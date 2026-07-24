@@ -292,7 +292,7 @@ export const SelectionPopover = ({ children, postUrl }: any) => {
                       onQuotesClick(selectedText);
                       document
                         .getElementsByClassName("comment-box")[0]
-                        .scrollIntoView({ block: "center" });
+                        ?.scrollIntoView({ block: "center" });
                     }}
                   />
                 )}
