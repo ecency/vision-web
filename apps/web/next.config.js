@@ -507,20 +507,17 @@ const config = {
         destination: "/:author/wallet",
         permanent: false
       },
-      // SEO: consolidate post URLs onto bare /@author/permlink form.
-      // Matches /:category/@:author/:permlink (community-prefixed or any legacy
-      // category prefix). The (?!@) on :category prevents the wild edge case
-      // of /@x/@y/z matching. Edit URLs (/:cat/@a/p/edit) and sub-path URLs
-      // (/:cat/@a/p/:sub) are 4 segments and don't match this 3-segment rule —
-      // their existing rewrites in rewrites() handle them.
-      // 308 (permanent): consolidation verified — community-prefixed URLs
-      // converge onto the bare canonical with no traffic regression, so the
-      // redirect is now permanent for full SEO signal transfer.
-      {
-        source: "/:category((?!@)[^/]+)/:author(@[^/]+)/:permlink",
-        destination: "/:author/:permlink",
-        permanent: true
-      },
+      // NOTE: the /:category/@:author/:permlink -> /@author/permlink
+      // consolidation that used to live here now lives in middleware, as
+      // `handleCategoryEntryRedirect`. It had to move: Next drops the headers
+      // from headers() on responses produced by redirects() (the redirect
+      // branch in resolve-routes.js is the one return path that omits
+      // resHeaders), so a redirect declared here can never carry a
+      // Cache-Control. That left every legacy inbound link uncacheable at the
+      // edge, so each one cost an origin round trip. Middleware runs
+      // after this block and owns all other cache tiers, so it can emit the
+      // redirect and its Cache-Control together. Behaviour is otherwise
+      // identical: same 3-segment match, same 308, same query preservation.
       // SEO: a bare community URL (/hive-NNNNN) currently 404s — no route
       // matches a bare hive-id at the root. Canonicalize it onto the working
       // /created/:community form (mapped to the community feed by the rewrites
