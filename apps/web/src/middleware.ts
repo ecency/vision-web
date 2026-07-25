@@ -5,6 +5,7 @@ import {
   getCachePolicyForPath,
   getEntryTierForAge,
   handleAgentReadableRewrite,
+  handleCategoryEntryRedirect,
   handleDecodedPathRedirect,
   handleIndexRedirect,
   isIndexRedirect,
@@ -66,6 +67,14 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
   // open-redirect (CWE-601) and redirect-loop reasoning.
   const decodedRedirect = handleDecodedPathRedirect(request);
   if (decodedRedirect) return decodedRedirect;
+
+  // Category-prefixed post URLs -> bare /@author/permlink canonical. This used
+  // to be a next.config.js redirects() rule, which runs ahead of ALL of this
+  // middleware, so it must stay near the top to preserve that precedence over
+  // the file-extension 404 and social-bot rewrite below. It moved here so the
+  // 308 can carry a Cache-Control — see the helper for why redirects() cannot.
+  const categoryEntryRedirect = handleCategoryEntryRedirect(request);
+  if (categoryEntryRedirect) return categoryEntryRedirect;
 
   const path = request.nextUrl.pathname;
 
