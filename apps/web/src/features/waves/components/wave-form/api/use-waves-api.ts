@@ -193,12 +193,12 @@ export function useWavesApi() {
 
       if (!editingEntry) {
         // Inline cache update for discussions list
-        const options = getDiscussionsQueryOptions(
-          entry,
-          SDKSortOrder.created,
-          true,
-          entry?.author
-        );
+        // Must resolve the same key the readers subscribe to. They call
+        // getDiscussionsQueryOptions(entry) with no observer (see
+        // use-wave-discussions-list), so pinning entry.author here would write
+        // this optimistic reply into a cache entry nobody is rendering and the
+        // reply would not show until the next refetch.
+        const options = getDiscussionsQueryOptions(entry, SDKSortOrder.created);
         queryClient.setQueryData<Entry[]>(options.queryKey, (data) => [...(data ?? []), tempReply]);
         updateRepliesCount(entry.children + 1, entry);
       }

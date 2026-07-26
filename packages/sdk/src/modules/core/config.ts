@@ -175,13 +175,22 @@ export namespace ConfigManager {
    * Defaults to "ecency"; a third-party integrator should point this at their
    * own moderation account.
    *
-   * Must be a real account. There is no empty-string opt-out: consumers resolve
-   * it with `||`, and `getDiscussion` separately falls back to the post author,
-   * so "" would not disable mute marking, it would silently observe as someone
-   * else and disagree with the cache key it was recorded under.
+   * Must be a real account. An empty value is rejected rather than treated as
+   * an opt-out: consumers resolve the observer with `||`, and `getDiscussion`
+   * separately falls back to the post author, so "" would not disable mute
+   * marking. It would silently observe as someone else while being cached under
+   * "", leaving the request and its cache key describing different things.
    * @param observer - Hive account whose mute list applies to anonymous reads
+   * @throws If given an empty or whitespace-only value
    */
   export function setDefaultObserver(observer: string) {
+    if (typeof observer !== "string" || observer.trim() === "") {
+      throw new Error(
+        "setDefaultObserver requires a non-empty Hive account. There is no empty-string opt-out; " +
+          "observer resolution would fall back to the post author while caching under an empty key."
+      );
+    }
+
     CONFIG.defaultObserver = observer;
   }
 

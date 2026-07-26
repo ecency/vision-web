@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getDiscussionsQueryOptions, SortOrder } from './get-discussions-query-options'
-import { CONFIG } from '@/modules/core'
+import { CONFIG, ConfigManager } from '@/modules/core'
 import { Entry } from '../types'
 
 const mockCallRPC = vi.hoisted(() => vi.fn())
@@ -62,8 +62,14 @@ describe('getDiscussionsQueryOptions observer resolution', () => {
     )
   })
 
+  it('rejects an empty default observer instead of silently observing as the author', () => {
+    expect(() => ConfigManager.setDefaultObserver('')).toThrow(/non-empty/)
+    expect(() => ConfigManager.setDefaultObserver('   ')).toThrow(/non-empty/)
+    expect(CONFIG.defaultObserver).toBe('ecency')
+  })
+
   it('honours a host that overrides the default observer', async () => {
-    CONFIG.defaultObserver = 'someotherapp'
+    ConfigManager.setDefaultObserver('someotherapp')
 
     const options = getDiscussionsQueryOptions(entry, SortOrder.created)
 
@@ -72,6 +78,28 @@ describe('getDiscussionsQueryOptions observer resolution', () => {
     expect(mockCallRPC).toHaveBeenCalledWith(
       'bridge.get_discussion',
       expect.objectContaining({ observer: 'someotherapp' })
+    )
+  })
+
+  // Waves and decks write optimistic replies with setQueryData against a key
+  // they rebuild themselves. They must omit the observer exactly as their
+  // readers do, or the reply lands in a cache entry nothing is subscribed to
+  // and does not appear until the next refetch.
+  it('gives writers the same key as readers when neither passes an observer', () => {
+    const readerKey = getDiscussionsQueryOptions(entry, SortOrder.created).queryKey
+    const writerKey = getDiscussionsQueryOptions(entry, SortOrder.created).queryKey
+
+    expect(writerKey).toEqual(readerKey)
+    // The key carries the post author in its own slot, so compare against
+    // fully-specified keys rather than searching for the name. Resolution must
+    // land on the default, not on the author (the pre-change behaviour that
+    // silently split writers from readers once the default stopped being the
+    // author).
+    expect(readerKey).toEqual(
+      getDiscussionsQueryOptions(entry, SortOrder.created, true, 'ecency').queryKey
+    )
+    expect(readerKey).not.toEqual(
+      getDiscussionsQueryOptions(entry, SortOrder.created, true, entry.author).queryKey
     )
   })
 
