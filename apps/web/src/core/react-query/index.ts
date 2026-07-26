@@ -20,14 +20,39 @@ export enum QueryIdentifiers {
   MARKET_BUCKET_SIZE = "market-bucket-size"
 }
 
+/**
+ * Ceiling on how long a server-side entry may linger. See the `gcTime` note
+ * below for the arithmetic; this is also the clamp applied to per-query
+ * overrides, since a default alone cannot hold the bound.
+ */
+export const SERVER_GC_TIME = 2 * 60 * 1000;
+
 export function makeQueryClient() {
-  return new QueryClient({
+  const client = new QueryClient({
     defaultOptions: {
       queries: {
         // With SSR, we usually want to set some default staleTime
         // above 0 to avoid refetching immediately on the client
         staleTime: 60 * 1000, // 60 seconds - prevents immediate refetch after SSR prefetch
-        gcTime: 10 * 60 * 1000, // 10 minutes - garbage collect unused cache entries
+        /**
+         * How long an unused entry stays before React Query collects it.
+         *
+         * The server needs a far shorter window than the browser. Every query a
+         * render creates schedules a gc timer, and a pending timer is a GC root,
+         * so each request's fetched data stays reachable for the whole gcTime no
+         * matter that the client itself is per-request. A server process
+         * therefore settles at roughly `ingest rate × gcTime`, and at ecency.com
+         * volume 10 minutes puts that steady state (~2.9GB measured) on top of
+         * the 3072MB `--max-old-space-size` cap: the renderer never reaches
+         * equilibrium, it aborts on the way there and Swarm restarts it.
+         *
+         * 2 minutes leaves the same ceiling ~5x of headroom while staying far
+         * longer than any single render (1-5s), which is the only window a
+         * server entry has to be reused before it is dehydrated into the
+         * payload. The browser keeps 10 minutes, where entries are reused across
+         * navigations and the working set is one user's, not every user's.
+         */
+        gcTime: isServer ? SERVER_GC_TIME : 10 * 60 * 1000,
         refetchOnWindowFocus: false,
         refetchOnMount: false,
         // Disable retries on server. hive-tx already retries across 7 nodes
@@ -38,6 +63,31 @@ export function makeQueryClient() {
       }
     }
   });
+
+  // A default is not a bound: per-query `gcTime` wins over it, and a single
+  // long-lived entry does not just retain itself. React Query's gc timer closes
+  // over its Query, and `Query` holds `#cache` — the whole QueryCache — so one
+  // query outliving the request pins every other entry that request cached.
+  // `getPollQueryOptions` asks for 30 minutes and renders during entry SSR;
+  // `getBadActorsQueryOptions` asks for `Infinity`. Either would have re-created
+  // the original problem on any request that touched them.
+  //
+  // `defaultQueryOptions` is the single funnel every query resolves through
+  // (fetchQuery, prefetchQuery, QueryObserver, QueriesObserver, QueryCache.build),
+  // so clamping here covers overrides without auditing each call site. Options
+  // stay untouched in the browser, where a long window is correct.
+  if (isServer) {
+    const resolveOptions = client.defaultQueryOptions.bind(client);
+    client.defaultQueryOptions = ((options: Parameters<typeof resolveOptions>[0]) => {
+      const resolved = resolveOptions(options);
+      if (typeof resolved.gcTime !== "number" || resolved.gcTime > SERVER_GC_TIME) {
+        resolved.gcTime = SERVER_GC_TIME;
+      }
+      return resolved;
+    }) as typeof client.defaultQueryOptions;
+  }
+
+  return client;
 }
 
 export const getQueryClient = isServer

@@ -67,7 +67,7 @@ vi.mock("@ecency/sdk", () => ({
   // duplicate vi.mock() calls for the same module (the first factory wins), so
   // a second factory's exports (e.g. hiveTxUtils) silently went missing and
   // broke specs that import them transitively.
-  ConfigManager: { setQueryClient: vi.fn() },
+  ConfigManager: { setQueryClient: vi.fn(), setQueryClientResolver: vi.fn() },
   CONFIG: {
     hiveNodes: [],
     privateApiHost: "https://ecency.com",
