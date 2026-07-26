@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * `isServer` is read at module load, so each case needs the module re-imported
@@ -13,50 +13,104 @@ async function loadWith(isServer: boolean) {
   return import("@/core/react-query");
 }
 
-function gcTimeOf(client: { getDefaultOptions: () => { queries?: { gcTime?: number } } }) {
-  return client.getDefaultOptions().queries?.gcTime;
-}
+const THIRTY_MINUTES = 30 * 60 * 1000;
 
 describe("query client gcTime", () => {
   beforeEach(() => {
     vi.resetModules();
   });
 
-  /**
-   * The regression this guards. Every query a render creates schedules a gc
-   * timer, and a pending timer is a GC root — so a server process retains each
-   * request's data for the whole gcTime regardless of the client being
-   * per-request, settling at roughly `ingest rate × gcTime`. At ecency.com
-   * volume a 10-minute window put that steady state above the renderer's
-   * old-space cap, so it aborted on the way there instead of levelling off.
-   */
-  it("keeps the server window short enough to bound the retained working set", async () => {
-    const { makeQueryClient } = await loadWith(true);
-
-    expect(gcTimeOf(makeQueryClient())).toBe(2 * 60 * 1000);
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it("leaves the browser window long, where the working set is one user's", async () => {
+  it("keeps the server default short enough to bound the retained working set", async () => {
+    const { makeQueryClient, SERVER_GC_TIME } = await loadWith(true);
+
+    expect(makeQueryClient().getDefaultOptions().queries?.gcTime).toBe(SERVER_GC_TIME);
+  });
+
+  it("leaves the browser default long, where the working set is one user's", async () => {
     const { makeQueryClient } = await loadWith(false);
 
-    expect(gcTimeOf(makeQueryClient())).toBe(10 * 60 * 1000);
+    expect(makeQueryClient().getDefaultOptions().queries?.gcTime).toBe(10 * 60 * 1000);
   });
 
-  it("gives the server a strictly shorter window than the browser", async () => {
-    const server = gcTimeOf((await loadWith(true)).makeQueryClient());
-    const browser = gcTimeOf((await loadWith(false)).makeQueryClient());
+  /**
+   * The regression the default alone does not cover. Per-query `gcTime` wins
+   * over the default, and a query that outlives the request does not only
+   * retain itself: React Query's gc timer closes over its Query, and `Query`
+   * holds `#cache`, so one long-lived entry pins every other entry that request
+   * cached. `getPollQueryOptions` (30 minutes, rendered during entry SSR) and
+   * `getBadActorsQueryOptions` (`Infinity`) both do this.
+   */
+  it("clamps a per-query override on the server", async () => {
+    const { makeQueryClient, SERVER_GC_TIME } = await loadWith(true);
+    const client = makeQueryClient();
 
-    expect(server).toBeLessThan(browser!);
+    const resolved = client.defaultQueryOptions({
+      queryKey: ["poll", "author", "permlink"],
+      gcTime: THIRTY_MINUTES
+    });
+
+    expect(resolved.gcTime).toBe(SERVER_GC_TIME);
+  });
+
+  it("clamps an Infinity override on the server", async () => {
+    const { makeQueryClient, SERVER_GC_TIME } = await loadWith(true);
+    const client = makeQueryClient();
+
+    const resolved = client.defaultQueryOptions({
+      queryKey: ["bad-actors"],
+      gcTime: Infinity
+    });
+
+    expect(resolved.gcTime).toBe(SERVER_GC_TIME);
+  });
+
+  it("leaves per-query overrides alone in the browser", async () => {
+    const { makeQueryClient } = await loadWith(false);
+    const client = makeQueryClient();
+
+    const resolved = client.defaultQueryOptions({
+      queryKey: ["poll", "author", "permlink"],
+      gcTime: THIRTY_MINUTES
+    });
+
+    expect(resolved.gcTime).toBe(THIRTY_MINUTES);
+  });
+
+  /**
+   * The bound has to hold in behaviour, not just in resolved options: the
+   * cached payload must actually be dropped once the window passes, including
+   * for a query that asked to live far longer.
+   */
+  it("drops a cached payload after the server window, despite a long override", async () => {
+    const { makeQueryClient, SERVER_GC_TIME } = await loadWith(true);
+    const client = makeQueryClient();
+    vi.useFakeTimers();
+
+    await client.fetchQuery({
+      queryKey: ["poll", "author", "permlink"],
+      gcTime: THIRTY_MINUTES,
+      queryFn: async () => ({ payload: "x".repeat(1024) })
+    });
+
+    expect(client.getQueryCache().findAll()).toHaveLength(1);
+
+    vi.advanceTimersByTime(SERVER_GC_TIME + 1000);
+
+    expect(client.getQueryCache().findAll()).toHaveLength(0);
   });
 
   /**
    * A single server render takes ~1-5s; the window only has to outlast that,
    * since the data is dehydrated into the payload as soon as the render ends.
-   * Guards against tightening this so far that entries expire mid-render.
+   * Guards against tightening this to where entries expire mid-render.
    */
   it("still outlasts a single server render by a wide margin", async () => {
-    const { makeQueryClient } = await loadWith(true);
+    const { SERVER_GC_TIME } = await loadWith(true);
 
-    expect(gcTimeOf(makeQueryClient())).toBeGreaterThanOrEqual(30 * 1000);
+    expect(SERVER_GC_TIME).toBeGreaterThanOrEqual(30 * 1000);
   });
 });
