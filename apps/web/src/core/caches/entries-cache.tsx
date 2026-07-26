@@ -8,7 +8,17 @@ import { Entry, EntryVote } from "@/entities";
 import { makeEntryPath } from "@/utils";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
+import { DEFAULT_OBSERVER } from "@/consts/observer";
 
+// Deliberately observer-free. Every entry read below pins the observer to
+// DEFAULT_OBSERVER for server and client alike, so there is exactly one cached
+// shape per post and this key stays stable. That matters: ~57 call sites write
+// through these helpers (optimistic vote and reply updates among them), and an
+// observer dimension in the key would silently split those writes away from the
+// entry the page is actually rendering. Personalising a single entry would mean
+// threading the observer through all of them; the comment thread already
+// personalises via getDiscussionsQueryOptions, which is where mute filtering
+// actually earns its keep on an entry page.
 function entryKey(author: string, permlink: string) {
   return QueryKeys.posts.entry(makeEntryPath("", author, permlink));
 }
@@ -16,7 +26,7 @@ function entryKey(author: string, permlink: string) {
 export namespace EcencyEntriesCacheManagement {
   export function getEntryQueryByPath(author?: string, permlink?: string) {
     return {
-      ...getPostQueryOptions(author ?? "", permlink),
+      ...getPostQueryOptions(author ?? "", permlink, DEFAULT_OBSERVER),
       queryKey: entryKey(author ?? "", permlink ?? ""),
       enabled: typeof author === "string" && typeof permlink === "string" && !!author && !!permlink,
       // getPostQueryOptions resolves to `Entry | null`. Callers treat a missing
@@ -28,7 +38,11 @@ export namespace EcencyEntriesCacheManagement {
 
   export function getEntryQuery<T extends Entry>(initialEntry?: T) {
     return {
-      ...getPostQueryOptions(initialEntry?.author ?? "", initialEntry?.permlink),
+      ...getPostQueryOptions(
+        initialEntry?.author ?? "",
+        initialEntry?.permlink,
+        DEFAULT_OBSERVER
+      ),
       queryKey: entryKey(initialEntry?.author ?? "", initialEntry?.permlink ?? ""),
       initialData: initialEntry,
       enabled: !!initialEntry,

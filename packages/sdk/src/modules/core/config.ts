@@ -66,6 +66,17 @@ function resolveQueryClient(): QueryClient {
 export const CONFIG = {
   privateApiHost: "https://ecency.com",
   /**
+   * Observer used for bridge calls when nobody is logged in. The bridge applies
+   * this account's mute list to the response, marking muted authors' posts and
+   * comments `stats.gray` so clients can dim or collapse them. Anonymous
+   * visitors therefore inherit Ecency's moderation instead of seeing an
+   * unfiltered firehose. Apps may override via `ConfigManager.setDefaultObserver`.
+   *
+   * Note this only *marks* content: the bridge still returns muted authors'
+   * posts, so an observer never shortens a feed.
+   */
+  defaultObserver: "ecency",
+  /**
    * First-party client identifier sent as the `X-Ecency-Client` header on
    * search/private API requests. Lets the origin distinguish Ecency's own
    * web/mobile/SSR traffic from third-party integrators (who should use the
@@ -156,6 +167,16 @@ export namespace ConfigManager {
    */
   export function setClientId(clientId: string) {
     CONFIG.clientId = clientId;
+  }
+
+  /**
+   * Set the observer used for bridge calls made without a logged-in user.
+   * Defaults to "ecency"; a third-party integrator should point this at their
+   * own moderation account (or "" to opt out of mute marking entirely).
+   * @param observer - Hive account whose mute list applies to anonymous reads
+   */
+  export function setDefaultObserver(observer: string) {
+    CONFIG.defaultObserver = observer;
   }
 
   /**

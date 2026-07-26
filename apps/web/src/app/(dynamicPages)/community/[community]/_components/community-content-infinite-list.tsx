@@ -6,6 +6,7 @@ import { useBottomPagination } from "@/core/hooks";
 import { usePostsFeedQuery } from "@/api/queries";
 import { Community, Entry, SearchResponse } from "@/entities";
 import type { InfiniteData } from "@tanstack/react-query";
+import { useObserver } from "@/core/hooks/use-observer";
 
 interface Props {
     community: Community;
@@ -15,8 +16,9 @@ interface Props {
 type FeedPage = Entry[] | SearchResponse;
 
 export function CommunityContentInfiniteList({ section, community }: Props) {
+    const observer = useObserver();
     // ⚠️ Don't destructure the cast; assign first, then read props.
-    const result = usePostsFeedQuery(section, community.name);
+    const result = usePostsFeedQuery(section, community.name, observer);
 
     const fetchNextPage = result.fetchNextPage;
     const isFetching = result.isFetching;

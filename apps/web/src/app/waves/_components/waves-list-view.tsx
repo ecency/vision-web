@@ -20,6 +20,7 @@ import {
 import { useWavesTagFilter } from "@/app/waves/_context";
 import { useBottomPagination } from "@/core/hooks";
 import { Button } from "@ui/button";
+import { DEFAULT_OBSERVER } from "@/consts/observer";
 import i18next from "i18next";
 import { sentry } from "@/core/sentry/lazy-sentry";
 
@@ -37,7 +38,10 @@ export function WavesListView({ feedType, username }: Props) {
   // the For You stream.
   // The logged-in user is the observer: server-side mute filtering keeps each
   // page full of waves they can see (client-side filtering would shrink pages).
-  const observer = username || undefined;
+  // Logged out, Ecency's moderation account stands in so anonymous visitors get
+  // the same spam filtering. Note esync actually drops muted authors here,
+  // unlike the Hive bridge, which only flags them `stats.gray`.
+  const observer = username || DEFAULT_OBSERVER;
   const queryOptions = useMemo(() => {
     if (selectedSource) {
       return getWavesFeedQueryOptions({ containers: [selectedSource], observer });

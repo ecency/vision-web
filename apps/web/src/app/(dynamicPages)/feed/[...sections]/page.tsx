@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
+import { DEFAULT_OBSERVER } from "@/consts/observer";
 import { prefetchGetPostsFeedQuery } from "@/api/queries";
 import { FeedLayout, FeedList } from "../_components";
 import React from "react";
@@ -49,9 +50,12 @@ export default async function FeedPage({ params, searchParams }: Props) {
   const { before } = await searchParams;
 
   const cookiesStore = await cookies();
-  // observer is for filtering muted users/content - always use logged-in user or "ecency"
+  // observer is for filtering muted users/content - always use logged-in user or "ecency".
+  // Safe to personalise here (unlike profile/community/entry) because the feed
+  // tiers are already marked user-specific in cache-policy.ts, so a logged-in
+  // render never shares an edge-cache entry with another user.
   const loggedInUser = cookiesStore.get(ACTIVE_USER_COOKIE_NAME)?.value;
-  const observer = loggedInUser || "ecency";
+  const observer = loggedInUser || DEFAULT_OBSERVER;
 
   const basePath = `/${filter}/${tag}`;
   const cursor = isArchivableTag(filter, tag) ? parseArchiveCursor(before) : null;

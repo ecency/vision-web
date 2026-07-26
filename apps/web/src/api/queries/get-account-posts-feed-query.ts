@@ -4,6 +4,7 @@ import { InfiniteData, UndefinedInitialDataInfiniteOptions, UseInfiniteQueryResu
 import { Entry, SearchResponse } from "@/entities";
 import { appAxios } from "@/api/axios";
 import { apiBase } from "@/api/helper";
+import { DEFAULT_OBSERVER } from "@/consts/observer";
 
 // Unify all branches on a single page type
 type Page = Entry[] | SearchResponse;
@@ -44,6 +45,7 @@ export async function prefetchGetPostsFeedQuery(
 ): Promise<FeedInfinite | undefined> {
   const isUser = tag.startsWith("@") || tag.startsWith("%40");
   const isPromotedSection = what === "promoted";
+  const resolvedObserver = observer ?? DEFAULT_OBSERVER;
 
   if (isPromotedSection) {
     return prefetchInfiniteQuery(getPromotedEntriesInfiniteQuery()) as Promise<FeedInfinite | undefined>;
@@ -55,7 +57,7 @@ export async function prefetchGetPostsFeedQuery(
         tag.replace("@", "").replace(/%40/g, ""),
         what,
         limit,
-        observer ?? "",
+        resolvedObserver,
         true
       )
     ) as Promise<FeedInfinite | undefined>;
@@ -67,7 +69,7 @@ export async function prefetchGetPostsFeedQuery(
         what,
         tag,
         limit,
-        observer ?? "",
+        resolvedObserver,
         true,
         { resolvePosts: false }
       )
@@ -75,7 +77,7 @@ export async function prefetchGetPostsFeedQuery(
   }
 
   return prefetchInfiniteQuery(
-    getPostsRankedInfiniteQueryOptions(what, tag, limit, observer ?? "")
+    getPostsRankedInfiniteQueryOptions(what, tag, limit, resolvedObserver)
   ) as Promise<FeedInfinite | undefined>;
 }
 
@@ -87,6 +89,7 @@ export function getPostsFeedQueryData(
 ): FeedInfinite | undefined {
   const isUser = tag.startsWith("@") || tag.startsWith("%40");
   const isPromotedSection = what === "promoted";
+  const resolvedObserver = observer ?? DEFAULT_OBSERVER;
 
   if (isPromotedSection) {
     return getInfiniteQueryData(getPromotedEntriesInfiniteQuery()) as FeedInfinite | undefined;
@@ -98,7 +101,7 @@ export function getPostsFeedQueryData(
         tag.replace("@", "").replace(/%40/g, ""),
         what,
         limit,
-        observer ?? "",
+        resolvedObserver,
         true
       )
     ) as FeedInfinite | undefined;
@@ -110,7 +113,7 @@ export function getPostsFeedQueryData(
         what,
         tag,
         limit,
-        observer ?? "",
+        resolvedObserver,
         true,
         { resolvePosts: false }
       )
@@ -118,7 +121,7 @@ export function getPostsFeedQueryData(
   }
 
   return getInfiniteQueryData(
-    getPostsRankedInfiniteQueryOptions(what, tag, limit, observer ?? "")
+    getPostsRankedInfiniteQueryOptions(what, tag, limit, resolvedObserver)
   ) as FeedInfinite | undefined;
 }
 
@@ -130,6 +133,7 @@ export function usePostsFeedQuery(
 ): UseInfiniteQueryResult<InfiniteData<Page, unknown>, Error> {
   const isUser = tag.startsWith("@") || tag.startsWith("%40");
   const isPromotedSection = what === "promoted";
+  const resolvedObserver = observer ?? DEFAULT_OBSERVER;
 
   const queryOptions =
       isPromotedSection
@@ -139,14 +143,14 @@ export function usePostsFeedQuery(
                   tag.replace("@", "").replace(/%40/g, ""),
                   what,
                   limit,
-                  observer ?? "",
+                  resolvedObserver,
                   true
               )
               : getPostsRankedInfiniteQueryOptions(
                     what,
                     tag,
                     limit,
-                    observer ?? "",
+                    resolvedObserver,
                     true,
                     what === "feed" ? { resolvePosts: false } : undefined
                 );
@@ -154,13 +158,18 @@ export function usePostsFeedQuery(
   // Each branch above is individually a valid infinite query, but they use
   // different page-param and page types, so their union matches no single
   // useInfiniteQuery overload. Unify at this boundary only.
-  return useInfiniteQuery(
-    queryOptions as unknown as UndefinedInitialDataInfiniteOptions<
+  return useInfiniteQuery({
+    ...(queryOptions as unknown as UndefinedInitialDataInfiniteOptions<
       Page,
       Error,
       FeedInfinite,
       (string | number)[],
       unknown
-    >
-  ) as unknown as UseInfiniteQueryResult<InfiniteData<Page, unknown>, Error>;
+    >),
+    // A logged-in visitor renders once with DEFAULT_OBSERVER (matching SSR),
+    // then swaps to their own username once the store rehydrates post-mount.
+    // That is a new query key with nothing cached behind it, so without this
+    // the list would blank out and reflow mid-scroll while the refetch lands.
+    placeholderData: (previous: FeedInfinite | undefined) => previous
+  }) as unknown as UseInfiniteQueryResult<InfiniteData<Page, unknown>, Error>;
 }

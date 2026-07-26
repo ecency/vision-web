@@ -9,6 +9,7 @@ import {
 import React, { useMemo } from "react";
 import { usePostsFeedQuery } from "@/api/queries";
 import { Entry, FullAccount } from "@/entities";
+import { useObserver } from "@/core/hooks/use-observer";
 
 interface Props {
   account: FullAccount;
@@ -25,8 +26,9 @@ export function ProfileEntriesInfiniteList({
   initialPageEntriesCount,
   initialDataLoaded
 }: Props) {
+  const observer = useObserver();
   const { fetchNextPage, data, isFetching, isLoading, hasNextPage, isFetchingNextPage } =
-    usePostsFeedQuery(section, `@${account.name}`);
+    usePostsFeedQuery(section, `@${account.name}`, observer);
 
   const dropFirstPage = initialPageEntriesCount > 0;
 
