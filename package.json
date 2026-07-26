@@ -43,7 +43,7 @@
     "tsup": "^8.5.0",
     "typescript": "^5",
     "vitest": "^4.1.8",
-    "postcss": "^8.4.49",
+    "postcss": "^8.5.18",
     "postcss-scss": "^4.0.9"
   }
 }
