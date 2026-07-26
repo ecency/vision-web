@@ -961,6 +961,18 @@ declare const INTERNAL_API_TIMEOUT_MS = 10000;
 declare const CONFIG: {
     privateApiHost: string;
     /**
+     * Observer used for bridge calls when nobody is logged in. The bridge applies
+     * this account's mute list to the response, marking muted authors' posts and
+     * comments `stats.gray` so clients can dim or collapse them. Anonymous
+     * visitors therefore inherit Ecency's moderation instead of seeing an
+     * unfiltered firehose. Apps may override via `ConfigManager.setDefaultObserver`,
+     * which expects a real account rather than "" (see that setter).
+     *
+     * Note this only *marks* content: the bridge still returns muted authors'
+     * posts, so an observer never shortens a feed.
+     */
+    defaultObserver: string;
+    /**
      * First-party client identifier sent as the `X-Ecency-Client` header on
      * search/private API requests. Lets the origin distinguish Ecency's own
      * web/mobile/SSR traffic from third-party integrators (who should use the
@@ -1029,6 +1041,20 @@ declare namespace ConfigManager {
      * @param clientId - Short client label
      */
     function setClientId(clientId: string): void;
+    /**
+     * Set the observer used for bridge calls made without a logged-in user.
+     * Defaults to "ecency"; a third-party integrator should point this at their
+     * own moderation account.
+     *
+     * Must be a real account. An empty value is rejected rather than treated as
+     * an opt-out: consumers resolve the observer with `||`, and `getDiscussion`
+     * separately falls back to the post author, so "" would not disable mute
+     * marking. It would silently observe as someone else while being cached under
+     * "", leaving the request and its cache key describing different things.
+     * @param observer - Hive account whose mute list applies to anonymous reads
+     * @throws If given an empty or whitespace-only value
+     */
+    function setDefaultObserver(observer: string): void;
     /**
      * Get a validated base URL for API requests
      * Returns a valid base URL that can be used with new URL(path, baseUrl)

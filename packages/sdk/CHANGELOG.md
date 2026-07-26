@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.64
+
+### Patch Changes
+
+- fix(observer): default to the ecency observer whenever nobody is logged in (#1244)
+
 ## 2.3.63
 
 ### Patch Changes
