@@ -32,6 +32,28 @@ const getHeliusApiKey = () => {
 export const INTERNAL_API_TIMEOUT_MS = 10_000;
 
 /**
+ * Ceiling on `gcTime` for any query that runs during SSR.
+ *
+ * A long window is fine in a browser or native app, where the cache holds one
+ * user's data and lives as long as the session. It is not fine in a server
+ * renderer: every query schedules a gc timer, a pending timer is a GC root, and
+ * `Query` holds the whole `QueryCache` — so one long-lived entry keeps
+ * everything else that request cached reachable for its entire window. A server
+ * process then settles at roughly `ingest rate × gcTime`, which is how
+ * ecency.com's renderers ended up aborting on the old-space cap rather than
+ * levelling off (2026-07-26).
+ *
+ * Two minutes is far longer than any single render, which is the only window a
+ * server-side entry has to be reused before it is dehydrated into the payload.
+ *
+ * Note this bounds SDK queries at the source. `apps/web` additionally clamps
+ * every query through `defaultQueryOptions`, which is what protects it from
+ * options defined outside the SDK; hosts that do not clamp get the right
+ * behaviour from these defaults alone.
+ */
+export const SERVER_GC_TIME_MS = 2 * 60 * 1000;
+
+/**
  * How `CONFIG.queryClient` is resolved.
  *
  * This used to be a plain `queryClient: new QueryClient()` property — a single
