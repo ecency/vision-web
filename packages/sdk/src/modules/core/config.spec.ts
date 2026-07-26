@@ -1,5 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryKeys } from "./query-keys";
 
 /**
  * `config.ts` keeps the resolver in module scope, so every case needs a fresh
@@ -93,6 +94,9 @@ describe("CONFIG.queryClient resolution", () => {
     const { CONFIG, ConfigManager } = await loadConfig();
     const clientsByRequest = new Map<string, QueryClient>();
     let currentRequest = "request-1";
+    // The same key production uses, so the test cannot drift from the real
+    // cache-key contract.
+    const entryKey = QueryKeys.posts.content("alice", "hello");
 
     ConfigManager.setQueryClientResolver(() => {
       let client = clientsByRequest.get(currentRequest);
@@ -103,15 +107,13 @@ describe("CONFIG.queryClient resolution", () => {
       return client;
     });
 
-    CONFIG.queryClient.setQueryData(["entry", "alice", "hello"], { title: "first" });
+    CONFIG.queryClient.setQueryData(entryKey, { title: "first" });
 
-    expect(CONFIG.queryClient.getQueryData(["entry", "alice", "hello"])).toEqual({
-      title: "first"
-    });
+    expect(CONFIG.queryClient.getQueryData(entryKey)).toEqual({ title: "first" });
 
     currentRequest = "request-2";
 
-    expect(CONFIG.queryClient.getQueryData(["entry", "alice", "hello"])).toBeUndefined();
+    expect(CONFIG.queryClient.getQueryData(entryKey)).toBeUndefined();
 
     // And the first request's cache is a distinct object, so it becomes
     // unreachable once that request's scope is gone.
