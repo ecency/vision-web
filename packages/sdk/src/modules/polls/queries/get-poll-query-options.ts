@@ -1,5 +1,5 @@
-import { queryOptions } from "@tanstack/react-query";
-import { CONFIG, QueryKeys } from "@/modules/core";
+import { isServer, queryOptions } from "@tanstack/react-query";
+import { CONFIG, QueryKeys, SERVER_GC_TIME_MS } from "@/modules/core";
 import { getBoundFetch } from "@/modules/core/utils";
 import type { Poll, PollChoice, PollVoter, PollStats } from "../types";
 
@@ -76,7 +76,10 @@ export function getPollQueryOptions(
   return queryOptions({
     queryKey: QueryKeys.polls.details(author ?? "", permlink ?? ""),
     enabled: !!author && !!permlink,
-    gcTime: 30 * 60 * 1000,
+    // Long in a browser, where a poll is cheap to keep and often revisited;
+    // bounded during SSR, where holding it also holds that request's whole
+    // cache. See SERVER_GC_TIME_MS.
+    gcTime: isServer ? SERVER_GC_TIME_MS : 30 * 60 * 1000,
     queryFn: async (): Promise<Poll> => {
       if (!author || !permlink) {
         throw new Error("[SDK][Polls] – missing author or permlink");

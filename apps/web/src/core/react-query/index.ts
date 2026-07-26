@@ -68,19 +68,28 @@ export function makeQueryClient() {
   // long-lived entry does not just retain itself. React Query's gc timer closes
   // over its Query, and `Query` holds `#cache` — the whole QueryCache — so one
   // query outliving the request pins every other entry that request cached.
-  // `getPollQueryOptions` asks for 30 minutes and renders during entry SSR;
-  // `getBadActorsQueryOptions` asks for `Infinity`. Either would have re-created
-  // the original problem on any request that touched them.
+  // `getPollQueryOptions` asks for 30 minutes and renders during entry SSR,
+  // which would have re-created the original problem on any request with a poll.
   //
   // `defaultQueryOptions` is the single funnel every query resolves through
   // (fetchQuery, prefetchQuery, QueryObserver, QueriesObserver, QueryCache.build),
   // so clamping here covers overrides without auditing each call site. Options
   // stay untouched in the browser, where a long window is correct.
+  //
+  // `Infinity` is deliberately exempt. It is the one value that schedules no gc
+  // timer at all — query-core's `isValidTimeout` rejects non-finite timeouts, so
+  // `scheduleGc` is a no-op — and with no timer there is no GC root, so on a
+  // per-request client the entry dies with its request. Clamping it to a finite
+  // window would *create* a timer that retains the Query and its whole
+  // QueryCache for that window: a regression, not a fix.
   if (isServer) {
     const resolveOptions = client.defaultQueryOptions.bind(client);
     client.defaultQueryOptions = ((options: Parameters<typeof resolveOptions>[0]) => {
       const resolved = resolveOptions(options);
-      if (typeof resolved.gcTime !== "number" || resolved.gcTime > SERVER_GC_TIME) {
+      const { gcTime } = resolved;
+      if (typeof gcTime !== "number") {
+        resolved.gcTime = SERVER_GC_TIME;
+      } else if (Number.isFinite(gcTime) && gcTime > SERVER_GC_TIME) {
         resolved.gcTime = SERVER_GC_TIME;
       }
       return resolved;
