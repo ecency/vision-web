@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.65
+
+### Patch Changes
+
+- fix(sdk): bound query gcTime during SSR at the source (#1246)
+
 ## 2.3.64
 
 ### Patch Changes
