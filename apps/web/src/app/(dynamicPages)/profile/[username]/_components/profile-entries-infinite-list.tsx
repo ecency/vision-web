@@ -25,6 +25,14 @@ export function ProfileEntriesInfiniteList({
   initialPageEntriesCount,
   initialDataLoaded
 }: Props) {
+  // No observer argument on purpose, so this resolves to DEFAULT_OBSERVER and
+  // matches the server-rendered first page. Personalising it here would only
+  // reach pages 2+: the server fetched page 1 as DEFAULT_OBSERVER and
+  // `dropFirstPage` below discards this query's own page 1, so the visitor's
+  // mute list would apply to every page except the most visible one.
+  // Personalising properly needs the SSR page replaced, which means adding this
+  // tier to cache-policy's USER_SPECIFIC_TIERS_WHEN_LOGGED_IN (giving up the
+  // shared edge-cache entry) or re-fetching page 1 on every logged-in view.
   const { fetchNextPage, data, isFetching, isLoading, hasNextPage, isFetchingNextPage } =
     usePostsFeedQuery(section, `@${account.name}`);
 

@@ -1,4 +1,4 @@
-import { QueryKeys } from "@/modules/core";
+import { CONFIG, QueryKeys } from "@/modules/core";
 import { queryOptions } from "@tanstack/react-query";
 import { Entry } from "../types";
 import { filterDmcaEntry } from "../utils/filter-dmca-entries";
@@ -106,8 +106,14 @@ export function getDiscussionsQueryOptions(
   enabled: boolean = true,
   observer?: string
 ) {
+  // Anonymous readers fall back to CONFIG.defaultObserver rather than the post
+  // author. Author-as-observer only helps the minority of authors who curate a
+  // mute list; everyone else's comment section came back unfiltered, so the
+  // shared moderation account is the better default for logged-out traffic.
+  const resolvedObserver = observer || CONFIG.defaultObserver;
+
   return queryOptions({
-    queryKey: QueryKeys.posts.discussions(entry?.author, entry?.permlink, order, observer || entry?.author),
+    queryKey: QueryKeys.posts.discussions(entry?.author, entry?.permlink, order, resolvedObserver),
     queryFn: async () => {
       if (!entry) {
         return [];
@@ -116,7 +122,7 @@ export function getDiscussionsQueryOptions(
       const response = await callRPC("bridge.get_discussion", {
         author: entry.author,
         permlink: entry.permlink,
-        observer: observer || entry.author,
+        observer: resolvedObserver,
       });
 
       const results = response
@@ -161,10 +167,15 @@ export function getDiscussionQueryOptions(
   observer?: string,
   enabled = true
 ) {
+  const resolvedObserver = observer || CONFIG.defaultObserver;
+
   return queryOptions({
-    queryKey: QueryKeys.posts.discussion(author, permlink, observer || author),
+    queryKey: QueryKeys.posts.discussion(author, permlink, resolvedObserver),
     enabled: enabled && !!author && !!permlink,
     queryFn: async () =>
-      getDiscussion(author, permlink, observer) as Promise<Record<string, Entry> | null>,
+      getDiscussion(author, permlink, resolvedObserver) as Promise<Record<
+        string,
+        Entry
+      > | null>,
   });
 }

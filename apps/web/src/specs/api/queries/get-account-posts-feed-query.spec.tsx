@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { DEFAULT_OBSERVER } from '@/consts/observer';
 import {
   prefetchGetPostsFeedQuery,
   getPostsFeedQueryData,
@@ -114,7 +115,7 @@ describe('get-account-posts-feed-query', () => {
           'bob',
           'posts',
           20,
-          '',
+          DEFAULT_OBSERVER,
           true
         );
       });
@@ -134,7 +135,7 @@ describe('get-account-posts-feed-query', () => {
           'charlie',
           'blog',
           20,
-          '',
+          DEFAULT_OBSERVER,
           true
         );
       });
@@ -177,7 +178,7 @@ describe('get-account-posts-feed-query', () => {
           'feed',
           'tag1',
           20,
-          '',
+          DEFAULT_OBSERVER,
           true,
           { resolvePosts: false }
         );
@@ -200,7 +201,7 @@ describe('get-account-posts-feed-query', () => {
           'trending',
           'tag1',
           20,
-          ''
+          DEFAULT_OBSERVER
         );
       });
 
@@ -215,7 +216,7 @@ describe('get-account-posts-feed-query', () => {
 
         await prefetchGetPostsFeedQuery('hot', 'tag1', 20);
 
-        expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith('hot', 'tag1', 20, '');
+        expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith('hot', 'tag1', 20, DEFAULT_OBSERVER);
       });
 
       it('should fetch created posts', async () => {
@@ -229,7 +230,7 @@ describe('get-account-posts-feed-query', () => {
 
         await prefetchGetPostsFeedQuery('created', 'tag1', 20);
 
-        expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith('created', 'tag1', 20, '');
+        expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith('created', 'tag1', 20, DEFAULT_OBSERVER);
       });
 
       it('should handle custom limit', async () => {
@@ -243,7 +244,7 @@ describe('get-account-posts-feed-query', () => {
 
         await prefetchGetPostsFeedQuery('trending', 'tag1', 50);
 
-        expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith('trending', 'tag1', 50, '');
+        expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith('trending', 'tag1', 50, DEFAULT_OBSERVER);
       });
     });
   });
@@ -280,7 +281,7 @@ describe('get-account-posts-feed-query', () => {
           'alice',
           'blog',
           20,
-          '',
+          DEFAULT_OBSERVER,
           true
         );
       });
@@ -338,7 +339,7 @@ describe('get-account-posts-feed-query', () => {
 
         getPostsFeedQueryData('trending', 'tag1', 20);
 
-        expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith('trending', 'tag1', 20, '');
+        expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith('trending', 'tag1', 20, DEFAULT_OBSERVER);
       });
     });
   });
@@ -438,7 +439,7 @@ describe('get-account-posts-feed-query', () => {
         'trending',
         'tag1',
         20,
-        '',
+        DEFAULT_OBSERVER,
         true,
         undefined
       );
@@ -457,7 +458,7 @@ describe('get-account-posts-feed-query', () => {
 
       await prefetchGetPostsFeedQuery('trending', '', 20);
 
-      expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith('trending', '', 20, '');
+      expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith('trending', '', 20, DEFAULT_OBSERVER);
     });
 
     it('should handle undefined observer', async () => {
@@ -471,7 +472,7 @@ describe('get-account-posts-feed-query', () => {
 
       await prefetchGetPostsFeedQuery('hot', 'tag1', 20, undefined);
 
-      expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith('hot', 'tag1', 20, '');
+      expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith('hot', 'tag1', 20, DEFAULT_OBSERVER);
     });
 
     it('should prioritize promoted over user posts when tag is @promoted', async () => {

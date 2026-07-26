@@ -14,6 +14,9 @@ interface Props {
 
 export function ProfileEntriesLayout(props: PropsWithChildren<Props>) {
   const listStyle = useGlobalStore((s) => s.listStyle);
+  // Must resolve to the same observer as the list components this wraps,
+  // otherwise it subscribes to a different query key and reports the fetching
+  // state of a feed nobody is rendering.
   const { isFetching } = usePostsFeedQuery(
     props.section,
     isCommunity(props.username) ? props.username : `@${props.username}`

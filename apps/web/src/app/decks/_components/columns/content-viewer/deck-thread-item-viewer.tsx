@@ -23,7 +23,10 @@ function addReplyToDiscussionsList(
   order: SortOrder,
   queryClient: ReturnType<typeof useQueryClient>
 ) {
-  const options = getDiscussionsQueryOptions(entry, order as unknown as SDKSortOrder, true, entry?.author);
+  // No observer argument, so this resolves the same key the readers below
+  // subscribe to via getDiscussionsQueryOptions(entry). Pinning entry.author
+  // here would file the optimistic reply under a cache entry nothing renders.
+  const options = getDiscussionsQueryOptions(entry, order as unknown as SDKSortOrder);
   queryClient.setQueryData<Entry[]>(options.queryKey, (data) => [...(data ?? []), reply]);
 }
 

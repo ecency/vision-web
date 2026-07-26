@@ -15,6 +15,10 @@ interface Props {
 type FeedPage = Entry[] | SearchResponse;
 
 export function CommunityContentInfiniteList({ section, community }: Props) {
+    // No observer argument on purpose, so this resolves to DEFAULT_OBSERVER and
+    // matches the server-rendered first page, which `entryList` drops below.
+    // See profile-entries-infinite-list for why personalising only pages 2+ is
+    // worse than not personalising at all.
     // ⚠️ Don't destructure the cast; assign first, then read props.
     const result = usePostsFeedQuery(section, community.name);
 
