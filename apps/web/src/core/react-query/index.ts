@@ -53,4 +53,17 @@ export const getQueryClient = isServer
       return (global as any).clientQueryClient as QueryClient;
     };
 
+// The client branch above hands the SDK its query client on first use, but on
+// the server that never happened: `cache()` gives each request its own client
+// while SDK internals kept reading the module-level one they were constructed
+// with. Every server render therefore wrote into a single process-wide cache
+// that nothing ever cleared, and the renderer's heap grew until it aborted.
+//
+// Registering a resolver instead of a client is what makes this work: `cache()`
+// memoises per request, so `getQueryClient()` returns the caller's own client
+// and the SDK follows the request it is actually serving.
+if (isServer) {
+  ConfigManager.setQueryClientResolver(() => getQueryClient());
+}
+
 export * from "./query-helpers";
