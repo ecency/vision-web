@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.66
+
+### Patch Changes
+
+- Page the full mute list in `getMutedUsersQueryOptions` instead of taking the first 100, and drop its `limit` parameter. The list drives muted-author dimming and comment collapsing, so a truncated one rendered muted accounts as though they were never muted. The parameter also never reached the username-keyed cache entry, so callers requesting different amounts shared one result and mount order decided how much of the list everyone saw. Ships the source fix from #1247, which merged without a release label.
+
 ## 2.3.65
 
 ### Patch Changes
