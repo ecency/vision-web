@@ -158,18 +158,16 @@ export function usePostsFeedQuery(
   // Each branch above is individually a valid infinite query, but they use
   // different page-param and page types, so their union matches no single
   // useInfiniteQuery overload. Unify at this boundary only.
-  return useInfiniteQuery({
-    ...(queryOptions as unknown as UndefinedInitialDataInfiniteOptions<
+  // No placeholderData here. It would be inherited on EVERY query key change,
+  // not just an observer change, so navigating between two profiles or two tags
+  // would render the previous author's entries under the new heading.
+  return useInfiniteQuery(
+    queryOptions as unknown as UndefinedInitialDataInfiniteOptions<
       Page,
       Error,
       FeedInfinite,
       (string | number)[],
       unknown
-    >),
-    // A logged-in visitor renders once with DEFAULT_OBSERVER (matching SSR),
-    // then swaps to their own username once the store rehydrates post-mount.
-    // That is a new query key with nothing cached behind it, so without this
-    // the list would blank out and reflow mid-scroll while the refetch lands.
-    placeholderData: (previous: FeedInfinite | undefined) => previous
-  }) as unknown as UseInfiniteQueryResult<InfiniteData<Page, unknown>, Error>;
+    >
+  ) as unknown as UseInfiniteQueryResult<InfiniteData<Page, unknown>, Error>;
 }

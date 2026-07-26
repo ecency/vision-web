@@ -70,7 +70,8 @@ export const CONFIG = {
    * this account's mute list to the response, marking muted authors' posts and
    * comments `stats.gray` so clients can dim or collapse them. Anonymous
    * visitors therefore inherit Ecency's moderation instead of seeing an
-   * unfiltered firehose. Apps may override via `ConfigManager.setDefaultObserver`.
+   * unfiltered firehose. Apps may override via `ConfigManager.setDefaultObserver`,
+   * which expects a real account rather than "" (see that setter).
    *
    * Note this only *marks* content: the bridge still returns muted authors'
    * posts, so an observer never shortens a feed.
@@ -172,7 +173,12 @@ export namespace ConfigManager {
   /**
    * Set the observer used for bridge calls made without a logged-in user.
    * Defaults to "ecency"; a third-party integrator should point this at their
-   * own moderation account (or "" to opt out of mute marking entirely).
+   * own moderation account.
+   *
+   * Must be a real account. There is no empty-string opt-out: consumers resolve
+   * it with `||`, and `getDiscussion` separately falls back to the post author,
+   * so "" would not disable mute marking, it would silently observe as someone
+   * else and disagree with the cache key it was recorded under.
    * @param observer - Hive account whose mute list applies to anonymous reads
    */
   export function setDefaultObserver(observer: string) {

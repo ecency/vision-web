@@ -19,6 +19,16 @@ vi.mock('../utils/filter-dmca-entries', () => ({
 
 const entry = { author: 'alice', permlink: 'a-post' } as Entry
 
+/**
+ * Invoke a query option's `queryFn` without asserting the full React Query
+ * context. These query functions ignore their argument, so an empty context is
+ * enough and keeps the call typed.
+ */
+function runQueryFn<T extends { queryFn?: unknown }>(options: T) {
+  const queryFn = options.queryFn as (context: Record<string, never>) => Promise<unknown>
+  return queryFn({})
+}
+
 describe('getDiscussionsQueryOptions observer resolution', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -32,7 +42,7 @@ describe('getDiscussionsQueryOptions observer resolution', () => {
   it('falls back to CONFIG.defaultObserver, not the post author, when logged out', async () => {
     const options = getDiscussionsQueryOptions(entry, SortOrder.created)
 
-    await (options.queryFn as any)()
+    await runQueryFn(options)
 
     expect(mockCallRPC).toHaveBeenCalledWith('bridge.get_discussion', {
       author: 'alice',
@@ -44,7 +54,7 @@ describe('getDiscussionsQueryOptions observer resolution', () => {
   it('prefers an explicit observer over the default', async () => {
     const options = getDiscussionsQueryOptions(entry, SortOrder.created, true, 'bob')
 
-    await (options.queryFn as any)()
+    await runQueryFn(options)
 
     expect(mockCallRPC).toHaveBeenCalledWith(
       'bridge.get_discussion',
@@ -57,7 +67,7 @@ describe('getDiscussionsQueryOptions observer resolution', () => {
 
     const options = getDiscussionsQueryOptions(entry, SortOrder.created)
 
-    await (options.queryFn as any)()
+    await runQueryFn(options)
 
     expect(mockCallRPC).toHaveBeenCalledWith(
       'bridge.get_discussion',

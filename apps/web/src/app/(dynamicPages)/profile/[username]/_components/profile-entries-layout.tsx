@@ -6,7 +6,6 @@ import { useGlobalStore } from "@/core/global-store";
 import { usePostsFeedQuery } from "@/api/queries";
 import { LinearProgress } from "@/features/shared/linear-progress";
 import { isCommunity } from "@/utils";
-import { useObserver } from "@/core/hooks/use-observer";
 
 interface Props {
   username: string;
@@ -15,11 +14,12 @@ interface Props {
 
 export function ProfileEntriesLayout(props: PropsWithChildren<Props>) {
   const listStyle = useGlobalStore((s) => s.listStyle);
-  const observer = useObserver();
+  // Must resolve to the same observer as the list components this wraps,
+  // otherwise it subscribes to a different query key and reports the fetching
+  // state of a feed nobody is rendering.
   const { isFetching } = usePostsFeedQuery(
     props.section,
-    isCommunity(props.username) ? props.username : `@${props.username}`,
-    observer
+    isCommunity(props.username) ? props.username : `@${props.username}`
   );
 
   return (
