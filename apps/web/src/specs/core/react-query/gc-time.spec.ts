@@ -56,8 +56,15 @@ describe("query client gcTime", () => {
     expect(resolved.gcTime).toBe(SERVER_GC_TIME);
   });
 
-  it("clamps an Infinity override on the server", async () => {
-    const { makeQueryClient, SERVER_GC_TIME } = await loadWith(true);
+  /**
+   * `Infinity` must survive the clamp. It is the one value that schedules no gc
+   * timer — query-core's `isValidTimeout` rejects non-finite timeouts — so with
+   * a per-request client the entry dies with its request. Turning it into a
+   * finite window would create a timer that retains the Query and its whole
+   * QueryCache for that window, which is worse than leaving it alone.
+   */
+  it("leaves an Infinity override alone on the server, since it schedules no timer", async () => {
+    const { makeQueryClient } = await loadWith(true);
     const client = makeQueryClient();
 
     const resolved = client.defaultQueryOptions({
@@ -65,7 +72,23 @@ describe("query client gcTime", () => {
       gcTime: Infinity
     });
 
-    expect(resolved.gcTime).toBe(SERVER_GC_TIME);
+    expect(resolved.gcTime).toBe(Infinity);
+  });
+
+  it("schedules no gc timer for an Infinity query, so nothing is retained", async () => {
+    const { makeQueryClient } = await loadWith(true);
+    const client = makeQueryClient();
+    vi.useFakeTimers();
+
+    await client.fetchQuery({
+      queryKey: ["bad-actors"],
+      gcTime: Infinity,
+      queryFn: async () => new Set(["a"])
+    });
+
+    // No timer means nothing schedules removal; the entry is released by the
+    // request scope dropping the client, not by a timeout firing.
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("leaves per-query overrides alone in the browser", async () => {

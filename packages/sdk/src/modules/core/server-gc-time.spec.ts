@@ -34,10 +34,17 @@ describe("SDK query gcTime under SSR", () => {
     expect(polls.getPollQueryOptions("alice", "hello").gcTime).toBe(SERVER_GC_TIME_MS);
   });
 
-  it("bounds the bad-actors query on the server, which asked for Infinity", async () => {
+  /**
+   * bad-actors stays `Infinity` everywhere on purpose. It is the one value that
+   * schedules no gc timer — query-core's `isValidTimeout` rejects non-finite
+   * timeouts — so there is no GC root and, on a per-request client, the entry
+   * dies with its request. Giving it a finite server window would *create* a
+   * timer retaining the Query and its whole QueryCache: a regression.
+   */
+  it("leaves bad-actors unbounded on the server, since Infinity schedules no timer", async () => {
     const { badActors } = await loadWith(true);
 
-    expect(badActors.getBadActorsQueryOptions().gcTime).toBe(SERVER_GC_TIME_MS);
+    expect(badActors.getBadActorsQueryOptions().gcTime).toBe(Infinity);
   });
 
   it("keeps the long poll window off the server", async () => {
@@ -52,15 +59,22 @@ describe("SDK query gcTime under SSR", () => {
     expect(badActors.getBadActorsQueryOptions().gcTime).toBe(Infinity);
   });
 
-  it("never lets a server window exceed the ceiling", async () => {
+  /**
+   * Any *finite* server window must sit under the ceiling. Infinity is exempt
+   * for the reason above — it is the absence of a timer, not a long one.
+   */
+  it("never lets a finite server window exceed the ceiling", async () => {
     const { polls, badActors } = await loadWith(true);
 
-    for (const gcTime of [
+    const windows = [
       polls.getPollQueryOptions("alice", "hello").gcTime,
       badActors.getBadActorsQueryOptions().gcTime
-    ]) {
+    ];
+
+    for (const gcTime of windows.filter((v) => Number.isFinite(v))) {
       expect(gcTime).toBeLessThanOrEqual(SERVER_GC_TIME_MS);
     }
+    expect(windows.filter((v) => Number.isFinite(v))).not.toHaveLength(0);
   });
 
   /**
