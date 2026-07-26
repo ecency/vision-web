@@ -973,6 +973,13 @@ declare const CONFIG: {
     /** Current Hive RPC nodes. Reads from the unified hive-tx config. */
     readonly hiveNodes: string[];
     heliusApiKey: string | undefined;
+    /**
+     * The React Query client all SDK code reads through `getQueryClient()`.
+     * Backed by a resolver so an SSR host can scope it per request — see the
+     * `queryClientResolver` note above. Assigning replaces the resolver with one
+     * that always returns the assigned client, preserving the previous
+     * "one client, set once" behaviour for browser and native hosts.
+     */
     queryClient: QueryClient;
     pollsApiHost: string;
     plausibleHost: string;
@@ -990,6 +997,25 @@ type DmcaListsInput = {
 };
 declare namespace ConfigManager {
     function setQueryClient(client: QueryClient): void;
+    /**
+     * Register how the SDK should obtain its React Query client, for hosts where
+     * a single shared instance is wrong — principally SSR, where one process
+     * serves many requests and a shared cache both leaks memory and risks serving
+     * one request's data to another.
+     *
+     * `resolve` is called on every SDK cache access and should return the client
+     * belonging to the request currently being handled. In a Next.js App Router
+     * host that means wrapping the factory in React's `cache()`, which memoises
+     * per request:
+     *
+     * ```ts
+     * ConfigManager.setQueryClientResolver(() => getQueryClient());
+     * ```
+     *
+     * Registering a resolver supersedes any client previously passed to
+     * `setQueryClient`; assigning a client afterwards supersedes the resolver.
+     */
+    function setQueryClientResolver(resolve: () => QueryClient): void;
     /**
      * Set the private API host
      * @param host - The private API host URL (e.g., "https://ecency.com" or "" for relative URLs)
@@ -1191,6 +1217,11 @@ declare function isInfoError(error: any): boolean;
  */
 declare function isNetworkError(error: any): boolean;
 
+/**
+ * Builds a client with the SDK's defaults. It is only a factory — request
+ * scoping is the host's job, via `ConfigManager.setQueryClientResolver`, since
+ * only the host knows where one request ends and the next begins.
+ */
 declare function makeQueryClient(): QueryClient;
 declare const getQueryClient: () => QueryClient;
 declare namespace EcencyQueriesManager {

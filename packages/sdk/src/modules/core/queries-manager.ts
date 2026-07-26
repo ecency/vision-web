@@ -9,8 +9,12 @@ import {
 } from "@tanstack/react-query";
 import { CONFIG } from "./config";
 
+/**
+ * Builds a client with the SDK's defaults. It is only a factory — request
+ * scoping is the host's job, via `ConfigManager.setQueryClientResolver`, since
+ * only the host knows where one request ends and the next begins.
+ */
 export function makeQueryClient() {
-  // Cache creates one single instance per request in a server side
   return new QueryClient({
     defaultOptions: {
       queries: {

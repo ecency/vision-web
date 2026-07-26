@@ -31,6 +31,38 @@ const getHeliusApiKey = () => {
 /** Timeout for internal API calls (search, private API). */
 export const INTERNAL_API_TIMEOUT_MS = 10_000;
 
+/**
+ * How `CONFIG.queryClient` is resolved.
+ *
+ * This used to be a plain `queryClient: new QueryClient()` property — a single
+ * instance created at module import and shared by every caller for the lifetime
+ * of the process. That is correct in a browser (one process, one user) but wrong
+ * under SSR, where one process serves every request: each server render wrote its
+ * fetched data into that one cache and nothing ever removed it, so the heap grew
+ * monotonically until the renderer hit its old-space limit and aborted.
+ *
+ * A host that renders on the server registers a resolver (see
+ * `ConfigManager.setQueryClientResolver`) which returns the *current request's*
+ * client, so cached data dies with the request that produced it. Hosts that
+ * genuinely want one long-lived client keep using `setQueryClient`, and callers
+ * that configure nothing fall back to a lazily created instance.
+ *
+ * The resolver is consulted on every read rather than cached here on purpose:
+ * request scoping is the host's concern, and only the host can know when one
+ * request ends and the next begins.
+ */
+let queryClientResolver: (() => QueryClient) | undefined;
+
+/** Created on first use, and only when no resolver has been registered. */
+let fallbackQueryClient: QueryClient | undefined;
+
+function resolveQueryClient(): QueryClient {
+  if (queryClientResolver) {
+    return queryClientResolver();
+  }
+  return (fallbackQueryClient ??= new QueryClient());
+}
+
 export const CONFIG = {
   privateApiHost: "https://ecency.com",
   /**
@@ -48,7 +80,19 @@ export const CONFIG = {
     return hiveTxConfig.nodes;
   },
   heliusApiKey: getHeliusApiKey(),
-  queryClient: new QueryClient(),
+  /**
+   * The React Query client all SDK code reads through `getQueryClient()`.
+   * Backed by a resolver so an SSR host can scope it per request — see the
+   * `queryClientResolver` note above. Assigning replaces the resolver with one
+   * that always returns the assigned client, preserving the previous
+   * "one client, set once" behaviour for browser and native hosts.
+   */
+  get queryClient(): QueryClient {
+    return resolveQueryClient();
+  },
+  set queryClient(client: QueryClient) {
+    queryClientResolver = () => client;
+  },
   pollsApiHost: "https://poll.ecency.com",
   plausibleHost: "https://pl.ecency.com",
   // DMCA filtering - can be configured by the app
@@ -71,6 +115,28 @@ type DmcaListsInput = {
 export namespace ConfigManager {
   export function setQueryClient(client: QueryClient) {
     CONFIG.queryClient = client;
+  }
+
+  /**
+   * Register how the SDK should obtain its React Query client, for hosts where
+   * a single shared instance is wrong — principally SSR, where one process
+   * serves many requests and a shared cache both leaks memory and risks serving
+   * one request's data to another.
+   *
+   * `resolve` is called on every SDK cache access and should return the client
+   * belonging to the request currently being handled. In a Next.js App Router
+   * host that means wrapping the factory in React's `cache()`, which memoises
+   * per request:
+   *
+   * ```ts
+   * ConfigManager.setQueryClientResolver(() => getQueryClient());
+   * ```
+   *
+   * Registering a resolver supersedes any client previously passed to
+   * `setQueryClient`; assigning a client afterwards supersedes the resolver.
+   */
+  export function setQueryClientResolver(resolve: () => QueryClient) {
+    queryClientResolver = resolve;
   }
 
   /**
