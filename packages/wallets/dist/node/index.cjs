@@ -622,6 +622,9 @@ function getTokenOperationsQueryOptions(token, username, isForOwner = false, cur
             "buy-points": sdk.AssetOperation.Buy,
             // Other
             "claim-interest": sdk.AssetOperation.ClaimInterest,
+            // Chain operation name, as emitted in the HP action list. The two
+            // slug spellings below predate it and stay as a fallback.
+            "set-withdraw-vesting-route": sdk.AssetOperation.WithdrawRoutes,
             "withdraw-routes": sdk.AssetOperation.WithdrawRoutes,
             "withdrawroutes": sdk.AssetOperation.WithdrawRoutes
           };

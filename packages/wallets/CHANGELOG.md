@@ -1,5 +1,11 @@
 # @ecency/wallets
 
+## 5.0.62
+
+### Patch Changes
+
+- fix(wallet): map set_withdraw_vesting_route to the withdraw routes operation (#1241)
+
 ## 5.0.61
 
 ### Patch Changes
