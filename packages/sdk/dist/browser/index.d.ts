@@ -3239,12 +3239,21 @@ declare function getFollowingQueryOptions(follower: string, startFollowing: stri
 };
 
 /**
- * Get list of users that an account has muted
+ * Get the full list of accounts a user has muted.
  *
- * @param username - The account username
- * @param limit - Maximum number of results (default: 100)
+ * Pages until the list is exhausted instead of taking the first N. That is
+ * load-bearing: this result dims muted authors in feeds and collapses their
+ * comments (`entry-list-item-muted-content`, `discussion-list`), so a truncated
+ * list silently renders muted accounts as though they were never muted.
+ *
+ * Takes no limit, on purpose. `QueryKeys.accounts.mutedUsers` keys on the
+ * username alone, so a limit parameter meant callers requesting different
+ * amounts shared one cache entry and whichever mounted first decided how much
+ * of the list every other caller saw.
+ *
+ * @param username - The account whose mute list to fetch
  */
-declare function getMutedUsersQueryOptions(username: string | undefined, limit?: number): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<string[], Error, string[], string[]>, "queryFn"> & {
+declare function getMutedUsersQueryOptions(username: string | undefined): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<string[], Error, string[], string[]>, "queryFn"> & {
     queryFn?: _tanstack_react_query.QueryFunction<string[], string[], never> | undefined;
 } & {
     queryKey: string[] & {
