@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.63
+
+### Patch Changes
+
+- fix(sdk): resolve query client per request instead of per process (#1242)
+
 ## 2.3.62
 
 ### Patch Changes
