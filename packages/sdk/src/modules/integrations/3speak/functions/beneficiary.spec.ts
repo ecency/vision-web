@@ -27,6 +27,32 @@ describe("3Speak embed beneficiaries", () => {
       ).toBe(true);
     });
 
+    it("detects an embed url on the bare domain", () => {
+      expect(hasThreeSpeakEmbed("https://3speak.tv/embed?v=user/abc")).toBe(true);
+    });
+
+    it("detects an embed url under nested subdomains", () => {
+      expect(hasThreeSpeakEmbed("https://a.b.3speak.tv/embed/user/abc")).toBe(true);
+    });
+
+    // Hostnames are case-insensitive, and a missed match means the 11% route is silently not
+    // attached rather than anything failing loudly.
+    it("matches regardless of hostname case", () => {
+      expect(hasThreeSpeakEmbed("https://PLAY.3speak.tv/embed?v=user/abc")).toBe(true);
+    });
+
+    // 3speak.tv has to be the host, not merely a suffix of it. `fake3speak.tv` is registrable
+    // by anyone, and treating it as an embed would route 11% of the author's rewards to
+    // threespeakfund for a video 3Speak never hosted.
+    it("does not match a lookalike domain that merely ends in 3speak.tv", () => {
+      expect(hasThreeSpeakEmbed("https://fake3speak.tv/embed?v=x")).toBe(false);
+      expect(hasThreeSpeakEmbed("https://not-3speak.tv.evil.com/embed?v=x")).toBe(false);
+    });
+
+    it("does not match the domain appearing in a path", () => {
+      expect(hasThreeSpeakEmbed("https://evil.com/3speak.tv/embed?v=x")).toBe(false);
+    });
+
     it("does not match a plain text mention without a url", () => {
       expect(hasThreeSpeakEmbed("check out 3speak.tv/embed for more info")).toBe(false);
     });

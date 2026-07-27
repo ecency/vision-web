@@ -26,12 +26,18 @@ export const THREESPEAK_BENEFICIARY_WEIGHT = 1100;
  * text mention of "3speak.tv/embed", which would otherwise attach an 11% route to a post that
  * merely talks about 3Speak.
  *
+ * `3speak.tv` must be the host, either bare or under dot-delimited subdomains. The previous
+ * `[a-z.]*` prefix also matched a lookalike domain such as `fake3speak.tv`, which would have
+ * routed 11% of a user's rewards to threespeakfund for a video 3Speak never hosted. Matching
+ * is case-insensitive because hostnames are, and a missed match means the route is silently
+ * not attached rather than anything failing loudly.
+ *
  * Note this requires an `/embed` path segment. The embed url is not built locally, it comes
  * back from 3Speak on upload, so if that shape ever changes this predicate stops recognising
  * it and the route is silently not attached.
  */
 export function hasThreeSpeakEmbed(body: string): boolean {
-  return /https?:\/\/[a-z.]*3speak\.tv\/embed[?/]/.test(body);
+  return /https?:\/\/([a-z0-9-]+\.)*3speak\.tv\/embed[?/]/i.test(body);
 }
 
 /**
