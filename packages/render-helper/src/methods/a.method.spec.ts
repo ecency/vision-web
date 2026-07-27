@@ -1388,6 +1388,28 @@ describe('a() method - Link Processing', () => {
         expect(el.getAttribute('class')).toContain('markdown-video-link')
         expect(el.getAttribute('class')).toContain(modifier)
       })
+
+      it.each([
+        ['https://www.bitchute.com/video/abc123def/', 'https://www.bitchute.com/embed/abc123def/'],
+        ['https://rumble.com/embed/v1abc23/?pub=4', 'https://www.rumble.com/embed/v1abc23/?pub=4'],
+        ['https://www.brighteon.com/embed/abc123', 'https://www.brighteon.com/embed/abc123'],
+        [
+          'https://odysee.com/@channel:2/video-title:e',
+          'https://odysee.com/$/embed/@channel:2/video-title:e'
+        ]
+      ])('embeds %s directly when the enhancer will not run', (href, embedSrc) => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false, 'ecency.com', undefined, { embedVideosDirectly: true })
+
+        const frames = el.getElementsByTagName('iframe')
+        expect(frames.length).toBe(1)
+        expect(frames[0]?.getAttribute('src')).toBe(embedSrc)
+      })
     })
 
     describe('Odysee', () => {
@@ -1454,6 +1476,30 @@ describe('a() method - Link Processing', () => {
         expect(el.getAttribute('data-embed-src')).toBe(
           'https://odysee.com/$/embed/@channel:2/video:e'
         )
+      })
+
+      // Waves and the self-hosted blog set embedVideosDirectly and mount no
+      // click-to-play enhancer, so a placeholder there would never play.
+      it('should emit a real iframe when embedVideosDirectly is set', () => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://odysee.com/@channel:2/video:e'
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false, 'ecency.com', undefined, { embedVideosDirectly: true })
+
+        const frames = el.getElementsByTagName('iframe')
+        expect(frames.length).toBe(1)
+        expect(frames[0]?.getAttribute('src')).toBe(
+          'https://odysee.com/$/embed/@channel:2/video:e'
+        )
+        // No autoplay: a feed must not start several videos at once.
+        expect(frames[0]?.getAttribute('src')).not.toContain('autoplay')
+        expect(el.getAttribute('class')).toContain('er-embed')
+        expect(el.getElementsByTagName('span').length).toBe(1)
+        expect(el.getElementsByTagName('span')[0]?.getAttribute('class')).toBe('er-embed-frame')
       })
 
       it('should leave a bare channel page as an ordinary link', () => {

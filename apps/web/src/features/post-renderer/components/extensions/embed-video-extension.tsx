@@ -76,12 +76,28 @@ export function EmbedVideoExtension({
   containerRef: RefObject<HTMLElement | null>;
 }) {
   const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
+  // The `er-embed` marker and the appended frame are DOM mutations on nodes
+  // React does not own (the body is set via dangerouslySetInnerHTML), so
+  // cleanup has to undo them explicitly. Leaving them behind meant Strict
+  // Mode's setup-cleanup-setup cycle skipped every element on the second
+  // setup — `:not(.er-embed)` already excluded them — leaving placeholders
+  // with no click listener for the rest of the mount.
+  const enhancedRef = useRef<{ element: HTMLElement; frame: HTMLElement }[]>([]);
 
-  useEffect(() => {
+  const reset = useCallback(() => {
     for (const r of rootsRef.current) {
       r.unmount();
     }
     rootsRef.current = [];
+    for (const { element, frame } of enhancedRef.current) {
+      element.classList.remove("er-embed");
+      frame.remove();
+    }
+    enhancedRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    reset();
 
     const elements = Array.from(
       containerRef.current?.querySelectorAll<HTMLElement>(SELECTOR) ?? []
@@ -105,6 +121,10 @@ export function EmbedVideoExtension({
         const container = document.createElement("div");
         container.classList.add("er-embed-frame");
         element.classList.add("er-embed");
+        // Tracked as soon as the marker goes on, not after the append below:
+        // if that final check fails the marker still needs undoing, and
+        // remove() on a never-appended node is a no-op.
+        enhancedRef.current.push({ element, frame: container });
 
         const root = createRoot(container);
         rootsRef.current.push(root);
@@ -119,13 +139,8 @@ export function EmbedVideoExtension({
       }
     });
 
-    return () => {
-      for (const r of rootsRef.current) {
-        r.unmount();
-      }
-      rootsRef.current = [];
-    };
-  }, [containerRef]);
+    return reset;
+  }, [containerRef, reset]);
 
   return null;
 }

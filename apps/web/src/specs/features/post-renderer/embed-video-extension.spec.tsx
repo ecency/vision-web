@@ -62,6 +62,30 @@ describe("EmbedVideoExtension", () => {
     ).toBe("none");
   });
 
+  // Strict Mode runs setup -> cleanup -> setup. If cleanup leaves the
+  // `er-embed` marker behind, the second setup skips the element (the selector
+  // excludes it) and the placeholder is left with no click listener.
+  it("still plays after a Strict Mode setup-cleanup-setup cycle", async () => {
+    const embedSrc = "https://odysee.com/$/embed/@channel:2/video:e";
+    const { container: root } = render(
+      <React.StrictMode>
+        <Harness html={videoLink("markdown-video-link-odysee", embedSrc)} />
+      </React.StrictMode>,
+      { container }
+    );
+
+    const anchor = root.querySelector<HTMLElement>(".markdown-video-link-odysee")!;
+    expect(anchor.classList.contains("er-embed")).toBe(true);
+    // Exactly one frame — a leaked cleanup would leave a second behind.
+    expect(anchor.querySelectorAll(".er-embed-frame").length).toBe(1);
+
+    await act(async () => {
+      anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(anchor.querySelector("iframe")?.getAttribute("src")).toBe(embedSrc);
+  });
+
   it("ignores an off-allowlist embed src", async () => {
     const { container: root } = render(
       <Harness
