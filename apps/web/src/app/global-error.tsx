@@ -71,7 +71,14 @@ export default function GlobalError({
                 <SentryIssueReporterDialog error={error} eventId={eventId} />
               </div>
             </div>
-            <Image src="/assets/illustration-open-source.png" alt="logo" width={571} height={460} />
+            {/* The page's main illustration and its LCP element — don't lazy-load it. */}
+            <Image
+              src="/assets/illustration-open-source.png"
+              alt="logo"
+              width={571}
+              height={460}
+              priority
+            />
           </div>
         </div>
         <div id="modal-overlay-container" />

@@ -6,6 +6,7 @@ import "./_index.scss";
 import defaults from "@/defaults";
 import { Account, Community, Entry, FullAccount } from "@/entities";
 import { makeEntryPath } from "@/utils";
+import { EAGER_THUMB_CARD_COUNT } from "@/features/shared/entry-list-item/thumb-lcp";
 import { pinSvg, repeatSvg } from "@ui/svg";
 import {
   EcencySourceBadge,
@@ -144,7 +145,7 @@ export function EntryListItemComponent({
             candidates). Interleaved promoted items have order=4 so they're
             already excluded; on the /promoted section the top items ARE
             promoted, so don't strip their priority — order alone is correct. */}
-        <EntryListItemMutedContent entry={entryProp} isThumbLcp={order < 2} />
+        <EntryListItemMutedContent entry={entryProp} isThumbLcp={order < EAGER_THUMB_CARD_COUNT} />
       </div>
       {/* The action bar is the heavy interactive cluster (vote/payout/votes/
           reblog/menu = many query observers + floating-ui popovers). Defer its

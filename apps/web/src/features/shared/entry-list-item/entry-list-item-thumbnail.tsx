@@ -4,12 +4,7 @@ import { useGlobalStore } from "@/core/global-store";
 import { EntryLink } from "@/features/shared";
 import { buildSrcSet, catchPostImage, proxifyImageSrc } from "@ecency/render-helper";
 import Image from "next/image";
-
-// The row thumbnail box is full-width on mobile but a fixed 150px on desktop
-// (.item-image in _index.scss). Use a thumbnail-sized `sizes` — NOT the
-// post-body IMAGE_SIZES (700px) — so desktop picks a small srcset candidate
-// instead of over-fetching an ~800w image for a 150px slot.
-const THUMB_SIZES = "(max-width: 768px) 100vw, 150px";
+import { THUMB_SIZES } from "./thumb-lcp";
 
 interface Props {
   entry: Entry;

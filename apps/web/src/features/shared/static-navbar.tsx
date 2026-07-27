@@ -14,7 +14,7 @@ export const StaticNavbar = ({ fullVersionUrl }: Props) => {
           <div className="brand">
             <Link href="/">
               <Image
-                src="assets/logo-circle.svg"
+                src="/assets/logo-circle.svg"
                 className="logo"
                 style={{ width: "40px", height: "40px" }}
                 alt="Logo"
@@ -35,7 +35,7 @@ export const StaticNavbar = ({ fullVersionUrl }: Props) => {
             <div className="brand">
               <Link href="/">
                 <Image
-                  src="assets/logo-circle.svg"
+                  src="/assets/logo-circle.svg"
                   className="logo"
                   style={{ width: "40px", height: "40px" }}
                   alt="Logo"
