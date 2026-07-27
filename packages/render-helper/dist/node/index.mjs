@@ -611,9 +611,11 @@ function extractLegacySizedSource(url) {
   const m = LEGACY_SIZED_PROXY_RE.exec(url);
   if (!m) return null;
   const rest = m[1];
-  const qIndex = rest.indexOf("?");
-  const path = qIndex >= 0 ? rest.slice(0, qIndex) : rest;
-  const query = qIndex >= 0 ? rest.slice(qIndex + 1) : "";
+  const hashIndex = rest.indexOf("#");
+  const addressable = hashIndex >= 0 ? rest.slice(0, hashIndex) : rest;
+  const qIndex = addressable.indexOf("?");
+  const path = qIndex >= 0 ? addressable.slice(0, qIndex) : addressable;
+  const query = qIndex >= 0 ? addressable.slice(qIndex + 1) : "";
   let end = path.length;
   while (end > 0 && path.charCodeAt(end - 1) === 47) {
     end--;

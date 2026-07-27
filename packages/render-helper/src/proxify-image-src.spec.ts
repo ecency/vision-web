@@ -376,6 +376,18 @@ describe('picture / per-format helpers (cache-safe content negotiation)', () => 
       // a normal-length URL is unaffected
       expect(proxifyImageSrc('https://files.peakd.com/file/x/abc.png', 60, 70)).toContain('/p/')
     })
+    it('ignores the fragment, which never reaches the server anyway', () => {
+      const base = 'https://images.hive.blog/60x70/http://hivebuzz.me/image.png'
+      const hash = (u: string) => proxifyImageSrc(u, 60, 70).split('/p/')[1].split('?')[0]
+      // verified against the live legacy handler: it returns the same Location
+      // for both forms, because no client sends anything after the '#'
+      expect(hash(base + '#frag')).toBe(hash(base))
+      // a '?' inside the fragment belongs to the fragment, not the query
+      expect(hash(base + '#a?b=c')).toBe(hash(base))
+      // a real query is still honoured alongside a fragment
+      expect(hash(base + '?x=1#frag')).toBe(hash(base + '?x=1'))
+      expect(hash(base + '?x=1')).not.toBe(hash(base))
+    })
     it('unwraps the nested source positionally, not by last-URL-in-string', () => {
       // The nested image carries a URL-valued query parameter. Picking the last
       // http(s):// substring would resolve to example.com instead of the image.

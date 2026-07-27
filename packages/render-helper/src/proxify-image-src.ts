@@ -131,10 +131,20 @@ function extractLegacySizedSource(url: string): string | null {
   const m = LEGACY_SIZED_PROXY_RE.exec(url)
   if (!m) return null
 
+  // Drop the fragment FIRST, and before splitting off the query. A browser
+  // never sends anything from the first '#' onward, so the imagehoster resolves
+  // `…/image.png` and `…/image.png#frag` to one hash; keeping it here would
+  // mint a separate proxy hash — and therefore a separate CDN entry — per
+  // fragment, letting arbitrary `#…` variants miss an already-cached image.
+  // Order matters too: a '?' inside a fragment (`…/image.png#a?b=c`) is part of
+  // the fragment, so splitting on '?' first would invent a query from it.
   const rest = m[1]
-  const qIndex = rest.indexOf('?')
-  const path = qIndex >= 0 ? rest.slice(0, qIndex) : rest
-  const query = qIndex >= 0 ? rest.slice(qIndex + 1) : ''
+  const hashIndex = rest.indexOf('#')
+  const addressable = hashIndex >= 0 ? rest.slice(0, hashIndex) : rest
+
+  const qIndex = addressable.indexOf('?')
+  const path = qIndex >= 0 ? addressable.slice(0, qIndex) : addressable
+  const query = qIndex >= 0 ? addressable.slice(qIndex + 1) : ''
 
   // Trailing slashes are trimmed with a scan, not /\/+$/: post bodies are
   // user-authored, so a crafted URL ending in thousands of slashes would make
