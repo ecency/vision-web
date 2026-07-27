@@ -60,6 +60,7 @@ declare function catchPostImage(obj: Entry | string, width?: number, height?: nu
 declare function getPostBodySummary(obj: Entry | string, length?: number, platform?: 'ios' | 'android' | 'web'): string;
 
 declare function setProxyBase(p: string): void;
+declare function isLegacySizedProxyUrl(url?: string): boolean;
 interface ProxifyOptions {
     /**
      * Request a tiny blurred LQIP placeholder. The proxy resizes to ~20px and
@@ -159,4 +160,4 @@ declare function isValidPermlink(permlink: string): boolean;
  */
 declare function simpleMarkdownToHTML(input: string): string;
 
-export { type Entry, IMAGE_SIZES, type ProxifyOptions, type RenderOptions, SECTION_LIST, type SeoContext, buildPictureSources, buildSrcSet, buildSrcSetForFormat, catchPostImage, getEntryImageRawUrl, isAllowedEmbedSrc, isPictureEligibleRawUrl, isValidPermlink, getPostBodySummary as postBodySummary, proxifyImageSrc, markdown2Html as renderPostBody, setCacheSize, setProxyBase, setSlowRenderThresholdMs, simpleMarkdownToHTML };
+export { type Entry, IMAGE_SIZES, type ProxifyOptions, type RenderOptions, SECTION_LIST, type SeoContext, buildPictureSources, buildSrcSet, buildSrcSetForFormat, catchPostImage, getEntryImageRawUrl, isAllowedEmbedSrc, isLegacySizedProxyUrl, isPictureEligibleRawUrl, isValidPermlink, getPostBodySummary as postBodySummary, proxifyImageSrc, markdown2Html as renderPostBody, setCacheSize, setProxyBase, setSlowRenderThresholdMs, simpleMarkdownToHTML };

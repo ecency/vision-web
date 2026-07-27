@@ -601,6 +601,40 @@ function isValidUrl(url) {
     return false;
   }
 }
+var MAX_PROXIED_URL_LENGTH = 2048;
+var LEGACY_SIZED_PROXY_RE = /^https:\/\/(?:images\.hive\.blog|steemitimages\.com)\/\d+x\d+\/(.+)$/;
+function isLegacySizedProxyUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  return LEGACY_SIZED_PROXY_RE.test(url);
+}
+function extractLegacySizedSource(url) {
+  const m = LEGACY_SIZED_PROXY_RE.exec(url);
+  if (!m) return null;
+  const rest = m[1];
+  const hashIndex = rest.indexOf("#");
+  const addressable = hashIndex >= 0 ? rest.slice(0, hashIndex) : rest;
+  const qIndex = addressable.indexOf("?");
+  const path = qIndex >= 0 ? addressable.slice(0, qIndex) : addressable;
+  const query = qIndex >= 0 ? addressable.slice(qIndex + 1) : "";
+  let end = path.length;
+  while (end > 0 && path.charCodeAt(end - 1) === 47) {
+    end--;
+  }
+  try {
+    const inner = new URL(path.slice(0, end));
+    if (query) {
+      for (const [key, value] of new URLSearchParams(query)) {
+        inner.searchParams.append(key, value);
+      }
+    }
+    return inner.toString();
+  } catch {
+    return null;
+  }
+}
+function isLegacyForeignProxyUrl(url) {
+  return url.indexOf("https://images.hive.blog/") === 0 && url.indexOf("https://images.hive.blog/D") !== 0 || url.indexOf("https://steemitimages.com/") === 0 && url.indexOf("https://steemitimages.com/D") !== 0;
+}
 function getLatestUrl(str) {
   const [last] = [...str.replace(/https?:\/\//g, "\n$&").trim().split("\n")].reverse();
   return last;
@@ -609,17 +643,17 @@ function proxifyForFormat(url, width = 0, height = 0, format = "match", opts = {
   if (!url || typeof url !== "string" || !isValidUrl(url)) {
     return "";
   }
-  const routeThroughProxy = width > 0 || height > 0 || !!opts.blur || !!opts.forceProxy;
-  if (url.indexOf("https://images.hive.blog/") === 0 && url.indexOf("https://images.hive.blog/D") !== 0) {
-    return url.replace("https://images.hive.blog", proxyBase);
+  if (url.length > MAX_PROXIED_URL_LENGTH) {
+    return "";
   }
-  if (url.indexOf("https://steemitimages.com/") === 0 && url.indexOf("https://steemitimages.com/D") !== 0) {
-    return url.replace("https://steemitimages.com", proxyBase);
+  const routeThroughProxy = width > 0 || height > 0 || !!opts.blur || !!opts.forceProxy;
+  if (isLegacyForeignProxyUrl(url) && !(isLegacySizedProxyUrl(url) && routeThroughProxy)) {
+    return url.replace("https://images.hive.blog", proxyBase).replace("https://steemitimages.com", proxyBase);
   }
   if (url.indexOf("https://images.ecency.com/") === 0 && !routeThroughProxy) {
     return url.replace("https://images.ecency.com", proxyBase);
   }
-  const realUrl = getLatestUrl(url);
+  const realUrl = extractLegacySizedSource(url) ?? getLatestUrl(url);
   const pHash = extractPHash(realUrl);
   const options = {
     format,
@@ -679,6 +713,7 @@ function isPictureEligibleRawUrl(rawUrl) {
     return false;
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  if (isLegacySizedProxyUrl(rawUrl)) return true;
   const host = `${u.protocol}//${u.host}`;
   const isProxyHost = host === proxyBase || host === "https://images.ecency.com";
   if (isProxyHost && (u.pathname.startsWith("/p/") || u.pathname.startsWith("/u/") || SIZED_PROXY_PATH.test(u.pathname))) {
@@ -2378,6 +2413,6 @@ function getPostBodySummary(obj, length, platform) {
   return res;
 }
 
-export { IMAGE_SIZES, SECTION_LIST, buildPictureSources, buildSrcSet, buildSrcSetForFormat, catchPostImage, getEntryImageRawUrl, isAllowedEmbedSrc, isPictureEligibleRawUrl, isValidPermlink, getPostBodySummary as postBodySummary, proxifyImageSrc, markdown2Html as renderPostBody, setCacheSize, setProxyBase, setSlowRenderThresholdMs, simpleMarkdownToHTML };
+export { IMAGE_SIZES, SECTION_LIST, buildPictureSources, buildSrcSet, buildSrcSetForFormat, catchPostImage, getEntryImageRawUrl, isAllowedEmbedSrc, isLegacySizedProxyUrl, isPictureEligibleRawUrl, isValidPermlink, getPostBodySummary as postBodySummary, proxifyImageSrc, markdown2Html as renderPostBody, setCacheSize, setProxyBase, setSlowRenderThresholdMs, simpleMarkdownToHTML };
 //# sourceMappingURL=index.mjs.map
 //# sourceMappingURL=index.mjs.map

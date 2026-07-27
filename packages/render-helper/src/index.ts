@@ -1,7 +1,7 @@
 import { markdown2Html as renderPostBody, setSlowRenderThresholdMs } from './markdown-2-html'
 import { catchPostImage, getEntryImageRawUrl } from './catch-post-image'
 import { getPostBodySummary as postBodySummary } from './post-body-summary'
-import { setProxyBase, proxifyImageSrc, buildSrcSet, buildSrcSetForFormat, buildPictureSources, isPictureEligibleRawUrl } from './proxify-image-src'
+import { setProxyBase, proxifyImageSrc, buildSrcSet, buildSrcSetForFormat, buildPictureSources, isPictureEligibleRawUrl, isLegacySizedProxyUrl } from './proxify-image-src'
 import type { ProxifyOptions } from './proxify-image-src'
 import { IMAGE_SIZES } from './methods/img.method'
 import { setCacheSize } from './cache'
@@ -20,6 +20,7 @@ export {
   proxifyImageSrc,
   buildSrcSet,
   buildSrcSetForFormat,
+  isLegacySizedProxyUrl,
   buildPictureSources,
   isPictureEligibleRawUrl,
   IMAGE_SIZES,

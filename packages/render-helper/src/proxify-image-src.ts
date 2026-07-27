@@ -86,6 +86,102 @@ export function isValidUrl(url: string): boolean {
   }
 }
 
+/**
+ * Longest image URL we will base58-encode. See the guard in proxifyForFormat:
+ * the encoder is quadratic, so this bounds per-render CPU on user-authored
+ * input. Observed maximum in real post bodies is ~234 characters.
+ */
+const MAX_PROXIED_URL_LENGTH = 2048
+
+/**
+ * A legacy foreign SIZED proxy URL: `images.hive.blog/<WxH>/<inner>` or the
+ * steemitimages equivalent — the only shape that carries a nested source URL
+ * for getLatestUrl to unwrap.
+ *
+ * Deliberately narrower than {@link isLegacyForeignProxyUrl}: other non-`/D`
+ * paths on those hosts (notably their own `/p/<hash>` proxy route) name a hash
+ * in a foreign hash space, so routing them through our `/p/` would proxy a
+ * proxy, and their content type is genuinely unknown.
+ *
+ * Shared by the proxify routing and the `<picture>` eligibility gate so the two
+ * cannot disagree about which URLs reach the /p/ route.
+ */
+const LEGACY_SIZED_PROXY_RE = /^https:\/\/(?:images\.hive\.blog|steemitimages\.com)\/\d+x\d+\/(.+)$/
+
+export function isLegacySizedProxyUrl(url?: string): boolean {
+  if (!url || typeof url !== 'string') return false
+  return LEGACY_SIZED_PROXY_RE.test(url)
+}
+
+/**
+ * The nested source of a legacy sized proxy URL — everything after the `<WxH>/`
+ * segment, query string included — or null when the URL is not that shape.
+ *
+ * Positional, not a search for the last `http(s)://`: the nested source may
+ * itself carry a URL-valued query parameter, and picking the last URL in the
+ * string would resolve to that parameter's target instead of the image.
+ *
+ * Normalised exactly the way the imagehoster's legacy handler does it, because
+ * both sides base58-encode this string and any divergence means two different
+ * hashes for the same image: parse the path segment (trailing slashes stripped)
+ * as a URL, then re-attach the query through searchParams — which percent-
+ * encodes a URL-valued parameter — and re-serialise.
+ */
+function extractLegacySizedSource(url: string): string | null {
+  const m = LEGACY_SIZED_PROXY_RE.exec(url)
+  if (!m) return null
+
+  // Drop the fragment FIRST, and before splitting off the query. A browser
+  // never sends anything from the first '#' onward, so the imagehoster resolves
+  // `…/image.png` and `…/image.png#frag` to one hash; keeping it here would
+  // mint a separate proxy hash — and therefore a separate CDN entry — per
+  // fragment, letting arbitrary `#…` variants miss an already-cached image.
+  // Order matters too: a '?' inside a fragment (`…/image.png#a?b=c`) is part of
+  // the fragment, so splitting on '?' first would invent a query from it.
+  const rest = m[1]
+  const hashIndex = rest.indexOf('#')
+  const addressable = hashIndex >= 0 ? rest.slice(0, hashIndex) : rest
+
+  const qIndex = addressable.indexOf('?')
+  const path = qIndex >= 0 ? addressable.slice(0, qIndex) : addressable
+  const query = qIndex >= 0 ? addressable.slice(qIndex + 1) : ''
+
+  // Trailing slashes are trimmed with a scan, not /\/+$/: post bodies are
+  // user-authored, so a crafted URL ending in thousands of slashes would make
+  // that regex backtrack quadratically on every render, including SSR.
+  let end = path.length
+  while (end > 0 && path.charCodeAt(end - 1) === 47 /* '/' */) {
+    end--
+  }
+
+  try {
+    const inner = new URL(path.slice(0, end))
+    if (query) {
+      // append, not set: the handler preserves repeated keys
+      for (const [key, value] of new URLSearchParams(query)) {
+        inner.searchParams.append(key, value)
+      }
+    }
+    return inner.toString()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Any legacy foreign proxy URL that has historically been served by swapping
+ * the hostname onto our proxy base. Kept broad on purpose — this is the
+ * long-standing behaviour for these hosts and narrowing it is out of scope.
+ * `/D…` (stored upload) URLs are excluded: those go through the normal /p/
+ * path so they can be resized and format-negotiated.
+ */
+function isLegacyForeignProxyUrl(url: string): boolean {
+  return (
+    (url.indexOf('https://images.hive.blog/') === 0 && url.indexOf('https://images.hive.blog/D') !== 0) ||
+    (url.indexOf('https://steemitimages.com/') === 0 && url.indexOf('https://steemitimages.com/D') !== 0)
+  )
+}
+
 export function getLatestUrl(str: string): string {
   const [last] = [...str.replace(/https?:\/\//g, '\n$&').trim().split('\n')].reverse()
   return last
@@ -125,6 +221,17 @@ function proxifyForFormat(
     return ''
   }
 
+  // base58 encoding is quadratic in the input length, and post bodies are
+  // user-authored: a single crafted 60KB image URL costs ~12.6s of CPU per
+  // render, on the SSR path. Real image URLs are nowhere near this — across 374
+  // in-body URLs from 60 live posts the longest was 234 characters — so cap it
+  // with generous headroom and treat anything longer as unusable, exactly like
+  // a malformed URL. Applies to every shape, including the legacy sized route
+  // that previously short-circuited to a hostname swap before any hashing.
+  if (url.length > MAX_PROXIED_URL_LENGTH) {
+    return ''
+  }
+
   // The /p/ route is the only one that transforms (resize/blur) or negotiates
   // WebP/AVIF; the direct-serve route streams the stored original bytes as-is.
   // Route through /p/ when a transform is requested, or when the caller opts in
@@ -133,13 +240,33 @@ function proxifyForFormat(
   // preserved (which matters for OG/social where AVIF may be unsupported).
   const routeThroughProxy = width > 0 || height > 0 || !!opts.blur || !!opts.forceProxy
 
-  // skip images already proxified with images.hive.blog
-  if (url.indexOf('https://images.hive.blog/') === 0 && url.indexOf('https://images.hive.blog/D') !== 0) {
-    return url.replace('https://images.hive.blog', proxyBase)
-  }
-
-  if (url.indexOf('https://steemitimages.com/') === 0 && url.indexOf('https://steemitimages.com/D') !== 0) {
-    return url.replace('https://steemitimages.com', proxyBase)
+  // Legacy sized proxy URLs (`images.hive.blog/<WxH>/<inner>`, same for
+  // steemitimages). The bare hostname swap keeps them on our own domain but
+  // lands on the direct-serve route, which the imagehoster answers with a 301
+  // to the /p/ form. Two costs: the extra round trip, and the redirect carries
+  // the width baked into the URL path (`.../1536x0/...` -> `width=1536`) rather
+  // than the width the caller asked for — so a 600px thumbnail was served the
+  // 1536px rendition (measured on a real post photo: 17,027 bytes via the
+  // redirect vs 3,316 bytes going straight to /p/ at width=600).
+  //
+  // The redirect target is the hash of the INNER source URL — the imagehoster
+  // unwraps the nested URL itself (verified: its Location header is byte-equal
+  // to the /p/ URL this function now returns). So routing here directly changes
+  // no image identity and no cache entry: if the inner source is gone, both
+  // paths fall back to the same placeholder.
+  //
+  // So keep the swap only when nothing is being requested of the proxy (OG and
+  // social images, where the original format is safest). Once a transform or
+  // format negotiation is wanted, fall through: getLatestUrl() unwraps the
+  // nested source URL, so the image is fetched from its origin through our own
+  // /p/ route in one hop, resized, and format-negotiated.
+  // Only the sized `<WxH>/<inner>` shape changes: it falls through to /p/ once
+  // something is actually asked of the proxy. Every other legacy foreign URL
+  // keeps the hostname swap exactly as before, transform or not.
+  if (isLegacyForeignProxyUrl(url) && !(isLegacySizedProxyUrl(url) && routeThroughProxy)) {
+    return url
+      .replace('https://images.hive.blog', proxyBase)
+      .replace('https://steemitimages.com', proxyBase)
   }
 
   // Legacy on-chain content embeds images.ecency.com URLs directly. With no
@@ -154,7 +281,14 @@ function proxifyForFormat(
     return url.replace('https://images.ecency.com', proxyBase)
   }
 
-  const realUrl = getLatestUrl(url)
+  // For a legacy sized URL take everything after the `<WxH>/` segment verbatim.
+  // getLatestUrl() picks the LAST http(s):// substring anywhere in the string,
+  // so a nested source carrying a URL-valued query parameter
+  // (`/60x70/http://host/image.png?redirect=https://other/x.png`) would resolve
+  // to the parameter's URL instead of the image. The imagehoster extracts the
+  // path segment and keeps the query — verified against its Location header —
+  // so match that exactly or the two disagree about which image this is.
+  const realUrl = extractLegacySizedSource(url) ?? getLatestUrl(url)
   const pHash = extractPHash(realUrl)
 
   const options: Record<string, string | number> = {
@@ -294,6 +428,18 @@ export function isPictureEligibleRawUrl(rawUrl?: string): boolean {
     return false;
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+
+  // Legacy sized-proxy URLs now reach the /p/ route (see proxifyForFormat), so a
+  // format CAN be pinned for them. Their path hides the original extension, but
+  // that no longer decides anything: an animated source is returned untouched
+  // whatever format is requested (verified on a live 44-frame gif — match, avif
+  // and webp all return the same 1,001,718 bytes), and an SVG is already
+  // rasterised by the /p/ route under format=match (verified: match and avif
+  // return byte-identical output). So a pinned <source> cannot change what the
+  // reader sees. These are ~5% of in-body images overall but cluster in
+  // photo-heavy posts, where a big image is usually the LCP element.
+  if (isLegacySizedProxyUrl(rawUrl)) return true;
+
   const host = `${u.protocol}//${u.host}`;
   const isProxyHost = host === proxyBase || host === 'https://images.ecency.com';
   if (

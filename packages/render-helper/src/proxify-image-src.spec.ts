@@ -1,5 +1,5 @@
 import multihash from 'multihashes'
-import { proxifyImageSrc, buildSrcSet, setProxyBase, getLatestUrl, extractPHash, buildSrcSetForFormat, buildPictureSources, isPictureEligibleRawUrl } from './proxify-image-src'
+import { proxifyImageSrc, buildSrcSet, setProxyBase, getLatestUrl, extractPHash, buildSrcSetForFormat, buildPictureSources, isPictureEligibleRawUrl, isLegacySizedProxyUrl } from './proxify-image-src'
 
 describe('getLatestUrl', () => {
   describe('with single proxification', () => {
@@ -332,11 +332,13 @@ describe('picture / per-format helpers (cache-safe content negotiation)', () => 
       const ss = buildSrcSetForFormat('https://i.ecency.com/p/abc?format=match&mode=fit', 'webp')
       expect(ss).toContain('https://i.ecency.com/p/abc?format=webp&mode=fit&width=320 320w')
     })
-    it('returns "" for a legacy host it cannot transcode (honors the format contract)', () => {
-      // images.hive.blog/WxH host-swaps without a /p/ transform — can\'t be avif/webp
-      expect(buildSrcSetForFormat('https://images.hive.blog/0x0/a.png', 'avif')).toBe('')
-      // match (original format) is still served via the host swap
-      expect(buildSrcSetForFormat('https://images.hive.blog/0x0/a.png', 'match')).not.toBe('')
+    it('transcodes a legacy sized-proxy URL, which now routes through /p/', () => {
+      // Requesting a width sends images.hive.blog/WxH through our own /p/ route
+      // (one hop, resized) instead of a host swap that 301s and drops the width.
+      const ss = buildSrcSetForFormat('https://images.hive.blog/0x0/a.png', 'avif')
+      expect(ss).toContain('/p/')
+      expect(ss).toContain('format=avif')
+      expect(buildSrcSetForFormat('https://images.hive.blog/0x0/a.png', 'match')).toContain('/p/')
     })
   })
 
@@ -353,10 +355,74 @@ describe('picture / per-format helpers (cache-safe content negotiation)', () => 
       expect(buildPictureSources('https://i.ecency.com/p/abc?format=match')).toBeNull()
       expect(buildPictureSources('https://x.com/no-ext')).toBeNull()
     })
-    it('returns null when the proxy host-swaps a legacy host instead of /p/ (no transcode)', () => {
-      // images.hive.blog non-/D/ URLs get a bare hostname swap with no /p/ and no
-      // format param — the origin would return the original bytes mislabeled.
-      expect(buildPictureSources('https://images.hive.blog/0x0/a.png')).toBeNull()
+    it('builds pinned sources for a legacy sized-proxy URL (nested source unwrapped)', () => {
+      const r = buildPictureSources('https://images.hive.blog/1536x0/https://files.peakd.com/file/x/abc')
+      expect(r).not.toBeNull()
+      expect(r!.avif).toContain('/p/')
+      expect(r!.avif).toContain('format=avif')
+      expect(r!.webp).toContain('format=webp')
+      // the /D upload form is NOT a nested proxy URL and keeps its old handling
+      expect(buildPictureSources('https://images.hive.blog/DQmabc/photo.png')).not.toBeNull()
+    })
+    it('refuses absurdly long URLs instead of base58-encoding them', () => {
+      // base58 encoding is quadratic: a 60KB URL from a post body cost ~12.6s of
+      // CPU per render before this guard, on the SSR path.
+      const bomb = 'http://hivebuzz.me/image.png' + '/'.repeat(60000) + 'x'
+      expect(proxifyImageSrc(bomb, 60, 70)).toBe('')
+      expect(proxifyImageSrc('https://images.hive.blog/60x70/' + bomb, 60, 70)).toBe('')
+      const started = Date.now()
+      proxifyImageSrc('https://images.hive.blog/60x70/' + bomb, 60, 70)
+      expect(Date.now() - started).toBeLessThan(500)
+      // a normal-length URL is unaffected
+      expect(proxifyImageSrc('https://files.peakd.com/file/x/abc.png', 60, 70)).toContain('/p/')
+    })
+    it('ignores the fragment, which never reaches the server anyway', () => {
+      const base = 'https://images.hive.blog/60x70/http://hivebuzz.me/image.png'
+      const hash = (u: string) => proxifyImageSrc(u, 60, 70).split('/p/')[1].split('?')[0]
+      // verified against the live legacy handler: it returns the same Location
+      // for both forms, because no client sends anything after the '#'
+      expect(hash(base + '#frag')).toBe(hash(base))
+      // a '?' inside the fragment belongs to the fragment, not the query
+      expect(hash(base + '#a?b=c')).toBe(hash(base))
+      // a real query is still honoured alongside a fragment
+      expect(hash(base + '?x=1#frag')).toBe(hash(base + '?x=1'))
+      expect(hash(base + '?x=1')).not.toBe(hash(base))
+    })
+    it('unwraps the nested source positionally, not by last-URL-in-string', () => {
+      // The nested image carries a URL-valued query parameter. Picking the last
+      // http(s):// substring would resolve to example.com instead of the image.
+      const u = 'https://images.hive.blog/60x70/http://hivebuzz.me/image.png?redirect=https://example.com/other.png'
+      const decoyHash = proxifyImageSrc('https://example.com/other.png', 60, 70).split('/p/')[1].split('?')[0]
+      const got = proxifyImageSrc(u, 60, 70).split('/p/')[1].split('?')[0]
+      expect(got).not.toBe(decoyHash)
+      // byte-equal to what the imagehoster's own legacy handler redirects to:
+      // it parses the path segment and re-attaches the query via searchParams,
+      // which percent-encodes the URL-valued value before base58 encoding.
+      expect(got).toBe(
+        '3HaJVvr6qfmnThj2pZ2URy81yA4vPxZ1VESc8MPJBForDhKM22NxfNu7ZkduRBaYGK7SAMimku9EvhR1YxUjtFBJEvpV8z65eJHXXWE'
+      )
+      // and the no-query form still agrees with the same handler
+      expect(
+        proxifyImageSrc('https://images.hive.blog/60x70/http://hivebuzz.me/image.png', 60, 70)
+          .split('/p/')[1].split('?')[0]
+      ).toBe('25K6n8rwZtJgk3dgpkudFuAzYSDbEBTnAgvqHAn')
+    })
+    it('leaves NON-sized legacy foreign URLs on the hostname swap, transform or not', () => {
+      // their own /p/<hash> names a foreign hash space — routing it through our
+      // /p/ would proxy a proxy, so this shape keeps its long-standing handling
+      const foreignP = 'https://steemitimages.com/p/B69zEhWZA8UDm9f4vLWvxrdxXd6DUG2Qar42eSi5'
+      expect(isLegacySizedProxyUrl(foreignP)).toBe(false)
+      expect(proxifyImageSrc(foreignP, 600, 500)).toBe(
+        'https://i.ecency.com/p/B69zEhWZA8UDm9f4vLWvxrdxXd6DUG2Qar42eSi5'
+      )
+      expect(buildPictureSources(foreignP)).toBeNull()
+      // and the sized shape is recognised only with a real WxH segment
+      expect(isLegacySizedProxyUrl('https://images.hive.blog/1536x0/https://x.com/a.png')).toBe(true)
+      expect(isLegacySizedProxyUrl('https://images.hive.blog/notsized/https://x.com/a.png')).toBe(false)
+    })
+    it('keeps the bare hostname swap when nothing is asked of the proxy (OG/social)', () => {
+      const og = proxifyImageSrc('https://images.hive.blog/1536x0/https://files.peakd.com/file/x/abc')
+      expect(og).toBe('https://i.ecency.com/1536x0/https://files.peakd.com/file/x/abc')
     })
   })
 })
