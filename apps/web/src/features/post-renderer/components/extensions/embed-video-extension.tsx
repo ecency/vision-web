@@ -71,9 +71,17 @@ export function EmbedVideoRenderer({
 }
 
 export function EmbedVideoExtension({
-  containerRef
+  containerRef,
+  body
 }: {
   containerRef: RefObject<HTMLElement | null>;
+  /**
+   * The rendered post body. Not read — it is a change signal. The container is
+   * populated via dangerouslySetInnerHTML, so when the body changes React swaps
+   * the nodes underneath us: the anchors we enhanced are detached and the new
+   * ones carry no marker or listener. Depending on it re-runs the pass.
+   */
+  body?: string;
 }) {
   const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
   // The `er-embed` marker and the appended frame are DOM mutations on nodes
@@ -140,7 +148,7 @@ export function EmbedVideoExtension({
     });
 
     return reset;
-  }, [containerRef, reset]);
+  }, [containerRef, reset, body]);
 
   return null;
 }

@@ -12,7 +12,7 @@ function Harness({ html }: { html: string }) {
   return (
     <div ref={ref}>
       <div className="markdown-view" dangerouslySetInnerHTML={{ __html: html }} />
-      <EmbedVideoExtension containerRef={ref} />
+      <EmbedVideoExtension containerRef={ref} body={html} />
     </div>
   );
 }
@@ -84,6 +84,36 @@ describe("EmbedVideoExtension", () => {
     });
 
     expect(anchor.querySelector("iframe")?.getAttribute("src")).toBe(embedSrc);
+  });
+
+  // The body arrives via dangerouslySetInnerHTML, so a changed post (edit
+  // refresh, recycled feed row) swaps the nodes underneath the extension. The
+  // pass has to run again or the new anchors are never enhanced.
+  it("re-enhances after the rendered body changes", async () => {
+    const first = "https://odysee.com/$/embed/@channel:2/first:e";
+    const second = "https://odysee.com/$/embed/@channel:2/second:f";
+
+    const { container: root, rerender } = render(
+      <Harness html={videoLink("markdown-video-link-odysee", first)} />,
+      { container }
+    );
+    expect(
+      root.querySelector<HTMLElement>(".markdown-video-link-odysee")!.classList.contains("er-embed")
+    ).toBe(true);
+
+    await act(async () => {
+      rerender(<Harness html={videoLink("markdown-video-link-odysee", second)} />);
+    });
+
+    const anchor = root.querySelector<HTMLElement>(".markdown-video-link-odysee")!;
+    expect(anchor.dataset.embedSrc).toBe(second);
+    expect(anchor.classList.contains("er-embed")).toBe(true);
+
+    await act(async () => {
+      anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(anchor.querySelector("iframe")?.getAttribute("src")).toBe(second);
   });
 
   it("ignores an off-allowlist embed src", async () => {
