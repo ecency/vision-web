@@ -241,6 +241,10 @@ internalRoutes.post('/activate', async (c) => {
       plan: result.plan,
       requestedPlan: plan,
       duplicate: !!result.duplicate,
+      // An expired/suspended duplicate is acknowledged without being reactivated, so the event
+      // carries the tenant's real status: 'active' means a blog is being served, anything else
+      // means this was a replay acknowledgment that changed nothing.
+      tenantStatus: tenant.subscriptionStatus,
       rail: 'card',
     });
 
@@ -351,14 +355,17 @@ internalRoutes.post('/domain/verify', async (c) => {
   }
 
   await TenantService.verifyCustomDomain(username);
-  await DomainService.markVerified(username, tenant.customDomain);
-  addVerifiedDomainOrigin(tenant.customDomain);
-
+  // Recorded here, not after the bookkeeping below: the tenant is already verified at this point,
+  // and the idempotent early return above means a retry would never reach a later audit call. If
+  // markVerified threw, the event would be lost permanently for a domain that IS verified.
   auditInternal(c, tenant.id, 'domain.verified', {
     domain: tenant.customDomain,
     username,
     via: 'internal',
   });
+
+  await DomainService.markVerified(username, tenant.customDomain);
+  addVerifiedDomainOrigin(tenant.customDomain);
 
   return c.json({ verified: true }, 200);
 });

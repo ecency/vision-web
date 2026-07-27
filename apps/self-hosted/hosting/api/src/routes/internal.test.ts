@@ -7,6 +7,13 @@ const mocks = vi.hoisted(() => ({
   auditLog: vi.fn(),
   buildConfig: vi.fn(),
   getBlogUrl: vi.fn(),
+  getByDomain: vi.fn(),
+  setCustomDomain: vi.fn(),
+  verifyCustomDomain: vi.fn(),
+  createVerification: vi.fn(),
+  verifyDomain: vi.fn(),
+  markVerified: vi.fn(),
+  addVerifiedDomainOrigin: vi.fn(),
 }));
 
 vi.mock('../db/client', () => ({
@@ -18,6 +25,9 @@ vi.mock('../services/tenant-service', () => ({
     getByUsername: mocks.getByUsername,
     buildConfig: mocks.buildConfig,
     getBlogUrl: mocks.getBlogUrl,
+    getByDomain: mocks.getByDomain,
+    setCustomDomain: mocks.setCustomDomain,
+    verifyCustomDomain: mocks.verifyCustomDomain,
   },
   ABANDONED_REREGISTER_QUARANTINE_HOURS: 24,
   CAUGHT_UP_SQL: 'TRUE',
@@ -29,9 +39,23 @@ vi.mock('../services/config-service', () => ({
   },
 }));
 
-vi.mock('../services/audit-service', () => ({
+vi.mock('../services/domain-service', () => ({
+  DomainService: {
+    createVerification: mocks.createVerification,
+    verifyDomain: mocks.verifyDomain,
+    markVerified: mocks.markVerified,
+  },
+}));
+
+vi.mock('../utils/cors-domains', () => ({
+  addVerifiedDomainOrigin: mocks.addVerifiedDomainOrigin,
+}));
+
+// Only the write path is mocked: parseClientIp stays real so the tests keep asserting the
+// production forwarded-for rule rather than a copy of it that can silently drift.
+vi.mock('../services/audit-service', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/audit-service')>()),
   AuditService: { log: (...args: any[]) => mocks.auditLog(...args) },
-  parseClientIp: (xff: string | undefined) => xff?.split(',').pop()?.trim() ?? null,
 }));
 
 const { internalRoutes } = await import('./internal');
@@ -154,6 +178,13 @@ describe('internal endpoint audit trail', () => {
     mocks.generateConfigFile.mockReset().mockResolvedValue('/configs/alice.json');
     mocks.buildConfig.mockReset().mockResolvedValue({ version: 1 });
     mocks.getBlogUrl.mockReset().mockReturnValue('https://alice.blogs.ecency.com');
+    mocks.getByDomain.mockReset().mockResolvedValue(null);
+    mocks.setCustomDomain.mockReset().mockResolvedValue(undefined);
+    mocks.verifyCustomDomain.mockReset().mockResolvedValue(undefined);
+    mocks.createVerification.mockReset().mockResolvedValue({ verificationMethod: 'cname' });
+    mocks.verifyDomain.mockReset().mockResolvedValue(true);
+    mocks.markVerified.mockReset().mockResolvedValue(undefined);
+    mocks.addVerifiedDomainOrigin.mockReset();
     mocks.auditLog.mockReset();
   });
 
@@ -237,6 +268,91 @@ describe('internal endpoint audit trail', () => {
       eventType: 'tenant.activation_denied',
       eventData: { reason: 'tenant_not_found' },
     });
+  });
+
+  it('carries the tenant status so a replay that reactivated nothing is not read as an activation', async () => {
+    mocks.transaction.mockResolvedValueOnce({
+      status: 200,
+      tenantId: 'tenant-1',
+      duplicate: true,
+      plan: 'standard',
+    });
+    mocks.getByUsername.mockResolvedValueOnce({
+      id: 'tenant-1',
+      username: 'alice',
+      subscriptionStatus: 'expired',
+    });
+
+    const response = await post('/activate', activateBody);
+
+    expect(response.status).toBe(200);
+    expect(mocks.generateConfigFile).not.toHaveBeenCalled();
+    expect(mocks.auditLog.mock.calls[0][0].eventData).toMatchObject({
+      duplicate: true,
+      tenantStatus: 'expired',
+    });
+  });
+
+  it('records an internally attached custom domain', async () => {
+    mocks.getByUsername.mockResolvedValueOnce({
+      id: 'tenant-1',
+      username: 'alice',
+      subscriptionPlan: 'pro',
+    });
+
+    const response = await post('/domain', { username: 'alice', domain: 'blog.example.com' });
+
+    expect(response.status).toBe(200);
+    expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({
+      tenantId: 'tenant-1',
+      eventType: 'domain.added',
+      eventData: { domain: 'blog.example.com', username: 'alice', via: 'internal' },
+    });
+  });
+
+  it('records a domain verification before the bookkeeping that could strand it', async () => {
+    mocks.getByUsername.mockResolvedValue({
+      id: 'tenant-1',
+      username: 'alice',
+      customDomain: 'blog.example.com',
+      customDomainVerified: false,
+    });
+
+    const response = await post('/domain/verify', { username: 'alice' });
+
+    expect(response.status).toBe(200);
+    expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({
+      tenantId: 'tenant-1',
+      eventType: 'domain.verified',
+      eventData: { domain: 'blog.example.com', username: 'alice', via: 'internal' },
+    });
+
+    // The tenant is verified the moment verifyCustomDomain commits, and the already-verified early
+    // return means a retry never reaches an audit call placed later. So a failure in the trailing
+    // bookkeeping must not cost the event.
+    mocks.auditLog.mockReset();
+    mocks.markVerified.mockRejectedValueOnce(new Error('bookkeeping write failed'));
+
+    await Promise.resolve(post('/domain/verify', { username: 'alice' })).catch(() => undefined);
+
+    expect(mocks.auditLog).toHaveBeenCalledTimes(1);
+    expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({ eventType: 'domain.verified' });
+  });
+
+  it('does not record a domain verification that DNS rejected', async () => {
+    mocks.getByUsername.mockResolvedValueOnce({
+      id: 'tenant-1',
+      username: 'alice',
+      customDomain: 'blog.example.com',
+      customDomainVerified: false,
+    });
+    mocks.verifyDomain.mockResolvedValueOnce(false);
+
+    const response = await post('/domain/verify', { username: 'alice' });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ verified: false });
+    expect(mocks.auditLog).not.toHaveBeenCalled();
   });
 
   it('records a Pro free-blog claim, flagging whether it provisioned the blog', async () => {
