@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.24
+
+### Patch Changes
+
+- fix(render-helper): proxy legacy hive/steemit images through /p/ (#1256)
+
 ## 2.5.23
 
 ### Patch Changes
