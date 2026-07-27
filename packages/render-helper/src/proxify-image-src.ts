@@ -87,6 +87,13 @@ export function isValidUrl(url: string): boolean {
 }
 
 /**
+ * Longest image URL we will base58-encode. See the guard in proxifyForFormat:
+ * the encoder is quadratic, so this bounds per-render CPU on user-authored
+ * input. Observed maximum in real post bodies is ~234 characters.
+ */
+const MAX_PROXIED_URL_LENGTH = 2048
+
+/**
  * A legacy foreign SIZED proxy URL: `images.hive.blog/<WxH>/<inner>` or the
  * steemitimages equivalent — the only shape that carries a nested source URL
  * for getLatestUrl to unwrap.
@@ -129,8 +136,16 @@ function extractLegacySizedSource(url: string): string | null {
   const path = qIndex >= 0 ? rest.slice(0, qIndex) : rest
   const query = qIndex >= 0 ? rest.slice(qIndex + 1) : ''
 
+  // Trailing slashes are trimmed with a scan, not /\/+$/: post bodies are
+  // user-authored, so a crafted URL ending in thousands of slashes would make
+  // that regex backtrack quadratically on every render, including SSR.
+  let end = path.length
+  while (end > 0 && path.charCodeAt(end - 1) === 47 /* '/' */) {
+    end--
+  }
+
   try {
-    const inner = new URL(path.replace(/\/+$/, ''))
+    const inner = new URL(path.slice(0, end))
     if (query) {
       // append, not set: the handler preserves repeated keys
       for (const [key, value] of new URLSearchParams(query)) {
@@ -193,6 +208,17 @@ function proxifyForFormat(
   opts: ProxifyOptions = {}
 ) {
   if (!url || typeof url !== 'string' || !isValidUrl(url)) {
+    return ''
+  }
+
+  // base58 encoding is quadratic in the input length, and post bodies are
+  // user-authored: a single crafted 60KB image URL costs ~12.6s of CPU per
+  // render, on the SSR path. Real image URLs are nowhere near this — across 374
+  // in-body URLs from 60 live posts the longest was 234 characters — so cap it
+  // with generous headroom and treat anything longer as unusable, exactly like
+  // a malformed URL. Applies to every shape, including the legacy sized route
+  // that previously short-circuited to a hostname swap before any hashing.
+  if (url.length > MAX_PROXIED_URL_LENGTH) {
     return ''
   }
 

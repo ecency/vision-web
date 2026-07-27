@@ -601,6 +601,7 @@ function isValidUrl(url) {
     return false;
   }
 }
+var MAX_PROXIED_URL_LENGTH = 2048;
 var LEGACY_SIZED_PROXY_RE = /^https:\/\/(?:images\.hive\.blog|steemitimages\.com)\/\d+x\d+\/(.+)$/;
 function isLegacySizedProxyUrl(url) {
   if (!url || typeof url !== "string") return false;
@@ -613,8 +614,12 @@ function extractLegacySizedSource(url) {
   const qIndex = rest.indexOf("?");
   const path = qIndex >= 0 ? rest.slice(0, qIndex) : rest;
   const query = qIndex >= 0 ? rest.slice(qIndex + 1) : "";
+  let end = path.length;
+  while (end > 0 && path.charCodeAt(end - 1) === 47) {
+    end--;
+  }
   try {
-    const inner = new URL(path.replace(/\/+$/, ""));
+    const inner = new URL(path.slice(0, end));
     if (query) {
       for (const [key, value] of new URLSearchParams(query)) {
         inner.searchParams.append(key, value);
@@ -634,6 +639,9 @@ function getLatestUrl(str) {
 }
 function proxifyForFormat(url, width = 0, height = 0, format = "match", opts = {}) {
   if (!url || typeof url !== "string" || !isValidUrl(url)) {
+    return "";
+  }
+  if (url.length > MAX_PROXIED_URL_LENGTH) {
     return "";
   }
   const routeThroughProxy = width > 0 || height > 0 || !!opts.blur || !!opts.forceProxy;

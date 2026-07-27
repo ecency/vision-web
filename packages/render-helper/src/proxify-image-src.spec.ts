@@ -364,6 +364,18 @@ describe('picture / per-format helpers (cache-safe content negotiation)', () => 
       // the /D upload form is NOT a nested proxy URL and keeps its old handling
       expect(buildPictureSources('https://images.hive.blog/DQmabc/photo.png')).not.toBeNull()
     })
+    it('refuses absurdly long URLs instead of base58-encoding them', () => {
+      // base58 encoding is quadratic: a 60KB URL from a post body cost ~12.6s of
+      // CPU per render before this guard, on the SSR path.
+      const bomb = 'http://hivebuzz.me/image.png' + '/'.repeat(60000) + 'x'
+      expect(proxifyImageSrc(bomb, 60, 70)).toBe('')
+      expect(proxifyImageSrc('https://images.hive.blog/60x70/' + bomb, 60, 70)).toBe('')
+      const started = Date.now()
+      proxifyImageSrc('https://images.hive.blog/60x70/' + bomb, 60, 70)
+      expect(Date.now() - started).toBeLessThan(500)
+      // a normal-length URL is unaffected
+      expect(proxifyImageSrc('https://files.peakd.com/file/x/abc.png', 60, 70)).toContain('/p/')
+    })
     it('unwraps the nested source positionally, not by last-URL-in-string', () => {
       // The nested image carries a URL-valued query parameter. Picking the last
       // http(s):// substring would resolve to example.com instead of the image.
