@@ -1,6 +1,10 @@
 "use client";
 
-import { isThreeSpeakBeneficiary } from "@/api/threespeak-embed";
+import {
+  isThreeSpeakBeneficiary,
+  THREESPEAK_ACCOUNT,
+  THREESPEAK_WEIGHT
+} from "@/api/threespeak-embed";
 import { EcencyConfigManager } from "@/config";
 import { error, LoginRequired } from "@/features/shared";
 import dynamic from "next/dynamic";
@@ -756,7 +760,7 @@ export function PublishEditorToolbar({ editor, allowToUploadVideo = true }: Prop
               if (prev.some((b) => isThreeSpeakBeneficiary(b.account))) {
                 return prev;
               }
-              return [...prev, { account: "threespeakfund", weight: 1100 }];
+              return [...prev, { account: THREESPEAK_ACCOUNT, weight: THREESPEAK_WEIGHT }];
             });
 
             setShowVideoUpload(false);

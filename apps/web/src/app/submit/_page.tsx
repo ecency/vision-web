@@ -1,6 +1,6 @@
 "use client";
 
-import { hasThreeSpeakEmbed } from "@/api/threespeak-embed";
+import { hasThreeSpeakEmbed, THREESPEAK_ACCOUNT } from "@/api/threespeak-embed";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -525,7 +525,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
                         <BeneficiaryEditorDialog
                           author={activeUser?.username}
                           list={beneficiaries}
-                          lockedAccounts={hasThreeSpeakEmbed(body) ? ["threespeakfund"] : []}
+                          lockedAccounts={hasThreeSpeakEmbed(body) ? [THREESPEAK_ACCOUNT] : []}
                           onAdd={(item) => {
                             const b = [...beneficiaries, item].sort((a, b) =>
                               a.account < b.account ? -1 : 1
