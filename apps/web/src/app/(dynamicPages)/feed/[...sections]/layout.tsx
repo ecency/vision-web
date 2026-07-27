@@ -60,6 +60,20 @@ async function FeedThumbPreload({ params }: Params) {
  * ahead of the <img> it was supposed to front-run). A layout renders OUTSIDE
  * the loading boundary, so this sibling boundary flushes as soon as the feed
  * data resolves, independent of how long the page takes to serialize.
+ *
+ * Scope note: layouts are not re-rendered on query-string-only client
+ * navigation, so this preload reflects the query string of the initial
+ * document request. That is the intended scope — it exists to beat the
+ * boundary flush in streamed HTML, and LCP is a hard-navigation metric. On a
+ * soft navigation within the same segment no new link is emitted, and the
+ * existing one is inert (a preload fetches once, when it is inserted), so a
+ * stale link costs nothing; navigating to a different `sections` segment
+ * re-renders this layout with that request's own query string.
+ *
+ * Do NOT "fix" that by moving the preload into page.tsx: the page sits inside
+ * the loading boundary, which is precisely what makes the link land ~380KB too
+ * late. A template.tsx would re-render per navigation but remounts the whole
+ * feed subtree on every navigation — real state loss for no measurable gain.
  */
 export default function FeedSectionsLayout({ children, params }: PropsWithChildren<Params>) {
   return (
