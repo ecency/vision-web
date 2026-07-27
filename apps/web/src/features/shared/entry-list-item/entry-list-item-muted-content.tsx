@@ -51,7 +51,7 @@ export function EntryListItemMutedContent({ entry: entryProp, isThumbLcp }: Prop
       entry.json_metadata.tags.includes("nsfw"),
     [entry]
   );
-  // SEO/backlink-farm signal: new low-reputation account + an outbound promo link.
+  // SEO/backlink-farm signal: low-reputation account + an outbound promo link.
   const isLowTrust = useMemo(() => isLowTrustSeoPost(entry), [entry]);
 
   const [showMuted, setShowMuted] = useState(isPostMuted);
