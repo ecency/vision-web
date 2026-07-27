@@ -51,7 +51,7 @@ const headPreload = (permlink: string) =>
 
 describe("EntryListThumbPreload", () => {
   it("emits a high-priority image preload, hoisted into <head>", () => {
-    render(<EntryListThumbPreload entry={makeEntry("lcp-1")} />);
+    render(<EntryListThumbPreload entries={[makeEntry("lcp-1")]} />);
     const link = headPreload("lcp-1")!;
     expect(link).toBeTruthy();
     expect(link.getAttribute("imagesrcset")).toContain("600w");
@@ -60,7 +60,7 @@ describe("EntryListThumbPreload", () => {
 
   it("matches the thumbnail's srcset and sizes exactly (a mismatch = second download)", () => {
     const entry = makeEntry("lcp-2");
-    render(<EntryListThumbPreload entry={entry} />);
+    render(<EntryListThumbPreload entries={[entry]} />);
     const { container: thumbC } = render(
       <EntryListItemThumbnail
         entry={entry}
@@ -82,7 +82,9 @@ describe("EntryListThumbPreload", () => {
 
   it("preloads the original post for a cross-post, matching the thumbnail", () => {
     const original = makeEntry("lcp-3-original", { author: "bob" });
-    render(<EntryListThumbPreload entry={makeEntry("lcp-3-cross", { original_entry: original })} />);
+    render(
+      <EntryListThumbPreload entries={[makeEntry("lcp-3-cross", { original_entry: original })]} />
+    );
 
     expect(headPreload("lcp-3-original")).toBeTruthy();
     expect(headPreload("lcp-3-cross")).toBeNull();
@@ -91,14 +93,37 @@ describe("EntryListThumbPreload", () => {
   it("emits nothing when there is no entry, no image, or the post is nsfw", () => {
     render(<EntryListThumbPreload />);
 
-    render(<EntryListThumbPreload entry={makeEntry("lcp-4-noimg", { __noimg: true })} />);
+    render(<EntryListThumbPreload entries={[makeEntry("lcp-4-noimg", { __noimg: true })]} />);
     expect(headPreload("lcp-4-noimg")).toBeNull();
 
     render(
       <EntryListThumbPreload
-        entry={makeEntry("lcp-4-nsfw", { json_metadata: { tags: ["nsfw"] } })}
+        entries={[makeEntry("lcp-4-nsfw", { json_metadata: { tags: ["nsfw"] } })]}
       />
     );
     expect(headPreload("lcp-4-nsfw")).toBeNull();
+  });
+
+  it("falls through to the next eager card when the first renders no thumbnail", () => {
+    render(
+      <EntryListThumbPreload
+        entries={[
+          makeEntry("lcp-5-nsfw", { json_metadata: { tags: ["nsfw"] } }),
+          makeEntry("lcp-5-visible")
+        ]}
+      />
+    );
+
+    expect(headPreload("lcp-5-visible")).toBeTruthy();
+    expect(headPreload("lcp-5-nsfw")).toBeNull();
+  });
+
+  it("preloads only one image even when several candidates qualify", () => {
+    render(
+      <EntryListThumbPreload entries={[makeEntry("lcp-6-first"), makeEntry("lcp-6-second")]} />
+    );
+
+    expect(headPreload("lcp-6-first")).toBeTruthy();
+    expect(headPreload("lcp-6-second")).toBeNull();
   });
 });

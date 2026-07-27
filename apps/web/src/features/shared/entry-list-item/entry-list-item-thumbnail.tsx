@@ -4,7 +4,7 @@ import { useGlobalStore } from "@/core/global-store";
 import { EntryLink } from "@/features/shared";
 import { buildSrcSet, catchPostImage, proxifyImageSrc } from "@ecency/render-helper";
 import Image from "next/image";
-import { THUMB_SIZES } from "./thumb-sizes";
+import { THUMB_SIZES } from "./thumb-lcp";
 
 interface Props {
   entry: Entry;

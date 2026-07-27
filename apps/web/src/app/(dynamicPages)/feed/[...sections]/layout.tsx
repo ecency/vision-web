@@ -3,6 +3,7 @@ import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { DEFAULT_OBSERVER } from "@/consts/observer";
 import { Entry } from "@/entities";
 import { EntryListThumbPreload } from "@/features/shared/entry-list-item/entry-list-thumb-preload";
+import { EAGER_THUMB_CARD_COUNT } from "@/features/shared/entry-list-item/thumb-lcp";
 import { cookies, headers } from "next/headers";
 import React, { PropsWithChildren, Suspense } from "react";
 
@@ -11,7 +12,8 @@ interface Params {
 }
 
 /**
- * Resolves the feed's first entry so its thumbnail can be preloaded.
+ * Resolves the feed's topmost entries so the first eagerly-rendered thumbnail
+ * can be preloaded.
  *
  * Shares the request-scoped query client with the page, and the client's 60s
  * staleTime means the page's own prefetch of the same key is a cache read, not
@@ -21,20 +23,31 @@ async function FeedThumbPreload({ params }: Params) {
   const [filter = "hot", rawTag = ""] = (await params).sections;
   const tag = rawTag === "global" ? "" : rawTag;
 
+  // Layouts get no searchParams; middleware forwards the query string.
+  const search = new URLSearchParams((await headers()).get("x-search") ?? "");
+
   // A cursor archive page (?before=) renders a different slice than page 1, so
   // preloading the page-1 thumbnail there would fetch an image the page never
-  // shows. Layouts get no searchParams; middleware forwards the query string.
-  const search = (await headers()).get("x-search") ?? "";
-  if (new URLSearchParams(search).has("before")) {
+  // shows.
+  if (search.has("before")) {
     return null;
   }
 
   const observer = (await cookies()).get(ACTIVE_USER_COOKIE_NAME)?.value || DEFAULT_OBSERVER;
 
   const feed = await prefetchGetPostsFeedQuery(filter, tag, 20, observer);
-  const firstEntry = ((feed?.pages?.[0] as Entry[] | undefined) ?? []).filter(Boolean)[0];
+  const entries = ((feed?.pages?.[0] as Entry[] | undefined) ?? []).filter(Boolean);
 
-  return <EntryListThumbPreload entry={firstEntry} />;
+  // FeedList drops reblogs client-side under ?no-reblog=true, which re-indexes
+  // the list — so the eager window there starts at a different entry than the
+  // raw feed's. Apply the same filter or the preload names a card the page
+  // never renders.
+  const rendered =
+    search.get("no-reblog") === "true"
+      ? entries.filter((entry) => !entry.reblogged_by || entry.reblogged_by.length === 0)
+      : entries;
+
+  return <EntryListThumbPreload entries={rendered.slice(0, EAGER_THUMB_CARD_COUNT)} />;
 }
 
 /**

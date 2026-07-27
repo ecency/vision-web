@@ -10,3 +10,12 @@
  * picks a different srcset candidate and downloads the thumbnail twice.
  */
 export const THUMB_SIZES = "(max-width: 768px) 100vw, 150px";
+
+/**
+ * How many topmost cards render their thumbnail eagerly at high fetch priority
+ * (EntryListItem passes `isThumbLcp={order < EAGER_THUMB_CARD_COUNT}`).
+ *
+ * EntryListThumbPreload preloads within this same window, so the two cannot
+ * drift into preloading an image the markup lazy-loads, or vice versa.
+ */
+export const EAGER_THUMB_CARD_COUNT = 2;

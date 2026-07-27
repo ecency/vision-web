@@ -71,7 +71,7 @@ export default function GlobalError({
                 <SentryIssueReporterDialog error={error} eventId={eventId} />
               </div>
             </div>
-            {/* The only image on the page and its LCP element — don't lazy-load it. */}
+            {/* The page's main illustration and its LCP element — don't lazy-load it. */}
             <Image
               src="/assets/illustration-open-source.png"
               alt="logo"
