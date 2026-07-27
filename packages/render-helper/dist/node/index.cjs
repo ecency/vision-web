@@ -629,6 +629,10 @@ function isValidUrl(url) {
     return false;
   }
 }
+function isLegacySizedProxyUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  return url.indexOf("https://images.hive.blog/") === 0 && url.indexOf("https://images.hive.blog/D") !== 0 || url.indexOf("https://steemitimages.com/") === 0 && url.indexOf("https://steemitimages.com/D") !== 0;
+}
 function getLatestUrl(str) {
   const [last] = [...str.replace(/https?:\/\//g, "\n$&").trim().split("\n")].reverse();
   return last;
@@ -638,11 +642,8 @@ function proxifyForFormat(url, width = 0, height = 0, format = "match", opts = {
     return "";
   }
   const routeThroughProxy = width > 0 || height > 0 || !!opts.blur || !!opts.forceProxy;
-  if (url.indexOf("https://images.hive.blog/") === 0 && url.indexOf("https://images.hive.blog/D") !== 0) {
-    return url.replace("https://images.hive.blog", proxyBase);
-  }
-  if (url.indexOf("https://steemitimages.com/") === 0 && url.indexOf("https://steemitimages.com/D") !== 0) {
-    return url.replace("https://steemitimages.com", proxyBase);
+  if (isLegacySizedProxyUrl(url) && !routeThroughProxy) {
+    return url.replace("https://images.hive.blog", proxyBase).replace("https://steemitimages.com", proxyBase);
   }
   if (url.indexOf("https://images.ecency.com/") === 0 && !routeThroughProxy) {
     return url.replace("https://images.ecency.com", proxyBase);
@@ -707,6 +708,7 @@ function isPictureEligibleRawUrl(rawUrl) {
     return false;
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  if (isLegacySizedProxyUrl(rawUrl)) return true;
   const host = `${u.protocol}//${u.host}`;
   const isProxyHost = host === proxyBase || host === "https://images.ecency.com";
   if (isProxyHost && (u.pathname.startsWith("/p/") || u.pathname.startsWith("/u/") || SIZED_PROXY_PATH.test(u.pathname))) {
@@ -2414,6 +2416,7 @@ exports.buildSrcSetForFormat = buildSrcSetForFormat;
 exports.catchPostImage = catchPostImage;
 exports.getEntryImageRawUrl = getEntryImageRawUrl;
 exports.isAllowedEmbedSrc = isAllowedEmbedSrc;
+exports.isLegacySizedProxyUrl = isLegacySizedProxyUrl;
 exports.isPictureEligibleRawUrl = isPictureEligibleRawUrl;
 exports.isValidPermlink = isValidPermlink;
 exports.postBodySummary = getPostBodySummary;

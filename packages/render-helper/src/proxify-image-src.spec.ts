@@ -332,11 +332,13 @@ describe('picture / per-format helpers (cache-safe content negotiation)', () => 
       const ss = buildSrcSetForFormat('https://i.ecency.com/p/abc?format=match&mode=fit', 'webp')
       expect(ss).toContain('https://i.ecency.com/p/abc?format=webp&mode=fit&width=320 320w')
     })
-    it('returns "" for a legacy host it cannot transcode (honors the format contract)', () => {
-      // images.hive.blog/WxH host-swaps without a /p/ transform — can\'t be avif/webp
-      expect(buildSrcSetForFormat('https://images.hive.blog/0x0/a.png', 'avif')).toBe('')
-      // match (original format) is still served via the host swap
-      expect(buildSrcSetForFormat('https://images.hive.blog/0x0/a.png', 'match')).not.toBe('')
+    it('transcodes a legacy sized-proxy URL, which now routes through /p/', () => {
+      // Requesting a width sends images.hive.blog/WxH through our own /p/ route
+      // (one hop, resized) instead of a host swap that 301s and drops the width.
+      const ss = buildSrcSetForFormat('https://images.hive.blog/0x0/a.png', 'avif')
+      expect(ss).toContain('/p/')
+      expect(ss).toContain('format=avif')
+      expect(buildSrcSetForFormat('https://images.hive.blog/0x0/a.png', 'match')).toContain('/p/')
     })
   })
 
@@ -353,10 +355,18 @@ describe('picture / per-format helpers (cache-safe content negotiation)', () => 
       expect(buildPictureSources('https://i.ecency.com/p/abc?format=match')).toBeNull()
       expect(buildPictureSources('https://x.com/no-ext')).toBeNull()
     })
-    it('returns null when the proxy host-swaps a legacy host instead of /p/ (no transcode)', () => {
-      // images.hive.blog non-/D/ URLs get a bare hostname swap with no /p/ and no
-      // format param — the origin would return the original bytes mislabeled.
-      expect(buildPictureSources('https://images.hive.blog/0x0/a.png')).toBeNull()
+    it('builds pinned sources for a legacy sized-proxy URL (nested source unwrapped)', () => {
+      const r = buildPictureSources('https://images.hive.blog/1536x0/https://files.peakd.com/file/x/abc')
+      expect(r).not.toBeNull()
+      expect(r!.avif).toContain('/p/')
+      expect(r!.avif).toContain('format=avif')
+      expect(r!.webp).toContain('format=webp')
+      // the /D upload form is NOT a nested proxy URL and keeps its old handling
+      expect(buildPictureSources('https://images.hive.blog/DQmabc/photo.png')).not.toBeNull()
+    })
+    it('keeps the bare hostname swap when nothing is asked of the proxy (OG/social)', () => {
+      const og = proxifyImageSrc('https://images.hive.blog/1536x0/https://files.peakd.com/file/x/abc')
+      expect(og).toBe('https://i.ecency.com/1536x0/https://files.peakd.com/file/x/abc')
     })
   })
 })

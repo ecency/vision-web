@@ -86,6 +86,22 @@ export function isValidUrl(url: string): boolean {
   }
 }
 
+/**
+ * A legacy foreign sized-proxy URL: `images.hive.blog/<WxH>/<inner>` or the
+ * steemitimages equivalent. Their `/D…` (upload hash) form is NOT included —
+ * that one is a plain stored image, not a nested proxy URL.
+ *
+ * Shared by the proxify routing and the `<picture>` eligibility gate so the two
+ * cannot disagree about which URLs reach the /p/ route.
+ */
+export function isLegacySizedProxyUrl(url?: string): boolean {
+  if (!url || typeof url !== 'string') return false
+  return (
+    (url.indexOf('https://images.hive.blog/') === 0 && url.indexOf('https://images.hive.blog/D') !== 0) ||
+    (url.indexOf('https://steemitimages.com/') === 0 && url.indexOf('https://steemitimages.com/D') !== 0)
+  )
+}
+
 export function getLatestUrl(str: string): string {
   const [last] = [...str.replace(/https?:\/\//g, '\n$&').trim().split('\n')].reverse()
   return last
@@ -133,13 +149,23 @@ function proxifyForFormat(
   // preserved (which matters for OG/social where AVIF may be unsupported).
   const routeThroughProxy = width > 0 || height > 0 || !!opts.blur || !!opts.forceProxy
 
-  // skip images already proxified with images.hive.blog
-  if (url.indexOf('https://images.hive.blog/') === 0 && url.indexOf('https://images.hive.blog/D') !== 0) {
-    return url.replace('https://images.hive.blog', proxyBase)
-  }
-
-  if (url.indexOf('https://steemitimages.com/') === 0 && url.indexOf('https://steemitimages.com/D') !== 0) {
-    return url.replace('https://steemitimages.com', proxyBase)
+  // Legacy sized proxy URLs (`images.hive.blog/<WxH>/<inner>`, same for
+  // steemitimages). The bare hostname swap keeps them on our own domain but
+  // lands on the direct-serve route, which the imagehoster answers with a 301
+  // to the /p/ form — so a displayed image pays an extra round trip AND loses
+  // the width we asked for, because the redirect target carries no width
+  // (measured: swap -> 301 -> 1,670-byte full-size variant in 296ms, vs 1,271
+  // bytes in 84ms going straight to /p/ at width=600).
+  //
+  // So keep the swap only when nothing is being requested of the proxy (OG and
+  // social images, where the original format is safest). Once a transform or
+  // format negotiation is wanted, fall through: getLatestUrl() unwraps the
+  // nested source URL, so the image is fetched from its origin through our own
+  // /p/ route in one hop, resized, and format-negotiated.
+  if (isLegacySizedProxyUrl(url) && !routeThroughProxy) {
+    return url
+      .replace('https://images.hive.blog', proxyBase)
+      .replace('https://steemitimages.com', proxyBase)
   }
 
   // Legacy on-chain content embeds images.ecency.com URLs directly. With no
@@ -294,6 +320,18 @@ export function isPictureEligibleRawUrl(rawUrl?: string): boolean {
     return false;
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+
+  // Legacy sized-proxy URLs now reach the /p/ route (see proxifyForFormat), so a
+  // format CAN be pinned for them. Their path hides the original extension, but
+  // that no longer decides anything: an animated source is returned untouched
+  // whatever format is requested (verified on a live 44-frame gif — match, avif
+  // and webp all return the same 1,001,718 bytes), and an SVG is already
+  // rasterised by the /p/ route under format=match (verified: match and avif
+  // return byte-identical output). So a pinned <source> cannot change what the
+  // reader sees. These are ~5% of in-body images overall but cluster in
+  // photo-heavy posts, where a big image is usually the LCP element.
+  if (isLegacySizedProxyUrl(rawUrl)) return true;
+
   const host = `${u.protocol}//${u.host}`;
   const isProxyHost = host === proxyBase || host === 'https://images.ecency.com';
   if (
