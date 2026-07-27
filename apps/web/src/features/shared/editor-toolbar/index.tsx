@@ -37,7 +37,7 @@ import { linkSvg } from "@ui/svg";
 interface Props {
   sm?: boolean;
   comment: boolean;
-  onVideoUploaded?: (embedUrl: string) => void;
+  onVideoUploaded?: (embedUrl: string, thumbnailUrl?: string) => void;
   onAddPoll?: (poll: PollSnapshot) => void;
   existingPoll?: PollSnapshot;
   onDeletePoll?: () => void;
@@ -624,7 +624,9 @@ export function EditorToolbar({
                 <VideoUpload
                   show={showVideoUpload}
                   setShow={(v) => setShowVideoUpload(v)}
-                  onVideoUploaded={(embedUrl) => onVideoUploaded(embedUrl)}
+                  onVideoUploaded={(embedUrl, thumbnailUrl) =>
+                    onVideoUploaded(embedUrl, thumbnailUrl)
+                  }
                 />
               </button>
             </Tooltip>
