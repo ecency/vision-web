@@ -200,7 +200,11 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
 
     const handleLoaded = () => {
       if (abortController.signal.aborted) return;
-      video.currentTime = Math.max(0.1, Math.min(1, video.duration * 0.25));
+      // Seek 25% in, past intros and black opening frames. The previous clamp capped this
+      // at 1s, so anything longer than 4s always grabbed a frame from the very start.
+      const { duration } = video;
+      video.currentTime =
+        Number.isFinite(duration) && duration > 0 ? Math.max(0.1, duration * 0.25) : 1;
     };
 
     video.addEventListener("seeked", handleSeeked, { once: true });

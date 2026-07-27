@@ -78,6 +78,9 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
   const [tags, setTags] = useState<string[]>([]);
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const [selectedThumbnail, setSelectedThumbnail] = useState<string>();
+  // Thumbnails extracted from uploaded 3Speak videos. Held separately because they are not
+  // present in the body, so the body driven recompute below cannot rediscover them.
+  const [videoThumbnails, setVideoThumbnails] = useState<string[]>([]);
   const [preview, setPreview] = useState<PostBase>({
     title: "",
     tags: [],
@@ -266,16 +269,17 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
 
   useEffect(() => {
     // Whenever body changed then need to re-validate thumbnails
-    const { thumbnails: mergedThumbnails } = extractMetaData(body, editingEntry?.json_metadata ?? {});
-    setThumbnails(mergedThumbnails ?? []);
+    const { thumbnails: extracted } = extractMetaData(body, editingEntry?.json_metadata ?? {});
+    const mergedThumbnails = Array.from(new Set([...(extracted ?? []), ...videoThumbnails]));
+    setThumbnails(mergedThumbnails);
 
     // In case of thumbnail isn't part of the thumbnails then should be reset to first one
-    if (!selectedThumbnail || !mergedThumbnails?.includes(selectedThumbnail)) {
-      setSelectedThumbnail(mergedThumbnails?.[0]);
+    if (!selectedThumbnail || !mergedThumbnails.includes(selectedThumbnail)) {
+      setSelectedThumbnail(mergedThumbnails[0]);
     }
 
     setIsDraftEmpty(!Boolean(title?.length || tags?.length || body?.length));
-  }, [body, selectedThumbnail]);
+  }, [body, selectedThumbnail, videoThumbnails]);
 
   useEffect(() => {
     if (searchParams && typeof searchParams?.cat === "string" && searchParams.cat.length > 0) {
@@ -302,6 +306,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     setSupportEcencySettled(false);
     setSelectedThumbnail(undefined);
     setThumbnails([]);
+    setVideoThumbnails([]);
     clearActivePoll();
   };
 
@@ -390,8 +395,13 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
             onVideoUploaded={
               editingEntry || hasThreeSpeakEmbed(body)
                 ? undefined
-                : (embedUrl) => {
+                : (embedUrl, thumbnailUrl) => {
                     setBody(`${body}\n${embedUrl}`);
+                    if (thumbnailUrl) {
+                      setVideoThumbnails((prev) =>
+                        prev.includes(thumbnailUrl) ? prev : [...prev, thumbnailUrl]
+                      );
+                    }
                   }
             }
             onAddPoll={(v) => setActivePoll(v)}
