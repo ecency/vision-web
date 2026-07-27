@@ -117,7 +117,9 @@ export const NotificationListItem = memo(function NotificationListItem({
       target={openLinksInNewTab ? "_blank" : undefined}
     >
       <span className="source-name">@{notification.source}</span>
-      <ProBadge username={notification.source} className="ml-1" />
+      {/* mr, not ml: .source-name already carries the leading gap, and the action text
+          ("reblogged", "replied", ...) follows immediately with no margin of its own. */}
+      <ProBadge username={notification.source} className="mr-1" />
     </ProfileLink>
   );
 

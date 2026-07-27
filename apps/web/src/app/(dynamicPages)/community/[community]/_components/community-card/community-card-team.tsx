@@ -26,7 +26,8 @@ export function CommunityCardTeam({ community, toggleInfo }: Props) {
             <ProfileLink username={m[0]}>
               <span className="username">{`@${m[0]}`}</span>
             </ProfileLink>
-            <ProBadge username={m[0]} className="ml-1" />
+            {/* .username carries the leading gap; the role label that follows has none. */}
+            <ProBadge username={m[0]} className="mr-1" />
             <span className="role">{m[1]}</span>
             {m[2] !== "" && <span className="extra">{m[2]}</span>}
           </div>
