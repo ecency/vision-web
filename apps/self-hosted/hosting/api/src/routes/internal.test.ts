@@ -224,6 +224,7 @@ describe('internal endpoint audit trail', () => {
         amountUsd: 24,
         plan: 'standard',
         duplicate: false,
+        published: true,
         rail: 'card',
       },
       ipAddress: '10.0.0.2',
@@ -231,13 +232,33 @@ describe('internal endpoint audit trail', () => {
     });
   });
 
-  it('does not record an activation that failed to publish', async () => {
+  it('records a committed activation whose config failed to publish', async () => {
     mocks.generateConfigFile.mockRejectedValueOnce(new Error('disk unavailable'));
 
     const response = await post('/activate', activateBody);
 
+    // The transaction has committed - the tenant is active and the order is recorded - so the
+    // event must exist even though the caller gets a retryable 500 and may never come back.
     expect(response.status).toBe(500);
-    expect(mocks.auditLog).not.toHaveBeenCalled();
+    expect(mocks.auditLog).toHaveBeenCalledTimes(1);
+    expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({
+      tenantId: 'tenant-1',
+      eventType: 'tenant.activated',
+      eventData: { orderId: 'order-1', published: false, publishError: 'disk unavailable' },
+    });
+  });
+
+  it('records a committed activation whose tenant could not be reloaded', async () => {
+    mocks.getByUsername.mockResolvedValueOnce(null);
+
+    const response = await post('/activate', activateBody);
+
+    expect(response.status).toBe(500);
+    expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({
+      tenantId: 'tenant-1',
+      eventType: 'tenant.activated',
+      eventData: { published: false, tenantStatus: null },
+    });
   });
 
   it.each([
@@ -308,6 +329,23 @@ describe('internal endpoint audit trail', () => {
       eventType: 'domain.added',
       eventData: { domain: 'blog.example.com', username: 'alice', via: 'internal' },
     });
+
+    // setCustomDomain has committed (and cleared the verified flag) before the verification record
+    // is created, so a failure there must not cost the event describing that change.
+    mocks.auditLog.mockReset();
+    mocks.getByUsername.mockResolvedValueOnce({
+      id: 'tenant-1',
+      username: 'alice',
+      subscriptionPlan: 'pro',
+    });
+    mocks.createVerification.mockRejectedValueOnce(new Error('verification insert failed'));
+
+    await Promise.resolve(
+      post('/domain', { username: 'alice', domain: 'blog.example.com' })
+    ).catch(() => undefined);
+
+    expect(mocks.auditLog).toHaveBeenCalledTimes(1);
+    expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({ eventType: 'domain.added' });
   });
 
   it('records a domain verification before the bookkeeping that could strand it', async () => {

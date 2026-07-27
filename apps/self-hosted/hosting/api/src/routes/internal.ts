@@ -15,7 +15,7 @@ import {
 import { DomainService } from '../services/domain-service';
 import { ConfigService } from '../services/config-service';
 import { AuditService, parseClientIp } from '../services/audit-service';
-import { mapTenantFromDb } from '../types';
+import { mapTenantFromDb, type Tenant } from '../types';
 import { addVerifiedDomainOrigin } from '../utils/cors-domains';
 
 export const internalRoutes = new Hono();
@@ -220,19 +220,28 @@ internalRoutes.post('/activate', async (c) => {
     // active duplicate also retries config publication (the first response may have failed here),
     // while an expired/suspended duplicate is already-processed history and remains idempotently
     // acknowledgeable without reactivating or extending it.
-    const tenant = await TenantService.getByUsername(username);
-    if (!tenant) {
-      throw new Error(`Activated tenant ${username} is not available for config generation`);
-    }
-    if (tenant.subscriptionStatus === 'active') {
-      await ConfigService.generateConfigFile(tenant);
-    } else if (!result.duplicate) {
-      throw new Error(`Activated tenant ${username} is not active for config generation`);
+    let tenant: Tenant | null = null;
+    let publishError: Error | null = null;
+    try {
+      tenant = await TenantService.getByUsername(username);
+      if (!tenant) {
+        throw new Error(`Activated tenant ${username} is not available for config generation`);
+      }
+      if (tenant.subscriptionStatus === 'active') {
+        await ConfigService.generateConfigFile(tenant);
+      } else if (!result.duplicate) {
+        throw new Error(`Activated tenant ${username} is not active for config generation`);
+      }
+    } catch (e) {
+      publishError = e as Error;
     }
 
-    // Logged only once the activation is fully delivered (config published), so the trail cannot
-    // claim an activation that the retryable throws above turned into a 500.
-    auditInternal(c, result.tenantId ?? tenant.id, 'tenant.activated', {
+    // The activation transaction is COMMITTED by this point -- the tenant is active and the order
+    // is recorded -- so the event is written whatever publication did, carrying the outcome rather
+    // than being skipped. Skipping it would leave an active, paid tenant with no event at all once
+    // the caller stops retrying, and a later successful retry would log `duplicate: true` at the
+    // retry's timestamp, describing the retry instead of the mutation that actually happened.
+    auditInternal(c, result.tenantId ?? tenant?.id, 'tenant.activated', {
       username,
       payer,
       orderId,
@@ -243,10 +252,18 @@ internalRoutes.post('/activate', async (c) => {
       duplicate: !!result.duplicate,
       // An expired/suspended duplicate is acknowledged without being reactivated, so the event
       // carries the tenant's real status: 'active' means a blog is being served, anything else
-      // means this was a replay acknowledgment that changed nothing.
-      tenantStatus: tenant.subscriptionStatus,
+      // means this was a replay acknowledgment that changed nothing. Null when the reload itself
+      // failed, which is what `published: false` then explains.
+      tenantStatus: tenant?.subscriptionStatus ?? null,
+      published: !publishError,
+      ...(publishError ? { publishError: publishError.message } : {}),
       rail: 'card',
     });
+
+    // Unchanged behaviour: publication failure is still a retryable 500 for the caller.
+    if (publishError) {
+      throw publishError;
+    }
 
     // Echo the tenant's ACTUAL plan so the caller (ePoints) can confirm the Pro tier was honored.
     // Truthful on replays too (the upgrade is idempotent); an older service that ignores `plan`
@@ -300,10 +317,13 @@ internalRoutes.post('/domain', async (c) => {
   }
 
   await TenantService.setCustomDomain(username, domain);
+  // Recorded as soon as the tenant row changes, before the verification record it does not depend
+  // on: setCustomDomain also clears custom_domain_verified, so if createVerification then threw,
+  // the tenant's domain state would have changed with nothing in the trail to say what changed it.
+  auditInternal(c, tenant.id, 'domain.added', { domain, username, via: 'internal' });
+
   await DomainService.createVerification(username, domain);
   const value = `${username}.${baseDomain}`;
-
-  auditInternal(c, tenant.id, 'domain.added', { domain, username, via: 'internal' });
 
   // The record NAME must be the domain itself: verification resolves the domain's CNAME
   // (and serving requires it too). The internal verification token is bookkeeping only;
