@@ -603,6 +603,9 @@ function isValidUrl(url) {
 }
 function isLegacySizedProxyUrl(url) {
   if (!url || typeof url !== "string") return false;
+  return /^https:\/\/(?:images\.hive\.blog|steemitimages\.com)\/\d+x\d+\//.test(url);
+}
+function isLegacyForeignProxyUrl(url) {
   return url.indexOf("https://images.hive.blog/") === 0 && url.indexOf("https://images.hive.blog/D") !== 0 || url.indexOf("https://steemitimages.com/") === 0 && url.indexOf("https://steemitimages.com/D") !== 0;
 }
 function getLatestUrl(str) {
@@ -614,7 +617,7 @@ function proxifyForFormat(url, width = 0, height = 0, format = "match", opts = {
     return "";
   }
   const routeThroughProxy = width > 0 || height > 0 || !!opts.blur || !!opts.forceProxy;
-  if (isLegacySizedProxyUrl(url) && !routeThroughProxy) {
+  if (isLegacyForeignProxyUrl(url) && !(isLegacySizedProxyUrl(url) && routeThroughProxy)) {
     return url.replace("https://images.hive.blog", proxyBase).replace("https://steemitimages.com", proxyBase);
   }
   if (url.indexOf("https://images.ecency.com/") === 0 && !routeThroughProxy) {

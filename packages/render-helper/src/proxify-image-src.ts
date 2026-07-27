@@ -87,15 +87,31 @@ export function isValidUrl(url: string): boolean {
 }
 
 /**
- * A legacy foreign sized-proxy URL: `images.hive.blog/<WxH>/<inner>` or the
- * steemitimages equivalent. Their `/D…` (upload hash) form is NOT included —
- * that one is a plain stored image, not a nested proxy URL.
+ * A legacy foreign SIZED proxy URL: `images.hive.blog/<WxH>/<inner>` or the
+ * steemitimages equivalent — the only shape that carries a nested source URL
+ * for getLatestUrl to unwrap.
+ *
+ * Deliberately narrower than {@link isLegacyForeignProxyUrl}: other non-`/D`
+ * paths on those hosts (notably their own `/p/<hash>` proxy route) name a hash
+ * in a foreign hash space, so routing them through our `/p/` would proxy a
+ * proxy, and their content type is genuinely unknown.
  *
  * Shared by the proxify routing and the `<picture>` eligibility gate so the two
  * cannot disagree about which URLs reach the /p/ route.
  */
 export function isLegacySizedProxyUrl(url?: string): boolean {
   if (!url || typeof url !== 'string') return false
+  return /^https:\/\/(?:images\.hive\.blog|steemitimages\.com)\/\d+x\d+\//.test(url)
+}
+
+/**
+ * Any legacy foreign proxy URL that has historically been served by swapping
+ * the hostname onto our proxy base. Kept broad on purpose — this is the
+ * long-standing behaviour for these hosts and narrowing it is out of scope.
+ * `/D…` (stored upload) URLs are excluded: those go through the normal /p/
+ * path so they can be resized and format-negotiated.
+ */
+function isLegacyForeignProxyUrl(url: string): boolean {
   return (
     (url.indexOf('https://images.hive.blog/') === 0 && url.indexOf('https://images.hive.blog/D') !== 0) ||
     (url.indexOf('https://steemitimages.com/') === 0 && url.indexOf('https://steemitimages.com/D') !== 0)
@@ -162,7 +178,10 @@ function proxifyForFormat(
   // format negotiation is wanted, fall through: getLatestUrl() unwraps the
   // nested source URL, so the image is fetched from its origin through our own
   // /p/ route in one hop, resized, and format-negotiated.
-  if (isLegacySizedProxyUrl(url) && !routeThroughProxy) {
+  // Only the sized `<WxH>/<inner>` shape changes: it falls through to /p/ once
+  // something is actually asked of the proxy. Every other legacy foreign URL
+  // keeps the hostname swap exactly as before, transform or not.
+  if (isLegacyForeignProxyUrl(url) && !(isLegacySizedProxyUrl(url) && routeThroughProxy)) {
     return url
       .replace('https://images.hive.blog', proxyBase)
       .replace('https://steemitimages.com', proxyBase)

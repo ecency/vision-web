@@ -61,9 +61,14 @@ declare function getPostBodySummary(obj: Entry | string, length?: number, platfo
 
 declare function setProxyBase(p: string): void;
 /**
- * A legacy foreign sized-proxy URL: `images.hive.blog/<WxH>/<inner>` or the
- * steemitimages equivalent. Their `/D…` (upload hash) form is NOT included —
- * that one is a plain stored image, not a nested proxy URL.
+ * A legacy foreign SIZED proxy URL: `images.hive.blog/<WxH>/<inner>` or the
+ * steemitimages equivalent — the only shape that carries a nested source URL
+ * for getLatestUrl to unwrap.
+ *
+ * Deliberately narrower than {@link isLegacyForeignProxyUrl}: other non-`/D`
+ * paths on those hosts (notably their own `/p/<hash>` proxy route) name a hash
+ * in a foreign hash space, so routing them through our `/p/` would proxy a
+ * proxy, and their content type is genuinely unknown.
  *
  * Shared by the proxify routing and the `<picture>` eligibility gate so the two
  * cannot disagree about which URLs reach the /p/ route.

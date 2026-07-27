@@ -1,5 +1,5 @@
 import multihash from 'multihashes'
-import { proxifyImageSrc, buildSrcSet, setProxyBase, getLatestUrl, extractPHash, buildSrcSetForFormat, buildPictureSources, isPictureEligibleRawUrl } from './proxify-image-src'
+import { proxifyImageSrc, buildSrcSet, setProxyBase, getLatestUrl, extractPHash, buildSrcSetForFormat, buildPictureSources, isPictureEligibleRawUrl, isLegacySizedProxyUrl } from './proxify-image-src'
 
 describe('getLatestUrl', () => {
   describe('with single proxification', () => {
@@ -363,6 +363,19 @@ describe('picture / per-format helpers (cache-safe content negotiation)', () => 
       expect(r!.webp).toContain('format=webp')
       // the /D upload form is NOT a nested proxy URL and keeps its old handling
       expect(buildPictureSources('https://images.hive.blog/DQmabc/photo.png')).not.toBeNull()
+    })
+    it('leaves NON-sized legacy foreign URLs on the hostname swap, transform or not', () => {
+      // their own /p/<hash> names a foreign hash space — routing it through our
+      // /p/ would proxy a proxy, so this shape keeps its long-standing handling
+      const foreignP = 'https://steemitimages.com/p/B69zEhWZA8UDm9f4vLWvxrdxXd6DUG2Qar42eSi5'
+      expect(isLegacySizedProxyUrl(foreignP)).toBe(false)
+      expect(proxifyImageSrc(foreignP, 600, 500)).toBe(
+        'https://i.ecency.com/p/B69zEhWZA8UDm9f4vLWvxrdxXd6DUG2Qar42eSi5'
+      )
+      expect(buildPictureSources(foreignP)).toBeNull()
+      // and the sized shape is recognised only with a real WxH segment
+      expect(isLegacySizedProxyUrl('https://images.hive.blog/1536x0/https://x.com/a.png')).toBe(true)
+      expect(isLegacySizedProxyUrl('https://images.hive.blog/notsized/https://x.com/a.png')).toBe(false)
     })
     it('keeps the bare hostname swap when nothing is asked of the proxy (OG/social)', () => {
       const og = proxifyImageSrc('https://images.hive.blog/1536x0/https://files.peakd.com/file/x/abc')
