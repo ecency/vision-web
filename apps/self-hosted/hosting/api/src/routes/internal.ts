@@ -222,6 +222,9 @@ internalRoutes.post('/activate', async (c) => {
     // acknowledgeable without reactivating or extending it.
     let tenant: Tenant | null = null;
     let publishError: Error | null = null;
+    // Tri-state, not a boolean: an expired/suspended replay deliberately does not attempt
+    // publication, and "not attempted" must not be recorded as "published".
+    let publication: 'published' | 'skipped' | 'failed' = 'failed';
     try {
       tenant = await TenantService.getByUsername(username);
       if (!tenant) {
@@ -229,11 +232,15 @@ internalRoutes.post('/activate', async (c) => {
       }
       if (tenant.subscriptionStatus === 'active') {
         await ConfigService.generateConfigFile(tenant);
+        publication = 'published';
       } else if (!result.duplicate) {
         throw new Error(`Activated tenant ${username} is not active for config generation`);
+      } else {
+        publication = 'skipped';
       }
     } catch (e) {
       publishError = e as Error;
+      publication = 'failed';
     }
 
     // The activation transaction is COMMITTED by this point -- the tenant is active and the order
@@ -253,9 +260,9 @@ internalRoutes.post('/activate', async (c) => {
       // An expired/suspended duplicate is acknowledged without being reactivated, so the event
       // carries the tenant's real status: 'active' means a blog is being served, anything else
       // means this was a replay acknowledgment that changed nothing. Null when the reload itself
-      // failed, which is what `published: false` then explains.
+      // failed, which is what `publication: 'failed'` then explains.
       tenantStatus: tenant?.subscriptionStatus ?? null,
-      published: !publishError,
+      publication,
       ...(publishError ? { publishError: publishError.message } : {}),
       rail: 'card',
     });

@@ -224,7 +224,7 @@ describe('internal endpoint audit trail', () => {
         amountUsd: 24,
         plan: 'standard',
         duplicate: false,
-        published: true,
+        publication: 'published',
         rail: 'card',
       },
       ipAddress: '10.0.0.2',
@@ -244,7 +244,7 @@ describe('internal endpoint audit trail', () => {
     expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({
       tenantId: 'tenant-1',
       eventType: 'tenant.activated',
-      eventData: { orderId: 'order-1', published: false, publishError: 'disk unavailable' },
+      eventData: { orderId: 'order-1', publication: 'failed', publishError: 'disk unavailable' },
     });
   });
 
@@ -257,7 +257,7 @@ describe('internal endpoint audit trail', () => {
     expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({
       tenantId: 'tenant-1',
       eventType: 'tenant.activated',
-      eventData: { published: false, tenantStatus: null },
+      eventData: { publication: 'failed', tenantStatus: null },
     });
   });
 
@@ -308,8 +308,11 @@ describe('internal endpoint audit trail', () => {
 
     expect(response.status).toBe(200);
     expect(mocks.generateConfigFile).not.toHaveBeenCalled();
+    // Publication was deliberately not attempted, which is a third outcome: recording it as
+    // published would claim a blog is being served when nothing was written.
     expect(mocks.auditLog.mock.calls[0][0].eventData).toMatchObject({
       duplicate: true,
+      publication: 'skipped',
       tenantStatus: 'expired',
     });
   });
