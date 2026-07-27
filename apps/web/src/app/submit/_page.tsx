@@ -274,9 +274,12 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     // Whenever body changed then need to re-validate thumbnails
     const { thumbnails: extracted } = extractMetaData(body, editingEntry?.json_metadata ?? {});
 
-    // Drop the thumbnail of any video that is no longer embedded in the body
+    // Drop the thumbnail of any video that is no longer embedded in the body. The embed is
+    // inserted on its own line, so match it as a whole token: a substring test would keep a
+    // removed video alive whenever its url is a prefix of the one that replaced it.
+    const bodyTokens = new Set(body.split(/\s+/));
     const activeVideoThumbnails = videoThumbnails
-      .filter(({ embedUrl }) => body.includes(embedUrl))
+      .filter(({ embedUrl }) => bodyTokens.has(embedUrl))
       .map(({ thumbUrl }) => thumbUrl);
 
     // A restored draft loses the in-memory list above, and its video thumbnail cannot be
