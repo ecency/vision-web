@@ -79,8 +79,11 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const [selectedThumbnail, setSelectedThumbnail] = useState<string>();
   // Thumbnails extracted from uploaded 3Speak videos. Held separately because they are not
-  // present in the body, so the body driven recompute below cannot rediscover them.
-  const [videoThumbnails, setVideoThumbnails] = useState<string[]>([]);
+  // present in the body, so the body driven recompute below cannot rediscover them. Keyed by
+  // the embed they belong to, so removing the video also removes its thumbnail.
+  const [videoThumbnails, setVideoThumbnails] = useState<
+    { embedUrl: string; thumbUrl: string }[]
+  >([]);
   const [preview, setPreview] = useState<PostBase>({
     title: "",
     tags: [],
@@ -270,7 +273,20 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
   useEffect(() => {
     // Whenever body changed then need to re-validate thumbnails
     const { thumbnails: extracted } = extractMetaData(body, editingEntry?.json_metadata ?? {});
-    const mergedThumbnails = Array.from(new Set([...(extracted ?? []), ...videoThumbnails]));
+
+    // Drop the thumbnail of any video that is no longer embedded in the body
+    const activeVideoThumbnails = videoThumbnails
+      .filter(({ embedUrl }) => body.includes(embedUrl))
+      .map(({ thumbUrl }) => thumbUrl);
+
+    // A restored draft loses the in-memory list above, and its video thumbnail cannot be
+    // recovered by parsing the body, so bring it back from the saved metadata for as long
+    // as the video it belongs to is still embedded.
+    const restoredVideoThumbnails = hasThreeSpeakEmbed(body) ? (editingDraft?.meta?.image ?? []) : [];
+
+    const mergedThumbnails = Array.from(
+      new Set([...(extracted ?? []), ...activeVideoThumbnails, ...restoredVideoThumbnails])
+    );
     setThumbnails(mergedThumbnails);
 
     // In case of thumbnail isn't part of the thumbnails then should be reset to first one
@@ -279,7 +295,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     }
 
     setIsDraftEmpty(!Boolean(title?.length || tags?.length || body?.length));
-  }, [body, selectedThumbnail, videoThumbnails]);
+  }, [body, selectedThumbnail, videoThumbnails, editingDraft]);
 
   useEffect(() => {
     if (searchParams && typeof searchParams?.cat === "string" && searchParams.cat.length > 0) {
@@ -399,7 +415,9 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
                     setBody(`${body}\n${embedUrl}`);
                     if (thumbnailUrl) {
                       setVideoThumbnails((prev) =>
-                        prev.includes(thumbnailUrl) ? prev : [...prev, thumbnailUrl]
+                        prev.some((v) => v.embedUrl === embedUrl)
+                          ? prev
+                          : [...prev, { embedUrl, thumbUrl: thumbnailUrl }]
                       );
                     }
                   }
