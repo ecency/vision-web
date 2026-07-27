@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.67
+
+### Patch Changes
+
+- Move the 3Speak beneficiary rule into @ecency/sdk (#1253)
+
 ## 2.3.66
 
 ### Patch Changes
