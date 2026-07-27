@@ -106,6 +106,9 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
   // routes (server components can't otherwise see the path).
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", path);
+  // Layouts cannot read searchParams, so expose the query string too — the feed
+  // layout needs it to tell a cursor archive page (?before=) apart from page 1.
+  requestHeaders.set("x-search", request.nextUrl.search);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   await applyCacheHeaders(request, response, path, event);
   return response;

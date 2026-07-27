@@ -41,7 +41,14 @@ export default async function NotFoundPage() {
             <SentryIssueReporterDialog />
           </div>
         </div>
-        <Image src="/assets/illustration-open-source.png" alt="logo" width={571} height={460} />
+        {/* The only image on the page and its LCP element — don't lazy-load it. */}
+        <Image
+          src="/assets/illustration-open-source.png"
+          alt="logo"
+          width={571}
+          height={460}
+          priority
+        />
       </div>
     </div>
   );

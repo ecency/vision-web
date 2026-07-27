@@ -101,7 +101,12 @@ export function ProfileWalletExternalBanner() {
 
   return (
     <div className="bg-white dark:bg-dark-200 rounded-xl p-3 mb-4 flex flex-col md:flex-row items-center gap-4 lg:gap-6">
-      <Image src="/assets/undraw-digital-currency.svg" alt="" width={300} height={300} />
+      {/* This banner sits at the top of the wallet page and is that page's LCP
+          element in the field. It only mounts once the profile/wallet queries
+          resolve, so the default lazy loading adds an intersection-observer
+          pass on top of that wait (CF RUM: 4.0s p75 resource-load-delay).
+          Fetch it as soon as it mounts instead. */}
+      <Image src="/assets/undraw-digital-currency.svg" alt="" width={300} height={300} priority />
       <div className="flex flex-col items-start gap-2 lg:gap-4 flex-1">
         <h3 className="text-2xl">
           {isMetaMaskUser
