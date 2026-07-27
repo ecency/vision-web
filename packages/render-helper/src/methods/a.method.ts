@@ -24,6 +24,7 @@ import {
   SPOTIFY_REGEX,
   RUMBLE_REGEX,
   BRIGHTEON_REGEX,
+  ODYSEE_WATCH_REGEX,
   DOMParser,
   LOOM_REGEX,
   SECTION_LIST
@@ -557,7 +558,11 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
   const BCmatch = href.match(BITCHUTE_REGEX)
   if (BCmatch && BCmatch[1] && el.textContent.trim() === href) {
     const vid = BCmatch[1]
-    el.setAttribute('class', 'markdown-video-link')
+    // The per-provider modifier class is what the app's stylesheet and the
+    // click-to-play extension both select on. Emitting only the base class left
+    // this anchor unstyled (zero-height, no play icon) and unhandled, so a
+    // posted BitChute link rendered as nothing at all.
+    el.setAttribute('class', 'markdown-video-link markdown-video-link-bitchute')
     el.removeAttribute('href')
 
     const embedSrc = `https://www.bitchute.com/embed/${vid}/`
@@ -575,7 +580,7 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
   if (RBmatch && RBmatch[1] && el.textContent.trim() === href) {
     const vid = RBmatch[1]
     const embedSrc = `https://www.rumble.com/embed/${vid}/?pub=4`
-    el.setAttribute('class', 'markdown-video-link')
+    el.setAttribute('class', 'markdown-video-link markdown-video-link-rumble')
     el.removeAttribute('href')
 
     el.textContent = ''
@@ -590,7 +595,26 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
   if (BNmatch && BNmatch[2] && el.textContent.trim() === href) {
     const vid = BNmatch[2]
     const embedSrc = `https://www.brighteon.com/embed/${vid}`
-    el.setAttribute('class', 'markdown-video-link')
+    el.setAttribute('class', 'markdown-video-link markdown-video-link-brighteon')
+    el.removeAttribute('href')
+
+    el.textContent = ''
+    el.setAttribute('data-embed-src', embedSrc)
+    const play = el.ownerDocument.createElement('span')
+    play.setAttribute('class', 'markdown-video-play')
+    el.appendChild(play)
+    return
+  }
+
+  // Odysee watch links. Odysee mirrors the watch path under /$/embed/, so a
+  // posted video URL maps to a playable embed with no network lookup. Unlike
+  // YouTube there is no synchronously-derivable thumbnail (Odysee's is behind an
+  // oEmbed call), so this renders the play-button placeholder over the standard
+  // 16:9 box; the embed itself loads on click.
+  const ODmatch = href.match(ODYSEE_WATCH_REGEX)
+  if (ODmatch && ODmatch[1] && el.textContent.trim() === href) {
+    const embedSrc = `https://odysee.com/$/embed/${ODmatch[1]}`
+    el.setAttribute('class', 'markdown-video-link markdown-video-link-odysee')
     el.removeAttribute('href')
 
     el.textContent = ''

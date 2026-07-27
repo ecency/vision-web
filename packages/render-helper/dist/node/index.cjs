@@ -105,6 +105,7 @@ var DAPPLR_REGEX = /^(https?:)?\/\/[a-z]*\.dapplr\.in\/file\/dapplr-videos\/.*/i
 var TRUVVL_REGEX = /^https?:\/\/embed\.truvvl\.com\/(@[\w.\d-]+)\/(.*)/i;
 var LBRY_REGEX = /^(https?:)?\/\/lbry\.tv\/\$\/embed\/[^?#]+(?:$|[?#])/i;
 var ODYSEE_REGEX = /^(https?:)?\/\/odysee\.com\/(?:\$|%24)\/embed\/[^?#]+(?:$|[?#])/i;
+var ODYSEE_WATCH_REGEX = /^(?:https?:)?\/\/odysee\.com\/(@[^/?#\s:"'<>\\]+:[^/?#\s:"'<>\\]+\/[^/?#\s:"'<>\\]+:[^/?#\s:"'<>\\]+|[^@/?#\s:"'<>\\][^/?#\s:"'<>\\]*:[^/?#\s:"'<>\\]+)(?:$|[?#])/i;
 var SKATEHIVE_IPFS_REGEX = /^https?:\/\/ipfs\.skatehive\.app\/ipfs\/([^/?#]+)/i;
 var SKATEHYPE_EMBED_REGEX = /^(https?:)?\/\/(www\.)?skatehype\.com\/ifplay\.php\?v=\d+(?:$|[&#])/i;
 var ARCH_REGEX = /^(https?:)?\/\/archive\.org\/embed\/[^/?#]+(?:$|[?#])/i;
@@ -278,7 +279,13 @@ var EMBED_HOST_PATH_PATTERNS = {
   "www.rumble.com": /^\/embed\//,
   "rumble.com": /^\/embed\//,
   "www.brighteon.com": /^\/embed\//,
-  "brighteon.com": /^\/embed\//
+  "brighteon.com": /^\/embed\//,
+  // Odysee's embed route is /$/embed/<claim path>. Both the literal `$` and its
+  // percent-encoded spelling occur in the wild: the renderer emits the literal
+  // form, while Odysee's own share dialog hands out fully-encoded URLs, and
+  // `URL.pathname` does not decode either. ODYSEE_REGEX accepts both for the
+  // same reason.
+  "odysee.com": /^\/(?:\$|%24)\/embed\//
 };
 function isAllowedEmbedSrc(value) {
   if (!value) return false;
@@ -1221,7 +1228,7 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   const BCmatch = href.match(BITCHUTE_REGEX);
   if (BCmatch && BCmatch[1] && el.textContent.trim() === href) {
     const vid = BCmatch[1];
-    el.setAttribute("class", "markdown-video-link");
+    el.setAttribute("class", "markdown-video-link markdown-video-link-bitchute");
     el.removeAttribute("href");
     const embedSrc = `https://www.bitchute.com/embed/${vid}/`;
     el.textContent = "";
@@ -1235,7 +1242,7 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   if (RBmatch && RBmatch[1] && el.textContent.trim() === href) {
     const vid = RBmatch[1];
     const embedSrc = `https://www.rumble.com/embed/${vid}/?pub=4`;
-    el.setAttribute("class", "markdown-video-link");
+    el.setAttribute("class", "markdown-video-link markdown-video-link-rumble");
     el.removeAttribute("href");
     el.textContent = "";
     el.setAttribute("data-embed-src", embedSrc);
@@ -1248,7 +1255,19 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   if (BNmatch && BNmatch[2] && el.textContent.trim() === href) {
     const vid = BNmatch[2];
     const embedSrc = `https://www.brighteon.com/embed/${vid}`;
-    el.setAttribute("class", "markdown-video-link");
+    el.setAttribute("class", "markdown-video-link markdown-video-link-brighteon");
+    el.removeAttribute("href");
+    el.textContent = "";
+    el.setAttribute("data-embed-src", embedSrc);
+    const play = el.ownerDocument.createElement("span");
+    play.setAttribute("class", "markdown-video-play");
+    el.appendChild(play);
+    return;
+  }
+  const ODmatch = href.match(ODYSEE_WATCH_REGEX);
+  if (ODmatch && ODmatch[1] && el.textContent.trim() === href) {
+    const embedSrc = `https://odysee.com/$/embed/${ODmatch[1]}`;
+    el.setAttribute("class", "markdown-video-link markdown-video-link-odysee");
     el.removeAttribute("href");
     el.textContent = "";
     el.setAttribute("data-embed-src", embedSrc);

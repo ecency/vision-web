@@ -89,7 +89,13 @@ const EMBED_HOST_PATH_PATTERNS: Record<string, RegExp> = {
   'www.rumble.com': /^\/embed\//,
   'rumble.com': /^\/embed\//,
   'www.brighteon.com': /^\/embed\//,
-  'brighteon.com': /^\/embed\//
+  'brighteon.com': /^\/embed\//,
+  // Odysee's embed route is /$/embed/<claim path>. Both the literal `$` and its
+  // percent-encoded spelling occur in the wild: the renderer emits the literal
+  // form, while Odysee's own share dialog hands out fully-encoded URLs, and
+  // `URL.pathname` does not decode either. ODYSEE_REGEX accepts both for the
+  // same reason.
+  'odysee.com': /^\/(?:\$|%24)\/embed\//
 }
 
 /**
