@@ -1,7 +1,7 @@
 import { BeneficiaryRoute } from "@/entities";
 
-const THREESPEAK_ACCOUNT = "threespeakfund";
-const THREESPEAK_WEIGHT = 1100; // 11%
+export const THREESPEAK_ACCOUNT = "threespeakfund";
+export const THREESPEAK_WEIGHT = 1100; // 11%
 
 /**
  * Check if body content contains a 3Speak embed URL.
