@@ -168,10 +168,17 @@ function proxifyForFormat(
   // Legacy sized proxy URLs (`images.hive.blog/<WxH>/<inner>`, same for
   // steemitimages). The bare hostname swap keeps them on our own domain but
   // lands on the direct-serve route, which the imagehoster answers with a 301
-  // to the /p/ form — so a displayed image pays an extra round trip AND loses
-  // the width we asked for, because the redirect target carries no width
-  // (measured: swap -> 301 -> 1,670-byte full-size variant in 296ms, vs 1,271
-  // bytes in 84ms going straight to /p/ at width=600).
+  // to the /p/ form. Two costs: the extra round trip, and the redirect carries
+  // the width baked into the URL path (`.../1536x0/...` -> `width=1536`) rather
+  // than the width the caller asked for — so a 600px thumbnail was served the
+  // 1536px rendition (measured on a real post photo: 17,027 bytes via the
+  // redirect vs 3,316 bytes going straight to /p/ at width=600).
+  //
+  // The redirect target is the hash of the INNER source URL — the imagehoster
+  // unwraps the nested URL itself (verified: its Location header is byte-equal
+  // to the /p/ URL this function now returns). So routing here directly changes
+  // no image identity and no cache entry: if the inner source is gone, both
+  // paths fall back to the same placeholder.
   //
   // So keep the swap only when nothing is being requested of the proxy (OG and
   // social images, where the original format is safest). Once a transform or
