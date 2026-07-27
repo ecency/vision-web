@@ -4,15 +4,19 @@ import { accountReputation } from "@/utils/account-reputation";
 /**
  * Content-moderation signal for SEO/backlink-farm abuse.
  *
- * Brand-new, low-reputation accounts that publish a post carrying an outbound
- * (non-Hive) link are the signature of free-faucet SEO spam. We do not block such
- * posts — we de-emphasize them and flag the outbound link as unverified so the
- * promotional payoff drops to zero (on top of the existing noindex), which is the
+ * Low-reputation accounts that publish a post carrying an outbound (non-Hive) link
+ * are the signature of free-faucet SEO spam. We do not block such posts — we
+ * de-emphasize them and flag the outbound link as unverified so the promotional
+ * payoff drops to zero (on top of the existing noindex), which is the
  * proportionate lever for content that is created *after* signup.
+ *
+ * NOTE: the only input is reputation. Account age is NOT part of this check, so a
+ * years-old account that never earned reputation trips it exactly like a fresh one.
+ * User-facing copy must say "low reputation", never "new account".
  */
 
-// Reputation below this (on the human-readable 0-100 scale) is treated as a
-// new/low-trust account. New Hive accounts start around 25.
+// Reputation below this (on the human-readable 0-100 scale) is treated as
+// low-trust. New Hive accounts start around 25.
 export const LOW_TRUST_REPUTATION_THRESHOLD = 30;
 
 // Hosts that are part of the Hive/Ecency ecosystem — links to these are normal

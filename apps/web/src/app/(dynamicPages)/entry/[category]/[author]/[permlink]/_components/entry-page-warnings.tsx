@@ -17,9 +17,9 @@ export function EntryPageWarnings({ entry }: Props) {
   );
   const isLowReputation =
     !!entry.stats?.gray && entry.net_rshares >= 0 && entry.author_reputation < 0;
-  // New low-reputation account publishing an outbound promo link (SEO/backlink-farm
-  // signature). We warn rather than hide; the outbound link carries no SEO value
-  // (noindex) and the reader is cautioned.
+  // Low-reputation account publishing an outbound promo link (SEO/backlink-farm
+  // signature; reputation only, not account age). We warn rather than hide; the
+  // outbound link carries no SEO value (noindex) and the reader is cautioned.
   const isLowTrust = isLowTrustSeoPost(entry);
 
   return (
