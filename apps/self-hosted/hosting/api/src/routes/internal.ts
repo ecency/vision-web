@@ -5,7 +5,7 @@
  * confused with a customer-facing path.
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { db } from '../db/client';
 import {
   TenantService,
@@ -14,6 +14,7 @@ import {
 } from '../services/tenant-service';
 import { DomainService } from '../services/domain-service';
 import { ConfigService } from '../services/config-service';
+import { AuditService, parseClientIp } from '../services/audit-service';
 import { mapTenantFromDb } from '../types';
 import { addVerifiedDomainOrigin } from '../utils/cors-domains';
 
@@ -25,6 +26,26 @@ const baseDomain = process.env.BASE_DOMAIN || 'blogs.ecency.com';
 const USERNAME_RE = /^[a-z][a-z0-9.-]{2,15}$/;
 // Same domain shape the public /v1/domains route enforces (zod regex, case-insensitive).
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
+
+// Every internal endpoint records its outcome here. These are service-to-service calls with no
+// user session, so without a trail the tenants row is the only trace and it cannot say what asked
+// for the change: a card-paid activation and a free Pro claim leave an identical `active` row, and
+// a denied one leaves nothing at all. Fire-and-forget, exactly like the public routes -- a failed
+// audit insert is logged by AuditService and never fails the operation it describes.
+function auditInternal(
+  c: Context,
+  tenantId: string | null | undefined,
+  eventType: string,
+  eventData: Record<string, unknown>
+): void {
+  void AuditService.log({
+    tenantId: tenantId ?? null,
+    eventType,
+    eventData,
+    ipAddress: parseClientIp(c.req.header('x-forwarded-for')),
+    userAgent: c.req.header('user-agent'),
+  });
+}
 
 // Constant-time check of the shared service-to-service secret (ePoints -> hosting).
 // Fails CLOSED when the secret is unset, so a misconfigured deploy cannot activate blogs.
@@ -75,7 +96,7 @@ internalRoutes.post('/activate', async (c) => {
   }
 
   try {
-    const result = await db.transaction<{ status: 200 | 403 | 404 | 409; duplicate?: boolean; expiresAt?: Date; plan?: string }>(
+    const result = await db.transaction<{ status: 200 | 403 | 404 | 409; tenantId?: string; duplicate?: boolean; expiresAt?: Date; plan?: string }>(
       async (client) => {
         // Lock the tenant row (serializes retries) and confirm it still exists.
         const t = await client.query(
@@ -92,7 +113,7 @@ internalRoutes.post('/activate', async (c) => {
         // activates a tenant different from the payer only for a community the payer owns; anything
         // else (including an empty payer) is refused. Omitted payer (null) means no check.
         if (payer !== null && payer !== tenant.owner) {
-          return { status: 403 };
+          return { status: 403, tenantId: tenant.id };
         }
 
         // Idempotent Pro upgrade for THIS tenant (a standard activation never touches the plan, so
@@ -126,11 +147,11 @@ internalRoutes.post('/activate', async (c) => {
             [orderId]
           );
           if (owner.rows[0]?.tenant_id !== tenant.id) {
-            return { status: 409 };
+            return { status: 409, tenantId: tenant.id };
           }
           // Genuine replay of this tenant's order: re-apply the upgrade idempotently (self-heal
           // after a staggered deploy) without re-extending the term.
-          return { status: 200, duplicate: true, plan: await applyPlan() };
+          return { status: 200, tenantId: tenant.id, duplicate: true, plan: await applyPlan() };
         }
 
         const effectivePlan = await applyPlan();
@@ -158,7 +179,7 @@ internalRoutes.post('/activate', async (c) => {
           `UPDATE payments SET processed_at = NOW(), subscription_extended_to = $2 WHERE trx_id = $1`,
           [orderId, newExpiry]
         );
-        return { status: 200, expiresAt: newExpiry, plan: effectivePlan };
+        return { status: 200, tenantId: tenant.id, expiresAt: newExpiry, plan: effectivePlan };
       }
     );
 
@@ -166,14 +187,32 @@ internalRoutes.post('/activate', async (c) => {
       // The paying account does not own this tenant: terminal for the caller. Distinguished from the
       // secret-misconfig 403 (returned at the top, before any processing) by this error body, which
       // the caller matches to treat ownership denial as terminal.
+      auditInternal(c, result.tenantId, 'tenant.activation_denied', {
+        username,
+        payer,
+        orderId,
+        reason: 'payer_not_owner',
+      });
       return c.json({ error: 'payer_not_owner' }, 403);
     }
     if (result.status === 404) {
+      auditInternal(c, null, 'tenant.activation_denied', {
+        username,
+        payer,
+        orderId,
+        reason: 'tenant_not_found',
+      });
       return c.json({ error: 'tenant_not_found' }, 404);
     }
     if (result.status === 409) {
       // The order id is already recorded against a DIFFERENT tenant -- a collision/misroute.
       // Surface it (the caller treats non-200/404 as retryable + alerts) rather than mutate.
+      auditInternal(c, result.tenantId, 'tenant.activation_denied', {
+        username,
+        payer,
+        orderId,
+        reason: 'order_tenant_mismatch',
+      });
       return c.json({ error: 'order_tenant_mismatch' }, 409);
     }
 
@@ -190,6 +229,20 @@ internalRoutes.post('/activate', async (c) => {
     } else if (!result.duplicate) {
       throw new Error(`Activated tenant ${username} is not active for config generation`);
     }
+
+    // Logged only once the activation is fully delivered (config published), so the trail cannot
+    // claim an activation that the retryable throws above turned into a 500.
+    auditInternal(c, result.tenantId ?? tenant.id, 'tenant.activated', {
+      username,
+      payer,
+      orderId,
+      months,
+      amountUsd,
+      plan: result.plan,
+      requestedPlan: plan,
+      duplicate: !!result.duplicate,
+      rail: 'card',
+    });
 
     // Echo the tenant's ACTUAL plan so the caller (ePoints) can confirm the Pro tier was honored.
     // Truthful on replays too (the upgrade is idempotent); an older service that ignores `plan`
@@ -246,6 +299,8 @@ internalRoutes.post('/domain', async (c) => {
   await DomainService.createVerification(username, domain);
   const value = `${username}.${baseDomain}`;
 
+  auditInternal(c, tenant.id, 'domain.added', { domain, username, via: 'internal' });
+
   // The record NAME must be the domain itself: verification resolves the domain's CNAME
   // (and serving requires it too). The internal verification token is bookkeeping only;
   // surfacing it as the record name produced instructions that could never verify.
@@ -298,6 +353,13 @@ internalRoutes.post('/domain/verify', async (c) => {
   await TenantService.verifyCustomDomain(username);
   await DomainService.markVerified(username, tenant.customDomain);
   addVerifiedDomainOrigin(tenant.customDomain);
+
+  auditInternal(c, tenant.id, 'domain.verified', {
+    domain: tenant.customDomain,
+    username,
+    via: 'internal',
+  });
+
   return c.json({ verified: true }, 200);
 });
 
@@ -405,6 +467,15 @@ internalRoutes.post('/claim-blog', async (c) => {
         console.error(`[internal/claim-blog] config generation failed for ${username}:`, err);
       }
     }
+
+    // A claim that found a live tenant is logged too: it is still a Pro member exercising the perk,
+    // and `created: false` is what distinguishes it from the grant that actually provisioned a blog.
+    auditInternal(c, tenant.id, 'tenant.pro_blog_claimed', {
+      username,
+      created: result.created,
+      plan: tenant.subscriptionPlan,
+      subscriptionStatus: tenant.subscriptionStatus,
+    });
 
     return c.json({
       tenant: {

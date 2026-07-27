@@ -19,7 +19,8 @@ export function FriendListItem({ item }: Props) {
           <ProfileLink username={item.name}>
             <span className="item-name notranslate">{item.name}</span>
           </ProfileLink>
-          <ProBadge username={item.name} className="ml-1" />
+          {/* .item-name carries the leading gap; the reputation pill that follows has none. */}
+          <ProBadge username={item.name} className="mr-1" />
           {item?.reputation !== undefined && (
             <span className="item-reputation">{accountReputation(item.reputation)}</span>
           )}

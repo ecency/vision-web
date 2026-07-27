@@ -77,7 +77,8 @@ export function CommunitySubscribers({ community }: Props) {
                             <ProfileLink username={username}>
                               <span className="item-name notranslate">{username}</span>
                             </ProfileLink>
-                            <ProBadge username={username} className="ml-1" />
+                            {/* .item-name carries the leading gap; the reputation pill that follows has none. */}
+                            <ProBadge username={username} className="mr-1" />
                             {account?.reputation !== undefined && (
                                 <span className="item-reputation">
                           {accountReputation(account.reputation)}
