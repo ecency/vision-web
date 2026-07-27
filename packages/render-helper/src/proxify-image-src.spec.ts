@@ -364,6 +364,25 @@ describe('picture / per-format helpers (cache-safe content negotiation)', () => 
       // the /D upload form is NOT a nested proxy URL and keeps its old handling
       expect(buildPictureSources('https://images.hive.blog/DQmabc/photo.png')).not.toBeNull()
     })
+    it('unwraps the nested source positionally, not by last-URL-in-string', () => {
+      // The nested image carries a URL-valued query parameter. Picking the last
+      // http(s):// substring would resolve to example.com instead of the image.
+      const u = 'https://images.hive.blog/60x70/http://hivebuzz.me/image.png?redirect=https://example.com/other.png'
+      const decoyHash = proxifyImageSrc('https://example.com/other.png', 60, 70).split('/p/')[1].split('?')[0]
+      const got = proxifyImageSrc(u, 60, 70).split('/p/')[1].split('?')[0]
+      expect(got).not.toBe(decoyHash)
+      // byte-equal to what the imagehoster's own legacy handler redirects to:
+      // it parses the path segment and re-attaches the query via searchParams,
+      // which percent-encodes the URL-valued value before base58 encoding.
+      expect(got).toBe(
+        '3HaJVvr6qfmnThj2pZ2URy81yA4vPxZ1VESc8MPJBForDhKM22NxfNu7ZkduRBaYGK7SAMimku9EvhR1YxUjtFBJEvpV8z65eJHXXWE'
+      )
+      // and the no-query form still agrees with the same handler
+      expect(
+        proxifyImageSrc('https://images.hive.blog/60x70/http://hivebuzz.me/image.png', 60, 70)
+          .split('/p/')[1].split('?')[0]
+      ).toBe('25K6n8rwZtJgk3dgpkudFuAzYSDbEBTnAgvqHAn')
+    })
     it('leaves NON-sized legacy foreign URLs on the hostname swap, transform or not', () => {
       // their own /p/<hash> names a foreign hash space — routing it through our
       // /p/ would proxy a proxy, so this shape keeps its long-standing handling

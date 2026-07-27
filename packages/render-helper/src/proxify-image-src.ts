@@ -99,9 +99,48 @@ export function isValidUrl(url: string): boolean {
  * Shared by the proxify routing and the `<picture>` eligibility gate so the two
  * cannot disagree about which URLs reach the /p/ route.
  */
+const LEGACY_SIZED_PROXY_RE = /^https:\/\/(?:images\.hive\.blog|steemitimages\.com)\/\d+x\d+\/(.+)$/
+
 export function isLegacySizedProxyUrl(url?: string): boolean {
   if (!url || typeof url !== 'string') return false
-  return /^https:\/\/(?:images\.hive\.blog|steemitimages\.com)\/\d+x\d+\//.test(url)
+  return LEGACY_SIZED_PROXY_RE.test(url)
+}
+
+/**
+ * The nested source of a legacy sized proxy URL — everything after the `<WxH>/`
+ * segment, query string included — or null when the URL is not that shape.
+ *
+ * Positional, not a search for the last `http(s)://`: the nested source may
+ * itself carry a URL-valued query parameter, and picking the last URL in the
+ * string would resolve to that parameter's target instead of the image.
+ *
+ * Normalised exactly the way the imagehoster's legacy handler does it, because
+ * both sides base58-encode this string and any divergence means two different
+ * hashes for the same image: parse the path segment (trailing slashes stripped)
+ * as a URL, then re-attach the query through searchParams — which percent-
+ * encodes a URL-valued parameter — and re-serialise.
+ */
+function extractLegacySizedSource(url: string): string | null {
+  const m = LEGACY_SIZED_PROXY_RE.exec(url)
+  if (!m) return null
+
+  const rest = m[1]
+  const qIndex = rest.indexOf('?')
+  const path = qIndex >= 0 ? rest.slice(0, qIndex) : rest
+  const query = qIndex >= 0 ? rest.slice(qIndex + 1) : ''
+
+  try {
+    const inner = new URL(path.replace(/\/+$/, ''))
+    if (query) {
+      // append, not set: the handler preserves repeated keys
+      for (const [key, value] of new URLSearchParams(query)) {
+        inner.searchParams.append(key, value)
+      }
+    }
+    return inner.toString()
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -206,7 +245,14 @@ function proxifyForFormat(
     return url.replace('https://images.ecency.com', proxyBase)
   }
 
-  const realUrl = getLatestUrl(url)
+  // For a legacy sized URL take everything after the `<WxH>/` segment verbatim.
+  // getLatestUrl() picks the LAST http(s):// substring anywhere in the string,
+  // so a nested source carrying a URL-valued query parameter
+  // (`/60x70/http://host/image.png?redirect=https://other/x.png`) would resolve
+  // to the parameter's URL instead of the image. The imagehoster extracts the
+  // path segment and keeps the query — verified against its Location header —
+  // so match that exactly or the two disagree about which image this is.
+  const realUrl = extractLegacySizedSource(url) ?? getLatestUrl(url)
   const pHash = extractPHash(realUrl)
 
   const options: Record<string, string | number> = {

@@ -629,9 +629,29 @@ function isValidUrl(url) {
     return false;
   }
 }
+var LEGACY_SIZED_PROXY_RE = /^https:\/\/(?:images\.hive\.blog|steemitimages\.com)\/\d+x\d+\/(.+)$/;
 function isLegacySizedProxyUrl(url) {
   if (!url || typeof url !== "string") return false;
-  return /^https:\/\/(?:images\.hive\.blog|steemitimages\.com)\/\d+x\d+\//.test(url);
+  return LEGACY_SIZED_PROXY_RE.test(url);
+}
+function extractLegacySizedSource(url) {
+  const m = LEGACY_SIZED_PROXY_RE.exec(url);
+  if (!m) return null;
+  const rest = m[1];
+  const qIndex = rest.indexOf("?");
+  const path = qIndex >= 0 ? rest.slice(0, qIndex) : rest;
+  const query = qIndex >= 0 ? rest.slice(qIndex + 1) : "";
+  try {
+    const inner = new URL(path.replace(/\/+$/, ""));
+    if (query) {
+      for (const [key, value] of new URLSearchParams(query)) {
+        inner.searchParams.append(key, value);
+      }
+    }
+    return inner.toString();
+  } catch {
+    return null;
+  }
 }
 function isLegacyForeignProxyUrl(url) {
   return url.indexOf("https://images.hive.blog/") === 0 && url.indexOf("https://images.hive.blog/D") !== 0 || url.indexOf("https://steemitimages.com/") === 0 && url.indexOf("https://steemitimages.com/D") !== 0;
@@ -651,7 +671,7 @@ function proxifyForFormat(url, width = 0, height = 0, format = "match", opts = {
   if (url.indexOf("https://images.ecency.com/") === 0 && !routeThroughProxy) {
     return url.replace("https://images.ecency.com", proxyBase);
   }
-  const realUrl = getLatestUrl(url);
+  const realUrl = extractLegacySizedSource(url) ?? getLatestUrl(url);
   const pHash = extractPHash(realUrl);
   const options = {
     format,

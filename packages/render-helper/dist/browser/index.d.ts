@@ -60,19 +60,6 @@ declare function catchPostImage(obj: Entry | string, width?: number, height?: nu
 declare function getPostBodySummary(obj: Entry | string, length?: number, platform?: 'ios' | 'android' | 'web'): string;
 
 declare function setProxyBase(p: string): void;
-/**
- * A legacy foreign SIZED proxy URL: `images.hive.blog/<WxH>/<inner>` or the
- * steemitimages equivalent — the only shape that carries a nested source URL
- * for getLatestUrl to unwrap.
- *
- * Deliberately narrower than {@link isLegacyForeignProxyUrl}: other non-`/D`
- * paths on those hosts (notably their own `/p/<hash>` proxy route) name a hash
- * in a foreign hash space, so routing them through our `/p/` would proxy a
- * proxy, and their content type is genuinely unknown.
- *
- * Shared by the proxify routing and the `<picture>` eligibility gate so the two
- * cannot disagree about which URLs reach the /p/ route.
- */
 declare function isLegacySizedProxyUrl(url?: string): boolean;
 interface ProxifyOptions {
     /**
