@@ -24,6 +24,7 @@ import {
   SPOTIFY_REGEX,
   RUMBLE_REGEX,
   BRIGHTEON_REGEX,
+  ODYSEE_WATCH_REGEX,
   DOMParser,
   LOOM_REGEX,
   SECTION_LIST
@@ -54,6 +55,63 @@ function getExternalLinkRel(seoContext?: SeoContext): string {
     return 'noopener';
   }
   return 'nofollow ugc noopener';
+}
+
+/**
+ * Turns a video link into a player for the providers we cannot derive a
+ * thumbnail for synchronously (BitChute, Rumble, Brighteon, Odysee). YouTube and
+ * 3Speak stay hand-written because each carries provider-specific work (start
+ * time, portrait detection, thumbnail from post metadata).
+ *
+ * The per-provider modifier class matters: both the stylesheet and the
+ * click-to-play extension select on it, so an anchor carrying only the base
+ * class is unstyled (zero height, no play icon) and unhandled — which is why a
+ * posted BitChute link used to render as nothing at all.
+ *
+ * `embedVideosDirectly` (waves feed, self-hosted blog) mounts no client
+ * enhancer, so there a placeholder would stay inert forever; emit a real iframe
+ * instead, mirroring the YouTube branch. It is never autoplayed: a feed
+ * scrolling past several videos that all start at once is disorienting.
+ */
+function renderPlainVideoLink(
+  el: HTMLElement,
+  provider: string,
+  embedSrc: string,
+  renderOptions?: RenderOptions
+): void {
+  const baseClass = `markdown-video-link markdown-video-link-${provider}`
+  // Attribute order below matches what these branches emitted before they were
+  // folded together, so the serialized-output fixtures stay stable.
+  el.setAttribute('class', baseClass)
+  el.removeAttribute('href')
+  el.textContent = ''
+  el.setAttribute('data-embed-src', embedSrc)
+
+  if (renderOptions?.embedVideosDirectly) {
+    const wrapper = el.ownerDocument.createElement('span')
+    wrapper.setAttribute('class', 'er-embed-frame')
+    wrapper.setAttribute('style', 'display:block')
+
+    const frame = el.ownerDocument.createElement('iframe')
+    frame.setAttribute('src', embedSrc)
+    frame.setAttribute('title', 'Video player')
+    frame.setAttribute(
+      'allow',
+      'accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share'
+    )
+    frame.setAttribute('allowfullscreen', '')
+
+    wrapper.appendChild(frame)
+    el.appendChild(wrapper)
+    // `er-embed` marks this as already enhanced so the click-to-play extension
+    // skips it if both paths ever run over the same document.
+    el.setAttribute('class', `${baseClass} er-embed`)
+    return
+  }
+
+  const play = el.ownerDocument.createElement('span')
+  play.setAttribute('class', 'markdown-video-play')
+  el.appendChild(play)
 }
 
 const normalizeValue = (value?: string | null): string => (value ? value.trim() : '')
@@ -556,48 +614,27 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
 
   const BCmatch = href.match(BITCHUTE_REGEX)
   if (BCmatch && BCmatch[1] && el.textContent.trim() === href) {
-    const vid = BCmatch[1]
-    el.setAttribute('class', 'markdown-video-link')
-    el.removeAttribute('href')
-
-    const embedSrc = `https://www.bitchute.com/embed/${vid}/`
-
-    el.textContent = ''
-
-    el.setAttribute('data-embed-src', embedSrc)
-    const play = el.ownerDocument.createElement('span')
-    play.setAttribute('class', 'markdown-video-play')
-    el.appendChild(play)
+    renderPlainVideoLink(el, 'bitchute', `https://www.bitchute.com/embed/${BCmatch[1]}/`, renderOptions)
     return
   }
 
   const RBmatch = href.match(RUMBLE_REGEX)
   if (RBmatch && RBmatch[1] && el.textContent.trim() === href) {
-    const vid = RBmatch[1]
-    const embedSrc = `https://www.rumble.com/embed/${vid}/?pub=4`
-    el.setAttribute('class', 'markdown-video-link')
-    el.removeAttribute('href')
-
-    el.textContent = ''
-    el.setAttribute('data-embed-src', embedSrc)
-    const play = el.ownerDocument.createElement('span')
-    play.setAttribute('class', 'markdown-video-play')
-    el.appendChild(play)
+    renderPlainVideoLink(el, 'rumble', `https://www.rumble.com/embed/${RBmatch[1]}/?pub=4`, renderOptions)
     return
   }
 
   const BNmatch = href.match(BRIGHTEON_REGEX)
   if (BNmatch && BNmatch[2] && el.textContent.trim() === href) {
-    const vid = BNmatch[2]
-    const embedSrc = `https://www.brighteon.com/embed/${vid}`
-    el.setAttribute('class', 'markdown-video-link')
-    el.removeAttribute('href')
+    renderPlainVideoLink(el, 'brighteon', `https://www.brighteon.com/embed/${BNmatch[2]}`, renderOptions)
+    return
+  }
 
-    el.textContent = ''
-    el.setAttribute('data-embed-src', embedSrc)
-    const play = el.ownerDocument.createElement('span')
-    play.setAttribute('class', 'markdown-video-play')
-    el.appendChild(play)
+  // Odysee watch links. Odysee mirrors the watch path under /$/embed/, so a
+  // posted video URL maps to a playable embed with no network lookup.
+  const ODmatch = href.match(ODYSEE_WATCH_REGEX)
+  if (ODmatch && ODmatch[1] && el.textContent.trim() === href) {
+    renderPlainVideoLink(el, 'odysee', `https://odysee.com/$/embed/${ODmatch[1]}`, renderOptions)
     return
   }
 

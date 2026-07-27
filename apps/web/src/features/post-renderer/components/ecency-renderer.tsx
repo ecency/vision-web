@@ -6,6 +6,7 @@ import type { RenderOptions, SeoContext } from "@ecency/render-helper";
 import { clsx } from "clsx";
 import "../ecency-renderer.scss";
 import {
+  EmbedVideoExtension,
   HiveOperationExtension,
   HivePostLinkExtension,
   ImageZoomExtension,
@@ -90,6 +91,7 @@ export function EcencyRenderer({
             <>
               <YoutubeVideoExtension containerRef={ref} />
               <ThreeSpeakVideoExtension containerRef={ref} images={images} />
+              <EmbedVideoExtension containerRef={ref} body={value} />
             </>
           )}
           <WaveLikePostExtension containerRef={ref} embedDepth={embedDepth} />

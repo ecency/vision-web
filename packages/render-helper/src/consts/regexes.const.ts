@@ -43,6 +43,23 @@ export const DAPPLR_REGEX = /^(https?:)?\/\/[a-z]*\.dapplr\.in\/file\/dapplr-vid
 export const TRUVVL_REGEX = /^https?:\/\/embed\.truvvl\.com\/(@[\w.\d-]+)\/(.*)/i
 export const LBRY_REGEX = /^(https?:)?\/\/lbry\.tv\/\$\/embed\/[^?#]+(?:$|[?#])/i
 export const ODYSEE_REGEX = /^(https?:)?\/\/odysee\.com\/(?:\$|%24)\/embed\/[^?#]+(?:$|[?#])/i
+// Odysee "watch" URLs — the canonical form a user copies from the address bar,
+// e.g. https://odysee.com/@channel:2/video-title:e (or https://odysee.com/video-title:e
+// for a claim posted outside a channel). Odysee's embed route mirrors the watch
+// path (/$/embed/<path>), so the mapping is deterministic and needs no network
+// lookup; capture group 1 is that path.
+//
+// Two alternatives rather than one optional-channel form, because the collapsed
+// version also matches a bare channel page (/@channel:2), which is not a video.
+// The first alternative requires both segments; the second forbids a leading `@`.
+// Special routes (/$/embed, /$/download, and their %24 spellings) are excluded
+// for free: their first segment carries no `:`.
+// Each segment class excludes the URL structural characters plus quote/angle/
+// backslash, so a captured path can never break out of the attribute it is
+// written into, and excludes `:` so the `+` cannot exchange characters with the
+// following separator (keeps matching linear).
+export const ODYSEE_WATCH_REGEX =
+  /^(?:https?:)?\/\/odysee\.com\/(@[^/?#\s:"'<>\\]+:[^/?#\s:"'<>\\]+\/[^/?#\s:"'<>\\]+:[^/?#\s:"'<>\\]+|[^@/?#\s:"'<>\\][^/?#\s:"'<>\\]*:[^/?#\s:"'<>\\]+)(?:$|[?#])/i
 export const SKATEHIVE_IPFS_REGEX = /^https?:\/\/ipfs\.skatehive\.app\/ipfs\/([^/?#]+)/i
 export const SKATEHYPE_EMBED_REGEX = /^(https?:)?\/\/(www\.)?skatehype\.com\/ifplay\.php\?v=\d+(?:$|[&#])/i
 export const ARCH_REGEX = /^(https?:)?\/\/archive\.org\/embed\/[^/?#]+(?:$|[?#])/i

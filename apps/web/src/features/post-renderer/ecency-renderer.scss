@@ -380,6 +380,7 @@ $xxxl-break: "1600px";
   .markdown-video-link-bitchute,
   .markdown-video-link-rumble,
   .markdown-video-link-brighteon,
+  .markdown-video-link-odysee,
   .markdown-video-link-dtube {
     position: relative;
     display: block;
@@ -398,7 +399,8 @@ $xxxl-break: "1600px";
     .video-thumbnail,
     .markdown-video-play,
     .er-youtube-frame,
-    .er-speak-frame {
+    .er-speak-frame,
+    .er-embed-frame {
       position: absolute;
       top: 0;
       left: 0;
@@ -422,7 +424,8 @@ $xxxl-break: "1600px";
     }
 
     .er-youtube-frame,
-    .er-speak-frame {
+    .er-speak-frame,
+    .er-embed-frame {
       z-index: 3; // On top when video plays
       display: block;
       margin: 0;

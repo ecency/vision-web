@@ -105,6 +105,7 @@ var DAPPLR_REGEX = /^(https?:)?\/\/[a-z]*\.dapplr\.in\/file\/dapplr-videos\/.*/i
 var TRUVVL_REGEX = /^https?:\/\/embed\.truvvl\.com\/(@[\w.\d-]+)\/(.*)/i;
 var LBRY_REGEX = /^(https?:)?\/\/lbry\.tv\/\$\/embed\/[^?#]+(?:$|[?#])/i;
 var ODYSEE_REGEX = /^(https?:)?\/\/odysee\.com\/(?:\$|%24)\/embed\/[^?#]+(?:$|[?#])/i;
+var ODYSEE_WATCH_REGEX = /^(?:https?:)?\/\/odysee\.com\/(@[^/?#\s:"'<>\\]+:[^/?#\s:"'<>\\]+\/[^/?#\s:"'<>\\]+:[^/?#\s:"'<>\\]+|[^@/?#\s:"'<>\\][^/?#\s:"'<>\\]*:[^/?#\s:"'<>\\]+)(?:$|[?#])/i;
 var SKATEHIVE_IPFS_REGEX = /^https?:\/\/ipfs\.skatehive\.app\/ipfs\/([^/?#]+)/i;
 var SKATEHYPE_EMBED_REGEX = /^(https?:)?\/\/(www\.)?skatehype\.com\/ifplay\.php\?v=\d+(?:$|[&#])/i;
 var ARCH_REGEX = /^(https?:)?\/\/archive\.org\/embed\/[^/?#]+(?:$|[?#])/i;
@@ -278,7 +279,13 @@ var EMBED_HOST_PATH_PATTERNS = {
   "www.rumble.com": /^\/embed\//,
   "rumble.com": /^\/embed\//,
   "www.brighteon.com": /^\/embed\//,
-  "brighteon.com": /^\/embed\//
+  "brighteon.com": /^\/embed\//,
+  // Odysee's embed route is /$/embed/<claim path>. Both the literal `$` and its
+  // percent-encoded spelling occur in the wild: the renderer emits the literal
+  // form, while Odysee's own share dialog hands out fully-encoded URLs, and
+  // `URL.pathname` does not decode either. ODYSEE_REGEX accepts both for the
+  // same reason.
+  "odysee.com": /^\/(?:\$|%24)\/embed\//
 };
 function isAllowedEmbedSrc(value) {
   if (!value) return false;
@@ -882,6 +889,33 @@ function getExternalLinkRel(seoContext) {
   }
   return "nofollow ugc noopener";
 }
+function renderPlainVideoLink(el, provider, embedSrc, renderOptions) {
+  const baseClass = `markdown-video-link markdown-video-link-${provider}`;
+  el.setAttribute("class", baseClass);
+  el.removeAttribute("href");
+  el.textContent = "";
+  el.setAttribute("data-embed-src", embedSrc);
+  if (renderOptions?.embedVideosDirectly) {
+    const wrapper = el.ownerDocument.createElement("span");
+    wrapper.setAttribute("class", "er-embed-frame");
+    wrapper.setAttribute("style", "display:block");
+    const frame = el.ownerDocument.createElement("iframe");
+    frame.setAttribute("src", embedSrc);
+    frame.setAttribute("title", "Video player");
+    frame.setAttribute(
+      "allow",
+      "accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share"
+    );
+    frame.setAttribute("allowfullscreen", "");
+    wrapper.appendChild(frame);
+    el.appendChild(wrapper);
+    el.setAttribute("class", `${baseClass} er-embed`);
+    return;
+  }
+  const play = el.ownerDocument.createElement("span");
+  play.setAttribute("class", "markdown-video-play");
+  el.appendChild(play);
+}
 var normalizeValue = (value) => value ? value.trim() : "";
 var matchesHref = (href, value) => {
   const normalizedHref = normalizeValue(href);
@@ -1220,41 +1254,22 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   }
   const BCmatch = href.match(BITCHUTE_REGEX);
   if (BCmatch && BCmatch[1] && el.textContent.trim() === href) {
-    const vid = BCmatch[1];
-    el.setAttribute("class", "markdown-video-link");
-    el.removeAttribute("href");
-    const embedSrc = `https://www.bitchute.com/embed/${vid}/`;
-    el.textContent = "";
-    el.setAttribute("data-embed-src", embedSrc);
-    const play = el.ownerDocument.createElement("span");
-    play.setAttribute("class", "markdown-video-play");
-    el.appendChild(play);
+    renderPlainVideoLink(el, "bitchute", `https://www.bitchute.com/embed/${BCmatch[1]}/`, renderOptions);
     return;
   }
   const RBmatch = href.match(RUMBLE_REGEX);
   if (RBmatch && RBmatch[1] && el.textContent.trim() === href) {
-    const vid = RBmatch[1];
-    const embedSrc = `https://www.rumble.com/embed/${vid}/?pub=4`;
-    el.setAttribute("class", "markdown-video-link");
-    el.removeAttribute("href");
-    el.textContent = "";
-    el.setAttribute("data-embed-src", embedSrc);
-    const play = el.ownerDocument.createElement("span");
-    play.setAttribute("class", "markdown-video-play");
-    el.appendChild(play);
+    renderPlainVideoLink(el, "rumble", `https://www.rumble.com/embed/${RBmatch[1]}/?pub=4`, renderOptions);
     return;
   }
   const BNmatch = href.match(BRIGHTEON_REGEX);
   if (BNmatch && BNmatch[2] && el.textContent.trim() === href) {
-    const vid = BNmatch[2];
-    const embedSrc = `https://www.brighteon.com/embed/${vid}`;
-    el.setAttribute("class", "markdown-video-link");
-    el.removeAttribute("href");
-    el.textContent = "";
-    el.setAttribute("data-embed-src", embedSrc);
-    const play = el.ownerDocument.createElement("span");
-    play.setAttribute("class", "markdown-video-play");
-    el.appendChild(play);
+    renderPlainVideoLink(el, "brighteon", `https://www.brighteon.com/embed/${BNmatch[2]}`, renderOptions);
+    return;
+  }
+  const ODmatch = href.match(ODYSEE_WATCH_REGEX);
+  if (ODmatch && ODmatch[1] && el.textContent.trim() === href) {
+    renderPlainVideoLink(el, "odysee", `https://odysee.com/$/embed/${ODmatch[1]}`, renderOptions);
     return;
   }
   let match = href.match(YOUTUBE_REGEX);

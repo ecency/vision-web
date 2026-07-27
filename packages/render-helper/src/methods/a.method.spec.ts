@@ -1366,6 +1366,185 @@ describe('a() method - Link Processing', () => {
         expect(el.getAttribute('data-embed-src')).toBe('https://www.bitchute.com/embed/abc123def/')
       })
     })
+
+    // The stylesheet and the click-to-play extension both select on the
+    // per-provider modifier class. Emitting only the base class rendered these
+    // three as an invisible, inert anchor.
+    describe('per-provider modifier class', () => {
+      it.each([
+        ['https://www.bitchute.com/video/abc123def/', 'markdown-video-link-bitchute'],
+        ['https://rumble.com/embed/v1abc23/?pub=4', 'markdown-video-link-rumble'],
+        ['https://www.brighteon.com/embed/abc123', 'markdown-video-link-brighteon'],
+        ['https://odysee.com/@channel:2/video-title:e', 'markdown-video-link-odysee']
+      ])('tags %s with %s', (href, modifier) => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false)
+
+        expect(el.getAttribute('class')).toContain('markdown-video-link')
+        expect(el.getAttribute('class')).toContain(modifier)
+      })
+
+      it.each([
+        ['https://www.bitchute.com/video/abc123def/', 'https://www.bitchute.com/embed/abc123def/'],
+        ['https://rumble.com/embed/v1abc23/?pub=4', 'https://www.rumble.com/embed/v1abc23/?pub=4'],
+        ['https://www.brighteon.com/embed/abc123', 'https://www.brighteon.com/embed/abc123'],
+        [
+          'https://odysee.com/@channel:2/video-title:e',
+          'https://odysee.com/$/embed/@channel:2/video-title:e'
+        ]
+      ])('embeds %s directly when the enhancer will not run', (href, embedSrc) => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false, 'ecency.com', undefined, { embedVideosDirectly: true })
+
+        const frames = el.getElementsByTagName('iframe')
+        expect(frames.length).toBe(1)
+        expect(frames[0]?.getAttribute('src')).toBe(embedSrc)
+      })
+    })
+
+    describe('Odysee', () => {
+      it('should embed a channel-scoped watch link', () => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://odysee.com/@whatsherface:2/Battle-of-the-Sexes:e'
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false)
+
+        expect(el.getAttribute('class')).toContain('markdown-video-link-odysee')
+        expect(el.getAttribute('href')).toBeNull()
+        expect(el.getAttribute('data-embed-src')).toBe(
+          'https://odysee.com/$/embed/@whatsherface:2/Battle-of-the-Sexes:e'
+        )
+        expect(el.getElementsByTagName('span')[0]?.getAttribute('class')).toBe(
+          'markdown-video-play'
+        )
+      })
+
+      it('should embed a claim posted outside a channel', () => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://odysee.com/video-title:a'
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false)
+
+        expect(el.getAttribute('data-embed-src')).toBe('https://odysee.com/$/embed/video-title:a')
+      })
+
+      // A title containing "YouTube" previously read as a YouTube link to the
+      // sanitizer and got dropped as unsupported (issue #219).
+      it('should embed a watch link whose title contains "YouTube"', () => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://odysee.com/@whatsherface:2/YouTube-HATES-me!:0'
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false)
+
+        expect(el.getAttribute('data-embed-src')).toBe(
+          'https://odysee.com/$/embed/@whatsherface:2/YouTube-HATES-me!:0'
+        )
+      })
+
+      it('should drop a tracking query string from the embed URL', () => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://odysee.com/@channel:2/video:e?r=H6VBbPfXH21Z'
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false)
+
+        expect(el.getAttribute('data-embed-src')).toBe(
+          'https://odysee.com/$/embed/@channel:2/video:e'
+        )
+      })
+
+      // Waves and the self-hosted blog set embedVideosDirectly and mount no
+      // click-to-play enhancer, so a placeholder there would never play.
+      it('should emit a real iframe when embedVideosDirectly is set', () => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://odysee.com/@channel:2/video:e'
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false, 'ecency.com', undefined, { embedVideosDirectly: true })
+
+        const frames = el.getElementsByTagName('iframe')
+        expect(frames.length).toBe(1)
+        expect(frames[0]?.getAttribute('src')).toBe(
+          'https://odysee.com/$/embed/@channel:2/video:e'
+        )
+        // No autoplay: a feed must not start several videos at once.
+        expect(frames[0]?.getAttribute('src')).not.toContain('autoplay')
+        expect(el.getAttribute('class')).toContain('er-embed')
+        expect(el.getElementsByTagName('span').length).toBe(1)
+        expect(el.getElementsByTagName('span')[0]?.getAttribute('class')).toBe('er-embed-frame')
+      })
+
+      it('should leave a bare channel page as an ordinary link', () => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://odysee.com/@whatsherface:2'
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false)
+
+        expect(el.getAttribute('class')).not.toContain('markdown-video-link')
+        expect(el.getAttribute('href')).toBe(href)
+      })
+
+      it('should leave an already-embed URL alone', () => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://odysee.com/$/embed/@channel:2/video:e'
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false)
+
+        expect(el.getAttribute('data-embed-src')).toBeNull()
+      })
+
+      // Only a link whose text is the bare URL becomes a player; a labelled
+      // link keeps its label, matching every other provider.
+      it('should not embed a labelled link', () => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://odysee.com/@channel:2/video:e'
+        el.setAttribute('href', href)
+        el.textContent = 'watch this'
+        parent.appendChild(el)
+
+        a(el, false)
+
+        expect(el.getAttribute('class')).not.toContain('markdown-video-link')
+        expect(el.textContent).toBe('watch this')
+      })
+    })
   })
 
   describe('Twitter/X embeds', () => {

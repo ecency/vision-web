@@ -724,7 +724,7 @@ describe('Markdown2Html', () => {
         last_update: '2021-05-10T09:15:21',
         body: 'https://www.bitchute.com/video/DJJvTZQxMaNK/'
       }
-      const expected = '<p dir=\"auto\"><a class=\"markdown-video-link\" data-embed-src=\"https://www.bitchute.com/embed/DJJvTZQxMaNK/\"><span class=\"markdown-video-play\"></span></a></p>'
+      const expected = '<p dir=\"auto\"><a class=\"markdown-video-link markdown-video-link-bitchute\" data-embed-src=\"https://www.bitchute.com/embed/DJJvTZQxMaNK/\"><span class=\"markdown-video-play\"></span></a></p>'
       expect(markdown2Html(input)).toBe(expected)
     })
 
@@ -1003,7 +1003,7 @@ describe('Markdown2Html', () => {
 
 
     it('Rumble embed URL', () => {
-      const expected = "<p dir=\"auto\"><a class=\"markdown-video-link\" data-embed-src=\"https://www.rumble.com/embed/vhwsp4/?pub=4\"><span class=\"markdown-video-play\"></span></a></p>"
+      const expected = "<p dir=\"auto\"><a class=\"markdown-video-link markdown-video-link-rumble\" data-embed-src=\"https://www.rumble.com/embed/vhwsp4/?pub=4\"><span class=\"markdown-video-play\"></span></a></p>"
       let input = {
         author: 'foo350y',
         permlink: 'bar350y',
@@ -1045,7 +1045,7 @@ describe('Markdown2Html', () => {
     })
 
     it('Brightreon embed URL', () => {
-      const expected = "<p dir=\"auto\"><a class=\"markdown-video-link\" data-embed-src=\"https://www.brighteon.com/embed/5821540656001\"><span class=\"markdown-video-play\"></span></a></p>"
+      const expected = "<p dir=\"auto\"><a class=\"markdown-video-link markdown-video-link-brighteon\" data-embed-src=\"https://www.brighteon.com/embed/5821540656001\"><span class=\"markdown-video-play\"></span></a></p>"
       let input = {
         author: 'foo351y',
         permlink: 'bar351y',
@@ -1056,7 +1056,7 @@ describe('Markdown2Html', () => {
     })
 
     it('Brightreon page URL', () => {
-      const expected = "<p dir=\"auto\"><a class=\"markdown-video-link\" data-embed-src=\"https://www.brighteon.com/embed/5821540656001\"><span class=\"markdown-video-play\"></span></a></p>"
+      const expected = "<p dir=\"auto\"><a class=\"markdown-video-link markdown-video-link-brighteon\" data-embed-src=\"https://www.brighteon.com/embed/5821540656001\"><span class=\"markdown-video-play\"></span></a></p>"
       let input = {
         author: 'foo351z',
         permlink: 'bar351z',
@@ -1064,6 +1064,54 @@ describe('Markdown2Html', () => {
         body: '<a href="https://www.brighteon.com/5821540656001">https://www.brighteon.com/5821540656001</a>'
       }
       expect(markdown2Html(input)).toBe(expected)
+    })
+  })
+
+  describe("Odysee support", () => {
+    it('Odysee watch URL becomes a player', () => {
+      const expected = "<p dir=\"auto\"><a class=\"markdown-video-link markdown-video-link-odysee\" data-embed-src=\"https://odysee.com/$/embed/@whatsherface:2/Battle-of-the-Sexes:e\"><span class=\"markdown-video-play\"></span></a></p>"
+      let input = {
+        author: 'foo352a',
+        permlink: 'bar352a',
+        last_update: '2021-05-10T09:17:50',
+        body: 'https://odysee.com/@whatsherface:2/Battle-of-the-Sexes:e'
+      }
+      expect(markdown2Html(input)).toBe(expected)
+    })
+
+    // A title containing "YouTube" must not be mistaken for a YouTube link.
+    it('Odysee watch URL whose title contains YouTube', () => {
+      const expected = "<p dir=\"auto\"><a class=\"markdown-video-link markdown-video-link-odysee\" data-embed-src=\"https://odysee.com/$/embed/@whatsherface:2/YouTube-HATES-me!:0\"><span class=\"markdown-video-play\"></span></a></p>"
+      let input = {
+        author: 'foo352b',
+        permlink: 'bar352b',
+        last_update: '2021-05-10T09:18:50',
+        body: 'https://odysee.com/@whatsherface:2/YouTube-HATES-me!:0'
+      }
+      expect(markdown2Html(input)).toBe(expected)
+    })
+
+    // Hand-written Odysee iframes are still accepted; the tightened
+    // odysee.com path pattern must not strip them.
+    it('Odysee embed iframe survives sanitization', () => {
+      const expected = "<iframe src=\"https://odysee.com/%24/embed/%40whatsherface%3A2%2FBattle-of-the-Sexes%3Ae\" allowfullscreen=\"allowfullscreen\" frameborder=\"0\"></iframe>"
+      let input = {
+        author: 'foo352c',
+        permlink: 'bar352c',
+        last_update: '2021-05-10T09:19:50',
+        body: '<iframe src="https://odysee.com/%24/embed/%40whatsherface%3A2%2FBattle-of-the-Sexes%3Ae" allowfullscreen></iframe>'
+      }
+      expect(markdown2Html(input)).toBe(expected)
+    })
+
+    it('Odysee channel page stays an ordinary link', () => {
+      let input = {
+        author: 'foo352d',
+        permlink: 'bar352d',
+        last_update: '2021-05-10T09:20:50',
+        body: 'https://odysee.com/@whatsherface:2'
+      }
+      expect(markdown2Html(input)).not.toContain('markdown-video-link')
     })
   })
 

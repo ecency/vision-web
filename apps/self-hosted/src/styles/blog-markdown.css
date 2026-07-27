@@ -1413,15 +1413,20 @@
    wrapped in a .markdown-video-link-<provider> anchor. Give that wrapper a
    responsive 16:9 frame so the player fills the content column instead of the
    browser default 300x150 box.
-   Note: bitchute/rumble/brighteon/dtube emit only the generic
-   .markdown-video-link class as click-to-play placeholders (no iframe, no
-   embedVideosDirectly branch), so they are not styled here and remain
-   non-playable on the self-hosted SPA. Audio embeds are handled separately below. */
+   BitChute/Rumble/Brighteon/Odysee also emit real iframes under
+   embedVideosDirectly now (wrapped in .er-embed-frame), so they get the same
+   treatment. dtube still emits only the generic .markdown-video-link
+   placeholder with no embedVideosDirectly branch, so it stays unstyled and
+   non-playable here. Audio embeds are handled separately below. */
 .markdown-body .markdown-video-link-youtube,
 .markdown-body .markdown-video-link-speak,
 .markdown-body .markdown-video-link-vimeo,
 .markdown-body .markdown-video-link-twitch,
-.markdown-body .markdown-video-link-loom {
+.markdown-body .markdown-video-link-loom,
+.markdown-body .markdown-video-link-bitchute,
+.markdown-body .markdown-video-link-rumble,
+.markdown-body .markdown-video-link-brighteon,
+.markdown-body .markdown-video-link-odysee {
   position: relative;
   display: block;
   width: 100%;
@@ -1437,11 +1442,16 @@
 
 .markdown-body .markdown-video-link-youtube .er-youtube-frame,
 .markdown-body .markdown-video-link-speak .er-speak-frame,
+.markdown-body .er-embed-frame,
 .markdown-body .markdown-video-link-youtube iframe,
 .markdown-body .markdown-video-link-speak iframe,
 .markdown-body .markdown-video-link-vimeo iframe,
 .markdown-body .markdown-video-link-twitch iframe,
-.markdown-body .markdown-video-link-loom iframe {
+.markdown-body .markdown-video-link-loom iframe,
+.markdown-body .markdown-video-link-bitchute iframe,
+.markdown-body .markdown-video-link-rumble iframe,
+.markdown-body .markdown-video-link-brighteon iframe,
+.markdown-body .markdown-video-link-odysee iframe {
   position: absolute;
   top: 0;
   left: 0;

@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.23
+
+### Patch Changes
+
+- fix(renderer): embed Odysee watch links and revive dead video placeholders (#1250)
+
 ## 2.5.22
 
 ### Patch Changes
