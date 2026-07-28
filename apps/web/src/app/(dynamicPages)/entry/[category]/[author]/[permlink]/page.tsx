@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { prefetchQuery, getQueryClient } from "@/core/react-query";
-import { getAccountFullQueryOptions } from "@ecency/sdk";
+import { getAccountFullQueryOptions, QueryKeys } from "@ecency/sdk";
 import {
   buildPictureSources,
   buildSrcSet,
@@ -56,9 +56,33 @@ interface Props {
  * query after use — generateMetadata and the page render share a request but
  * their order is not guaranteed.
  */
+// The scope segments of a posts.content key, derived from the SDK builder itself
+// rather than assumed. Two keys are generated with different arguments and the
+// common leading segments are taken — those are exactly the parts that do NOT
+// depend on author/permlink. Nothing here hardcodes how many scope segments
+// there are or where they sit, so a reshaped key (say ["posts","v2","content",…])
+// still yields the right discriminator.
+//
+// Matching the family rather than one exact key is deliberate: generateMetadata
+// resolves the permlink with safeDecodeURIComponent().trim() while this page uses
+// the raw param, so an exact-key comparison would silently miss whenever those
+// differ and let the duplicate copy back in.
+const METADATA_CONTENT_KEY_PREFIX = (() => {
+  const a = QueryKeys.posts.content("\u0000a", "\u0000b");
+  const b = QueryKeys.posts.content("\u0000c", "\u0000d");
+  const shared: unknown[] = [];
+  for (let i = 0; i < a.length && a[i] === b[i]; i++) {
+    shared.push(a[i]);
+  }
+  return shared;
+})();
+
 function shouldDehydrateEntryQuery(query: Query): boolean {
-  const [scope, kind] = query.queryKey as unknown[];
-  if (scope === "posts" && kind === "content") {
+  const queryKey = query.queryKey as readonly unknown[];
+  const isMetadataContentQuery =
+    METADATA_CONTENT_KEY_PREFIX.length > 0 &&
+    METADATA_CONTENT_KEY_PREFIX.every((segment, index) => queryKey[index] === segment);
+  if (isMetadataContentQuery) {
     return false;
   }
   return defaultShouldDehydrateQuery(query);
