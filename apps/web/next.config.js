@@ -162,6 +162,18 @@ const config = {
     // staging (alpha) vs production. Conditionally spread for the same reason.
     ...(process.env.SENTRY_ENVIRONMENT && { SENTRY_ENVIRONMENT: process.env.SENTRY_ENVIRONMENT })
   },
+  // UAs that get metadata rendered into <head> (blocking) instead of streamed
+  // into the body. Googlebot is intentionally absent — it executes JS, and
+  // blocking would cost it the streaming TTFB win for no benefit.
+  //
+  // ⚠️ This list is MIRRORED in the origin nginx SSR cache (`$html_limited_bot`
+  // in the `proxy_cache_key`). If the two drift, cached responses get served to
+  // the wrong UA class and this setting silently stops working — the failure is
+  // invisible in dev, where nothing is cached. See docs/cache/nginx.md and
+  // issue #1257 before editing.
+  //
+  // Note: Next.js applies this as `new RegExp(htmlLimitedBots, 'i')`, so
+  // matching is case-insensitive regardless of the flags written here.
   htmlLimitedBots:
     /Mediapartners-Google|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|WhatsApp|SkypeUriPreview|Yeti/,
   sassOptions: {

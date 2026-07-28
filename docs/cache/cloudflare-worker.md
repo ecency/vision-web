@@ -26,6 +26,23 @@ const cacheKeyUrl =
   `https://cache.internal/${authClass}${reqUrl.pathname}${reqUrl.search}`;
 ```
 
+### Known gap: no bot-class dimension
+
+The key does **not** encode the Next.js `htmlLimitedBots` UA class, which the
+origin SSR cache does (`$html_limited_bot`, see `nginx.md`). Those crawlers get
+metadata rendered into `<head>` while everyone else gets it streamed into the
+body, so the two are genuinely different responses for the same URL.
+
+This is currently **latent, not active**: post HTML is effectively pass-through
+at the edge — `x-edge-cache` is MISS even on repeat requests to clean, cacheable
+URLs, and the origin cache status advances on every request, which it could not
+do if the standard-cache subfetch were absorbing them. The origin key is the one
+that decides, and it does account for bot class.
+
+**If edge HTML caching is ever made to actually hit, this key must gain the same
+dimension first**, or browser-primed edge entries will be served to crawlers and
+the origin-side split becomes unreachable. See issue #1257.
+
 `active_user` cookie presence determines auth-class. Neither the cookie's
 value nor any other cookie is part of the key — empirical analysis confirmed
 that SSR is auth-class-equivalent (same for any logged-in user) on every
