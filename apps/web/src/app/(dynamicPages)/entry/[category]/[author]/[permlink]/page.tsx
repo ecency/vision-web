@@ -14,7 +14,11 @@ import { EntryPageContentSSR } from "@/app/(dynamicPages)/entry/[category]/[auth
 import { EntryPageBreadcrumb } from "./_components/entry-page-breadcrumb";
 import { buildEntryBreadcrumbs } from "./_components/entry-breadcrumbs";
 import { EntryRelatedFooter } from "./_components/entry-related-footer";
-import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
+import { dehydrate, defaultShouldDehydrateQuery, HydrationBoundary } from "@tanstack/react-query";
+import type { Query } from "@tanstack/react-query";
+import { cookies } from "next/headers";
+import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
+import { stripAnonEntryCacheInPlace } from "@/core/react-query/strip-active-votes";
 import { Metadata, ResolvingMetadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { generateEntryMetadata } from "../../../_helpers";
@@ -38,9 +42,36 @@ interface Props {
   searchParams: Promise<Record<string, string | undefined>>;
 }
 
-// ISR: post body/title/tags are stable after publishing.
-// Live data (votes, comments, payout) is fetched client-side after hydration.
-// 5 min revalidation - edge cache (Cloudflare Worker) also caches anonymous HTML for 5 min.
+/**
+ * generateMetadata resolves the entry through `condenser_api.get_content`
+ * because it is the only source of root_author / root_permlink — bridge.get_post
+ * returns them empty, and the canonical logic needs them to point a reply at its
+ * discussion root and to detect container/wave trees. That fetch lands in the
+ * same request-scoped query cache the page dehydrates, so a SECOND full copy of
+ * the entry (post body and voter array included) was being serialized to the
+ * client purely as a side effect of building <head> tags. Nothing on this route
+ * reads that query client-side; the page renders from the bridge copy.
+ *
+ * Dropping it at the dehydration boundary is deterministic, unlike removing the
+ * query after use — generateMetadata and the page render share a request but
+ * their order is not guaranteed.
+ */
+function shouldDehydrateEntryQuery(query: Query): boolean {
+  const [scope, kind] = query.queryKey as unknown[];
+  if (scope === "posts" && kind === "content") {
+    return false;
+  }
+  return defaultShouldDehydrateQuery(query);
+}
+
+// NOTE: this is currently INERT — the route renders dynamically regardless,
+// because the component awaits `searchParams` (?raw / ?history). Verified
+// against the deployed build: `prerender-manifest.json` lists 0 dynamicRoutes
+// and no prerendered entry page, so nothing is ISR-cached here. Kept so the
+// intent survives if the route ever becomes statically renderable again.
+//
+// Anonymous HTML is instead cached at the edge and in the origin SSR cache via
+// the Cache-Control tier that middleware assigns by pathname.
 export const revalidate = 300;
 
 export async function generateMetadata(
@@ -60,12 +91,33 @@ export default async function EntryPage({ params, searchParams }: Props) {
   const isRawContent = sParams.raw !== undefined;
 
   const author = username.replace(/%40/g, "");
-  const [entry, account] = await Promise.all([
-    prefetchQuery(EcencyEntriesCacheManagement.getEntryQueryByPath(author, permlink)),
+  // Anonymous requests get active_votes stripped out of everything that crosses
+  // to the client (see below). Logged-in requests keep the full arrays, because
+  // they are the only source of the viewer's own vote — entry-vote-btn derives
+  // isVoted from entry.active_votes and there is no per-observer field to fall
+  // back to. Reading the cookie costs nothing here: this route already awaits
+  // searchParams, so it renders dynamically regardless.
+  const loggedInUser = (await cookies()).get(ACTIVE_USER_COOKIE_NAME)?.value;
+  const entryQueryOptions = EcencyEntriesCacheManagement.getEntryQueryByPath(author, permlink);
+  const [fetchedEntry, account] = await Promise.all([
+    prefetchQuery(entryQueryOptions),
     // Warm the query cache for child components that read account data.
     // Use author from URL params so this runs in parallel with the entry fetch.
     prefetchQuery(getAccountFullQueryOptions(author))
   ]);
+
+  // Strip at the SOURCE, so the render only ever has ONE entry object.
+  //
+  // Flight dedupes by reference, and the entry reaches the client twice — as a
+  // prop in the RSC tree and inside the dehydrated React Query state. If those
+  // are different objects the whole entry, post body included, is serialized
+  // twice, which on a low-vote post costs more than the voter array saves.
+  //
+  // stripAnonEntryCacheInPlace rewrites the cache and hands back the STORED
+  // object, so the prop below and the dehydrated copy are one reference. (It has
+  // to return the stored one: setQueryData applies structural sharing and stores
+  // a third object that is neither the previous value nor the clone given to it.)
+  const entry = stripAnonEntryCacheInPlace(getQueryClient(), fetchedEntry, loggedInUser);
 
   if (
     permlink.startsWith("wave-") ||
@@ -149,8 +201,15 @@ export default async function EntryPage({ params, searchParams }: Props) {
         buildBreadcrumbJsonLd(breadcrumbs.map((c) => ({ name: c.name, url: c.url })))
       ];
 
+
+  // The cache was already stripped in place above, so dehydrate() emits the same
+  // objects the props carry — no second strip, and no second copy.
+  const hydrationState = dehydrate(getQueryClient(), {
+    shouldDehydrateQuery: shouldDehydrateEntryQuery
+  });
+
   return (
-    <HydrationBoundary state={dehydrate(getQueryClient())}>
+    <HydrationBoundary state={hydrationState}>
       {coverPicture ? (
         <link
           rel="preload"

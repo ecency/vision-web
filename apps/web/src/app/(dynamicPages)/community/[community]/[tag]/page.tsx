@@ -6,6 +6,9 @@ import { EntryArchivePager } from "@/features/shared/entry-archive-pager";
 import { LinearProgress } from "@/features/shared/linear-progress";
 import { dehydrate, HydrationBoundary, InfiniteData } from "@tanstack/react-query";
 import { getQueryClient, prefetchQuery } from "@/core/react-query";
+import { cookies } from "next/headers";
+import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
+import { stripAnonEntryCacheInPlace } from "@/core/react-query/strip-active-votes";
 import { Metadata, ResolvingMetadata } from "next";
 import { generateCommunityMetadata } from "@/app/(dynamicPages)/community/[community]/_helpers";
 import { CommunityContentSearch } from "../_components/community-content-search";
@@ -46,6 +49,11 @@ function pageToEntries(p: Page): Entry[] {
 export default async function CommunityPostsPage({ params, searchParams }: Props) {
   const { community, tag } = await params;
   const { before } = await searchParams;
+  // Anonymous visitors never read active_votes (isVoted is logged-in-only and the
+  // votes dialog fetches on demand), and it is ~30% of this document. Strip the
+  // cache IN PLACE so the dehydrated state and the entries prop stay one
+  // reference — separate clones would make Flight serialize every post twice.
+  const loggedInUser = (await cookies()).get(ACTIVE_USER_COOKIE_NAME)?.value;
   const basePath = `/${tag}/${community}`;
   const cursor = isArchivableFilter(tag) ? parseArchiveCursor(before) : null;
 
@@ -58,6 +66,11 @@ export default async function CommunityPostsPage({ params, searchParams }: Props
     ]);
     if (!communityData) return notFound();
     if (archive.entries.length === 0) return redirect(basePath); // stale cursor
+    const archiveEntries = stripAnonEntryCacheInPlace(
+      getQueryClient(),
+      archive.entries,
+      loggedInUser
+    );
 
     return (
       <HydrationBoundary state={dehydrate(getQueryClient())}>
@@ -66,7 +79,7 @@ export default async function CommunityPostsPage({ params, searchParams }: Props
             community={communityData}
             username={community}
             isPromoted={false}
-            entries={archive.entries}
+            entries={archiveEntries}
             loading={false}
             sectionParam={tag}
           />
@@ -92,7 +105,8 @@ export default async function CommunityPostsPage({ params, searchParams }: Props
     return null;
   }
 
-  const flatEntries = data.pages.flatMap(pageToEntries);
+  const feed = stripAnonEntryCacheInPlace(getQueryClient(), data, loggedInUser);
+  const flatEntries = feed.pages.flatMap(pageToEntries);
   // Crawlable "Older" entry into the cursor chain — `created` only (the SDK
   // re-sorts processed pages by date, so trending/hot cursors would not match
   // bridge rank order, and the created chain already reaches every post).

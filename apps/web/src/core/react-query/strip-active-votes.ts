@@ -1,4 +1,4 @@
-import type { DehydratedState } from "@tanstack/react-query";
+import type { DehydratedState, QueryClient } from "@tanstack/react-query";
 import type { Entry } from "@/entities";
 
 /**
@@ -29,6 +29,18 @@ function isStripableEntry(value: unknown): value is Entry {
   // Strip only when a vote COUNT survives elsewhere, so consumers stay
   // hydration-stable: posts carry it on stats.total_votes; search results carry
   // it as a top-level total_votes.
+  //
+  // net_votes is deliberately NOT accepted. It is upvotes MINUS downvotes, not a
+  // voter count — live posts show active_votes 848 vs net_votes 820, and 453 vs
+  // 423. entry-votes reads
+  // `stats.total_votes || active_votes.length || net_votes || total_votes`, so
+  // stripping a shape whose only count is net_votes (condenser_api.get_content
+  // has no stats object) would drop the displayed number to the net figure.
+  //
+  // Nothing needs it: the entry page keeps that metadata-only condenser query
+  // out of the dehydrated payload entirely, so no such entry reaches the client
+  // there. Accepting it here would buy nothing and leave this shared helper —
+  // also used by the feed and profile routes — able to undercount.
   const hasCount =
     typeof entry.stats?.total_votes === "number" || typeof entry.total_votes === "number";
   return Array.isArray(entry.active_votes) && entry.active_votes.length > 0 && hasCount;
@@ -146,4 +158,50 @@ export function stripActiveVotesFromValue<T>(value: T, currentUser?: string): T 
     return value;
   }
   return stripQueryData(value) as T;
+}
+
+/**
+ * Strip every entry-bearing query in a request-scoped cache IN PLACE, and return
+ * the stored object that corresponds to `value`.
+ *
+ * Prefer this over stripping the dehydrated state and the props separately.
+ * SSR data reaches the client through two channels — the dehydrated React Query
+ * state and props serialized into the RSC tree — and React Flight dedupes by
+ * REFERENCE. Producing a separate clone per channel makes Flight serialize the
+ * whole payload (post bodies included) twice, which can cost more than the voter
+ * arrays save. Rewriting the cache instead means `dehydrate()` emits the very
+ * object the page also passes as a prop, so there is exactly one copy.
+ *
+ * ⚠️ `setQueryData` applies structural sharing (replaceEqualDeep) and stores —
+ * and returns — a THIRD object that is neither the previous value nor the one
+ * handed to it. That is why this returns the STORED reference rather than the
+ * clone: using the clone would silently reintroduce the duplicate.
+ *
+ * Anonymous-only, like the other two helpers: logged-in requests keep the full
+ * arrays because active_votes is the only source of the viewer's own vote.
+ */
+export function stripAnonEntryCacheInPlace<T>(
+  queryClient: QueryClient,
+  value: T,
+  currentUser?: string
+): T {
+  if (currentUser) {
+    return value;
+  }
+
+  let result = value;
+  for (const query of queryClient.getQueryCache().getAll()) {
+    const data = query.state.data;
+    const stripped = stripQueryData(data);
+    if (stripped === data) {
+      continue;
+    }
+    const stored = queryClient.setQueryData(query.queryKey, stripped) ?? stripped;
+    // Identity bridge: hand the caller back the object now in the cache, so the
+    // prop it renders and the dehydrated copy are the same reference.
+    if (data === (value as unknown)) {
+      result = stored as T;
+    }
+  }
+  return result;
 }
