@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { DehydratedState } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import {
   stripActiveVotesFromDehydratedState,
-  stripActiveVotesFromValue
+  stripActiveVotesFromValue,
+  stripAnonEntryCacheInPlace
 } from "@/core/react-query/strip-active-votes";
 
 function entry(overrides: Record<string, any> = {}) {
@@ -181,5 +183,113 @@ describe("stripActiveVotesFromValue (props channel, e.g. profile initialFeed)", 
 
   it("passes through undefined (no feed prefetched)", () => {
     expect(stripActiveVotesFromValue(undefined, undefined)).toBeUndefined();
+  });
+});
+
+// condenser_api.get_content has no `stats` object — its only count field is
+// `net_votes`, which is upvotes MINUS downvotes, not a voter count (live posts:
+// 848 voters vs net_votes 820, and 453 vs 423). Since entry-votes reads
+// `stats.total_votes || active_votes.length || net_votes || total_votes`,
+// stripping that shape would drop the displayed number to the net figure. It is
+// therefore left unstripped, and nothing needs otherwise: the entry page keeps
+// the metadata-only condenser query out of the dehydrated payload entirely.
+describe("condenser_api.get_content shape (net_votes is NOT a voter count)", () => {
+  function condenserEntry(overrides: Record<string, any> = {}) {
+    return {
+      author: "alice",
+      permlink: "p",
+      net_votes: 1, // deliberately != active_votes.length, as on real posts
+      active_votes: [
+        { voter: "a", rshares: 1 },
+        { voter: "b", rshares: -2 }
+      ],
+      ...overrides
+    };
+  }
+
+  it("does NOT strip an entry whose only surviving count is net_votes", () => {
+    const out = stripActiveVotesFromDehydratedState(dehydrated(condenserEntry()));
+    expect((out.queries[0].state.data as any).active_votes).toHaveLength(2);
+  });
+
+  it("does NOT strip that shape through the props channel either", () => {
+    const out = stripActiveVotesFromValue(condenserEntry(), undefined) as any;
+    expect(out.active_votes).toHaveLength(2);
+  });
+
+  it("DOES strip the same entry once a real voter count is present", () => {
+    const out = stripActiveVotesFromValue(condenserEntry({ total_votes: 2 }), undefined) as any;
+    expect(out.active_votes).toEqual([]);
+    expect(out.total_votes).toBe(2);
+  });
+
+  it("still refuses to strip when NO vote count survives anywhere", () => {
+    const e = { author: "alice", permlink: "p", active_votes: [{ voter: "a", rshares: 1 }] };
+    const out = stripActiveVotesFromDehydratedState(dehydrated(e));
+    expect((out.queries[0].state.data as any).active_votes).toHaveLength(1);
+  });
+});
+
+// The identity-preserving variant used by the entry, community and waves routes.
+// It rewrites the request-scoped cache so dehydrate() emits the same objects the
+// page passes as props — Flight dedupes by reference, and two separate clones
+// would serialize every post body twice.
+describe("stripAnonEntryCacheInPlace", () => {
+  function makeClient() {
+    return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  }
+
+  it("returns the STORED object, not the clone (setQueryData applies structural sharing)", () => {
+    const qc = makeClient();
+    const e = entry();
+    qc.setQueryData(["posts", "entry", "/@alice/p"], e);
+
+    const returned = stripAnonEntryCacheInPlace(qc, e);
+    const stored = qc.getQueryData(["posts", "entry", "/@alice/p"]);
+
+    expect(returned).toBe(stored); // the identity that makes Flight dedupe work
+    expect((returned as any).active_votes).toEqual([]);
+    expect((returned as any).stats.total_votes).toBe(3);
+  });
+
+  it("rewrites the cache so a later dehydrate carries no voters", () => {
+    const qc = makeClient();
+    qc.setQueryData(["posts", "entry", "/@alice/p"], entry());
+    stripAnonEntryCacheInPlace(qc, undefined);
+    expect((qc.getQueryData(["posts", "entry", "/@alice/p"]) as any).active_votes).toEqual([]);
+  });
+
+  it("strips every entry-bearing query, not just the one passed in", () => {
+    const qc = makeClient();
+    qc.setQueryData(["a"], entry({ permlink: "one" }));
+    qc.setQueryData(["b"], { pages: [[entry({ permlink: "two" })]], pageParams: [null] });
+    stripAnonEntryCacheInPlace(qc, undefined);
+    expect((qc.getQueryData(["a"]) as any).active_votes).toEqual([]);
+    expect((qc.getQueryData(["b"]) as any).pages[0][0].active_votes).toEqual([]);
+  });
+
+  it("bridges identity for an infinite feed value too", () => {
+    const qc = makeClient();
+    const feed = { pages: [[entry({ permlink: "p1" })]], pageParams: [null] };
+    qc.setQueryData(["feed"], feed);
+    const returned = stripAnonEntryCacheInPlace(qc, feed);
+    expect(returned).toBe(qc.getQueryData(["feed"]));
+    expect((returned as any).pages[0][0].active_votes).toEqual([]);
+  });
+
+  it("is a no-op for a logged-in user — cache and value untouched", () => {
+    const qc = makeClient();
+    const e = entry();
+    qc.setQueryData(["posts", "entry", "/@alice/p"], e);
+    const returned = stripAnonEntryCacheInPlace(qc, e, "alice");
+    expect(returned).toBe(e);
+    expect((qc.getQueryData(["posts", "entry", "/@alice/p"]) as any).active_votes).toHaveLength(3);
+  });
+
+  it("leaves the value alone when it holds nothing strippable", () => {
+    const qc = makeClient();
+    const plain = { foo: "bar" };
+    qc.setQueryData(["plain"], plain);
+    expect(stripAnonEntryCacheInPlace(qc, plain)).toBe(plain);
   });
 });

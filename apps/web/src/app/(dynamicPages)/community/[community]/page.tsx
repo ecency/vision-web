@@ -9,6 +9,9 @@ import { Entry } from "@/entities";
 import { CommunityContentInfiniteList } from "@/app/(dynamicPages)/community/[community]/_components/community-content-infinite-list";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { getQueryClient, prefetchQuery } from "@/core/react-query";
+import { cookies } from "next/headers";
+import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
+import { stripAnonEntryCacheInPlace } from "@/core/react-query/strip-active-votes";
 import { Metadata, ResolvingMetadata } from "next";
 import { generateCommunityMetadata } from "@/app/(dynamicPages)/community/[community]/_helpers";
 
@@ -16,8 +19,19 @@ interface Props {
   params: Promise<{ community: string }>;
 }
 
-// ISR: community metadata is stable. Live post lists fetched client-side.
-// 5 min revalidation aligned with edge cache TTL.
+// NOTE: this is INERT, and was already inert before this route read cookies.
+// The ROOT LAYOUT awaits cookies() (theme) and headers() (x-pathname), which opts
+// every route in the app into request-time rendering. Verified against the
+// deployed production build: prerender-manifest.json lists 0 ISR dynamicRoutes
+// and only 5 prerendered entries, all static files — no page route is in the
+// Full Route Cache, this one included.
+//
+// So the anonymous vote strip below costs no ISR here; there is none to lose.
+// Making these routes statically renderable is a separate, larger change that
+// starts with the root layout, not with this file.
+//
+// Anonymous HTML is cached at the edge and in the origin SSR cache instead, via
+// the Cache-Control tier middleware assigns by pathname.
 export const revalidate = 300;
 
 export async function generateMetadata(props: Props, parent: ResolvingMetadata): Promise<Metadata> {
@@ -27,15 +41,20 @@ export async function generateMetadata(props: Props, parent: ResolvingMetadata):
 
 export default async function CommunityPostsPage({ params }: Props) {
   const { community } = await params;
+  // See the [tag] route: anonymous renders drop active_votes, and the cache is
+  // rewritten in place so the dehydrated copy and the entries prop share one
+  // reference.
+  const loggedInUser = (await cookies()).get(ACTIVE_USER_COOKIE_NAME)?.value;
   const communityData = await prefetchQuery(getCommunityCache(community));
   if (!communityData) {
     return notFound();
   }
 
-  const data = await prefetchGetPostsFeedQuery("created", community);
-  if (!data || !data.pages || data.pages.length === 0) {
+  const fetched = await prefetchGetPostsFeedQuery("created", community);
+  if (!fetched || !fetched.pages || fetched.pages.length === 0) {
     return <></>;
   }
+  const data = stripAnonEntryCacheInPlace(getQueryClient(), fetched, loggedInUser);
 
   return (
     <HydrationBoundary state={dehydrate(getQueryClient())}>

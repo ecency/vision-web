@@ -4,6 +4,9 @@ import { WaveViewDetails, WaveViewDiscussion } from "@/app/waves/[author]/[perml
 import { WaveEntry } from "@/entities";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { getQueryClient, prefetchQuery } from "@/core/react-query";
+import { cookies } from "next/headers";
+import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
+import { stripAnonEntryCacheInPlace } from "@/core/react-query/strip-active-votes";
 import { EcencyConfigManager } from "@/config";
 import { Metadata } from "next";
 import { ScrollToTop } from "@/features/shared/scroll-to-top";
@@ -31,10 +34,15 @@ export default async function WaveViewPage({ params }: Props) {
 
   const { author, permlink } = await params;
 
-  const data = (await prefetchQuery(EcencyEntriesCacheManagement.getEntryQueryByPath(
+  // Waves are depth-1 posts and can carry large voter arrays. Same treatment as
+  // the entry route: anonymous-only, cache rewritten in place so the prop and the
+  // dehydrated copy remain a single reference.
+  const loggedInUser = (await cookies()).get(ACTIVE_USER_COOKIE_NAME)?.value;
+  const fetched = (await prefetchQuery(EcencyEntriesCacheManagement.getEntryQueryByPath(
     author.replace(/%40/g, ""),
     permlink
   ))) as WaveEntry;
+  const data = stripAnonEntryCacheInPlace(getQueryClient(), fetched, loggedInUser);
 
   if (!data) {
     return notFound();
