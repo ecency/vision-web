@@ -1463,16 +1463,64 @@
   display: block;
 }
 
+/* Vertical and square 3Speak clips. The 16:9 box above would pillarbox them
+   between two wide black bars, so use-three-speak-orientation.ts tags the
+   container from the player's own `3speak-player-ready` report. Ratios and max
+   widths match ecency.com (apps/web/.../ecency-renderer.scss) so a post looks
+   the same on a hosted blog. */
+.markdown-body .markdown-video-link-speak.speak-portrait {
+  padding-bottom: 0;
+  aspect-ratio: 3 / 5;
+  height: auto;
+  max-width: 450px;
+}
+
+.markdown-body .markdown-video-link-speak.speak-square {
+  padding-bottom: 0;
+  aspect-ratio: 1 / 1;
+  height: auto;
+  max-width: 600px;
+}
+
+/* A 3Speak <iframe> pasted by the author has no wrapper anchor, so the class
+   lands on the iframe itself and overrides the standalone-iframe rule below.
+   width/margin/display carry over from it, which keeps the player centred. */
+.markdown-body iframe.speak-iframe.speak-portrait {
+  aspect-ratio: 3 / 5;
+  height: auto;
+  max-width: 450px;
+}
+
+.markdown-body iframe.speak-iframe.speak-square {
+  aspect-ratio: 1 / 1;
+  height: auto;
+  max-width: 600px;
+}
+
+/* Truvvl stories are always 9:16; render-helper marks their iframe
+   portrait-embed, which the 16:9 fallback below would otherwise stretch. */
+.markdown-body iframe.portrait-embed {
+  max-width: 360px;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  height: auto;
+  border: none;
+  display: block;
+  margin: 1rem auto 0.5rem;
+}
+
 /* Standalone iframe embeds (raw author-pasted <iframe> — the sanitizer strips
    width/height, so without this they render at the 300x150 default). Kept
    responsive 16:9. :where() holds this at zero added specificity so the
    provider container rules above (and the audio overrides below) always win;
-   audio hosts are excluded so they are not stretched into video boxes. */
+   audio hosts are excluded so they are not stretched into video boxes, and
+   portrait embeds keep their own 9:16 rule. */
 .markdown-body
   iframe:where(
     :not(
         .markdown-audio-link *,
         .speak-audio-iframe,
+        .portrait-embed,
         [src*="open.spotify.com"],
         [src*="soundcloud.com"]
       )

@@ -6,6 +6,7 @@ import { useParams, useSearch } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { InstanceConfigManager, t } from '@/core';
 import { useDocumentMeta } from '@/utils/use-document-meta';
+import { useThreeSpeakOrientation } from '../hooks/use-three-speak-orientation';
 import { BlogLayout } from '../layout/blog-layout';
 import { BlogPostBody } from './blog-post-body';
 import { BlogPostDiscussion } from './blog-post-discussion';
@@ -33,6 +34,10 @@ export function BlogPostPage() {
     error,
     refetch,
   } = useQuery(getPostQueryOptions(author, permlink));
+
+  // Installed here rather than in BlogPostBody so one listener serves both the
+  // post body and the comment bodies below it.
+  useThreeSpeakOrientation();
 
   // Extract first image from post body for OG image
   const ogImage = useMemo(() => {

@@ -45,9 +45,14 @@ export function EcencyRenderer({
 }: HTMLProps<HTMLDivElement> & Props) {
   const ref = useRef<HTMLDivElement>(null);
 
-  // Lightweight postMessage listener for 3Speak orientation when videos are embedded directly
+  // Lightweight postMessage listener for 3Speak orientation. ThreeSpeakVideoExtension
+  // owns this for the players it builds, but it only enhances
+  // .markdown-video-link-speak anchors - an <iframe> the author pasted is normalized
+  // to a bare iframe.speak-iframe with no wrapper, so nothing ever sized it by
+  // orientation and a 9:16 clip stayed in a 16:9 box. Those are handled here, along
+  // with every player when embedVideosDirectly skips the extensions entirely.
   useEffect(() => {
-    if (!renderOptions?.embedVideosDirectly) return;
+    const embedsDirectly = renderOptions?.embedVideosDirectly ?? false;
 
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== "https://play.3speak.tv" || event.data?.type !== "3speak-player-ready") return;
@@ -55,13 +60,20 @@ export function EcencyRenderer({
       const iframes = ref.current?.querySelectorAll<HTMLIFrameElement>(".speak-iframe");
       iframes?.forEach((iframe) => {
         if (iframe.contentWindow == null || iframe.contentWindow !== event.source) return;
+
         const container = iframe.closest(".markdown-video-link-speak");
-        if (!container) return;
+        // A wrapped player belongs to the extension whenever one is running.
+        if (container && !embedsDirectly) return;
+
+        // The player re-reports when the source changes, so drop any earlier
+        // verdict instead of stacking classes.
+        const target = container ?? iframe;
+        target.classList.remove("speak-portrait", "speak-square");
 
         if (event.data.isVertical) {
-          container.classList.add("speak-portrait");
+          target.classList.add("speak-portrait");
         } else if (event.data.aspectRatio && Math.abs(event.data.aspectRatio - 1) < 0.1) {
-          container.classList.add("speak-square");
+          target.classList.add("speak-square");
         }
       });
     };
