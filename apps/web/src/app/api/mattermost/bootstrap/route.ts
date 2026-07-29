@@ -3,6 +3,8 @@ import { getAccountSubscriptionsQueryOptions } from "@ecency/sdk";
 import { QueryClient } from "@tanstack/react-query";
 import { Subscription } from "@/entities";
 import {
+  CHAT_BAN_PROP,
+  ChatBannedError,
   ensureCommunityChannelMembership,
   ensureMattermostUser,
   ensurePersonalToken,
@@ -167,6 +169,20 @@ async function handleBootstrap(req: Request, signal: AbortSignal): Promise<NextR
         // Burying it under a generic outage status here would lose that.
         if (signal.aborted || (e instanceof Error && e.name === "AbortError")) {
             throw e;
+        }
+        // A live chat ban on a deactivated account is a moderation decision,
+        // not an outage: answer 403 with the expiration so the client can say
+        // so, instead of the 502 the outage mapping would produce (which reads
+        // as "chat is down" and invites a retry loop).
+        if (e instanceof ChatBannedError) {
+            console.warn("MM bootstrap: refused to reactivate banned account", {
+              username,
+              bannedUntil: e.bannedUntil
+            });
+            return NextResponse.json(
+                { error: e.message, bannedUntil: e.bannedUntil, prop: CHAT_BAN_PROP },
+                { status: 403 }
+            );
         }
         // Don't flatten every failure to 502. A per-call timeout or upstream
         // overload is transient: returning 503/504 lets the client retry

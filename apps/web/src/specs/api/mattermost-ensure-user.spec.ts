@@ -80,6 +80,88 @@ describe("ensureMattermostUser — idempotency / concurrent-create race", () => 
     expect(fetchMock).toHaveBeenCalledTimes(1); // no POST /users
   });
 
+  // Deactivation on its own is undone by the next login, so a moderation
+  // action that deactivates + bans used to be silently reverted here: the
+  // account came back active and held a live session, with only the post-time
+  // ban still enforcing. Reactivation must refuse while the ban is live.
+  it("refuses to reactivate a deactivated account with a live ban", async () => {
+    const { ensureMattermostUser, ChatBannedError } = await loadModule();
+    const bannedUntil = Date.now() + 60_000;
+    fetchMock.mockResolvedValueOnce(
+      resp(200, {
+        id: "u-3",
+        username: "spammer",
+        email: "s",
+        delete_at: 1700000000000,
+        props: { ecency_chat_banned_until: String(bannedUntil) }
+      })
+    );
+
+    const err = await ensureMattermostUser("spammer").catch((e) => e);
+
+    expect(err).toBeInstanceOf(ChatBannedError);
+    expect(err.bannedUntil).toBe(bannedUntil);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no PUT /active
+  });
+
+  it("reactivates once the ban has expired", async () => {
+    const { ensureMattermostUser } = await loadModule();
+    fetchMock
+      .mockResolvedValueOnce(
+        resp(200, {
+          id: "u-4",
+          username: "reformed",
+          email: "r",
+          delete_at: 1700000000000,
+          props: { ecency_chat_banned_until: String(Date.now() - 60_000) }
+        })
+      )
+      .mockResolvedValueOnce(resp(200, "")); // PUT /users/u-4/active
+
+    const user = await ensureMattermostUser("reformed");
+
+    expect(user.delete_at).toBe(0);
+    expect(fetchMock.mock.calls[1][0]).toContain("/users/u-4/active");
+  });
+
+  it("leaves a banned but still-active account alone", async () => {
+    const { ensureMattermostUser } = await loadModule();
+    fetchMock.mockResolvedValueOnce(
+      resp(200, {
+        id: "u-5",
+        username: "muted",
+        email: "m",
+        delete_at: 0,
+        props: { ecency_chat_banned_until: String(Date.now() + 60_000) }
+      })
+    );
+
+    // The ban blocks posting, not reading — bootstrap stays available.
+    const user = await ensureMattermostUser("muted");
+
+    expect(user.id).toBe("u-5");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses reactivation on the username_exists race path too", async () => {
+    const { ensureMattermostUser, ChatBannedError } = await loadModule();
+    fetchMock
+      .mockResolvedValueOnce(resp(404, "nf"))
+      .mockResolvedValueOnce(resp(400, USERNAME_EXISTS))
+      .mockResolvedValueOnce(
+        resp(200, {
+          id: "u-6",
+          username: "racer",
+          email: "r",
+          delete_at: 1700000000000,
+          props: { ecency_chat_banned_until: String(Date.now() + 60_000) }
+        })
+      );
+
+    await expect(ensureMattermostUser("racer")).rejects.toBeInstanceOf(ChatBannedError);
+    expect(fetchMock).toHaveBeenCalledTimes(3); // no PUT /active
+  });
+
   it("still throws on non-username_exists create errors", async () => {
     const { ensureMattermostUser } = await loadModule();
     fetchMock

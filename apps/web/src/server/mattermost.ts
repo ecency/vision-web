@@ -52,6 +52,24 @@ class MattermostError extends Error {
   }
 }
 
+/**
+ * Raised when provisioning would resurrect an account that is deactivated and
+ * still chat-banned. Distinct from MattermostError so bootstrap can answer 403
+ * (a moderation decision) instead of routing it through the outage mapping,
+ * which would report a 502 and invite the client to retry.
+ */
+export class ChatBannedError extends Error {
+  readonly username: string;
+  readonly bannedUntil: number;
+
+  constructor(username: string, bannedUntil: number) {
+    super(`@${username} is banned from chat until ${new Date(bannedUntil).toISOString()}`);
+    this.name = "ChatBannedError";
+    this.username = username;
+    this.bannedUntil = bannedUntil;
+  }
+}
+
 function requireEnv(value: string | undefined, name: string) {
   if (!value) {
     throw new Error(`${name} is not configured`);
@@ -138,11 +156,29 @@ export async function reactivateMattermostUser(userId: string, signal?: AbortSig
   });
 }
 
-export async function ensureMattermostUser(username: string, signal?: AbortSignal): Promise<MattermostUser> {
+/**
+ * Deactivation alone is not a durable block: this function reactivates on the
+ * next login, so a deactivated account comes back as soon as its owner opens
+ * chat. The durable control is the chat ban prop, which survives deactivation.
+ * Refuse to reactivate while that ban is live, so a moderation action that
+ * deactivates and bans stays in effect instead of being undone by the next
+ * bootstrap.
+ */
+function assertReactivationAllowed(user: MattermostUserWithProps) {
+  const bannedUntil = isUserChatBanned(user);
+  if (bannedUntil) {
+    throw new ChatBannedError(user.username, bannedUntil);
+  }
+}
+
+export async function ensureMattermostUser(
+  username: string,
+  signal?: AbortSignal
+): Promise<MattermostUserWithProps> {
   // Step 1: Try to find existing user (only suppress 404)
-  let user: MattermostUser | null = null;
+  let user: MattermostUserWithProps | null = null;
   try {
-    user = await mmFetch<MattermostUser>(`/users/username/${encodeURIComponent(username)}`, {
+    user = await mmFetch<MattermostUserWithProps>(`/users/username/${encodeURIComponent(username)}`, {
       headers: getAdminHeaders(),
       signal
     });
@@ -157,6 +193,7 @@ export async function ensureMattermostUser(username: string, signal?: AbortSigna
   // Step 2: If found, reactivate if needed (errors surface to caller)
   if (user) {
     if (user.delete_at > 0) {
+      assertReactivationAllowed(user);
       await reactivateMattermostUser(user.id, signal);
       user.delete_at = 0;
     }
@@ -172,7 +209,7 @@ export async function ensureMattermostUser(username: string, signal?: AbortSigna
   // a 502) to the caller. Makes provisioning idempotent / race-safe.
   const email = `${username}+no-email@ecency.local`;
   try {
-    return await mmFetch<MattermostUser>(`/users`, {
+    return await mmFetch<MattermostUserWithProps>(`/users`, {
       method: "POST",
       headers: getAdminHeaders(),
       body: JSON.stringify({
@@ -189,11 +226,12 @@ export async function ensureMattermostUser(username: string, signal?: AbortSigna
       error.status === 400 &&
       error.message.includes("app.user.save.username_exists")
     ) {
-      const existing = await mmFetch<MattermostUser>(
+      const existing = await mmFetch<MattermostUserWithProps>(
         `/users/username/${encodeURIComponent(username)}`,
         { headers: getAdminHeaders(), signal }
       );
       if (existing.delete_at > 0) {
+        assertReactivationAllowed(existing);
         await reactivateMattermostUser(existing.id, signal);
         existing.delete_at = 0;
       }
