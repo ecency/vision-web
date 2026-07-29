@@ -10,7 +10,12 @@ export interface ProMembersResponse {
 /**
  * Public, cached roster of Ecency Pro members. Backed by a lightweight private-api
  * endpoint (no auth) so any surface can decorate a username with a Pro badge without
- * a per-user request. The list changes slowly, so it stays fresh for ~5 minutes.
+ * a per-user request.
+ *
+ * `staleTime` matches that endpoint's fresh window. A shorter one only makes
+ * react-query re-ask for a roster the browser already holds, since the response
+ * now carries a Cache-Control; a longer one would show a stale badge after the
+ * server already considers the list refreshable.
  */
 export function getProMembersQueryOptions() {
   return queryOptions({
@@ -29,7 +34,7 @@ export function getProMembersQueryOptions() {
 
       return response.json() as Promise<ProMembersResponse>;
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
   });
 }
 
