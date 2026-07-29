@@ -12,10 +12,12 @@ export interface ProMembersResponse {
  * endpoint (no auth) so any surface can decorate a username with a Pro badge without
  * a per-user request.
  *
- * `staleTime` matches that endpoint's fresh window. A shorter one only makes
- * react-query re-ask for a roster the browser already holds, since the response
- * now carries a Cache-Control; a longer one would show a stale badge after the
- * server already considers the list refreshable.
+ * `staleTime` is deliberately shorter than the endpoint's own cache window and is
+ * NOT raised to match it. react-query has no idea how old a response already was
+ * when `fetch` served it from the browser cache: it treats a nine-minute-old
+ * cached body as freshly fetched and starts its own window from zero. Worst-case
+ * staleness is therefore the endpoint's window plus this one, so raising this to
+ * match the server would roughly double it rather than align it.
  */
 export function getProMembersQueryOptions() {
   return queryOptions({
@@ -34,7 +36,7 @@ export function getProMembersQueryOptions() {
 
       return response.json() as Promise<ProMembersResponse>;
     },
-    staleTime: 10 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

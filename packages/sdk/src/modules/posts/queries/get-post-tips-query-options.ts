@@ -11,9 +11,11 @@ import { PostTipsResponse } from "../types/post-tip";
  * serves a Cache-Control, so a repeat read can come from the browser instead of
  * the network.
  *
- * `staleTime` matches that endpoint's fresh window: a shorter one just makes
- * react-query ask again for something the browser would answer from cache, and
- * a longer one holds a tip total past the point the server considers it stale.
+ * `staleTime` is kept at or below the endpoint's own cache window rather than
+ * extending it. react-query cannot see how old a response already was when
+ * `fetch` served it from the browser cache, so it restarts its window from zero
+ * on a body that may already be near expiry; worst-case staleness is the two
+ * windows added together.
  */
 export function getPostTipsQueryOptions(author: string, permlink: string, isEnabled = true) {
   return queryOptions({

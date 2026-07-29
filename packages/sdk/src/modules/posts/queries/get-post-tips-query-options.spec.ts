@@ -46,8 +46,10 @@ describe("getPostTipsQueryOptions", () => {
     expect(url).toContain("/private-api/post-tips/a%20b/post%2Fwith%3Fchars");
   });
 
-  it("stays fresh long enough to avoid a refetch on every mount", () => {
-    expect(getPostTipsQueryOptions("good-karma", "some-post").staleTime).toBeGreaterThan(0);
+  it("stays fresh for the endpoint's window, not merely non-zero", () => {
+    // toBeGreaterThan(0) would pass for a 1ms window, which is the bug this
+    // guards: an unset or near-zero staleTime refetches on every mount.
+    expect(getPostTipsQueryOptions("good-karma", "some-post").staleTime).toBe(60 * 1000);
   });
 
   it("does not fire without both an author and a permlink", () => {
