@@ -60,6 +60,39 @@ interface MattermostChannelSummary {
   type: string;
 }
 
+/**
+ * A 403 from bootstrap is a decision, not a fault: it is returned for an
+ * account whose chat ban is still live. Retrying it, or re-running it on every
+ * window focus, would re-verify the token and re-fetch subscriptions for an
+ * answer that cannot change until the ban expires.
+ */
+export function isBootstrapBanError(error: unknown) {
+  return (error as { status?: number } | null)?.status === 403;
+}
+
+// `error: Error` is load-bearing: React Query infers the query's TError from
+// this predicate, and widening it to `unknown` propagates out to every consumer
+// reading `error.message`.
+export function shouldRetryBootstrap(failureCount: number, error: Error) {
+  if (isBootstrapBanError(error)) {
+    return false;
+  }
+
+  // Don't retry on auth errors after refresh attempt fails
+  const errorMessage = (error as Error)?.message?.toLowerCase() || "";
+  const isAuthError =
+    errorMessage.includes("unauthorized") ||
+    errorMessage.includes("invalid token") ||
+    errorMessage.includes("authentication required");
+
+  if (isAuthError) {
+    return false; // Don't retry auth errors
+  }
+
+  // Retry other errors (network, server issues) up to 3 times
+  return failureCount < 3;
+}
+
 export function useMattermostBootstrap(community?: string) {
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username;
@@ -71,22 +104,10 @@ export function useMattermostBootstrap(community?: string) {
     enabled: Boolean(username),
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
-    refetchOnWindowFocus: true, // Auto-retry when user returns to tab
-    retry: (failureCount, error) => {
-      // Don't retry on auth errors after refresh attempt fails
-      const errorMessage = (error as Error)?.message?.toLowerCase() || "";
-      const isAuthError =
-        errorMessage.includes("unauthorized") ||
-        errorMessage.includes("invalid token") ||
-        errorMessage.includes("authentication required");
-
-      if (isAuthError) {
-        return false; // Don't retry auth errors
-      }
-
-      // Retry other errors (network, server issues) up to 3 times
-      return failureCount < 3;
-    },
+    // Auto-retry when user returns to tab. An errored query is always stale, so
+    // without the ban exemption every focus would re-run the whole bootstrap.
+    refetchOnWindowFocus: (query) => !isBootstrapBanError(query.state.error),
+    retry: shouldRetryBootstrap,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
     queryFn: async () => {
       let accessToken = getAccessToken(username || "");
@@ -151,7 +172,9 @@ export function useMattermostBootstrap(community?: string) {
 
       if (!res.ok) {
         const data = await safeJson<{ error?: string }>(res);
-        throw new Error(data?.error || "Unable to initialize chat");
+        throw Object.assign(new Error(data?.error || "Unable to initialize chat"), {
+          status: res.status
+        });
       }
 
       const bootstrap = (await safeJson(res)) as {
