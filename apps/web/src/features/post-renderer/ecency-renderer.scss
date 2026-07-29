@@ -478,6 +478,31 @@ $xxxl-break: "1600px";
     display: block;
   }
 
+  // A 3Speak <iframe> the author pasted has no .markdown-video-link-speak
+  // wrapper to size it, and .speak-iframe is excluded from both the fallback
+  // below and the one in _markdown.scss, so without this it renders at the
+  // 300x150 browser default (the sanitizer drops width/height). Orientation
+  // classes come from the listener in EcencyRenderer.
+  iframe.speak-iframe:where(:not(.markdown-video-link-speak *)) {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 16 / 9;
+    height: auto;
+    border: none;
+    margin: 1rem auto 0.5rem;
+
+    &.speak-portrait {
+      aspect-ratio: 3 / 5;
+      max-width: 450px;
+    }
+
+    &.speak-square {
+      aspect-ratio: 1 / 1;
+      max-width: 600px;
+    }
+  }
+
   // Fallback for standalone iframes not inside video containers.
   // Use :where() to keep specificity at (0,0,1) so video container rules
   // (.markdown-video-link-* iframe) win by specificity and aren't shadowed.
