@@ -10,7 +10,14 @@ export interface ProMembersResponse {
 /**
  * Public, cached roster of Ecency Pro members. Backed by a lightweight private-api
  * endpoint (no auth) so any surface can decorate a username with a Pro badge without
- * a per-user request. The list changes slowly, so it stays fresh for ~5 minutes.
+ * a per-user request.
+ *
+ * `staleTime` is deliberately shorter than the endpoint's own cache window and is
+ * NOT raised to match it. react-query has no idea how old a response already was
+ * when `fetch` served it from the browser cache: it treats a nine-minute-old
+ * cached body as freshly fetched and starts its own window from zero. Worst-case
+ * staleness is therefore the endpoint's window plus this one, so raising this to
+ * match the server would roughly double it rather than align it.
  */
 export function getProMembersQueryOptions() {
   return queryOptions({

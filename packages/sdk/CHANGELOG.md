@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.68
+
+### Patch Changes
+
+- feat(sdk): read post tips over GET and align pro-members freshness (#1273)
+
 ## 2.3.67
 
 ### Patch Changes
