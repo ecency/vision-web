@@ -61,13 +61,44 @@ interface MattermostChannelSummary {
 }
 
 /**
+ * How long a live ban suppresses focus refetches for. Not "forever": a
+ * moderator can lift a ban early, which only changes the answer server-side, so
+ * an open page has to look again eventually or it stays dead until reload.
+ */
+const BANNED_RECHECK_MS = 5 * 60_000;
+
+/**
  * A 403 from bootstrap is a decision, not a fault: it is returned for an
- * account whose chat ban is still live. Retrying it, or re-running it on every
- * window focus, would re-verify the token and re-fetch subscriptions for an
- * answer that cannot change until the ban expires.
+ * account whose chat ban is still live. Retrying it inside one fetch cycle
+ * cannot change the answer.
  */
 export function isBootstrapBanError(error: unknown) {
   return (error as { status?: number } | null)?.status === 403;
+}
+
+/**
+ * An errored query is always stale, so without this every focus would re-run
+ * the whole bootstrap (token verification plus a subscriptions fetch) for a
+ * banned account. Two things still have to get through: the ban expiring, which
+ * the response tells us the time of, and a moderator lifting it early, which it
+ * cannot. So suppress refetches while the ban is known to be live, resume the
+ * moment its expiry passes, and in the meantime look again occasionally.
+ */
+export function shouldRefetchBootstrapOnFocus(
+  error: unknown,
+  errorUpdatedAt: number,
+  now = Date.now()
+) {
+  if (!isBootstrapBanError(error)) {
+    return true;
+  }
+
+  const bannedUntil = (error as { bannedUntil?: number } | null)?.bannedUntil;
+  if (typeof bannedUntil === "number" && now >= bannedUntil) {
+    return true;
+  }
+
+  return now - errorUpdatedAt >= BANNED_RECHECK_MS;
 }
 
 // `error: Error` is load-bearing: React Query infers the query's TError from
@@ -104,9 +135,9 @@ export function useMattermostBootstrap(community?: string) {
     enabled: Boolean(username),
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
-    // Auto-retry when user returns to tab. An errored query is always stale, so
-    // without the ban exemption every focus would re-run the whole bootstrap.
-    refetchOnWindowFocus: (query) => !isBootstrapBanError(query.state.error),
+    // Auto-retry when user returns to tab, throttled while a ban is live.
+    refetchOnWindowFocus: (query) =>
+      shouldRefetchBootstrapOnFocus(query.state.error, query.state.errorUpdatedAt),
     retry: shouldRetryBootstrap,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
     queryFn: async () => {
@@ -171,9 +202,11 @@ export function useMattermostBootstrap(community?: string) {
       }
 
       if (!res.ok) {
-        const data = await safeJson<{ error?: string }>(res);
+        const data = await safeJson<{ error?: string; bannedUntil?: number }>(res);
+        // bannedUntil rides along so the ban can expire without a reload.
         throw Object.assign(new Error(data?.error || "Unable to initialize chat"), {
-          status: res.status
+          status: res.status,
+          bannedUntil: data?.bannedUntil
         });
       }
 
