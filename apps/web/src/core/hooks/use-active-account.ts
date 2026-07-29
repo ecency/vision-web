@@ -44,7 +44,7 @@ export function useActiveAccount() {
   const activeUser = useGlobalStore((s) => s.activeUser);
   const username = activeUser?.username ?? null;
 
-  const query = useQuery(getAccountFullQueryOptions(username ?? undefined));
+  const query = useQuery({ ...getAccountFullQueryOptions(username ?? undefined), throwOnError: false });
   const account: FullAccount | null | undefined =
       username ? (query.data as FullAccount | null | undefined) : null;
 
