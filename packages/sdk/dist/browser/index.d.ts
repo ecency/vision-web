@@ -3808,7 +3808,14 @@ interface ProMembersResponse {
 /**
  * Public, cached roster of Ecency Pro members. Backed by a lightweight private-api
  * endpoint (no auth) so any surface can decorate a username with a Pro badge without
- * a per-user request. The list changes slowly, so it stays fresh for ~5 minutes.
+ * a per-user request.
+ *
+ * `staleTime` is deliberately shorter than the endpoint's own cache window and is
+ * NOT raised to match it. react-query has no idea how old a response already was
+ * when `fetch` served it from the browser cache: it treats a nine-minute-old
+ * cached body as freshly fetched and starts its own window from zero. Worst-case
+ * staleness is therefore the endpoint's window plus this one, so raising this to
+ * match the server would roughly double it rather than align it.
  */
 declare function getProMembersQueryOptions(): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<ProMembersResponse, Error, ProMembersResponse, string[]>, "queryFn"> & {
     queryFn?: _tanstack_react_query.QueryFunction<ProMembersResponse, string[], never> | undefined;
@@ -4191,6 +4198,21 @@ declare function getDeletedEntryQueryOptions(author: string, permlink: string): 
     };
 };
 
+/**
+ * Tips for a single post.
+ *
+ * Addressed as a GET so the response can be cached. This was a POST, which no
+ * cache may store, so the same tip totals were refetched on every mount. The
+ * endpoint keys off nothing but author and permlink and needs no auth, and now
+ * serves a Cache-Control, so a repeat read can come from the browser instead of
+ * the network.
+ *
+ * `staleTime` is kept at or below the endpoint's own cache window rather than
+ * extending it. react-query cannot see how old a response already was when
+ * `fetch` served it from the browser cache, so it restarts its window from zero
+ * on a body that may already be near expiry; worst-case staleness is the two
+ * windows added together.
+ */
 declare function getPostTipsQueryOptions(author: string, permlink: string, isEnabled?: boolean): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<PostTipsResponse, Error, PostTipsResponse, string[]>, "queryFn"> & {
     queryFn?: _tanstack_react_query.QueryFunction<PostTipsResponse, string[], never> | undefined;
 } & {
