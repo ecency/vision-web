@@ -63,18 +63,22 @@ export function useThreeSpeakOrientation() {
       ).find(
         (el) => el.contentWindow !== null && el.contentWindow === event.source,
       );
-      const container = iframe?.closest('.markdown-video-link-speak');
-      if (!container) {
+      if (!iframe) {
         return;
       }
 
+      // A link the renderer expanded sits in a .markdown-video-link-speak box
+      // that owns the aspect ratio. An <iframe> the author pasted is sized
+      // directly by the standalone-iframe rule, so it carries the class itself.
+      const target = iframe.closest('.markdown-video-link-speak') ?? iframe;
+
       // The player re-reports when the source changes, so drop any earlier
       // verdict instead of stacking classes.
-      container.classList.remove('speak-portrait', 'speak-square');
+      target.classList.remove('speak-portrait', 'speak-square');
 
       const orientation = resolveSpeakOrientationClass(event);
       if (orientation) {
-        container.classList.add(orientation);
+        target.classList.add(orientation);
       }
     };
 

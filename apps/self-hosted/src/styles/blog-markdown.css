@@ -1482,6 +1482,21 @@
   max-width: 600px;
 }
 
+/* A 3Speak <iframe> pasted by the author has no wrapper anchor, so the class
+   lands on the iframe itself and overrides the standalone-iframe rule below.
+   width/margin/display carry over from it, which keeps the player centred. */
+.markdown-body iframe.speak-iframe.speak-portrait {
+  aspect-ratio: 3 / 5;
+  height: auto;
+  max-width: 450px;
+}
+
+.markdown-body iframe.speak-iframe.speak-square {
+  aspect-ratio: 1 / 1;
+  height: auto;
+  max-width: 600px;
+}
+
 /* Truvvl stories are always 9:16; render-helper marks their iframe
    portrait-embed, which the 16:9 fallback below would otherwise stretch. */
 .markdown-body iframe.portrait-embed {
