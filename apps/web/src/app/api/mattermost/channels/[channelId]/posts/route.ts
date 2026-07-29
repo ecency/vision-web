@@ -12,6 +12,7 @@ import {
   isUserChatBanned,
   CHAT_BAN_PROP
 } from "@/server/mattermost";
+import { checkDmFanout } from "@/server/chat-dm-fanout";
 
 // Prevent artificial timeout - this route should be fast now
 export const maxDuration = 60; // 60 seconds max
@@ -334,6 +335,7 @@ export async function POST(
       mmUserFetch<{
         id: string;
         username: string;
+        create_at?: number;
         props?: Record<string, string>;
       }>(`/users/me`, token),
       mmUserFetch<MattermostChannel>(`/channels/${channelIdPath}`, token)
@@ -351,6 +353,34 @@ export async function POST(
         },
         { status: 403 }
       );
+    }
+
+    // Cap how many distinct people one account can reach privately in a rolling
+    // window. Mass-DM phishing is otherwise only contained after the fact, by
+    // which point the spray has already been delivered. Public channels are not
+    // counted: the abuse pattern, and the harm, is private and one-to-one.
+    if (channel.type === "D" || channel.type === "G") {
+      const fanout = await checkDmFanout({
+        userId: currentUser.id,
+        channelId,
+        accountCreatedAt: currentUser.create_at
+      });
+
+      if (!fanout.allowed) {
+        console.warn("MM posts: DM fan-out limit reached", {
+          username: currentUser.username,
+          recipients: fanout.recipients,
+          limit: fanout.limit
+        });
+        return NextResponse.json(
+          {
+            error:
+              "You have started conversations with too many people recently. Please try again later.",
+            retryAfter: fanout.retryAfterSeconds
+          },
+          { status: 429, headers: { "Retry-After": String(fanout.retryAfterSeconds) } }
+        );
+      }
     }
 
     // DM privacy is enforced at channel creation time (/api/mattermost/direct)
