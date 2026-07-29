@@ -101,11 +101,11 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
     return NextResponse.rewrite(nextUrl);
   }
 
-  // Expose the resolved pathname to server components via a request header — the
-  // root layout reads it to skip the analytics script on the /embed/* WebView
-  // routes (server components can't otherwise see the path).
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-pathname", path);
+  // x-pathname was dropped here: its only consumer was the root layout's
+  // /embed analytics skip, which was itself dead (that route became a route
+  // handler, and route handlers never render the layout). Nothing reads it now.
+  //
   // Layouts cannot read searchParams, so expose the query string too — the feed
   // layout needs it to tell a cursor archive page (?before=) apart from page 1.
   requestHeaders.set("x-search", request.nextUrl.search);
