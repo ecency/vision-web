@@ -20,8 +20,8 @@ interface Props {
 }
 
 // NOTE: this is INERT, and was already inert before this route read cookies.
-// The ROOT LAYOUT awaits cookies() (theme) and headers() (x-pathname), which opts
-// every route in the app into request-time rendering. Verified against the
+// The ROOT LAYOUT awaits cookies() (theme), which opts every route in the app
+// into request-time rendering. Verified against the
 // deployed production build: prerender-manifest.json lists 0 ISR dynamicRoutes
 // and only 5 prerendered entries, all static files — no page route is in the
 // Full Route Cache, this one included.

@@ -2,7 +2,7 @@ import "@/styles/style.scss";
 import "@/core/sdk-init"; // Initialize SDK DMCA filters immediately (SSR)
 import Providers from "@/app/providers";
 import { HiringConsoleLog } from "@/app/_components";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { Theme } from "@/enums";
 import { BannerManager } from "@/features/banners";
 import { ServiceWorkerRecovery } from "@/features/pwa-install";
@@ -79,13 +79,25 @@ const lora = Lora({
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const theme = (await cookies()).get("theme")?.value;
-  // The /embed/* routes are loaded inside the mobile app's WebView (e.g. the
-  // Turnstile widget). Skip analytics there so automated widget loads don't
-  // register as ecency.com pageviews. Path comes from the middleware header.
-  const isEmbedRoute = ((await headers()).get("x-pathname") ?? "").startsWith("/embed");
 
   return (
-    <html lang="en" className={`${lora.variable} ${inter.variable}`}>
+    // The dark class goes on BOTH <html> and <body>, deliberately.
+    //
+    // <html> is what five checkout components probe via
+    // `document.documentElement.classList.contains("dark")` — with the class on
+    // body alone that check always read false and they rendered light.
+    //
+    // <body> must KEEP it: styles/theme-day.scss assigns the light custom
+    // properties, `background: white` and `color` directly to `body`, while
+    // theme-night.scss applies its dark values under `.dark`. With the class only
+    // on <html>, body's own light declarations beat the merely-inherited dark
+    // ones, so Tailwind dark variants would activate while the body, Bootstrap
+    // surfaces and every CSS-variable consumer stayed light. Keeping it on body
+    // preserves that cascade exactly as it was.
+    <html
+      lang="en"
+      className={`${lora.variable} ${inter.variable} ${theme === Theme.night ? "dark" : ""}`}
+    >
       <head>
         {/*
           Global CONFIG stub for Twitter/X in-app browser compatibility.
@@ -111,9 +123,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="preconnect" href="https://ecency.com" crossOrigin="anonymous" />
         <JsonLd data={buildOrganizationJsonLd()} />
       </head>
-      {!isEmbedRoute && (
-        <Script defer data-domain="ecency.com" data-api="/pl/api/event" src="/pl/js/script.js" />
-      )}
+      {/* The /embed analytics skip that used to wrap this was dead code: it was
+          added (c5391e8b69) while /embed was a Next page, and the next day
+          db2d671035 replaced that page with a self-contained route handler.
+          Route handlers never render this layout, so the guard could not fire —
+          and the headers() call behind it was the app's second forced-dynamic
+          read (see #1262). */}
+      <Script defer data-domain="ecency.com" data-api="/pl/api/event" src="/pl/js/script.js" />
       <body className={theme === Theme.night ? "dark" : ""}>
         <BannerManager />
         <ServiceWorkerRecovery />

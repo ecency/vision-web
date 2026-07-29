@@ -10,6 +10,7 @@ import { isInAppBrowser } from "@/utils/keychain";
 import { runWithRetries } from "@/utils/run-with-retries";
 import type { AppWindow } from "@/types/app-window";
 import { getQueryClient } from "@/core/react-query";
+import { applyThemeClass } from "@/utils/apply-theme-class";
 import defaults, { ALLOWED_IMAGE_SERVERS } from "@/defaults";
 import { setProxyBase } from "@ecency/render-helper";
 
@@ -76,14 +77,11 @@ export function createGlobalActions(set: (state: Partial<State>) => void, getSta
       set({
         theme: newTheme
       });
-      let body: any = document.getElementsByTagName("body");
-      if (!body) return;
-      body = body[0];
-      if (theme === "night") {
-        body.classList.remove("dark");
-      } else {
-        body.classList.add("dark");
-      }
+      // Apply from newTheme, not the previous `theme`. The old form worked for a
+      // plain toggle but desynced whenever newTheme was not simply the opposite:
+      // an explicit theme_key matching the current theme (settings re-selecting
+      // the active option) or the use_system_theme path.
+      applyThemeClass(newTheme);
     },
     setLang: async (lang: string) => {
       ls.set("lang", lang);
