@@ -48,7 +48,47 @@ export interface DmFanoutDecision {
   limit: number;
   /** Seconds until the oldest recipient ages out. Only meaningful when blocked. */
   retryAfterSeconds: number;
+  /**
+   * True when this call added a recipient that was not already in the window.
+   * Callers pass it to `releaseDmFanout` if the send then fails, so an
+   * undelivered message does not hold a slot for the rest of the window.
+   */
+  reserved: boolean;
 }
+
+/**
+ * Trim, count and conditionally insert in one atomic step.
+ *
+ * A read pipeline followed by a separate write loses to exactly the attack
+ * this limits: fire the whole spray in parallel and every request reads a
+ * count below the cap before any of them writes, so all of them pass.
+ */
+const RESERVE_SCRIPT = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local windowMs = tonumber(ARGV[2])
+local limit = tonumber(ARGV[3])
+local member = ARGV[4]
+
+redis.call('ZREMRANGEBYSCORE', key, 0, now - windowMs)
+local known = redis.call('ZSCORE', key, member)
+local count = redis.call('ZCARD', key)
+
+if not known and count >= limit then
+  local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+  local oldestScore = -1
+  if oldest[2] then oldestScore = tonumber(oldest[2]) end
+  return {0, count, 0, oldestScore}
+end
+
+redis.call('ZADD', key, now, member)
+redis.call('PEXPIRE', key, windowMs)
+
+if known then
+  return {1, count, 0, -1}
+end
+return {1, count + 1, 1, -1}
+`;
 
 /**
  * A missing or nonsensical creation timestamp resolves to the established cap.
@@ -93,23 +133,20 @@ export function getChatRedis(): RedisClient | null {
   }
 }
 
-const ALLOW_UNMEASURED: DmFanoutDecision = {
+const ALLOW_UNMEASURED: Omit<DmFanoutDecision, "limit"> = {
   allowed: true,
   recipients: 0,
-  limit: DM_FANOUT_MAX,
-  retryAfterSeconds: 0
+  retryAfterSeconds: 0,
+  reserved: false
 };
 
-function pipelineValue(results: [Error | null, unknown][] | null, index: number) {
-  const entry = results?.[index];
-  if (!entry || entry[0]) return null;
-  return entry[1] ?? null;
-}
-
 /**
- * Records `channelId` as a recipient of `userId` and reports whether the send
+ * Reserves `channelId` as a recipient of `userId` and reports whether the send
  * may proceed. Nothing is recorded when the send is blocked, so a rejected
- * attempt does not consume a slot or extend the window.
+ * attempt neither consumes a slot nor extends the window.
+ *
+ * A reservation is provisional: call `releaseDmFanout` if the send does not go
+ * through, otherwise an undelivered message holds a slot for a full window.
  */
 export async function checkDmFanout(
   {
@@ -129,44 +166,55 @@ export async function checkDmFanout(
   if (!redis) return { ...ALLOW_UNMEASURED, limit };
 
   try {
-    const key = `${KEY_PREFIX}${userId}`;
-    const results = (await redis
-      .pipeline()
-      .zremrangebyscore(key, 0, now - DM_FANOUT_WINDOW_MS)
-      .zscore(key, channelId)
-      .zcard(key)
-      .zrange(key, 0, 0, "WITHSCORES")
-      .exec()) as [Error | null, unknown][] | null;
+    const [allowed, recipients, reserved, oldestScore] = (await redis.eval(
+      RESERVE_SCRIPT,
+      1,
+      `${KEY_PREFIX}${userId}`,
+      String(now),
+      String(DM_FANOUT_WINDOW_MS),
+      String(limit),
+      channelId
+    )) as [number, number, number, number];
 
-    // An already-counted recipient is never blocked: the cap is on how many
-    // people you reach, not on how much you say to them.
-    const known = pipelineValue(results, 1) !== null;
-    const recipients = Number(pipelineValue(results, 2) ?? 0);
-
-    if (!known && recipients >= limit) {
-      const oldest = pipelineValue(results, 3) as string[] | null;
-      const oldestScore = Number(oldest?.[1]);
-      const freesAt = Number.isFinite(oldestScore)
-        ? oldestScore + DM_FANOUT_WINDOW_MS
-        : now + DM_FANOUT_WINDOW_MS;
+    if (allowed) {
       return {
-        allowed: false,
+        allowed: true,
         recipients,
         limit,
-        retryAfterSeconds: Math.max(1, Math.ceil((freesAt - now) / 1000))
+        retryAfterSeconds: 0,
+        reserved: reserved === 1
       };
     }
 
-    await redis.pipeline().zadd(key, now, channelId).pexpire(key, DM_FANOUT_WINDOW_MS).exec();
+    const freesAt =
+      oldestScore >= 0 ? oldestScore + DM_FANOUT_WINDOW_MS : now + DM_FANOUT_WINDOW_MS;
 
     return {
-      allowed: true,
-      recipients: known ? recipients : recipients + 1,
+      allowed: false,
+      recipients,
       limit,
-      retryAfterSeconds: 0
+      retryAfterSeconds: Math.max(1, Math.ceil((freesAt - now) / 1000)),
+      reserved: false
     };
   } catch {
     // Fail open — see the module comment.
     return { ...ALLOW_UNMEASURED, limit };
+  }
+}
+
+/**
+ * Gives back a reservation whose send never landed. Only called for a
+ * newly-inserted recipient, so releasing cannot erase a conversation the
+ * sender already had inside the window.
+ */
+export async function releaseDmFanout(
+  { userId, channelId }: { userId: string; channelId: string },
+  redis: RedisClient | null = getChatRedis()
+): Promise<void> {
+  if (!redis) return;
+  try {
+    await redis.zrem(`${KEY_PREFIX}${userId}`, channelId);
+  } catch {
+    // Best effort: a stuck reservation ages out with the window.
   }
 }

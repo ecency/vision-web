@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   checkDmFanout,
   dmFanoutLimitFor,
+  releaseDmFanout,
   DM_FANOUT_MAX,
   DM_FANOUT_MAX_NEW,
   DM_FANOUT_NEW_ACCOUNT_MS,
@@ -10,11 +11,17 @@ import {
 
 // The limiter is the only thing standing between a freshly created account and
 // a mass-DM spray, so these exercise the real code path against an in-memory
-// stand-in for the sorted-set commands it issues rather than mocking the
-// decision away.
+// stand-in for the sorted set it keeps, rather than mocking the decision away.
 
 type Entry = { member: string; score: number };
 
+/**
+ * Stands in for the sorted-set state the reserve script operates on. `eval`
+ * reimplements that script's semantics: trim by score, look up membership,
+ * count, and insert only when under the cap. Crucially it runs to completion
+ * without interleaving, which is the property the real script buys and the
+ * reason the parallel-spray test below is meaningful.
+ */
 class FakeRedis {
   sets = new Map<string, Entry[]>();
   ttls = new Map<string, number>();
@@ -29,64 +36,46 @@ class FakeRedis {
     return e;
   }
 
-  pipeline() {
-    const ops: (() => unknown)[] = [];
-    const self = this;
-    const chain = {
-      zremrangebyscore(key: string, min: number, max: number) {
-        ops.push(() => {
-          const kept = self.entries(key).filter((e) => e.score < min || e.score > max);
-          self.sets.set(key, kept);
-          return 0;
-        });
-        return chain;
-      },
-      zscore(key: string, member: string) {
-        ops.push(() => {
-          const found = self.entries(key).find((e) => e.member === member);
-          return found ? String(found.score) : null;
-        });
-        return chain;
-      },
-      zcard(key: string) {
-        ops.push(() => self.entries(key).length);
-        return chain;
-      },
-      zrange(key: string, start: number, stop: number, _opt: string) {
-        ops.push(() => {
-          const sorted = [...self.entries(key)].sort((a, b) => a.score - b.score);
-          return sorted
-            .slice(start, stop + 1)
-            .flatMap((e) => [e.member, String(e.score)]);
-        });
-        return chain;
-      },
-      zadd(key: string, score: number, member: string) {
-        ops.push(() => {
-          const list = self.entries(key);
-          const existing = list.find((e) => e.member === member);
-          if (existing) {
-            existing.score = score;
-            return 0;
-          }
-          list.push({ member, score });
-          return 1;
-        });
-        return chain;
-      },
-      pexpire(key: string, ms: number) {
-        ops.push(() => {
-          self.ttls.set(key, ms);
-          return 1;
-        });
-        return chain;
-      },
-      async exec() {
-        if (self.failOn === "exec") throw new Error("redis down");
-        return ops.map((op) => [null, op()]);
-      }
-    };
-    return chain;
+  async eval(_script: string, _numKeys: number, key: string, ...args: string[]) {
+    if (this.failOn === "eval") throw new Error("redis down");
+    const [now, windowMs, limit, member] = [
+      Number(args[0]),
+      Number(args[1]),
+      Number(args[2]),
+      args[3]
+    ];
+
+    this.sets.set(
+      key,
+      this.entries(key).filter((e) => e.score > now - windowMs)
+    );
+
+    const list = this.entries(key);
+    const known = list.find((e) => e.member === member);
+    const count = list.length;
+
+    if (!known && count >= limit) {
+      const sorted = [...list].sort((a, b) => a.score - b.score);
+      return [0, count, 0, sorted.length ? sorted[0].score : -1];
+    }
+
+    if (known) {
+      known.score = now;
+    } else {
+      list.push({ member, score: now });
+    }
+    this.ttls.set(key, windowMs);
+
+    return known ? [1, count, 0, -1] : [1, count + 1, 1, -1];
+  }
+
+  async zrem(key: string, member: string) {
+    if (this.failOn === "zrem") throw new Error("redis down");
+    const list = this.entries(key);
+    const at = list.findIndex((e) => e.member === member);
+    if (at === -1) return 0;
+    list.splice(at, 1);
+    return 1;
   }
 }
 
@@ -211,8 +200,65 @@ describe("checkDmFanout", () => {
   });
 
   it("allows the send when a redis command fails", async () => {
-    redis.failOn = "exec";
+    redis.failOn = "eval";
     const res = await send(redis, "dm-1", { createdAt: NEW_ACCOUNT });
     expect(res.allowed).toBe(true);
+    expect(res.reserved).toBe(false); // nothing to hand back
+  });
+
+  // A read-then-write pipeline loses to exactly this: fire the spray in
+  // parallel and every request sees a count below the cap before any writes.
+  it("holds the cap when the whole spray is sent in parallel", async () => {
+    const targets = Array.from({ length: DM_FANOUT_MAX_NEW * 3 }, (_, i) => `dm-${i}`);
+
+    const results = await Promise.all(
+      targets.map((channelId) => send(redis, channelId, { createdAt: NEW_ACCOUNT }))
+    );
+
+    expect(results.filter((r) => r.allowed)).toHaveLength(DM_FANOUT_MAX_NEW);
+    expect(redis.sets.get("chat:dmfanout:u-1")).toHaveLength(DM_FANOUT_MAX_NEW);
+  });
+});
+
+describe("releaseDmFanout", () => {
+  let redis: FakeRedis;
+
+  beforeEach(() => {
+    redis = new FakeRedis();
+  });
+
+  // The send is validated further and then has to be accepted upstream. Both
+  // can fail after the slot is taken, and five failed attempts must not lock a
+  // new account out for the rest of the window.
+  it("hands back a slot whose send never landed", async () => {
+    const first = await send(redis, "dm-0", { createdAt: NEW_ACCOUNT });
+    expect(first.reserved).toBe(true);
+
+    await releaseDmFanout({ userId: "u-1", channelId: "dm-0" }, redis as never);
+
+    expect(redis.sets.get("chat:dmfanout:u-1")).toHaveLength(0);
+  });
+
+  // Releasing a recipient the sender already had would erase real history and
+  // let them re-open that conversation for free, so the route only releases
+  // what this call actually inserted.
+  it("does not report a reservation when the recipient was already known", async () => {
+    await send(redis, "dm-0", { createdAt: NEW_ACCOUNT });
+
+    const again = await send(redis, "dm-0", { createdAt: NEW_ACCOUNT });
+
+    expect(again.allowed).toBe(true);
+    expect(again.reserved).toBe(false);
+  });
+
+  it("is a no-op without redis and survives a failing command", async () => {
+    await expect(
+      releaseDmFanout({ userId: "u-1", channelId: "dm-0" }, null)
+    ).resolves.toBeUndefined();
+
+    redis.failOn = "zrem";
+    await expect(
+      releaseDmFanout({ userId: "u-1", channelId: "dm-0" }, redis as never)
+    ).resolves.toBeUndefined();
   });
 });

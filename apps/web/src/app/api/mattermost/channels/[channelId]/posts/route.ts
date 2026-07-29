@@ -12,7 +12,7 @@ import {
   isUserChatBanned,
   CHAT_BAN_PROP
 } from "@/server/mattermost";
-import { checkDmFanout } from "@/server/chat-dm-fanout";
+import { checkDmFanout, releaseDmFanout } from "@/server/chat-dm-fanout";
 
 // Prevent artificial timeout - this route should be fast now
 export const maxDuration = 60; // 60 seconds max
@@ -359,12 +359,27 @@ export async function POST(
     // window. Mass-DM phishing is otherwise only contained after the fact, by
     // which point the spray has already been delivered. Public channels are not
     // counted: the abuse pattern, and the harm, is private and one-to-one.
+    //
+    // A group channel consumes one slot even though a post there reaches every
+    // member. That is not a way around the cap: /api/mattermost/direct is the
+    // only channel-creation path we expose and it is strictly one-to-one, so an
+    // account cannot assemble groups to spray. Someone else has to have added
+    // them to each group first.
+    // The reservation is provisional until the post lands: releaseReservation
+    // hands the slot back on any path that does not deliver, so a rejected or
+    // failed message cannot lock a new account out for the rest of the window.
+    let releaseReservation: (() => Promise<void>) | null = null;
+
     if (channel.type === "D" || channel.type === "G") {
       const fanout = await checkDmFanout({
         userId: currentUser.id,
         channelId,
         accountCreatedAt: currentUser.create_at
       });
+
+      if (fanout.reserved) {
+        releaseReservation = () => releaseDmFanout({ userId: currentUser.id, channelId });
+      }
 
       if (!fanout.allowed) {
         console.warn("MM posts: DM fan-out limit reached", {
@@ -405,6 +420,7 @@ export async function POST(
       );
 
       if (!moderation.canModerate) {
+        await releaseReservation?.();
         return NextResponse.json(
           {
             error: "Only community moderators can mention everyone in this channel."
@@ -415,16 +431,22 @@ export async function POST(
     }
 
     // Send the message - WebSocket will handle UI updates, HTTP is for persistence
-    const post = await mmUserFetch(`/posts`, token, {
-      method: "POST",
-      body: JSON.stringify({
-        channel_id: channelId,
-        message,
-        root_id: rootId || undefined,
-        props: props || undefined,
-        pending_post_id: body.pendingPostId || `${currentUser.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      })
-    });
+    let post;
+    try {
+      post = await mmUserFetch(`/posts`, token, {
+        method: "POST",
+        body: JSON.stringify({
+          channel_id: channelId,
+          message,
+          root_id: rootId || undefined,
+          props: props || undefined,
+          pending_post_id: body.pendingPostId || `${currentUser.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        })
+      });
+    } catch (error) {
+      await releaseReservation?.();
+      throw error;
+    }
 
     // --- Background tasks (non-blocking) ---
 
