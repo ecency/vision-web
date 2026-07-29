@@ -12,6 +12,7 @@ import {
   isUserChatBanned,
   CHAT_BAN_PROP
 } from "@/server/mattermost";
+import { checkDmFanout } from "@/server/chat-dm-fanout";
 
 // Prevent artificial timeout - this route should be fast now
 export const maxDuration = 60; // 60 seconds max
@@ -334,6 +335,7 @@ export async function POST(
       mmUserFetch<{
         id: string;
         username: string;
+        create_at?: number;
         props?: Record<string, string>;
       }>(`/users/me`, token),
       mmUserFetch<MattermostChannel>(`/channels/${channelIdPath}`, token)
@@ -380,6 +382,50 @@ export async function POST(
             error: "Only community moderators can mention everyone in this channel."
           },
           { status: 403 }
+        );
+      }
+    }
+
+    // Cap how many distinct people one account can reach privately in a rolling
+    // window. Mass-DM phishing is otherwise only contained after the fact, by
+    // which point the spray has already been delivered. Public channels are not
+    // counted: the abuse pattern, and the harm, is private and one-to-one.
+    //
+    // This sits as late as it can, immediately before the post: everything that
+    // can reject the message has already run, so a rejected message never costs
+    // a slot. There is deliberately no compensating release afterwards. A
+    // release cannot tell its own reservation from one another in-flight
+    // request is relying on, so pairing a doomed request with a real one would
+    // delete the record of a message that did land, and repeating the pair
+    // would defeat the cap entirely. The only remaining way to hold a slot
+    // without delivering is an upstream post failure, which is rare, transient,
+    // ages out with the window, and errs on the safe side.
+    //
+    // A group channel consumes one slot even though a post there reaches every
+    // member. That is not a way around the cap: /api/mattermost/direct is the
+    // only channel-creation path we expose and it is strictly one-to-one, so an
+    // account cannot assemble groups to spray. Someone else has to have added
+    // them to each group first.
+    if (channel.type === "D" || channel.type === "G") {
+      const fanout = await checkDmFanout({
+        userId: currentUser.id,
+        channelId,
+        accountCreatedAt: currentUser.create_at
+      });
+
+      if (!fanout.allowed) {
+        console.warn("MM posts: DM fan-out limit reached", {
+          username: currentUser.username,
+          recipients: fanout.recipients,
+          limit: fanout.limit
+        });
+        return NextResponse.json(
+          {
+            error:
+              "You have started conversations with too many people recently. Please try again later.",
+            retryAfter: fanout.retryAfterSeconds
+          },
+          { status: 429, headers: { "Retry-After": String(fanout.retryAfterSeconds) } }
         );
       }
     }
