@@ -48,12 +48,6 @@ export interface DmFanoutDecision {
   limit: number;
   /** Seconds until the oldest recipient ages out. Only meaningful when blocked. */
   retryAfterSeconds: number;
-  /**
-   * True when this call added a recipient that was not already in the window.
-   * Callers pass it to `releaseDmFanout` if the send then fails, so an
-   * undelivered message does not hold a slot for the rest of the window.
-   */
-  reserved: boolean;
 }
 
 /**
@@ -78,16 +72,16 @@ if not known and count >= limit then
   local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
   local oldestScore = -1
   if oldest[2] then oldestScore = tonumber(oldest[2]) end
-  return {0, count, 0, oldestScore}
+  return {0, count, oldestScore}
 end
 
 redis.call('ZADD', key, now, member)
 redis.call('PEXPIRE', key, windowMs)
 
 if known then
-  return {1, count, 0, -1}
+  return {1, count, -1}
 end
-return {1, count + 1, 1, -1}
+return {1, count + 1, -1}
 `;
 
 /**
@@ -136,17 +130,19 @@ export function getChatRedis(): RedisClient | null {
 const ALLOW_UNMEASURED: Omit<DmFanoutDecision, "limit"> = {
   allowed: true,
   recipients: 0,
-  retryAfterSeconds: 0,
-  reserved: false
+  retryAfterSeconds: 0
 };
 
 /**
- * Reserves `channelId` as a recipient of `userId` and reports whether the send
+ * Records `channelId` as a recipient of `userId` and reports whether the send
  * may proceed. Nothing is recorded when the send is blocked, so a rejected
  * attempt neither consumes a slot nor extends the window.
  *
- * A reservation is provisional: call `releaseDmFanout` if the send does not go
- * through, otherwise an undelivered message holds a slot for a full window.
+ * Recording is final. There is no compensating release, because a release
+ * cannot distinguish its own record from one a concurrent request is relying
+ * on: pairing a doomed request with a real one would delete the record of a
+ * message that did land. Callers instead run this as late as possible, once
+ * nothing but the upstream post can still fail.
  */
 export async function checkDmFanout(
   {
@@ -166,7 +162,7 @@ export async function checkDmFanout(
   if (!redis) return { ...ALLOW_UNMEASURED, limit };
 
   try {
-    const [allowed, recipients, reserved, oldestScore] = (await redis.eval(
+    const [allowed, recipients, oldestScore] = (await redis.eval(
       RESERVE_SCRIPT,
       1,
       `${KEY_PREFIX}${userId}`,
@@ -174,16 +170,10 @@ export async function checkDmFanout(
       String(DM_FANOUT_WINDOW_MS),
       String(limit),
       channelId
-    )) as [number, number, number, number];
+    )) as [number, number, number];
 
     if (allowed) {
-      return {
-        allowed: true,
-        recipients,
-        limit,
-        retryAfterSeconds: 0,
-        reserved: reserved === 1
-      };
+      return { allowed: true, recipients, limit, retryAfterSeconds: 0 };
     }
 
     const freesAt =
@@ -193,28 +183,10 @@ export async function checkDmFanout(
       allowed: false,
       recipients,
       limit,
-      retryAfterSeconds: Math.max(1, Math.ceil((freesAt - now) / 1000)),
-      reserved: false
+      retryAfterSeconds: Math.max(1, Math.ceil((freesAt - now) / 1000))
     };
   } catch {
     // Fail open — see the module comment.
     return { ...ALLOW_UNMEASURED, limit };
-  }
-}
-
-/**
- * Gives back a reservation whose send never landed. Only called for a
- * newly-inserted recipient, so releasing cannot erase a conversation the
- * sender already had inside the window.
- */
-export async function releaseDmFanout(
-  { userId, channelId }: { userId: string; channelId: string },
-  redis: RedisClient | null = getChatRedis()
-): Promise<void> {
-  if (!redis) return;
-  try {
-    await redis.zrem(`${KEY_PREFIX}${userId}`, channelId);
-  } catch {
-    // Best effort: a stuck reservation ages out with the window.
   }
 }

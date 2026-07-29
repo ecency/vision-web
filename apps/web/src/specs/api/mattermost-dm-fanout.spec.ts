@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   checkDmFanout,
   dmFanoutLimitFor,
-  releaseDmFanout,
   DM_FANOUT_MAX,
   DM_FANOUT_MAX_NEW,
   DM_FANOUT_NEW_ACCOUNT_MS,
@@ -56,7 +55,7 @@ class FakeRedis {
 
     if (!known && count >= limit) {
       const sorted = [...list].sort((a, b) => a.score - b.score);
-      return [0, count, 0, sorted.length ? sorted[0].score : -1];
+      return [0, count, sorted.length ? sorted[0].score : -1];
     }
 
     if (known) {
@@ -66,17 +65,9 @@ class FakeRedis {
     }
     this.ttls.set(key, windowMs);
 
-    return known ? [1, count, 0, -1] : [1, count + 1, 1, -1];
+    return known ? [1, count, -1] : [1, count + 1, -1];
   }
 
-  async zrem(key: string, member: string) {
-    if (this.failOn === "zrem") throw new Error("redis down");
-    const list = this.entries(key);
-    const at = list.findIndex((e) => e.member === member);
-    if (at === -1) return 0;
-    list.splice(at, 1);
-    return 1;
-  }
 }
 
 const NOW = 1_800_000_000_000;
@@ -203,7 +194,6 @@ describe("checkDmFanout", () => {
     redis.failOn = "eval";
     const res = await send(redis, "dm-1", { createdAt: NEW_ACCOUNT });
     expect(res.allowed).toBe(true);
-    expect(res.reserved).toBe(false); // nothing to hand back
   });
 
   // A read-then-write pipeline loses to exactly this: fire the spray in
@@ -217,48 +207,5 @@ describe("checkDmFanout", () => {
 
     expect(results.filter((r) => r.allowed)).toHaveLength(DM_FANOUT_MAX_NEW);
     expect(redis.sets.get("chat:dmfanout:u-1")).toHaveLength(DM_FANOUT_MAX_NEW);
-  });
-});
-
-describe("releaseDmFanout", () => {
-  let redis: FakeRedis;
-
-  beforeEach(() => {
-    redis = new FakeRedis();
-  });
-
-  // The send is validated further and then has to be accepted upstream. Both
-  // can fail after the slot is taken, and five failed attempts must not lock a
-  // new account out for the rest of the window.
-  it("hands back a slot whose send never landed", async () => {
-    const first = await send(redis, "dm-0", { createdAt: NEW_ACCOUNT });
-    expect(first.reserved).toBe(true);
-
-    await releaseDmFanout({ userId: "u-1", channelId: "dm-0" }, redis as never);
-
-    expect(redis.sets.get("chat:dmfanout:u-1")).toHaveLength(0);
-  });
-
-  // Releasing a recipient the sender already had would erase real history and
-  // let them re-open that conversation for free, so the route only releases
-  // what this call actually inserted.
-  it("does not report a reservation when the recipient was already known", async () => {
-    await send(redis, "dm-0", { createdAt: NEW_ACCOUNT });
-
-    const again = await send(redis, "dm-0", { createdAt: NEW_ACCOUNT });
-
-    expect(again.allowed).toBe(true);
-    expect(again.reserved).toBe(false);
-  });
-
-  it("is a no-op without redis and survives a failing command", async () => {
-    await expect(
-      releaseDmFanout({ userId: "u-1", channelId: "dm-0" }, null)
-    ).resolves.toBeUndefined();
-
-    redis.failOn = "zrem";
-    await expect(
-      releaseDmFanout({ userId: "u-1", channelId: "dm-0" }, redis as never)
-    ).resolves.toBeUndefined();
   });
 });
