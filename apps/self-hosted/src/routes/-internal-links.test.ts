@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -7,20 +8,17 @@ import { describe, expect, it } from 'vitest';
  *
  * The SPA serves index.html for unmatched paths, so a link to a route that does
  * not exist renders "Page not found" with HTTP 200. It never appears as a 404 in
- * logs, and nothing in the type system catches it because these are raw `href`
- * strings rather than typed `<Link to>`. A commenter's name pointed at `/@user`
- * this way and shipped.
+ * logs, and nothing in the type system catches a raw `href` string. A
+ * commenter's name pointed at `/@user` this way and shipped.
  *
- * Scope, stated precisely rather than as "every link":
- *   1. literal values        - `href="/blog"`, `` href={`/@${a}/${b}`} ``  -> checked
- *   2. same-file identifiers - `href={entryLink}` where entryLink is a const
- *                              or useMemo returning a literal              -> resolved, then checked
- *   3. anything else dynamic - config values, API-derived URLs, and props
- *                              that merely share the name `to`             -> must appear in
- *                              DYNAMIC_LINKS with a reason
- *
- * (3) exists so the blind spot is visible: a new unresolvable link fails this
- * test until someone classifies it, instead of silently escaping the check.
+ * This walks the TypeScript AST rather than matching source text. An earlier
+ * regex version kept finding new ways to under-report: it could not tell an
+ * `<a href>` from a component that happens to take a prop named `to`, it
+ * resolved identifiers by proximity rather than by scope, and it preferred one
+ * declaration form over another regardless of source order. Each of those
+ * silently dropped links from validation. The AST settles all three
+ * structurally: element identity, real lexical scope, and the actual
+ * initializer of the declaration that is in view.
  *
  * Lives under src/routes with a `-` prefix, TanStack Router's convention for a
  * non-route file in the routes directory. Without it the generator warns on
@@ -29,29 +27,28 @@ import { describe, expect, it } from 'vitest';
 
 const SRC = join(__dirname, '..');
 
+/** Router components whose `to` really is navigation. */
+const NAVIGATION_COMPONENTS = new Set(['Link', 'Navigate']);
+
 /**
- * Dynamic `href` / `to` values this test cannot resolve statically.
+ * Components taking a `to` / `href` prop that is not a link at all. Listed so a
+ * new component with a link-shaped prop name must be classified rather than
+ * quietly assumed to be one or the other.
+ */
+const NON_LINK_COMPONENT_PROPS: Record<string, string> = {
+  'TippingPopover.to': 'tip recipient username, not a destination',
+  'TippingStepCurrency.to': 'tip recipient username, not a destination',
+};
+
+/**
+ * Real links whose destination is not statically knowable.
  * Adding an entry is a deliberate act: say why it is safe.
  *
- * Keyed by `file:identifier`, never by identifier alone. `to` in particular is a
- * very common name (it is also a plain prop on the tipping components), so a
- * bare-name exemption would silently wave through a real `<a href={to}>` added
- * anywhere in the app later.
- *
- * `occurrences` pins how many matches the entry is allowed to absorb in that
- * file. Keying by file alone still covers every same-named occurrence in it, so
- * adding a real `<a href={to}>` beside the tipping prop would inherit its
- * exemption; the count turns that into a failure instead.
+ * `occurrences` pins how many links the entry may account for, so a second link
+ * through the same identifier in the same file fails rather than inheriting the
+ * exemption, and a stale entry matching nothing fails too.
  */
 const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
-  'src/routes/hosting.tsx:SIGNUP_URL': {
-    occurrences: 1,
-    reason: 'absolute https://ecency.com/hosting constant',
-  },
-  'src/features/claim/claim-landing.tsx:claimHref': {
-    occurrences: 1,
-    reason: 'built from HOSTING_URL, absolute',
-  },
   'src/features/blog/layout/blog-navigation.tsx:rssUrl': {
     occurrences: 1,
     reason: 'getRssFeedUrl() returns an absolute ecency.com URL',
@@ -68,15 +65,10 @@ const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
     occurrences: 1,
     reason: 'wallet/extension install links, external',
   },
-  'src/features/tipping/components/tipping-popover.tsx:to': {
-    occurrences: 1,
-    reason: 'not a link: TippingStepCurrency prop naming the tip recipient',
-  },
-  'src/features/tipping/components/tip-button.tsx:recipientUsername': {
-    occurrences: 1,
-    reason: 'not a link: TippingPopover prop naming the tip recipient',
-  },
 };
+
+/** Stands in for an interpolated segment, so `/@${a}` compares as `/@*`. */
+const HOLE = '*';
 
 function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -86,95 +78,118 @@ function walk(dir: string): string[] {
   });
 }
 
-/** Route paths declared by the generated route tree, e.g. /$author/$permlink. */
-function declaredRoutes(): string[] {
-  const tree = readFileSync(join(SRC, 'routeTree.gen.ts'), 'utf8');
-  return [...new Set(Array.from(tree.matchAll(/'(\/[^']*)'/g), (m) => m[1]))];
-}
-
-const LINK_RE =
-  /\b(?:href|to)=(?:"([^"]*)"|\{`([^`]*)`\}|\{'([^']*)'\}|\{([A-Za-z_$][\w$.]*)\})/g;
-
-/**
- * The literal assigned to `name`, for the two forms the app actually uses:
- *
- *   const NAME = '/literal'
- *   const NAME = useMemo(() => `/literal`, [deps])   (comments before the arrow ok)
- *
- * Anything else returns null and becomes an unclassified link, which fails the
- * suite. Deliberately strict: an earlier version scanned for the first string
- * within 400 characters of the declaration, which for `const target = getUrl()`
- * happily returned a className or even a word from a type annotation. A wrong
- * literal that does not start with "/" is treated as external and the real link
- * is dropped from the check without a sound, which is the worst outcome for a
- * test whose whole job is to not miss links.
- *
- * Resolution is positional: the declaration nearest *above* the link wins. Two
- * component scopes in one file can reuse a name, and preferring one syntactic
- * form globally would let a later `useMemo(() => 'https://external')` answer for
- * an earlier `const target = '/missing'`, reclassifying a real internal link as
- * external. This is not scope analysis (that wants an AST), but nearest
- * preceding declaration matches how these components are actually written.
- */
-function declarationsOf(
-  source: string,
-  name: string,
-): { at: number; value: string | null }[] {
-  const root = name.split('.')[0].replace(/[^\w$]/g, '');
-  if (!root) return [];
-
-  // Every `const NAME =`, whatever the right-hand side. Collecting only the
-  // shapes we can read would let an unreadable declaration be skipped over, so
-  // a later `const target = getUrl()` would silently inherit an earlier
-  // component's `const target = '/blog'`.
-  const anyDecl = new RegExp(`\\bconst\\s+${root}\\s*=`, 'g');
-  const direct = new RegExp(`^const\\s+${root}\\s*=\\s*(['"\`])([^'"\`]*)\\1`);
-  const viaMemo = new RegExp(
-    `^const\\s+${root}\\s*=\\s*useMemo\\(\\s*(?:\\/\\/[^\\n]*\\n\\s*)*\\(\\s*\\)\\s*=>\\s*(['"\`])([^'"\`]*)\\1`,
+function parse(file: string): ts.SourceFile {
+  return ts.createSourceFile(
+    file,
+    readFileSync(file, 'utf8'),
+    ts.ScriptTarget.Latest,
+    /* setParentNodes */ true,
+    ts.ScriptKind.TSX,
   );
+}
 
-  return Array.from(source.matchAll(anyDecl), (m) => {
-    const tail = source.slice(m.index);
-    const lit = tail.match(viaMemo) ?? tail.match(direct);
-    return { at: m.index, value: lit ? lit[2] : null };
-  });
+/** Route paths exactly as the generator declares them in FileRoutesByFullPath. */
+function declaredRoutes(): string[] {
+  const sf = parse(join(SRC, 'routeTree.gen.ts'));
+  const found: string[] = [];
+  const visit = (n: ts.Node) => {
+    if (
+      ts.isInterfaceDeclaration(n) &&
+      n.name.text === 'FileRoutesByFullPath'
+    ) {
+      for (const member of n.members) {
+        if (member.name && ts.isStringLiteral(member.name)) {
+          found.push(member.name.text);
+        }
+      }
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return found;
 }
 
 /**
- * Nearest declaration above `usedAt`, resolved only if that declaration itself
- * has a readable literal. An unreadable one yields null, i.e. unclassified,
- * rather than deferring to some other declaration of the same name.
+ * The nearest `const <name>` visible from `from`, honouring lexical scope, so an
+ * identifier declared in a sibling component is not in view.
  */
-function resolveIdentifier(
-  source: string,
+function declarationInScope(
+  from: ts.Node,
   name: string,
-  usedAt: number,
-): string | null {
-  const above = declarationsOf(source, name).filter((d) => d.at < usedAt);
-  return above.length > 0 ? above[above.length - 1].value : null;
+): ts.Expression | undefined {
+  for (let n: ts.Node | undefined = from; n; n = n.parent) {
+    const statements = ts.isSourceFile(n)
+      ? n.statements
+      : ts.isBlock(n) || ts.isModuleBlock(n)
+        ? n.statements
+        : undefined;
+    if (!statements) continue;
+
+    for (const statement of statements) {
+      if (!ts.isVariableStatement(statement)) continue;
+      for (const decl of statement.declarationList.declarations) {
+        if (ts.isIdentifier(decl.name) && decl.name.text === name) {
+          return decl.initializer;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+/** `useMemo(() => X, deps)` -> X; any other call -> undefined. */
+function unwrapUseMemo(call: ts.CallExpression): ts.Expression | undefined {
+  if (!ts.isIdentifier(call.expression) || call.expression.text !== 'useMemo') {
+    return undefined;
+  }
+  const [factory] = call.arguments;
+  if (!factory || !ts.isArrowFunction(factory)) return undefined;
+  return ts.isBlock(factory.body) ? undefined : factory.body;
 }
 
 /**
- * Builds the literal text `${name}` for fixtures, without writing `${` inside a
- * plain string. Biome's noTemplateCurlyInString flags that, correctly in general
- * (it usually means a missing backtick), and here the placeholder text is the
- * thing under test rather than a mistake.
+ * Static value of `expr`, with interpolations collapsed to HOLE.
+ * Returns null when the value cannot be known without running the app.
  */
-const ph = (name: string) => `$\u007B${name}\u007D`;
+function staticValue(
+  expr: ts.Expression | undefined,
+  depth = 0,
+): string | null {
+  if (!expr || depth > 8) return null;
+
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
+    return expr.text;
+  }
+  if (ts.isTemplateExpression(expr)) {
+    return (
+      expr.head.text +
+      expr.templateSpans.map((span) => HOLE + span.literal.text).join('')
+    );
+  }
+  if (ts.isIdentifier(expr)) {
+    return staticValue(declarationInScope(expr, expr.text), depth + 1);
+  }
+  if (ts.isCallExpression(expr)) {
+    return staticValue(unwrapUseMemo(expr), depth + 1);
+  }
+  if (ts.isParenthesizedExpression(expr)) {
+    return staticValue(expr.expression, depth + 1);
+  }
+  return null;
+}
 
 const isInternal = (v: string) => v.startsWith('/') && !v.startsWith('//');
 
-/** `/@${a}/${b}` -> ['@*', '*'] so interpolations compare as wildcards. */
 function segments(path: string): string[] {
-  const clean = path.split(/[?#]/)[0].replace(/\$\{[^}]*\}/g, '*');
-  return clean.split('/').filter(Boolean);
+  return path.split(/[?#]/)[0].split('/').filter(Boolean);
 }
 
 function matches(link: string, route: string): boolean {
   const l = segments(link);
   const r = segments(route);
   if (l.length !== r.length) return false;
-  return r.every((rs, i) => rs.startsWith('$') || rs === l[i]);
+  // a route param matches anything; a HOLE in the link matches any route segment
+  return r.every((rs, i) => rs.startsWith('$') || l[i] === HOLE || rs === l[i]);
 }
 
 interface FoundLink {
@@ -186,56 +201,100 @@ interface FoundLink {
 function collect() {
   const checked: FoundLink[] = [];
   const unresolved: FoundLink[] = [];
+  const componentProps: { where: string; key: string }[] = [];
   const exemptionHits: Record<string, number> = {};
 
   for (const file of walk(SRC)) {
-    const source = readFileSync(file, 'utf8');
+    const sf = parse(file);
     const rel = file.replace(SRC, 'src');
+    const lineOf = (n: ts.Node) =>
+      sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
 
-    for (const m of source.matchAll(LINK_RE)) {
-      const line = source.slice(0, m.index).split('\n').length;
-      const where = `${rel}:${line}`;
-      const literal = m[1] ?? m[2] ?? m[3];
+    const visit = (node: ts.Node) => {
+      if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name)) {
+        const attr = node.name.text;
+        if (attr === 'href' || attr === 'to') {
+          const owner = node.parent.parent as ts.JsxOpeningLikeElement;
+          const tag = owner.tagName.getText(sf);
+          const where = `${rel}:${lineOf(node)}`;
+          // lowercase tags are DOM elements, so href is genuinely a link;
+          // capitalised ones are components and only the router's navigate
+          const isLink = /^[a-z]/.test(tag)
+            ? attr === 'href'
+            : NAVIGATION_COMPONENTS.has(tag);
 
-      if (literal !== undefined) {
-        if (isInternal(literal)) checked.push({ where, value: literal });
-        continue;
+          if (!isLink) {
+            componentProps.push({ where, key: `${tag}.${attr}` });
+          } else {
+            const init = node.initializer;
+            const expr =
+              init && ts.isJsxExpression(init)
+                ? init.expression
+                : (init as ts.Expression | undefined);
+
+            const ident =
+              expr && ts.isIdentifier(expr)
+                ? expr.text
+                : expr && ts.isPropertyAccessExpression(expr)
+                  ? expr.getText(sf)
+                  : undefined;
+
+            const key = ident ? `${rel}:${ident}` : undefined;
+            if (key && key in DYNAMIC_LINKS) {
+              exemptionHits[key] = (exemptionHits[key] ?? 0) + 1;
+            } else {
+              const value = staticValue(expr);
+              if (value === null) {
+                unresolved.push({ where, value: ident ?? '<expression>' });
+              } else if (isInternal(value)) {
+                checked.push({ where, value, via: ident });
+              }
+            }
+          }
+        }
       }
-
-      const ident = m[4];
-      // Scoped to this file: a same-named identifier elsewhere is not exempt.
-      const key = `${rel}:${ident}`;
-      if (key in DYNAMIC_LINKS) {
-        exemptionHits[key] = (exemptionHits[key] ?? 0) + 1;
-        continue;
-      }
-
-      const resolved = resolveIdentifier(source, ident, m.index);
-      if (resolved === null) {
-        unresolved.push({ where, value: ident });
-      } else if (isInternal(resolved)) {
-        checked.push({ where, value: resolved, via: ident });
-      }
-    }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
   }
-  return { checked, unresolved, exemptionHits };
+
+  return { checked, unresolved, componentProps, exemptionHits };
+}
+
+/** Parses a snippet and returns every `href` value the resolver produces. */
+function hrefValuesIn(code: string): (string | null)[] {
+  const sf = ts.createSourceFile(
+    'snippet.tsx',
+    code,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const out: (string | null)[] = [];
+  const visit = (n: ts.Node) => {
+    if (
+      ts.isJsxAttribute(n) &&
+      ts.isIdentifier(n.name) &&
+      n.name.text === 'href' &&
+      n.initializer &&
+      ts.isJsxExpression(n.initializer)
+    ) {
+      out.push(staticValue(n.initializer.expression));
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return out;
 }
 
 describe('internal links resolve to declared routes', () => {
   const routes = declaredRoutes();
-  const { checked, unresolved, exemptionHits } = collect();
+  const { checked, unresolved, componentProps, exemptionHits } = collect();
 
-  it('finds the route tree and links to check', () => {
-    expect(routes.length).toBeGreaterThan(0);
+  it('reads the route tree and finds links to check', () => {
+    expect(routes).toContain('/blog');
+    expect(routes).toContain('/$author/$permlink');
     expect(checked.length).toBeGreaterThan(0);
-  });
-
-  it('resolves identifier-backed links, not only inline literals', () => {
-    // blog-discussion-item's `href={entryLink}` is a useMemo returning a template
-    // literal; an inline-literal-only scan would not see it at all.
-    const viaIdentifier = checked.filter((l) => l.via);
-    expect(viaIdentifier.length).toBeGreaterThan(0);
-    expect(viaIdentifier.some((l) => l.via === 'entryLink')).toBe(true);
   });
 
   it('has no link pointing at an undeclared route', () => {
@@ -245,109 +304,86 @@ describe('internal links resolve to declared routes', () => {
     expect(dead).toEqual([]);
   });
 
-  it('leaves no dynamic link unclassified', () => {
-    const missing = unresolved.map((l) => `${l.where} -> ${l.value}`);
-    expect(missing).toEqual([]);
+  it('leaves no real link unclassified', () => {
+    expect(unresolved.map((l) => `${l.where} -> ${l.value}`)).toEqual([]);
   });
 
   it('consumes each exemption exactly as many times as declared', () => {
-    // File-scoped keys still cover every same-named occurrence in that file, so
-    // a real <a href={to}> added beside the tipping prop would inherit its
-    // exemption. Pinning the count makes that a failure. A stale entry that
-    // matches nothing fails here too.
     const expected = Object.fromEntries(
       Object.entries(DYNAMIC_LINKS).map(([k, v]) => [k, v.occurrences]),
     );
     expect(exemptionHits).toEqual(expected);
   });
 
-  it('scopes every exemption to a file, so common names stay checked', () => {
-    // A bare `to` key would exempt any future `<a href={to}>` in any file.
-    for (const [key, entry] of Object.entries(DYNAMIC_LINKS)) {
-      expect(key).toMatch(/^src\/.+\.tsx:[\w$.]+$/);
-      expect(entry.reason.length).toBeGreaterThan(0);
-    }
-    // and each exemption must still point at a file that exists
-    for (const key of Object.keys(DYNAMIC_LINKS)) {
-      const file = join(SRC, '..', key.split(':')[0]);
-      expect(() => readFileSync(file, 'utf8')).not.toThrow();
-    }
+  it('classifies every component prop that merely looks like a link', () => {
+    const unclassified = componentProps
+      .filter((p) => !(p.key in NON_LINK_COMPONENT_PROPS))
+      .map((p) => `${p.where} -> ${p.key}`);
+    expect(unclassified).toEqual([]);
   });
 
-  it('resolves only real literal assignments, never a nearby string', () => {
-    const interpolated = `/@${ph('a')}/${ph('b')}`;
-    const memo = `const entryLink = useMemo(\n  // note\n  () => \`${interpolated}\`,\n  [a],\n);`;
-    expect(resolveIdentifier(memo, 'entryLink', memo.length)).toBe(
-      interpolated,
+  it('resolves identifiers by scope, not proximity', () => {
+    // Both hazards the regex version fell into, now decided by the AST: a
+    // sibling component's declaration is not in view, and the declaration that
+    // is in view is used whatever form it takes.
+    const values = hrefValuesIn(
+      [
+        'function A() {',
+        "  const target = '/blog';",
+        '  return <a href={target}>a</a>;',
+        '}',
+        'function B() {',
+        '  const target = getUrl();',
+        '  return <a href={target}>b</a>;',
+        '}',
+        'function C() {',
+        "  const target = useMemo(() => '/search', []);",
+        '  return <a href={target}>c</a>;',
+        '}',
+      ].join('\n'),
     );
-    const plain = "const x = '/blog';";
-    expect(resolveIdentifier(plain, 'x', plain.length)).toBe('/blog');
-    // the mis-resolution this replaced: a call expression must not borrow a
-    // later string such as a className or a word from a type annotation
-    const call = 'const target = getUrl();\nconst cls = "totally-unrelated";';
-    expect(resolveIdentifier(call, 'target', call.length)).toBeNull();
-    const annotated =
-      'function P({ to }: { to: string }) {\n  const target = getUrl();';
-    expect(resolveIdentifier(annotated, 'target', annotated.length)).toBeNull();
+    // B's getUrl() is unknowable and must not borrow A's '/blog'
+    expect(values).toEqual(['/blog', null, '/search']);
   });
 
-  it('uses the declaration above the link when a name is reused in one file', () => {
-    // Two component scopes reusing `target`. Preferring the useMemo form globally
-    // answered the first link with the second declaration's external URL, so a
-    // real internal link was reclassified as external and never validated.
-    const src = [
-      'function A() {',
-      "  const target = '/missing';",
-      '  return <a href={target}>a</a>;',
-      '}',
-      'function B() {',
-      "  const target = useMemo(() => 'https://external', []);",
-      '  return <a href={target}>b</a>;',
-      '}',
-    ].join('\n');
-
-    const firstLink = src.indexOf('href={target}');
-    const secondLink = src.indexOf('href={target}', firstLink + 1);
-
-    expect(resolveIdentifier(src, 'target', firstLink)).toBe('/missing');
-    expect(resolveIdentifier(src, 'target', secondLink)).toBe(
-      'https://external',
+  it('prefers an inner declaration over an outer one', () => {
+    const values = hrefValuesIn(
+      [
+        "const target = '/blog';",
+        'function A() {',
+        "  const target = '/search';",
+        '  return <a href={target}>a</a>;',
+        '}',
+      ].join('\n'),
     );
-    // nothing declared above the very top of the file
-    expect(resolveIdentifier(src, 'target', 0)).toBeNull();
+    expect(values).toEqual(['/search']);
   });
 
-  it('does not let an unreadable declaration inherit an earlier literal', () => {
-    const src = [
-      'function A() {',
-      "  const target = '/blog';",
-      '  return <a href={target}>a</a>;',
-      '}',
-      'function B() {',
-      '  const target = getUrl();',
-      '  return <a href={target}>b</a>;',
-      '}',
-    ].join('\n');
-
-    const first = src.indexOf('href={target}');
-    const second = src.indexOf('href={target}', first + 1);
-
-    expect(resolveIdentifier(src, 'target', first)).toBe('/blog');
-    // nearest declaration above the second link is getUrl(), which we cannot
-    // read, so it must be unclassified rather than borrowing '/blog'
-    expect(resolveIdentifier(src, 'target', second)).toBeNull();
+  it('collapses interpolation to a wildcard that matches a route param', () => {
+    // template literal with escaped placeholders: keeps a literal `${` out of a
+    // plain string, which noTemplateCurlyInString flags (rightly, in general)
+    const [value] = hrefValuesIn(
+      `const E = () => <a href={\`/@\${a}/\${b}\`}>x</a>;`,
+    );
+    expect(value).toBe(`/@${HOLE}/${HOLE}`);
+    expect(matches(`/@${HOLE}/${HOLE}`, '/$author/$permlink')).toBe(true);
+    expect(matches(`/@${HOLE}`, '/$author/$permlink')).toBe(false);
+    // a template that starts with an interpolation is not an internal path
+    const [absolute] = hrefValuesIn(
+      `const E = () => <a href={\`\${base}/x\`}>x</a>;`,
+    );
+    expect(isInternal(absolute ?? '')).toBe(false);
   });
 
   it('recognises the shapes the app actually uses', () => {
-    // guards the matcher itself, so a broken matcher cannot silently pass the above
     expect(matches('/blog', '/blog')).toBe(true);
-    expect(matches(`/@${ph('a')}/${ph('b')}`, '/$author/$permlink')).toBe(true);
     expect(matches('/edit/$author/$permlink', '/edit/$author/$permlink')).toBe(
       true,
     );
     expect(matches('/blog', '/$author/$permlink')).toBe(false);
     expect(isInternal('//evil.com')).toBe(false);
+    expect(isInternal('https://ecency.com/blog')).toBe(false);
     // the regression this test exists for
-    expect(routes.some((r) => matches(`/@${ph('author')}`, r))).toBe(false);
+    expect(routes.some((r) => matches(`/@${HOLE}`, r))).toBe(false);
   });
 });
