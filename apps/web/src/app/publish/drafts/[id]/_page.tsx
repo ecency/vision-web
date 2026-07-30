@@ -13,7 +13,7 @@ import { usePublishEditor, usePublishState, useAutoSavePublishDraft } from "@/ap
 import { useApiDraftDetector } from "@/app/submit/_hooks";
 import i18next from "i18next";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { normalizePollSnapshot } from "@/app/publish/_utils/poll";
 import { PublishEditorHtmlWarning } from "../../_components/publish-editor-html-warning";
 import { PublishSuccessState } from "../../_components/publish-success-state";
@@ -24,9 +24,15 @@ export default function PublishPage() {
   const router = useRouter();
   const draftId = params?.id as string | undefined;
 
-  const [step, setStep] = useState<"edit" | "validation" | "scheduled" | "published" | "no-draft">(
-    "edit"
-  );
+  // Starts on "loading", not "edit". Rendering the editor before the draft
+  // arrives let someone type into an empty composer that was about to be
+  // overwritten by clearAll(), while autosave happily persisted that partial
+  // state over the draft's real content. Gating each write in turn kept missing
+  // a path; not offering an editable surface until there is something to edit
+  // closes all of them at once.
+  const [step, setStep] = useState<
+    "loading" | "edit" | "validation" | "scheduled" | "published" | "no-draft"
+  >("loading");
   const [publishedEntry, setPublishedEntry] = useState<{ title: string; author: string; permlink: string; category: string } | undefined>();
   const [showHtmlWarning, setShowHtmlWarning] = useState(false);
 
@@ -47,7 +53,11 @@ export default function PublishPage() {
     clearAll
   } = usePublishState();
 
-  useApiDraftDetector(
+  // Until this flips, publish state is the empty initial state rather than the
+  // draft's content, and any write would store that emptiness over the draft.
+  const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+
+  const { isError: isDraftLoadError } = useApiDraftDetector(
     params?.id as string,
     (draft) => {
       clearAll();
@@ -65,10 +75,40 @@ export default function PublishPage() {
       setPoll(normalizePollSnapshot(draft.meta?.poll));
       setDecentMemes(draft.meta?.decentMemes ?? []);
       setAiTools(draft.meta?.ai_tools ?? {});
+      setIsDraftLoaded(true);
+      setStep("edit");
     },
     () => setStep("no-draft")
   );
-  const { lastSaved, isActiveTab } = useAutoSavePublishDraft(step, draftId);
+  // A drafts request that failed outright would otherwise sit on the loader
+  // forever, since the detector only reports a *missing* draft.
+  useEffect(() => {
+    if (isDraftLoadError && !isDraftLoaded) {
+      setStep("no-draft");
+    }
+  }, [isDraftLoadError, isDraftLoaded]);
+
+  // autosave is keyed on step, so "loading" keeps it off until the draft lands.
+  const { lastSaved, isActiveTab, flush } = useAutoSavePublishDraft(step, draftId);
+
+  // The classic editor reloads this draft from the server, so anything typed
+  // inside the 10s debounce or the 60s throttle window would be dropped on the
+  // way out. Flush first, and stay put if that fails rather than navigating to
+  // a copy that is knowingly behind - useSaveDraftApi surfaces the error.
+  const backToClassic = useCallback(async () => {
+    // Nothing has reached the editor yet, so there is nothing to carry over -
+    // and flushing here would write the empty initial state over the draft's
+    // stored content. The classic editor loads the draft itself anyway.
+    if (isDraftLoaded) {
+      try {
+        await flush();
+      } catch {
+        return;
+      }
+    }
+
+    router.push(`/draft/${params?.id}`);
+  }, [flush, isDraftLoaded, params?.id, router]);
 
   return (
     <>
@@ -78,9 +118,11 @@ export default function PublishPage() {
           <PublishModeHeader label={i18next.t("publish.draft-mode")} lastSaved={lastSaved} />
           <PublishActionBar
             onPublish={() => setStep("validation")}
-            onBackToClassic={() => router.push(`/draft/${params?.id}`)}
+            onBackToClassic={backToClassic}
             setEditorContent={setEditorContent}
             draftId={draftId}
+            saveDraft={flush}
+            isActiveTab={isActiveTab}
           />
           <PublishEditor editor={editor} />
         </>
@@ -100,6 +142,11 @@ export default function PublishPage() {
           setEditStep={() => setStep("edit")}
           entryInfo={publishedEntry}
         />
+      )}
+      {step === "loading" && (
+        <div className="flex items-center justify-center p-8">
+          <div className="text-gray-500">{i18next.t("publish.loading-editor")}</div>
+        </div>
       )}
       {step === "no-draft" && <PublishDraftsNoDraft />}
       <PublishEditorHtmlWarning show={showHtmlWarning} setShow={setShowHtmlWarning} />

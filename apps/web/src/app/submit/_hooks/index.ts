@@ -4,4 +4,4 @@ export * from "./entry-type-detection";
 export * from "./community-detector";
 export * from "./entry-detector";
 export * from "./api-draft-detector";
-export * from "./body-versioning-manager";
+export * from "./submit-body-manager";

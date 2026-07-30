@@ -7,6 +7,8 @@ import {
   PublishMultiTabWarning
 } from "@/app/publish/_components";
 import {
+  useBackToClassic,
+  useOpenAutosavedDraft,
   usePublishAutosave,
   usePublishEditor,
   usePublishHandoff,
@@ -14,8 +16,7 @@ import {
 } from "@/app/publish/_hooks";
 import type { ImportResult } from "@/app/publish/_components/publish-import-dialog";
 import { isCommunity } from "@/utils";
-import routes from "@/routes";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import i18next from "i18next";
 import { PublishEditorHtmlWarning } from "./_components/publish-editor-html-warning";
@@ -44,7 +45,6 @@ export default function Publish() {
   const [showHtmlWarning, setShowHtmlWarning] = useState(false);
 
   const { editor, setEditorContent } = usePublishEditor(() => setShowHtmlWarning(true));
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { tags, setTags, setTitle, setContent, setSelectedThumbnail } = usePublishState();
 
@@ -74,7 +74,9 @@ export default function Publish() {
     )
   );
 
-  const { isActiveTab, lastSaved, draftId } = usePublishAutosave();
+  const { isActiveTab, lastSaved, draftId, flush } = usePublishAutosave();
+  const backToClassic = useBackToClassic();
+  const { openDraft, isOpening } = useOpenAutosavedDraft({ draftId, flush });
 
   useEffect(() => {
     const communityParam = searchParams?.get("com");
@@ -114,13 +116,17 @@ export default function Publish() {
           <PublishModeHeader
             label={i18next.t("publish.new-content")}
             lastSaved={draftId ? lastSaved : null}
+            onOpenDraft={draftId && isActiveTab ? openDraft : undefined}
+            isOpeningDraft={isOpening}
           />
           <PublishActionBar
             onPublish={() => setStep("validation")}
-            onBackToClassic={() => router.push(routes.SUBMIT)}
+            onBackToClassic={backToClassic}
             onImport={handleImport}
             setEditorContent={setEditorContent}
             draftId={draftId}
+            saveDraft={flush}
+            isActiveTab={isActiveTab}
           />
           <PublishEditor editor={editor} />
         </>

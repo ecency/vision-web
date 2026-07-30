@@ -204,7 +204,6 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
               tags={tags ?? []}
               maxItem={10}
               onChange={(tags) => setTags(tags)}
-              onValid={() => {}}
             />
             {!tags?.length && (
               <div className="text-sm text-red">{i18next.t("publish.tags-min-message")}</div>

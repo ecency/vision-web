@@ -70,9 +70,10 @@ import {
 import { Button } from "@ui/button";
 import { Dropdown, DropdownItemWithIcon, DropdownMenu, DropdownToggle } from "@ui/dropdown";
 import i18next from "i18next";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { PropsWithChildren, useState } from "react";
-import { useSaveDraftApi, useSaveTemplateApi } from "../_api";
+import { useSaveTemplateApi } from "../_api";
+import type { SaveDraftOptions } from "../_api/use-save-draft";
 import {
   useApplyTemplate,
   useDefaultBeneficiary,
@@ -81,7 +82,7 @@ import {
 } from "../_hooks";
 import { useOptionalUploadTracker } from "../_hooks/use-upload-tracker";
 import { PublishActionBarCommunity } from "./publish-action-bar-community";
-import { hasPublishContent } from "../_utils/content";
+import { hasDraftableContent, hasPublishContent } from "../_utils/content";
 import { Spinner } from "@ui/spinner";
 import type { ImportResult } from "./publish-import-dialog";
 
@@ -91,6 +92,22 @@ interface Props {
   onImport?: (result: ImportResult) => void;
   setEditorContent?: (content: string | undefined) => void;
   draftId?: string;
+  /**
+   * The autosave engine's queued write. Deliberately not a `useSaveDraftApi` of
+   * our own: a manual save racing an autosave could be overwritten by the older
+   * response, and before the first autosave has returned an id both would take
+   * the create path and leave two drafts behind.
+   */
+  saveDraft: (
+    options?: SaveDraftOptions
+  ) => Promise<{ draftId?: string; created: boolean }>;
+  /**
+   * Whether this tab holds the draft lock. Writes from a tab that does not are
+   * refused by the queue before they reach useSaveDraftApi, so nothing would
+   * surface the failure - the actions are disabled instead, alongside the
+   * multi-tab warning already on screen.
+   */
+  isActiveTab?: boolean;
 }
 
 export function PublishActionBar({
@@ -99,7 +116,9 @@ export function PublishActionBar({
   onBackToClassic,
   onImport,
   setEditorContent,
-  draftId
+  draftId,
+  saveDraft,
+  isActiveTab = true
 }: PropsWithChildren<Props>) {
   const { schedule: scheduleDate, clearAll, title, content, aiTools } = usePublishState();
   const hasAiDisclosure = !!aiTools.media_generation || !!aiTools.writing_edit;
@@ -114,13 +133,15 @@ export function PublishActionBar({
   const [templatesMode, setTemplatesMode] = useState<"list" | "save">("list");
 
   const pathname = usePathname();
+  const router = useRouter();
+  const isDraftRoute = !!pathname?.includes("drafts");
 
   useDefaultBeneficiary();
   useSupportEcencyBeneficiary();
 
-  const hasEditorContent = !!title?.trim() || hasPublishContent(content);
+  const hasEditorContent = hasDraftableContent(title, content);
 
-  const { mutateAsync: saveToDraft, isPending: isDraftPending } = useSaveDraftApi(draftId);
+  const [isDraftPending, setIsDraftPending] = useState(false);
   const { mutateAsync: saveTemplate, isPending: isTemplatePending } = useSaveTemplateApi();
   const applyTemplate = useApplyTemplate(setEditorContent);
   const uploadTracker = useOptionalUploadTracker();
@@ -160,13 +181,56 @@ export function PublishActionBar({
         )}
 
         <LoginRequired promptOnAnon>
+          {/* A draft only needs *something* worth keeping, not a title. Gating
+              this on the title alone left anyone who writes body-first with a
+              button that looked enabled (gray-link had no disabled styling) and
+              did nothing. Autosave already persists title-less drafts, so the
+              server side of this has always been fine.
+
+              Pending uploads block it for the same reason they block Continue
+              and Back to classic: the write captures the body as it stands, and
+              an image's markdown only lands there once its upload resolves. The
+              create path waits before *redirecting* but never re-saves, and the
+              update path does not wait at all, so saving mid-upload stores a
+              draft without the image and then navigates to that stale copy. */}
           <Button
             size="sm"
-            disabled={isDraftPending || !title?.trim()}
+            disabled={
+              isDraftPending ||
+              !hasEditorContent ||
+              !isActiveTab ||
+              uploadTracker?.hasPendingUploads
+            }
             appearance="gray-link"
-            onClick={() => saveToDraft({ showToast: true })}
+            onClick={async () => {
+              setIsDraftPending(true);
+              try {
+                // redirect is explicit because the queue defaults every write
+                // to silent-and-stay-put for autosave's sake. Saving a *new*
+                // post has always moved the writer into /publish/drafts/[id],
+                // which is also what stops the composer leaving an orphan
+                // draft behind.
+                const { draftId: savedId, created } = await saveDraft({
+                  showToast: true,
+                  redirect: true
+                });
+
+                // useSaveDraftApi only redirects from its create branch. When
+                // this save queued behind an autosave that had already created
+                // the draft it takes the update path instead, so the redirect
+                // never happens and the writer is left on /publish with an
+                // orphan draft - exactly what the redirect exists to prevent.
+                if (!created && savedId && !isDraftRoute) {
+                  router.push(`/publish/drafts/${savedId}`);
+                }
+              } catch {
+                // useSaveDraftApi surfaces the failure itself.
+              } finally {
+                setIsDraftPending(false);
+              }
+            }}
           >
-            {pathname?.includes("drafts")
+            {isDraftRoute
               ? i18next.t("publish.update-draft")
               : i18next.t("publish.save-draft")}
           </Button>
@@ -248,7 +312,7 @@ export function PublishActionBar({
               icon={<UilClock />}
               label={i18next.t("publish.schedule")}
             />
-            {!pathname?.includes("drafts") && (
+            {!isDraftRoute && (
               <>
                 <div className="border-b border-[--border-color] h-[1px] w-full" />
                 <DropdownItemWithIcon
@@ -259,8 +323,13 @@ export function PublishActionBar({
               </>
             )}
             <div className="border-b border-[--border-color] h-[1px] w-full" />
+            {/* Gated on pending uploads for the same reason Continue is: an
+                image's markdown only lands in the body once its upload
+                resolves, so leaving now would hand the classic editor a post
+                without it and unmount the composer tracking the upload. */}
             <DropdownItemWithIcon
               label={i18next.t("publish.back-to-old")}
+              disabled={uploadTracker?.hasPendingUploads || !isActiveTab}
               onClick={onBackToClassic}
             />
           </DropdownMenu>

@@ -30,6 +30,12 @@ interface Props {
   description: string | null;
   selectedThumbnail: string | undefined;
   validate: () => boolean;
+  /**
+   * Saving a draft is a weaker promise than publishing one, so it gets its own
+   * check: `validate` is the publish gate and rejects anything without a title,
+   * tags and a body.
+   */
+  validateDraft: () => boolean;
   onDraftCreated?: (draft: Draft) => void;
 }
 
@@ -50,6 +56,7 @@ export function EditorActions({
   description,
   selectedThumbnail,
   validate,
+  validateDraft,
   onDraftCreated
 }: Props) {
   const { activeUser } = useActiveAccount();
@@ -140,7 +147,7 @@ export function EditorActions({
                   isLoading={savingDraft}
                   loadingText={i18next.t("submit.saving")}
                   onClick={() => {
-                    if (!validate()) {
+                    if (!validateDraft()) {
                       return;
                     }
                     saveDraft({

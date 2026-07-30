@@ -15,9 +15,18 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { ensureValidToken } from "@/utils";
 import { getCreatedDraft } from "../_utils/get-created-draft";
 
-type SaveDraftOptions = {
+export type SaveDraftOptions = {
   showToast?: boolean;
   redirect?: boolean;
+  /**
+   * Draft to write, overriding the one this hook was built with.
+   *
+   * The hook-level id comes from React state, so it is a render behind: a save
+   * queued directly after the create that produced the id would still be bound
+   * to `undefined` and create a *second* draft. The queue passes the id it just
+   * received through here instead of waiting for a re-render.
+   */
+  draftId?: string;
 };
 
 export function useSaveDraftApi(draftId?: string) {
@@ -49,7 +58,12 @@ export function useSaveDraftApi(draftId?: string) {
 
   return useMutation({
     mutationKey: ["saveDraft-2.0", draftId],
-    mutationFn: async ({ showToast = true, redirect = true }: SaveDraftOptions = {}) => {
+    mutationFn: async ({
+      showToast = true,
+      redirect = true,
+      draftId: draftIdOverride
+    }: SaveDraftOptions = {}) => {
+      const targetDraftId = draftIdOverride ?? draftId;
       if (!activeUser?.username) {
         throw new Error("[Draft] No active user");
       }
@@ -81,10 +95,10 @@ export function useSaveDraftApi(draftId?: string) {
 
       const token = await ensureValidToken(username);
 
-      if (draftId) {
+      if (targetDraftId) {
         const resp = await updateDraft(
           token,
-          draftId,
+          targetDraftId,
           title!,
           content!,
           tagJ!,
