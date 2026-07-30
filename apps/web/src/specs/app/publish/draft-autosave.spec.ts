@@ -1,5 +1,7 @@
 import {
+  AUTOSAVE_COOLDOWN_MS,
   AUTOSAVE_DEBOUNCE_MS,
+  AUTOSAVE_FAIL_THRESHOLD,
   AUTOSAVE_MIN_INTERVAL_MS
 } from "@/app/publish/_hooks/autosave-policy";
 import { act, renderHook } from "@testing-library/react";
@@ -116,6 +118,35 @@ describe("useDraftAutosave", () => {
     await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
 
     expect(saveToDraft).toHaveBeenCalledTimes(1);
+  });
+
+  // The breaker is what keeps a broken endpoint (drafts-add returning 406, say)
+  // from being hit every debounce window for as long as the writer keeps
+  // typing.
+  it("backs off after repeated failures, then resumes once the cooldown elapses", async () => {
+    saveToDraft.mockRejectedValue(new Error("drafts-add 406"));
+
+    const { rerender } = renderAutosave({ title: "a title", content: "body 0" });
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    expect(saveToDraft).toHaveBeenCalledTimes(1);
+
+    for (let i = 1; i < AUTOSAVE_FAIL_THRESHOLD; i++) {
+      rerender({ snapshot: { title: "a title", content: `body ${i}` } });
+      await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+    }
+    expect(saveToDraft).toHaveBeenCalledTimes(AUTOSAVE_FAIL_THRESHOLD);
+
+    // Breaker open: further edits are not sent at all.
+    rerender({ snapshot: { title: "a title", content: "while backed off" } });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+    expect(saveToDraft).toHaveBeenCalledTimes(AUTOSAVE_FAIL_THRESHOLD);
+
+    saveToDraft.mockResolvedValue(undefined);
+    await advance(AUTOSAVE_COOLDOWN_MS);
+
+    rerender({ snapshot: { title: "a title", content: "after the cooldown" } });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+    expect(saveToDraft).toHaveBeenCalledTimes(AUTOSAVE_FAIL_THRESHOLD + 1);
   });
 
   it("stays quiet while another tab holds the draft", async () => {

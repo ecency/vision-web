@@ -5,8 +5,13 @@ export const BUTTON_STYLES: Record<ButtonAppearance, string> = {
     "bg-blue-dark-sky hover:bg-blue-dark-sky-hover focus:bg-blue-dark-sky-active text-white hover:text-white disabled:opacity-50 disabled:hover:bg-blue-dark-sky disabled:focus:bg-blue-dark-sky",
   secondary:
     "bg-gray-600 hover:bg-gray-700 disabled:hover:bg-gray-600 focus:bg-gray-800 text-white dark:bg-blue-metallic-20 disabled:dark:hover:bg-blue-metallic-20 dark:hover:bg-blue-metallic disabled:opacity-50",
-  link: "text-blue-dark-sky hover:text-blue-dark-sky-hover focus:text-blue-dark-sky-active disabled:opacity-50",
-  danger: "bg-red hover:bg-red-020 focus:bg-red-030 text-white disabled:opacity-50",
+  // The disabled:hover / disabled:focus resets are load-bearing, not belt and
+  // braces: hover: and disabled: are independent variants, so dimming opacity
+  // alone still lets a disabled button light up under the cursor and read as
+  // clickable.
+  link: "text-blue-dark-sky hover:text-blue-dark-sky-hover focus:text-blue-dark-sky-active disabled:opacity-50 disabled:hover:text-blue-dark-sky disabled:focus:text-blue-dark-sky",
+  danger:
+    "bg-red hover:bg-red-020 focus:bg-red-030 text-white disabled:opacity-50 disabled:hover:bg-red disabled:focus:bg-red",
   success: "bg-green hover:bg-green-hover focus:bg-green-hover text-white disabled:grayscale",
   warning: "",
   info: "bg-info-default hover:info-hover focus:bg-info-focus text-white disabled:opacity-50 disabled:hover:bg-info-default disabled:focus:bg-info-default",
