@@ -65,6 +65,25 @@ const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
     occurrences: 1,
     reason: 'wallet/extension install links, external',
   },
+  'src/features/claim/claim-landing.tsx:claimHref': {
+    occurrences: 1,
+    reason: 'built from the imported HOSTING_URL constant, absolute',
+  },
+  // Both author links resolve against runtime config, which defaults to an
+  // absolute ecency.com profile but an operator may point it anywhere. Not
+  // knowable here, so classified rather than guessed either way.
+  'src/features/blog/components/blog-post-header.tsx:`${profileBaseUrl}${entryData.author}`':
+    {
+      occurrences: 1,
+      reason:
+        'runtime config general.profileBaseUrl, defaults to https://ecency.com/@',
+    },
+  'src/features/blog/components/blog-post-item.tsx:`${profileBaseUrl}${entryData.author}`':
+    {
+      occurrences: 1,
+      reason:
+        'runtime config general.profileBaseUrl, defaults to https://ecency.com/@',
+    },
 };
 
 /** Stands in for an interpolated segment, so `/@${a}` compares as `/@*`. */
@@ -109,15 +128,58 @@ function declaredRoutes(): string[] {
   return found;
 }
 
+/** Every name introduced by a binding, including destructured ones. */
+function boundNames(name: ts.BindingName, out: Set<string>): void {
+  if (ts.isIdentifier(name)) {
+    out.add(name.text);
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) boundNames(element.name, out);
+  }
+}
+
+/**
+ * True when `node` itself introduces `name` as something whose value we cannot
+ * read: a parameter, a catch variable, or a loop binding. Such a binding shadows
+ * anything outside it, so lookup must stop rather than walk out to an unrelated
+ * declaration of the same name.
+ */
+function bindsOpaquely(node: ts.Node, name: string): boolean {
+  const names = new Set<string>();
+
+  if (ts.isFunctionLike(node)) {
+    for (const parameter of node.parameters) boundNames(parameter.name, names);
+  } else if (ts.isCatchClause(node) && node.variableDeclaration) {
+    boundNames(node.variableDeclaration.name, names);
+  } else if (
+    ts.isForOfStatement(node) ||
+    ts.isForInStatement(node) ||
+    ts.isForStatement(node)
+  ) {
+    const initializer = node.initializer;
+    if (initializer && ts.isVariableDeclarationList(initializer)) {
+      for (const decl of initializer.declarations) boundNames(decl.name, names);
+    }
+  }
+
+  return names.has(name);
+}
+
 /**
  * The nearest `const <name>` visible from `from`, honouring lexical scope, so an
- * identifier declared in a sibling component is not in view.
+ * identifier declared in a sibling component is not in view and a parameter is
+ * not mistaken for an outer constant.
  */
 function declarationInScope(
   from: ts.Node,
   name: string,
 ): ts.Expression | undefined {
   for (let n: ts.Node | undefined = from; n; n = n.parent) {
+    // a parameter or loop binding shadows everything further out, and its value
+    // is not knowable, so the link must be classified rather than guessed
+    if (bindsOpaquely(n, name)) return undefined;
+
     const statements = ts.isSourceFile(n)
       ? n.statements
       : ts.isBlock(n) || ts.isModuleBlock(n)
@@ -128,9 +190,14 @@ function declarationInScope(
     for (const statement of statements) {
       if (!ts.isVariableStatement(statement)) continue;
       for (const decl of statement.declarationList.declarations) {
-        if (ts.isIdentifier(decl.name) && decl.name.text === name) {
-          return decl.initializer;
+        if (ts.isIdentifier(decl.name)) {
+          if (decl.name.text === name) return decl.initializer;
+          continue;
         }
+        // destructured: it binds the name but we cannot read the value
+        const destructured = new Set<string>();
+        boundNames(decl.name, destructured);
+        if (destructured.has(name)) return undefined;
       }
     }
   }
@@ -161,10 +228,25 @@ function staticValue(
     return expr.text;
   }
   if (ts.isTemplateExpression(expr)) {
-    return (
-      expr.head.text +
-      expr.templateSpans.map((span) => HOLE + span.literal.text).join('')
-    );
+    const parts = [expr.head.text];
+    let everySpanKnown = true;
+    for (const span of expr.templateSpans) {
+      const value = staticValue(span.expression, depth + 1);
+      if (value === null) {
+        everySpanKnown = false;
+        parts.push(HOLE);
+      } else {
+        parts.push(value);
+      }
+      parts.push(span.literal.text);
+    }
+    const joined = parts.join('');
+    if (everySpanKnown) return joined;
+    // With an unknown span the result is only safe to use when the literal head
+    // already proves this is a path. `${base}/x` must not be read as external:
+    // base could be '/missing', making it a dead internal link. Unknown means
+    // unknown, so it goes back as null and has to be classified.
+    return expr.head.text.startsWith('/') ? joined : null;
   }
   if (ts.isIdentifier(expr)) {
     return staticValue(declarationInScope(expr, expr.text), depth + 1);
@@ -232,12 +314,12 @@ function collect() {
                 ? init.expression
                 : (init as ts.Expression | undefined);
 
-            const ident =
-              expr && ts.isIdentifier(expr)
-                ? expr.text
-                : expr && ts.isPropertyAccessExpression(expr)
-                  ? expr.getText(sf)
-                  : undefined;
+            // Source text of the expression, so a template with no identifier
+            // can still be classified. For a plain identifier this is just its
+            // name, which keeps the exemption keys readable.
+            const ident = expr
+              ? expr.getText(sf).replace(/\s+/g, ' ')
+              : undefined;
 
             const key = ident ? `${rel}:${ident}` : undefined;
             if (key && key in DYNAMIC_LINKS) {
@@ -368,11 +450,77 @@ describe('internal links resolve to declared routes', () => {
     expect(value).toBe(`/@${HOLE}/${HOLE}`);
     expect(matches(`/@${HOLE}/${HOLE}`, '/$author/$permlink')).toBe(true);
     expect(matches(`/@${HOLE}`, '/$author/$permlink')).toBe(false);
-    // a template that starts with an interpolation is not an internal path
-    const [absolute] = hrefValuesIn(
+    // A template starting with an unknown interpolation is NOT assumed external:
+    // base could be '/missing', which would be a dead internal link.
+    const [unknownBase] = hrefValuesIn(
       `const E = () => <a href={\`\${base}/x\`}>x</a>;`,
     );
+    expect(unknownBase).toBeNull();
+  });
+
+  it('resolves knowable interpolations instead of assuming external', () => {
+    // base is knowable and internal: the whole path must be validated
+    const [known] = hrefValuesIn(
+      [
+        "const base = '/missing';",
+        `const E = () => <a href={\`\${base}/x/y/z\`}>x</a>;`,
+      ].join('\n'),
+    );
+    // resolved rather than waved through as external, and no route is this deep
+    expect(known).toBe('/missing/x/y/z');
+    expect(routes.some((r) => matches(known ?? '', r))).toBe(false);
+
+    // knowable and absolute: correctly external
+    const [absolute] = hrefValuesIn(
+      [
+        "const base = 'https://ecency.com';",
+        `const E = () => <a href={\`\${base}/x\`}>x</a>;`,
+      ].join('\n'),
+    );
+    expect(absolute).toBe('https://ecency.com/x');
     expect(isInternal(absolute ?? '')).toBe(false);
+
+    // head already proves it is a path, so an unknown span is just a wildcard
+    const [rooted] = hrefValuesIn(
+      `const E = () => <a href={\`/@\${a}\`}>x</a>;`,
+    );
+    expect(rooted).toBe(`/@${HOLE}`);
+  });
+
+  it('stops at a parameter rather than reading an outer constant', () => {
+    const outer = "const target = '/blog';";
+    expect(
+      hrefValuesIn(
+        [
+          outer,
+          'function A(target: string) { return <a href={target}>a</a>; }',
+        ].join('\n'),
+      ),
+    ).toEqual([null]);
+    // destructured props bind the name too
+    expect(
+      hrefValuesIn(
+        [
+          outer,
+          'function A({ target }: { target: string }) { return <a href={target}>a</a>; }',
+        ].join('\n'),
+      ),
+    ).toEqual([null]);
+    // and a loop binding
+    expect(
+      hrefValuesIn(
+        [
+          outer,
+          'function A(xs: string[]) { return xs.map((x) => { for (const target of xs) { return <a href={target}>a</a>; } }); }',
+        ].join('\n'),
+      ),
+    ).toEqual([null]);
+    // control: no shadowing, the outer const is genuinely in view
+    expect(
+      hrefValuesIn(
+        [outer, 'function A() { return <a href={target}>a</a>; }'].join('\n'),
+      ),
+    ).toEqual(['/blog']);
   });
 
   it('recognises the shapes the app actually uses', () => {
