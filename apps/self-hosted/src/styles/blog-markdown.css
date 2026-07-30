@@ -1549,16 +1549,19 @@
 /* Author (@user) and tag (#tag) chips.
    renderPostBody's non-app path — the one this SPA uses (forApp = false, see
    blog-post-body.tsx) — emits a mention as
-   `<a class="er-author er-author-link"><img class="er-author-link-image"/>@user</a>`
-   and a tag as `<a class="er-tag er-tag-link">`; the app path used by decks and
-   other in-app surfaces emits plain `.markdown-author-link` text with no image.
+   `<span class="er-author er-author-link"><img class="er-author-link-image"/>@user</span>`
+   and a tag as `<span class="er-tag er-tag-link">`; the app path used by decks
+   and other in-app surfaces emits plain `.markdown-author-link` text with no
+   image. These are spans rather than anchors because this app passes
+   `inertAuthorAndTagChips` — a blog has no profile or tag route to land on.
    The avatar is served at 256x256, so without a size here the generic
    `.markdown-body img` rule above owns it and renders a 256px block with 29px
    vertical margins in the middle of the sentence. apps/web carries the
    equivalent rules in src/styles/_markdown.scss; these mirror them on the
-   theme tokens instead of web's hardcoded palette. Both selectors are scoped
-   under `.markdown-body` so they outrank the generic `img`/`a` rules without
-   needing !important. */
+   theme tokens instead of web's hardcoded palette. Selectors match on class
+   only, so they hold if a surface ever renders the linked `<a>` variant, and
+   are scoped under `.markdown-body` to outrank the generic `img` / `a` rules
+   without needing !important. */
 .markdown-body .er-author-link {
   display: inline-flex;
   align-items: center;
@@ -1602,8 +1605,11 @@
   box-sizing: border-box;
 }
 
-.markdown-body .er-author-link:hover,
-.markdown-body .er-tag-link:hover {
+/* Hover feedback only where the chip is actually a link. An inert span keeps the
+   default text cursor and no hover state, so it does not advertise a click that
+   does nothing. */
+.markdown-body a.er-author-link:hover,
+.markdown-body a.er-tag-link:hover {
   color: var(--theme-accent-hover, #1b68da);
   text-decoration: none;
 }

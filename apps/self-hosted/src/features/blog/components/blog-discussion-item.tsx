@@ -88,13 +88,17 @@ export function BlogDiscussionItem({
                 dangerouslySetInnerHTML={{
                   // embedVideosDirectly: emit ready-to-play iframes for
                   // YouTube/3Speak (no client-side enhancer runs here).
+                  // inertAuthorAndTagChips: no profile or tag routes exist here.
                   __html: renderPostBody(
                     entry.body,
                     false,
                     false,
                     'ecency.com',
                     undefined,
-                    { embedVideosDirectly: true },
+                    {
+                      embedVideosDirectly: true,
+                      inertAuthorAndTagChips: true,
+                    },
                   ),
                 }}
               />

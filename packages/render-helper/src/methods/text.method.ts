@@ -16,13 +16,38 @@ function hasAncestor(node: Node, tagNames: string[]): boolean {
   return false
 }
 
+/**
+ * True when the node already sits inside a rendered `@user` / `#tag` chip.
+ *
+ * The `'a'` guard below is what normally stops a chip's own `@user` text from
+ * being linkified again: traverse() recurses into the node text() inserted, so
+ * without a stop condition the chip's label is re-linkified into a nested chip
+ * on every pass, forever. With `RenderOptions.inertAuthorAndTagChips` the chip
+ * is a `<span>`, which the tag-name guard does not catch, so match on the chip
+ * classes instead. a.method.ts uses the same class-based "already processed"
+ * signal.
+ */
+function hasChipAncestor(node: Node): boolean {
+  let current: Node | null = node.parentNode
+  while (current) {
+    const el = current as HTMLElement
+    const className =
+      typeof el.getAttribute === 'function' ? el.getAttribute('class') : null
+    if (className && (className.includes('er-author-link') || className.includes('er-tag-link'))) {
+      return true
+    }
+    current = current.parentNode
+  }
+  return false
+}
+
 export function text(node: HTMLElement | null, forApp: boolean, renderOptions?: RenderOptions): void {
   if (!node || !node.parentNode) {
     return
   }
 
   // Skip text nodes inside links, inline code, or code blocks (check all ancestors)
-  if (hasAncestor(node, ['a', 'code', 'pre'])) {
+  if (hasAncestor(node, ['a', 'code', 'pre']) || hasChipAncestor(node)) {
     return
   }
 

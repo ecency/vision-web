@@ -1763,6 +1763,9 @@ function linkify(content, forApp, renderOptions) {
     const tag2 = tag.trim().substring(1);
     const tagLower = tag2.toLowerCase();
     if (!forApp) {
+      if (renderOptions?.inertAuthorAndTagChips) {
+        return `${preceding}<span class="er-tag er-tag-link">${tag.trim()}</span>`;
+      }
       return `${preceding}<a class="er-tag er-tag-link" href="/trending/${tagLower}">${tag.trim()}</a>`;
     }
     return `${preceding}<a class="markdown-tag-link" data-tag="${tagLower}">${tag.trim()}</a>`;
@@ -1776,7 +1779,8 @@ function linkify(content, forApp, renderOptions) {
       if (userLower.indexOf("/") === -1 && isValidUsername(user)) {
         if (!forApp) {
           const avatarSrc = `${getProxyBase()}/u/${userLower}/avatar/small`;
-          const html = `${preceedings}<a class="er-author er-author-link" href="/@${userLower}"><img class="er-author-link-image" src="${avatarSrc}" alt="${userLower}"/>@${userLower}</a>`;
+          const inner = `<img class="er-author-link-image" src="${avatarSrc}" alt="${userLower}"/>@${userLower}`;
+          const html = renderOptions?.inertAuthorAndTagChips ? `${preceedings}<span class="er-author er-author-link">${inner}</span>` : `${preceedings}<a class="er-author er-author-link" href="/@${userLower}">${inner}</a>`;
           const placeholder = `\u200C${authorPlaceholders.length}\u200C`;
           authorPlaceholders.push({ placeholder, html });
           return placeholder;
@@ -1841,15 +1845,27 @@ function hasAncestor(node, tagNames) {
   }
   return false;
 }
+function hasChipAncestor(node) {
+  let current = node.parentNode;
+  while (current) {
+    const el = current;
+    const className = typeof el.getAttribute === "function" ? el.getAttribute("class") : null;
+    if (className && (className.includes("er-author-link") || className.includes("er-tag-link"))) {
+      return true;
+    }
+    current = current.parentNode;
+  }
+  return false;
+}
 function text(node, forApp, renderOptions) {
   if (!node || !node.parentNode) {
     return;
   }
-  if (hasAncestor(node, ["a", "code", "pre"])) {
+  if (hasAncestor(node, ["a", "code", "pre"]) || hasChipAncestor(node)) {
     return;
   }
   const nodeValue = node.nodeValue || "";
-  const linkified = linkify(nodeValue, forApp);
+  const linkified = linkify(nodeValue, forApp, renderOptions);
   if (linkified !== nodeValue) {
     const doc = DOMParser.parseFromString(
       `<span class="wr">${linkified}</span>`,
@@ -1937,7 +1953,7 @@ function traverse(node, forApp, depth = 0, state = { firstImageFound: false }, p
       iframe(child, parentDomain, forApp, renderOptions);
     }
     if (child.nodeName === "#text") {
-      text(child, forApp);
+      text(child, forApp, renderOptions);
     }
     if (child.nodeName.toLowerCase() === "img") {
       img(child, state, forApp);
@@ -2141,7 +2157,7 @@ function markdown2Html(obj, forApp = true, _webp = false, parentDomain = "ecency
     logIfSlow(performance.now() - t02, `body_len=${obj.length}`);
     return res2;
   }
-  const key = `${makeEntryCacheKey(obj)}-md-${forApp ? "app" : "site"}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ""}-${seoContext.postPayout ?? ""}` : ""}${renderOptions?.embedVideosDirectly ? "-embed" : ""}`;
+  const key = `${makeEntryCacheKey(obj)}-md-${forApp ? "app" : "site"}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ""}-${seoContext.postPayout ?? ""}` : ""}${renderOptions?.embedVideosDirectly ? "-embed" : ""}${renderOptions?.inertAuthorAndTagChips ? "-inert" : ""}`;
   const item = cacheGet(key);
   if (item) {
     return item;

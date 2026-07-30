@@ -16,9 +16,12 @@ export function BlogPostBody({ entry, isRawContent }: Props) {
     // embedVideosDirectly: emit ready-to-play iframes for YouTube/3Speak instead
     // of click-to-play thumbnails. The self-hosted SPA does not run the web app's
     // client-side video enhancers, so without this videos render as inert placeholders.
+    // inertAuthorAndTagChips: a blog has no profile or tag routes, so @user and
+    // #tag chips render as spans instead of links to nowhere.
     () =>
       renderPostBody(entryData.body, false, false, 'ecency.com', undefined, {
         embedVideosDirectly: true,
+        inertAuthorAndTagChips: true,
       }),
     [entryData.body],
   );

@@ -347,4 +347,60 @@ describe('linkify() method - Content Linkification', () => {
       expect(result).toContain('er-tag-link')
     })
   })
+
+  describe('inertAuthorAndTagChips option', () => {
+    const inert = { inertAuthorAndTagChips: true }
+
+    it('should render mentions as a span with no href', () => {
+      const result = linkify('Thanks @username', false, inert)
+
+      expect(result).toContain('<span class="er-author er-author-link">')
+      expect(result).toContain('@username</span>')
+      expect(result).not.toContain('href="/@username"')
+      expect(result).not.toContain('<a class="er-author')
+    })
+
+    it('should keep the avatar image and its class on inert mentions', () => {
+      const result = linkify('Thanks @username', false, inert)
+
+      expect(result).toContain('class="er-author-link-image"')
+      expect(result).toContain('/u/username/avatar/small')
+      expect(result).toContain('alt="username"')
+    })
+
+    it('should render hashtags as a span with no href', () => {
+      const result = linkify('#bitcoin is great', false, inert)
+
+      expect(result).toContain('<span class="er-tag er-tag-link">')
+      expect(result).toContain('#bitcoin</span>')
+      expect(result).not.toContain('href="/trending/bitcoin"')
+    })
+
+    it('should leave both chips as links when the option is absent', () => {
+      const result = linkify('Thanks @username #bitcoin', false)
+
+      expect(result).toContain('href="/@username"')
+      expect(result).toContain('href="/trending/bitcoin"')
+      expect(result).not.toContain('<span class="er-author')
+      expect(result).not.toContain('<span class="er-tag')
+    })
+
+    it('should leave both chips as links when the option is explicitly false', () => {
+      const result = linkify('Thanks @username #bitcoin', false, {
+        inertAuthorAndTagChips: false,
+      })
+
+      expect(result).toContain('href="/@username"')
+      expect(result).toContain('href="/trending/bitcoin"')
+    })
+
+    it('should not affect the app render path, which emits no chips', () => {
+      const result = linkify('Thanks @username #bitcoin', true, inert)
+
+      expect(result).toContain('class="markdown-author-link" data-author="username"')
+      expect(result).toContain('class="markdown-tag-link" data-tag="bitcoin"')
+      expect(result).not.toContain('er-author-link')
+      expect(result).not.toContain('er-tag-link')
+    })
+  })
 })
