@@ -121,4 +121,8 @@ export function useApiDraftDetector(
     queryClient,
     draftsQueryOptions.queryKey
   ]);
+
+  // Surfaced so a caller that blocks editing until the draft arrives has a way
+  // out when it never will, rather than showing a loader forever.
+  return { isError: draftsQuery.isError && !draftsQuery.isFetching };
 }
