@@ -206,8 +206,14 @@ export function TagSelector({ tags, onChange, maxItem }: Props) {
   );
   const onBlur = useCallback(() => {
     setHasFocus(false);
-    add(value);
-  }, [add, value]);
+    // Same gate Enter already applies. Without it, a tag the warning has just
+    // rejected ("abc-", a leading digit, a second dash) was still committed by
+    // clicking away, so invalid tags reached publish - the warning was advice
+    // on one path and a rule on the other.
+    if (warning === "") {
+      add(value);
+    }
+  }, [add, value, warning]);
 
   return (
     <>

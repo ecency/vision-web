@@ -6,16 +6,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const KEY = PREFIX + "_local_draft";
 
-// The route guard only engages for a signed-in user, so these tests need a real
-// one rather than the null active user the global setup mock hands out.
-const activeAccount = vi.hoisted(() => ({
-  current: null as { username: string } | null
-}));
-
-vi.mock("@/core/hooks/use-active-account", () => ({
-  useActiveAccount: () => ({ activeUser: activeAccount.current })
-}));
-
 // Regression: the waves composer and the deck threads form persist an
 // overflowing post as { ...localDraft, body } into this shared key, with
 // localDraft defaulting to {}. That stores a draft carrying neither title nor
@@ -47,7 +37,6 @@ function renderManager(
 describe("useLocalDraftManager", () => {
   beforeEach(() => {
     localStorage.clear();
-    activeAccount.current = null;
   });
 
   it("substitutes empty values for a draft stored without title and tags", () => {
@@ -119,12 +108,15 @@ describe("useLocalDraftManager", () => {
     expect(empty.onDraftLoaded).not.toHaveBeenCalled();
   });
 
-  // Regression: useEntryTypeDetection used to publish isEntry/isDraft from an
-  // effect, so they were still false during the commit in which this hook's
-  // useMount ran. The guard below therefore never held, and opening a saved
-  // draft or an entry edit restored the unrelated /submit local draft over it.
+  // Regression, two causes. useEntryTypeDetection used to publish
+  // isEntry/isDraft from an effect, so they were still false during the commit
+  // in which this hook's useMount runs; and it also required an activeUser,
+  // which client-init only loads in a post-mount effect and which is therefore
+  // null on every first render. Either alone kept the guard open, so opening a
+  // saved draft or an entry edit restored the unrelated /submit local draft
+  // over it. These run under the global mock's null active user on purpose -
+  // that is the real first-render condition.
   it("does not restore the local draft on the draft route", () => {
-    activeAccount.current = { username: "coloneljethro" };
     localStorage.setItem(
       KEY,
       JSON.stringify({ title: "a title", tags: ["hive"], body: "a body" })
@@ -140,7 +132,6 @@ describe("useLocalDraftManager", () => {
   });
 
   it("does not restore the local draft on the entry edit route", () => {
-    activeAccount.current = { username: "coloneljethro" };
     localStorage.setItem(
       KEY,
       JSON.stringify({ title: "a title", tags: ["hive"], body: "a body" })

@@ -47,6 +47,7 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
   const cooldownUntilRef = useRef<number>(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attemptRef = useRef<() => void>(() => {});
+  const isSavingRef = useRef(false);
 
   const scheduleRetry = useCallback((delay: number) => {
     // One pending retry is enough: it re-reads the newest snapshot when it runs.
@@ -74,6 +75,18 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
     if (isEqual(prevSnapshotRef.current, snapshot)) return;
 
     const sinceLastAttempt = now - lastAttemptAtRef.current;
+
+    // Never let two saves be on the wire at once. Responses are not guaranteed
+    // to come back in the order they were sent, so a slow earlier request can
+    // land after a newer one and overwrite the newer content on the server -
+    // and then set prevSnapshotRef to the older snapshot, so the newer content
+    // no longer even looks unsaved. Serialising also means the assignment to
+    // prevSnapshotRef below always belongs to the most recent completed save.
+    if (isSavingRef.current) {
+      scheduleRetry(Math.max(AUTOSAVE_MIN_INTERVAL_MS - sinceLastAttempt, 1_000));
+      return;
+    }
+
     if (sinceLastAttempt < AUTOSAVE_MIN_INTERVAL_MS) {
       // Defer, never drop. This used to `return` outright, which discarded the
       // save entirely: the next attempt could only come from a *further* edit
@@ -85,6 +98,7 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
     }
 
     lastAttemptAtRef.current = now;
+    isSavingRef.current = true;
 
     try {
       const id = await saveToDraft({ showToast: false, redirect: false });
@@ -100,6 +114,8 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
       if (consecutiveFailsRef.current >= AUTOSAVE_FAIL_THRESHOLD) {
         cooldownUntilRef.current = Date.now() + AUTOSAVE_COOLDOWN_MS;
       }
+    } finally {
+      isSavingRef.current = false;
     }
   }, [enabled, isActiveTab, saveToDraft, scheduleRetry, snapshot]);
 

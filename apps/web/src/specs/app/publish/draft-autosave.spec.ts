@@ -74,6 +74,37 @@ describe("useDraftAutosave", () => {
     expect(saveToDraft).toHaveBeenCalledTimes(2);
   });
 
+  // Responses are not guaranteed to return in send order, so a slow earlier
+  // save can land after a newer one and overwrite the newer content on the
+  // server - and then mark the newer content as already persisted.
+  it("never puts two saves on the wire at once", async () => {
+    let resolveFirst: (() => void) | undefined;
+    saveToDraft.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFirst = resolve;
+        })
+    );
+
+    const { rerender } = renderAutosave({ title: "a title", content: "a body" });
+
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    expect(saveToDraft).toHaveBeenCalledTimes(1);
+
+    // A later edit, well past the throttle window, while the first save is
+    // still unresolved.
+    rerender({ snapshot: { title: "a title", content: "a longer body" } });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+    expect(saveToDraft).toHaveBeenCalledTimes(1);
+
+    // Once it lands, the deferred save is free to go.
+    await act(async () => {
+      resolveFirst?.();
+    });
+    await advance(AUTOSAVE_MIN_INTERVAL_MS);
+    expect(saveToDraft).toHaveBeenCalledTimes(2);
+  });
+
   it("does not save again when nothing changed", async () => {
     const snapshot = { title: "a title", content: "a body" };
     const { rerender } = renderAutosave(snapshot);

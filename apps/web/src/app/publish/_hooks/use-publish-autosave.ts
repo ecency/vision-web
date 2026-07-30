@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { usePublishState } from "./use-publish-state";
 import { useDraftAutosave } from "./use-draft-autosave";
+import { hasDraftableContent } from "../_utils/content";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 /**
@@ -54,7 +55,7 @@ export function usePublishAutosave() {
   );
 
   return useDraftAutosave({
-    enabled: !!activeUser?.username && !!(title?.trim() || content?.trim()),
+    enabled: !!activeUser?.username && hasDraftableContent(title, content),
     snapshot
   });
 }

@@ -6,6 +6,7 @@ import useLocalStorage from "react-use/lib/useLocalStorage";
 import { PREFIX } from "@/utils/local-storage";
 import routes from "@/routes";
 import { PostBase } from "@/app/submit/_types";
+import { hasDraftableContent } from "../_utils/content";
 import { usePublishState } from "./use-publish-state";
 
 export const SUBMIT_LOCAL_DRAFT_KEY = PREFIX + "_local_draft";
@@ -32,7 +33,7 @@ export function useBackToClassic() {
     // Only overwrite the classic editor's draft when there is something worth
     // handing over, so leaving an untouched composer cannot wipe a post
     // already in progress over there.
-    if (title?.trim() || content?.trim()) {
+    if (hasDraftableContent(title, content)) {
       setLocalDraft({
         title: title ?? "",
         tags: tags ?? [],
