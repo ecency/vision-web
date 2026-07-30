@@ -185,10 +185,22 @@ export function PublishActionBar({
               this on the title alone left anyone who writes body-first with a
               button that looked enabled (gray-link had no disabled styling) and
               did nothing. Autosave already persists title-less drafts, so the
-              server side of this has always been fine. */}
+              server side of this has always been fine.
+
+              Pending uploads block it for the same reason they block Continue
+              and Back to classic: the write captures the body as it stands, and
+              an image's markdown only lands there once its upload resolves. The
+              create path waits before *redirecting* but never re-saves, and the
+              update path does not wait at all, so saving mid-upload stores a
+              draft without the image and then navigates to that stale copy. */}
           <Button
             size="sm"
-            disabled={isDraftPending || !hasEditorContent || !isActiveTab}
+            disabled={
+              isDraftPending ||
+              !hasEditorContent ||
+              !isActiveTab ||
+              uploadTracker?.hasPendingUploads
+            }
             appearance="gray-link"
             onClick={async () => {
               setIsDraftPending(true);
