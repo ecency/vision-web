@@ -22,6 +22,7 @@ import i18next from "i18next";
 import { PublishEditorHtmlWarning } from "./_components/publish-editor-html-warning";
 import { PublishSuccessState } from "./_components/publish-success-state";
 import dynamic from "next/dynamic";
+import { ModalConfirm } from "@ui/modal-confirm";
 
 function EditorLoadingFallback() {
   return (
@@ -75,7 +76,7 @@ export default function Publish() {
   );
 
   const { isActiveTab, lastSaved, draftId, flush } = usePublishAutosave();
-  const backToClassic = useBackToClassic();
+  const { backToClassic, conflict, confirmHandOver, cancelHandOver } = useBackToClassic();
   const { openDraft, isOpening } = useOpenAutosavedDraft({ draftId, flush });
 
   useEffect(() => {
@@ -145,6 +146,19 @@ export default function Publish() {
           step={step as "published" | "scheduled"}
           setEditStep={() => setStep("edit")}
           entryInfo={publishedEntry}
+        />
+      )}
+
+      {/* The classic editor's local draft is the only copy of an unsaved post
+          over there, so replacing it needs consent rather than a silent write. */}
+      {conflict && (
+        <ModalConfirm
+          titleText={i18next.t("publish.classic-handoff-conflict-title")}
+          descriptionText={i18next.t("publish.classic-handoff-conflict-description")}
+          okText={i18next.t("publish.classic-handoff-conflict-ok")}
+          okVariant="danger"
+          onConfirm={confirmHandOver}
+          onCancel={cancelHandOver}
         />
       )}
 

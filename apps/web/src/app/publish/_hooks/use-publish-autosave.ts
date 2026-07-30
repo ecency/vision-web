@@ -22,7 +22,8 @@ export function usePublishAutosave() {
     poll,
     postLinks,
     location,
-    decentMemes
+    decentMemes,
+    clearGeneration
   } = usePublishState();
 
   const snapshot = useMemo(
@@ -56,6 +57,7 @@ export function usePublishAutosave() {
 
   return useDraftAutosave({
     enabled: !!activeUser?.username && hasDraftableContent(title, content),
-    snapshot
+    snapshot,
+    resetKey: clearGeneration
   });
 }

@@ -49,7 +49,7 @@ describe("useBackToClassic", () => {
     };
 
     const { result } = renderHook(() => useBackToClassic());
-    act(() => result.current());
+    act(() => result.current.backToClassic());
 
     expect(readDraft()).toEqual({
       title: "Error 404: Title Not Found",
@@ -69,7 +69,7 @@ describe("useBackToClassic", () => {
     };
 
     const { result } = renderHook(() => useBackToClassic());
-    act(() => result.current());
+    act(() => result.current.backToClassic());
 
     expect(readDraft()).toEqual({
       title: "",
@@ -89,10 +89,85 @@ describe("useBackToClassic", () => {
     localStorage.setItem(KEY, JSON.stringify(existing));
 
     const { result } = renderHook(() => useBackToClassic());
-    act(() => result.current());
+    act(() => result.current.backToClassic());
 
     expect(readDraft()).toEqual(existing);
     expect(push).toHaveBeenCalledWith("/submit");
   });
 
+  // The classic local draft is the ONLY copy of an unsaved /submit post - no
+  // server draft sits behind it - so replacing it needs consent. Guarding only
+  // on "does the composer have content" covered the empty-composer case and
+  // nothing else, while the comment claimed it protected the post over there.
+  it("asks before replacing an unsaved classic post, and leaves it intact until then", () => {
+    const existing: PostBase = {
+      title: "a post in progress",
+      tags: ["hive"],
+      body: "already being written over there",
+      description: null
+    };
+    localStorage.setItem(KEY, JSON.stringify(existing));
+    publishState.current = {
+      title: "composer post",
+      content: "composer body",
+      tags: [],
+      metaDescription: ""
+    };
+
+    const { result } = renderHook(() => useBackToClassic());
+    act(() => result.current.backToClassic());
+
+    expect(result.current.conflict).toBe(true);
+    expect(readDraft()).toEqual(existing);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("keeps the classic post when the replacement is declined", () => {
+    const existing: PostBase = {
+      title: "a post in progress",
+      tags: ["hive"],
+      body: "already being written over there",
+      description: null
+    };
+    localStorage.setItem(KEY, JSON.stringify(existing));
+    publishState.current = {
+      title: "composer post",
+      content: "composer body",
+      tags: [],
+      metaDescription: ""
+    };
+
+    const { result } = renderHook(() => useBackToClassic());
+    act(() => result.current.backToClassic());
+    act(() => result.current.cancelHandOver());
+
+    expect(result.current.conflict).toBe(false);
+    expect(readDraft()).toEqual(existing);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("replaces the classic post once the replacement is confirmed", () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ title: "old", tags: [], body: "old body", description: null })
+    );
+    publishState.current = {
+      title: "composer post",
+      content: "composer body",
+      tags: ["photofeed"],
+      metaDescription: "summary"
+    };
+
+    const { result } = renderHook(() => useBackToClassic());
+    act(() => result.current.backToClassic());
+    act(() => result.current.confirmHandOver());
+
+    expect(readDraft()).toEqual({
+      title: "composer post",
+      tags: ["photofeed"],
+      body: "composer body",
+      description: "summary"
+    });
+    expect(push).toHaveBeenCalledWith("/submit");
+  });
 });

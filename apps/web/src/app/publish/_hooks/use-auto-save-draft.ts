@@ -22,7 +22,8 @@ export function useAutoSavePublishDraft(step: string, draftId?: string) {
     selectedThumbnail,
     poll,
     postLinks,
-    location
+    location,
+    clearGeneration
   } = usePublishState();
 
   const snapshot = useMemo(
@@ -58,6 +59,7 @@ export function useAutoSavePublishDraft(step: string, draftId?: string) {
     // "[Draft] No active user" and counted towards the circuit breaker.
     enabled:
       step === "edit" && !!activeUser?.username && hasDraftableContent(title, content),
-    snapshot
+    snapshot,
+    resetKey: clearGeneration
   });
 }

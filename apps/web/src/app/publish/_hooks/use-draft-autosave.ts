@@ -13,6 +13,15 @@ import {
   AUTOSAVE_COOLDOWN_MS
 } from "./autosave-policy";
 
+/**
+ * Raised when the post an action belonged to has been cleared away - whether
+ * that is noticed before the write goes out or after it comes back. Both cases
+ * must REJECT rather than resolve: callers navigate on a fulfilled flush and do
+ * not inspect the payload, so a "successful" no-op would still send them to the
+ * previous draft and pull it over the composer.
+ */
+export const STALE_DRAFT_ACTION = "[Draft] The post this action belonged to is gone";
+
 interface Options {
   /**
    * Draft being written to. Undefined on the new-post route until the first
@@ -26,6 +35,15 @@ interface Options {
    * unchanged (build it with useMemo) - it drives the debounce.
    */
   snapshot: Record<string, unknown>;
+  /**
+   * Changes whenever the composer is emptied to start something else - Clear,
+   * applying a template, or finishing a publish. The draft this engine has been
+   * writing to belongs to the *previous* post, so the binding must be dropped:
+   * keeping it made the next post overwrite the previous post's draft, and left
+   * an "auto-saved HH:MM / Open draft" strip on screen pointing at a draft the
+   * composer no longer holds - so flushing it wrote an empty post over it.
+   */
+  resetKey?: number;
 }
 
 /**
@@ -33,7 +51,7 @@ interface Options {
  * previously carried two near-identical copies of this logic and therefore two
  * copies of every bug in it.
  */
-export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
+export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Options) {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [createdDraftId, setCreatedDraftId] = useState<string>();
 
@@ -53,6 +71,17 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
   // returns so a queued write behind it targets the new draft rather than
   // creating another. The state copy exists only to drive re-renders.
   const createdDraftIdRef = useRef<string | undefined>(undefined);
+  const resetKeyRef = useRef(resetKey);
+  // Bumped by every reset. Each write captures it and abandons itself if it no
+  // longer matches, so work belonging to a post that has been cleared away can
+  // neither be sent nor write its result back.
+  const generationRef = useRef(0);
+  // Assigned during render, so it always holds the newest resetKey - unlike
+  // resetKeyRef, which the effect below updates a commit later. Callbacks
+  // capture the resetKey of the render that produced them and compare against
+  // this, which is what makes a *retained* callback detectable.
+  const latestResetKeyRef = useRef(resetKey);
+  latestResetKeyRef.current = resetKey;
 
   /**
    * The only path that writes this draft. Every caller queues behind whatever
@@ -68,6 +97,7 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
    */
   const save = useCallback(
     async (options?: SaveDraftOptions) => {
+      const generation = generationRef.current;
       // inFlightRef only serialises this tab. Ordering *between* tabs is the
       // draft lock's job, so every write has to respect it - a write that skips
       // the lock can overwrite whatever the tab holding it just stored.
@@ -83,6 +113,13 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
           await previous.catch(() => undefined);
         }
 
+        // The post this write was queued for has been cleared away. It must not
+        // be sent: saveToDraft reads publish state at call time, so it would
+        // write whatever is in the composer *now* into the old post's draft.
+        if (generationRef.current !== generation) {
+          return undefined;
+        }
+
         // Resolved *after* the queue drains, never at call time. If the write
         // we just waited on was the create, it produced the id a moment ago and
         // React has not re-rendered yet - reading the hook-level id here would
@@ -95,6 +132,14 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
           draftId: targetDraftId,
           ...options
         });
+
+        // A reset landed while this was on the wire. Writing the id back now
+        // would resurrect a binding to a post that no longer exists here, and
+        // the next post would be saved straight over that post's draft - the
+        // exact loss the reset exists to prevent.
+        if (generationRef.current !== generation) {
+          return undefined;
+        }
 
         // Synchronously, so the next queued write sees it without a render.
         if (id) {
@@ -163,9 +208,17 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
     }
 
     lastAttemptAtRef.current = now;
+    const generation = generationRef.current;
 
     try {
       const id = await save();
+
+      // Cleared while this was in flight: the snapshot and the saved time both
+      // describe a post the composer no longer holds.
+      if (generationRef.current !== generation) {
+        return;
+      }
+
       // Only a create returns an id; updates resolve undefined.
       if (id) {
         setCreatedDraftId(id);
@@ -198,7 +251,32 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
    */
   const flush = useCallback(
     async (options?: SaveDraftOptions) => {
+      // Bound to the render that produced this callback, not to the moment it
+      // runs. A caller can hold a flush across an await - useOpenAutosavedDraft
+      // holds one while it waits for image uploads - and a Clear or a template
+      // applied during that wait would otherwise have it read the *new*
+      // generation and sail through the stale-work guard, after which the
+      // caller navigates to the previous draft over the new composer state.
+      // Rejecting keeps the caller's existing catch effective.
+      if (latestResetKeyRef.current !== resetKey) {
+        throw new Error(STALE_DRAFT_ACTION);
+      }
+
+      // Same gate autosave applies. Without it a caller could write an empty
+      // post over a real draft - which is exactly what Open draft did after the
+      // composer had been cleared, since it stayed bound to the old draft.
+      if (!enabled) {
+        throw new Error("[Draft] Nothing worth saving");
+      }
+
+      const generation = generationRef.current;
       const id = await save(options);
+
+      // Cleared while this write was on the wire. Resolving here would look
+      // like success to a caller that navigates on any fulfilled flush.
+      if (generationRef.current !== generation) {
+        throw new Error(STALE_DRAFT_ACTION);
+      }
 
       if (id) {
         setCreatedDraftId(id);
@@ -216,8 +294,24 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
         created: !!id
       };
     },
-    [draftId, save, snapshot]
+    [draftId, enabled, resetKey, save, snapshot]
   );
+
+  // Drop everything tied to the post that was just cleared away. Without this
+  // the engine keeps writing the *next* post into the previous post's draft.
+  useEffect(() => {
+    if (resetKeyRef.current === resetKey) {
+      return;
+    }
+
+    resetKeyRef.current = resetKey;
+    generationRef.current += 1;
+    createdDraftIdRef.current = undefined;
+    prevSnapshotRef.current = null;
+    lastAttemptAtRef.current = 0;
+    setCreatedDraftId(undefined);
+    setLastSaved(null);
+  }, [resetKey]);
 
   // Keep the retry timer pointed at the newest closure, so a deferred save
   // writes the latest content rather than whatever was current when it was

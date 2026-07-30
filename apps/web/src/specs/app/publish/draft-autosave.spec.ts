@@ -265,6 +265,153 @@ describe("useDraftAutosave", () => {
     expect(saveToDraft).not.toHaveBeenCalled();
   });
 
+  // The engine latched the created draft id and never let go, while clearAll
+  // reset only publish state. Clearing the composer (or applying a template, or
+  // publishing) therefore left the next post writing into the *previous* post's
+  // draft - overwriting a post that the UI still claimed was safely auto-saved.
+  it("drops the draft binding when the composer is cleared", async () => {
+    const targets: (string | undefined)[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return targets.length === 1 ? "draft-for-post-a" : undefined;
+    });
+
+    const { rerender } = renderHook(
+      ({ snapshot, resetKey }: { snapshot: Record<string, unknown>; resetKey: number }) =>
+        useDraftAutosave({ enabled: true, snapshot, resetKey }),
+      { initialProps: { snapshot: { title: "post A", content: "body A" }, resetKey: 0 } }
+    );
+
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    expect(targets).toEqual([undefined]);
+
+    // Clear, then write a different post.
+    rerender({ snapshot: { title: "post B", content: "body B" }, resetKey: 1 });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+
+    // Post B must create its own draft, not overwrite post A's.
+    expect(targets).toEqual([undefined, undefined]);
+  });
+
+  // Clearing the ref is not enough on its own: a create already on the wire
+  // resolves afterwards and writes its id straight back, restoring the binding
+  // to the post that was just cleared away - so the next post is saved over it
+  // regardless. Every write is stamped with the generation it belongs to.
+  it("does not let a create in flight during a clear restore the binding", async () => {
+    const targets: (string | undefined)[] = [];
+    let resolveCreate: ((id: string) => void) | undefined;
+
+    saveToDraft.mockImplementationOnce((options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return new Promise<string>((resolve) => {
+        resolveCreate = resolve;
+      });
+    });
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return undefined;
+    });
+
+    const { rerender } = renderHook(
+      ({ snapshot, resetKey }: { snapshot: Record<string, unknown>; resetKey: number }) =>
+        useDraftAutosave({ enabled: true, snapshot, resetKey }),
+      { initialProps: { snapshot: { title: "post A", content: "body A" }, resetKey: 0 } }
+    );
+
+    // Post A's create goes out and stays unresolved.
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    expect(targets).toEqual([undefined]);
+
+    // Clear lands while it is still on the wire, then the create comes back.
+    rerender({ snapshot: { title: "", content: "" }, resetKey: 1 });
+    await act(async () => {
+      resolveCreate?.("draft-for-post-a");
+    });
+
+    // Now write a different post.
+    rerender({ snapshot: { title: "post B", content: "body B" }, resetKey: 1 });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+
+    // Post B must create its own draft. Targeting draft-for-post-a here would
+    // overwrite post A with post B.
+    expect(targets).toEqual([undefined, undefined]);
+  });
+
+  // A caller can hold a flush across an await - useOpenAutosavedDraft holds one
+  // while it waits for image uploads. A clear during that wait must invalidate
+  // the retained flush, or it reads the *new* generation, passes the stale-work
+  // guard, and the caller then navigates to the previous draft over whatever the
+  // composer holds now. Rejecting is what keeps the caller's catch effective.
+  it("rejects a flush retained across a clear", async () => {
+    const { result, rerender } = renderHook(
+      ({ snapshot, resetKey }: { snapshot: Record<string, unknown>; resetKey: number }) =>
+        useDraftAutosave({ enabled: true, snapshot, resetKey }),
+      { initialProps: { snapshot: { title: "post A", content: "body A" }, resetKey: 0 } }
+    );
+
+    // Captured before the clear, the way a caller awaiting uploads holds it.
+    const retainedFlush = result.current.flush;
+
+    rerender({ snapshot: { title: "post B", content: "body B" }, resetKey: 1 });
+
+    await expect(retainedFlush()).rejects.toThrow(/belonged to is gone/i);
+    expect(saveToDraft).not.toHaveBeenCalled();
+  });
+
+  // The pre-save guard only covers a flush that was already stale when called.
+  // A reset landing while the write is on the wire has to reject too: callers
+  // navigate on any *fulfilled* flush and do not inspect the payload, so
+  // resolving with an empty result still sent them to the previous draft.
+  it("rejects a flush whose post is cleared while the write is in flight", async () => {
+    let resolveSave: ((id: string | undefined) => void) | undefined;
+    saveToDraft.mockImplementationOnce(
+      () =>
+        new Promise<string | undefined>((resolve) => {
+          resolveSave = resolve;
+        })
+    );
+
+    const { result, rerender } = renderHook(
+      ({ snapshot, resetKey }: { snapshot: Record<string, unknown>; resetKey: number }) =>
+        useDraftAutosave({ enabled: true, snapshot, resetKey }),
+      { initialProps: { snapshot: { title: "post A", content: "body A" }, resetKey: 0 } }
+    );
+
+    // Attach the handler immediately so the rejection is never unhandled.
+    const outcome: { error?: Error } = {};
+    let settled: Promise<void> | undefined;
+    await act(async () => {
+      settled = result.current
+        .flush()
+        .then(() => undefined)
+        .catch((err: Error) => {
+          outcome.error = err;
+        });
+    });
+
+    // Clear lands while the write is still unresolved.
+    rerender({ snapshot: { title: "", content: "" }, resetKey: 1 });
+
+    await act(async () => {
+      resolveSave?.(undefined);
+      await settled;
+    });
+
+    expect(outcome.error?.message).toMatch(/belonged to is gone/i);
+  });
+
+  // After a clear the composer is empty but the engine still knew a draft id,
+  // and flush had no content guard - so Open draft, the action offered to
+  // recover the auto-saved post, wrote an empty post over it instead.
+  it("refuses to flush when there is nothing worth saving", async () => {
+    const { result } = renderHook(() =>
+      useDraftAutosave({ enabled: false, snapshot: { title: "", content: "" } })
+    );
+
+    await expect(result.current.flush()).rejects.toThrow(/nothing worth saving/i);
+    expect(saveToDraft).not.toHaveBeenCalled();
+  });
+
   it("stays quiet while another tab holds the draft", async () => {
     isActiveTab.current = false;
     renderAutosave({ title: "a title", content: "a body" });
