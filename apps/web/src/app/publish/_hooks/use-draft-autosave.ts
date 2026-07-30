@@ -63,6 +63,10 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
   // creating another. The state copy exists only to drive re-renders.
   const createdDraftIdRef = useRef<string | undefined>(undefined);
   const resetKeyRef = useRef(resetKey);
+  // Bumped by every reset. Each write captures it and abandons itself if it no
+  // longer matches, so work belonging to a post that has been cleared away can
+  // neither be sent nor write its result back.
+  const generationRef = useRef(0);
 
   /**
    * The only path that writes this draft. Every caller queues behind whatever
@@ -78,6 +82,7 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
    */
   const save = useCallback(
     async (options?: SaveDraftOptions) => {
+      const generation = generationRef.current;
       // inFlightRef only serialises this tab. Ordering *between* tabs is the
       // draft lock's job, so every write has to respect it - a write that skips
       // the lock can overwrite whatever the tab holding it just stored.
@@ -93,6 +98,13 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
           await previous.catch(() => undefined);
         }
 
+        // The post this write was queued for has been cleared away. It must not
+        // be sent: saveToDraft reads publish state at call time, so it would
+        // write whatever is in the composer *now* into the old post's draft.
+        if (generationRef.current !== generation) {
+          return undefined;
+        }
+
         // Resolved *after* the queue drains, never at call time. If the write
         // we just waited on was the create, it produced the id a moment ago and
         // React has not re-rendered yet - reading the hook-level id here would
@@ -105,6 +117,14 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
           draftId: targetDraftId,
           ...options
         });
+
+        // A reset landed while this was on the wire. Writing the id back now
+        // would resurrect a binding to a post that no longer exists here, and
+        // the next post would be saved straight over that post's draft - the
+        // exact loss the reset exists to prevent.
+        if (generationRef.current !== generation) {
+          return undefined;
+        }
 
         // Synchronously, so the next queued write sees it without a render.
         if (id) {
@@ -173,9 +193,17 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
     }
 
     lastAttemptAtRef.current = now;
+    const generation = generationRef.current;
 
     try {
       const id = await save();
+
+      // Cleared while this was in flight: the snapshot and the saved time both
+      // describe a post the composer no longer holds.
+      if (generationRef.current !== generation) {
+        return;
+      }
+
       // Only a create returns an id; updates resolve undefined.
       if (id) {
         setCreatedDraftId(id);
@@ -215,7 +243,12 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
         throw new Error("[Draft] Nothing worth saving");
       }
 
+      const generation = generationRef.current;
       const id = await save(options);
+
+      if (generationRef.current !== generation) {
+        return { draftId: undefined, created: false };
+      }
 
       if (id) {
         setCreatedDraftId(id);
@@ -244,6 +277,7 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
     }
 
     resetKeyRef.current = resetKey;
+    generationRef.current += 1;
     createdDraftIdRef.current = undefined;
     prevSnapshotRef.current = null;
     lastAttemptAtRef.current = 0;
