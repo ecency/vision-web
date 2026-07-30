@@ -1873,12 +1873,13 @@ function hasAncestor(node, tagNames) {
   }
   return false;
 }
+var CHIP_CLASSES = ["er-author-link", "er-tag-link"];
 function hasChipAncestor(node) {
   let current = node.parentNode;
   while (current) {
     const el = current;
     const className = typeof el.getAttribute === "function" ? el.getAttribute("class") : null;
-    if (className && (className.includes("er-author-link") || className.includes("er-tag-link"))) {
+    if (className && className.split(/\s+/).some((token) => CHIP_CLASSES.includes(token))) {
       return true;
     }
     current = current.parentNode;
@@ -1889,7 +1890,10 @@ function text(node, forApp, renderOptions) {
   if (!node || !node.parentNode) {
     return;
   }
-  if (hasAncestor(node, ["a", "code", "pre"]) || hasChipAncestor(node)) {
+  if (hasAncestor(node, ["a", "code", "pre"])) {
+    return;
+  }
+  if (renderOptions?.inertAuthorAndTagChips && hasChipAncestor(node)) {
     return;
   }
   const nodeValue = node.nodeValue || "";

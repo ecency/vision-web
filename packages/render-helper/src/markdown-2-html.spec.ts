@@ -1401,6 +1401,49 @@ describe('Markdown2Html', () => {
       expect(out).toContain('href="/trending/powerup"')
     })
 
+    // `class` is author-writable: the sanitizer permits it on <span> and runs after
+    // traverse, so a post body can carry `er-tag-link` into the DOM the guard walks.
+    // An unconditional guard would let any author suppress linkification for every
+    // reader on ecency.com and in the mobile app.
+    describe('author-supplied chip classes on the default path', () => {
+      const hostile = '<span class="er-tag-link">hello @alice and #btc</span>'
+
+      it('still linkifies inside an author span for forApp=true', () => {
+        const out = markdown2Html(hostile, true)
+
+        expect(out).toContain('data-author="alice"')
+        expect(out).toContain('data-tag="btc"')
+      })
+
+      it('still linkifies inside an author span for forApp=false', () => {
+        const out = markdown2Html(hostile, false, false, 'ecency.com')
+
+        expect(out).toContain('href="/@alice"')
+        expect(out).toContain('href="/trending/btc"')
+      })
+
+      it('does not match class names that merely contain a chip token', () => {
+        const out = markdown2Html(
+          '<span class="custom-er-tag-link-label">hello @alice</span>',
+          false,
+          false,
+          'ecency.com',
+          undefined,
+          inert
+        )
+
+        expect(out).toContain('<span class="er-author er-author-link">')
+      })
+
+      it('suppresses re-linkification only inside a real chip on inert renders', () => {
+        const out = markdown2Html(hostile, false, false, 'ecency.com', undefined, inert)
+
+        // The author's own span is a genuine chip-class token, so its contents are
+        // left alone on this path. Accepted: narrow, and only on self-hosted.
+        expect(out).toContain('hello @alice and #btc')
+      })
+    })
+
     it('does not serve a cached render across differing options for the same entry', () => {
       const entry = {
         author: 'chipcache',
