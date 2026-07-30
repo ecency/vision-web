@@ -40,17 +40,15 @@ interface Props {
   tags: string[];
   maxItem: number;
   onChange: (tags: string[]) => void;
-  onValid: (value: boolean) => void;
 }
 
-export function TagSelector({ tags, onChange, onValid, maxItem }: Props) {
+export function TagSelector({ tags, onChange, maxItem }: Props) {
   const { data: trendingTagsPages } = useInfiniteQuery(getTrendingTagsQueryOptions(250));
   const trendingTags = useMemo(() => trendingTagsPages?.pages[0] ?? [], [trendingTagsPages?.pages]);
 
   const [hasFocus, setHasFocus] = useState(false);
   const [value, setValue] = useState("");
   const [warning, setWarning] = useState("");
-  const previousWarning = usePrevious(warning);
 
   const sanitizeInput = useCallback(sanitizeTagInput, []);
 
@@ -210,10 +208,6 @@ export function TagSelector({ tags, onChange, onValid, maxItem }: Props) {
     setHasFocus(false);
     add(value);
   }, [add, value]);
-
-  useEffect(() => {
-    onValid(previousWarning !== warning && warning !== "");
-  }, [warning, previousWarning, onValid]);
 
   return (
     <>

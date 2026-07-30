@@ -102,7 +102,6 @@ export function useAdvancedManager() {
       clearReward();
       clearBeneficiaries();
       clearDescription();
-      clearDescription();
       clearSetReblogSwitch();
       clearSchedule();
     }

@@ -6,13 +6,13 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { PostBase } from "./_types";
 import {
-  BodyVersioningManager,
+  SubmitBodyProvider,
   useAdvancedManager,
   useApiDraftDetector,
-  useBodyVersioningManager,
   useCommunityDetector,
   useEntryDetector,
-  useLocalDraftManager
+  useLocalDraftManager,
+  useSubmitBody
 } from "./_hooks";
 import { postBodySummary, proxifyImageSrc } from "@ecency/render-helper";
 import useLocalStorage from "react-use/lib/useLocalStorage";
@@ -52,8 +52,7 @@ import { EcencyConfigManager } from "@/config";
 import {
   SUBMIT_DESCRIPTION_MAX_LENGTH,
   SUBMIT_TAG_MAX_LENGTH,
-  SUBMIT_TITLE_MAX_LENGTH,
-  SUBMIT_TOUR_ITEMS
+  SUBMIT_TITLE_MAX_LENGTH
 } from "@/app/submit/_consts";
 import { checkSvg } from "@ui/svg";
 
@@ -68,7 +67,7 @@ interface Props {
 function Submit({ path, draftId, username, permlink, searchParams }: Props) {
   const postBodyRef = useRef<HTMLDivElement | null>(null);
   const { setActivePoll, activePoll, clearActivePoll } = useContext(PollsContext);
-  const { body, setBody } = useBodyVersioningManager();
+  const { body, setBody } = useSubmitBody();
 
   const router = useRouter();
   const { activeUser } = useActiveAccount();
@@ -90,22 +89,13 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     body: "",
     description: ""
   });
-  const [disabled, setDisabled] = useState(true);
   const [drafts, setDrafts] = useState(false);
-  const [isDraftEmpty, setIsDraftEmpty] = useState(false);
-  const [forceReactivateTour, setForceReactivateTour] = useState(false);
 
   // Misc
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [editingDraft, setEditingDraft] = useState<Draft | null>(null);
-  const [isTourFinished] = useLocalStorage(PREFIX + `_itf_submit`, false);
 
   const postPoll = useEntryPollExtractor(editingEntry);
-
-  const tourEnabled = useMemo(() => !activeUser, [activeUser]);
-  const introSteps = useMemo(() => SUBMIT_TOUR_ITEMS, []);
-
-  let _updateTimer: any; // todo think about it
 
   const applyTitle = useCallback(
     (value: string) => {
@@ -128,18 +118,29 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     [sanitizeTags, setTags]
   );
 
-  const { setLocalDraft } = useLocalDraftManager(
+  const { setLocalDraft, isNewPostRoute } = useLocalDraftManager(
     path,
     username,
     permlink,
     draftId,
-    setIsDraftEmpty,
     (title, tags, body) => {
       applyTitle(title);
       applyTags(tags);
       setBody(body);
     }
   );
+
+  // Derived, never stored. This used to be state written from an effect keyed
+  // on `body` alone, plus a setTimeout(100) once an API draft had loaded, so a
+  // post carrying a title but no body yet still reported "empty" and
+  // EditorActions rendered "Load draft" where the Save draft button belongs.
+  // Only the new-post route has a draft that can be empty; on /draft/[id] the
+  // content arrives asynchronously and must not read as empty in the meantime.
+  const isDraftEmpty = useMemo(
+    () => isNewPostRoute && !(title.length || tags.length || body.length),
+    [isNewPostRoute, title, tags, body]
+  );
+
   const {
     advanced,
     setAdvanced,
@@ -217,8 +218,6 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
       setReward(draft.meta?.rewardType ?? "default");
       setSelectedThumbnail(draft.meta?.image?.[0]);
       setDescription(draft.meta?.description ?? "");
-
-      setTimeout(() => setIsDraftEmpty(false), 100);
     },
     () => {
       clear();
@@ -251,24 +250,28 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     }
   }, [activeUser, beneficiaries, previousActiveUser, setBeneficiaries]);
 
-  // In case of creating new post then should save to local draft
+  // The local draft is the unsaved *new* post. Gating this on `editingEntry`
+  // alone still let the draft route through (a draft is not an entry), so
+  // opening /draft/[id] overwrote whatever the user had in progress on /submit
+  // with the saved draft's content, keystroke by keystroke.
   useEffect(() => {
-    if (editingEntry === null) {
+    if (isNewPostRoute && editingEntry === null) {
       setLocalDraft({ tags, title, body, description });
     }
-  }, [tags, title, body, setLocalDraft, description, editingEntry]);
+  }, [tags, title, body, setLocalDraft, description, editingEntry, isNewPostRoute]);
 
   useEffect(() => {
-    if (_updateTimer) {
-      clearTimeout(_updateTimer);
-      _updateTimer = null;
-    }
-
-    // Not sure why we are using setTimeOut(), but it causes some odd behavior and sets input value to preview.body when you try to delete/cancel text
-    _updateTimer = setTimeout(() => {
+    // Debounced so the preview renderer does not run on every keystroke. The
+    // handle has to live in the effect: it used to be a plain `let` in the
+    // component body, which is a fresh binding on each render, so the
+    // clearTimeout never had anything to cancel and every render leaked a
+    // timer that still fired setPreview - including after unmount.
+    const timer = setTimeout(() => {
       setPreview({ title, tags, body, description });
     }, 50);
-  }, [title, body, tags]);
+
+    return () => clearTimeout(timer);
+  }, [title, body, tags, description]);
 
   useEffect(() => {
     // Whenever body changed then need to re-validate thumbnails
@@ -296,8 +299,6 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     if (!selectedThumbnail || !mergedThumbnails.includes(selectedThumbnail)) {
       setSelectedThumbnail(mergedThumbnails[0]);
     }
-
-    setIsDraftEmpty(!Boolean(title?.length || tags?.length || body?.length));
   }, [body, selectedThumbnail, videoThumbnails, editingDraft]);
 
   useEffect(() => {
@@ -317,7 +318,6 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     setBeneficiaries([]);
     setSchedule(null);
     setReblogSwitch(false);
-    setIsDraftEmpty(true);
     setDescription("");
 
     clearAdvanced();
@@ -448,7 +448,6 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
               tags={tags}
               maxItem={10}
               onChange={tagsChanged}
-              onValid={(v) => setDisabled(v)}
             />
           </div>
           <div className="body-input" role="presentation" onKeyDown={handleShortcuts} ref={postBodyRef}>
@@ -718,10 +717,10 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
 
 export const SubmitWithProvidersPage = (props: Props) => {
   return (
-    <BodyVersioningManager>
+    <SubmitBodyProvider>
       <PollsManager>
         <Submit {...props} />
       </PollsManager>
-    </BodyVersioningManager>
+    </SubmitBodyProvider>
   );
 };

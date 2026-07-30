@@ -26,7 +26,6 @@ function renderSelector() {
       <TagSelector
         tags={tags}
         maxItem={10}
-        onValid={() => {}}
         onChange={(next) => {
           onChange(next);
           setTags(next);
