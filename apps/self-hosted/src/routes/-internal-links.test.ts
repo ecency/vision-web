@@ -1,4 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
@@ -11,21 +10,32 @@ import { describe, expect, it } from 'vitest';
  * logs, and nothing in the type system catches a raw `href` string. A
  * commenter's name pointed at `/@user` this way and shipped.
  *
- * This walks the TypeScript AST rather than matching source text. An earlier
- * regex version kept finding new ways to under-report: it could not tell an
- * `<a href>` from a component that happens to take a prop named `to`, it
- * resolved identifiers by proximity rather than by scope, and it preferred one
- * declaration form over another regardless of source order. Each of those
- * silently dropped links from validation. The AST settles all three
- * structurally: element identity, real lexical scope, and the actual
- * initializer of the declaration that is in view.
+ * Destinations are read through the TypeScript type checker. Earlier versions
+ * did their own lexical analysis and each review round found another form they
+ * had not enumerated: declaration shape, then scope, then parameters, then
+ * template interpolation, then mutability, then JSX spreads. The checker
+ * answers all of those from one mechanism, and answers several the lexical
+ * version could not reach at all:
+ *
+ *   const good = '/blog'          -> "/blog"
+ *   import { EXT } from './x'     -> "/imported"   (cross-file)
+ *   `${base}/x`                   -> "/missing/x"  (template literal types)
+ *   let m = '/a'; m = '/b'        -> string, so not a literal, so unknown
+ *   function A(href) { … }        -> string, so unknown
+ *
+ * What remains explicit is policy, not analysis: which elements navigate, and
+ * which unknowable destinations are acceptable.
  *
  * Lives under src/routes with a `-` prefix, TanStack Router's convention for a
  * non-route file in the routes directory. Without it the generator warns on
  * every build that this file exports no Route.
  */
 
-const SRC = join(__dirname, '..');
+const APP = join(__dirname, '..', '..');
+const SRC = join(APP, 'src');
+
+/** DOM elements whose `href` is a navigation destination. */
+const NAVIGABLE_INTRINSICS = new Set(['a', 'area']);
 
 /** Router components whose `to` really is navigation. */
 const NAVIGATION_COMPONENTS = new Set(['Link', 'Navigate']);
@@ -45,8 +55,10 @@ const NON_LINK_COMPONENT_PROPS: Record<string, string> = {
  * Adding an entry is a deliberate act: say why it is safe.
  *
  * `occurrences` pins how many links the entry may account for, so a second link
- * through the same identifier in the same file fails rather than inheriting the
- * exemption, and a stale entry matching nothing fails too.
+ * through the same expression in the same file fails rather than inheriting the
+ * exemption, and a stale entry matching nothing fails too. An exemption is only
+ * consumed when the checker genuinely cannot resolve the value, so an entry
+ * whose target becomes a literal fails instead of covering for it.
  */
 const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
   'src/features/blog/layout/blog-navigation.tsx:rssUrl': {
@@ -69,9 +81,6 @@ const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
     occurrences: 1,
     reason: 'built from the imported HOSTING_URL constant, absolute',
   },
-  // Both author links resolve against runtime config, which defaults to an
-  // absolute ecency.com profile but an operator may point it anywhere. Not
-  // knowable here, so classified rather than guessed either way.
   'src/features/blog/components/blog-post-header.tsx:`${profileBaseUrl}${entryData.author}`':
     {
       occurrences: 1,
@@ -86,30 +95,269 @@ const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
     },
 };
 
+const LINK_ATTRS = ['href', 'to'] as const;
+
 /** Stands in for an interpolated segment, so `/@${a}` compares as `/@*`. */
 const HOLE = '*';
 
-function walk(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    const p = join(dir, e.name);
-    if (e.isDirectory()) return walk(p);
-    return e.isFile() && p.endsWith('.tsx') ? [p] : [];
-  });
+interface FoundLink {
+  where: string;
+  value: string;
+  via?: string;
 }
 
-function parse(file: string): ts.SourceFile {
-  return ts.createSourceFile(
-    file,
-    readFileSync(file, 'utf8'),
-    ts.ScriptTarget.Latest,
-    /* setParentNodes */ true,
-    ts.ScriptKind.TSX,
-  );
+interface Buckets {
+  checked: FoundLink[];
+  unresolved: FoundLink[];
+  componentProps: { where: string; key: string }[];
+  exemptionHits: Record<string, number>;
+}
+
+function emptyBuckets(): Buckets {
+  return { checked: [], unresolved: [], componentProps: [], exemptionHits: {} };
+}
+
+const isInternal = (v: string) => v.startsWith('/') && !v.startsWith('//');
+
+function segments(path: string): string[] {
+  return path.split(/[?#]/)[0].split('/').filter(Boolean);
+}
+
+function matches(link: string, route: string): boolean {
+  const l = segments(link);
+  const r = segments(route);
+  if (l.length !== r.length) return false;
+  // a route param matches anything; a HOLE in the link matches any route segment
+  return r.every((rs, i) => rs.startsWith('$') || l[i] === HOLE || rs === l[i]);
+}
+
+/** The string this expression is known to be, or undefined if not knowable. */
+function literalOf(checker: ts.TypeChecker, node: ts.Node): string | undefined {
+  // A JSX attribute written as `to="/blog"` types as the element's declared prop
+  // type, not as a literal, so read the syntax directly when it is one.
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    return node.text;
+  }
+  const type = checker.getTypeAtLocation(node);
+  return type.isStringLiteral() ? type.value : undefined;
+}
+
+/**
+ * `{ href }` has no initializer node and its property type is widened, so ask
+ * the checker for the symbol the shorthand refers to.
+ */
+function shorthandLiteral(
+  checker: ts.TypeChecker,
+  prop: ts.ShorthandPropertyAssignment,
+): string | undefined {
+  const symbol = checker.getShorthandAssignmentValueSymbol(prop);
+  if (!symbol) return undefined;
+  const type = checker.getTypeOfSymbolAtLocation(symbol, prop);
+  return type.isStringLiteral() ? type.value : undefined;
+}
+
+/** `useMemo(() => X, deps)` -> X, so a memoised destination is still readable. */
+function unwrapUseMemo(call: ts.CallExpression): ts.Expression | undefined {
+  if (!ts.isIdentifier(call.expression) || call.expression.text !== 'useMemo') {
+    return undefined;
+  }
+  const [factory] = call.arguments;
+  if (!factory || !ts.isArrowFunction(factory) || ts.isBlock(factory.body)) {
+    return undefined;
+  }
+  return factory.body;
+}
+
+/** The expression a const identifier was initialised with, via real symbol resolution. */
+function constInitializer(
+  checker: ts.TypeChecker,
+  node: ts.Node,
+): ts.Expression | undefined {
+  if (!ts.isIdentifier(node)) return undefined;
+  const symbol = checker.getSymbolAtLocation(node);
+  const decl = symbol?.valueDeclaration;
+  if (!decl || !ts.isVariableDeclaration(decl)) return undefined;
+  if ((ts.getCombinedNodeFlags(decl) & ts.NodeFlags.Const) === 0)
+    return undefined;
+  const init = decl.initializer;
+  if (init && ts.isCallExpression(init)) return unwrapUseMemo(init);
+  return init;
+}
+
+/**
+ * The route *shape* of a template whose literal head already proves it is a
+ * path, with unknowable interpolations standing in as HOLE.
+ *
+ * The checker gives an exact value or nothing, but `/@${author}` has no exact
+ * value and is still the case this test exists for: its segment structure is
+ * what makes it a dead link. A template whose head does not start with `/`
+ * returns undefined rather than being assumed external, since the leading
+ * interpolation could itself be an internal path.
+ */
+function pathShape(
+  checker: ts.TypeChecker,
+  node: ts.Node,
+  depth = 0,
+): string | undefined {
+  if (depth > 4) return undefined;
+
+  if (ts.isTemplateExpression(node)) {
+    if (!node.head.text.startsWith('/')) return undefined;
+    let shape = node.head.text;
+    for (const span of node.templateSpans) {
+      shape +=
+        (literalOf(checker, span.expression) ?? HOLE) + span.literal.text;
+    }
+    return shape;
+  }
+
+  const init = constInitializer(checker, node);
+  return init ? pathShape(checker, init, depth + 1) : undefined;
+}
+
+/**
+ * Walks one source file and files every navigation destination it can see.
+ * Shared by the repository sweep and by the unit tests, so the tests exercise
+ * the real classification rather than a reimplementation of it.
+ */
+function collectFrom(
+  sf: ts.SourceFile,
+  checker: ts.TypeChecker,
+  rel: string,
+  into: Buckets,
+): void {
+  const lineOf = (n: ts.Node) =>
+    sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+
+  const label = (n: ts.Node) => n.getText(sf).replace(/\s+/g, ' ');
+
+  const record = (where: string, node: ts.Node | undefined) => {
+    const via = node ? label(node) : undefined;
+    const key = via ? `${rel}:${via}` : undefined;
+    const value = node
+      ? (literalOf(checker, node) ?? pathShape(checker, node))
+      : undefined;
+
+    if (value === undefined) {
+      if (key && key in DYNAMIC_LINKS) {
+        into.exemptionHits[key] = (into.exemptionHits[key] ?? 0) + 1;
+      } else {
+        into.unresolved.push({ where, value: via ?? '<expression>' });
+      }
+    } else if (isInternal(value)) {
+      into.checked.push({ where, value, via });
+    }
+  };
+
+  const navigates = (tag: string, attr: string) =>
+    /^[a-z]/.test(tag)
+      ? NAVIGABLE_INTRINSICS.has(tag) && attr === 'href'
+      : NAVIGATION_COMPONENTS.has(tag);
+
+  /**
+   * A spread may carry a destination. Object literals are read property by
+   * property, covering shorthand and nested spreads; anything else is asked of
+   * its type, so `{...props}` on a type without href is correctly ignored while
+   * one with a non-literal href becomes unresolved.
+   */
+  const fromSpread = (
+    where: string,
+    expr: ts.Expression,
+    tag: string,
+    depth = 0,
+  ) => {
+    if (depth > 4) return;
+
+    if (ts.isObjectLiteralExpression(expr)) {
+      for (const prop of expr.properties) {
+        if (ts.isSpreadAssignment(prop)) {
+          fromSpread(where, prop.expression, tag, depth + 1);
+          continue;
+        }
+        const name =
+          prop.name &&
+          (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name))
+            ? prop.name.text
+            : undefined;
+        if (!name || !navigates(tag, name)) continue;
+
+        if (ts.isPropertyAssignment(prop)) {
+          record(where, prop.initializer);
+        } else if (ts.isShorthandPropertyAssignment(prop)) {
+          const value = shorthandLiteral(checker, prop);
+          if (value === undefined) {
+            into.unresolved.push({ where, value: `{...{ ${name} }}` });
+          } else if (isInternal(value)) {
+            into.checked.push({ where, value, via: `{...{ ${name} }}` });
+          }
+        } else {
+          into.unresolved.push({ where, value: `{...{ ${name} }}` });
+        }
+      }
+      return;
+    }
+
+    const type = checker.getTypeAtLocation(expr);
+    for (const attr of LINK_ATTRS) {
+      if (!navigates(tag, attr)) continue;
+      const prop = type.getProperty(attr);
+      if (!prop) continue; // this spread cannot carry a destination
+      const propType = checker.getTypeOfSymbolAtLocation(prop, expr);
+      if (propType.isStringLiteral()) {
+        const value = propType.value;
+        if (isInternal(value)) {
+          into.checked.push({ where, value, via: `{...${label(expr)}}` });
+        }
+      } else {
+        into.unresolved.push({ where, value: `{...${label(expr)}}` });
+      }
+    }
+  };
+
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxSpreadAttribute(node)) {
+      const owner = node.parent.parent as ts.JsxOpeningLikeElement;
+      fromSpread(
+        `${rel}:${lineOf(node)}`,
+        node.expression,
+        owner.tagName.getText(sf),
+      );
+    }
+
+    if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name)) {
+      const attr = node.name.text;
+      if (attr === 'href' || attr === 'to') {
+        const owner = node.parent.parent as ts.JsxOpeningLikeElement;
+        const tag = owner.tagName.getText(sf);
+        const where = `${rel}:${lineOf(node)}`;
+
+        if (navigates(tag, attr)) {
+          const init = node.initializer;
+          record(
+            where,
+            init && ts.isJsxExpression(init) ? init.expression : init,
+          );
+        } else {
+          into.componentProps.push({ where, key: `${tag}.${attr}` });
+        }
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sf);
+}
+
+function compilerOptions(): ts.CompilerOptions {
+  const configPath = join(APP, 'tsconfig.json');
+  const { config } = ts.readConfigFile(configPath, ts.sys.readFile);
+  const parsed = ts.parseJsonConfigFileContent(config ?? {}, ts.sys, APP);
+  return { ...parsed.options, noEmit: true };
 }
 
 /** Route paths exactly as the generator declares them in FileRoutesByFullPath. */
-function declaredRoutes(): string[] {
-  const sf = parse(join(SRC, 'routeTree.gen.ts'));
+function declaredRoutes(sf: ts.SourceFile): string[] {
   const found: string[] = [];
   const visit = (n: ts.Node) => {
     if (
@@ -128,299 +376,62 @@ function declaredRoutes(): string[] {
   return found;
 }
 
-/** Every name introduced by a binding, including destructured ones. */
-function boundNames(name: ts.BindingName, out: Set<string>): void {
-  if (ts.isIdentifier(name)) {
-    out.add(name.text);
-    return;
+function sweepRepository() {
+  const options = compilerOptions();
+  const configPath = join(APP, 'tsconfig.json');
+  const { config } = ts.readConfigFile(configPath, ts.sys.readFile);
+  const parsed = ts.parseJsonConfigFileContent(config ?? {}, ts.sys, APP);
+  const program = ts.createProgram(parsed.fileNames, options);
+  const checker = program.getTypeChecker();
+
+  const buckets = emptyBuckets();
+  let routes: string[] = [];
+
+  for (const sf of program.getSourceFiles()) {
+    if (sf.isDeclarationFile) continue;
+    const file = sf.fileName;
+    if (!file.startsWith(SRC)) continue;
+    if (file.endsWith('routeTree.gen.ts')) routes = declaredRoutes(sf);
+    if (!file.endsWith('.tsx')) continue;
+    collectFrom(sf, checker, file.replace(SRC, 'src'), buckets);
   }
-  for (const element of name.elements) {
-    if (ts.isBindingElement(element)) boundNames(element.name, out);
-  }
+
+  return { ...buckets, routes };
 }
 
-/**
- * True when `node` itself introduces `name` as something whose value we cannot
- * read: a parameter, a catch variable, or a loop binding. Such a binding shadows
- * anything outside it, so lookup must stop rather than walk out to an unrelated
- * declaration of the same name.
- */
-function bindsOpaquely(node: ts.Node, name: string): boolean {
-  const names = new Set<string>();
+/** Runs the real classifier over a snippet, in memory. */
+function classify(code: string): Buckets {
+  const name = join(SRC, '__probe__.tsx');
+  const options = compilerOptions();
+  const host = ts.createCompilerHost(options, true);
+  const readFile = host.readFile.bind(host);
+  const fileExists = host.fileExists.bind(host);
+  const getSourceFile = host.getSourceFile.bind(host);
 
-  if (ts.isFunctionLike(node)) {
-    for (const parameter of node.parameters) boundNames(parameter.name, names);
-  } else if (ts.isCatchClause(node) && node.variableDeclaration) {
-    boundNames(node.variableDeclaration.name, names);
-  } else if (
-    ts.isForOfStatement(node) ||
-    ts.isForInStatement(node) ||
-    ts.isForStatement(node)
-  ) {
-    const initializer = node.initializer;
-    if (initializer && ts.isVariableDeclarationList(initializer)) {
-      for (const decl of initializer.declarations) boundNames(decl.name, names);
-    }
-  }
+  host.fileExists = (f) => (f === name ? true : fileExists(f));
+  host.readFile = (f) => (f === name ? code : readFile(f));
+  host.getSourceFile = (f, ...rest) =>
+    f === name
+      ? ts.createSourceFile(
+          name,
+          code,
+          ts.ScriptTarget.Latest,
+          true,
+          ts.ScriptKind.TSX,
+        )
+      : getSourceFile(f, ...rest);
 
-  return names.has(name);
-}
-
-/**
- * The nearest `const <name>` visible from `from`, honouring lexical scope, so an
- * identifier declared in a sibling component is not in view and a parameter is
- * not mistaken for an outer constant.
- */
-function declarationInScope(
-  from: ts.Node,
-  name: string,
-): ts.Expression | undefined {
-  for (let n: ts.Node | undefined = from; n; n = n.parent) {
-    // a parameter or loop binding shadows everything further out, and its value
-    // is not knowable, so the link must be classified rather than guessed
-    if (bindsOpaquely(n, name)) return undefined;
-
-    const statements = ts.isSourceFile(n)
-      ? n.statements
-      : ts.isBlock(n) || ts.isModuleBlock(n)
-        ? n.statements
-        : undefined;
-    if (!statements) continue;
-
-    for (const statement of statements) {
-      if (!ts.isVariableStatement(statement)) continue;
-      for (const decl of statement.declarationList.declarations) {
-        // `let` / `var` can be reassigned after the initializer, so the
-        // declaration does not tell us the value at the point of use.
-        const isConst =
-          (ts.getCombinedNodeFlags(decl) & ts.NodeFlags.Const) !== 0;
-        if (ts.isIdentifier(decl.name)) {
-          if (decl.name.text === name) {
-            return isConst ? decl.initializer : undefined;
-          }
-          continue;
-        }
-        // destructured: it binds the name but we cannot read the value
-        const destructured = new Set<string>();
-        boundNames(decl.name, destructured);
-        if (destructured.has(name)) return undefined;
-      }
-    }
-  }
-  return undefined;
-}
-
-/** `useMemo(() => X, deps)` -> X; any other call -> undefined. */
-function unwrapUseMemo(call: ts.CallExpression): ts.Expression | undefined {
-  if (!ts.isIdentifier(call.expression) || call.expression.text !== 'useMemo') {
-    return undefined;
-  }
-  const [factory] = call.arguments;
-  if (!factory || !ts.isArrowFunction(factory)) return undefined;
-  return ts.isBlock(factory.body) ? undefined : factory.body;
-}
-
-/**
- * Static value of `expr`, with interpolations collapsed to HOLE.
- * Returns null when the value cannot be known without running the app.
- */
-function staticValue(
-  expr: ts.Expression | undefined,
-  depth = 0,
-): string | null {
-  if (!expr || depth > 8) return null;
-
-  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
-    return expr.text;
-  }
-  if (ts.isTemplateExpression(expr)) {
-    const parts = [expr.head.text];
-    let everySpanKnown = true;
-    for (const span of expr.templateSpans) {
-      const value = staticValue(span.expression, depth + 1);
-      if (value === null) {
-        everySpanKnown = false;
-        parts.push(HOLE);
-      } else {
-        parts.push(value);
-      }
-      parts.push(span.literal.text);
-    }
-    const joined = parts.join('');
-    if (everySpanKnown) return joined;
-    // With an unknown span the result is only safe to use when the literal head
-    // already proves this is a path. `${base}/x` must not be read as external:
-    // base could be '/missing', making it a dead internal link. Unknown means
-    // unknown, so it goes back as null and has to be classified.
-    return expr.head.text.startsWith('/') ? joined : null;
-  }
-  if (ts.isIdentifier(expr)) {
-    return staticValue(declarationInScope(expr, expr.text), depth + 1);
-  }
-  if (ts.isCallExpression(expr)) {
-    return staticValue(unwrapUseMemo(expr), depth + 1);
-  }
-  if (ts.isParenthesizedExpression(expr)) {
-    return staticValue(expr.expression, depth + 1);
-  }
-  return null;
-}
-
-const isInternal = (v: string) => v.startsWith('/') && !v.startsWith('//');
-
-function segments(path: string): string[] {
-  return path.split(/[?#]/)[0].split('/').filter(Boolean);
-}
-
-function matches(link: string, route: string): boolean {
-  const l = segments(link);
-  const r = segments(route);
-  if (l.length !== r.length) return false;
-  // a route param matches anything; a HOLE in the link matches any route segment
-  return r.every((rs, i) => rs.startsWith('$') || l[i] === HOLE || rs === l[i]);
-}
-
-interface FoundLink {
-  where: string;
-  value: string;
-  via?: string;
-}
-
-function collect() {
-  const checked: FoundLink[] = [];
-  const unresolved: FoundLink[] = [];
-  const componentProps: { where: string; key: string }[] = [];
-  const exemptionHits: Record<string, number> = {};
-
-  for (const file of walk(SRC)) {
-    const sf = parse(file);
-    const rel = file.replace(SRC, 'src');
-    const lineOf = (n: ts.Node) =>
-      sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
-
-    /** Records one destination, whether it came from an attribute or a spread. */
-    const record = (where: string, expr: ts.Expression | undefined) => {
-      // Source text of the expression, so a template with no identifier can
-      // still be classified. For a plain identifier this is just its name,
-      // which keeps the exemption keys readable.
-      const ident = expr ? expr.getText(sf).replace(/\s+/g, ' ') : undefined;
-      const key = ident ? `${rel}:${ident}` : undefined;
-
-      // Resolve first. An exemption may only absorb a link that is genuinely
-      // unknowable, so if the identifier later becomes a plain literal the link
-      // is validated and the now-stale exemption fails its occurrence count
-      // instead of quietly covering for it.
-      const value = staticValue(expr);
-      if (value === null) {
-        if (key && key in DYNAMIC_LINKS) {
-          exemptionHits[key] = (exemptionHits[key] ?? 0) + 1;
-        } else {
-          unresolved.push({ where, value: ident ?? '<expression>' });
-        }
-      } else if (isInternal(value)) {
-        checked.push({ where, value, via: ident });
-      }
-    };
-
-    /** Can this element carry a destination at all? */
-    const navigable = (tag: string) =>
-      /^[a-z]/.test(tag) || NAVIGATION_COMPONENTS.has(tag);
-
-    const visit = (node: ts.Node) => {
-      // `<a {...{ href: '/dead' }}>` and `<Link {...props}>` are attributes too,
-      // just not JsxAttribute nodes. Without this they produce no entry at all,
-      // so a dead link inside a spread is invisible rather than merely
-      // unresolved.
-      if (ts.isJsxSpreadAttribute(node)) {
-        const owner = node.parent.parent as ts.JsxOpeningLikeElement;
-        const tag = owner.tagName.getText(sf);
-        const where = `${rel}:${lineOf(node)}`;
-
-        if (navigable(tag)) {
-          const spread = node.expression;
-          if (ts.isObjectLiteralExpression(spread)) {
-            // a literal tells us exactly whether it carries a destination
-            for (const prop of spread.properties) {
-              if (
-                ts.isPropertyAssignment(prop) &&
-                (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) &&
-                (prop.name.text === 'href' || prop.name.text === 'to')
-              ) {
-                record(where, prop.initializer);
-              }
-            }
-          } else {
-            // an opaque spread may or may not carry one; it has to be classified
-            unresolved.push({
-              where,
-              value: `{...${spread.getText(sf).replace(/\s+/g, ' ')}}`,
-            });
-          }
-        }
-      }
-
-      if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name)) {
-        const attr = node.name.text;
-        if (attr === 'href' || attr === 'to') {
-          const owner = node.parent.parent as ts.JsxOpeningLikeElement;
-          const tag = owner.tagName.getText(sf);
-          const where = `${rel}:${lineOf(node)}`;
-          // lowercase tags are DOM elements, so href is genuinely a link;
-          // capitalised ones are components and only the router's navigate
-          const isLink = /^[a-z]/.test(tag)
-            ? attr === 'href'
-            : NAVIGATION_COMPONENTS.has(tag);
-
-          if (!isLink) {
-            componentProps.push({ where, key: `${tag}.${attr}` });
-          } else {
-            const init = node.initializer;
-            record(
-              where,
-              init && ts.isJsxExpression(init)
-                ? init.expression
-                : (init as ts.Expression | undefined),
-            );
-          }
-        }
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(sf);
-  }
-
-  return { checked, unresolved, componentProps, exemptionHits };
-}
-
-/** Parses a snippet and returns every `href` value the resolver produces. */
-function hrefValuesIn(code: string): (string | null)[] {
-  const sf = ts.createSourceFile(
-    'snippet.tsx',
-    code,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
-  const out: (string | null)[] = [];
-  const visit = (n: ts.Node) => {
-    if (
-      ts.isJsxAttribute(n) &&
-      ts.isIdentifier(n.name) &&
-      n.name.text === 'href' &&
-      n.initializer &&
-      ts.isJsxExpression(n.initializer)
-    ) {
-      out.push(staticValue(n.initializer.expression));
-    }
-    ts.forEachChild(n, visit);
-  };
-  visit(sf);
-  return out;
+  const program = ts.createProgram([name], options, host);
+  const sf = program.getSourceFile(name);
+  const buckets = emptyBuckets();
+  if (sf)
+    collectFrom(sf, program.getTypeChecker(), 'src/__probe__.tsx', buckets);
+  return buckets;
 }
 
 describe('internal links resolve to declared routes', () => {
-  const routes = declaredRoutes();
-  const { checked, unresolved, componentProps, exemptionHits } = collect();
+  const { checked, unresolved, componentProps, exemptionHits, routes } =
+    sweepRepository();
 
   it('reads the route tree and finds links to check', () => {
     expect(routes).toContain('/blog');
@@ -453,194 +464,99 @@ describe('internal links resolve to declared routes', () => {
     expect(unclassified).toEqual([]);
   });
 
-  it('resolves identifiers by scope, not proximity', () => {
-    // Both hazards the regex version fell into, now decided by the AST: a
-    // sibling component's declaration is not in view, and the declaration that
-    // is in view is used whatever form it takes.
-    const values = hrefValuesIn(
-      [
-        'function A() {',
-        "  const target = '/blog';",
-        '  return <a href={target}>a</a>;',
-        '}',
-        'function B() {',
-        '  const target = getUrl();',
-        '  return <a href={target}>b</a>;',
-        '}',
-        'function C() {',
-        "  const target = useMemo(() => '/search', []);",
-        '  return <a href={target}>c</a>;',
-        '}',
-      ].join('\n'),
-    );
-    // B's getUrl() is unknowable and must not borrow A's '/blog'
-    expect(values).toEqual(['/blog', null, '/search']);
-  });
+  describe('classification', () => {
+    const values = (b: Buckets) => b.checked.map((l) => l.value);
+    const unknown = (b: Buckets) => b.unresolved.map((l) => l.value);
 
-  it('prefers an inner declaration over an outer one', () => {
-    const values = hrefValuesIn(
-      [
-        "const target = '/blog';",
-        'function A() {',
-        "  const target = '/search';",
-        '  return <a href={target}>a</a>;',
-        '}',
-      ].join('\n'),
-    );
-    expect(values).toEqual(['/search']);
-  });
-
-  it('collapses interpolation to a wildcard that matches a route param', () => {
-    // template literal with escaped placeholders: keeps a literal `${` out of a
-    // plain string, which noTemplateCurlyInString flags (rightly, in general)
-    const [value] = hrefValuesIn(
-      `const E = () => <a href={\`/@\${a}/\${b}\`}>x</a>;`,
-    );
-    expect(value).toBe(`/@${HOLE}/${HOLE}`);
-    expect(matches(`/@${HOLE}/${HOLE}`, '/$author/$permlink')).toBe(true);
-    expect(matches(`/@${HOLE}`, '/$author/$permlink')).toBe(false);
-    // A template starting with an unknown interpolation is NOT assumed external:
-    // base could be '/missing', which would be a dead internal link.
-    const [unknownBase] = hrefValuesIn(
-      `const E = () => <a href={\`\${base}/x\`}>x</a>;`,
-    );
-    expect(unknownBase).toBeNull();
-  });
-
-  it('resolves knowable interpolations instead of assuming external', () => {
-    // base is knowable and internal: the whole path must be validated
-    const [known] = hrefValuesIn(
-      [
-        "const base = '/missing';",
-        `const E = () => <a href={\`\${base}/x/y/z\`}>x</a>;`,
-      ].join('\n'),
-    );
-    // resolved rather than waved through as external, and no route is this deep
-    expect(known).toBe('/missing/x/y/z');
-    expect(routes.some((r) => matches(known ?? '', r))).toBe(false);
-
-    // knowable and absolute: correctly external
-    const [absolute] = hrefValuesIn(
-      [
-        "const base = 'https://ecency.com';",
-        `const E = () => <a href={\`\${base}/x\`}>x</a>;`,
-      ].join('\n'),
-    );
-    expect(absolute).toBe('https://ecency.com/x');
-    expect(isInternal(absolute ?? '')).toBe(false);
-
-    // head already proves it is a path, so an unknown span is just a wildcard
-    const [rooted] = hrefValuesIn(
-      `const E = () => <a href={\`/@\${a}\`}>x</a>;`,
-    );
-    expect(rooted).toBe(`/@${HOLE}`);
-  });
-
-  it('stops at a parameter rather than reading an outer constant', () => {
-    const outer = "const target = '/blog';";
-    expect(
-      hrefValuesIn(
+    it('resolves consts, imports and template literals', () => {
+      const b = classify(
         [
-          outer,
-          'function A(target: string) { return <a href={target}>a</a>; }',
+          "const good = '/blog';",
+          "const base = '/missing';",
+          'export const A = () => <a href={good}>1</a>;',
+          `export const B = () => <a href={\`\${base}/x/y/z\`}>2</a>;`,
         ].join('\n'),
-      ),
-    ).toEqual([null]);
-    // destructured props bind the name too
-    expect(
-      hrefValuesIn(
-        [
-          outer,
-          'function A({ target }: { target: string }) { return <a href={target}>a</a>; }',
-        ].join('\n'),
-      ),
-    ).toEqual([null]);
-    // and a loop binding
-    expect(
-      hrefValuesIn(
-        [
-          outer,
-          'function A(xs: string[]) { return xs.map((x) => { for (const target of xs) { return <a href={target}>a</a>; } }); }',
-        ].join('\n'),
-      ),
-    ).toEqual([null]);
-    // control: no shadowing, the outer const is genuinely in view
-    expect(
-      hrefValuesIn(
-        [outer, 'function A() { return <a href={target}>a</a>; }'].join('\n'),
-      ),
-    ).toEqual(['/blog']);
-  });
-
-  it('treats a reassignable binding as unknowable', () => {
-    // let/var may be reassigned after the initializer, so the declaration does
-    // not tell us the value at the point of use
-    expect(
-      hrefValuesIn(
-        [
-          'function A() {',
-          "  let target = '/blog';",
-          "  target = '/dead';",
-          '  return <a href={target}>a</a>;',
-          '}',
-        ].join('\n'),
-      ),
-    ).toEqual([null]);
-    // const is readable
-    expect(
-      hrefValuesIn(
-        [
-          'function A() {',
-          "  const target = '/blog';",
-          '  return <a href={target}>a</a>;',
-          '}',
-        ].join('\n'),
-      ),
-    ).toEqual(['/blog']);
-  });
-
-  it('sees destinations passed through a JSX spread', () => {
-    // A spread is a JsxSpreadAttribute, not a JsxAttribute, so an
-    // attribute-only visitor produces no entry at all and a dead link inside
-    // one is invisible rather than merely unresolved.
-    const inSpread = (code: string) => {
-      const sf = ts.createSourceFile(
-        'spread.tsx',
-        code,
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TSX,
       );
-      const out: string[] = [];
-      const visit = (n: ts.Node) => {
-        if (ts.isJsxSpreadAttribute(n)) out.push(n.expression.getText(sf));
-        ts.forEachChild(n, visit);
-      };
-      visit(sf);
-      return out;
-    };
+      expect(values(b)).toEqual(['/blog', '/missing/x/y/z']);
+      expect(unknown(b)).toEqual([]);
+    });
 
-    // the shapes exist and are reachable as spread attributes
-    expect(
-      inSpread("const E = () => <a {...{ href: '/dead' }}>x</a>;"),
-    ).toEqual(["{ href: '/dead' }"]);
-    expect(inSpread('const E = () => <a {...props}>x</a>;')).toEqual(['props']);
+    it('treats parameters, destructuring and reassignment as unknowable', () => {
+      const b = classify(
+        [
+          "const target = '/blog';",
+          'export const A = (target: string) => <a href={target}>1</a>;',
+          'export const B = ({ target }: { target: string }) => <a href={target}>2</a>;',
+          "export const C = () => { let m = '/blog'; m = '/dead'; return <a href={m}>3</a>; };",
+        ].join('\n'),
+      );
+      expect(values(b)).toEqual([]);
+      expect(unknown(b)).toHaveLength(3);
+    });
 
-    // and the collector classifies them: object literals resolve, opaque
-    // spreads are unresolved, and non-navigable components are ignored.
-    // Exercised end to end by the probe cases in the PR description.
-    expect(NAVIGATION_COMPONENTS.has('Link')).toBe(true);
+    it('reads destinations out of every spread shape', () => {
+      const literal = classify(
+        "export const A = () => <a {...{ href: '/dead' }}>1</a>;",
+      );
+      expect(values(literal)).toEqual(['/dead']);
+
+      const shorthand = classify(
+        [
+          "const href = '/dead';",
+          'export const A = () => <a {...{ href }}>1</a>;',
+        ].join('\n'),
+      );
+      expect(values(shorthand)).toEqual(['/dead']);
+
+      const nested = classify(
+        [
+          "const href = '/dead';",
+          'export const A = () => <a {...{ ...{ href } }}>1</a>;',
+        ].join('\n'),
+      );
+      expect(values(nested)).toEqual(['/dead']);
+
+      const opaque = classify(
+        'export const A = (props: { href: string }) => <a {...props}>1</a>;',
+      );
+      expect(unknown(opaque)).toEqual(['{...props}']);
+    });
+
+    it('ignores spreads that cannot carry a destination', () => {
+      // common prop forwarding must not be reported
+      const div = classify(
+        'export const A = (props: { href: string }) => <div {...props}>1</div>;',
+      );
+      expect(unknown(div)).toEqual([]);
+      expect(values(div)).toEqual([]);
+
+      const noHref = classify(
+        'export const A = (props: { className: string }) => <a {...props}>1</a>;',
+      );
+      expect(unknown(noHref)).toEqual([]);
+    });
+
+    it('separates navigation from props that merely share the name', () => {
+      const b = classify(
+        'export const A = (to: string) => <TippingPopover to={to} />;',
+      );
+      expect(b.componentProps.map((p) => p.key)).toEqual(['TippingPopover.to']);
+      expect(unknown(b)).toEqual([]);
+    });
+
+    it('treats router components as navigation', () => {
+      const b = classify("export const A = () => <Link to='/blog'>1</Link>;");
+      expect(values(b)).toEqual(['/blog']);
+    });
   });
 
-  it('recognises the shapes the app actually uses', () => {
+  it('recognises the route shapes the app uses', () => {
     expect(matches('/blog', '/blog')).toBe(true);
-    expect(matches('/edit/$author/$permlink', '/edit/$author/$permlink')).toBe(
-      true,
-    );
+    expect(matches('/@alice/post', '/$author/$permlink')).toBe(true);
     expect(matches('/blog', '/$author/$permlink')).toBe(false);
     expect(isInternal('//evil.com')).toBe(false);
     expect(isInternal('https://ecency.com/blog')).toBe(false);
     // the regression this test exists for
-    expect(routes.some((r) => matches(`/@${HOLE}`, r))).toBe(false);
+    expect(routes.some((r) => matches('/@alice', r))).toBe(false);
   });
 });
