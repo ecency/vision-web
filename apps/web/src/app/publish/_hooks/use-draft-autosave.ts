@@ -49,6 +49,10 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attemptRef = useRef<() => void>(() => {});
   const inFlightRef = useRef<Promise<string | undefined> | null>(null);
+  // Mirrors createdDraftId, but updated synchronously the moment a create
+  // returns so a queued write behind it targets the new draft rather than
+  // creating another. The state copy exists only to drive re-renders.
+  const createdDraftIdRef = useRef<string | undefined>(undefined);
 
   /**
    * The only path that writes this draft. Every caller queues behind whatever
@@ -78,7 +82,26 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
           // Only the ordering matters here, not whether it succeeded.
           await previous.catch(() => undefined);
         }
-        return saveToDraft({ showToast: false, redirect: false, ...options });
+
+        // Resolved *after* the queue drains, never at call time. If the write
+        // we just waited on was the create, it produced the id a moment ago and
+        // React has not re-rendered yet - reading the hook-level id here would
+        // still see undefined and create a second draft.
+        const targetDraftId = draftId ?? createdDraftIdRef.current;
+
+        const id = await saveToDraft({
+          showToast: false,
+          redirect: false,
+          draftId: targetDraftId,
+          ...options
+        });
+
+        // Synchronously, so the next queued write sees it without a render.
+        if (id) {
+          createdDraftIdRef.current = id;
+        }
+
+        return id;
       })();
 
       inFlightRef.current = run;
@@ -91,7 +114,7 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
         }
       }
     },
-    [isActiveTab, saveToDraft]
+    [draftId, isActiveTab, saveToDraft]
   );
 
   const scheduleRetry = useCallback((delay: number) => {

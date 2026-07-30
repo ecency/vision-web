@@ -157,6 +157,51 @@ describe("useDraftAutosave", () => {
     expect(order).toEqual(["autosave", "flush"]);
   });
 
+  // The created id arrives via setState, so it is a render behind. A write
+  // queued straight after the create runs as a microtask, before React has
+  // re-rendered, and would otherwise still be bound to `undefined` - taking the
+  // create path a second time and leaving two drafts for one post.
+  it("targets the draft the queued create just made, rather than creating another", async () => {
+    const targets: (string | undefined)[] = [];
+    let resolveCreate: ((id: string) => void) | undefined;
+
+    saveToDraft.mockImplementationOnce(
+      (options: { draftId?: string }) =>
+        new Promise<string>((resolve) => {
+          targets.push(options?.draftId);
+          resolveCreate = (id: string) => resolve(id);
+        })
+    );
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return undefined;
+    });
+
+    const { result } = renderHook(
+      ({ snapshot }: { snapshot: Record<string, unknown> }) =>
+        useDraftAutosave({ enabled: true, snapshot }),
+      { initialProps: { snapshot: { title: "a title", content: "a body" } } }
+    );
+
+    // Autosave takes the create path: no draft exists yet.
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    expect(targets).toEqual([undefined]);
+
+    // A manual save queues behind the still-unresolved create.
+    let flushed: Promise<unknown> | undefined;
+    await act(async () => {
+      flushed = result.current.flush();
+    });
+
+    await act(async () => {
+      resolveCreate?.("created-draft-id");
+      await flushed;
+    });
+
+    // The queued write must update that draft, not create a second one.
+    expect(targets).toEqual([undefined, "created-draft-id"]);
+  });
+
   it("does not save again when nothing changed", async () => {
     const snapshot = { title: "a title", content: "a body" };
     const { rerender } = renderAutosave(snapshot);

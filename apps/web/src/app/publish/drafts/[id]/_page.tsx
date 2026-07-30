@@ -47,6 +47,10 @@ export default function PublishPage() {
     clearAll
   } = usePublishState();
 
+  // Until this flips, publish state is the empty initial state rather than the
+  // draft's content, and any write would store that emptiness over the draft.
+  const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+
   useApiDraftDetector(
     params?.id as string,
     (draft) => {
@@ -65,6 +69,7 @@ export default function PublishPage() {
       setPoll(normalizePollSnapshot(draft.meta?.poll));
       setDecentMemes(draft.meta?.decentMemes ?? []);
       setAiTools(draft.meta?.ai_tools ?? {});
+      setIsDraftLoaded(true);
     },
     () => setStep("no-draft")
   );
@@ -75,14 +80,19 @@ export default function PublishPage() {
   // way out. Flush first, and stay put if that fails rather than navigating to
   // a copy that is knowingly behind - useSaveDraftApi surfaces the error.
   const backToClassic = useCallback(async () => {
-    try {
-      await flush();
-    } catch {
-      return;
+    // Nothing has reached the editor yet, so there is nothing to carry over -
+    // and flushing here would write the empty initial state over the draft's
+    // stored content. The classic editor loads the draft itself anyway.
+    if (isDraftLoaded) {
+      try {
+        await flush();
+      } catch {
+        return;
+      }
     }
 
     router.push(`/draft/${params?.id}`);
-  }, [flush, params?.id, router]);
+  }, [flush, isDraftLoaded, params?.id, router]);
 
   return (
     <>

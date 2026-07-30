@@ -181,7 +181,12 @@ export function PublishActionBar({
             onClick={async () => {
               setIsDraftPending(true);
               try {
-                await saveDraft({ showToast: true });
+                // redirect is explicit because the queue defaults every write
+                // to silent-and-stay-put for autosave's sake. Saving a *new*
+                // post has always moved the writer into /publish/drafts/[id],
+                // which is also what stops the composer leaving an orphan
+                // draft behind. Ignored on the update path.
+                await saveDraft({ showToast: true, redirect: true });
               } catch {
                 // useSaveDraftApi surfaces the failure itself.
               } finally {
