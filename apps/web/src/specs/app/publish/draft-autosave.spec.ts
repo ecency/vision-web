@@ -358,6 +358,48 @@ describe("useDraftAutosave", () => {
     expect(saveToDraft).not.toHaveBeenCalled();
   });
 
+  // The pre-save guard only covers a flush that was already stale when called.
+  // A reset landing while the write is on the wire has to reject too: callers
+  // navigate on any *fulfilled* flush and do not inspect the payload, so
+  // resolving with an empty result still sent them to the previous draft.
+  it("rejects a flush whose post is cleared while the write is in flight", async () => {
+    let resolveSave: ((id: string | undefined) => void) | undefined;
+    saveToDraft.mockImplementationOnce(
+      () =>
+        new Promise<string | undefined>((resolve) => {
+          resolveSave = resolve;
+        })
+    );
+
+    const { result, rerender } = renderHook(
+      ({ snapshot, resetKey }: { snapshot: Record<string, unknown>; resetKey: number }) =>
+        useDraftAutosave({ enabled: true, snapshot, resetKey }),
+      { initialProps: { snapshot: { title: "post A", content: "body A" }, resetKey: 0 } }
+    );
+
+    // Attach the handler immediately so the rejection is never unhandled.
+    const outcome: { error?: Error } = {};
+    let settled: Promise<void> | undefined;
+    await act(async () => {
+      settled = result.current
+        .flush()
+        .then(() => undefined)
+        .catch((err: Error) => {
+          outcome.error = err;
+        });
+    });
+
+    // Clear lands while the write is still unresolved.
+    rerender({ snapshot: { title: "", content: "" }, resetKey: 1 });
+
+    await act(async () => {
+      resolveSave?.(undefined);
+      await settled;
+    });
+
+    expect(outcome.error?.message).toMatch(/belonged to is gone/i);
+  });
+
   // After a clear the composer is empty but the engine still knew a draft id,
   // and flush had no content guard - so Open draft, the action offered to
   // recover the auto-saved post, wrote an empty post over it instead.

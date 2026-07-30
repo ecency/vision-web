@@ -13,6 +13,15 @@ import {
   AUTOSAVE_COOLDOWN_MS
 } from "./autosave-policy";
 
+/**
+ * Raised when the post an action belonged to has been cleared away - whether
+ * that is noticed before the write goes out or after it comes back. Both cases
+ * must REJECT rather than resolve: callers navigate on a fulfilled flush and do
+ * not inspect the payload, so a "successful" no-op would still send them to the
+ * previous draft and pull it over the composer.
+ */
+export const STALE_DRAFT_ACTION = "[Draft] The post this action belonged to is gone";
+
 interface Options {
   /**
    * Draft being written to. Undefined on the new-post route until the first
@@ -250,7 +259,7 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
       // caller navigates to the previous draft over the new composer state.
       // Rejecting keeps the caller's existing catch effective.
       if (latestResetKeyRef.current !== resetKey) {
-        throw new Error("[Draft] The post this action belonged to is gone");
+        throw new Error(STALE_DRAFT_ACTION);
       }
 
       // Same gate autosave applies. Without it a caller could write an empty
@@ -263,8 +272,10 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
       const generation = generationRef.current;
       const id = await save(options);
 
+      // Cleared while this write was on the wire. Resolving here would look
+      // like success to a caller that navigates on any fulfilled flush.
       if (generationRef.current !== generation) {
-        return { draftId: undefined, created: false };
+        throw new Error(STALE_DRAFT_ACTION);
       }
 
       if (id) {
