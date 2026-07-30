@@ -65,12 +65,15 @@ export function BlogDiscussionItem({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 sm:gap-2 mb-2 text-xs sm:text-sm text-theme-muted font-theme-ui">
-            <a
-              href={`/@${entry.author}`}
-              className="font-semibold transition-theme hover:opacity-70 text-theme-primary"
-            >
+            {/* Not a link: there is no /@user route, so this pointed at the SPA's
+                "Page not found". A blog does not show other people's profiles, same
+                reasoning as the inert @user chips in rendered bodies, and the same
+                treatment the sidebar team list already gives other accounts. The
+                post author's own name is the exception and still links out via
+                general.profileBaseUrl (blog-post-header, blog-post-item). */}
+            <span className="font-semibold text-theme-primary">
               @{entry.author}
-            </a>
+            </span>
             <span>•</span>
             <a href={entryLink} className="transition-theme hover:opacity-70">
               {createdDate}
