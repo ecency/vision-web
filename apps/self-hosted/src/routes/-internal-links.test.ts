@@ -85,18 +85,35 @@ const LINK_RE =
  * literal that does not start with "/" is treated as external and the real link
  * is dropped from the check without a sound, which is the worst outcome for a
  * test whose whole job is to not miss links.
+ *
+ * Resolution is positional: the declaration nearest *above* the link wins. Two
+ * component scopes in one file can reuse a name, and preferring one syntactic
+ * form globally would let a later `useMemo(() => 'https://external')` answer for
+ * an earlier `const target = '/missing'`, reclassifying a real internal link as
+ * external. This is not scope analysis (that wants an AST), but nearest
+ * preceding declaration matches how these components are actually written.
  */
-function resolveIdentifier(source: string, name: string): string | null {
+function declarationsOf(source: string, name: string): { at: number; value: string }[] {
   const root = name.split('.')[0].replace(/[^\w$]/g, '');
-  if (!root) return null;
+  if (!root) return [];
 
-  const direct = new RegExp(`\\bconst\\s+${root}\\s*=\\s*(['"\`])([^'"\`]*)\\1`);
-  const viaMemo = new RegExp(
-    `\\bconst\\s+${root}\\s*=\\s*useMemo\\(\\s*(?:\\/\\/[^\\n]*\\n\\s*)*\\(\\s*\\)\\s*=>\\s*(['"\`])([^'"\`]*)\\1`
-  );
+  // `direct` needs a quote straight after `=`, so it never also matches the useMemo form.
+  const forms = [
+    new RegExp(`\\bconst\\s+${root}\\s*=\\s*(['"\`])([^'"\`]*)\\1`, 'g'),
+    new RegExp(
+      `\\bconst\\s+${root}\\s*=\\s*useMemo\\(\\s*(?:\\/\\/[^\\n]*\\n\\s*)*\\(\\s*\\)\\s*=>\\s*(['"\`])([^'"\`]*)\\1`,
+      'g'
+    ),
+  ];
 
-  const m = source.match(viaMemo) ?? source.match(direct);
-  return m ? m[2] : null;
+  return forms
+    .flatMap((re) => Array.from(source.matchAll(re), (m) => ({ at: m.index, value: m[2] })))
+    .sort((a, b) => a.at - b.at);
+}
+
+function resolveIdentifier(source: string, name: string, usedAt: number): string | null {
+  const above = declarationsOf(source, name).filter((d) => d.at < usedAt);
+  return above.length > 0 ? above[above.length - 1].value : null;
 }
 
 const isInternal = (v: string) => v.startsWith('/') && !v.startsWith('//');
@@ -142,7 +159,7 @@ function collect() {
       // Scoped to this file: a same-named identifier elsewhere is not exempt.
       if (`${rel}:${ident}` in DYNAMIC_LINKS) continue;
 
-      const resolved = resolveIdentifier(source, ident);
+      const resolved = resolveIdentifier(source, ident, m.index);
       if (resolved === null) {
         unresolved.push({ where, value: ident });
       } else if (isInternal(resolved)) {
@@ -196,14 +213,39 @@ describe('internal links resolve to declared routes', () => {
 
   it('resolves only real literal assignments, never a nearby string', () => {
     const memo = "const entryLink = useMemo(\n  // note\n  () => `/@${a}/${b}`,\n  [a],\n);";
-    expect(resolveIdentifier(memo, 'entryLink')).toBe('/@${a}/${b}');
-    expect(resolveIdentifier("const x = '/blog';", 'x')).toBe('/blog');
+    expect(resolveIdentifier(memo, 'entryLink', memo.length)).toBe('/@${a}/${b}');
+    const plain = "const x = '/blog';";
+    expect(resolveIdentifier(plain, 'x', plain.length)).toBe('/blog');
     // the mis-resolution this replaced: a call expression must not borrow a
     // later string such as a className or a word from a type annotation
     const call = 'const target = getUrl();\nconst cls = "totally-unrelated";';
-    expect(resolveIdentifier(call, 'target')).toBeNull();
+    expect(resolveIdentifier(call, 'target', call.length)).toBeNull();
     const annotated = 'function P({ to }: { to: string }) {\n  const target = getUrl();';
-    expect(resolveIdentifier(annotated, 'target')).toBeNull();
+    expect(resolveIdentifier(annotated, 'target', annotated.length)).toBeNull();
+  });
+
+  it('uses the declaration above the link when a name is reused in one file', () => {
+    // Two component scopes reusing `target`. Preferring the useMemo form globally
+    // answered the first link with the second declaration's external URL, so a
+    // real internal link was reclassified as external and never validated.
+    const src = [
+      'function A() {',
+      "  const target = '/missing';",
+      '  return <a href={target}>a</a>;',
+      '}',
+      'function B() {',
+      "  const target = useMemo(() => 'https://external', []);",
+      '  return <a href={target}>b</a>;',
+      '}',
+    ].join('\n');
+
+    const firstLink = src.indexOf('href={target}');
+    const secondLink = src.indexOf('href={target}', firstLink + 1);
+
+    expect(resolveIdentifier(src, 'target', firstLink)).toBe('/missing');
+    expect(resolveIdentifier(src, 'target', secondLink)).toBe('https://external');
+    // nothing declared above the very top of the file
+    expect(resolveIdentifier(src, 'target', 0)).toBeNull();
   });
 
   it('recognises the shapes the app actually uses', () => {
