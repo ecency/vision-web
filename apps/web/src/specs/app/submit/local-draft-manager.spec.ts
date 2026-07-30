@@ -24,7 +24,12 @@ vi.mock("@/core/hooks/use-active-account", () => ({
 // (ECENCY-NEXT-1GJC). The manager now substitutes empty values for whichever
 // fields the stored draft is missing.
 function renderManager(
-  onDraftLoaded: (title: string, tags: string[], body: string) => void = vi.fn(),
+  onDraftLoaded: (
+    title: string,
+    tags: string[],
+    body: string,
+    description: string | null
+  ) => void = vi.fn(),
   route: {
     path?: string;
     username?: string;
@@ -50,7 +55,7 @@ describe("useLocalDraftManager", () => {
 
     const { onDraftLoaded } = renderManager();
 
-    expect(onDraftLoaded).toHaveBeenCalledWith("", [], "an overflowing wave");
+    expect(onDraftLoaded).toHaveBeenCalledWith("", [], "an overflowing wave", null);
   });
 
   it("survives a consumer that treats title as a string and tags as an array", () => {
@@ -75,8 +80,33 @@ describe("useLocalDraftManager", () => {
 
     const { onDraftLoaded, result } = renderManager();
 
-    expect(onDraftLoaded).toHaveBeenCalledWith(draft.title, draft.tags, draft.body);
+    expect(onDraftLoaded).toHaveBeenCalledWith(draft.title, draft.tags, draft.body, null);
     expect(result.current.isNewPostRoute).toBe(true);
+  });
+
+  // The publish composer hands a post over through this key when leaving for
+  // the classic editor. Dropping the description here meant a custom meta
+  // description was silently replaced by whatever the persisted advanced state
+  // still held, and then written back over the transferred one.
+  it("restores a description carried over from the composer", () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        title: "a title",
+        tags: ["hive"],
+        body: "a body",
+        description: "a hand-written summary"
+      })
+    );
+
+    const { onDraftLoaded } = renderManager();
+
+    expect(onDraftLoaded).toHaveBeenCalledWith(
+      "a title",
+      ["hive"],
+      "a body",
+      "a hand-written summary"
+    );
   });
 
   it("loads nothing for a missing or empty draft", () => {

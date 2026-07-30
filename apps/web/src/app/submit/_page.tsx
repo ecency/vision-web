@@ -123,10 +123,11 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     username,
     permlink,
     draftId,
-    (title, tags, body) => {
+    (title, tags, body, description) => {
       applyTitle(title);
       applyTags(tags);
       setBody(body);
+      setDescription(description ?? "");
     }
   );
 

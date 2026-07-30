@@ -15,7 +15,12 @@ export function useLocalDraftManager(
   username: string | undefined,
   permlink: string | undefined,
   draftId: string | undefined,
-  onDraftLoaded: (title: string, tags: string[], body: string) => void
+  onDraftLoaded: (
+    title: string,
+    tags: string[],
+    body: string,
+    description: string | null
+  ) => void
 ) {
   const [localDraft, setLocalDraft] = useLocalStorage<PostBase>(PREFIX + "_local_draft");
 
@@ -31,8 +36,13 @@ export function useLocalDraftManager(
       return;
     }
 
-    const { title = "", tags = [], body = "" } = localDraft;
-    onDraftLoaded(title, tags, body);
+    // description is restored too: the publish composer hands a post over
+    // through this key when leaving for the classic editor, and dropping it
+    // here meant a custom meta description was silently replaced by whatever
+    // the persisted advanced state still held - and then written back over the
+    // transferred one by the local-draft effect.
+    const { title = "", tags = [], body = "", description = null } = localDraft;
+    onDraftLoaded(title, tags, body, description);
   });
 
   return {
