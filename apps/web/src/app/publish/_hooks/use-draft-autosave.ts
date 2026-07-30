@@ -67,6 +67,12 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
   // longer matches, so work belonging to a post that has been cleared away can
   // neither be sent nor write its result back.
   const generationRef = useRef(0);
+  // Assigned during render, so it always holds the newest resetKey - unlike
+  // resetKeyRef, which the effect below updates a commit later. Callbacks
+  // capture the resetKey of the render that produced them and compare against
+  // this, which is what makes a *retained* callback detectable.
+  const latestResetKeyRef = useRef(resetKey);
+  latestResetKeyRef.current = resetKey;
 
   /**
    * The only path that writes this draft. Every caller queues behind whatever
@@ -236,6 +242,17 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
    */
   const flush = useCallback(
     async (options?: SaveDraftOptions) => {
+      // Bound to the render that produced this callback, not to the moment it
+      // runs. A caller can hold a flush across an await - useOpenAutosavedDraft
+      // holds one while it waits for image uploads - and a Clear or a template
+      // applied during that wait would otherwise have it read the *new*
+      // generation and sail through the stale-work guard, after which the
+      // caller navigates to the previous draft over the new composer state.
+      // Rejecting keeps the caller's existing catch effective.
+      if (latestResetKeyRef.current !== resetKey) {
+        throw new Error("[Draft] The post this action belonged to is gone");
+      }
+
       // Same gate autosave applies. Without it a caller could write an empty
       // post over a real draft - which is exactly what Open draft did after the
       // composer had been cleared, since it stayed bound to the old draft.
@@ -266,7 +283,7 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
         created: !!id
       };
     },
-    [draftId, enabled, save, snapshot]
+    [draftId, enabled, resetKey, save, snapshot]
   );
 
   // Drop everything tied to the post that was just cleared away. Without this

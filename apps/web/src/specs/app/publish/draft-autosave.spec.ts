@@ -337,6 +337,27 @@ describe("useDraftAutosave", () => {
     expect(targets).toEqual([undefined, undefined]);
   });
 
+  // A caller can hold a flush across an await - useOpenAutosavedDraft holds one
+  // while it waits for image uploads. A clear during that wait must invalidate
+  // the retained flush, or it reads the *new* generation, passes the stale-work
+  // guard, and the caller then navigates to the previous draft over whatever the
+  // composer holds now. Rejecting is what keeps the caller's catch effective.
+  it("rejects a flush retained across a clear", async () => {
+    const { result, rerender } = renderHook(
+      ({ snapshot, resetKey }: { snapshot: Record<string, unknown>; resetKey: number }) =>
+        useDraftAutosave({ enabled: true, snapshot, resetKey }),
+      { initialProps: { snapshot: { title: "post A", content: "body A" }, resetKey: 0 } }
+    );
+
+    // Captured before the clear, the way a caller awaiting uploads holds it.
+    const retainedFlush = result.current.flush;
+
+    rerender({ snapshot: { title: "post B", content: "body B" }, resetKey: 1 });
+
+    await expect(retainedFlush()).rejects.toThrow(/belonged to is gone/i);
+    expect(saveToDraft).not.toHaveBeenCalled();
+  });
+
   // After a clear the composer is empty but the engine still knew a draft id,
   // and flush had no content guard - so Open draft, the action offered to
   // recover the auto-saved post, wrote an empty post over it instead.
