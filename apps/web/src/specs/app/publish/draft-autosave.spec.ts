@@ -200,6 +200,13 @@ describe("useDraftAutosave", () => {
 
     // The queued write must update that draft, not create a second one.
     expect(targets).toEqual([undefined, "created-draft-id"]);
+
+    // And it must report the update path, since useSaveDraftApi only redirects
+    // from its create branch - the caller has to navigate itself.
+    await expect(flushed).resolves.toEqual({
+      draftId: "created-draft-id",
+      created: false
+    });
   });
 
   it("does not save again when nothing changed", async () => {

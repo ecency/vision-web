@@ -207,9 +207,16 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
       prevSnapshotRef.current = snapshot;
       consecutiveFailsRef.current = 0;
 
-      return id;
+      // `created` matters to the caller because useSaveDraftApi only redirects
+      // from its create branch. A manual save that queued behind an autosave
+      // which already created the draft takes the *update* path, so its
+      // redirect option is ignored and the caller has to navigate itself.
+      return {
+        draftId: id ?? draftId ?? createdDraftIdRef.current,
+        created: !!id
+      };
     },
-    [save, snapshot]
+    [draftId, save, snapshot]
   );
 
   // Keep the retry timer pointed at the newest closure, so a deferred save

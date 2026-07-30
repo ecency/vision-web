@@ -70,7 +70,7 @@ import {
 import { Button } from "@ui/button";
 import { Dropdown, DropdownItemWithIcon, DropdownMenu, DropdownToggle } from "@ui/dropdown";
 import i18next from "i18next";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { PropsWithChildren, useState } from "react";
 import { useSaveTemplateApi } from "../_api";
 import type { SaveDraftOptions } from "../_api/use-save-draft";
@@ -98,7 +98,16 @@ interface Props {
    * response, and before the first autosave has returned an id both would take
    * the create path and leave two drafts behind.
    */
-  saveDraft: (options?: SaveDraftOptions) => Promise<string | undefined>;
+  saveDraft: (
+    options?: SaveDraftOptions
+  ) => Promise<{ draftId?: string; created: boolean }>;
+  /**
+   * Whether this tab holds the draft lock. Writes from a tab that does not are
+   * refused by the queue before they reach useSaveDraftApi, so nothing would
+   * surface the failure - the actions are disabled instead, alongside the
+   * multi-tab warning already on screen.
+   */
+  isActiveTab?: boolean;
 }
 
 export function PublishActionBar({
@@ -108,7 +117,8 @@ export function PublishActionBar({
   onImport,
   setEditorContent,
   draftId,
-  saveDraft
+  saveDraft,
+  isActiveTab = true
 }: PropsWithChildren<Props>) {
   const { schedule: scheduleDate, clearAll, title, content, aiTools } = usePublishState();
   const hasAiDisclosure = !!aiTools.media_generation || !!aiTools.writing_edit;
@@ -123,6 +133,8 @@ export function PublishActionBar({
   const [templatesMode, setTemplatesMode] = useState<"list" | "save">("list");
 
   const pathname = usePathname();
+  const router = useRouter();
+  const isDraftRoute = !!pathname?.includes("drafts");
 
   useDefaultBeneficiary();
   useSupportEcencyBeneficiary();
@@ -176,7 +188,7 @@ export function PublishActionBar({
               server side of this has always been fine. */}
           <Button
             size="sm"
-            disabled={isDraftPending || !hasEditorContent}
+            disabled={isDraftPending || !hasEditorContent || !isActiveTab}
             appearance="gray-link"
             onClick={async () => {
               setIsDraftPending(true);
@@ -185,8 +197,20 @@ export function PublishActionBar({
                 // to silent-and-stay-put for autosave's sake. Saving a *new*
                 // post has always moved the writer into /publish/drafts/[id],
                 // which is also what stops the composer leaving an orphan
-                // draft behind. Ignored on the update path.
-                await saveDraft({ showToast: true, redirect: true });
+                // draft behind.
+                const { draftId: savedId, created } = await saveDraft({
+                  showToast: true,
+                  redirect: true
+                });
+
+                // useSaveDraftApi only redirects from its create branch. When
+                // this save queued behind an autosave that had already created
+                // the draft it takes the update path instead, so the redirect
+                // never happens and the writer is left on /publish with an
+                // orphan draft - exactly what the redirect exists to prevent.
+                if (!created && savedId && !isDraftRoute) {
+                  router.push(`/publish/drafts/${savedId}`);
+                }
               } catch {
                 // useSaveDraftApi surfaces the failure itself.
               } finally {
@@ -194,7 +218,7 @@ export function PublishActionBar({
               }
             }}
           >
-            {pathname?.includes("drafts")
+            {isDraftRoute
               ? i18next.t("publish.update-draft")
               : i18next.t("publish.save-draft")}
           </Button>
@@ -276,7 +300,7 @@ export function PublishActionBar({
               icon={<UilClock />}
               label={i18next.t("publish.schedule")}
             />
-            {!pathname?.includes("drafts") && (
+            {!isDraftRoute && (
               <>
                 <div className="border-b border-[--border-color] h-[1px] w-full" />
                 <DropdownItemWithIcon
@@ -293,7 +317,7 @@ export function PublishActionBar({
                 without it and unmount the composer tracking the upload. */}
             <DropdownItemWithIcon
               label={i18next.t("publish.back-to-old")}
-              disabled={uploadTracker?.hasPendingUploads}
+              disabled={uploadTracker?.hasPendingUploads || !isActiveTab}
               onClick={onBackToClassic}
             />
           </DropdownMenu>

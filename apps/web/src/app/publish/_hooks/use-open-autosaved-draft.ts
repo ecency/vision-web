@@ -13,7 +13,7 @@ interface Options {
    * flush and put older content back on the server - and into the drafts cache -
    * moments before we navigate to read it.
    */
-  flush: () => Promise<string | undefined>;
+  flush: () => Promise<{ draftId?: string; created: boolean }>;
 }
 
 /**

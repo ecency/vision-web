@@ -21,7 +21,7 @@ describe("useOpenAutosavedDraft", () => {
   beforeEach(() => {
     push.mockReset();
     flush.mockReset();
-    flush.mockResolvedValue(undefined);
+    flush.mockResolvedValue({ draftId: "abc123", created: false });
     uploadTracker.current = null;
   });
 

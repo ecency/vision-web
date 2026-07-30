@@ -126,6 +126,7 @@ export default function Publish() {
             setEditorContent={setEditorContent}
             draftId={draftId}
             saveDraft={flush}
+            isActiveTab={isActiveTab}
           />
           <PublishEditor editor={editor} />
         </>
