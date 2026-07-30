@@ -32,16 +32,27 @@ const SRC = join(__dirname, '..');
 /**
  * Dynamic `href` / `to` values this test cannot resolve statically.
  * Adding an entry is a deliberate act: say why it is safe.
+ *
+ * Keyed by `file:identifier`, never by identifier alone. `to` in particular is a
+ * very common name (it is also a plain prop on the tipping components), so a
+ * bare-name exemption would silently wave through a real `<a href={to}>` added
+ * anywhere in the app later.
  */
 const DYNAMIC_LINKS: Record<string, string> = {
-  SIGNUP_URL: 'absolute https://ecency.com/hosting constant',
-  claimHref: 'built from HOSTING_URL, absolute',
-  rssUrl: 'getRssFeedUrl() returns an absolute ecency.com URL',
-  createPostUrl: 'runtime config general.createPostUrl, may be internal or absolute',
-  websiteUrl: 'account metadata, arbitrary external site',
-  'link.url': 'wallet/extension install links, external',
-  to: 'not a link: TippingStepCurrency prop naming the tip recipient',
-  recipientUsername: 'not a link: TippingPopover prop naming the tip recipient',
+  'src/routes/hosting.tsx:SIGNUP_URL': 'absolute https://ecency.com/hosting constant',
+  'src/features/claim/claim-landing.tsx:claimHref': 'built from HOSTING_URL, absolute',
+  'src/features/blog/layout/blog-navigation.tsx:rssUrl':
+    'getRssFeedUrl() returns an absolute ecency.com URL',
+  'src/features/auth/components/create-post-button.tsx:createPostUrl':
+    'runtime config general.createPostUrl, may be internal or absolute',
+  'src/features/blog/layout/blog-sidebar.tsx:websiteUrl':
+    'account metadata, arbitrary external site',
+  'src/features/auth/components/extension-login.tsx:link.url':
+    'wallet/extension install links, external',
+  'src/features/tipping/components/tipping-popover.tsx:to':
+    'not a link: TippingStepCurrency prop naming the tip recipient',
+  'src/features/tipping/components/tip-button.tsx:recipientUsername':
+    'not a link: TippingPopover prop naming the tip recipient',
 };
 
 function walk(dir: string): string[] {
@@ -61,14 +72,31 @@ function declaredRoutes(): string[] {
 const LINK_RE =
   /\b(?:href|to)=(?:"([^"]*)"|\{`([^`]*)`\}|\{'([^']*)'\}|\{([A-Za-z_$][\w$.]*)\})/g;
 
-/** First string literal assigned to `name` in this file, if it is a simple const. */
+/**
+ * The literal assigned to `name`, for the two forms the app actually uses:
+ *
+ *   const NAME = '/literal'
+ *   const NAME = useMemo(() => `/literal`, [deps])   (comments before the arrow ok)
+ *
+ * Anything else returns null and becomes an unclassified link, which fails the
+ * suite. Deliberately strict: an earlier version scanned for the first string
+ * within 400 characters of the declaration, which for `const target = getUrl()`
+ * happily returned a className or even a word from a type annotation. A wrong
+ * literal that does not start with "/" is treated as external and the real link
+ * is dropped from the check without a sound, which is the worst outcome for a
+ * test whose whole job is to not miss links.
+ */
 function resolveIdentifier(source: string, name: string): string | null {
-  const root = name.split('.')[0];
-  const at = source.search(new RegExp(`\\bconst\\s+${root}\\s*=`));
-  if (at === -1) return null;
-  const window = source.slice(at, at + 400).replace(/\/\/[^\n]*/g, '');
-  const lit = window.match(/[`'"]([^`'"]*)[`'"]/);
-  return lit ? lit[1] : null;
+  const root = name.split('.')[0].replace(/[^\w$]/g, '');
+  if (!root) return null;
+
+  const direct = new RegExp(`\\bconst\\s+${root}\\s*=\\s*(['"\`])([^'"\`]*)\\1`);
+  const viaMemo = new RegExp(
+    `\\bconst\\s+${root}\\s*=\\s*useMemo\\(\\s*(?:\\/\\/[^\\n]*\\n\\s*)*\\(\\s*\\)\\s*=>\\s*(['"\`])([^'"\`]*)\\1`
+  );
+
+  const m = source.match(viaMemo) ?? source.match(direct);
+  return m ? m[2] : null;
 }
 
 const isInternal = (v: string) => v.startsWith('/') && !v.startsWith('//');
@@ -111,7 +139,8 @@ function collect() {
       }
 
       const ident = m[4];
-      if (ident in DYNAMIC_LINKS) continue; // classified, see the map above
+      // Scoped to this file: a same-named identifier elsewhere is not exempt.
+      if (`${rel}:${ident}` in DYNAMIC_LINKS) continue;
 
       const resolved = resolveIdentifier(source, ident);
       if (resolved === null) {
@@ -151,6 +180,30 @@ describe('internal links resolve to declared routes', () => {
   it('leaves no dynamic link unclassified', () => {
     const missing = unresolved.map((l) => `${l.where} -> ${l.value}`);
     expect(missing).toEqual([]);
+  });
+
+  it('scopes every exemption to a file, so common names stay checked', () => {
+    // A bare `to` key would exempt any future `<a href={to}>` in any file.
+    for (const key of Object.keys(DYNAMIC_LINKS)) {
+      expect(key).toMatch(/^src\/.+\.tsx:[\w$.]+$/);
+    }
+    // and each exemption must still point at a file that exists
+    for (const key of Object.keys(DYNAMIC_LINKS)) {
+      const file = join(SRC, '..', key.split(':')[0]);
+      expect(() => readFileSync(file, 'utf8')).not.toThrow();
+    }
+  });
+
+  it('resolves only real literal assignments, never a nearby string', () => {
+    const memo = "const entryLink = useMemo(\n  // note\n  () => `/@${a}/${b}`,\n  [a],\n);";
+    expect(resolveIdentifier(memo, 'entryLink')).toBe('/@${a}/${b}');
+    expect(resolveIdentifier("const x = '/blog';", 'x')).toBe('/blog');
+    // the mis-resolution this replaced: a call expression must not borrow a
+    // later string such as a className or a word from a type annotation
+    const call = 'const target = getUrl();\nconst cls = "totally-unrelated";';
+    expect(resolveIdentifier(call, 'target')).toBeNull();
+    const annotated = 'function P({ to }: { to: string }) {\n  const target = getUrl();';
+    expect(resolveIdentifier(annotated, 'target')).toBeNull();
   });
 
   it('recognises the shapes the app actually uses', () => {
