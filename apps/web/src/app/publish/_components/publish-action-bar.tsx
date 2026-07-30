@@ -81,7 +81,7 @@ import {
 } from "../_hooks";
 import { useOptionalUploadTracker } from "../_hooks/use-upload-tracker";
 import { PublishActionBarCommunity } from "./publish-action-bar-community";
-import { hasPublishContent } from "../_utils/content";
+import { hasDraftableContent, hasPublishContent } from "../_utils/content";
 import { Spinner } from "@ui/spinner";
 import type { ImportResult } from "./publish-import-dialog";
 
@@ -118,7 +118,7 @@ export function PublishActionBar({
   useDefaultBeneficiary();
   useSupportEcencyBeneficiary();
 
-  const hasEditorContent = !!title?.trim() || hasPublishContent(content);
+  const hasEditorContent = hasDraftableContent(title, content);
 
   const { mutateAsync: saveToDraft, isPending: isDraftPending } = useSaveDraftApi(draftId);
   const { mutateAsync: saveTemplate, isPending: isTemplatePending } = useSaveTemplateApi();
@@ -160,9 +160,14 @@ export function PublishActionBar({
         )}
 
         <LoginRequired promptOnAnon>
+          {/* A draft only needs *something* worth keeping, not a title. Gating
+              this on the title alone left anyone who writes body-first with a
+              button that looked enabled (gray-link had no disabled styling) and
+              did nothing. Autosave already persists title-less drafts, so the
+              server side of this has always been fine. */}
           <Button
             size="sm"
-            disabled={isDraftPending || !title?.trim()}
+            disabled={isDraftPending || !hasEditorContent}
             appearance="gray-link"
             onClick={() => saveToDraft({ showToast: true })}
           >
