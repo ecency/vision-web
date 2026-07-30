@@ -14,6 +14,10 @@ export function linkify(content: string, forApp: boolean, renderOptions?: Render
     const tagLower = tag2.toLowerCase()
 
     if (!forApp) {
+      // No tag route to land on -> inert span rather than a dead, crawlable /trending link.
+      if (renderOptions?.inertAuthorAndTagChips) {
+        return `${preceding}<span class="er-tag er-tag-link">${tag.trim()}</span>`
+      }
       return `${preceding}<a class="er-tag er-tag-link" href="/trending/${tagLower}">${tag.trim()}</a>`
     }
     return `${preceding}<a class="markdown-tag-link" data-tag="${tagLower}">${tag.trim()}</a>`
@@ -31,7 +35,11 @@ export function linkify(content: string, forApp: boolean, renderOptions?: Render
       if (userLower.indexOf('/') === -1 && isValidUsername(user)) {
         if (!forApp) {
           const avatarSrc = `${getProxyBase()}/u/${userLower}/avatar/small`
-          const html = `${preceedings}<a class="er-author er-author-link" href="/@${userLower}"><img class="er-author-link-image" src="${avatarSrc}" alt="${userLower}"/>@${userLower}</a>`
+          const inner = `<img class="er-author-link-image" src="${avatarSrc}" alt="${userLower}"/>@${userLower}`
+          // No profile route to land on -> inert span rather than a dead, crawlable /@user link.
+          const html = renderOptions?.inertAuthorAndTagChips
+            ? `${preceedings}<span class="er-author er-author-link">${inner}</span>`
+            : `${preceedings}<a class="er-author er-author-link" href="/@${userLower}">${inner}</a>`
           const placeholder = `\u200C${authorPlaceholders.length}\u200C`
           authorPlaceholders.push({ placeholder, html })
           return placeholder

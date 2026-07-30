@@ -16,6 +16,41 @@ function hasAncestor(node: Node, tagNames: string[]): boolean {
   return false
 }
 
+const CHIP_CLASSES = ['er-author-link', 'er-tag-link']
+
+/**
+ * True when the node already sits inside a rendered `@user` / `#tag` chip.
+ *
+ * The `'a'` guard below is what normally stops a chip's own `@user` text from
+ * being linkified again: traverse() recurses into the node text() inserted, so
+ * without a stop condition the chip's label is re-linkified into a nested chip
+ * on every pass, forever. With `RenderOptions.inertAuthorAndTagChips` the chip
+ * is a `<span>`, which the tag-name guard does not catch, so match on the chip
+ * classes instead. a.method.ts uses the same class-based "already processed"
+ * signal.
+ *
+ * Only consulted on inert renders. `class` is author-writable (the sanitizer
+ * allows it on `span` and runs *after* traverse), so a post body containing
+ * `<span class="er-tag-link">@alice</span>` would otherwise let an author
+ * suppress linkification, and the later bare-image and video enhancements, for
+ * every reader on the default render path. Gating keeps that reachable only
+ * where the inert chips actually need it. Tokens are compared exactly so
+ * unrelated names like `custom-er-tag-link-label` do not match.
+ */
+function hasChipAncestor(node: Node): boolean {
+  let current: Node | null = node.parentNode
+  while (current) {
+    const el = current as HTMLElement
+    const className =
+      typeof el.getAttribute === 'function' ? el.getAttribute('class') : null
+    if (className && className.split(/\s+/).some((token) => CHIP_CLASSES.includes(token))) {
+      return true
+    }
+    current = current.parentNode
+  }
+  return false
+}
+
 export function text(node: HTMLElement | null, forApp: boolean, renderOptions?: RenderOptions): void {
   if (!node || !node.parentNode) {
     return
@@ -23,6 +58,12 @@ export function text(node: HTMLElement | null, forApp: boolean, renderOptions?: 
 
   // Skip text nodes inside links, inline code, or code blocks (check all ancestors)
   if (hasAncestor(node, ['a', 'code', 'pre'])) {
+    return
+  }
+
+  // Inert chips are spans, so they need the class-based guard too. Kept behind
+  // the option so the default render path is untouched — see hasChipAncestor.
+  if (renderOptions?.inertAuthorAndTagChips && hasChipAncestor(node)) {
     return
   }
 

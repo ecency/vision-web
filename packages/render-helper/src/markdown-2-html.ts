@@ -59,7 +59,10 @@ export function markdown2Html(obj: Entry | string, forApp = true, _webp = false,
     return res
   }
 
-  const key = `${makeEntryCacheKey(obj)}-md-${forApp ? 'app' : 'site'}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ''}-${seoContext.postPayout ?? ''}` : ''}${renderOptions?.embedVideosDirectly ? '-embed' : ''}`
+  // Every RenderOptions flag that changes the output must appear in the key, or
+  // two callers rendering the same entry with different options serve each
+  // other's HTML from cache.
+  const key = `${makeEntryCacheKey(obj)}-md-${forApp ? 'app' : 'site'}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ''}-${seoContext.postPayout ?? ''}` : ''}${renderOptions?.embedVideosDirectly ? '-embed' : ''}${renderOptions?.inertAuthorAndTagChips ? '-inert' : ''}`
 
   const item = cacheGet<string>(key)
   if (item) {

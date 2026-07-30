@@ -133,7 +133,11 @@ export function BlogPostItem({ entry }: Props) {
         <div
           className="markdown-body text-sm sm:text-base max-w-none body-theme entry-body"
           dangerouslySetInnerHTML={{
-            __html: renderPostBody(summary, false),
+            // inertAuthorAndTagChips: no profile or tag routes exist here, and a
+            // link inside this card would nest inside the card's own post link.
+            __html: renderPostBody(summary, false, false, 'ecency.com', undefined, {
+              inertAuthorAndTagChips: true,
+            }),
           }}
         />
       </div>

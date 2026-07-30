@@ -1355,4 +1355,109 @@ describe('Markdown2Html', () => {
       expect(markdown2Html(input, false, false)).toBe(SNAPSHOT_JSON.markdown_2_html_webp_support_should_render_images_in_match_format)
     })
   })
+
+  describe('inertAuthorAndTagChips', () => {
+    const inert = { inertAuthorAndTagChips: true }
+    const body = 'Danke dennoch an @der-prophet und #powerup day'
+
+    it('renders both chips as spans with no href, through the full pipeline', () => {
+      const out = markdown2Html(body, false, false, 'ecency.com', undefined, inert)
+
+      expect(out).toContain('<span class="er-author er-author-link">')
+      expect(out).toContain('<span class="er-tag er-tag-link">')
+      expect(out).not.toContain('href="/@der-prophet"')
+      expect(out).not.toContain('href="/trending/powerup"')
+    })
+
+    it('keeps the avatar image, which the sanitizer must not strip from a span', () => {
+      const out = markdown2Html(body, false, false, 'ecency.com', undefined, inert)
+
+      expect(out).toContain('class="er-author-link-image"')
+      expect(out).toContain('/u/der-prophet/avatar/small')
+    })
+
+    // A chip is normally an <a>, and the 'a' ancestor guard in text.method is what
+    // stops traverse() from re-linkifying the chip's own label. An inert chip is a
+    // <span>, so without the class-based guard the label expands into a nested chip
+    // on every pass until the render throws and falls back to unenhanced HTML.
+    it('does not re-linkify its own label into nested chips', () => {
+      const out = markdown2Html(body, false, false, 'ecency.com', undefined, inert)
+
+      expect(out.match(/er-author-link"/g)).toHaveLength(1)
+      expect(out.match(/er-tag-link"/g)).toHaveLength(1)
+      expect(out).not.toContain('<span class="er-author er-author-link"><span')
+    })
+
+    it('still enhances the surrounding paragraph rather than falling back', () => {
+      const out = markdown2Html(body, false, false, 'ecency.com', undefined, inert)
+
+      expect(out).toContain('dir="auto"')
+    })
+
+    it('leaves chips as links when the option is absent', () => {
+      const out = markdown2Html(body, false, false, 'ecency.com')
+
+      expect(out).toContain('href="/@der-prophet"')
+      expect(out).toContain('href="/trending/powerup"')
+    })
+
+    // `class` is author-writable: the sanitizer permits it on <span> and runs after
+    // traverse, so a post body can carry `er-tag-link` into the DOM the guard walks.
+    // An unconditional guard would let any author suppress linkification for every
+    // reader on ecency.com and in the mobile app.
+    describe('author-supplied chip classes on the default path', () => {
+      const hostile = '<span class="er-tag-link">hello @alice and #btc</span>'
+
+      it('still linkifies inside an author span for forApp=true', () => {
+        const out = markdown2Html(hostile, true)
+
+        expect(out).toContain('data-author="alice"')
+        expect(out).toContain('data-tag="btc"')
+      })
+
+      it('still linkifies inside an author span for forApp=false', () => {
+        const out = markdown2Html(hostile, false, false, 'ecency.com')
+
+        expect(out).toContain('href="/@alice"')
+        expect(out).toContain('href="/trending/btc"')
+      })
+
+      it('does not match class names that merely contain a chip token', () => {
+        const out = markdown2Html(
+          '<span class="custom-er-tag-link-label">hello @alice</span>',
+          false,
+          false,
+          'ecency.com',
+          undefined,
+          inert
+        )
+
+        expect(out).toContain('<span class="er-author er-author-link">')
+      })
+
+      it('suppresses re-linkification only inside a real chip on inert renders', () => {
+        const out = markdown2Html(hostile, false, false, 'ecency.com', undefined, inert)
+
+        // The author's own span is a genuine chip-class token, so its contents are
+        // left alone on this path. Accepted: narrow, and only on self-hosted.
+        expect(out).toContain('hello @alice and #btc')
+      })
+    })
+
+    it('does not serve a cached render across differing options for the same entry', () => {
+      const entry = {
+        author: 'chipcache',
+        permlink: 'chipcache',
+        last_update: '2019-05-10T09:15:21',
+        body
+      }
+
+      const linked = markdown2Html(entry, false, false, 'ecency.com')
+      const inertOut = markdown2Html(entry, false, false, 'ecency.com', undefined, inert)
+
+      expect(linked).toContain('href="/@der-prophet"')
+      expect(inertOut).not.toContain('href="/@der-prophet"')
+      expect(inertOut).toContain('<span class="er-author er-author-link">')
+    })
+  })
 })
