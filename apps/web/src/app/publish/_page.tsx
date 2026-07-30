@@ -8,6 +8,7 @@ import {
 } from "@/app/publish/_components";
 import {
   useBackToClassic,
+  useOpenAutosavedDraft,
   usePublishAutosave,
   usePublishEditor,
   usePublishHandoff,
@@ -75,6 +76,7 @@ export default function Publish() {
 
   const { isActiveTab, lastSaved, draftId } = usePublishAutosave();
   const backToClassic = useBackToClassic();
+  const { openDraft, isOpening } = useOpenAutosavedDraft(draftId);
 
   useEffect(() => {
     const communityParam = searchParams?.get("com");
@@ -114,6 +116,8 @@ export default function Publish() {
           <PublishModeHeader
             label={i18next.t("publish.new-content")}
             lastSaved={draftId ? lastSaved : null}
+            onOpenDraft={draftId ? openDraft : undefined}
+            isOpeningDraft={isOpening}
           />
           <PublishActionBar
             onPublish={() => setStep("validation")}

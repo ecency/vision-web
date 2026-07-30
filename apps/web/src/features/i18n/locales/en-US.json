@@ -3502,6 +3502,7 @@
     "draft-mode": "Draft Editing",
     "edit-mode": "Post Editing",
     "auto-save": "Auto saved",
+    "open-draft": "Open draft",
     "save-draft": "Save Draft",
     "update-draft": "Update Draft",
     "three-speak-upload": "Upload and paste",
