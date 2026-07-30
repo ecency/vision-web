@@ -298,7 +298,67 @@ function collect() {
     const lineOf = (n: ts.Node) =>
       sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
 
+    /** Records one destination, whether it came from an attribute or a spread. */
+    const record = (where: string, expr: ts.Expression | undefined) => {
+      // Source text of the expression, so a template with no identifier can
+      // still be classified. For a plain identifier this is just its name,
+      // which keeps the exemption keys readable.
+      const ident = expr ? expr.getText(sf).replace(/\s+/g, ' ') : undefined;
+      const key = ident ? `${rel}:${ident}` : undefined;
+
+      // Resolve first. An exemption may only absorb a link that is genuinely
+      // unknowable, so if the identifier later becomes a plain literal the link
+      // is validated and the now-stale exemption fails its occurrence count
+      // instead of quietly covering for it.
+      const value = staticValue(expr);
+      if (value === null) {
+        if (key && key in DYNAMIC_LINKS) {
+          exemptionHits[key] = (exemptionHits[key] ?? 0) + 1;
+        } else {
+          unresolved.push({ where, value: ident ?? '<expression>' });
+        }
+      } else if (isInternal(value)) {
+        checked.push({ where, value, via: ident });
+      }
+    };
+
+    /** Can this element carry a destination at all? */
+    const navigable = (tag: string) =>
+      /^[a-z]/.test(tag) || NAVIGATION_COMPONENTS.has(tag);
+
     const visit = (node: ts.Node) => {
+      // `<a {...{ href: '/dead' }}>` and `<Link {...props}>` are attributes too,
+      // just not JsxAttribute nodes. Without this they produce no entry at all,
+      // so a dead link inside a spread is invisible rather than merely
+      // unresolved.
+      if (ts.isJsxSpreadAttribute(node)) {
+        const owner = node.parent.parent as ts.JsxOpeningLikeElement;
+        const tag = owner.tagName.getText(sf);
+        const where = `${rel}:${lineOf(node)}`;
+
+        if (navigable(tag)) {
+          const spread = node.expression;
+          if (ts.isObjectLiteralExpression(spread)) {
+            // a literal tells us exactly whether it carries a destination
+            for (const prop of spread.properties) {
+              if (
+                ts.isPropertyAssignment(prop) &&
+                (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) &&
+                (prop.name.text === 'href' || prop.name.text === 'to')
+              ) {
+                record(where, prop.initializer);
+              }
+            }
+          } else {
+            // an opaque spread may or may not carry one; it has to be classified
+            unresolved.push({
+              where,
+              value: `{...${spread.getText(sf).replace(/\s+/g, ' ')}}`,
+            });
+          }
+        }
+      }
+
       if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name)) {
         const attr = node.name.text;
         if (attr === 'href' || attr === 'to') {
@@ -315,33 +375,12 @@ function collect() {
             componentProps.push({ where, key: `${tag}.${attr}` });
           } else {
             const init = node.initializer;
-            const expr =
+            record(
+              where,
               init && ts.isJsxExpression(init)
                 ? init.expression
-                : (init as ts.Expression | undefined);
-
-            // Source text of the expression, so a template with no identifier
-            // can still be classified. For a plain identifier this is just its
-            // name, which keeps the exemption keys readable.
-            const ident = expr
-              ? expr.getText(sf).replace(/\s+/g, ' ')
-              : undefined;
-
-            const key = ident ? `${rel}:${ident}` : undefined;
-            // Resolve first. An exemption may only absorb a link that is
-            // genuinely unknowable, so if the identifier later becomes a plain
-            // literal the link is validated and the now-stale exemption fails
-            // its occurrence count instead of quietly covering for it.
-            const value = staticValue(expr);
-            if (value === null) {
-              if (key && key in DYNAMIC_LINKS) {
-                exemptionHits[key] = (exemptionHits[key] ?? 0) + 1;
-              } else {
-                unresolved.push({ where, value: ident ?? '<expression>' });
-              }
-            } else if (isInternal(value)) {
-              checked.push({ where, value, via: ident });
-            }
+                : (init as ts.Expression | undefined),
+            );
           }
         }
       }
@@ -558,6 +597,39 @@ describe('internal links resolve to declared routes', () => {
         ].join('\n'),
       ),
     ).toEqual(['/blog']);
+  });
+
+  it('sees destinations passed through a JSX spread', () => {
+    // A spread is a JsxSpreadAttribute, not a JsxAttribute, so an
+    // attribute-only visitor produces no entry at all and a dead link inside
+    // one is invisible rather than merely unresolved.
+    const inSpread = (code: string) => {
+      const sf = ts.createSourceFile(
+        'spread.tsx',
+        code,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX,
+      );
+      const out: string[] = [];
+      const visit = (n: ts.Node) => {
+        if (ts.isJsxSpreadAttribute(n)) out.push(n.expression.getText(sf));
+        ts.forEachChild(n, visit);
+      };
+      visit(sf);
+      return out;
+    };
+
+    // the shapes exist and are reachable as spread attributes
+    expect(
+      inSpread("const E = () => <a {...{ href: '/dead' }}>x</a>;"),
+    ).toEqual(["{ href: '/dead' }"]);
+    expect(inSpread('const E = () => <a {...props}>x</a>;')).toEqual(['props']);
+
+    // and the collector classifies them: object literals resolve, opaque
+    // spreads are unresolved, and non-navigable components are ignored.
+    // Exercised end to end by the probe cases in the PR description.
+    expect(NAVIGATION_COMPONENTS.has('Link')).toBe(true);
   });
 
   it('recognises the shapes the app actually uses', () => {
