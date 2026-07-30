@@ -358,6 +358,25 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     }
   };
 
+  // Saving a draft is not publishing one. Routing Save draft through the full
+  // publish gate below meant a draft was rejected until it had a title *and*
+  // tags *and* a body, which is exactly the half-written post drafts exist to
+  // hold. Matches the publish composer, which saves on any content at all.
+  const validateDraft = useCallback(() => {
+    if (title.trim() === "" && body.trim() === "") {
+      focusInput(".title-input");
+      error(i18next.t("submit.empty-draft-alert"));
+      return false;
+    }
+
+    if (tags.length > 10) {
+      error(i18next.t("tag-selector.error-max", { n: 10 }));
+      return false;
+    }
+
+    return true;
+  }, [title, body, tags]);
+
   const validate = () => {
     if (title.trim() === "") {
       focusInput(".title-input");
@@ -678,6 +697,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
               description={description}
               selectedThumbnail={selectedThumbnail}
               validate={validate}
+              validateDraft={validateDraft}
               onDraftCreated={(draft) => setEditingDraft(draft)}
             />
           </div>
@@ -706,6 +726,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
               description={description}
               selectedThumbnail={selectedThumbnail}
               validate={validate}
+              validateDraft={validateDraft}
               onDraftCreated={(draft) => setEditingDraft(draft)}
             />
           </div>
