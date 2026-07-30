@@ -116,7 +116,7 @@ export default function Publish() {
           <PublishModeHeader
             label={i18next.t("publish.new-content")}
             lastSaved={draftId ? lastSaved : null}
-            onOpenDraft={draftId ? openDraft : undefined}
+            onOpenDraft={draftId && isActiveTab ? openDraft : undefined}
             isOpeningDraft={isOpening}
           />
           <PublishActionBar
@@ -125,6 +125,7 @@ export default function Publish() {
             onImport={handleImport}
             setEditorContent={setEditorContent}
             draftId={draftId}
+            saveDraft={flush}
           />
           <PublishEditor editor={editor} />
         </>

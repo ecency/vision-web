@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import isEqual from "react-fast-compare";
 import { useDebounce } from "react-use";
 import { useSaveDraftApi } from "../_api";
+import type { SaveDraftOptions } from "../_api/use-save-draft";
 import { useDraftTabCoordinator } from "./use-draft-tab-coordinator";
 import {
   AUTOSAVE_DEBOUNCE_MS,
@@ -61,27 +62,37 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
    * the moment a second entry point (the Open draft flush) opened its own
    * mutation alongside it.
    */
-  const save = useCallback(async () => {
-    const previous = inFlightRef.current;
-
-    const run = (async () => {
-      if (previous) {
-        // Only the ordering matters here, not whether it succeeded.
-        await previous.catch(() => undefined);
+  const save = useCallback(
+    async (options?: SaveDraftOptions) => {
+      // inFlightRef only serialises this tab. Ordering *between* tabs is the
+      // draft lock's job, so every write has to respect it - a write that skips
+      // the lock can overwrite whatever the tab holding it just stored.
+      if (!isActiveTab) {
+        throw new Error("[Draft] Another tab is editing this draft");
       }
-      return saveToDraft({ showToast: false, redirect: false });
-    })();
 
-    inFlightRef.current = run;
+      const previous = inFlightRef.current;
 
-    try {
-      return await run;
-    } finally {
-      if (inFlightRef.current === run) {
-        inFlightRef.current = null;
+      const run = (async () => {
+        if (previous) {
+          // Only the ordering matters here, not whether it succeeded.
+          await previous.catch(() => undefined);
+        }
+        return saveToDraft({ showToast: false, redirect: false, ...options });
+      })();
+
+      inFlightRef.current = run;
+
+      try {
+        return await run;
+      } finally {
+        if (inFlightRef.current === run) {
+          inFlightRef.current = null;
+        }
       }
-    }
-  }, [saveToDraft]);
+    },
+    [isActiveTab, saveToDraft]
+  );
 
   const scheduleRetry = useCallback((delay: number) => {
     // One pending retry is enough: it re-reads the newest snapshot when it runs.
@@ -149,26 +160,34 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
 
   /**
    * Write the current content now, queued behind any autosave already on the
-   * wire, and let the caller await the result. This is what the Open draft
-   * action uses before it navigates: the draft route refills publish state from
-   * the server copy, so it must be looking at a copy that includes everything
-   * typed since the last autosave.
+   * wire, and let the caller await the result. Both user-initiated writes go
+   * through this: the Save draft button and the Open draft action.
    *
-   * Errors propagate - a caller that is about to navigate needs to know the
-   * flush did not land.
+   * Open draft needs it because `/publish/drafts/[id]` refills publish state
+   * from the server copy, so that copy has to include everything typed since
+   * the last autosave. Save draft needs it because a manual save racing an
+   * autosave could otherwise be overwritten by the older response - and, before
+   * the first autosave has returned an id, both would take the create path and
+   * produce two drafts.
+   *
+   * Errors propagate. A caller that is about to navigate needs to know the
+   * flush did not land, and so does a button showing a success toast.
    */
-  const flush = useCallback(async () => {
-    const id = await save();
+  const flush = useCallback(
+    async (options?: SaveDraftOptions) => {
+      const id = await save(options);
 
-    if (id) {
-      setCreatedDraftId(id);
-    }
-    setLastSaved(new Date());
-    prevSnapshotRef.current = snapshot;
-    consecutiveFailsRef.current = 0;
+      if (id) {
+        setCreatedDraftId(id);
+      }
+      setLastSaved(new Date());
+      prevSnapshotRef.current = snapshot;
+      consecutiveFailsRef.current = 0;
 
-    return id;
-  }, [save, snapshot]);
+      return id;
+    },
+    [save, snapshot]
+  );
 
   // Keep the retry timer pointed at the newest closure, so a deferred save
   // writes the latest content rather than whatever was current when it was

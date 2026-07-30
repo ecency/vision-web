@@ -15,7 +15,7 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { ensureValidToken } from "@/utils";
 import { getCreatedDraft } from "../_utils/get-created-draft";
 
-type SaveDraftOptions = {
+export type SaveDraftOptions = {
   showToast?: boolean;
   redirect?: boolean;
 };

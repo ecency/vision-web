@@ -199,6 +199,20 @@ describe("useDraftAutosave", () => {
     expect(saveToDraft).toHaveBeenCalledTimes(AUTOSAVE_FAIL_THRESHOLD + 1);
   });
 
+  // inFlightRef only serialises one tab. Ordering between tabs is the draft
+  // lock's job, so a user-initiated flush has to respect it too - otherwise an
+  // inactive tab could overwrite whatever the tab holding the lock just stored.
+  it("refuses a flush from a tab that does not hold the draft lock", async () => {
+    isActiveTab.current = false;
+
+    const { result } = renderHook(() =>
+      useDraftAutosave({ enabled: true, snapshot: { title: "a title", content: "a body" } })
+    );
+
+    await expect(result.current.flush()).rejects.toThrow(/another tab/i);
+    expect(saveToDraft).not.toHaveBeenCalled();
+  });
+
   it("stays quiet while another tab holds the draft", async () => {
     isActiveTab.current = false;
     renderAutosave({ title: "a title", content: "a body" });

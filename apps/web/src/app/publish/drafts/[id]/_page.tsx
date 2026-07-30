@@ -13,7 +13,7 @@ import { usePublishEditor, usePublishState, useAutoSavePublishDraft } from "@/ap
 import { useApiDraftDetector } from "@/app/submit/_hooks";
 import i18next from "i18next";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { normalizePollSnapshot } from "@/app/publish/_utils/poll";
 import { PublishEditorHtmlWarning } from "../../_components/publish-editor-html-warning";
 import { PublishSuccessState } from "../../_components/publish-success-state";
@@ -68,7 +68,21 @@ export default function PublishPage() {
     },
     () => setStep("no-draft")
   );
-  const { lastSaved, isActiveTab } = useAutoSavePublishDraft(step, draftId);
+  const { lastSaved, isActiveTab, flush } = useAutoSavePublishDraft(step, draftId);
+
+  // The classic editor reloads this draft from the server, so anything typed
+  // inside the 10s debounce or the 60s throttle window would be dropped on the
+  // way out. Flush first, and stay put if that fails rather than navigating to
+  // a copy that is knowingly behind - useSaveDraftApi surfaces the error.
+  const backToClassic = useCallback(async () => {
+    try {
+      await flush();
+    } catch {
+      return;
+    }
+
+    router.push(`/draft/${params?.id}`);
+  }, [flush, params?.id, router]);
 
   return (
     <>
@@ -78,9 +92,10 @@ export default function PublishPage() {
           <PublishModeHeader label={i18next.t("publish.draft-mode")} lastSaved={lastSaved} />
           <PublishActionBar
             onPublish={() => setStep("validation")}
-            onBackToClassic={() => router.push(`/draft/${params?.id}`)}
+            onBackToClassic={backToClassic}
             setEditorContent={setEditorContent}
             draftId={draftId}
+            saveDraft={flush}
           />
           <PublishEditor editor={editor} />
         </>

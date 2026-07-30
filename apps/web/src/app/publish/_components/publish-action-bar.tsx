@@ -72,7 +72,8 @@ import { Dropdown, DropdownItemWithIcon, DropdownMenu, DropdownToggle } from "@u
 import i18next from "i18next";
 import { usePathname } from "next/navigation";
 import { PropsWithChildren, useState } from "react";
-import { useSaveDraftApi, useSaveTemplateApi } from "../_api";
+import { useSaveTemplateApi } from "../_api";
+import type { SaveDraftOptions } from "../_api/use-save-draft";
 import {
   useApplyTemplate,
   useDefaultBeneficiary,
@@ -91,6 +92,13 @@ interface Props {
   onImport?: (result: ImportResult) => void;
   setEditorContent?: (content: string | undefined) => void;
   draftId?: string;
+  /**
+   * The autosave engine's queued write. Deliberately not a `useSaveDraftApi` of
+   * our own: a manual save racing an autosave could be overwritten by the older
+   * response, and before the first autosave has returned an id both would take
+   * the create path and leave two drafts behind.
+   */
+  saveDraft: (options?: SaveDraftOptions) => Promise<string | undefined>;
 }
 
 export function PublishActionBar({
@@ -99,7 +107,8 @@ export function PublishActionBar({
   onBackToClassic,
   onImport,
   setEditorContent,
-  draftId
+  draftId,
+  saveDraft
 }: PropsWithChildren<Props>) {
   const { schedule: scheduleDate, clearAll, title, content, aiTools } = usePublishState();
   const hasAiDisclosure = !!aiTools.media_generation || !!aiTools.writing_edit;
@@ -120,7 +129,7 @@ export function PublishActionBar({
 
   const hasEditorContent = hasDraftableContent(title, content);
 
-  const { mutateAsync: saveToDraft, isPending: isDraftPending } = useSaveDraftApi(draftId);
+  const [isDraftPending, setIsDraftPending] = useState(false);
   const { mutateAsync: saveTemplate, isPending: isTemplatePending } = useSaveTemplateApi();
   const applyTemplate = useApplyTemplate(setEditorContent);
   const uploadTracker = useOptionalUploadTracker();
@@ -169,7 +178,16 @@ export function PublishActionBar({
             size="sm"
             disabled={isDraftPending || !hasEditorContent}
             appearance="gray-link"
-            onClick={() => saveToDraft({ showToast: true })}
+            onClick={async () => {
+              setIsDraftPending(true);
+              try {
+                await saveDraft({ showToast: true });
+              } catch {
+                // useSaveDraftApi surfaces the failure itself.
+              } finally {
+                setIsDraftPending(false);
+              }
+            }}
           >
             {pathname?.includes("drafts")
               ? i18next.t("publish.update-draft")
