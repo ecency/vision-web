@@ -190,8 +190,14 @@ function declarationInScope(
     for (const statement of statements) {
       if (!ts.isVariableStatement(statement)) continue;
       for (const decl of statement.declarationList.declarations) {
+        // `let` / `var` can be reassigned after the initializer, so the
+        // declaration does not tell us the value at the point of use.
+        const isConst =
+          (ts.getCombinedNodeFlags(decl) & ts.NodeFlags.Const) !== 0;
         if (ts.isIdentifier(decl.name)) {
-          if (decl.name.text === name) return decl.initializer;
+          if (decl.name.text === name) {
+            return isConst ? decl.initializer : undefined;
+          }
           continue;
         }
         // destructured: it binds the name but we cannot read the value
@@ -322,15 +328,19 @@ function collect() {
               : undefined;
 
             const key = ident ? `${rel}:${ident}` : undefined;
-            if (key && key in DYNAMIC_LINKS) {
-              exemptionHits[key] = (exemptionHits[key] ?? 0) + 1;
-            } else {
-              const value = staticValue(expr);
-              if (value === null) {
+            // Resolve first. An exemption may only absorb a link that is
+            // genuinely unknowable, so if the identifier later becomes a plain
+            // literal the link is validated and the now-stale exemption fails
+            // its occurrence count instead of quietly covering for it.
+            const value = staticValue(expr);
+            if (value === null) {
+              if (key && key in DYNAMIC_LINKS) {
+                exemptionHits[key] = (exemptionHits[key] ?? 0) + 1;
+              } else {
                 unresolved.push({ where, value: ident ?? '<expression>' });
-              } else if (isInternal(value)) {
-                checked.push({ where, value, via: ident });
               }
+            } else if (isInternal(value)) {
+              checked.push({ where, value, via: ident });
             }
           }
         }
@@ -519,6 +529,33 @@ describe('internal links resolve to declared routes', () => {
     expect(
       hrefValuesIn(
         [outer, 'function A() { return <a href={target}>a</a>; }'].join('\n'),
+      ),
+    ).toEqual(['/blog']);
+  });
+
+  it('treats a reassignable binding as unknowable', () => {
+    // let/var may be reassigned after the initializer, so the declaration does
+    // not tell us the value at the point of use
+    expect(
+      hrefValuesIn(
+        [
+          'function A() {',
+          "  let target = '/blog';",
+          "  target = '/dead';",
+          '  return <a href={target}>a</a>;',
+          '}',
+        ].join('\n'),
+      ),
+    ).toEqual([null]);
+    // const is readable
+    expect(
+      hrefValuesIn(
+        [
+          'function A() {',
+          "  const target = '/blog';",
+          '  return <a href={target}>a</a>;',
+          '}',
+        ].join('\n'),
       ),
     ).toEqual(['/blog']);
   });
