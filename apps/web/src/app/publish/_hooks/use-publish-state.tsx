@@ -78,6 +78,13 @@ interface PublishStateContextValue {
   clearAiTools: () => void;
   appliedTemplateBody: string | null;
   setAppliedTemplateBody: (value: string | null) => void;
+  /**
+   * Bumped by clearAll. Anything holding state derived from "the post that was
+   * being written" - the autosave engine's draft binding above all - has to
+   * drop it when this changes, or it stays bound to the previous post and
+   * writes the next one over that post's draft.
+   */
+  clearGeneration: number;
 }
 
 const PublishStateContext = createContext<PublishStateContextValue | undefined>(undefined);
@@ -107,6 +114,7 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
   const [decentMemes, setDecentMemes] = useState<DecentMemesEntry[]>([]);
   const [aiTools, setAiTools] = useState<AiToolsMeta>({});
   const [appliedTemplateBody, setAppliedTemplateBody] = useState<string | null>(null);
+  const [clearGeneration, setClearGeneration] = useState(0);
 
   const clearDecentMemes = useCallback(() => setDecentMemes([]), []);
   const clearAiTools = useCallback(() => setAiTools({}), []);
@@ -239,6 +247,7 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
     clearAiTools();
     setAppliedTemplateBody(null);
     setIsReblogToCommunity(false);
+    setClearGeneration((generation) => generation + 1);
   }, [
     setBeneficiaries,
     setContent,
@@ -303,7 +312,8 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
         setAiTools,
         clearAiTools,
         appliedTemplateBody,
-        setAppliedTemplateBody
+        setAppliedTemplateBody,
+        clearGeneration
       }}
     >
       {children}

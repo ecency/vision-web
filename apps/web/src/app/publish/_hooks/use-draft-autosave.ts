@@ -26,6 +26,15 @@ interface Options {
    * unchanged (build it with useMemo) - it drives the debounce.
    */
   snapshot: Record<string, unknown>;
+  /**
+   * Changes whenever the composer is emptied to start something else - Clear,
+   * applying a template, or finishing a publish. The draft this engine has been
+   * writing to belongs to the *previous* post, so the binding must be dropped:
+   * keeping it made the next post overwrite the previous post's draft, and left
+   * an "auto-saved HH:MM / Open draft" strip on screen pointing at a draft the
+   * composer no longer holds - so flushing it wrote an empty post over it.
+   */
+  resetKey?: number;
 }
 
 /**
@@ -33,7 +42,7 @@ interface Options {
  * previously carried two near-identical copies of this logic and therefore two
  * copies of every bug in it.
  */
-export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
+export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Options) {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [createdDraftId, setCreatedDraftId] = useState<string>();
 
@@ -53,6 +62,7 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
   // returns so a queued write behind it targets the new draft rather than
   // creating another. The state copy exists only to drive re-renders.
   const createdDraftIdRef = useRef<string | undefined>(undefined);
+  const resetKeyRef = useRef(resetKey);
 
   /**
    * The only path that writes this draft. Every caller queues behind whatever
@@ -198,6 +208,13 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
    */
   const flush = useCallback(
     async (options?: SaveDraftOptions) => {
+      // Same gate autosave applies. Without it a caller could write an empty
+      // post over a real draft - which is exactly what Open draft did after the
+      // composer had been cleared, since it stayed bound to the old draft.
+      if (!enabled) {
+        throw new Error("[Draft] Nothing worth saving");
+      }
+
       const id = await save(options);
 
       if (id) {
@@ -216,8 +233,23 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
         created: !!id
       };
     },
-    [draftId, save, snapshot]
+    [draftId, enabled, save, snapshot]
   );
+
+  // Drop everything tied to the post that was just cleared away. Without this
+  // the engine keeps writing the *next* post into the previous post's draft.
+  useEffect(() => {
+    if (resetKeyRef.current === resetKey) {
+      return;
+    }
+
+    resetKeyRef.current = resetKey;
+    createdDraftIdRef.current = undefined;
+    prevSnapshotRef.current = null;
+    lastAttemptAtRef.current = 0;
+    setCreatedDraftId(undefined);
+    setLastSaved(null);
+  }, [resetKey]);
 
   // Keep the retry timer pointed at the newest closure, so a deferred save
   // writes the latest content rather than whatever was current when it was

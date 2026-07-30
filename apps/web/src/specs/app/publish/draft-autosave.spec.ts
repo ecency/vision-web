@@ -265,6 +265,46 @@ describe("useDraftAutosave", () => {
     expect(saveToDraft).not.toHaveBeenCalled();
   });
 
+  // The engine latched the created draft id and never let go, while clearAll
+  // reset only publish state. Clearing the composer (or applying a template, or
+  // publishing) therefore left the next post writing into the *previous* post's
+  // draft - overwriting a post that the UI still claimed was safely auto-saved.
+  it("drops the draft binding when the composer is cleared", async () => {
+    const targets: (string | undefined)[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return targets.length === 1 ? "draft-for-post-a" : undefined;
+    });
+
+    const { rerender } = renderHook(
+      ({ snapshot, resetKey }: { snapshot: Record<string, unknown>; resetKey: number }) =>
+        useDraftAutosave({ enabled: true, snapshot, resetKey }),
+      { initialProps: { snapshot: { title: "post A", content: "body A" }, resetKey: 0 } }
+    );
+
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    expect(targets).toEqual([undefined]);
+
+    // Clear, then write a different post.
+    rerender({ snapshot: { title: "post B", content: "body B" }, resetKey: 1 });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+
+    // Post B must create its own draft, not overwrite post A's.
+    expect(targets).toEqual([undefined, undefined]);
+  });
+
+  // After a clear the composer is empty but the engine still knew a draft id,
+  // and flush had no content guard - so Open draft, the action offered to
+  // recover the auto-saved post, wrote an empty post over it instead.
+  it("refuses to flush when there is nothing worth saving", async () => {
+    const { result } = renderHook(() =>
+      useDraftAutosave({ enabled: false, snapshot: { title: "", content: "" } })
+    );
+
+    await expect(result.current.flush()).rejects.toThrow(/nothing worth saving/i);
+    expect(saveToDraft).not.toHaveBeenCalled();
+  });
+
   it("stays quiet while another tab holds the draft", async () => {
     isActiveTab.current = false;
     renderAutosave({ title: "a title", content: "a body" });
