@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.25
+
+### Patch Changes
+
+- feat(render-helper): render author and tag chips inert on self-hosted blogs (#1277)
+
 ## 2.5.24
 
 ### Patch Changes
