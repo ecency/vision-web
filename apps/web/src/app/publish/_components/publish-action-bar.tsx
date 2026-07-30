@@ -264,8 +264,13 @@ export function PublishActionBar({
               </>
             )}
             <div className="border-b border-[--border-color] h-[1px] w-full" />
+            {/* Gated on pending uploads for the same reason Continue is: an
+                image's markdown only lands in the body once its upload
+                resolves, so leaving now would hand the classic editor a post
+                without it and unmount the composer tracking the upload. */}
             <DropdownItemWithIcon
               label={i18next.t("publish.back-to-old")}
+              disabled={uploadTracker?.hasPendingUploads}
               onClick={onBackToClassic}
             />
           </DropdownMenu>

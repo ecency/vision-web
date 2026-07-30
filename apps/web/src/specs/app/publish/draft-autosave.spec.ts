@@ -107,6 +107,56 @@ describe("useDraftAutosave", () => {
     expect(saveToDraft).toHaveBeenCalledTimes(2);
   });
 
+  // The Open draft action flushes through this same engine rather than opening
+  // its own mutation. If it wrote independently, a slow autosave already on the
+  // wire could land *after* the flush, put older content back on the server and
+  // in the drafts cache, and the composer would then navigate to read exactly
+  // that stale copy.
+  it("queues a user-initiated flush behind an autosave already on the wire", async () => {
+    const order: string[] = [];
+    let resolveAutosave: (() => void) | undefined;
+
+    saveToDraft.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveAutosave = () => {
+            order.push("autosave");
+            resolve();
+          };
+        })
+    );
+
+    const { result } = renderHook(
+      ({ snapshot }: { snapshot: Record<string, unknown> }) =>
+        useDraftAutosave({ enabled: true, snapshot }),
+      { initialProps: { snapshot: { title: "a title", content: "a body" } } }
+    );
+
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    expect(saveToDraft).toHaveBeenCalledTimes(1);
+
+    saveToDraft.mockImplementation(async () => {
+      order.push("flush");
+    });
+
+    // Flush while the autosave is still unresolved.
+    let flushed: Promise<unknown> | undefined;
+    await act(async () => {
+      flushed = result.current.flush();
+    });
+
+    // It must not have gone out yet - the autosave still owns the wire.
+    expect(saveToDraft).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveAutosave?.();
+      await flushed;
+    });
+
+    expect(saveToDraft).toHaveBeenCalledTimes(2);
+    expect(order).toEqual(["autosave", "flush"]);
+  });
+
   it("does not save again when nothing changed", async () => {
     const snapshot = { title: "a title", content: "a body" };
     const { rerender } = renderAutosave(snapshot);

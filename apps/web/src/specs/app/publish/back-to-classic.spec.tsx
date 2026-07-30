@@ -94,4 +94,5 @@ describe("useBackToClassic", () => {
     expect(readDraft()).toEqual(existing);
     expect(push).toHaveBeenCalledWith("/submit");
   });
+
 });

@@ -47,7 +47,41 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
   const cooldownUntilRef = useRef<number>(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attemptRef = useRef<() => void>(() => {});
-  const isSavingRef = useRef(false);
+  const inFlightRef = useRef<Promise<string | undefined> | null>(null);
+
+  /**
+   * The only path that writes this draft. Every caller queues behind whatever
+   * is already on the wire, because responses are not guaranteed to come back
+   * in the order they were sent: a slow earlier request landing after a newer
+   * one would overwrite the newer content on the server and in the drafts
+   * cache.
+   *
+   * This has to be shared rather than per-caller. Autosave used to be the only
+   * writer and guarded itself with a boolean, which stopped guarding anything
+   * the moment a second entry point (the Open draft flush) opened its own
+   * mutation alongside it.
+   */
+  const save = useCallback(async () => {
+    const previous = inFlightRef.current;
+
+    const run = (async () => {
+      if (previous) {
+        // Only the ordering matters here, not whether it succeeded.
+        await previous.catch(() => undefined);
+      }
+      return saveToDraft({ showToast: false, redirect: false });
+    })();
+
+    inFlightRef.current = run;
+
+    try {
+      return await run;
+    } finally {
+      if (inFlightRef.current === run) {
+        inFlightRef.current = null;
+      }
+    }
+  }, [saveToDraft]);
 
   const scheduleRetry = useCallback((delay: number) => {
     // One pending retry is enough: it re-reads the newest snapshot when it runs.
@@ -76,13 +110,10 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
 
     const sinceLastAttempt = now - lastAttemptAtRef.current;
 
-    // Never let two saves be on the wire at once. Responses are not guaranteed
-    // to come back in the order they were sent, so a slow earlier request can
-    // land after a newer one and overwrite the newer content on the server -
-    // and then set prevSnapshotRef to the older snapshot, so the newer content
-    // no longer even looks unsaved. Serialising also means the assignment to
-    // prevSnapshotRef below always belongs to the most recent completed save.
-    if (isSavingRef.current) {
+    // A write is already on the wire. Autosave defers rather than queueing:
+    // whatever is in flight is at most a minute old, and the retry re-reads the
+    // newest content anyway. A user-initiated flush queues instead - see below.
+    if (inFlightRef.current) {
       scheduleRetry(Math.max(AUTOSAVE_MIN_INTERVAL_MS - sinceLastAttempt, 1_000));
       return;
     }
@@ -98,10 +129,9 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
     }
 
     lastAttemptAtRef.current = now;
-    isSavingRef.current = true;
 
     try {
-      const id = await saveToDraft({ showToast: false, redirect: false });
+      const id = await save();
       // Only a create returns an id; updates resolve undefined.
       if (id) {
         setCreatedDraftId(id);
@@ -114,10 +144,31 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
       if (consecutiveFailsRef.current >= AUTOSAVE_FAIL_THRESHOLD) {
         cooldownUntilRef.current = Date.now() + AUTOSAVE_COOLDOWN_MS;
       }
-    } finally {
-      isSavingRef.current = false;
     }
-  }, [enabled, isActiveTab, saveToDraft, scheduleRetry, snapshot]);
+  }, [enabled, isActiveTab, save, scheduleRetry, snapshot]);
+
+  /**
+   * Write the current content now, queued behind any autosave already on the
+   * wire, and let the caller await the result. This is what the Open draft
+   * action uses before it navigates: the draft route refills publish state from
+   * the server copy, so it must be looking at a copy that includes everything
+   * typed since the last autosave.
+   *
+   * Errors propagate - a caller that is about to navigate needs to know the
+   * flush did not land.
+   */
+  const flush = useCallback(async () => {
+    const id = await save();
+
+    if (id) {
+      setCreatedDraftId(id);
+    }
+    setLastSaved(new Date());
+    prevSnapshotRef.current = snapshot;
+    consecutiveFailsRef.current = 0;
+
+    return id;
+  }, [save, snapshot]);
 
   // Keep the retry timer pointed at the newest closure, so a deferred save
   // writes the latest content rather than whatever was current when it was
@@ -136,5 +187,5 @@ export function useDraftAutosave({ draftId, enabled, snapshot }: Options) {
     []
   );
 
-  return { lastSaved, isActiveTab, draftId: effectiveDraftId };
+  return { lastSaved, isActiveTab, draftId: effectiveDraftId, flush };
 }

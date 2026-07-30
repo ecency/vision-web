@@ -1,9 +1,20 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSaveDraftApi } from "../_api";
 import { useOptionalUploadTracker } from "./use-upload-tracker";
+
+interface Options {
+  draftId?: string;
+  /**
+   * The autosave engine's serialised flush. Deliberately not a mutation of our
+   * own: a second `useSaveDraftApi` here would write outside the engine's
+   * ordering, so a slow autosave already on the wire could land after this
+   * flush and put older content back on the server - and into the drafts cache -
+   * moments before we navigate to read it.
+   */
+  flush: () => Promise<string | undefined>;
+}
 
 /**
  * Moves the writer into the draft that autosave has been writing to.
@@ -19,33 +30,37 @@ import { useOptionalUploadTracker } from "./use-upload-tracker";
  * minute ago. Navigating without saving first would quietly replace everything
  * typed since with that older copy.
  */
-export function useOpenAutosavedDraft(draftId?: string) {
+export function useOpenAutosavedDraft({ draftId, flush }: Options) {
   const router = useRouter();
   const uploadTracker = useOptionalUploadTracker();
-  const { mutateAsync: saveToDraft, isPending } = useSaveDraftApi(draftId);
+  const [isOpening, setIsOpening] = useState(false);
 
   const openDraft = useCallback(async () => {
-    if (!draftId) {
+    if (!draftId || isOpening) {
       return;
     }
 
-    // Images resolve into the body only once their upload finishes, so a draft
-    // flushed mid-upload would be stored without them.
-    if (uploadTracker?.hasPendingUploads) {
-      await uploadTracker.waitForUploads();
-    }
+    setIsOpening(true);
 
     try {
-      await saveToDraft({ showToast: false, redirect: false });
+      // Images resolve into the body only once their upload finishes, so a
+      // draft flushed mid-upload would be stored without them.
+      if (uploadTracker?.hasPendingUploads) {
+        await uploadTracker.waitForUploads();
+      }
+
+      await flush();
     } catch {
       // useSaveDraftApi already surfaces the error. Staying put is the safe
       // outcome: the newest content is still in memory here, and the draft
       // route would show the stale server copy instead.
       return;
+    } finally {
+      setIsOpening(false);
     }
 
     router.push(`/publish/drafts/${draftId}`);
-  }, [draftId, router, saveToDraft, uploadTracker]);
+  }, [draftId, flush, isOpening, router, uploadTracker]);
 
-  return { openDraft, isOpening: isPending };
+  return { openDraft, isOpening };
 }

@@ -74,9 +74,9 @@ export default function Publish() {
     )
   );
 
-  const { isActiveTab, lastSaved, draftId } = usePublishAutosave();
+  const { isActiveTab, lastSaved, draftId, flush } = usePublishAutosave();
   const backToClassic = useBackToClassic();
-  const { openDraft, isOpening } = useOpenAutosavedDraft(draftId);
+  const { openDraft, isOpening } = useOpenAutosavedDraft({ draftId, flush });
 
   useEffect(() => {
     const communityParam = searchParams?.get("com");

@@ -23,6 +23,15 @@ export const SUBMIT_LOCAL_DRAFT_KEY = PREFIX + "_local_draft";
  * A complete PostBase is written, never a partial one - the submit page reads
  * title as a string and tags as an array, and a half-filled object used to
  * crash it on mount.
+ *
+ * This reads the body as it stands, so the caller must not offer the action
+ * while an image is still uploading: that markdown is only written into the
+ * body once the upload resolves, and handing over first would transfer a post
+ * without the image and unmount the composer tracking it. The action bar gates
+ * it on `hasPendingUploads`, the same condition it already applies to Continue.
+ * Awaiting the uploads here instead is not sound - the value would have to be
+ * re-read after the wait, and the await continuation is a microtask that can
+ * run before React has committed the render carrying the new body.
  */
 export function useBackToClassic() {
   const router = useRouter();
