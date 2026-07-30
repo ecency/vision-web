@@ -37,22 +37,45 @@ const SRC = join(__dirname, '..');
  * very common name (it is also a plain prop on the tipping components), so a
  * bare-name exemption would silently wave through a real `<a href={to}>` added
  * anywhere in the app later.
+ *
+ * `occurrences` pins how many matches the entry is allowed to absorb in that
+ * file. Keying by file alone still covers every same-named occurrence in it, so
+ * adding a real `<a href={to}>` beside the tipping prop would inherit its
+ * exemption; the count turns that into a failure instead.
  */
-const DYNAMIC_LINKS: Record<string, string> = {
-  'src/routes/hosting.tsx:SIGNUP_URL': 'absolute https://ecency.com/hosting constant',
-  'src/features/claim/claim-landing.tsx:claimHref': 'built from HOSTING_URL, absolute',
-  'src/features/blog/layout/blog-navigation.tsx:rssUrl':
-    'getRssFeedUrl() returns an absolute ecency.com URL',
-  'src/features/auth/components/create-post-button.tsx:createPostUrl':
-    'runtime config general.createPostUrl, may be internal or absolute',
-  'src/features/blog/layout/blog-sidebar.tsx:websiteUrl':
-    'account metadata, arbitrary external site',
-  'src/features/auth/components/extension-login.tsx:link.url':
-    'wallet/extension install links, external',
-  'src/features/tipping/components/tipping-popover.tsx:to':
-    'not a link: TippingStepCurrency prop naming the tip recipient',
-  'src/features/tipping/components/tip-button.tsx:recipientUsername':
-    'not a link: TippingPopover prop naming the tip recipient',
+const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
+  'src/routes/hosting.tsx:SIGNUP_URL': {
+    occurrences: 1,
+    reason: 'absolute https://ecency.com/hosting constant',
+  },
+  'src/features/claim/claim-landing.tsx:claimHref': {
+    occurrences: 1,
+    reason: 'built from HOSTING_URL, absolute',
+  },
+  'src/features/blog/layout/blog-navigation.tsx:rssUrl': {
+    occurrences: 1,
+    reason: 'getRssFeedUrl() returns an absolute ecency.com URL',
+  },
+  'src/features/auth/components/create-post-button.tsx:createPostUrl': {
+    occurrences: 1,
+    reason: 'runtime config general.createPostUrl, may be internal or absolute',
+  },
+  'src/features/blog/layout/blog-sidebar.tsx:websiteUrl': {
+    occurrences: 1,
+    reason: 'account metadata, arbitrary external site',
+  },
+  'src/features/auth/components/extension-login.tsx:link.url': {
+    occurrences: 1,
+    reason: 'wallet/extension install links, external',
+  },
+  'src/features/tipping/components/tipping-popover.tsx:to': {
+    occurrences: 1,
+    reason: 'not a link: TippingStepCurrency prop naming the tip recipient',
+  },
+  'src/features/tipping/components/tip-button.tsx:recipientUsername': {
+    occurrences: 1,
+    reason: 'not a link: TippingPopover prop naming the tip recipient',
+  },
 };
 
 function walk(dir: string): string[] {
@@ -93,28 +116,51 @@ const LINK_RE =
  * external. This is not scope analysis (that wants an AST), but nearest
  * preceding declaration matches how these components are actually written.
  */
-function declarationsOf(source: string, name: string): { at: number; value: string }[] {
+function declarationsOf(
+  source: string,
+  name: string,
+): { at: number; value: string | null }[] {
   const root = name.split('.')[0].replace(/[^\w$]/g, '');
   if (!root) return [];
 
-  // `direct` needs a quote straight after `=`, so it never also matches the useMemo form.
-  const forms = [
-    new RegExp(`\\bconst\\s+${root}\\s*=\\s*(['"\`])([^'"\`]*)\\1`, 'g'),
-    new RegExp(
-      `\\bconst\\s+${root}\\s*=\\s*useMemo\\(\\s*(?:\\/\\/[^\\n]*\\n\\s*)*\\(\\s*\\)\\s*=>\\s*(['"\`])([^'"\`]*)\\1`,
-      'g'
-    ),
-  ];
+  // Every `const NAME =`, whatever the right-hand side. Collecting only the
+  // shapes we can read would let an unreadable declaration be skipped over, so
+  // a later `const target = getUrl()` would silently inherit an earlier
+  // component's `const target = '/blog'`.
+  const anyDecl = new RegExp(`\\bconst\\s+${root}\\s*=`, 'g');
+  const direct = new RegExp(`^const\\s+${root}\\s*=\\s*(['"\`])([^'"\`]*)\\1`);
+  const viaMemo = new RegExp(
+    `^const\\s+${root}\\s*=\\s*useMemo\\(\\s*(?:\\/\\/[^\\n]*\\n\\s*)*\\(\\s*\\)\\s*=>\\s*(['"\`])([^'"\`]*)\\1`,
+  );
 
-  return forms
-    .flatMap((re) => Array.from(source.matchAll(re), (m) => ({ at: m.index, value: m[2] })))
-    .sort((a, b) => a.at - b.at);
+  return Array.from(source.matchAll(anyDecl), (m) => {
+    const tail = source.slice(m.index);
+    const lit = tail.match(viaMemo) ?? tail.match(direct);
+    return { at: m.index, value: lit ? lit[2] : null };
+  });
 }
 
-function resolveIdentifier(source: string, name: string, usedAt: number): string | null {
+/**
+ * Nearest declaration above `usedAt`, resolved only if that declaration itself
+ * has a readable literal. An unreadable one yields null, i.e. unclassified,
+ * rather than deferring to some other declaration of the same name.
+ */
+function resolveIdentifier(
+  source: string,
+  name: string,
+  usedAt: number,
+): string | null {
   const above = declarationsOf(source, name).filter((d) => d.at < usedAt);
   return above.length > 0 ? above[above.length - 1].value : null;
 }
+
+/**
+ * Builds the literal text `${name}` for fixtures, without writing `${` inside a
+ * plain string. Biome's noTemplateCurlyInString flags that, correctly in general
+ * (it usually means a missing backtick), and here the placeholder text is the
+ * thing under test rather than a mistake.
+ */
+const ph = (name: string) => `$\u007B${name}\u007D`;
 
 const isInternal = (v: string) => v.startsWith('/') && !v.startsWith('//');
 
@@ -140,6 +186,7 @@ interface FoundLink {
 function collect() {
   const checked: FoundLink[] = [];
   const unresolved: FoundLink[] = [];
+  const exemptionHits: Record<string, number> = {};
 
   for (const file of walk(SRC)) {
     const source = readFileSync(file, 'utf8');
@@ -157,7 +204,11 @@ function collect() {
 
       const ident = m[4];
       // Scoped to this file: a same-named identifier elsewhere is not exempt.
-      if (`${rel}:${ident}` in DYNAMIC_LINKS) continue;
+      const key = `${rel}:${ident}`;
+      if (key in DYNAMIC_LINKS) {
+        exemptionHits[key] = (exemptionHits[key] ?? 0) + 1;
+        continue;
+      }
 
       const resolved = resolveIdentifier(source, ident, m.index);
       if (resolved === null) {
@@ -167,12 +218,12 @@ function collect() {
       }
     }
   }
-  return { checked, unresolved };
+  return { checked, unresolved, exemptionHits };
 }
 
 describe('internal links resolve to declared routes', () => {
   const routes = declaredRoutes();
-  const { checked, unresolved } = collect();
+  const { checked, unresolved, exemptionHits } = collect();
 
   it('finds the route tree and links to check', () => {
     expect(routes.length).toBeGreaterThan(0);
@@ -199,10 +250,22 @@ describe('internal links resolve to declared routes', () => {
     expect(missing).toEqual([]);
   });
 
+  it('consumes each exemption exactly as many times as declared', () => {
+    // File-scoped keys still cover every same-named occurrence in that file, so
+    // a real <a href={to}> added beside the tipping prop would inherit its
+    // exemption. Pinning the count makes that a failure. A stale entry that
+    // matches nothing fails here too.
+    const expected = Object.fromEntries(
+      Object.entries(DYNAMIC_LINKS).map(([k, v]) => [k, v.occurrences]),
+    );
+    expect(exemptionHits).toEqual(expected);
+  });
+
   it('scopes every exemption to a file, so common names stay checked', () => {
     // A bare `to` key would exempt any future `<a href={to}>` in any file.
-    for (const key of Object.keys(DYNAMIC_LINKS)) {
+    for (const [key, entry] of Object.entries(DYNAMIC_LINKS)) {
       expect(key).toMatch(/^src\/.+\.tsx:[\w$.]+$/);
+      expect(entry.reason.length).toBeGreaterThan(0);
     }
     // and each exemption must still point at a file that exists
     for (const key of Object.keys(DYNAMIC_LINKS)) {
@@ -212,15 +275,19 @@ describe('internal links resolve to declared routes', () => {
   });
 
   it('resolves only real literal assignments, never a nearby string', () => {
-    const memo = "const entryLink = useMemo(\n  // note\n  () => `/@${a}/${b}`,\n  [a],\n);";
-    expect(resolveIdentifier(memo, 'entryLink', memo.length)).toBe('/@${a}/${b}');
+    const interpolated = `/@${ph('a')}/${ph('b')}`;
+    const memo = `const entryLink = useMemo(\n  // note\n  () => \`${interpolated}\`,\n  [a],\n);`;
+    expect(resolveIdentifier(memo, 'entryLink', memo.length)).toBe(
+      interpolated,
+    );
     const plain = "const x = '/blog';";
     expect(resolveIdentifier(plain, 'x', plain.length)).toBe('/blog');
     // the mis-resolution this replaced: a call expression must not borrow a
     // later string such as a className or a word from a type annotation
     const call = 'const target = getUrl();\nconst cls = "totally-unrelated";';
     expect(resolveIdentifier(call, 'target', call.length)).toBeNull();
-    const annotated = 'function P({ to }: { to: string }) {\n  const target = getUrl();';
+    const annotated =
+      'function P({ to }: { to: string }) {\n  const target = getUrl();';
     expect(resolveIdentifier(annotated, 'target', annotated.length)).toBeNull();
   });
 
@@ -243,19 +310,44 @@ describe('internal links resolve to declared routes', () => {
     const secondLink = src.indexOf('href={target}', firstLink + 1);
 
     expect(resolveIdentifier(src, 'target', firstLink)).toBe('/missing');
-    expect(resolveIdentifier(src, 'target', secondLink)).toBe('https://external');
+    expect(resolveIdentifier(src, 'target', secondLink)).toBe(
+      'https://external',
+    );
     // nothing declared above the very top of the file
     expect(resolveIdentifier(src, 'target', 0)).toBeNull();
+  });
+
+  it('does not let an unreadable declaration inherit an earlier literal', () => {
+    const src = [
+      'function A() {',
+      "  const target = '/blog';",
+      '  return <a href={target}>a</a>;',
+      '}',
+      'function B() {',
+      '  const target = getUrl();',
+      '  return <a href={target}>b</a>;',
+      '}',
+    ].join('\n');
+
+    const first = src.indexOf('href={target}');
+    const second = src.indexOf('href={target}', first + 1);
+
+    expect(resolveIdentifier(src, 'target', first)).toBe('/blog');
+    // nearest declaration above the second link is getUrl(), which we cannot
+    // read, so it must be unclassified rather than borrowing '/blog'
+    expect(resolveIdentifier(src, 'target', second)).toBeNull();
   });
 
   it('recognises the shapes the app actually uses', () => {
     // guards the matcher itself, so a broken matcher cannot silently pass the above
     expect(matches('/blog', '/blog')).toBe(true);
-    expect(matches('/@${a}/${b}', '/$author/$permlink')).toBe(true);
-    expect(matches('/edit/$author/$permlink', '/edit/$author/$permlink')).toBe(true);
+    expect(matches(`/@${ph('a')}/${ph('b')}`, '/$author/$permlink')).toBe(true);
+    expect(matches('/edit/$author/$permlink', '/edit/$author/$permlink')).toBe(
+      true,
+    );
     expect(matches('/blog', '/$author/$permlink')).toBe(false);
     expect(isInternal('//evil.com')).toBe(false);
     // the regression this test exists for
-    expect(routes.some((r) => matches('/@${author}', r))).toBe(false);
+    expect(routes.some((r) => matches(`/@${ph('author')}`, r))).toBe(false);
   });
 });
