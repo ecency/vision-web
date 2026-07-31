@@ -354,8 +354,14 @@ const config = {
             // page. browsing-topics is unrecognized outside Chromium-with-Privacy-
             // Sandbox and warns there too. The app uses neither API, so the opt-out
             // tokens bought nothing but console noise.
+            // microphone=(self): dictation records from the publish editor, so the
+            // app's own origin needs it. An empty allowlist is not merely "ask the
+            // user" -- it is a hard block that also HIDES the Microphone entry from
+            // Chrome's site settings, so there is nothing for anyone to grant and
+            // the failure looks like a broken app rather than a policy.
+            // Deliberately (self) and not *: no embedded third party gets the mic.
             value:
-              "camera=(), microphone=(), geolocation=(self), payment=(self \"https://js.stripe.com\" \"https://*.js.stripe.com\"), usb=(), magnetometer=()"
+              "camera=(), microphone=(self), geolocation=(self), payment=(self \"https://js.stripe.com\" \"https://*.js.stripe.com\"), usb=(), magnetometer=()"
           },
           // ENFORCING CSP — only directives that cannot break JS/CSS execution
           // or block the app's existing cross-origin fetches/frames/images. We
