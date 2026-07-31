@@ -16,6 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import i18next from "i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { estimateDictationCost } from "../_hooks/estimate-dictation-cost";
+import { DictationAuth, tokenForUser } from "../_hooks/dictation-auth";
 import { runDictationSubmit } from "../_hooks/run-dictation-submit";
 import { useDictationRecorder } from "../_hooks/use-dictation-recorder";
 
@@ -39,7 +40,8 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
   // would otherwise fail the pricing query, and since recording is gated on pricing
   // the user could never start at all. Refreshing here fixes both this and the
   // transcription call below.
-  const [token, setToken] = useState<string | null>(null);
+  // Stored WITH its owner -- see tokenForUser.
+  const [auth, setAuth] = useState<DictationAuth | null>(null);
   // Tracked separately from `token`. A failed refresh leaves the pricing query
   // disabled rather than errored, so without this the dialog would sit on
   // "checking price" forever with nothing for the user to act on.
@@ -53,18 +55,22 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
     ensureValidToken(username)
       .then((t) => {
         if (cancelled) return;
-        setToken(t ?? null);
+        setAuth(t ? { username, token: t } : null);
         setTokenState(t ? "ready" : "failed");
       })
       .catch(() => {
         if (cancelled) return;
-        setToken(null);
+        setAuth(null);
         setTokenState("failed");
       });
     return () => {
       cancelled = true;
     };
   }, [show, username, tokenAttempt]);
+
+  // Never the previous account's token: an empty string disables the query, which is
+  // what we want until a token for THIS user has resolved.
+  const token = tokenForUser(auth, username);
 
   const {
     data: price,
@@ -106,7 +112,7 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
   const unitSeconds = price?.unit_seconds ?? 0;
   const unitCost = price?.unit_cost ?? 0;
   const freeRemaining = price?.free_remaining ?? 0;
-  const isPriceReady = tokenState === "ready" && !!price && !isPriceLoading && !isPriceError;
+  const isPriceReady = tokenState === "ready" && !!token && !!price && !isPriceLoading && !isPriceError;
   // Either failure blocks the same thing (recording), so they share one retry.
   const hasBlockingError = tokenState === "failed" || isPriceError;
 
