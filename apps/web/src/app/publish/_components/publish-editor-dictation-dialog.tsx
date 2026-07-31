@@ -16,6 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import i18next from "i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { estimateDictationCost } from "../_hooks/estimate-dictation-cost";
+import { runDictationSubmit } from "../_hooks/run-dictation-submit";
 import { useDictationRecorder } from "../_hooks/use-dictation-recorder";
 
 interface Props {
@@ -39,21 +40,37 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
   // the user could never start at all. Refreshing here fixes both this and the
   // transcription call below.
   const [token, setToken] = useState<string | null>(null);
+  // Tracked separately from `token`. A failed refresh leaves the pricing query
+  // disabled rather than errored, so without this the dialog would sit on
+  // "checking price" forever with nothing for the user to act on.
+  const [tokenState, setTokenState] = useState<"pending" | "ready" | "failed">("pending");
+  const [tokenAttempt, setTokenAttempt] = useState(0);
+
   useEffect(() => {
     if (!show || !username) return;
     let cancelled = false;
+    setTokenState("pending");
     ensureValidToken(username)
-      .then((t) => !cancelled && setToken(t ?? null))
-      .catch(() => !cancelled && setToken(null));
+      .then((t) => {
+        if (cancelled) return;
+        setToken(t ?? null);
+        setTokenState(t ? "ready" : "failed");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setToken(null);
+        setTokenState("failed");
+      });
     return () => {
       cancelled = true;
     };
-  }, [show, username]);
+  }, [show, username, tokenAttempt]);
 
   const {
     data: price,
     isLoading: isPriceLoading,
-    isError: isPriceError
+    isError: isPriceError,
+    refetch: refetchPrice
   } = useQuery(getAiTranscribePriceQueryOptions(username, token ?? ""));
   const { data: points } = useQuery(
     withFeatureFlag(
@@ -89,7 +106,9 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
   const unitSeconds = price?.unit_seconds ?? 0;
   const unitCost = price?.unit_cost ?? 0;
   const freeRemaining = price?.free_remaining ?? 0;
-  const isPriceReady = !!price && !isPriceLoading && !isPriceError;
+  const isPriceReady = tokenState === "ready" && !!price && !isPriceLoading && !isPriceError;
+  // Either failure blocks the same thing (recording), so they share one retry.
+  const hasBlockingError = tokenState === "failed" || isPriceError;
 
   const estimatedCost = useMemo(
     () =>
@@ -126,32 +145,29 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
 
     setIsSubmitting(true);
     try {
-      // Resolve a current token rather than the one captured when this dialog
-      // opened: a recording can run for minutes, and a stale token turns a paid
-      // action into an opaque failure.
-      const freshToken = await ensureValidToken(username);
+      // The closure-check ordering lives in runDictationSubmit so it is exercised by
+      // tests rather than restated by them. A token is resolved per submit because a
+      // recording can run for minutes and the one from open can expire in that time.
+      const outcome = await runDictationSubmit({
+        ensureToken: () => ensureValidToken(username),
+        transcribe: ({ code }) =>
+          transcribe({
+            audio: result.blob,
+            durationMs: result.durationMs,
+            fileName: "dictation.webm",
+            idempotency_key: idempotencyKeyRef.current!,
+            code
+          }),
+        isClosed: () => closedRef.current
+      });
 
-      // Re-check AFTER the await. Dismissal is blocked for the duration of this
-      // function, but an unmount is not, and sending the request now would charge
-      // for a transcript with nowhere left to put it.
-      if (closedRef.current) return;
-
-      if (!freshToken) {
+      if (outcome.status === "abandoned") return;
+      if (outcome.status === "no-token") {
         error(i18next.t("publish.dictation-failed"));
         return;
       }
 
-      const response = await transcribe({
-        audio: result.blob,
-        durationMs: result.durationMs,
-        fileName: "dictation.webm",
-        idempotency_key: idempotencyKeyRef.current,
-        code: freshToken
-      });
-
-      // Dismissal is blocked while this is in flight, but an unmount (navigation)
-      // is not, so the transcript is only applied if the dialog is still open.
-      if (closedRef.current) return;
+      const response = outcome.response;
 
       if (!response.text.trim()) {
         // A silent or unintelligible clip still costs Points, so say so plainly
@@ -222,8 +238,24 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
           <div className="text-sm text-red mb-4">{i18next.t("publish.dictation-denied")}</div>
         )}
 
-        {isPriceError && (
-          <div className="text-sm text-red mb-4">{i18next.t("publish.dictation-price-error")}</div>
+        {hasBlockingError && (
+          <div className="flex flex-col items-start gap-2 mb-4">
+            <div className="text-sm text-red">
+              {tokenState === "failed"
+                ? i18next.t("publish.dictation-session-error")
+                : i18next.t("publish.dictation-price-error")}
+            </div>
+            <Button
+              size="xs"
+              appearance="gray"
+              onClick={() => {
+                setTokenAttempt((n) => n + 1);
+                refetchPrice();
+              }}
+            >
+              {i18next.t("g.try-again")}
+            </Button>
+          </div>
         )}
 
         <div className="flex flex-col items-center gap-3 py-4">
@@ -237,8 +269,10 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
           )}
 
           <div className="text-sm opacity-50">
-            {!isPriceReady
-              ? i18next.t("publish.dictation-price-loading")
+            {hasBlockingError
+              ? ""
+              : !isPriceReady
+                ? i18next.t("publish.dictation-price-loading")
               : estimatedCost > 0
                 ? i18next.t("publish.dictation-cost", { n: estimatedCost })
                 : i18next.t("publish.dictation-free")}

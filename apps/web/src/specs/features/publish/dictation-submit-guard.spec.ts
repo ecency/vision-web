@@ -1,100 +1,87 @@
 import { describe, expect, test, vi } from "vitest";
+import { runDictationSubmit } from "@/app/publish/_hooks/run-dictation-submit";
 
 /**
- * The dictation submit is a two-step operation: refresh the token, then send the
- * paid request. Only the second step is covered by the mutation's own pending flag,
- * which left a window where the dialog was closable but the charge still went out.
+ * Exercises the real helper the dialog calls. An earlier version of this spec
+ * restated the ordering locally, which meant the production path could regress
+ * while the test stayed green -- the ordering IS the behaviour here, so a copy
+ * tests nothing.
  *
- * This models that sequence directly rather than mounting the dialog, because the
- * property under test is the ordering of the closure check against the awaits, and
- * a rendered test would not distinguish "checked before the request" from "checked
- * after it".
+ * A charge lands the moment `transcribe` is called, so the closure check has to sit
+ * between the token refresh and the request, not after it.
  */
-
-interface SubmitDeps {
-  ensureValidToken: () => Promise<string | null>;
-  transcribe: (args: { code: string }) => Promise<{ text: string }>;
-  onInsert: (text: string) => void;
-  isClosed: () => boolean;
-}
-
-/** Mirrors the guard ordering in publish-editor-dictation-dialog's submit(). */
-async function submit({ ensureValidToken, transcribe, onInsert, isClosed }: SubmitDeps) {
-  const token = await ensureValidToken();
-  if (isClosed()) return;
-  if (!token) return;
-
-  const response = await transcribe({ code: token });
-  if (isClosed()) return;
-
-  onInsert(response.text);
-}
-
-describe("dictation submit guards", () => {
-  test("closing during the token refresh does not send the paid request", async () => {
+describe("runDictationSubmit", () => {
+  test("closing during the token refresh sends nothing", async () => {
     let closed = false;
-    const transcribe = vi.fn(async () => ({ text: "hello" }));
-    const onInsert = vi.fn();
+    const transcribe = vi.fn(async () => ({ text: "hello" }) as any);
 
-    await submit({
-      // The user closes the dialog while the refresh is still in flight.
-      ensureValidToken: async () => {
+    const outcome = await runDictationSubmit({
+      // Stands in for the user dismissing while the refresh is still in flight.
+      ensureToken: async () => {
         closed = true;
         return "fresh-token";
       },
       transcribe,
-      onInsert,
       isClosed: () => closed
     });
 
-    // Nothing was charged: the check sits before transcribe(), not after it.
+    expect(outcome).toEqual({ status: "abandoned" });
+    // The charge never happened: the check precedes the request.
     expect(transcribe).not.toHaveBeenCalled();
-    expect(onInsert).not.toHaveBeenCalled();
   });
 
-  test("closing during transcription does not touch the draft", async () => {
+  test("closing during transcription discards the result", async () => {
     let closed = false;
-    const onInsert = vi.fn();
 
-    await submit({
-      ensureValidToken: async () => "fresh-token",
+    const outcome = await runDictationSubmit({
+      ensureToken: async () => "fresh-token",
+      // Stands in for unmount by navigation, which dismissal-blocking cannot stop.
       transcribe: async () => {
-        // Stands in for unmount by navigation, which dismissal-blocking cannot stop.
         closed = true;
-        return { text: "hello" };
+        return { text: "hello" } as any;
       },
-      onInsert,
       isClosed: () => closed
     });
 
-    expect(onInsert).not.toHaveBeenCalled();
+    expect(outcome).toEqual({ status: "abandoned" });
   });
 
-  test("the happy path still inserts, using the refreshed token", async () => {
-    const transcribe = vi.fn(async () => ({ text: "hello world" }));
-    const onInsert = vi.fn();
+  test("a failed refresh stops before charging", async () => {
+    const transcribe = vi.fn(async () => ({ text: "hello" }) as any);
 
-    await submit({
-      ensureValidToken: async () => "fresh-token",
+    const outcome = await runDictationSubmit({
+      ensureToken: async () => null,
       transcribe,
-      onInsert,
+      isClosed: () => false
+    });
+
+    expect(outcome).toEqual({ status: "no-token" });
+    expect(transcribe).not.toHaveBeenCalled();
+  });
+
+  test("the happy path returns the transcript and uses the refreshed token", async () => {
+    const transcribe = vi.fn(async () => ({ text: "hello world" }) as any);
+
+    const outcome = await runDictationSubmit({
+      ensureToken: async () => "fresh-token",
+      transcribe,
       isClosed: () => false
     });
 
     expect(transcribe).toHaveBeenCalledWith({ code: "fresh-token" });
-    expect(onInsert).toHaveBeenCalledWith("hello world");
+    expect(outcome).toEqual({ status: "transcribed", response: { text: "hello world" } });
   });
 
-  test("a failed refresh stops before charging", async () => {
-    const transcribe = vi.fn(async () => ({ text: "hello" }));
-
-    await submit({
-      ensureValidToken: async () => null,
-      transcribe,
-      onInsert: vi.fn(),
-      isClosed: () => false
-    });
-
-    expect(transcribe).not.toHaveBeenCalled();
+  test("errors from the request propagate for the caller to map", async () => {
+    // Status-to-message mapping is the dialog's job, so this must not swallow.
+    await expect(
+      runDictationSubmit({
+        ensureToken: async () => "fresh-token",
+        transcribe: async () => {
+          throw Object.assign(new Error("nope"), { status: 402 });
+        },
+        isClosed: () => false
+      })
+    ).rejects.toMatchObject({ status: 402 });
   });
 });
