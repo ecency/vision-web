@@ -605,6 +605,7 @@ export const QueryKeys = {
   ai: {
     prices: () => ["ai", "prices"] as const,
     assistPrices: (username?: string) => ["ai", "assist-prices", username] as const,
+    transcribePrice: (username?: string) => ["ai", "transcribe-price", username] as const,
     _prefix: ["ai"],
   },
 } as const;

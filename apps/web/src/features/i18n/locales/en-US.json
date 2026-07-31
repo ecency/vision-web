@@ -1617,6 +1617,8 @@
     "delegation-list-desc": "Delegation reward",
     "referral-list-desc": "Referral reward",
     "community-list-desc": "Community reward",
+    "burned-list-desc": "Spent on AI",
+    "burn-refund-list-desc": "Refund",
     "transfer": "Gift",
     "claim-ok": "Points claimed",
     "promote": "Promote",
