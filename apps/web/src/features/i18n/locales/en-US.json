@@ -3592,7 +3592,8 @@
       "video": "Video",
       "poll": "Poll",
       "align-hint": "Only paragraph and images can be aligned",
-      "geotag": "Geo tag"
+      "geotag": "Geo tag",
+      "dictation": "Dictate"
     },
     "table-toolbar": {
       "add-column-before": "Add column before",
@@ -3638,7 +3639,25 @@
     "community-beneficiary": {
       "reward": "Community reward",
       "hint": "This community asks ≥ 25% of post rewards"
-    }
+    },
+    "dictation": "Dictate",
+    "dictation-start": "Start recording",
+    "dictation-stop": "Stop",
+    "dictation-rerecord": "Record again",
+    "dictation-insert": "Insert text",
+    "dictation-recording": "Recording",
+    "dictation-cost": "{{n}} Points",
+    "dictation-free": "Free",
+    "dictation-max": "Up to {{n}} minutes",
+    "dictation-denied": "Ecency needs microphone access to dictate. Allow it in your browser settings and try again.",
+    "dictation-empty": "No speech was detected in that recording.",
+    "dictation-insufficient-points": "Not enough Points to transcribe that recording.",
+    "dictation-rate-limited": "Too many recordings for now. Please try again shortly.",
+    "dictation-too-long": "That recording is too long to transcribe.",
+    "dictation-failed": "Could not transcribe that recording. Please try again.",
+    "dictation-price-loading": "Checking price",
+    "dictation-price-error": "Could not load transcription pricing. Please try again.",
+    "dictation-session-error": "Your session could not be refreshed. Please try again or sign in once more."
   },
   "ecency-images": {
     "upload-image": "Upload image",

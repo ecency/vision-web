@@ -52,6 +52,7 @@ import {
   UilListUiAlt,
   UilListUl,
   UilMap,
+  UilMicrophone,
   UilMapPin,
   UilMapPinAlt,
   UilPalette,
@@ -84,6 +85,14 @@ import { AiImageIcon } from "@/features/shared/ai-image-icon";
 import { UilEditAlt } from "@tooni/iconscout-unicons-react";
 import { parseAllExtensionsToDoc } from "@/features/tiptap-editor";
 import { simpleMarkdownToHTML } from "@ecency/render-helper";
+
+const PublishEditorDictationDialog = dynamic(
+  () =>
+    import("./publish-editor-dictation-dialog").then((m) => ({
+      default: m.PublishEditorDictationDialog
+    })),
+  { ssr: false }
+);
 
 const PublishEditorVideoByLinkDialog = dynamic(
   () => import("./publish-editor-video-by-link-dialog").then((m) => ({
@@ -222,6 +231,7 @@ export function PublishEditorToolbar({ editor, allowToUploadVideo = true }: Prop
   const [pickedImages, setPickedImages] = useState<File[]>([]);
   const [showVideoUpload, setShowVideoUpload] = useState(false);
   const [showVideoLink, setShowVideoLink] = useState(false);
+  const [showDictation, setShowDictation] = useState(false);
   const [showGeoTag, setShowGeoTag] = useState(false);
   const [showTranslate, setShowTranslate] = useState(false);
   const [showAiGenerator, setShowAiGenerator] = useState(false);
@@ -556,6 +566,30 @@ export function PublishEditorToolbar({ editor, allowToUploadVideo = true }: Prop
             />
           )}
         </div>
+
+        <StyledTooltip content={i18next.t("publish.action-bar.dictation")}>
+          {/* Gated like every other paid AI control here: without a session the
+              pricing and Points queries are disabled, so a logged-out user could
+              record and then find insertion permanently unavailable. */}
+          <LoginRequired>
+            <Button
+              appearance="gray-link"
+              size="sm"
+              icon={<UilMicrophone />}
+              onClick={() => setShowDictation(true)}
+              aria-label={i18next.t("publish.action-bar.dictation")}
+              aria-haspopup="dialog"
+              aria-expanded={showDictation}
+            />
+          </LoginRequired>
+        </StyledTooltip>
+        {showDictation && (
+          <PublishEditorDictationDialog
+            show={showDictation}
+            setShow={setShowDictation}
+            onInsert={(text) => editor?.chain().focus().insertContent(text).run()}
+          />
+        )}
 
         <StyledTooltip
             content={i18next.t("publish.action-bar.color", { defaultValue: "Text color" })}

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.70
+
+### Patch Changes
+
+- feat(publish): dictate posts from the editor toolbar (#1286)
+
 ## 2.3.69
 
 ### Patch Changes
