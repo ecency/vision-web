@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.69
+
+### Patch Changes
+
+- feat(sdk): transcription hooks and a label for burned points (#1285)
+
 ## 2.3.68
 
 ### Patch Changes

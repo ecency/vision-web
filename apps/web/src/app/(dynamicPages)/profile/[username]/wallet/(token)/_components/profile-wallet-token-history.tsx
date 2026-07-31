@@ -19,12 +19,20 @@ export function ProfileWalletTokenHistory({ data, action }: Props) {
         const { created, type, results, from, to, id } = transaction;
         const labelFactory = TRANSACTIONS_LABELS[type] ?? (() => "");
         const numericType = Number(type);
+        // A refunded burn arrives as BURNED with a positive amount, so the sign is what
+        // separates "spent" from "refunded" -- there is no counterparty to read.
+        const isBurnRefund =
+          numericType === PointTransactionType.BURNED &&
+          results.some(({ amount }) => Number(amount) > 0);
+
         const transferLabel =
           numericType === PointTransactionType.TRANSFER_SENT && to
             ? labelFactory(`@${to}`)
             : numericType === PointTransactionType.TRANSFER_INCOMING && from
               ? labelFactory(`@${from}`)
-              : labelFactory();
+              : numericType === PointTransactionType.BURNED
+                ? labelFactory(isBurnRefund ? "refund" : "spend")
+                : labelFactory();
 
         const fromUser = from ? (
           <ProfileLink username={from} className="inline-block max-w-full">
