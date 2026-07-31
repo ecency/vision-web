@@ -35,13 +35,16 @@ export function useAiTranscribe(username: string | undefined, accessToken: strin
         throw new Error("[SDK][AI][Transcribe] – username wasn't provided");
       }
 
-      if (!accessToken) {
+      // Validate the token actually being sent, not just the bound one. A caller
+      // that resolves a fresh token per call (because the bound one can expire
+      // during a long recording) legitimately has nothing at hook construction.
+      const code = params.code ?? accessToken;
+      if (!code) {
         throw new Error("[SDK][AI][Transcribe] – access token wasn't found");
       }
 
       const form = new FormData();
-      // params.code wins: it is the freshly-resolved token when the caller has one.
-      form.append("code", params.code ?? accessToken);
+      form.append("code", code);
       // `us` is resolved from the code server-side and is deliberately not sent:
       // upstream burns from whoever it names.
       form.append("duration_ms", String(Math.round(params.durationMs)));

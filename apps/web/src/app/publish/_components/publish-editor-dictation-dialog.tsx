@@ -5,7 +5,7 @@ import { withFeatureFlag } from "@/core/react-query";
 import { error } from "@/features/shared";
 import { PointsTopupCta } from "@/features/shared/points-topup-cta";
 import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from "@/features/ui";
-import { ensureValidToken, getAccessToken } from "@/utils";
+import { ensureValidToken } from "@/utils";
 import {
   getAiTranscribePriceQueryOptions,
   getPointsQueryOptions,
@@ -33,13 +33,28 @@ function formatClock(totalSeconds: number) {
 export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props) {
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username;
-  const accessToken = username ? getAccessToken(username) : "";
+
+  // Resolved rather than read straight from storage: an already-expired session
+  // would otherwise fail the pricing query, and since recording is gated on pricing
+  // the user could never start at all. Refreshing here fixes both this and the
+  // transcription call below.
+  const [token, setToken] = useState<string | null>(null);
+  useEffect(() => {
+    if (!show || !username) return;
+    let cancelled = false;
+    ensureValidToken(username)
+      .then((t) => !cancelled && setToken(t ?? null))
+      .catch(() => !cancelled && setToken(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [show, username]);
 
   const {
     data: price,
     isLoading: isPriceLoading,
     isError: isPriceError
-  } = useQuery(getAiTranscribePriceQueryOptions(username, accessToken ?? ""));
+  } = useQuery(getAiTranscribePriceQueryOptions(username, token ?? ""));
   const { data: points } = useQuery(
     withFeatureFlag(
       ({ visionFeatures }) => visionFeatures.points.enabled,
@@ -47,10 +62,12 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
     )
   );
 
-  const { mutateAsync: transcribe, isPending: isTranscribing } = useAiTranscribe(
-    username,
-    accessToken
-  );
+  const { mutateAsync: transcribe } = useAiTranscribe(username, token ?? "");
+
+  // Covers the WHOLE submit, including the token refresh that precedes the request.
+  // isPending from the mutation only turns true once transcribe() is called, which
+  // left a window where the dialog was closable but the paid call still went out.
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const maxSeconds = price?.max_seconds ?? 300;
   const { state, seconds, result, start, stop, reset } = useDictationRecorder({ maxSeconds });
@@ -101,18 +118,25 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
   }, [reset, setShow]);
 
   const submit = useCallback(async () => {
-    if (!result || !username) return;
+    if (!result || !username || isSubmitting) return;
 
     if (!idempotencyKeyRef.current) {
       idempotencyKeyRef.current = crypto.randomUUID();
     }
 
+    setIsSubmitting(true);
     try {
       // Resolve a current token rather than the one captured when this dialog
-      // mounted: a recording can run for minutes, and a stale token turns a paid
+      // opened: a recording can run for minutes, and a stale token turns a paid
       // action into an opaque failure.
-      const token = await ensureValidToken(username);
-      if (!token) {
+      const freshToken = await ensureValidToken(username);
+
+      // Re-check AFTER the await. Dismissal is blocked for the duration of this
+      // function, but an unmount is not, and sending the request now would charge
+      // for a transcript with nowhere left to put it.
+      if (closedRef.current) return;
+
+      if (!freshToken) {
         error(i18next.t("publish.dictation-failed"));
         return;
       }
@@ -122,7 +146,7 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
         durationMs: result.durationMs,
         fileName: "dictation.webm",
         idempotency_key: idempotencyKeyRef.current,
-        code: token
+        code: freshToken
       });
 
       // Dismissal is blocked while this is in flight, but an unmount (navigation)
@@ -153,8 +177,10 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
         error(i18next.t("publish.dictation-failed"));
       }
       // The key is deliberately kept so a retry replays rather than re-charges.
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [result, username, transcribe, onInsert, close, estimatedCost]);
+  }, [result, username, isSubmitting, transcribe, onInsert, close, estimatedCost]);
 
   // A fresh recording is a different operation, so it gets a fresh key.
   useEffect(() => {
@@ -169,19 +195,28 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
     }
   }, [show]);
 
+  // Unmount (navigating away) never runs close(), so without this an in-flight
+  // response could still edit the draft of a page the user has left.
+  useEffect(
+    () => () => {
+      closedRef.current = true;
+    },
+    []
+  );
+
   return (
     <Modal
       show={show}
       onHide={() => {
         // Points are charged the moment the request lands, so dismissing mid-flight
         // would pay for a transcript and throw it away.
-        if (!isTranscribing) {
+        if (!isSubmitting) {
           close();
         }
       }}
       centered={true}
     >
-      <ModalHeader closeButton={!isTranscribing}>{i18next.t("publish.dictation")}</ModalHeader>
+      <ModalHeader closeButton={!isSubmitting}>{i18next.t("publish.dictation")}</ModalHeader>
       <ModalBody>
         {state === "denied" && (
           <div className="text-sm text-red mb-4">{i18next.t("publish.dictation-denied")}</div>
@@ -230,7 +265,7 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
             icon={<UilMicrophone />}
             size="sm"
             appearance="gray"
-            disabled={state === "requesting" || isTranscribing || !isPriceReady}
+            disabled={state === "requesting" || isSubmitting || !isPriceReady}
             onClick={start}
           >
             {result
@@ -241,8 +276,8 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
 
         <Button
           size="sm"
-          disabled={!result || isTranscribing || cannotAfford || !isPriceReady}
-          isLoading={isTranscribing}
+          disabled={!result || isSubmitting || cannotAfford || !isPriceReady}
+          isLoading={isSubmitting}
           onClick={submit}
         >
           {i18next.t("publish.dictation-insert")}
