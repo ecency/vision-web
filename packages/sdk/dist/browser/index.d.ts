@@ -63,6 +63,7 @@ interface AiTranscribeParams {
     durationMs: number;
     fileName?: string;
     idempotency_key?: string;
+    code?: string;
 }
 interface AiTranscribeResponse {
     text: string;
