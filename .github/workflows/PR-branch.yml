@@ -2,8 +2,19 @@ name: PR build
 on:
   push:
     branches:
+      # Every prefix in real use, not just the two most common. This list is an
+      # opt-IN, so a branch named anything else silently gets no build at all --
+      # which is how a change to next.config.js (a build-time file that neither
+      # tsc nor eslint evaluates) reached review with nothing having compiled it.
+      # Add new prefixes here, or they inherit that same silent gap.
       - 'bugfix/*'
       - 'feature/*'
+      - 'fix/*'
+      - 'chore/*'
+      - 'refactor/*'
+      - 'docs/*'
+      # Bot-authored PRs were previously merged without ever being built.
+      - 'seer/*'
 # Build/test only — no writes back to GitHub.
 # Superseded runs are cancelled: only the newest commit on the branch is worth building.
 concurrency:
