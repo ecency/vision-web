@@ -17,6 +17,7 @@ import i18next from "i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { estimateDictationCost } from "../_hooks/estimate-dictation-cost";
 import { DictationAuth, tokenForUser } from "../_hooks/dictation-auth";
+import { nextRetryAction } from "../_hooks/dictation-retry";
 import { runDictationSubmit } from "../_hooks/run-dictation-submit";
 import { useDictationRecorder } from "../_hooks/use-dictation-recorder";
 
@@ -255,8 +256,14 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
               size="xs"
               appearance="gray"
               onClick={() => {
-                setTokenAttempt((n) => n + 1);
-                refetchPrice();
+                // Never both: retrying pricing without a token fires an
+                // unauthenticated request whose error then outlives the fix.
+                const action = nextRetryAction(tokenState, isPriceError);
+                if (action === "resolve-token") {
+                  setTokenAttempt((n) => n + 1);
+                } else if (action === "refetch-price") {
+                  refetchPrice();
+                }
               }}
             >
               {i18next.t("g.try-again")}
