@@ -97,8 +97,29 @@ const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
 
 const LINK_ATTRS = ['href', 'to'] as const;
 
+/** How far to follow nested object spreads before giving up and reporting. */
+const MAX_SPREAD_DEPTH = 4;
+
 /** Stands in for an interpolated segment, so `/@${a}` compares as `/@*`. */
 const HOLE = '*';
+
+/**
+ * Interpolations known to be a single path segment.
+ *
+ * A HOLE stands for exactly one segment, but an arbitrary string is not
+ * slash-free: `/blog/${tail}` with tail = 'x/y/z' is a four-segment path at
+ * runtime while the shape says two. So a template with an unreadable
+ * interpolation is only shaped when every such interpolation is listed here;
+ * otherwise it stays unresolved and has to be classified.
+ *
+ * These are Hive usernames and permlinks, which cannot contain a slash.
+ */
+const SEGMENT_SAFE = new Set([
+  'entry.author',
+  'entry.permlink',
+  'entryData.author',
+  'entryData.permlink',
+]);
 
 interface FoundLink {
   where: string;
@@ -205,8 +226,16 @@ function pathShape(
     if (!node.head.text.startsWith('/')) return undefined;
     let shape = node.head.text;
     for (const span of node.templateSpans) {
-      shape +=
-        (literalOf(checker, span.expression) ?? HOLE) + span.literal.text;
+      const known = literalOf(checker, span.expression);
+      if (known !== undefined) {
+        shape += known + span.literal.text;
+        continue;
+      }
+      // an unreadable interpolation only counts as one segment if we have said
+      // so; otherwise the segment count is a guess and the shape is worthless
+      const text = span.expression.getText().replace(/\s+/g, ' ');
+      if (!SEGMENT_SAFE.has(text)) return undefined;
+      shape += HOLE + span.literal.text;
     }
     return shape;
   }
@@ -249,10 +278,16 @@ function collectFrom(
     }
   };
 
+  // The attribute matters as much as the tag: a router component navigates
+  // through `to`, a DOM element through `href`. Ignoring the attribute made
+  // every prop on a <Link> look like a destination.
   const navigates = (tag: string, attr: string) =>
     /^[a-z]/.test(tag)
       ? NAVIGABLE_INTRINSICS.has(tag) && attr === 'href'
-      : NAVIGATION_COMPONENTS.has(tag);
+      : NAVIGATION_COMPONENTS.has(tag) && attr === 'to';
+
+  const canNavigate = (tag: string) =>
+    (LINK_ATTRS as readonly string[]).some((attr) => navigates(tag, attr));
 
   /**
    * A spread may carry a destination. Object literals are read property by
@@ -266,7 +301,20 @@ function collectFrom(
     tag: string,
     depth = 0,
   ) => {
-    if (depth > 4) return;
+    // Nothing on this element can be a destination, so no property of a spread
+    // onto it can be either. Checked before any reporting, or a computed key on
+    // a <div> would be reported as an unclassified link.
+    if (!canNavigate(tag)) return;
+
+    // Bounded recursion must still leave a trace: silently returning here would
+    // let a deeply nested spread hide a destination entirely.
+    if (depth > MAX_SPREAD_DEPTH) {
+      into.unresolved.push({
+        where,
+        value: `{...${label(expr)}} (nested beyond ${MAX_SPREAD_DEPTH})`,
+      });
+      return;
+    }
 
     if (ts.isObjectLiteralExpression(expr)) {
       for (const prop of expr.properties) {
@@ -290,7 +338,13 @@ function collectFrom(
             continue;
           }
         }
-        if (!name || !navigates(tag, name)) continue;
+        if (
+          !name ||
+          !(LINK_ATTRS as readonly string[]).includes(name) ||
+          !navigates(tag, name)
+        ) {
+          continue;
+        }
 
         if (ts.isPropertyAssignment(prop)) {
           record(where, prop.initializer);
@@ -596,6 +650,58 @@ describe('internal links resolve to declared routes', () => {
         );
         expect(unknown(b)).toEqual(['{...props}']);
       }
+    });
+
+    it('only treats the right attribute on the right element as navigation', () => {
+      // a router component navigates through `to`, not through every prop
+      const search = classify(
+        [
+          'declare const Link: (p: { to: string; search?: object }) => null;',
+          'declare function buildSearch(): object;',
+          'export const A = () => <Link to="/blog" {...{ search: buildSearch() }} />;',
+        ].join('\n'),
+      );
+      expect(unknown(search)).toEqual([]);
+      expect(values(search)).toEqual(['/blog']);
+
+      // and an opaque spread onto it reports once, not once per link attribute
+      const once = classify(
+        [
+          'declare const Link: (p: { to: string }) => null;',
+          'export const A = (props: { to: string }) => <Link {...props} />;',
+        ].join('\n'),
+      );
+      expect(unknown(once)).toEqual(['{...props}']);
+    });
+
+    it('does not report spreads onto elements that cannot navigate', () => {
+      const computedOnDiv = classify(
+        [
+          'declare const k: string;',
+          "export const A = () => <div {...{ [k]: '/x' }}>1</div>;",
+        ].join('\n'),
+      );
+      expect(unknown(computedOnDiv)).toEqual([]);
+      expect(values(computedOnDiv)).toEqual([]);
+    });
+
+    it('will not guess how many segments an unknown interpolation spans', () => {
+      // tail could be 'x/y/z', so /blog/${tail} is not a two-segment path
+      const spanning = classify(
+        `export const A = (p: { tail: string }) => <a href={\`/blog/\${p.tail}\`}>1</a>;`,
+      );
+      expect(unknown(spanning)).toHaveLength(1);
+      expect(values(spanning)).toEqual([]);
+    });
+
+    it('records a destination hidden beyond the nesting limit', () => {
+      const deep = classify(
+        [
+          "const href = '/dead';",
+          'export const A = () => <a {...{...{...{...{...{...{ href }}}}}}}>1</a>;',
+        ].join('\n'),
+      );
+      expect(unknown(deep).length + values(deep).length).toBeGreaterThan(0);
     });
 
     it('reads computed destination keys', () => {
