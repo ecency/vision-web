@@ -274,11 +274,22 @@ function collectFrom(
           fromSpread(where, prop.expression, tag, depth + 1);
           continue;
         }
-        const name =
+        let name: string | undefined;
+        if (
           prop.name &&
           (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name))
-            ? prop.name.text
-            : undefined;
+        ) {
+          name = prop.name.text;
+        } else if (prop.name && ts.isComputedPropertyName(prop.name)) {
+          // `{ ['href']: '/dead' }` names a destination just as plainly as
+          // `{ href: ... }`. A key we cannot read might be one, so the whole
+          // spread has to be classified rather than skipped.
+          name = literalOf(checker, prop.name.expression);
+          if (name === undefined) {
+            into.unresolved.push({ where, value: `{...{ [computed] }}` });
+            continue;
+          }
+        }
         if (!name || !navigates(tag, name)) continue;
 
         if (ts.isPropertyAssignment(prop)) {
@@ -297,13 +308,21 @@ function collectFrom(
       return;
     }
 
+    // A declared type cannot prove the absence of a destination at runtime.
+    // `any` and index signatures obviously carry anything, and a plain object
+    // type does too: `{ href: '/dead', className: 'x' }` assigned to
+    // `{ className: string }` still has href when it is spread. So only a
+    // literal we can read is accepted; every other opaque spread onto a
+    // navigable element is classified.
     const type = checker.getTypeAtLocation(expr);
     for (const attr of LINK_ATTRS) {
       if (!navigates(tag, attr)) continue;
       const prop = type.getProperty(attr);
-      if (!prop) continue; // this spread cannot carry a destination
-      const propType = checker.getTypeOfSymbolAtLocation(prop, expr);
-      if (propType.isStringLiteral()) {
+      const propType = prop
+        ? checker.getTypeOfSymbolAtLocation(prop, expr)
+        : undefined;
+
+      if (propType?.isStringLiteral()) {
         const value = propType.value;
         if (isInternal(value)) {
           into.checked.push({ where, value, via: `{...${label(expr)}}` });
@@ -399,33 +418,65 @@ function sweepRepository() {
   return { ...buckets, routes };
 }
 
-/** Runs the real classifier over a snippet, in memory. */
-function classify(code: string): Buckets {
-  const name = join(SRC, '__probe__.tsx');
-  const options = compilerOptions();
-  const host = ts.createCompilerHost(options, true);
+/**
+ * Snippets are self-contained, so they compile against a minimal environment
+ * rather than the app's full tsconfig: about 90 files instead of about 1280,
+ * roughly halving this file's runtime. The host and the previous program are
+ * reused so only the changed snippet is re-parsed. Resolution is identical and
+ * `collectFrom` is the same code the repository sweep runs.
+ */
+const SNIPPET_OPTIONS: ts.CompilerOptions = {
+  jsx: ts.JsxEmit.ReactJSX,
+  target: ts.ScriptTarget.Latest,
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+  strict: true,
+  noEmit: true,
+  skipLibCheck: true,
+  types: [],
+};
+
+const SNIPPET_FILE = join(SRC, '__probe__.tsx');
+let snippetCode = '';
+let snippetProgram: ts.Program | undefined;
+
+const snippetHost = (() => {
+  const host = ts.createCompilerHost(SNIPPET_OPTIONS, true);
   const readFile = host.readFile.bind(host);
   const fileExists = host.fileExists.bind(host);
   const getSourceFile = host.getSourceFile.bind(host);
 
-  host.fileExists = (f) => (f === name ? true : fileExists(f));
-  host.readFile = (f) => (f === name ? code : readFile(f));
+  host.fileExists = (f) => (f === SNIPPET_FILE ? true : fileExists(f));
+  host.readFile = (f) => (f === SNIPPET_FILE ? snippetCode : readFile(f));
   host.getSourceFile = (f, ...rest) =>
-    f === name
+    f === SNIPPET_FILE
       ? ts.createSourceFile(
-          name,
-          code,
+          SNIPPET_FILE,
+          snippetCode,
           ts.ScriptTarget.Latest,
           true,
           ts.ScriptKind.TSX,
         )
       : getSourceFile(f, ...rest);
+  return host;
+})();
 
-  const program = ts.createProgram([name], options, host);
-  const sf = program.getSourceFile(name);
+/** Runs the real classifier over a snippet, in memory. */
+function classify(code: string): Buckets {
+  snippetCode = code;
+  const program = ts.createProgram(
+    [SNIPPET_FILE],
+    SNIPPET_OPTIONS,
+    snippetHost,
+    snippetProgram,
+  );
+  snippetProgram = program;
+
+  const sf = program.getSourceFile(SNIPPET_FILE);
   const buckets = emptyBuckets();
-  if (sf)
+  if (sf) {
     collectFrom(sf, program.getTypeChecker(), 'src/__probe__.tsx', buckets);
+  }
   return buckets;
 }
 
@@ -522,18 +573,45 @@ describe('internal links resolve to declared routes', () => {
       expect(unknown(opaque)).toEqual(['{...props}']);
     });
 
-    it('ignores spreads that cannot carry a destination', () => {
+    it('ignores spreads onto elements that cannot navigate', () => {
       // common prop forwarding must not be reported
       const div = classify(
         'export const A = (props: { href: string }) => <div {...props}>1</div>;',
       );
       expect(unknown(div)).toEqual([]);
       expect(values(div)).toEqual([]);
+    });
 
-      const noHref = classify(
-        'export const A = (props: { className: string }) => <a {...props}>1</a>;',
+    it('does not let a declared type prove a spread carries no destination', () => {
+      // A type without href does not mean the value has none: an object with
+      // href assigned to { className: string } keeps it when spread. Likewise
+      // `any` and index signatures carry anything. All must be classified.
+      for (const props of [
+        '{ className: string }',
+        'any',
+        'Record<string, string>',
+      ]) {
+        const b = classify(
+          `export const A = (props: ${props}) => <a {...props}>1</a>;`,
+        );
+        expect(unknown(b)).toEqual(['{...props}']);
+      }
+    });
+
+    it('reads computed destination keys', () => {
+      const known = classify(
+        "export const A = () => <a {...{ ['href']: '/dead' }}>1</a>;",
       );
-      expect(unknown(noHref)).toEqual([]);
+      expect(values(known)).toEqual(['/dead']);
+
+      // a key we cannot read might be href, so the spread is classified
+      const unknownKey = classify(
+        [
+          'declare const k: string;',
+          "export const A = () => <a {...{ [k]: '/dead' }}>1</a>;",
+        ].join('\n'),
+      );
+      expect(unknown(unknownKey)).toEqual(['{...{ [computed] }}']);
     });
 
     it('separates navigation from props that merely share the name', () => {
