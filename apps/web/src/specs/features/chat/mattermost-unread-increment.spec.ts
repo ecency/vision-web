@@ -18,6 +18,7 @@ type UnreadChannel = {
   message_count: number;
   thread_unread: number;
   unread_eligible?: boolean;
+  unread_emptied?: boolean;
 };
 
 function seed(qc: QueryClient, channels: UnreadChannel[]) {
@@ -72,5 +73,60 @@ describe("MattermostWebSocket.incrementUnreadCount — badge eligibility", () =>
     const data = increment(qc, "dm-legacy");
     expect(data.channels[0].message_count).toBe(3);
     expect(data.totalDMs).toBe(1);
+  });
+
+  /**
+   * "Every post was deleted" is the one ineligibility that a new post undoes.
+   * Patching the cache locally is not enough — the channel-list route hides an
+   * emptied DM and a post event does not invalidate that list, so the badge
+   * would grow with no row to open. Both queries have to be refetched.
+   */
+  it("refetches instead of silently dropping a post to an emptied DM", () => {
+    const invalidated: unknown[] = [];
+    qc.invalidateQueries = ((filters: { queryKey?: unknown }) => {
+      invalidated.push(filters?.queryKey);
+      return Promise.resolve();
+    }) as QueryClient["invalidateQueries"];
+
+    seed(qc, [
+      {
+        channelId: "dm-emptied",
+        type: "D",
+        mention_count: 0,
+        message_count: 0,
+        thread_unread: 0,
+        unread_eligible: false,
+        unread_emptied: true
+      }
+    ]);
+
+    const data = increment(qc, "dm-emptied");
+
+    expect(invalidated).toEqual([["mattermost-unread"], ["mattermost-channels"]]);
+    // The cache is left untouched — the refetch supplies the truth.
+    expect(data.channels[0].message_count).toBe(0);
+  });
+
+  it("does not refetch for a muted or never-viewed channel", () => {
+    const invalidated: unknown[] = [];
+    qc.invalidateQueries = ((filters: { queryKey?: unknown }) => {
+      invalidated.push(filters?.queryKey);
+      return Promise.resolve();
+    }) as QueryClient["invalidateQueries"];
+
+    seed(qc, [
+      {
+        channelId: "c-muted",
+        type: "O",
+        mention_count: 0,
+        message_count: 0,
+        thread_unread: 0,
+        unread_eligible: false,
+        unread_emptied: false
+      }
+    ]);
+
+    increment(qc, "c-muted");
+    expect(invalidated).toEqual([]);
   });
 });

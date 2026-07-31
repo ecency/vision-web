@@ -9,9 +9,11 @@ import * as Sentry from "@sentry/nextjs";
 import {
   fetchAllChannelPages,
   fetchAllChannelMemberPages,
-  isChannelMuted,
-  isChannelNeverViewed,
+  isChannelUnreadSuppressed,
+  isDirectLikeChannel,
   channelUnreadMessageCount,
+  fetchDeactivatedDmPartners,
+  findPhantomUnreadDmChannelIds,
   isMattermostDefaultChannel
 } from "../helpers";
 
@@ -117,54 +119,18 @@ export async function GET() {
     // Only thread pagination can still hit a cap, so `truncated` reflects only that.
     const truncated = threadsResult.truncated;
 
-    // Extract user IDs from DM channels to check for deactivated users
-    const dmChannels = allChannels.filter((ch) => ch.type === "D");
-    const dmUserIds = new Set<string>();
-    dmChannels.forEach((channel) => {
-      const parts = channel.name?.split("__") ?? [];
-      if (parts.length === 2) {
-        const otherUserId = parts.find((id) => id !== currentUser.id) || parts[0];
-        if (otherUserId) {
-          dmUserIds.add(otherUserId);
-        }
-      }
-    });
-
-    // Fetch user data to check delete_at status
-    const usersById: Record<string, MattermostUser> = {};
-    if (dmUserIds.size > 0) {
-      try {
-        const users = await mmUserFetch<MattermostUser[]>(`/users/ids`, token, {
-          method: "POST",
-          body: JSON.stringify(Array.from(dmUserIds))
-        });
-        users.forEach((user) => {
-          usersById[user.id] = user;
-        });
-      } catch {
-        // If we can't fetch users, proceed without filtering
-      }
-    }
-
-    // Set of DM channel IDs to exclude (deactivated users)
-    const excludedDmChannelIds = new Set<string>();
-    dmChannels.forEach((channel) => {
-      const parts = channel.name?.split("__") ?? [];
-      if (parts.length === 2) {
-        const otherUserId = parts.find((id) => id !== currentUser.id) || parts[0];
-        if (otherUserId) {
-          const user = usersById[otherUserId];
-          // Exclude if user is deactivated (delete_at > 0)
-          if (user && user.delete_at && user.delete_at > 0) {
-            excludedDmChannelIds.add(channel.id);
-          }
-        }
-      }
-    });
+    // DMs with a deactivated partner are dropped. Shared with the channel-list
+    // route so both spend their capped phantom probes on the same candidates —
+    // see fetchDeactivatedDmPartners.
+    const { excludedChannelIds } = await fetchDeactivatedDmPartners<MattermostUser>(
+      token,
+      allChannels,
+      currentUser.id
+    );
 
     // Filter out excluded DM channels and hidden default channels
     const filteredChannels = allChannels.filter(
-      (ch) => !excludedDmChannelIds.has(ch.id) && !isMattermostDefaultChannel(ch)
+      (ch) => !excludedChannelIds.has(ch.id) && !isMattermostDefaultChannel(ch)
     );
 
     const memberByChannelId = members.reduce<Record<string, MattermostChannelMember>>((acc, member) => {
@@ -179,24 +145,48 @@ export async function GET() {
       return acc;
     }, {});
 
+    // A DM whose posts were all deleted still reports unread (Mattermost never
+    // decrements total_msg_count on delete). Probe only those DMs — the count
+    // is what makes the badge unclearable, so an empty channel must resolve to
+    // zero here and in the list route alike.
+    const candidatePhantomDmIds = filteredChannels
+      .filter(
+        (channel) =>
+          isDirectLikeChannel(channel) &&
+          !isChannelUnreadSuppressed(channel, memberByChannelId[channel.id]) &&
+          channelUnreadMessageCount(channel, memberByChannelId[channel.id]) > 0
+      )
+      .map((channel) => channel.id);
+
+    const phantomDmIds = await findPhantomUnreadDmChannelIds(token, candidatePhantomDmIds);
+
     const channelsWithCounts = filteredChannels.map((channel) => {
       const member = memberByChannelId[channel.id];
 
       // Zero out muted channels (hidden from the list, so their unreads would
-      // mislead) and never-viewed channels (skipped to prevent a historical
-      // message flood). Both rules are shared with the channel-list route via
-      // ./helpers so the two stay in lockstep — see dmContributesToUnreadBadge.
+      // mislead), never-viewed non-DM channels (skipped to prevent a historical
+      // message flood) and DMs with nothing left to read. All three rules are
+      // shared with the channel-list route via ./helpers so the two stay in
+      // lockstep — see dmContributesToUnreadBadge.
       // `unread_eligible: false` tells the realtime updater not to grow the
       // badge for these on a websocket post, otherwise the badge could count a
       // channel the list route never shows (a phantom unread).
-      if (isChannelMuted(member) || isChannelNeverViewed(member)) {
+      // `unread_emptied` separates the one verdict that expires from the ones
+      // that do not. Muting and never-viewed survive a new post; "every post
+      // was deleted" stops being true the moment one arrives, so a client
+      // holding this response must refetch rather than trust it — see
+      // MattermostWebSocket.incrementUnreadCount.
+      const emptied = phantomDmIds.has(channel.id);
+
+      if (isChannelUnreadSuppressed(channel, member) || emptied) {
         return {
           channelId: channel.id,
           type: channel.type,
           mention_count: 0,
           message_count: 0,
           thread_unread: 0,
-          unread_eligible: false
+          unread_eligible: false,
+          unread_emptied: emptied
         };
       }
 

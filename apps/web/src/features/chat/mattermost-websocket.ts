@@ -717,9 +717,37 @@ export class MattermostWebSocket {
     );
   }
 
+  /**
+   * A channel the unreads route reported as emptied (every post deleted) is
+   * no longer empty once a post arrives, so its `unread_eligible: false` is
+   * stale rather than structural. Patching the badge locally is not enough
+   * either: the channel-list route hides such a DM, and a post event does not
+   * invalidate that list — so the badge would grow with no row to open. Refetch
+   * both and let the server re-derive.
+   */
+  private isEmptiedChannel(channelId: string): boolean {
+    if (!this.queryClient) return false;
+
+    return this.queryClient
+      .getQueriesData<{
+        channels?: Array<{ channelId: string; unread_emptied?: boolean }>;
+      }>({ queryKey: ["mattermost-unread"] })
+      .some(([, data]) =>
+        data?.channels?.some(
+          (channel) => channel.channelId === channelId && channel.unread_emptied === true
+        )
+      );
+  }
+
   private incrementUnreadCount(channelId: string): void {
     if (!this.queryClient) return;
     if (channelId === this.channelId) return;
+
+    if (this.isEmptiedChannel(channelId)) {
+      this.queryClient.invalidateQueries({ queryKey: ["mattermost-unread"] });
+      this.queryClient.invalidateQueries({ queryKey: ["mattermost-channels"] });
+      return;
+    }
 
     this.queryClient.setQueriesData<{
       channels: Array<{ channelId: string; type: string; mention_count: number; message_count: number; thread_unread?: number; unread_eligible?: boolean }>;
@@ -739,6 +767,7 @@ export class MattermostWebSocket {
       // the unreads route (unread_eligible === false). Growing the badge here would
       // count a channel the list route never shows — a phantom unread. Skip them.
       // (undefined means an older cached response: treat as eligible, no regression.)
+      // Emptied channels are handled above — that verdict expires, these do not.
       if (target.unread_eligible === false) return data;
 
       const isDm = target.type === "D";
