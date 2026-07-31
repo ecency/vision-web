@@ -112,14 +112,29 @@ const HOLE = '*';
  * interpolation is only shaped when every such interpolation is listed here;
  * otherwise it stays unresolved and has to be classified.
  *
- * These are Hive usernames and permlinks, which cannot contain a slash.
+ * Keyed by `file:expression` with an occurrence count, exactly like
+ * DYNAMIC_LINKS: a bare expression name would declare `entry.author` slash-free
+ * everywhere, including in some future component whose `entry.author` is not a
+ * username at all.
  */
-const SEGMENT_SAFE = new Set([
-  'entry.author',
-  'entry.permlink',
-  'entryData.author',
-  'entryData.permlink',
-]);
+const SEGMENT_SAFE: Record<string, { occurrences: number; reason: string }> = {
+  'src/features/blog/components/blog-discussion-item.tsx:entry.author': {
+    occurrences: 1,
+    reason: 'Hive username, cannot contain a slash',
+  },
+  'src/features/blog/components/blog-discussion-item.tsx:entry.permlink': {
+    occurrences: 1,
+    reason: 'Hive permlink, cannot contain a slash',
+  },
+  'src/features/blog/components/blog-post-item.tsx:entryData.author': {
+    occurrences: 3,
+    reason: 'Hive username, cannot contain a slash',
+  },
+  'src/features/blog/components/blog-post-item.tsx:entryData.permlink': {
+    occurrences: 3,
+    reason: 'Hive permlink, cannot contain a slash',
+  },
+};
 
 interface FoundLink {
   where: string;
@@ -132,10 +147,17 @@ interface Buckets {
   unresolved: FoundLink[];
   componentProps: { where: string; key: string }[];
   exemptionHits: Record<string, number>;
+  safeHits: Record<string, number>;
 }
 
 function emptyBuckets(): Buckets {
-  return { checked: [], unresolved: [], componentProps: [], exemptionHits: {} };
+  return {
+    checked: [],
+    unresolved: [],
+    componentProps: [],
+    exemptionHits: {},
+    safeHits: {},
+  };
 }
 
 const isInternal = (v: string) => v.startsWith('/') && !v.startsWith('//');
@@ -218,6 +240,8 @@ function constInitializer(
 function pathShape(
   checker: ts.TypeChecker,
   node: ts.Node,
+  rel: string,
+  safeHits: Record<string, number>,
   depth = 0,
 ): string | undefined {
   if (depth > 4) return undefined;
@@ -233,15 +257,16 @@ function pathShape(
       }
       // an unreadable interpolation only counts as one segment if we have said
       // so; otherwise the segment count is a guess and the shape is worthless
-      const text = span.expression.getText().replace(/\s+/g, ' ');
-      if (!SEGMENT_SAFE.has(text)) return undefined;
+      const key = `${rel}:${span.expression.getText().replace(/\s+/g, ' ')}`;
+      if (!(key in SEGMENT_SAFE)) return undefined;
+      safeHits[key] = (safeHits[key] ?? 0) + 1;
       shape += HOLE + span.literal.text;
     }
     return shape;
   }
 
   const init = constInitializer(checker, node);
-  return init ? pathShape(checker, init, depth + 1) : undefined;
+  return init ? pathShape(checker, init, rel, safeHits, depth + 1) : undefined;
 }
 
 /**
@@ -264,7 +289,8 @@ function collectFrom(
     const via = node ? label(node) : undefined;
     const key = via ? `${rel}:${via}` : undefined;
     const value = node
-      ? (literalOf(checker, node) ?? pathShape(checker, node))
+      ? (literalOf(checker, node) ??
+        pathShape(checker, node, rel, into.safeHits))
       : undefined;
 
     if (value === undefined) {
@@ -535,8 +561,14 @@ function classify(code: string): Buckets {
 }
 
 describe('internal links resolve to declared routes', () => {
-  const { checked, unresolved, componentProps, exemptionHits, routes } =
-    sweepRepository();
+  const {
+    checked,
+    unresolved,
+    componentProps,
+    exemptionHits,
+    safeHits,
+    routes,
+  } = sweepRepository();
 
   it('reads the route tree and finds links to check', () => {
     expect(routes).toContain('/blog');
@@ -560,6 +592,18 @@ describe('internal links resolve to declared routes', () => {
       Object.entries(DYNAMIC_LINKS).map(([k, v]) => [k, v.occurrences]),
     );
     expect(exemptionHits).toEqual(expected);
+  });
+
+  it('consumes each segment-safety entry exactly as many times as declared', () => {
+    // Same rule as DYNAMIC_LINKS: scoped to a file, counted, so a stale entry
+    // fails and a second use in that file has to be looked at.
+    const expected = Object.fromEntries(
+      Object.entries(SEGMENT_SAFE).map(([k, v]) => [k, v.occurrences]),
+    );
+    expect(safeHits).toEqual(expected);
+    for (const key of Object.keys(SEGMENT_SAFE)) {
+      expect(key).toMatch(/^src\/.+\.tsx:.+$/);
+    }
   });
 
   it('classifies every component prop that merely looks like a link', () => {
