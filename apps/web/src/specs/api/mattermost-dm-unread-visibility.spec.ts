@@ -53,7 +53,9 @@ const CHANNELS = [
   // never viewed (last_viewed_at 0, Mattermost's other "never" value) -> visible
   { id: "dm-neverviewed-zero", name: "u-self__u-zero", display_name: "", type: "D", total_msg_count: 2 },
   // unread per Mattermost, but every post was deleted -> nothing to read -> hidden
-  { id: "dm-phantom", name: "u-self__u-ghost", display_name: "", type: "D", total_msg_count: 2 }
+  { id: "dm-phantom", name: "u-self__u-ghost", display_name: "", type: "D", total_msg_count: 2 },
+  // unread, but the partner is deactivated -> dropped, and must not be probed
+  { id: "dm-deactivated", name: "u-self__u-gone", display_name: "", type: "D", total_msg_count: 4 }
 ];
 
 // Channels whose post list comes back empty because every post is soft-deleted.
@@ -72,7 +74,8 @@ const MEMBERS = [
   },
   { user_id: "u-self", channel_id: "dm-neverviewed", mention_count: 0, msg_count: 0, last_viewed_at: null },
   { user_id: "u-self", channel_id: "dm-neverviewed-zero", mention_count: 0, msg_count: 0, last_viewed_at: 0 },
-  { user_id: "u-self", channel_id: "dm-phantom", mention_count: 2, msg_count: 0, last_viewed_at: 0 }
+  { user_id: "u-self", channel_id: "dm-phantom", mention_count: 2, msg_count: 0, last_viewed_at: 0 },
+  { user_id: "u-self", channel_id: "dm-deactivated", mention_count: 0, msg_count: 0, last_viewed_at: 0 }
 ];
 
 const PREFERENCES = [
@@ -81,7 +84,8 @@ const PREFERENCES = [
   { user_id: "u-self", category: "direct_channel_show", name: "u-muted", value: "false" },
   { user_id: "u-self", category: "direct_channel_show", name: "u-new", value: "false" },
   { user_id: "u-self", category: "direct_channel_show", name: "u-zero", value: "false" },
-  { user_id: "u-self", category: "direct_channel_show", name: "u-ghost", value: "false" }
+  { user_id: "u-self", category: "direct_channel_show", name: "u-ghost", value: "false" },
+  { user_id: "u-self", category: "direct_channel_show", name: "u-gone", value: "false" }
 ];
 
 const DM_USERS = [
@@ -90,7 +94,8 @@ const DM_USERS = [
   { id: "u-muted", username: "mutedpartner", delete_at: 0 },
   { id: "u-new", username: "newpartner", delete_at: 0 },
   { id: "u-zero", username: "zeropartner", delete_at: 0 },
-  { id: "u-ghost", username: "ghostpartner", delete_at: 0 }
+  { id: "u-ghost", username: "ghostpartner", delete_at: 0 },
+  { id: "u-gone", username: "goneparter", delete_at: 1700000000000 }
 ];
 
 describe("channels route — DM unread visibility", () => {
@@ -129,6 +134,12 @@ describe("channels route — DM unread visibility", () => {
     return (await getChannels()).map((c) => c.id);
   }
 
+  function probedChannelIds() {
+    return mockMmUserFetch.mock.calls
+      .map(([path]) => /^\/channels\/([^/]+)\/posts/.exec(path as string)?.[1])
+      .filter(Boolean);
+  }
+
   it("keeps a closed DM visible when it has unread messages", async () => {
     const ids = await getChannelIds();
     expect(ids).toContain("dm-unread");
@@ -161,10 +172,25 @@ describe("channels route — DM unread visibility", () => {
 
   it("does not probe DMs that have no unread messages", async () => {
     await getChannelIds();
-    const probed = mockMmUserFetch.mock.calls
-      .map(([path]) => /^\/channels\/([^/]+)\/posts/.exec(path as string)?.[1])
-      .filter(Boolean);
-    expect(probed).not.toContain("dm-read");
-    expect(probed).not.toContain("dm-muted");
+    expect(probedChannelIds()).not.toContain("dm-read");
+    expect(probedChannelIds()).not.toContain("dm-muted");
+  });
+
+  /**
+   * The probe is capped, so a route that spends slots on channels it is going
+   * to drop anyway can run out before reaching a real phantom — and then the
+   * two routes disagree about which DMs are phantom. Deactivated partners are
+   * resolved before the probe, in both routes, for exactly this reason.
+   */
+  it("does not spend probe budget on a DM whose partner is deactivated", async () => {
+    const ids = await getChannelIds();
+    expect(ids).not.toContain("dm-deactivated");
+    expect(probedChannelIds()).not.toContain("dm-deactivated");
+  });
+
+  it("resolves DM partners in a single batched lookup", async () => {
+    await getChannelIds();
+    const lookups = mockMmUserFetch.mock.calls.filter(([path]) => path === "/users/ids");
+    expect(lookups).toHaveLength(1);
   });
 });

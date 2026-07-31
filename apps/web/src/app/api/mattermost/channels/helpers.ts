@@ -67,6 +67,68 @@ export function isDirectLikeChannel(channel: { type?: string }): boolean {
   return channel.type === "D" || channel.type === "G";
 }
 
+interface MattermostDmUser {
+  id: string;
+  delete_at?: number;
+}
+
+/**
+ * A 1:1 DM channel is named `<userA>__<userB>`, so the partner is whichever id
+ * is not the viewer's. Group channels do not use that form and have no single
+ * partner, hence `undefined`.
+ */
+export function directMessagePartnerId(
+  channel: { name?: string | null; type?: string },
+  selfUserId: string
+): string | undefined {
+  if (channel.type !== "D") return undefined;
+  const parts = channel.name?.split("__") ?? [];
+  if (parts.length !== 2) return undefined;
+  return parts.find((id) => id !== selfUserId) || parts[0];
+}
+
+/**
+ * DM channels whose partner has been deactivated. Both routes drop these, and
+ * both must drop them at the SAME point: the phantom probe is capped, so a
+ * route that probes doomed channels spends slots the other route does not and
+ * the two can disagree about which DMs are phantom.
+ *
+ * Returns an empty set if the lookup fails — same fail-open reasoning as the
+ * probe, a listing error must not silently hide conversations.
+ */
+export async function fetchDeactivatedDmPartners<TUser extends MattermostDmUser>(
+  token: string,
+  channels: Array<{ id: string; name?: string | null; type?: string }>,
+  selfUserId: string
+): Promise<{ usersById: Record<string, TUser>; excludedChannelIds: Set<string> }> {
+  const partnerIdByChannelId = new Map<string, string>();
+  for (const channel of channels) {
+    const partnerId = directMessagePartnerId(channel, selfUserId);
+    if (partnerId) partnerIdByChannelId.set(channel.id, partnerId);
+  }
+
+  const usersById: Record<string, TUser> = {};
+  const excludedChannelIds = new Set<string>();
+  if (!partnerIdByChannelId.size) return { usersById, excludedChannelIds };
+
+  try {
+    const users = await mmUserFetch<TUser[]>(`/users/ids`, token, {
+      method: "POST",
+      body: JSON.stringify(Array.from(new Set(partnerIdByChannelId.values())))
+    });
+    for (const user of users) usersById[user.id] = user;
+  } catch {
+    return { usersById, excludedChannelIds };
+  }
+
+  for (const [channelId, partnerId] of partnerIdByChannelId) {
+    const partner = usersById[partnerId];
+    if (partner?.delete_at && partner.delete_at > 0) excludedChannelIds.add(channelId);
+  }
+
+  return { usersById, excludedChannelIds };
+}
+
 /**
  * Whether the never-viewed rule suppresses a channel's unread count.
  *

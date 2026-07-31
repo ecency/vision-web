@@ -10,6 +10,7 @@ import {
   fetchAllChannelMemberPages,
   channelUnreadMessageCount,
   dmContributesToUnreadBadge,
+  fetchDeactivatedDmPartners,
   findPhantomUnreadDmChannelIds,
   isChannelUnreadSuppressed,
   isDirectLikeChannel,
@@ -125,6 +126,17 @@ export async function GET() {
       {}
     );
 
+    // Resolve deactivated DM partners FIRST. Their channels are dropped further
+    // down anyway, and the phantom probe below is capped — letting doomed
+    // channels eat probe slots here would make this route disagree with
+    // unreads/route.ts about which DMs are phantom, which is exactly the
+    // list-vs-badge drift this file exists to prevent.
+    const { usersById, excludedChannelIds } = await fetchDeactivatedDmPartners<MattermostUser>(
+      token,
+      channels,
+      currentUser.id
+    );
+
     // Mattermost keeps counting deleted posts as unread (total_msg_count is
     // never decremented), so a DM whose sender deleted everything reports
     // unread with nothing to render. Resolve those before anything else reads
@@ -136,6 +148,8 @@ export async function GET() {
         .filter(
           (channel) =>
             isDirectLikeChannel(channel) &&
+            !excludedChannelIds.has(channel.id) &&
+            !isMattermostDefaultChannel(channel) &&
             !isChannelUnreadSuppressed(channel, channelMembersById[channel.id]) &&
             channelUnreadMessageCount(channel, channelMembersById[channel.id]) > 0
         )
@@ -194,36 +208,8 @@ export async function GET() {
       return true;
     });
 
-    const directChannels = filteredChannels.filter((channel) => channel.type === "D");
-    const usersById: Record<string, MattermostUser> = {};
-
-    if (directChannels.length) {
-      const memberIds = new Set<string>();
-
-      directChannels.forEach((channel) => {
-        const parts = channel.name?.split("__") ?? [];
-        const otherUserId =
-          parts.length === 2
-            ? parts.find((id) => id !== currentUser.id) || parts[0]
-            : undefined;
-
-        if (otherUserId) {
-          memberIds.add(otherUserId);
-        }
-      });
-
-      if (memberIds.size) {
-        const users = await mmUserFetch<MattermostUser[]>(`/users/ids`, token, {
-          method: "POST",
-          body: JSON.stringify(Array.from(memberIds))
-        });
-
-        users.forEach((user) => {
-          usersById[user.id] = user;
-        });
-      }
-    }
-
+    // DM partners were already resolved above (one batched lookup covering every
+    // DM channel, so it is a superset of what the filtered list needs).
     const channelsWithDirectUsers = filteredChannels
       .map((channel) => {
         if (channel.type !== "D") return channel;
