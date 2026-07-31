@@ -179,4 +179,52 @@ describe("useDictationRecorder", () => {
     expect(recorders).toHaveLength(0);
     expect(tracks.every((t) => t.stopped)).toBe(true);
   });
+
+  test("a late permission REJECTION cannot clobber the recording that replaced it", async () => {
+    // Mirror of the late-grant case, with worse symptoms: reporting a superseded
+    // rejection flips a live recording to "denied", so the stop button disappears
+    // while the microphone keeps running to the cap.
+    let rejectFirst: (e: unknown) => void = () => {};
+    const firstPrompt = new Promise((_, reject) => {
+      rejectFirst = reject;
+    });
+
+    let call = 0;
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => {
+          call += 1;
+          if (call === 1) {
+            await firstPrompt;
+          }
+          return { getTracks: () => tracks };
+        })
+      }
+    });
+
+    const { result } = renderHook(() => useDictationRecorder({ maxSeconds: 60 }));
+
+    let firstStart: Promise<void>;
+    act(() => {
+      firstStart = result.current.start();
+    });
+
+    // User gives up on the first prompt and starts over.
+    act(() => {
+      result.current.reset();
+    });
+    await act(async () => {
+      await result.current.start();
+    });
+    expect(result.current.state).toBe("recording");
+
+    // The abandoned prompt now rejects.
+    await act(async () => {
+      rejectFirst(new Error("denied"));
+      await firstStart!.catch(() => {});
+    });
+
+    // The live recording is untouched and still stoppable.
+    expect(result.current.state).toBe("recording");
+  });
 });

@@ -58,6 +58,12 @@ export function useDictationRecorder({ maxSeconds }: UseDictationRecorderOptions
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
+      if (generation !== generationRef.current) {
+        // A rejection from a prompt that has already been superseded. Reporting it
+        // would overwrite the state of the recording that replaced it -- leaving a
+        // live microphone behind a "denied" screen with no stop button on it.
+        return;
+      }
       // Denied, dismissed, or no input device. All three leave the user unable to
       // dictate, and the browser has already explained why, so they collapse here.
       setState("denied");

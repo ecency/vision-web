@@ -1,5 +1,17 @@
+import type { AiTranscribeResponse } from "@ecency/sdk";
 import { describe, expect, test, vi } from "vitest";
 import { runDictationSubmit } from "@/app/publish/_hooks/run-dictation-submit";
+
+// Typed rather than `as any`: a cast would keep these green through a breaking
+// change to the response contract while handing the dialog a shape it cannot use.
+const makeResponse = (text: string): AiTranscribeResponse => ({
+  text,
+  duration: 30,
+  units: 1,
+  free_units: 0,
+  cost: 15,
+  request_id: "req-1"
+});
 
 /**
  * Exercises the real helper the dialog calls. An earlier version of this spec
@@ -13,7 +25,7 @@ import { runDictationSubmit } from "@/app/publish/_hooks/run-dictation-submit";
 describe("runDictationSubmit", () => {
   test("closing during the token refresh sends nothing", async () => {
     let closed = false;
-    const transcribe = vi.fn(async () => ({ text: "hello" }) as any);
+    const transcribe = vi.fn(async () => makeResponse("hello"));
 
     const outcome = await runDictationSubmit({
       // Stands in for the user dismissing while the refresh is still in flight.
@@ -38,7 +50,7 @@ describe("runDictationSubmit", () => {
       // Stands in for unmount by navigation, which dismissal-blocking cannot stop.
       transcribe: async () => {
         closed = true;
-        return { text: "hello" } as any;
+        return makeResponse("hello");
       },
       isClosed: () => closed
     });
@@ -47,7 +59,7 @@ describe("runDictationSubmit", () => {
   });
 
   test("a failed refresh stops before charging", async () => {
-    const transcribe = vi.fn(async () => ({ text: "hello" }) as any);
+    const transcribe = vi.fn(async () => makeResponse("hello"));
 
     const outcome = await runDictationSubmit({
       ensureToken: async () => null,
@@ -60,7 +72,7 @@ describe("runDictationSubmit", () => {
   });
 
   test("the happy path returns the transcript and uses the refreshed token", async () => {
-    const transcribe = vi.fn(async () => ({ text: "hello world" }) as any);
+    const transcribe = vi.fn(async () => makeResponse("hello world"));
 
     const outcome = await runDictationSubmit({
       ensureToken: async () => "fresh-token",
@@ -69,7 +81,7 @@ describe("runDictationSubmit", () => {
     });
 
     expect(transcribe).toHaveBeenCalledWith({ code: "fresh-token" });
-    expect(outcome).toEqual({ status: "transcribed", response: { text: "hello world" } });
+    expect(outcome).toMatchObject({ status: "transcribed", response: { text: "hello world" } });
   });
 
   test("errors from the request propagate for the caller to map", async () => {
