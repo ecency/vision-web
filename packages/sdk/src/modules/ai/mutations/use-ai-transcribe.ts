@@ -40,7 +40,8 @@ export function useAiTranscribe(username: string | undefined, accessToken: strin
       }
 
       const form = new FormData();
-      form.append("code", accessToken);
+      // params.code wins: it is the freshly-resolved token when the caller has one.
+      form.append("code", params.code ?? accessToken);
       // `us` is resolved from the code server-side and is deliberately not sent:
       // upstream burns from whoever it names.
       form.append("duration_ms", String(Math.round(params.durationMs)));

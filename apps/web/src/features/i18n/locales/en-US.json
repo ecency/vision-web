@@ -3654,7 +3654,9 @@
     "dictation-insufficient-points": "Not enough Points to transcribe that recording.",
     "dictation-rate-limited": "Too many recordings for now. Please try again shortly.",
     "dictation-too-long": "That recording is too long to transcribe.",
-    "dictation-failed": "Could not transcribe that recording. Please try again."
+    "dictation-failed": "Could not transcribe that recording. Please try again.",
+    "dictation-price-loading": "Checking price",
+    "dictation-price-error": "Could not load transcription pricing. Please try again."
   },
   "ecency-images": {
     "upload-image": "Upload image",

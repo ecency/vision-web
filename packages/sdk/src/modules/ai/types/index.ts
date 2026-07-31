@@ -82,6 +82,10 @@ export interface AiTranscribeParams {
   // defeat the dedupe in exactly the case it exists for: a request that reached the
   // server whose response was lost. Same contract as AiGenerationRequest.
   idempotency_key?: string;
+  // Overrides the hook's access token for this call. Lets a caller hand over a token
+  // it just refreshed, rather than the one captured when the hook was constructed --
+  // which can have expired during a long recording. Same contract as AiAssistParams.
+  code?: string;
 }
 
 export interface AiTranscribeResponse {
