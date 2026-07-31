@@ -10,6 +10,7 @@ import {
   fetchAllChannelPages,
   fetchAllChannelMemberPages,
   isChannelUnreadSuppressed,
+  isDirectLikeChannel,
   channelUnreadMessageCount,
   findPhantomUnreadDmChannelIds,
   isMattermostDefaultChannel
@@ -186,7 +187,7 @@ export async function GET() {
     const candidatePhantomDmIds = filteredChannels
       .filter(
         (channel) =>
-          channel.type === "D" &&
+          isDirectLikeChannel(channel) &&
           !isChannelUnreadSuppressed(channel, memberByChannelId[channel.id]) &&
           channelUnreadMessageCount(channel, memberByChannelId[channel.id]) > 0
       )
@@ -205,14 +206,22 @@ export async function GET() {
       // `unread_eligible: false` tells the realtime updater not to grow the
       // badge for these on a websocket post, otherwise the badge could count a
       // channel the list route never shows (a phantom unread).
-      if (isChannelUnreadSuppressed(channel, member) || phantomDmIds.has(channel.id)) {
+      // `unread_emptied` separates the one verdict that expires from the ones
+      // that do not. Muting and never-viewed survive a new post; "every post
+      // was deleted" stops being true the moment one arrives, so a client
+      // holding this response must refetch rather than trust it — see
+      // MattermostWebSocket.incrementUnreadCount.
+      const emptied = phantomDmIds.has(channel.id);
+
+      if (isChannelUnreadSuppressed(channel, member) || emptied) {
         return {
           channelId: channel.id,
           type: channel.type,
           mention_count: 0,
           message_count: 0,
           thread_unread: 0,
-          unread_eligible: false
+          unread_eligible: false,
+          unread_emptied: emptied
         };
       }
 

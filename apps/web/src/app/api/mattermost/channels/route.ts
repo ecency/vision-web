@@ -12,6 +12,7 @@ import {
   dmContributesToUnreadBadge,
   findPhantomUnreadDmChannelIds,
   isChannelUnreadSuppressed,
+  isDirectLikeChannel,
   isMattermostDefaultChannel
 } from "./helpers";
 
@@ -134,7 +135,7 @@ export async function GET() {
       channels
         .filter(
           (channel) =>
-            channel.type === "D" &&
+            isDirectLikeChannel(channel) &&
             !isChannelUnreadSuppressed(channel, channelMembersById[channel.id]) &&
             channelUnreadMessageCount(channel, channelMembersById[channel.id]) > 0
         )

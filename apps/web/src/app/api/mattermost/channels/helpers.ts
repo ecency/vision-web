@@ -59,6 +59,15 @@ export function isChannelNeverViewed(member?: { last_viewed_at?: number | null }
 }
 
 /**
+ * Direct (`D`) and group (`G`) message channels. Neither has an auto-join
+ * path — a person has to be put in one deliberately — which is what makes the
+ * never-viewed rule below inapplicable to them.
+ */
+export function isDirectLikeChannel(channel: { type?: string }): boolean {
+  return channel.type === "D" || channel.type === "G";
+}
+
+/**
  * Whether the never-viewed rule suppresses a channel's unread count.
  *
  * Mattermost auto-joins a user to every channel of a community they join, and
@@ -66,12 +75,11 @@ export function isChannelNeverViewed(member?: { last_viewed_at?: number | null }
  * unread = `total_msg_count`). Counting those buries the badge under thousands
  * of messages nobody ever asked for, so a never-viewed channel contributes 0.
  *
- * ⛔ This must NOT be applied to DMs. `last_viewed_at = 0` is exactly what a
- * first-ever DM from a new person looks like, so the rule silently swallowed
- * every first-contact DM — the badge stayed at 0 while a real message sat
- * unread. A DM has no auto-join path (`/api/mattermost/direct` is the only way
- * one is created and it is deliberate on both sides), so there is no history
- * flood to protect against and the never-viewed guard has no work to do.
+ * ⛔ This must NOT be applied to DMs or group messages. `last_viewed_at = 0` is
+ * exactly what a first-ever DM from a new person looks like, so the rule
+ * silently swallowed every first-contact DM — the badge stayed at 0 while a
+ * real message sat unread. Neither channel type can be auto-joined, so there is
+ * no history flood to protect against and the guard has no work to do.
  */
 export function isChannelUnreadSuppressed(
   channel: { type?: string },
@@ -81,7 +89,7 @@ export function isChannelUnreadSuppressed(
   }
 ): boolean {
   if (isChannelMuted(member)) return true;
-  if (channel.type === "D") return false;
+  if (isDirectLikeChannel(channel)) return false;
   return isChannelNeverViewed(member);
 }
 
@@ -129,6 +137,10 @@ export function dmContributesToUnreadBadge(
  *
  * Fails OPEN: a probe that errors (or a channel past the cap) is treated as
  * live, because hiding a real message is far worse than leaving a stale badge.
+ *
+ * ⚠️ This verdict goes stale the instant a new post lands, unlike the mute and
+ * never-viewed rules. Anything caching it must be able to tell the two apart —
+ * see `unread_emptied` in channels/unreads/route.ts.
  */
 const DM_LIVENESS_PROBE_LIMIT = 16;
 
