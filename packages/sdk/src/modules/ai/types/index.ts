@@ -77,6 +77,11 @@ export interface AiTranscribeParams {
   // is trued up against it, so a wrong value here does not change what you pay.
   durationMs: number;
   fileName?: string;
+  // Reused across retries so the backend replays a completed transcription instead
+  // of transcribing (and charging) a second time. Generating one per attempt would
+  // defeat the dedupe in exactly the case it exists for: a request that reached the
+  // server whose response was lost. Same contract as AiGenerationRequest.
+  idempotency_key?: string;
 }
 
 export interface AiTranscribeResponse {
