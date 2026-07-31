@@ -9,9 +9,9 @@ import * as Sentry from "@sentry/nextjs";
 import {
   fetchAllChannelPages,
   fetchAllChannelMemberPages,
-  isChannelMuted,
-  isChannelNeverViewed,
+  isChannelUnreadSuppressed,
   channelUnreadMessageCount,
+  findPhantomUnreadDmChannelIds,
   isMattermostDefaultChannel
 } from "../helpers";
 
@@ -179,17 +179,33 @@ export async function GET() {
       return acc;
     }, {});
 
+    // A DM whose posts were all deleted still reports unread (Mattermost never
+    // decrements total_msg_count on delete). Probe only those DMs — the count
+    // is what makes the badge unclearable, so an empty channel must resolve to
+    // zero here and in the list route alike.
+    const candidatePhantomDmIds = filteredChannels
+      .filter(
+        (channel) =>
+          channel.type === "D" &&
+          !isChannelUnreadSuppressed(channel, memberByChannelId[channel.id]) &&
+          channelUnreadMessageCount(channel, memberByChannelId[channel.id]) > 0
+      )
+      .map((channel) => channel.id);
+
+    const phantomDmIds = await findPhantomUnreadDmChannelIds(token, candidatePhantomDmIds);
+
     const channelsWithCounts = filteredChannels.map((channel) => {
       const member = memberByChannelId[channel.id];
 
       // Zero out muted channels (hidden from the list, so their unreads would
-      // mislead) and never-viewed channels (skipped to prevent a historical
-      // message flood). Both rules are shared with the channel-list route via
-      // ./helpers so the two stay in lockstep — see dmContributesToUnreadBadge.
+      // mislead), never-viewed non-DM channels (skipped to prevent a historical
+      // message flood) and DMs with nothing left to read. All three rules are
+      // shared with the channel-list route via ./helpers so the two stay in
+      // lockstep — see dmContributesToUnreadBadge.
       // `unread_eligible: false` tells the realtime updater not to grow the
       // badge for these on a websocket post, otherwise the badge could count a
       // channel the list route never shows (a phantom unread).
-      if (isChannelMuted(member) || isChannelNeverViewed(member)) {
+      if (isChannelUnreadSuppressed(channel, member) || phantomDmIds.has(channel.id)) {
         return {
           channelId: channel.id,
           type: channel.type,

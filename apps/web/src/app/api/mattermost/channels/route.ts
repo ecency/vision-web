@@ -8,7 +8,10 @@ import {
 import {
   fetchAllChannelPages,
   fetchAllChannelMemberPages,
+  channelUnreadMessageCount,
   dmContributesToUnreadBadge,
+  findPhantomUnreadDmChannelIds,
+  isChannelUnreadSuppressed,
   isMattermostDefaultChannel
 } from "./helpers";
 
@@ -121,12 +124,36 @@ export async function GET() {
       {}
     );
 
+    // Mattermost keeps counting deleted posts as unread (total_msg_count is
+    // never decremented), so a DM whose sender deleted everything reports
+    // unread with nothing to render. Resolve those before anything else reads
+    // an unread count — visibility, the per-row badge and the global badge all
+    // have to agree that such a channel is empty.
+    const phantomDmIds = await findPhantomUnreadDmChannelIds(
+      token,
+      channels
+        .filter(
+          (channel) =>
+            channel.type === "D" &&
+            !isChannelUnreadSuppressed(channel, channelMembersById[channel.id]) &&
+            channelUnreadMessageCount(channel, channelMembersById[channel.id]) > 0
+        )
+        .map((channel) => channel.id)
+    );
+
+    const unreadMessageCount = (channel: MattermostChannel) =>
+      isChannelUnreadSuppressed(channel, channelMembersById[channel.id]) ||
+      phantomDmIds.has(channel.id)
+        ? 0
+        : channelUnreadMessageCount(channel, channelMembersById[channel.id]);
+
     // A DM that contributes to the unread badge must stay visible in the list,
     // otherwise the badge shows a count the user has no row to open and clear —
     // the "phantom unread" bug for a closed (or uncategorized) DM that later
     // receives a message. The rule lives in ./helpers so it stays identical to
     // the unread-badge computation in channels/unreads/route.ts.
     const dmContributesToBadge = (channel: MattermostChannel) =>
+      !phantomDmIds.has(channel.id) &&
       dmContributesToUnreadBadge(channel, channelMembersById[channel.id]);
 
     const hasCategories = (categoriesResponse.categories || []).length > 0;
@@ -211,7 +238,7 @@ export async function GET() {
         return {
           ...channel,
           mention_count: member?.mention_count || 0,
-          message_count: Math.max((channel.total_msg_count || 0) - (member?.msg_count || 0), 0),
+          message_count: unreadMessageCount(channel),
           display_name: directUser ? `@${directUser.username}` : channel.display_name,
           directUser: directUser || null,
           last_viewed_at: member?.last_viewed_at
@@ -250,19 +277,29 @@ export async function GET() {
       return order;
     })();
 
-    const channelsWithCounts = channelsWithDirectUsers.map((channel) => ({
-      ...channel,
-      is_favorite: favoriteIds.has(channel.id),
-      is_muted: channelMembersById[channel.id]?.notify_props?.mark_unread === "mention",
-      mention_count:
-        channelMembersById[channel.id]?.mention_count ||
-        channel.mention_count ||
-        0,
-      message_count:
-        Math.max((channel.total_msg_count || 0) - (channelMembersById[channel.id]?.msg_count || 0), 0),
-      order: channelOrderFromCategories.get(channel.id),
-      last_viewed_at: channelMembersById[channel.id]?.last_viewed_at
-    }));
+    // `unread_eligible` is the server's verdict on whether this channel may
+    // raise the badge at all, so clients do not each re-derive the rule and
+    // drift apart. Both counts are zeroed alongside it: a mention count is a
+    // subset of the message count, so leaving it populated on a suppressed or
+    // emptied channel would resurrect the very badge we just cleared.
+    const channelsWithCounts = channelsWithDirectUsers.map((channel) => {
+      const unreadEligible =
+        !isChannelUnreadSuppressed(channel, channelMembersById[channel.id]) &&
+        !phantomDmIds.has(channel.id);
+
+      return {
+        ...channel,
+        is_favorite: favoriteIds.has(channel.id),
+        is_muted: channelMembersById[channel.id]?.notify_props?.mark_unread === "mention",
+        mention_count: unreadEligible
+          ? channelMembersById[channel.id]?.mention_count || channel.mention_count || 0
+          : 0,
+        message_count: unreadMessageCount(channel),
+        unread_eligible: unreadEligible,
+        order: channelOrderFromCategories.get(channel.id),
+        last_viewed_at: channelMembersById[channel.id]?.last_viewed_at
+      };
+    });
 
     const orderedChannels = [...channelsWithCounts].sort((a, b) => {
       const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
