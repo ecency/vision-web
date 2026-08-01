@@ -3646,6 +3646,7 @@
     "dictation-record-more": "Record more",
     "dictation-done": "Done",
     "dictation-transcribe": "Transcribe",
+    "dictation-retry": "Try again",
     "dictation-recording": "Recording",
     "dictation-rate": "{{n}} Points per {{s}} seconds",
     "dictation-cost-running": "{{n}} Points so far",
