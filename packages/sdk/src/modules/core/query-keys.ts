@@ -325,6 +325,8 @@ export const QueryKeys = {
       ["communities", "list", sort, query, limit],
     subscribers: (communityName: string) =>
       ["communities", "subscribers", communityName],
+    subscribersInfinite: (communityName: string) =>
+      ["communities", "subscribers", "infinite", communityName],
     accountNotifications: (account: string, limit: number) =>
       ["communities", "account-notifications", account, limit],
   },

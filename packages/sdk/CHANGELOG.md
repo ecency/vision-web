@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.71
+
+### Patch Changes
+
+- fix(sdk): page community subscribers and stop swallowing activity errors (#1293)
+
 ## 2.3.70
 
 ### Patch Changes

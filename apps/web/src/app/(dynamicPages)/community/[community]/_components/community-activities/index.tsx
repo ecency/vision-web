@@ -88,7 +88,7 @@ function isInfinite<TPage>(d: unknown): d is InfiniteData<TPage, unknown> {
 
 export function CommunityActivities({ community }: Props) {
   const result = useInfiniteQuery(getAccountNotificationsInfiniteQueryOptions(community.name, 50));
-  const { isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = result;
+  const { isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = result;
 
   // Narrow `data` safely
   const pagesArr: NotifPage[] = useMemo(() => {
@@ -107,9 +107,26 @@ export function CommunityActivities({ community }: Props) {
       [pagesArr]
   );
 
+  // The SDK used to swallow fetch errors into an empty page, so a failed
+  // request was indistinguishable from an empty log. It now surfaces the error,
+  // which is only useful if it is actually rendered: without this, a failed
+  // request still looks like a community with no activity.
+  const hasFailed = isError && !isFetchingNextPage;
+
   return (
       <div className="community-activities">
         {(isLoading || isFetchingNextPage) && <LinearProgress />}
+
+        {hasFailed && (
+            <div className="activity-error flex flex-col items-center gap-3 py-6">
+              <div className="text-gray-600 dark:text-gray-400">
+                {i18next.t("g.server-error")}
+              </div>
+              <Button size="sm" appearance="secondary" onClick={() => refetch()}>
+                {i18next.t("g.retry")}
+              </Button>
+            </div>
+        )}
 
         <div className="activity-list">
           <div className="activity-list-body">
@@ -119,7 +136,7 @@ export function CommunityActivities({ community }: Props) {
           </div>
         </div>
 
-        {hasMore && (
+        {hasMore && !hasFailed && (
             <div className="load-more">
               <Button
                   disabled={isLoading || isFetchingNextPage}
