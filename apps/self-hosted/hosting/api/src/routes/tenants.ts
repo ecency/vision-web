@@ -157,8 +157,12 @@ async function resolveAndValidateTenant(
     if (!body.owner || owner === communityId) {
       return { ok: false, status: 400, error: 'A community instance requires a separate owner account' };
     }
-    if (!(await TenantService.verifyCommunity(communityId))) {
-      return { ok: false, status: 400, error: 'Community not found' };
+    if (!(await TenantService.verifyCommunityControlledBy(communityId, owner))) {
+      return {
+        ok: false,
+        status: 400,
+        error: 'Community not found, or the owner account does not administer it',
+      };
     }
   } else if (owner !== username) {
     // A personal blog is always controlled by its own account; reject an attempt to assign a
