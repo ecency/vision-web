@@ -138,6 +138,20 @@ export function hasUnsupportedMarkup(markdown: string | undefined): boolean {
   }
 }
 
+/**
+ * Escapes alt text for the `![alt](src)` form. The backslash has to be escaped
+ * first: escaping only the brackets turns an alt ending in a backslash into
+ * "\\]", which escapes the closing bracket and breaks the whole image.
+ */
+function escapeMarkdownText(value: string): string {
+  return value.replace(/[\\[\]]/g, "\\$&");
+}
+
+/** Escapes the optional `"title"` part of an image, same reasoning. */
+function escapeMarkdownTitle(value: string): string {
+  return value.replace(/["\\]/g, "\\$&");
+}
+
 function extractTextAlign(style: string | null): string | undefined {
   if (!style) return undefined;
   return style
@@ -219,11 +233,11 @@ export function htmlToMarkdown(html: string | undefined): string {
       replacement: function (_, node) {
         const element = node as HTMLElement;
         const src = (element.getAttribute("src") ?? "").replace(/[()]/g, encodeURIComponent);
-        // Escape rather than delete: stripping brackets silently rewrites an
-        // alt like "fig [1]" into "fig 1".
-        const alt = (element.getAttribute("alt") ?? "").replace(/[\[\]]/g, "\\$&");
+        const alt = escapeMarkdownText(element.getAttribute("alt") ?? "");
         const title = element.getAttribute("title");
-        return title ? `![${alt}](${src} "${title}")` : `![${alt}](${src})`;
+        return title
+          ? `![${alt}](${src} "${escapeMarkdownTitle(title)}")`
+          : `![${alt}](${src})`;
       }
     })
     .addRule("autolink", {

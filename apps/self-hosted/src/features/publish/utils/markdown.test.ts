@@ -109,6 +109,23 @@ describe('edit round-trip', () => {
     expect(roundTrip('![fig \\[1\\]](https://x.co/i.png)')).toContain('fig');
   });
 
+  it('escapes backslashes in alt text so they cannot escape the closing bracket', () => {
+    // An alt ending in a backslash would otherwise emit "...\](src)", where the
+    // "\]" escapes the bracket and the image markdown never closes.
+    const out = htmlToMarkdown(
+      '<p><img src="https://x.co/i.png" alt="trailing\\"></p>',
+    );
+    expect(out).toBe('![trailing\\\\](https://x.co/i.png)');
+    expect(markdownToHtml(out)).toContain('<img');
+  });
+
+  it('escapes quotes in an image title so the title cannot be closed early', () => {
+    const out = htmlToMarkdown(
+      '<p><img src="https://x.co/i.png" alt="a" title=\'say "hi"\'></p>',
+    );
+    expect(out).toBe('![a](https://x.co/i.png "say \\"hi\\"")');
+  });
+
   it('is idempotent: a second round trip changes nothing', () => {
     const bodies = [
       'See [my post](https://ecency.com/@user/post) here.',
