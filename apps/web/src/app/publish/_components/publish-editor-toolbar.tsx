@@ -6,6 +6,7 @@ import {
   THREESPEAK_WEIGHT
 } from "@/api/threespeak-embed";
 import { EcencyConfigManager } from "@/config";
+import { dictationSeparator } from "../_hooks/dictation-separator";
 import { error, LoginRequired } from "@/features/shared";
 import dynamic from "next/dynamic";
 
@@ -531,7 +532,23 @@ export function PublishEditorToolbar({ editor, allowToUploadVideo = true }: Prop
           <PublishEditorDictationDialog
             show={showDictation}
             setShow={setShowDictation}
-            onInsert={(text) => editor?.chain().focus().insertContent(text).run()}
+            onInsert={(text) => {
+              // Space between segments so consecutive dictations do not run together.
+              // TipTap leaves the cursor AFTER inserted content, so segments append
+              // rather than replace -- unlike the mobile editor, which needed its own
+              // insert path for exactly that reason.
+              //
+              // Inspecting nodeBefore rather than textBetween: textBetween renders
+              // non-text leaves as empty, so an inline image immediately before the
+              // cursor looked like the start of a block and the transcript was
+              // concatenated straight onto it.
+              const separator = dictationSeparator(editor?.state.selection.$from.nodeBefore);
+              editor
+                ?.chain()
+                .focus()
+                .insertContent(`${separator}${text}`)
+                .run();
+            }}
           />
         )}
 

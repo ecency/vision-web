@@ -77,6 +77,7 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
     data: price,
     isLoading: isPriceLoading,
     isError: isPriceError,
+    isFetching: isPriceFetching,
     refetch: refetchPrice
   } = useQuery(getAiTranscribePriceQueryOptions(username, token ?? ""));
   const { data: points } = useQuery(
@@ -92,6 +93,16 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
   // isPending from the mutation only turns true once transcribe() is called, which
   // left a window where the dialog was closable but the paid call still went out.
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Segments inserted this session: tells the user their words landed even though
+  // the dialog never closed, and switches the button to "Record more".
+  const [segments, setSegments] = useState(0);
+  // Guards the auto-submit effect against firing twice for the same recording.
+  const submittedForRef = useRef<Blob | null>(null);
+  // Set after ANY failed submission. The blob guard above stops the effect retrying
+  // on its own (which would loop), so without an explicit action the audio would be
+  // stranded -- and if the server charged a request whose response was lost, the
+  // retained idempotency key can replay that transcript for free.
+  const [needsRetry, setNeedsRetry] = useState(false);
 
   const maxSeconds = price?.max_seconds ?? 300;
   const { state, seconds, result, start, stop, reset } = useDictationRecorder({ maxSeconds });
@@ -151,6 +162,7 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
     }
 
     setIsSubmitting(true);
+    setNeedsRetry(false);
     try {
       // The closure-check ordering lives in runDictationSubmit so it is exercised by
       // tests rather than restated by them. A token is resolved per submit because a
@@ -171,6 +183,9 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
       if (outcome.status === "abandoned") return;
       if (outcome.status === "no-token") {
         error(i18next.t("publish.dictation-failed"));
+        // Nothing was sent, so the audio is still good. Without this the blob guard
+        // blocks auto-retry and no button appears -- the recording is stranded.
+        setNeedsRetry(true);
         return;
       }
 
@@ -178,13 +193,30 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
 
       if (!response.text.trim()) {
         // A silent or unintelligible clip still costs Points, so say so plainly
-        // rather than closing as though it worked.
+        // rather than resetting as though it had worked.
         error(i18next.t("publish.dictation-empty"));
+        // Deliberately NOT a retry: the request succeeded and was charged, so
+        // replaying the same key would return the same empty transcript. Clear the
+        // recorder instead, so the only useful action -- recording again -- is the
+        // one that is available.
+        idempotencyKeyRef.current = null;
+        reset();
         return;
       }
 
       onInsert(response.text);
-      close();
+      // Stay open with a clean recorder rather than closing: the point of
+      // transcribing on stop is that someone can keep dictating without reopening
+      // the dialog between paragraphs.
+      setSegments((n) => n + 1);
+      idempotencyKeyRef.current = null;
+      // Clear the rejection state as well. Leaving it set kept the top-up CTA on
+      // screen after a successful top-up-and-retry, and -- worse -- kept
+      // cannotAfford true, so every later recording silently skipped auto-submit.
+      setServerRejectedForPoints(false);
+      setPendingCost(0);
+      setNeedsRetry(false);
+      reset();
     } catch (e) {
       const status = (e as { status?: number }).status;
       if (closedRef.current) return;
@@ -199,11 +231,37 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
       } else {
         error(i18next.t("publish.dictation-failed"));
       }
-      // The key is deliberately kept so a retry replays rather than re-charges.
+      // The key and the recording are both kept so Retry replays rather than
+      // re-charging, and so a lost response can still be recovered.
+      setNeedsRetry(true);
     } finally {
       setIsSubmitting(false);
     }
-  }, [result, username, isSubmitting, transcribe, onInsert, close, estimatedCost]);
+  }, [result, username, isSubmitting, transcribe, onInsert, reset, estimatedCost]);
+
+  // Transcribe as soon as recording stops. Keyed on the blob so a re-render cannot
+  // fire a second paid request for the same audio.
+  //
+  // Skipped when the client already knows the balance is short: firing anyway would
+  // spend a round trip to be told what we can see, and leave the user staring at a
+  // spinner before the top-up prompt they actually need.
+  useEffect(() => {
+    // isPriceFetching matters as much as isPriceReady: a successful transcription
+    // invalidates free_remaining, and that refetch is async while "Record more" is
+    // already enabled. Submitting mid-refresh would price the clip against a spent
+    // free allowance -- quoting zero and charging anyway.
+    if (
+      state === "stopped" &&
+      result &&
+      isPriceReady &&
+      !isPriceFetching &&
+      !cannotAfford &&
+      submittedForRef.current !== result.blob
+    ) {
+      submittedForRef.current = result.blob;
+      submit();
+    }
+  }, [state, result, isPriceReady, isPriceFetching, cannotAfford, submit]);
 
   // A fresh recording is a different operation, so it gets a fresh key.
   useEffect(() => {
@@ -215,6 +273,8 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
   useEffect(() => {
     if (show) {
       closedRef.current = false;
+      submittedForRef.current = null;
+      setSegments(0);
     }
   }, [show]);
 
@@ -340,22 +400,33 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
             icon={<UilMicrophone />}
             size="sm"
             appearance="gray"
-            disabled={state === "requesting" || isSubmitting || !isPriceReady}
+            disabled={state === "requesting" || isSubmitting || !isPriceReady || isPriceFetching}
             onClick={start}
           >
-            {result
-              ? i18next.t("publish.dictation-rerecord")
+            {segments > 0
+              ? i18next.t("publish.dictation-record-more")
               : i18next.t("publish.dictation-start")}
           </Button>
         )}
 
-        <Button
-          size="sm"
-          disabled={!result || isSubmitting || cannotAfford || !isPriceReady}
-          isLoading={isSubmitting}
-          onClick={submit}
-        >
-          {i18next.t("publish.dictation-insert")}
+        {/* Shown when the audio is still waiting to be sent: either the client knew
+            the balance was short so auto-submit was skipped, or a submission failed
+            and the effect will not retry itself. Without this the recording is
+            stranded -- and a paid-but-lost response could never be recovered. */}
+        {result && (cannotAfford || needsRetry) && (
+          <Button
+            size="sm"
+            disabled={isSubmitting || !isPriceReady || isPriceFetching}
+            onClick={submit}
+          >
+            {i18next.t(
+              needsRetry ? "publish.dictation-retry" : "publish.dictation-transcribe"
+            )}
+          </Button>
+        )}
+
+        <Button size="sm" appearance="gray" disabled={isSubmitting} onClick={close}>
+          {i18next.t("publish.dictation-done")}
         </Button>
       </ModalFooter>
     </Modal>
