@@ -95,6 +95,9 @@ importers:
       '@tiptap/extension-image':
         specifier: ^2.11.5
         version: 2.26.2(@tiptap/core@2.26.2(@tiptap/pm@2.26.2))
+      '@tiptap/extension-link':
+        specifier: ^2.26.2
+        version: 2.26.2(@tiptap/core@2.26.2(@tiptap/pm@2.26.2))(@tiptap/pm@2.26.2)
       '@tiptap/extension-placeholder':
         specifier: ^2.11.5
         version: 2.26.2(@tiptap/core@2.26.2(@tiptap/pm@2.26.2))(@tiptap/pm@2.26.2)
@@ -213,6 +216,9 @@ importers:
       '@types/turndown':
         specifier: ^5.0.0
         version: 5.0.5
+      jsdom:
+        specifier: ^26.1.0
+        version: 26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       tailwindcss:
         specifier: ^4.1.13
         version: 4.1.18
@@ -7182,6 +7188,7 @@ packages:
 
   react-grid-layout@1.5.2:
     resolution: {integrity: sha512-vT7xmQqszTT+sQw/LfisrEO4le1EPNnSEMVHy6sBZyzS3yGkMywdOd+5iEFFwQwt0NSaGkxuRmYwa1JsP6OJdw==}
+    deprecated: 'Ships stray files that were never in the repo: an ip_fetcher binary and its curl-sample source (1.5.0-1.5.3), plus a yarn-error.log containing local paths (1.5.3). Upgrade to 1.5.4, which is byte-identical apart from removing them. See https://github.com/react-grid-layout/react-grid-layout/issues/2269'
     peerDependencies:
       react: '>= 16.3.0'
       react-dom: '>= 16.3.0'
@@ -12366,7 +12373,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.1.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.18.8)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.0.16(@types/node@22.18.8)(esbuild@0.28.1)(jiti@2.6.1)(sass-embedded@1.93.2)(sass@1.93.2)(terser@5.47.1)(tsx@4.21.0))
+      vitest: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@24.10.8)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.0.16(@types/node@24.10.8)(esbuild@0.28.1)(jiti@2.6.1)(sass-embedded@1.93.2)(sass@1.93.2)(terser@5.47.1)(tsx@4.21.0))
 
   '@vitest/expect@4.1.8':
     dependencies:
@@ -12428,7 +12435,7 @@ snapshots:
       sirv: 3.0.2
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
-      vitest: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.18.8)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.0.16(@types/node@22.18.8)(esbuild@0.28.1)(jiti@2.6.1)(sass-embedded@1.93.2)(sass@1.93.2)(terser@5.47.1)(tsx@4.21.0))
+      vitest: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@24.10.8)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.0.16(@types/node@24.10.8)(esbuild@0.28.1)(jiti@2.6.1)(sass-embedded@1.93.2)(sass@1.93.2)(terser@5.47.1)(tsx@4.21.0))
 
   '@vitest/utils@4.1.8':
     dependencies:

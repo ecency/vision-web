@@ -65,11 +65,37 @@ function RouteComponent() {
   return <EditPageContent entry={entry} />;
 }
 
+/**
+ * json_metadata normally arrives parsed, but some nodes hand it back as the raw
+ * JSON string. Both shapes have to resolve to an object here: whatever is not
+ * carried through ends up erased from the post on the next update.
+ */
+function parseJsonMetadata(value: unknown): Record<string, unknown> | undefined {
+  let parsed = value;
+
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return undefined;
+    }
+  }
+
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : undefined;
+}
+
 function EditPageContent({ entry }: { entry: any }) {
+  const jsonMetadata = useMemo(
+    () => parseJsonMetadata(entry.json_metadata),
+    [entry]
+  );
+
   const initialTags = useMemo(() => {
-    const tags = entry.json_metadata?.tags;
+    const tags = jsonMetadata?.tags;
     return Array.isArray(tags) ? tags : [];
-  }, [entry]);
+  }, [jsonMetadata]);
 
   const parentPermlink = useMemo(() => {
     return entry.parent_permlink || (initialTags[0] ?? "").toLowerCase();
@@ -86,6 +112,7 @@ function EditPageContent({ entry }: { entry: any }) {
               initialTitle={entry.title}
               initialBody={entry.body}
               initialTags={initialTags}
+              initialJsonMetadata={jsonMetadata}
             />
           </main>
           <div className="blog-sidebar-container order-1 lg:order-2">

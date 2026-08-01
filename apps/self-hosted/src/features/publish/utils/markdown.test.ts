@@ -1,0 +1,253 @@
+// @vitest-environment jsdom
+
+import { Editor } from '@tiptap/core';
+import Image from '@tiptap/extension-image';
+import Table from '@tiptap/extension-table';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
+import TableRow from '@tiptap/extension-table-row';
+import TextAlign from '@tiptap/extension-text-align';
+import StarterKit from '@tiptap/starter-kit';
+import { describe, expect, it } from 'vitest';
+import { LINK_EXTENSION } from './editor-extensions';
+import {
+  hasUnsupportedMarkup,
+  htmlToMarkdown,
+  markdownToHtml,
+} from './markdown';
+
+/**
+ * Mirrors the extension list used by EditPostEditor and usePublishEditor. These
+ * assertions are about what a post looks like AFTER it has been loaded into the
+ * editor and saved again, which is the path that was silently rewriting posts.
+ */
+function roundTrip(markdown: string): string {
+  const editor = new Editor({
+    extensions: [
+      StarterKit,
+      LINK_EXTENSION,
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      Image.configure({ inline: true }),
+    ],
+    content: markdownToHtml(markdown),
+  });
+
+  try {
+    return htmlToMarkdown(editor.getHTML());
+  } finally {
+    editor.destroy();
+  }
+}
+
+describe('edit round-trip', () => {
+  it('keeps link targets', () => {
+    const body = 'See [my post](https://ecency.com/@user/post) here.';
+    expect(roundTrip(body)).toBe(body);
+  });
+
+  it('keeps a bare link written as markdown', () => {
+    expect(roundTrip('[a](https://ecency.com)')).toBe(
+      '[a](https://ecency.com)',
+    );
+  });
+
+  it('keeps single newlines as line breaks', () => {
+    expect(roundTrip('Line one\nLine two')).toBe('Line one\nLine two');
+  });
+
+  it('keeps a centered image wrapper', () => {
+    const body = '<center><img src="https://files.peakd.com/a.jpg"></center>';
+    expect(roundTrip(body)).toContain('<center>');
+    expect(roundTrip(body)).toContain('https://files.peakd.com/a.jpg');
+  });
+
+  it('keeps centering when the image is written as markdown', () => {
+    const out = roundTrip(
+      '<center>![img](https://files.peakd.com/a.jpg)</center>',
+    );
+    expect(out).toContain('<center>');
+    expect(out).toContain('https://files.peakd.com/a.jpg');
+    // The old pipeline escaped the brackets and stored literal text.
+    expect(out).not.toContain('\\[');
+  });
+
+  it('keeps a centered image that is wrapped in a link', () => {
+    const out = roundTrip(
+      '<center><a href="https://ecency.com"><img src="https://files.peakd.com/a.jpg"></a></center>',
+    );
+    expect(out).toContain('<center>');
+    expect(out).toContain('https://ecency.com');
+    expect(out).toContain('https://files.peakd.com/a.jpg');
+  });
+
+  it('does not leak the editor target/rel attributes into the stored body', () => {
+    const out = roundTrip(
+      '<center><a href="https://ecency.com"><img src="https://files.peakd.com/a.jpg"></a></center>',
+    );
+    expect(out).not.toContain('target=');
+    expect(out).not.toContain('nofollow');
+  });
+
+  it('keeps strikethrough', () => {
+    expect(roundTrip('Price: ~~$100~~ $80')).toBe('Price: ~~$100~~ $80');
+  });
+
+  it('leaves bare URLs alone instead of rewriting them as markdown links', () => {
+    expect(roundTrip('see https://ecency.com/faq here')).toBe(
+      'see https://ecency.com/faq here',
+    );
+  });
+
+  it('keeps an image title and escapes brackets in alt text', () => {
+    expect(roundTrip('![a](https://x.co/i.png "the title")')).toContain(
+      '"the title"',
+    );
+    expect(roundTrip('![fig \\[1\\]](https://x.co/i.png)')).toContain('fig');
+  });
+
+  it('is idempotent: a second round trip changes nothing', () => {
+    const bodies = [
+      'See [my post](https://ecency.com/@user/post) here.',
+      'Line one\nLine two',
+      '<center><img src="https://files.peakd.com/a.jpg"></center>',
+      '```js\nconst a = 1;\n```',
+      '| a | b |\n| --- | --- |\n| 1 | 2 |',
+      '- one\n- two\n  - nested',
+    ];
+    for (const body of bodies) {
+      const once = roundTrip(body);
+      expect(roundTrip(once)).toBe(once);
+    }
+  });
+
+  it('keeps a pull-left image wrapper', () => {
+    const out = roundTrip(
+      '<div class="pull-left"><img src="https://files.peakd.com/a.jpg"></div>',
+    );
+    expect(out).toContain('pull-left');
+    expect(out).toContain('https://files.peakd.com/a.jpg');
+  });
+
+  it('leaves wrappers holding block content alone rather than nesting them in a paragraph', () => {
+    const html = markdownToHtml(
+      '<div class="pull-right"><p>one</p><p>two</p></div>',
+    );
+    expect(html).not.toContain('<p><p>');
+  });
+
+  it('keeps code blocks and blockquotes', () => {
+    expect(roundTrip('```js\nconst a = 1;\n```')).toBe(
+      '```js\nconst a = 1;\n```',
+    );
+    expect(roundTrip('> quoted text')).toBe('> quoted text');
+  });
+
+  it('keeps mentions and tags untouched', () => {
+    expect(roundTrip('Hello @alice and #hive')).toBe('Hello @alice and #hive');
+  });
+
+  it('keeps table content', () => {
+    const out = roundTrip('| a | b |\n| --- | --- |\n| 1 | 2 |');
+    for (const cell of ['a', 'b', '1', '2']) {
+      expect(out).toContain(`<p>${cell}</p>`);
+    }
+  });
+});
+
+describe('hasUnsupportedMarkup', () => {
+  it('flags embeds the editor schema cannot hold', () => {
+    expect(
+      hasUnsupportedMarkup(
+        '<center><iframe src="https://www.youtube.com/embed/abc"></iframe></center>',
+      ),
+    ).toBe(true);
+    expect(hasUnsupportedMarkup('<video src="a.mp4"></video>')).toBe(true);
+    expect(hasUnsupportedMarkup('<script>alert(1)</script>')).toBe(true);
+  });
+
+  it('flags markup the schema silently flattens', () => {
+    // <details> is the worst of these: flattening it exposes hidden content.
+    expect(
+      hasUnsupportedMarkup(
+        '<details><summary>Spoiler</summary>\n\nhidden\n\n</details>',
+      ),
+    ).toBe(true);
+    expect(hasUnsupportedMarkup('H<sub>2</sub>O')).toBe(true);
+    expect(hasUnsupportedMarkup('x<sup>2</sup>')).toBe(true);
+    expect(hasUnsupportedMarkup('<u>underlined</u>')).toBe(true);
+  });
+
+  it('flags task lists, whose checkbox state has nowhere to live', () => {
+    expect(hasUnsupportedMarkup('- [x] done\n- [ ] todo')).toBe(true);
+  });
+
+  it('flags hive deep links, whose scheme is rejected on load', () => {
+    expect(hasUnsupportedMarkup('[vote](hive://sign/op)')).toBe(true);
+  });
+
+  it('flags alignment wrappers that cannot be rebuilt', () => {
+    // A caption alongside the image: the old code turned the image markdown
+    // into literal "![" text inside a raw HTML paragraph.
+    expect(
+      hasUnsupportedMarkup(
+        '<center>![img](https://x.co/i.png) photo credit</center>',
+      ),
+    ).toBe(true);
+    // Clickable centered banner written as nested markdown (the 3Speak shape).
+    expect(
+      hasUnsupportedMarkup(
+        '<center>[![thumb](https://x.co/t.jpg)](https://3speak.tv/w/x)</center>',
+      ),
+    ).toBe(true);
+    // Blank lines make marked close the HTML block, giving <center><p>...
+    expect(
+      hasUnsupportedMarkup(
+        '<center>\n\n![img](https://x.co/a.jpg)\n\n</center>',
+      ),
+    ).toBe(true);
+    expect(hasUnsupportedMarkup('<center>Thanks for reading!</center>')).toBe(
+      true,
+    );
+    expect(hasUnsupportedMarkup('<center>\n\n# Title\n\n</center>')).toBe(true);
+  });
+
+  it('does not flag ordinary posts', () => {
+    expect(
+      hasUnsupportedMarkup(
+        '# Title\n\nSome **body** with [a link](https://x.co)',
+      ),
+    ).toBe(false);
+    expect(
+      hasUnsupportedMarkup(
+        '<center><img src="https://files.peakd.com/a.jpg"></center>',
+      ),
+    ).toBe(false);
+    expect(
+      hasUnsupportedMarkup(
+        '<center>![img](https://files.peakd.com/a.jpg)</center>',
+      ),
+    ).toBe(false);
+    expect(
+      hasUnsupportedMarkup(
+        '<center><a href="https://ecency.com"><img src="https://x.co/a.jpg"></a></center>',
+      ),
+    ).toBe(false);
+    expect(hasUnsupportedMarkup('- one\n- two\n\n> quote')).toBe(false);
+    expect(hasUnsupportedMarkup('| a | b |\n| --- | --- |\n| 1 | 2 |')).toBe(
+      false,
+    );
+    expect(hasUnsupportedMarkup(undefined)).toBe(false);
+  });
+
+  it('is the guard that keeps an iframe post out of the lossy path', () => {
+    // Documents why the fallback exists: this body still cannot survive the
+    // editor, so EditPostEditor must not load it.
+    const body = '<iframe src="https://www.youtube.com/embed/abc"></iframe>';
+    expect(roundTrip(body)).not.toContain('iframe');
+    expect(hasUnsupportedMarkup(body)).toBe(true);
+  });
+});

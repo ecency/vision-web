@@ -19,12 +19,14 @@ export function useUpdatePost() {
       title,
       body,
       tags,
+      jsonMetadata,
     }: {
       permlink: string;
       parentPermlink: string;
       title: string;
       body: string;
       tags: string[];
+      jsonMetadata?: Record<string, unknown>;
     }) => {
       if (!user) {
         throw new Error("Authentication required to update post");
@@ -55,10 +57,18 @@ export function useUpdatePost() {
         parentPermlink,
         title: title.trim(),
         body: body.trim(),
+        // Carry the post's existing metadata forward. Rebuilding it from scratch
+        // would drop image/thumbnail, description, users, links and any app
+        // specific block (3Speak's video object, for example) that was written
+        // by whichever client originally published the post.
         jsonMetadata: {
+          ...jsonMetadata,
           tags: normalizedTags,
           app: "ecency-selfhost/1.0",
-          format: "markdown",
+          format:
+            typeof jsonMetadata?.format === "string"
+              ? jsonMetadata.format
+              : "markdown",
         },
       });
     },
@@ -67,7 +77,7 @@ export function useUpdatePost() {
 
       navigate({
         to: "/$author/$permlink",
-        params: { author: user.username, permlink: variables.permlink },
+        params: { author: `@${user.username}`, permlink: variables.permlink },
         search: { raw: undefined },
       });
     },

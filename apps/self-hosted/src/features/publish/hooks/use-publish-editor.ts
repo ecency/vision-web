@@ -8,6 +8,7 @@ import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import TextAlign from "@tiptap/extension-text-align";
 import { useCallback, useEffect } from "react";
+import { LINK_EXTENSION } from "../utils/editor-extensions";
 import { htmlToMarkdown, markdownToHtml } from "../utils/markdown";
 import { usePublishState } from "./use-publish-state";
 
@@ -19,6 +20,7 @@ export function usePublishEditor() {
     shouldRerenderOnTransaction: true,
     extensions: [
       StarterKit,
+      LINK_EXTENSION,
       Placeholder.configure({
         placeholder: "Start writing..."
       }),
