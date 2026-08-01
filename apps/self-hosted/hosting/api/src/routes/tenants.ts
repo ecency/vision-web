@@ -13,7 +13,7 @@ import {
 } from '../services/tenant-service';
 import { mapTenantFromDb } from '../types';
 import { PAYMENT_ACCOUNT, MONTHLY_PRICE_HBD, PRO_UPGRADE_PRICE_HBD, hbd } from '../pricing';
-import { ConfigService } from '../services/config-service';
+import { ConfigService, isPublishableTenant } from '../services/config-service';
 import { authMiddleware } from '../middleware/auth';
 import { subscriptionPaywall, proUpgradePaywall } from '../middleware/x402-paywall';
 import { withPaymentTargetLock } from '../middleware/payment-target-lock';
@@ -567,8 +567,15 @@ tenantRoutes.patch('/:username', authMiddleware, zValidator('json', updateTenant
     ? await TenantService.applyConfigDocument(username, body.config)
     : await TenantService.updateConfig(username, body.config);
   
-  // Regenerate config file
-  await ConfigService.generateConfigFile(updatedTenant);
+  // Publish only for a tenant that is entitled to be served. POST deliberately
+  // does not write the file for the same reason: nginx serves any file that
+  // exists with no subscription check, so publishing here would put a blog that
+  // has never been paid for live until the next sweep removes it. The config
+  // itself is always persisted, so the edit is not lost.
+  const published = isPublishableTenant(updatedTenant);
+  if (published) {
+    await ConfigService.generateConfigFile(updatedTenant);
+  }
   
   void AuditService.log({
     tenantId: updatedTenant.id,
@@ -581,7 +588,12 @@ tenantRoutes.patch('/:username', authMiddleware, zValidator('json', updateTenant
   return c.json({
     username: updatedTenant.username,
     config: updatedTenant.config,
-    message: 'Configuration updated',
+    // Tells the editor whether the change is live or only stored, so a saved
+    // edit that the visitor cannot see yet is explainable.
+    published,
+    message: published
+      ? 'Configuration updated'
+      : 'Configuration saved. It goes live once the subscription is active.',
   });
 });
 
