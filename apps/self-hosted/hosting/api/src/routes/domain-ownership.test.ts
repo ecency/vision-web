@@ -1,0 +1,281 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  getByUsername: vi.fn(),
+  isDomainClaimed: vi.fn(),
+  setCustomDomain: vi.fn(),
+  verifyCustomDomain: vi.fn(),
+  removeCustomDomain: vi.fn(),
+  getByDomain: vi.fn(),
+  createVerification: vi.fn(),
+  verifyDomain: vi.fn(),
+  markVerified: vi.fn(),
+}));
+
+class DomainInUseError extends Error {}
+
+vi.mock('../services/tenant-service', () => ({
+  TenantService: {
+    getByUsername: mocks.getByUsername,
+    isDomainClaimed: mocks.isDomainClaimed,
+    setCustomDomain: mocks.setCustomDomain,
+    verifyCustomDomain: mocks.verifyCustomDomain,
+    removeCustomDomain: mocks.removeCustomDomain,
+    getByDomain: mocks.getByDomain,
+  },
+  DomainInUseError,
+}));
+
+vi.mock('../services/domain-service', () => ({
+  DomainService: {
+    createVerification: mocks.createVerification,
+    verifyDomain: mocks.verifyDomain,
+    markVerified: mocks.markVerified,
+  },
+}));
+
+vi.mock('../middleware/auth', () => ({
+  authMiddleware: async (c: any, next: any) => {
+    c.set('user', { username: 'alice' });
+    await next();
+  },
+}));
+
+vi.mock('../services/audit-service', () => ({
+  AuditService: { log: vi.fn() },
+  parseClientIp: () => null,
+}));
+
+vi.mock('../utils/cors-domains', () => ({ addVerifiedDomainOrigin: vi.fn() }));
+
+const { domainRoutes } = await import('./domains');
+
+const COMMUNITY = {
+  id: 'tenant-community',
+  username: 'hive-125125',
+  owner: 'alice',
+  subscriptionPlan: 'pro',
+  customDomain: null as string | null,
+};
+
+function request(path: string, init?: RequestInit) {
+  return domainRoutes.request(`http://localhost${path}`, init);
+}
+
+beforeEach(() => {
+  for (const mock of Object.values(mocks)) mock.mockReset();
+  mocks.createVerification.mockResolvedValue({
+    verificationMethod: 'cname',
+    expiresAt: new Date().toISOString(),
+  });
+  mocks.isDomainClaimed.mockResolvedValue(false);
+});
+
+describe('custom domains for a community instance', () => {
+  it('addresses the community tenant rather than the caller name', async () => {
+    // A community tenant is username hive-NNNN with a separate owner, so
+    // resolving by the caller's own name could only reach a personal blog.
+    mocks.getByUsername.mockImplementation(async (name: string) =>
+      name === 'hive-125125' ? { ...COMMUNITY } : null,
+    );
+    mocks.setCustomDomain.mockResolvedValue({ ...COMMUNITY });
+
+    const res = await request('/?tenant=hive-125125', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ domain: 'blog.example.com' }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(mocks.setCustomDomain).toHaveBeenCalledWith(
+      'hive-125125',
+      'blog.example.com',
+    );
+  });
+
+  it('still refuses a tenant the caller does not own', async () => {
+    mocks.getByUsername.mockResolvedValue({ ...COMMUNITY, owner: 'bob' });
+
+    const res = await request('/?tenant=hive-125125', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ domain: 'blog.example.com' }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(mocks.setCustomDomain).not.toHaveBeenCalled();
+  });
+});
+
+describe('domain occupancy', () => {
+  it('rejects a domain another tenant reserved but never verified', async () => {
+    // getByDomain matches verified rows only, but the column is UNIQUE either
+    // way, so an unverified reservation still blocks everyone else.
+    mocks.getByUsername.mockResolvedValue({ ...COMMUNITY, username: 'alice' });
+    mocks.isDomainClaimed.mockResolvedValue(true);
+
+    const res = await request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ domain: 'taken.example.com' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(mocks.setCustomDomain).not.toHaveBeenCalled();
+  });
+
+  it('answers a lost race with a conflict rather than a server error', async () => {
+    mocks.getByUsername.mockResolvedValue({ ...COMMUNITY, username: 'alice' });
+    mocks.setCustomDomain.mockRejectedValue(new DomainInUseError('x'));
+
+    const res = await request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ domain: 'raced.example.com' }),
+    });
+
+    expect(res.status).toBe(409);
+  });
+});
+
+describe('domain verification', () => {
+  it('applies the result to the domain that was checked', async () => {
+    mocks.getByUsername.mockResolvedValue({
+      ...COMMUNITY,
+      username: 'alice',
+      customDomain: 'mine.example.com',
+    });
+    mocks.verifyDomain.mockResolvedValue(true);
+    mocks.verifyCustomDomain.mockResolvedValue({ ...COMMUNITY });
+
+    const res = await request('/verify', { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    expect(mocks.verifyCustomDomain).toHaveBeenCalledWith(
+      'alice',
+      'mine.example.com',
+    );
+    expect(mocks.markVerified).toHaveBeenCalledWith('alice', 'mine.example.com');
+  });
+
+  it('does not report success when the domain changed mid-check', async () => {
+    // The conditional update matched no row, so the DNS result describes a
+    // domain the tenant no longer holds.
+    mocks.getByUsername.mockResolvedValue({
+      ...COMMUNITY,
+      username: 'alice',
+      customDomain: 'mine.example.com',
+    });
+    mocks.verifyDomain.mockResolvedValue(true);
+    mocks.verifyCustomDomain.mockResolvedValue(null);
+
+    const res = await request('/verify', { method: 'POST' });
+    const body = (await res.json()) as { verified: boolean };
+
+    expect(body.verified).toBe(false);
+    expect(mocks.markVerified).not.toHaveBeenCalled();
+  });
+});
+
+describe('removing a custom domain', () => {
+  it('removes it from the community tenant, not the caller name', async () => {
+    mocks.getByUsername.mockImplementation(async (name: string) =>
+      name === 'hive-125125' ? { ...COMMUNITY } : null,
+    );
+    mocks.removeCustomDomain.mockResolvedValue(undefined);
+
+    const res = await request('/?tenant=hive-125125', { method: 'DELETE' });
+
+    expect(res.status).toBe(200);
+    expect(mocks.removeCustomDomain).toHaveBeenCalledWith('hive-125125');
+  });
+
+  it('refuses to strip the domain off a tenant the caller does not own', async () => {
+    // Destructive and newly reachable for other tenants, so the ownership check
+    // is asserted rather than assumed.
+    mocks.getByUsername.mockResolvedValue({ ...COMMUNITY, owner: 'bob' });
+
+    const res = await request('/?tenant=hive-125125', { method: 'DELETE' });
+
+    expect(res.status).toBe(403);
+    expect(mocks.removeCustomDomain).not.toHaveBeenCalled();
+  });
+
+  it('reports a missing tenant rather than removing anything', async () => {
+    mocks.getByUsername.mockResolvedValue(null);
+
+    const res = await request('/?tenant=hive-999999', { method: 'DELETE' });
+
+    expect(res.status).toBe(404);
+    expect(mocks.removeCustomDomain).not.toHaveBeenCalled();
+  });
+});
+
+describe('tenant targeting', () => {
+  it('rejects a malformed tenant parameter before touching the database', async () => {
+    const res = await request('/?tenant=NOT%20A%20NAME', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ domain: 'blog.example.com' }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(mocks.getByUsername).not.toHaveBeenCalled();
+  });
+
+  it('defaults to the caller when no tenant is given', async () => {
+    mocks.getByUsername.mockResolvedValue({ ...COMMUNITY, username: 'alice' });
+    mocks.removeCustomDomain.mockResolvedValue(undefined);
+
+    await request('/', { method: 'DELETE' });
+
+    expect(mocks.getByUsername).toHaveBeenCalledWith('alice');
+  });
+});
+
+describe('re-submitting a domain the tenant already holds', () => {
+  it('leaves the verification intact', async () => {
+    // setCustomDomain clears the verified flag, and the origin sync drops the
+    // vhost and certificate for anything that leaves the verified set.
+    mocks.getByUsername.mockResolvedValue({
+      ...COMMUNITY,
+      username: 'alice',
+      customDomain: 'mine.example.com',
+      customDomainVerified: true,
+    });
+
+    const res = await request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ domain: 'mine.example.com' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.setCustomDomain).not.toHaveBeenCalled();
+  });
+});
+
+describe('availability check', () => {
+  it('reports a domain reserved but never verified as unavailable', async () => {
+    // The verified-only lookup used to call this free, right up until the add
+    // call refused it with a conflict.
+    mocks.isDomainClaimed.mockResolvedValue(true);
+    mocks.getByDomain.mockResolvedValue(null);
+
+    const res = await request('/check/squat.example.com');
+    const body = (await res.json()) as { available: boolean; registeredTo: string | null };
+
+    expect(body.available).toBe(false);
+    // Unproven claims do not name their holder to unauthenticated callers.
+    expect(body.registeredTo).toBe(null);
+  });
+
+  it('reports a free domain as available', async () => {
+    mocks.isDomainClaimed.mockResolvedValue(false);
+
+    const res = await request('/check/free.example.com');
+    const body = (await res.json()) as { available: boolean };
+
+    expect(body.available).toBe(true);
+  });
+});

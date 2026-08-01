@@ -3,15 +3,54 @@
  */
 
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { TenantService } from '../services/tenant-service';
+import { DomainInUseError, TenantService } from '../services/tenant-service';
+import type { Tenant } from '../types';
 import { DomainService } from '../services/domain-service';
 import { authMiddleware } from '../middleware/auth';
 import { AuditService, parseClientIp } from '../services/audit-service';
 import { addVerifiedDomainOrigin } from '../utils/cors-domains';
 
+/** Hive account names, the same shape the internal rail validates. */
+const HIVE_USERNAME = /^[a-z][a-z0-9.-]{2,15}$/;
+
 export const domainRoutes = new Hono();
+
+/**
+ * Resolves the tenant a domain request is about.
+ *
+ * A community tenant is stored as username 'hive-NNNN' with a separate owner,
+ * so resolving by the caller's own name could only ever reach a personal blog
+ * and a community owner got 404 for the domain their Pro plan paid for. The
+ * target is explicit, and authorisation stays on tenant.owner.
+ */
+type OwnedTenant =
+  | { tenant: Tenant; actor: string; response: null }
+  | { tenant: null; actor: null; response: Response };
+
+async function resolveOwnedTenant(c: Context): Promise<OwnedTenant> {
+  const authUser = c.get('user');
+  const requested = (c.req.query('tenant') || '').trim().toLowerCase();
+
+  // Shape-checked before it reaches the database, matching every sibling path.
+  // Authorisation keys on tenant.owner rather than on this value, so it is not
+  // a bypass, but an unbounded free-text lookup is not worth leaving open.
+  if (requested && !HIVE_USERNAME.test(requested)) {
+    return { tenant: null, actor: null, response: c.json({ error: 'Invalid tenant' }, 400) };
+  }
+
+  const tenant = await TenantService.getByUsername(requested || authUser.username);
+  if (!tenant) {
+    return { tenant: null, actor: null, response: c.json({ error: 'Tenant not found' }, 404) };
+  }
+  if (authUser.username !== tenant.owner) {
+    return { tenant: null, actor: null, response: c.json({ error: 'Unauthorized' }, 403) };
+  }
+
+  return { tenant, actor: authUser.username, response: null };
+}
 
 // Validation schemas
 const addDomainSchema = z.object({
@@ -24,42 +63,51 @@ const addDomainSchema = z.object({
 // POST /v1/domains - Add custom domain to tenant
 domainRoutes.post('/', authMiddleware, zValidator('json', addDomainSchema), async (c) => {
   const { domain } = c.req.valid('json');
-  const authUser = c.get('user');
-  const username = authUser.username;
-
-  // Get tenant
-  const tenant = await TenantService.getByUsername(username);
-  if (!tenant) {
-    return c.json({ error: 'Tenant not found' }, 404);
-  }
-
-  // Authorize the controlling owner, not the showcased account.
-  if (authUser.username !== tenant.owner) {
-    return c.json({ error: 'Unauthorized' }, 403);
-  }
+  const { tenant, actor, response } = await resolveOwnedTenant(c);
+  if (!tenant) return response;
+  const username = tenant.username;
 
   // Check if Pro plan
   if (tenant.subscriptionPlan !== 'pro') {
     return c.json({ error: 'Custom domains require Pro plan' }, 402);
   }
 
-  // Check if domain is already in use
-  const existingTenant = await TenantService.getByDomain(domain);
-  if (existingTenant && existingTenant.username !== username) {
+  // Occupancy covers unverified reservations too: the column is UNIQUE either
+  // way, so an unverified row still blocks everyone else.
+  if (await TenantService.isDomainClaimed(domain, username)) {
     return c.json({ error: 'Domain already in use' }, 409);
   }
 
-  // Set domain and generate verification
-  await TenantService.setCustomDomain(username, domain);
-  const verification = await DomainService.createVerification(username, domain);
+  // Re-submitting the domain this tenant already has verified must not run the
+  // write below: setCustomDomain clears the verified flag, and the origin sync
+  // removes the vhost and certificate for anything that leaves the verified
+  // set, so a repeat submit would take a live blog off its own hostname.
+  if (tenant.customDomainVerified && tenant.customDomain === domain.toLowerCase()) {
+    return c.json({ domain, verified: true, message: 'Domain already verified' });
+  }
 
+  // Set domain and generate verification
+  try {
+    await TenantService.setCustomDomain(username, domain);
+  } catch (error) {
+    if (error instanceof DomainInUseError) {
+      return c.json({ error: 'Domain already in use' }, 409);
+    }
+    throw error;
+  }
+  // Recorded as soon as the tenant row changes, before the verification record
+  // it does not depend on, matching internal.ts: setCustomDomain also clears
+  // custom_domain_verified, so a throw from createVerification would otherwise
+  // leave the domain state changed with nothing in the trail to say what did it.
   void AuditService.log({
     tenantId: tenant.id,
     eventType: 'domain.added',
-    eventData: { domain, username },
+    eventData: { domain, username, actor },
     ipAddress: parseClientIp(c.req.header('x-forwarded-for')),
     userAgent: c.req.header('user-agent'),
   });
+
+  const verification = await DomainService.createVerification(username, domain);
 
   // The record NAME must be the domain itself: verification resolves the domain's CNAME
   // (and serving requires it too). The internal verification token is bookkeeping only.
@@ -78,77 +126,71 @@ domainRoutes.post('/', authMiddleware, zValidator('json', addDomainSchema), asyn
 
 // POST /v1/domains/verify - Verify domain ownership
 domainRoutes.post('/verify', authMiddleware, async (c) => {
-  const authUser = c.get('user');
-  const username = authUser.username;
-
-  // Get tenant
-  const tenant = await TenantService.getByUsername(username);
-  if (!tenant) {
-    return c.json({ error: 'Tenant not found' }, 404);
-  }
-
-  // Authorize the controlling owner, not the showcased account.
-  if (authUser.username !== tenant.owner) {
-    return c.json({ error: 'Unauthorized' }, 403);
-  }
+  const { tenant, actor, response } = await resolveOwnedTenant(c);
+  if (!tenant) return response;
+  const username = tenant.username;
 
   if (!tenant.customDomain) {
     return c.json({ error: 'No custom domain configured' }, 400);
   }
 
+  // Captured before the DNS round trip so the result is applied to the domain
+  // that was actually checked.
+  const checkedDomain = tenant.customDomain;
+
   // Check DNS
-  const isVerified = await DomainService.verifyDomain(tenant.customDomain, username);
+  const isVerified = await DomainService.verifyDomain(checkedDomain, username);
 
   if (!isVerified) {
     return c.json({
       verified: false,
-      domain: tenant.customDomain,
+      domain: checkedDomain,
       message: 'DNS verification failed. Please check your CNAME record.',
     });
   }
 
-  // Mark as verified
-  await TenantService.verifyCustomDomain(username);
-  await DomainService.markVerified(username, tenant.customDomain);
-  addVerifiedDomainOrigin(tenant.customDomain);
+  // Mark as verified. Null means the tenant's domain changed while DNS was
+  // being checked, so this result no longer describes the stored domain.
+  const verifiedTenant = await TenantService.verifyCustomDomain(username, checkedDomain);
+  if (!verifiedTenant) {
+    return c.json({
+      verified: false,
+      domain: checkedDomain,
+      message: 'The custom domain changed during verification. Please verify again.',
+    });
+  }
+
+  await DomainService.markVerified(username, checkedDomain);
+  addVerifiedDomainOrigin(checkedDomain);
 
   void AuditService.log({
     tenantId: tenant.id,
     eventType: 'domain.verified',
-    eventData: { domain: tenant.customDomain, username },
+    eventData: { domain: checkedDomain, username, actor },
     ipAddress: parseClientIp(c.req.header('x-forwarded-for')),
     userAgent: c.req.header('user-agent'),
   });
 
   return c.json({
     verified: true,
-    domain: tenant.customDomain,
+    domain: checkedDomain,
     message: 'Domain verified successfully!',
   });
 });
 
 // DELETE /v1/domains - Remove custom domain
 domainRoutes.delete('/', authMiddleware, async (c) => {
-  const authUser = c.get('user');
-  const username = authUser.username;
-
   try {
-    const tenant = await TenantService.getByUsername(username);
-    if (!tenant) {
-      return c.json({ error: 'Tenant not found' }, 404);
-    }
-
-    // Authorize the controlling owner, not the showcased account.
-    if (authUser.username !== tenant.owner) {
-      return c.json({ error: 'Unauthorized' }, 403);
-    }
+    const { tenant, actor, response } = await resolveOwnedTenant(c);
+    if (!tenant) return response;
+    const username = tenant.username;
 
     await TenantService.removeCustomDomain(username);
 
     void AuditService.log({
       tenantId: tenant?.id ?? null,
       eventType: 'domain.removed',
-      eventData: { username },
+      eventData: { username, actor },
       ipAddress: parseClientIp(c.req.header('x-forwarded-for')),
       userAgent: c.req.header('user-agent'),
     });
@@ -167,12 +209,19 @@ domainRoutes.delete('/', authMiddleware, async (c) => {
 domainRoutes.get('/check/:domain', async (c) => {
   const domain = c.req.param('domain');
 
-  const tenant = await TenantService.getByDomain(domain);
+  // Availability has to answer the same question POST / enforces. Asking the
+  // verified-only lookup reported a domain another tenant had reserved but not
+  // verified as free, right up until the add call refused it with a conflict.
+  const claimed = await TenantService.isDomainClaimed(domain);
+  // registeredTo stays on the verified lookup: an unverified reservation is
+  // unproven, so naming its holder to an unauthenticated caller would disclose
+  // a claim nobody has demonstrated.
+  const verifiedHolder = claimed ? await TenantService.getByDomain(domain) : null;
 
   return c.json({
     domain,
-    available: !tenant,
-    registeredTo: tenant ? tenant.username : null,
+    available: !claimed,
+    registeredTo: verifiedHolder ? verifiedHolder.username : null,
   });
 });
 
