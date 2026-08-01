@@ -281,15 +281,34 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
             </div>
           )}
 
+          {/* Before recording this must show the RATE, not the cost of a hypothetical
+              minimum clip. estimateDictationCost bills a minimum of one unit, so at
+              zero elapsed it renders one unit's price -- which sat next to "up to 5
+              minutes" and read as 15 Points for five minutes, when five minutes is
+              150. Once recording, the running total is the honest number. */}
           <div className="text-sm opacity-50">
             {hasBlockingError
               ? ""
               : !isPriceReady
                 ? i18next.t("publish.dictation-price-loading")
-              : estimatedCost > 0
-                ? i18next.t("publish.dictation-cost", { n: estimatedCost })
-                : i18next.t("publish.dictation-free")}
+                : state === "recording"
+                  ? estimatedCost > 0
+                    ? i18next.t("publish.dictation-cost-running", { n: estimatedCost })
+                    : i18next.t("publish.dictation-cost-running-free")
+                  : i18next.t("publish.dictation-rate", {
+                      n: unitCost,
+                      s: unitSeconds
+                    })}
           </div>
+
+          {isPriceReady && state !== "recording" && freeRemaining > 0 && (
+            <div className="text-xs opacity-50">
+              {i18next.t("publish.dictation-free-remaining", {
+                n: freeRemaining,
+                s: unitSeconds
+              })}
+            </div>
+          )}
 
           {isPriceReady && (
             <div className="text-xs opacity-50">
