@@ -3648,6 +3648,7 @@
     "dictation-recording": "Recording",
     "dictation-rate": "{{n}} Points per {{s}} seconds",
     "dictation-cost-running": "{{n}} Points so far",
+    "dictation-cost-total": "{{n}} Points for this recording",
     "dictation-cost-running-free": "Free so far",
     "dictation-free-remaining": "Your next {{n}} x {{s}}s is free today",
     "dictation-max": "Up to {{n}} minutes",
