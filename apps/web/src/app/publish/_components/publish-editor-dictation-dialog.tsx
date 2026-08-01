@@ -183,6 +183,9 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
       if (outcome.status === "abandoned") return;
       if (outcome.status === "no-token") {
         error(i18next.t("publish.dictation-failed"));
+        // Nothing was sent, so the audio is still good. Without this the blob guard
+        // blocks auto-retry and no button appears -- the recording is stranded.
+        setNeedsRetry(true);
         return;
       }
 
@@ -190,8 +193,14 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
 
       if (!response.text.trim()) {
         // A silent or unintelligible clip still costs Points, so say so plainly
-        // rather than closing as though it worked.
+        // rather than resetting as though it had worked.
         error(i18next.t("publish.dictation-empty"));
+        // Deliberately NOT a retry: the request succeeded and was charged, so
+        // replaying the same key would return the same empty transcript. Clear the
+        // recorder instead, so the only useful action -- recording again -- is the
+        // one that is available.
+        idempotencyKeyRef.current = null;
+        reset();
         return;
       }
 
