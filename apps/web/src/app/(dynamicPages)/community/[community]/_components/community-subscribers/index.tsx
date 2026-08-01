@@ -2,14 +2,19 @@
 
 import React, { useMemo, useState } from "react";
 import "./_index.scss";
-import { getCommunitySubscribersQueryOptions, getAccountsQueryOptions } from "@ecency/sdk";
-import { useQuery } from "@tanstack/react-query";
+import {
+  getCommunitySubscribersInfiniteQueryOptions,
+  getAccountsQueryOptions
+} from "@ecency/sdk";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Community, roleMap, Subscription } from "@/entities";
 import { LinearProgress, ProfileLink, UserAvatar } from "@/features/shared";
 import { ProBadge } from "@/features/pro";
 import { accountReputation } from "@/utils";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { pencilOutlineSvg } from "@ui/svg";
+import { Button } from "@ui/button";
+import i18next from "i18next";
 import { CommunityRoleEditDialog } from "@/app/(dynamicPages)/community/[community]/_components/community-role-edit";
 
 interface Props {
@@ -20,14 +25,20 @@ export function CommunitySubscribers({ community }: Props) {
   const { activeUser } = useActiveAccount();
   const [editingSubscriber, setEditingSubscriber] = useState<Subscription>();
 
+  // Paged: `list_subscribers` caps at 100 rows per call, so a single request
+  // showed only the first 100 accounts alphabetically and presented them as the
+  // whole roster. Communities routinely run to thousands.
   const {
     data: subscribersRaw,
-    isLoading
-  } = useQuery(getCommunitySubscribersQueryOptions(community.name));
+    isLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage
+  } = useInfiniteQuery(getCommunitySubscribersInfiniteQueryOptions(community.name));
 
   // ✅ normalize query result to an array
   const subscribers = useMemo<Subscription[]>(
-      () => (Array.isArray(subscribersRaw) ? (subscribersRaw as Subscription[]) : []),
+      () => (subscribersRaw?.pages?.flat() as Subscription[]) ?? [],
       [subscribersRaw]
   );
 
@@ -108,6 +119,19 @@ export function CommunitySubscribers({ community }: Props) {
                   );
                 })}
               </div>
+            </div>
+        )}
+
+        {hasNextPage && (
+            <div className="flex justify-center mt-4">
+              <Button
+                  disabled={isFetchingNextPage}
+                  onClick={() => fetchNextPage()}
+                  size="sm"
+                  appearance="secondary"
+              >
+                {i18next.t("g.load-more")}
+              </Button>
             </div>
         )}
 

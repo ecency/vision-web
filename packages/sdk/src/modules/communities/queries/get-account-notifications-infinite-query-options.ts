@@ -26,20 +26,23 @@ export function getAccountNotificationsInfiniteQueryOptions(
     queryKey: QueryKeys.communities.accountNotifications(account, limit),
     initialPageParam: null as NotifCursor,
 
+    // Errors are deliberately not caught. Returning [] on failure made an RPC
+    // outage indistinguishable from an empty log: `isError` never became true,
+    // so consumers rendered "no activity" for a failed request, and a failed
+    // page produced no cursor and silently ended pagination. Let React Query
+    // own the error so `isError` and retry behave normally.
     queryFn: async ({ pageParam }: { pageParam: NotifCursor }) => {
-      try {
-        const response = await callRPC("bridge.account_notifications", {
-          account,
-          limit,
-          last_id: pageParam ?? undefined,
-        });
-        return (response as AccountNotification[] | null) ?? [];
-      } catch {
-        return [];
-      }
+      const response = await callRPC("bridge.account_notifications", {
+        account,
+        limit,
+        last_id: pageParam ?? undefined,
+      });
+      return (response as AccountNotification[] | null) ?? [];
     },
 
+    // A short page is the end of the log. Keying on "empty" alone would also
+    // treat a truncated page as the end.
     getNextPageParam: (lastPage: NotifPage): NotifCursor =>
-      lastPage?.length > 0 ? lastPage[lastPage.length - 1].id : null,
+      lastPage?.length >= limit ? lastPage[lastPage.length - 1].id : null,
   });
 }
