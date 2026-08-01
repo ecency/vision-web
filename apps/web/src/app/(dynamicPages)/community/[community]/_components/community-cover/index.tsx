@@ -26,7 +26,6 @@ interface Props {
 
 export function CommunityCover({ community, account }: Props) {
   const { activeUser } = useActiveAccount();
-  const users = useGlobalStore((state) => state.users);
   const theme = useGlobalStore((state) => state.theme);
   const { data: channelData } = useQuery({
     queryKey: ["private-api", "get-community-channel", community.name],
@@ -66,9 +65,12 @@ export function CommunityCover({ community, account }: Props) {
     () => formattedNumber(community.num_authors, { fractionDigits: 0 }),
     [community.num_authors]
   );
+  // Same as the avatar: `useUpdateProfile` signs for the ACTIVE user, so
+  // showing this because the community is merely in the saved-accounts list
+  // let it overwrite the signed-in user's own cover image.
   const canUpdateCoverImage = useMemo(
-    () => activeUser && !!users.find((x: { username: string }) => x.username === community.name),
-    [activeUser, users, community.name]
+    () => activeUser?.username === community.name,
+    [activeUser?.username, community.name]
   );
 
   return (
