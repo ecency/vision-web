@@ -24,22 +24,27 @@ const ALIGNMENT_WRAPPERS: { selector: string; align: string }[] = [
 const IMAGE_MARKDOWN = /^!\[([^\]]*)\]\(\s*(\S+?)\s*\)$/;
 
 /**
- * Tags with no node or mark in the editor schema. DOMPurify strips some of them
- * (iframe, script, object); the rest survive sanitising and are then unwrapped
- * by Tiptap, which silently flattens the post. <details> is the worst of these:
- * losing it exposes content the author deliberately hid.
+ * Tags the editor schema can represent. Anything else is unwrapped by Tiptap,
+ * which silently flattens the post, so its presence routes the post to the raw
+ * markdown editor instead.
+ *
+ * This is an allowlist on purpose. The set of markup Hive authors reach for is
+ * open ended (details, figure, abbr, kbd, input, sub, sup, span, ...), so a
+ * denylist of known-bad tags is never finished.
  */
-const UNSUPPORTED_MARKUP =
-  /<\s*(iframe|script|object|embed|video|audio|form|svg|canvas|details|summary|sub|sup|u|ins|mark|dl|marquee)\b/i;
+const SUPPORTED_TAGS = new Set([
+  "A", "B", "BLOCKQUOTE", "BR", "CODE", "COL", "COLGROUP", "DEL", "EM",
+  "H1", "H2", "H3", "H4", "H5", "H6", "HR", "I", "IMG", "LI", "OL", "P",
+  "PRE", "S", "STRONG", "TABLE", "TBODY", "TD", "TH", "THEAD", "TR", "UL"
+]);
 
-/** GFM task lists: the schema has no checkbox, so [x] vs [ ] would be erased. */
-const TASK_LIST_ITEM = /^[ \t]*[-*+] \[[ xX]\]\s/m;
-
-/** Hive deep links: DOMPurify and the link mark both reject these schemes. */
-const CUSTOM_SCHEME_LINK = /\]\(\s*(hive|esteem|ecency|steem):/i;
-
-/** Cheap pre-check so ordinary posts skip the DOM pass entirely. */
-const ALIGNMENT_WRAPPER_HINT = /<center|pull-left|pull-right/i;
+/**
+ * Markup the sanitiser deletes outright. These leave no node behind, so the
+ * document walk below cannot see them and the source has to be checked instead.
+ * HTML comments are included: DOMPurify strips them, so an edit would drop them
+ * from the post.
+ */
+const SANITIZER_REMOVED = /<\s*(iframe|script|object|embed|style|form)\b|<!--/i;
 
 interface ParsedMarkdown {
   html: string;
@@ -48,10 +53,22 @@ interface ParsedMarkdown {
 }
 
 /**
- * True when the wrapper holds nothing but a single image, optionally wrapped in
- * a link. Mirrors the `onlyImage` condition of the outbound alignment rule, so
- * these are exactly the wrappers that survive a full round trip.
+ * True when the document holds anything the editor schema would flatten.
+ * Covers raw HTML the author wrote, markup marked generated (task list
+ * checkboxes become <input>), and links whose scheme DOMPurify rejected:
+ * those keep the anchor but lose the href, so they would save as plain text.
+ * Checking the parsed document rather than the markdown source means reference
+ * links and raw HTML anchors are caught the same way inline links are.
  */
+function containsUnsupportedMarkup(doc: Document): boolean {
+  for (const element of Array.from(doc.body.querySelectorAll("*"))) {
+    if (!SUPPORTED_TAGS.has(element.tagName)) return true;
+    if (element.tagName === "A" && !element.getAttribute("href")) return true;
+  }
+
+  return false;
+}
+
 function holdsOnlyImage(element: Element): boolean {
   if (element.children.length !== 1) return false;
   if (element.textContent?.trim()) return false;
@@ -66,12 +83,7 @@ function holdsOnlyImage(element: Element): boolean {
   );
 }
 
-function normalizeAlignmentWrappers(html: string): ParsedMarkdown {
-  if (!ALIGNMENT_WRAPPER_HINT.test(html)) {
-    return { html, lossy: false };
-  }
-
-  const doc = new DOMParser().parseFromString(html, "text/html");
+function normalizeAlignmentWrappers(doc: Document): boolean {
   let lossy = false;
 
   for (const { selector, align } of ALIGNMENT_WRAPPERS) {
@@ -105,14 +117,26 @@ function normalizeAlignmentWrappers(html: string): ParsedMarkdown {
     }
   }
 
-  return { html: doc.body.innerHTML, lossy };
+  return lossy;
 }
 
 function parseMarkdown(markdown: string): ParsedMarkdown {
   // breaks: true matches how @ecency/render-helper renders stored posts, so a
   // single newline stays a line break instead of collapsing into the paragraph.
   const parsed = marked.parse(markdown, { async: false, breaks: true }) as string;
-  return normalizeAlignmentWrappers(DOMPurify.sanitize(parsed));
+  const doc = new DOMParser().parseFromString(
+    DOMPurify.sanitize(parsed),
+    "text/html"
+  );
+
+  // Run the wrappers first: a <center> that becomes an aligned paragraph must
+  // not then be reported as an unsupported tag.
+  const wrappersLossy = normalizeAlignmentWrappers(doc);
+
+  return {
+    html: doc.body.innerHTML,
+    lossy: wrappersLossy || containsUnsupportedMarkup(doc)
+  };
 }
 
 /**
@@ -122,13 +146,7 @@ function parseMarkdown(markdown: string): ParsedMarkdown {
 export function hasUnsupportedMarkup(markdown: string | undefined): boolean {
   if (!markdown) return false;
 
-  if (
-    UNSUPPORTED_MARKUP.test(markdown) ||
-    TASK_LIST_ITEM.test(markdown) ||
-    CUSTOM_SCHEME_LINK.test(markdown)
-  ) {
-    return true;
-  }
+  if (SANITIZER_REMOVED.test(markdown)) return true;
 
   try {
     return parseMarkdown(markdown).lossy;
@@ -245,8 +263,20 @@ export function htmlToMarkdown(html: string | undefined): string {
       // sees it. Without this rule every plain "https://..." in the post would
       // be rewritten as "[https://...](https://...)" on the first edit.
       filter: (node) => {
+        if (node.nodeName !== "A") return false;
+
         const href = node.getAttribute("href");
-        return node.nodeName === "A" && !!href && node.textContent === href;
+        const text = node.textContent;
+        if (!href || !text) return false;
+
+        // marked normalises bare autolinks, so the href does not always equal
+        // the text: "me@example.com" gains a mailto: prefix and
+        // "www.example.com" gains http://.
+        return (
+          href === text ||
+          href === `mailto:${text}` ||
+          href === `http://${text}`
+        );
       },
       replacement: (content) => content
     })

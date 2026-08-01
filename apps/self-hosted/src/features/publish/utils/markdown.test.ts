@@ -102,6 +102,17 @@ describe('edit round-trip', () => {
     );
   });
 
+  it('leaves bare email and www autolinks alone', () => {
+    // marked gives these a mailto:/http:// href, so the href does not equal the
+    // link text and a naive comparison would rewrite them.
+    expect(roundTrip('mail me@example.com now')).toBe(
+      'mail me@example.com now',
+    );
+    expect(roundTrip('visit www.example.com now')).toBe(
+      'visit www.example.com now',
+    );
+  });
+
   it('keeps an image title and escapes brackets in alt text', () => {
     expect(roundTrip('![a](https://x.co/i.png "the title")')).toContain(
       '"the title"',
@@ -184,6 +195,38 @@ describe('hasUnsupportedMarkup', () => {
     ).toBe(true);
     expect(hasUnsupportedMarkup('<video src="a.mp4"></video>')).toBe(true);
     expect(hasUnsupportedMarkup('<script>alert(1)</script>')).toBe(true);
+  });
+
+  it('flags raw HTML anchors and reference links with rejected schemes', () => {
+    // Detection works on the parsed document, so the link syntax used in the
+    // source does not matter: DOMPurify drops the href either way.
+    expect(hasUnsupportedMarkup('<a href="hive://sign/op">vote</a>')).toBe(
+      true,
+    );
+    expect(hasUnsupportedMarkup('[vote][sign]\n\n[sign]: hive://sign/op')).toBe(
+      true,
+    );
+    expect(hasUnsupportedMarkup('<a href="https://ecency.com">ok</a>')).toBe(
+      false,
+    );
+  });
+
+  it('flags arbitrary HTML the tag list was never going to enumerate', () => {
+    expect(
+      hasUnsupportedMarkup('<input type="checkbox" checked> accepted'),
+    ).toBe(true);
+    expect(
+      hasUnsupportedMarkup(
+        '<figure><img src="https://x.co/a.jpg"><figcaption>cap</figcaption></figure>',
+      ),
+    ).toBe(true);
+    expect(hasUnsupportedMarkup('<abbr title="HyperText">HTML</abbr>')).toBe(
+      true,
+    );
+    expect(hasUnsupportedMarkup('press <kbd>Ctrl</kbd>')).toBe(true);
+    expect(hasUnsupportedMarkup('<span class="x">styled</span>')).toBe(true);
+    // DOMPurify deletes comments outright, so there is no node left to find.
+    expect(hasUnsupportedMarkup('before <!-- note --> after')).toBe(true);
   });
 
   it('flags markup the schema silently flattens', () => {

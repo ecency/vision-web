@@ -20,6 +20,7 @@ export function useUpdatePost() {
       body,
       tags,
       jsonMetadata,
+      preserveOriginalFormat,
     }: {
       permlink: string;
       parentPermlink: string;
@@ -27,6 +28,13 @@ export function useUpdatePost() {
       body: string;
       tags: string[];
       jsonMetadata?: Record<string, unknown>;
+      /**
+       * Only true when the body was edited as raw markdown and therefore still
+       * carries whatever format it was published with. The rich text editor
+       * always re-serialises the body to markdown, so keeping an inherited
+       * "html" format would advertise the post as something it no longer is.
+       */
+      preserveOriginalFormat?: boolean;
     }) => {
       if (!user) {
         throw new Error("Authentication required to update post");
@@ -66,7 +74,7 @@ export function useUpdatePost() {
           tags: normalizedTags,
           app: "ecency-selfhost/1.0",
           format:
-            typeof jsonMetadata?.format === "string"
+            preserveOriginalFormat && typeof jsonMetadata?.format === "string"
               ? jsonMetadata.format
               : "markdown",
         },

@@ -105,6 +105,7 @@ export function EditPostEditor({
         body,
         tags,
         jsonMetadata: initialJsonMetadata,
+        preserveOriginalFormat: editAsMarkdown,
       });
     } catch (err) {
       console.error("Failed to update:", err);
@@ -119,6 +120,7 @@ export function EditPostEditor({
     body,
     tags,
     initialJsonMetadata,
+    editAsMarkdown,
   ]);
 
   const handleTitleChange = useCallback(
