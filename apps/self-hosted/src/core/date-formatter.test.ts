@@ -1,26 +1,29 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { InstanceConfigManager } from './configuration-loader';
-import {
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * configuration-loader imports the build-time config.json, which is generated
+ * at image build and gitignored, so it does not exist in CI. The formatters
+ * only read a handful of general settings, so the manager is stubbed here.
+ */
+const state = vi.hoisted(() => ({ general: {} as Record<string, unknown> }));
+
+vi.mock('./configuration-loader', () => ({
+  InstanceConfigManager: {
+    getConfigValue: (selector: (config: unknown) => unknown) =>
+      selector({ configuration: { general: state.general } }),
+  },
+}));
+
+const {
   formatCustom,
   formatDate,
   formatDateTime,
   formatMonthYear,
   formatRelativeDate,
   formatTime,
-} from './date-formatter';
+} = await import('./date-formatter');
 
 const DATE = '2024-01-16T10:00:00';
-
-function configure(general: Record<string, unknown>) {
-  const current = InstanceConfigManager.getConfig();
-  InstanceConfigManager.updateConfig({
-    ...current,
-    configuration: {
-      ...current.configuration,
-      general: { ...current.configuration.general, ...general },
-    },
-  } as never);
-}
 
 /**
  * These fields are free text in the config editor and are read while rendering
@@ -29,16 +32,17 @@ function configure(general: Record<string, unknown>) {
  */
 describe('date formatting with invalid configuration', () => {
   beforeEach(() => {
-    configure({
+    state.general = {
+      language: 'en',
       timezone: 'UTC',
       dateFormat: 'yyyy-MM-dd',
       timeFormat: 'HH:mm:ss',
       dateTimeFormat: 'yyyy-MM-dd HH:mm:ss',
-    });
+    };
   });
 
   it('survives a timezone that is not an IANA zone', () => {
-    configure({ timezone: 'UTC+3' });
+    state.general.timezone = 'UTC+3';
 
     expect(() => formatDate(DATE)).not.toThrow();
     expect(formatDate(DATE)).not.toBe('');
@@ -50,14 +54,14 @@ describe('date formatting with invalid configuration', () => {
 
   it('survives a Moment style pattern date-fns cannot parse', () => {
     // Uppercase A is not a date-fns token and throws a RangeError.
-    configure({ timeFormat: 'hh:mm A' });
+    state.general.timeFormat = 'hh:mm A';
 
     expect(() => formatTime(DATE)).not.toThrow();
     expect(formatTime(DATE)).not.toBe('');
   });
 
   it('survives a pattern made of literal words', () => {
-    configure({ dateFormat: 'Updated on' });
+    state.general.dateFormat = 'Updated on';
 
     expect(() => formatDate(DATE)).not.toThrow();
     expect(formatDate(DATE)).not.toBe('');
