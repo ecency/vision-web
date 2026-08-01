@@ -24,6 +24,14 @@ const ALIGNMENT_WRAPPERS: { selector: string; align: string }[] = [
 const IMAGE_MARKDOWN = /^!\[([^\]]*)\]\(\s*(\S+?)\s*\)$/;
 
 /**
+ * The image below is built after DOMPurify has run, so its src never passes
+ * through the sanitiser's URI checks. Restrict it here instead: without this a
+ * body containing `<center>![x](javascript:...)</center>` would have its inert
+ * text promoted into a live attribute.
+ */
+const SAFE_IMAGE_SRC = /^https?:\/\//i;
+
+/**
  * Tags the editor schema can represent. Anything else is unwrapped by Tiptap,
  * which silently flattens the post, so its presence routes the post to the raw
  * markdown editor instead.
@@ -37,6 +45,29 @@ const SUPPORTED_TAGS = new Set([
   "H1", "H2", "H3", "H4", "H5", "H6", "HR", "I", "IMG", "LI", "OL", "P",
   "PRE", "S", "STRONG", "TABLE", "TBODY", "TD", "TH", "THEAD", "TR", "UL"
 ]);
+
+/**
+ * Attributes the schema round-trips, per tag. Anything else is dropped on save
+ * just as an unsupported tag would be: a heading id breaks in-page anchors, an
+ * image class loses its styling, a column alignment vanishes from a table.
+ * Tags absent from this map round-trip only with no attributes at all.
+ */
+const SUPPORTED_ATTRIBUTES: Record<string, Set<string>> = {
+  A: new Set(["href"]),
+  CODE: new Set(["class"]),
+  H1: new Set(["style", "data-align"]),
+  H2: new Set(["style", "data-align"]),
+  H3: new Set(["style", "data-align"]),
+  H4: new Set(["style", "data-align"]),
+  H5: new Set(["style", "data-align"]),
+  H6: new Set(["style", "data-align"]),
+  IMG: new Set(["src", "alt", "title"]),
+  OL: new Set(["start"]),
+  P: new Set(["style", "data-align"]),
+  TABLE: new Set(["style"]),
+  TD: new Set(["colspan", "rowspan", "colwidth", "style"]),
+  TH: new Set(["colspan", "rowspan", "colwidth", "style"])
+};
 
 /**
  * Markup the sanitiser deletes outright. These leave no node behind, so the
@@ -64,9 +95,35 @@ function containsUnsupportedMarkup(doc: Document): boolean {
   for (const element of Array.from(doc.body.querySelectorAll("*"))) {
     if (!SUPPORTED_TAGS.has(element.tagName)) return true;
     if (element.tagName === "A" && !element.getAttribute("href")) return true;
+
+    const allowed = SUPPORTED_ATTRIBUTES[element.tagName];
+    for (const attribute of Array.from(element.attributes)) {
+      if (!allowed?.has(attribute.name)) return true;
+    }
   }
 
   return false;
+}
+
+/**
+ * @ecency/render-helper keeps `data-align` and drops the inline style, so a
+ * post that has been through it carries the alignment in an attribute Tiptap
+ * does not read. Restoring the style lets those paragraphs keep their alignment
+ * instead of being sent to the markdown fallback.
+ */
+function restoreAlignmentFromDataAttribute(doc: Document): void {
+  for (const element of Array.from(doc.body.querySelectorAll("[data-align]"))) {
+    const align = element.getAttribute("data-align");
+    if (!align || !ALIGNMENT_VALUES.has(align)) continue;
+
+    const style = element.getAttribute("style") ?? "";
+    if (!extractTextAlign(style)) {
+      element.setAttribute(
+        "style",
+        `${style ? `${style.replace(/;\s*$/, "")}; ` : ""}text-align: ${align}`
+      );
+    }
+  }
 }
 
 function holdsOnlyImage(element: Element): boolean {
@@ -94,7 +151,7 @@ function normalizeAlignmentWrappers(doc: Document): boolean {
         // one image can be rebuilt; a caption or a second image alongside it
         // would end up as literal "![" text in the saved body.
         const match = IMAGE_MARKDOWN.exec(element.textContent?.trim() ?? "");
-        if (!match) {
+        if (!match || !SAFE_IMAGE_SRC.test(match[2])) {
           lossy = true;
           continue;
         }
@@ -132,11 +189,19 @@ function parseMarkdown(markdown: string): ParsedMarkdown {
   // Run the wrappers first: a <center> that becomes an aligned paragraph must
   // not then be reported as an unsupported tag.
   const wrappersLossy = normalizeAlignmentWrappers(doc);
+  restoreAlignmentFromDataAttribute(doc);
 
   return {
     html: doc.body.innerHTML,
     lossy: wrappersLossy || containsUnsupportedMarkup(doc)
   };
+}
+
+function stripCodeSpans(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/~~~[\s\S]*?~~~/g, "")
+    .replace(/`[^`\n]*`/g, "");
 }
 
 /**
@@ -146,7 +211,9 @@ function parseMarkdown(markdown: string): ParsedMarkdown {
 export function hasUnsupportedMarkup(markdown: string | undefined): boolean {
   if (!markdown) return false;
 
-  if (SANITIZER_REMOVED.test(markdown)) return true;
+  // Code spans round-trip verbatim, so markup quoted inside them is not a risk
+  // and must not cost the author the rich editor.
+  if (SANITIZER_REMOVED.test(stripCodeSpans(markdown))) return true;
 
   try {
     return parseMarkdown(markdown).lossy;

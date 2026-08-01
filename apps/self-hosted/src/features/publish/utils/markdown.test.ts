@@ -137,6 +137,19 @@ describe('edit round-trip', () => {
     expect(out).toBe('![a](https://x.co/i.png "say \\"hi\\"")');
   });
 
+  it('keeps alignment carried only by data-align', () => {
+    // render-helper drops the inline style and keeps data-align, so a post that
+    // has been through it would otherwise lose its alignment on the next edit.
+    const out = roundTrip('<p data-align="center">centered</p>');
+    expect(out).toContain('data-align="center"');
+    expect(out).toContain('centered');
+  });
+
+  it('round-trips its own aligned output unchanged', () => {
+    const body = '<p style="text-align: center;" data-align="center">hi</p>';
+    expect(roundTrip(body)).toBe(body);
+  });
+
   it('is idempotent: a second round trip changes nothing', () => {
     const bodies = [
       'See [my post](https://ecency.com/@user/post) here.',
@@ -229,6 +242,46 @@ describe('hasUnsupportedMarkup', () => {
     expect(hasUnsupportedMarkup('before <!-- note --> after')).toBe(true);
   });
 
+  it('does not promote a non-http image URL into a live attribute', () => {
+    // The <img> is built after DOMPurify has run, so its src is not sanitised
+    // there. Such a wrapper has to go to the markdown fallback instead.
+    expect(
+      hasUnsupportedMarkup('<center>![x](javascript:alert(1))</center>'),
+    ).toBe(true);
+    expect(
+      markdownToHtml('<center>![x](javascript:alert(1))</center>'),
+    ).not.toContain('src="javascript:');
+  });
+
+  it('flags attributes the schema would drop', () => {
+    // Tags alone are not enough: these all parse into supported elements but
+    // lose an attribute that carries meaning.
+    expect(
+      hasUnsupportedMarkup('<img src="https://x.co/a.jpg" class="alignright">'),
+    ).toBe(true);
+    expect(hasUnsupportedMarkup('[a](https://x.co "tip")')).toBe(true);
+    expect(hasUnsupportedMarkup('<h2 id="sec">Section</h2>')).toBe(true);
+    expect(hasUnsupportedMarkup('<ol reversed><li>a</li></ol>')).toBe(true);
+    // marked emits align="left" on the cells, which tables cannot round-trip.
+    expect(hasUnsupportedMarkup('| a | b |\n| :-- | --: |\n| 1 | 2 |')).toBe(
+      true,
+    );
+  });
+
+  it('does not flag markup quoted inside code, which round-trips verbatim', () => {
+    expect(
+      hasUnsupportedMarkup('```html\n<script>alert(1)</script>\n```'),
+    ).toBe(false);
+    expect(hasUnsupportedMarkup('use `<script>` carefully')).toBe(false);
+    expect(hasUnsupportedMarkup('~~~\n<iframe src="x"></iframe>\n~~~')).toBe(
+      false,
+    );
+    // Still caught when it is real markup rather than quoted.
+    expect(hasUnsupportedMarkup('hi <script>alert(1)</script> there')).toBe(
+      true,
+    );
+  });
+
   it('flags markup the schema silently flattens', () => {
     // <details> is the worst of these: flattening it exposes hidden content.
     expect(
@@ -297,6 +350,18 @@ describe('hasUnsupportedMarkup', () => {
       ),
     ).toBe(false);
     expect(hasUnsupportedMarkup('- one\n- two\n\n> quote')).toBe(false);
+    // A realistic post has to stay in the rich editor, or the fallback would
+    // effectively replace the editor rather than protect the few posts it must.
+    expect(
+      hasUnsupportedMarkup(
+        '# Title\n\nHello **world**, see [link](https://x.co).\n\n- one\n- two\n\n![img](https://x.co/a.jpg)\n\n> quote\n\n```js\nconst a=1;\n```',
+      ),
+    ).toBe(false);
+    expect(
+      hasUnsupportedMarkup(
+        '<center><img src="https://files.peakd.com/a.jpg"></center>\n\nCaption below.\n\n@alice mentioned #hive',
+      ),
+    ).toBe(false);
     expect(hasUnsupportedMarkup('| a | b |\n| --- | --- |\n| 1 | 2 |')).toBe(
       false,
     );
