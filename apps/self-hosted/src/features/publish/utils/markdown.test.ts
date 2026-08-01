@@ -253,6 +253,42 @@ describe('hasUnsupportedMarkup', () => {
     ).not.toContain('src="javascript:');
   });
 
+  it('flags attribute values the schema would drop, not just names', () => {
+    // style is kept for alignment but nothing else, so a colour would vanish.
+    expect(hasUnsupportedMarkup('<p style="color:red">red</p>')).toBe(true);
+    expect(
+      hasUnsupportedMarkup('<p style="text-align:center;color:red">x</p>'),
+    ).toBe(true);
+    expect(hasUnsupportedMarkup('<p style="text-align:center">x</p>')).toBe(
+      false,
+    );
+    // class is kept for a code language but not for an arbitrary class.
+    expect(hasUnsupportedMarkup('<pre><code class="foo">x</code></pre>')).toBe(
+      true,
+    );
+    expect(hasUnsupportedMarkup('```js\nconst a = 1;\n```')).toBe(false);
+    expect(
+      hasUnsupportedMarkup(
+        '<table><tbody><tr><td style="color:red">a</td></tr></tbody></table>',
+      ),
+    ).toBe(true);
+  });
+
+  it('flags elements the sanitiser would remove before the walk could see them', () => {
+    // Inspection runs on the unsanitised document precisely so these are caught:
+    // DOMPurify unwraps <foo> to its text and drops head elements outright.
+    expect(hasUnsupportedMarkup('<foo data-x="1">custom</foo>')).toBe(true);
+    expect(hasUnsupportedMarkup('<meta name="x" content="y">\n\ntext')).toBe(
+      true,
+    );
+    expect(
+      hasUnsupportedMarkup('<link rel="stylesheet" href="x.css">\n\ntext'),
+    ).toBe(true);
+    expect(hasUnsupportedMarkup('<base href="https://x.co/">\n\ntext')).toBe(
+      true,
+    );
+  });
+
   it('flags attributes the schema would drop', () => {
     // Tags alone are not enough: these all parse into supported elements but
     // lose an attribute that carries meaning.

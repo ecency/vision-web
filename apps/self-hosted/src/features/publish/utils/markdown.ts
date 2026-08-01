@@ -24,12 +24,23 @@ const ALIGNMENT_WRAPPERS: { selector: string; align: string }[] = [
 const IMAGE_MARKDOWN = /^!\[([^\]]*)\]\(\s*(\S+?)\s*\)$/;
 
 /**
- * The image below is built after DOMPurify has run, so its src never passes
- * through the sanitiser's URI checks. Restrict it here instead: without this a
- * body containing `<center>![x](javascript:...)</center>` would have its inert
- * text promoted into a live attribute.
+ * Rebuilding an image from wrapper text turns inert markdown into a live
+ * attribute, so the URL is parsed and re-serialised rather than copied through:
+ * without this, `<center>![x](javascript:...)</center>` would produce an
+ * executable src. Only absolute http(s) URLs are accepted, which is what Hive
+ * image markdown carries.
  */
-const SAFE_IMAGE_SRC = /^https?:\/\//i;
+function toSafeImageSrc(candidate: string): string | null {
+  let url: URL;
+
+  try {
+    url = new URL(candidate);
+  } catch {
+    return null;
+  }
+
+  return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+}
 
 /**
  * Tags the editor schema can represent. Anything else is unwrapped by Tiptap,
@@ -46,36 +57,96 @@ const SUPPORTED_TAGS = new Set([
   "PRE", "S", "STRONG", "TABLE", "TBODY", "TD", "TH", "THEAD", "TR", "UL"
 ]);
 
+type AttributeCheck = (value: string) => boolean;
+
+const anyValue: AttributeCheck = () => true;
+const isInteger: AttributeCheck = (value) => /^\d+$/.test(value.trim());
+const isAlignment: AttributeCheck = (value) =>
+  ALIGNMENT_VALUES.has(value.trim().toLowerCase());
+
+/** Only `language-x` survives: Tiptap rebuilds the class from the language. */
+const isLanguageClass: AttributeCheck = (value) =>
+  /^language-[\w+#.-]+$/.test(value.trim());
+
+function everyDeclaration(
+  style: string,
+  predicate: (property: string, value: string) => boolean
+): boolean {
+  const declarations = style
+    .split(";")
+    .map((declaration) => declaration.trim())
+    .filter(Boolean);
+
+  return (
+    declarations.length > 0 &&
+    declarations.every((declaration) => {
+      const separator = declaration.indexOf(":");
+      if (separator === -1) return false;
+
+      return predicate(
+        declaration.slice(0, separator).trim().toLowerCase(),
+        declaration
+          .slice(separator + 1)
+          .replace(/!important$/i, "")
+          .trim()
+          .toLowerCase()
+      );
+    })
+  );
+}
+
 /**
- * Attributes the schema round-trips, per tag. Anything else is dropped on save
- * just as an unsupported tag would be: a heading id breaks in-page anchors, an
- * image class loses its styling, a column alignment vanishes from a table.
- * Tags absent from this map round-trip only with no attributes at all.
+ * The schema keeps text-align and nothing else, so a style carrying any other
+ * property (a colour, a font) would lose it silently.
  */
-const SUPPORTED_ATTRIBUTES: Record<string, Set<string>> = {
-  A: new Set(["href"]),
-  CODE: new Set(["class"]),
-  H1: new Set(["style", "data-align"]),
-  H2: new Set(["style", "data-align"]),
-  H3: new Set(["style", "data-align"]),
-  H4: new Set(["style", "data-align"]),
-  H5: new Set(["style", "data-align"]),
-  H6: new Set(["style", "data-align"]),
-  IMG: new Set(["src", "alt", "title"]),
-  OL: new Set(["start"]),
-  P: new Set(["style", "data-align"]),
-  TABLE: new Set(["style"]),
-  TD: new Set(["colspan", "rowspan", "colwidth", "style"]),
-  TH: new Set(["colspan", "rowspan", "colwidth", "style"])
+const isAlignmentStyle: AttributeCheck = (value) =>
+  everyDeclaration(
+    value,
+    (property, declared) =>
+      property === "text-align" && ALIGNMENT_VALUES.has(declared)
+  );
+
+/** Tiptap's own table output, which has to load back without a warning. */
+const isTableStyle: AttributeCheck = (value) =>
+  everyDeclaration(value, (property) => property === "min-width");
+
+/**
+ * Sanitising runs after this inspection, so URLs are checked here instead.
+ * A scheme the sanitiser would reject (hive:, javascript:) means the link or
+ * image would come back stripped, which is exactly the silent loss to avoid.
+ */
+const isSafeHref: AttributeCheck = (value) =>
+  /^(https?:\/\/|mailto:|\/|#|\.{0,2}\/)/i.test(value.trim());
+const isSafeSrc: AttributeCheck = (value) =>
+  /^(https?:\/\/|\/)/i.test(value.trim());
+
+const ALIGNABLE_ATTRIBUTES: Record<string, AttributeCheck> = {
+  style: isAlignmentStyle,
+  "data-align": isAlignment
 };
 
 /**
- * Markup the sanitiser deletes outright. These leave no node behind, so the
- * document walk below cannot see them and the source has to be checked instead.
- * HTML comments are included: DOMPurify strips them, so an edit would drop them
- * from the post.
+ * Attributes the schema round-trips, per tag, and what each may contain.
+ * Checking only the name is not enough: `style` is preserved for alignment but
+ * discards a colour, and `class` is preserved for a code language but not for
+ * an arbitrary class. Tags absent from this map round-trip only bare.
  */
-const SANITIZER_REMOVED = /<\s*(iframe|script|object|embed|style|form)\b|<!--/i;
+const SUPPORTED_ATTRIBUTES: Record<string, Record<string, AttributeCheck>> = {
+  A: { href: isSafeHref },
+  CODE: { class: isLanguageClass },
+  H1: ALIGNABLE_ATTRIBUTES,
+  H2: ALIGNABLE_ATTRIBUTES,
+  H3: ALIGNABLE_ATTRIBUTES,
+  H4: ALIGNABLE_ATTRIBUTES,
+  H5: ALIGNABLE_ATTRIBUTES,
+  H6: ALIGNABLE_ATTRIBUTES,
+  IMG: { src: isSafeSrc, alt: anyValue, title: anyValue },
+  OL: { start: isInteger },
+  P: ALIGNABLE_ATTRIBUTES,
+  TABLE: { style: isTableStyle },
+  TD: { colspan: isInteger, rowspan: isInteger, colwidth: anyValue },
+  TH: { colspan: isInteger, rowspan: isInteger, colwidth: anyValue }
+};
 
 interface ParsedMarkdown {
   html: string;
@@ -85,32 +156,34 @@ interface ParsedMarkdown {
 
 /**
  * True when the document holds anything the editor schema would flatten.
- * Covers raw HTML the author wrote, markup marked generated (task list
- * checkboxes become <input>), and links whose scheme DOMPurify rejected:
- * those keep the anchor but lose the href, so they would save as plain text.
- * Checking the parsed document rather than the markdown source means reference
- * links and raw HTML anchors are caught the same way inline links are.
+ *
+ * This runs on the document as parsed from marked's output, BEFORE sanitising.
+ * Inspecting the sanitised document instead would miss everything DOMPurify
+ * removes on our behalf: an unknown element such as <foo> is unwrapped to its
+ * text, <meta>/<link>/<base> are dropped, and comments disappear, all of which
+ * would then look like ordinary content and be classified as safe.
  */
 function containsUnsupportedMarkup(doc: Document): boolean {
+  // The parser hoists <meta>, <link>, <base> and <title> out of the body.
+  if (doc.head.children.length > 0) return true;
+
+  const comments = doc.createTreeWalker(doc.body, NodeFilter.SHOW_COMMENT);
+  if (comments.nextNode()) return true;
+
   for (const element of Array.from(doc.body.querySelectorAll("*"))) {
     if (!SUPPORTED_TAGS.has(element.tagName)) return true;
     if (element.tagName === "A" && !element.getAttribute("href")) return true;
 
     const allowed = SUPPORTED_ATTRIBUTES[element.tagName];
     for (const attribute of Array.from(element.attributes)) {
-      if (!allowed?.has(attribute.name)) return true;
+      const check = allowed?.[attribute.name];
+      if (!check || !check(attribute.value)) return true;
     }
   }
 
   return false;
 }
 
-/**
- * @ecency/render-helper keeps `data-align` and drops the inline style, so a
- * post that has been through it carries the alignment in an attribute Tiptap
- * does not read. Restoring the style lets those paragraphs keep their alignment
- * instead of being sent to the markdown fallback.
- */
 function restoreAlignmentFromDataAttribute(doc: Document): void {
   for (const element of Array.from(doc.body.querySelectorAll("[data-align]"))) {
     const align = element.getAttribute("data-align");
@@ -151,13 +224,14 @@ function normalizeAlignmentWrappers(doc: Document): boolean {
         // one image can be rebuilt; a caption or a second image alongside it
         // would end up as literal "![" text in the saved body.
         const match = IMAGE_MARKDOWN.exec(element.textContent?.trim() ?? "");
-        if (!match || !SAFE_IMAGE_SRC.test(match[2])) {
+        const source = match && toSafeImageSrc(match[2]);
+        if (!match || !source) {
           lossy = true;
           continue;
         }
 
         const image = doc.createElement("img");
-        image.setAttribute("src", match[2]);
+        image.setAttribute("src", source);
         if (match[1]) image.setAttribute("alt", match[1]);
         element.replaceChildren(image);
       } else if (!holdsOnlyImage(element)) {
@@ -181,27 +255,21 @@ function parseMarkdown(markdown: string): ParsedMarkdown {
   // breaks: true matches how @ecency/render-helper renders stored posts, so a
   // single newline stays a line break instead of collapsing into the paragraph.
   const parsed = marked.parse(markdown, { async: false, breaks: true }) as string;
-  const doc = new DOMParser().parseFromString(
-    DOMPurify.sanitize(parsed),
-    "text/html"
-  );
 
-  // Run the wrappers first: a <center> that becomes an aligned paragraph must
-  // not then be reported as an unsupported tag.
+  // Parsed with DOMParser, which produces an inert document: scripts do not
+  // run and resources are not fetched, so the unsanitised markup is safe to
+  // inspect. Sanitising happens at the end, on the way to the editor.
+  const doc = new DOMParser().parseFromString(parsed, "text/html");
+
+  // Wrappers first: a <center> that becomes an aligned paragraph must not then
+  // be reported as an unsupported tag.
   const wrappersLossy = normalizeAlignmentWrappers(doc);
   restoreAlignmentFromDataAttribute(doc);
 
   return {
-    html: doc.body.innerHTML,
+    html: DOMPurify.sanitize(doc.body.innerHTML),
     lossy: wrappersLossy || containsUnsupportedMarkup(doc)
   };
-}
-
-function stripCodeSpans(markdown: string): string {
-  return markdown
-    .replace(/```[\s\S]*?```/g, "")
-    .replace(/~~~[\s\S]*?~~~/g, "")
-    .replace(/`[^`\n]*`/g, "");
 }
 
 /**
@@ -210,10 +278,6 @@ function stripCodeSpans(markdown: string): string {
  */
 export function hasUnsupportedMarkup(markdown: string | undefined): boolean {
   if (!markdown) return false;
-
-  // Code spans round-trip verbatim, so markup quoted inside them is not a risk
-  // and must not cost the author the rich editor.
-  if (SANITIZER_REMOVED.test(stripCodeSpans(markdown))) return true;
 
   try {
     return parseMarkdown(markdown).lossy;
