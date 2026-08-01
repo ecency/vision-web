@@ -47,10 +47,26 @@ function auditInternal(
   });
 }
 
-// Constant-time check of the shared service-to-service secret (ePoints -> hosting).
-// Fails CLOSED when the secret is unset, so a misconfigured deploy cannot activate blogs.
-export function internalSecretOk(provided: string | undefined): boolean {
+/**
+ * These routes activate subscriptions, attach custom domains and grant free Pro
+ * terms, and the shared secret is the only thing in front of them. JWT_SECRET is
+ * already floored at 32 characters; this one had no requirement at all, so a
+ * short operator-chosen value was accepted.
+ */
+export const MIN_INTERNAL_SECRET_LENGTH = 32;
+
+/** The configured secret, or null when it is absent or too weak to accept. */
+export function internalSecret(): string | null {
   const secret = process.env.HOSTING_INTERNAL_SECRET || '';
+  return secret.length >= MIN_INTERNAL_SECRET_LENGTH ? secret : null;
+}
+
+// Constant-time check of the shared service-to-service secret (ePoints -> hosting).
+// Fails CLOSED when the secret is unset OR too short, so neither a missing value nor a
+// weak one can activate blogs. Rejecting rather than refusing to boot keeps an
+// otherwise healthy deploy serving; the startup log says which case applies.
+export function internalSecretOk(provided: string | undefined): boolean {
+  const secret = internalSecret() ?? '';
   const given = provided || '';
   if (secret.length === 0 || given.length !== secret.length) return false;
   let diff = 0;

@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
   addVerifiedDomainOrigin: vi.fn(),
 }));
 
+// Must satisfy MIN_INTERNAL_SECRET_LENGTH, which the routes now enforce.
+const INTERNAL_SECRET = 'test-internal-secret-of-32-chars!!';
+
 vi.mock('../db/client', () => ({
   db: { transaction: mocks.transaction },
 }));
@@ -62,7 +65,7 @@ const { internalRoutes } = await import('./internal');
 
 describe('POST /activate config publication', () => {
   beforeEach(() => {
-    process.env.HOSTING_INTERNAL_SECRET = 'test-secret';
+    process.env.HOSTING_INTERNAL_SECRET = INTERNAL_SECRET;
     mocks.transaction.mockReset().mockResolvedValue({
       status: 200,
       tenantId: 'tenant-1',
@@ -82,7 +85,7 @@ describe('POST /activate config publication', () => {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-internal-secret': 'test-secret',
+        'x-internal-secret': INTERNAL_SECRET,
       },
       body: JSON.stringify({
         username: 'alice',
@@ -163,7 +166,7 @@ describe('POST /activate config publication', () => {
 
 describe('internal endpoint audit trail', () => {
   beforeEach(() => {
-    process.env.HOSTING_INTERNAL_SECRET = 'test-secret';
+    process.env.HOSTING_INTERNAL_SECRET = INTERNAL_SECRET;
     mocks.transaction.mockReset().mockResolvedValue({
       status: 200,
       tenantId: 'tenant-1',
@@ -193,7 +196,7 @@ describe('internal endpoint audit trail', () => {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-internal-secret': 'test-secret',
+        'x-internal-secret': INTERNAL_SECRET,
         'x-forwarded-for': '203.0.113.9, 10.0.0.2',
         'user-agent': 'epoints-fulfillment/1.0',
       },
