@@ -6,7 +6,7 @@ import {
   getCommunitySubscribersInfiniteQueryOptions,
   getAccountsQueryOptions
 } from "@ecency/sdk";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
 import { Community, roleMap, Subscription } from "@/entities";
 import { LinearProgress, ProfileLink, UserAvatar } from "@/features/shared";
 import { ProBadge } from "@/features/pro";
@@ -42,21 +42,36 @@ export function CommunitySubscribers({ community }: Props) {
       [subscribersRaw]
   );
 
-  const usernames = useMemo(
-      () =>
-          [
-            // team (excluding hive-*)
-            ...community.team.filter((x) => !x[0].startsWith("hive-")),
-            // subscribers not already in team
-            ...subscribers.filter(
-                (x) => community.team.find((y) => x[0] === y[0]) === undefined
-            )
-          ].map((x) => x[0]),
-      [community.team, subscribers]
-  );
+  // Account details are fetched one batch per loaded page, not as one growing
+  // list. `getAccountsQueryOptions` keys on the usernames it is given, so
+  // passing the accumulated roster would mint a new key per page and refetch
+  // every account already loaded: 100, then 200, then 300, each cached
+  // separately. Page contents never change once fetched, so a per-page batch
+  // has a stable key and is fetched exactly once.
+  const usernameBatches = useMemo(() => {
+    const teamUsernames = community.team
+        .filter((x) => !x[0].startsWith("hive-"))
+        .map((x) => x[0]);
+    const inTeam = new Set(teamUsernames);
+
+    const pageBatches = (subscribersRaw?.pages ?? []).map((page) =>
+        (page as Subscription[])
+            .map((x) => x[0])
+            .filter((username) => !inTeam.has(username))
+    );
+
+    return [teamUsernames, ...pageBatches].filter((batch) => batch.length > 0);
+  }, [community.team, subscribersRaw]);
+
+  const accountQueries = useQueries({
+    queries: usernameBatches.map((batch) => getAccountsQueryOptions(batch))
+  });
 
   // ✅ default to []
-  const { data: accounts = [] } = useQuery(getAccountsQueryOptions(usernames));
+  const accounts = useMemo(
+      () => accountQueries.flatMap((query) => query.data ?? []),
+      [accountQueries]
+  );
 
   const role = useMemo(
       () => community.team.find((x) => x[0] === activeUser?.username),
