@@ -1,6 +1,6 @@
 {
   "name": "@ecency/web",
-  "version": "4.4.0",
+  "version": "4.4.1",
   "private": true,
   "packageManager": "pnpm@11.5.0",
   "sideEffects": [
