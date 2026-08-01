@@ -281,15 +281,43 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
             </div>
           )}
 
+          {/* The rate is only honest BEFORE anything is recorded. estimateDictationCost
+              bills a minimum of one unit, so at zero elapsed it renders one unit's
+              price -- which sat next to "up to 5 minutes" and read as 15 Points for
+              five minutes, when five minutes is 150.
+
+              Once there IS a recording the total is what matters, and that includes
+              the stopped state: unlike mobile, web still has a review step, and that
+              is the exact moment the user decides whether to spend. Falling back to
+              the rate there would replace a 90-second clip's real 45 Points with
+              "15 Points per 30 seconds" on the confirm screen. */}
           <div className="text-sm opacity-50">
             {hasBlockingError
               ? ""
               : !isPriceReady
                 ? i18next.t("publish.dictation-price-loading")
-              : estimatedCost > 0
-                ? i18next.t("publish.dictation-cost", { n: estimatedCost })
-                : i18next.t("publish.dictation-free")}
+                : state === "recording"
+                  ? estimatedCost > 0
+                    ? i18next.t("publish.dictation-cost-running", { n: estimatedCost })
+                    : i18next.t("publish.dictation-cost-running-free")
+                  : result
+                    ? estimatedCost > 0
+                      ? i18next.t("publish.dictation-cost-total", { n: estimatedCost })
+                      : i18next.t("publish.dictation-cost-running-free")
+                    : i18next.t("publish.dictation-rate", {
+                        n: unitCost,
+                        s: unitSeconds
+                      })}
           </div>
+
+          {isPriceReady && state !== "recording" && !result && freeRemaining > 0 && (
+            <div className="text-xs opacity-50">
+              {i18next.t("publish.dictation-free-remaining", {
+                n: freeRemaining,
+                s: unitSeconds
+              })}
+            </div>
+          )}
 
           {isPriceReady && (
             <div className="text-xs opacity-50">
