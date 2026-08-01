@@ -5,7 +5,6 @@ import "./_index.scss";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import { Button } from "@ui/button";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { useGlobalStore } from "@/core/global-store";
 import { Account, Community, FullAccount, roleMap, ROLES } from "@/entities";
 import i18next from "i18next";
 import { UserAvatar } from "@/features/shared";
@@ -26,7 +25,6 @@ interface Props {
 
 export function CommunityCard({ community, account }: Props) {
   const { activeUser } = useActiveAccount();
-  const users = useGlobalStore((state) => state.users);
 
   const [info, setInfo] = useState<DialogInfo>();
   const [settings, setSettings] = useState(false);
@@ -38,9 +36,14 @@ export function CommunityCard({ community, account }: Props) {
     [activeUser?.username, community.team]
   );
   const roleInTeam = useMemo(() => (role ? role[1] : null), [role]);
+  // The edit affordance is shown for one account but `useUpdateProfile` signs
+  // for the ACTIVE user, so this has to be the active user actually being the
+  // community account. Checking the saved-accounts list instead meant that
+  // signing in as @alice with @hive-x merely saved showed the pencil, and
+  // uploading rewrote *alice's* own profile image.
   const canUpdatePic = useMemo(
-    () => activeUser && !!users.find((x: { username: string }) => x.username === community.name),
-    [activeUser, community.name, users]
+    () => activeUser?.username === community.name,
+    [activeUser?.username, community.name]
   );
   const canEditCommunity = useMemo(
     () => !!(roleInTeam && [ROLES.OWNER.toString(), ROLES.ADMIN.toString()].includes(roleInTeam)),
