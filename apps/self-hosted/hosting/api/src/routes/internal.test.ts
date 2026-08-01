@@ -182,7 +182,10 @@ describe('internal endpoint audit trail', () => {
     mocks.buildConfig.mockReset().mockResolvedValue({ version: 1 });
     mocks.getBlogUrl.mockReset().mockReturnValue('https://alice.blogs.ecency.com');
     mocks.isDomainClaimed.mockReset().mockResolvedValue(false);
-    mocks.setCustomDomain.mockReset().mockResolvedValue(undefined);
+    mocks.setCustomDomain.mockReset().mockResolvedValue({
+      id: 'tenant-1',
+      customDomainVerified: false,
+    });
     mocks.verifyCustomDomain.mockReset().mockResolvedValue({ id: 'tenant-1' });
     mocks.createVerification.mockReset().mockResolvedValue({ verificationMethod: 'cname' });
     mocks.verifyDomain.mockReset().mockResolvedValue(true);
@@ -246,10 +249,16 @@ describe('internal endpoint audit trail', () => {
       expect(response.status).toBe(409);
     });
 
-    it('does not clear verification when the same domain is submitted again', async () => {
+    it('does not re-issue verification when the same domain is submitted again', async () => {
       mocks.getByUsername.mockResolvedValue({
         ...proTenant,
         customDomain: 'mine.example.com',
+        customDomainVerified: true,
+      });
+      // The statement preserves the flag only when the stored domain already
+      // equals the requested one, so a still-verified result means no reset.
+      mocks.setCustomDomain.mockResolvedValue({
+        id: 'tenant-1',
         customDomainVerified: true,
       });
 
@@ -259,9 +268,9 @@ describe('internal endpoint audit trail', () => {
       });
 
       expect(response.status).toBe(200);
-      // setCustomDomain would reset custom_domain_verified and cost the tenant
-      // its vhost and certificate until it verified again.
-      expect(mocks.setCustomDomain).not.toHaveBeenCalled();
+      // Re-issuing would delete the live verification record, and the origin
+      // sync would drop the vhost and certificate with it.
+      expect(mocks.createVerification).not.toHaveBeenCalled();
     });
 
     it('verifies against the domain that was checked', async () => {

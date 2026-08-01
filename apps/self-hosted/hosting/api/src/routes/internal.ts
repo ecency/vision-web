@@ -324,14 +324,9 @@ internalRoutes.post('/domain', async (c) => {
     return c.json({ error: 'domain_in_use' }, 409);
   }
 
-  // Re-submitting an already-verified domain would clear the verified flag and
-  // cost the tenant its vhost and certificate until it verified again.
-  if (tenant.customDomainVerified && tenant.customDomain === domain) {
-    return c.json({ domain, verified: true }, 200);
-  }
-
+  let updated: Awaited<ReturnType<typeof TenantService.setCustomDomain>>;
   try {
-    await TenantService.setCustomDomain(username, domain);
+    updated = await TenantService.setCustomDomain(username, domain);
   } catch (error) {
     if (error instanceof DomainInUseError) {
       return c.json({ error: 'domain_in_use' }, 409);
@@ -341,6 +336,12 @@ internalRoutes.post('/domain', async (c) => {
   // Recorded as soon as the tenant row changes, before the verification record it does not depend
   // on: setCustomDomain also clears custom_domain_verified, so if createVerification then threw,
   // the tenant's domain state would have changed with nothing in the trail to say what changed it.
+  // Still verified means the statement matched the domain already stored, so
+  // this was a repeat submit of a live domain and nothing was reset.
+  if (updated.customDomainVerified) {
+    return c.json({ domain, verified: true }, 200);
+  }
+
   auditInternal(c, tenant.id, 'domain.added', { domain, username, via: 'internal' });
 
   await DomainService.createVerification(username, domain);

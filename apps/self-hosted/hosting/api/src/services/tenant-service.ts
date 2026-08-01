@@ -389,11 +389,18 @@ export const TenantService = {
     let row: TenantRow | null;
 
     try {
+      // Re-submitting the domain the tenant already holds keeps its verification.
+      // Decided inside the statement rather than from an earlier read: a route
+      // level guard would be check-then-act, and a concurrent update could make
+      // the read stale between the two. Setting a DIFFERENT domain still clears
+      // the flag, which is what re-verification exists for.
       row = await db.queryOne<TenantRow>(
         `UPDATE tenants
          SET custom_domain = $2,
-             custom_domain_verified = false,
-             custom_domain_verified_at = NULL,
+             custom_domain_verified =
+               CASE WHEN custom_domain = $2 THEN custom_domain_verified ELSE false END,
+             custom_domain_verified_at =
+               CASE WHEN custom_domain = $2 THEN custom_domain_verified_at ELSE NULL END,
              updated_at = NOW()
          WHERE username = $1
          RETURNING *`,

@@ -78,23 +78,24 @@ domainRoutes.post('/', authMiddleware, zValidator('json', addDomainSchema), asyn
     return c.json({ error: 'Domain already in use' }, 409);
   }
 
-  // Re-submitting the domain this tenant already has verified must not run the
-  // write below: setCustomDomain clears the verified flag, and the origin sync
-  // removes the vhost and certificate for anything that leaves the verified
-  // set, so a repeat submit would take a live blog off its own hostname.
-  if (tenant.customDomainVerified && tenant.customDomain === domain.toLowerCase()) {
-    return c.json({ domain, verified: true, message: 'Domain already verified' });
-  }
-
   // Set domain and generate verification
+  let updated: Awaited<ReturnType<typeof TenantService.setCustomDomain>>;
   try {
-    await TenantService.setCustomDomain(username, domain);
+    updated = await TenantService.setCustomDomain(username, domain);
   } catch (error) {
     if (error instanceof DomainInUseError) {
       return c.json({ error: 'Domain already in use' }, 409);
     }
     throw error;
   }
+  // The statement preserves the flag only when the domain was unchanged, so a
+  // still-verified row here means this was a repeat submit of a live domain.
+  // Re-issuing the verification would delete its record and the origin sync
+  // would drop the vhost and certificate.
+  if (updated.customDomainVerified) {
+    return c.json({ domain, verified: true, message: 'Domain already verified' });
+  }
+
   // Recorded as soon as the tenant row changes, before the verification record
   // it does not depend on, matching internal.ts: setCustomDomain also clears
   // custom_domain_verified, so a throw from createVerification would otherwise

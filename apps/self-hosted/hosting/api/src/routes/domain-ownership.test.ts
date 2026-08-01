@@ -69,6 +69,7 @@ beforeEach(() => {
     expiresAt: new Date().toISOString(),
   });
   mocks.isDomainClaimed.mockResolvedValue(false);
+  mocks.setCustomDomain.mockResolvedValue({ ...COMMUNITY, customDomainVerified: false });
 });
 
 describe('custom domains for a community instance', () => {
@@ -234,24 +235,53 @@ describe('tenant targeting', () => {
 });
 
 describe('re-submitting a domain the tenant already holds', () => {
-  it('leaves the verification intact', async () => {
-    // setCustomDomain clears the verified flag, and the origin sync drops the
-    // vhost and certificate for anything that leaves the verified set.
+  it('does not re-issue verification, which would drop the live certificate', () =>
+    (async () => {
+      mocks.getByUsername.mockResolvedValue({
+        ...COMMUNITY,
+        username: 'alice',
+        customDomain: 'mine.example.com',
+        customDomainVerified: true,
+      });
+      // The statement preserves the flag only for an unchanged domain, so a
+      // still-verified result means nothing was reset.
+      mocks.setCustomDomain.mockResolvedValue({
+        ...COMMUNITY,
+        customDomain: 'mine.example.com',
+        customDomainVerified: true,
+      });
+
+      const res = await request('/', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ domain: 'mine.example.com' }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mocks.createVerification).not.toHaveBeenCalled();
+    })());
+
+  it('still issues verification for a domain that is new to the tenant', async () => {
     mocks.getByUsername.mockResolvedValue({
       ...COMMUNITY,
       username: 'alice',
-      customDomain: 'mine.example.com',
+      customDomain: 'old.example.com',
       customDomainVerified: true,
+    });
+    mocks.setCustomDomain.mockResolvedValue({
+      ...COMMUNITY,
+      customDomain: 'new.example.com',
+      customDomainVerified: false,
     });
 
     const res = await request('/', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ domain: 'mine.example.com' }),
+      body: JSON.stringify({ domain: 'new.example.com' }),
     });
 
-    expect(res.status).toBe(200);
-    expect(mocks.setCustomDomain).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(mocks.createVerification).toHaveBeenCalled();
   });
 });
 
