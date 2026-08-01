@@ -130,12 +130,21 @@ tenantRoutes.get('/:username/config', async (c) => {
 // username) so a direct API call cannot assign someone else as controller of a blog; and that a
 // COMMUNITY has a real, separate owner account plus a valid, existing community id equal to the
 // subdomain. Returns the resolved owner or a client error.
-async function resolveAndValidateTenant(
+/** Hive names a community account hive-NNNN; the subdomain must match it. */
+const COMMUNITY_NAME = /^hive-\d+$/;
+
+export async function resolveAndValidateTenant(
   body: any
 ): Promise<{ ok: true; owner: string } | { ok: false; status: 400; error: string }> {
   const username = body.username.toLowerCase();
   const owner = (body.owner || body.username).toLowerCase();
-  const isCommunity = body.config?.type === 'community';
+  // Derived from the subdomain being claimed, never from the caller-supplied
+  // type. Trusting body.config.type let a caller omit it, take the personal
+  // blog branch (which only requires owner === username) and capture a
+  // community's subdomain with no ownership check at all. A community account
+  // is a real Hive account, so the account existence check does not stop it.
+  const isCommunity =
+    COMMUNITY_NAME.test(username) || body.config?.type === 'community';
 
   if (!(await TenantService.verifyHiveAccount(username))) {
     return { ok: false, status: 400, error: 'Hive account not found' };
@@ -145,8 +154,8 @@ async function resolveAndValidateTenant(
   }
 
   if (isCommunity) {
-    const communityId = (body.config.communityId || '').toLowerCase();
-    if (!/^hive-\d+$/.test(communityId)) {
+    const communityId = (body.config?.communityId || username).toLowerCase();
+    if (!COMMUNITY_NAME.test(communityId)) {
       return { ok: false, status: 400, error: 'Community id must look like hive-NNNN' };
     }
     if (username !== communityId) {
