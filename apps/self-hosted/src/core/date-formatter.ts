@@ -80,6 +80,36 @@ function isValidDate(d: Date): boolean {
   return !Number.isNaN(d.getTime());
 }
 
+/**
+ * date-fns throws on an unknown time zone, and the value comes from a free text
+ * config field, so "UTC+3" (not an IANA zone) would otherwise take down every
+ * page that renders a date.
+ */
+function toZoned(date: Date, timezone: string): Date {
+  const zoned = toZonedTime(date, timezone);
+  return isValidDate(zoned) ? zoned : date;
+}
+
+/**
+ * date-fns throws a RangeError on any unescaped latin character that is not a
+ * token, which includes common Moment style patterns such as "hh:mm A". The
+ * pattern is owner-typed, so one typo would blank the whole blog rather than a
+ * single timestamp.
+ */
+function safeFormat(date: Date, pattern: string, fallback: string): string {
+  const locale = getLocale();
+
+  try {
+    return format(date, pattern, { locale });
+  } catch {
+    try {
+      return format(date, fallback, { locale });
+    } catch {
+      return date.toISOString();
+    }
+  }
+}
+
 function getLocale(): Locale {
   const language = InstanceConfigManager.getConfigValue(
     ({ configuration }) => configuration.general.language,
@@ -120,8 +150,8 @@ function getDateTimeFormat(): string {
 export function formatDate(date: Date | string | number): string {
   const utcDate = parseHiveDate(date);
   if (!isValidDate(utcDate)) return '';
-  const zonedDate = toZonedTime(utcDate, getTimezone());
-  return format(zonedDate, getDateFormat(), { locale: getLocale() });
+  const zonedDate = toZoned(utcDate, getTimezone());
+  return safeFormat(zonedDate, getDateFormat(), 'yyyy-MM-dd');
 }
 
 /**
@@ -130,8 +160,8 @@ export function formatDate(date: Date | string | number): string {
 export function formatTime(date: Date | string | number): string {
   const utcDate = parseHiveDate(date);
   if (!isValidDate(utcDate)) return '';
-  const zonedDate = toZonedTime(utcDate, getTimezone());
-  return format(zonedDate, getTimeFormat(), { locale: getLocale() });
+  const zonedDate = toZoned(utcDate, getTimezone());
+  return safeFormat(zonedDate, getTimeFormat(), 'HH:mm:ss');
 }
 
 /**
@@ -140,8 +170,8 @@ export function formatTime(date: Date | string | number): string {
 export function formatDateTime(date: Date | string | number): string {
   const utcDate = parseHiveDate(date);
   if (!isValidDate(utcDate)) return '';
-  const zonedDate = toZonedTime(utcDate, getTimezone());
-  return format(zonedDate, getDateTimeFormat(), { locale: getLocale() });
+  const zonedDate = toZoned(utcDate, getTimezone());
+  return safeFormat(zonedDate, getDateTimeFormat(), 'yyyy-MM-dd HH:mm:ss');
 }
 
 /**
@@ -163,9 +193,14 @@ export function formatRelativeDate(date: Date | string | number): string {
   const utcDate = parseHiveDate(date);
   if (!isValidDate(utcDate)) return '';
   const timezone = getTimezone();
-  const zonedDate = toZonedTime(utcDate, timezone);
-  const zonedNow = toZonedTime(new Date(), timezone);
-  return formatRelative(zonedDate, zonedNow, { locale: getLocale() });
+  const zonedDate = toZoned(utcDate, timezone);
+  const zonedNow = toZoned(new Date(), timezone);
+
+  try {
+    return formatRelative(zonedDate, zonedNow, { locale: getLocale() });
+  } catch {
+    return zonedDate.toISOString();
+  }
 }
 
 /**
@@ -173,8 +208,9 @@ export function formatRelativeDate(date: Date | string | number): string {
  */
 export function formatMonthYear(date: Date | string | number): string {
   const utcDate = parseHiveDate(date);
-  const zonedDate = toZonedTime(utcDate, getTimezone());
-  return format(zonedDate, 'MMMM yyyy', { locale: getLocale() });
+  if (!isValidDate(utcDate)) return '';
+  const zonedDate = toZoned(utcDate, getTimezone());
+  return safeFormat(zonedDate, 'MMMM yyyy', 'MMMM yyyy');
 }
 
 /**
@@ -185,8 +221,11 @@ export function formatCustom(
   formatStr: string,
 ): string {
   const utcDate = parseHiveDate(date);
-  const zonedDate = toZonedTime(utcDate, getTimezone());
-  return format(zonedDate, convertFormatPattern(formatStr), {
-    locale: getLocale(),
-  });
+  if (!isValidDate(utcDate)) return '';
+  const zonedDate = toZoned(utcDate, getTimezone());
+  return safeFormat(
+    zonedDate,
+    convertFormatPattern(formatStr),
+    'yyyy-MM-dd HH:mm:ss',
+  );
 }

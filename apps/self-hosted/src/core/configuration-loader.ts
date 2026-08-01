@@ -15,6 +15,7 @@ import {
 
 // Build-time config import (fallback)
 import buildTimeConfig from '../../config.json';
+import { mergeConfig } from './merge-config';
 
 // =============================================================================
 // Configuration Types
@@ -145,7 +146,14 @@ class ConfigStore {
 
       // Validate basic structure
       if (runtimeConfig?.version && runtimeConfig?.configuration) {
-        this.config = runtimeConfig as InstanceConfig;
+        // Merged over the build-time config rather than replacing it: a served
+        // config that omits a nested section (hand edited, or written against
+        // an older schema) would otherwise leave those paths undefined for
+        // every consumer that reads them.
+        this.config = mergeConfig(
+          buildTimeConfig as InstanceConfig,
+          runtimeConfig as InstanceConfig,
+        );
         this.notifyListeners();
         console.debug('[Config] Loaded runtime config v' + runtimeConfig.version);
       }
