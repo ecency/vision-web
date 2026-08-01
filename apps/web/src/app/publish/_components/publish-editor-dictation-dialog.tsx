@@ -92,6 +92,11 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
   // isPending from the mutation only turns true once transcribe() is called, which
   // left a window where the dialog was closable but the paid call still went out.
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Segments inserted this session: tells the user their words landed even though
+  // the dialog never closed, and switches the button to "Record more".
+  const [segments, setSegments] = useState(0);
+  // Guards the auto-submit effect against firing twice for the same recording.
+  const submittedForRef = useRef<Blob | null>(null);
 
   const maxSeconds = price?.max_seconds ?? 300;
   const { state, seconds, result, start, stop, reset } = useDictationRecorder({ maxSeconds });
@@ -184,7 +189,12 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
       }
 
       onInsert(response.text);
-      close();
+      // Stay open with a clean recorder rather than closing: the point of
+      // transcribing on stop is that someone can keep dictating without reopening
+      // the dialog between paragraphs.
+      setSegments((n) => n + 1);
+      idempotencyKeyRef.current = null;
+      reset();
     } catch (e) {
       const status = (e as { status?: number }).status;
       if (closedRef.current) return;
@@ -203,7 +213,20 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
     } finally {
       setIsSubmitting(false);
     }
-  }, [result, username, isSubmitting, transcribe, onInsert, close, estimatedCost]);
+  }, [result, username, isSubmitting, transcribe, onInsert, reset, estimatedCost]);
+
+  // Transcribe as soon as recording stops. Keyed on the blob so a re-render cannot
+  // fire a second paid request for the same audio.
+  //
+  // Skipped when the client already knows the balance is short: firing anyway would
+  // spend a round trip to be told what we can see, and leave the user staring at a
+  // spinner before the top-up prompt they actually need.
+  useEffect(() => {
+    if (state === "stopped" && result && !cannotAfford && submittedForRef.current !== result.blob) {
+      submittedForRef.current = result.blob;
+      submit();
+    }
+  }, [state, result, cannotAfford, submit]);
 
   // A fresh recording is a different operation, so it gets a fresh key.
   useEffect(() => {
@@ -215,6 +238,8 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
   useEffect(() => {
     if (show) {
       closedRef.current = false;
+      submittedForRef.current = null;
+      setSegments(0);
     }
   }, [show]);
 
@@ -343,19 +368,23 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
             disabled={state === "requesting" || isSubmitting || !isPriceReady}
             onClick={start}
           >
-            {result
-              ? i18next.t("publish.dictation-rerecord")
+            {segments > 0
+              ? i18next.t("publish.dictation-record-more")
               : i18next.t("publish.dictation-start")}
           </Button>
         )}
 
-        <Button
-          size="sm"
-          disabled={!result || isSubmitting || cannotAfford || !isPriceReady}
-          isLoading={isSubmitting}
-          onClick={submit}
-        >
-          {i18next.t("publish.dictation-insert")}
+        {/* Only reachable when the client knew the balance was short, so the
+            auto-submit was skipped and the audio is still waiting. Otherwise there
+            is nothing to press: stopping transcribes. */}
+        {result && cannotAfford && (
+          <Button size="sm" disabled={isSubmitting || !isPriceReady} onClick={submit}>
+            {i18next.t("publish.dictation-transcribe")}
+          </Button>
+        )}
+
+        <Button size="sm" appearance="gray" disabled={isSubmitting} onClick={close}>
+          {i18next.t("publish.dictation-done")}
         </Button>
       </ModalFooter>
     </Modal>

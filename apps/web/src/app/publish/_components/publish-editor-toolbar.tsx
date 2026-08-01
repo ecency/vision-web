@@ -531,7 +531,23 @@ export function PublishEditorToolbar({ editor, allowToUploadVideo = true }: Prop
           <PublishEditorDictationDialog
             show={showDictation}
             setShow={setShowDictation}
-            onInsert={(text) => editor?.chain().focus().insertContent(text).run()}
+            onInsert={(text) => {
+              // Space between segments so consecutive dictations do not run together,
+              // skipped when the character before the cursor is already whitespace.
+              // TipTap leaves the cursor AFTER inserted content, so segments append
+              // rather than replace -- unlike the mobile editor, which needed its own
+              // insert path for exactly that reason.
+              const before = editor?.state.doc.textBetween(
+                Math.max(0, (editor?.state.selection.from ?? 0) - 1),
+                editor?.state.selection.from ?? 0
+              );
+              const separator = !before || /\s/.test(before) ? "" : " ";
+              editor
+                ?.chain()
+                .focus()
+                .insertContent(`${separator}${text}`)
+                .run();
+            }}
           />
         )}
 
