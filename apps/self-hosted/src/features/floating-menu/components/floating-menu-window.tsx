@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { InstanceConfigManager } from '@/core';
+import {
+  applyConfigDom,
+  type ConfigDomSnapshot,
+  defaultPostsFiltersFor,
+  type InstanceConfig,
+  InstanceConfigManager,
+  type InstanceType,
+  restoreConfigDom,
+  snapshotConfigDom,
+  toInstanceType,
+  withPinnedInstanceType,
+} from '@/core';
 import {
   clearHostingToken,
   getHostingToken,
@@ -39,162 +50,40 @@ function getTenantUsername(): string | null {
   );
 }
 
-interface OriginalState {
-  theme: string;
-  styleTemplate: string;
-  sidebarPlacement: string;
-  /** Complete snapshot of all body classes at capture time */
-  allBodyClasses: string[];
-  pageTitle: string;
-  language: string;
-  instanceType: string;
-  showFollowers: string;
-  showFollowing: string;
-  showHiveInfo: string;
-  listType: string | null;
-}
+const INSTANCE_TYPE_PATH = 'configuration.instanceConfiguration.type';
+const POSTS_FILTERS_PATH =
+  'configuration.instanceConfiguration.features.postsFilters';
 
-function applyPreviewConfig(config: Record<string, ConfigValue>) {
-  const configuration = config.configuration as Record<string, ConfigValue>;
-  const general = configuration?.general as Record<string, ConfigValue>;
-  const instanceConfiguration = configuration?.instanceConfiguration as Record<
-    string,
-    ConfigValue
-  >;
-
-  if (!general) return;
-
-  // Apply theme
-  const theme = (general.theme as string) || 'light';
-  if (theme === 'system') {
-    const prefersDark = window.matchMedia(
-      '(prefers-color-scheme: dark)',
-    ).matches;
-    document.documentElement.setAttribute(
-      'data-theme',
-      prefersDark ? 'dark' : 'light',
-    );
-  } else {
-    document.documentElement.setAttribute('data-theme', theme);
-  }
-
-  // Apply style template
-  const styleTemplate = (general.styleTemplate as string) || 'medium';
-  document.documentElement.setAttribute('data-style-template', styleTemplate);
-
-  // Apply language
-  const language = (general.language as string) || 'en';
-  document.documentElement.setAttribute('lang', language);
-  document.documentElement.setAttribute('data-language', language);
-
-  // Apply sidebar placement
-  const layout = instanceConfiguration?.layout as Record<string, ConfigValue>;
-  const sidebar = layout?.sidebar as Record<string, ConfigValue>;
-  const sidebarPlacement = (sidebar?.placement as string) || 'right';
-  document.documentElement.setAttribute(
-    'data-sidebar-placement',
-    sidebarPlacement,
-  );
-
-  // Apply list type
-  const listType = (layout?.listType as string) || 'grid';
-  document.documentElement.setAttribute('data-list-type', listType);
-
-  // Apply meta title to page
-  const meta = instanceConfiguration?.meta as Record<string, ConfigValue>;
-  const title = (meta?.title as string) || '';
-  if (title) {
-    document.title = title;
-  }
-
-  // Apply background styles
-  const styles = general.styles as Record<string, ConfigValue>;
-  const background = (styles?.background as string) || '';
-
-  // Remove old background classes and add new ones
-  const bodyClasses = Array.from(document.body.classList);
-  for (const c of bodyClasses) {
-    if (c.startsWith('bg-') || c.startsWith('from-') || c.startsWith('to-')) {
-      document.body.classList.remove(c);
-    }
-  }
-
-  if (background) {
-    for (const className of background.split(' ')) {
-      if (className) document.body.classList.add(className);
-    }
-  }
-
-  // Apply instance type
-  const instanceType = (instanceConfiguration?.type as string) || 'blog';
-  document.documentElement.setAttribute('data-instance-type', instanceType);
-
-  // Apply sidebar section visibility
-  const followers = sidebar?.followers as Record<string, ConfigValue>;
-  const following = sidebar?.following as Record<string, ConfigValue>;
-  const hiveInfo = sidebar?.hiveInformation as Record<string, ConfigValue>;
-
-  document.documentElement.setAttribute(
-    'data-show-followers',
-    followers?.enabled !== false ? 'true' : 'false',
-  );
-  document.documentElement.setAttribute(
-    'data-show-following',
-    following?.enabled !== false ? 'true' : 'false',
-  );
-  document.documentElement.setAttribute(
-    'data-show-hive-info',
-    hiveInfo?.enabled !== false ? 'true' : 'false',
+/**
+ * The instance type the hosting API will keep no matter what this document
+ * says: applyConfigDocument pins it from the stored config. Null when the site
+ * is not on managed hosting, where the edited document is what the owner
+ * deploys.
+ */
+function getPinnedInstanceType(): InstanceType | null {
+  if (!isManagedHosting()) return null;
+  return toInstanceType(
+    InstanceConfigManager.getConfigValue(
+      ({ configuration }) => configuration.instanceConfiguration.type,
+    ),
   );
 }
 
-function restoreOriginalState(original: OriginalState) {
-  // Restore theme
-  document.documentElement.setAttribute('data-theme', original.theme);
-
-  // Restore style template
-  document.documentElement.setAttribute(
-    'data-style-template',
-    original.styleTemplate,
-  );
-
-  // Restore sidebar placement
-  document.documentElement.setAttribute(
-    'data-sidebar-placement',
-    original.sidebarPlacement,
-  );
-
-  // Restore language
-  document.documentElement.setAttribute('lang', original.language);
-  document.documentElement.setAttribute('data-language', original.language);
-
-  // Restore page title
-  document.title = original.pageTitle;
-
-  // Restore all body classes to original state
-  // Remove all current classes and restore the original snapshot
-  const currentClasses = Array.from(document.body.classList);
-  for (const c of currentClasses) {
-    document.body.classList.remove(c);
+/**
+ * The config the server actually stored, which is authoritative: it pins the
+ * identity fields and drops values that disagree with the stored shape.
+ */
+function readSavedConfig(payload: unknown): Record<string, ConfigValue> | null {
+  const saved = (payload as { config?: unknown } | null)?.config;
+  if (
+    saved &&
+    typeof saved === 'object' &&
+    !Array.isArray(saved) &&
+    'configuration' in saved
+  ) {
+    return saved as Record<string, ConfigValue>;
   }
-  for (const c of original.allBodyClasses) {
-    document.body.classList.add(c);
-  }
-
-  // Restore instance type
-  document.documentElement.setAttribute('data-instance-type', original.instanceType);
-
-  // Restore sidebar section visibility
-  document.documentElement.setAttribute('data-show-followers', original.showFollowers);
-  document.documentElement.setAttribute('data-show-following', original.showFollowing);
-  document.documentElement.setAttribute('data-show-hive-info', original.showHiveInfo);
-
-  // Restore list type
-  if (original.listType !== null) {
-    document.documentElement.setAttribute('data-list-type', original.listType);
-  } else {
-    document.documentElement.removeAttribute('data-list-type');
-  }
+  return null;
 }
 
 interface FloatingMenuWindowProps {
@@ -213,7 +102,8 @@ export function FloatingMenuWindow({
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
-  const originalStateRef = useRef<OriginalState | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const originalStateRef = useRef<ConfigDomSnapshot | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const managed = useMemo(() => isManagedHosting(), []);
 
@@ -225,18 +115,34 @@ export function FloatingMenuWindow({
   }, [isOpen]);
 
   const handleUpdate = useCallback((path: string, value: ConfigValue) => {
-    setConfig((prev) => {
-      let updated = updateNestedPath(prev, path, value);
+    const isTypeChange = path === INSTANCE_TYPE_PATH;
 
-      // Auto-fill postsFilters when instance type changes
-      if (path === 'configuration.instanceConfiguration.type') {
-        const blogFilters = ['blog', 'posts', 'comments', 'replies'];
-        const communityFilters = ['trending', 'hot', 'new'];
-        const filters = value === 'community' ? communityFilters : blogFilters;
-        updated = updateNestedPath(
+    if (isTypeChange) {
+      // The hosting API pins the instance type from the stored config, so a
+      // switch made here is never persisted while the filters auto-filled
+      // beside it are. That combination is what leaves a blog instance whose
+      // only filters are community sorts, and every feed tab then errors.
+      const pinnedType = getPinnedInstanceType();
+      if (pinnedType && value !== pinnedType) {
+        setNotice(
+          'Instance type is set when the site is created and cannot be changed from the editor.',
+        );
+        return;
+      }
+    }
+    setNotice(null);
+
+    setConfig((prev) => {
+      const updated = updateNestedPath(prev, path, value);
+
+      // Auto-fill postsFilters when instance type changes. Only sorts the new
+      // type can actually fetch: a blog feed calls bridge.get_account_posts, a
+      // community feed calls bridge.get_ranked_posts.
+      if (isTypeChange) {
+        return updateNestedPath(
           updated,
-          'configuration.instanceConfiguration.features.postsFilters',
-          filters,
+          POSTS_FILTERS_PATH,
+          defaultPostsFiltersFor(toInstanceType(value)),
         );
       }
 
@@ -259,6 +165,13 @@ export function FloatingMenuWindow({
     setIsSaving(true);
     setSaveStatus('idle');
     setSaveError(null);
+    // Last line of defence for a document that already carries filters from
+    // before this was fixed, or one edited outside the editor and pasted back:
+    // what goes out must agree with the type the server keeps.
+    const pinnedType = getPinnedInstanceType();
+    const outgoing = pinnedType
+      ? withPinnedInstanceType(config, pinnedType)
+      : config;
     try {
       const saveWith = (token: string) =>
         fetch(`${HOSTING_API_URL}/v1/tenants/${encodeURIComponent(username)}`, {
@@ -267,7 +180,7 @@ export function FloatingMenuWindow({
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ config }),
+          body: JSON.stringify({ config: outgoing }),
           signal: AbortSignal.timeout(HOSTING_FETCH_TIMEOUT_MS),
         });
 
@@ -287,6 +200,19 @@ export function FloatingMenuWindow({
           (data as { error?: string }).error || `Save failed (${response.status})`,
         );
       }
+      // A save becomes the new baseline. Without this the PATCH landed but the
+      // running app kept the old config, and leaving preview restored the
+      // pre-save snapshot, so the owner watched the saved change revert and
+      // concluded the save had failed.
+      const saved = readSavedConfig(await response.json().catch(() => null));
+      const baseline = saved ?? outgoing;
+      setConfig(baseline);
+      InstanceConfigManager.updateConfig(baseline as unknown as InstanceConfig);
+      applyConfigDom(baseline, { syncSystemTheme: true });
+      // Re-take the restore point so exiting preview cannot roll back what was
+      // just saved.
+      originalStateRef.current = snapshotConfigDom();
+
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (e) {
@@ -304,33 +230,13 @@ export function FloatingMenuWindow({
   const handleTogglePreview = useCallback(() => {
     setIsPreviewMode((prev) => {
       if (!prev) {
-        // Entering preview mode - save original state
-        originalStateRef.current = {
-          theme: document.documentElement.getAttribute('data-theme') || 'light',
-          styleTemplate:
-            document.documentElement.getAttribute('data-style-template') ||
-            'medium',
-          sidebarPlacement:
-            document.documentElement.getAttribute('data-sidebar-placement') ||
-            'right',
-          allBodyClasses: Array.from(document.body.classList),
-          pageTitle: document.title,
-          language: document.documentElement.getAttribute('lang') || 'en',
-          instanceType:
-            document.documentElement.getAttribute('data-instance-type') || 'blog',
-          showFollowers:
-            document.documentElement.getAttribute('data-show-followers') || 'true',
-          showFollowing:
-            document.documentElement.getAttribute('data-show-following') || 'true',
-          showHiveInfo:
-            document.documentElement.getAttribute('data-show-hive-info') || 'true',
-          listType: document.documentElement.getAttribute('data-list-type'),
-        };
-        applyPreviewConfig(config);
+        // Entering preview mode - capture everything the config can touch
+        originalStateRef.current = snapshotConfigDom();
+        applyConfigDom(config);
       } else {
         // Exiting preview mode - restore original state
         if (originalStateRef.current) {
-          restoreOriginalState(originalStateRef.current);
+          restoreConfigDom(originalStateRef.current);
           originalStateRef.current = null;
         }
       }
@@ -348,7 +254,7 @@ export function FloatingMenuWindow({
     // Cleanup: restore original state only when exiting preview mode
     return () => {
       if (originalStateRef.current) {
-        restoreOriginalState(originalStateRef.current);
+        restoreConfigDom(originalStateRef.current);
       }
     };
   }, [isPreviewMode]);
@@ -357,13 +263,13 @@ export function FloatingMenuWindow({
   // This effect has NO cleanup to avoid restore/reapply flicker
   useEffect(() => {
     if (isPreviewMode) {
-      applyPreviewConfig(config);
+      applyConfigDom(config);
     }
   }, [config, isPreviewMode]);
 
   const handleExitPreview = useCallback(() => {
     if (originalStateRef.current) {
-      restoreOriginalState(originalStateRef.current);
+      restoreConfigDom(originalStateRef.current);
       originalStateRef.current = null;
     }
     setIsPreviewMode(false);
@@ -573,6 +479,16 @@ export function FloatingMenuWindow({
             >
               {saveError}
             </div>
+          )}
+
+          {/* Field the server owns, rejected before it can be edited */}
+          {notice && (
+            <output
+              className="block px-4 py-2 text-sm font-sans text-gray-300 border-b shrink-0"
+              style={{ borderColor: FLOATING_MENU_THEME.borderColor }}
+            >
+              {notice}
+            </output>
           )}
 
           {/* Content */}
