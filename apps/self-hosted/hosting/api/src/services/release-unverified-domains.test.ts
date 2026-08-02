@@ -7,17 +7,33 @@ vi.mock('../db/client', () => ({
 }));
 vi.mock('@ecency/sdk/hive', () => ({ callRPC: vi.fn(), config: { set: vi.fn() } }));
 
-const { TenantService } = await import('./tenant-service');
+const { TenantService, DOMAIN_CLAIM_SETTLE_MINUTES } = await import('./tenant-service');
 
 /**
- * Records every statement the sweep runs, and models the one database behaviour that matters
- * here: once the claim is cleared, the domain is gone from the row. A read taken after the
- * UPDATE (or a RETURNING clause, which reports the new row) yields a null domain, so a sweep
- * that reports what it released has to capture it beforehand.
+ * Records every statement the sweep runs, and models the two database behaviours that matter here.
+ *
+ * Once the claim is cleared, the domain is gone from the row: a read taken after the UPDATE (or a
+ * RETURNING clause, which reports the new row) yields a null domain, so a sweep that reports what
+ * it released has to capture it beforehand.
+ *
+ * The settle window is evaluated rather than merely recorded. A candidate whose updated_at falls
+ * inside the window the SELECT asks for is withheld, the way Postgres would withhold it, so a
+ * sweep that drops that predicate is handed the row and releases it.
  */
 function fakeTransaction(candidates: any[]) {
   const calls: { sql: string; params: any[] }[] = [];
   let cleared = false;
+
+  const isSettling = (sql: string, params: any[], row: any) => {
+    if (!row.updated_at) return false;
+    const window = /updated_at < NOW\(\) - \(\$(\d+) \* INTERVAL '1 minute'\)/.exec(
+      sql.replace(/\s+/g, ' ')
+    );
+    if (!window) return false;
+    const minutes = params[Number(window[1]) - 1];
+    return row.updated_at.getTime() > Date.now() - minutes * 60_000;
+  };
+
   mocks.transaction.mockImplementation(async (fn: (client: any) => Promise<any>) =>
     fn({
       query: async (sql: string, params: any[] = []) => {
@@ -28,9 +44,10 @@ function fakeTransaction(candidates: any[]) {
           return { rows: /RETURNING/.test(sql) ? rows : [], rowCount: candidates.length };
         }
         if (/^SELECT/.test(sql.trim())) {
+          const matched = candidates.filter((row) => !isSettling(sql, params, row));
           const rows = cleared
-            ? candidates.map((row) => ({ ...row, custom_domain: null }))
-            : candidates;
+            ? matched.map((row) => ({ ...row, custom_domain: null }))
+            : matched;
           return { rows, rowCount: rows.length };
         }
         return { rows: [], rowCount: 0 };
@@ -41,6 +58,9 @@ function fakeTransaction(candidates: any[]) {
 }
 
 const CLAIM = { id: 'tenant-1', username: 'alice', custom_domain: 'mine.example.test' };
+// A claim in the middle of being attached: setCustomDomain has committed (which is what stamps
+// updated_at), the verification record that would date it is not in yet.
+const ATTACHING = { ...CLAIM, updated_at: new Date() };
 
 beforeEach(() => {
   mocks.transaction.mockReset();
@@ -66,7 +86,7 @@ describe('TenantService.releaseUnverifiedDomains', () => {
     // schema change is needed and a claim made minutes ago is never swept.
     expect(select.sql).toContain('NOT EXISTS');
     expect(select.sql).toContain("dv.created_at > NOW() - ($1 * INTERVAL '1 day')");
-    expect(select.params).toEqual([14]);
+    expect(select.params).toEqual([14, DOMAIN_CLAIM_SETTLE_MINUTES]);
   });
 
   it('locks the candidates it is about to clear', async () => {
@@ -109,6 +129,39 @@ describe('TenantService.releaseUnverifiedDomains', () => {
     expect(cleanup.sql).toContain('DELETE FROM domain_verifications');
     expect(cleanup.sql).toContain('verified = false');
     expect(cleanup.params).toEqual([['tenant-1']]);
+  });
+
+  /**
+   * The attach path commits the claim and writes the verification record that dates it as two
+   * separate statements, and a re-attach deletes the old record before inserting the new one. A
+   * sweep landing in either gap finds no record for the claim, so without the settle window it
+   * would clear a claim made seconds ago whatever claimDays says: the request would then write
+   * its verification record and answer 201 for a domain the tenant no longer held.
+   */
+  it('leaves a claim alone while its tenant row is still settling', async () => {
+    const calls = fakeTransaction([ATTACHING]);
+
+    const released = await TenantService.releaseUnverifiedDomains(14);
+
+    expect(released).toEqual([]);
+    // Nothing beyond the candidate read: no claim was cleared.
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toContain("updated_at < NOW() - ($2 * INTERVAL '1 minute')");
+  });
+
+  it('still releases a claim once its row has settled', async () => {
+    // Same row, last touched well outside the window: the settle guard delays a release, it does
+    // not cancel it.
+    const settled = {
+      ...ATTACHING,
+      updated_at: new Date(Date.now() - (DOMAIN_CLAIM_SETTLE_MINUTES + 1) * 60_000),
+    };
+    const calls = fakeTransaction([settled]);
+
+    const released = await TenantService.releaseUnverifiedDomains(14);
+
+    expect(released).toEqual([{ username: 'alice', domain: 'mine.example.test' }]);
+    expect(calls[1].sql).toContain('UPDATE tenants');
   });
 
   it('writes nothing when there is nothing to release', async () => {

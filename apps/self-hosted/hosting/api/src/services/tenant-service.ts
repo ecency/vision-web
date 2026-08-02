@@ -46,6 +46,11 @@ const CONTROLLING_COMMUNITY_ROLES = new Set(['owner', 'admin']);
 // The time-based quarantine then only has to cover the residual seconds of healthy live tailing.
 export const ABANDONED_REREGISTER_QUARANTINE_HOURS = 1;
 
+// Settle window the unverified-domain sweep leaves around a freshly touched tenant row. The attach
+// path writes the claim and the verification record that dates it as two separate statements, so
+// for a moment a live claim has no record backing it; see releaseUnverifiedDomains.
+export const DOMAIN_CLAIM_SETTLE_MINUTES = 60;
+
 // Whether an existing row is an abandoned reservation that has cleared the re-registration
 // quarantine (so a fresh signup may reclaim its username). A live row, or one reclaimed within
 // the quarantine, is NOT reusable. The SQL upsert applies the same guard atomically; this is the
@@ -536,6 +541,18 @@ export const TenantService = {
    * verification's own UPDATE is keyed on username AND domain, matches no row, returns null, and
    * both rails already answer "verify again" for that.
    *
+   * A claim whose tenant row was touched within DOMAIN_CLAIM_SETTLE_MINUTES is also left alone.
+   * Dating the claim by its verification record only works once that record exists, and the attach
+   * path writes the two separately: setCustomDomain commits the claim, then createVerification
+   * deletes any previous record and inserts the new one. In both gaps no record matches the claim,
+   * so a sweep landing there would clear a claim made seconds ago no matter how large claimDays is,
+   * and the request would carry on to write its record and report success for a domain the tenant
+   * no longer held. Every write to a tenant row bumps updated_at (a trigger does it, so this does
+   * not depend on any statement remembering to), which puts a claim in mid-attach inside the
+   * window. An unrelated tenant write postpones a release by up to that window, which is the
+   * harmless direction: a squatted domain is freed an hour later rather than a domain being taken
+   * from someone who has just asked for it.
+   *
    * The claim is read before it is cleared rather than from RETURNING, which reports the NEW row
    * and would hand back a null domain for every release.
    */
@@ -546,6 +563,7 @@ export const TenantService = {
            FROM tenants
           WHERE custom_domain IS NOT NULL
             AND custom_domain_verified = false
+            AND updated_at < NOW() - ($2 * INTERVAL '1 minute')
             AND NOT EXISTS (
                   SELECT 1 FROM domain_verifications dv
                    WHERE dv.tenant_id = tenants.id
@@ -553,7 +571,7 @@ export const TenantService = {
                      AND dv.created_at > NOW() - ($1 * INTERVAL '1 day')
                 )
           FOR UPDATE`,
-        [claimDays]
+        [claimDays, DOMAIN_CLAIM_SETTLE_MINUTES]
       );
 
       if (candidates.rows.length === 0) return [];

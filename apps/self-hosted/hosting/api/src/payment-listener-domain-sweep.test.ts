@@ -67,6 +67,29 @@ describe('the maintenance pass releases unverified domain claims', () => {
     expect(mocks.releaseUnverifiedDomains).toHaveBeenCalled();
   });
 
+  it('names the domain it freed in the maintenance log', async () => {
+    // The only reason this line exists is being able to tell WHICH domain was freed. Reporting
+    // the post-update row (what UPDATE ... RETURNING hands back) prints null for every release,
+    // which is indistinguishable from a sweep that released nothing.
+    mocks.releaseUnverifiedDomains.mockResolvedValue([
+      { username: 'alice', domain: 'mine.example.test' },
+    ]);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      await maintenancePass();
+
+      const lines = log.mock.calls
+        .map((args) => args.join(' '))
+        .filter((line) => line.includes('Released unverified domain claim'));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('mine.example.test');
+      expect(lines[0]).toContain('alice');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('expires subscriptions first, so a failure to release cannot skip that', async () => {
     mocks.releaseUnverifiedDomains.mockRejectedValue(new Error('database unavailable'));
 
