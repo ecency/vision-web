@@ -5,6 +5,7 @@
 import { db } from '../db/client';
 import { callRPC, config as hiveTxConfig } from '@ecency/sdk/hive';
 import { Tenant, TenantRow, mapTenantFromDb } from '../types';
+import { ApiError } from '../errors';
 
 // Re-export Tenant type for backward compatibility
 export type { Tenant } from '../types';
@@ -32,6 +33,39 @@ const baseDomain = process.env.BASE_DOMAIN || 'blogs.ecency.com';
 export const COMMUNITY_NAME = /^hive-\d+$/;
 
 const CONTROLLING_COMMUNITY_ROLES = new Set(['owner', 'admin']);
+
+/**
+ * A value the server did not store, reported back to the caller.
+ *
+ * Identity fields are pinned and shape-mismatched values are dropped, both silently: the save
+ * answered 200 while the stored config disagreed with what the editor was showing, and the
+ * owner had no way to find out. Every drop is collected here and returned by the PATCH.
+ */
+export interface DiscardedField {
+  /** Dot path of the value inside the config document the caller sent. */
+  path: string;
+  reason: string;
+}
+
+/** Where the guarded merge currently is, and where to record what it drops. */
+interface MergeReport {
+  path: string;
+  discarded: DiscardedField[];
+}
+
+/**
+ * Post filters each instance type can actually serve.
+ *
+ * A blog instance queries bridge.get_account_posts, whose sort must be one of these; a
+ * community instance queries bridge.get_ranked_posts through the SPA's tab mapping. They do not
+ * overlap except on 'payout', so filters carried over from the other type are not a cosmetic
+ * mismatch: every feed tab on the instance errors. The instance type is pinned server-side, so
+ * filters that contradict the pinned type are dropped rather than stored.
+ */
+export const POSTS_FILTERS_BY_TYPE: Record<'blog' | 'community', readonly string[]> = {
+  blog: ['blog', 'feed', 'posts', 'comments', 'replies', 'payout'],
+  community: ['trending', 'hot', 'created', 'new', 'payout', 'muted'],
+};
 
 // Quiet period after the sweep marks a username 'abandoned' before it can be reserved again. It is
 // a backstop; three enforced guarantees keep a paid-for reservation out of a re-registration:
@@ -234,21 +268,31 @@ export const TenantService = {
    * communityId) are server-owned and pinned from the stored config so a config save can
    * never reassign control or re-type the tenant.
    */
-  async applyConfigDocument(username: string, doc: any): Promise<Tenant> {
+  async applyConfigDocument(
+    username: string,
+    doc: any
+  ): Promise<{ tenant: Tenant; discarded: DiscardedField[] }> {
     const tenant = await this.getByUsername(username);
     if (!tenant) throw new Error('Tenant not found');
 
     const current = tenant.config?.configuration?.instanceConfiguration || {};
+    // Every value the server refuses to store is collected here and returned to the caller, so
+    // the editor can tell the owner instead of showing a save that silently disagreed with it.
+    const discarded: DiscardedField[] = [];
     // Identity comes from the tenant ROW (authorization's source of truth), never from the
     // stored config JSON, which could carry stale values from before the owner column.
-    const clean = this.sanitizeConfigDocument(doc, {
-      version: tenant.config?.version ?? 1,
-      username: tenant.username,
-      owner: tenant.owner,
-      type: current.type ?? 'blog',
-      communityId: current.communityId ?? '',
-    });
-    const newConfig = this.mergeConfigGuarded(tenant.config, clean);
+    const clean = this.sanitizeConfigDocument(
+      doc,
+      {
+        version: tenant.config?.version ?? 1,
+        username: tenant.username,
+        owner: tenant.owner,
+        type: current.type ?? 'blog',
+        communityId: current.communityId ?? '',
+      },
+      discarded
+    );
+    const newConfig = this.mergeConfigGuarded(tenant.config, clean, { path: '', discarded });
 
     const row = await db.queryOne<TenantRow>(
       `UPDATE tenants
@@ -259,7 +303,7 @@ export const TenantService = {
       [username.toLowerCase(), JSON.stringify(newConfig)]
     );
 
-    return mapTenantFromDb(row!);
+    return { tenant: mapTenantFromDb(row!), discarded };
   },
 
   /**
@@ -271,7 +315,7 @@ export const TenantService = {
    * this keeps every known section's runtime shape intact no matter what an authenticated
    * client sends (e.g. `general: "oops"` or `postsFilters: "trending"`).
    */
-  mergeConfigGuarded(base: any, updates: any): any {
+  mergeConfigGuarded(base: any, updates: any, ctx?: MergeReport): any {
     const result = Object.assign(Object.create(null), base);
 
     for (const key of Object.keys(updates)) {
@@ -287,21 +331,24 @@ export const TenantService = {
       const incomingIsPlainObject =
         incoming && typeof incoming === 'object' && !Array.isArray(incoming);
       const incomingIsArray = Array.isArray(incoming);
+      const child = ctx
+        ? { path: ctx.path ? `${ctx.path}.${key}` : key, discarded: ctx.discarded }
+        : undefined;
 
       if (stored === undefined || stored === null) {
         // No stored shape to agree with; take the incoming value.
         result[key] = incomingIsPlainObject
-          ? this.mergeConfigGuarded(Object.create(null), incoming)
+          ? this.mergeConfigGuarded(Object.create(null), incoming, child)
           : incoming;
       } else if (typeof stored === 'object' && !Array.isArray(stored)) {
         if (!incomingIsPlainObject) {
-          console.warn('[TenantService] Dropped type-mismatched config value for key:', key);
+          this.reportTypeMismatch(child, key);
           continue;
         }
-        result[key] = this.mergeConfigGuarded(stored, incoming);
+        result[key] = this.mergeConfigGuarded(stored, incoming, child);
       } else if (Array.isArray(stored)) {
         if (!incomingIsArray || !this.isValidArrayReplacement(stored, incoming)) {
-          console.warn('[TenantService] Dropped type-mismatched config value for key:', key);
+          this.reportTypeMismatch(child, key);
           continue;
         }
         result[key] = incoming;
@@ -309,7 +356,7 @@ export const TenantService = {
         // Stored scalar: only a scalar of the SAME primitive type may replace it, so a
         // string "false" cannot stand in for a boolean, nor 42 for a string.
         if (incomingIsPlainObject || incomingIsArray || typeof incoming !== typeof stored) {
-          console.warn('[TenantService] Dropped type-mismatched config value for key:', key);
+          this.reportTypeMismatch(child, key);
           continue;
         }
         result[key] = incoming;
@@ -317,6 +364,17 @@ export const TenantService = {
     }
 
     return result;
+  },
+
+  /** Log a dropped value and, when the caller asked for a report, record it for the response. */
+  reportTypeMismatch(child: MergeReport | undefined, key: string): void {
+    console.warn('[TenantService] Dropped type-mismatched config value for key:', key);
+    if (child) {
+      child.discarded.push({
+        path: child.path,
+        reason: 'value does not match the type of the stored setting',
+      });
+    }
   },
 
   /**
@@ -360,9 +418,13 @@ export const TenantService = {
    */
   sanitizeConfigDocument(
     doc: any,
-    pins: { version: number; username: string; owner: string; type: string; communityId: string }
+    pins: { version: number; username: string; owner: string; type: string; communityId: string },
+    discarded?: DiscardedField[]
   ): any {
     const clean = this.mergeConfig(Object.create(null), this.stripNulls(doc || {}));
+    if (clean.version !== undefined && clean.version !== pins.version) {
+      discarded?.push({ path: 'version', reason: 'the config version is set by the server' });
+    }
     clean.version = pins.version;
     // Arrays must be rejected, not just non-objects: an array passes typeof === 'object',
     // silently drops any pinned properties when serialized, and would replace the stored
@@ -373,13 +435,31 @@ export const TenantService = {
       Array.isArray(clean.configuration) ||
       Array.isArray(clean.configuration.instanceConfiguration)
     ) {
-      throw new Error('Invalid configuration document');
+      throw new ApiError(400, 'Invalid configuration document');
     }
     const instance = (clean.configuration.instanceConfiguration =
       clean.configuration.instanceConfiguration &&
       typeof clean.configuration.instanceConfiguration === 'object'
         ? clean.configuration.instanceConfiguration
         : Object.create(null));
+
+    // Report a pin only when the client actually sent something different. The editor loads
+    // the served config and sends it back, so the identity fields normally match and produce
+    // no report; a genuine attempt to change one (switching the instance type) does.
+    const pinReasons: Record<string, string> = {
+      username: 'the showcased account is set by the server',
+      owner: 'the controlling account is set by the server',
+      type: 'the instance type is set when the instance is created and cannot be changed here',
+      communityId: 'the community id is set by the server',
+    };
+    for (const key of ['username', 'owner', 'type', 'communityId'] as const) {
+      if (instance[key] !== undefined && instance[key] !== pins[key]) {
+        discarded?.push({
+          path: `configuration.instanceConfiguration.${key}`,
+          reason: pinReasons[key],
+        });
+      }
+    }
 
     instance.username = pins.username;
     instance.owner = pins.owner;
@@ -389,7 +469,45 @@ export const TenantService = {
     // client document into the stored config.
     delete instance.managed;
 
+    // Post filters are checked AFTER the type is pinned, against the pinned type: a document
+    // that switches the instance type carries the other type's filters with it, and storing
+    // those while the type stays put leaves every feed tab querying a sort its API rejects.
+    this.normalizePostsFilters(instance, pins.type, discarded);
+
     return clean;
+  },
+
+  /**
+   * Drop post filters the pinned instance type cannot serve.
+   *
+   * If nothing valid is left the key is removed entirely rather than stored empty, so the merge
+   * keeps whatever the instance already had: an instance with no filters at all has no feed.
+   * Mutates `instance` in place; the caller owns the freshly-sanitized copy.
+   */
+  normalizePostsFilters(instance: any, type: string, discarded?: DiscardedField[]): void {
+    const features = instance?.features;
+    if (!features || typeof features !== 'object' || Array.isArray(features)) return;
+    if (!Array.isArray(features.postsFilters)) return;
+
+    const allowed = POSTS_FILTERS_BY_TYPE[type === 'community' ? 'community' : 'blog'];
+    const kept = features.postsFilters.filter(
+      (filter: unknown) => typeof filter === 'string' && allowed.includes(filter)
+    );
+    if (kept.length === features.postsFilters.length) return;
+
+    const dropped = features.postsFilters.filter((filter: unknown) => !kept.includes(filter));
+    discarded?.push({
+      path: 'configuration.instanceConfiguration.features.postsFilters',
+      reason: `${JSON.stringify(dropped)} cannot be served by a ${
+        type === 'community' ? 'community' : 'blog'
+      } instance`,
+    });
+
+    if (kept.length > 0) {
+      features.postsFilters = kept;
+    } else {
+      delete features.postsFilters;
+    }
   },
   
   /**

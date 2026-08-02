@@ -14,6 +14,7 @@ import { paymentRoutes } from './routes/payments';
 import { authRoutes } from './routes/auth';
 import { internalRoutes, internalSecret, MIN_INTERNAL_SECRET_LENGTH } from './routes/internal';
 import { rateLimit } from './middleware/rate-limit';
+import { errorHandler } from './middleware/error-handler';
 import { db } from './db/client';
 import { TenantService } from './services/tenant-service';
 import { ConfigService } from './services/config-service';
@@ -78,11 +79,8 @@ app.route('/v1/auth', authRoutes);
 // Service-to-service only (shared-secret guarded); mounted at its own /v1/internal prefix.
 app.route('/v1/internal', internalRoutes);
 
-// Error handling
-app.onError((err, c) => {
-  console.error('API Error:', err);
-  return c.json({ error: err.message || 'Internal server error' }, 500);
-});
+// Error handling. Driver text never reaches the caller; see middleware/error-handler.
+app.onError(errorHandler);
 
 // 404 handler
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
