@@ -20,6 +20,7 @@ const {
   formatDateTime,
   formatMonthYear,
   formatRelativeDate,
+  formatRelativeTime,
   formatTime,
 } = await import('./date-formatter');
 
@@ -75,6 +76,43 @@ describe('date formatting with invalid configuration', () => {
   it('still formats correctly when the configuration is valid', () => {
     expect(formatDate(DATE)).toBe('2024-01-16');
     expect(formatTime(DATE)).toBe('10:00:00');
+  });
+
+  it('survives a general section that is missing entirely', () => {
+    // getLocale reads configuration.general.language, so reading it above the
+    // guard's own try would throw past the protection.
+    state.general = undefined as never;
+
+    expect(() => formatDate(DATE)).not.toThrow();
+    expect(() => formatTime(DATE)).not.toThrow();
+    expect(() => formatRelativeTime(DATE)).not.toThrow();
+    expect(() => formatRelativeDate(DATE)).not.toThrow();
+  });
+
+  it('survives a language that collides with an Object.prototype member', () => {
+    // A bare localeMap[language] lookup would hand date-fns a function.
+    state.general = { language: 'constructor' };
+
+    expect(() => formatDate(DATE)).not.toThrow();
+    expect(() => formatRelativeTime(DATE)).not.toThrow();
+    expect(formatDate(DATE)).not.toBe('');
+  });
+
+  it('uses the shipped Moment-style patterns, not only date-fns native ones', () => {
+    // Every config the product ships (config.template.json, the hosting
+    // default, and getDefaultConfig) uses YYYY-MM-DD, which date-fns rejects
+    // unless convertFormatPattern rewrites it, so the tests have to exercise
+    // that path rather than pre-converted patterns.
+    state.general = {
+      language: 'en',
+      timezone: 'UTC',
+      dateFormat: 'YYYY-MM-DD',
+      timeFormat: 'HH:mm:ss',
+      dateTimeFormat: 'YYYY-MM-DD HH:mm:ss',
+    };
+
+    expect(formatDate(DATE)).toBe('2024-01-16');
+    expect(formatDateTime(DATE)).toBe('2024-01-16 10:00:00');
   });
 
   it('returns empty rather than throwing for an unparseable date', () => {

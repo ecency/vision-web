@@ -20,8 +20,11 @@ import {
 import { toZonedTime } from 'date-fns-tz';
 import { InstanceConfigManager } from './configuration-loader';
 
-// Map language codes to date-fns locales
-const localeMap: Record<string, Locale> = {
+// Map language codes to date-fns locales.
+// Null-prototype on purpose: the language comes from owner-editable config, and
+// a plain literal would resolve a value like 'constructor' to an inherited
+// member instead of falling back to the default locale.
+const localeMap: Record<string, Locale> = Object.assign(Object.create(null), {
   en: enUS,
   es: es,
   de: de,
@@ -37,7 +40,7 @@ const localeMap: Record<string, Locale> = {
   uk: uk,
   vi: vi,
   id: id,
-};
+});
 
 // Convert config format patterns to date-fns format patterns
 // Config uses common patterns like YYYY-MM-DD, date-fns uses yyyy-MM-dd
@@ -97,49 +100,54 @@ function toZoned(date: Date, timezone: string): Date {
  * single timestamp.
  */
 function safeFormat(date: Date, pattern: string, fallback: string): string {
-  const locale = getLocale();
-
+  // getLocale() reads the config and is inside the try on purpose: a general
+  // section that is missing or not an object is exactly the shape this guard
+  // exists to survive, and reading it above the try would throw past it.
   try {
-    return format(date, pattern, { locale });
+    return format(date, pattern, { locale: getLocale() });
   } catch {
     try {
-      return format(date, fallback, { locale });
+      return format(date, fallback, { locale: getLocale() });
     } catch {
-      return date.toISOString();
+      try {
+        return format(date, fallback);
+      } catch {
+        return '';
+      }
     }
   }
 }
 
 function getLocale(): Locale {
   const language = InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.general.language,
+    ({ configuration }) => configuration.general?.language,
   );
   return localeMap[language] || enUS;
 }
 
 function getTimezone(): string {
   return InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.general.timezone || 'UTC',
+    ({ configuration }) => configuration.general?.timezone || 'UTC',
   );
 }
 
 function getDateFormat(): string {
   const configFormat = InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.general.dateFormat,
+    ({ configuration }) => configuration.general?.dateFormat,
   );
   return convertFormatPattern(configFormat || 'yyyy-MM-dd');
 }
 
 function getTimeFormat(): string {
   const configFormat = InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.general.timeFormat,
+    ({ configuration }) => configuration.general?.timeFormat,
   );
   return convertFormatPattern(configFormat || 'HH:mm:ss');
 }
 
 function getDateTimeFormat(): string {
   const configFormat = InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.general.dateTimeFormat,
+    ({ configuration }) => configuration.general?.dateTimeFormat,
   );
   return convertFormatPattern(configFormat || 'yyyy-MM-dd HH:mm:ss');
 }
@@ -182,8 +190,16 @@ export function formatRelativeTime(date: Date | string | number): string {
   const utcDate = parseHiveDate(date);
   if (!isValidDate(utcDate)) return '';
   // formatDistanceToNow compares UTC timestamps internally, so we just need
-  // to ensure the input date is parsed as UTC (which parseHiveDate does)
-  return formatDistanceToNow(utcDate, { addSuffix: true, locale: getLocale() });
+  // to ensure the input date is parsed as UTC (which parseHiveDate does).
+  // Guarded like the others: getLocale() reads owner-controlled config.
+  try {
+    return formatDistanceToNow(utcDate, {
+      addSuffix: true,
+      locale: getLocale(),
+    });
+  } catch {
+    return '';
+  }
 }
 
 /**
