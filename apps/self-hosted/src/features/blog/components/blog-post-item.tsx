@@ -90,7 +90,10 @@ export function BlogPostItem({ entry }: Props) {
   // away the query cache the feed had just filled. The route param carries the
   // bare username; the post page accepts it with or without the @ prefix.
   const postParams = useMemo(
-    () => ({ author: entryData.author, permlink: entryData.permlink }),
+    // The '@' is part of the canonical post URL, and the router is configured to
+    // leave it unencoded, so these links keep the shape the rest of the Hive
+    // ecosystem uses instead of dropping to /author/permlink.
+    () => ({ author: `@${entryData.author}`, permlink: entryData.permlink }),
     [entryData.author, entryData.permlink],
   );
 
