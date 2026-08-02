@@ -81,7 +81,7 @@ export async function withAdvisoryLock<T>(
   // No database configured (unit tests): nothing to coordinate with.
   if (!process.env.DATABASE_URL) return fn();
 
-  let client: pg.PoolClient;
+  let client: pg.PoolClient | undefined;
   try {
     client = await pool.connect();
     // Advisory waits honour lock_timeout, so a stuck holder cannot wedge the
@@ -89,6 +89,10 @@ export async function withAdvisoryLock<T>(
     await client.query(`SET lock_timeout = ${ADVISORY_LOCK_TIMEOUT_MS}`);
     await client.query('SELECT pg_advisory_lock($1, $2)', [namespace, key]);
   } catch (error) {
+    // The connection may already be checked out: a lock timeout throws AFTER
+    // connect succeeded. Returning without releasing would leak one client per
+    // failure and exhaust the pool under repeated timeouts.
+    if (client) releaseLockClient(client);
     console.warn(
       '[Db] Advisory lock unavailable, continuing without cross-process ordering:',
       (error as Error).message
@@ -102,11 +106,29 @@ export async function withAdvisoryLock<T>(
     try {
       await client.query('SELECT pg_advisory_unlock($1, $2)', [namespace, key]);
     } catch (error) {
-      // The lock is session scoped, so releasing the client drops it anyway.
+      // The lock is session scoped, so destroying the client below drops it.
       console.error('[Db] Failed to release advisory lock:', (error as Error).message);
     }
-    client.release();
+    releaseLockClient(client);
   }
+}
+
+/**
+ * Return a lock client to the pool with the session state it was given wiped.
+ *
+ * SET without LOCAL lives for the whole session, and pooled connections are
+ * reused, so a client handed back as-is would carry lock_timeout to unrelated
+ * queries. If the reset itself fails the connection is destroyed instead, since
+ * a session whose state cannot be established must not be reused.
+ */
+function releaseLockClient(client: pg.PoolClient): void {
+  client
+    .query('RESET lock_timeout')
+    .then(() => client.release())
+    .catch((error) => {
+      console.error('[Db] Failed to reset lock client, discarding it:', (error as Error).message);
+      client.release(true);
+    });
 }
 
 export default db;
