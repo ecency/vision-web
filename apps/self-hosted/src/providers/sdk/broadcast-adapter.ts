@@ -100,15 +100,18 @@ export function createBroadcastAdapter(): PlatformAdapter {
     async broadcastWithHiveAuth(
       username: string,
       ops: Operation[],
-      _keyType: "posting" | "active" | "owner" | "memo"
+      keyType: "posting" | "active" | "owner" | "memo"
     ): Promise<TransactionConfirmation> {
       const { session } = authenticationStore.getState();
       if (!session) {
         throw new Error("No HiveAuth session available");
       }
 
+      // The requested authority is passed on. Dropping it made every HiveAuth
+      // broadcast ask for the posting key, so an active operation such as a tip
+      // transfer was signed with the wrong authority and rejected by the chain.
       // broadcastWithHiveAuth returns void (broadcast happens server-side)
-      await broadcastWithHiveAuth(session, ops);
+      await broadcastWithHiveAuth(session, ops, keyType);
 
       // HiveAuth broadcasts server-side and doesn't return tx confirmation
       return {} as TransactionConfirmation;
