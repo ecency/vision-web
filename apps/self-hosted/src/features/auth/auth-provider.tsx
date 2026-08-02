@@ -1,19 +1,11 @@
-"use client";
+'use client';
 
-import { InstanceConfigManager } from "@/core";
-import { useAuthStore } from "@/store";
-import {
-  createContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
-import { clearHiveAuthSession, clearUser, saveUser } from "./storage";
-import type { AuthContextValue, AuthMethod, AuthUser } from "./types";
-import {
-  resolveHivesignerClientId,
-} from "./utils/hivesigner";
+import { createContext, type ReactNode, useEffect, useMemo } from 'react';
+import { InstanceConfigManager } from '@/core';
+import { useAuthStore } from '@/store';
+import { clearHiveAuthSession, clearUser } from './storage';
+import type { AuthContextValue, AuthMethod, AuthUser } from './types';
+import { resolveHivesignerClientId } from './utils/hivesigner';
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -26,14 +18,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Get auth config
   const authConfig = InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.instanceConfiguration.features.auth
+    ({ configuration }) => configuration.instanceConfiguration.features.auth,
   );
 
   const isAuthEnabled = authConfig?.enabled ?? false;
   const hivesignerClientId = resolveHivesignerClientId(
     InstanceConfigManager.getConfigValue(
-      ({ configuration }) => configuration.general?.hivesigner?.clientId
-    )
+      ({ configuration }) => configuration.general?.hivesigner?.clientId,
+    ),
   );
 
   // Configured methods, minus any this instance cannot actually complete.
@@ -42,7 +34,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // and a hosted blog's origin cannot be registered in advance, so it is offered
   // only when the instance names a client of its own.
   const availableMethods = ((authConfig?.methods ?? []) as AuthMethod[]).filter(
-    (method) => (method === "hivesigner" ? hivesignerClientId !== null : true)
+    (method) => (method === 'hivesigner' ? hivesignerClientId !== null : true),
   );
 
   // Get the instance owner. Falls back to the showcased username for older
@@ -52,14 +44,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const blogOwner = InstanceConfigManager.getConfigValue(
     ({ configuration }) =>
       configuration.instanceConfiguration.owner ||
-      configuration.instanceConfiguration.username
+      configuration.instanceConfiguration.username,
   );
 
   // Check if current user is the instance owner
   const isBlogOwner = useMemo(() => {
     if (!user || !blogOwner) return false;
     return (
-      (user.username ?? "").toLowerCase() === (blogOwner ?? "").toLowerCase()
+      (user.username ?? '').toLowerCase() === (blogOwner ?? '').toLowerCase()
     );
   }, [user, blogOwner]);
 
@@ -106,7 +98,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       isBlogOwner,
       isSessionExpiringSoon,
     }),
-    [user, isAuthEnabled, availableMethods, isBlogOwner, isSessionExpiringSoon]
+    [user, isAuthEnabled, availableMethods, isBlogOwner, isSessionExpiringSoon],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
