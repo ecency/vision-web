@@ -31,8 +31,13 @@ describe('mergeConfig', () => {
     expect(merged.postsFilters).toEqual(['trending']);
   });
 
-  it('lets the served config override a section with a scalar', () => {
-    expect(mergeConfig({ a: { b: 1 } }, { a: 2 } as never)).toEqual({ a: 2 });
+  it('does not let the served config replace a section with a scalar', () => {
+    // This previously asserted the opposite. Allowing it reproduced the crash
+    // the skeleton exists to prevent, because components dereference the
+    // section during render.
+    expect(mergeConfig({ a: { b: 1 } }, { a: 2 } as never)).toEqual({
+      a: { b: 1 },
+    });
   });
 
   it('returns the override when either side is not an object', () => {
@@ -61,5 +66,55 @@ describe('mergeConfig', () => {
     expect(merged.a).toBe(1);
     expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it('keeps a section when the served value is the wrong shape', () => {
+    // A scalar cannot stand in for a section: applyConfig's try/catch only
+    // covers the boot path, while components dereference
+    // configuration.general.* during render and land in the error boundary.
+    const skeleton = {
+      general: { styles: {} },
+      features: { postsFilters: [] },
+    };
+
+    expect(
+      mergeConfig(skeleton, { general: 'invalid' } as never).general,
+    ).toEqual({
+      styles: {},
+    });
+    expect(mergeConfig(skeleton, { general: 42 } as never).general).toEqual({
+      styles: {},
+    });
+    expect(mergeConfig(skeleton, { general: [] } as never).general).toEqual({
+      styles: {},
+    });
+  });
+
+  it('keeps the whole configuration section when it is served as a scalar', () => {
+    // A truthy scalar passes the loader's version/configuration presence check,
+    // so without type agreement it replaced the skeleton outright and
+    // applyConfig destructured a string.
+    const skeleton = {
+      version: 1,
+      configuration: { general: { styles: {} }, instanceConfiguration: {} },
+    };
+
+    for (const bad of ['bad', 42, true, [], ['a']]) {
+      const merged = mergeConfig(skeleton, {
+        version: 2,
+        configuration: bad,
+      } as never);
+
+      expect(merged.configuration.general).toEqual({ styles: {} });
+      expect(merged.version).toBe(2);
+    }
+  });
+
+  it('keeps an array when the served value is not an array', () => {
+    const merged = mergeConfig({ postsFilters: ['posts'] }, {
+      postsFilters: 'trending',
+    } as never);
+
+    expect(merged.postsFilters).toEqual(['posts']);
   });
 });

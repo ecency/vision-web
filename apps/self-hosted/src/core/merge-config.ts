@@ -36,9 +36,23 @@ export function mergeConfig<T>(base: T, override: T): T {
     // the same position, for the same reason.
     if (value === null) continue;
 
-    merged[key] = isPlainObject(value)
-      ? mergeConfig(merged[key], value)
-      : value;
+    // Type agreement, matching mergeConfigGuarded in the hosting API: a value
+    // of the wrong shape cannot stand in for a section. Letting a scalar
+    // replace an object would restore the exact failure the skeleton exists to
+    // prevent, because applyConfig's try/catch only protects the boot path
+    // while components go on dereferencing configuration.general.* during
+    // render, which lands the whole blog in the root error boundary.
+    const current = merged[key];
+    if (isPlainObject(current) && !isPlainObject(value)) {
+      console.warn('[Config] Ignoring type-mismatched value for key:', key);
+      continue;
+    }
+    if (Array.isArray(current) && !Array.isArray(value)) {
+      console.warn('[Config] Ignoring type-mismatched value for key:', key);
+      continue;
+    }
+
+    merged[key] = isPlainObject(value) ? mergeConfig(current, value) : value;
   }
 
   return merged as T;
