@@ -75,7 +75,7 @@ export function useDocumentMeta(meta: DocumentMeta) {
 
     // Set title
     if (meta.title) {
-      document.title = `${meta.title} — ${defaultTitle}`;
+      document.title = `${meta.title} | ${defaultTitle}`;
     }
 
     // OG tags
