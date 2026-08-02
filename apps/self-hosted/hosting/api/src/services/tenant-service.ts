@@ -529,18 +529,21 @@ export const TenantService = {
    * Only unverified claims are touched, so a verified domain is never unbound and no serving
    * site is affected. Idempotent: a released row has custom_domain NULL and cannot match again.
    *
-   * A verification running at the moment of release is safe without any coordination:
-   * verifyCustomDomain keys its UPDATE on username AND domain, so once this clears the column it
-   * matches no row, returns null, and both rails already answer "verify again" for that.
+   * Candidates are selected FOR UPDATE and cleared in the same transaction, which is what makes
+   * a verification racing the sweep safe in both directions. If the verification commits first,
+   * the locked re-read sees custom_domain_verified = true and the row is no longer a candidate,
+   * so a domain that was just proven is never unbound. If the sweep commits first, the
+   * verification's own UPDATE is keyed on username AND domain, matches no row, returns null, and
+   * both rails already answer "verify again" for that.
+   *
+   * The claim is read before it is cleared rather than from RETURNING, which reports the NEW row
+   * and would hand back a null domain for every release.
    */
   async releaseUnverifiedDomains(claimDays: number): Promise<{ username: string; domain: string }[]> {
     return db.transaction(async (client) => {
-      const released = await client.query<{ id: string; username: string; custom_domain: string }>(
-        `UPDATE tenants
-            SET custom_domain = NULL,
-                custom_domain_verified = false,
-                custom_domain_verified_at = NULL,
-                updated_at = NOW()
+      const candidates = await client.query<{ id: string; username: string; custom_domain: string }>(
+        `SELECT id, username, custom_domain
+           FROM tenants
           WHERE custom_domain IS NOT NULL
             AND custom_domain_verified = false
             AND NOT EXISTS (
@@ -549,21 +552,32 @@ export const TenantService = {
                      AND dv.domain = tenants.custom_domain
                      AND dv.created_at > NOW() - ($1 * INTERVAL '1 day')
                 )
-          RETURNING id, username, custom_domain`,
+          FOR UPDATE`,
         [claimDays]
       );
 
-      if (released.rowCount) {
-        // Drop the stale records with the claim they belonged to, in the same transaction, so
-        // the two can never disagree about whether a claim exists.
-        await client.query(
-          `DELETE FROM domain_verifications
-            WHERE tenant_id = ANY($1::uuid[]) AND verified = false`,
-          [released.rows.map((row) => row.id)]
-        );
-      }
+      if (candidates.rows.length === 0) return [];
+      const ids = candidates.rows.map((row) => row.id);
 
-      return released.rows.map((row) => ({
+      await client.query(
+        `UPDATE tenants
+            SET custom_domain = NULL,
+                custom_domain_verified = false,
+                custom_domain_verified_at = NULL,
+                updated_at = NOW()
+          WHERE id = ANY($1::uuid[])`,
+        [ids]
+      );
+
+      // Drop the stale records with the claim they belonged to, in the same transaction, so the
+      // two can never disagree about whether a claim exists. Verified records are left alone.
+      await client.query(
+        `DELETE FROM domain_verifications
+          WHERE tenant_id = ANY($1::uuid[]) AND verified = false`,
+        [ids]
+      );
+
+      return candidates.rows.map((row) => ({
         username: row.username,
         domain: row.custom_domain,
       }));
