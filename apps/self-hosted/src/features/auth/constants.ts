@@ -16,7 +16,9 @@ export const HIVESIGNER_REDIRECT_PATH = '/auth';
 export const HIVESIGNER_STATE_KEY = 'ecency_selfhost_hs_state';
 
 // HiveAuth
-export const HIVEAUTH_API = 'wss://hiveauth.arcange.eu';
+// The HAS server. `hiveauth.arcange.eu` does not resolve, so the socket could
+// never open and login failed before the protocol was even reached.
+export const HIVEAUTH_API = 'wss://hive-auth.arcange.eu';
 export const HIVEAUTH_APP = 'ecency.selfhost';
 export const HIVEAUTH_KEY_PREFIX = 'ecency_ha_';
 
