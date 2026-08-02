@@ -1,40 +1,43 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { getPostQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
-import { useIsBlogOwner, useIsAuthEnabled, useAuth } from "@/features/auth/hooks";
+import { useIsAuthEnabled, useAuth } from "@/features/auth/hooks";
 import { BlogSidebar } from "@/features/blog/layout/blog-sidebar";
 import { useEffect, useMemo } from "react";
 import { t } from "@/core";
 import { EditPostEditor } from "@/features/publish/components/edit-post-editor";
+import { canEditEntry } from "@/features/publish/utils/can-edit-entry";
 
 export const Route = createFileRoute("/edit/$author/$permlink")({
   component: RouteComponent,
 });
 
 function RouteComponent() {
-  const isBlogOwner = useIsBlogOwner();
   const isAuthEnabled = useIsAuthEnabled();
   const { user } = useAuth();
   const navigate = useNavigate();
   const { author, permlink } = Route.useParams();
 
   const cleanAuthor = author.replace("@", "");
-  const isAuthorOwner = isBlogOwner && user?.username === cleanAuthor;
+  // Authorship, not instance ownership: on a community instance every member
+  // can publish, and requiring ownership here locked them out of their own
+  // posts. Broadcasting the edit still requires the author's own key.
+  const canEdit = canEditEntry(user?.username, cleanAuthor);
 
   useEffect(() => {
-    if (!isAuthEnabled || !isAuthorOwner) {
+    if (!isAuthEnabled || !canEdit) {
       navigate({ to: "/blog", search: { filter: "posts" } });
     }
-  }, [isAuthEnabled, isAuthorOwner, navigate]);
+  }, [isAuthEnabled, canEdit, navigate]);
 
   const queryOptions = getPostQueryOptions(cleanAuthor, permlink);
   const {
     data: entry,
     isLoading,
     error,
-  } = useQuery({ ...queryOptions, enabled: isAuthorOwner });
+  } = useQuery({ ...queryOptions, enabled: canEdit });
 
-  if (!isAuthEnabled || !isAuthorOwner) {
+  if (!isAuthEnabled || !canEdit) {
     return null;
   }
 

@@ -6,7 +6,8 @@ import { useMemo } from 'react';
 import { Link } from '@tanstack/react-router';
 import { formatRelativeTime, InstanceConfigManager, t } from '@/core';
 import { UserAvatar } from '@/features/shared/user-avatar';
-import { useIsBlogOwner } from '@/features/auth/hooks';
+import { useAuth } from '@/features/auth/hooks';
+import { canEditEntry } from '@/features/publish/utils/can-edit-entry';
 import { stripHtmlAndMarkdown } from '../utils/strip-markdown';
 import { TextToSpeechButton } from './text-to-speech-button';
 
@@ -28,7 +29,7 @@ function calculateReadTime(body: string): number {
 }
 
 export function BlogPostHeader({ entry }: Props) {
-  const isBlogOwner = useIsBlogOwner();
+  const { user } = useAuth();
   const entryData = entry.original_entry || entry;
   const instanceType = InstanceConfigManager.getConfigValue(
     ({ configuration }) => configuration.instanceConfiguration.type ?? 'blog',
@@ -108,7 +109,7 @@ export function BlogPostHeader({ entry }: Props) {
             text={entryData.body}
             title={entryData.title}
           />
-          {isBlogOwner && (
+          {canEditEntry(user?.username, entryData.author) && (
             <Link
               to="/edit/$author/$permlink"
               params={{ author: entryData.author, permlink: entryData.permlink }}
