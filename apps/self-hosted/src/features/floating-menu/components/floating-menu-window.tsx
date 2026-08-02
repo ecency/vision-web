@@ -18,6 +18,11 @@ import {
 } from '@/features/auth/utils/hosting-token';
 import { configFieldsMap } from '../config-fields';
 import { FLOATING_MENU_THEME } from '../constants';
+import {
+  readDiscarded,
+  readSavedConfig,
+  withServedOnlyMarkers,
+} from '../save-response';
 import type { ConfigValue } from '../types';
 import { downloadJson, updateNestedPath } from '../utils';
 import { ConfigEditor } from './config-editor';
@@ -69,23 +74,6 @@ function getPinnedInstanceType(): InstanceType | null {
   );
 }
 
-/**
- * The config the server actually stored, which is authoritative: it pins the
- * identity fields and drops values that disagree with the stored shape.
- */
-function readSavedConfig(payload: unknown): Record<string, ConfigValue> | null {
-  const saved = (payload as { config?: unknown } | null)?.config;
-  if (
-    saved &&
-    typeof saved === 'object' &&
-    !Array.isArray(saved) &&
-    'configuration' in saved
-  ) {
-    return saved as Record<string, ConfigValue>;
-  }
-  return null;
-}
-
 interface FloatingMenuWindowProps {
   isOpen: boolean;
   onClose: () => void;
@@ -96,11 +84,16 @@ export function FloatingMenuWindow({
   onClose,
 }: FloatingMenuWindowProps) {
   const [config, setConfig] = useState<Record<string, ConfigValue>>(() => {
-    return InstanceConfigManager.getConfig() as unknown as Record<string, ConfigValue>;
+    return InstanceConfigManager.getConfig() as unknown as Record<
+      string,
+      ConfigValue
+    >;
   });
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>(
+    'idle',
+  );
   const [saveError, setSaveError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const originalStateRef = useRef<ConfigDomSnapshot | null>(null);
@@ -197,21 +190,34 @@ export function FloatingMenuWindow({
         }
         const data = await response.json().catch(() => ({}));
         throw new Error(
-          (data as { error?: string }).error || `Save failed (${response.status})`,
+          (data as { error?: string }).error ||
+            `Save failed (${response.status})`,
         );
       }
       // A save becomes the new baseline. Without this the PATCH landed but the
       // running app kept the old config, and leaving preview restored the
       // pre-save snapshot, so the owner watched the saved change revert and
       // concluded the save had failed.
-      const saved = readSavedConfig(await response.json().catch(() => null));
-      const baseline = saved ?? outgoing;
+      const payload = await response.json().catch(() => null);
+      const saved = readSavedConfig(payload);
+      // Read before updateConfig replaces what isManagedHosting() consults.
+      const managed = InstanceConfigManager.getConfigValue(
+        ({ configuration }) => configuration.instanceConfiguration.managed,
+      );
+      const baseline = saved ? withServedOnlyMarkers(saved, managed) : outgoing;
       setConfig(baseline);
       InstanceConfigManager.updateConfig(baseline as unknown as InstanceConfig);
       applyConfigDom(baseline, { syncSystemTheme: true });
       // Re-take the restore point so exiting preview cannot roll back what was
       // just saved.
       originalStateRef.current = snapshotConfigDom();
+
+      const discarded = readDiscarded(payload);
+      setNotice(
+        discarded.length > 0
+          ? `Saved, but the server did not store: ${discarded.join(', ')}. The editor now shows what was stored.`
+          : null,
+      );
 
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), 3000);
@@ -370,7 +376,10 @@ export function FloatingMenuWindow({
               borderColor: FLOATING_MENU_THEME.borderColor,
             }}
           >
-            <h2 id="config-editor-title" className="text-sm font-semibold font-sans text-white">
+            <h2
+              id="config-editor-title"
+              className="text-sm font-semibold font-sans text-white"
+            >
               Configuration Editor
             </h2>
             <div className="flex items-center gap-2">
@@ -431,7 +440,13 @@ export function FloatingMenuWindow({
                   type="button"
                   aria-label="Save configuration"
                 >
-                  {isSaving ? 'Saving...' : saveStatus === 'success' ? 'Saved!' : saveStatus === 'error' ? 'Failed' : 'Save'}
+                  {isSaving
+                    ? 'Saving...'
+                    : saveStatus === 'success'
+                      ? 'Saved!'
+                      : saveStatus === 'error'
+                        ? 'Failed'
+                        : 'Save'}
                 </button>
               ) : (
                 <button
