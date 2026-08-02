@@ -112,7 +112,7 @@ export function TippingStepCurrency({
           <button
             type="button"
             disabled={!canSubmit}
-            className="px-3 py-2 rounded-md border border-theme text-theme-contrast text-sm hover:bg-theme-tertiary disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-2 rounded-md border border-theme text-theme-primary text-sm hover:bg-theme-tertiary disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={onSubmit}
           >
             {t(getTipSubmitLabelKey(user?.username, loading))}
