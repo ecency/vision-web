@@ -64,12 +64,9 @@ export function internalSecret(): string | null {
 
 // Constant-time check of the shared service-to-service secret (ePoints -> hosting).
 // Fails CLOSED when the secret is unset OR too short, so neither a missing value nor a
-// weak one can activate blogs. Rejecting rather than refusing to boot keeps an
-// otherwise healthy deploy serving; the startup log says which case applies.
-// Constant-time check of the shared service-to-service secret (ePoints -> hosting).
-// Fails CLOSED when the secret is unset OR too short, so neither a missing value nor a
-// weak one can activate blogs. Refusing rather than refusing to boot keeps an
-// otherwise healthy deploy serving; the startup log says which case applies.
+// weak one can activate blogs. Rejecting the call rather than refusing to boot keeps an
+// otherwise healthy deploy serving the rest of its routes; the startup log distinguishes
+// "not configured" from "configured too weakly", which look identical from outside.
 export function internalSecretOk(provided: string | undefined): boolean {
   const secret = Buffer.from(internalSecret() ?? '');
   const given = Buffer.from(provided || '');
