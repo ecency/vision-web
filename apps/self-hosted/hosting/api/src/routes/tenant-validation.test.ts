@@ -6,6 +6,9 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('../services/tenant-service', () => ({
+  // Shared with the payment listener so both recognise a community claim the
+  // same way; the real pattern is used here rather than a stub of it.
+  COMMUNITY_NAME: /^hive-\d+$/,
   TenantService: {
     verifyHiveAccount: async (name: string) => state.accounts.has(name),
     verifyCommunityControlledBy: async (community: string, account: string) =>

@@ -15,6 +15,12 @@ const baseDomain = process.env.BASE_DOMAIN || 'blogs.ecency.com';
 
 // Roles that may claim a community's hosted instance. Mods moderate content but
 // do not control the community's identity, so they are deliberately excluded.
+/**
+ * Hive names a community account hive-NNNN. Shared so every path that can bring
+ * a tenant into existence recognises a community claim the same way.
+ */
+export const COMMUNITY_NAME = /^hive-\d+$/;
+
 const CONTROLLING_COMMUNITY_ROLES = new Set(['owner', 'admin']);
 
 // Quiet period after the sweep marks a username 'abandoned' before it can be reserved again. It is

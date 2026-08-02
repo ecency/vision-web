@@ -8,6 +8,7 @@ import { zValidator } from '@hono/zod-validator';
 import { db } from '../db/client';
 import {
   TenantService,
+  COMMUNITY_NAME,
   isReregisterableAbandoned,
   ABANDONED_REREGISTER_QUARANTINE_HOURS,
 } from '../services/tenant-service';
@@ -130,9 +131,6 @@ tenantRoutes.get('/:username/config', async (c) => {
 // username) so a direct API call cannot assign someone else as controller of a blog; and that a
 // COMMUNITY has a real, separate owner account plus a valid, existing community id equal to the
 // subdomain. Returns the resolved owner or a client error.
-/** Hive names a community account hive-NNNN; the subdomain must match it. */
-const COMMUNITY_NAME = /^hive-\d+$/;
-
 export async function resolveAndValidateTenant(
   body: any
 ): Promise<{ ok: true; owner: string } | { ok: false; status: 400; error: string }> {
