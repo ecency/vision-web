@@ -7,7 +7,7 @@
 
 import { callRPC, setNodes } from '@ecency/sdk/hive';
 import { db } from './db/client';
-import { TenantService } from './services/tenant-service';
+import { COMMUNITY_NAME, TenantService } from './services/tenant-service';
 import { ConfigService } from './services/config-service';
 import { parseMemo, mapTenantFromDb, type ParsedMemo } from './types';
 import { AuditService } from './services/audit-service';
@@ -339,6 +339,20 @@ export class PaymentListener {
         // row — including one the sweep marked 'abandoned' — skips this block and is revived in
         // place by the activation in step 4, preserving its stored owner + config.
         if (!row) {
+          // A community instance may only exist if it was reserved through
+          // POST /v1/tenants, which verifies the claimed owner administers the
+          // community on chain. Auto-creating one here would set owner =
+          // username, i.e. the community account itself, and permanently occupy
+          // the subdomain: the create upsert only revives an abandoned row or a
+          // same-owner inactive one, so the real team could never take it back.
+          // A community account IS a real Hive account, so the existence check
+          // below does not stop this on its own.
+          if (COMMUNITY_NAME.test(username)) {
+            throw Object.assign(
+              new Error('Community instances must be reserved before payment'),
+              { permanent: true }
+            );
+          }
           if (!(await TenantService.accountExistsStrict(username))) {
             throw Object.assign(new Error('Hive account not found'), { permanent: true });
           }
@@ -400,7 +414,12 @@ export class PaymentListener {
       // (which regenerates every active tenant), so log and move on.
       if (updatedTenant) {
         try {
-          await ConfigService.generateConfigFile(updatedTenant);
+          // Publishes from the row as it stands inside the write lock, which is
+          // now a cross-process advisory lock. Passing the snapshot this
+          // transaction returned, or even re-reading just before the call,
+          // leaves a window where the API can commit and publish an owner's
+          // newer config and have this write roll it back.
+          await ConfigService.publishConfigFile(username);
         } catch (err) {
           console.error(
             `[PaymentListener] Config generation failed post-commit for ${username} (periodic sync will retry):`,

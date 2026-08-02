@@ -23,12 +23,19 @@ function applyConfig() {
   const imageProxyBase = general.imageProxy || 'https://i.ecency.com';
   setProxyBase(imageProxyBase);
 
-  // Apply background styles
-  const backgroundClasses = general.styles.background;
+  // Apply background styles. classList.add throws on a token containing
+  // whitespace or an empty string, and the value is owner-typed, so a stray tab
+  // pasted into the field would otherwise abort the whole boot.
+  const backgroundClasses = general.styles?.background;
   if (backgroundClasses) {
-    backgroundClasses.split(' ').forEach((className) => {
-      if (className) document.body.classList.add(className);
-    });
+    for (const className of backgroundClasses.split(/\s+/)) {
+      if (!className) continue;
+      try {
+        document.body.classList.add(className);
+      } catch {
+        console.warn('[Config] Ignoring invalid background class:', className);
+      }
+    }
   }
 
   // Apply theme
@@ -50,7 +57,7 @@ function applyConfig() {
   document.documentElement.setAttribute('data-style-template', styleTemplate);
 
   // Apply sidebar placement
-  const sidebarConfig = instanceConfiguration.layout.sidebar;
+  const sidebarConfig = instanceConfiguration.layout?.sidebar ?? {};
   const sidebarPlacement = sidebarConfig.placement ?? 'right';
   document.documentElement.setAttribute(
     'data-sidebar-placement',
@@ -58,7 +65,7 @@ function applyConfig() {
   );
 
   // Apply list type
-  const listType = instanceConfiguration.layout.listType ?? 'grid';
+  const listType = instanceConfiguration.layout?.listType ?? 'grid';
   document.documentElement.setAttribute('data-list-type', listType);
 
   // Apply instance type
@@ -92,7 +99,7 @@ function applyConfig() {
   }
 
   // Apply SEO meta tags
-  const meta = instanceConfiguration.meta;
+  const meta = instanceConfiguration.meta ?? {};
 
   if (meta.title) {
     document.title = meta.title;
@@ -174,7 +181,16 @@ function applyConfig() {
 async function main() {
   // Fetch runtime config before rendering
   await InstanceConfigManager.initialize();
-  applyConfig();
+
+  // applyConfig only decorates the document. A malformed config value must not
+  // stop the app from rendering: the floating menu that would let the owner fix
+  // the config is part of the app, so aborting here leaves a blank page with no
+  // way back in.
+  try {
+    applyConfig();
+  } catch (error) {
+    console.error('[Config] Failed to apply configuration:', error);
+  }
 
   const rootElement = document.getElementById('root')!;
   if (!rootElement.innerHTML) {

@@ -12,8 +12,11 @@ import {
   UilAlignRight,
   UilBracketsCurly,
   UilParagraph,
+  UilLink,
+  UilLinkBroken,
 } from "@tooni/iconscout-unicons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { t } from "@/core";
 import { PublishEditorTableToolbar } from "./publish-editor-table-toolbar";
 
 interface Props {
@@ -68,6 +71,23 @@ export function PublishEditorToolbar({ editor }: Props) {
       editor.off("selectionUpdate", handleSelectionUpdate);
       editor.off("blur", handleBlur);
     };
+  }, [editor]);
+
+  const setLink = useCallback(() => {
+    if (!editor) return;
+
+    const previous = editor.getAttributes("link").href as string | undefined;
+    const input = window.prompt(t("editor_link_prompt"), previous ?? "https://");
+    // Cancelling returns null; an empty string is an explicit "remove the link".
+    if (input === null) return;
+
+    const href = input.trim();
+    if (!href) {
+      editor.chain().focus().extendMarkRange("link").unsetLink().run();
+      return;
+    }
+
+    editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
   }, [editor]);
 
   const insertTable = useCallback(() => {
@@ -221,6 +241,34 @@ export function PublishEditorToolbar({ editor }: Props) {
       >
         <UilBracketsCurly className="size-5" />
       </button>
+
+      <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+
+      {/* Link */}
+      <button
+        type="button"
+        onClick={setLink}
+        className={`p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${
+          editor.isActive("link") ? "bg-gray-200 dark:bg-gray-600" : ""
+        }`}
+        title={t("editor_link")}
+        aria-label={t("editor_link")}
+      >
+        <UilLink className="size-5" aria-hidden="true" />
+      </button>
+      {editor.isActive("link") && (
+        <button
+          type="button"
+          onClick={() =>
+            editor.chain().focus().extendMarkRange("link").unsetLink().run()
+          }
+          className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+          title={t("editor_link_remove")}
+          aria-label={t("editor_link_remove")}
+        >
+          <UilLinkBroken className="size-5" aria-hidden="true" />
+        </button>
+      )}
 
       <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
 

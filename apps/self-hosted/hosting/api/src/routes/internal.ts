@@ -10,6 +10,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { db } from '../db/client';
 import {
   TenantService,
+  DomainInUseError,
   ABANDONED_REREGISTER_QUARANTINE_HOURS,
   CAUGHT_UP_SQL,
 } from '../services/tenant-service';
@@ -336,16 +337,30 @@ internalRoutes.post('/domain', async (c) => {
     return c.json({ error: 'custom_domain_requires_pro' }, 402);
   }
 
-  // Refuse a domain already verified by a different tenant.
-  const existing = await TenantService.getByDomain(domain);
-  if (existing && existing.username !== username) {
+  // Refuse a domain another tenant already holds, verified or not: the column is
+  // UNIQUE either way, so an unverified reservation still blocks everyone else.
+  if (await TenantService.isDomainClaimed(domain, username)) {
     return c.json({ error: 'domain_in_use' }, 409);
   }
 
-  await TenantService.setCustomDomain(username, domain);
+  let updated: Awaited<ReturnType<typeof TenantService.setCustomDomain>>;
+  try {
+    updated = await TenantService.setCustomDomain(username, domain);
+  } catch (error) {
+    if (error instanceof DomainInUseError) {
+      return c.json({ error: 'domain_in_use' }, 409);
+    }
+    throw error;
+  }
   // Recorded as soon as the tenant row changes, before the verification record it does not depend
   // on: setCustomDomain also clears custom_domain_verified, so if createVerification then threw,
   // the tenant's domain state would have changed with nothing in the trail to say what changed it.
+  // Still verified means the statement matched the domain already stored, so
+  // this was a repeat submit of a live domain and nothing was reset.
+  if (updated.customDomainVerified) {
+    return c.json({ domain, verified: true }, 200);
+  }
+
   auditInternal(c, tenant.id, 'domain.added', { domain, username, via: 'internal' });
 
   await DomainService.createVerification(username, domain);
@@ -395,23 +410,30 @@ internalRoutes.post('/domain/verify', async (c) => {
     return c.json({ verified: true }, 200);
   }
 
-  const ok = await DomainService.verifyDomain(tenant.customDomain, username);
+  // Captured before the DNS round trip so the result is applied to the domain
+  // that was actually checked, not to whatever the row holds afterwards.
+  const checkedDomain = tenant.customDomain;
+
+  const ok = await DomainService.verifyDomain(checkedDomain, username);
   if (!ok) {
     return c.json({ verified: false }, 200);
   }
 
-  await TenantService.verifyCustomDomain(username);
+  // Null means the domain changed while DNS was being checked.
+  if (!(await TenantService.verifyCustomDomain(username, checkedDomain))) {
+    return c.json({ verified: false }, 200);
+  }
   // Recorded here, not after the bookkeeping below: the tenant is already verified at this point,
   // and the idempotent early return above means a retry would never reach a later audit call. If
   // markVerified threw, the event would be lost permanently for a domain that IS verified.
   auditInternal(c, tenant.id, 'domain.verified', {
-    domain: tenant.customDomain,
+    domain: checkedDomain,
     username,
     via: 'internal',
   });
 
-  await DomainService.markVerified(username, tenant.customDomain);
-  addVerifiedDomainOrigin(tenant.customDomain);
+  await DomainService.markVerified(username, checkedDomain);
+  addVerifiedDomainOrigin(checkedDomain);
 
   return c.json({ verified: true }, 200);
 });

@@ -8,12 +8,13 @@ import { zValidator } from '@hono/zod-validator';
 import { db } from '../db/client';
 import {
   TenantService,
+  COMMUNITY_NAME,
   isReregisterableAbandoned,
   ABANDONED_REREGISTER_QUARANTINE_HOURS,
 } from '../services/tenant-service';
 import { mapTenantFromDb } from '../types';
 import { PAYMENT_ACCOUNT, MONTHLY_PRICE_HBD, PRO_UPGRADE_PRICE_HBD, hbd } from '../pricing';
-import { ConfigService } from '../services/config-service';
+import { ConfigService, isPublishableTenant } from '../services/config-service';
 import { authMiddleware } from '../middleware/auth';
 import { subscriptionPaywall, proUpgradePaywall } from '../middleware/x402-paywall';
 import { withPaymentTargetLock } from '../middleware/payment-target-lock';
@@ -130,12 +131,18 @@ tenantRoutes.get('/:username/config', async (c) => {
 // username) so a direct API call cannot assign someone else as controller of a blog; and that a
 // COMMUNITY has a real, separate owner account plus a valid, existing community id equal to the
 // subdomain. Returns the resolved owner or a client error.
-async function resolveAndValidateTenant(
+export async function resolveAndValidateTenant(
   body: any
 ): Promise<{ ok: true; owner: string } | { ok: false; status: 400; error: string }> {
   const username = body.username.toLowerCase();
   const owner = (body.owner || body.username).toLowerCase();
-  const isCommunity = body.config?.type === 'community';
+  // Derived from the subdomain being claimed, never from the caller-supplied
+  // type. Trusting body.config.type let a caller omit it, take the personal
+  // blog branch (which only requires owner === username) and capture a
+  // community's subdomain with no ownership check at all. A community account
+  // is a real Hive account, so the account existence check does not stop it.
+  const isCommunity =
+    COMMUNITY_NAME.test(username) || body.config?.type === 'community';
 
   if (!(await TenantService.verifyHiveAccount(username))) {
     return { ok: false, status: 400, error: 'Hive account not found' };
@@ -145,8 +152,8 @@ async function resolveAndValidateTenant(
   }
 
   if (isCommunity) {
-    const communityId = (body.config.communityId || '').toLowerCase();
-    if (!/^hive-\d+$/.test(communityId)) {
+    const communityId = (body.config?.communityId || username).toLowerCase();
+    if (!COMMUNITY_NAME.test(communityId)) {
       return { ok: false, status: 400, error: 'Community id must look like hive-NNNN' };
     }
     if (username !== communityId) {
@@ -157,8 +164,12 @@ async function resolveAndValidateTenant(
     if (!body.owner || owner === communityId) {
       return { ok: false, status: 400, error: 'A community instance requires a separate owner account' };
     }
-    if (!(await TenantService.verifyCommunity(communityId))) {
-      return { ok: false, status: 400, error: 'Community not found' };
+    if (!(await TenantService.verifyCommunityControlledBy(communityId, owner))) {
+      return {
+        ok: false,
+        status: 400,
+        error: 'Community not found, or the owner account does not administer it',
+      };
     }
   } else if (owner !== username) {
     // A personal blog is always controlled by its own account; reject an attempt to assign a
@@ -563,8 +574,15 @@ tenantRoutes.patch('/:username', authMiddleware, zValidator('json', updateTenant
     ? await TenantService.applyConfigDocument(username, body.config)
     : await TenantService.updateConfig(username, body.config);
   
-  // Regenerate config file
-  await ConfigService.generateConfigFile(updatedTenant);
+  // Publish only for a tenant that is entitled to be served. POST deliberately
+  // does not write the file for the same reason: nginx serves any file that
+  // exists with no subscription check, so publishing here would put a blog that
+  // has never been paid for live until the next sweep removes it. The config
+  // itself is always persisted, so the edit is not lost.
+  const published = isPublishableTenant(updatedTenant);
+  if (published) {
+    await ConfigService.generateConfigFile(updatedTenant);
+  }
   
   void AuditService.log({
     tenantId: updatedTenant.id,
@@ -577,7 +595,12 @@ tenantRoutes.patch('/:username', authMiddleware, zValidator('json', updateTenant
   return c.json({
     username: updatedTenant.username,
     config: updatedTenant.config,
-    message: 'Configuration updated',
+    // Tells the editor whether the change is live or only stored, so a saved
+    // edit that the visitor cannot see yet is explainable.
+    published,
+    message: published
+      ? 'Configuration updated'
+      : 'Configuration saved. It goes live once the subscription is active.',
   });
 });
 

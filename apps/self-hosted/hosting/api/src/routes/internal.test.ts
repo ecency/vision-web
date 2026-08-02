@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   auditLog: vi.fn(),
   buildConfig: vi.fn(),
   getBlogUrl: vi.fn(),
-  getByDomain: vi.fn(),
+  isDomainClaimed: vi.fn(),
   setCustomDomain: vi.fn(),
   verifyCustomDomain: vi.fn(),
   createVerification: vi.fn(),
@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
 // Must satisfy MIN_INTERNAL_SECRET_LENGTH, which the routes now enforce.
 const INTERNAL_SECRET = 'test-internal-secret-of-32-chars!!';
 
+class DomainInUseError extends Error {}
+
 vi.mock('../db/client', () => ({
   db: { transaction: mocks.transaction },
 }));
@@ -28,12 +30,13 @@ vi.mock('../services/tenant-service', () => ({
     getByUsername: mocks.getByUsername,
     buildConfig: mocks.buildConfig,
     getBlogUrl: mocks.getBlogUrl,
-    getByDomain: mocks.getByDomain,
+    isDomainClaimed: mocks.isDomainClaimed,
     setCustomDomain: mocks.setCustomDomain,
     verifyCustomDomain: mocks.verifyCustomDomain,
   },
   ABANDONED_REREGISTER_QUARANTINE_HOURS: 24,
   CAUGHT_UP_SQL: 'TRUE',
+  DomainInUseError,
 }));
 
 vi.mock('../services/config-service', () => ({
@@ -181,9 +184,12 @@ describe('internal endpoint audit trail', () => {
     mocks.generateConfigFile.mockReset().mockResolvedValue('/configs/alice.json');
     mocks.buildConfig.mockReset().mockResolvedValue({ version: 1 });
     mocks.getBlogUrl.mockReset().mockReturnValue('https://alice.blogs.ecency.com');
-    mocks.getByDomain.mockReset().mockResolvedValue(null);
-    mocks.setCustomDomain.mockReset().mockResolvedValue(undefined);
-    mocks.verifyCustomDomain.mockReset().mockResolvedValue(undefined);
+    mocks.isDomainClaimed.mockReset().mockResolvedValue(false);
+    mocks.setCustomDomain.mockReset().mockResolvedValue({
+      id: 'tenant-1',
+      customDomainVerified: false,
+    });
+    mocks.verifyCustomDomain.mockReset().mockResolvedValue({ id: 'tenant-1' });
     mocks.createVerification.mockReset().mockResolvedValue({ verificationMethod: 'cname' });
     mocks.verifyDomain.mockReset().mockResolvedValue(true);
     mocks.markVerified.mockReset().mockResolvedValue(undefined);
@@ -210,6 +216,100 @@ describe('internal endpoint audit trail', () => {
     order_id: 'order-1',
     amount_usd: 24,
   };
+
+  describe('custom domain integrity', () => {
+    const proTenant = {
+      id: 'tenant-1',
+      username: 'alice',
+      subscriptionStatus: 'active',
+      subscriptionPlan: 'pro',
+      customDomain: null as string | null,
+      customDomainVerified: false,
+    };
+
+    it('refuses a domain another tenant holds without verifying it', async () => {
+      mocks.getByUsername.mockResolvedValue({ ...proTenant });
+      mocks.isDomainClaimed.mockResolvedValue(true);
+
+      const response = await post('/domain', {
+        username: 'alice',
+        domain: 'taken.example.com',
+      });
+
+      expect(response.status).toBe(409);
+      expect(mocks.setCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('answers a lost unique race with a conflict, not a server error', async () => {
+      mocks.getByUsername.mockResolvedValue({ ...proTenant });
+      mocks.setCustomDomain.mockRejectedValue(new DomainInUseError('raced'));
+
+      const response = await post('/domain', {
+        username: 'alice',
+        domain: 'raced.example.com',
+      });
+
+      expect(response.status).toBe(409);
+    });
+
+    it('does not re-issue verification when the same domain is submitted again', async () => {
+      mocks.getByUsername.mockResolvedValue({
+        ...proTenant,
+        customDomain: 'mine.example.com',
+        customDomainVerified: true,
+      });
+      // The statement preserves the flag only when the stored domain already
+      // equals the requested one, so a still-verified result means no reset.
+      mocks.setCustomDomain.mockResolvedValue({
+        id: 'tenant-1',
+        customDomainVerified: true,
+      });
+
+      const response = await post('/domain', {
+        username: 'alice',
+        domain: 'mine.example.com',
+      });
+
+      expect(response.status).toBe(200);
+      // Re-issuing would delete the live verification record, and the origin
+      // sync would drop the vhost and certificate with it.
+      expect(mocks.createVerification).not.toHaveBeenCalled();
+    });
+
+    it('verifies against the domain that was checked', async () => {
+      mocks.getByUsername.mockResolvedValue({
+        ...proTenant,
+        customDomain: 'mine.example.com',
+      });
+
+      const response = await post('/domain/verify', { username: 'alice' });
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ verified: true });
+      expect(mocks.verifyCustomDomain).toHaveBeenCalledWith('alice', 'mine.example.com');
+      expect(mocks.markVerified).toHaveBeenCalledWith('alice', 'mine.example.com');
+    });
+
+    it('does not report success when the domain changed during the DNS check', async () => {
+      mocks.getByUsername.mockResolvedValue({
+        ...proTenant,
+        customDomain: 'mine.example.com',
+      });
+      // The conditional update matched no row: the DNS result describes a domain
+      // the tenant no longer holds.
+      mocks.verifyCustomDomain.mockResolvedValue(null);
+
+      const response = await post('/domain/verify', { username: 'alice' });
+
+      expect(await response.json()).toEqual({ verified: false });
+      expect(mocks.markVerified).not.toHaveBeenCalled();
+      expect(mocks.addVerifiedDomainOrigin).not.toHaveBeenCalled();
+      const verifiedEvents = mocks.auditLog.mock.calls.filter(
+        (call) => (call[0] as { eventType?: string })?.eventType === 'domain.verified',
+      );
+      expect(verifiedEvents).toHaveLength(0);
+    });
+  });
 
   it('records a card activation with its order, term and rail', async () => {
     const response = await post('/activate', activateBody);

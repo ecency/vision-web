@@ -11,7 +11,27 @@ export type { Tenant } from '../types';
 
 // Configure hive-tx nodes
 hiveTxConfig.nodes = process.env.HIVE_API_URL?.split(',') || ['https://api.hive.blog'];
+const UNIQUE_VIOLATION = '23505';
+
+/** Raised when another tenant already holds the requested custom domain. */
+export class DomainInUseError extends Error {
+  constructor(public readonly domain: string) {
+    super('Domain already in use');
+    this.name = 'DomainInUseError';
+  }
+}
+
 const baseDomain = process.env.BASE_DOMAIN || 'blogs.ecency.com';
+
+// Roles that may claim a community's hosted instance. Mods moderate content but
+// do not control the community's identity, so they are deliberately excluded.
+/**
+ * Hive names a community account hive-NNNN. Shared so every path that can bring
+ * a tenant into existence recognises a community claim the same way.
+ */
+export const COMMUNITY_NAME = /^hive-\d+$/;
+
+const CONTROLLING_COMMUNITY_ROLES = new Set(['owner', 'admin']);
 
 // Quiet period after the sweep marks a username 'abandoned' before it can be reserved again. It is
 // a backstop; three enforced guarantees keep a paid-for reservation out of a re-registration:
@@ -376,16 +396,35 @@ export const TenantService = {
    * Set custom domain
    */
   async setCustomDomain(username: string, domain: string): Promise<Tenant> {
-    const row = await db.queryOne<TenantRow>(
-      `UPDATE tenants
-       SET custom_domain = $2,
-           custom_domain_verified = false,
-           custom_domain_verified_at = NULL,
-           updated_at = NOW()
-       WHERE username = $1
-       RETURNING *`,
-      [username.toLowerCase(), domain.toLowerCase()]
-    );
+    let row: TenantRow | null;
+
+    try {
+      // Re-submitting the domain the tenant already holds keeps its verification.
+      // Decided inside the statement rather than from an earlier read: a route
+      // level guard would be check-then-act, and a concurrent update could make
+      // the read stale between the two. Setting a DIFFERENT domain still clears
+      // the flag, which is what re-verification exists for.
+      row = await db.queryOne<TenantRow>(
+        `UPDATE tenants
+         SET custom_domain = $2,
+             custom_domain_verified =
+               CASE WHEN custom_domain = $2 THEN custom_domain_verified ELSE false END,
+             custom_domain_verified_at =
+               CASE WHEN custom_domain = $2 THEN custom_domain_verified_at ELSE NULL END,
+             updated_at = NOW()
+         WHERE username = $1
+         RETURNING *`,
+        [username.toLowerCase(), domain.toLowerCase()]
+      );
+    } catch (error) {
+      // custom_domain is UNIQUE. Losing the race to another tenant is a
+      // conflict, not a server error: without this the raw Postgres message
+      // surfaced as a 500 and the caller could not tell why.
+      if ((error as { code?: string }).code === UNIQUE_VIOLATION) {
+        throw new DomainInUseError(domain);
+      }
+      throw error;
+    }
 
     if (!row) throw new Error('Tenant not found');
     return mapTenantFromDb(row);
@@ -394,19 +433,47 @@ export const TenantService = {
   /**
    * Verify custom domain
    */
-  async verifyCustomDomain(username: string): Promise<Tenant> {
+  /**
+   * Marks the domain that was actually checked, not whatever the row holds now.
+   *
+   * Verification does a DNS round trip between reading the tenant and writing
+   * the flag. Keying the update on the username alone let a domain swap during
+   * that window inherit the result of a check performed against the previous
+   * domain, which also added it to the CORS allowlist and blocked its rightful
+   * owner. Returns null when the row moved on, so the caller can ask the user
+   * to verify again.
+   */
+  async verifyCustomDomain(username: string, domain: string): Promise<Tenant | null> {
     const row = await db.queryOne<TenantRow>(
       `UPDATE tenants
        SET custom_domain_verified = true,
            custom_domain_verified_at = NOW(),
            updated_at = NOW()
-       WHERE username = $1
+       WHERE username = $1 AND custom_domain = $2
        RETURNING *`,
-      [username.toLowerCase()]
+      [username.toLowerCase(), domain.toLowerCase()]
     );
 
-    if (!row) throw new Error('Tenant not found');
-    return mapTenantFromDb(row);
+    return row ? mapTenantFromDb(row) : null;
+  },
+
+  /**
+   * Whether any tenant holds this domain, verified or not.
+   *
+   * getByDomain deliberately matches verified rows only, because that is what
+   * serving a request by host means. Occupancy is a different question: the
+   * column is UNIQUE regardless of the flag, so an unverified reservation still
+   * blocks everyone else, and checking only verified rows let the insert fail
+   * on the constraint instead of returning a clean conflict.
+   */
+  async isDomainClaimed(domain: string, excludeUsername?: string): Promise<boolean> {
+    const row = await db.queryOne<{ username: string }>(
+      'SELECT username FROM tenants WHERE custom_domain = $1',
+      [domain.toLowerCase()]
+    );
+
+    if (!row) return false;
+    return row.username.toLowerCase() !== excludeUsername?.toLowerCase();
   },
 
   /**
@@ -559,11 +626,36 @@ export const TenantService = {
   /**
    * Verify a Hive community exists (not merely an account named hive-NNNNN).
    */
-  async verifyCommunity(communityId: string): Promise<boolean> {
+  /**
+   * A community instance may only be claimed by an account that controls the
+   * community on chain. Verifying that the community merely exists would let
+   * any account pay for, and permanently hold, the instance of a community it
+   * has no part in: every later mutation authorises against tenants.owner, so
+   * the real team could never take it back.
+   *
+   * `team` carries [account, role, title] tuples for the community's owner,
+   * admins and mods. Only owner and admin are accepted, matching who can change
+   * the community's own settings on chain.
+   */
+  async verifyCommunityControlledBy(communityId: string, account: string): Promise<boolean> {
     try {
       const community = await callRPC('bridge.get_community', { name: communityId, observer: '' }) as any;
-      return !!community && community.name === communityId;
+      if (!community || community.name !== communityId) return false;
+
+      const team = community.team;
+      if (!Array.isArray(team)) return false;
+
+      const claimant = account.toLowerCase();
+      return team.some(
+        (member: unknown) =>
+          Array.isArray(member) &&
+          typeof member[0] === 'string' &&
+          member[0].toLowerCase() === claimant &&
+          typeof member[1] === 'string' &&
+          CONTROLLING_COMMUNITY_ROLES.has(member[1].toLowerCase())
+      );
     } catch {
+      // Fail closed: an RPC failure must not hand out a community instance.
       return false;
     }
   },

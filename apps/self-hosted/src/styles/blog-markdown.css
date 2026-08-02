@@ -1613,3 +1613,49 @@
   color: var(--theme-accent-hover, #1b68da);
   text-decoration: none;
 }
+
+/*
+ * Alignment written by the editor toolbar and by Hive's <center> / pull-* wrappers.
+ * render-helper strips the inline style attribute and keeps only data-align, so
+ * without these rules aligned paragraphs render left aligned on the blog itself
+ * even though ecency.com shows them correctly.
+ */
+.markdown-body p[data-align='left'],
+.markdown-body h1[data-align='left'],
+.markdown-body h2[data-align='left'],
+.markdown-body h3[data-align='left'],
+.markdown-body h4[data-align='left'],
+.markdown-body h5[data-align='left'],
+.markdown-body h6[data-align='left'] {
+  text-align: left;
+}
+
+.markdown-body p[data-align='center'],
+.markdown-body h1[data-align='center'],
+.markdown-body h2[data-align='center'],
+.markdown-body h3[data-align='center'],
+.markdown-body h4[data-align='center'],
+.markdown-body h5[data-align='center'],
+.markdown-body h6[data-align='center'] {
+  text-align: center;
+}
+
+.markdown-body p[data-align='right'],
+.markdown-body h1[data-align='right'],
+.markdown-body h2[data-align='right'],
+.markdown-body h3[data-align='right'],
+.markdown-body h4[data-align='right'],
+.markdown-body h5[data-align='right'],
+.markdown-body h6[data-align='right'] {
+  text-align: right;
+}
+
+.markdown-body p[data-align='justify'],
+.markdown-body h1[data-align='justify'],
+.markdown-body h2[data-align='justify'],
+.markdown-body h3[data-align='justify'],
+.markdown-body h4[data-align='justify'],
+.markdown-body h5[data-align='justify'],
+.markdown-body h6[data-align='justify'] {
+  text-align: justify;
+}
