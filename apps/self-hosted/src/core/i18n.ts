@@ -72,6 +72,10 @@ type TranslationKey =
   | 'updating'
   | 'update'
   | 'editor_start_writing'
+  | 'editor_link'
+  | 'editor_link_remove'
+  | 'editor_link_prompt'
+  | 'editor_markdown_fallback'
   | 'editor_post_title'
   | 'tip_amount'
   | 'tip_custom'
@@ -163,6 +167,10 @@ const translations: Record<string, Translations> = {
     updating: 'Updating...',
     update: 'Update',
     editor_start_writing: 'Start writing...',
+    editor_link: 'Link',
+    editor_link_remove: 'Remove link',
+    editor_link_prompt: 'Enter the link address',
+    editor_markdown_fallback: 'This post contains embeds or HTML the rich text editor cannot represent. Editing as markdown so nothing is lost.',
     editor_post_title: 'Post title...',
     tip_amount: 'Amount',
     tip_custom: 'Custom',
@@ -250,6 +258,10 @@ const translations: Record<string, Translations> = {
     updating: 'Actualizando...',
     update: 'Actualizar',
     editor_start_writing: 'Empieza a escribir...',
+    editor_link: 'Enlace',
+    editor_link_remove: 'Quitar enlace',
+    editor_link_prompt: 'Introduce la dirección del enlace',
+    editor_markdown_fallback: 'Esta publicación contiene incrustaciones o HTML que el editor visual no puede representar. Se edita como markdown para no perder nada.',
     editor_post_title: 'Título de la publicación...',
     tip_amount: 'Cantidad',
     tip_custom: 'Personalizado',
@@ -337,6 +349,10 @@ const translations: Record<string, Translations> = {
     updating: 'Aktualisierung...',
     update: 'Aktualisieren',
     editor_start_writing: 'Beginne zu schreiben...',
+    editor_link: 'Link',
+    editor_link_remove: 'Link entfernen',
+    editor_link_prompt: 'Gib die Link-Adresse ein',
+    editor_markdown_fallback: 'Dieser Beitrag enthält Einbettungen oder HTML, die der visuelle Editor nicht darstellen kann. Er wird als Markdown bearbeitet, damit nichts verloren geht.',
     editor_post_title: 'Beitragstitel...',
     tip_amount: 'Betrag',
     tip_custom: 'Benutzerdefiniert',
@@ -425,6 +441,10 @@ const translations: Record<string, Translations> = {
     updating: 'Mise à jour...',
     update: 'Mettre à jour',
     editor_start_writing: 'Commencez à écrire...',
+    editor_link: 'Lien',
+    editor_link_remove: 'Supprimer le lien',
+    editor_link_prompt: "Saisissez l'adresse du lien",
+    editor_markdown_fallback: "Cet article contient des intégrations ou du HTML que l'éditeur visuel ne peut pas représenter. Il est modifié en markdown pour ne rien perdre.",
     editor_post_title: "Titre de l'article...",
     tip_amount: 'Montant',
     tip_custom: 'Personnalisé',
@@ -512,6 +532,10 @@ const translations: Record<string, Translations> = {
     updating: '업데이트 중...',
     update: '업데이트',
     editor_start_writing: '글을 작성하세요...',
+    editor_link: '링크',
+    editor_link_remove: '링크 제거',
+    editor_link_prompt: '링크 주소를 입력하세요',
+    editor_markdown_fallback: '이 게시물에는 리치 텍스트 편집기가 표현할 수 없는 임베드나 HTML이 있습니다. 내용이 손실되지 않도록 마크다운으로 편집합니다.',
     editor_post_title: '게시물 제목...',
     tip_amount: '금액',
     tip_custom: '사용자 정의',
@@ -599,6 +623,10 @@ const translations: Record<string, Translations> = {
     updating: 'Обновление...',
     update: 'Обновить',
     editor_start_writing: 'Начните писать...',
+    editor_link: 'Ссылка',
+    editor_link_remove: 'Удалить ссылку',
+    editor_link_prompt: 'Введите адрес ссылки',
+    editor_markdown_fallback: 'В этом посте есть встроенные объекты или HTML, которые визуальный редактор не может отобразить. Редактирование идёт в markdown, чтобы ничего не потерялось.',
     editor_post_title: 'Заголовок поста...',
     tip_amount: 'Сумма',
     tip_custom: 'Другая',

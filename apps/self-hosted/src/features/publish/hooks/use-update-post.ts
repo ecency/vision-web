@@ -19,12 +19,22 @@ export function useUpdatePost() {
       title,
       body,
       tags,
+      jsonMetadata,
+      preserveOriginalFormat,
     }: {
       permlink: string;
       parentPermlink: string;
       title: string;
       body: string;
       tags: string[];
+      jsonMetadata?: Record<string, unknown>;
+      /**
+       * Only true when the body was edited as raw markdown and therefore still
+       * carries whatever format it was published with. The rich text editor
+       * always re-serialises the body to markdown, so keeping an inherited
+       * "html" format would advertise the post as something it no longer is.
+       */
+      preserveOriginalFormat?: boolean;
     }) => {
       if (!user) {
         throw new Error("Authentication required to update post");
@@ -55,10 +65,18 @@ export function useUpdatePost() {
         parentPermlink,
         title: title.trim(),
         body: body.trim(),
+        // Carry the post's existing metadata forward. Rebuilding it from scratch
+        // would drop image/thumbnail, description, users, links and any app
+        // specific block (3Speak's video object, for example) that was written
+        // by whichever client originally published the post.
         jsonMetadata: {
+          ...jsonMetadata,
           tags: normalizedTags,
           app: "ecency-selfhost/1.0",
-          format: "markdown",
+          format:
+            preserveOriginalFormat && typeof jsonMetadata?.format === "string"
+              ? jsonMetadata.format
+              : "markdown",
         },
       });
     },
@@ -67,7 +85,7 @@ export function useUpdatePost() {
 
       navigate({
         to: "/$author/$permlink",
-        params: { author: user.username, permlink: variables.permlink },
+        params: { author: `@${user.username}`, permlink: variables.permlink },
         search: { raw: undefined },
       });
     },
