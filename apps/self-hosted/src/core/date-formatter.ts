@@ -118,6 +118,17 @@ function safeFormat(date: Date, pattern: string, fallback: string): string {
   }
 }
 
+/**
+ * These come from free-text config fields, so a value can be any JSON type.
+ * Falling back only on falsiness let a number or an object through to
+ * convertFormatPattern, whose .replace() then threw a TypeError outside
+ * safeFormat's try - the same blank-page failure this guarding exists to stop,
+ * for the wrong-type case rather than the missing-value one.
+ */
+function configString(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() !== '' ? value : fallback;
+}
+
 function getLocale(): Locale {
   const language = InstanceConfigManager.getConfigValue(
     ({ configuration }) => configuration.general?.language,
@@ -126,8 +137,11 @@ function getLocale(): Locale {
 }
 
 function getTimezone(): string {
-  return InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.general?.timezone || 'UTC',
+  return configString(
+    InstanceConfigManager.getConfigValue(
+      ({ configuration }) => configuration.general?.timezone,
+    ),
+    'UTC',
   );
 }
 
@@ -135,21 +149,23 @@ function getDateFormat(): string {
   const configFormat = InstanceConfigManager.getConfigValue(
     ({ configuration }) => configuration.general?.dateFormat,
   );
-  return convertFormatPattern(configFormat || 'yyyy-MM-dd');
+  return convertFormatPattern(configString(configFormat, 'yyyy-MM-dd'));
 }
 
 function getTimeFormat(): string {
   const configFormat = InstanceConfigManager.getConfigValue(
     ({ configuration }) => configuration.general?.timeFormat,
   );
-  return convertFormatPattern(configFormat || 'HH:mm:ss');
+  return convertFormatPattern(configString(configFormat, 'HH:mm:ss'));
 }
 
 function getDateTimeFormat(): string {
   const configFormat = InstanceConfigManager.getConfigValue(
     ({ configuration }) => configuration.general?.dateTimeFormat,
   );
-  return convertFormatPattern(configFormat || 'yyyy-MM-dd HH:mm:ss');
+  return convertFormatPattern(
+    configString(configFormat, 'yyyy-MM-dd HH:mm:ss'),
+  );
 }
 
 /**
@@ -241,7 +257,7 @@ export function formatCustom(
   const zonedDate = toZoned(utcDate, getTimezone());
   return safeFormat(
     zonedDate,
-    convertFormatPattern(formatStr),
+    convertFormatPattern(configString(formatStr, 'yyyy-MM-dd HH:mm:ss')),
     'yyyy-MM-dd HH:mm:ss',
   );
 }

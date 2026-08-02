@@ -4,6 +4,9 @@ const state = vi.hoisted(() => ({
   instanceConfiguration: {} as Record<string, unknown>,
 }));
 
+// The specifier is relative because that is what vitest's '@' -> './src' alias
+// resolves post-filters.ts's '@/core' import to; mocking '@/core' does not
+// intercept it and the real module is loaded instead.
 vi.mock('../../../core', () => ({
   InstanceConfigManager: {
     getConfigValue: (selector: (config: unknown) => unknown) =>
@@ -30,6 +33,15 @@ describe('getConfiguredPostsFilters path handling', () => {
 
   it('survives a null features section', () => {
     state.instanceConfiguration = { features: null };
+
+    expect(() => getConfiguredPostsFilters()).not.toThrow();
+    expect(getConfiguredPostsFilters()).toEqual(['posts']);
+  });
+
+  it('survives a missing instanceConfiguration section', () => {
+    // updateConfig bypasses mergeConfig, so a config without the section can
+    // reach this selector and throw before the fallback runs.
+    state.instanceConfiguration = undefined as never;
 
     expect(() => getConfiguredPostsFilters()).not.toThrow();
     expect(getConfiguredPostsFilters()).toEqual(['posts']);

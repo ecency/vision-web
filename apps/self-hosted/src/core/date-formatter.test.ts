@@ -115,6 +115,35 @@ describe('date formatting with invalid configuration', () => {
     expect(formatDateTime(DATE)).toBe('2024-01-16 10:00:00');
   });
 
+  it('survives a format value that is not a string', () => {
+    // convertFormatPattern calls .replace() and runs OUTSIDE safeFormat's try,
+    // so a truthy non-string threw uncaught and blanked the page.
+    for (const bad of [42, true, {}, ['a']]) {
+      state.general = {
+        language: 'en',
+        timezone: 'UTC',
+        dateFormat: bad,
+        timeFormat: bad,
+        dateTimeFormat: bad,
+      } as never;
+
+      expect(
+        () => formatDate(DATE),
+        `dateFormat=${JSON.stringify(bad)}`,
+      ).not.toThrow();
+      expect(() => formatTime(DATE)).not.toThrow();
+      expect(() => formatDateTime(DATE)).not.toThrow();
+      expect(formatDate(DATE)).toBe('2024-01-16');
+    }
+  });
+
+  it('survives a timezone that is not a string', () => {
+    state.general = { language: 'en', timezone: 99 } as never;
+
+    expect(() => formatDate(DATE)).not.toThrow();
+    expect(() => formatRelativeDate(DATE)).not.toThrow();
+  });
+
   it('returns empty rather than throwing for an unparseable date', () => {
     expect(formatMonthYear('not a date')).toBe('');
     expect(formatCustom('not a date', 'yyyy')).toBe('');
