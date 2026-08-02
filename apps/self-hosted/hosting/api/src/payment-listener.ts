@@ -414,7 +414,12 @@ export class PaymentListener {
       // (which regenerates every active tenant), so log and move on.
       if (updatedTenant) {
         try {
-          await ConfigService.generateConfigFile(updatedTenant);
+          // Publishes from the row as it stands inside the write lock, which is
+          // now a cross-process advisory lock. Passing the snapshot this
+          // transaction returned, or even re-reading just before the call,
+          // leaves a window where the API can commit and publish an owner's
+          // newer config and have this write roll it back.
+          await ConfigService.publishConfigFile(username);
         } catch (err) {
           console.error(
             `[PaymentListener] Config generation failed post-commit for ${username} (periodic sync will retry):`,

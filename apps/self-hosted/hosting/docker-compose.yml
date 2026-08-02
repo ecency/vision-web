@@ -79,6 +79,12 @@ services:
       - PAYMENT_ACCOUNT=${PAYMENT_ACCOUNT:-ecency.hosting}
       - MONTHLY_PRICE_HBD=${MONTHLY_PRICE_HBD:-2.000}
       - PRO_UPGRADE_PRICE_HBD=${PRO_UPGRADE_PRICE_HBD:-5.000}
+    volumes:
+      # Activating a subscription writes the tenant's served config. Without
+      # this mount that write lands in the container's own layer and never
+      # reaches the volume nginx serves, so a paying customer gets default.json
+      # until the API's periodic sync repairs it.
+      - "tenant-configs:/app/configs"
     networks:
       - ecency-hosting
     depends_on:
