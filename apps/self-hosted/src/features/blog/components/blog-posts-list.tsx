@@ -1,13 +1,15 @@
 'use client';
 
-import { getAccountPostsInfiniteQueryOptions } from '@ecency/sdk';
+import {
+  getAccountPostsInfiniteQueryOptions,
+  getPostsRankedInfiniteQueryOptions,
+} from '@ecency/sdk';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
 import { t } from '@/core';
 import { BlogPostItem } from './blog-post-item';
 import { DetectBottom } from './detect-bottom';
 import { useInstanceConfig } from '../hooks/use-instance-config';
-import { getCommunityPostsInfiniteQueryOptions } from '../queries/community-queries';
 import { ErrorMessage } from '@/features/shared/error-message';
 
 interface Props {
@@ -41,7 +43,16 @@ export function BlogPostsList({ filter = 'posts', limit = 20 }: Props) {
 
   // Get query options and preserve their built-in enabled guards
   const accountOptions = getAccountPostsInfiniteQueryOptions(username, filter, limit);
-  const communityOptions = getCommunityPostsInfiniteQueryOptions(communityId, communitySort, limit);
+  // The SDK's ranked-posts query, not a local bridge call: it is the path that
+  // applies DMCA post filtering and drops a tag that is itself listed. A
+  // bespoke get_ranked_posts call here served takedown-listed content.
+  const communityOptions = getPostsRankedInfiniteQueryOptions(
+    communitySort,
+    communityId,
+    limit,
+    '',
+    !!communityId && isCommunityMode,
+  );
 
   const blogQuery = useInfiniteQuery({
     ...accountOptions,
@@ -52,7 +63,6 @@ export function BlogPostsList({ filter = 'posts', limit = 20 }: Props) {
   const communityQuery = useInfiniteQuery({
     ...communityOptions,
     select: selectPosts,
-    enabled: communityOptions.enabled && isCommunityMode,
   });
 
   const { data = [], fetchNextPage, isFetching, hasNextPage, isError, refetch } = isCommunityMode
