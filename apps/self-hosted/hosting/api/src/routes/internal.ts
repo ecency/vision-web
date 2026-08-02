@@ -6,6 +6,7 @@
  */
 
 import { Hono, type Context } from 'hono';
+import { timingSafeEqual } from 'node:crypto';
 import { db } from '../db/client';
 import {
   TenantService,
@@ -65,13 +66,18 @@ export function internalSecret(): string | null {
 // Fails CLOSED when the secret is unset OR too short, so neither a missing value nor a
 // weak one can activate blogs. Rejecting rather than refusing to boot keeps an
 // otherwise healthy deploy serving; the startup log says which case applies.
+// Constant-time check of the shared service-to-service secret (ePoints -> hosting).
+// Fails CLOSED when the secret is unset OR too short, so neither a missing value nor a
+// weak one can activate blogs. Refusing rather than refusing to boot keeps an
+// otherwise healthy deploy serving; the startup log says which case applies.
 export function internalSecretOk(provided: string | undefined): boolean {
-  const secret = internalSecret() ?? '';
-  const given = provided || '';
+  const secret = Buffer.from(internalSecret() ?? '');
+  const given = Buffer.from(provided || '');
+  // Compared on BYTE length, not string length: timingSafeEqual throws on a
+  // mismatch, and two strings of equal length can encode to different byte
+  // counts, which would turn a rejected secret into a 500.
   if (secret.length === 0 || given.length !== secret.length) return false;
-  let diff = 0;
-  for (let i = 0; i < secret.length; i++) diff |= given.charCodeAt(i) ^ secret.charCodeAt(i);
-  return diff === 0;
+  return timingSafeEqual(given, secret);
 }
 
 // POST /v1/internal/activate - service-to-service activation (NOT public).

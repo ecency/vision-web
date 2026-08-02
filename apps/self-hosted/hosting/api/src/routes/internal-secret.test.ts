@@ -57,6 +57,21 @@ describe('internal shared secret', () => {
     expect(internalSecretOk('b'.repeat(MIN_INTERNAL_SECRET_LENGTH))).toBe(false);
   });
 
+  it('rejects a multi-byte value of the same string length without throwing', () => {
+    // timingSafeEqual throws on a byte-length mismatch, and two strings of equal
+    // length can encode to different byte counts, which would turn a rejected
+    // secret into a 500 rather than a 403.
+    process.env.HOSTING_INTERNAL_SECRET = STRONG;
+    const sameLengthDifferentBytes = `${'a'.repeat(MIN_INTERNAL_SECRET_LENGTH - 1)}\u00e9`;
+
+    expect(sameLengthDifferentBytes.length).toBe(STRONG.length);
+    expect(Buffer.from(sameLengthDifferentBytes).length).not.toBe(
+      Buffer.from(STRONG).length,
+    );
+    expect(() => internalSecretOk(sameLengthDifferentBytes)).not.toThrow();
+    expect(internalSecretOk(sameLengthDifferentBytes)).toBe(false);
+  });
+
   it('rejects a value that is merely a prefix of the secret', () => {
     process.env.HOSTING_INTERNAL_SECRET = STRONG;
 
