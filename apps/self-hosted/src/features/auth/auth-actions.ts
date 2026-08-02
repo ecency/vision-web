@@ -1,7 +1,9 @@
 "use client";
 
 import type { Operation } from "@ecency/sdk";
+import { InstanceConfigManager } from "@/core";
 import { authenticationStore } from "@/store";
+import { HIVESIGNER_REDIRECT_PATH } from "./constants";
 import type { AuthMethod, AuthUser } from "./types";
 import {
   clearHiveAuthSession,
@@ -20,7 +22,9 @@ import type { HiveExtensionId } from "./types";
 import {
   broadcastWithHivesigner,
   getHivesignerLoginUrl,
-} from "./utils/hivesigner";
+  createHivesignerState,
+  resolveHivesignerClientId,
+} from './utils/hivesigner';
 import { broadcastWithHiveAuth, loginWithHiveAuth } from "./utils/hive-auth";
 
 /**
@@ -96,9 +100,25 @@ export async function login(
  */
 export function loginWithHivesigner(): void {
   if (typeof window === "undefined") return;
-  const redirectUri = window.location.origin + window.location.pathname;
-  const loginUrl = getHivesignerLoginUrl(redirectUri);
-  window.location.href = loginUrl;
+
+  const clientId = resolveHivesignerClientId(
+    InstanceConfigManager.getConfigValue(
+      ({ configuration }) => configuration.general?.hivesigner?.clientId
+    )
+  );
+  // The provider hides the method when this is null, so getting here without a
+  // client means the picker was bypassed.
+  if (!clientId) return;
+
+  // A fixed path, so the redirect_uri is identical whichever page login started
+  // from and can actually be registered. The current pathname produced a
+  // different URI per page, none of which would match.
+  const redirectUri = window.location.origin + HIVESIGNER_REDIRECT_PATH;
+  window.location.href = getHivesignerLoginUrl(
+    redirectUri,
+    createHivesignerState(),
+    clientId
+  );
 }
 
 /**

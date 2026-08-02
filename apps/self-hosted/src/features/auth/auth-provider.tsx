@@ -12,8 +12,7 @@ import {
 import { clearHiveAuthSession, clearUser, saveUser } from "./storage";
 import type { AuthContextValue, AuthMethod, AuthUser } from "./types";
 import {
-  isHivesignerCallback,
-  parseHivesignerCallback,
+  resolveHivesignerClientId,
 } from "./utils/hivesigner";
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -31,7 +30,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
   );
 
   const isAuthEnabled = authConfig?.enabled ?? false;
-  const availableMethods = (authConfig?.methods ?? []) as AuthMethod[];
+  const hivesignerClientId = resolveHivesignerClientId(
+    InstanceConfigManager.getConfigValue(
+      ({ configuration }) => configuration.general?.hivesigner?.clientId
+    )
+  );
+
+  // Configured methods, minus any this instance cannot actually complete.
+  // Offering a method that always fails sends the visitor into an error with no
+  // explanation: Hivesigner rejects a redirect_uri its app has not registered,
+  // and a hosted blog's origin cannot be registered in advance, so it is offered
+  // only when the instance names a client of its own.
+  const availableMethods = ((authConfig?.methods ?? []) as AuthMethod[]).filter(
+    (method) => (method === "hivesigner" ? hivesignerClientId !== null : true)
+  );
 
   // Get the instance owner. Falls back to the showcased username for older
   // configs that predate the `owner` field (blog instances where the owner and
@@ -74,28 +86,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => clearInterval(interval);
   }, [user?.expiresAt]);
 
-  // Handle Hivesigner callback
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const search = window.location.search;
-    if (isHivesignerCallback(search)) {
-      const callbackData = parseHivesignerCallback(search);
-      if (callbackData) {
-        const newUser: AuthUser = {
-          username: callbackData.username,
-          accessToken: callbackData.accessToken,
-          loginType: "hivesigner",
-          expiresAt: Date.now() + callbackData.expiresIn * 1000,
-        };
-        setUser(newUser);
-        saveUser(newUser);
-
-        // Clean up URL
-        window.history.replaceState({}, "", window.location.pathname);
-      }
-    }
-  }, []);
+  // The Hivesigner callback is handled by the /auth route, not here. Running it
+  // on every route meant any page carrying ?access_token=&username= counted as a
+  // completed login, which treated URL input as a credential.
 
   // Check if session is expiring within 5 minutes
   const isSessionExpiringSoon = useMemo(() => {

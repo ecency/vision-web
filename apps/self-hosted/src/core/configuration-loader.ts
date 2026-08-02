@@ -53,6 +53,14 @@ export interface InstanceConfig {
       imageProxy: string;
       profileBaseUrl: string;
       createPostUrl: string;
+    /**
+     * Optional per-instance Hivesigner app. The built-in client only has
+     * ecency.com origins registered, so a hosted blog cannot complete the OAuth
+     * flow with it; an owner who registers their own app names it here.
+     */
+    hivesigner?: {
+      clientId?: string;
+    };
       styles: {
         background: string;
       };
