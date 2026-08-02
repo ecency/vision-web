@@ -38,7 +38,7 @@ ConfigManager.setQueryClient(queryClient);
 // any post query can resolve. Not awaited: the lists are fetched from a remote
 // origin and nothing about rendering the blog may depend on that origin being
 // reachable.
-loadDmcaLists();
+loadDmcaLists(queryClient);
 
 export const Route = createRootRoute({
   component: RootComponent,

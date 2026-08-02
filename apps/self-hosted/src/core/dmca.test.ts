@@ -155,4 +155,38 @@ describe('loadDmcaLists', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(setDmcaLists).toHaveBeenCalledTimes(1);
   });
+
+  /**
+   * The fetch is not awaited, so a post query can resolve against an empty
+   * configuration and cache the unfiltered result. Without a refetch the listed
+   * content stays on screen for the rest of the session.
+   */
+  it('refetches post queries once the lists land', async () => {
+    vi.stubGlobal('fetch', respond(FULL));
+    const loadDmcaLists = await importLoader();
+    const invalidateQueries = vi.fn();
+
+    await loadDmcaLists({ invalidateQueries } as never);
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['posts'] });
+  });
+
+  it('does not refetch when the lists came back empty', async () => {
+    vi.stubGlobal(
+      'fetch',
+      respond({
+        'dmca-accounts.json': { accounts: [] },
+        'dmca-tags.json': { tags: [] },
+        'dmca-posts.json': { posts: [] },
+      }),
+    );
+    const loadDmcaLists = await importLoader();
+    const invalidateQueries = vi.fn();
+
+    await loadDmcaLists({ invalidateQueries } as never);
+
+    // Nothing to filter, so the refetch would cost every visitor a round of
+    // requests for no change whenever the lists are unreachable.
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
 });

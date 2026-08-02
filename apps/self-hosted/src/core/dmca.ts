@@ -1,4 +1,5 @@
 import { ConfigManager } from '@ecency/sdk';
+import type { QueryClient } from '@tanstack/react-query';
 
 /**
  * DMCA filtering lists.
@@ -61,10 +62,27 @@ let pending: Promise<void> | undefined;
 /**
  * Loads the lists into the SDK config. Memoised: repeated calls share the first
  * request. Always resolves, and always applies whatever it managed to fetch.
+ *
+ * Post queries are refetched once the lists land. Nothing about rendering may
+ * wait on a remote origin, so the fetch is not awaited, which leaves a window
+ * where a query resolves first: filterDmcaEntry runs against an empty
+ * configuration, and the unfiltered result is cached and displayed for the rest
+ * of the session. Refetching closes it. Every post key starts with "posts", so
+ * one invalidation reaches them all.
+ *
+ * Skipped when nothing was loaded, since there is then nothing to filter and
+ * the refetch would be pure cost for every visitor whenever the lists are
+ * unreachable.
  */
-export function loadDmcaLists(): Promise<void> {
+export function loadDmcaLists(queryClient?: QueryClient): Promise<void> {
   pending ??= fetchLists().then((lists) => {
     ConfigManager.setDmcaLists(lists);
+
+    const listed =
+      lists.accounts.length + lists.tags.length + lists.posts.length;
+    if (listed > 0 && queryClient) {
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+    }
   });
   return pending;
 }
