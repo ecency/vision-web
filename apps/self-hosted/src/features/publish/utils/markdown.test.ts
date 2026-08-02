@@ -274,6 +274,37 @@ describe('hasUnsupportedMarkup', () => {
     ).toBe(true);
   });
 
+  it('flags attribute values Tiptap rewrites rather than preserves', () => {
+    // The extension re-serialises min-width from its own cellMinWidth, so any
+    // other width comes back as 25px.
+    expect(
+      hasUnsupportedMarkup(
+        '<table style="min-width:100px"><tbody><tr><td>a</td></tr></tbody></table>',
+      ),
+    ).toBe(true);
+    // colwidth is parsed from data-colwidth, so a plain attribute is dropped.
+    expect(
+      hasUnsupportedMarkup(
+        '<table><tbody><tr><td colwidth="100">a</td></tr></tbody></table>',
+      ),
+    ).toBe(true);
+    // The table this app emits itself has to keep loading without a warning.
+    expect(
+      hasUnsupportedMarkup(
+        '<table style="min-width: 25px;"><tbody><tr><td colspan="1" rowspan="1"><p>a</p></td></tr></tbody></table>',
+      ),
+    ).toBe(false);
+  });
+
+  it('accepts a language class only where the code block rebuilds it', () => {
+    // On an inline <code> the mark carries no attributes, so the class is lost.
+    expect(
+      hasUnsupportedMarkup('use <code class="language-js">x</code> here'),
+    ).toBe(true);
+    // Inside a <pre> the code block node round-trips it.
+    expect(hasUnsupportedMarkup('```js\nconst a = 1;\n```')).toBe(false);
+  });
+
   it('flags elements the sanitiser would remove before the walk could see them', () => {
     // Inspection runs on the unsanitised document precisely so these are caught:
     // DOMPurify unwraps <foo> to its text and drops head elements outright.

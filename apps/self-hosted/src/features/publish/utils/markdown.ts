@@ -57,7 +57,7 @@ const SUPPORTED_TAGS = new Set([
   "PRE", "S", "STRONG", "TABLE", "TBODY", "TD", "TH", "THEAD", "TR", "UL"
 ]);
 
-type AttributeCheck = (value: string) => boolean;
+type AttributeCheck = (value: string, element: Element) => boolean;
 
 const anyValue: AttributeCheck = () => true;
 const isInteger: AttributeCheck = (value) => /^\d+$/.test(value.trim());
@@ -65,7 +65,7 @@ const isAlignment: AttributeCheck = (value) =>
   ALIGNMENT_VALUES.has(value.trim().toLowerCase());
 
 /** Only `language-x` survives: Tiptap rebuilds the class from the language. */
-const isLanguageClass: AttributeCheck = (value) =>
+const isLanguageClass = (value: string): boolean =>
   /^language-[\w+#.-]+$/.test(value.trim());
 
 function everyDeclaration(
@@ -106,9 +106,24 @@ const isAlignmentStyle: AttributeCheck = (value) =>
       property === "text-align" && ALIGNMENT_VALUES.has(declared)
   );
 
-/** Tiptap's own table output, which has to load back without a warning. */
+/**
+ * Only the table style Tiptap emits itself round-trips. The extension always
+ * re-serialises min-width from its own cellMinWidth, so any other width is
+ * silently rewritten: a table carrying min-width:100px would come back as
+ * 25px. Matching the exact emitted value keeps that table on the markdown
+ * path, and a future cellMinWidth change fails safe the same way.
+ */
+const TIPTAP_TABLE_STYLE = "min-width:25px";
 const isTableStyle: AttributeCheck = (value) =>
-  everyDeclaration(value, (property) => property === "min-width");
+  value.replace(/\s+/g, "").replace(/;$/, "").toLowerCase() === TIPTAP_TABLE_STYLE;
+
+/**
+ * A language class only survives on the <code> inside a <pre>, which is what
+ * the code block node rebuilds. On an inline <code> the mark carries no
+ * attributes, so the class is dropped.
+ */
+const isCodeBlockLanguage: AttributeCheck = (value, element) =>
+  element.parentElement?.tagName === "PRE" && isLanguageClass(value);
 
 /**
  * Sanitising runs after this inspection, so URLs are checked here instead.
@@ -133,7 +148,7 @@ const ALIGNABLE_ATTRIBUTES: Record<string, AttributeCheck> = {
  */
 const SUPPORTED_ATTRIBUTES: Record<string, Record<string, AttributeCheck>> = {
   A: { href: isSafeHref },
-  CODE: { class: isLanguageClass },
+  CODE: { class: isCodeBlockLanguage },
   H1: ALIGNABLE_ATTRIBUTES,
   H2: ALIGNABLE_ATTRIBUTES,
   H3: ALIGNABLE_ATTRIBUTES,
@@ -144,8 +159,8 @@ const SUPPORTED_ATTRIBUTES: Record<string, Record<string, AttributeCheck>> = {
   OL: { start: isInteger },
   P: ALIGNABLE_ATTRIBUTES,
   TABLE: { style: isTableStyle },
-  TD: { colspan: isInteger, rowspan: isInteger, colwidth: anyValue },
-  TH: { colspan: isInteger, rowspan: isInteger, colwidth: anyValue }
+  TD: { colspan: isInteger, rowspan: isInteger },
+  TH: { colspan: isInteger, rowspan: isInteger }
 };
 
 interface ParsedMarkdown {
@@ -177,7 +192,7 @@ function containsUnsupportedMarkup(doc: Document): boolean {
     const allowed = SUPPORTED_ATTRIBUTES[element.tagName];
     for (const attribute of Array.from(element.attributes)) {
       const check = allowed?.[attribute.name];
-      if (!check || !check(attribute.value)) return true;
+      if (!check || !check(attribute.value, element)) return true;
     }
   }
 
