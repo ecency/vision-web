@@ -55,6 +55,9 @@ const COMMUNITY = {
   username: 'hive-125125',
   owner: 'alice',
   subscriptionPlan: 'pro',
+  // Attach and verify now require a subscription that is paid for, not just the Pro plan.
+  subscriptionStatus: 'active',
+  subscriptionExpiresAt: null as Date | null,
   customDomain: null as string | null,
 };
 

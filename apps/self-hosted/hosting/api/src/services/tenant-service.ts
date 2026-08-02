@@ -513,6 +513,64 @@ export const TenantService = {
   },
   
   /**
+   * Release custom-domain claims that were never verified.
+   *
+   * custom_domain is UNIQUE whether or not it is verified, so a tenant could claim a domain,
+   * never point DNS at it, and hold it against its rightful owner forever: nothing expired the
+   * claim. The verification RECORD had a 7-day expiry, but nothing acted on it and clearing it
+   * would not have freed the column anyway.
+   *
+   * A claim is released when no verification record for that exact domain has been created
+   * within `claimDays`. The record is what the attach path always writes, so it dates the claim
+   * without needing a new column (this service must keep running against the old schema while a
+   * deploy rolls out). Re-submitting the same domain writes a fresh record and restarts the
+   * clock, which is deliberate: an owner who is still working on DNS keeps their claim.
+   *
+   * Only unverified claims are touched, so a verified domain is never unbound and no serving
+   * site is affected. Idempotent: a released row has custom_domain NULL and cannot match again.
+   *
+   * A verification running at the moment of release is safe without any coordination:
+   * verifyCustomDomain keys its UPDATE on username AND domain, so once this clears the column it
+   * matches no row, returns null, and both rails already answer "verify again" for that.
+   */
+  async releaseUnverifiedDomains(claimDays: number): Promise<{ username: string; domain: string }[]> {
+    return db.transaction(async (client) => {
+      const released = await client.query<{ id: string; username: string; custom_domain: string }>(
+        `UPDATE tenants
+            SET custom_domain = NULL,
+                custom_domain_verified = false,
+                custom_domain_verified_at = NULL,
+                updated_at = NOW()
+          WHERE custom_domain IS NOT NULL
+            AND custom_domain_verified = false
+            AND NOT EXISTS (
+                  SELECT 1 FROM domain_verifications dv
+                   WHERE dv.tenant_id = tenants.id
+                     AND dv.domain = tenants.custom_domain
+                     AND dv.created_at > NOW() - ($1 * INTERVAL '1 day')
+                )
+          RETURNING id, username, custom_domain`,
+        [claimDays]
+      );
+
+      if (released.rowCount) {
+        // Drop the stale records with the claim they belonged to, in the same transaction, so
+        // the two can never disagree about whether a claim exists.
+        await client.query(
+          `DELETE FROM domain_verifications
+            WHERE tenant_id = ANY($1::uuid[]) AND verified = false`,
+          [released.rows.map((row) => row.id)]
+        );
+      }
+
+      return released.rows.map((row) => ({
+        username: row.username,
+        domain: row.custom_domain,
+      }));
+    });
+  },
+
+  /**
    * Delete tenant
    */
   async delete(username: string): Promise<void> {

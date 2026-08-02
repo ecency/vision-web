@@ -8,6 +8,7 @@
  */
 
 import { db } from '../db/client';
+import { IN_GOOD_STANDING_SQL, PRO_GRACE_DAYS } from '../services/subscription';
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -16,9 +17,15 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 export async function refreshVerifiedDomainOrigins(): Promise<void> {
   try {
+    // Standing is part of the question: a first-party origin can save configuration and exchange
+    // auth, so a tenant that stopped paying should not keep one. The grace window is included,
+    // so a briefly-late customer's site keeps working through a renewal.
     const rows = await db.queryAll<{ custom_domain: string }>(
       `SELECT custom_domain FROM tenants
-       WHERE custom_domain IS NOT NULL AND custom_domain_verified = true`
+       WHERE custom_domain IS NOT NULL AND custom_domain_verified = true
+         AND subscription_plan = 'pro'
+         AND ${IN_GOOD_STANDING_SQL}`,
+      [PRO_GRACE_DAYS]
     );
     verifiedOrigins = new Set(
       rows

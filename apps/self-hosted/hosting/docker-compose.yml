@@ -52,6 +52,9 @@ services:
       - HOSTING_INTERNAL_SECRET=${HOSTING_INTERNAL_SECRET:-}
       - HOSTING_CARD_ENABLED=${HOSTING_CARD_ENABLED:-true}
       - HOSTING_CARD_USD_CENTS=${HOSTING_CARD_USD_CENTS:-200}
+      # Days a lapsed subscription keeps its custom-domain capabilities after expiry.
+      # Must match the listener below: both decide the same thing.
+      - PRO_GRACE_DAYS=${PRO_GRACE_DAYS:-14}
     volumes:
       - "tenant-configs:/app/configs"
     networks:
@@ -79,6 +82,9 @@ services:
       - PAYMENT_ACCOUNT=${PAYMENT_ACCOUNT:-ecency.hosting}
       - MONTHLY_PRICE_HBD=${MONTHLY_PRICE_HBD:-2.000}
       - PRO_UPGRADE_PRICE_HBD=${PRO_UPGRADE_PRICE_HBD:-5.000}
+      # Maintenance sweeps run here (expiry, abandoned reservations, unverified domain claims).
+      - PRO_GRACE_DAYS=${PRO_GRACE_DAYS:-14}
+      - UNVERIFIED_DOMAIN_CLAIM_DAYS=${UNVERIFIED_DOMAIN_CLAIM_DAYS:-14}
     volumes:
       # Activating a subscription writes the tenant's served config. Without
       # this mount that write lands in the container's own layer and never

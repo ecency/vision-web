@@ -9,6 +9,7 @@ import { zValidator } from '@hono/zod-validator';
 import { DomainInUseError, TenantService } from '../services/tenant-service';
 import type { Tenant } from '../types';
 import { DomainService } from '../services/domain-service';
+import { customDomainCapability } from '../services/subscription';
 import { authMiddleware } from '../middleware/auth';
 import { AuditService, parseClientIp } from '../services/audit-service';
 import { addVerifiedDomainOrigin } from '../utils/cors-domains';
@@ -52,6 +53,30 @@ async function resolveOwnedTenant(c: Context): Promise<OwnedTenant> {
   return { tenant, actor: authUser.username, response: null };
 }
 
+/**
+ * Refuse a custom-domain capability the tenant is no longer paying for.
+ *
+ * The plan alone is not enough: expiry never clears subscription_plan, so a lapsed tenant kept
+ * 'pro' and with it the ability to attach and verify domains. A tenant inside the grace window
+ * is still allowed, so a renewal in progress is never blocked. Returns null when allowed.
+ */
+function refuseIfNotEntitled(c: Context, tenant: Tenant): Response | null {
+  const capability = customDomainCapability(tenant);
+  if (capability.allowed) return null;
+
+  if (capability.state === 'none') {
+    return c.json({ error: 'Custom domains require Pro plan' }, 402);
+  }
+  return c.json(
+    {
+      error: 'Custom domains require an active subscription',
+      subscriptionStatus: tenant.subscriptionStatus,
+      customDomainCapability: capability.state,
+    },
+    402
+  );
+}
+
 // Validation schemas
 const addDomainSchema = z.object({
   domain: z.string()
@@ -67,10 +92,9 @@ domainRoutes.post('/', authMiddleware, zValidator('json', addDomainSchema), asyn
   if (!tenant) return response;
   const username = tenant.username;
 
-  // Check if Pro plan
-  if (tenant.subscriptionPlan !== 'pro') {
-    return c.json({ error: 'Custom domains require Pro plan' }, 402);
-  }
+  // Pro plan AND a subscription that is paid for (or inside the grace window after expiry).
+  const refusal = refuseIfNotEntitled(c, tenant);
+  if (refusal) return refusal;
 
   // Occupancy covers unverified reservations too: the column is UNIQUE either
   // way, so an unverified row still blocks everyone else.
@@ -130,6 +154,12 @@ domainRoutes.post('/verify', authMiddleware, async (c) => {
   const { tenant, actor, response } = await resolveOwnedTenant(c);
   if (!tenant) return response;
   const username = tenant.username;
+
+  // Verification had no plan or status gate at all, so a lapsed tenant could still turn an
+  // unverified claim into a verified one, which is what puts the domain into the served set and
+  // the first-party CORS allowlist.
+  const refusal = refuseIfNotEntitled(c, tenant);
+  if (refusal) return refusal;
 
   if (!tenant.customDomain) {
     return c.json({ error: 'No custom domain configured' }, 400);

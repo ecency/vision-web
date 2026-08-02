@@ -15,6 +15,7 @@ import {
 import { mapTenantFromDb } from '../types';
 import { PAYMENT_ACCOUNT, MONTHLY_PRICE_HBD, PRO_UPGRADE_PRICE_HBD, hbd } from '../pricing';
 import { ConfigService, isPublishableTenant } from '../services/config-service';
+import { customDomainCapability } from '../services/subscription';
 import { authMiddleware } from '../middleware/auth';
 import { subscriptionPaywall, proUpgradePaywall } from '../middleware/x402-paywall';
 import { withPaymentTargetLock } from '../middleware/payment-target-lock';
@@ -621,6 +622,10 @@ tenantRoutes.get('/:username/status', async (c) => {
   const expiresAt = tenant.subscriptionExpiresAt ? new Date(tenant.subscriptionExpiresAt) : null;
   const daysRemaining = expiresAt ? Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : null;
 
+  // Whether custom domains still work, and until when if the subscription has lapsed. Without
+  // this the owner's only signal is an attach or verify call failing.
+  const capability = customDomainCapability(tenant, now);
+
   return c.json({
     exists: true,
     subscriptionStatus: tenant.subscriptionStatus,
@@ -628,6 +633,8 @@ tenantRoutes.get('/:username/status', async (c) => {
     daysRemaining,
     customDomain: tenant.customDomain,
     customDomainVerified: tenant.customDomainVerified,
+    customDomainCapability: capability.state,
+    customDomainGraceEndsAt: capability.graceEndsAt,
     blogUrl: TenantService.getBlogUrl(tenant),
   });
 });
