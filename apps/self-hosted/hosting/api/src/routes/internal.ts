@@ -6,6 +6,7 @@
  */
 
 import { Hono, type Context } from 'hono';
+import { timingSafeEqual } from 'node:crypto';
 import { db } from '../db/client';
 import {
   TenantService,
@@ -48,15 +49,33 @@ function auditInternal(
   });
 }
 
-// Constant-time check of the shared service-to-service secret (ePoints -> hosting).
-// Fails CLOSED when the secret is unset, so a misconfigured deploy cannot activate blogs.
-export function internalSecretOk(provided: string | undefined): boolean {
+/**
+ * These routes activate subscriptions, attach custom domains and grant free Pro
+ * terms, and the shared secret is the only thing in front of them. JWT_SECRET is
+ * already floored at 32 characters; this one had no requirement at all, so a
+ * short operator-chosen value was accepted.
+ */
+export const MIN_INTERNAL_SECRET_LENGTH = 32;
+
+/** The configured secret, or null when it is absent or too weak to accept. */
+export function internalSecret(): string | null {
   const secret = process.env.HOSTING_INTERNAL_SECRET || '';
-  const given = provided || '';
+  return secret.length >= MIN_INTERNAL_SECRET_LENGTH ? secret : null;
+}
+
+// Constant-time check of the shared service-to-service secret (ePoints -> hosting).
+// Fails CLOSED when the secret is unset OR too short, so neither a missing value nor a
+// weak one can activate blogs. Rejecting the call rather than refusing to boot keeps an
+// otherwise healthy deploy serving the rest of its routes; the startup log distinguishes
+// "not configured" from "configured too weakly", which look identical from outside.
+export function internalSecretOk(provided: string | undefined): boolean {
+  const secret = Buffer.from(internalSecret() ?? '');
+  const given = Buffer.from(provided || '');
+  // Compared on BYTE length, not string length: timingSafeEqual throws on a
+  // mismatch, and two strings of equal length can encode to different byte
+  // counts, which would turn a rejected secret into a 500.
   if (secret.length === 0 || given.length !== secret.length) return false;
-  let diff = 0;
-  for (let i = 0; i < secret.length; i++) diff |= given.charCodeAt(i) ^ secret.charCodeAt(i);
-  return diff === 0;
+  return timingSafeEqual(given, secret);
 }
 
 // POST /v1/internal/activate - service-to-service activation (NOT public).

@@ -12,7 +12,7 @@ import { tenantRoutes } from './routes/tenants';
 import { domainRoutes } from './routes/domains';
 import { paymentRoutes } from './routes/payments';
 import { authRoutes } from './routes/auth';
-import { internalRoutes } from './routes/internal';
+import { internalRoutes, internalSecret, MIN_INTERNAL_SECRET_LENGTH } from './routes/internal';
 import { rateLimit } from './middleware/rate-limit';
 import { db } from './db/client';
 import { TenantService } from './services/tenant-service';
@@ -55,15 +55,20 @@ app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOStri
 // Per-IP rate limiting. A general budget on all public routes caps the unauthenticated
 // tenant-creation + RPC-amplification abuse; a tighter budget on /v1/auth throttles the
 // challenge/verify/hivesigner endpoints, which each spend an RPC or external call per hit.
-// The shared-secret /v1/internal routes (called by ePoints, not end users) are NOT IP-limited.
+// /v1/internal is reachable from the public internet and its only gate is a shared secret,
+// so it gets a budget too: generous enough that ePoints' fulfillment never notices, tight
+// enough that the secret cannot be guessed online and that each attempt cannot keep opening
+// a database transaction.
 const generalLimit = rateLimit({ name: 'api', limit: 180, windowMs: 60_000 });
 const authLimit = rateLimit({ name: 'auth', limit: 30, windowMs: 60_000 });
+const internalLimit = rateLimit({ name: 'internal', limit: 600, windowMs: 60_000 });
 app.use('/v1/tenants/*', generalLimit);
 app.use('/v1/tenants', generalLimit);
 app.use('/v1/domains/*', generalLimit);
 app.use('/v1/payments/*', generalLimit);
 app.use('/v1/auth/*', generalLimit);
 app.use('/v1/auth/*', authLimit);
+app.use('/v1/internal/*', internalLimit);
 
 // API Routes
 app.route('/v1/tenants', tenantRoutes);
@@ -107,6 +112,19 @@ async function syncTenantConfigs(): Promise<void> {
   } finally {
     configSyncRunning = false;
   }
+}
+
+// Say once, at boot, what state the internal shared secret is in. Without this the two
+// misconfigurations are indistinguishable in production: both simply reject every call,
+// one because the operator meant to disable card activation and one because the value
+// they chose is too weak to accept.
+if (!process.env.HOSTING_INTERNAL_SECRET) {
+  console.log('[Startup] HOSTING_INTERNAL_SECRET is not set; /v1/internal is disabled');
+} else if (!internalSecret()) {
+  console.error(
+    `[Startup] HOSTING_INTERNAL_SECRET is shorter than ${MIN_INTERNAL_SECRET_LENGTH} characters` +
+      ' and will be refused; /v1/internal is disabled until it is replaced'
+  );
 }
 
 // Warm request-critical state BEFORE accepting traffic, bounded so a slow or down DB

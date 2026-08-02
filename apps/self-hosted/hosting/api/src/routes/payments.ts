@@ -3,6 +3,7 @@
  */
 
 import { Hono } from 'hono';
+import { internalSecret } from './internal';
 import { db } from '../db/client';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { TenantService } from '../services/tenant-service';
@@ -24,9 +25,11 @@ paymentRoutes.get('/methods', async (c) => {
   const facilitator = process.env.X402_FACILITATOR_URL || '';
   // Card requires the internal secret (ePoints -> hosting activation). Without it, a paid
   // card order can only get a 403 from /v1/internal/activate, so never advertise the option.
+  // Asked through internalSecret() rather than by re-testing the variable, so that a secret
+  // the activation endpoint refuses is also one the signup UI does not offer: a value that
+  // is present but too weak would otherwise take the payment and fail the fulfilment.
   const cardEnabled =
-    (process.env.HOSTING_CARD_ENABLED || 'true') === 'true' &&
-    (process.env.HOSTING_INTERNAL_SECRET || '').length > 0;
+    (process.env.HOSTING_CARD_ENABLED || 'true') === 'true' && internalSecret() !== null;
   return c.json({
     hbd: {
       enabled: true,
