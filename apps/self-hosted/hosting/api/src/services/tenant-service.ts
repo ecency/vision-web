@@ -13,6 +13,16 @@ export type { Tenant } from '../types';
 hiveTxConfig.nodes = process.env.HIVE_API_URL?.split(',') || ['https://api.hive.blog'];
 const baseDomain = process.env.BASE_DOMAIN || 'blogs.ecency.com';
 
+// Roles that may claim a community's hosted instance. Mods moderate content but
+// do not control the community's identity, so they are deliberately excluded.
+/**
+ * Hive names a community account hive-NNNN. Shared so every path that can bring
+ * a tenant into existence recognises a community claim the same way.
+ */
+export const COMMUNITY_NAME = /^hive-\d+$/;
+
+const CONTROLLING_COMMUNITY_ROLES = new Set(['owner', 'admin']);
+
 // Quiet period after the sweep marks a username 'abandoned' before it can be reserved again. It is
 // a backstop; three enforced guarantees keep a paid-for reservation out of a re-registration:
 //   1. create() refreshes the grace clock on every checkout re-entry, so an actively-paid
@@ -559,11 +569,36 @@ export const TenantService = {
   /**
    * Verify a Hive community exists (not merely an account named hive-NNNNN).
    */
-  async verifyCommunity(communityId: string): Promise<boolean> {
+  /**
+   * A community instance may only be claimed by an account that controls the
+   * community on chain. Verifying that the community merely exists would let
+   * any account pay for, and permanently hold, the instance of a community it
+   * has no part in: every later mutation authorises against tenants.owner, so
+   * the real team could never take it back.
+   *
+   * `team` carries [account, role, title] tuples for the community's owner,
+   * admins and mods. Only owner and admin are accepted, matching who can change
+   * the community's own settings on chain.
+   */
+  async verifyCommunityControlledBy(communityId: string, account: string): Promise<boolean> {
     try {
       const community = await callRPC('bridge.get_community', { name: communityId, observer: '' }) as any;
-      return !!community && community.name === communityId;
+      if (!community || community.name !== communityId) return false;
+
+      const team = community.team;
+      if (!Array.isArray(team)) return false;
+
+      const claimant = account.toLowerCase();
+      return team.some(
+        (member: unknown) =>
+          Array.isArray(member) &&
+          typeof member[0] === 'string' &&
+          member[0].toLowerCase() === claimant &&
+          typeof member[1] === 'string' &&
+          CONTROLLING_COMMUNITY_ROLES.has(member[1].toLowerCase())
+      );
     } catch {
+      // Fail closed: an RPC failure must not hand out a community instance.
       return false;
     }
   },

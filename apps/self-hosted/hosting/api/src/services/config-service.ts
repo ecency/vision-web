@@ -43,6 +43,19 @@ export function withTenantWriteLock<T>(username: string, fn: () => Promise<T>): 
   return run;
 }
 
+/**
+ * Whether a tenant's config may be published to the served directory.
+ *
+ * nginx serves any file that exists with no subscription check, so publishing
+ * for a tenant that has never paid puts a free blog live until the next sweep
+ * removes it. syncAllConfigs writes only for 'active'; every other publication
+ * path has to agree with it, which is why this predicate is shared rather than
+ * repeated.
+ */
+export function isPublishableTenant(tenant: Pick<Tenant, 'subscriptionStatus'>): boolean {
+  return tenant.subscriptionStatus === 'active';
+}
+
 export const ConfigService = {
   /**
    * Generate config file for a tenant. Writes are serialized per tenant (see
@@ -234,7 +247,7 @@ export const ConfigService = {
         // that window). The unlocked writer is used because the lock is not reentrant.
         await withTenantWriteLock(tenant.username, async () => {
           const fresh = await TenantService.getByUsername(tenant.username);
-          if (!fresh || fresh.subscriptionStatus !== 'active') return;
+          if (!fresh || !isPublishableTenant(fresh)) return;
           await this.writeConfigFile(fresh);
         });
       } catch (err) {
