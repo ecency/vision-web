@@ -103,13 +103,15 @@ export async function withAdvisoryLock<T>(
   try {
     return await fn();
   } finally {
+    let stillLocked = false;
     try {
       await client.query('SELECT pg_advisory_unlock($1, $2)', [namespace, key]);
     } catch (error) {
-      // The lock is session scoped, so destroying the client below drops it.
+      // The unlock did not run, so this session may still hold the lock.
+      stillLocked = true;
       console.error('[Db] Failed to release advisory lock:', (error as Error).message);
     }
-    releaseLockClient(client);
+    releaseLockClient(client, stillLocked);
   }
 }
 
@@ -121,7 +123,17 @@ export async function withAdvisoryLock<T>(
  * queries. If the reset itself fails the connection is destroyed instead, since
  * a session whose state cannot be established must not be reused.
  */
-function releaseLockClient(client: pg.PoolClient): void {
+function releaseLockClient(client: pg.PoolClient, stillLocked = false): void {
+  if (stillLocked) {
+    // Advisory locks live for the session, so returning this connection to the
+    // pool would keep the lock held for the life of the connection and block
+    // every later writer for that tenant. Destroy it instead: ending the
+    // backend session is what actually drops the lock.
+    console.error('[Db] Discarding lock client that may still hold its advisory lock');
+    client.release(true);
+    return;
+  }
+
   client
     .query('RESET lock_timeout')
     .then(() => client.release())

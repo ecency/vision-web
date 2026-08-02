@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'fs';
+import { existsSync, mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -96,10 +96,40 @@ describe('publishConfigFile', () => {
   });
 
   it('publishes nothing when the tenant is gone or not serving', async () => {
-    mocks.getByUsername.mockResolvedValue(null);
-    await expect(ConfigService.publishConfigFile('alice')).resolves.toBeUndefined();
+    // Asserting the resolved value proves nothing: publishConfigFile returns
+    // Promise<void>, so it resolves to undefined on the writing path too. The
+    // absence of the served file is the thing that matters, because nginx
+    // serves any file that exists with no subscription check.
+    // A name no other test in this file publishes, so a file here can only
+    // have come from this call.
+    const served = path.join(process.env.CONFIG_DIR as string, 'carol.json');
+    const meta = path.join(process.env.CONFIG_DIR as string, 'carol.meta.html');
 
-    mocks.getByUsername.mockResolvedValue(tenant('T', 'inactive'));
-    await expect(ConfigService.publishConfigFile('alice')).resolves.toBeUndefined();
+    mocks.getByUsername.mockResolvedValue(null);
+    await ConfigService.publishConfigFile('carol');
+    expect(existsSync(served)).toBe(false);
+    expect(existsSync(meta)).toBe(false);
+
+    mocks.getByUsername.mockResolvedValue({
+      ...(tenant('T', 'inactive') as unknown as Record<string, unknown>),
+      username: 'carol',
+    } as never);
+    await ConfigService.publishConfigFile('carol');
+    expect(existsSync(served)).toBe(false);
+    expect(existsSync(meta)).toBe(false);
+  });
+
+  it('does write the served file for an active tenant', async () => {
+    // The counterpart, so the assertion above cannot pass simply because
+    // nothing in this suite ever writes.
+    const served = path.join(process.env.CONFIG_DIR as string, 'bob.json');
+    mocks.getByUsername.mockResolvedValue({
+      ...(tenant('Live') as unknown as Record<string, unknown>),
+      username: 'bob',
+    } as never);
+
+    await ConfigService.publishConfigFile('bob');
+
+    expect(existsSync(served)).toBe(true);
   });
 });

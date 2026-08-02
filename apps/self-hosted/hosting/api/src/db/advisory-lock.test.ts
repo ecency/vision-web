@@ -87,6 +87,21 @@ describe('withAdvisoryLock client handling', () => {
     expect(c.release).toHaveBeenCalledWith(true);
   });
 
+  it('destroys the client when the advisory lock cannot be released', async () => {
+    // Advisory locks are session scoped: handing this connection back to the
+    // pool would keep the lock held for the life of the connection and block
+    // every later writer for that tenant.
+    const c = client('pg_advisory_unlock');
+    mocks.connect.mockResolvedValue(c);
+
+    await withAdvisoryLock(1, 2, async () => 'ok');
+    await flush();
+
+    expect(c.release).toHaveBeenCalledWith(true);
+    // The reset is pointless on a connection being destroyed.
+    expect(c.queries).not.toContain('RESET lock_timeout');
+  });
+
   it('releases the client even when the work throws', async () => {
     const c = client();
     mocks.connect.mockResolvedValue(c);
