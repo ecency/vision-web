@@ -6,6 +6,7 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
+import { withAdvisoryLock } from '../db/client';
 import { TenantService, type Tenant } from './tenant-service';
 
 const CONFIG_DIR = process.env.CONFIG_DIR || '/app/configs';
@@ -29,10 +30,30 @@ const writeChains = new Map<string, Promise<void>>();
  * Serialize an async operation per tenant. The next operation runs regardless of whether
  * the previous one failed; the caller still sees its own operation's result or error.
  */
+// Advisory lock coordinates: a fixed namespace plus a stable hash of the tenant,
+// so both containers derive the same lock for the same tenant without depending
+// on a Postgres internal like hashtext().
+const CONFIG_LOCK_NAMESPACE = 0x6563;
+
+function tenantLockKey(username: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < username.length; i++) {
+    hash ^= username.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash | 0;
+}
+
 export function withTenantWriteLock<T>(username: string, fn: () => Promise<T>): Promise<T> {
   const key = username.toLowerCase();
+  // The in-process chain orders this process's own writes; the advisory lock
+  // orders them against the other container. Both are needed: the chain alone
+  // cannot see across processes, and taking only the advisory lock would let
+  // two writes from THIS process interleave while one waits on the database.
+  const guarded = () =>
+    withAdvisoryLock(CONFIG_LOCK_NAMESPACE, tenantLockKey(key), fn);
   const prev = writeChains.get(key) ?? Promise.resolve();
-  const run = prev.then(fn, fn);
+  const run = prev.then(guarded, guarded);
   writeChains.set(
     key,
     run.then(
@@ -218,6 +239,22 @@ export const ConfigService = {
   /**
    * Sync all tenant configs to disk
    */
+  /**
+   * Publish a tenant's served config from the row as it stands INSIDE the lock.
+   *
+   * Callers that hold a tenant object read it before doing other work, so
+   * publishing that snapshot can overwrite a newer config another process
+   * committed in between. Re-reading under the lock removes the window instead
+   * of narrowing it.
+   */
+  async publishConfigFile(username: string): Promise<void> {
+    return withTenantWriteLock(username, async () => {
+      const fresh = await TenantService.getByUsername(username);
+      if (!fresh || fresh.subscriptionStatus !== 'active') return;
+      await this.writeConfigFile(fresh);
+    });
+  },
+
   async syncAllConfigs(activeTenants: Tenant[]): Promise<void> {
     console.log('[ConfigService] Syncing', activeTenants.length, 'active configs to disk...');
 

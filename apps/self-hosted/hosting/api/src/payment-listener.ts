@@ -400,16 +400,12 @@ export class PaymentListener {
       // (which regenerates every active tenant), so log and move on.
       if (updatedTenant) {
         try {
-          // Re-read rather than publishing the snapshot this transaction returned.
-          // The API and this listener are separate processes, so the per-tenant
-          // write lock in config-service cannot serialize them: an owner who
-          // edits their config while the payment is being processed would
-          // otherwise have that edit overwritten by a tenant row read before it
-          // was saved. Reading at write time keeps the published file from
-          // rolling back to a version older than what is committed.
-          const current =
-            (await TenantService.getByUsername(username)) ?? updatedTenant;
-          await ConfigService.generateConfigFile(current);
+          // Publishes from the row as it stands inside the write lock, which is
+          // now a cross-process advisory lock. Passing the snapshot this
+          // transaction returned, or even re-reading just before the call,
+          // leaves a window where the API can commit and publish an owner's
+          // newer config and have this write roll it back.
+          await ConfigService.publishConfigFile(username);
         } catch (err) {
           console.error(
             `[PaymentListener] Config generation failed post-commit for ${username} (periodic sync will retry):`,
