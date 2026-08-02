@@ -128,8 +128,10 @@
   border: 1px solid var(--theme-glass-border);
 }
 
-[data-style-template="modern-gradient"] .theme-tag {
-  background: var(--theme-tag-bg);
+/* `.tag-theme` is the class the chips actually carry; `.theme-tag` matched
+   nothing, so this rule never applied. The gradient background now comes from
+   the shared .tag-theme rule; only the border is specific to this template. */
+[data-style-template="modern-gradient"] .tag-theme {
   border: 1px solid var(--theme-border);
 }
 
