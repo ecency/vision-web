@@ -92,11 +92,20 @@ export function getPostsRankedInfiniteQueryOptions(
       hasNextPage: true,
     } as PageParam,
     getNextPageParam: (lastPage: Entry[]) => {
+      // React Query reads "there is no next page" from undefined alone, so
+      // returning an object here always left hasNextPage true. An infinite list
+      // then keeps calling fetchNextPage at the end of the feed, appending an
+      // empty page each time: the query state churns and the cache grows for as
+      // long as the reader sits at the bottom.
       const last = lastPage?.[lastPage.length - 1];
+      if (!last) {
+        return undefined;
+      }
+
       return {
-        author: last?.author,
-        permlink: last?.permlink,
-        hasNextPage: (lastPage?.length ?? 0) > 0,
+        author: last.author,
+        permlink: last.permlink,
+        hasNextPage: true,
       };
     },
   });
