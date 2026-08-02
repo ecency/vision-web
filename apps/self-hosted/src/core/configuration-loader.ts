@@ -15,6 +15,25 @@ import {
 
 // Build-time config import (fallback)
 import buildTimeConfig from '../../config.json';
+import { mergeConfig } from './merge-config';
+
+/**
+ * The nested sections applyConfig and the feature hooks dereference. Values are
+ * deliberately absent: every consumer already supplies its own default (?? or
+ * ||), so the skeleton only has to guarantee the objects exist. Anything given a
+ * value here would silently become that consumer's default instead.
+ */
+const CONFIG_SKELETON = {
+  version: 1,
+  configuration: {
+    general: { styles: {} },
+    instanceConfiguration: {
+      meta: {},
+      layout: { sidebar: {} },
+      features: {},
+    },
+  },
+} as const;
 
 // =============================================================================
 // Configuration Types
@@ -145,7 +164,20 @@ class ConfigStore {
 
       // Validate basic structure
       if (runtimeConfig?.version && runtimeConfig?.configuration) {
-        this.config = runtimeConfig as InstanceConfig;
+        // Merged over a structural skeleton, NOT over the build-time config.
+        //
+        // The merge exists so a served config that omits a nested section
+        // cannot leave those paths undefined for the consumers that read them.
+        // It must supply shape only. Merging the build-time config would supply
+        // CONTENT: the image published without a baked config falls back to
+        // config.template.json, a demo document, so an omitted meta.logo would
+        // make the blog hotlink the template's placeholder URL, and an omitted
+        // username would resolve the ownership gate in auth-provider
+        // (owner || username) to the template's account.
+        this.config = mergeConfig(
+          CONFIG_SKELETON as InstanceConfig,
+          runtimeConfig as InstanceConfig,
+        );
         this.notifyListeners();
         console.debug('[Config] Loaded runtime config v' + runtimeConfig.version);
       }

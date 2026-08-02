@@ -7,7 +7,7 @@ import { InstanceConfigManager } from '@/core';
 export function getConfiguredPostsFilters(): string[] {
   const filters = InstanceConfigManager.getConfigValue(
     ({ configuration }) =>
-      configuration.instanceConfiguration.features.postsFilters,
+      configuration.instanceConfiguration?.features?.postsFilters,
   );
   // Self-hosted config.json is hand-edited: a scalar like "trending" would
   // otherwise pass a truthy length check and index to its first CHARACTER.

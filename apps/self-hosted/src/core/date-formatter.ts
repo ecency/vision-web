@@ -20,8 +20,11 @@ import {
 import { toZonedTime } from 'date-fns-tz';
 import { InstanceConfigManager } from './configuration-loader';
 
-// Map language codes to date-fns locales
-const localeMap: Record<string, Locale> = {
+// Map language codes to date-fns locales.
+// Null-prototype on purpose: the language comes from owner-editable config, and
+// a plain literal would resolve a value like 'constructor' to an inherited
+// member instead of falling back to the default locale.
+const localeMap: Record<string, Locale> = Object.assign(Object.create(null), {
   en: enUS,
   es: es,
   de: de,
@@ -37,7 +40,7 @@ const localeMap: Record<string, Locale> = {
   uk: uk,
   vi: vi,
   id: id,
-};
+});
 
 // Convert config format patterns to date-fns format patterns
 // Config uses common patterns like YYYY-MM-DD, date-fns uses yyyy-MM-dd
@@ -80,38 +83,89 @@ function isValidDate(d: Date): boolean {
   return !Number.isNaN(d.getTime());
 }
 
+/**
+ * date-fns throws on an unknown time zone, and the value comes from a free text
+ * config field, so "UTC+3" (not an IANA zone) would otherwise take down every
+ * page that renders a date.
+ */
+function toZoned(date: Date, timezone: string): Date {
+  const zoned = toZonedTime(date, timezone);
+  return isValidDate(zoned) ? zoned : date;
+}
+
+/**
+ * date-fns throws a RangeError on any unescaped latin character that is not a
+ * token, which includes common Moment style patterns such as "hh:mm A". The
+ * pattern is owner-typed, so one typo would blank the whole blog rather than a
+ * single timestamp.
+ */
+function safeFormat(date: Date, pattern: string, fallback: string): string {
+  // getLocale() reads the config and is inside the try on purpose: a general
+  // section that is missing or not an object is exactly the shape this guard
+  // exists to survive, and reading it above the try would throw past it.
+  try {
+    return format(date, pattern, { locale: getLocale() });
+  } catch {
+    try {
+      return format(date, fallback, { locale: getLocale() });
+    } catch {
+      try {
+        return format(date, fallback);
+      } catch {
+        return '';
+      }
+    }
+  }
+}
+
+/**
+ * These come from free-text config fields, so a value can be any JSON type.
+ * Falling back only on falsiness let a number or an object through to
+ * convertFormatPattern, whose .replace() then threw a TypeError outside
+ * safeFormat's try - the same blank-page failure this guarding exists to stop,
+ * for the wrong-type case rather than the missing-value one.
+ */
+function configString(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() !== '' ? value : fallback;
+}
+
 function getLocale(): Locale {
   const language = InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.general.language,
+    ({ configuration }) => configuration.general?.language,
   );
   return localeMap[language] || enUS;
 }
 
 function getTimezone(): string {
-  return InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.general.timezone || 'UTC',
+  return configString(
+    InstanceConfigManager.getConfigValue(
+      ({ configuration }) => configuration.general?.timezone,
+    ),
+    'UTC',
   );
 }
 
 function getDateFormat(): string {
   const configFormat = InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.general.dateFormat,
+    ({ configuration }) => configuration.general?.dateFormat,
   );
-  return convertFormatPattern(configFormat || 'yyyy-MM-dd');
+  return convertFormatPattern(configString(configFormat, 'yyyy-MM-dd'));
 }
 
 function getTimeFormat(): string {
   const configFormat = InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.general.timeFormat,
+    ({ configuration }) => configuration.general?.timeFormat,
   );
-  return convertFormatPattern(configFormat || 'HH:mm:ss');
+  return convertFormatPattern(configString(configFormat, 'HH:mm:ss'));
 }
 
 function getDateTimeFormat(): string {
   const configFormat = InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.general.dateTimeFormat,
+    ({ configuration }) => configuration.general?.dateTimeFormat,
   );
-  return convertFormatPattern(configFormat || 'yyyy-MM-dd HH:mm:ss');
+  return convertFormatPattern(
+    configString(configFormat, 'yyyy-MM-dd HH:mm:ss'),
+  );
 }
 
 /**
@@ -120,8 +174,8 @@ function getDateTimeFormat(): string {
 export function formatDate(date: Date | string | number): string {
   const utcDate = parseHiveDate(date);
   if (!isValidDate(utcDate)) return '';
-  const zonedDate = toZonedTime(utcDate, getTimezone());
-  return format(zonedDate, getDateFormat(), { locale: getLocale() });
+  const zonedDate = toZoned(utcDate, getTimezone());
+  return safeFormat(zonedDate, getDateFormat(), 'yyyy-MM-dd');
 }
 
 /**
@@ -130,8 +184,8 @@ export function formatDate(date: Date | string | number): string {
 export function formatTime(date: Date | string | number): string {
   const utcDate = parseHiveDate(date);
   if (!isValidDate(utcDate)) return '';
-  const zonedDate = toZonedTime(utcDate, getTimezone());
-  return format(zonedDate, getTimeFormat(), { locale: getLocale() });
+  const zonedDate = toZoned(utcDate, getTimezone());
+  return safeFormat(zonedDate, getTimeFormat(), 'HH:mm:ss');
 }
 
 /**
@@ -140,8 +194,8 @@ export function formatTime(date: Date | string | number): string {
 export function formatDateTime(date: Date | string | number): string {
   const utcDate = parseHiveDate(date);
   if (!isValidDate(utcDate)) return '';
-  const zonedDate = toZonedTime(utcDate, getTimezone());
-  return format(zonedDate, getDateTimeFormat(), { locale: getLocale() });
+  const zonedDate = toZoned(utcDate, getTimezone());
+  return safeFormat(zonedDate, getDateTimeFormat(), 'yyyy-MM-dd HH:mm:ss');
 }
 
 /**
@@ -152,8 +206,16 @@ export function formatRelativeTime(date: Date | string | number): string {
   const utcDate = parseHiveDate(date);
   if (!isValidDate(utcDate)) return '';
   // formatDistanceToNow compares UTC timestamps internally, so we just need
-  // to ensure the input date is parsed as UTC (which parseHiveDate does)
-  return formatDistanceToNow(utcDate, { addSuffix: true, locale: getLocale() });
+  // to ensure the input date is parsed as UTC (which parseHiveDate does).
+  // Guarded like the others: getLocale() reads owner-controlled config.
+  try {
+    return formatDistanceToNow(utcDate, {
+      addSuffix: true,
+      locale: getLocale(),
+    });
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -163,9 +225,14 @@ export function formatRelativeDate(date: Date | string | number): string {
   const utcDate = parseHiveDate(date);
   if (!isValidDate(utcDate)) return '';
   const timezone = getTimezone();
-  const zonedDate = toZonedTime(utcDate, timezone);
-  const zonedNow = toZonedTime(new Date(), timezone);
-  return formatRelative(zonedDate, zonedNow, { locale: getLocale() });
+  const zonedDate = toZoned(utcDate, timezone);
+  const zonedNow = toZoned(new Date(), timezone);
+
+  try {
+    return formatRelative(zonedDate, zonedNow, { locale: getLocale() });
+  } catch {
+    return zonedDate.toISOString();
+  }
 }
 
 /**
@@ -173,8 +240,9 @@ export function formatRelativeDate(date: Date | string | number): string {
  */
 export function formatMonthYear(date: Date | string | number): string {
   const utcDate = parseHiveDate(date);
-  const zonedDate = toZonedTime(utcDate, getTimezone());
-  return format(zonedDate, 'MMMM yyyy', { locale: getLocale() });
+  if (!isValidDate(utcDate)) return '';
+  const zonedDate = toZoned(utcDate, getTimezone());
+  return safeFormat(zonedDate, 'MMMM yyyy', 'MMMM yyyy');
 }
 
 /**
@@ -185,8 +253,11 @@ export function formatCustom(
   formatStr: string,
 ): string {
   const utcDate = parseHiveDate(date);
-  const zonedDate = toZonedTime(utcDate, getTimezone());
-  return format(zonedDate, convertFormatPattern(formatStr), {
-    locale: getLocale(),
-  });
+  if (!isValidDate(utcDate)) return '';
+  const zonedDate = toZoned(utcDate, getTimezone());
+  return safeFormat(
+    zonedDate,
+    convertFormatPattern(configString(formatStr, 'yyyy-MM-dd HH:mm:ss')),
+    'yyyy-MM-dd HH:mm:ss',
+  );
 }

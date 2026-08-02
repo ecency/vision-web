@@ -8,6 +8,7 @@ import { InstanceConfigManager, t } from '@/core';
 import { getRssFeedUrl } from '@/utils/rss-feed-url';
 import { UserMenu, CreatePostButton } from '@/features/auth';
 import { useInstanceConfig, useCommunityData } from '../hooks/use-instance-config';
+import { getConfiguredPostsFilters } from '../utils/post-filters';
 import { SearchInput } from '../components/search-input';
 
 export function BlogNavigation() {
@@ -15,10 +16,10 @@ export function BlogNavigation() {
   const { isCommunityMode } = useInstanceConfig();
   const { data: community } = useCommunityData();
 
-  const availableFilters = InstanceConfigManager.getConfigValue(
-    ({ configuration }) =>
-      configuration.instanceConfiguration.features.postsFilters || ['posts'],
-  );
+  // getConfiguredPostsFilters validates the shape. Reading the raw value here
+  // would re-open the crash it exists to prevent: a scalar is truthy, so
+  // availableFilters.map below would throw and take the whole layout with it.
+  const availableFilters = getConfiguredPostsFilters();
 
   const currentFilter = useMemo(() => {
     // Default to the first configured filter
