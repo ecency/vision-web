@@ -2,12 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { t } from '@/core';
 import { saveUser } from '@/features/auth/storage';
-import type { AuthUser } from '@/features/auth/types';
-import {
-  consumeHivesignerState,
-  parseHivesignerCallback,
-  verifyHivesignerToken,
-} from '@/features/auth/utils/hivesigner';
+import { completeHivesignerCallback } from '@/features/auth/utils/hivesigner-callback';
 import { useAuthStore } from '@/store';
 
 export const Route = createFileRoute('/auth')({
@@ -35,49 +30,19 @@ function RouteComponent() {
   useEffect(() => {
     let cancelled = false;
 
-    async function completeLogin() {
-      const search = window.location.search;
-      const params = new URLSearchParams(search);
-      const callback = parseHivesignerCallback(search);
-
-      // Consumed unconditionally so a failed attempt cannot be replayed.
-      const stateOk = consumeHivesignerState(params.get('state'));
-
-      if (!callback) {
-        setError(t('hivesigner_login_failed'));
-        return;
-      }
-      if (!stateOk) {
-        // The login did not start in this tab, so the token is unsolicited.
-        setError(t('hivesigner_login_failed'));
-        return;
-      }
-
-      const verified = await verifyHivesignerToken(
-        callback.accessToken,
-        callback.username,
-      );
+    completeHivesignerCallback().then((outcome) => {
       if (cancelled) return;
-      if (!verified) {
+
+      if (!outcome.ok) {
         setError(t('hivesigner_login_failed'));
         return;
       }
 
-      const user: AuthUser = {
-        username: callback.username,
-        accessToken: callback.accessToken,
-        loginType: 'hivesigner',
-        expiresAt: Date.now() + callback.expiresIn * 1000,
-      };
-      setUser(user);
-      saveUser(user);
-
-      // Drop the credential from the address bar before leaving this page.
-      window.history.replaceState({}, '', window.location.pathname);
+      setUser(outcome.user);
+      saveUser(outcome.user);
       navigate({ to: '/blog', search: { filter: 'posts' } });
-    }
+    });
 
-    completeLogin();
     return () => {
       cancelled = true;
     };
