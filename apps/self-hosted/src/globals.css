@@ -88,10 +88,24 @@ button {
 
 /* Mobile responsiveness improvements */
 
-/* Prevent horizontal scroll */
+/*
+ * Prevent horizontal scroll.
+ *
+ * `clip`, not `hidden`. `overflow-x: hidden` makes the element a scroll
+ * container on BOTH axes (the other axis computes to auto), so body became the
+ * nearest scrollport for everything inside it. body's height is content-driven
+ * and never scrolls, so the sidebar's `lg:sticky` had a scrollport that could
+ * not scroll and it simply never stuck. `clip` still clips the overflow, but
+ * does not create a scroll container, so sticky resolves against the viewport
+ * again. It is the only overflow value that pairs with `visible` on the other
+ * axis instead of forcing it to auto.
+ *
+ * The clipping itself is still doing work: post bodies carry author-authored
+ * media and markup that can be wider than the column.
+ */
 html,
 body {
-  overflow-x: hidden;
+  overflow-x: clip;
   max-width: 100vw;
 }
 
