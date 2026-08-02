@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { isExternalWalletAsset } from "../types";
 import { TippingCurrencyCards } from "./tipping-currency-cards";
 import { TippingWalletQr } from "./tipping-wallet-qr";
+import { getTipSubmitLabelKey } from "../utils/tip-submit-label";
 import { useAuth } from "@/features/auth";
 
 interface TippingStepCurrencyProps {
@@ -114,8 +115,7 @@ export function TippingStepCurrency({
             className="px-3 py-2 rounded-md border border-theme text-theme-contrast text-sm hover:bg-theme-tertiary disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={onSubmit}
           >
-            {!user?.username && t("tip_login_to_send")}
-            {user?.username && loading ? t("tip_sending") : t("tip_send")}
+            {t(getTipSubmitLabelKey(user?.username, loading))}
           </button>
         )}
       </div>
