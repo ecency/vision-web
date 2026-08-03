@@ -83,7 +83,14 @@ describe('getPostsRankedInfiniteQueryOptions', () => {
     mockCallRPC.mockResolvedValue(mockEntries)
 
     const options = getPostsRankedInfiniteQueryOptions('created', 'hive')
-    const result = await (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+    const page = await (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+
+    // The query function keeps the bridge's order, because the pagination
+    // cursor is read from the page it returns.
+    expect(page.map((e: any) => e.permlink)).toEqual(['oldest', 'pinned', 'newest'])
+
+    // Display order is applied in select, after pagination.
+    const result = (options.select as any)({ pages: [page], pageParams: [] }).pages[0]
 
     expect(result).toHaveLength(3)
     // Pinned entry should be first regardless of date
@@ -172,5 +179,66 @@ describe('getPostsRankedQueryOptions', () => {
 
     const options = getPostsRankedQueryOptions('created')
     await expect((options.queryFn as any)()).rejects.toThrow('timeout')
+  })
+
+  /**
+   * React Query reads "there is no next page" from undefined alone. Returning an
+   * object unconditionally left hasNextPage true forever, so an infinite list
+   * kept calling fetchNextPage at the end of the feed and appended an empty page
+   * each time, churning query state and growing the cache while the reader sat
+   * at the bottom.
+   */
+  describe('pagination termination', () => {
+    it('stops when a page comes back empty', () => {
+      const options = getPostsRankedInfiniteQueryOptions('trending', 'hive-125125')
+
+      expect(
+        options.getNextPageParam([], [[]], null as never, [])
+      ).toBeUndefined()
+    })
+
+    it('carries the last entry forward while pages still have posts', () => {
+      const options = getPostsRankedInfiniteQueryOptions('trending', 'hive-125125')
+      const page = [
+        { author: 'alice', permlink: 'first', created: '2026-01-02T00:00:00' },
+        { author: 'bob', permlink: 'second', created: '2026-01-01T00:00:00' },
+      ] as never
+
+      expect(options.getNextPageParam(page, [page], null as never, [])).toEqual({
+        author: 'bob',
+        permlink: 'second',
+        hasNextPage: true,
+      })
+    })
+  })
+})
+
+/**
+ * The bridge continues a ranked feed from the entry the cursor names, in ITS
+ * ranking. Re-ordering the page before the cursor was read meant trending,
+ * payout and muted started the next request from the middle of the previous
+ * ranked page, so scrolling repeated some posts and skipped others.
+ */
+describe('ranked cursor survives display ordering', () => {
+  it('takes the cursor from the bridge order, not the displayed order', async () => {
+    // Ranked last is the OLDEST-ranked entry, which is not the oldest by date.
+    const mockEntries = [
+      { author: 'a', permlink: 'ranked-first', created: '2026-01-01T00:00:00', stats: null },
+      { author: 'b', permlink: 'ranked-last', created: '2026-01-09T00:00:00', stats: null }
+    ]
+    mockCallRPC.mockResolvedValue(mockEntries)
+
+    const options = getPostsRankedInfiniteQueryOptions('trending', 'hive-125125')
+    const page = await (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+
+    expect((options.getNextPageParam as any)(page, [page], null, [])).toEqual({
+      author: 'b',
+      permlink: 'ranked-last',
+      hasNextPage: true
+    })
+
+    // Display still puts the newest first, so the two orders genuinely differ.
+    const shown = (options.select as any)({ pages: [page], pageParams: [] }).pages[0]
+    expect(shown[0].permlink).toBe('ranked-last')
   })
 })
