@@ -334,4 +334,48 @@ describe('HAS host', () => {
     // hiveauth.arcange.eu is NXDOMAIN, so the socket never opened.
     expect(HIVEAUTH_API).toBe('wss://hive-auth.arcange.eu');
   });
+
+  /**
+   * HAS deprecated the session token and protocol v1 acknowledgements omit it
+   * entirely, so requiring one rejected an authentication the wallet had
+   * already approved. The key and the expiry establish the session.
+   */
+  it('accepts a protocol v1 approval that carries no token', () => {
+    const session = toHiveAuthSession('alice', {
+      expire: 1_800_000_000_000,
+      key: 'the-auth-key',
+    } as never);
+
+    expect(session).toEqual({
+      username: 'alice',
+      expire: 1_800_000_000,
+      key: 'the-auth-key',
+    });
+    expect('token' in session).toBe(false);
+  });
+
+  it('still carries a pre-v1 token through when the wallet sends one', () => {
+    const session = toHiveAuthSession('alice', {
+      token: 'legacy-token',
+      expire: 1_800_000_000_000,
+      key: 'the-auth-key',
+    } as never);
+
+    expect(session.token).toBe('legacy-token');
+  });
+
+  it('rebuilds credentials without a token for a v1 session', () => {
+    const credentials = toHiveAuthCredentials({
+      username: 'alice',
+      expire: 1_800_000_000,
+      key: 'the-auth-key',
+    });
+
+    expect(credentials).toEqual({
+      username: 'alice',
+      expire: 1_800_000_000_000,
+      key: 'the-auth-key',
+    });
+    expect('token' in credentials).toBe(false);
+  });
 });

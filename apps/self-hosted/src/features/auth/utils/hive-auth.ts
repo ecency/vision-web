@@ -84,16 +84,17 @@ export function toHiveAuthSession(
   if (!auth.key) {
     throw new Error('HiveAuth returned no encryption key');
   }
-  if (!auth.token) {
-    throw new Error('HiveAuth returned no session token');
-  }
+  // No token check. HAS deprecated it and protocol v1 acknowledgements omit it,
+  // so requiring one rejects an authentication the wallet already approved. The
+  // key and the expiry are what establish the session; the token is carried
+  // through only when a pre-v1 wallet sends one.
   if (!auth.expire) {
     throw new Error('HiveAuth returned no session expiry');
   }
 
   return {
     username,
-    token: auth.token,
+    ...(auth.token ? { token: auth.token } : {}),
     expire: Math.floor(auth.expire / 1000),
     key: auth.key,
   };
@@ -103,7 +104,7 @@ export function toHiveAuthSession(
 export function toHiveAuthCredentials(session: HiveAuthSession): HasAuth {
   return {
     username: session.username,
-    token: session.token,
+    ...(session.token ? { token: session.token } : {}),
     expire: session.expire * 1000,
     key: session.key,
   };
