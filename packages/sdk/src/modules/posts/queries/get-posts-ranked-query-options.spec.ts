@@ -33,7 +33,7 @@ vi.mock('../utils/filter-dmca-entries', () => ({
 
 function makeInfiniteContext(
   options: ReturnType<typeof getPostsRankedInfiniteQueryOptions>,
-  pageParam: { author?: string; permlink?: string; hasNextPage: boolean }
+  pageParam: { author?: string; permlink?: string }
 ) {
   return {
     pageParam: { author: undefined, permlink: undefined, ...pageParam },
@@ -49,17 +49,11 @@ describe('getPostsRankedInfiniteQueryOptions', () => {
     vi.clearAllMocks()
   })
 
-  it('should return [] when pageParam.hasNextPage is false', async () => {
-    const options = getPostsRankedInfiniteQueryOptions('created', 'hive')
-    const result = await (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: false }))
-    expect(result).toEqual([])
-  })
-
   it('should return [] when RPC returns null', async () => {
     mockCallRPC.mockResolvedValue(null)
 
     const options = getPostsRankedInfiniteQueryOptions('created', 'hive')
-    const result = await (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+    const result = await (options.queryFn as any)(makeInfiniteContext(options, {}))
 
     expect(result).toEqual([])
   })
@@ -69,7 +63,7 @@ describe('getPostsRankedInfiniteQueryOptions', () => {
 
     const options = getPostsRankedInfiniteQueryOptions('created', 'hive')
     await expect(
-      (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+      (options.queryFn as any)(makeInfiniteContext(options, {}))
     ).rejects.toThrow('[SDK] get_ranked_posts returned string')
   })
 
@@ -83,7 +77,7 @@ describe('getPostsRankedInfiniteQueryOptions', () => {
     mockCallRPC.mockResolvedValue(mockEntries)
 
     const options = getPostsRankedInfiniteQueryOptions('created', 'hive')
-    const page = await (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+    const page = await (options.queryFn as any)(makeInfiniteContext(options, {}))
 
     // The query function keeps the bridge's order, because the pagination
     // cursor is read from the page it returns.
@@ -114,7 +108,7 @@ describe('getPostsRankedInfiniteQueryOptions', () => {
     mockCallRPC.mockResolvedValue(mockEntries)
 
     const options = getPostsRankedInfiniteQueryOptions('created', 'hive-125125')
-    const result = await (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+    const result = await (options.queryFn as any)(makeInfiniteContext(options, {}))
 
     expect(result).toHaveLength(5) // nothing dropped
     // All pins first, preserving the bridge's pin order (not re-sorted by date)
@@ -132,7 +126,7 @@ describe('getPostsRankedInfiniteQueryOptions', () => {
     mockCallRPC.mockResolvedValue(mockEntries)
 
     const options = getPostsRankedInfiniteQueryOptions('hot', 'hive')
-    const result = await (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+    const result = await (options.queryFn as any)(makeInfiniteContext(options, {}))
 
     // "hot" preserves original order
     expect(result[0].permlink).toBe('p1')
@@ -144,7 +138,7 @@ describe('getPostsRankedInfiniteQueryOptions', () => {
 
     const options = getPostsRankedInfiniteQueryOptions('created', 'hive')
     await expect(
-      (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+      (options.queryFn as any)(makeInfiniteContext(options, {}))
     ).rejects.toThrow('network')
   })
 })
@@ -183,7 +177,7 @@ describe('getPostsRankedQueryOptions', () => {
 
   /**
    * React Query reads "there is no next page" from undefined alone. Returning an
-   * object unconditionally left hasNextPage true forever, so an infinite list
+   * object unconditionally left it true forever, so an infinite list
    * kept calling fetchNextPage at the end of the feed and appended an empty page
    * each time, churning query state and growing the cache while the reader sat
    * at the bottom.
@@ -207,7 +201,6 @@ describe('getPostsRankedQueryOptions', () => {
       expect(options.getNextPageParam(page, [page], null as never, [])).toEqual({
         author: 'bob',
         permlink: 'second',
-        hasNextPage: true,
       })
     })
   })
@@ -229,16 +222,36 @@ describe('ranked cursor survives display ordering', () => {
     mockCallRPC.mockResolvedValue(mockEntries)
 
     const options = getPostsRankedInfiniteQueryOptions('trending', 'hive-125125')
-    const page = await (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+    const page = await (options.queryFn as any)(makeInfiniteContext(options, {}))
 
     expect((options.getNextPageParam as any)(page, [page], null, [])).toEqual({
       author: 'b',
-      permlink: 'ranked-last',
-      hasNextPage: true
+      permlink: 'ranked-last'
     })
 
     // Display still puts the newest first, so the two orders genuinely differ.
     const shown = (options.select as any)({ pages: [page], pageParams: [] }).pages[0]
     expect(shown[0].permlink).toBe('ranked-last')
+  })
+})
+
+/**
+ * React Query only reuses a previous `select` result when both the data and the
+ * select function are unchanged. These options are rebuilt on every render, so
+ * an inline arrow would re-sort every page on every render.
+ */
+describe('select identity', () => {
+  it('is stable across rebuilt options for the same sort', () => {
+    const a = getPostsRankedInfiniteQueryOptions('trending', 'hive-125125')
+    const b = getPostsRankedInfiniteQueryOptions('trending', 'hive-999')
+
+    expect(a.select).toBe(b.select)
+  })
+
+  it('differs per sort, so each keeps its own ordering', () => {
+    const trending = getPostsRankedInfiniteQueryOptions('trending', 'hive-125125')
+    const hot = getPostsRankedInfiniteQueryOptions('hot', 'hive-125125')
+
+    expect(trending.select).not.toBe(hot.select)
   })
 })

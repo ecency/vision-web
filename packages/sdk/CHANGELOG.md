@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.73
+
+### Patch Changes
+
+- refactor(sdk): drop the dead hasNextPage page param and stabilise the display select (#1327)
+
 ## 2.3.72
 
 ### Patch Changes
