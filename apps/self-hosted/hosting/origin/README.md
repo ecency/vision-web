@@ -195,7 +195,7 @@ Two differences from this file, both worth knowing before copying values across:
 
   ```text
   [SourceAllowlist] internal: refused 127.0.0.1 for /v1/internal/activate
-    (peer ::ffff:172.22.0.1, via trusted proxy)
+    (peer <docker bridge gateway>, via trusted proxy)
   ```
 - **It cannot see a process on the origin itself.** Anything local can reach the API's
   published port directly, and that is indistinguishable from this vhost doing the same. What
