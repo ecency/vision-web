@@ -1,27 +1,20 @@
 import type { Operation } from '@ecency/sdk';
-import CryptoJS from 'crypto-js';
+import HAS, { type HasAuth, type HasChallengeData } from 'hive-auth-wrapper';
 import { HIVEAUTH_API, HIVEAUTH_APP } from '../constants';
 import type { HiveAuthSession } from '../types';
 
-interface HiveAuthChallenge {
-  key_type: string;
-  challenge: string;
-}
-
-interface HiveAuthAuthResponse {
-  cmd: 'auth_ack' | 'auth_nack' | 'auth_wait' | 'auth_err';
-  uuid?: string;
-  expire?: number;
-  token?: string;
-  error?: string;
-}
-
-interface HiveAuthSignResponse {
-  cmd: 'sign_ack' | 'sign_nack' | 'sign_wait' | 'sign_err';
-  broadcast?: boolean;
-  error?: string;
-  data?: string;
-}
+/**
+ * HiveAuth (HAS) client.
+ *
+ * The protocol is not a plain JSON exchange: everything an app sends in a
+ * request `data` field is AES encrypted with a per-session auth key, and the
+ * PKSA replies encrypted with the same key. The key never travels over the
+ * socket; it reaches the wallet out of band, in the QR payload the user scans.
+ * A hand-rolled client that sends `auth_req.data` in the clear, reads
+ * `auth_ack.data` as plain JSON, or emits a QR under a scheme no wallet
+ * registers cannot complete a login, so the crypto and the socket lifecycle are
+ * delegated to the official wrapper instead of being reimplemented here.
+ */
 
 type HiveAuthCallback = {
   onQRCode?: (qrData: string) => void;
@@ -36,341 +29,207 @@ type HiveAuthSignCallback = {
   onError?: (error: string) => void;
 };
 
-/**
- * Generate a random encryption key for HiveAuth
- */
-function generateKey(): string {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-/**
- * Encrypt challenge using AES-CBC with EVP_BytesToKey derivation
- * This matches HiveAuth's expected encryption format
- */
-function encryptChallenge(challenge: string, key: string): string {
-  // CryptoJS.AES.encrypt with a string key uses EVP_BytesToKey internally
-  // which derives the AES key and IV using MD5 - this is what HiveAuth expects
-  return CryptoJS.AES.encrypt(challenge, key).toString();
-}
-
-/**
- * Generate QR code data for HiveAuth login
- */
-function generateQRData(
-  username: string,
-  uuid: string,
-  key: string,
-  challenge: HiveAuthChallenge
-): string {
-  const authData = {
-    account: username,
-    uuid,
-    key,
-    host: HIVEAUTH_API,
-    ...challenge,
-  };
-
-  return `hiveauth://auth/${btoa(JSON.stringify(authData))}`;
-}
-
-/**
- * HiveAuth login flow
- */
-export async function loginWithHiveAuth(
-  username: string,
-  callbacks: HiveAuthCallback
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(HIVEAUTH_API);
-    const key = generateKey();
-    let uuid: string | null = null;
-    let authTimeout: ReturnType<typeof setTimeout> | null = null;
-    let settled = false;
-
-    // Create challenge once to ensure consistent timestamps between auth_req and QR data
-    const challenge: HiveAuthChallenge = {
-      key_type: 'posting',
-      challenge: JSON.stringify({
-        login: true,
-        ts: Date.now(),
-      }),
-    };
-
-    const cleanup = () => {
-      if (authTimeout) {
-        clearTimeout(authTimeout);
-        authTimeout = null;
-      }
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
-    };
-
-    const safeReject = (error: Error) => {
-      if (!settled) {
-        settled = true;
-        reject(error);
-      }
-    };
-
-    const safeResolve = () => {
-      if (!settled) {
-        settled = true;
-        resolve();
-      }
-    };
-
-    ws.onopen = () => {
-      // Send auth request using the pre-created challenge
-      const authReq = {
-        cmd: 'auth_req',
-        account: username,
-        data: {
-          app: {
-            name: HIVEAUTH_APP,
-          },
-          challenge: encryptChallenge(challenge.challenge, key),
-          key_type: challenge.key_type,
-        },
-      };
-
-      ws.send(JSON.stringify(authReq));
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as HiveAuthAuthResponse;
-
-        switch (msg.cmd) {
-          case 'auth_wait':
-            if (msg.uuid) {
-              uuid = msg.uuid;
-              // Reuse the same challenge for QR data
-              const qrData = generateQRData(username, uuid, key, challenge);
-              callbacks.onQRCode?.(qrData);
-              callbacks.onWaiting?.();
-            }
-            break;
-
-          case 'auth_ack':
-            if (msg.token && msg.expire) {
-              const session: HiveAuthSession = {
-                username,
-                token: msg.token,
-                expire: msg.expire,
-                key,
-              };
-              callbacks.onSuccess?.(session);
-              cleanup();
-              safeResolve();
-            }
-            break;
-
-          case 'auth_nack':
-            callbacks.onError?.('Authentication rejected');
-            cleanup();
-            safeReject(new Error('Authentication rejected'));
-            break;
-
-          case 'auth_err':
-            callbacks.onError?.(msg.error || 'Authentication error');
-            cleanup();
-            safeReject(new Error(msg.error || 'Authentication error'));
-            break;
-        }
-      } catch (error) {
-        callbacks.onError?.('Failed to parse response');
-        cleanup();
-        safeReject(error instanceof Error ? error : new Error('Failed to parse response'));
-      }
-    };
-
-    ws.onerror = () => {
-      callbacks.onError?.('WebSocket connection error');
-      cleanup();
-      safeReject(new Error('WebSocket connection error'));
-    };
-
-    ws.onclose = () => {
-      // Connection closed - ensure timeout is cleared
-      if (authTimeout) {
-        clearTimeout(authTimeout);
-        authTimeout = null;
-      }
-      // Reject if the Promise hasn't been settled yet
-      if (!settled) {
-        callbacks.onError?.('WebSocket closed before authentication completed');
-        safeReject(new Error('WebSocket closed before authentication completed'));
-      }
-    };
-
-    // Timeout after 5 minutes
-    authTimeout = setTimeout(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        callbacks.onError?.('Authentication timeout');
-        cleanup();
-        safeReject(new Error('Authentication timeout'));
-      }
-    }, 5 * 60 * 1000);
-  });
-}
-
-/**
- * Internal helper: sends a sign_req via HiveAuth WebSocket and resolves with
- * the sign_ack data string (or undefined if broadcast-only).
- */
-function hiveAuthSignRequest(
-  session: HiveAuthSession,
-  operations: Operation[],
-  opts: { keyType: string; broadcast: boolean },
-  callbacks?: HiveAuthSignCallback
-): Promise<string | undefined> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(HIVEAUTH_API);
-    let signTimeout: ReturnType<typeof setTimeout> | null = null;
-    let settled = false;
-
-    const cleanup = () => {
-      if (signTimeout) {
-        clearTimeout(signTimeout);
-        signTimeout = null;
-      }
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
-    };
-
-    const safeReject = (error: Error) => {
-      if (!settled) {
-        settled = true;
-        reject(error);
-      }
-    };
-
-    ws.onopen = () => {
-      const signReq = {
-        cmd: 'sign_req',
-        account: session.username,
-        token: session.token,
-        data: {
-          key_type: opts.keyType,
-          ops: operations,
-          broadcast: opts.broadcast,
-        },
-      };
-
-      ws.send(JSON.stringify(signReq));
-      callbacks?.onWaiting?.();
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as HiveAuthSignResponse;
-
-        switch (msg.cmd) {
-          case 'sign_wait':
-            callbacks?.onWaiting?.();
-            break;
-
-          case 'sign_ack':
-            if (!settled) {
-              settled = true;
-              callbacks?.onSuccess?.(msg.data);
-              cleanup();
-              resolve(msg.data);
-            }
-            break;
-
-          case 'sign_nack':
-            callbacks?.onError?.('Transaction rejected');
-            cleanup();
-            safeReject(new Error('Transaction rejected'));
-            break;
-
-          case 'sign_err':
-            callbacks?.onError?.(msg.error || 'Signing error');
-            cleanup();
-            safeReject(new Error(msg.error || 'Signing error'));
-            break;
-        }
-      } catch (error) {
-        callbacks?.onError?.('Failed to parse response');
-        cleanup();
-        safeReject(error instanceof Error ? error : new Error('Failed to parse response'));
-      }
-    };
-
-    ws.onerror = () => {
-      callbacks?.onError?.('WebSocket connection error');
-      cleanup();
-      safeReject(new Error('WebSocket connection error'));
-    };
-
-    ws.onclose = () => {
-      if (signTimeout) {
-        clearTimeout(signTimeout);
-        signTimeout = null;
-      }
-      if (!settled) {
-        callbacks?.onError?.('WebSocket closed before signing completed');
-        safeReject(new Error('WebSocket closed before signing completed'));
-      }
-    };
-
-    signTimeout = setTimeout(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        callbacks?.onError?.('Signing timeout');
-        cleanup();
-        safeReject(new Error('Signing timeout'));
-      }
-    }, 2 * 60 * 1000);
-  });
-}
-
 /** Authorities HiveAuth can be asked to sign with. */
 export type HiveAuthKeyType = 'posting' | 'active' | 'owner' | 'memo';
 
+/** Shown by the wallet when it asks the user to approve the request. */
+const APP_META = {
+  name: HIVEAUTH_APP,
+  description: 'Ecency self-hosted blog',
+};
+
 /**
- * Broadcast operations with HiveAuth
+ * The payload a HiveAuth wallet expects to scan. `has://auth_req/` is the
+ * scheme wallets register; anything else produces a QR that scans as unknown
+ * text. `key` is the AES key for the rest of the exchange, which is why it
+ * travels here and not over the websocket.
+ */
+export function buildHiveAuthQrPayload(params: {
+  account: string;
+  uuid: string;
+  key: string;
+  host: string;
+}): string {
+  const payload = {
+    account: params.account,
+    uuid: params.uuid,
+    key: params.key,
+    host: params.host,
+  };
+
+  return `has://auth_req/${btoa(JSON.stringify(payload))}`;
+}
+
+/**
+ * Challenge the wallet signs to prove it holds the account's posting key.
+ * Sent as plain data; the wrapper encrypts it with the auth key.
+ */
+export function buildLoginChallenge(username: string): HasChallengeData {
+  return {
+    key_type: 'posting',
+    challenge: JSON.stringify({ login: username, ts: Date.now() }),
+  };
+}
+
+/**
+ * HAS reports token expiry as an epoch in milliseconds. The stored session
+ * keeps seconds, which is what `storage.ts`, `isHiveAuthSessionValid` and
+ * auth-actions' `session.expire * 1000` all assume. Storing the raw HAS value
+ * would push every expiry check thousands of years out.
+ */
+export function toHiveAuthSession(
+  username: string,
+  auth: HasAuth,
+): HiveAuthSession {
+  if (!auth.key) {
+    throw new Error('HiveAuth returned no encryption key');
+  }
+  // No token check. HAS deprecated it and protocol v1 acknowledgements omit it,
+  // so requiring one rejects an authentication the wallet already approved. The
+  // key and the expiry are what establish the session; the token is carried
+  // through only when a pre-v1 wallet sends one.
+  if (!auth.expire) {
+    throw new Error('HiveAuth returned no session expiry');
+  }
+
+  return {
+    username,
+    ...(auth.token ? { token: auth.token } : {}),
+    expire: Math.floor(auth.expire / 1000),
+    key: auth.key,
+  };
+}
+
+/** Rebuild the wrapper's credentials from a stored session, expiry back in ms. */
+export function toHiveAuthCredentials(session: HiveAuthSession): HasAuth {
+  return {
+    username: session.username,
+    ...(session.token ? { token: session.token } : {}),
+    expire: session.expire * 1000,
+    key: session.key,
+  };
+}
+
+/**
+ * HAS rejects with either an Error or a raw protocol message, so a plain
+ * `error.message` read turns half the failures into "undefined".
+ */
+export function describeHiveAuthError(reason: unknown): string {
+  if (reason instanceof Error) {
+    return reason.message === 'expired'
+      ? 'HiveAuth request expired'
+      : reason.message;
+  }
+
+  if (reason && typeof reason === 'object') {
+    const message = reason as { cmd?: string; error?: string };
+    if (typeof message.error === 'string' && message.error) {
+      return message.error;
+    }
+    switch (message.cmd) {
+      case 'auth_nack':
+        return 'Authentication rejected';
+      case 'auth_err':
+        return 'Authentication error';
+      case 'sign_nack':
+        return 'Transaction rejected';
+      case 'sign_err':
+        return 'Signing error';
+    }
+  }
+
+  return 'HiveAuth request failed';
+}
+
+/**
+ * HiveAuth login flow. Resolves once the wallet has approved; `onSuccess`
+ * carries the session the caller has to persist.
+ */
+export async function loginWithHiveAuth(
+  username: string,
+  callbacks: HiveAuthCallback,
+): Promise<void> {
+  HAS.setOptions({ host: HIVEAUTH_API });
+
+  // The wrapper fills token, expire and key into this object on success.
+  const auth: HasAuth = { username };
+
+  try {
+    await HAS.authenticate(
+      auth,
+      APP_META,
+      buildLoginChallenge(username),
+      (evt) => {
+        // evt.key is the auth key the wrapper generated for this request. The
+        // wallet cannot decrypt anything until it reads the key from the QR.
+        callbacks.onQRCode?.(
+          buildHiveAuthQrPayload({
+            account: username,
+            uuid: evt.uuid,
+            key: evt.key ?? auth.key ?? '',
+            host: HIVEAUTH_API,
+          }),
+        );
+        callbacks.onWaiting?.();
+      },
+    );
+  } catch (error) {
+    const message = describeHiveAuthError(error);
+    callbacks.onError?.(message);
+    throw new Error(message);
+  }
+
+  let session: HiveAuthSession;
+  try {
+    session = toHiveAuthSession(username, auth);
+  } catch (error) {
+    const message = describeHiveAuthError(error);
+    callbacks.onError?.(message);
+    throw new Error(message);
+  }
+
+  callbacks.onSuccess?.(session);
+}
+
+/**
+ * Broadcast operations with HiveAuth.
+ *
+ * The authority is the caller's to choose. Hardcoding 'posting' meant an
+ * active operation - a transfer, a tip, a custom_json with required_auths -
+ * asked the wallet for the posting key, and the chain rejects a transfer
+ * signed with posting authority.
  */
 export async function broadcastWithHiveAuth(
   session: HiveAuthSession,
   operations: Operation[],
   keyType: HiveAuthKeyType = 'posting',
-  callbacks?: HiveAuthSignCallback
+  callbacks?: HiveAuthSignCallback,
 ): Promise<void> {
-  // The authority is the caller's to choose. Hardcoding 'posting' meant an
-  // active operation - a transfer, a tip, a custom_json with required_auths -
-  // asked the wallet for the posting key, and the chain rejects a transfer
-  // signed with posting authority.
-  await hiveAuthSignRequest(session, operations, { keyType, broadcast: true }, callbacks);
-}
+  HAS.setOptions({ host: HIVEAUTH_API });
 
-/**
- * Sign operations with HiveAuth without broadcasting (for x402 payments).
- * Uses key_type: 'active' and broadcast: false to get signed tx data back.
- *
- * Note: HiveAuth may not support broadcast:false with active keys.
- * If unsupported, this will reject with an error.
- */
-export async function signWithHiveAuth(
-  session: HiveAuthSession,
-  operations: Operation[],
-  callbacks?: HiveAuthSignCallback
-): Promise<string> {
-  const data = await hiveAuthSignRequest(session, operations, { keyType: 'active', broadcast: false }, callbacks);
-  if (!data) {
-    throw new Error('HiveAuth signing failed: no data returned');
+  try {
+    const response = await HAS.broadcast(
+      toHiveAuthCredentials(session),
+      keyType,
+      operations,
+      () => callbacks?.onWaiting?.(),
+    );
+    callbacks?.onSuccess?.(
+      typeof response?.data === 'string' ? response.data : undefined,
+    );
+  } catch (error) {
+    const message = describeHiveAuthError(error);
+    callbacks?.onError?.(message);
+    throw new Error(message);
   }
-  return data;
 }
 
 /**
  * Check if HiveAuth session is valid
  */
-export function isHiveAuthSessionValid(session: HiveAuthSession | null): boolean {
+export function isHiveAuthSessionValid(
+  session: HiveAuthSession | null,
+): boolean {
   if (!session) return false;
   return Date.now() < session.expire * 1000;
 }

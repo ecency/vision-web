@@ -54,7 +54,13 @@ export interface KeychainSignTxResponse {
 
 export interface HiveAuthSession {
   username: string;
-  token: string;
+  /**
+   * Deprecated in HAS and omitted entirely by protocol v1 acknowledgements, so
+   * a compliant wallet establishes a session without one. Kept optional rather
+   * than removed, because pre-v1 wallets still send it and the wrapper still
+   * accepts it.
+   */
+  token?: string;
   expire: number;
   key: string;
 }
