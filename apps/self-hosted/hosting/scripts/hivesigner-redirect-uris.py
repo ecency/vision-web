@@ -110,6 +110,27 @@ def wanted_uris(database_url: str, base_domain: str) -> list[str]:
     return uris
 
 
+def write_private(contents: str, path: str | None) -> str:
+    """
+    Write to a file only its owner can read, with no window where it is not.
+
+    Creating the file and then chmod-ing it leaves the payload readable by
+    anything on the box for the interval between the two, and world-readable
+    forever if the process dies in between. The mode has to be applied by the
+    call that creates the file.
+    """
+    if path is None:
+        handle, path = tempfile.mkstemp(prefix="hivesigner-metadata-", suffix=".json")
+    else:
+        # O_CREAT with mode 0600. An existing file keeps its own mode, so the
+        # caller owns that choice; a new one is never briefly readable.
+        handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR)
+
+    with os.fdopen(handle, "w", encoding="utf-8") as payload:
+        payload.write(contents)
+    return path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--account", default=os.environ.get("HIVESIGNER_APP_ACCOUNT", DEFAULT_ACCOUNT))
@@ -146,26 +167,23 @@ def main() -> int:
         for uri in missing:
             print(f"  {uri}")
 
-        path = args.out
-        if path is None:
-            handle, path = tempfile.mkstemp(prefix="hivesigner-metadata-", suffix=".json")
-            os.close(handle)
-        with open(path, "w", encoding="utf-8") as payload:
-            payload.write(serialized)
-        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        path = write_private(serialized, args.out)
 
         print(f"\npayload written to {path}")
         print("broadcast it as posting_json_metadata (account_update2, posting authority).")
         print("it carries the account's existing profile, including its app secret, so do")
         print("not paste it into a shared terminal and delete it when you are done.")
-        # Stale entries are reported, never removed: one may be a hand-added URI
-        # for something outside this script's view, and dropping it silently
-        # breaks a login nobody will connect back to this run.
-        stale = [u for u in existing if u.endswith(f".{args.base_domain}/auth") and u not in wanted]
-        if stale:
-            print("\nregistered but no longer live, review by hand before removing:")
-            for uri in stale:
-                print(f"  {uri}")
+
+    # Reported whether or not anything is being added. Once every live instance
+    # is registered there is nothing to add, and that is exactly when a tenant
+    # going inactive would otherwise be reported by nobody.
+    stale = [u for u in existing if u.endswith(f".{args.base_domain}/auth") and u not in wanted]
+    if stale:
+        print("\nregistered but no longer live, review by hand before removing:")
+        for uri in stale:
+            print(f"  {uri}")
+
+    if missing:
         return 10
 
     print("\nnothing to add")
