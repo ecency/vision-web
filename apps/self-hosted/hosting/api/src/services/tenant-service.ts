@@ -1020,6 +1020,17 @@ export const TenantService = {
             },
           },
           features: {
+            // How much of the Hive blockchain a reader sees. A new blog shows
+            // what each post earned, when its payout window closes, and a link
+            // to its record on chain; no feed payouts, no vote-weight picker,
+            // no downvotes. Every tenant created before this carries no `hive`
+            // block at all and resolves to `off`, so seeding it here changes
+            // nothing for them: getDefaultConfig is reached only through
+            // buildConfig, which is called only at tenant creation.
+            hive: {
+              readerLayer: 'standard',
+              authorRewards: 'author',
+            },
             postsFilters: ['posts', 'blog'],
             likes: { enabled: true },
             comments: { enabled: true },

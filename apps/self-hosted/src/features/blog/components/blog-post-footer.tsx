@@ -4,8 +4,12 @@ import type { Entry } from '@ecency/sdk';
 import { UilComment } from '@tooni/iconscout-unicons-react';
 import { useMemo } from 'react';
 import { InstanceConfigManager, t } from '@/core';
-import { VoteButton, ReblogButton } from '@/features/auth';
+import { useIsAuthEnabled, VoteButton, ReblogButton } from '@/features/auth';
+import { VoteDisclosure } from '@/features/shared/hive-disclosure';
 import { TipButton } from '@/features/tipping';
+import { useHiveLayer } from '../hooks/use-hive-layer';
+import { HivePostNote } from './hive-post-note';
+import { PostPayout } from './post-payout';
 
 interface Props {
   entry: Entry;
@@ -13,6 +17,8 @@ interface Props {
 
 export function BlogPostFooter({ entry }: Props) {
   const entryData = entry.original_entry || entry;
+  const hiveLayer = useHiveLayer();
+  const isAuthEnabled = useIsAuthEnabled();
 
   const showLikes = InstanceConfigManager.getConfigValue(
     ({ configuration }) =>
@@ -80,7 +86,28 @@ export function BlogPostFooter({ entry }: Props) {
             className="flex items-center gap-1"
           />
         )}
+        {hiveLayer.showPayoutOnPost && (
+          <PostPayout entry={entryData} label={hiveLayer.payoutLabel} />
+        )}
       </div>
+
+      {/*
+        Not configurable, by design. The gate is only whether a reader can vote
+        at all, which features.likes and features.auth already decide.
+      */}
+      {showLikes && isAuthEnabled && (
+        <div className="mt-2">
+          <VoteDisclosure />
+        </div>
+      )}
+
+      <HivePostNote
+        author={entryData.author}
+        permlink={entryData.permlink}
+        showNote={hiveLayer.showChainNote}
+        showPermalink={hiveLayer.showChainPermalink}
+        learnMoreUrl={hiveLayer.learnMoreUrl}
+      />
     </footer>
   );
 }

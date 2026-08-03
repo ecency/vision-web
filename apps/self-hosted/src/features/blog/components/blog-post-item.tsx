@@ -14,6 +14,8 @@ import clsx from 'clsx';
 import { useMemo } from 'react';
 import { formatDate, InstanceConfigManager } from '@/core';
 import { UserAvatar } from '@/features/shared/user-avatar';
+import { useHiveLayer } from '../hooks/use-hive-layer';
+import { PostPayout } from './post-payout';
 
 interface Props {
   entry: Entry;
@@ -21,6 +23,7 @@ interface Props {
 }
 
 export function BlogPostItem({ entry }: Props) {
+  const hiveLayer = useHiveLayer();
   const listType = InstanceConfigManager.getConfigValue(
     ({ configuration }) => configuration.instanceConfiguration.layout.listType,
   );
@@ -200,6 +203,20 @@ export function BlogPostItem({ entry }: Props) {
               <span>{commentsCount}</span>
             </div>
           </>
+        )}
+        {/*
+          The `full` posture, and the only thing it adds over `standard`. Same
+          meta row, same muted treatment as the post page, so one earnings
+          figure per surface still holds. PostPayout renders nothing when the
+          entry carries no readable payout, which is what keeps the search feed
+          safe: it hand-builds an Entry with no payout fields at all.
+        */}
+        {hiveLayer.showPayoutInFeed && (
+          <PostPayout
+            entry={entryData}
+            label={hiveLayer.payoutLabel}
+            separator={<span>•</span>}
+          />
         )}
       </div>
     </>

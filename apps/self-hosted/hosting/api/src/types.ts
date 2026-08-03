@@ -70,6 +70,17 @@ export interface BlogConfig {
         };
       };
       features: {
+        /**
+         * How much of the Hive blockchain the site shows readers. Decorative
+         * here, like the rest of this interface: nothing validates against it,
+         * and the client resolver treats every member as unknown-shaped.
+         */
+        hive?: {
+          readerLayer?: string;
+          authorRewards?: string;
+          payoutLabel?: string;
+          learnMoreUrl?: string;
+        };
         postsFilters?: string[];
         likes?: { enabled: boolean };
         comments?: { enabled: boolean };

@@ -2,6 +2,7 @@ import { usePublishState } from "../hooks/use-publish-state";
 import { usePublishPost } from "../hooks/use-publish-post";
 import { Link } from "@tanstack/react-router";
 import { UilArrowLeft } from "@tooni/iconscout-unicons-react";
+import { PublishDisclosure } from "@/features/shared/hive-disclosure";
 
 interface Props {
   onSuccess?: () => void;
@@ -52,6 +53,14 @@ export function PublishActionBar({ onSuccess }: Props) {
       </Link>
       <div className="px-2 md:px-4 py-4 flex justify-end">
         <div className="flex flex-col items-end gap-2">
+          {/*
+            Not configurable, by design. Publishing is the one action here that
+            cannot be undone, so the statement of that goes above the button
+            regardless of how the instance is configured.
+          */}
+          <div className="max-w-sm text-right">
+            <PublishDisclosure />
+          </div>
           {error && (
             <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded">
               {error.message}

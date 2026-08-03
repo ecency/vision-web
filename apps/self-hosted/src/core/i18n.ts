@@ -91,7 +91,28 @@ type TranslationKey =
   | 'tip_transaction_failed'
   | 'tip_qr_no_address'
   | 'tip_qr_failed'
-  | 'cancel';
+  | 'cancel'
+  | 'rewards_pending'
+  | 'rewards_earned'
+  | 'rewards_declined'
+  | 'payout_window'
+  | 'payout_hint'
+  | 'published_on_hive'
+  | 'view_on_hive'
+  | 'hive_disclosure_vote'
+  | 'hive_disclosure_comment'
+  | 'hive_disclosure_publish'
+  | 'join_community'
+  | 'leave_community'
+  | 'joining'
+  | 'leaving'
+  | 'community_membership_failed'
+  | 'reputation_band_new'
+  | 'reputation_band_established'
+  | 'reputation_band_longstanding'
+  | 'confirming'
+  | 'membership_unconfirmed'
+  | 'check_again';
 
 type Translations = Record<TranslationKey, string>;
 
@@ -188,6 +209,32 @@ const translations: Record<string, Translations> = {
     tip_qr_no_address: 'No address',
     tip_qr_failed: 'Failed to generate QR',
     cancel: 'Cancel',
+    rewards_pending: 'Pending rewards',
+    rewards_earned: 'Earned',
+    rewards_declined: 'Rewards declined',
+    payout_window: 'Pays out',
+    payout_hint: 'Estimated value in HIVE Power and HBD',
+    published_on_hive: 'Published on Hive',
+    view_on_hive: 'View this post on Hive',
+    hive_disclosure_vote:
+      'Liking casts a vote on Hive and spends part of your voting power.',
+    hive_disclosure_comment:
+      'Comments are published to Hive. They are public and cannot be deleted.',
+    hive_disclosure_publish:
+      'Publishing writes this post publicly and permanently to Hive. Rewards close 7 days after publishing.',
+    join_community: 'Join',
+    leave_community: 'Leave',
+    joining: 'Joining...',
+    leaving: 'Leaving...',
+    community_membership_failed:
+      'Could not update your membership. Please try again.',
+    reputation_band_new: 'New',
+    reputation_band_established: 'Established',
+    reputation_band_longstanding: 'Long standing',
+    confirming: 'Confirming...',
+    membership_unconfirmed:
+      'Sent to Hive. The community has not confirmed this yet. Reload in a moment to check.',
+    check_again: 'Check again',
   },
   es: {
     loading: 'Cargando...',
@@ -280,6 +327,32 @@ const translations: Record<string, Translations> = {
     tip_qr_no_address: 'Sin dirección',
     tip_qr_failed: 'Error al generar el QR',
     cancel: 'Cancelar',
+    rewards_pending: 'Recompensas pendientes',
+    rewards_earned: 'Ganado',
+    rewards_declined: 'Recompensas rechazadas',
+    payout_window: 'Se paga',
+    payout_hint: 'Valor estimado en HIVE Power y HBD',
+    published_on_hive: 'Publicado en Hive',
+    view_on_hive: 'Ver esta publicación en Hive',
+    hive_disclosure_vote:
+      'Dar me gusta emite un voto en Hive y consume parte de tu poder de voto.',
+    hive_disclosure_comment:
+      'Los comentarios se publican en Hive. Son públicos y no se pueden borrar.',
+    hive_disclosure_publish:
+      'Al publicar, esta entrada se escribe en Hive de forma pública y permanente. Las recompensas se cierran 7 días después de publicar.',
+    join_community: 'Unirse',
+    leave_community: 'Salir',
+    joining: 'Uniéndose...',
+    leaving: 'Saliendo...',
+    community_membership_failed:
+      'No se pudo actualizar tu membresía. Inténtalo de nuevo.',
+    reputation_band_new: 'Nueva',
+    reputation_band_established: 'Establecida',
+    reputation_band_longstanding: 'Veterana',
+    confirming: 'Confirmando...',
+    membership_unconfirmed:
+      'Enviado a Hive. La comunidad todavía no lo ha confirmado. Vuelve a cargar en un momento para comprobarlo.',
+    check_again: 'Comprobar de nuevo',
   },
   de: {
     loading: 'Lädt...',
@@ -372,6 +445,32 @@ const translations: Record<string, Translations> = {
     tip_qr_no_address: 'Keine Adresse',
     tip_qr_failed: 'QR-Generierung fehlgeschlagen',
     cancel: 'Abbrechen',
+    rewards_pending: 'Ausstehende Belohnungen',
+    rewards_earned: 'Verdient',
+    rewards_declined: 'Belohnungen abgelehnt',
+    payout_window: 'Auszahlung',
+    payout_hint: 'Geschätzter Wert in HIVE Power und HBD',
+    published_on_hive: 'Auf Hive veröffentlicht',
+    view_on_hive: 'Diesen Beitrag auf Hive ansehen',
+    hive_disclosure_vote:
+      'Ein Like ist eine Stimme auf Hive und verbraucht einen Teil deiner Stimmkraft.',
+    hive_disclosure_comment:
+      'Kommentare werden auf Hive veröffentlicht. Sie sind öffentlich und können nicht gelöscht werden.',
+    hive_disclosure_publish:
+      'Das Veröffentlichen schreibt diesen Beitrag öffentlich und dauerhaft auf Hive. Belohnungen enden 7 Tage nach der Veröffentlichung.',
+    join_community: 'Beitreten',
+    leave_community: 'Verlassen',
+    joining: 'Beitritt...',
+    leaving: 'Austritt...',
+    community_membership_failed:
+      'Mitgliedschaft konnte nicht aktualisiert werden. Bitte erneut versuchen.',
+    reputation_band_new: 'Neu',
+    reputation_band_established: 'Etabliert',
+    reputation_band_longstanding: 'Langjährig',
+    confirming: 'Wird bestätigt...',
+    membership_unconfirmed:
+      'An Hive gesendet. Die Community hat es noch nicht bestätigt. Lade die Seite gleich neu, um nachzusehen.',
+    check_again: 'Erneut prüfen',
   },
   fr: {
     loading: "Chargement...",
@@ -465,6 +564,32 @@ const translations: Record<string, Translations> = {
     tip_qr_no_address: 'Aucune adresse',
     tip_qr_failed: 'Échec de la génération du QR',
     cancel: 'Annuler',
+    rewards_pending: 'Récompenses en attente',
+    rewards_earned: 'Gagné',
+    rewards_declined: 'Récompenses refusées',
+    payout_window: 'Paiement',
+    payout_hint: 'Valeur estimée en HIVE Power et HBD',
+    published_on_hive: 'Publié sur Hive',
+    view_on_hive: 'Voir ce billet sur Hive',
+    hive_disclosure_vote:
+      'Aimer envoie un vote sur Hive et consomme une partie de votre pouvoir de vote.',
+    hive_disclosure_comment:
+      'Les commentaires sont publiés sur Hive. Ils sont publics et ne peuvent pas être supprimés.',
+    hive_disclosure_publish:
+      'La publication écrit ce billet sur Hive de façon publique et permanente. Les récompenses se ferment 7 jours après la publication.',
+    join_community: 'Rejoindre',
+    leave_community: 'Quitter',
+    joining: 'Adhésion...',
+    leaving: 'Départ...',
+    community_membership_failed:
+      'Impossible de mettre à jour votre adhésion. Veuillez réessayer.',
+    reputation_band_new: 'Nouveau',
+    reputation_band_established: 'Établi',
+    reputation_band_longstanding: 'De longue date',
+    confirming: 'Confirmation...',
+    membership_unconfirmed:
+      "Envoyé à Hive. La communauté ne l'a pas encore confirmé. Rechargez dans un instant pour vérifier.",
+    check_again: 'Vérifier à nouveau',
   },
   ko: {
     loading: '로딩 중...',
@@ -557,6 +682,31 @@ const translations: Record<string, Translations> = {
     tip_qr_no_address: '주소 없음',
     tip_qr_failed: 'QR 생성 실패',
     cancel: '취소',
+    rewards_pending: '대기 중인 보상',
+    rewards_earned: '획득',
+    rewards_declined: '보상 거부됨',
+    payout_window: '지급',
+    payout_hint: 'HIVE Power와 HBD로 환산한 예상 금액',
+    published_on_hive: 'Hive에 게시됨',
+    view_on_hive: 'Hive에서 이 글 보기',
+    hive_disclosure_vote:
+      '좋아요는 Hive에 투표를 기록하며 회원님의 투표력을 소모합니다.',
+    hive_disclosure_comment:
+      '댓글은 Hive에 게시됩니다. 공개되며 삭제할 수 없습니다.',
+    hive_disclosure_publish:
+      '게시하면 이 글이 Hive에 공개적으로 영구히 기록됩니다. 보상은 게시 후 7일에 마감됩니다.',
+    join_community: '가입',
+    leave_community: '탈퇴',
+    joining: '가입 중...',
+    leaving: '탈퇴 중...',
+    community_membership_failed: '멤버십을 변경하지 못했습니다. 다시 시도해 주세요.',
+    reputation_band_new: '신규',
+    reputation_band_established: '활동 중',
+    reputation_band_longstanding: '오래된 계정',
+    confirming: '확인 중...',
+    membership_unconfirmed:
+      'Hive로 전송했습니다. 커뮤니티가 아직 확인하지 않았습니다. 잠시 후 새로 고쳐 확인해 주세요.',
+    check_again: '다시 확인',
   },
   ru: {
     loading: 'Загрузка...',
@@ -649,6 +799,32 @@ const translations: Record<string, Translations> = {
     tip_qr_no_address: 'Нет адреса',
     tip_qr_failed: 'Не удалось создать QR-код',
     cancel: 'Отмена',
+    rewards_pending: 'Ожидаемые награды',
+    rewards_earned: 'Заработано',
+    rewards_declined: 'Награды отклонены',
+    payout_window: 'Выплата',
+    payout_hint: 'Оценочная стоимость в HIVE Power и HBD',
+    published_on_hive: 'Опубликовано в Hive',
+    view_on_hive: 'Посмотреть этот пост в Hive',
+    hive_disclosure_vote:
+      'Лайк отправляет голос в Hive и расходует часть вашей силы голоса.',
+    hive_disclosure_comment:
+      'Комментарии публикуются в Hive. Они общедоступны, и их нельзя удалить.',
+    hive_disclosure_publish:
+      'Публикация записывает этот пост в Hive публично и навсегда. Награды закрываются через 7 дней после публикации.',
+    join_community: 'Вступить',
+    leave_community: 'Выйти',
+    joining: 'Вступление...',
+    leaving: 'Выход...',
+    community_membership_failed:
+      'Не удалось изменить членство. Попробуйте ещё раз.',
+    reputation_band_new: 'Новый',
+    reputation_band_established: 'Постоянный',
+    reputation_band_longstanding: 'Давний',
+    confirming: 'Подтверждение...',
+    membership_unconfirmed:
+      'Отправлено в Hive. Сообщество это ещё не подтвердило. Обновите страницу через минуту, чтобы проверить.',
+    check_again: 'Проверить снова',
   },
 };
 

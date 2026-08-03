@@ -1,13 +1,26 @@
 import { formatMonthYear, InstanceConfigManager, t } from "@/core";
+import { useAuth } from "@/features/auth";
 import { UserAvatar } from "@/features/shared/user-avatar";
 import { TipButton } from "@/features/tipping";
-import { getAccountFullQueryOptions } from "@ecency/sdk";
+import {
+  getAccountFullQueryOptions,
+  getCommunityContextQueryOptions,
+} from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { CommunityJoinButton } from "../components/community-join-button";
 import {
   useCommunityData,
   useInstanceConfig,
 } from "../hooks/use-instance-config";
+import { isModeratorRole } from "../utils/community-role";
+import { resolveReputation } from "../utils/reputation-band";
+
+const REPUTATION_BAND_LABELS = {
+  new: "reputation_band_new",
+  established: "reputation_band_established",
+  longstanding: "reputation_band_longstanding",
+} as const;
 
 export function BlogSidebar() {
   const { username, isCommunityMode } = useInstanceConfig();
@@ -34,6 +47,13 @@ function BlogSidebarContent({ username }: { username: string }) {
     if (!data?.created) return null;
     return formatMonthYear(data.created);
   }, [data?.created]);
+
+  // The bare integer means nothing to a reader who has not learned the scale,
+  // and a zero is a failed bridge call rather than a new account.
+  const reputation = useMemo(
+    () => resolveReputation(data?.reputation),
+    [data?.reputation],
+  );
 
   const websiteUrl = useMemo(() => {
     const raw = data?.profile?.website;
@@ -78,10 +98,10 @@ function BlogSidebarContent({ username }: { username: string }) {
           <div className="text-xs font-medium mb-2 text-theme-muted">
             {t("hiveInfo")}
           </div>
-          {data.reputation !== undefined && (
+          {reputation && (
             <div className="text-xs mb-1 text-theme-muted">
               <span className="font-medium">{t("reputation")}:</span>{" "}
-              {Math.floor(data.reputation)}
+              {t(REPUTATION_BAND_LABELS[reputation.band])} ({reputation.score})
             </div>
           )}
           {joinDate && (
@@ -131,6 +151,16 @@ function BlogSidebarContent({ username }: { username: string }) {
 
 function CommunitySidebar() {
   const { data: community, isLoading } = useCommunityData();
+  const { communityId } = useInstanceConfig();
+  const { user } = useAuth();
+
+  // num_pending is a moderation queue, not a statistic about the community.
+  // The context query is disabled without a username, so a logged-out visitor
+  // resolves to no role and sees nothing.
+  const { data: context } = useQuery(
+    getCommunityContextQueryOptions(user?.username, communityId),
+  );
+  const isModerator = isModeratorRole(context?.role);
 
   // Get the community avatar URL from the image proxy
   const communityAvatarUrl = useMemo(() => {
@@ -216,6 +246,10 @@ function CommunitySidebar() {
         </div>
       </div>
 
+      <div className="mb-4">
+        <CommunityJoinButton communityId={communityId} />
+      </div>
+
       <div className="border-t border-theme pt-4 mt-4">
         <div className="text-xs font-medium mb-2 text-theme-muted">
           {t("community_info")}
@@ -232,7 +266,7 @@ function CommunitySidebar() {
             {community.lang.toUpperCase()}
           </div>
         )}
-        {community.num_pending > 0 && (
+        {isModerator && community.num_pending > 0 && (
           <div className="text-xs text-theme-muted">
             <span className="font-medium">{t("pending_posts")}:</span>{" "}
             {community.num_pending}
