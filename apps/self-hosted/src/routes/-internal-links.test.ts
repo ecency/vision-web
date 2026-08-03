@@ -65,9 +65,10 @@ const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
     occurrences: 1,
     reason: 'getRssFeedUrl() returns an absolute ecency.com URL',
   },
-  'src/features/auth/components/create-post-button.tsx:createPostUrl': {
+  'src/features/auth/components/create-post-button.tsx:target.href': {
     occurrences: 1,
-    reason: 'runtime config general.createPostUrl, may be internal or absolute',
+    reason:
+      'runtime config general.createPostUrl, an owner-chosen external composer',
   },
   'src/features/blog/layout/blog-sidebar.tsx:websiteUrl': {
     occurrences: 1,

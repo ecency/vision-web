@@ -342,7 +342,8 @@ export const configFieldsMap: Record<string, ConfigField> = {
           createPostUrl: {
             label: 'Create Post URL',
             type: 'string',
-            description: 'URL for creating new posts (e.g., https://ecency.com/publish)',
+            description:
+              'Optional external composer for the Create post button. Leave empty to write here with the built-in editor. The old default https://ecency.com/publish also means the built-in editor.',
           },
           styles: {
             label: 'Styles',

@@ -967,7 +967,10 @@ export const TenantService = {
           dateTimeFormat: 'YYYY-MM-DD HH:mm:ss',
           imageProxy: 'https://i.ecency.com',
           profileBaseUrl: 'https://ecency.com/@',
-          createPostUrl: 'https://ecency.com/publish',
+          // Empty means the built-in composer at /publish, so a new blog owner
+          // writes on their own domain. Only an owner who fills this in is sent
+          // to an external composer.
+          createPostUrl: '',
           styles: {
             background: 'bg-gradient-to-br from-[#f8fafc] to-[#e2e8f0]',
           },

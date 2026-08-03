@@ -35,7 +35,7 @@ cat > "$CONFIG_FILE" << EOJSON
       "language": "en",
       "imageProxy": "https://i.ecency.com",
       "profileBaseUrl": "https://ecency.com/@",
-      "createPostUrl": "https://ecency.com/submit"
+      "createPostUrl": ""
     },
     "instanceConfiguration": {
       "type": "blog",
