@@ -15,72 +15,72 @@ import {
 
 function resolve(
   hive: unknown,
-  overrides: { isCommunityMode?: boolean; composerIsInternal?: boolean } = {},
+  overrides: { composerIsInternal?: boolean } = {},
 ): ResolvedHiveLayer {
   return resolveHiveLayer({
     features: hive === undefined ? {} : { hive },
-    isCommunityMode: overrides.isCommunityMode ?? false,
     composerIsInternal: overrides.composerIsInternal ?? true,
   });
 }
 
-/** Every render decision the posture expands to, as one comparable record. */
-function posture(resolved: ResolvedHiveLayer) {
-  return {
-    payoutOnPost: resolved.showPayoutOnPost,
-    payoutInFeed: resolved.showPayoutInFeed,
-    chainNote: resolved.showChainNote,
-    chainPermalink: resolved.showChainPermalink,
-    voteWeightPicker: resolved.showVoteWeightPicker,
-    downvotes: resolved.allowDownvotes,
-  };
+/**
+ * Every render decision the posture expands to, as one comparable record.
+ *
+ * Built by reading the booleans off the resolved object rather than by naming
+ * them, so a flag added to `ResolvedHiveLayer` without a row in these tables
+ * fails here instead of shipping unasserted.
+ */
+function posture(resolved: ResolvedHiveLayer): Record<string, boolean> {
+  return Object.fromEntries(
+    Object.entries(resolved).filter(([, value]) => typeof value === 'boolean'),
+  ) as Record<string, boolean>;
 }
 
 const OFF = {
-  payoutOnPost: false,
-  payoutInFeed: false,
-  chainNote: false,
-  chainPermalink: false,
-  voteWeightPicker: false,
-  downvotes: false,
+  showPayoutOnPost: false,
+  showPayoutInFeed: false,
+  showChainNote: false,
+  showChainPermalink: false,
 };
 
 const STANDARD = {
-  payoutOnPost: true,
-  payoutInFeed: false,
-  chainNote: true,
-  chainPermalink: true,
-  voteWeightPicker: false,
-  downvotes: false,
+  showPayoutOnPost: true,
+  showPayoutInFeed: false,
+  showChainNote: true,
+  showChainPermalink: true,
 };
 
-const FULL_BLOG = {
-  payoutOnPost: true,
-  payoutInFeed: true,
-  chainNote: true,
-  chainPermalink: true,
-  voteWeightPicker: true,
-  downvotes: false,
+const FULL = {
+  showPayoutOnPost: true,
+  showPayoutInFeed: true,
+  showChainNote: true,
+  showChainPermalink: true,
 };
-
-const FULL_COMMUNITY = { ...FULL_BLOG, downvotes: true };
 
 describe('resolveHiveLayer: the posture table', () => {
-  it('expands each posture on a blog instance', () => {
+  it('expands each posture', () => {
     expect(posture(resolve({ readerLayer: 'off' }))).toEqual(OFF);
     expect(posture(resolve({ readerLayer: 'standard' }))).toEqual(STANDARD);
-    expect(posture(resolve({ readerLayer: 'full' }))).toEqual(FULL_BLOG);
+    expect(posture(resolve({ readerLayer: 'full' }))).toEqual(FULL);
   });
 
-  it('expands each posture on a community instance', () => {
-    const community = { isCommunityMode: true };
-    expect(posture(resolve({ readerLayer: 'off' }, community))).toEqual(OFF);
-    expect(posture(resolve({ readerLayer: 'standard' }, community))).toEqual(
-      STANDARD,
+  it('makes full differ from standard, on exactly one surface', () => {
+    // The finding this pins: three postures were offered and two shipped,
+    // because the flags that separated full from standard had no consumer.
+    // Whatever full adds must be something a component reads; the companion
+    // test in hive-layer-consumers.test.ts is what checks that end.
+    const standard = posture(resolve({ readerLayer: 'standard' }));
+    const full = posture(resolve({ readerLayer: 'full' }));
+
+    const added = Object.keys(full).filter(
+      (flag) => full[flag] && !standard[flag],
     );
-    expect(posture(resolve({ readerLayer: 'full' }, community))).toEqual(
-      FULL_COMMUNITY,
+    const removed = Object.keys(full).filter(
+      (flag) => standard[flag] && !full[flag],
     );
+
+    expect(added).toEqual(['showPayoutInFeed']);
+    expect(removed).toEqual([]);
   });
 
   it('reports the posture it resolved', () => {
@@ -130,7 +130,6 @@ describe('resolveHiveLayer: absence and malformed documents', () => {
       posture(
         resolveHiveLayer({
           features: arrayFeatures,
-          isCommunityMode: true,
           composerIsInternal: true,
         }),
       ),
@@ -143,19 +142,10 @@ describe('resolveHiveLayer: absence and malformed documents', () => {
         posture(
           resolveHiveLayer({
             features,
-            isCommunityMode: true,
             composerIsInternal: true,
           }),
         ),
       ).toEqual(OFF);
-    }
-  });
-
-  it('never enables downvotes outside community mode', () => {
-    for (const readerLayer of ['off', 'standard', 'full', 'FULL', 42]) {
-      expect(
-        resolve({ readerLayer }, { isCommunityMode: false }).allowDownvotes,
-      ).toBe(false);
     }
   });
 });
@@ -265,7 +255,6 @@ describe('the config surface stays writable', () => {
   it('seeds a new instance with values the resolver accepts', () => {
     const seeded = resolveHiveLayer({
       features: { hive: HIVE_LAYER_SEED },
-      isCommunityMode: false,
       composerIsInternal: true,
     });
     expect(seeded.readerLayer).toBe('standard');

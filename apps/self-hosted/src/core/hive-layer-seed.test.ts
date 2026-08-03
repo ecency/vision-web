@@ -95,16 +95,13 @@ describe('the hosting seed and the client resolver agree', () => {
   it('resolves the seeded document to the standard posture', () => {
     const layer = resolveHiveLayer({
       features: { hive: seeded },
-      isCommunityMode: false,
       composerIsInternal: true,
     });
     expect(layer.readerLayer).toBe('standard');
     expect(layer.authorRewards).toBe('author');
     expect(layer.showPayoutOnPost).toBe(true);
     expect(layer.showChainPermalink).toBe(true);
-    // Not the full posture: no feed payouts, no weight picker, no downvotes.
+    // Not the full posture: no payout on feed cards.
     expect(layer.showPayoutInFeed).toBe(false);
-    expect(layer.showVoteWeightPicker).toBe(false);
-    expect(layer.allowDownvotes).toBe(false);
   });
 });

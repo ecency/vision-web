@@ -18,6 +18,17 @@
  * `typeof`, so a hand-crafted PATCH can store any type-compatible value at any
  * of these paths, and the served document reaches the client unvalidated. An
  * unknown value therefore always resolves toward LESS, never more.
+ *
+ * Nothing is resolved here that nothing can render. The reader vote-weight
+ * picker and the community downvote arrow are part of the `full` posture in the
+ * spec and are deliberately absent from this module: `VoteButton` comes from
+ * `@ecency/ui` through a committed `dist`, so a prop added in its source does
+ * not reach this app at all until that dist is rebuilt, which house policy keeps
+ * out of a feature PR. Resolving flags in that state advertises a posture the
+ * app cannot honour, so both return together with the `@ecency/ui` change that
+ * gives them a consumer, along with the `isCommunityMode` input the downvote
+ * clamp needs. See step 10 of the Hive-native layer spec. A test asserts that
+ * every render flag this module resolves is read by a component.
  */
 
 export type ReaderLayer = 'off' | 'standard' | 'full';
@@ -33,10 +44,6 @@ export interface ResolvedHiveLayer {
   showChainNote: boolean;
   /** "View this post on Hive" permalink to the chain record. */
   showChainPermalink: boolean;
-  /** Reader picks how strongly their vote lands. */
-  showVoteWeightPicker: boolean;
-  /** Reader may downvote. Community instances only, always. */
-  allowDownvotes: boolean;
   authorRewards: AuthorRewards;
   /** Owner's own word for earnings, or null to use the built-in i18n label. */
   payoutLabel: string | null;
@@ -47,14 +54,6 @@ export interface ResolvedHiveLayer {
 export interface HiveLayerInput {
   /** Raw `instanceConfiguration.features`, of entirely unknown shape. */
   features: unknown;
-  /**
-   * Same expression every other consumer uses (`use-instance-config.ts`):
-   * `type === 'community' && !!communityId`. Taking the resolved boolean rather
-   * than the raw type keeps one definition of "is a community" in the app; a
-   * second one would disagree on `type: 'community'` with an empty communityId,
-   * where the sidebar already renders the personal branch.
-   */
-  isCommunityMode: boolean;
   /** `resolveCreatePostTarget(...).kind === 'internal'`. */
   composerIsInternal: boolean;
 }
@@ -174,16 +173,13 @@ export function resolveHiveLayer(input: HiveLayerInput): ResolvedHiveLayer {
   return {
     readerLayer,
     showPayoutOnPost: atLeastStandard,
+    // The one thing `full` does that `standard` does not, so the two postures
+    // differ on a surface a reader can see rather than only in this object.
     showPayoutInFeed: isFull,
     // Not separately toggleable. A payout printed without the note that it is
-    // not final, or a weight picker whose effect is invisible, are each worse
-    // than showing neither.
+    // not final is worse than showing neither.
     showChainNote: atLeastStandard,
     showChainPermalink: atLeastStandard,
-    showVoteWeightPicker: isFull,
-    // A personal blog owner cannot put a downvote arrow on their own posts, by
-    // hand-edited JSON or otherwise.
-    allowDownvotes: isFull && input.isCommunityMode,
     // An owner who deliberately points "Create post" at an external composer
     // must not get a panel that configures a composer nobody uses.
     authorRewards: input.composerIsInternal

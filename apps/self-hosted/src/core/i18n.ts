@@ -109,7 +109,10 @@ type TranslationKey =
   | 'community_membership_failed'
   | 'reputation_band_new'
   | 'reputation_band_established'
-  | 'reputation_band_longstanding';
+  | 'reputation_band_longstanding'
+  | 'confirming'
+  | 'membership_unconfirmed'
+  | 'check_again';
 
 type Translations = Record<TranslationKey, string>;
 
@@ -228,6 +231,10 @@ const translations: Record<string, Translations> = {
     reputation_band_new: 'New',
     reputation_band_established: 'Established',
     reputation_band_longstanding: 'Long standing',
+    confirming: 'Confirming...',
+    membership_unconfirmed:
+      'Sent to Hive. The community has not confirmed this yet. Reload in a moment to check.',
+    check_again: 'Check again',
   },
   es: {
     loading: 'Cargando...',
@@ -342,6 +349,10 @@ const translations: Record<string, Translations> = {
     reputation_band_new: 'Nueva',
     reputation_band_established: 'Establecida',
     reputation_band_longstanding: 'Veterana',
+    confirming: 'Confirmando...',
+    membership_unconfirmed:
+      'Enviado a Hive. La comunidad todavía no lo ha confirmado. Vuelve a cargar en un momento para comprobarlo.',
+    check_again: 'Comprobar de nuevo',
   },
   de: {
     loading: 'Lädt...',
@@ -456,6 +467,10 @@ const translations: Record<string, Translations> = {
     reputation_band_new: 'Neu',
     reputation_band_established: 'Etabliert',
     reputation_band_longstanding: 'Langjährig',
+    confirming: 'Wird bestätigt...',
+    membership_unconfirmed:
+      'An Hive gesendet. Die Community hat es noch nicht bestätigt. Lade die Seite gleich neu, um nachzusehen.',
+    check_again: 'Erneut prüfen',
   },
   fr: {
     loading: "Chargement...",
@@ -571,6 +586,10 @@ const translations: Record<string, Translations> = {
     reputation_band_new: 'Nouveau',
     reputation_band_established: 'Établi',
     reputation_band_longstanding: 'De longue date',
+    confirming: 'Confirmation...',
+    membership_unconfirmed:
+      "Envoyé à Hive. La communauté ne l'a pas encore confirmé. Rechargez dans un instant pour vérifier.",
+    check_again: 'Vérifier à nouveau',
   },
   ko: {
     loading: '로딩 중...',
@@ -684,6 +703,10 @@ const translations: Record<string, Translations> = {
     reputation_band_new: '신규',
     reputation_band_established: '활동 중',
     reputation_band_longstanding: '오래된 계정',
+    confirming: '확인 중...',
+    membership_unconfirmed:
+      'Hive로 전송했습니다. 커뮤니티가 아직 확인하지 않았습니다. 잠시 후 새로 고쳐 확인해 주세요.',
+    check_again: '다시 확인',
   },
   ru: {
     loading: 'Загрузка...',
@@ -798,6 +821,10 @@ const translations: Record<string, Translations> = {
     reputation_band_new: 'Новый',
     reputation_band_established: 'Постоянный',
     reputation_band_longstanding: 'Давний',
+    confirming: 'Подтверждение...',
+    membership_unconfirmed:
+      'Отправлено в Hive. Сообщество это ещё не подтвердило. Обновите страницу через минуту, чтобы проверить.',
+    check_again: 'Проверить снова',
   },
 };
 

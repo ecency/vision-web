@@ -50,7 +50,6 @@ async function serveAndResolve(configuration: unknown) {
     features: instance.features,
     layer: resolveHiveLayer({
       features: instance.features,
-      isCommunityMode: instance.type === 'community' && !!instance.communityId,
       composerIsInternal: true,
     }),
   };
@@ -61,19 +60,13 @@ const OFF_POSTURE = {
   showPayoutInFeed: false,
   showChainNote: false,
   showChainPermalink: false,
-  showVoteWeightPicker: false,
-  allowDownvotes: false,
 };
 
+/** Read off the object, so a flag added without an OFF_POSTURE row fails here. */
 function posture(layer: ReturnType<typeof resolveHiveLayer>) {
-  return {
-    showPayoutOnPost: layer.showPayoutOnPost,
-    showPayoutInFeed: layer.showPayoutInFeed,
-    showChainNote: layer.showChainNote,
-    showChainPermalink: layer.showChainPermalink,
-    showVoteWeightPicker: layer.showVoteWeightPicker,
-    allowDownvotes: layer.allowDownvotes,
-  };
+  return Object.fromEntries(
+    Object.entries(layer).filter(([, value]) => typeof value === 'boolean'),
+  );
 }
 
 describe('the Hive layer through the real config merge', () => {

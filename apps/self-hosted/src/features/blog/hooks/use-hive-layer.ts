@@ -20,7 +20,8 @@ export function useHiveLayer(): ResolvedHiveLayer {
 
     // Same expression as use-instance-config, deliberately: a second definition
     // of "is a community" would disagree with the sidebar on an instance typed
-    // community with no communityId.
+    // community with no communityId. The resolver does not take it today; the
+    // downvote clamp that needs it returns with the vote controls.
     const isCommunityMode =
       instance?.type === 'community' && !!instance?.communityId;
 
@@ -31,7 +32,6 @@ export function useHiveLayer(): ResolvedHiveLayer {
 
     return resolveHiveLayer({
       features: instance?.features,
-      isCommunityMode,
       composerIsInternal: composer.kind === 'internal',
     });
   }, []);

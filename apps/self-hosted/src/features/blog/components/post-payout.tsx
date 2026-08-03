@@ -2,6 +2,7 @@
 
 import type { Entry } from '@ecency/sdk';
 import { UilUsdCircle } from '@tooni/iconscout-unicons-react';
+import type { ReactNode } from 'react';
 import { formatRelativeTime, t } from '@/core';
 import {
   formatPayoutAmount,
@@ -13,6 +14,15 @@ interface Props {
   entry: Entry;
   /** Owner's own word for earnings, or null for the built-in label. */
   label: string | null;
+  /**
+   * Rendered immediately before the figure, and only when there is one.
+   *
+   * The feed row separates its items with a bullet. Putting that bullet at the
+   * call site would leave it stranded on every entry this renders nothing for,
+   * which on a search result is every entry, so the component that knows
+   * whether it renders owns the separator too.
+   */
+  separator?: ReactNode;
 }
 
 /**
@@ -23,7 +33,7 @@ interface Props {
  * all when the figure would be zero or the entry carries no readable payout
  * fields, which is what keeps the search feed safe.
  */
-export function PostPayout({ entry, label }: Props) {
+export function PostPayout({ entry, label, separator }: Props) {
   const payout = resolvePostPayout(entry);
   if (!payout) return null;
 
@@ -37,14 +47,17 @@ export function PostPayout({ entry, label }: Props) {
     label ?? (payout.paidOut ? t('rewards_earned') : t('rewards_pending'));
 
   return (
-    <div className="flex items-center gap-1" title={t('payout_hint')}>
-      <UilUsdCircle className="size-4" aria-hidden="true" />
-      <span>{payout.declined ? figure : `${heading} ${figure}`}</span>
-      {isPayoutWindowOpen(entry) && (
-        <span className="opacity-80">
-          {`· ${t('payout_window')} ${formatRelativeTime(entry.payout_at)}`}
-        </span>
-      )}
-    </div>
+    <>
+      {separator}
+      <div className="flex items-center gap-1" title={t('payout_hint')}>
+        <UilUsdCircle className="size-4" aria-hidden="true" />
+        <span>{payout.declined ? figure : `${heading} ${figure}`}</span>
+        {isPayoutWindowOpen(entry) && (
+          <span className="opacity-80">
+            {`· ${t('payout_window')} ${formatRelativeTime(entry.payout_at)}`}
+          </span>
+        )}
+      </div>
+    </>
   );
 }
