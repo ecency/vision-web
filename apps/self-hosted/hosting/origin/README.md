@@ -79,7 +79,7 @@ diagnostics.
 **Why the include path has a `*` in it.** nginx refuses to start on an `include` naming a
 file that does not exist:
 
-```
+```text
 nginx: [emerg] open() "/etc/nginx/hosting-internal-allow.conf" failed (2: No such file
 or directory) in /etc/nginx/sites-enabled/blogs.ecency.com.conf:67
 ```
@@ -101,8 +101,11 @@ Order matters: create the allowlist first, or the window between reloading nginx
 the file is a window where card activation and Pro blog claims return 403.
 
 ```bash
-# 1. Write the allowlist (root, 0644, world-readable so the nginx workers can read it)
-sudo install -m 0644 /dev/null /etc/nginx/hosting-internal-allow.conf
+# 1. Write the allowlist (root, 0644, world-readable so the nginx workers can read it).
+#    Created only when absent: installing over an existing file empties it, and the
+#    next reload would then refuse every internal caller. Safe to re-run.
+[ -e /etc/nginx/hosting-internal-allow.conf ] \
+  || sudo install -m 0644 /dev/null /etc/nginx/hosting-internal-allow.conf
 sudo nano /etc/nginx/hosting-internal-allow.conf      # allow ...;  one per line
 
 # 2. Back up the live vhost, then copy the new one in
@@ -133,12 +136,22 @@ Adding an address is a reload, not a rollback:
 sudo nano /etc/nginx/hosting-internal-allow.conf && sudo nginx -t && sudo systemctl reload nginx
 ```
 
-To drop the restriction entirely and go back to the previous behaviour:
+To drop the restriction entirely and go back to the previous behaviour, roll back **both**
+layers. Restoring the vhost alone leaves the container-side allowlist enforcing, so internal
+callers stay refused and the cause is no longer visible in the nginx config:
 
 ```bash
+# 1. The vhost
 sudo cp /etc/nginx/sites-available/blogs.ecency.com.conf.bak \
         /etc/nginx/sites-available/blogs.ecency.com.conf
 sudo nginx -t && sudo systemctl reload nginx
+
+# 2. The container-side allowlist, if it was ever set. Removing the line is not
+#    enough on its own: the running container keeps the environment it started
+#    with, so it has to be recreated.
+sudo sed -i '/^HOSTING_INTERNAL_ALLOWED_IPS=/d' ~/hosting/.env
+cd ~/hosting && docker compose up -d hosting-api
+docker logs ecency-hosting-api 2>&1 | grep SourceAllowlist   # expect "not configured"
 ```
 
 Do **not** roll back by deleting the allowlist file: the vhost still has `deny all`, so that
@@ -151,7 +164,18 @@ by a reload - it neutralises the check without editing the vhost.
 `HOSTING_INTERNAL_ALLOWED_IPS` in the hosting stack's `.env` is the same restriction enforced
 inside the API, for traffic that reaches the container without passing through here. It is
 unset by default and allows everything until it is set; it takes the same comma-separated
-addresses and CIDRs. Restart `hosting-api` after setting it.
+addresses and CIDRs.
+
+Apply it with `cd ~/hosting && docker compose up -d hosting-api`, which recreates the container
+because the resolved environment changed. `docker compose restart` is **not** enough: it restarts
+the existing container, which keeps the environment it was created with, so the new value is
+silently ignored and the allowlist appears not to work. Confirm with:
+
+```bash
+docker logs ecency-hosting-api 2>&1 | grep SourceAllowlist
+```
+
+which reports `enforcing (N rule(s), ...)` once it is live and `not configured` while it is not.
 
 Two differences from this file, both worth knowing before copying values across:
 
