@@ -130,6 +130,32 @@ Enable/disable features in your config:
 }
 ```
 
+`methods` accepts `keychain`, `hivesigner` and `hiveauth`. Any other name is ignored.
+
+### Hivesigner Login
+
+Listing `hivesigner` is not enough on its own. The button stays hidden until the
+instance names a Hivesigner app:
+
+```json
+{
+  "general": {
+    "hivesigner": { "clientId": "your-app-id" }
+  }
+}
+```
+
+Two ways to get an id:
+
+- Register your own Hivesigner app and put its id here.
+- Email hello@ecency.com to get this site's `/auth` address registered on the
+  shared `ecency.app` app, then put `ecency.app` here.
+
+Hivesigner refuses to return to an address its app has not registered, so a
+login button offered without this can only end on an error page. That is why it
+stays hidden instead. Site owners can also set the id in the Configuration
+Editor, under General Settings > Hivesigner.
+
 ### Layout Options
 
 ```json

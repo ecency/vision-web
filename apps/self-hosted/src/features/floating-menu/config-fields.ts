@@ -1,3 +1,5 @@
+import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
+
 export type ConfigFieldType =
   | 'string'
   | 'number'
@@ -12,6 +14,13 @@ export interface ConfigField {
   description?: string;
   fields?: Record<string, ConfigField>;
   options?: Array<{ value: string; label: string }>;
+  /**
+   * For `array` fields: the only entries this list accepts. Anything else is
+   * rejected in the editor instead of being saved into a config that no code
+   * reads. Entries stay primitives, since the hosting API drops an array
+   * holding objects and reports the save as successful anyway.
+   */
+  allowedValues?: readonly string[];
 }
 
 export const configFieldsMap: Record<string, ConfigField> = {
@@ -256,7 +265,9 @@ export const configFieldsMap: Record<string, ConfigField> = {
                   methods: {
                     label: 'Auth Methods',
                     type: 'array',
-                    description: 'Available login methods: keychain, hivesigner, hiveauth',
+                    allowedValues: AUTH_METHODS,
+                    description:
+                      'Available login methods: keychain, hivesigner, hiveauth. Hivesigner also needs a client id, set under General Settings > Hivesigner.',
                   },
                 },
               },
@@ -344,6 +355,20 @@ export const configFieldsMap: Record<string, ConfigField> = {
             type: 'string',
             description:
               'Optional external composer for the Create post button. Leave empty to write here with the built-in editor. The old default https://ecency.com/publish also means the built-in editor.',
+          },
+          hivesigner: {
+            label: 'Hivesigner',
+            type: 'section',
+            fields: {
+              clientId: {
+                label: 'Hivesigner Client ID',
+                // A text input, never a number one: the number input writes null
+                // when cleared, and null erases the stored section on merge.
+                type: 'string',
+                description:
+                  "Hivesigner login stays hidden until this is set. Either register your own Hivesigner app and put its id here, or email hello@ecency.com to get this site's /auth address registered on the shared ecency.app app, then put ecency.app here.",
+              },
+            },
           },
           styles: {
             label: 'Styles',
