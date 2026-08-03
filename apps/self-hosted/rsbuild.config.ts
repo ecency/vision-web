@@ -31,6 +31,13 @@ export default defineConfig({
           'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
           '@tanstack/react-query': path.resolve(__dirname, 'node_modules/@tanstack/react-query'),
           '@ecency/ui': path.resolve(__dirname, '../../packages/ui/dist/index.js'),
+          // hive-auth-wrapper imports Node's assert. Without this the bundler
+          // resolves it to the npm polyfill, which reads process.emitWarning and
+          // process.stderr at module scope, and Rspack provides no process
+          // global: the chunk threw ReferenceError before any app code ran and
+          // every hosted blog rendered blank. The shim keeps the one behaviour
+          // the wrapper uses and drops the Node globals with the rest.
+          assert: path.resolve(__dirname, 'src/shims/assert.ts'),
         },
       },
       plugins: [

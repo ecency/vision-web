@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "rsbuild build",
+    "build": "rsbuild build && node scripts/check-node-globals.mjs",
     "check": "biome check --write",
     "dev": "rsbuild dev --open",
     "format": "biome format --write",
     "preview": "rsbuild preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:node-globals": "node scripts/check-node-globals.mjs"
   },
   "dependencies": {
     "@ecency/render-helper": "workspace:*",
