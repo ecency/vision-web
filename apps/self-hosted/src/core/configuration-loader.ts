@@ -98,6 +98,21 @@ export interface InstanceConfig {
         };
       };
       features: {
+        /**
+         * How much of the Hive blockchain this site shows readers.
+         *
+         * Every member optional and nothing added to CONFIG_SKELETON: a value
+         * placed there would silently become the consumer's default. The
+         * absence values live in one place, `resolveHiveLayer`, which also
+         * treats this whole block as unknown-shaped because the hosting API's
+         * merge only checks `typeof`.
+         */
+        hive?: {
+          readerLayer?: string;
+          authorRewards?: string;
+          payoutLabel?: string;
+          learnMoreUrl?: string;
+        };
         postsFilters: string[];
         likes: { enabled: boolean };
         comments: { enabled: boolean };

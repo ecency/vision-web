@@ -94,6 +94,16 @@ const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
       reason:
         'runtime config general.profileBaseUrl, defaults to https://ecency.com/@',
     },
+  'src/features/blog/components/hive-post-note.tsx:hiveUrl': {
+    occurrences: 1,
+    reason:
+      'absolute https template to the chain record; the checker widens it to string',
+  },
+  'src/features/blog/components/hive-post-note.tsx:learnMoreUrl': {
+    occurrences: 1,
+    reason:
+      'runtime config features.hive.learnMoreUrl, refused by resolveHiveLayer unless it parses as absolute http(s)',
+  },
 };
 
 const LINK_ATTRS = ['href', 'to'] as const;

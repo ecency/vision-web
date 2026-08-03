@@ -6,6 +6,7 @@ import { Link } from "@tanstack/react-router";
 import { useComment } from "@ecency/sdk";
 import { useAuth, useIsAuthenticated, useIsAuthEnabled } from "../hooks";
 import { t } from "@/core";
+import { CommentDisclosure } from "@/features/shared/hive-disclosure";
 import { createBroadcastAdapter } from "@/providers/sdk";
 
 interface CommentFormProps {
@@ -121,6 +122,13 @@ export function CommentForm({
       {error && (
         <div className="text-sm text-red-500 dark:text-red-400">{error}</div>
       )}
+
+      {/*
+        Not configurable, by design, and rendered only here: the unauthenticated
+        branch above is a login prompt, not a form, so nothing can be written
+        from it.
+      */}
+      <CommentDisclosure />
 
       <div className="flex justify-end">
         <button
