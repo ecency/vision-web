@@ -3,6 +3,7 @@ import { InstanceConfigManager } from "./configuration-loader";
 // Translation keys used throughout the app
 type TranslationKey =
   | 'loading'
+  | 'hivesigner_login_failed'
   | 'loadingPost'
   | 'loadingMore'
   | 'postNotFound'
@@ -97,6 +98,7 @@ type Translations = Record<TranslationKey, string>;
 const translations: Record<string, Translations> = {
   en: {
     loading: "Loading...",
+    hivesigner_login_failed: 'Sign in could not be completed. Please try again.',
     loadingPost: "Loading post...",
     loadingMore: "Loading more posts...",
     postNotFound: "Post not found.",
@@ -189,6 +191,7 @@ const translations: Record<string, Translations> = {
   },
   es: {
     loading: 'Cargando...',
+    hivesigner_login_failed: 'No se pudo completar el inicio de sesión. Inténtalo de nuevo.',
     loadingPost: 'Cargando publicación...',
     loadingMore: 'Cargando más publicaciones...',
     postNotFound: 'Publicación no encontrada.',
@@ -280,6 +283,7 @@ const translations: Record<string, Translations> = {
   },
   de: {
     loading: 'Lädt...',
+    hivesigner_login_failed: 'Die Anmeldung konnte nicht abgeschlossen werden. Bitte versuche es erneut.',
     loadingPost: 'Beitrag wird geladen...',
     loadingMore: 'Weitere Beiträge laden...',
     postNotFound: 'Beitrag nicht gefunden.',
@@ -371,6 +375,7 @@ const translations: Record<string, Translations> = {
   },
   fr: {
     loading: "Chargement...",
+    hivesigner_login_failed: "La connexion n'a pas pu aboutir. Veuillez réessayer.",
     loadingPost: "Chargement de l'article...",
     loadingMore: "Chargement d'autres articles...",
     postNotFound: "Article non trouvé.",
@@ -463,6 +468,7 @@ const translations: Record<string, Translations> = {
   },
   ko: {
     loading: '로딩 중...',
+    hivesigner_login_failed: '로그인을 완료하지 못했습니다. 다시 시도해 주세요.',
     loadingPost: '게시물 로딩 중...',
     loadingMore: '더 많은 게시물 로딩 중...',
     postNotFound: '게시물을 찾을 수 없습니다.',
@@ -554,6 +560,7 @@ const translations: Record<string, Translations> = {
   },
   ru: {
     loading: 'Загрузка...',
+    hivesigner_login_failed: 'Не удалось завершить вход. Попробуйте ещё раз.',
     loadingPost: 'Загрузка поста...',
     loadingMore: 'Загрузка постов...',
     postNotFound: 'Пост не найден.',

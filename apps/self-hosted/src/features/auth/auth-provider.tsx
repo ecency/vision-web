@@ -1,20 +1,11 @@
-"use client";
+'use client';
 
-import { InstanceConfigManager } from "@/core";
-import { useAuthStore } from "@/store";
-import {
-  createContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
-import { clearHiveAuthSession, clearUser, saveUser } from "./storage";
-import type { AuthContextValue, AuthMethod, AuthUser } from "./types";
-import {
-  isHivesignerCallback,
-  parseHivesignerCallback,
-} from "./utils/hivesigner";
+import { createContext, type ReactNode, useEffect, useMemo } from 'react';
+import { InstanceConfigManager } from '@/core';
+import { useAuthStore } from '@/store';
+import { clearHiveAuthSession, clearUser } from './storage';
+import type { AuthContextValue, AuthMethod, AuthUser } from './types';
+import { resolveHivesignerClientId } from './utils/hivesigner';
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -27,11 +18,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Get auth config
   const authConfig = InstanceConfigManager.getConfigValue(
-    ({ configuration }) => configuration.instanceConfiguration.features.auth
+    ({ configuration }) => configuration.instanceConfiguration.features.auth,
   );
 
   const isAuthEnabled = authConfig?.enabled ?? false;
-  const availableMethods = (authConfig?.methods ?? []) as AuthMethod[];
+  const hivesignerClientId = resolveHivesignerClientId(
+    InstanceConfigManager.getConfigValue(
+      ({ configuration }) => configuration.general?.hivesigner?.clientId,
+    ),
+  );
+
+  // Configured methods, minus any this instance cannot actually complete.
+  // Offering a method that always fails sends the visitor into an error with no
+  // explanation: Hivesigner rejects a redirect_uri its app has not registered,
+  // and a hosted blog's origin cannot be registered in advance, so it is offered
+  // only when the instance names a client of its own.
+  const availableMethods = ((authConfig?.methods ?? []) as AuthMethod[]).filter(
+    (method) => (method === 'hivesigner' ? hivesignerClientId !== null : true),
+  );
 
   // Get the instance owner. Falls back to the showcased username for older
   // configs that predate the `owner` field (blog instances where the owner and
@@ -40,14 +44,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const blogOwner = InstanceConfigManager.getConfigValue(
     ({ configuration }) =>
       configuration.instanceConfiguration.owner ||
-      configuration.instanceConfiguration.username
+      configuration.instanceConfiguration.username,
   );
 
   // Check if current user is the instance owner
   const isBlogOwner = useMemo(() => {
     if (!user || !blogOwner) return false;
     return (
-      (user.username ?? "").toLowerCase() === (blogOwner ?? "").toLowerCase()
+      (user.username ?? '').toLowerCase() === (blogOwner ?? '').toLowerCase()
     );
   }, [user, blogOwner]);
 
@@ -74,28 +78,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => clearInterval(interval);
   }, [user?.expiresAt]);
 
-  // Handle Hivesigner callback
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const search = window.location.search;
-    if (isHivesignerCallback(search)) {
-      const callbackData = parseHivesignerCallback(search);
-      if (callbackData) {
-        const newUser: AuthUser = {
-          username: callbackData.username,
-          accessToken: callbackData.accessToken,
-          loginType: "hivesigner",
-          expiresAt: Date.now() + callbackData.expiresIn * 1000,
-        };
-        setUser(newUser);
-        saveUser(newUser);
-
-        // Clean up URL
-        window.history.replaceState({}, "", window.location.pathname);
-      }
-    }
-  }, []);
+  // The Hivesigner callback is handled by the /auth route, not here. Running it
+  // on every route meant any page carrying ?access_token=&username= counted as a
+  // completed login, which treated URL input as a credential.
 
   // Check if session is expiring within 5 minutes
   const isSessionExpiringSoon = useMemo(() => {
@@ -113,7 +98,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       isBlogOwner,
       isSessionExpiringSoon,
     }),
-    [user, isAuthEnabled, availableMethods, isBlogOwner, isSessionExpiringSoon]
+    [user, isAuthEnabled, availableMethods, isBlogOwner, isSessionExpiringSoon],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

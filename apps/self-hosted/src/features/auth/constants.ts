@@ -6,7 +6,14 @@ export const HIVEAUTH_KEY = 'ecency_selfhost_hiveauth';
 export const HIVESIGNER_CLIENT_ID = 'ecency.app';
 export const HIVESIGNER_OAUTH_URL = 'https://hivesigner.com/oauth2/authorize';
 export const HIVESIGNER_TOKEN_URL = 'https://hivesigner.com/api/oauth2/token';
+export const HIVESIGNER_ME_URL = 'https://hivesigner.com/api/me';
 export const HIVESIGNER_SCOPE = 'vote,comment,custom_json';
+// A FIXED path, not the page login started from. OAuth matches redirect_uri
+// exactly, so sending origin + pathname produced a different URI per page and
+// none of them could realistically be registered on the app.
+export const HIVESIGNER_REDIRECT_PATH = '/auth';
+/** sessionStorage key holding the OAuth state nonce for the in-flight login. */
+export const HIVESIGNER_STATE_KEY = 'ecency_selfhost_hs_state';
 
 // HiveAuth
 export const HIVEAUTH_API = 'wss://hiveauth.arcange.eu';

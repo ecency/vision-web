@@ -329,15 +329,23 @@ function hiveAuthSignRequest(
   });
 }
 
+/** Authorities HiveAuth can be asked to sign with. */
+export type HiveAuthKeyType = 'posting' | 'active' | 'owner' | 'memo';
+
 /**
  * Broadcast operations with HiveAuth
  */
 export async function broadcastWithHiveAuth(
   session: HiveAuthSession,
   operations: Operation[],
+  keyType: HiveAuthKeyType = 'posting',
   callbacks?: HiveAuthSignCallback
 ): Promise<void> {
-  await hiveAuthSignRequest(session, operations, { keyType: 'posting', broadcast: true }, callbacks);
+  // The authority is the caller's to choose. Hardcoding 'posting' meant an
+  // active operation - a transfer, a tip, a custom_json with required_auths -
+  // asked the wallet for the posting key, and the chain rejects a transfer
+  // signed with posting authority.
+  await hiveAuthSignRequest(session, operations, { keyType, broadcast: true }, callbacks);
 }
 
 /**
