@@ -8,11 +8,34 @@ import { callRPC } from "@/modules/core/hive-tx";
 type PageParam = {
   author: string | undefined;
   permlink: string | undefined;
-  hasNextPage: boolean;
 };
 
 interface GetPostsRankedOptions {
   resolvePosts?: boolean;
+}
+
+/**
+ * `select` runs on every render, and React Query only reuses its previous
+ * result when both the data and the select function are unchanged. These
+ * options are rebuilt on each render, so an inline arrow would be a new
+ * function every time and every page would be re-sorted on every render.
+ * One stable function per sort keeps that memoization working.
+ */
+const displaySelects = new Map<
+  string,
+  (data: InfiniteData<Entry[], PageParam>) => InfiniteData<Entry[], PageParam>
+>();
+
+function displaySelect(sort: string) {
+  let select = displaySelects.get(sort);
+  if (!select) {
+    select = (data) => ({
+      ...data,
+      pages: data.pages.map((page) => orderForDisplay(page, sort)),
+    });
+    displaySelects.set(sort, select);
+  }
+  return select;
 }
 
 /**
@@ -59,10 +82,6 @@ export function getPostsRankedInfiniteQueryOptions(
   >({
     queryKey: QueryKeys.posts.postsRanked(sort, tag, limit, observer),
     queryFn: async ({ pageParam, signal }: { pageParam: PageParam; signal: AbortSignal }) => {
-      if (!pageParam.hasNextPage) {
-        return [];
-      }
-
       let sanitizedTag = tag;
       if (CONFIG.dmcaTagRegexes.some((regex) => regex.test(tag))) {
         sanitizedTag = "";
@@ -96,19 +115,15 @@ export function getPostsRankedInfiniteQueryOptions(
       // applied in `select`, which React Query runs after pagination.
       return filterDmcaEntry(response as Entry[]);
     },
-    select: (data) => ({
-      ...data,
-      pages: data.pages.map((page) => orderForDisplay(page, sort)),
-    }),
+    select: displaySelect(sort),
     enabled,
     initialPageParam: {
       author: undefined,
       permlink: undefined,
-      hasNextPage: true,
     } as PageParam,
     getNextPageParam: (lastPage: Entry[]) => {
       // React Query reads "there is no next page" from undefined alone, so
-      // returning an object here always left hasNextPage true. An infinite list
+      // returning an object here always left it true. An infinite list
       // then keeps calling fetchNextPage at the end of the feed, appending an
       // empty page each time: the query state churns and the cache grows for as
       // long as the reader sits at the bottom.
@@ -117,11 +132,7 @@ export function getPostsRankedInfiniteQueryOptions(
         return undefined;
       }
 
-      return {
-        author: last.author,
-        permlink: last.permlink,
-        hasNextPage: true,
-      };
+      return { author: last.author, permlink: last.permlink };
     },
   });
 }
