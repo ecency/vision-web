@@ -57,19 +57,31 @@ const CALL_SITES: Record<string, string> = {
   'features/blog/components/blog-post-footer.tsx': 'VoteDisclosure',
 };
 
-function parse(relative: string): ts.SourceFile {
-  const path = join(SRC, relative);
+function parseSource(code: string, name = 'probe.tsx'): ts.SourceFile {
   return ts.createSourceFile(
-    path,
-    readFileSync(path, 'utf8'),
+    name,
+    code,
     ts.ScriptTarget.Latest,
     true,
     ts.ScriptKind.TSX,
   );
 }
 
+function parse(relative: string): ts.SourceFile {
+  const path = join(SRC, relative);
+  return parseSource(readFileSync(path, 'utf8'), path);
+}
+
 interface Imported {
   specifier: string;
+  /**
+   * Both names an import introduces: what was exported, and what it is called
+   * here. `import { resolveHiveLayer as layer }` is the resolver under a name
+   * no list of forbidden bindings would think to contain, so recording only
+   * the local name let exactly that through. Recording only the exported name
+   * would miss the mirror image, a local name that happens to collide with a
+   * forbidden one, so both are kept and both are checked.
+   */
   bindings: string[];
 }
 
@@ -86,6 +98,9 @@ function importsOf(sf: ts.SourceFile): Imported[] {
       if (clause?.namedBindings) {
         if (ts.isNamedImports(clause.namedBindings)) {
           for (const element of clause.namedBindings.elements) {
+            // propertyName is set only on an aliased import, and is the name
+            // the module actually exported.
+            if (element.propertyName) bindings.push(element.propertyName.text);
             bindings.push(element.name.text);
           }
         } else {
@@ -145,15 +160,19 @@ function enclosingConditions(node: ts.Node, sf: ts.SourceFile): string[] {
   return conditions;
 }
 
+/** Everything a file pulls in that would let it read the Hive layer. */
+function forbiddenBindingsIn(sf: ts.SourceFile): string[] {
+  return importsOf(sf).flatMap((entry) =>
+    entry.bindings.filter((binding) => FORBIDDEN_BINDINGS.has(binding)),
+  );
+}
+
 describe('the disclosure floor has no way to be switched off', () => {
   const module = parse(DISCLOSURE_MODULE);
   const moduleImports = importsOf(module);
 
   it('imports nothing from the Hive layer resolver', () => {
-    const reachable = moduleImports.flatMap((entry) =>
-      entry.bindings.filter((binding) => FORBIDDEN_BINDINGS.has(binding)),
-    );
-    expect(reachable).toEqual([]);
+    expect(forbiddenBindingsIn(module)).toEqual([]);
   });
 
   it('imports nothing from a hive-layer module by path either', () => {
@@ -197,4 +216,87 @@ describe('the disclosure floor has no way to be switched off', () => {
       expect(gated).toEqual([]);
     },
   );
+});
+
+describe('the guard catches the ways around it', () => {
+  const from = (code: string) => parseSource(code);
+
+  it('passes a module that only imports what it should', () => {
+    expect(forbiddenBindingsIn(from("import { t } from '@/core';"))).toEqual(
+      [],
+    );
+  });
+
+  it('catches the resolver imported under another name', () => {
+    // The hole: only the LOCAL name was recorded, so an alias was a name no
+    // list of forbidden bindings would ever contain, and the resolver was
+    // fully reachable through it.
+    expect(
+      forbiddenBindingsIn(
+        from("import { resolveHiveLayer as layer } from '@/core';"),
+      ),
+    ).toContain('resolveHiveLayer');
+  });
+
+  it.each([
+    ["import { useHiveLayer as h } from '@/core';", 'useHiveLayer'],
+    [
+      "import { t, HIVE_LAYER_CONFIG_DEFAULTS as d } from '@/core';",
+      'HIVE_LAYER_CONFIG_DEFAULTS',
+    ],
+    [
+      "import type { ResolvedHiveLayer as L } from '@/core';",
+      'ResolvedHiveLayer',
+    ],
+    [
+      "import { InstanceConfigManager as cfg } from '@/core';",
+      'InstanceConfigManager',
+    ],
+  ])('catches %s', (code, expected) => {
+    expect(forbiddenBindingsIn(from(code))).toContain(expected);
+  });
+
+  it('still catches an unaliased import', () => {
+    expect(
+      forbiddenBindingsIn(from("import { resolveHiveLayer } from '@/core';")),
+    ).toContain('resolveHiveLayer');
+  });
+
+  it('catches a local name that collides with a forbidden one', () => {
+    // The mirror image: recording only the exported name would let a local
+    // `resolveHiveLayer` bound to some other export through.
+    expect(
+      forbiddenBindingsIn(
+        from("import { somethingElse as resolveHiveLayer } from './x';"),
+      ),
+    ).toContain('resolveHiveLayer');
+  });
+
+  it('catches a namespace import, which hides every name', () => {
+    const wildcards = importsOf(from("import * as core from '@/core';"));
+    expect(wildcards[0].bindings).toContain('*');
+  });
+
+  it('reads a Hive-layer condition wrapped around a disclosure', () => {
+    const sf = from(
+      'export const A = () => <div>{hiveLayer.showChainNote && <CommentDisclosure />}</div>;',
+    );
+    const [element] = jsxElements(sf, 'CommentDisclosure');
+    expect(enclosingConditions(element, sf)).toContain(
+      'hiveLayer.showChainNote',
+    );
+  });
+
+  it('does not read the auth and likes gates as Hive-layer conditions', () => {
+    // features.likes and features.auth already decide whether the action
+    // exists at all, so gating on them is allowed and must not be reported.
+    const sf = from(
+      'export const A = () => <div>{showLikes && isAuthEnabled && <VoteDisclosure />}</div>;',
+    );
+    const [element] = jsxElements(sf, 'VoteDisclosure');
+    const gated = enclosingConditions(element, sf).filter((condition) =>
+      /hiveLayer|resolveHiveLayer|useHiveLayer|readerLayer/.test(condition),
+    );
+    expect(gated).toEqual([]);
+  });
 });

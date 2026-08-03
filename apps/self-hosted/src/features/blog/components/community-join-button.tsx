@@ -11,6 +11,7 @@ import clsx from 'clsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '@/core';
 import { useAuth, useIsAuthEnabled, useIsAuthenticated } from '@/features/auth';
+import { LiveRegion } from '@/features/shared/live-region';
 import { createBroadcastAdapter } from '@/providers/sdk';
 import {
   MEMBERSHIP_CONFIRMATION,
@@ -98,14 +99,21 @@ export function CommunityJoinButton({ communityId }: Props) {
         await sleep(delayMs);
         if (cancelled.current) return;
 
-        const { data } = await refetch();
+        // A read that fails is not a reading. Letting the rejection escape here
+        // left the button in `confirming` forever, disabled, with no way out;
+        // an absent observation is already handled, and advances the run toward
+        // the honest `unconfirmed` ending instead.
+        let observed: boolean | undefined;
+        try {
+          const result = await refetch();
+          observed = result.isError ? undefined : result.data?.subscribed;
+        } catch (err) {
+          console.error('Community context read failed:', err);
+          observed = undefined;
+        }
         if (cancelled.current) return;
 
-        const step = nextConfirmationStep(
-          data?.subscribed,
-          target,
-          attemptsMade,
-        );
+        const step = nextConfirmationStep(observed, target, attemptsMade);
         if (step.kind === 'confirmed') {
           setPhase('idle');
           setDesired(null);
@@ -145,8 +153,14 @@ export function CommunityJoinButton({ communityId }: Props) {
         setPhase('failed');
         setError(t('community_membership_failed'));
         // The throw may have been a timeout on a broadcast that still landed,
-        // so the community stays the authority on what actually happened.
-        await refetch();
+        // so the community stays the authority on what actually happened. Its
+        // own failure must not replace the broadcast error the reader needs,
+        // nor escape as an unhandled rejection.
+        try {
+          await refetch();
+        } catch (readErr) {
+          console.error('Community context read failed:', readErr);
+        }
         return;
       }
 
@@ -207,24 +221,33 @@ export function CommunityJoinButton({ communityId }: Props) {
         {label}
       </button>
 
+      {/*
+        Both outcomes are announced, and both regions are mounted from the
+        first render rather than appearing with their message. A live region
+        created at the same moment as its content is usually not read out, so
+        conditionally rendering these would leave a screen reader user with a
+        button that silently goes disabled and nothing else.
+      */}
+      <LiveRegion
+        className="text-xs text-theme-muted"
+        message={phase === 'unconfirmed' ? t('membership_unconfirmed') : null}
+      />
+
       {phase === 'unconfirmed' && (
-        <div className="flex flex-col items-start gap-1">
-          <span className="text-xs text-theme-muted">
-            {t('membership_unconfirmed')}
-          </span>
-          <button
-            type="button"
-            onClick={handleCheckAgain}
-            className="text-xs underline text-theme-muted"
-          >
-            {t('check_again')}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleCheckAgain}
+          className="text-xs underline text-theme-muted"
+        >
+          {t('check_again')}
+        </button>
       )}
 
-      {error && (
-        <span className="text-xs text-red-500 dark:text-red-400">{error}</span>
-      )}
+      <LiveRegion
+        urgency="assertive"
+        className="text-xs text-red-500 dark:text-red-400"
+        message={error}
+      />
     </div>
   );
 }
