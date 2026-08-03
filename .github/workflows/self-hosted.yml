@@ -11,6 +11,39 @@ on:
       - 'packages/render-helper/**'
       - 'packages/wallets/**'
       - 'packages/ui/**'
+      # Root dependency inputs: the Dockerfile copies all of these before
+      # installing, so a lockfile bump, an override or a patch can change the
+      # emitted chunks without any file above being touched.
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
+      - 'patches/**'
+  # Tests and the app build also run on pull requests. Without this the first
+  # time anything is compiled is the deploy, which serves live blogs: a bundle
+  # that threw at load reached production that way and blanked every instance.
+  # The image build and the deploy stay push-only, so a pull request needs no
+  # secrets and can neither publish an image nor touch a server.
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths:
+      - 'apps/self-hosted/**'
+      - 'packages/sdk/**'
+      - 'packages/render-helper/**'
+      - 'packages/wallets/**'
+      - 'packages/ui/**'
+      # Root dependency inputs: the Dockerfile copies all of these before
+      # installing, so a lockfile bump, an override or a patch can change the
+      # emitted chunks without any file above being touched.
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
+      - 'patches/**'
+      # Deliberately only on this side. A change to this file should prove itself
+      # on its own pull request, but merging one should not redeploy an app whose
+      # code did not change, and develop deploys with no staging tier in between.
+      - '.github/workflows/self-hosted.yml'
 
 # Default to read-only GITHUB_TOKEN. Build pushes to Docker Hub (external);
 # deploy jobs SCP/SSH to servers — neither path needs GitHub write access.
@@ -55,6 +88,37 @@ jobs:
       - name: Run hosting API tests
         run: cd apps/self-hosted/hosting/api && npm install && npm test
 
+      # The unit tests never compile the app, so a bundle that only fails at
+      # load used to reach production uncompiled. This is also what runs
+      # scripts/check-node-globals.mjs, which fails on a Node global that
+      # Rsbuild does not provide.
+      #
+      # The shared packages are built first, in the same order as
+      # apps/self-hosted/Dockerfile. They resolve through their committed dist
+      # (and rsbuild.config.ts aliases @ecency/ui straight at it), so skipping
+      # this bundles whatever dist happens to be checked in and tests a
+      # different artifact than the image ships. A regression introduced in a
+      # package's source would then pass here and still reach production, which
+      # is how the last one arrived: it came from render-helper.
+      - name: Build shared packages
+        run: |
+          pnpm --filter @ecency/sdk build
+          pnpm --filter @ecency/render-helper build
+          pnpm --filter @ecency/ui build
+          pnpm --filter @ecency/wallets build
+        env:
+          CI: true
+
+      - name: Build the self-hosted app
+        run: |
+          # Mirrors the Dockerfile: config.json is gitignored, so fall back to
+          # the template exactly as the image build does.
+          [ -f apps/self-hosted/config.json ] \
+            || cp apps/self-hosted/config.template.json apps/self-hosted/config.json
+          pnpm --filter @ecency/self-hosted build
+        env:
+          CI: true
+
   build-blog:
     # Its own group: build-blog and build-api run in parallel and would otherwise cancel
     # each other.
@@ -62,6 +126,9 @@ jobs:
       group: ${{ github.workflow }}-build-blog-${{ github.ref }}
       cancel-in-progress: true
     needs: tests
+    # Publishes to Docker Hub, so it needs secrets a fork pull request cannot have
+    # and produces an artifact a pull request has no use for.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -99,6 +166,8 @@ jobs:
       group: ${{ github.workflow }}-build-api-${{ github.ref }}
       cancel-in-progress: true
     needs: tests
+    # Push-only, for the same reasons as build-blog.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
