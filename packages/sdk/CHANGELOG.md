@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.72
+
+### Patch Changes
+
+- fix(sdk): stop ranked-posts pagination at the end of the feed (#1324)
+
 ## 2.3.71
 
 ### Patch Changes
