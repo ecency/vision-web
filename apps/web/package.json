@@ -142,7 +142,7 @@
     "speakingurl": "^14.0.1",
     "turndown": "^7.2.0",
     "tus-js-client": "^4.1.0",
-    "undici": "^6.27.0",
+    "undici": "^6.28.0",
     "use-indexeddb": "^2.0.2",
     "uuid": "^14.0.0",
     "webpack": "^5.104.1",
