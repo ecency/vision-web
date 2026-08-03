@@ -34,3 +34,12 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Lint
         run: pnpm -r lint
+      # `pnpm -r lint` runs each package's own eslint binary, so a workspace-root
+      # eslint on a major that cannot read the packages' flat configs stays
+      # invisible here while breaking every root-resolved invocation - `npx eslint`
+      # inside a package and editor ESLint servers both resolve to the workspace
+      # root, because the root package.json declares `workspaces`. That skew is
+      # what #1335 hit. Run one flat-config package through the root-resolved
+      # binary so the next skew fails here instead of at a desk.
+      - name: Root-resolved eslint reads the packages' flat configs
+        run: cd packages/sdk && "$GITHUB_WORKSPACE/node_modules/.bin/eslint" .
