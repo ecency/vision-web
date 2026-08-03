@@ -13,7 +13,7 @@ in practice — **re-copy any change made there back into this directory.**
 
 | file | on the origin | purpose |
 |---|---|---|
-| `blogs.ecency.com.conf` | `/etc/nginx/sites-available/` | TLS termination and proxying for the apex, the API, and tenant subdomains |
+| `blogs.ecency.com.conf` | `/etc/nginx/sites-available/`, under whatever name the `sites-enabled` symlink already points at (currently `blogs.ecency.com`, no suffix) | TLS termination and proxying for the apex, the API, and tenant subdomains |
 | `sync-custom-domains.py` | cron, every 5 min | issues certificates and writes vhosts for custom domains and dotted tenant names |
 | `install.sh` | once, idempotent | nginx include dir, certbot deploy hook, cron entry |
 | `hosting-internal-allow.conf` | `/etc/nginx/` **only** (not in git) | who may reach `/v1/internal` |
@@ -74,7 +74,8 @@ access log rather than guessing - `awk '$7 ~ /^\/v1\/internal/'` over `access.lo
 requests that have actually been made; take the peer column (the first field with the stock
 `combined` format, the third with the `realip` format this origin uses, since that one leads
 with `$http_cf_connecting_ip`). Adding 127.0.0.1 as well is convenient for on-box
-diagnostics.
+diagnostics; if you do, add it to `HOSTING_INTERNAL_ALLOWED_IPS` too, or the API refuses what
+this file admits. See the note further down.
 
 **Why the include path has a `*` in it.** nginx refuses to start on an `include` naming a
 file that does not exist:
@@ -109,8 +110,13 @@ the file is a window where card activation and Pro blog claims return 403.
 sudo nano /etc/nginx/hosting-internal-allow.conf      # allow ...;  one per line
 
 # 2. Back up the live vhost, then copy the new one in
-sudo cp /etc/nginx/sites-available/blogs.ecency.com.conf{,.bak}
-sudo cp blogs.ecency.com.conf /etc/nginx/sites-available/blogs.ecency.com.conf
+# The live file is NOT necessarily named like the one in this directory: on the
+# current origin it is sites-available/blogs.ecency.com, with no .conf suffix.
+# Resolve it through the symlink rather than assuming, or you will write a file
+# nginx never loads and conclude the change did nothing.
+LIVE=$(readlink -f /etc/nginx/sites-enabled/blogs.ecency.com)
+sudo cp -p "$LIVE" "$LIVE.bak"
+sudo cp blogs.ecency.com.conf "$LIVE"
 
 # 3. Test BEFORE reloading. A failed test here means nothing has changed yet.
 sudo nginx -t && sudo systemctl reload nginx
@@ -142,8 +148,8 @@ callers stay refused and the cause is no longer visible in the nginx config:
 
 ```bash
 # 1. The vhost
-sudo cp /etc/nginx/sites-available/blogs.ecency.com.conf.bak \
-        /etc/nginx/sites-available/blogs.ecency.com.conf
+LIVE=$(readlink -f /etc/nginx/sites-enabled/blogs.ecency.com)
+sudo cp "$LIVE.bak" "$LIVE"
 sudo nginx -t && sudo systemctl reload nginx
 
 # 2. The container-side allowlist, if it was ever set. Removing the line is not
@@ -179,11 +185,18 @@ which reports `enforcing (N rule(s), ...)` once it is live and `not configured` 
 
 Two differences from this file, both worth knowing before copying values across:
 
-- **Give it the caller addresses, not `127.0.0.1`.** A request proxied from here arrives at the
-  container from the docker bridge, which the API recognises as a trusted proxy and therefore
-  judges on the `X-Real-IP` this vhost set, meaning the real caller. Loopback is never the
-  identity being matched, so an entry for it does nothing there. It stays useful *here*, where
-  it is what lets an on-box `curl --resolve api.blogs.ecency.com:443:127.0.0.1 ...` through.
+- **Give it the caller addresses, and keep `127.0.0.1` in step with this file.** A request
+  proxied from here arrives at the container from the docker bridge, which the API recognises
+  as a trusted proxy and therefore judges on the `X-Real-IP` this vhost set, meaning the real
+  caller. For an on-box request that identity **is** loopback, so if this file allows
+  `127.0.0.1` and the variable does not, the two layers disagree: nginx admits the documented
+  `curl --resolve api.blogs.ecency.com:443:127.0.0.1 ...` diagnostic and the API then refuses
+  it. Allow it in both, or in neither. The log names which layer refused:
+
+  ```text
+  [SourceAllowlist] internal: refused 127.0.0.1 for /v1/internal/activate
+    (peer <docker bridge gateway>, via trusted proxy)
+  ```
 - **It cannot see a process on the origin itself.** Anything local can reach the API's
   published port directly, and that is indistinguishable from this vhost doing the same. What
   it does stop is a caller that is neither: another container on the compose network, which
