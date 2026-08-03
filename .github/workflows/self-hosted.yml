@@ -11,6 +11,21 @@ on:
       - 'packages/render-helper/**'
       - 'packages/wallets/**'
       - 'packages/ui/**'
+  # Tests and the app build also run on pull requests. Without this the first
+  # time anything is compiled is the deploy, which serves live blogs: a bundle
+  # that threw at load reached production that way and blanked every instance.
+  # The image build and the deploy stay push-only, so a pull request needs no
+  # secrets and can neither publish an image nor touch a server.
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths:
+      - 'apps/self-hosted/**'
+      - 'packages/sdk/**'
+      - 'packages/render-helper/**'
+      - 'packages/wallets/**'
+      - 'packages/ui/**'
 
 # Default to read-only GITHUB_TOKEN. Build pushes to Docker Hub (external);
 # deploy jobs SCP/SSH to servers — neither path needs GitHub write access.
@@ -55,6 +70,20 @@ jobs:
       - name: Run hosting API tests
         run: cd apps/self-hosted/hosting/api && npm install && npm test
 
+      # The unit tests never compile the app, so a bundle that only fails at
+      # load used to reach production uncompiled. This is also what runs
+      # scripts/check-node-globals.mjs, which fails on a Node global that
+      # Rsbuild does not provide.
+      - name: Build the self-hosted app
+        run: |
+          # Mirrors the Dockerfile: config.json is gitignored, so fall back to
+          # the template exactly as the image build does.
+          [ -f apps/self-hosted/config.json ] \
+            || cp apps/self-hosted/config.template.json apps/self-hosted/config.json
+          pnpm --filter @ecency/self-hosted build
+        env:
+          CI: true
+
   build-blog:
     # Its own group: build-blog and build-api run in parallel and would otherwise cancel
     # each other.
@@ -62,6 +91,9 @@ jobs:
       group: ${{ github.workflow }}-build-blog-${{ github.ref }}
       cancel-in-progress: true
     needs: tests
+    # Publishes to Docker Hub, so it needs secrets a fork pull request cannot have
+    # and produces an artifact a pull request has no use for.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -99,6 +131,8 @@ jobs:
       group: ${{ github.workflow }}-build-api-${{ github.ref }}
       cancel-in-progress: true
     needs: tests
+    # Push-only, for the same reasons as build-blog.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
