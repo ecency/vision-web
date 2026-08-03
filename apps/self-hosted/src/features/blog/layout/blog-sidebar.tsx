@@ -102,7 +102,7 @@ function BlogSidebarContent({ username }: { username: string }) {
           <TipButton
             recipientUsername={username}
             variant="general"
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-md border border-theme bg-theme-bg text-theme-primary hover:bg-theme-tertiary text-sm"
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-md border border-theme bg-theme-primary text-theme-primary hover:bg-theme-tertiary text-sm"
           />
         </div>
       )}

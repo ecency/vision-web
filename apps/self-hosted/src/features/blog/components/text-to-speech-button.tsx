@@ -4,6 +4,7 @@ import { UilPlay, UilPause, UilStopCircle } from '@tooni/iconscout-unicons-react
 import { useCallback, useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { InstanceConfigManager, t } from '@/core';
+import { stripHtmlAndMarkdown } from '../utils/strip-markdown';
 
 interface Props {
   text: string;
@@ -51,11 +52,10 @@ export function TextToSpeechButton({ text, title, className }: Props) {
     // Cancel any existing speech
     window.speechSynthesis.cancel();
 
-    // Strip HTML and prepare text
-    const cleanText = text
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    // `text` is the raw post body: markdown, not rendered HTML. Stripping tags
+    // alone left image URLs, link targets and `#`/`*` markers in the string,
+    // and the speech synthesiser read every one of them out loud.
+    const cleanText = stripHtmlAndMarkdown(text);
 
     const fullText = title ? `${title}. ${cleanText}` : cleanText;
 

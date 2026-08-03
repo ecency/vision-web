@@ -76,6 +76,13 @@
   border-color: var(--theme-border-strong);
 }
 
+/* Selected-state border, the counterpart of .text-theme-accent. The tipping
+   currency cards already asked for this class; without it the selected card
+   fell back to Tailwind's default currentColor border. */
+.border-theme-accent {
+  border-color: var(--theme-accent);
+}
+
 /* Border Radius */
 .rounded-theme-sm {
   border-radius: var(--theme-radius-sm);
@@ -128,7 +135,14 @@
 
 /* Tag/Chip Styles */
 .tag-theme {
-  background-color: var(--theme-tag-bg, var(--theme-bg-tertiary));
+  /*
+   * `background`, not `background-color`: a template is free to set
+   * --theme-tag-bg to a gradient (modern-gradient, the default template, does).
+   * A gradient is not a <color>, so `background-color` dropped the declaration
+   * at computed-value time and the chips rendered with no background at all.
+   * The shorthand accepts a color and an image alike.
+   */
+  background: var(--theme-tag-bg, var(--theme-bg-tertiary));
   color: var(--theme-tag-text, var(--theme-text-secondary));
   border-radius: var(--theme-tag-radius, var(--theme-radius-full));
   font-family: var(--theme-font-ui);

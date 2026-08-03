@@ -7,7 +7,13 @@ import { applyConfigDom, InstanceConfigManager } from './core';
 import { getRssFeedUrl } from './utils/rss-feed-url';
 import { routeTree } from './routeTree.gen';
 
-const router = createRouter({ routeTree });
+const router = createRouter({
+  routeTree,
+  // Path params are percent-encoded by default, which would turn the canonical
+  // /@author/permlink into /%40author/permlink. Every Hive frontend uses the
+  // '@' form and posts link to each other with it, so it stays literal.
+  pathParamsAllowedCharacters: ['@'],
+});
 
 declare module '@tanstack/react-router' {
   interface Register {

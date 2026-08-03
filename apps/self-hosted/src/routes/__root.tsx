@@ -15,6 +15,7 @@ import {
 } from "@/features/auth/storage";
 import { authenticationStore } from "@/store";
 import { t, InstanceConfigManager } from "@/core";
+import { loadDmcaLists } from "@/core/dmca";
 
 // Check if we're in development mode
 const isDev = process.env.NODE_ENV === "development";
@@ -31,6 +32,13 @@ const ReactQueryDevtools = isDev
 // Sync SDK's internal QueryClient with the app's client so SDK-side
 // cache invalidations and optimistic updates target the same cache.
 ConfigManager.setQueryClient(queryClient);
+
+// Load the DMCA lists the SDK's post queries filter against. Started here, at
+// module load, so the request is in flight before React mounts and well before
+// any post query can resolve. Not awaited: the lists are fetched from a remote
+// origin and nothing about rendering the blog may depend on that origin being
+// reachable.
+loadDmcaLists(queryClient);
 
 export const Route = createRootRoute({
   component: RootComponent,

@@ -126,14 +126,6 @@ const SEGMENT_SAFE: Record<string, { occurrences: number; reason: string }> = {
     occurrences: 1,
     reason: 'Hive permlink, cannot contain a slash',
   },
-  'src/features/blog/components/blog-post-item.tsx:entryData.author': {
-    occurrences: 3,
-    reason: 'Hive username, cannot contain a slash',
-  },
-  'src/features/blog/components/blog-post-item.tsx:entryData.permlink': {
-    occurrences: 3,
-    reason: 'Hive permlink, cannot contain a slash',
-  },
 };
 
 interface FoundLink {

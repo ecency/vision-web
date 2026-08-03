@@ -4,6 +4,7 @@ import {
   renderPostBody,
 } from '@ecency/render-helper';
 import type { Entry } from '@ecency/sdk';
+import { Link } from '@tanstack/react-router';
 import {
   UilComment,
   UilHeart,
@@ -84,6 +85,23 @@ export function BlogPostItem({ entry }: Props) {
     return catchPostImage(entryData, 800, 600) || null;
   }, [entryData]);
 
+  // Router navigation, not a document load: an <a href> here tore down the SPA
+  // on every feed-to-post click, refetching the instance config and throwing
+  // away the query cache the feed had just filled. The route param carries the
+  // bare username; the post page accepts it with or without the @ prefix.
+  const postParams = useMemo(
+    // The '@' is part of the canonical post URL, and the router is configured to
+    // leave it unencoded, so these links keep the shape the rest of the Hive
+    // ecosystem uses instead of dropping to /author/permlink.
+    () => ({ author: `@${entryData.author}`, permlink: entryData.permlink }),
+    [entryData.author, entryData.permlink],
+  );
+
+  // The post route declares `raw` as a search param, so the type demands the
+  // key. An undefined value is dropped when the href is built, so the link is
+  // still the bare post path.
+  const postSearch = { raw: undefined };
+
   const contentSection = (
     <>
       <div className="mb-2">
@@ -100,25 +118,21 @@ export function BlogPostItem({ entry }: Props) {
       </div>
 
       <h2 className="text-xl sm:text-2xl font-bold mb-3 transition-theme hover:opacity-70 heading-theme leading-[1.15]">
-        <a
-          href={`/@${entryData.author}/${entryData.permlink}`}
-        >
+        <Link to="/$author/$permlink" params={postParams} search={postSearch}>
           {entryData.title}
-        </a>
+        </Link>
       </h2>
 
       {listType === 'grid' && imageUrl && (
         <div className="mb-4 overflow-hidden">
-          <a
-            href={`/@${entryData.author}/${entryData.permlink}`}
-          >
+          <Link to="/$author/$permlink" params={postParams} search={postSearch}>
             <img
               src={imageUrl}
               alt={entryData.title}
               className="w-full object-cover post-card-image-theme"
               loading="lazy"
             />
-          </a>
+          </Link>
         </div>
       )}
 
@@ -197,8 +211,10 @@ export function BlogPostItem({ entry }: Props) {
         <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
           <div className="flex-1">{contentSection}</div>
           <div className="shrink-0 w-full sm:w-48">
-            <a
-              href={`/@${entryData.author}/${entryData.permlink}`}
+            <Link
+              to="/$author/$permlink"
+              params={postParams}
+              search={postSearch}
             >
               <img
                 src={imageUrl}
@@ -206,7 +222,7 @@ export function BlogPostItem({ entry }: Props) {
                 className="w-full h-48 sm:h-32 object-cover rounded-theme"
                 loading="lazy"
               />
-            </a>
+            </Link>
           </div>
         </div>
       ) : (

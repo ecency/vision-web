@@ -1,8 +1,5 @@
-import { callRPC, type Entry } from '@ecency/sdk';
-import {
-  infiniteQueryOptions,
-  queryOptions,
-} from '@tanstack/react-query';
+import { callRPC } from '@ecency/sdk';
+import { queryOptions } from '@tanstack/react-query';
 import type { Community } from './types';
 
 export type { Community };
@@ -24,41 +21,12 @@ export function getCommunityQueryOptions(communityId: string) {
   });
 }
 
-/**
- * Get community posts (ranked posts with community tag)
+/*
+ * The community feed used to be a bespoke bridge.get_ranked_posts call here. It
+ * bypassed the SDK's DMCA post filtering and tag sanitisation entirely, so
+ * takedown-listed content was served. Use getPostsRankedInfiniteQueryOptions
+ * from @ecency/sdk instead; see blog-posts-list.
  */
-export function getCommunityPostsInfiniteQueryOptions(
-  communityId: string,
-  sort: string = 'created',
-  limit: number = 20
-) {
-  return infiniteQueryOptions({
-    queryKey: ['community-posts', communityId, sort, limit],
-    enabled: !!communityId,
-    initialPageParam: { start_author: '', start_permlink: '' },
-    queryFn: async ({ pageParam }) => {
-      const result = await callRPC('bridge.get_ranked_posts', {
-        sort,
-        tag: communityId,
-        start_author: pageParam.start_author,
-        start_permlink: pageParam.start_permlink,
-        limit,
-        observer: '',
-      });
-      return (result as Entry[]) || [];
-    },
-    getNextPageParam: (lastPage) => {
-      if (!lastPage || lastPage.length < limit) {
-        return undefined;
-      }
-      const lastPost = lastPage[lastPage.length - 1];
-      return {
-        start_author: lastPost.author,
-        start_permlink: lastPost.permlink,
-      };
-    },
-  });
-}
 
 /**
  * Get community subscribers count

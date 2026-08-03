@@ -6,37 +6,13 @@ import { useMemo } from 'react';
 import { Link } from '@tanstack/react-router';
 import { formatRelativeTime, InstanceConfigManager, t } from '@/core';
 import { UserAvatar } from '@/features/shared/user-avatar';
-import { useIsBlogOwner } from '@/features/auth/hooks';
+import { useAuth } from '@/features/auth/hooks';
+import { canEditEntry } from '@/features/publish/utils/can-edit-entry';
+import { stripHtmlAndMarkdown } from '../utils/strip-markdown';
 import { TextToSpeechButton } from './text-to-speech-button';
 
 interface Props {
   entry: Entry;
-}
-
-function stripHtmlAndMarkdown(text: string): string {
-  return text
-    // Remove HTML tags
-    .replace(/<[^>]*>/g, ' ')
-    // Remove Markdown images ![alt](url)
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-    // Remove Markdown links [text](url) - keep the text
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    // Remove Markdown bold/italic **text**, *text*, __text__, _text_
-    .replace(/(\*\*|__)(.*?)\1/g, '$2')
-    .replace(/(\*|_)(.*?)\1/g, '$2')
-    // Remove Markdown headings # ## ### etc.
-    .replace(/^#{1,6}\s+/gm, '')
-    // Remove Markdown blockquotes >
-    .replace(/^>\s*/gm, '')
-    // Remove Markdown code blocks ```...```
-    .replace(/```[\s\S]*?```/g, '')
-    // Remove inline code `text`
-    .replace(/`([^`]*)`/g, '$1')
-    // Remove horizontal rules ---, ***, ___
-    .replace(/^[-*_]{3,}\s*$/gm, '')
-    // Remove extra whitespace
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 function countWords(text: string): number {
@@ -53,7 +29,7 @@ function calculateReadTime(body: string): number {
 }
 
 export function BlogPostHeader({ entry }: Props) {
-  const isBlogOwner = useIsBlogOwner();
+  const { user } = useAuth();
   const entryData = entry.original_entry || entry;
   const instanceType = InstanceConfigManager.getConfigValue(
     ({ configuration }) => configuration.instanceConfiguration.type ?? 'blog',
@@ -133,7 +109,7 @@ export function BlogPostHeader({ entry }: Props) {
             text={entryData.body}
             title={entryData.title}
           />
-          {isBlogOwner && (
+          {canEditEntry(user?.username, entryData.author) && (
             <Link
               to="/edit/$author/$permlink"
               params={{ author: entryData.author, permlink: entryData.permlink }}
