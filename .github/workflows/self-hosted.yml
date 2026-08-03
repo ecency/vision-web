@@ -26,6 +26,10 @@ on:
       - 'packages/render-helper/**'
       - 'packages/wallets/**'
       - 'packages/ui/**'
+      # Deliberately only on this side. A change to this file should prove itself
+      # on its own pull request, but merging one should not redeploy an app whose
+      # code did not change, and develop deploys with no staging tier in between.
+      - '.github/workflows/self-hosted.yml'
 
 # Default to read-only GITHUB_TOKEN. Build pushes to Docker Hub (external);
 # deploy jobs SCP/SSH to servers — neither path needs GitHub write access.
