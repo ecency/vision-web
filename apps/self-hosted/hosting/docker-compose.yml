@@ -50,9 +50,10 @@ services:
       # ePoints calls the internal activation endpoint with this shared secret; empty = card
       # activation disabled (endpoint fails closed).
       - HOSTING_INTERNAL_SECRET=${HOSTING_INTERNAL_SECRET:-}
-      # Comma-separated addresses/CIDRs allowed to reach /v1/internal, checked against the
-      # X-Real-IP the fronting proxy sets. Empty (the default) allows every source, so this
-      # is inert until an operator sets it; the edge nginx does the same check in front.
+      # Comma-separated addresses/CIDRs allowed to reach /v1/internal. Matched against
+      # X-Real-IP for requests arriving from a trusted proxy, and against the connection's own
+      # address otherwise. Empty (the default) allows every source, so this is inert until an
+      # operator sets it; the edge nginx does the same check in front.
       - HOSTING_INTERNAL_ALLOWED_IPS=${HOSTING_INTERNAL_ALLOWED_IPS:-}
       - HOSTING_CARD_ENABLED=${HOSTING_CARD_ENABLED:-true}
       - HOSTING_CARD_USD_CENTS=${HOSTING_CARD_USD_CENTS:-200}

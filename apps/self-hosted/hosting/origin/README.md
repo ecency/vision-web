@@ -151,9 +151,23 @@ by a reload - it neutralises the check without editing the vhost.
 `HOSTING_INTERNAL_ALLOWED_IPS` in the hosting stack's `.env` is the same restriction enforced
 inside the API, for traffic that reaches the container without passing through here. It is
 unset by default and allows everything until it is set; it takes the same comma-separated
-addresses and CIDRs. Set it to the same list as this file and restart `hosting-api`. Because
-it reads `X-Real-IP`, which this vhost overwrites on every proxied request, it stays correct
-only as long as these locations keep setting that header.
+addresses and CIDRs. Restart `hosting-api` after setting it.
+
+Two differences from this file, both worth knowing before copying values across:
+
+- **Give it the caller addresses, not `127.0.0.1`.** A request proxied from here arrives at the
+  container from the docker bridge, which the API recognises as a trusted proxy and therefore
+  judges on the `X-Real-IP` this vhost set, meaning the real caller. Loopback is never the
+  identity being matched, so an entry for it does nothing there. It stays useful *here*, where
+  it is what lets an on-box `curl --resolve api.blogs.ecency.com:443:127.0.0.1 ...` through.
+- **It cannot see a process on the origin itself.** Anything local can reach the API's
+  published port directly, and that is indistinguishable from this vhost doing the same. What
+  it does stop is a caller that is neither: another container on the compose network, which
+  arrives as its own address and is checked as itself. This vhost is the gate for everything
+  arriving over the network, and the shared secret is what stands behind both.
+
+Because the API believes `X-Real-IP` for proxied requests, it stays correct only as long as
+these locations keep setting that header.
 
 ## Two things in the vhost that are load-bearing
 

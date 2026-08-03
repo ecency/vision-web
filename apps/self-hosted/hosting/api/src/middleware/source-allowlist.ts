@@ -11,9 +11,29 @@
  * default-deny would switch card activation off at merge time for every deployment,
  * including self-hosters who have no allowlist to set. The operator turns it on afterwards
  * by setting the variable on the host.
+ *
+ * WHERE THE CLIENT ADDRESS COMES FROM. The socket peer first, `X-Real-IP` only when that peer
+ * is a proxy we trust. Headers are only as good as whoever last wrote them: the vhost sets
+ * `X-Real-IP $remote_addr`, which replaces what the client sent, but that is a statement about
+ * requests that went through the vhost. The requests this middleware exists for are the ones
+ * that did not, and for those the caller writes every header itself, so believing X-Real-IP
+ * unconditionally would hand any direct caller an allowlisted identity for free. Reading the
+ * peer first and consulting the header only behind it keeps the header's guarantee tied to
+ * the thing that actually provides it.
+ *
+ * What this can and cannot reach, given how the API is published (loopback-only port, plus
+ * the compose network):
+ *  - another container on the compose network is a distinct peer address and is checked as
+ *    itself, which is the case this defends;
+ *  - a process on the host itself is indistinguishable from the proxy, because both arrive
+ *    through the same published port. Nothing at this layer can separate them; the shared
+ *    secret is what stands behind it there, and a process on that host can read the secret
+ *    out of the environment anyway.
  */
 
 import type { Context, Next } from 'hono';
+import { readFileSync } from 'node:fs';
+import { getConnInfo } from '@hono/node-server/conninfo';
 
 /** A parsed allowlist entry: a network address plus how many leading bits must match. */
 interface CidrRule {
@@ -161,35 +181,94 @@ function matchesRule(address: Uint8Array, rule: CidrRule): boolean {
   return true;
 }
 
-/** True when `ip` (a bare address string) falls inside any rule. */
-export function isAllowedAddress(ip: string | null | undefined, list: SourceAllowlist): boolean {
-  if (!list.enforcing) return true;
+/**
+ * Strict membership: does `ip` fall inside any of these rules. An EMPTY rule set matches
+ * nothing. Separate from isAllowedAddress below, which deliberately answers "yes" for a list
+ * that is not enforcing -- convenient for the allowlist, catastrophic for the trusted-proxy
+ * set, where "no rules" must mean "trust no peer" and not "trust every peer".
+ */
+function addressInRules(ip: string | null | undefined, rules: CidrRule[]): boolean {
   if (!ip) return false;
   // Strip a zone id ("fe80::1%eth0") and any brackets before parsing.
   const cleaned = ip.trim().replace(/^\[([^\]]+)\]$/, '$1').split('%')[0];
   const parsed = parseAddress(cleaned);
   if (!parsed) return false;
   const address = collapseMapped({ bytes: parsed, prefix: parsed.length * 8 }).bytes;
-  return list.rules.some((rule) => matchesRule(address, rule));
+  return rules.some((rule) => matchesRule(address, rule));
+}
+
+/** True when `ip` falls inside any rule, or when the list is not enforcing at all. */
+export function isAllowedAddress(ip: string | null | undefined, list: SourceAllowlist): boolean {
+  if (!list.enforcing) return true;
+  return addressInRules(ip, list.rules);
 }
 
 /**
- * The peer address as the fronting nginx saw it.
+ * The socket peer, via the Node adapter's ConnInfo helper. This API runs on Node
+ * (`node:24-alpine` running `tsx src/index.ts`, served by `@hono/node-server`), so this is the
+ * matching accessor; it reads `remoteAddress` off the underlying `IncomingMessage` socket.
  *
- * X-Real-IP, NOT X-Forwarded-For. The vhost sets `X-Real-IP $remote_addr`, which REPLACES
- * whatever the client sent, so its value is never client-supplied. X-Forwarded-For is built
- * with `$proxy_add_x_forwarded_for`, which APPENDS the peer to the client's own header: a
- * caller can put any address it likes in there, and only the last element is trustworthy --
- * a position that silently shifts the moment another proxy is inserted in front. Keying an
- * authorization decision on that is a bug waiting for a topology change; the rate limiter can
- * live with it because the worst case there is a wrong bucket, not a granted request.
- *
- * The value is handed to the parser as-is. A comma-joined header (which nginx here never
- * produces) is not an address and simply fails to parse, so it is refused rather than split
- * on a guess about which element is the real one.
+ * It throws rather than returning undefined when the request did not come from that adapter,
+ * so it is guarded: an unknown peer is treated as untrusted, which refuses while enforcing.
  */
-function proxyClientIp(c: Context): string | null {
-  return c.req.header('x-real-ip')?.trim() || null;
+function peerAddress(c: Context): string | null {
+  try {
+    return getConnInfo(c).remote.address?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The container's default gateway, read from the routing table.
+ *
+ * This is what makes "the request came in through the host" checkable. The API publishes to a
+ * loopback port on the host and Docker forwards that to the container, so the peer the
+ * container observes for a proxied request is NOT loopback: it is the bridge address, which is
+ * also the container's default gateway. Verified on the deployed host, where a request to the
+ * published port arrives from the bridge address while a sibling container on the same compose
+ * network arrives as its own distinct address.
+ *
+ * Detected rather than configured, because it differs per deployment (bridge subnets are
+ * assigned by Docker) and a wrong value would refuse every proxied call. A deployment where
+ * the API is not containerised has nginx talking to loopback directly, which is covered by the
+ * loopback rules alongside this.
+ *
+ * Split from the file read so the format handling is testable against a literal table.
+ */
+export function parseDefaultGateway(routeTable: string): string | null {
+  for (const line of routeTable.split('\n').slice(1)) {
+    const fields = line.trim().split(/\s+/);
+    // Destination 00000000 is the default route; field 2 is its gateway.
+    if (fields.length < 3 || fields[1] !== '00000000') continue;
+    const hex = fields[2];
+    if (!/^[0-9A-Fa-f]{8}$/.test(hex)) continue;
+    // Stored little-endian, so the four bytes read backwards.
+    const bytes = [0, 2, 4, 6].map((i) => parseInt(hex.slice(i, i + 2), 16)).reverse();
+    if (bytes.every((b) => b === 0)) continue;
+    return bytes.join('.');
+  }
+  return null;
+}
+
+/** The default gateway of the machine this process runs on, or null if it cannot be read. */
+export function defaultGatewayAddress(): string | null {
+  try {
+    return parseDefaultGateway(readFileSync('/proc/net/route', 'utf8'));
+  } catch {
+    // No /proc (non-Linux, or a locked-down filesystem). Loopback alone still applies.
+    return null;
+  }
+}
+
+/**
+ * Peers whose X-Real-IP is believed: loopback, plus the default gateway when there is one.
+ * Loopback covers an uncontainerised deployment; the gateway covers this one. Neither is an
+ * address a sibling container can present, since each of those has its own bridge address.
+ */
+export function defaultTrustedProxies(): string {
+  const gateway = defaultGatewayAddress();
+  return ['127.0.0.0/8', '::1', ...(gateway ? [gateway] : [])].join(',');
 }
 
 export interface SourceAllowlistOptions {
@@ -197,6 +276,13 @@ export interface SourceAllowlistOptions {
   name: string;
   /** Raw comma-separated value from the environment. Empty/unset means allow everything. */
   value: string | undefined;
+  /**
+   * Peers whose X-Real-IP is trusted, same syntax as `value`. Defaults to loopback plus the
+   * detected default gateway. A parameter rather than another environment variable: the
+   * default is derived from the machine it runs on, and an operator-supplied version of it is
+   * one more value to get wrong at 2am for no gain. Tests set it explicitly.
+   */
+  trustedProxies?: string;
 }
 
 /**
@@ -206,6 +292,10 @@ export interface SourceAllowlistOptions {
 export function sourceAllowlist(options: SourceAllowlistOptions) {
   const { name, value } = options;
   const list = parseAllowlist(value);
+  // Only needed while enforcing, and detecting it costs a file read, so skip it otherwise.
+  const trusted = list.enforcing
+    ? parseAllowlist(options.trustedProxies ?? defaultTrustedProxies())
+    : parseAllowlist('');
 
   // Say at boot which of the three states this is in. "Off" and "on" both look like a working
   // service right up until the day a call is refused, and a typo has to be visible before it
@@ -216,8 +306,13 @@ export function sourceAllowlist(options: SourceAllowlistOptions) {
     );
   }
   if (list.enforcing) {
-    // Count only. The addresses are already in the environment; no reason to repeat them.
-    console.log(`[SourceAllowlist] ${name}: enforcing (${list.rules.length} rule(s))`);
+    // Counts only. The addresses are already in the environment; no reason to repeat them.
+    // The trusted-proxy count is here because a zero would mean every request is judged by its
+    // peer and no X-Real-IP is ever read, which explains an otherwise baffling wall of 403s.
+    console.log(
+      `[SourceAllowlist] ${name}: enforcing (${list.rules.length} rule(s),` +
+        ` ${trusted.rules.length} trusted proxy rule(s))`
+    );
   } else if ((value ?? '').trim().length > 0) {
     // Configured, but nothing in it survived parsing. Enforcing an empty list would deny every
     // caller, so a typo would take card activation down; the edge allowlist is the primary gate
@@ -232,12 +327,22 @@ export function sourceAllowlist(options: SourceAllowlistOptions) {
   return async function sourceAllowlistMiddleware(c: Context, next: Next) {
     if (!list.enforcing) return next();
 
-    const ip = proxyClientIp(c);
-    if (!isAllowedAddress(ip, list)) {
-      // Enough to diagnose (which gate, which address, whether the header was even present)
-      // without echoing the allowlist back into the response.
+    const peer = peerAddress(c);
+    // Behind a proxy we trust, the caller's identity is the header that proxy wrote, and ONLY
+    // that: no falling back to the peer if it is missing or malformed, because the peer there
+    // is the proxy itself and falling back would admit anything that can open a connection to
+    // the port. Everywhere else the peer IS the caller and the header is just something the
+    // caller typed, so it is ignored outright.
+    const viaTrustedProxy = addressInRules(peer, trusted.rules);
+    const claimed = viaTrustedProxy ? c.req.header('x-real-ip')?.trim() || null : peer;
+
+    if (!isAllowedAddress(claimed, list)) {
+      // Enough to diagnose: which gate, the address judged, and whether it came from the peer
+      // or from a proxy's header, which is the difference between "add this to the allowlist"
+      // and "this did not come through the proxy at all". The allowlist is never echoed back.
       console.warn(
-        `[SourceAllowlist] ${name}: refused ${ip ?? '<no trusted client address>'} for ${c.req.path}`
+        `[SourceAllowlist] ${name}: refused ${claimed ?? '<none>'} for ${c.req.path}` +
+          ` (peer ${peer ?? '<unknown>'}, ${viaTrustedProxy ? 'via trusted proxy' : 'direct'})`
       );
       // Deliberately identical to the shared-secret refusal, so a prober cannot tell which
       // gate stopped it or learn anything about the allowlist from the body.
