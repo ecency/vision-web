@@ -42,8 +42,8 @@ importers:
         specifier: ^22
         version: 22.18.8
       eslint:
-        specifier: ^8
-        version: 8.57.1
+        specifier: ^9.21.0
+        version: 9.37.0(jiti@2.6.1)
       postcss:
         specifier: ^8.5.10
         version: 8.5.18
@@ -3961,9 +3961,6 @@ packages:
 
   '@types/estree@0.0.39':
     resolution: {integrity: sha512-EYNwp3bU+98cpU4lAWYYL7Zz+2gryWH1qbdDTidVd6hkiR6weksdbMadyXKXNPEkQFhXM+hVO9ZygomHXp+AIw==}
-
-  '@types/estree@1.0.8':
-    resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
 
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
@@ -12007,8 +12004,6 @@ snapshots:
 
   '@types/estree@0.0.39': {}
 
-  '@types/estree@1.0.8': {}
-
   '@types/estree@1.0.9': {}
 
   '@types/geojson@7946.0.16': {}
@@ -12397,7 +12392,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.1.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@24.10.8)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.0.16(@types/node@24.10.8)(esbuild@0.28.1)(jiti@2.6.1)(sass-embedded@1.93.2)(sass@1.93.2)(terser@5.47.1)(tsx@4.21.0))
+      vitest: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.18.8)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.0.16(@types/node@22.18.8)(esbuild@0.28.1)(jiti@2.6.1)(sass-embedded@1.93.2)(sass@1.93.2)(terser@5.47.1)(tsx@4.21.0))
 
   '@vitest/expect@4.1.8':
     dependencies:
@@ -12459,7 +12454,7 @@ snapshots:
       sirv: 3.0.2
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
-      vitest: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@24.10.8)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.0.16(@types/node@24.10.8)(esbuild@0.28.1)(jiti@2.6.1)(sass-embedded@1.93.2)(sass@1.93.2)(terser@5.47.1)(tsx@4.21.0))
+      vitest: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.18.8)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.0.16(@types/node@22.18.8)(esbuild@0.28.1)(jiti@2.6.1)(sass-embedded@1.93.2)(sass@1.93.2)(terser@5.47.1)(tsx@4.21.0))
 
   '@vitest/utils@4.1.8':
     dependencies:
@@ -13700,7 +13695,7 @@ snapshots:
       '@humanfs/node': 0.16.7
       '@humanwhocodes/module-importer': 1.0.1
       '@humanwhocodes/retry': 0.4.3
-      '@types/estree': 1.0.8
+      '@types/estree': 1.0.9
       '@types/json-schema': 7.0.15
       ajv: 6.15.0
       chalk: 4.1.2
