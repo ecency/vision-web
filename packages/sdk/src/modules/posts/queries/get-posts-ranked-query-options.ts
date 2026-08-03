@@ -15,6 +15,33 @@ interface GetPostsRankedOptions {
   resolvePosts?: boolean;
 }
 
+/**
+ * Display order for one page.
+ *
+ * Pinned entries are captured before the created-date sort: the bridge surfaces
+ * them at the head of the response in the community moderators' chosen order,
+ * which the sort would scatter by age. Every pin is kept, since an earlier
+ * post-sort find() kept one and silently dropped the rest, so multi-pin
+ * communities never displayed their other pinned posts. Pins only occur on the
+ * first page, cursor pages return none, so this is a no-op elsewhere.
+ *
+ * Applied in `select` rather than in the query function so it cannot reach the
+ * pagination cursor.
+ */
+function orderForDisplay(page: Entry[], sort: string): Entry[] {
+  const pinned = page.filter((entry) => entry.stats?.is_pinned);
+  const rest = page.filter((entry) => !entry.stats?.is_pinned);
+
+  if (sort === "hot") {
+    return [...pinned, ...rest];
+  }
+
+  const byCreated = [...rest].sort(
+    (a, b) => new Date(b.created).getTime() - new Date(a.created).getTime()
+  );
+  return [...pinned, ...byCreated];
+}
+
 export function getPostsRankedInfiniteQueryOptions(
   sort: string,
   tag: string,
@@ -60,31 +87,19 @@ export function getPostsRankedInfiniteQueryOptions(
         );
       }
 
-      const data = response as Entry[];
-
-      // Capture pinned entries BEFORE the in-place created-date sort: the
-      // bridge surfaces them at the head of the response in the community
-      // moderators' chosen order, which the sort would scatter by age.
-      // Keep EVERY pin — the previous post-sort find() kept a single pin and
-      // silently dropped the rest, so multi-pin communities never displayed
-      // their other pinned posts on any page. Pins only occur on the first
-      // page (cursor pages return none), so this is a no-op elsewhere.
-      const pinnedEntries = data.filter((s) => s.stats?.is_pinned);
-
-      // Sort by created date unless it's "hot"
-      const sorted =
-        sort === "hot"
-          ? data
-          : data.sort(
-              (a, b) =>
-                new Date(b.created).getTime() - new Date(a.created).getTime()
-            );
-
-      const nonPinnedEntries = sorted.filter((s) => !s.stats?.is_pinned);
-
-      const combined = [...pinnedEntries, ...nonPinnedEntries];
-      return filterDmcaEntry(combined);
+      // Kept in the bridge's own order. getNextPageParam takes the cursor from
+      // the last entry of the page this returns, and the bridge continues from
+      // that entry in ITS ranking, so reordering here made the next request
+      // start from the middle of the previous ranked page: for trending, payout
+      // and muted the last entry by date is not the last entry by rank, and
+      // scrolling repeated some posts and skipped others. Display order is
+      // applied in `select`, which React Query runs after pagination.
+      return filterDmcaEntry(response as Entry[]);
     },
+    select: (data) => ({
+      ...data,
+      pages: data.pages.map((page) => orderForDisplay(page, sort)),
+    }),
     enabled,
     initialPageParam: {
       author: undefined,

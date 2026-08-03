@@ -83,7 +83,14 @@ describe('getPostsRankedInfiniteQueryOptions', () => {
     mockCallRPC.mockResolvedValue(mockEntries)
 
     const options = getPostsRankedInfiniteQueryOptions('created', 'hive')
-    const result = await (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+    const page = await (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+
+    // The query function keeps the bridge's order, because the pagination
+    // cursor is read from the page it returns.
+    expect(page.map((e: any) => e.permlink)).toEqual(['oldest', 'pinned', 'newest'])
+
+    // Display order is applied in select, after pagination.
+    const result = (options.select as any)({ pages: [page], pageParams: [] }).pages[0]
 
     expect(result).toHaveLength(3)
     // Pinned entry should be first regardless of date
@@ -203,5 +210,35 @@ describe('getPostsRankedQueryOptions', () => {
         hasNextPage: true,
       })
     })
+  })
+})
+
+/**
+ * The bridge continues a ranked feed from the entry the cursor names, in ITS
+ * ranking. Re-ordering the page before the cursor was read meant trending,
+ * payout and muted started the next request from the middle of the previous
+ * ranked page, so scrolling repeated some posts and skipped others.
+ */
+describe('ranked cursor survives display ordering', () => {
+  it('takes the cursor from the bridge order, not the displayed order', async () => {
+    // Ranked last is the OLDEST-ranked entry, which is not the oldest by date.
+    const mockEntries = [
+      { author: 'a', permlink: 'ranked-first', created: '2026-01-01T00:00:00', stats: null },
+      { author: 'b', permlink: 'ranked-last', created: '2026-01-09T00:00:00', stats: null }
+    ]
+    mockCallRPC.mockResolvedValue(mockEntries)
+
+    const options = getPostsRankedInfiniteQueryOptions('trending', 'hive-125125')
+    const page = await (options.queryFn as any)(makeInfiniteContext(options, { hasNextPage: true }))
+
+    expect((options.getNextPageParam as any)(page, [page], null, [])).toEqual({
+      author: 'b',
+      permlink: 'ranked-last',
+      hasNextPage: true
+    })
+
+    // Display still puts the newest first, so the two orders genuinely differ.
+    const shown = (options.select as any)({ pages: [page], pageParams: [] }).pages[0]
+    expect(shown[0].permlink).toBe('ranked-last')
   })
 })
