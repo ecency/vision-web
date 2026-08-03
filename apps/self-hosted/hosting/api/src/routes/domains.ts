@@ -102,28 +102,26 @@ domainRoutes.post('/', authMiddleware, zValidator('json', addDomainSchema), asyn
     return c.json({ error: 'Domain already in use' }, 409);
   }
 
-  // Set domain and generate verification
-  let updated: Awaited<ReturnType<typeof TenantService.setCustomDomain>>;
+  // Claim and verification record in one transaction, the same call the internal rail makes.
+  let attached: Awaited<ReturnType<typeof DomainService.attachDomain>>;
   try {
-    updated = await TenantService.setCustomDomain(username, domain);
+    attached = await DomainService.attachDomain(username, domain);
   } catch (error) {
     if (error instanceof DomainInUseError) {
       return c.json({ error: 'Domain already in use' }, 409);
     }
     throw error;
   }
-  // The statement preserves the flag only when the domain was unchanged, so a
-  // still-verified row here means this was a repeat submit of a live domain.
-  // Re-issuing the verification would delete its record and the origin sync
-  // would drop the vhost and certificate.
-  if (updated.customDomainVerified) {
+  // A null verification means the attach found the domain already verified, so nothing was
+  // reset. Re-issuing would delete its record and the origin sync would drop the vhost and
+  // certificate.
+  const verification = attached.verification;
+  if (!verification) {
     return c.json({ domain, verified: true, message: 'Domain already verified' });
   }
 
-  // Recorded as soon as the tenant row changes, before the verification record
-  // it does not depend on, matching internal.ts: setCustomDomain also clears
-  // custom_domain_verified, so a throw from createVerification would otherwise
-  // leave the domain state changed with nothing in the trail to say what did it.
+  // After the transaction, not before it: an attach that throws now changes nothing, so an
+  // event describing a change would be describing one that never happened.
   void AuditService.log({
     tenantId: tenant.id,
     eventType: 'domain.added',
@@ -131,8 +129,6 @@ domainRoutes.post('/', authMiddleware, zValidator('json', addDomainSchema), asyn
     ipAddress: parseClientIp(c.req.header('x-forwarded-for')),
     userAgent: c.req.header('user-agent'),
   });
-
-  const verification = await DomainService.createVerification(username, domain);
 
   // The record NAME must be the domain itself: verification resolves the domain's CNAME
   // (and serving requires it too). The internal verification token is bookkeeping only.

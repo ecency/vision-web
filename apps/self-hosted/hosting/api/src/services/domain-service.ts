@@ -5,50 +5,101 @@
  */
 
 import { promises as dns } from 'dns';
-import { db } from '../db/client';
+import { db, type SqlExecutor } from '../db/client';
 import { nanoid } from 'nanoid';
+import { TenantService } from './tenant-service';
 import {
   type DomainVerification,
   type DomainVerificationRow,
+  type Tenant,
   mapDomainVerificationFromDb,
 } from '../types';
 
 const baseDomain = process.env.BASE_DOMAIN || 'blogs.ecency.com';
 
+/** Days the instructions give for pointing DNS at us. Bookkeeping: nothing enforces it. */
+const VERIFICATION_WINDOW_DAYS = 7;
+
+/**
+ * Give the tenant a verification record for the domain it now holds.
+ *
+ * Records for domains it no longer holds are dropped, but a record for THIS domain is kept as
+ * it stands. Its created_at is what the release sweep dates the claim by, so replacing it on
+ * every submit let a holder restart the claim clock indefinitely by re-posting the same domain.
+ * Keeping the earliest record means the window runs from the first time the domain was asked
+ * for, which is the honest reading of "how long has this claim been unverified".
+ *
+ * Runs on the caller's executor so it commits with the claim, never separately.
+ */
+async function issueVerification(
+  exec: SqlExecutor,
+  tenantId: string,
+  domain: string
+): Promise<DomainVerification> {
+  const normalized = domain.toLowerCase();
+
+  await exec.query(
+    'DELETE FROM domain_verifications WHERE tenant_id = $1 AND domain <> $2',
+    [tenantId, normalized]
+  );
+
+  const existing = await exec.query<DomainVerificationRow>(
+    `SELECT * FROM domain_verifications
+      WHERE tenant_id = $1 AND domain = $2
+      ORDER BY created_at ASC
+      LIMIT 1`,
+    [tenantId, normalized]
+  );
+  if (existing.rows[0]) return mapDomainVerificationFromDb(existing.rows[0]);
+
+  const token = '_ecency-verify.' + nanoid(16);
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + VERIFICATION_WINDOW_DAYS);
+
+  const created = await exec.query<DomainVerificationRow>(
+    `INSERT INTO domain_verifications
+     (tenant_id, domain, verification_token, verification_method, expires_at)
+     VALUES ($1, $2, $3, 'cname', $4)
+     RETURNING *`,
+    [tenantId, normalized, token, expiresAt]
+  );
+
+  return mapDomainVerificationFromDb(created.rows[0]);
+}
+
+/** Outcome of an attach. A null verification means the domain was already verified. */
+export interface DomainAttachment {
+  tenant: Tenant;
+  verification: DomainVerification | null;
+}
+
 export const DomainService = {
   /**
-   * Create domain verification record
+   * Attach a custom domain to a tenant, claim and verification record together.
+   *
+   * ONE transaction, and the only way either rail attaches a domain. Split across two commits,
+   * as this was, there were windows in which a tenant held a domain with no record backing it:
+   * the release sweep dates a claim by that record, so a sweep landing in one of them cleared a
+   * claim seconds old, and a failed insert left the tenant holding a domain whose previous
+   * record had already been deleted. Neither state exists now: the claim and the record commit
+   * together or not at all.
+   *
+   * Re-submitting a domain the tenant already holds VERIFIED returns verification null and
+   * leaves everything alone. Re-issuing it would delete the live record, and the origin sync
+   * would drop the vhost and certificate with it. Whether the domain was unchanged is decided
+   * inside the UPDATE rather than from an earlier read, which a concurrent update could stale.
+   *
+   * Throws DomainInUseError if another tenant holds the domain, and 'Tenant not found' if the
+   * username matches no row.
    */
-  async createVerification(username: string, domain: string): Promise<DomainVerification> {
-    // Get tenant ID
-    const tenant = await db.queryOne<{ id: string }>(
-      'SELECT id FROM tenants WHERE username = $1',
-      [username]
-    );
+  async attachDomain(username: string, domain: string): Promise<DomainAttachment> {
+    return db.transaction(async (client) => {
+      const tenant = await TenantService.setCustomDomain(client, username, domain);
+      if (tenant.customDomainVerified) return { tenant, verification: null };
 
-    if (!tenant) throw new Error('Tenant not found');
-
-    // Generate verification token
-    const token = '_ecency-verify.' + nanoid(16);
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days to verify
-
-    // Delete any existing verification for this domain
-    await db.query(
-      'DELETE FROM domain_verifications WHERE tenant_id = $1',
-      [tenant.id]
-    );
-
-    // Create new verification
-    const result = await db.queryOne<DomainVerificationRow>(
-      `INSERT INTO domain_verifications
-       (tenant_id, domain, verification_token, verification_method, expires_at)
-       VALUES ($1, $2, $3, 'cname', $4)
-       RETURNING *`,
-      [tenant.id, domain.toLowerCase(), token, expiresAt]
-    );
-
-    return mapDomainVerificationFromDb(result!);
+      const verification = await issueVerification(client, tenant.id, domain);
+      return { tenant, verification };
+    });
   },
 
   /**
@@ -104,28 +155,13 @@ export const DomainService = {
       [tenant.id, domain.toLowerCase()]
     );
   },
-
-  /**
-   * Get pending verifications (for cleanup job)
-   */
-  async getExpiredVerifications(): Promise<DomainVerification[]> {
-    const rows = await db.queryAll<DomainVerificationRow>(
-      `SELECT * FROM domain_verifications
-       WHERE verified = false AND expires_at < NOW()`
-    );
-    return rows.map(mapDomainVerificationFromDb);
-  },
-
-  /**
-   * Delete expired verifications
-   */
-  async cleanupExpiredVerifications(): Promise<number> {
-    const result = await db.query(
-      `DELETE FROM domain_verifications
-       WHERE verified = false AND expires_at < NOW()`
-    );
-    return result.rowCount || 0;
-  },
 };
+
+// getExpiredVerifications and cleanupExpiredVerifications were here, wired to nothing since they
+// were written. They are deleted rather than wired up: a record's expires_at is bookkeeping shown
+// in the DNS instructions, while the record itself now DATES the claim for the release sweep, so
+// deleting records on that expiry would hand the sweep a claim with no date and free a domain
+// early. Stale records are removed with the claim they belong to, by releaseUnverifiedDomains and
+// by removeCustomDomain.
 
 export default DomainService;

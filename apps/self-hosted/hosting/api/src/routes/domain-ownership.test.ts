@@ -3,11 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getByUsername: vi.fn(),
   isDomainClaimed: vi.fn(),
-  setCustomDomain: vi.fn(),
   verifyCustomDomain: vi.fn(),
   removeCustomDomain: vi.fn(),
   getByDomain: vi.fn(),
-  createVerification: vi.fn(),
+  attachDomain: vi.fn(),
   verifyDomain: vi.fn(),
   markVerified: vi.fn(),
 }));
@@ -18,7 +17,6 @@ vi.mock('../services/tenant-service', () => ({
   TenantService: {
     getByUsername: mocks.getByUsername,
     isDomainClaimed: mocks.isDomainClaimed,
-    setCustomDomain: mocks.setCustomDomain,
     verifyCustomDomain: mocks.verifyCustomDomain,
     removeCustomDomain: mocks.removeCustomDomain,
     getByDomain: mocks.getByDomain,
@@ -28,7 +26,7 @@ vi.mock('../services/tenant-service', () => ({
 
 vi.mock('../services/domain-service', () => ({
   DomainService: {
-    createVerification: mocks.createVerification,
+    attachDomain: mocks.attachDomain,
     verifyDomain: mocks.verifyDomain,
     markVerified: mocks.markVerified,
   },
@@ -67,12 +65,11 @@ function request(path: string, init?: RequestInit) {
 
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset();
-  mocks.createVerification.mockResolvedValue({
-    verificationMethod: 'cname',
-    expiresAt: new Date().toISOString(),
-  });
   mocks.isDomainClaimed.mockResolvedValue(false);
-  mocks.setCustomDomain.mockResolvedValue({ ...COMMUNITY, customDomainVerified: false });
+  mocks.attachDomain.mockResolvedValue({
+    tenant: { ...COMMUNITY, customDomainVerified: false },
+    verification: { verificationMethod: 'cname', expiresAt: new Date().toISOString() },
+  });
 });
 
 describe('custom domains for a community instance', () => {
@@ -82,7 +79,6 @@ describe('custom domains for a community instance', () => {
     mocks.getByUsername.mockImplementation(async (name: string) =>
       name === 'hive-125125' ? { ...COMMUNITY } : null,
     );
-    mocks.setCustomDomain.mockResolvedValue({ ...COMMUNITY });
 
     const res = await request('/?tenant=hive-125125', {
       method: 'POST',
@@ -91,7 +87,7 @@ describe('custom domains for a community instance', () => {
     });
 
     expect(res.status).toBe(201);
-    expect(mocks.setCustomDomain).toHaveBeenCalledWith(
+    expect(mocks.attachDomain).toHaveBeenCalledWith(
       'hive-125125',
       'blog.example.com',
     );
@@ -107,7 +103,7 @@ describe('custom domains for a community instance', () => {
     });
 
     expect(res.status).toBe(403);
-    expect(mocks.setCustomDomain).not.toHaveBeenCalled();
+    expect(mocks.attachDomain).not.toHaveBeenCalled();
   });
 });
 
@@ -125,12 +121,12 @@ describe('domain occupancy', () => {
     });
 
     expect(res.status).toBe(409);
-    expect(mocks.setCustomDomain).not.toHaveBeenCalled();
+    expect(mocks.attachDomain).not.toHaveBeenCalled();
   });
 
   it('answers a lost race with a conflict rather than a server error', async () => {
     mocks.getByUsername.mockResolvedValue({ ...COMMUNITY, username: 'alice' });
-    mocks.setCustomDomain.mockRejectedValue(new DomainInUseError('x'));
+    mocks.attachDomain.mockRejectedValue(new DomainInUseError('x'));
 
     const res = await request('/', {
       method: 'POST',
@@ -246,12 +242,15 @@ describe('re-submitting a domain the tenant already holds', () => {
         customDomain: 'mine.example.com',
         customDomainVerified: true,
       });
-      // The statement preserves the flag only for an unchanged domain, so a
-      // still-verified result means nothing was reset.
-      mocks.setCustomDomain.mockResolvedValue({
-        ...COMMUNITY,
-        customDomain: 'mine.example.com',
-        customDomainVerified: true,
+      // The attach preserves the flag only for an unchanged domain, and answers with no
+      // verification when it found one, so a null verification means nothing was reset.
+      mocks.attachDomain.mockResolvedValue({
+        tenant: {
+          ...COMMUNITY,
+          customDomain: 'mine.example.com',
+          customDomainVerified: true,
+        },
+        verification: null,
       });
 
       const res = await request('/', {
@@ -261,7 +260,10 @@ describe('re-submitting a domain the tenant already holds', () => {
       });
 
       expect(res.status).toBe(200);
-      expect(mocks.createVerification).not.toHaveBeenCalled();
+      // Answered from the live domain rather than with fresh DNS instructions, which is what
+      // tells the caller nothing was reset. That the attach itself leaves the record alone is
+      // proved in domain-attach.test.ts.
+      expect(await res.json()).toMatchObject({ domain: 'mine.example.com', verified: true });
     })());
 
   it('still issues verification for a domain that is new to the tenant', async () => {
@@ -271,10 +273,13 @@ describe('re-submitting a domain the tenant already holds', () => {
       customDomain: 'old.example.com',
       customDomainVerified: true,
     });
-    mocks.setCustomDomain.mockResolvedValue({
-      ...COMMUNITY,
-      customDomain: 'new.example.com',
-      customDomainVerified: false,
+    mocks.attachDomain.mockResolvedValue({
+      tenant: {
+        ...COMMUNITY,
+        customDomain: 'new.example.com',
+        customDomainVerified: false,
+      },
+      verification: { verificationMethod: 'cname', expiresAt: new Date().toISOString() },
     });
 
     const res = await request('/', {
@@ -284,7 +289,7 @@ describe('re-submitting a domain the tenant already holds', () => {
     });
 
     expect(res.status).toBe(201);
-    expect(mocks.createVerification).toHaveBeenCalled();
+    expect(mocks.attachDomain).toHaveBeenCalledWith('alice', 'new.example.com');
   });
 });
 

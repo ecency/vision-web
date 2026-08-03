@@ -23,6 +23,18 @@ pool.on('error', (err) => {
   console.error('Database error:', err);
 });
 
+/**
+ * Anything statements can be run on: the pool helper below, or a transaction client.
+ *
+ * Service functions that must be able to share ONE transaction with a caller take this
+ * instead of reaching for `db` themselves. A function that reaches for the module-level
+ * `db` runs on its own connection, so it commits separately no matter what the caller
+ * wrapped around it, which is how the custom-domain attach ended up as two commits.
+ */
+export interface SqlExecutor {
+  query<T extends pg.QueryResultRow = any>(text: string, params?: any[]): Promise<pg.QueryResult<T>>;
+}
+
 // Helper for single queries
 export const db = {
   query: <T extends pg.QueryResultRow = any>(text: string, params?: any[]): Promise<pg.QueryResult<T>> => {
