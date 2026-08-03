@@ -114,3 +114,35 @@ docker-compose up -d
 # Check tenant status
 ./scripts/tenant-status.sh alice
 ```
+
+## Hivesigner redirect URIs
+
+Hivesigner matches an OAuth callback with `redirect_uris.includes(callback)` against the app
+account's on-chain `posting_json_metadata`. Exact string match, no wildcards, so an instance whose
+`/auth` URI is not listed verbatim cannot complete a Hivesigner login. The self-hosted app hides the
+method when the instance has no usable client, which is why hosted blogs currently offer Keychain
+and HiveAuth only.
+
+`scripts/hivesigner-redirect-uris.py` reconciles that array against the live tenants:
+
+```
+DATABASE_URL=... ./scripts/hivesigner-redirect-uris.py
+```
+
+It prints a summary and writes the broadcast payload to a 0600 file. It does **not** broadcast:
+updating the account needs its posting key, and this service holds no signing key of any kind. Run
+the broadcast separately with the payload as `posting_json_metadata` (`account_update2`, posting
+authority).
+
+Notes:
+
+- Existing entries are never dropped, so a URI added by hand for something outside this script's
+  view survives. Entries that are registered but no longer live are reported for review rather than
+  removed.
+- Only `active` and `trialing` tenants are registered. An unverified custom domain is skipped, since
+  registering a domain someone merely claimed would let whoever controls that name receive callbacks
+  for the app.
+- The payload carries the account's whole existing profile, which on an app account includes its
+  secret. Do not paste it into a shared terminal, and delete the file afterwards.
+- Once the URIs are registered, set `general.hivesigner.clientId` in the tenant config template to
+  turn the method back on. No client code change is needed.
