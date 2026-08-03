@@ -3,7 +3,7 @@ import { createRouter, RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import ReactDOM from 'react-dom/client';
 import './globals.css';
-import { InstanceConfigManager } from './core';
+import { applyConfigDom, InstanceConfigManager } from './core';
 import { getRssFeedUrl } from './utils/rss-feed-url';
 import { routeTree } from './routeTree.gen';
 
@@ -23,87 +23,15 @@ function applyConfig() {
   const imageProxyBase = general.imageProxy || 'https://i.ecency.com';
   setProxyBase(imageProxyBase);
 
-  // Apply background styles. classList.add throws on a token containing
-  // whitespace or an empty string, and the value is owner-typed, so a stray tab
-  // pasted into the field would otherwise abort the whole boot.
-  const backgroundClasses = general.styles?.background;
-  if (backgroundClasses) {
-    for (const className of backgroundClasses.split(/\s+/)) {
-      if (!className) continue;
-      try {
-        document.body.classList.add(className);
-      } catch {
-        console.warn('[Config] Ignoring invalid background class:', className);
-      }
-    }
-  }
+  // Every attribute, custom property, body class and the document title the
+  // config drives live in one declaration, which the Configuration Editor's
+  // preview applies through the same function. See core/apply-config-dom.ts.
+  applyConfigDom(config, { syncSystemTheme: true });
 
-  // Apply theme
-  const configuredTheme = general.theme;
-  if (configuredTheme === 'system') {
-    const prefersDark = window.matchMedia(
-      '(prefers-color-scheme: dark)',
-    ).matches;
-    document.documentElement.setAttribute(
-      'data-theme',
-      prefersDark ? 'dark' : 'light',
-    );
-  } else {
-    document.documentElement.setAttribute('data-theme', configuredTheme);
-  }
-
-  // Apply style template
-  const styleTemplate = general.styleTemplate ?? 'medium';
-  document.documentElement.setAttribute('data-style-template', styleTemplate);
-
-  // Apply sidebar placement
-  const sidebarConfig = instanceConfiguration.layout?.sidebar ?? {};
-  const sidebarPlacement = sidebarConfig.placement ?? 'right';
-  document.documentElement.setAttribute(
-    'data-sidebar-placement',
-    sidebarPlacement,
-  );
-
-  // Apply list type
-  const listType = instanceConfiguration.layout?.listType ?? 'grid';
-  document.documentElement.setAttribute('data-list-type', listType);
-
-  // Apply instance type
   const instanceType = instanceConfiguration.type ?? 'blog';
-  document.documentElement.setAttribute('data-instance-type', instanceType);
-
-  // Apply sidebar section visibility
-  document.documentElement.setAttribute(
-    'data-show-followers',
-    sidebarConfig.followers?.enabled !== false ? 'true' : 'false',
-  );
-  document.documentElement.setAttribute(
-    'data-show-following',
-    sidebarConfig.following?.enabled !== false ? 'true' : 'false',
-  );
-  document.documentElement.setAttribute(
-    'data-show-hive-info',
-    sidebarConfig.hiveInformation?.enabled !== false ? 'true' : 'false',
-  );
-
-  // Listen for system theme changes when theme is set to "system"
-  if (configuredTheme === 'system') {
-    window
-      .matchMedia('(prefers-color-scheme: dark)')
-      .addEventListener('change', (e) => {
-        document.documentElement.setAttribute(
-          'data-theme',
-          e.matches ? 'dark' : 'light',
-        );
-      });
-  }
 
   // Apply SEO meta tags
   const meta = instanceConfiguration.meta ?? {};
-
-  if (meta.title) {
-    document.title = meta.title;
-  }
 
   if (meta.description) {
     let descriptionMeta = document.querySelector('meta[name="description"]');
