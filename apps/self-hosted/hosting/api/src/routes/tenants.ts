@@ -37,13 +37,21 @@ const createTenantSchema = z.object({
 });
 
 // PATCH accepts either the FULL config document (what the instance's Configuration Editor
-// holds: { version, configuration: {...} }) or the legacy flat keys. The union is ordered
-// full-document first: a flat body has no `configuration` key so it falls through, while a
-// full document must never be matched by the flat schema (which would strip everything).
+// holds: { version, configuration: {...} }) or the legacy flat keys.
+//
+// Which one applies is decided by the PRESENCE of `configuration`, NOT by trying both. A
+// z.union does the latter: a full document that fails validation for any reason falls through
+// to the flat schema, and because every flat key is optional that schema matches any object and
+// strips it to {}. The route then merged nothing and answered 200 "Configuration updated" while
+// the save was discarded. Clearing the Version field (the number input sends null, which is not
+// an optional int) was enough to trigger it.
 const fullConfigDocSchema = z.object({
   version: z.number().int().optional(),
   configuration: z.record(z.any()),
 });
+// Kept for callers that send flat keys: create/signup uses this vocabulary, and the PATCH has
+// accepted it since before the Configuration Editor existed. A flat body carries no
+// `configuration` key, so it is unambiguous.
 const flatConfigUpdateSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']).optional(),
   styleTemplate: z.enum(['medium', 'minimal', 'magazine', 'developer', 'modern-gradient']).optional(),
@@ -52,9 +60,18 @@ const flatConfigUpdateSchema = z.object({
   listType: z.enum(['list', 'grid']).optional(),
   sidebarPlacement: z.enum(['left', 'right']).optional(),
 });
+// Only the container is validated here (an object, not an array or a scalar); the branch schema
+// above does the real work once the handler knows which document this is.
 const updateTenantSchema = z.object({
-  config: z.union([fullConfigDocSchema, flatConfigUpdateSchema]).optional(),
+  config: z.record(z.any()).optional(),
 });
+
+/** Whether a PATCH body carries a full config document rather than flat keys. */
+function isFullConfigDocument(config: unknown): boolean {
+  return (
+    !!config && typeof config === 'object' && !Array.isArray(config) && 'configuration' in config
+  );
+}
 
 // Upper bound for a config document; far above any real config, guards the DB row.
 const MAX_CONFIG_BYTES = 64 * 1024;
@@ -566,14 +583,37 @@ tenantRoutes.patch('/:username', authMiddleware, zValidator('json', updateTenant
     return c.json({ error: 'Configuration document too large' }, 413);
   }
 
+  // Validate against the schema for the document this actually is, and answer 400 with the
+  // reason. A body that cannot be understood must never report a successful save.
+  const isFullDoc = isFullConfigDocument(body.config);
+  let configUpdate: any = body.config;
+  if (body.config) {
+    const parsed = isFullDoc
+      ? fullConfigDocSchema.safeParse(body.config)
+      : flatConfigUpdateSchema.safeParse(body.config);
+    if (!parsed.success) {
+      return c.json(
+        {
+          error: 'Invalid configuration',
+          issues: parsed.error.issues.map((issue) => ({
+            path: ['config', ...issue.path].join('.'),
+            message: issue.message,
+          })),
+        },
+        400
+      );
+    }
+    configUpdate = parsed.data;
+  }
+
   // Full document (Configuration Editor) deep-merges into the stored config with identity
   // fields pinned server-side; flat keys are normalized first, then merge the same way.
-  const isFullDoc =
-    !!body.config && typeof body.config === 'object' && 'configuration' in body.config;
-  const updatedTenant = isFullDoc
-    ? await TenantService.applyConfigDocument(username, body.config)
-    : await TenantService.updateConfig(username, body.config);
-  
+  // `discarded` lists what the server refused to store (pinned identity fields, filters the
+  // instance type cannot serve, shape mismatches) so the editor can say so.
+  const { tenant: updatedTenant, discarded } = isFullDoc
+    ? await TenantService.applyConfigDocument(username, configUpdate)
+    : { tenant: await TenantService.updateConfig(username, configUpdate), discarded: [] };
+
   // Publish only for a tenant that is entitled to be served. POST deliberately
   // does not write the file for the same reason: nginx serves any file that
   // exists with no subscription check, so publishing here would put a blog that
@@ -598,8 +638,12 @@ tenantRoutes.patch('/:username', authMiddleware, zValidator('json', updateTenant
     // Tells the editor whether the change is live or only stored, so a saved
     // edit that the visitor cannot see yet is explainable.
     published,
+    // Values the server did not store, with the reason for each. Empty on an ordinary save.
+    discarded,
     message: published
-      ? 'Configuration updated'
+      ? discarded.length > 0
+        ? 'Configuration updated. Some values were not applied.'
+        : 'Configuration updated'
       : 'Configuration saved. It goes live once the subscription is active.',
   });
 });
