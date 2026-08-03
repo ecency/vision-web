@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
+import { validateArrayDraft, validateArrayEntries } from '../array-field';
 import type { ConfigField } from '../config-fields';
 import { FLOATING_MENU_THEME } from '../constants';
 import type {
@@ -26,6 +27,7 @@ const sectionIcons: Record<string, string> = {
   comments: '💬',
   post: '📄',
   text2Speech: '🔊',
+  hivesigner: '🔑',
 } as const;
 
 function getSectionIcon(label: string): string {
@@ -57,29 +59,30 @@ function ArrayFieldEditor({
   // Memoize the serialized value to avoid recalculating on every render
   const serializedValue = useMemo(() => JSON.stringify(arrayValue), [arrayValue]);
   const [draftJson, setDraftJson] = useState(() => JSON.stringify(arrayValue, null, 2));
-  const [isValid, setIsValid] = useState(true);
+  // Checked on mount too, so a value that is already in the saved config is
+  // reported rather than waiting for the owner to touch the field.
+  const [error, setError] = useState<string | null>(() =>
+    validateArrayEntries(arrayValue, field.allowedValues),
+  );
+  const isValid = error === null;
 
   // Sync draft when external value changes
   useEffect(() => {
     const newJson = JSON.stringify(arrayValue, null, 2);
     setDraftJson(newJson);
-    setIsValid(true);
-  }, [serializedValue]);
+    setError(validateArrayEntries(arrayValue, field.allowedValues));
+  }, [serializedValue, field.allowedValues]);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     setDraftJson(newValue);
 
-    try {
-      const parsed = JSON.parse(newValue);
-      if (Array.isArray(parsed)) {
-        setIsValid(true);
-        handleChange(parsed);
-      } else {
-        setIsValid(false);
-      }
-    } catch {
-      setIsValid(false);
+    // A rejected draft is never written into the config: the owner keeps
+    // looking at what they typed and at the reason it was not taken.
+    const result = validateArrayDraft(newValue, field.allowedValues);
+    setError(result.error);
+    if (result.value) {
+      handleChange(result.value);
     }
   };
 
@@ -110,7 +113,7 @@ function ArrayFieldEditor({
         aria-invalid={!isValid}
       />
       <p className={`text-xs mt-1 font-sans ${isValid ? 'text-gray-400' : 'text-red-400'}`}>
-        {isValid ? 'Enter a valid JSON array' : 'Invalid JSON array'}
+        {error ?? 'Enter a valid JSON array'}
       </p>
     </div>
   );

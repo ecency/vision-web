@@ -4,7 +4,8 @@ import { createContext, type ReactNode, useEffect, useMemo } from 'react';
 import { InstanceConfigManager } from '@/core';
 import { useAuthStore } from '@/store';
 import { clearHiveAuthSession, clearUser } from './storage';
-import type { AuthContextValue, AuthMethod, AuthUser } from './types';
+import type { AuthContextValue, AuthUser } from './types';
+import { availableAuthMethods } from './utils/auth-methods';
 import { resolveHivesignerClientId } from './utils/hivesigner';
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -33,8 +34,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // explanation: Hivesigner rejects a redirect_uri its app has not registered,
   // and a hosted blog's origin cannot be registered in advance, so it is offered
   // only when the instance names a client of its own.
-  const availableMethods = ((authConfig?.methods ?? []) as AuthMethod[]).filter(
-    (method) => (method === 'hivesigner' ? hivesignerClientId !== null : true),
+  const availableMethods = availableAuthMethods(
+    authConfig?.methods,
+    hivesignerClientId,
   );
 
   // Get the instance owner. Falls back to the showcased username for older

@@ -18,6 +18,7 @@ import {
 } from '@/features/auth/utils/hosting-token';
 import { configFieldsMap } from '../config-fields';
 import { FLOATING_MENU_THEME } from '../constants';
+import { getHivesignerSetupNotice } from '../hivesigner-setup';
 import {
   readDiscarded,
   readSavedConfig,
@@ -99,6 +100,19 @@ export function FloatingMenuWindow({
   const originalStateRef = useRef<ConfigDomSnapshot | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const managed = useMemo(() => isManagedHosting(), []);
+
+  // Everything the owner is being told, in one place. This window is the whole
+  // audience: it is rendered for the instance owner only, so a setting that
+  // cannot work can be reported here without a reader ever seeing it. Read from
+  // the edited document, so it answers for what is on screen and clears as soon
+  // as the client id is typed.
+  const notices = useMemo(
+    () =>
+      [notice, getHivesignerSetupNotice(config)].filter(
+        (message): message is string => !!message,
+      ),
+    [notice, config],
+  );
 
   // Focus the dialog when it opens for keyboard accessibility
   useEffect(() => {
@@ -496,13 +510,15 @@ export function FloatingMenuWindow({
             </div>
           )}
 
-          {/* Field the server owns, rejected before it can be edited */}
-          {notice && (
+          {/* Owner-only: a field the server owns, or a setting that cannot work as configured */}
+          {notices.length > 0 && (
             <output
-              className="block px-4 py-2 text-sm font-sans text-gray-300 border-b shrink-0"
+              className="block px-4 py-2 text-sm font-sans text-gray-300 border-b shrink-0 space-y-1"
               style={{ borderColor: FLOATING_MENU_THEME.borderColor }}
             >
-              {notice}
+              {notices.map((message) => (
+                <p key={message}>{message}</p>
+              ))}
             </output>
           )}
 
