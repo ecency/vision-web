@@ -16,6 +16,7 @@ in practice — **re-copy any change made there back into this directory.**
 | `blogs.ecency.com.conf` | `/etc/nginx/sites-available/` | TLS termination and proxying for the apex, the API, and tenant subdomains |
 | `sync-custom-domains.py` | cron, every 5 min | issues certificates and writes vhosts for custom domains and dotted tenant names |
 | `install.sh` | once, idempotent | nginx include dir, certbot deploy hook, cron entry |
+| `hosting-internal-allow.conf` | `/etc/nginx/` **only** (not in git) | who may reach `/v1/internal` |
 
 ## What the sync does
 
@@ -39,6 +40,120 @@ They are not committed because this repository is public and those addresses sit
 Cloudflare; publishing them would amount to handing out an origin-bypass list. The script
 exits with an explanatory error when the file is missing, rather than silently failing
 every DNS check and never issuing a certificate again.
+
+## hosting-internal-allow.conf (not in git)
+
+`/v1/internal` activates subscriptions, attaches custom domains and grants free Pro terms.
+It is service-to-service only, so the vhost restricts it to the services that call it:
+
+```nginx
+location /v1/internal/ {
+    include /etc/nginx/hosting-internal-allow*.conf;
+    deny all;
+    ...
+}
+```
+
+The list itself is not committed, for the same reason `origin-ips` is not: this repository is
+public and these are origin addresses.
+
+**What belongs in the file.** One `allow` directive per line, terminated with a semicolon,
+nothing else. Plain addresses and CIDR both work:
+
+```nginx
+# <who and why>
+allow 203.0.113.10;      # example only, not a real entry
+allow 198.51.100.0/24;   # example only, not a real entry
+```
+
+Everything not listed is refused by the `deny all` that follows the include. Who needs to be
+on it: every origin that runs the web app's `/api/hosting/*` server routes (one of them is
+co-located with this stack and arrives on the local docker bridge, so that is a range rather
+than a single address), and the ePoints host that posts card activations. Read them off the
+access log rather than guessing - `awk '$7 ~ /^\/v1\/internal/'` over `access.log*` gives the
+requests that have actually been made; take the peer column (the first field with the stock
+`combined` format, the third with the `realip` format this origin uses, since that one leads
+with `$http_cf_connecting_ip`). Adding 127.0.0.1 as well is convenient for on-box
+diagnostics.
+
+**Why the include path has a `*` in it.** nginx refuses to start on an `include` naming a
+file that does not exist:
+
+```
+nginx: [emerg] open() "/etc/nginx/hosting-internal-allow.conf" failed (2: No such file
+or directory) in /etc/nginx/sites-enabled/blogs.ecency.com.conf:67
+```
+
+That is a hard failure of the whole config, so a vhost with a plain include would take every
+tenant blog offline on any box where the file has not been created yet, including a rebuilt
+origin. A glob that matches nothing is skipped silently and the config still tests clean, so
+the worst case degrades to `deny all` on `/v1/internal` alone while everything else serves.
+Do not "tidy" the `*` away.
+
+**Both API prefixes are gated.** The vhost also exposes the API under `/hosting/`, which
+strips its prefix, so `/hosting/v1/internal/...` reaches the same handlers. There is a second
+location for that path with the same include. If you ever add another prefix that proxies to
+the hosting API, it needs the same treatment.
+
+### Applying it
+
+Order matters: create the allowlist first, or the window between reloading nginx and writing
+the file is a window where card activation and Pro blog claims return 403.
+
+```bash
+# 1. Write the allowlist (root, 0644, world-readable so the nginx workers can read it)
+sudo install -m 0644 /dev/null /etc/nginx/hosting-internal-allow.conf
+sudo nano /etc/nginx/hosting-internal-allow.conf      # allow ...;  one per line
+
+# 2. Back up the live vhost, then copy the new one in
+sudo cp /etc/nginx/sites-available/blogs.ecency.com.conf{,.bak}
+sudo cp blogs.ecency.com.conf /etc/nginx/sites-available/blogs.ecency.com.conf
+
+# 3. Test BEFORE reloading. A failed test here means nothing has changed yet.
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Verify from a host that should be allowed and one that should not. A refused caller gets a
+bare nginx 403; an allowed one gets whatever the API says (405/404 for a GET on these
+POST-only routes is a pass - it means the request reached the container):
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://api.blogs.ecency.com/v1/internal/activate
+curl -s -o /dev/null -w '%{http_code}\n' https://api.blogs.ecency.com/hosting/v1/internal/activate
+```
+
+Refusals are logged as `access forbidden by rule` in `/var/log/nginx/error.log`, with the
+client address - that is where to look when a legitimate caller starts failing.
+
+### Rolling back
+
+Adding an address is a reload, not a rollback:
+
+```bash
+sudo nano /etc/nginx/hosting-internal-allow.conf && sudo nginx -t && sudo systemctl reload nginx
+```
+
+To drop the restriction entirely and go back to the previous behaviour:
+
+```bash
+sudo cp /etc/nginx/sites-available/blogs.ecency.com.conf.bak \
+        /etc/nginx/sites-available/blogs.ecency.com.conf
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Do **not** roll back by deleting the allowlist file: the vhost still has `deny all`, so that
+refuses everyone rather than restoring service. If the backup is gone, the equivalent
+emergency fix is a temporary `allow all;` as the only line in the allowlist file, followed
+by a reload - it neutralises the check without editing the vhost.
+
+### The container-side allowlist is separate
+
+`HOSTING_INTERNAL_ALLOWED_IPS` in the hosting stack's `.env` is the same restriction enforced
+inside the API, for traffic that reaches the container without passing through here. It is
+unset by default and allows everything until it is set; it takes the same comma-separated
+addresses and CIDRs. Set it to the same list as this file and restart `hosting-api`. Because
+it reads `X-Real-IP`, which this vhost overwrites on every proxied request, it stays correct
+only as long as these locations keep setting that header.
 
 ## Two things in the vhost that are load-bearing
 
