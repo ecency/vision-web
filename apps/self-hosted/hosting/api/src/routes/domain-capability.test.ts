@@ -3,11 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getByUsername: vi.fn(),
   isDomainClaimed: vi.fn(),
-  setCustomDomain: vi.fn(),
   verifyCustomDomain: vi.fn(),
   removeCustomDomain: vi.fn(),
   getByDomain: vi.fn(),
-  createVerification: vi.fn(),
+  attachDomain: vi.fn(),
   verifyDomain: vi.fn(),
   markVerified: vi.fn(),
 }));
@@ -18,7 +17,6 @@ vi.mock('../services/tenant-service', () => ({
   TenantService: {
     getByUsername: mocks.getByUsername,
     isDomainClaimed: mocks.isDomainClaimed,
-    setCustomDomain: mocks.setCustomDomain,
     verifyCustomDomain: mocks.verifyCustomDomain,
     removeCustomDomain: mocks.removeCustomDomain,
     getByDomain: mocks.getByDomain,
@@ -28,7 +26,7 @@ vi.mock('../services/tenant-service', () => ({
 
 vi.mock('../services/domain-service', () => ({
   DomainService: {
-    createVerification: mocks.createVerification,
+    attachDomain: mocks.attachDomain,
     verifyDomain: mocks.verifyDomain,
     markVerified: mocks.markVerified,
   },
@@ -84,13 +82,10 @@ function verifyDomain() {
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset();
   mocks.isDomainClaimed.mockResolvedValue(false);
-  mocks.createVerification.mockResolvedValue({
-    verificationMethod: 'cname',
-    expiresAt: new Date().toISOString(),
-  });
-  mocks.setCustomDomain.mockImplementation(async () =>
-    tenant({ customDomain: 'mine.example.test', customDomainVerified: false })
-  );
+  mocks.attachDomain.mockImplementation(async () => ({
+    tenant: tenant({ customDomain: 'mine.example.test', customDomainVerified: false }),
+    verification: { verificationMethod: 'cname', expiresAt: new Date().toISOString() },
+  }));
   mocks.verifyDomain.mockResolvedValue(true);
   mocks.verifyCustomDomain.mockImplementation(async () =>
     tenant({ customDomain: 'mine.example.test', customDomainVerified: true })
@@ -141,7 +136,7 @@ describe('custom domain capabilities follow subscription standing', () => {
 
     expect(response.status).toBe(402);
     expect(await response.json()).toMatchObject({ customDomainCapability: 'lapsed' });
-    expect(mocks.setCustomDomain).not.toHaveBeenCalled();
+    expect(mocks.attachDomain).not.toHaveBeenCalled();
   });
 
   it('refuses a verification once the grace window has passed', async () => {

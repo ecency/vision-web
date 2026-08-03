@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The hourly maintenance pass is where the unverified-domain release has to run. A sweep that
-// exists but is never called is exactly the state DomainService.cleanupExpiredVerifications is
-// in: written, tested by nobody, wired to nothing.
+// exists but is never called does nothing at all, which is the state the verification-cleanup
+// helpers in domain-service sat in until they were deleted: written, tested by nobody, wired to
+// nothing.
 
 const mocks = vi.hoisted(() => ({
   callRPC: vi.fn(),

@@ -8,9 +8,8 @@ const mocks = vi.hoisted(() => ({
   buildConfig: vi.fn(),
   getBlogUrl: vi.fn(),
   isDomainClaimed: vi.fn(),
-  setCustomDomain: vi.fn(),
   verifyCustomDomain: vi.fn(),
-  createVerification: vi.fn(),
+  attachDomain: vi.fn(),
   verifyDomain: vi.fn(),
   markVerified: vi.fn(),
   addVerifiedDomainOrigin: vi.fn(),
@@ -31,7 +30,6 @@ vi.mock('../services/tenant-service', () => ({
     buildConfig: mocks.buildConfig,
     getBlogUrl: mocks.getBlogUrl,
     isDomainClaimed: mocks.isDomainClaimed,
-    setCustomDomain: mocks.setCustomDomain,
     verifyCustomDomain: mocks.verifyCustomDomain,
   },
   ABANDONED_REREGISTER_QUARANTINE_HOURS: 24,
@@ -47,7 +45,7 @@ vi.mock('../services/config-service', () => ({
 
 vi.mock('../services/domain-service', () => ({
   DomainService: {
-    createVerification: mocks.createVerification,
+    attachDomain: mocks.attachDomain,
     verifyDomain: mocks.verifyDomain,
     markVerified: mocks.markVerified,
   },
@@ -185,12 +183,11 @@ describe('internal endpoint audit trail', () => {
     mocks.buildConfig.mockReset().mockResolvedValue({ version: 1 });
     mocks.getBlogUrl.mockReset().mockReturnValue('https://alice.blogs.ecency.com');
     mocks.isDomainClaimed.mockReset().mockResolvedValue(false);
-    mocks.setCustomDomain.mockReset().mockResolvedValue({
-      id: 'tenant-1',
-      customDomainVerified: false,
+    mocks.attachDomain.mockReset().mockResolvedValue({
+      tenant: { id: 'tenant-1', customDomainVerified: false },
+      verification: { verificationMethod: 'cname' },
     });
     mocks.verifyCustomDomain.mockReset().mockResolvedValue({ id: 'tenant-1' });
-    mocks.createVerification.mockReset().mockResolvedValue({ verificationMethod: 'cname' });
     mocks.verifyDomain.mockReset().mockResolvedValue(true);
     mocks.markVerified.mockReset().mockResolvedValue(undefined);
     mocks.addVerifiedDomainOrigin.mockReset();
@@ -237,12 +234,12 @@ describe('internal endpoint audit trail', () => {
       });
 
       expect(response.status).toBe(409);
-      expect(mocks.setCustomDomain).not.toHaveBeenCalled();
+      expect(mocks.attachDomain).not.toHaveBeenCalled();
     });
 
     it('answers a lost unique race with a conflict, not a server error', async () => {
       mocks.getByUsername.mockResolvedValue({ ...proTenant });
-      mocks.setCustomDomain.mockRejectedValue(new DomainInUseError('raced'));
+      mocks.attachDomain.mockRejectedValue(new DomainInUseError('raced'));
 
       const response = await post('/domain', {
         username: 'alice',
@@ -258,11 +255,11 @@ describe('internal endpoint audit trail', () => {
         customDomain: 'mine.example.com',
         customDomainVerified: true,
       });
-      // The statement preserves the flag only when the stored domain already
-      // equals the requested one, so a still-verified result means no reset.
-      mocks.setCustomDomain.mockResolvedValue({
-        id: 'tenant-1',
-        customDomainVerified: true,
+      // The attach preserves the flag only when the stored domain already equals the requested
+      // one, and answers with no verification when it did, so nothing was reset.
+      mocks.attachDomain.mockResolvedValue({
+        tenant: { id: 'tenant-1', customDomainVerified: true },
+        verification: null,
       });
 
       const response = await post('/domain', {
@@ -273,7 +270,7 @@ describe('internal endpoint audit trail', () => {
       expect(response.status).toBe(200);
       // Re-issuing would delete the live verification record, and the origin
       // sync would drop the vhost and certificate with it.
-      expect(mocks.createVerification).not.toHaveBeenCalled();
+      expect(await response.json()).toEqual({ domain: 'mine.example.com', verified: true });
     });
 
     it('verifies against the domain that was checked', async () => {
@@ -437,8 +434,10 @@ describe('internal endpoint audit trail', () => {
       eventData: { domain: 'blog.example.com', username: 'alice', via: 'internal' },
     });
 
-    // setCustomDomain has committed (and cleared the verified flag) before the verification record
-    // is created, so a failure there must not cost the event describing that change.
+    // The attach is one transaction, so a failure inside it changes nothing at all. Recording
+    // domain.added anyway would put a domain change in the trail that the database never made.
+    // This is the other side of the old ordering, which logged first because the claim had
+    // already committed by the time the verification record could fail.
     mocks.auditLog.mockReset();
     mocks.getByUsername.mockResolvedValueOnce({
       id: 'tenant-1',
@@ -446,14 +445,13 @@ describe('internal endpoint audit trail', () => {
       subscriptionPlan: 'pro',
       subscriptionStatus: 'active',
     });
-    mocks.createVerification.mockRejectedValueOnce(new Error('verification insert failed'));
+    mocks.attachDomain.mockRejectedValueOnce(new Error('verification insert failed'));
 
     await Promise.resolve(
       post('/domain', { username: 'alice', domain: 'blog.example.com' })
     ).catch(() => undefined);
 
-    expect(mocks.auditLog).toHaveBeenCalledTimes(1);
-    expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({ eventType: 'domain.added' });
+    expect(mocks.auditLog).not.toHaveBeenCalled();
   });
 
   it('records a domain verification before the bookkeeping that could strand it', async () => {

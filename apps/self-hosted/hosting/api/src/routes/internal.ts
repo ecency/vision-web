@@ -360,27 +360,26 @@ internalRoutes.post('/domain', async (c) => {
     return c.json({ error: 'domain_in_use' }, 409);
   }
 
-  let updated: Awaited<ReturnType<typeof TenantService.setCustomDomain>>;
+  // Claim and verification record in one transaction, the same call the public rail makes.
+  let attached: Awaited<ReturnType<typeof DomainService.attachDomain>>;
   try {
-    updated = await TenantService.setCustomDomain(username, domain);
+    attached = await DomainService.attachDomain(username, domain);
   } catch (error) {
     if (error instanceof DomainInUseError) {
       return c.json({ error: 'domain_in_use' }, 409);
     }
     throw error;
   }
-  // Recorded as soon as the tenant row changes, before the verification record it does not depend
-  // on: setCustomDomain also clears custom_domain_verified, so if createVerification then threw,
-  // the tenant's domain state would have changed with nothing in the trail to say what changed it.
-  // Still verified means the statement matched the domain already stored, so
-  // this was a repeat submit of a live domain and nothing was reset.
-  if (updated.customDomainVerified) {
+  // A null verification means the attach matched the domain already stored, so this was a repeat
+  // submit of a live domain and nothing was reset.
+  if (!attached.verification) {
     return c.json({ domain, verified: true }, 200);
   }
 
+  // After the transaction, not before it: an attach that throws now changes nothing, so an event
+  // describing a change would be describing one that never happened.
   auditInternal(c, tenant.id, 'domain.added', { domain, username, via: 'internal' });
 
-  await DomainService.createVerification(username, domain);
   const value = `${username}.${baseDomain}`;
 
   // The record NAME must be the domain itself: verification resolves the domain's CNAME
