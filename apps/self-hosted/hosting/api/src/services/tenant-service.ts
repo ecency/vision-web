@@ -80,6 +80,11 @@ export const POSTS_FILTERS_BY_TYPE: Record<'blog' | 'community', readonly string
 // The time-based quarantine then only has to cover the residual seconds of healthy live tailing.
 export const ABANDONED_REREGISTER_QUARANTINE_HOURS = 1;
 
+// Settle window the unverified-domain sweep leaves around a freshly touched tenant row. The attach
+// path writes the claim and the verification record that dates it as two separate statements, so
+// for a moment a live claim has no record backing it; see releaseUnverifiedDomains.
+export const DOMAIN_CLAIM_SETTLE_MINUTES = 60;
+
 // Whether an existing row is an abandoned reservation that has cleared the re-registration
 // quarantine (so a fresh signup may reclaim its username). A live row, or one reclaimed within
 // the quarantine, is NOT reusable. The SQL upsert applies the same guard atomically; this is the
@@ -630,6 +635,91 @@ export const TenantService = {
     });
   },
   
+  /**
+   * Release custom-domain claims that were never verified.
+   *
+   * custom_domain is UNIQUE whether or not it is verified, so a tenant could claim a domain,
+   * never point DNS at it, and hold it against its rightful owner forever: nothing expired the
+   * claim. The verification RECORD had a 7-day expiry, but nothing acted on it and clearing it
+   * would not have freed the column anyway.
+   *
+   * A claim is released when no verification record for that exact domain has been created
+   * within `claimDays`. The record is what the attach path always writes, so it dates the claim
+   * without needing a new column (this service must keep running against the old schema while a
+   * deploy rolls out). Re-submitting the same domain writes a fresh record and restarts the
+   * clock, which is deliberate: an owner who is still working on DNS keeps their claim.
+   *
+   * Only unverified claims are touched, so a verified domain is never unbound and no serving
+   * site is affected. Idempotent: a released row has custom_domain NULL and cannot match again.
+   *
+   * Candidates are selected FOR UPDATE and cleared in the same transaction, which is what makes
+   * a verification racing the sweep safe in both directions. If the verification commits first,
+   * the locked re-read sees custom_domain_verified = true and the row is no longer a candidate,
+   * so a domain that was just proven is never unbound. If the sweep commits first, the
+   * verification's own UPDATE is keyed on username AND domain, matches no row, returns null, and
+   * both rails already answer "verify again" for that.
+   *
+   * A claim whose tenant row was touched within DOMAIN_CLAIM_SETTLE_MINUTES is also left alone.
+   * Dating the claim by its verification record only works once that record exists, and the attach
+   * path writes the two separately: setCustomDomain commits the claim, then createVerification
+   * deletes any previous record and inserts the new one. In both gaps no record matches the claim,
+   * so a sweep landing there would clear a claim made seconds ago no matter how large claimDays is,
+   * and the request would carry on to write its record and report success for a domain the tenant
+   * no longer held. Every write to a tenant row bumps updated_at (a trigger does it, so this does
+   * not depend on any statement remembering to), which puts a claim in mid-attach inside the
+   * window. An unrelated tenant write postpones a release by up to that window, which is the
+   * harmless direction: a squatted domain is freed an hour later rather than a domain being taken
+   * from someone who has just asked for it.
+   *
+   * The claim is read before it is cleared rather than from RETURNING, which reports the NEW row
+   * and would hand back a null domain for every release.
+   */
+  async releaseUnverifiedDomains(claimDays: number): Promise<{ username: string; domain: string }[]> {
+    return db.transaction(async (client) => {
+      const candidates = await client.query<{ id: string; username: string; custom_domain: string }>(
+        `SELECT id, username, custom_domain
+           FROM tenants
+          WHERE custom_domain IS NOT NULL
+            AND custom_domain_verified = false
+            AND updated_at < NOW() - ($2 * INTERVAL '1 minute')
+            AND NOT EXISTS (
+                  SELECT 1 FROM domain_verifications dv
+                   WHERE dv.tenant_id = tenants.id
+                     AND dv.domain = tenants.custom_domain
+                     AND dv.created_at > NOW() - ($1 * INTERVAL '1 day')
+                )
+          FOR UPDATE`,
+        [claimDays, DOMAIN_CLAIM_SETTLE_MINUTES]
+      );
+
+      if (candidates.rows.length === 0) return [];
+      const ids = candidates.rows.map((row) => row.id);
+
+      await client.query(
+        `UPDATE tenants
+            SET custom_domain = NULL,
+                custom_domain_verified = false,
+                custom_domain_verified_at = NULL,
+                updated_at = NOW()
+          WHERE id = ANY($1::uuid[])`,
+        [ids]
+      );
+
+      // Drop the stale records with the claim they belonged to, in the same transaction, so the
+      // two can never disagree about whether a claim exists. Verified records are left alone.
+      await client.query(
+        `DELETE FROM domain_verifications
+          WHERE tenant_id = ANY($1::uuid[]) AND verified = false`,
+        [ids]
+      );
+
+      return candidates.rows.map((row) => ({
+        username: row.username,
+        domain: row.custom_domain,
+      }));
+    });
+  },
+
   /**
    * Delete tenant
    */

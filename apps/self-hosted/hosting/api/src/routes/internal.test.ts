@@ -425,6 +425,7 @@ describe('internal endpoint audit trail', () => {
       id: 'tenant-1',
       username: 'alice',
       subscriptionPlan: 'pro',
+      subscriptionStatus: 'active',
     });
 
     const response = await post('/domain', { username: 'alice', domain: 'blog.example.com' });
@@ -443,6 +444,7 @@ describe('internal endpoint audit trail', () => {
       id: 'tenant-1',
       username: 'alice',
       subscriptionPlan: 'pro',
+      subscriptionStatus: 'active',
     });
     mocks.createVerification.mockRejectedValueOnce(new Error('verification insert failed'));
 
@@ -458,6 +460,8 @@ describe('internal endpoint audit trail', () => {
     mocks.getByUsername.mockResolvedValue({
       id: 'tenant-1',
       username: 'alice',
+      subscriptionPlan: 'pro',
+      subscriptionStatus: 'active',
       customDomain: 'blog.example.com',
       customDomainVerified: false,
     });
@@ -487,6 +491,8 @@ describe('internal endpoint audit trail', () => {
     mocks.getByUsername.mockResolvedValueOnce({
       id: 'tenant-1',
       username: 'alice',
+      subscriptionPlan: 'pro',
+      subscriptionStatus: 'active',
       customDomain: 'blog.example.com',
       customDomainVerified: false,
     });

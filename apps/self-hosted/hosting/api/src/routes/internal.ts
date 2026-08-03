@@ -15,6 +15,7 @@ import {
   CAUGHT_UP_SQL,
 } from '../services/tenant-service';
 import { DomainService } from '../services/domain-service';
+import { customDomainCapability, type CapabilityState } from '../services/subscription';
 import { ConfigService } from '../services/config-service';
 import { AuditService, parseClientIp } from '../services/audit-service';
 import { mapTenantFromDb, type Tenant } from '../types';
@@ -305,6 +306,18 @@ internalRoutes.post('/activate', async (c) => {
   }
 });
 
+/**
+ * 402 body shared by both internal domain endpoints. 'none' means the plan never included
+ * custom domains; anything else means the subscription is not currently paying for them, which
+ * the caller can turn into a renewal prompt rather than an upgrade one.
+ */
+function capabilityRefusal(state: CapabilityState) {
+  return {
+    error: state === 'none' ? 'custom_domain_requires_pro' : 'subscription_not_active',
+    customDomainCapability: state,
+  };
+}
+
 // POST /v1/internal/domain - attach a custom domain to a tenant (service-to-service).
 // The web proxy has already verified the caller owns `username` (HiveSigner token); the shared
 // secret protects the endpoint. Mirrors the public /v1/domains shape but keyed by body username
@@ -332,9 +345,13 @@ internalRoutes.post('/domain', async (c) => {
   if (!tenant) {
     return c.json({ error: 'tenant_not_found' }, 404);
   }
-  // Custom domains require the Pro plan (internal value stays 'pro'; user-facing = Custom domain).
-  if (tenant.subscriptionPlan !== 'pro') {
-    return c.json({ error: 'custom_domain_requires_pro' }, 402);
+  // Custom domains require the Pro plan (internal value stays 'pro'; user-facing = Custom domain)
+  // AND a subscription that is paid for. Expiry never clears the plan, so the plan check alone
+  // let a lapsed tenant keep attaching domains on this rail too. A tenant inside the grace window
+  // after expiry is still allowed.
+  const capability = customDomainCapability(tenant);
+  if (!capability.allowed) {
+    return c.json(capabilityRefusal(capability.state), 402);
   }
 
   // Refuse a domain another tenant already holds, verified or not: the column is
@@ -405,9 +422,15 @@ internalRoutes.post('/domain/verify', async (c) => {
   if (!tenant.customDomain) {
     return c.json({ verified: false }, 200);
   }
-  // Already verified earlier -> idempotent success.
+  // Already verified earlier -> idempotent success. Answered before the capability check so a
+  // tenant that lapses after verifying still gets a truthful answer about its own domain; the
+  // check below only gates turning an unverified claim INTO a verified one.
   if (tenant.customDomainVerified) {
     return c.json({ verified: true }, 200);
+  }
+  const capability = customDomainCapability(tenant);
+  if (!capability.allowed) {
+    return c.json({ ...capabilityRefusal(capability.state), verified: false }, 402);
   }
 
   // Captured before the DNS round trip so the result is applied to the domain

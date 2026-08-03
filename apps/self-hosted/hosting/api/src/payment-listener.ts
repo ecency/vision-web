@@ -8,6 +8,7 @@
 import { callRPC, setNodes } from '@ecency/sdk/hive';
 import { db } from './db/client';
 import { COMMUNITY_NAME, TenantService } from './services/tenant-service';
+import { parseGraceDays } from './services/subscription';
 import { ConfigService } from './services/config-service';
 import { parseMemo, mapTenantFromDb, type ParsedMemo } from './types';
 import { AuditService } from './services/audit-service';
@@ -18,10 +19,13 @@ import * as Pricing from './pricing';
 // partial matches like '13.9' or '7foo', silently bypassing the safe fallback with a truncated
 // value. Empty, non-numeric, zero, and negative all fall back to 7. Exported for unit testing.
 export function parseAbandonedGraceDays(raw: string | undefined): number {
-  const trimmed = (raw ?? '').trim();
-  const n = /^\d+$/.test(trimmed) ? parseInt(trimmed, 10) : NaN;
-  return Number.isInteger(n) && n > 0 ? n : 7;
+  return parseGraceDays(raw, 7);
 }
+
+// Days an unverified custom-domain claim is held before the sweep releases it, freeing the
+// domain for its rightful owner. Same fail-safe parse: a zero/negative/NaN value would release
+// every pending claim on the next sweep, including one made minutes ago.
+export const DEFAULT_UNVERIFIED_DOMAIN_CLAIM_DAYS = 14;
 
 // Configuration. Payment amounts come from the shared pricing module so the listener validates
 // against exactly what every quoting route tells the user to pay.
@@ -37,6 +41,10 @@ const CONFIG = {
   // cutoff `NOW() - (n * INTERVAL '1 day')` land at or after now and sweep EVERY inactive tenant,
   // so a misconfigured env falls back to 7 rather than mass-reclaiming.
   ABANDONED_GRACE_DAYS: parseAbandonedGraceDays(process.env.ABANDONED_TENANT_GRACE_DAYS),
+  UNVERIFIED_DOMAIN_CLAIM_DAYS: parseGraceDays(
+    process.env.UNVERIFIED_DOMAIN_CLAIM_DAYS,
+    DEFAULT_UNVERIFIED_DOMAIN_CLAIM_DAYS
+  ),
 };
 
 // Configure hive-tx nodes. setNodes() trims/validates entries and no-ops on an
@@ -640,6 +648,21 @@ export class PaymentListener {
         if (reclaimed.length > 0) {
           console.log('[PaymentListener] Reclaimed', reclaimed.length, 'abandoned inactive tenants');
         }
+      }
+
+      // Release custom-domain claims that were never verified, so a domain someone claimed and
+      // never pointed at us stops blocking its rightful owner. Only unverified claims are
+      // touched, so no serving site is affected, and the operation is idempotent: a released
+      // row no longer matches. It needs no caught-up gate for the same reason the reclaim does
+      // (nothing on chain grants a domain), and it is deliberately AFTER the reclaim so a
+      // failure here cannot skip the expiry sweep.
+      const released = await TenantService.releaseUnverifiedDomains(
+        CONFIG.UNVERIFIED_DOMAIN_CLAIM_DAYS
+      );
+      for (const claim of released) {
+        console.log(
+          `[PaymentListener] Released unverified domain claim ${claim.domain} held by ${claim.username}`
+        );
       }
     } catch (error) {
       // Never let a transient DB error escape an interval/void call as an unhandled rejection.
