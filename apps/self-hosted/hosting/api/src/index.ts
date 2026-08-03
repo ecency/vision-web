@@ -14,6 +14,7 @@ import { paymentRoutes } from './routes/payments';
 import { authRoutes } from './routes/auth';
 import { internalRoutes, internalSecret, MIN_INTERNAL_SECRET_LENGTH } from './routes/internal';
 import { rateLimit } from './middleware/rate-limit';
+import { sourceAllowlist } from './middleware/source-allowlist';
 import { errorHandler } from './middleware/error-handler';
 import { db } from './db/client';
 import { TenantService } from './services/tenant-service';
@@ -69,6 +70,17 @@ app.use('/v1/domains/*', generalLimit);
 app.use('/v1/payments/*', generalLimit);
 app.use('/v1/auth/*', generalLimit);
 app.use('/v1/auth/*', authLimit);
+
+// Source-address allowlist for the service-to-service routes, ahead of the rate limit so a
+// refused source never spends a Redis round trip. Defence in depth behind the edge nginx,
+// which does the same check but is not on the path of anything that reaches the container
+// directly. Unset/empty allows everything: this deploys straight to production with no
+// staging tier, so it has to be switched on deliberately after the fact. Which state it is
+// in is logged at construction, next to the shared-secret startup line below.
+app.use(
+  '/v1/internal/*',
+  sourceAllowlist({ name: 'internal', value: process.env.HOSTING_INTERNAL_ALLOWED_IPS })
+);
 app.use('/v1/internal/*', internalLimit);
 
 // API Routes
