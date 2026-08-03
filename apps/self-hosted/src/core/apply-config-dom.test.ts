@@ -4,9 +4,14 @@ import {
   applyConfigDom,
   CONFIG_DOM_DECLARATION,
   type ConfigDomDeclaration,
+  resetConfigDomBaseline,
   restoreConfigDom,
   snapshotConfigDom,
 } from './apply-config-dom';
+
+function configWithTitle(title: string) {
+  return { configuration: { instanceConfiguration: { meta: { title } } } };
+}
 
 function background(value: string) {
   return { configuration: { general: { styles: { background: value } } } };
@@ -119,7 +124,12 @@ describe('applyConfigDom', () => {
     ]);
   });
 
-  it('keeps the current title when the config carries none', () => {
+  it('shows the boot title when the config carries none', () => {
+    // The baseline is captured on the first apply, so this states which title
+    // the document booted with rather than relying on an earlier test's state.
+    resetConfigDomBaseline();
+    document.title = 'Ecency Blog';
+
     applyConfigDom({
       configuration: { instanceConfiguration: { meta: { title: '' } } },
     });
@@ -229,5 +239,42 @@ describe('declared CSS variables', () => {
     expect(
       document.documentElement.style.getPropertyValue('--instance-accent'),
     ).toBe('#0000ff');
+  });
+});
+
+describe('document title round trip', () => {
+  beforeEach(() => {
+    resetConfigDomBaseline();
+    document.title = 'Ecency Blog';
+  });
+
+  /**
+   * An empty configured title means the owner cleared it, which is not the same
+   * as "leave whatever is on the document". Returning early left the old title
+   * on screen, so the change could not be previewed and read as a failed save.
+   */
+  it('falls back to the boot title when the owner clears it', () => {
+    applyConfigDom(configWithTitle('My Blog'));
+    expect(document.title).toBe('My Blog');
+
+    applyConfigDom(configWithTitle(''));
+    expect(document.title).toBe('Ecency Blog');
+  });
+
+  it('does not adopt a configured title as the baseline', () => {
+    // The first apply carries a title, so the baseline must still be the one
+    // the document booted with, not the configured one.
+    applyConfigDom(configWithTitle('My Blog'));
+    applyConfigDom(configWithTitle('Renamed'));
+    applyConfigDom(configWithTitle(''));
+
+    expect(document.title).toBe('Ecency Blog');
+  });
+
+  it('applies a title on every apply, not only the first', () => {
+    applyConfigDom(configWithTitle('One'));
+    applyConfigDom(configWithTitle('Two'));
+
+    expect(document.title).toBe('Two');
   });
 });

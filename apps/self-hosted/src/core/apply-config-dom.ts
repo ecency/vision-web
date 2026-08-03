@@ -209,6 +209,26 @@ export const CONFIG_DOM_DECLARATION: ConfigDomDeclaration = {
 // =============================================================================
 
 /**
+ * The document title before configuration first touched it, which is what an
+ * instance with no configured title falls back to. Captured lazily on the first
+ * apply, which is boot, so preview cannot capture a configured title as if it
+ * were the baseline.
+ */
+let originalDocumentTitle: string | null = null;
+
+function baselineDocumentTitle(): string {
+  if (originalDocumentTitle === null) {
+    originalDocumentTitle = document.title;
+  }
+  return originalDocumentTitle;
+}
+
+/** Test seam: the baseline otherwise leaks between cases. */
+export function resetConfigDomBaseline(): void {
+  originalDocumentTitle = null;
+}
+
+/**
  * Classes this module added on the previous apply. Cleared alongside the
  * declared prefixes so a background class that carries no declared prefix is
  * still replaced rather than accumulated.
@@ -300,10 +320,18 @@ export function applyConfigDom(
 
   applyBodyClasses(read, declaration.bodyClasses);
 
+  // null means the config carries no title, which is not the same as "leave
+  // whatever is on the document". Clearing the title in the editor produced
+  // null, so the old title stayed on screen: the change could not be previewed
+  // and looked like the save had failed. Falling back to the title the document
+  // booted with makes clearing round-trip and stay deterministic.
+  // Captured before the assignment, and unconditionally: reading it only in the
+  // fallback branch would mean the first apply with a configured title never
+  // captures, and a later clear would then adopt that configured title as the
+  // baseline.
+  const baseline = baselineDocumentTitle();
   const title = declaration.documentTitle(read);
-  if (title !== null) {
-    document.title = title;
-  }
+  document.title = title ?? baseline;
 
   if (options.syncSystemTheme) {
     syncSystemTheme(text(read(PATHS.theme), DEFAULT_THEME) === 'system');
