@@ -45,10 +45,12 @@ describe('resolveCreatePostTarget', () => {
     });
   });
 
-  it('does not mistake another ecency.com page for the legacy default', () => {
-    expect(blog('https://ecency.com/submit')).toEqual({
+  it('does not mistake another ecency.com page for a seeded default', () => {
+    // Only the two spellings provisioning actually wrote are non-decisions.
+    // An owner who deliberately points at some other ecency.com page keeps it.
+    expect(blog('https://ecency.com/@someone/drafts')).toEqual({
       kind: 'external',
-      href: 'https://ecency.com/submit',
+      href: 'https://ecency.com/@someone/drafts',
     });
   });
 
@@ -68,5 +70,46 @@ describe('resolveCreatePostTarget', () => {
         isCommunityMode: true,
       }),
     ).toEqual({ kind: 'internal' });
+  });
+
+  it('treats the add-tenant.sh seeded default as unset too', () => {
+    // hosting/scripts/add-tenant.sh wrote /submit rather than /publish. Same
+    // non-decision, so a scripted tenant must not be stranded on the hand-off.
+    for (const url of [
+      'https://ecency.com/submit',
+      'http://www.ecency.com/submit/',
+      '  HTTPS://Ecency.com/Submit  ',
+    ]) {
+      expect(
+        resolveCreatePostTarget({ createPostUrl: url, isCommunityMode: false }),
+      ).toEqual({ kind: 'internal' });
+    }
+  });
+
+  /**
+   * The configured value becomes an href. A scheme that executes must not reach
+   * the DOM, and a value that cannot resolve must not render a dead button.
+   */
+  it('refuses a configured value that is not an http(s) destination', () => {
+    for (const url of [
+      'javascript:alert(1)',
+      'JavaScript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      '/relative/path',
+      'not a url',
+    ]) {
+      expect(
+        resolveCreatePostTarget({ createPostUrl: url, isCommunityMode: false }),
+      ).toEqual({ kind: 'internal' });
+    }
+  });
+
+  it('still honours a real external composer', () => {
+    expect(
+      resolveCreatePostTarget({
+        createPostUrl: 'https://write.example.com/new',
+        isCommunityMode: false,
+      }),
+    ).toEqual({ kind: 'external', href: 'https://write.example.com/new' });
   });
 });

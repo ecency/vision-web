@@ -29,6 +29,13 @@ const LEGACY_EXTERNAL_DEFAULTS = new Set([
   'http://ecency.com/publish',
   'https://www.ecency.com/publish',
   'http://www.ecency.com/publish',
+  // hosting/scripts/add-tenant.sh seeded this spelling instead. Same intent,
+  // same non-decision, so a tenant provisioned by the script is not stranded on
+  // the hand-off either.
+  'https://ecency.com/submit',
+  'http://ecency.com/submit',
+  'https://www.ecency.com/submit',
+  'http://www.ecency.com/submit',
 ]);
 
 export type CreatePostTarget =
@@ -42,6 +49,28 @@ export interface CreatePostTargetInput {
   createPostUrl: string | null | undefined;
   /** True when this instance is a community instance with a community id. */
   isCommunityMode: boolean;
+}
+
+/**
+ * Accept the value as an external destination, or refuse it.
+ *
+ * This string becomes an href. Parsing it and re-serializing means a
+ * `javascript:` or `data:` value cannot reach the DOM, and a relative or
+ * unparseable one cannot produce a link that goes nowhere. Refusing falls back
+ * to the built-in editor, which is the working destination, rather than
+ * rendering a button that does nothing.
+ */
+function toExternalTarget(value: string): CreatePostTarget | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return null;
+  }
+  return { kind: 'external', href: url.href };
 }
 
 /** Fold away the differences that do not change which composer is meant. */
@@ -58,8 +87,8 @@ function normalize(value: string): string {
  * is therefore not honoured there.
  *
  * On a blog instance an absent, blank, legacy-default or self-referential value
- * all mean the built-in editor. Anything else is the owner's own choice and is
- * honoured as-is, only trimmed so surrounding whitespace cannot break the href.
+ * all mean the built-in editor. Anything else is the owner's own choice, and is
+ * honoured only when it is a real http(s) destination.
  */
 export function resolveCreatePostTarget({
   createPostUrl,
@@ -85,5 +114,5 @@ export function resolveCreatePostTarget({
     return { kind: 'internal' };
   }
 
-  return { kind: 'external', href: configured };
+  return toExternalTarget(configured) ?? { kind: 'internal' };
 }
