@@ -4106,7 +4106,6 @@ declare function getAccountPostsQueryOptions(username: string | undefined, filte
 type PageParam$1 = {
     author: string | undefined;
     permlink: string | undefined;
-    hasNextPage: boolean;
 };
 interface GetPostsRankedOptions {
     resolvePosts?: boolean;
