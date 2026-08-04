@@ -22,6 +22,32 @@
 /* biome-ignore lint/correctness/noInvalidPositionAtImportRule: Tailwind v4 requires @source before these imports */
 @import "./styles/blog-markdown.css";
 
+/*
+ * UNLAYERED BY DESIGN: every rule below whose subject is <html> or <body>.
+ *
+ * `@import "tailwindcss"` emits `@layer theme, base, components, utilities`,
+ * and an unlayered normal declaration beats a layered one whatever its
+ * specificity. Two things depend on that, and src/styles/cascade-layers.test.ts
+ * fails if either is quietly "tidied up" into the layer below:
+ *
+ * 1. `general.styles.background` is a free-form class string an owner types
+ *    into the configuration panel, and applyConfigDom puts it on <body>
+ *    (core/apply-config-dom.ts, applyBodyClasses). It has never painted,
+ *    because `background-color` here wins over any `bg-*` utility the owner
+ *    names. Layering this rule would hand the win to the 22 distinct compiled
+ *    `bg-*` literals, `bg-black` and `bg-white` among them, while
+ *    `color: var(--theme-text-primary)` stayed put: black text on a black page,
+ *    saved with a 200 OK, on a live instance. The field stays inert on purpose.
+ * 2. The responsive `font-size` overrides are `body` rules too. Layering them
+ *    while this one stayed unlayered would let `var(--theme-text-base)` beat
+ *    both media queries, dropping desktop body copy from 21px to the template's
+ *    base size on every instance.
+ *
+ * The collision surface is only what these rules declare, and nothing in the
+ * app puts a `text-*`, `font-*`, `leading-*`, `tracking-*`, `overflow-*` or
+ * padding utility on <html> or <body>: the only classes that reach <body> are
+ * the ones applyBodyClasses adds.
+ */
 html,
 body {
   min-height: 100%;
@@ -51,43 +77,6 @@ body {
   }
 }
 
-* {
-  font-family: inherit;
-}
-
-/* Theme-aware typography */
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  font-family: var(--theme-font-heading);
-  font-weight: 700;
-  letter-spacing: var(--theme-tracking-tight);
-  color: var(--theme-text-primary);
-}
-
-/* Theme-aware links */
-a {
-  color: inherit;
-  text-decoration: var(--theme-link-decoration, none);
-  text-decoration-color: var(--theme-link-decoration-color, transparent);
-  transition: all var(--theme-transition);
-}
-
-a:hover {
-  opacity: 0.7;
-  text-decoration-color: var(--theme-link-decoration-hover, inherit);
-}
-
-/* Theme-aware buttons */
-button {
-  font-family: var(--theme-font-ui);
-}
-
-/* Mobile responsiveness improvements */
-
 /*
  * Prevent horizontal scroll.
  *
@@ -109,53 +98,108 @@ body {
   max-width: 100vw;
 }
 
-/* Ensure images don't overflow */
-img {
-  max-width: 100%;
-  height: auto;
-}
-
-/* Prevent long words from breaking layout */
-.markdown-body,
-article {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-}
-
-/* Code blocks should scroll horizontally on mobile */
-.markdown-body pre {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Tables should scroll on mobile */
-.markdown-body table {
-  display: block;
-  width: max-content;
-  max-width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Improve touch targets on mobile */
-@media (max-width: 640px) {
-  button,
-  a {
-    min-height: 44px;
-    min-width: 44px;
-  }
-
-  /* Increase tap area for small interactive elements */
-  .flex.items-center.gap-1 {
-    padding: 4px 0;
-  }
-}
-
 /* Safe area insets for notched devices */
 @supports (padding: env(safe-area-inset-bottom)) {
   body {
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
     padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/*
+ * Everything else is a base rule and belongs in @layer base.
+ *
+ * Unlayered, these element rules beat every Tailwind utility however specific:
+ * `a { color: inherit }` beat `text-theme-accent`, `img { height: auto }` beat
+ * `h-48`, `h1 { font-weight: 700 }` beat `font-semibold`, and
+ * `* { font-family: inherit }` beat `font-mono`. That is why `no-underline` at
+ * blog-navigation.tsx did nothing while the comment above it said it did, and
+ * why two call sites had reached for `!` to get an ordinary utility to apply.
+ * In the layer they behave the way every other Tailwind project's base rules
+ * behave: they set the default and a utility on the element overrides it.
+ */
+@layer base {
+  * {
+    font-family: inherit;
+  }
+
+  /* Theme-aware typography */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--theme-font-heading);
+    font-weight: 700;
+    letter-spacing: var(--theme-tracking-tight);
+    color: var(--theme-text-primary);
+  }
+
+  /* Theme-aware links */
+  a {
+    color: inherit;
+    text-decoration: var(--theme-link-decoration, none);
+    text-decoration-color: var(--theme-link-decoration-color, transparent);
+    transition: all var(--theme-transition);
+  }
+
+  /*
+   * No `opacity` here. It used to be 0.7, which multiplied with the
+   * `hover:opacity-70` already on the wrapping heading in the feed to an
+   * effective 0.49, taking headline contrast on hover from 17.06 to 3.28.
+   * `text-decoration-color` stays: it is the only thing that makes
+   * --theme-link-decoration-hover visible outside .markdown-body.
+   */
+  a:hover {
+    text-decoration-color: var(--theme-link-decoration-hover, inherit);
+  }
+
+  /* Theme-aware buttons */
+  button {
+    font-family: var(--theme-font-ui);
+  }
+
+  /* Ensure images don't overflow */
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Prevent long words from breaking layout */
+  .markdown-body,
+  article {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  /* Code blocks should scroll horizontally on mobile */
+  .markdown-body pre {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Tables should scroll on mobile */
+  .markdown-body table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Improve touch targets on mobile */
+  @media (max-width: 640px) {
+    button,
+    a {
+      min-height: 44px;
+      min-width: 44px;
+    }
+
+    /* Increase tap area for small interactive elements */
+    .flex.items-center.gap-1 {
+      padding: 4px 0;
+    }
   }
 }
