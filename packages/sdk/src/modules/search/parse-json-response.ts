@@ -32,7 +32,14 @@ export async function parseJsonResponse<T>(response: Response): Promise<T> {
     try {
       return JSON.parse(raw) as unknown;
     } catch {
-      return raw;
+      // Raw text is a diagnostic, not a payload. On a failed response it is
+      // what the caller shows or logs, but on a 2xx returning it would hand
+      // back a string typed as the parsed body: callers reading `.results`
+      // would see undefined and report an empty result set, and the
+      // controversial/rising pager would throw on `resp.results.length`. An
+      // unparseable success is a failure, so let it fall through to the throw
+      // below rather than caching a string as a SearchResponse.
+      return response.ok ? undefined : raw;
     }
   };
 
