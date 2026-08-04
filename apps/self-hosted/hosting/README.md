@@ -163,6 +163,12 @@ instance, and neither is a bug in the script.
   Hivesigner app in that window would have it overwritten with the shared one and never
   restored, and a custom domain verified in that window would be enabled on one origin while
   the other was still unregistered.
+- **The served file cannot go stale either.** The same hazard applies one step later: a row
+  committed a moment ago is the wrong thing to write to disk if something else committed after
+  it. Both writers of a tenant's file publish by name through `publishConfigFile`, which
+  re-reads inside the per-tenant write lock, so the file always ends up carrying the newest
+  committed config whichever order they land in. A file and a row that disagree are worse than
+  either being stale on its own, because the row no longer explains what readers are served.
 
 Report only, writing the payload someone else would broadcast (unchanged behaviour, no key
 needed):

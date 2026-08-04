@@ -645,9 +645,16 @@ tenantRoutes.patch('/:username', authMiddleware, zValidator('json', updateTenant
   // exists with no subscription check, so publishing here would put a blog that
   // has never been paid for live until the next sweep removes it. The config
   // itself is always persisted, so the edit is not lost.
+  // Published BY NAME rather than from the row this request just wrote. The
+  // served file now has more than one writer: the Hivesigner reconcile can
+  // commit a client id for this tenant and publish it while this save is in
+  // flight, and whichever of the two writes its own snapshot last would put the
+  // other's change back on disk while the database kept both. publishConfigFile
+  // re-reads inside the same per-tenant lock, so the file always ends up
+  // carrying the newest committed config no matter which order they land in.
   const published = isPublishableTenant(updatedTenant);
   if (published) {
-    await ConfigService.generateConfigFile(updatedTenant);
+    await ConfigService.publishConfigFile(username);
   }
   
   void AuditService.log({

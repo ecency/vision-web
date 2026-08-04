@@ -249,17 +249,26 @@ export async function reconcileHivesignerClientIds(
     }
 
     try {
-      const applied = await applyClientIdForTenant(tenant.username, registered, appAccount);
-      if (applied.action === 'leave' || !applied.updated) {
+      const action = await applyClientIdForTenant(tenant.username, registered, appAccount);
+      if (action === 'leave') {
         result.unchanged++;
         continue;
       }
-      // Publish so the change is live rather than only stored. No second
-      // entitlement check: isPublishableTenant already decided this inside the
-      // transaction, on the locked row, and repeating it here would be a check
-      // that can never fire dressed up as a safeguard.
-      await ConfigService.generateConfigFile(applied.updated);
-      (applied.action === 'enable' ? result.enabled : result.disabled).push(tenant.username);
+      // Published BY NAME, never from the row the transaction returned.
+      //
+      // This is the same hazard the locked re-read above exists for, one step
+      // later. The transaction commits, and in the moment before the file is
+      // written an owner can save a config of their own; publishing the
+      // committed snapshot then puts the older document on disk and leaves the
+      // database holding the newer one. That split is worse than either value
+      // being wrong on its own, because the row no longer explains what readers
+      // are being served and nothing later notices the disagreement.
+      //
+      // publishConfigFile re-reads the row inside the per-tenant write lock, so
+      // the file can only ever receive the newest committed config. It exists
+      // because the payment listener had this exact bug and was fixed this way.
+      await ConfigService.publishConfigFile(tenant.username);
+      (action === 'enable' ? result.enabled : result.disabled).push(tenant.username);
     } catch (err) {
       console.error(
         `[HivesignerRegistry] client id update failed for ${tenant.username}:`,
@@ -291,26 +300,32 @@ export async function reconcileHivesignerClientIds(
  *
  * Returns 'leave' when the fresh row no longer wants the change, which is the
  * normal outcome of losing that race and is not an error.
+ *
+ * Returns ONLY the action, deliberately. Handing the caller the row this wrote
+ * is what makes the next step easy to get wrong: that object is accurate for as
+ * long as the transaction, and stale from the instant it commits, but it looks
+ * exactly like a tenant worth publishing. With nothing to publish from, the only
+ * thing the caller can pass on is a name.
  */
 async function applyClientIdForTenant(
   username: string,
   registered: ReadonlySet<string>,
   appAccount: string
-): Promise<{ action: ClientIdAction; updated?: Tenant }> {
+): Promise<ClientIdAction> {
   return db.transaction(async (client) => {
     const locked = await client.query<TenantRow>(
       'SELECT * FROM tenants WHERE username = $1 FOR UPDATE',
       [username.toLowerCase()]
     );
     const row = locked.rows[0];
-    if (!row) return { action: 'leave' as ClientIdAction };
+    if (!row) return 'leave' as ClientIdAction;
 
     const fresh = mapTenantFromDb(row);
     // Standing can have changed since the listing too, and a tenant that may no
     // longer be served should not be given a login method. The shared predicate,
     // so this agrees with every other publication path by construction rather
     // than by a copy of the rule that can drift.
-    if (!isPublishableTenant(fresh)) return { action: 'leave' as ClientIdAction };
+    if (!isPublishableTenant(fresh)) return 'leave' as ClientIdAction;
 
     const action = decideClientId(
       readPath(fresh.config, CLIENT_ID_PATH),
@@ -318,14 +333,14 @@ async function applyClientIdForTenant(
       registered,
       appAccount
     );
-    if (action === 'leave') return { action };
+    if (action === 'leave') return action;
 
-    const { tenant: updated } = await TenantService.applyConfigDocument(
+    await TenantService.applyConfigDocument(
       username,
       clientIdDocument(action === 'enable' ? appAccount : ''),
       [],
       client
     );
-    return { action, updated };
+    return action;
   });
 }

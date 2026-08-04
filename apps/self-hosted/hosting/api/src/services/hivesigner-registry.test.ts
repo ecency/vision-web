@@ -4,9 +4,10 @@ const mocks = vi.hoisted(() => ({
   callRPC: vi.fn(),
   getActiveTenants: vi.fn(),
   applyConfigDocument: vi.fn(),
-  generateConfigFile: vi.fn(),
+  getByUsername: vi.fn(),
   lockedRow: vi.fn(),
   lockedSql: vi.fn(),
+  written: vi.fn(),
 }));
 
 vi.mock('@ecency/sdk/hive', () => ({
@@ -29,24 +30,34 @@ vi.mock('../db/client', () => ({
         },
       }),
   },
+  // config-service serialises file writes on this; there is one process here.
+  withAdvisoryLock: (_ns: number, _key: number, fn: () => Promise<unknown>) => fn(),
 }));
 
 vi.mock('./tenant-service', () => ({
   TenantService: {
     getActiveTenants: mocks.getActiveTenants,
     applyConfigDocument: mocks.applyConfigDocument,
+    getByUsername: mocks.getByUsername,
   },
 }));
 
-// isPublishableTenant is deliberately NOT mocked: the rule about which tenants may be
-// served is shared, and a copy of it here would let the two drift.
-vi.mock('./config-service', async (importOriginal) => {
-  const actual = (await importOriginal()) as Record<string, unknown>;
-  return {
-    ...actual,
-    ConfigService: { generateConfigFile: mocks.generateConfigFile },
-  };
-});
+// ConfigService is NOT mocked. What ends up in a tenant's served file is the
+// thing under test here, and a stand-in for the publisher would be a copy of the
+// rule it is supposed to be checked against. The filesystem is mocked instead,
+// so the assertions are about the bytes that reach disk.
+vi.mock('fs', () => ({
+  promises: {
+    mkdir: async () => undefined,
+    readFile: async () => {
+      const missing = new Error('ENOENT') as NodeJS.ErrnoException;
+      missing.code = 'ENOENT';
+      throw missing;
+    },
+    writeFile: async (file: string, contents: string) => mocks.written(file, contents),
+    unlink: async () => undefined,
+  },
+}));
 
 const {
   decideClientId,
@@ -58,6 +69,12 @@ const {
 
 const APP = 'ecency.app';
 const BASE = 'blogs.ecency.com';
+
+/** A stored config that already carries the shared client id. */
+const enabledConfig = { configuration: { general: { hivesigner: { clientId: APP } } } };
+
+/** A stored config carrying an app the owner registered themselves. */
+const ownersConfig = { configuration: { general: { hivesigner: { clientId: 'myblog.app' } } } };
 
 function tenant(over: Record<string, unknown> = {}) {
   return {
@@ -243,12 +260,32 @@ describe('reconcileHivesignerClientIds', () => {
     mocks.callRPC.mockReset();
     mocks.getActiveTenants.mockReset();
     mocks.applyConfigDocument.mockReset();
-    mocks.generateConfigFile.mockReset();
-    // By default the locked re-read agrees with the listing.
+    mocks.written.mockReset();
+    // By default the locked re-read agrees with the listing, and the read that
+    // the publish does afterwards agrees with both.
     mocks.lockedRow.mockReset().mockReturnValue([row()]);
     mocks.lockedSql.mockReset();
-    mocks.applyConfigDocument.mockResolvedValue({ tenant: tenant() });
+    mocks.applyConfigDocument.mockResolvedValue({ tenant: tenant({ config: enabledConfig }) });
+    // Answers for whoever is asked, so a pass over several tenants cannot appear
+    // to publish the same file twice.
+    mocks.getByUsername
+      .mockReset()
+      .mockImplementation(async (username: string) =>
+        tenant({ username, config: enabledConfig })
+      );
   });
+
+  /** The config document written to a tenant's served file, if one was. */
+  function publishedConfig(username: string): any | undefined {
+    const write = mocks.written.mock.calls.find((call: any[]) =>
+      String(call[0]).endsWith(`${username}.json`)
+    );
+    return write ? JSON.parse(write[1]) : undefined;
+  }
+
+  function publishedClientId(username: string): unknown {
+    return publishedConfig(username)?.configuration?.general?.hivesigner?.clientId;
+  }
 
   it('takes a row lock on the re-read, which is what makes the decision safe', async () => {
     // Re-reading without locking narrows the window instead of closing it: a
@@ -284,7 +321,38 @@ describe('reconcileHivesignerClientIds', () => {
       [],
       expect.objectContaining({ query: expect.any(Function) })
     );
-    expect(mocks.generateConfigFile).toHaveBeenCalledTimes(1);
+    expect(publishedClientId('alice')).toBe(APP);
+  });
+
+  it('publishes the row as it stands AFTER the commit, not the row it committed', async () => {
+    // The same hazard as the locked re-read, one step later. The transaction
+    // commits, and before the file is written the owner saves an app of their
+    // own. Publishing the committed snapshot would put the older document on
+    // disk while the database holds the newer one, and that split is the worst
+    // outcome available: readers get a client id the row does not mention, and
+    // nothing afterwards notices the two disagree.
+    chainHas('https://alice.blogs.ecency.com/auth');
+    mocks.getActiveTenants.mockResolvedValue([tenant()]);
+    mocks.applyConfigDocument.mockResolvedValue({ tenant: tenant({ config: enabledConfig }) });
+    // The save lands in the gap between COMMIT and the file write.
+    mocks.getByUsername.mockResolvedValue(tenant({ config: ownersConfig }));
+
+    await reconcileHivesignerClientIds(APP);
+
+    expect(publishedClientId('alice')).toBe('myblog.app');
+  });
+
+  it('does not publish a tenant that lapsed between the commit and the write', async () => {
+    // publishConfigFile re-reads for this reason too: nginx serves any file that
+    // exists, with no subscription check.
+    chainHas('https://alice.blogs.ecency.com/auth');
+    mocks.getActiveTenants.mockResolvedValue([tenant()]);
+    mocks.getByUsername.mockResolvedValue(tenant({ subscriptionStatus: 'expired' }));
+
+    const result = await reconcileHivesignerClientIds(APP);
+
+    expect(result.enabled).toEqual(['alice']);
+    expect(publishedConfig('alice')).toBeUndefined();
   });
 
   it("does not overwrite an owner's app saved after the listing was taken", async () => {
@@ -409,7 +477,7 @@ describe('reconcileHivesignerClientIds', () => {
     expect(result.enabled).toEqual([]);
     expect(result.unchanged).toBe(1);
     expect(mocks.applyConfigDocument).not.toHaveBeenCalled();
-    expect(mocks.generateConfigFile).not.toHaveBeenCalled();
+    expect(publishedConfig('alice')).toBeUndefined();
   });
 
   it('requires BOTH origins before enabling a tenant that serves a verified custom domain', async () => {
