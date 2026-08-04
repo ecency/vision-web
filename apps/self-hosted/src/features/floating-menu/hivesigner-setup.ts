@@ -10,6 +10,28 @@ import { resolveHivesignerClientId } from '@/features/auth/utils/hivesigner';
 export const HIVESIGNER_SETUP_NOTICE =
   "Hivesigner is listed as a login method but this site has no Hivesigner client id, so the button stays hidden. Add your own app id under General Settings > Hivesigner, or email hello@ecency.com to get this site's /auth address registered on the shared ecency.app app.";
 
+/**
+ * The same gap on a managed blog, where the owner has nothing to do.
+ *
+ * Registration is automatic there: a scheduled job adds the instance's /auth
+ * address to the shared app and only then writes the client id, so the two can
+ * never disagree. Telling a managed owner to email support would send them to
+ * ask for something that completes on its own within minutes, and the wait is
+ * the only part they need explained.
+ *
+ * A verified custom domain is called out because it is the one case where a
+ * working button goes away again for a few minutes: the new origin has to be
+ * registered before either address may be offered.
+ */
+export const HIVESIGNER_MANAGED_SETUP_NOTICE =
+  "Hivesigner is listed as a login method but this site's address is not registered with the shared Hivesigner app yet, so the button stays hidden. Registration is automatic on a managed blog and completes within a few minutes of the site going live, and again after a custom domain is verified. Add your own app id under General Settings > Hivesigner if you would rather not wait.";
+
+const MANAGED_PATH = [
+  'configuration',
+  'instanceConfiguration',
+  'managed',
+] as const;
+
 const AUTH_PATH = [
   'configuration',
   'instanceConfiguration',
@@ -53,7 +75,14 @@ export function getHivesignerSetupNotice(config: unknown): string | null {
   const methods = readKey(auth, 'methods');
   if (!Array.isArray(methods) || !methods.includes('hivesigner')) return null;
 
-  return resolveHivesignerClientId(readPath(config, CLIENT_ID_PATH)) === null
-    ? HIVESIGNER_SETUP_NOTICE
-    : null;
+  if (resolveHivesignerClientId(readPath(config, CLIENT_ID_PATH)) !== null) {
+    return null;
+  }
+
+  // `managed` is injected into the served config by the hosting service and is
+  // never stored, so it cannot be set by a self-hosted config claiming a
+  // registration nobody is going to perform for it.
+  return readPath(config, MANAGED_PATH) === true
+    ? HIVESIGNER_MANAGED_SETUP_NOTICE
+    : HIVESIGNER_SETUP_NOTICE;
 }
