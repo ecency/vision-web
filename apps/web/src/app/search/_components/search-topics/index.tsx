@@ -19,7 +19,7 @@ export function SearchTopics() {
     [params]
   );
 
-  const { data, isLoading } = useQuery(getSearchTopicsQueryOptions(q, 10));
+  const { data, isLoading, isError } = useQuery(getSearchTopicsQueryOptions(q, 10));
 
   return (
     <div className="border border-[--border-color] bg-white rounded  search-topics">
@@ -32,7 +32,17 @@ export function SearchTopics() {
             return <LinearProgress />;
           }
 
-          if (data?.length === 0) {
+          // A failed lookup also leaves data undefined with isLoading false, so
+          // it has to be told apart from an empty one or the panel reports "no
+          // such topic" for a request that never came back.
+          if (isError) {
+            return <span className="text-gray-600">{i18next.t("search-comment.error-failed")}</span>;
+          }
+
+          // With no term to look up the query is disabled, so isLoading is
+          // false and data is undefined - without this the panel renders as an
+          // empty box, hitting neither the spinner nor the empty state.
+          if (!data || data.length === 0) {
             return <span className="text-gray-600">{i18next.t("g.no-matches")}</span>;
           }
 
