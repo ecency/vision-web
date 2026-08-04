@@ -9,6 +9,9 @@ vi.mock('../services/tenant-service', () => ({
   // Shared with the payment listener so both recognise a community claim the
   // same way; the real pattern is used here rather than a stub of it.
   COMMUNITY_NAME: /^hive-\d+$/,
+  // Read at module scope by the PATCH body schema; the real values, for the same reason.
+  CONFIG_RESET_PATH: /^configuration(\.[A-Za-z][A-Za-z0-9_-]*)+$/,
+  MAX_RESET_PATHS: 32,
   TenantService: {
     verifyHiveAccount: async (name: string) => state.accounts.has(name),
     verifyCommunityControlledBy: async (community: string, account: string) =>
