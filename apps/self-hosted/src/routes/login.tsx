@@ -1,12 +1,17 @@
 'use client';
 
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
-import { useAuth, useIsAuthenticated, useIsAuthEnabled, useAvailableAuthMethods } from '@/features/auth';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  useIsAuthenticated,
+  useIsAuthEnabled,
+  useAvailableAuthMethods,
+  orderAuthMethods,
+} from '@/features/auth';
 import { ExtensionLogin } from '@/features/auth/components/extension-login';
 import { HiveAuthLogin } from '@/features/auth/components/hiveauth-login';
 import { HivesignerLogin } from '@/features/auth/components/hivesigner-login';
-import { InstanceConfigManager } from '@/core';
+import { InstanceConfigManager, t } from '@/core';
 
 /**
  * Validates that a redirect URL is safe (internal path only).
@@ -59,6 +64,13 @@ function LoginPage() {
     ({ configuration }) => configuration.instanceConfiguration.meta.title
   );
 
+  // Which method can actually complete depends on the device, not on the order
+  // the config happens to list them in. See orderAuthMethods.
+  const orderedMethods = useMemo(
+    () => orderAuthMethods(availableMethods),
+    [availableMethods]
+  );
+
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
@@ -90,9 +102,26 @@ function LoginPage() {
     <div className="min-h-screen flex items-center justify-center p-4 bg-theme-primary">
       <div className="w-full max-w-md">
         <div className="card-theme p-6 sm:p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold heading-theme mb-2">Login to {blogTitle}</h1>
-            <p className="text-theme-muted font-theme-ui">Choose your preferred login method</p>
+          <div className="mb-8">
+            <h1 className="text-2xl font-bold heading-theme mb-1 text-center">
+              {t('login')}
+            </h1>
+            {blogTitle && (
+              <p className="text-theme-muted font-theme-ui text-center">
+                {blogTitle}
+              </p>
+            )}
+            {/* The only place a hosted site says it is configurable at all.
+                Deliberately not gated on anything: who the owner is cannot be
+                known before they authenticate, and this page is what tells them
+                authenticating is worth doing. Without it a site can run
+                indefinitely on the stock template, because the panel that
+                changes it only exists once you are already signed in. Phrased so
+                a reader who is not the owner reads one sentence that does not
+                apply to them and moves on. */}
+            <p className="mt-4 text-sm text-theme-muted font-theme-ui">
+              {t('login_owner_hint')}
+            </p>
           </div>
 
           {error && (
@@ -102,13 +131,32 @@ function LoginPage() {
           )}
 
           <div className="space-y-3">
-            {availableMethods.includes('keychain') && (
-              <ExtensionLogin onSuccess={handleSuccess} onError={handleError} />
-            )}
-            {availableMethods.includes('hivesigner') && <HivesignerLogin />}
-            {availableMethods.includes('hiveauth') && (
-              <HiveAuthLogin onSuccess={handleSuccess} onError={handleError} />
-            )}
+            {orderedMethods.map((method) => {
+              switch (method) {
+                case 'keychain':
+                  return (
+                    <ExtensionLogin
+                      key={method}
+                      onSuccess={handleSuccess}
+                      onError={handleError}
+                    />
+                  );
+                case 'hivesigner':
+                  return <HivesignerLogin key={method} />;
+                case 'hiveauth':
+                  return (
+                    <HiveAuthLogin
+                      key={method}
+                      onSuccess={handleSuccess}
+                      onError={handleError}
+                    />
+                  );
+                default:
+                  // A method name the config accepted but this page cannot
+                  // render. Nothing, rather than a blank card.
+                  return null;
+              }
+            })}
           </div>
 
           <div className="mt-8 text-center">
@@ -117,7 +165,7 @@ function LoginPage() {
               onClick={() => navigate({ to: '/' })}
               className="text-sm text-theme-muted hover:text-theme-primary transition-theme font-theme-ui"
             >
-              Back to blog
+              {t('back_to_blog')}
             </button>
           </div>
         </div>
