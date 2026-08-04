@@ -23,7 +23,12 @@ export function SearchCommunities() {
     () => new SearchQuery(params?.get("q") ?? "").search.split(" ")[0]?.replace("@", "") ?? "",
     [params]
   );
-  const { isLoading, data } = useQuery(getCommunitiesQueryOptions("rank", q, 4));
+  // Disabled without a term, like the sibling panels. Left enabled it falls
+  // back to listing the global top communities by rank, which a filter-only
+  // search ("author:demo") then presents as if those four matched the query.
+  const { isLoading, isError, data } = useQuery(
+    getCommunitiesQueryOptions("rank", q, 4, undefined, !!q)
+  );
 
   return (
     <div className="border border-[--border-color] bg-white rounded search-communities">
@@ -36,7 +41,17 @@ export function SearchCommunities() {
             return <LinearProgress />;
           }
 
-          if (data?.length === 0) {
+          // Unlike the people and topics panels this query is never disabled,
+          // so undefined data means the lookup failed. Saying "no matches" for
+          // a dropped RPC is the same failure/empty conflation the results list
+          // just lost.
+          if (isError) {
+            return <span className="text-gray-600">{i18next.t("search-comment.error-failed")}</span>;
+          }
+
+          // Without this the panel renders as an empty box on an empty result,
+          // hitting neither the spinner nor the empty state.
+          if (!data || data.length === 0) {
             return <span className="text-gray-600">{i18next.t("g.no-matches")}</span>;
           }
 

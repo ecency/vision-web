@@ -9,6 +9,122 @@ export enum SearchType {
   COMMENT = "comment"
 }
 
+export const MAX_SEARCH_TAGS = 5;
+
+// The search API applies both caps itself (see query_validator); mirrored here
+// so the client can refuse instead of turning a 400 into an empty result list.
+export const MAX_SEARCH_QUERY_LENGTH = 100;
+
+/**
+ * Both parsers match a token with /author:([^\s]+)/, so a value containing a
+ * space stops filtering at the space and the remainder silently becomes
+ * required free text. Keep the first word only, which is what the API would
+ * have filtered on anyway.
+ */
+function firstToken(value: string): string {
+  return value.trim().split(/\s+/)[0] ?? "";
+}
+
+/**
+ * Hive account names are lowercase and the API filters authors with an exact
+ * term query, so "@Demo" has to become "demo" or it matches nothing.
+ */
+export function normalizeSearchAuthor(value: string): string {
+  return firstToken(value).replace(/^@+/, "").toLowerCase();
+}
+
+export function normalizeSearchCategory(value: string): string {
+  return firstToken(value).toLowerCase();
+}
+
+/**
+ * Accepts what a user actually types ("travel, photography", "#travel travel")
+ * and returns exact-match ready tags, deduped in first-seen order.
+ */
+export function normalizeSearchTags(value: string): string[] {
+  const seen = new Set<string>();
+
+  return value
+    .split(/[\s,]+/)
+    .map((tag) => tag.replace(/^#+/, "").toLowerCase())
+    .filter((tag) => {
+      if (tag === "" || seen.has(tag)) {
+        return false;
+      }
+
+      seen.add(tag);
+      return true;
+    });
+}
+
+export interface SearchQueryParts {
+  search?: string;
+  author?: string;
+  type?: SearchType;
+  category?: string;
+  /** Raw user input ("a, b") or an already split list. */
+  tags?: string | string[];
+}
+
+export interface BuiltSearchQuery {
+  /** The `q` value to put in the URL. Round-trips through `SearchQuery`. */
+  q: string;
+  search: string;
+  author: string;
+  type: SearchType;
+  category: string;
+  tags: string[];
+}
+
+/**
+ * Assembles the single `q` string that both this app and the search API parse
+ * back into filters. Returns the normalized parts too, because the caller has
+ * to validate the tag count and the total length before navigating.
+ */
+export function buildSearchQuery({
+  search = "",
+  author = "",
+  type = SearchType.ALL,
+  category = "",
+  tags = []
+}: SearchQueryParts): BuiltSearchQuery {
+  const normalizedSearch = search.trim().replace(/\s+/g, " ");
+  const normalizedAuthor = normalizeSearchAuthor(author);
+  const normalizedCategory = normalizeSearchCategory(category);
+  const normalizedTags = normalizeSearchTags(Array.isArray(tags) ? tags.join(",") : tags);
+
+  const parts = [normalizedSearch];
+
+  if (normalizedAuthor) {
+    parts.push(`author:${normalizedAuthor}`);
+  }
+
+  if (type) {
+    parts.push(`type:${type}`);
+  }
+
+  if (normalizedCategory) {
+    parts.push(`category:${normalizedCategory}`);
+  }
+
+  if (normalizedTags.length > 0) {
+    // No space after the commas: the tag token is matched with /tag:([^\s]+)/,
+    // so anything past a space stops filtering and becomes required free text.
+    parts.push(`tag:${normalizedTags.join(",")}`);
+  }
+
+  return {
+    // Dropping the empty free text here is what keeps a filter-only query from
+    // starting with a space.
+    q: parts.filter((part) => part !== "").join(" "),
+    search: normalizedSearch,
+    author: normalizedAuthor,
+    type,
+    category: normalizedCategory,
+    tags: normalizedTags
+  };
+}
+
 export class SearchQuery {
   public query: string = "";
   public search: string = "";
@@ -54,10 +170,25 @@ export class SearchQuery {
   };
 
   private grabTags = () => {
-    const tags = this.grab(tag_re);
-    if (tags !== "") {
-      this.tags = tags.split(",").map((x) => x.trim());
-    }
+    // Every tag: token counts, not just the first one. The API joins all of its
+    // own tag: matches before splitting on commas, so reading only the first
+    // token here under-reports the tags a query really applies and let a query
+    // past the MAX_SEARCH_TAGS guard that the API then rejects with a 400.
+    // A trailing comma ("tag:a,") must not yield an empty tag either - it would
+    // be shown back as a phantom tag and counted against the same cap.
+    const seen = new Set<string>();
+
+    this.tags = [...this.query.matchAll(tag_re)]
+      .flatMap((match) => match[1].split(","))
+      .map((tag) => tag.trim())
+      .filter((tag) => {
+        if (tag === "" || seen.has(tag)) {
+          return false;
+        }
+
+        seen.add(tag);
+        return true;
+      });
   };
 
   private grabSearch = () => {

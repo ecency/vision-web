@@ -17,7 +17,7 @@ export function SearchPeople() {
       (new SearchQuery(params?.get("q") ?? "").search.split(" ")[0]?.replace("@", "") ?? "").toLowerCase(),
     [params]
   );
-  const { data: results, isLoading } = useQuery(getSearchAccountQueryOptions(q));
+  const { data: results, isLoading, isError } = useQuery(getSearchAccountQueryOptions(q));
 
   return (
     <div className="border border-[--border-color] bg-white rounded  search-people">
@@ -30,7 +30,17 @@ export function SearchPeople() {
             return <LinearProgress />;
           }
 
-          if (results?.length === 0) {
+          // A failed lookup also leaves data undefined with isLoading false, so
+          // it has to be told apart from an empty one or the panel reports "no
+          // such account" for a request that never came back.
+          if (isError) {
+            return <span className="text-gray-600">{i18next.t("search-comment.error-failed")}</span>;
+          }
+
+          // With no term to look up the query is disabled, so isLoading is
+          // false and data is undefined - without this the panel renders as an
+          // empty box, hitting neither the spinner nor the empty state.
+          if (!results || results.length === 0) {
             return <span className="text-gray-600">{i18next.t("g.no-matches")}</span>;
           }
 

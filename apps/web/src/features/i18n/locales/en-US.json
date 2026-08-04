@@ -2211,7 +2211,11 @@
     "sort-newest": "Recent",
     "hide-low": "Hide low payout content",
     "include-nsfw": "Show NSFW content",
-    "show-more": "show more"
+    "show-more": "show more",
+    "error-no-criteria": "Enter a search term, or an author, category or tag to filter by",
+    "error-too-many-tags": "Use at most {{n}} tags",
+    "error-too-long": "Search is too long. Use at most {{n}} characters",
+    "error-failed": "Search could not be completed. Please try again"
   },
   "search-people": {
     "title": "People"

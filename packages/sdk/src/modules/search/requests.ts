@@ -1,35 +1,6 @@
 import { CONFIG, INTERNAL_API_TIMEOUT_MS, getBoundFetch, withTimeoutSignal } from "@/modules/core";
 import { SearchResponse } from "./types/search-response";
-
-type RequestError = Error & { status?: number; data?: unknown };
-
-async function parseJsonResponse<T>(response: Response): Promise<T> {
-  const parseBody = async (): Promise<unknown> => {
-    try {
-      return await response.json();
-    } catch {
-      try {
-        return await response.text();
-      } catch {
-        return undefined;
-      }
-    }
-  };
-
-  const data = await parseBody();
-  if (!response.ok) {
-    const error = new Error(`Request failed with status ${response.status}`) as RequestError;
-    error.status = response.status;
-    error.data = data;
-    throw error;
-  }
-
-  if (data === undefined) {
-    throw new Error("Response body was empty or invalid JSON");
-  }
-
-  return data as T;
-}
+import { parseJsonResponse } from "./parse-json-response";
 
 export async function search(
   q: string,

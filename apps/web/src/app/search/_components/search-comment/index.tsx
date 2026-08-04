@@ -1,4 +1,4 @@
-import React, { Fragment, useMemo, useState } from "react";
+import React, { Fragment, useCallback, useMemo, useState } from "react";
 import numeral from "numeral";
 import dayjs, { Dayjs } from "@/utils/dayjs";
 import "./_index.scss";
@@ -19,9 +19,15 @@ interface Props {
 }
 
 export function SearchComment({ disableResults }: Props) {
-  const [advanced, setAdvanced] = useState(false);
-
   const params = useSearchParams();
+
+  // The advanced form writes adv=1 when it applies filters, so a reloaded or
+  // shared advanced-search URL has to show the panel the active filters belong
+  // to. The URL only seeds it - once the user toggles, that choice wins.
+  const [advancedToggle, setAdvancedToggle] = useState<boolean>();
+  const advanced = advancedToggle ?? params?.get("adv") === "1";
+
+  const q = params?.get("q") ?? "";
 
   const since = useMemo(() => {
     let sinceDate: Dayjs | undefined;
@@ -49,20 +55,26 @@ export function SearchComment({ disableResults }: Props) {
   const {
     data: resultsPages,
     dataUpdatedAt,
-    isLoading,
+    isError,
     isFetching,
     fetchNextPage,
     hasNextPage
   } = useInfiniteQuery({
     ...getSearchApiInfiniteQueryOptions(
-      params?.get("q") ?? "",
+      q,
       params?.get("sort") ?? SearchSort.RELEVANCE,
       params?.get("hd") !== "0",
       since,
       undefined,
       params?.get("nsfw") === "1" || undefined
-    ),
-    initialData: { pages: [], pageParams: [] }
+    )
+    // No `initialData` here on purpose. Seeding it made `state.data` defined,
+    // which is exactly what shouldLoadOnMount checks, so React Query never
+    // fetched page 1 and the bottom sentinel was the only thing that could
+    // start it (refetchOnMount is false app-wide). That held only while the
+    // sentinel was near the top of a short card: with the advanced panel open
+    // from adv=1, on a phone the sentinel starts below the fold and page 1 was
+    // never requested at all. The sentinel now does what it says, pagination.
   });
   const results = useMemo(
     () =>
@@ -71,19 +83,33 @@ export function SearchComment({ disableResults }: Props) {
     [resultsPages]
   );
 
-  // initialData seeds this query as "success" with zero pages, so the bottom
-  // sentinel is also what bootstraps page 1 — see useBottomPagination.
-  const onBottom = useBottomPagination({
+  // Read the doc comment on this hook before changing anything around it.
+  const loadMore = useBottomPagination({
     data: resultsPages,
     dataUpdatedAt,
     hasNextPage,
     isFetching,
     fetchNextPage
   });
+  // fetchNextPage does not consult `enabled`, so on /search with no q the
+  // sentinel would still post an empty query and collect a 400. The identity
+  // changes with q, which is what re-runs the sentinel's effect once a query
+  // does arrive.
+  const onBottom = useCallback(() => {
+    if (q) {
+      loadMore();
+    }
+  }, [loadMore, q]);
   const hits = useMemo(
     () => resultsPages?.pages?.[resultsPages?.pages?.length - 1]?.hits ?? 0,
     [resultsPages?.pages]
   );
+
+  // There is a first page coming whenever a query is set and none has landed
+  // yet, which covers the gap between mount and the fetch resolving. Derived
+  // from the pages rather than isLoading so it stays true across the whole gap,
+  // and gates the empty message only - never the sentinel.
+  const isFirstPagePending = !!q && !isError && (resultsPages?.pages?.length ?? 0) === 0;
 
   return (
     <div className="border dark:border-dark-400 overflow-hidden bg-white rounded search-comment">
@@ -113,7 +139,7 @@ export function SearchComment({ disableResults }: Props) {
           href="#"
           onClick={(e) => {
             e.preventDefault();
-            setAdvanced(!advanced);
+            setAdvancedToggle(!advanced);
           }}
         >
           {advanced ? i18next.t("g.close") : i18next.t("search-comment.advanced")}
@@ -142,14 +168,29 @@ export function SearchComment({ disableResults }: Props) {
             );
           }
 
-          if (!isLoading) {
-            return <span>{i18next.t("g.no-matches")}</span>;
+          // Checked after the results branch: a failed "show more" must not
+          // replace the pages the user is already reading with an error.
+          // Gated on q for the same reason isFirstPagePending is: with no query
+          // there is nothing the user asked for to have failed. The backend
+          // explains the rejection in the response body, but that text is
+          // English only and lives in another repo, so it stays on the error
+          // object for Sentry rather than being rendered.
+          if (isError && q) {
+            return (
+              <div role="alert">
+                <span className="text-red-500">{i18next.t("search-comment.error-failed")}</span>
+              </div>
+            );
           }
 
-          return null;
+          if (isFirstPagePending) {
+            return null;
+          }
+
+          return <span>{i18next.t("g.no-matches")}</span>;
         })()}
 
-        {!disableResults && isLoading && <LinearProgress />}
+        {!disableResults && isFirstPagePending && <LinearProgress />}
       </div>
       <DetectBottom onBottom={onBottom} />
     </div>
