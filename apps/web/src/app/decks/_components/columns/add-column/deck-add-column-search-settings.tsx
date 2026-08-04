@@ -7,7 +7,7 @@ import { DateOpt, SearchSort } from "../../consts";
 import { FormControl } from "@ui/input";
 import { Button } from "@ui/button";
 import i18next from "i18next";
-import { SearchType } from "@/utils/search-query";
+import { SearchType } from "@ecency/sdk";
 
 export const DeckAddColumnSearchSettings = ({ deckKey }: SettingsProps) => {
   const [query, setQuery] = useState("");

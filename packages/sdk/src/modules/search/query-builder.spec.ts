@@ -1,3 +1,4 @@
+import { describe, it, expect } from "vitest";
 import {
   BuiltSearchQuery,
   buildSearchQuery,
@@ -8,7 +9,7 @@ import {
   normalizeSearchTags,
   SearchQuery,
   SearchType
-} from "../../utils/search-query";
+} from "./query-builder";
 
 /**
  * Parses a built query back out and rebuilds it, i.e. exactly what the advanced

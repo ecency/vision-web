@@ -21,7 +21,7 @@ vi.mock("next/navigation", () => ({
 // mirrors the real factories - it is the whole subject of these tests. Note
 // getCommunitiesQueryOptions defaults it to true and takes it as the 5th
 // argument, so the panel has to pass it explicitly.
-vi.mock("@ecency/sdk", () => ({
+vi.mock("@ecency/sdk", async () => ({
   getSearchAccountQueryOptions: (q: string, limit = 5) => {
     mocks.terms.account.push(q);
     return {
@@ -51,7 +51,10 @@ vi.mock("@ecency/sdk", () => ({
       queryFn: () => mocks.communities(),
       enabled
     };
-  }
+  },
+  // These panels parse the URL's q with SearchQuery, which now lives in the SDK
+  // rather than @/utils. It is pure logic, so hand back the real thing.
+  ...(await import("../../../../../../packages/sdk/src/modules/search/query-builder"))
 }));
 
 vi.mock("@/features/shared", () => ({

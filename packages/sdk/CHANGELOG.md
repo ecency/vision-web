@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.76
+
+### Patch Changes
+
+- Move the search query builder into the SDK (#1353)
+
 ## 2.3.75
 
 ### Patch Changes
