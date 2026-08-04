@@ -300,3 +300,93 @@ describe('the guard catches the ways around it', () => {
     expect(gated).toEqual([]);
   });
 });
+
+/**
+ * The composer's reward panel makes the same kind of promise as the floor
+ * above, one step further in: it is shown only where the instance asked for
+ * it, but once shown it always states the split about to be broadcast and that
+ * the split cannot be changed afterwards. A `comment_options` operation is
+ * written once and no edit reaches it, so those two lines are not allowed to
+ * become conditional on the selection, on the posture, or on anything else.
+ *
+ * Checked here rather than in the panel's own test because there is no such
+ * thing: `include: ['src/**\/*.test.ts']` means no `.tsx` in this app is
+ * rendered by any test, so the syntax tree is the strongest statement
+ * available.
+ */
+const REWARD_PANEL = 'features/publish/components/publish-reward-selector.tsx';
+const REWARD_PANEL_HOST =
+  'features/publish/components/publish-action-bar.tsx';
+
+/** Every `t('key')` call in the file, with the key it was given. */
+function translationCalls(
+  sf: ts.SourceFile,
+): { key: string; node: ts.Node }[] {
+  const found: { key: string; node: ts.Node }[] = [];
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.getText(sf) === 't' &&
+      node.arguments.length === 1 &&
+      ts.isStringLiteral(node.arguments[0])
+    ) {
+      found.push({ key: node.arguments[0].text, node });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
+
+describe('the composer states what it is about to broadcast', () => {
+  const panel = parse(REWARD_PANEL);
+
+  it.each(['reward_split_broadcast', 'reward_split_permanent'])(
+    'prints %s unconditionally',
+    (key) => {
+      const calls = translationCalls(panel).filter(
+        (call) => call.key === key,
+      );
+      expect(calls, `${key} is never printed`).toHaveLength(1);
+      // Any condition at all, not only a Hive-layer one: an author who leaves
+      // the selection alone still gets told what their post pays.
+      expect(enclosingConditions(calls[0].node, panel)).toEqual([]);
+    },
+  );
+
+  it('prints the split for the selection actually held', () => {
+    // A hardcoded split would read as a statement of fact while the select
+    // said something else. The printed label has to be looked up from the
+    // current value, and that lookup must not sit under a condition either.
+    const lookups: ts.Node[] = [];
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isElementAccessExpression(node) &&
+        node.expression.getText(panel) === 'OPTION_LABELS' &&
+        node.argumentExpression.getText(panel) === 'value'
+      ) {
+        lookups.push(node);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(panel);
+
+    expect(lookups.length).toBeGreaterThan(0);
+    for (const lookup of lookups) {
+      expect(enclosingConditions(lookup, panel)).toEqual([]);
+    }
+  });
+
+  it('is shown exactly where the instance asked for it', () => {
+    // The panel itself is conditional, and this is the one condition it may
+    // carry: the resolved posture, which the resolver has already clamped to
+    // off for an external composer.
+    const host = parse(REWARD_PANEL_HOST);
+    const [element] = jsxElements(host, 'PublishRewardSelector');
+    expect(element, 'the reward panel is not rendered at all').toBeDefined();
+
+    const conditions = enclosingConditions(element, host);
+    expect(conditions).toHaveLength(1);
+    expect(conditions[0]).toContain('authorRewards');
+  });
+});
