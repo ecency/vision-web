@@ -370,8 +370,8 @@ describe('the editor waits for a read that succeeded', () => {
   it('does not open on the presence of a cached entry alone', () => {
     // Every reading surface treats "there is an entry" as enough. This one
     // cannot: the editor seeds title, body, tags and metadata from that entry
-    // and the update broadcast carries no version check, so a cached entry
-    // whose re-read failed lets a save overwrite the author's own newer post.
+    // and the update broadcast carries no version check, so an entry that was
+    // not read during this mount lets a save overwrite the author's newer post.
     const gates: boolean[] = [];
     each(sf, (n) => {
       if (!ts.isJsxSelfClosingElement(n) && !ts.isJsxOpeningElement(n)) return;
@@ -384,6 +384,66 @@ describe('the editor waits for a read that succeeded', () => {
     });
     expect(gates).toEqual([true]);
     expect(callsFunction(sf, 'isReadConfirmed')).toBe(true);
+  });
+
+  /**
+   * This defect survived a first fix because the gate looked right. It asked
+   * whether the query had succeeded, and query-core reports success the instant
+   * the cache holds an entry, with no request behind it. So the property worth
+   * pinning is not "the editor is gated" but what the gate is allowed to count
+   * as evidence: something that can only be true after a request belonging to
+   * this mount has come back.
+   */
+  it('requires evidence from after this mount, not the presence of data', () => {
+    // Read off the argument rather than the file: the destructured name stays
+    // present in the source even if what is handed to the gate is a constant,
+    // and a hardcoded `fetchedAfterMount: true` is the same defect again.
+    const evidence: string[] = [];
+    each(sf, (n) => {
+      if (
+        !ts.isCallExpression(n) ||
+        !ts.isIdentifier(n.expression) ||
+        n.expression.text !== 'isReadConfirmed'
+      ) {
+        return;
+      }
+      for (const arg of n.arguments) {
+        if (!ts.isObjectLiteralExpression(arg)) continue;
+        for (const prop of arg.properties) {
+          if (
+            !ts.isPropertyAssignment(prop) ||
+            !ts.isIdentifier(prop.name) ||
+            prop.name.text !== 'fetchedAfterMount'
+          ) {
+            continue;
+          }
+          evidence.push(prop.initializer.getText(sf));
+        }
+      }
+    });
+    expect(evidence).toEqual(['isFetchedAfterMount']);
+  });
+
+  it('issues that request even when the cache is fresh', () => {
+    // Without this the global one minute staleTime suppresses the fetch
+    // entirely, isFetchedAfterMount never becomes true, and the gate above
+    // turns from a safety check into a door that never opens.
+    const overrides: string[] = [];
+    each(sf, (n) => {
+      if (
+        !ts.isPropertyAssignment(n) ||
+        !ts.isIdentifier(n.name) ||
+        n.name.text !== 'refetchOnMount'
+      ) {
+        return;
+      }
+      overrides.push(
+        ts.isStringLiteralLike(n.initializer)
+          ? n.initializer.text
+          : '<dynamic>',
+      );
+    });
+    expect(overrides).toEqual(['always']);
   });
 });
 

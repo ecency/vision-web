@@ -45,9 +45,21 @@ function RouteComponent() {
     data: entry,
     isEnabled,
     isError,
+    isFetchedAfterMount,
     isSuccess,
     refetch,
-  } = useQuery({ ...queryOptions, enabled: canEdit });
+  } = useQuery({
+    ...queryOptions,
+    enabled: canEdit,
+    // The reading surfaces leave this at its default and serve from cache,
+    // which is what they should do. This one cannot. The global staleTime is a
+    // minute, so a reader who opens a post and clicks Edit inside that minute
+    // would otherwise reach the editor with no request having been made at all,
+    // and `isFetchedAfterMount` would stay false forever. Verified against the
+    // installed query-core: 'always' is checked before the staleness test, so
+    // it issues the fetch regardless of staleTime.
+    refetchOnMount: 'always',
+  });
 
   // Was: `if (error || !entry)` renders "Post not found." One failed bridge
   // call told an author their own post did not exist, on the screen they had
@@ -60,17 +72,21 @@ function RouteComponent() {
   });
 
   // Latched during render rather than in an effect, so the editor appears on
-  // the same frame the read succeeds instead of flashing the notice first.
-  readConfirmed.current = isReadConfirmed(outcome, readConfirmed.current);
+  // the same frame the read succeeds instead of flashing a notice first.
+  readConfirmed.current = isReadConfirmed(
+    { outcome, fetchedAfterMount: isFetchedAfterMount },
+    readConfirmed.current,
+  );
 
   if (!isAuthEnabled || !canEdit) {
     return null;
   }
 
-  // Presence of an entry is not enough here, unlike every reading surface. A
-  // cached entry whose re-read failed can be older than the post on chain, and
-  // an update broadcast carries no version check, so saving it would overwrite
-  // the author's own newer work with no sign that anything had gone wrong.
+  // Presence of an entry is not enough here, unlike every reading surface, and
+  // neither is a successful outcome: an entry served straight from cache reads
+  // as a success without a request having been made. An update broadcast
+  // carries no version check, so editing either of those could overwrite the
+  // author's own newer work with no sign that anything had gone wrong.
   if (entry && readConfirmed.current) {
     return <EditPageContent entry={entry} />;
   }
