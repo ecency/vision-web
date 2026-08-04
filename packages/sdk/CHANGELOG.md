@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.75
+
+### Patch Changes
+
+- Reject a successful search body that is not the expected shape (#1351)
+
 ## 2.3.74
 
 ### Patch Changes

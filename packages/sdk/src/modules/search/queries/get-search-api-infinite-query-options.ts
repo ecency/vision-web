@@ -1,7 +1,7 @@
 import { infiniteQueryOptions } from "@tanstack/react-query";
 import { CONFIG, INTERNAL_API_TIMEOUT_MS, withTimeoutSignal, QueryKeys } from "@/modules/core";
 import { SearchResponse } from "../types/search-response";
-import { parseJsonResponse } from "../parse-json-response";
+import { isSearchResponse, parseJsonResponse } from "../parse-json-response";
 import { searchRetryPolicy } from "../retry-policy";
 
 export function getSearchApiInfiniteQueryOptions(
@@ -52,7 +52,7 @@ export function getSearchApiInfiniteQueryOptions(
 
       // Keeps the backend's own explanation of a rejected query on the error
       // (status + body), instead of collapsing it to a status code.
-      return parseJsonResponse<SearchResponse>(response);
+      return parseJsonResponse<SearchResponse>(response, isSearchResponse);
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage: SearchResponse) => lastPage?.scroll_id,

@@ -1,6 +1,6 @@
 import { CONFIG, INTERNAL_API_TIMEOUT_MS, getBoundFetch, withTimeoutSignal } from "@/modules/core";
 import { SearchResponse } from "./types/search-response";
-import { parseJsonResponse } from "./parse-json-response";
+import { isSearchResponse, parseJsonResponse } from "./parse-json-response";
 
 export async function search(
   q: string,
@@ -41,7 +41,7 @@ export async function search(
     signal: withTimeoutSignal(INTERNAL_API_TIMEOUT_MS, signal),
   });
 
-  return parseJsonResponse<SearchResponse>(response);
+  return parseJsonResponse<SearchResponse>(response, isSearchResponse);
 }
 
 export async function similar(
@@ -67,7 +67,7 @@ export async function similar(
     signal: withTimeoutSignal(timeoutMs, signal),
   });
 
-  return parseJsonResponse<SearchResponse>(response);
+  return parseJsonResponse<SearchResponse>(response, isSearchResponse);
 }
 
 export async function searchPath(q: string, signal?: AbortSignal): Promise<string[]> {
@@ -82,6 +82,6 @@ export async function searchPath(q: string, signal?: AbortSignal): Promise<strin
     signal: withTimeoutSignal(INTERNAL_API_TIMEOUT_MS, signal),
   });
 
-  const data = await parseJsonResponse<string[]>(response);
+  const data = await parseJsonResponse<string[]>(response, Array.isArray);
   return data?.length > 0 ? data : [q];
 }
