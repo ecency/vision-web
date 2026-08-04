@@ -106,15 +106,31 @@ def log(message: str) -> None:
     print(message, flush=True)
 
 
+class RpcError(Exception):
+    """
+    A node answered, and what it said was an error.
+
+    Its own type because the alternative was reading a response with no `result`
+    as an empty one. That turned every node fault into "account does not exist",
+    which is both the wrong diagnosis and unretryable, so a blip during
+    confirmation ended the run claiming the app account was gone.
+    """
+
+
 def rpc(url: str, method: str, params: list) -> dict:
     payload = json.dumps({"jsonrpc": "2.0", "method": method, "params": params, "id": 1}).encode()
     request = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=30) as response:
-        return json.load(response)
+        body = json.load(response)
+    if "error" in body:
+        raise RpcError(f"{method}: {body['error']}")
+    if "result" not in body:
+        raise RpcError(f"{method}: response carried neither result nor error")
+    return body
 
 
 def fetch_account(rpc_url: str, account: str) -> dict:
-    result = rpc(rpc_url, "condenser_api.get_accounts", [[account]]).get("result") or []
+    result = rpc(rpc_url, "condenser_api.get_accounts", [[account]])["result"] or []
     if not result:
         raise SystemExit(f"account {account} does not exist")
     return result[0]
@@ -271,14 +287,23 @@ def write_private(contents: str, path: str | None) -> str:
     return path
 
 
-def broadcast_metadata(account: str, serialized: str, key: str, nodes: list[str]) -> None:
+def broadcast_metadata(
+    account: str, serialized: str, json_metadata: str, key: str, nodes: list[str]
+) -> None:
     """
     Update the account's posting_json_metadata.
 
-    account_update2 leaves a field alone when it is sent empty, so json_metadata
-    is passed as "" and only the posting copy is written. lighthive serializes
-    through the node's own get_transaction_hex, so this needs no client-side
-    operation table that could fall behind the chain.
+    The account's CURRENT json_metadata is sent back verbatim rather than left
+    empty. hived's account_update2 evaluator only writes a field whose string is
+    non-empty, so an empty one would in fact be left alone, but that is a detail
+    of an evaluator this script cannot test against, and the cost of being wrong
+    about it is erasing the app account's global metadata on a live account. Both
+    readings of the rule give the same result when the current value is echoed:
+    either it is skipped, or it is written back unchanged. Being explicit costs a
+    few bytes in a transaction that happens only when an instance is unregistered.
+
+    lighthive serializes through the node's own get_transaction_hex, so this needs
+    no client-side operation table that could fall behind the chain.
     """
     try:
         from lighthive.client import Client
@@ -292,7 +317,7 @@ def broadcast_metadata(account: str, serialized: str, key: str, nodes: list[str]
             "account_update2",
             {
                 "account": account,
-                "json_metadata": "",
+                "json_metadata": json_metadata,
                 "posting_json_metadata": serialized,
                 "extensions": [],
             },
@@ -316,7 +341,7 @@ def confirm_registered(rpc_url: str, account: str, wanted: list[str]) -> list[st
             time.sleep(CONFIRM_DELAY_SECONDS)
         try:
             _, seen = current_metadata(fetch_account(rpc_url, account))
-        except (urllib.error.URLError, TimeoutError, ValueError) as error:
+        except (urllib.error.URLError, TimeoutError, ValueError, RpcError) as error:
             log(f"  confirmation read failed ({error}), retrying")
             continue
         if all(uri in seen for uri in wanted):
@@ -325,6 +350,40 @@ def confirm_registered(rpc_url: str, account: str, wanted: list[str]) -> list[st
     raise SystemExit(
         "broadcast did not appear on chain after "
         f"{CONFIRM_ATTEMPTS * CONFIRM_DELAY_SECONDS}s; {len(missing)} URI(s) still missing"
+    )
+
+
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """
+    Turn a redirect into an error instead of following it.
+
+    urllib re-sends the request headers to whatever a redirect names, and one of
+    those headers is the shared secret. Anything able to answer this call could
+    then collect it by replying 302, so the reconcile does not follow redirects
+    at all: the endpoint it wants is a fixed path on a host the operator named.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.URLError(f"refusing to follow a redirect to {newurl}")
+
+
+def assert_secret_safe_base(api_base: str) -> None:
+    """
+    Refuse to put the shared secret on a cleartext connection.
+
+    The secret authenticates every internal call to the hosting API, and this
+    sends it as a request header. Over plain http on the network that is simply
+    handing it to anyone on the path. Loopback is allowed because there is no
+    path: an operator running this beside the API is talking to the same kernel.
+    """
+    parts = urllib.parse.urlsplit(api_base)
+    if parts.scheme == "https":
+        return
+    if parts.scheme == "http" and (parts.hostname or "") in ("127.0.0.1", "::1", "localhost"):
+        return
+    raise SystemExit(
+        "--api-base must be https, or http on loopback; the internal secret is sent "
+        "as a header and plain http over the network exposes it"
     )
 
 
@@ -343,7 +402,8 @@ def reconcile_client_ids(api_base: str, secret: str) -> dict:
         method="POST",
         headers={"Content-Type": "application/json", "x-internal-secret": secret},
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
+    opener = urllib.request.build_opener(_RefuseRedirects)
+    with opener.open(request, timeout=120) as response:
         return json.load(response)
 
 
@@ -375,6 +435,7 @@ def acquire_lock() -> None:
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
+        handle.close()
         raise SystemExit(0)
     _LOCK_HANDLE = handle
 
@@ -433,6 +494,9 @@ def main() -> int:
             raise SystemExit("--broadcast needs --key-file or HIVESIGNER_POSTING_KEY")
         if not args.api_base:
             raise SystemExit("--broadcast needs --api-base or HOSTING_API_BASE")
+        # Checked before the key is read, so a misconfigured base cannot get as
+        # far as a broadcast it would then be unable to enable.
+        assert_secret_safe_base(args.api_base)
         if not args.internal_secret_file and not os.environ.get("HOSTING_INTERNAL_SECRET"):
             raise SystemExit("--broadcast needs --internal-secret-file or HOSTING_INTERNAL_SECRET")
         key = (
@@ -501,7 +565,14 @@ def main() -> int:
 
     if missing:
         log(f"\nbroadcasting {len(missing)} addition(s) as {args.account}...")
-        broadcast_metadata(args.account, serialized, key, args.rpc.split(","))
+        broadcast_metadata(
+            args.account,
+            serialized,
+            # Echoed back rather than left empty: see broadcast_metadata.
+            account.get("json_metadata") or "",
+            key,
+            args.rpc.split(","),
+        )
         confirm_registered(args.rpc, args.account, wanted)
         log("confirmed on chain")
     else:

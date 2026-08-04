@@ -118,7 +118,14 @@ export function parseImports(source: string): ModuleImport[] {
     const named = clause.match(/\{([\s\S]*?)\}/);
     if (named) {
       for (const entry of named[1].split(',')) {
-        const name = entry.trim().split(/\s+as\s+/)[0].trim();
+        // An inline `type` modifier is part of the syntax, not part of the name.
+        // Without stripping it, `import { type PrivateKey }` records the binding
+        // as "type PrivateKey", which matches nothing and hides the import.
+        const name = entry
+          .trim()
+          .replace(/^type\s+/, '')
+          .split(/\s+as\s+/)[0]
+          .trim();
         if (name) bindings.push(name);
       }
     }
@@ -202,6 +209,25 @@ describe('parseImports (the guard proves itself before it is trusted)', () => {
     expect(parseImports("import * as hive from 'hive-tx';")).toEqual([
       { specifier: 'hive-tx', bindings: ['*'] },
     ]);
+  });
+
+  it('flags a signing import behind an inline type modifier', () => {
+    // A type-only import cannot sign anything on its own, and it is still
+    // reported. Nothing in this package has a reason to name these types, so an
+    // appearance is someone starting to write the code that does sign, which is
+    // the moment this is meant to be discussed rather than after it works.
+    const [entry] = parseImports("import { callRPC, type PrivateKey } from '@ecency/sdk/hive';");
+    expect(entry.bindings).toContain('PrivateKey');
+  });
+
+  it('flags a wholly type-only signing import', () => {
+    const [entry] = parseImports("import type { Transaction } from '@ecency/sdk/hive';");
+    expect(entry.bindings).toContain('Transaction');
+  });
+
+  it('does not mangle the name of an ordinary inline type import', () => {
+    const [entry] = parseImports("import { mapTenantFromDb, type Tenant } from '../types';");
+    expect(entry.bindings).toEqual(expect.arrayContaining(['mapTenantFromDb', 'Tenant']));
   });
 
   it('flags a multi-line import clause', () => {

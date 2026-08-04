@@ -13,8 +13,10 @@ to check it.
 """
 
 import fcntl
+import json
 import os
 import stat
+import sys
 import tempfile
 import types
 import unittest
@@ -184,6 +186,151 @@ class ReadSecretFile(unittest.TestCase):
     def test_refuses_a_file_that_is_not_there(self):
         with self.assertRaises(SystemExit):
             registrar.read_secret_file("/nonexistent/posting.key", "posting key")
+
+
+class RpcErrors(unittest.TestCase):
+    """
+    A node that answers with an error must not read as an empty answer. That
+    turned every node fault into "the app account does not exist", which is the
+    wrong diagnosis and, being a SystemExit, could not be retried during
+    confirmation either.
+    """
+
+    def call(self, body):
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *exc):
+                return False
+
+            def read(self_inner):
+                return body.encode()
+
+        original = registrar.urllib.request.urlopen
+        registrar.urllib.request.urlopen = lambda *a, **k: FakeResponse()
+        self.addCleanup(setattr, registrar.urllib.request, "urlopen", original)
+        captured["result"] = registrar.rpc("https://node.example", "m", [])
+        return captured["result"]
+
+    def test_returns_the_body_on_success(self):
+        self.assertEqual(self.call('{"result": [1]}')["result"], [1])
+
+    def test_raises_on_a_json_rpc_error_member(self):
+        with self.assertRaises(registrar.RpcError):
+            self.call('{"error": {"message": "server busy"}}')
+
+    def test_repeats_what_the_node_actually_said(self):
+        # The missing-result check below would also refuse this body, so what the
+        # error member buys is the diagnosis. Without it the operator reads
+        # "response carried neither result nor error" and goes looking for a bug
+        # here instead of at the node that told them why.
+        with self.assertRaises(registrar.RpcError) as caught:
+            self.call('{"error": {"message": "server busy"}}')
+        self.assertIn("server busy", str(caught.exception))
+
+    def test_raises_on_a_response_with_neither_result_nor_error(self):
+        with self.assertRaises(registrar.RpcError):
+            self.call("{}")
+
+    def test_an_rpc_error_is_retryable_during_confirmation(self):
+        # confirm_registered only retries what it catches, so RpcError has to be
+        # in that set or a blip ends the run.
+        import inspect
+
+        source = inspect.getsource(registrar.confirm_registered)
+        self.assertIn("RpcError", source.split("except")[1].split(":")[0])
+
+
+class BroadcastMetadata(unittest.TestCase):
+    """
+    The one operation here that changes something on a live account, and the one
+    whose mistakes are not undoable by running it again.
+    """
+
+    def broadcast(self, json_metadata):
+        sent = {}
+
+        class FakeClient:
+            def __init__(self_inner, nodes=None, keys=None):
+                sent["nodes"] = nodes
+                sent["keys"] = keys
+
+            def broadcast_sync(self_inner, op):
+                sent["op"] = op.to_dict()
+
+        class FakeOperation:
+            def __init__(self_inner, type_, value):
+                self_inner.type = type_
+                self_inner.value = value
+
+            def to_dict(self_inner):
+                return [self_inner.type, self_inner.value]
+
+        client_mod = types.ModuleType("lighthive.client")
+        client_mod.Client = FakeClient
+        data_mod = types.ModuleType("lighthive.datastructures")
+        data_mod.Operation = FakeOperation
+        package = types.ModuleType("lighthive")
+        for name, module in (
+            ("lighthive", package),
+            ("lighthive.client", client_mod),
+            ("lighthive.datastructures", data_mod),
+        ):
+            sys.modules[name] = module
+            self.addCleanup(sys.modules.pop, name, None)
+
+        registrar.broadcast_metadata("app", '{"profile":{}}', json_metadata, "wif", ["n"])
+        return sent
+
+    def test_updates_the_posting_copy(self):
+        sent = self.broadcast("")
+        self.assertEqual(sent["op"][0], "account_update2")
+        self.assertEqual(sent["op"][1]["posting_json_metadata"], '{"profile":{}}')
+
+    def test_echoes_the_accounts_existing_json_metadata_back(self):
+        # Sending an empty string here would rely on the evaluator treating it as
+        # "leave alone". If that reading is ever wrong, or ever changes, the app
+        # account's global metadata is erased and cannot be recovered from here.
+        sent = self.broadcast('{"keep":"me"}')
+        self.assertEqual(sent["op"][1]["json_metadata"], '{"keep":"me"}')
+
+    def test_does_not_put_the_key_in_the_operation(self):
+        sent = self.broadcast("")
+        self.assertNotIn("wif", json.dumps(sent["op"]))
+
+
+class SecretSafeBase(unittest.TestCase):
+    """
+    The shared secret goes out as a request header, so the base it is sent to
+    decides whether it crosses a network in the clear.
+    """
+
+    def test_accepts_https(self):
+        registrar.assert_secret_safe_base("https://api.example")
+
+    def test_accepts_http_on_loopback(self):
+        # No network path, so nothing to intercept.
+        registrar.assert_secret_safe_base("http://127.0.0.1:3001")
+        registrar.assert_secret_safe_base("http://localhost:3001")
+
+    def test_refuses_plain_http_to_a_remote_host(self):
+        with self.assertRaises(SystemExit):
+            registrar.assert_secret_safe_base("http://api.example")
+
+    def test_refuses_a_scheme_that_is_neither(self):
+        for base in ("ftp://api.example", "api.example", ""):
+            with self.assertRaises(SystemExit):
+                registrar.assert_secret_safe_base(base)
+
+    def test_refuses_to_follow_a_redirect(self):
+        # urllib re-sends headers to wherever a redirect points, and one of them
+        # is the secret, so anything able to answer could collect it with a 302.
+        handler = registrar._RefuseRedirects()
+        with self.assertRaises(registrar.urllib.error.URLError):
+            handler.redirect_request(None, None, 302, "Found", {}, "http://evil.example/")
 
 
 class AcquireLock(unittest.TestCase):
