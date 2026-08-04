@@ -112,7 +112,17 @@ type TranslationKey =
   | 'reputation_band_longstanding'
   | 'confirming'
   | 'membership_unconfirmed'
-  | 'check_again';
+  | 'check_again'
+  | 'posts_load_failed'
+  | 'post_refresh_failed'
+  | 'comments_loading'
+  | 'comments_empty'
+  | 'comments_load_failed'
+  | 'comments_incomplete'
+  | 'community_load_failed'
+  | 'app_error_title'
+  | 'app_error_description'
+  | 'reload_page';
 
 type Translations = Record<TranslationKey, string>;
 
@@ -235,6 +245,17 @@ const translations: Record<string, Translations> = {
     membership_unconfirmed:
       'Sent to Hive. The community has not confirmed this yet. Reload in a moment to check.',
     check_again: 'Check again',
+    posts_load_failed: 'Could not load more posts.',
+    post_refresh_failed: 'Could not refresh this post.',
+    comments_loading: 'Loading comments...',
+    comments_empty: 'No comments yet. Be the first to comment!',
+    comments_load_failed: 'Could not load comments.',
+    comments_incomplete: 'Some comments could not be loaded.',
+    community_load_failed: 'Could not load community details.',
+    app_error_title: 'Something went wrong',
+    app_error_description:
+      'This page could not be displayed. Reloading usually fixes it.',
+    reload_page: 'Reload',
   },
   es: {
     loading: 'Cargando...',
@@ -353,6 +374,18 @@ const translations: Record<string, Translations> = {
     membership_unconfirmed:
       'Enviado a Hive. La comunidad todavía no lo ha confirmado. Vuelve a cargar en un momento para comprobarlo.',
     check_again: 'Comprobar de nuevo',
+    posts_load_failed: 'No se pudieron cargar más publicaciones.',
+    post_refresh_failed: 'No se pudo actualizar esta publicación.',
+    comments_loading: 'Cargando comentarios...',
+    comments_empty: 'Aún no hay comentarios. ¡Sé el primero en comentar!',
+    comments_load_failed: 'No se pudieron cargar los comentarios.',
+    comments_incomplete: 'Algunos comentarios no se pudieron cargar.',
+    community_load_failed:
+      'No se pudieron cargar los datos de la comunidad.',
+    app_error_title: 'Algo salió mal',
+    app_error_description:
+      'No se pudo mostrar esta página. Recargar suele solucionarlo.',
+    reload_page: 'Recargar',
   },
   de: {
     loading: 'Lädt...',
@@ -471,6 +504,18 @@ const translations: Record<string, Translations> = {
     membership_unconfirmed:
       'An Hive gesendet. Die Community hat es noch nicht bestätigt. Lade die Seite gleich neu, um nachzusehen.',
     check_again: 'Erneut prüfen',
+    posts_load_failed: 'Weitere Beiträge konnten nicht geladen werden.',
+    post_refresh_failed: 'Dieser Beitrag konnte nicht aktualisiert werden.',
+    comments_loading: 'Kommentare werden geladen...',
+    comments_empty: 'Noch keine Kommentare. Schreibe den ersten!',
+    comments_load_failed: 'Kommentare konnten nicht geladen werden.',
+    comments_incomplete:
+      'Einige Kommentare konnten nicht geladen werden.',
+    community_load_failed: 'Community-Daten konnten nicht geladen werden.',
+    app_error_title: 'Etwas ist schief gelaufen',
+    app_error_description:
+      'Diese Seite konnte nicht angezeigt werden. Ein Neuladen hilft meistens.',
+    reload_page: 'Neu laden',
   },
   fr: {
     loading: "Chargement...",
@@ -590,6 +635,19 @@ const translations: Record<string, Translations> = {
     membership_unconfirmed:
       "Envoyé à Hive. La communauté ne l'a pas encore confirmé. Rechargez dans un instant pour vérifier.",
     check_again: 'Vérifier à nouveau',
+    posts_load_failed: "Impossible de charger plus d'articles.",
+    post_refresh_failed: "Impossible d'actualiser cet article.",
+    comments_loading: 'Chargement des commentaires...',
+    comments_empty: 'Aucun commentaire pour le moment. Soyez le premier!',
+    comments_load_failed: 'Impossible de charger les commentaires.',
+    comments_incomplete:
+      "Certains commentaires n'ont pas pu être chargés.",
+    community_load_failed:
+      'Impossible de charger les informations de la communauté.',
+    app_error_title: "Une erreur s'est produite",
+    app_error_description:
+      "Cette page n'a pas pu s'afficher. Recharger règle souvent le problème.",
+    reload_page: 'Recharger',
   },
   ko: {
     loading: '로딩 중...',
@@ -707,6 +765,17 @@ const translations: Record<string, Translations> = {
     membership_unconfirmed:
       'Hive로 전송했습니다. 커뮤니티가 아직 확인하지 않았습니다. 잠시 후 새로 고쳐 확인해 주세요.',
     check_again: '다시 확인',
+    posts_load_failed: '게시물을 더 불러오지 못했습니다.',
+    post_refresh_failed: '이 게시물을 새로 고치지 못했습니다.',
+    comments_loading: '댓글 불러오는 중...',
+    comments_empty: '아직 댓글이 없습니다. 첫 댓글을 남겨보세요!',
+    comments_load_failed: '댓글을 불러오지 못했습니다.',
+    comments_incomplete: '일부 댓글을 불러오지 못했습니다.',
+    community_load_failed: '커뮤니티 정보를 불러오지 못했습니다.',
+    app_error_title: '문제가 발생했습니다',
+    app_error_description:
+      '이 페이지를 표시할 수 없습니다. 새로 고치면 대개 해결됩니다.',
+    reload_page: '새로 고침',
   },
   ru: {
     loading: 'Загрузка...',
@@ -825,6 +894,17 @@ const translations: Record<string, Translations> = {
     membership_unconfirmed:
       'Отправлено в Hive. Сообщество это ещё не подтвердило. Обновите страницу через минуту, чтобы проверить.',
     check_again: 'Проверить снова',
+    posts_load_failed: 'Не удалось загрузить больше постов.',
+    post_refresh_failed: 'Не удалось обновить этот пост.',
+    comments_loading: 'Загрузка комментариев...',
+    comments_empty: 'Комментариев пока нет. Оставьте первый!',
+    comments_load_failed: 'Не удалось загрузить комментарии.',
+    comments_incomplete: 'Некоторые комментарии не удалось загрузить.',
+    community_load_failed: 'Не удалось загрузить данные сообщества.',
+    app_error_title: 'Что-то пошло не так',
+    app_error_description:
+      'Не удалось отобразить эту страницу. Обычно помогает перезагрузка.',
+    reload_page: 'Перезагрузить',
   },
 };
 
