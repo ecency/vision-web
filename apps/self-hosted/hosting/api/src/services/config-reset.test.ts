@@ -226,6 +226,132 @@ describe('the type guard is still enforced', () => {
   });
 });
 
+/**
+ * The reset has to know which side of the save is the broken one. Asking only whether the
+ * stored and incoming values disagree cannot tell: that question is symmetric, so it answers
+ * yes just as readily when the stored value is healthy and the replacement is junk, and the
+ * repair tool becomes the easiest way to corrupt a good field. The canonical shape for the
+ * path is what breaks the symmetry.
+ */
+describe('a reset cannot corrupt a healthy value', () => {
+  it('refuses to put a number over a healthy string', async () => {
+    seedTenant(await storedConfig());
+
+    const { discarded, reset } = await TenantService.applyConfigDocument(
+      'alice',
+      { version: 1, configuration: { general: { theme: 42 } } },
+      ['configuration.general.theme']
+    );
+
+    expect(saved.configuration.general.theme).toBe('system');
+    expect(reset).toEqual([]);
+    expect(discarded).toContainEqual({
+      path: 'configuration.general.theme',
+      reason: 'the value being saved is not the type this setting must have',
+    });
+  });
+
+  it('refuses to put the string "false" over a healthy boolean', async () => {
+    seedTenant(await storedConfig());
+
+    const { reset } = await TenantService.applyConfigDocument(
+      'alice',
+      instanceDoc({ features: { likes: { enabled: 'false' } } }),
+      ['configuration.instanceConfiguration.features.likes.enabled']
+    );
+
+    expect(saved.configuration.instanceConfiguration.features.likes.enabled).toBe(true);
+    expect(reset).toEqual([]);
+  });
+
+  it('refuses array elements of the wrong type over a healthy array', async () => {
+    seedTenant(await storedConfig());
+
+    const { reset } = await TenantService.applyConfigDocument(
+      'alice',
+      instanceDoc({ features: { auth: { methods: [1, 2] } } }),
+      ['configuration.instanceConfiguration.features.auth.methods']
+    );
+
+    expect(saved.configuration.instanceConfiguration.features.auth.methods).toEqual([
+      'keychain',
+      'hivesigner',
+      'hiveauth',
+    ]);
+    expect(reset).toEqual([]);
+  });
+
+  it('refuses junk inside a replacement block, even repairing a broken one', async () => {
+    // The stored side really is broken here, so the only thing standing between the reset and
+    // a stored `readerLayer: 42` is checking the replacement against the canonical block.
+    seedTenant(
+      await storedConfig((c) => {
+        c.configuration.instanceConfiguration.features.hive = 'full';
+      })
+    );
+
+    const { reset } = await TenantService.applyConfigDocument(
+      'alice',
+      instanceDoc({ features: { hive: { readerLayer: 42 } } }),
+      ['configuration.instanceConfiguration.features.hive']
+    );
+
+    expect(saved.configuration.instanceConfiguration.features.hive).toBe('full');
+    expect(reset).toEqual([]);
+  });
+
+  it('still accepts a block carrying a setting newer than the seed', async () => {
+    // The editor offers more of the Hive block than getDefaultConfig writes. A key the seed
+    // does not carry contradicts nothing, and a normal save may already write it into an
+    // absent slot, so refusing it would block the repair without protecting anything.
+    seedTenant(
+      await storedConfig((c) => {
+        c.configuration.instanceConfiguration.features.hive = 'full';
+      })
+    );
+
+    const { reset } = await TenantService.applyConfigDocument(
+      'alice',
+      instanceDoc({
+        features: {
+          hive: { readerLayer: 'standard', authorRewards: 'author', payoutLabel: 'Earned' },
+        },
+      }),
+      ['configuration.instanceConfiguration.features.hive']
+    );
+
+    expect(saved.configuration.instanceConfiguration.features.hive).toEqual({
+      readerLayer: 'standard',
+      authorRewards: 'author',
+      payoutLabel: 'Earned',
+    });
+    expect(reset).toEqual(['configuration.instanceConfiguration.features.hive']);
+  });
+
+  it('refuses a setting the server has no default for', async () => {
+    // Nothing says what this field is supposed to be, so nothing can say which side is broken.
+    // Refusing leaves it stuck for an operator; guessing would let anything overwrite anything.
+    seedTenant(
+      await storedConfig((c) => {
+        c.configuration.instanceConfiguration.features.tipping = { buttonLabel: 42 };
+      })
+    );
+
+    const { discarded, reset } = await TenantService.applyConfigDocument(
+      'alice',
+      instanceDoc({ features: { tipping: { buttonLabel: 'Tip' } } }),
+      ['configuration.instanceConfiguration.features.tipping.buttonLabel']
+    );
+
+    expect(saved.configuration.instanceConfiguration.features.tipping.buttonLabel).toBe(42);
+    expect(reset).toEqual([]);
+    expect(discarded).toContainEqual({
+      path: 'configuration.instanceConfiguration.features.tipping.buttonLabel',
+      reason: 'the server has no default for this setting, so it cannot judge a replacement',
+    });
+  });
+});
+
 describe('a reset cannot remove a pinned identity field', () => {
   it.each(PINNED_INSTANCE_FIELDS)('refuses to reset %s', async (field) => {
     seedTenant(await storedConfig());
@@ -358,7 +484,7 @@ describe('a reset cannot wipe configuration', () => {
       })
     );
 
-    const { reset } = await TenantService.applyConfigDocument(
+    const { discarded, reset } = await TenantService.applyConfigDocument(
       'alice',
       { version: 1, configuration: { general: { theme: null } } },
       ['configuration.general.theme']
@@ -366,6 +492,11 @@ describe('a reset cannot wipe configuration', () => {
 
     expect(saved.configuration.general.theme).toBe(7);
     expect(reset).toEqual([]);
+    // Refused for carrying no replacement, which is what a stripped null leaves behind.
+    expect(discarded).toContainEqual({
+      path: 'configuration.general.theme',
+      reason: 'the saved document carries no replacement value for this field',
+    });
   });
 
   it('refuses the whole list once it is past the ceiling', async () => {
@@ -428,6 +559,28 @@ describe('a reset changes nothing about a save that would have worked', () => {
     expect(discarded).toEqual([]);
   });
 
+  it('stores the same config where the merge would have taken the value anyway', async () => {
+    // An empty array is a valid replacement for a stored array of any element type, so this
+    // save applies with or without the reset. The reset does fire, because the stored value is
+    // genuinely broken, and what it stores is identical either way.
+    const doc = instanceDoc({ features: { auth: { methods: [] } } });
+    const broken = (c: any) => {
+      c.configuration.instanceConfiguration.features.auth.methods = [1, 2];
+    };
+
+    seedTenant(await storedConfig(broken));
+    await TenantService.applyConfigDocument('alice', doc);
+    const withoutReset = JSON.stringify(saved);
+
+    seedTenant(await storedConfig(broken));
+    await TenantService.applyConfigDocument('alice', doc, [
+      'configuration.instanceConfiguration.features.auth.methods',
+    ]);
+
+    expect(saved.configuration.instanceConfiguration.features.auth.methods).toEqual([]);
+    expect(JSON.stringify(saved)).toBe(withoutReset);
+  });
+
   it('leaves a save with no reset list byte-identical', async () => {
     const doc = {
       version: 1,
@@ -457,7 +610,10 @@ describe('resetConfigPaths mechanics', () => {
     const { config, reset } = TenantService.resetConfigPaths(
       stored,
       ['configuration.general.theme'],
-      { configuration: { general: { theme: 'dark' } } }
+      {
+        document: { configuration: { general: { theme: 'dark' } } },
+        canonical: await TenantService.getDefaultConfig('alice', 'alice'),
+      }
     );
 
     expect(reset).toEqual(['configuration.general.theme']);
@@ -469,6 +625,18 @@ describe('resetConfigPaths mechanics', () => {
     );
   });
 
+  it('never walks a prototype key when checking a replacement against the canonical shape', () => {
+    // JSON.parse makes `__proto__` an own key, so a replacement object can carry one even
+    // though sanitize strips it before this runs. Refused rather than walked.
+    expect(
+      TenantService.matchesCanonicalShape(
+        { readerLayer: 'standard' },
+        JSON.parse('{"readerLayer":"standard","__proto__":{"polluted":true}}')
+      )
+    ).toBe(false);
+    expect(({} as any).polluted).toBeUndefined();
+  });
+
   it('reads own properties only, so an inherited key is not mistaken for stored config', () => {
     const stored = { configuration: { general: {} } };
     // `toString` resolves through the prototype chain; readPath must not see it.
@@ -477,7 +645,10 @@ describe('resetConfigPaths mechanics', () => {
 
   it('takes no paths as no work', async () => {
     const stored = await storedConfig();
-    const result = TenantService.resetConfigPaths(stored, undefined, {});
+    const result = TenantService.resetConfigPaths(stored, undefined, {
+      document: {},
+      canonical: {},
+    });
     expect(result.config).toBe(stored);
     expect(result.reset).toEqual([]);
   });

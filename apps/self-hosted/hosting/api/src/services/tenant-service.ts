@@ -349,10 +349,19 @@ export const TenantService = {
     // Reset first, against the stored config and the already-sanitized document: identity
     // fields are pinned into `clean` above, so a reset can never make one of them absent and
     // let the client's value through.
+    //
+    // getDefaultConfig is the shape contract for a stored config: it is what seeds every
+    // tenant at creation, it lives in this service rather than in the SPA image, and the
+    // guarded merge already treats a stored config as authoritative on the grounds that it
+    // came from here. The SPA's config.template.json is a demo document (it carries settings
+    // the hosted product does not seed and misses ones it does) and is not in this image at
+    // all, so it cannot be the source of truth for what a hosted tenant's field must be.
+    // Only built when a reset was actually asked for.
+    const canonical = resetPaths.length > 0 ? await this.getDefaultConfig(tenant.username, tenant.owner) : null;
     const { config: base, reset } = this.resetConfigPaths(
       tenant.config,
       resetPaths,
-      clean,
+      { document: clean, canonical },
       discarded
     );
     const newConfig = this.mergeConfigGuarded(base, clean, { path: '', discarded });
@@ -376,9 +385,7 @@ export const TenantService = {
    * from the report; the input config is never mutated.
    *
    * A reset is the only way past the type guard, so it is deliberately the narrowest operation
-   * that repairs a stuck field. Five conditions must all hold, and the last one is what makes
-   * this safe to ship: a reset cannot change the outcome of a save that would have succeeded
-   * anyway.
+   * that repairs a stuck field. Every one of these must hold:
    *
    *  1. The path is a well-formed path into `configuration`, so `version` and the document
    *     root are out of reach.
@@ -387,20 +394,32 @@ export const TenantService = {
    *     setting, it only replaces one, so it cannot be used to wipe config and cannot leave
    *     the served file with a hole. A null in the document is stripped before this runs, so
    *     "the value happens to be null" never reads as a reset.
-   *  4. The stored value is not a section (a non-empty object). Sections are repaired one
+   *  4. `canonical` knows the path. Where the server cannot say what a setting is supposed to
+   *     be, it cannot say which side of the save is the broken one, so it refuses.
+   *  5. The value being saved matches the canonical shape for the path.
+   *  6. The stored value is not a section (a non-empty object). Sections are repaired one
    *     value at a time; no single request can drop a subtree.
-   *  5. The stored value actually blocks the document's value. Where the save would have
-   *     applied normally, the reset is a no-op.
+   *  7. The stored value does NOT match the canonical shape. This is what is being repaired.
+   *
+   * 5 and 7 are the pair that matters, and neither can stand in for the other. Asking only
+   * whether the two values disagree is symmetric: it fires just as readily when the STORED
+   * value is healthy and the incoming one is junk, which would turn a repair tool into the
+   * easiest way to put `theme: 42` over a good `theme: "system"`. Only a canonical shape can
+   * say which side is broken, so the replacement must be right AND the stored value wrong.
+   *
+   * A reset still cannot change what a save that would have succeeded stores. Where the merge
+   * would have accepted the incoming value, the merged result is that value, and clearing the
+   * slot first writes the same value into it.
    *
    * Not covered: a non-empty object stored where a scalar belongs stays stuck, because
    * clearing it would be exactly the "replace a whole section with one value" move that
-   * condition 4 exists to prevent. Reaching that state takes a hand-written PATCH into a key
-   * the stored config did not have.
+   * condition 6 exists to prevent, and so does any setting the canonical config has no entry
+   * for. Both stay repairable only by an operator editing the row.
    */
   resetConfigPaths(
     stored: any,
     paths: readonly string[] | undefined,
-    document: any,
+    context: { document: any; canonical: any },
     discarded?: DiscardedField[]
   ): { config: any; reset: string[] } {
     const reset: string[] = [];
@@ -419,7 +438,7 @@ export const TenantService = {
     let config = stored;
     for (const requested of paths) {
       const path = typeof requested === 'string' ? requested : String(requested);
-      const verdict = this.resetVerdict(config, path, document);
+      const verdict = this.resetVerdict(config, path, context);
       if (verdict.action === 'refuse') {
         console.warn('[TenantService] Refused config reset for path:', path);
         discarded?.push({ path, reason: verdict.reason });
@@ -434,7 +453,7 @@ export const TenantService = {
   },
 
   /** Decide what to do with one requested reset path. Pure. */
-  resetVerdict(config: any, path: string, document: any): ResetVerdict {
+  resetVerdict(config: any, path: string, context: { document: any; canonical: any }): ResetVerdict {
     const segments = path.split('.');
     if (!CONFIG_RESET_PATH.test(path) || segments.some((s) => RESERVED_PATH_SEGMENTS.has(s))) {
       return { action: 'refuse', reason: 'not a value inside the configuration document' };
@@ -447,7 +466,7 @@ export const TenantService = {
       return { action: 'refuse', reason: 'this field is set by the server and cannot be reset' };
     }
 
-    const incoming = this.readPath(document, segments);
+    const incoming = this.readPath(context.document, segments);
     if (incoming === undefined) {
       return {
         action: 'refuse',
@@ -455,9 +474,25 @@ export const TenantService = {
       };
     }
 
+    // What this setting is supposed to be. Without it the server cannot tell a broken stored
+    // value from a broken replacement, and guessing is how a healthy value gets overwritten.
+    const canonical = this.readPath(context.canonical, segments);
+    if (canonical === undefined) {
+      return {
+        action: 'refuse',
+        reason: 'the server has no default for this setting, so it cannot judge a replacement',
+      };
+    }
+    if (!this.matchesCanonicalShape(canonical, incoming)) {
+      return {
+        action: 'refuse',
+        reason: 'the value being saved is not the type this setting must have',
+      };
+    }
+
     const current = this.readPath(config, segments);
-    // Nothing stored: the save already writes straight into the empty slot.
-    if (current === undefined) return { action: 'skip' };
+    // Nothing usable stored: the save already writes straight into the slot.
+    if (current === undefined || current === null) return { action: 'skip' };
     const currentIsSection =
       !!current &&
       typeof current === 'object' &&
@@ -469,10 +504,31 @@ export const TenantService = {
         reason: 'a section cannot be reset, only the individual values inside it',
       };
     }
-    // The stored value already accepts what is being saved, so there is nothing to repair.
-    if (!this.mergeRefuses(current, incoming)) return { action: 'skip' };
+    // The stored value is the type it should be, so it is not what is broken.
+    if (this.matchesCanonicalShape(canonical, current)) return { action: 'skip' };
 
     return { action: 'clear' };
+  },
+
+  /**
+   * Whether `value` is shaped the way the canonical default says this setting must be: same
+   * primitive type as the default, an array whose elements match the default's element type, or
+   * an object whose known keys each match in turn.
+   *
+   * A key the default does not carry is left alone rather than refused. Those are settings
+   * added after the seed (the editor offers more of the Hive block than the seed writes), and a
+   * normal save is already allowed to write them into an absent slot, so refusing here would
+   * block the repair without protecting anything. Pure.
+   */
+  matchesCanonicalShape(canonical: any, value: any): boolean {
+    if (this.mergeRefuses(canonical, value)) return false;
+    if (!canonical || typeof canonical !== 'object' || Array.isArray(canonical)) return true;
+    for (const key of Object.keys(value)) {
+      if (RESERVED_PATH_SEGMENTS.has(key)) return false;
+      if (!Object.prototype.hasOwnProperty.call(canonical, key)) continue;
+      if (!this.matchesCanonicalShape(canonical[key], value[key])) return false;
+    }
+    return true;
   },
 
   /**
