@@ -19,6 +19,10 @@ vi.mock('../services/tenant-service', () => ({
   COMMUNITY_NAME: /^hive-\d+$/,
   isReregisterableAbandoned: () => false,
   ABANDONED_REREGISTER_QUARANTINE_HOURS: 1,
+  // Read at module scope by the PATCH body schema, so these are the real values: stubbing them
+  // loosely would let this suite accept reset paths the deployed route rejects.
+  CONFIG_RESET_PATH: /^configuration(\.[A-Za-z][A-Za-z0-9_-]*)+$/,
+  MAX_RESET_PATHS: 32,
 }));
 
 vi.mock('../services/config-service', () => ({
@@ -54,11 +58,11 @@ const TENANT = {
   subscriptionPlan: 'standard',
 };
 
-function patch(config: unknown) {
+function patch(config: unknown, reset?: unknown) {
   return tenantRoutes.request('http://localhost/alice', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config }),
+    body: JSON.stringify(reset === undefined ? { config } : { config, reset }),
   });
 }
 
@@ -68,6 +72,7 @@ beforeEach(() => {
   mocks.applyConfigDocument.mockImplementation(async () => ({
     tenant: { ...TENANT, config: { version: 1, configuration: {} } },
     discarded: [],
+    reset: [],
   }));
   mocks.updateConfig.mockImplementation(async () => ({
     ...TENANT,
@@ -116,7 +121,7 @@ describe('PATCH /v1/tenants/:username config validation', () => {
     const res = await patch(doc);
 
     expect(res.status).toBe(200);
-    expect(mocks.applyConfigDocument).toHaveBeenCalledWith('alice', doc);
+    expect(mocks.applyConfigDocument).toHaveBeenCalledWith('alice', doc, []);
     expect(mocks.updateConfig).not.toHaveBeenCalled();
   });
 
@@ -146,6 +151,7 @@ describe('PATCH /v1/tenants/:username config validation', () => {
           reason: 'the instance type is set when the instance is created and cannot be changed here',
         },
       ],
+      reset: [],
     });
 
     const res = await patch({
@@ -166,5 +172,102 @@ describe('PATCH /v1/tenants/:username config validation', () => {
     const body = (await res.json()) as { discarded: unknown[]; message: string };
     expect(body.discarded).toEqual([]);
     expect(body.message).toBe('Configuration updated');
+  });
+});
+
+/**
+ * A value stored with the wrong primitive type cannot be replaced: the merge only accepts a
+ * value that agrees with what is stored. `reset` names stored values to drop so the document in
+ * the SAME request can write the replacement. It rides on this PATCH rather than an endpoint of
+ * its own, so it is authorized exactly as a save is: there is no second door to the config.
+ */
+describe('PATCH /v1/tenants/:username config reset', () => {
+  const doc = { version: 1, configuration: { general: { theme: 'dark' } } };
+
+  it('passes the requested paths to the service and reports what was cleared', async () => {
+    mocks.applyConfigDocument.mockResolvedValue({
+      tenant: { ...TENANT, config: { version: 1, configuration: {} } },
+      discarded: [],
+      reset: ['configuration.general.theme'],
+    });
+
+    const res = await patch(doc, ['configuration.general.theme']);
+
+    expect(res.status).toBe(200);
+    expect(mocks.applyConfigDocument).toHaveBeenCalledWith('alice', doc, [
+      'configuration.general.theme',
+    ]);
+    const body = (await res.json()) as { reset: string[] };
+    expect(body.reset).toEqual(['configuration.general.theme']);
+  });
+
+  it('refuses a caller who does not control the instance', async () => {
+    // The same 403 an ordinary save gets. A reset must never be reachable by anyone a save is
+    // not, and it is checked before the body is looked at.
+    mocks.getByUsername.mockResolvedValue({ ...TENANT, owner: 'bob' });
+
+    const res = await patch(doc, ['configuration.general.theme']);
+
+    expect(res.status).toBe(403);
+    expect(mocks.applyConfigDocument).not.toHaveBeenCalled();
+    expect(mocks.updateConfig).not.toHaveBeenCalled();
+    expect(mocks.generateConfigFile).not.toHaveBeenCalled();
+  });
+
+  it('refuses a reset sent without the document that replaces the value', async () => {
+    // A bare reset would be a delete. Requiring the document keeps it a repair, and means a
+    // caller cannot remove anything without stating what it expects to be stored.
+    const res = await patch({ theme: 'dark' }, ['configuration.general.theme']);
+
+    expect(res.status).toBe(400);
+    expect(mocks.updateConfig).not.toHaveBeenCalled();
+    expect(mocks.applyConfigDocument).not.toHaveBeenCalled();
+  });
+
+  it('refuses paths that are not values inside the configuration document', async () => {
+    for (const path of [
+      'configuration',
+      'version',
+      'general.theme',
+      'configuration.__proto__.polluted',
+      'configuration.general.0',
+      '../../etc/passwd',
+    ]) {
+      const res = await patch(doc, [path]);
+      expect(res.status, path).toBe(400);
+    }
+    expect(mocks.applyConfigDocument).not.toHaveBeenCalled();
+  });
+
+  it('refuses a reset that is not a list of paths', async () => {
+    for (const reset of ['configuration.general.theme', 42, { path: 'x' }, [42]]) {
+      const res = await patch(doc, reset);
+      expect(res.status, JSON.stringify(reset)).toBe(400);
+    }
+    expect(mocks.applyConfigDocument).not.toHaveBeenCalled();
+  });
+
+  it('refuses more paths than one repair can need', async () => {
+    const many = Array.from({ length: 33 }, (_, i) => `configuration.general.field${i}`);
+
+    const res = await patch(doc, many);
+
+    expect(res.status).toBe(400);
+    expect(mocks.applyConfigDocument).not.toHaveBeenCalled();
+  });
+
+  it('answers an ordinary save with an empty reset list', async () => {
+    const res = await patch(doc);
+
+    const body = (await res.json()) as { reset: unknown[] };
+    expect(body.reset).toEqual([]);
+  });
+
+  it('answers a flat-key save with an empty reset list', async () => {
+    const res = await patch({ theme: 'dark' });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { reset: unknown[] };
+    expect(body.reset).toEqual([]);
   });
 });

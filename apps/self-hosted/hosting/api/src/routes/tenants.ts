@@ -11,6 +11,8 @@ import {
   COMMUNITY_NAME,
   isReregisterableAbandoned,
   ABANDONED_REREGISTER_QUARANTINE_HOURS,
+  CONFIG_RESET_PATH,
+  MAX_RESET_PATHS,
 } from '../services/tenant-service';
 import { mapTenantFromDb } from '../types';
 import { PAYMENT_ACCOUNT, MONTHLY_PRICE_HBD, PRO_UPGRADE_PRICE_HBD, hbd } from '../pricing';
@@ -63,8 +65,17 @@ const flatConfigUpdateSchema = z.object({
 });
 // Only the container is validated here (an object, not an array or a scalar); the branch schema
 // above does the real work once the handler knows which document this is.
+//
+// `reset` names stored values to drop before the document is merged in, which is how a value
+// stored with the wrong type is repaired: the merge refuses any replacement that disagrees with
+// what is stored, so without this the field is frozen behind a 200 OK. It is a sibling of
+// `config`, never a value inside it, so nothing a document can carry (a null, an empty string)
+// can be read as a request to reset, and no reset can be mistaken for a value. Malformed paths
+// are a 400 here; well-formed ones the server will not act on come back in `discarded` with the
+// reason. TenantService.resetConfigPaths re-checks everything, this is only the early answer.
 const updateTenantSchema = z.object({
   config: z.record(z.any()).optional(),
+  reset: z.array(z.string().max(200).regex(CONFIG_RESET_PATH)).max(MAX_RESET_PATHS).optional(),
 });
 
 /** Whether a PATCH body carries a full config document rather than flat keys. */
@@ -587,6 +598,16 @@ tenantRoutes.patch('/:username', authMiddleware, zValidator('json', updateTenant
   // Validate against the schema for the document this actually is, and answer 400 with the
   // reason. A body that cannot be understood must never report a successful save.
   const isFullDoc = isFullConfigDocument(body.config);
+  const resetPaths = body.reset ?? [];
+  // A reset only clears a stored value so the SAME save can write the replacement, so it means
+  // nothing without the document that carries it. Refusing here also means a bare `{ reset: [...] }`
+  // body can never remove anything: the caller has to send the config it expects to be stored.
+  if (resetPaths.length > 0 && !isFullDoc) {
+    return c.json(
+      { error: 'Resetting a configuration value requires the full configuration document' },
+      400
+    );
+  }
   let configUpdate: any = body.config;
   if (body.config) {
     const parsed = isFullDoc
@@ -611,9 +632,13 @@ tenantRoutes.patch('/:username', authMiddleware, zValidator('json', updateTenant
   // fields pinned server-side; flat keys are normalized first, then merge the same way.
   // `discarded` lists what the server refused to store (pinned identity fields, filters the
   // instance type cannot serve, shape mismatches) so the editor can say so.
-  const { tenant: updatedTenant, discarded } = isFullDoc
-    ? await TenantService.applyConfigDocument(username, configUpdate)
-    : { tenant: await TenantService.updateConfig(username, configUpdate), discarded: [] };
+  const { tenant: updatedTenant, discarded, reset } = isFullDoc
+    ? await TenantService.applyConfigDocument(username, configUpdate, resetPaths)
+    : {
+        tenant: await TenantService.updateConfig(username, configUpdate),
+        discarded: [],
+        reset: [] as string[],
+      };
 
   // Publish only for a tenant that is entitled to be served. POST deliberately
   // does not write the file for the same reason: nginx serves any file that
@@ -628,7 +653,8 @@ tenantRoutes.patch('/:username', authMiddleware, zValidator('json', updateTenant
   void AuditService.log({
     tenantId: updatedTenant.id,
     eventType: 'tenant.config_updated',
-    eventData: { username },
+    // A reset is the one save that can drop a stored value, so record which ones it dropped.
+    eventData: reset.length > 0 ? { username, reset } : { username },
     ipAddress: parseClientIp(c.req.header('x-forwarded-for')),
     userAgent: c.req.header('user-agent'),
   });
@@ -640,7 +666,12 @@ tenantRoutes.patch('/:username', authMiddleware, zValidator('json', updateTenant
     // edit that the visitor cannot see yet is explainable.
     published,
     // Values the server did not store, with the reason for each. Empty on an ordinary save.
+    // A requested reset the server would not perform is reported here too.
     discarded,
+    // Paths whose stored value was cleared so this save could replace it. A requested path
+    // that is absent from both this and `discarded` needed no reset: the save applied it
+    // normally, so the client never has to guess which of the three happened.
+    reset,
     message: published
       ? discarded.length > 0
         ? 'Configuration updated. Some values were not applied.'

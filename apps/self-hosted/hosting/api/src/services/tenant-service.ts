@@ -54,6 +54,34 @@ interface MergeReport {
 }
 
 /**
+ * Instance fields the server owns. A config save never stores what the client sent for these
+ * (sanitizeConfigDocument pins them from the tenant row), and a reset must not be able to
+ * remove one either: they are the same list so a field pinned in one place cannot be reached
+ * through the other.
+ */
+export const PINNED_INSTANCE_FIELDS = ['username', 'owner', 'type', 'communityId'] as const;
+
+/**
+ * Shape of a resettable path: a dot path into the configuration document, spelled exactly as
+ * the `discarded` channel reports it, so a client can send back the path it was told about.
+ * Requires at least one segment below `configuration`, and every segment to start with a
+ * letter, which keeps array indices and the prototype-pollution keys out.
+ */
+export const CONFIG_RESET_PATH = /^configuration(\.[A-Za-z][A-Za-z0-9_-]*)+$/;
+
+/** Keys that must never be walked, whatever the path regex allows. */
+const RESERVED_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** Ceiling on how many paths one save may reset. Repair is field-by-field, never a sweep. */
+export const MAX_RESET_PATHS = 32;
+
+/** What resetConfigPaths decided to do with one requested path. */
+type ResetVerdict =
+  | { action: 'clear' }
+  | { action: 'skip' }
+  | { action: 'refuse'; reason: string };
+
+/**
  * Post filters each instance type can actually serve.
  *
  * A blog instance queries bridge.get_account_posts, whose sort must be one of these; a
@@ -286,11 +314,18 @@ export const TenantService = {
    * sections it carries and can never erase the rest. Identity fields (username, owner, type,
    * communityId) are server-owned and pinned from the stored config so a config save can
    * never reassign control or re-type the tenant.
+   *
+   * `resetPaths` names values whose STORED copy is to be dropped before the merge, so the
+   * document's value lands in an absent slot. That is the only way to repair a value stored
+   * with the wrong type: the merge refuses any replacement that disagrees with what is stored,
+   * which is deliberate (a string "false" must never stand in for a boolean), but it also
+   * freezes a key that already holds the wrong type. See resetConfigPaths for the guarantees.
    */
   async applyConfigDocument(
     username: string,
-    doc: any
-  ): Promise<{ tenant: Tenant; discarded: DiscardedField[] }> {
+    doc: any,
+    resetPaths: readonly string[] = []
+  ): Promise<{ tenant: Tenant; discarded: DiscardedField[]; reset: string[] }> {
     const tenant = await this.getByUsername(username);
     if (!tenant) throw new Error('Tenant not found');
 
@@ -311,7 +346,16 @@ export const TenantService = {
       },
       discarded
     );
-    const newConfig = this.mergeConfigGuarded(tenant.config, clean, { path: '', discarded });
+    // Reset first, against the stored config and the already-sanitized document: identity
+    // fields are pinned into `clean` above, so a reset can never make one of them absent and
+    // let the client's value through.
+    const { config: base, reset } = this.resetConfigPaths(
+      tenant.config,
+      resetPaths,
+      clean,
+      discarded
+    );
+    const newConfig = this.mergeConfigGuarded(base, clean, { path: '', discarded });
 
     const row = await db.queryOne<TenantRow>(
       `UPDATE tenants
@@ -322,7 +366,142 @@ export const TenantService = {
       [username.toLowerCase(), JSON.stringify(newConfig)]
     );
 
-    return { tenant: mapTenantFromDb(row!), discarded };
+    return { tenant: mapTenantFromDb(row!), discarded, reset };
+  },
+
+  /**
+   * Drop the stored value at each requested path so the accompanying document can write a
+   * correctly typed one into the now-absent slot (the merge takes any value where nothing is
+   * stored). Returns the config to merge into, plus the paths actually cleared. Pure apart
+   * from the report; the input config is never mutated.
+   *
+   * A reset is the only way past the type guard, so it is deliberately the narrowest operation
+   * that repairs a stuck field. Five conditions must all hold, and the last one is what makes
+   * this safe to ship: a reset cannot change the outcome of a save that would have succeeded
+   * anyway.
+   *
+   *  1. The path is a well-formed path into `configuration`, so `version` and the document
+   *     root are out of reach.
+   *  2. It does not name a pinned identity field, which the server owns.
+   *  3. The document being saved carries a value at that same path. A reset never removes a
+   *     setting, it only replaces one, so it cannot be used to wipe config and cannot leave
+   *     the served file with a hole. A null in the document is stripped before this runs, so
+   *     "the value happens to be null" never reads as a reset.
+   *  4. The stored value is not a section (a non-empty object). Sections are repaired one
+   *     value at a time; no single request can drop a subtree.
+   *  5. The stored value actually blocks the document's value. Where the save would have
+   *     applied normally, the reset is a no-op.
+   *
+   * Not covered: a non-empty object stored where a scalar belongs stays stuck, because
+   * clearing it would be exactly the "replace a whole section with one value" move that
+   * condition 4 exists to prevent. Reaching that state takes a hand-written PATCH into a key
+   * the stored config did not have.
+   */
+  resetConfigPaths(
+    stored: any,
+    paths: readonly string[] | undefined,
+    document: any,
+    discarded?: DiscardedField[]
+  ): { config: any; reset: string[] } {
+    const reset: string[] = [];
+    if (!Array.isArray(paths) || paths.length === 0) return { config: stored, reset };
+    if (paths.length > MAX_RESET_PATHS) {
+      // All or nothing past the ceiling. A caller sending that many is not repairing fields one
+      // by one, and applying the first few of a list it did not mean is the worst answer.
+      console.warn('[TenantService] Refused config reset, too many paths:', paths.length);
+      discarded?.push({
+        path: 'reset',
+        reason: `at most ${MAX_RESET_PATHS} values can be reset in one save`,
+      });
+      return { config: stored, reset };
+    }
+
+    let config = stored;
+    for (const requested of paths) {
+      const path = typeof requested === 'string' ? requested : String(requested);
+      const verdict = this.resetVerdict(config, path, document);
+      if (verdict.action === 'refuse') {
+        console.warn('[TenantService] Refused config reset for path:', path);
+        discarded?.push({ path, reason: verdict.reason });
+        continue;
+      }
+      if (verdict.action === 'skip') continue;
+      config = this.deletePath(config, path.split('.'));
+      reset.push(path);
+    }
+
+    return { config, reset };
+  },
+
+  /** Decide what to do with one requested reset path. Pure. */
+  resetVerdict(config: any, path: string, document: any): ResetVerdict {
+    const segments = path.split('.');
+    if (!CONFIG_RESET_PATH.test(path) || segments.some((s) => RESERVED_PATH_SEGMENTS.has(s))) {
+      return { action: 'refuse', reason: 'not a value inside the configuration document' };
+    }
+    if (
+      segments.length >= 3 &&
+      segments[1] === 'instanceConfiguration' &&
+      (PINNED_INSTANCE_FIELDS as readonly string[]).includes(segments[2])
+    ) {
+      return { action: 'refuse', reason: 'this field is set by the server and cannot be reset' };
+    }
+
+    const incoming = this.readPath(document, segments);
+    if (incoming === undefined) {
+      return {
+        action: 'refuse',
+        reason: 'the saved document carries no replacement value for this field',
+      };
+    }
+
+    const current = this.readPath(config, segments);
+    // Nothing stored: the save already writes straight into the empty slot.
+    if (current === undefined) return { action: 'skip' };
+    const currentIsSection =
+      !!current &&
+      typeof current === 'object' &&
+      !Array.isArray(current) &&
+      Object.keys(current).length > 0;
+    if (currentIsSection) {
+      return {
+        action: 'refuse',
+        reason: 'a section cannot be reset, only the individual values inside it',
+      };
+    }
+    // The stored value already accepts what is being saved, so there is nothing to repair.
+    if (!this.mergeRefuses(current, incoming)) return { action: 'skip' };
+
+    return { action: 'clear' };
+  },
+
+  /**
+   * Read the value at a dot path, or undefined if any step is missing or not an object.
+   * Own properties only, so nothing inherited can be read as stored config. Pure.
+   */
+  readPath(node: any, segments: readonly string[]): any {
+    let current = node;
+    for (const segment of segments) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) return undefined;
+      if (!Object.prototype.hasOwnProperty.call(current, segment)) return undefined;
+      current = current[segment];
+    }
+    return current;
+  },
+
+  /**
+   * Copy `node` without the value at the dot path. Only the objects along the path are copied;
+   * everything else is shared with the input, which is left untouched. Pure.
+   */
+  deletePath(node: any, segments: readonly string[]): any {
+    const [head, ...rest] = segments;
+    const copy = Object.assign(Object.create(null), node);
+    if (rest.length === 0) {
+      delete copy[head];
+    } else {
+      copy[head] = this.deletePath(node[head], rest);
+    }
+    return copy;
   },
 
   /**
@@ -349,7 +528,6 @@ export const TenantService = {
       const stored = result[key];
       const incomingIsPlainObject =
         incoming && typeof incoming === 'object' && !Array.isArray(incoming);
-      const incomingIsArray = Array.isArray(incoming);
       const child = ctx
         ? { path: ctx.path ? `${ctx.path}.${key}` : key, discarded: ctx.discarded }
         : undefined;
@@ -359,30 +537,38 @@ export const TenantService = {
         result[key] = incomingIsPlainObject
           ? this.mergeConfigGuarded(Object.create(null), incoming, child)
           : incoming;
+      } else if (this.mergeRefuses(stored, incoming)) {
+        this.reportTypeMismatch(child, key);
       } else if (typeof stored === 'object' && !Array.isArray(stored)) {
-        if (!incomingIsPlainObject) {
-          this.reportTypeMismatch(child, key);
-          continue;
-        }
         result[key] = this.mergeConfigGuarded(stored, incoming, child);
-      } else if (Array.isArray(stored)) {
-        if (!incomingIsArray || !this.isValidArrayReplacement(stored, incoming)) {
-          this.reportTypeMismatch(child, key);
-          continue;
-        }
-        result[key] = incoming;
       } else {
-        // Stored scalar: only a scalar of the SAME primitive type may replace it, so a
-        // string "false" cannot stand in for a boolean, nor 42 for a string.
-        if (incomingIsPlainObject || incomingIsArray || typeof incoming !== typeof stored) {
-          this.reportTypeMismatch(child, key);
-          continue;
-        }
         result[key] = incoming;
       }
     }
 
     return result;
+  },
+
+  /**
+   * Whether the guarded merge would refuse `incoming` in place of `stored`: an object section
+   * only takes an object, an array only a valid array, and a scalar only a scalar of the same
+   * primitive type, so a string "false" cannot stand in for a boolean nor 42 for a string.
+   *
+   * The single statement of the rule. resetConfigPaths asks the same question to decide whether
+   * a stored value is actually blocking a save, and the two must not drift: a reset that fired
+   * where the merge would have accepted the value would be clearing a healthy field. Pure.
+   */
+  mergeRefuses(stored: any, incoming: any): boolean {
+    // An absent or null slot takes anything; this is what a reset creates.
+    if (stored === undefined || stored === null) return false;
+    const incomingIsPlainObject =
+      !!incoming && typeof incoming === 'object' && !Array.isArray(incoming);
+    const incomingIsArray = Array.isArray(incoming);
+    if (typeof stored === 'object' && !Array.isArray(stored)) return !incomingIsPlainObject;
+    if (Array.isArray(stored)) {
+      return !incomingIsArray || !this.isValidArrayReplacement(stored, incoming);
+    }
+    return incomingIsPlainObject || incomingIsArray || typeof incoming !== typeof stored;
   },
 
   /** Log a dropped value and, when the caller asked for a report, record it for the response. */
@@ -471,7 +657,7 @@ export const TenantService = {
       type: 'the instance type is set when the instance is created and cannot be changed here',
       communityId: 'the community id is set by the server',
     };
-    for (const key of ['username', 'owner', 'type', 'communityId'] as const) {
+    for (const key of PINNED_INSTANCE_FIELDS) {
       if (instance[key] !== undefined && instance[key] !== pins[key]) {
         discarded?.push({
           path: `configuration.instanceConfiguration.${key}`,
@@ -480,10 +666,9 @@ export const TenantService = {
       }
     }
 
-    instance.username = pins.username;
-    instance.owner = pins.owner;
-    instance.type = pins.type;
-    instance.communityId = pins.communityId;
+    for (const key of PINNED_INSTANCE_FIELDS) {
+      instance[key] = pins[key];
+    }
     // Served-only marker (injected at config-file generation); must never round-trip from a
     // client document into the stored config.
     delete instance.managed;
