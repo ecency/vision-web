@@ -1,0 +1,81 @@
+/*
+ * Theme tokens registered as Tailwind namespaces.
+ *
+ * Everything here exists so that `hover:bg-theme-tertiary` produces CSS.
+ * Tailwind cannot generate a variant for a class it did not create, and the
+ * theme classes used to be hand-written rules in components.css, so the base
+ * class rendered and every variant of it rendered nothing: 28 hover and focus
+ * states were written, reviewed and shipped dead.
+ *
+ * `inline` is deliberate. It emits nothing onto `:root`, and the generated
+ * utility carries `var(--theme-bg-primary)` itself rather than a copy of its
+ * value, so every utility re-resolves against whatever element carries
+ * `[data-style-template]` or `[data-theme]` instead of resolving once against
+ * <html>.
+ *
+ * Per-utility namespaces, not `--color-*`, because the theme's names collide
+ * inside one colour namespace: `--color-theme-secondary` would have to generate
+ * both `bg-theme-secondary` (which must read --theme-bg-secondary) and
+ * `text-theme-secondary` (which must read --theme-text-secondary) from a single
+ * value, and `--color-theme` would have to serve both `bg-theme`
+ * (--theme-bg-primary) and `border-theme` (--theme-border, 40 call sites).
+ * Splitting by utility keeps every existing class name and value intact across
+ * roughly 300 call sites, with no renames.
+ *
+ * The accent is the one family with no collision, so it takes the whole colour
+ * namespace and `bg-`, `border-` and `ring-` all get the raw fill.
+ * `--text-color-theme-accent` then overrides `text-theme-accent` alone, which is
+ * what will let the accent *text* be contrast-corrected while the accent *fill*
+ * stays exactly the colour that was asked for.
+ *
+ * What does NOT belong here: anything setting more than one property. Those
+ * stay hand-written and unlayered in components.css, so that a composite
+ * applied over the utilities it replaces produces the composite's look rather
+ * than silently keeping the old one. See the invariant at the top of that file.
+ */
+/* biome-ignore lint/suspicious/noUnknownAtRules: @theme is a Tailwind v4 feature */
+@theme inline {
+  /* surfaces: bg-* only */
+  --background-color-theme: var(--theme-bg-primary);
+  --background-color-theme-primary: var(--theme-bg-primary);
+  --background-color-theme-secondary: var(--theme-bg-secondary);
+  --background-color-theme-tertiary: var(--theme-bg-tertiary);
+  --background-color-theme-card: var(--theme-bg-card);
+  /*
+   * `bg-theme-hover` was two different colours: the bare class was
+   * --theme-bg-secondary and the hand-written `hover:` variant was
+   * --theme-bg-tertiary. One namespace entry cannot be both, so it is the
+   * tertiary the six live `hover:bg-theme-hover` sites actually show, and the
+   * two bare uses were rewritten to `bg-theme-secondary`, which is what they
+   * already meant.
+   */
+  --background-color-theme-hover: var(--theme-bg-tertiary);
+
+  /* text: text-* only */
+  --text-color-theme-primary: var(--theme-text-primary);
+  --text-color-theme-secondary: var(--theme-text-secondary);
+  --text-color-theme-muted: var(--theme-text-muted);
+  --text-color-theme-accent: var(--theme-accent-text, var(--theme-accent));
+
+  /* borders: border-* only */
+  --border-color-theme: var(--theme-border);
+  --border-color-theme-strong: var(--theme-border-strong);
+
+  /* accent: the one collision-free family, gets the whole colour namespace */
+  --color-theme-accent: var(--theme-accent);
+  --color-theme-accent-contrast: var(--theme-accent-contrast, #ffffff);
+
+  --radius-theme-sm: var(--theme-radius-sm);
+  --radius-theme: var(--theme-radius);
+  --radius-theme-lg: var(--theme-radius-lg);
+  --radius-theme-full: var(--theme-radius-full);
+
+  --font-theme-body: var(--theme-font-body);
+  --font-theme-heading: var(--theme-font-heading);
+  --font-theme-ui: var(--theme-font-ui);
+  --font-theme-mono: var(--theme-font-mono);
+
+  --shadow-theme-sm: var(--theme-shadow-sm);
+  --shadow-theme: var(--theme-shadow);
+  --shadow-theme-lg: var(--theme-shadow-lg);
+}

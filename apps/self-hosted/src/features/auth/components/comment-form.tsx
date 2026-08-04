@@ -85,7 +85,7 @@ export function CommentForm({
     return (
       <div
         className={clsx(
-          "p-4 border border-theme rounded-lg bg-theme-hover",
+          "p-4 border border-theme rounded-lg bg-theme-secondary",
           className
         )}
       >
@@ -104,7 +104,7 @@ export function CommentForm({
   return (
     <div className={clsx("space-y-3", className)}>
       <div className="flex items-start gap-3">
-        <div className="flex-shrink-0 size-8 rounded-full bg-theme-hover flex items-center justify-center text-sm font-medium text-theme-primary">
+        <div className="flex-shrink-0 size-8 rounded-full bg-theme-secondary flex items-center justify-center text-sm font-medium text-theme-primary">
           {user?.username?.charAt(0).toUpperCase()}
         </div>
         <div className="flex-1">
@@ -112,7 +112,7 @@ export function CommentForm({
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder={t("write_comment")}
-            className="w-full px-3 py-2 rounded-md border border-theme bg-theme text-theme-primary placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-theme-strong resize-none"
+            className="w-full px-3 py-2 rounded-md border border-theme bg-theme text-theme-primary placeholder:text-theme-muted focus:outline-none focus:ring-2 focus:ring-theme-accent resize-none"
             rows={3}
             disabled={commentMutation.isPending}
           />

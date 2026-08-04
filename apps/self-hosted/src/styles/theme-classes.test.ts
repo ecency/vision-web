@@ -48,15 +48,7 @@ const UI_SRC = resolve(APP, '..', '..', 'packages', 'ui', 'src');
  * it starts working, and a newly dead class fails the emission check instead of
  * being added.
  */
-const KNOWN_UNREGISTERED: Record<string, string> = {
-  'focus:ring-theme-strong': 'no ring-theme-strong rule and no namespace',
-  'hover:bg-theme-secondary': 'variant of a hand-written class',
-  'hover:bg-theme-tertiary': 'variant of a hand-written class',
-  'hover:border-theme': 'variant of a hand-written class',
-  'hover:border-theme-strong': 'variant of a hand-written class',
-  'hover:text-theme-primary': 'variant of a hand-written class',
-  'placeholder:text-theme-muted': 'variant of a hand-written class',
-};
+const KNOWN_UNREGISTERED: Record<string, string> = {};
 
 /** Controls. Ordinary Tailwind classes, to prove the harness can see emission. */
 const CONTROLS = ['bg-red-500', 'hover:bg-red-500'];

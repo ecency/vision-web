@@ -149,7 +149,7 @@ export function BlogPostDiscussion({ entry, isRawContent }: Props) {
         <select
           value={order}
           onChange={(e) => setOrder(e.target.value as SortOrder)}
-          className="px-3 py-2 border border-theme rounded-theme-sm text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-theme-strong focus:border-transparent transition-theme hover:opacity-70 w-full sm:w-auto bg-theme-primary text-theme-primary font-theme-ui"
+          className="px-3 py-2 border border-theme rounded-theme-sm text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-theme-accent focus:border-transparent transition-theme hover:opacity-70 w-full sm:w-auto bg-theme-primary text-theme-primary font-theme-ui"
         >
           <option value="trending">Trending</option>
           <option value="author_reputation">Reputation</option>

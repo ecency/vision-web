@@ -5,6 +5,16 @@
 /* biome-ignore lint/suspicious/noUnknownAtRules: @source is a Tailwind v4 feature */
 @source "../../../packages/ui/src/**/*.tsx";
 /*
+ * Tests are scanned like any other source, so a class-shaped word in a test's
+ * prose ships as a real rule to every instance: writing `bg-red-500` in a
+ * comment was enough to put `.bg-red-500` in the stylesheet. Nothing under a
+ * test file renders.
+ */
+/* biome-ignore lint/suspicious/noUnknownAtRules: @source is a Tailwind v4 feature */
+@source not "./**/*.test.ts";
+/* biome-ignore lint/suspicious/noUnknownAtRules: @source is a Tailwind v4 feature */
+@source not "../../../packages/ui/src/**/*.test.tsx";
+/*
  * The instance theme is applied as data-theme on <html> from the tenant config,
  * and every --theme-* token keys off it. Tailwind v4 otherwise compiles `dark:`
  * to @media (prefers-color-scheme: dark), which made every surface built from
@@ -15,6 +25,8 @@
 /* biome-ignore lint/suspicious/noUnknownAtRules: @custom-variant is a Tailwind v4 feature */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* biome-ignore lint/correctness/noInvalidPositionAtImportRule: Tailwind v4 requires @source before these imports */
+@import "./styles/theme-tokens.css";
 /* biome-ignore lint/correctness/noInvalidPositionAtImportRule: Tailwind v4 requires @source before these imports */
 @import "./styles/themes/index.css";
 /* biome-ignore lint/correctness/noInvalidPositionAtImportRule: Tailwind v4 requires @source before these imports */
