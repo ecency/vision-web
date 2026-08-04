@@ -1,7 +1,17 @@
-const author_re = /author:([^\s]+)/g;
-const type_re = /type:([^\s]+)/g;
-const category_re = /category:([^\s]+)/g;
-const tag_re = /tag:([^\s]+)/g;
+// A token only counts at the start of the query or after whitespace, matching
+// the search API's parser. Unanchored, these matched inside ordinary words:
+// "prototype:v2" read as type=v2 and the API rejected it as an invalid type,
+// "subcategory:hive-1" filtered on category=hive-1 with a stray "sub" left as
+// required text. The boundary is captured rather than looked behind so it can
+// be put back when the token is stripped, keeping the neighbouring words apart
+// (a lookbehind would also be fine here, but this stays portable).
+const author_re = /(^|\s)author:([^\s]+)/g;
+const type_re = /(^|\s)type:([^\s]+)/g;
+const category_re = /(^|\s)category:([^\s]+)/g;
+const tag_re = /(^|\s)tag:([^\s]+)/g;
+
+// Index of the token value in a match; group 1 is the boundary.
+const VALUE = 2;
 
 export enum SearchType {
   ALL = "",
@@ -110,8 +120,8 @@ export function buildSearchQuery({
   }
 
   if (normalizedTags.length > 0) {
-    // No space after the commas: the tag token is matched with /tag:([^\s]+)/,
-    // so anything past a space stops filtering and becomes required free text.
+    // No space after the commas: a tag token ends at the first space, so
+    // anything past one stops filtering and becomes required free text.
     parts.push(`tag:${normalizedTags.join(",")}`);
   }
 
@@ -150,7 +160,7 @@ export class SearchQuery {
     // @ts-ignore
     const matches = [...this.query.matchAll(re)];
     if (matches.length > 0) {
-      return matches[0][1].trim();
+      return matches[0][VALUE].trim();
     }
 
     return "";
@@ -181,7 +191,7 @@ export class SearchQuery {
     const seen = new Set<string>();
 
     this.tags = [...this.query.matchAll(tag_re)]
-      .flatMap((match) => match[1].split(","))
+      .flatMap((match) => match[VALUE].split(","))
       .map((tag) => tag.trim())
       .filter((tag) => {
         if (tag === "" || seen.has(tag)) {
@@ -195,7 +205,9 @@ export class SearchQuery {
 
   private grabSearch = () => {
     [author_re, type_re, category_re, tag_re].forEach((r) => {
-      this.search = this.search.replace(r, () => "");
+      // Put the captured boundary back, or removing a mid-query token would
+      // run the words either side of it together.
+      this.search = this.search.replace(r, "$1");
     });
 
     while (this.search.indexOf("  ") !== -1) {

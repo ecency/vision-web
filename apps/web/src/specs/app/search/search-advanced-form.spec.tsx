@@ -254,24 +254,33 @@ describe("SearchAdvancedForm", () => {
         expect(pushedParams().get("q")).toBe("coffee tag:travel,photography");
       });
 
-      it("keeps the Type select when the free text carries a broken type token", () => {
+      it("drops a type: token the API would reject rather than sending it", () => {
         render(<SearchAdvancedForm />);
 
-        // The API reads the FIRST type: match, so "prototype:v2" shadowed the
-        // select with "v2" and the whole search came back 400.
-        //
-        // The truncation to "proto" is NOT desirable, it is this parser
-        // agreeing with the API's: both match a token inside an ordinary word.
-        // ecency/hivesearcher-api#11 anchors the token to a word boundary on
-        // the API side; the same change lands here once that is deployed, and
-        // this expectation becomes "prototype:v2 type:post". Anchoring only
-        // this side first would send text the deployed API still misreads.
+        // The one place this parser deliberately differs from the API's: the
+        // API keeps type="bogus" and answers 400, this discards an
+        // unrecognised value. Rebuilding then drops the token, so the user
+        // gets results for the rest of their text and sees the token
+        // disappear from the field rather than an error they cannot act on.
+        fireEvent.change(searchField(), { target: { value: "coffee type:bogus" } });
+        fireEvent.click(applyButton());
+
+        expect(screen.queryByRole("alert")).toBeNull();
+        expect(pushedParams().get("q")).toBe("coffee");
+      });
+
+      it("leaves a token-lookalike word alone and keeps the Type select", () => {
+        render(<SearchAdvancedForm />);
+
+        // "prototype:v2" is an ordinary word, not a type filter: a token only
+        // counts at a word boundary, here and in the API's parser. It used to
+        // read as type=v2, shadow the select and come back 400.
         fireEvent.change(searchField(), { target: { value: "prototype:v2" } });
         fireEvent.change(typeSelect(), { target: { value: "post" } });
         fireEvent.click(applyButton());
 
         expect(screen.queryByRole("alert")).toBeNull();
-        expect(pushedParams().get("q")).toBe("proto type:post");
+        expect(pushedParams().get("q")).toBe("prototype:v2 type:post");
       });
     });
   });

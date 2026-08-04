@@ -307,3 +307,26 @@ describe("buildSearchQuery round trip", () => {
     expect(built.q.length).toBeLessThanOrEqual(MAX_SEARCH_QUERY_LENGTH);
   });
 });
+
+describe("token boundaries", () => {
+  // Must stay in lockstep with the API's parser (user_query_parser.py), which
+  // anchors the same way. A disagreement here is silently wrong results.
+  it("ignores a token glued to the end of an ordinary word", () => {
+    expect(new SearchQuery("prototype:v2").type).toBe(SearchType.ALL);
+    expect(new SearchQuery("prototype:v2").search).toBe("prototype:v2");
+    expect(new SearchQuery("subcategory:hive-1").category).toBe("");
+    expect(new SearchQuery("filetype:pdf hive").search).toBe("filetype:pdf hive");
+  });
+
+  it("still reads a real token beside a lookalike", () => {
+    const q = new SearchQuery("prototype:v2 type:post");
+    expect(q.type).toBe(SearchType.POST);
+    expect(q.search).toBe("prototype:v2");
+  });
+
+  it("does not run words together when a mid-query token is stripped", () => {
+    const q = new SearchQuery("foo tag:a,b bar");
+    expect(q.tags).toEqual(["a", "b"]);
+    expect(q.search).toBe("foo bar");
+  });
+});
