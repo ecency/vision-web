@@ -124,7 +124,8 @@ type TranslationKey =
   | 'app_error_description'
   | 'reload_page'
   | 'community_refresh_failed'
-  | 'edit_read_failed';
+  | 'edit_read_failed'
+  | 'login_owner_hint';
 
 type Translations = Record<TranslationKey, string>;
 
@@ -261,6 +262,8 @@ const translations: Record<string, Translations> = {
     community_refresh_failed: 'Could not refresh community details.',
     edit_read_failed:
       'Could not load the current version of this post. Editing stays closed until it loads, so a save cannot overwrite newer changes.',
+    login_owner_hint:
+      'If this site is yours, sign in with the account that owns it. A settings button then appears, where you can change the title, logo, theme and layout.',
   },
   es: {
     loading: 'Cargando...',
@@ -395,6 +398,8 @@ const translations: Record<string, Translations> = {
       'No se pudieron actualizar los datos de la comunidad.',
     edit_read_failed:
       'No se pudo cargar la versión actual de esta publicación. La edición permanece cerrada hasta que cargue, para que al guardar no se sobrescriban cambios más nuevos.',
+    login_owner_hint:
+      'Si este sitio es tuyo, inicia sesión con la cuenta propietaria. Aparecerá entonces un botón de ajustes donde puedes cambiar el título, el logo, el tema y el diseño.',
   },
   de: {
     loading: 'Lädt...',
@@ -529,6 +534,8 @@ const translations: Record<string, Translations> = {
       'Community-Daten konnten nicht aktualisiert werden.',
     edit_read_failed:
       'Die aktuelle Fassung dieses Beitrags konnte nicht geladen werden. Die Bearbeitung bleibt geschlossen, bis sie geladen ist, damit ein Speichern keine neueren Änderungen überschreibt.',
+    login_owner_hint:
+      'Wenn diese Website Ihnen gehört, melden Sie sich mit dem Konto an, dem sie gehört. Danach erscheint eine Schaltfläche für Einstellungen, in der Sie Titel, Logo, Design und Layout ändern können.',
   },
   fr: {
     loading: "Chargement...",
@@ -665,6 +672,8 @@ const translations: Record<string, Translations> = {
       'Impossible d\'actualiser les informations de la communauté.',
     edit_read_failed:
       "Impossible de charger la version actuelle de cet article. L'édition reste fermée tant qu'elle n'a pas chargé, pour qu'un enregistrement n'écrase pas des modifications plus récentes.",
+    login_owner_hint:
+      "Si ce site est le vôtre, connectez-vous avec le compte qui en est propriétaire. Un bouton de réglages apparaît alors, pour modifier le titre, le logo, le thème et la mise en page.",
   },
   ko: {
     loading: '로딩 중...',
@@ -796,6 +805,8 @@ const translations: Record<string, Translations> = {
     community_refresh_failed: '커뮤니티 정보를 새로 고치지 못했습니다.',
     edit_read_failed:
       '이 게시물의 최신 버전을 불러오지 못했습니다. 저장할 때 더 새로운 변경 사항을 덮어쓰지 않도록, 불러올 때까지 편집을 열지 않습니다.',
+    login_owner_hint:
+      '이 사이트가 회원님의 것이라면 소유 계정으로 로그인하세요. 로그인하면 제목, 로고, 테마, 레이아웃을 바꿀 수 있는 설정 버튼이 나타납니다.',
   },
   ru: {
     loading: 'Загрузка...',
@@ -929,6 +940,8 @@ const translations: Record<string, Translations> = {
       'Не удалось обновить данные сообщества.',
     edit_read_failed:
       'Не удалось загрузить текущую версию этого поста. Редактор не откроется, пока она не загрузится, чтобы сохранение не перезаписало более новые изменения.',
+    login_owner_hint:
+      'Если это ваш сайт, войдите с аккаунта-владельца. После этого появится кнопка настроек, где можно изменить название, логотип, тему и макет.',
   },
 };
 

@@ -31,3 +31,39 @@ export function availableAuthMethods(
     method === 'hivesigner' ? hivesignerClientId !== null : true,
   );
 }
+
+/**
+ * The order the login page offers the methods in.
+ *
+ * `keychain` is a desktop browser extension, so on a phone its card can only
+ * render an install prompt for software the device cannot run. Offered first,
+ * that install prompt was the first thing an owner opening their own site on a
+ * phone read, and it looks exactly like a dead end. Methods that need nothing
+ * installed lead instead; the extension keeps its card for the desktop visitor
+ * who has one, one place further down.
+ *
+ * This orders, it never filters: `availableAuthMethods` already decided what a
+ * visitor may be offered, and a method that is not ranked here keeps its
+ * configured position at the end rather than vanishing from the page.
+ */
+const DISPLAY_ORDER: readonly AuthMethod[] = [
+  'hiveauth',
+  'hivesigner',
+  'keychain',
+];
+
+export function orderAuthMethods(
+  methods: readonly AuthMethod[],
+): AuthMethod[] {
+  const rank = (method: AuthMethod) => {
+    const index = DISPLAY_ORDER.indexOf(method);
+    return index === -1 ? DISPLAY_ORDER.length : index;
+  };
+
+  // Sorted on an explicit original index rather than relying on the runtime's
+  // sort being stable, so unranked methods keep the order the owner configured.
+  return methods
+    .map((method, index) => ({ method, index }))
+    .sort((a, b) => rank(a.method) - rank(b.method) || a.index - b.index)
+    .map((entry) => entry.method);
+}

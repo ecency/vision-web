@@ -38,6 +38,7 @@ export {
   hasKeychainLikeExtension,
 } from './utils/hive-extensions';
 export { isHivesignerCallback, parseHivesignerCallback } from './utils/hivesigner';
+export { AUTH_METHODS, availableAuthMethods, orderAuthMethods } from './utils/auth-methods';
 export { isHiveAuthSessionValid } from './utils/hive-auth';
 
 // Components
