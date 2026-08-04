@@ -32,6 +32,8 @@
   --theme-accent: #7c3aed;
   --theme-accent-hover: #6d28d9;
   --theme-accent-secondary: #2563eb;
+  /* Ink on the accent fill: 5.70:1, against 3.11:1 for #111827. */
+  --theme-accent-contrast: #ffffff;
 
   --theme-border: rgba(148, 163, 184, 0.2);
   --theme-border-strong: rgba(148, 163, 184, 0.4);
@@ -51,8 +53,12 @@
 
   /* Link style */
   --theme-link-decoration: underline;
-  --theme-link-decoration-color: color-mix(in srgb, var(--theme-accent) 40%, transparent);
-  --theme-link-decoration-hover: var(--theme-accent);
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
 
   /* Tag style - fill comes from the accent tint in variables.css */
   --theme-tag-text: var(--theme-accent-text-light, #7c3aed);
@@ -107,9 +113,20 @@
   --theme-accent: #a78bfa;
   --theme-accent-hover: #c4b5fd;
   --theme-accent-secondary: #60a5fa;
+  /* 6.52:1, against 2.72:1 for #ffffff. */
+  --theme-accent-contrast: #111827;
 
   --theme-border: rgba(148, 163, 184, 0.15);
   --theme-border-strong: rgba(148, 163, 184, 0.25);
+
+  /* Stated per block, like the accent itself, so "derived" is checkable one
+     block at a time rather than by simulating the cascade. */
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
 
   --theme-tag-text: var(--theme-accent-text-dark, #a78bfa);
 

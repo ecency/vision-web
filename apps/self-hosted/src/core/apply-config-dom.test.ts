@@ -11,7 +11,13 @@ import {
   restoreConfigDom,
   snapshotConfigDom,
 } from './apply-config-dom';
-import { FONT_PRESETS } from './theme-appearance';
+import {
+  accentShadeFor,
+  FONT_PRESETS,
+  parseHexColor,
+  type Rgb,
+  relativeLuminance,
+} from './theme-appearance';
 
 const APP = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -365,6 +371,33 @@ describe('the appearance knobs', () => {
     expect(inline['--theme-font-body']).toBeUndefined();
   });
 
+  it('writes the shade the hover reads, pointing away from the ink', () => {
+    // The hover is only safe because of this property. Left to the stylesheet
+    // it is black in light mode and white in dark mode, which is the mode's
+    // shade rather than the ink's opposite, and a fill walking towards its own
+    // label is how the hovered button lost 4.5:1 for 39% of accents.
+    //
+    // Asserted as a resolved DOM value against what the module computes, over
+    // accents whose ink differs, so dropping the entry from the declaration
+    // fails here rather than silently falling back to the stylesheet.
+    for (const accent of ['#8B4513', '#ffff00', '#767676', '#0969da']) {
+      applyConfigDom(styles({ accent }));
+      const inline = inlineVariables();
+      const ink = inline['--theme-accent-contrast'];
+      const shade = inline['--theme-accent-shade'];
+
+      expect(`${accent} shade`).toBe(`${accent} shade`);
+      expect(shade, `${accent}: no shade written`).toBeDefined();
+      expect(shade, `${accent}: shade does not oppose ink ${ink}`).toBe(
+        accentShadeFor(ink),
+      );
+      // Opposite ends of the luminance range, computed rather than listed.
+      const luminanceOf = (hex: string) =>
+        relativeLuminance(parseHexColor(hex) as Rgb);
+      expect(luminanceOf(shade) > 0.5).toBe(!(luminanceOf(ink) > 0.5));
+    }
+  });
+
   it('writes all three faces for a pairing, never one of them', () => {
     applyConfigDom(styles({ fontPreset: 'technical' }));
 
@@ -399,9 +432,15 @@ describe('the appearance knobs', () => {
     expect(inlineVariables()).toEqual({});
   });
 
-  it('writes only properties a stylesheet reads', () => {
+  it('writes only properties something reads', () => {
     // Nine token families shipped with no consumer the last time appearance
     // work landed here. A property nothing reads is a knob that does nothing.
+    //
+    // A reader is a stylesheet OR another written value, because a written
+    // value may itself be a var() expression: --theme-accent-hover is the
+    // constant color-mix that reads --theme-accent-shade, and the shade has no
+    // stylesheet consumer at all. Resolving that by hand would let the next
+    // genuinely dead property in behind the same exception.
     const stylesheets: string[] = [];
     const walk = (dir: string) => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -413,8 +452,12 @@ describe('the appearance knobs', () => {
     };
     walk(join(APP, 'src', 'styles'));
 
+    applyConfigDom(styles({ accent: '#7c3aed', fontPreset: 'modern' }));
+    const written = Object.values(inlineVariables());
+
+    const readers = [...stylesheets, ...written];
     const unread = declaredVariables().filter(
-      (variable) => !stylesheets.some((css) => css.includes(`var(${variable}`)),
+      (variable) => !readers.some((text) => text.includes(`var(${variable}`)),
     );
     expect(unread).toEqual([]);
   });

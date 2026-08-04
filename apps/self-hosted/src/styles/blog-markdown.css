@@ -1571,7 +1571,10 @@
   padding: 0.375rem 0.675rem 0.375rem 0.375rem;
   border: 1px solid var(--theme-border, rgba(0, 0, 0, 0.1));
   border-radius: 1rem;
-  color: var(--theme-accent, #357ce6);
+  /* The corrected accent, not the raw one: this is accent-as-TEXT on the page
+     surface, so it reads --theme-accent-text, which falls back to the accent
+     itself until an owner configures one. */
+  color: var(--theme-accent-text, var(--theme-accent, #357ce6));
   font-size: 0.875rem;
   line-height: 1.2;
   text-decoration: none;
@@ -1597,7 +1600,8 @@
   padding: 0.375rem 0.75rem;
   border: 1px solid var(--theme-border, rgba(0, 0, 0, 0.1));
   border-radius: 1rem;
-  color: var(--theme-accent, #357ce6);
+  /* Corrected accent, as on .er-author-link above. */
+  color: var(--theme-accent-text, var(--theme-accent, #357ce6));
   font-size: 0.75rem;
   line-height: 1.2;
   white-space: nowrap;

@@ -30,7 +30,7 @@ export function LoginMethodButton({
         'flex items-center gap-4 text-left bg-theme-primary',
         'hover:bg-theme-secondary hover:border-theme-strong',
         'disabled:opacity-50 disabled:cursor-not-allowed',
-        'focus:outline-none focus:ring-2 focus:ring-blue-500'
+        'focus:outline-none focus:ring-2 focus:ring-theme-accent'
       )}
     >
       {icon && <div className="flex-shrink-0 size-8 flex items-center justify-center">{icon}</div>}

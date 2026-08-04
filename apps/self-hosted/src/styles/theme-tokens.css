@@ -64,6 +64,22 @@
   /* accent: the one collision-free family, gets the whole colour namespace */
   --color-theme-accent: var(--theme-accent);
   --color-theme-accent-contrast: var(--theme-accent-contrast, #ffffff);
+  /*
+   * Borders and rings are state indicators, so they take the corrected accent
+   * for the same reason text does, while bg-theme-accent keeps the raw fill.
+   *
+   * The distinction is the whole point of the split: a fill is allowed to be
+   * exactly the colour the owner asked for, because the thing on top of it is
+   * contrast-corrected against it. A 2px ring has nothing on top of it and
+   * lives directly on the page, so a pale accent on a pale page is an
+   * indicator that is simply not there, which is the defect that made
+   * focus:ring-theme-strong get retargeted in the first place.
+   * --theme-accent-text clears 4.5:1 against the worst surface of its mode and
+   * falls through to --theme-accent when nothing is configured, so the twelve
+   * palettes render exactly as they do today.
+   */
+  --border-color-theme-accent: var(--theme-accent-text, var(--theme-accent));
+  --ring-color-theme-accent: var(--theme-accent-text, var(--theme-accent));
 
   --radius-theme-sm: var(--theme-radius-sm);
   --radius-theme: var(--theme-radius);

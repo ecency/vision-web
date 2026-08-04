@@ -91,7 +91,7 @@ export function PaymentDialog({
               'flex items-center gap-3 text-left bg-theme-primary',
               'hover:bg-theme-secondary hover:border-theme-strong',
               'disabled:opacity-50 disabled:cursor-not-allowed',
-              'focus:outline-none focus:ring-2 focus:ring-blue-500'
+              'focus:outline-none focus:ring-2 focus:ring-theme-accent'
             )}
           >
             <div className="flex-1">
@@ -118,7 +118,7 @@ export function PaymentDialog({
                 'flex items-center gap-3 text-left bg-theme-primary',
                 'hover:bg-theme-secondary hover:border-theme-strong',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
-                'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                'focus:outline-none focus:ring-2 focus:ring-theme-accent'
               )}
             >
               <div className="flex-1">
@@ -140,7 +140,7 @@ export function PaymentDialog({
                 className={clsx(
                   'w-full p-3 rounded-theme border border-theme',
                   'bg-theme-primary text-theme-primary text-sm',
-                  'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                  'focus:outline-none focus:ring-2 focus:ring-theme-accent'
                 )}
               />
               <button
@@ -148,9 +148,8 @@ export function PaymentDialog({
                 onClick={() => handleSign('manual')}
                 disabled={!activeKey || !!loadingMethod}
                 className={clsx(
-                  'w-full p-2 rounded-theme bg-blue-600 text-white text-sm font-medium',
-                  'hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed',
-                  'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                  'btn-theme-primary w-full p-2 text-sm font-medium',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
                 )}
               >
                 {loadingMethod === 'manual' ? 'Signing...' : 'Sign Payment'}

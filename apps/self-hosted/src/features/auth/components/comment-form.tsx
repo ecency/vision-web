@@ -93,7 +93,7 @@ export function CommentForm({
         <Link
           to="/login"
           search={{ redirect: `/@${parentAuthor}/${parentPermlink}` }}
-          className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+          className="btn-theme-primary inline-block px-4 py-2 transition-colors text-sm"
         >
           {t("login")}
         </Link>
@@ -136,8 +136,7 @@ export function CommentForm({
           onClick={handleSubmit}
           disabled={commentMutation.isPending || !body.trim()}
           className={clsx(
-            "px-4 py-2 rounded-md text-sm font-medium transition-colors",
-            "bg-blue-600 text-white hover:bg-blue-700",
+            "btn-theme-primary px-4 py-2 text-sm font-medium transition-colors",
             "disabled:opacity-50 disabled:cursor-not-allowed"
           )}
         >

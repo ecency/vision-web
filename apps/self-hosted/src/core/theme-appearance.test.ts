@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 import {
   ACCENT_CONTRAST_TARGET,
   ACCENT_TINT_PERCENT,
+  ACCENT_HOVER,
   accentContrastColor,
+  accentShadeFor,
   accentTextFor,
   accentTextForMode,
   contrastRatio,
@@ -200,6 +202,139 @@ describe('accentContrastColor', () => {
     );
 
     expect(worst.ratio).toBeGreaterThanOrEqual(ACCENT_CONTRAST_TARGET);
+  });
+});
+
+describe('accentShadeFor and the hovered fill', () => {
+  /**
+   * `color-mix(in oklab, a p%, b)`, which is what ACCENT_HOVER asks the browser
+   * for. Modelled here rather than approximated in sRGB, because the whole
+   * claim is about where the hovered fill lands relative to its own ink and an
+   * approximation would be measuring a different colour than the one shipped.
+   */
+  function mixOklab(a: Rgb, b: Rgb, share: number): Rgb {
+    const toLinear = (channel: number) => {
+      const c = channel / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    const toSrgb = (channel: number) => {
+      const v =
+        channel <= 0.0031308
+          ? channel * 12.92
+          : 1.055 * channel ** (1 / 2.4) - 0.055;
+      return Math.min(255, Math.max(0, Math.round(v * 255)));
+    };
+    const forward = (rgb: Rgb): [number, number, number] => {
+      const [R, G, B] = rgb.map(toLinear);
+      const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
+      const m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
+      const s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+      return [
+        0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+        1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+        0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+      ];
+    };
+    const back = ([L, A, B]: [number, number, number]): Rgb => {
+      const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
+      const m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
+      const s = (L - 0.0894841775 * A - 1.291485548 * B) ** 3;
+      return [
+        toSrgb(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
+        toSrgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
+        toSrgb(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s),
+      ];
+    };
+    const A = forward(a);
+    const B = forward(b);
+    return back([0, 1, 2].map((i) => A[i] * share + B[i] * (1 - share)) as [
+      number,
+      number,
+      number,
+    ]);
+  }
+
+  /** The share ACCENT_HOVER keeps of the accent, read from the constant. */
+  const HOVER_SHARE =
+    Number(/var\(--theme-accent\)\s+(\d+)%/.exec(ACCENT_HOVER)?.[1]) / 100;
+
+  it('mixes the accent with the shade, at a share the constant states', () => {
+    // Everything below measures the colour this produces, so a change to the
+    // constant that these assertions could not see would make them vacuous.
+    expect(ACCENT_HOVER).toContain('in oklab');
+    expect(ACCENT_HOVER).toContain('var(--theme-accent-shade)');
+    expect(HOVER_SHARE).toBeGreaterThan(0);
+    expect(HOVER_SHARE).toBeLessThan(1);
+  });
+
+  it('points away from the ink rather than towards the mode', () => {
+    const wrong: string[] = [];
+    for (const colour of COLOURS) {
+      const ink = accentContrastColor(colour) as string;
+      const shade = accentShadeFor(ink) as string;
+      const inkLuminance = relativeLuminance(parseHexColor(ink) as Rgb);
+      const shadeLuminance = relativeLuminance(parseHexColor(shade) as Rgb);
+      // Opposite ends of the range: a light ink must take a dark shade.
+      if (inkLuminance > 0.5 === shadeLuminance > 0.5)
+        wrong.push(`${colour}: ink ${ink} with shade ${shade}`);
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it('leaves the label readable while hovered, over an exhaustive sweep', () => {
+    // The defect this closes: the shade used to be picked by the MODE while the
+    // ink is picked by the accent's own luminance, so when they agreed the
+    // hover walked the fill towards its own label. 39% of these colours fell
+    // below 4.5:1 hovered, worst 3.08, and #0969da reached 3.86 in dark mode.
+    let worst = Number.POSITIVE_INFINITY;
+    let worstColour = '';
+
+    for (const colour of COLOURS) {
+      const accent = parseHexColor(colour) as Rgb;
+      const ink = accentContrastColor(colour) as string;
+      const shade = accentShadeFor(ink) as string;
+      const hovered = mixOklab(
+        accent,
+        parseHexColor(shade) as Rgb,
+        HOVER_SHARE,
+      );
+      const ratio = contrastRatio(hovered, parseHexColor(ink) as Rgb);
+      if (ratio < worst) {
+        worst = ratio;
+        worstColour = colour;
+      }
+    }
+
+    expect(
+      worst,
+      `worst hovered label contrast ${worst.toFixed(3)}:1 on ${worstColour}`,
+    ).toBeGreaterThanOrEqual(ACCENT_CONTRAST_TARGET);
+  });
+
+  it('never makes the label worse than it is at rest', () => {
+    // The property that makes the assertion above hold for colours outside the
+    // sweep too: moving a fill away from its ink can only raise the ratio, and
+    // accentContrastColor already clears the target at rest.
+    const regressions: string[] = [];
+
+    for (const colour of COLOURS) {
+      const accent = parseHexColor(colour) as Rgb;
+      const ink = accentContrastColor(colour) as string;
+      const inkRgb = parseHexColor(ink) as Rgb;
+      const hovered = mixOklab(
+        accent,
+        parseHexColor(accentShadeFor(ink) as string) as Rgb,
+        HOVER_SHARE,
+      );
+      const atRest = contrastRatio(accent, inkRgb);
+      const onHover = contrastRatio(hovered, inkRgb);
+      if (onHover < atRest - 0.001)
+        regressions.push(
+          `${colour}: ${atRest.toFixed(2)} to ${onHover.toFixed(2)}`,
+        );
+    }
+
+    expect(regressions).toEqual([]);
   });
 });
 

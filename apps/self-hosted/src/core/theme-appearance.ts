@@ -57,10 +57,11 @@ export const CONTRAST_INK_LIGHT = '#ffffff';
 export const CONTRAST_INK_DARKEST = '#000000';
 
 /**
- * Set inline as a constant string rather than as a computed colour.
- * Custom-property substitution happens at computed-value time on the element,
- * so this one declaration re-substitutes with the other shade when
- * `[data-theme]` changes on <html>, with no JS.
+ * Set inline as a constant string rather than as a computed colour, so the
+ * declaration re-substitutes on its own if either operand changes.
+ *
+ * The whole safety of the hovered button lives in --theme-accent-shade. See
+ * accentShadeFor.
  */
 export const ACCENT_HOVER =
   'color-mix(in oklab, var(--theme-accent) 85%, var(--theme-accent-shade))';
@@ -273,11 +274,41 @@ export function accentContrastColor(hex: string): string | null {
     : CONTRAST_INK_LIGHT;
 }
 
+/**
+ * The end of the range the hover moves the fill TOWARDS, which is the end away
+ * from the ink that sits on it.
+ *
+ * --theme-accent-shade used to be declared in CSS as black in light mode and
+ * white in dark mode, and its only consumer is ACCENT_HOVER. That picked the
+ * direction from the MODE while accentContrastColor picks the ink from the
+ * ACCENT's own luminance, and when the two agreed the hover walked the fill
+ * towards its own label: over the 4096-colour sweep 39% of accents dropped
+ * below 4.5:1 while hovered, worst 3.08, and even #0969da reached 3.86 in dark
+ * mode. Re-choosing the ink against the hovered fill does not rescue it either,
+ * since 1261 of 4096 still fail that way: the fill has to stop crossing the ink
+ * rather than the ink chasing the fill.
+ *
+ * Taking the direction from the ink instead makes contrast on hover
+ * monotonically better than at rest, because moving a fill away from its ink in
+ * luminance can only raise the ratio. Since accentContrastColor already clears
+ * the target at rest, the hover clears it too, for every colour. The guard
+ * measures that over the same sweep rather than trusting the argument.
+ */
+export function accentShadeFor(contrast: string): string | null {
+  const ink = parseHexColor(contrast);
+  if (!ink) return null;
+  return relativeLuminance(ink) > 0.5
+    ? CONTRAST_INK_DARKEST
+    : CONTRAST_INK_LIGHT;
+}
+
 export interface AccentAppearance {
   /** The owner's colour, normalised to `#rrggbb`. */
   accent: string;
   hover: string;
   contrast: string;
+  /** The end the hover walks towards; away from `contrast`, never the mode's. */
+  shade: string;
   textLight: string;
   textDark: string;
 }
@@ -296,8 +327,10 @@ export function resolveAccent(value: unknown): AccentAppearance | null {
   const textLight = accentTextForMode(accent, 'light');
   const textDark = accentTextForMode(accent, 'dark');
   if (!contrast || !textLight || !textDark) return null;
+  const shade = accentShadeFor(contrast);
+  if (!shade) return null;
 
-  return { accent, hover: ACCENT_HOVER, contrast, textLight, textDark };
+  return { accent, hover: ACCENT_HOVER, contrast, shade, textLight, textDark };
 }
 
 // =============================================================================

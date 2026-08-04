@@ -30,6 +30,8 @@
 
   --theme-accent: rgba(0, 0, 0, 0.84);
   --theme-accent-hover: rgba(0, 0, 0, 1);
+  /* Ink on the accent fill: 14.59:1, against 1.22:1 for #111827. */
+  --theme-accent-contrast: #ffffff;
 
   --theme-border: rgba(0, 0, 0, 0.1);
   --theme-border-strong: rgba(0, 0, 0, 0.15);
@@ -44,10 +46,14 @@
   --theme-shadow: none;
   --theme-shadow-lg: none;
 
-  /* Link underline style */
+  /* Link underline style, derived from the accent; see variables.css */
   --theme-link-decoration: underline;
-  --theme-link-decoration-color: rgba(0, 0, 0, 0.3);
-  --theme-link-decoration-hover: rgba(0, 0, 0, 0.84);
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
 
   /*
    * Tag style. The chip fill is a tint of the accent and is declared once in
@@ -93,12 +99,18 @@
 
   --theme-accent: rgba(255, 255, 255, 0.92);
   --theme-accent-hover: rgba(255, 255, 255, 1);
+  /* 15.02:1, against 1.18:1 for #ffffff. */
+  --theme-accent-contrast: #111827;
 
   --theme-border: rgba(255, 255, 255, 0.1);
   --theme-border-strong: rgba(255, 255, 255, 0.15);
 
-  --theme-link-decoration-color: rgba(255, 255, 255, 0.3);
-  --theme-link-decoration-hover: rgba(255, 255, 255, 0.92);
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
 
   --theme-tag-text: var(--theme-accent-text-dark, rgba(255, 255, 255, 0.68));
 }
