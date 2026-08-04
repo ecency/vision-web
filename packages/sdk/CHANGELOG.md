@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.74
+
+### Patch Changes
+
+- Give every search query the same error and retry handling (#1348)
+
 ## 2.3.73
 
 ### Patch Changes
