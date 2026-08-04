@@ -10,3 +10,6 @@ coverage/
 *.lcov
 
 packages/*/coverage/
+
+# Byte cache from running the hosting operator scripts and their tests
+__pycache__/

@@ -88,6 +88,12 @@ jobs:
       - name: Run hosting API tests
         run: cd apps/self-hosted/hosting/api && npm install && npm test
 
+      # Operator scripts are not part of any package: they run from a timer on the
+      # host that holds the key, so nothing else would ever execute them. stdlib
+      # unittest only, so this needs no more than the python3 already on the runner.
+      - name: Run hosting script tests
+        run: cd apps/self-hosted/hosting/scripts && python3 -m unittest discover -p 'test_*.py'
+
       # The unit tests never compile the app, so a bundle that only fails at
       # load used to reach production uncompiled. This is also what runs
       # scripts/check-node-globals.mjs, which fails on a Node global that

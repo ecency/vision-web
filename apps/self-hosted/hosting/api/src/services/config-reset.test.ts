@@ -17,8 +17,19 @@ const mocks = vi.hoisted(() => ({
   queryOne: vi.fn(),
 }));
 
+// applyConfigDocument reads and writes through an SqlExecutor so a caller can run
+// it inside its own transaction, and an executor returns a result set rather than
+// a row. The mock keeps ONE implementation and exposes it both ways, so the two
+// cannot answer differently.
 vi.mock('../db/client', () => ({
-  db: { query: vi.fn(), queryOne: mocks.queryOne, transaction: vi.fn() },
+  db: {
+    query: async (sql: string, params: any[]) => {
+      const row = await mocks.queryOne(sql, params);
+      return { rows: row ? [row] : [] };
+    },
+    queryOne: mocks.queryOne,
+    transaction: vi.fn(),
+  },
 }));
 
 const { TenantService, CONFIG_RESET_PATH, MAX_RESET_PATHS, PINNED_INSTANCE_FIELDS } = await import(

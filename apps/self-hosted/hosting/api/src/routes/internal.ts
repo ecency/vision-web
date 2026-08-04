@@ -17,6 +17,7 @@ import {
 import { DomainService } from '../services/domain-service';
 import { customDomainCapability, type CapabilityState } from '../services/subscription';
 import { ConfigService } from '../services/config-service';
+import { reconcileHivesignerClientIds } from '../services/hivesigner-registry';
 import { AuditService, parseClientIp } from '../services/audit-service';
 import { mapTenantFromDb, type Tenant } from '../types';
 import { addVerifiedDomainOrigin } from '../utils/cors-domains';
@@ -589,6 +590,49 @@ internalRoutes.post('/claim-blog', async (c) => {
     // rather than a permanent failure or a false success.
     if (err.retryable) return c.json({ error: 'reclaimed_recently' }, 503);
     return c.json({ error: 'claim_failed' }, 500);
+  }
+});
+
+/**
+ * POST /v1/internal/hivesigner/reconcile - bring every served tenant's Hivesigner
+ * client id into agreement with the app account's on-chain redirect_uris.
+ *
+ * Called by the scheduled registration job right after it has confirmed what is on
+ * chain. Registration and enablement have to be inseparable: a client id on an
+ * instance whose URI is not registered is a login button that leads to an error page
+ * with no explanation.
+ *
+ * Deliberately takes NO body. The job says only "look again"; what gets enabled is
+ * decided here, from the chain and from each tenant's own row, so a caller holding
+ * the shared secret still cannot enable an instance whose URI is not registered.
+ *
+ * Idempotent, and safe on a schedule: a pass that failed halfway leaves the tenants it
+ * did not reach for the next one, which repairs them without anybody being told.
+ */
+internalRoutes.post('/hivesigner/reconcile', async (c) => {
+  if (!internalSecretOk(c.req.header('x-internal-secret'))) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+
+  try {
+    const result = await reconcileHivesignerClientIds();
+
+    auditInternal(c, null, 'hivesigner.client_ids_reconciled', {
+      account: result.account,
+      registered: result.registered,
+      enabled: result.enabled,
+      disabled: result.disabled,
+      unchanged: result.unchanged,
+      failed: result.failed,
+    });
+
+    return c.json(result);
+  } catch (e) {
+    // The chain read failed, so nothing is known about what is registered. Reported as
+    // transient and NOTHING is written: guessing here would switch the login method off
+    // for every tenant at once on a single bad RPC response.
+    console.error('[internal/hivesigner] reconcile failed:', (e as Error).message);
+    return c.json({ error: 'reconcile_failed' }, 503);
   }
 });
 

@@ -1,0 +1,62 @@
+[Unit]
+Description=Register managed-blog Hivesigner redirect URIs and enable the login method
+Documentation=https://github.com/ecency/vision-next/blob/develop/apps/self-hosted/hosting/README.md
+# Nothing to do without a network, and a run that fails on DNS is noise.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# The only process in this system that holds the app account's posting key. It is
+# deliberately not the hosting API: that service is internet-facing, holds tenant
+# and payment data, and has never held a key of any kind.
+#
+# Create a dedicated unprivileged user for it and give that user exclusive read of
+# the two credential files. Both must be mode 0600 or the script refuses to start.
+User=hivesigner-registrar
+Group=hivesigner-registrar
+
+WorkingDirectory=/opt/hivesigner-registrar
+
+# DATABASE_URL, HOSTING_API_BASE, and optionally HIVE_RPC / BASE_DOMAIN /
+# HIVESIGNER_APP_ACCOUNT. Keep the posting key and the internal secret OUT of this
+# file and out of the environment: they are passed as paths below so they never
+# appear in `systemctl show`, in the journal, or in /proc/<pid>/environ.
+EnvironmentFile=/etc/hivesigner-registrar/registrar.env
+
+ExecStart=/opt/hivesigner-registrar/venv/bin/python \
+    /opt/hivesigner-registrar/hivesigner-redirect-uris.py \
+    --broadcast \
+    --key-file /etc/hivesigner-registrar/posting.key \
+    --internal-secret-file /etc/hivesigner-registrar/internal.secret
+
+# A failed run is repaired by the next one: every pass merges onto whatever is on
+# chain at the time and never removes, and the client-id reconcile runs whether or
+# not anything was broadcast. So there is nothing to retry here, and a restart loop
+# would only broadcast more often on a bad day.
+Restart=no
+
+# A run that cannot finish inside the timer interval is stuck; the lock file stops
+# the next one from starting anyway, so let this one go rather than pile up.
+TimeoutStartSec=240
+
+# The key is the whole risk surface. Nothing here needs to write outside its own
+# directory or see the rest of the filesystem.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# The lock file lives next to the script.
+ReadWritePaths=/opt/hivesigner-registrar
+
+[Install]
+WantedBy=multi-user.target

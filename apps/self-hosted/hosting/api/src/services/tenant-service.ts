@@ -157,11 +157,18 @@ export const TenantService = {
   /**
    * Get tenant by username
    */
-  async getByUsername(username: string): Promise<Tenant | null> {
-    const row = await db.queryOne<TenantRow>(
+  /**
+   * `exec` lets a caller read inside its own transaction. A caller that decides
+   * something from a tenant and then writes it back has to see the same row for
+   * both, or it acts on a version that no longer exists; the default keeps every
+   * existing caller on its own connection exactly as before.
+   */
+  async getByUsername(username: string, exec: SqlExecutor = db): Promise<Tenant | null> {
+    const result = await exec.query<TenantRow>(
       'SELECT * FROM tenants WHERE username = $1',
       [username.toLowerCase()]
     );
+    const row = result.rows[0];
     return row ? mapTenantFromDb(row) : null;
   },
   
@@ -324,9 +331,10 @@ export const TenantService = {
   async applyConfigDocument(
     username: string,
     doc: any,
-    resetPaths: readonly string[] = []
+    resetPaths: readonly string[] = [],
+    exec: SqlExecutor = db
   ): Promise<{ tenant: Tenant; discarded: DiscardedField[]; reset: string[] }> {
-    const tenant = await this.getByUsername(username);
+    const tenant = await this.getByUsername(username, exec);
     if (!tenant) throw new Error('Tenant not found');
 
     const current = tenant.config?.configuration?.instanceConfiguration || {};
@@ -366,7 +374,7 @@ export const TenantService = {
     );
     const newConfig = this.mergeConfigGuarded(base, clean, { path: '', discarded });
 
-    const row = await db.queryOne<TenantRow>(
+    const result = await exec.query<TenantRow>(
       `UPDATE tenants
        SET config = $2,
            updated_at = NOW()
@@ -375,7 +383,7 @@ export const TenantService = {
       [username.toLowerCase(), JSON.stringify(newConfig)]
     );
 
-    return { tenant: mapTenantFromDb(row!), discarded, reset };
+    return { tenant: mapTenantFromDb(result.rows[0]!), discarded, reset };
   },
 
   /**

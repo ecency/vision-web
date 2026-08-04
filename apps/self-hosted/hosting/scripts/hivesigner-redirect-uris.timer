@@ -1,0 +1,30 @@
+[Unit]
+Description=Periodic Hivesigner redirect-URI registration for managed blogs
+Documentation=https://github.com/ecency/vision-next/blob/develop/apps/self-hosted/hosting/README.md
+
+[Timer]
+# Five minutes, matching the two sync loops a new instance already waits on: the
+# hosting API regenerates served config files every five minutes, and the origin
+# issues certificates and writes vhosts every five minutes. A blog is not finished
+# arriving before those have run, so a shorter interval here would not make the
+# login button appear any sooner to its owner, and a longer one would be the only
+# thing they were still waiting for.
+#
+# The cost of a pass that finds nothing to do is one query, one RPC read and one
+# local API call, so the interval is not paid for in broadcasts: a broadcast
+# happens only when an instance is genuinely unregistered.
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+# Runs are independent and each merges onto whatever is on chain, so letting the
+# scheduler spread them costs nothing and keeps this off the same second as every
+# other five-minute job on the host.
+AccuracySec=30s
+RandomizedDelaySec=30s
+
+# A host that was down through a provisioning window should register on the way
+# back up rather than at the next tick.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

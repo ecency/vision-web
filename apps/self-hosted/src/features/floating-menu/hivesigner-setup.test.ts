@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getHivesignerSetupNotice,
+  HIVESIGNER_MANAGED_SETUP_NOTICE,
   HIVESIGNER_SETUP_NOTICE,
 } from './hivesigner-setup';
 
@@ -8,6 +9,7 @@ function configWith(options: {
   methods?: unknown;
   enabled?: unknown;
   clientId?: unknown;
+  managed?: unknown;
 }) {
   return {
     configuration: {
@@ -16,6 +18,7 @@ function configWith(options: {
           ? {}
           : { hivesigner: { clientId: options.clientId } },
       instanceConfiguration: {
+        ...(options.managed === undefined ? {} : { managed: options.managed }),
         features: {
           auth: {
             enabled: options.enabled ?? true,
@@ -41,6 +44,54 @@ describe('hivesigner setup notice', () => {
   it('tells the owner both routes and where to do each', () => {
     expect(HIVESIGNER_SETUP_NOTICE).toContain('General Settings > Hivesigner');
     expect(HIVESIGNER_SETUP_NOTICE).toContain('hello@ecency.com');
+  });
+
+  /**
+   * On a managed blog the registration is performed by a scheduled job and the
+   * client id is written only once it has landed, so the owner has nothing to
+   * do. Sending them to support would be asking for something already under way.
+   */
+  it('tells a managed blog to wait rather than to email support', () => {
+    const notice = getHivesignerSetupNotice(
+      configWith({ methods: ['hivesigner'], managed: true }),
+    );
+
+    expect(notice).toBe(HIVESIGNER_MANAGED_SETUP_NOTICE);
+    expect(notice).not.toContain('hello@ecency.com');
+  });
+
+  it('still offers the managed owner their own app as a way past the wait', () => {
+    expect(HIVESIGNER_MANAGED_SETUP_NOTICE).toContain(
+      'General Settings > Hivesigner',
+    );
+  });
+
+  it('names the custom-domain case, the one time a working button goes away', () => {
+    expect(HIVESIGNER_MANAGED_SETUP_NOTICE).toContain('custom domain');
+  });
+
+  it.each([
+    ['absent', undefined],
+    ['false', false],
+    ['a string that merely looks true', 'true'],
+  ])('keeps the self-hosted notice when managed is %s', (_label, managed) => {
+    // `managed` is injected by the hosting service and never stored, so a
+    // self-hosted config cannot claim a registration nobody will perform.
+    expect(
+      getHivesignerSetupNotice(configWith({ methods: ['hivesigner'], managed })),
+    ).toBe(HIVESIGNER_SETUP_NOTICE);
+  });
+
+  it('says nothing on a managed blog once the client id has been written', () => {
+    expect(
+      getHivesignerSetupNotice(
+        configWith({
+          methods: ['hivesigner'],
+          managed: true,
+          clientId: 'ecency.app',
+        }),
+      ),
+    ).toBe(null);
   });
 
   it('says nothing once the owner names their own app', () => {

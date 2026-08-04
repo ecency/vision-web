@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   getByUsername: vi.fn(),
   applyConfigDocument: vi.fn(),
   updateConfig: vi.fn(),
-  generateConfigFile: vi.fn(),
+  publishConfigFile: vi.fn(),
 }));
 
 vi.mock('../db/client', () => ({ db: { query: vi.fn(), queryOne: vi.fn(), transaction: vi.fn() } }));
@@ -26,7 +26,7 @@ vi.mock('../services/tenant-service', () => ({
 }));
 
 vi.mock('../services/config-service', () => ({
-  ConfigService: { generateConfigFile: mocks.generateConfigFile },
+  ConfigService: { publishConfigFile: mocks.publishConfigFile },
   isPublishableTenant: (tenant: { subscriptionStatus: string }) =>
     tenant.subscriptionStatus === 'active',
 }));
@@ -78,7 +78,7 @@ beforeEach(() => {
     ...TENANT,
     config: { version: 1, configuration: {} },
   }));
-  mocks.generateConfigFile.mockResolvedValue(undefined);
+  mocks.publishConfigFile.mockResolvedValue(undefined);
 });
 
 /**
@@ -88,6 +88,26 @@ beforeEach(() => {
  * and the route answered 200 "Configuration updated" having stored none of it. Clearing the
  * Version field in the editor is enough to trigger it: a cleared number input sends null.
  */
+describe('PATCH /v1/tenants/:username publication', () => {
+  it('hands the publisher a name, never the row it just wrote', async () => {
+    // The served file has more than one writer now: the Hivesigner reconcile can
+    // commit a client id for this tenant while a save is in flight. Whichever of
+    // the two publishes its OWN snapshot last puts the other's change back on
+    // disk while the database keeps both, and nothing afterwards notices the
+    // file and the row disagree. Passing an identifier is what makes that
+    // impossible, because the content is then resolved after the commit, inside
+    // the lock. That the content really is the newest committed config is proven
+    // end to end against the real ConfigService in hivesigner-registry.test.ts.
+    await patch({ version: 1, configuration: { general: { theme: 'dark' } } });
+
+    const args = mocks.publishConfigFile.mock.calls[0];
+    expect(args).toEqual(['alice']);
+    expect(
+      args.some((arg: unknown) => !!arg && typeof arg === 'object' && 'config' in (arg as object))
+    ).toBe(false);
+  });
+});
+
 describe('PATCH /v1/tenants/:username config validation', () => {
   it('rejects a full document with a null version instead of discarding the save', async () => {
     const res = await patch({
@@ -211,7 +231,7 @@ describe('PATCH /v1/tenants/:username config reset', () => {
     expect(res.status).toBe(403);
     expect(mocks.applyConfigDocument).not.toHaveBeenCalled();
     expect(mocks.updateConfig).not.toHaveBeenCalled();
-    expect(mocks.generateConfigFile).not.toHaveBeenCalled();
+    expect(mocks.publishConfigFile).not.toHaveBeenCalled();
   });
 
   it('refuses a reset sent without the document that replaces the value', async () => {
