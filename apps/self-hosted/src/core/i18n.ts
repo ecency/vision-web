@@ -102,6 +102,13 @@ type TranslationKey =
   | 'hive_disclosure_vote'
   | 'hive_disclosure_comment'
   | 'hive_disclosure_publish'
+  | 'reward_split_label'
+  | 'reward_split_default'
+  | 'reward_split_sp'
+  | 'reward_split_dp'
+  | 'reward_split_broadcast'
+  | 'reward_split_permanent'
+  | 'publish_confirm'
   | 'join_community'
   | 'leave_community'
   | 'joining'
@@ -235,6 +242,14 @@ const translations: Record<string, Translations> = {
       'Comments are published to Hive. They are public and cannot be deleted.',
     hive_disclosure_publish:
       'Publishing writes this post publicly and permanently to Hive. Rewards close 7 days after publishing.',
+    reward_split_label: 'Post rewards',
+    reward_split_default: 'Half in Hive Power, half in Hive Dollars',
+    reward_split_sp: 'All in Hive Power',
+    reward_split_dp: 'Decline rewards',
+    reward_split_broadcast: 'This post will be published with:',
+    reward_split_permanent:
+      'Reward settings cannot be changed after publishing.',
+    publish_confirm: 'Press again to publish',
     join_community: 'Join',
     leave_community: 'Leave',
     joining: 'Joining...',
@@ -369,6 +384,14 @@ const translations: Record<string, Translations> = {
       'Los comentarios se publican en Hive. Son públicos y no se pueden borrar.',
     hive_disclosure_publish:
       'Al publicar, esta entrada se escribe en Hive de forma pública y permanente. Las recompensas se cierran 7 días después de publicar.',
+    reward_split_label: 'Recompensas de la publicación',
+    reward_split_default: 'Mitad en Hive Power, mitad en Hive Dollars',
+    reward_split_sp: 'Todo en Hive Power',
+    reward_split_dp: 'Rechazar las recompensas',
+    reward_split_broadcast: 'Esta publicación se publicará con:',
+    reward_split_permanent:
+      'La configuración de recompensas no se puede cambiar después de publicar.',
+    publish_confirm: 'Pulsa de nuevo para publicar',
     join_community: 'Unirse',
     leave_community: 'Salir',
     joining: 'Uniéndose...',
@@ -505,6 +528,14 @@ const translations: Record<string, Translations> = {
       'Kommentare werden auf Hive veröffentlicht. Sie sind öffentlich und können nicht gelöscht werden.',
     hive_disclosure_publish:
       'Das Veröffentlichen schreibt diesen Beitrag öffentlich und dauerhaft auf Hive. Belohnungen enden 7 Tage nach der Veröffentlichung.',
+    reward_split_label: 'Belohnungen für diesen Beitrag',
+    reward_split_default: 'Halb in Hive Power, halb in Hive Dollars',
+    reward_split_sp: 'Alles in Hive Power',
+    reward_split_dp: 'Belohnungen ablehnen',
+    reward_split_broadcast: 'Dieser Beitrag wird veröffentlicht mit:',
+    reward_split_permanent:
+      'Die Belohnungseinstellung kann nach dem Veröffentlichen nicht mehr geändert werden.',
+    publish_confirm: 'Zum Veröffentlichen erneut drücken',
     join_community: 'Beitreten',
     leave_community: 'Verlassen',
     joining: 'Beitritt...',
@@ -642,6 +673,14 @@ const translations: Record<string, Translations> = {
       'Les commentaires sont publiés sur Hive. Ils sont publics et ne peuvent pas être supprimés.',
     hive_disclosure_publish:
       'La publication écrit ce billet sur Hive de façon publique et permanente. Les récompenses se ferment 7 jours après la publication.',
+    reward_split_label: 'Récompenses du billet',
+    reward_split_default: 'Moitié en Hive Power, moitié en Hive Dollars',
+    reward_split_sp: 'Tout en Hive Power',
+    reward_split_dp: 'Refuser les récompenses',
+    reward_split_broadcast: 'Ce billet sera publié avec :',
+    reward_split_permanent:
+      'Le réglage des récompenses ne peut plus être modifié après la publication.',
+    publish_confirm: 'Appuyez à nouveau pour publier',
     join_community: 'Rejoindre',
     leave_community: 'Quitter',
     joining: 'Adhésion...',
@@ -779,6 +818,13 @@ const translations: Record<string, Translations> = {
       '댓글은 Hive에 게시됩니다. 공개되며 삭제할 수 없습니다.',
     hive_disclosure_publish:
       '게시하면 이 글이 Hive에 공개적으로 영구히 기록됩니다. 보상은 게시 후 7일에 마감됩니다.',
+    reward_split_label: '게시물 보상',
+    reward_split_default: '절반은 Hive Power, 절반은 Hive Dollars',
+    reward_split_sp: '전액 Hive Power',
+    reward_split_dp: '보상 거절',
+    reward_split_broadcast: '이 게시물은 다음 설정으로 게시됩니다:',
+    reward_split_permanent: '보상 설정은 게시한 뒤에는 바꿀 수 없습니다.',
+    publish_confirm: '게시하려면 한 번 더 누르세요',
     join_community: '가입',
     leave_community: '탈퇴',
     joining: '가입 중...',
@@ -912,6 +958,14 @@ const translations: Record<string, Translations> = {
       'Комментарии публикуются в Hive. Они общедоступны, и их нельзя удалить.',
     hive_disclosure_publish:
       'Публикация записывает этот пост в Hive публично и навсегда. Награды закрываются через 7 дней после публикации.',
+    reward_split_label: 'Награды за пост',
+    reward_split_default: 'Половина в Hive Power, половина в Hive Dollars',
+    reward_split_sp: 'Всё в Hive Power',
+    reward_split_dp: 'Отказаться от наград',
+    reward_split_broadcast: 'Этот пост будет опубликован с настройкой:',
+    reward_split_permanent:
+      'Настройку наград нельзя изменить после публикации.',
+    publish_confirm: 'Нажмите ещё раз, чтобы опубликовать',
     join_community: 'Вступить',
     leave_community: 'Выйти',
     joining: 'Вступление...',

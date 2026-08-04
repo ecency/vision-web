@@ -7,12 +7,12 @@
  * rule lives in one place and is testable without the config module.
  *
  * The governing rule for the whole Hive-native layer: a deploy may change what a
- * visitor sees, it may never change what gets signed. Nothing in this module
- * contributes to a broadcast payload. The composer-side counterpart
- * (`authorRewards`) is resolved here so the posture lives in one place, but it
- * only decides whether the composer offers the author a control; the reward
- * controls themselves, and the `comment_options` operation they would produce,
- * are not part of this layer yet.
+ * visitor sees, it may never change what gets signed. `authorRewards` decides
+ * only whether the composer offers the author a control. What that control can
+ * put on chain is `resolveCommentOptions` at the bottom of this file, and its
+ * answer for the untouched selection is `undefined`, which is what keeps the
+ * broadcast byte-identical to today for every author who does not choose
+ * otherwise. No config value reaches that function.
  *
  * Every read is defensive. `mergeConfigGuarded` on the hosting API only checks
  * `typeof`, so a hand-crafted PATCH can store any type-compatible value at any
@@ -30,6 +30,8 @@
  * clamp needs. See step 10 of the Hive-native layer spec. A test asserts that
  * every render flag this module resolves is read by a component.
  */
+
+import type { CommentPayload, DraftRewardType } from '@ecency/sdk';
 
 export type ReaderLayer = 'off' | 'standard' | 'full';
 export type AuthorRewards = 'off' | 'author';
@@ -192,4 +194,126 @@ export function resolveHiveLayer(input: HiveLayerInput): ResolvedHiveLayer {
     payoutLabel: resolvePayoutLabel(hive?.payoutLabel),
     learnMoreUrl: resolveLearnMoreUrl(hive?.learnMoreUrl),
   };
+}
+
+/**
+ * The author's reward choice for one post, in the drafts API's vocabulary.
+ *
+ * `DraftRewardType` is reused rather than redeclared so config, composer and
+ * the drafts API cannot drift into three spellings of the same three states.
+ */
+export type RewardType = DraftRewardType;
+
+/**
+ * Every field of a `comment_options` operation, with none of them optional.
+ *
+ * Derived from the SDK's own payload type rather than restated, and wrapped in
+ * `Required` on purpose: `use-comment.ts` destructures this object with
+ * defaults (`maxAcceptedPayout = "1000000.000 HBD"`, `percentHbd = 10000`,
+ * `allowVotes = true`, `allowCurationRewards = true`, `beneficiaries = []`),
+ * so any field we leave out is silently filled in across a package boundary by
+ * a value we never reviewed and can never edit once it is on chain. `Required`
+ * turns that from a rule someone has to remember into a compile error, and it
+ * fails loudly if the SDK ever adds a sixth field.
+ */
+export type ExplicitCommentOptions = Required<
+  NonNullable<CommentPayload['options']>
+>;
+
+/** Hive's own "no cap", the value a post carries when nothing is set. */
+export const UNLIMITED_MAX_ACCEPTED_PAYOUT = '1000000.000 HBD';
+/** A cap of zero is how Hive expresses declined rewards. */
+export const DECLINED_MAX_ACCEPTED_PAYOUT = '0.000 HBD';
+/** 10000 basis points, Hive's own default split. */
+export const DEFAULT_PERCENT_HBD = 10000;
+
+const REWARD_TYPES: readonly RewardType[] = ['default', 'sp', 'dp'];
+
+/**
+ * One of the three reward selections, or `default` for anything else.
+ *
+ * The stored value comes from the draft in localStorage, which any visitor can
+ * edit and which outlives the version of the app that wrote it. Unknown
+ * resolves to `default`, and `default` emits nothing, so a corrupted draft
+ * cannot broadcast an operation the author never chose.
+ */
+export function resolveRewardType(value: unknown): RewardType {
+  return oneOf(value, REWARD_TYPES, 'default');
+}
+
+/**
+ * What the author's selection puts on chain, or `undefined` for none.
+ *
+ * `undefined` is the whole safety property of this track: `use-comment.ts`
+ * gates the second operation on `if (payload.options)`, so an absent or
+ * undefined value produces an operation array byte-identical to the one this
+ * app broadcasts today. That is why the untouched selection returns nothing at
+ * all rather than an object spelling out Hive's defaults: an emitted
+ * `comment_options` operation is on chain forever and cannot be edited, and no
+ * author asked for one.
+ *
+ * When something IS emitted, every field is written explicitly. See
+ * `ExplicitCommentOptions`.
+ *
+ * No beneficiary is ever seeded. A beneficiary rewrites who gets paid, and
+ * doing that on an author's behalf is not a default anyone may set for them.
+ * The empty array is written rather than omitted so that "we ship none" is a
+ * value a test can read.
+ */
+export function resolveCommentOptions(
+  selection: RewardType | undefined,
+): ExplicitCommentOptions | undefined {
+  const rewardType = resolveRewardType(selection);
+
+  if (rewardType === 'default') {
+    return undefined;
+  }
+
+  return {
+    // Declining rewards is a payout cap of zero. Powering up is unchanged pay
+    // with none of it in Hive Dollars, so the cap stays at Hive's own no-cap.
+    maxAcceptedPayout:
+      rewardType === 'dp'
+        ? DECLINED_MAX_ACCEPTED_PAYOUT
+        : UNLIMITED_MAX_ACCEPTED_PAYOUT,
+    percentHbd: rewardType === 'sp' ? 0 : DEFAULT_PERCENT_HBD,
+    allowVotes: true,
+    allowCurationRewards: true,
+    beneficiaries: [],
+  };
+}
+
+/**
+ * The selection an instance will actually honour.
+ *
+ * One definition, used by the composer and by the publish hook, because the
+ * two have to agree. The hook applies it again at the broadcast site, which is
+ * where it is load-bearing; the composer applies it to know what it is about to
+ * ask the author to confirm. If each had its own expression, an instance could
+ * ask for a confirmation it then does not act on, or act without asking.
+ */
+export function resolveRewardSelection(
+  authorRewards: AuthorRewards,
+  selection: RewardType | undefined,
+): RewardType {
+  return authorRewards === 'author' ? resolveRewardType(selection) : 'default';
+}
+
+/**
+ * Whether publishing this selection would put something on chain that no later
+ * edit can reach.
+ *
+ * This is the rule for asking the author to press twice, and it is derived from
+ * `resolveCommentOptions` rather than from the posture flag on purpose. The
+ * second press exists because a `comment_options` operation cannot be edited or
+ * removed afterwards. Where none is emitted, the publish is an ordinary post
+ * that its author can edit, and there is nothing a confirmation would protect,
+ * so asking would be a behaviour change bought for nothing. Reading the answer
+ * off the same function that builds the operation means the question and the
+ * broadcast cannot drift apart.
+ */
+export function emitsUneditableOperation(
+  selection: RewardType | undefined,
+): boolean {
+  return resolveCommentOptions(selection) !== undefined;
 }

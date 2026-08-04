@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DECLINED_MAX_ACCEPTED_PAYOUT,
+  DEFAULT_PERCENT_HBD,
   HIVE_LAYER_CONFIG_DEFAULTS,
   HIVE_LAYER_SEED,
   PAYOUT_LABEL_MAX_LENGTH,
   type ResolvedHiveLayer,
+  emitsUneditableOperation,
+  resolveCommentOptions,
   resolveHiveLayer,
+  resolveRewardSelection,
+  resolveRewardType,
+  UNLIMITED_MAX_ACCEPTED_PAYOUT,
 } from './hive-layer';
 
 /**
@@ -265,6 +272,179 @@ describe('the config surface stays writable', () => {
   it('seeds only keys the defaults table declares', () => {
     for (const key of Object.keys(HIVE_LAYER_SEED)) {
       expect(Object.keys(HIVE_LAYER_CONFIG_DEFAULTS)).toContain(key);
+    }
+  });
+});
+
+describe("what the author's reward choice puts on chain", () => {
+  /**
+   * The governing rule, at the one place in this app that can break it: a
+   * deploy may change what a visitor sees, it may never change what gets
+   * signed. `undefined` here is not a null object, it is the absence of a
+   * second operation, and `use-comment.ts` gates on exactly that.
+   */
+  it('emits no operation at all for the untouched selection', () => {
+    expect(resolveCommentOptions('default')).toBeUndefined();
+  });
+
+  it('emits nothing for a selection it does not recognise', () => {
+    // The value is read back out of a draft in localStorage, which any visitor
+    // can edit and which outlives the release that wrote it. Unknown resolves
+    // toward the operation that is never broadcast, never toward one that is.
+    for (const selection of [
+      'sp ',
+      'SP',
+      'decline',
+      '',
+      undefined,
+      null,
+      42,
+      true,
+      { rewardType: 'dp' },
+      ['dp'],
+    ]) {
+      expect(
+        resolveCommentOptions(selection as never),
+        String(JSON.stringify(selection)),
+      ).toBeUndefined();
+      expect(resolveRewardType(selection)).toBe('default');
+    }
+  });
+
+  it('recognises exactly the three drafts-API selections', () => {
+    for (const selection of ['default', 'sp', 'dp'] as const) {
+      expect(resolveRewardType(selection)).toBe(selection);
+    }
+  });
+
+  it('writes every field explicitly for a full power up', () => {
+    // percentHbd 0 is the choice. Everything else is written out rather than
+    // left to the SDK's destructuring defaults, which would otherwise supply
+    // values across a package boundary that no one here reviewed and that no
+    // edit can reach once they are on chain.
+    expect(resolveCommentOptions('sp')).toEqual({
+      maxAcceptedPayout: '1000000.000 HBD',
+      percentHbd: 0,
+      allowVotes: true,
+      allowCurationRewards: true,
+      beneficiaries: [],
+    });
+  });
+
+  it('writes every field explicitly for declined rewards', () => {
+    expect(resolveCommentOptions('dp')).toEqual({
+      maxAcceptedPayout: '0.000 HBD',
+      percentHbd: 10000,
+      allowVotes: true,
+      allowCurationRewards: true,
+      beneficiaries: [],
+    });
+  });
+
+  it('never seeds a beneficiary', () => {
+    // Beneficiaries rewrite who gets paid. Nothing in this app may set one on
+    // an author's behalf, so "we ship none" is asserted on the emitted object
+    // rather than left as an absence somebody could later fill in.
+    for (const selection of ['default', 'sp', 'dp'] as const) {
+      expect(resolveCommentOptions(selection)?.beneficiaries ?? []).toEqual([]);
+    }
+  });
+
+  it('leaves votes and curation alone in every selection it emits', () => {
+    // Neither is offered as a choice anywhere in this app, so both must be the
+    // chain's own default in anything we broadcast. A false here would disable
+    // voting on a post permanently.
+    for (const selection of ['sp', 'dp'] as const) {
+      const options = resolveCommentOptions(selection);
+      expect(options?.allowVotes, selection).toBe(true);
+      expect(options?.allowCurationRewards, selection).toBe(true);
+    }
+  });
+
+  it('declines by capping the payout, and powers up without capping it', () => {
+    // The two selections must not bleed into each other: a power-up that also
+    // capped the payout would silently decline the rewards it was asked to
+    // convert.
+    expect(resolveCommentOptions('sp')?.maxAcceptedPayout).toBe(
+      UNLIMITED_MAX_ACCEPTED_PAYOUT,
+    );
+    expect(resolveCommentOptions('dp')?.maxAcceptedPayout).toBe(
+      DECLINED_MAX_ACCEPTED_PAYOUT,
+    );
+    expect(resolveCommentOptions('dp')?.percentHbd).toBe(DEFAULT_PERCENT_HBD);
+  });
+
+  it('reads no config value at all', () => {
+    // The composer control is per post and per author. If an instance could
+    // reach this function, a deploy could change what an author signs, which
+    // is the one thing this layer may never do.
+    const from = (features: unknown) =>
+      resolveHiveLayer({ features, composerIsInternal: true });
+    expect(from({ hive: { authorRewards: 'author' } }).authorRewards).toBe(
+      'author',
+    );
+    // Nothing in the resolved layer carries a reward split, a payout cap or a
+    // beneficiary for the composer to inherit.
+    const resolved = resolveHiveLayer({
+      features: { hive: HIVE_LAYER_SEED },
+      composerIsInternal: true,
+    });
+    for (const key of Object.keys(resolved)) {
+      expect(
+        ['maxAcceptedPayout', 'percentHbd', 'beneficiaries', 'rewardType'],
+      ).not.toContain(key);
+    }
+  });
+});
+
+describe('what the instance honours, and what it has to ask about', () => {
+  /**
+   * One definition of the clamp, used by the composer and by the publish hook.
+   * Two expressions of it would let the composer ask for a confirmation the
+   * hook then ignores, or let the hook broadcast something nobody confirmed.
+   */
+  it('honours the author selection only where the control is offered', () => {
+    for (const selection of ['default', 'sp', 'dp'] as const) {
+      expect(resolveRewardSelection('author', selection)).toBe(selection);
+      expect(resolveRewardSelection('off', selection)).toBe('default');
+    }
+  });
+
+  it('collapses a selection it does not recognise, in either posture', () => {
+    for (const posture of ['author', 'off'] as const) {
+      expect(resolveRewardSelection(posture, 'SP' as never)).toBe('default');
+      expect(resolveRewardSelection(posture, undefined)).toBe('default');
+    }
+  });
+
+  /**
+   * The rule for asking twice. Read off the function that builds the
+   * operation, so "is there anything to confirm" and "here is what will be
+   * broadcast" are the same question asked once.
+   */
+  it('asks only where something uneditable would be emitted', () => {
+    expect(emitsUneditableOperation('default')).toBe(false);
+    expect(emitsUneditableOperation('sp')).toBe(true);
+    expect(emitsUneditableOperation('dp')).toBe(true);
+    expect(emitsUneditableOperation(undefined)).toBe(false);
+    expect(emitsUneditableOperation('decline' as never)).toBe(false);
+  });
+
+  it('never asks on an instance that does not offer the control', () => {
+    // The behaviour an owner who opted out keeps: one press, and an operation
+    // array identical to the one they had before this shipped.
+    for (const selection of ['default', 'sp', 'dp'] as const) {
+      const honoured = resolveRewardSelection('off', selection);
+      expect(emitsUneditableOperation(honoured), selection).toBe(false);
+      expect(resolveCommentOptions(honoured), selection).toBeUndefined();
+    }
+  });
+
+  it('agrees with itself: it asks exactly when an operation is built', () => {
+    for (const selection of ['default', 'sp', 'dp', 'nonsense'] as const) {
+      expect(emitsUneditableOperation(selection as never)).toBe(
+        resolveCommentOptions(selection as never) !== undefined,
+      );
     }
   });
 });

@@ -7,20 +7,24 @@ import { describe, expect, it } from 'vitest';
  * A deploy may change what a visitor sees. It may never change what gets
  * signed.
  *
- * This layer is a display layer. Nothing in it may cause a `comment_options`
- * operation to be broadcast where one is not broadcast today, because a
- * `comment_options` op is on chain forever and cannot be edited afterwards.
+ * The Hive layer is a display layer. Nothing in it may cause a
+ * `comment_options` operation to be broadcast, because such an operation is on
+ * chain forever and cannot be edited afterwards. Exactly one thing in this app
+ * may produce one: an author's own per post choice in the composer, and only
+ * through `resolveCommentOptions`, which returns undefined for the selection
+ * nobody touched.
  *
  * The mechanism it relies on is in the SDK: `use-comment.ts` gates the whole
- * second operation on `if (payload.options)`, so a payload without that key
- * produces a byte-identical operation array. Both halves are pinned here, the
- * gate and the absence of the key, because either one alone is an assumption.
+ * second operation on `if (payload.options)`, so a payload whose `options` is
+ * absent or undefined produces a byte-identical operation array. Both halves
+ * are pinned here, the gate and what may appear at that key, because either one
+ * alone is an assumption.
  *
  * The anchor is deliberate: `options` is a field of the payload passed to
  * `mutateAsync`, not an argument to `useComment`, whose second argument is
  * `{ adapter }`.
  *
- * Two rules this file holds itself to, because a guard that passes without
+ * Three rules this file holds itself to, because a guard that passes without
  * checking anything is worse than the defect it was written for:
  *
  *   - A payload it cannot read is a payload it cannot vouch for, so an
@@ -28,10 +32,17 @@ import { describe, expect, it } from 'vitest';
  *   - The SDK gate is asserted structurally, on the `if` statement that
  *     actually contains the builder call, never on the order two strings
  *     happen to appear in.
+ *   - The one permitted `options` expression is checked by resolving its callee
+ *     to an imported binding, not by the name written at the call site, so a
+ *     local function borrowing the name does not inherit its permission.
  *
  * The analysis functions are exercised against synthetic sources at the bottom,
  * so each of those rules is demonstrated to catch its bypass rather than
  * asserted to.
+ *
+ * What the emitted operation actually contains is not asserted here, because
+ * source shape cannot show it. `use-publish-post.broadcast.test.ts` runs the
+ * hook and the SDK's own builder and compares operation arrays.
  */
 
 const SRC = join(__dirname, '..');
@@ -73,6 +84,25 @@ const OPTIONS_FIELDS = [
   'allowCurationRewards',
   'beneficiaries',
 ];
+
+/**
+ * The one module allowed to name those fields: the resolver that builds the
+ * object, where every value is a literal a test can read and no config value
+ * can reach. One door to the chain.
+ */
+const OPTIONS_BUILDER_FILE = 'src/core/hive-layer.ts';
+
+/** The only function whose result may be handed to a payload's `options`. */
+const OPTIONS_FACTORY = 'resolveCommentOptions';
+
+/**
+ * The only payload allowed to carry an `options` key at all.
+ *
+ * A comment reply must never acquire one: nothing in this app offers a reply
+ * author a reward choice, so an `options` key appearing there would be a
+ * decision taken on someone's behalf.
+ */
+const OPTIONS_CALL_SITES = ['src/features/publish/hooks/use-publish-post.ts'];
 
 /** The truthiness test the absence of an `options` key relies on. */
 const SDK_GATE = 'payload.options';
@@ -152,8 +182,136 @@ function namesUsedIn(sf: ts.SourceFile): Set<string> {
   return names;
 }
 
+/**
+ * Local name to the name it was imported under.
+ *
+ * The guard on the `options` expression resolves through this rather than
+ * trusting the text at the call site. `import { resolveCommentOptions } from
+ * '@/core/hive-layer'` and a local `function resolveCommentOptions()` read
+ * identically at the call site and are not remotely the same thing.
+ */
+function importedBindings(sf: ts.SourceFile): Map<string, string> {
+  const bindings = new Map<string, string>();
+  const visit = (node: ts.Node) => {
+    if (ts.isImportSpecifier(node)) {
+      const imported = (node.propertyName ?? node.name).getText(sf);
+      bindings.set(node.name.getText(sf), imported);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return bindings;
+}
+
+/**
+ * Object literals bound once to a `const` in this file, by name.
+ *
+ * A payload does not stop being readable because it was given a name. The
+ * publish bar builds its variables once and both confirms and publishes that
+ * one object, which is the only way the confirmation can be for the payload
+ * that goes out, so the walk follows the name to the literal.
+ *
+ * Deliberately narrow. `const` only, since a `let` can be reassigned to
+ * anything after the walk has looked at it, and a name declared more than once
+ * in the file is ambiguous and stays unreadable rather than being guessed at.
+ */
+function constObjectLiterals(
+  sf: ts.SourceFile,
+): Map<string, ts.ObjectLiteralExpression | null> {
+  const found = new Map<string, ts.ObjectLiteralExpression | null>();
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.parent &&
+      ts.isVariableDeclarationList(node.parent)
+    ) {
+      const isConst =
+        (node.parent.flags & ts.NodeFlags.Const) === ts.NodeFlags.Const;
+      const name = node.name.text;
+      const literal =
+        isConst && node.initializer && ts.isObjectLiteralExpression(node.initializer)
+          ? node.initializer
+          : null;
+      // Declared twice, or not a const object literal: unreadable either way.
+      found.set(name, found.has(name) ? null : literal);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
+
+/**
+ * How a file decides whether a publish has to be confirmed.
+ *
+ * Read as a shape, not as a name that appears somewhere: the initializer has to
+ * BE a call to the resolver, wrapping a call to the shared clamp. Two mutations
+ * survived a guard that only checked the surrounding wiring, `= true` and
+ * `= authorRewards === 'author'`, and both put the confirm step back on
+ * publishes that emit nothing, which is the finding this whole change exists
+ * for. The second one is worse than it looks: it restates the rule from the
+ * posture flag, so it drifts from what is broadcast the moment the two differ.
+ */
+interface ConfirmationRule {
+  /** The imported name the declaration calls, or null if it calls nothing. */
+  outer: string | null;
+  /** The imported name that call's argument calls, or null. */
+  inner: string | null;
+  /** The inner call's arguments, as written. */
+  args: string[];
+}
+
+function confirmationRuleIn(
+  sf: ts.SourceFile,
+  name: string,
+): ConfirmationRule | null {
+  const bindings = importedBindings(sf);
+  let rule: ConfirmationRule | null = null;
+
+  /** The name a call resolves to through an import, or null. */
+  const importedCallee = (node: ts.Node): string | null => {
+    if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) {
+      return null;
+    }
+    return bindings.get(node.expression.text) ?? null;
+  };
+
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === name &&
+      node.initializer
+    ) {
+      const outer = importedCallee(node.initializer);
+      const argument = ts.isCallExpression(node.initializer)
+        ? node.initializer.arguments[0]
+        : undefined;
+      rule = {
+        outer,
+        inner: argument ? importedCallee(argument) : null,
+        args:
+          argument && ts.isCallExpression(argument)
+            ? argument.arguments.map((each) => each.getText(sf))
+            : [],
+      };
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return rule;
+}
+
+/** What a payload wrote at its `options` key. */
+type OptionsValue =
+  | { kind: 'call'; callee: string; imported: string | null; text: string }
+  | { kind: 'other'; text: string };
+
 interface Payload {
   where: string;
+  /** Path relative to `src`, for the call-site allowlist. */
+  file: string;
   /**
    * The payload's own property names, or null when the argument is not
    * something this guard can read: an identifier, a call, a property access, a
@@ -164,12 +322,36 @@ interface Payload {
   keys: string[] | null;
   /** The argument as written, so a failure names the thing it could not read. */
   argument: string;
+  /** The `options` expression, when the payload has one. */
+  options?: OptionsValue;
 }
 
 /** Every payload handed to a mutation call in one file, readable or not. */
 function payloadsIn(sf: ts.SourceFile, rel: string): Payload[] {
   const aliases = mutationAliases(sf);
+  const bindings = importedBindings(sf);
+  const locals = constObjectLiterals(sf);
   const found: Payload[] = [];
+
+  const readOptions = (property: ts.ObjectLiteralElementLike): OptionsValue => {
+    // A shorthand `{ options }` has no initializer to read, and neither does a
+    // spread. Both land in `other`, which fails.
+    if (!ts.isPropertyAssignment(property)) {
+      return { kind: 'other', text: property.getText(sf).replace(/\s+/g, ' ') };
+    }
+    const value = property.initializer;
+    const text = value.getText(sf).replace(/\s+/g, ' ');
+    if (!ts.isCallExpression(value) || !ts.isIdentifier(value.expression)) {
+      return { kind: 'other', text };
+    }
+    const callee = value.expression.text;
+    return {
+      kind: 'call',
+      callee,
+      imported: bindings.get(callee) ?? null,
+      text,
+    };
+  };
 
   const visit = (node: ts.Node) => {
     if (ts.isCallExpression(node)) {
@@ -179,24 +361,34 @@ function payloadsIn(sf: ts.SourceFile, rel: string): Payload[] {
         /(^|\.)mutate$/.test(callee) ||
         aliases.has(callee);
 
-      const [first] = node.arguments;
+      const [argument] = node.arguments;
+      // An identifier is followed to its `const` object literal, if it has
+      // one. An identifier that resolves to nothing is unreadable, exactly as
+      // it was before this could follow anything at all.
+      const first =
+        argument && ts.isIdentifier(argument)
+          ? (locals.get(argument.text) ?? null)
+          : argument;
+
       if (isMutation) {
         const line =
           sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
         const where = `${rel}:${line}`;
 
-        if (!first) {
+        if (!argument) {
           // No payload at all cannot carry an options key.
-          found.push({ where, keys: [], argument: '<no argument>' });
-        } else if (!ts.isObjectLiteralExpression(first)) {
+          found.push({ where, file: rel, keys: [], argument: '<no argument>' });
+        } else if (!first || !ts.isObjectLiteralExpression(first)) {
           found.push({
             where,
+            file: rel,
             keys: null,
-            argument: first.getText(sf).replace(/\s+/g, ' '),
+            argument: argument.getText(sf).replace(/\s+/g, ' '),
           });
         } else {
           const keys: string[] = [];
           let readable = true;
+          let options: OptionsValue | undefined;
           for (const property of first.properties) {
             // Anything without a name this guard can read: a spread, which
             // carries whatever the spread object carries including `options`,
@@ -207,12 +399,16 @@ function payloadsIn(sf: ts.SourceFile, rel: string): Payload[] {
               readable = false;
               break;
             }
-            keys.push(property.name.getText(sf));
+            const name = property.name.getText(sf);
+            keys.push(name);
+            if (name === 'options') options = readOptions(property);
           }
           found.push({
             where,
+            file: rel,
             keys: readable ? keys.sort() : null,
             argument: first.getText(sf).replace(/\s+/g, ' '),
+            options,
           });
         }
       }
@@ -298,25 +494,67 @@ describe('no deploy of this layer changes a broadcast payload', () => {
     expect(opaque).toEqual([]);
   });
 
-  it('passes no options object to any mutation', () => {
-    // `options` is what turns on the second operation. Absent, the operation
-    // array is byte-identical to today's.
+  it('passes an options object from exactly one place', () => {
+    // `options` is what turns on the second operation. Everywhere else its
+    // absence keeps the operation array byte-identical to today's.
     const withOptions = payloads
       .filter((payload) => payload.keys?.includes('options'))
-      .map((payload) => payload.where);
-    expect(withOptions).toEqual([]);
+      .map((payload) => payload.file);
+    expect([...new Set(withOptions)].sort()).toEqual([...OPTIONS_CALL_SITES]);
   });
 
-  it('never uses a comment_options field anywhere in the app', () => {
+  it('builds every options object through the one resolver', () => {
+    // Read off the expression, not off the name at the call site: the callee
+    // has to resolve to an imported binding whose original name is the
+    // resolver's. A locally declared function of the same name is a different
+    // function and does not inherit its permission.
+    const offenders = payloads
+      .filter((payload) => payload.options)
+      .filter(
+        (payload) =>
+          payload.options?.kind !== 'call' ||
+          payload.options.imported !== OPTIONS_FACTORY,
+      )
+      .map((payload) => `${payload.where} -> options: ${payload.options?.text}`);
+    expect(offenders).toEqual([]);
+  });
+
+  it('names a comment_options field in exactly one module', () => {
+    // Elsewhere in the app these names have no legitimate use, and in that one
+    // module every value is a literal this suite reads.
     const offenders: string[] = [];
     for (const path of sourceFiles(SRC)) {
+      const rel = path.replace(SRC, 'src');
+      if (rel === OPTIONS_BUILDER_FILE) continue;
       const names = namesUsedIn(parse(path));
       for (const field of OPTIONS_FIELDS) {
-        if (names.has(field))
-          offenders.push(`${path.replace(SRC, 'src')}:${field}`);
+        if (names.has(field)) offenders.push(`${rel}:${field}`);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('never writes a beneficiary into the options it builds', () => {
+    // A beneficiary rewrites who gets paid. Seeding one on an author's behalf
+    // is not something this app may ever do, so the only value allowed at that
+    // key is an empty array literal, checked on the syntax tree rather than by
+    // trusting the resolver's unit test to keep looking at the same thing.
+    const sf = parse(join(SRC, ...OPTIONS_BUILDER_FILE.split('/').slice(1)));
+    const written: string[] = [];
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isPropertyAssignment(node) &&
+        node.name.getText(sf) === 'beneficiaries'
+      ) {
+        const value = node.initializer;
+        const empty =
+          ts.isArrayLiteralExpression(value) && value.elements.length === 0;
+        if (!empty) written.push(value.getText(sf).replace(/\s+/g, ' '));
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    expect(written).toEqual([]);
   });
 
   it('pins the exact key set of every comment payload', () => {
@@ -329,8 +567,96 @@ describe('no deploy of this layer changes a broadcast payload', () => {
     // comment-form, use-publish-post, use-update-post.
     expect(commentPayloads.map((payload) => payload.where)).toHaveLength(3);
     for (const payload of commentPayloads) {
+      const allowed = OPTIONS_CALL_SITES.includes(payload.file)
+        ? [...EXPECTED_PAYLOAD_KEYS, 'options'].sort()
+        : EXPECTED_PAYLOAD_KEYS;
+      expect(payload.keys, payload.where).toEqual(allowed);
+    }
+  });
+
+  it('leaves the edit path with no options key at all', () => {
+    // Editing a post cannot change its reward settings: `comment_options` is
+    // written once and is not editable afterwards, so an `options` key here
+    // would be a control that silently does nothing, or worse, one that
+    // rebroadcasts a different split the author never chose.
+    const edit = payloads.filter((payload) =>
+      payload.file.includes('use-update-post'),
+    );
+    expect(edit).not.toHaveLength(0);
+    for (const payload of edit) {
       expect(payload.keys, payload.where).toEqual(EXPECTED_PAYLOAD_KEYS);
     }
+  });
+
+  /** The publish bar, and the payload name it hands to the mutation. */
+  function publishBar() {
+    const rel = 'features/publish/components/publish-action-bar.tsx';
+    const sf = parse(join(SRC, ...rel.split('/')));
+    const aliases = mutationAliases(sf);
+    const locals = constObjectLiterals(sf);
+
+    const callsTo = (predicate: (callee: string) => boolean): string[][] => {
+      const calls: string[][] = [];
+      const visit = (node: ts.Node) => {
+        if (
+          ts.isCallExpression(node) &&
+          predicate(node.expression.getText(sf))
+        ) {
+          calls.push(node.arguments.map((argument) => argument.getText(sf)));
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sf);
+      return calls;
+    };
+
+    const published = callsTo((callee) => aliases.has(callee));
+    expect(published).toHaveLength(1);
+    expect(published[0]).toHaveLength(1);
+
+    return { sf, locals, callsTo, payload: published[0][0] };
+  }
+
+  it('confirms the payload it publishes, not a second copy of it', () => {
+    // The confirmation is granted to a payload identity. If the object handed
+    // to `publishConfirmationKey` were built separately from the one handed to
+    // the mutation, the two could differ, and the author would be agreeing to
+    // something other than what goes out. Checked as an identity of syntax
+    // nodes: both arguments must be the same name, bound once, to one literal.
+    const { locals, callsTo, payload } = publishBar();
+
+    // Every function that decides whether a confirmation is held, or mints
+    // one, has to be looking at that same object.
+    const confirmations = callsTo(
+      (callee) =>
+        callee === 'publishConfirmationKey' || callee === 'isConfirmationHeld',
+    );
+    expect(confirmations.length).toBeGreaterThanOrEqual(2);
+    for (const call of confirmations) {
+      expect(call, `confirmation call does not read ${payload}`).toContain(
+        payload,
+      );
+    }
+
+    // And that name is one object literal, so "the same name" means the same
+    // object rather than two things that happen to be spelled alike.
+    expect(locals.get(payload)).toBeTruthy();
+  });
+
+  it('asks for a confirmation on the rule, not on a restatement of it', () => {
+    // The second press is asked for on the operation that would be emitted,
+    // for that same payload. `= true` asks always, which is the behaviour
+    // change owners who took the control off were made to live with;
+    // `= authorRewards === 'author'` asks whenever the panel is on, which
+    // drifts from what is broadcast as soon as an author leaves the selection
+    // alone. Neither is a call to the resolver, and that is what is checked.
+    const { sf, payload } = publishBar();
+    const rule = confirmationRuleIn(sf, 'needsConfirmation');
+
+    expect(rule, 'nothing decides whether to confirm').not.toBeNull();
+    expect(rule?.outer).toBe('emitsUneditableOperation');
+    expect(rule?.inner).toBe('resolveRewardSelection');
+    expect(rule?.args).toContain(`${payload}.rewardType`);
   });
 
   it('pins the SDK gate the absence of options relies on', () => {
@@ -351,6 +677,55 @@ describe('the guard catches the ways around it', () => {
     expect(payload.keys).toEqual(['author', 'options']);
   });
 
+  it('accepts the resolver call, imported, however it is spelled locally', () => {
+    for (const code of [
+      "import { resolveCommentOptions } from '@/core/hive-layer';\nm.mutateAsync({ author: a, options: resolveCommentOptions(s) });",
+      // Aliased on import: a different name at the call site, the same
+      // function. The binding is what is checked, so this passes.
+      "import { resolveCommentOptions as ro } from '@/core/hive-layer';\nm.mutateAsync({ author: a, options: ro(s) });",
+    ]) {
+      const [payload] = payloadsOf(code);
+      expect(payload.options?.kind, code).toBe('call');
+      expect(
+        payload.options?.kind === 'call' ? payload.options.imported : null,
+        code,
+      ).toBe('resolveCommentOptions');
+    }
+  });
+
+  it.each([
+    [
+      'a local function wearing the resolver name',
+      'function resolveCommentOptions(s) { return { percentHbd: 0 }; }\nm.mutateAsync({ options: resolveCommentOptions(s) });',
+    ],
+    [
+      'an object literal written inline',
+      "m.mutateAsync({ options: { maxAcceptedPayout: '0.000 HBD' } });",
+    ],
+    [
+      'a variable holding one',
+      'm.mutateAsync({ options: chosenOptions });',
+    ],
+    [
+      'a shorthand property',
+      'm.mutateAsync({ author, options });',
+    ],
+    [
+      'a conditional around the resolver',
+      "import { resolveCommentOptions } from '@/core/hive-layer';\nm.mutateAsync({ options: x ? resolveCommentOptions(s) : { percentHbd: 0 } });",
+    ],
+    [
+      'a method call that merely looks right',
+      "import { resolveCommentOptions } from '@/core/hive-layer';\nm.mutateAsync({ options: helpers.resolveCommentOptions(s) });",
+    ],
+  ])('refuses %s', (_label, code) => {
+    const [payload] = payloadsOf(code);
+    const accepted =
+      payload.options?.kind === 'call' &&
+      payload.options.imported === 'resolveCommentOptions';
+    expect(accepted).toBe(false);
+  });
+
   it('refuses an identifier argument instead of ignoring it', () => {
     // The hole: `mutateAsync(payload)` skipped every assertion below while the
     // walk still found enough literals elsewhere for the suite to pass.
@@ -359,11 +734,29 @@ describe('the guard catches the ways around it', () => {
       'm.mutateAsync(options.payload);',
       'm.mutateAsync(buildPayload());',
       'm.mutate(payload as CommentPayload);',
+      // Named, but by something the walk cannot read through.
+      'const payload = buildPayload(); m.mutateAsync(payload);',
+      'let payload = { title: t }; payload = other; m.mutateAsync(payload);',
+      'const payload = { ...base }; m.mutateAsync(payload);',
+      // Two declarations of the name: which one reaches the call is not
+      // something this walk can decide, so it decides nothing.
+      'const payload = { title: t }; function f() { const payload = { options: o }; m.mutateAsync(payload); }',
     ]) {
       const [payload] = payloadsOf(code);
       expect(payload, code).toBeDefined();
       expect(payload.keys, code).toBeNull();
     }
+  });
+
+  it('follows a const object literal to its keys', () => {
+    // Naming the payload is allowed, and has to be: the publish bar confirms
+    // and publishes one object. It is read exactly as if it were written at
+    // the call site, options key and all.
+    const [payload] = payloadsOf(
+      'const variables = { title: t, options: o }; m.mutateAsync(variables);',
+    );
+    expect(payload.keys).toEqual(['options', 'title']);
+    expect(payload.options?.kind).toBe('other');
   });
 
   it('refuses a literal whose keys it cannot enumerate', () => {
@@ -388,6 +781,68 @@ describe('the guard catches the ways around it', () => {
   it('accepts a call with no payload at all', () => {
     const [payload] = payloadsOf('m.mutate();');
     expect(payload.keys).toEqual([]);
+  });
+
+  const ruleOf = (code: string) =>
+    confirmationRuleIn(parseSource(code), 'needsConfirmation');
+
+  const IMPORTS =
+    "import { emitsUneditableOperation, resolveRewardSelection } from '@/core/hive-layer';\n";
+
+  it('accepts the rule as written, and under an alias', () => {
+    for (const code of [
+      `${IMPORTS}const needsConfirmation = emitsUneditableOperation(resolveRewardSelection(authorRewards, variables.rewardType));`,
+      // Aliased imports: different names at the call site, same functions.
+      "import { emitsUneditableOperation as asks, resolveRewardSelection as honoured } from '@/core/hive-layer';\nconst needsConfirmation = asks(honoured(authorRewards, variables.rewardType));",
+    ]) {
+      const rule = ruleOf(code);
+      expect(rule?.outer, code).toBe('emitsUneditableOperation');
+      expect(rule?.inner, code).toBe('resolveRewardSelection');
+      expect(rule?.args, code).toContain('variables.rewardType');
+    }
+  });
+
+  it.each([
+    ['a hardcoded true, which asks always', 'const needsConfirmation = true;'],
+    [
+      'the posture flag restated',
+      'const needsConfirmation = authorRewards === "author";',
+    ],
+    [
+      'the panel condition reused',
+      'const needsConfirmation = authorRewards === "author" && rewardType !== "default";',
+    ],
+    [
+      'a local function wearing the resolver name',
+      'function emitsUneditableOperation(s) { return true; }\nconst needsConfirmation = emitsUneditableOperation(resolveRewardSelection(authorRewards, variables.rewardType));',
+    ],
+    [
+      'the clamp dropped',
+      `${IMPORTS}const needsConfirmation = emitsUneditableOperation(variables.rewardType);`,
+    ],
+    [
+      'the clamp replaced by a local one',
+      `${IMPORTS}function clamp(a, s) { return s; }\nconst needsConfirmation = emitsUneditableOperation(clamp(authorRewards, variables.rewardType));`,
+    ],
+  ])('refuses %s', (_label, code) => {
+    const rule = ruleOf(code);
+    const accepted =
+      rule?.outer === 'emitsUneditableOperation' &&
+      rule?.inner === 'resolveRewardSelection';
+    expect(accepted).toBe(false);
+  });
+
+  it('refuses a rule that reads a different object than the payload', () => {
+    // The ask has to be about the payload that goes out, not about a value
+    // that merely looks like part of one.
+    const rule = ruleOf(
+      `${IMPORTS}const needsConfirmation = emitsUneditableOperation(resolveRewardSelection(authorRewards, storedRewardType));`,
+    );
+    expect(rule?.args).not.toContain('variables.rewardType');
+  });
+
+  it('reports nothing when nothing decides at all', () => {
+    expect(ruleOf('const other = 1;')).toBeNull();
   });
 
   it('accepts the builder only inside the real gate', () => {
