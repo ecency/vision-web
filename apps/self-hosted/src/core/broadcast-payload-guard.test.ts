@@ -242,6 +242,67 @@ function constObjectLiterals(
   return found;
 }
 
+/**
+ * How a file decides whether a publish has to be confirmed.
+ *
+ * Read as a shape, not as a name that appears somewhere: the initializer has to
+ * BE a call to the resolver, wrapping a call to the shared clamp. Two mutations
+ * survived a guard that only checked the surrounding wiring, `= true` and
+ * `= authorRewards === 'author'`, and both put the confirm step back on
+ * publishes that emit nothing, which is the finding this whole change exists
+ * for. The second one is worse than it looks: it restates the rule from the
+ * posture flag, so it drifts from what is broadcast the moment the two differ.
+ */
+interface ConfirmationRule {
+  /** The imported name the declaration calls, or null if it calls nothing. */
+  outer: string | null;
+  /** The imported name that call's argument calls, or null. */
+  inner: string | null;
+  /** The inner call's arguments, as written. */
+  args: string[];
+}
+
+function confirmationRuleIn(
+  sf: ts.SourceFile,
+  name: string,
+): ConfirmationRule | null {
+  const bindings = importedBindings(sf);
+  let rule: ConfirmationRule | null = null;
+
+  /** The name a call resolves to through an import, or null. */
+  const importedCallee = (node: ts.Node): string | null => {
+    if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) {
+      return null;
+    }
+    return bindings.get(node.expression.text) ?? null;
+  };
+
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === name &&
+      node.initializer
+    ) {
+      const outer = importedCallee(node.initializer);
+      const argument = ts.isCallExpression(node.initializer)
+        ? node.initializer.arguments[0]
+        : undefined;
+      rule = {
+        outer,
+        inner: argument ? importedCallee(argument) : null,
+        args:
+          argument && ts.isCallExpression(argument)
+            ? argument.arguments.map((each) => each.getText(sf))
+            : [],
+      };
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return rule;
+}
+
 /** What a payload wrote at its `options` key. */
 type OptionsValue =
   | { kind: 'call'; callee: string; imported: string | null; text: string }
@@ -527,12 +588,8 @@ describe('no deploy of this layer changes a broadcast payload', () => {
     }
   });
 
-  it('confirms the payload it publishes, not a second copy of it', () => {
-    // The confirmation is granted to a payload identity. If the object handed
-    // to `publishConfirmationKey` were built separately from the one handed to
-    // the mutation, the two could differ, and the author would be agreeing to
-    // something other than what goes out. Checked as an identity of syntax
-    // nodes: both arguments must be the same name, bound once, to one literal.
+  /** The publish bar, and the payload name it hands to the mutation. */
+  function publishBar() {
     const rel = 'features/publish/components/publish-action-bar.tsx';
     const sf = parse(join(SRC, ...rel.split('/')));
     const aliases = mutationAliases(sf);
@@ -556,7 +613,17 @@ describe('no deploy of this layer changes a broadcast payload', () => {
     const published = callsTo((callee) => aliases.has(callee));
     expect(published).toHaveLength(1);
     expect(published[0]).toHaveLength(1);
-    const payload = published[0][0];
+
+    return { sf, locals, callsTo, payload: published[0][0] };
+  }
+
+  it('confirms the payload it publishes, not a second copy of it', () => {
+    // The confirmation is granted to a payload identity. If the object handed
+    // to `publishConfirmationKey` were built separately from the one handed to
+    // the mutation, the two could differ, and the author would be agreeing to
+    // something other than what goes out. Checked as an identity of syntax
+    // nodes: both arguments must be the same name, bound once, to one literal.
+    const { locals, callsTo, payload } = publishBar();
 
     // Every function that decides whether a confirmation is held, or mints
     // one, has to be looking at that same object.
@@ -574,6 +641,22 @@ describe('no deploy of this layer changes a broadcast payload', () => {
     // And that name is one object literal, so "the same name" means the same
     // object rather than two things that happen to be spelled alike.
     expect(locals.get(payload)).toBeTruthy();
+  });
+
+  it('asks for a confirmation on the rule, not on a restatement of it', () => {
+    // The second press is asked for on the operation that would be emitted,
+    // for that same payload. `= true` asks always, which is the behaviour
+    // change owners who took the control off were made to live with;
+    // `= authorRewards === 'author'` asks whenever the panel is on, which
+    // drifts from what is broadcast as soon as an author leaves the selection
+    // alone. Neither is a call to the resolver, and that is what is checked.
+    const { sf, payload } = publishBar();
+    const rule = confirmationRuleIn(sf, 'needsConfirmation');
+
+    expect(rule, 'nothing decides whether to confirm').not.toBeNull();
+    expect(rule?.outer).toBe('emitsUneditableOperation');
+    expect(rule?.inner).toBe('resolveRewardSelection');
+    expect(rule?.args).toContain(`${payload}.rewardType`);
   });
 
   it('pins the SDK gate the absence of options relies on', () => {
@@ -698,6 +781,68 @@ describe('the guard catches the ways around it', () => {
   it('accepts a call with no payload at all', () => {
     const [payload] = payloadsOf('m.mutate();');
     expect(payload.keys).toEqual([]);
+  });
+
+  const ruleOf = (code: string) =>
+    confirmationRuleIn(parseSource(code), 'needsConfirmation');
+
+  const IMPORTS =
+    "import { emitsUneditableOperation, resolveRewardSelection } from '@/core/hive-layer';\n";
+
+  it('accepts the rule as written, and under an alias', () => {
+    for (const code of [
+      `${IMPORTS}const needsConfirmation = emitsUneditableOperation(resolveRewardSelection(authorRewards, variables.rewardType));`,
+      // Aliased imports: different names at the call site, same functions.
+      "import { emitsUneditableOperation as asks, resolveRewardSelection as honoured } from '@/core/hive-layer';\nconst needsConfirmation = asks(honoured(authorRewards, variables.rewardType));",
+    ]) {
+      const rule = ruleOf(code);
+      expect(rule?.outer, code).toBe('emitsUneditableOperation');
+      expect(rule?.inner, code).toBe('resolveRewardSelection');
+      expect(rule?.args, code).toContain('variables.rewardType');
+    }
+  });
+
+  it.each([
+    ['a hardcoded true, which asks always', 'const needsConfirmation = true;'],
+    [
+      'the posture flag restated',
+      'const needsConfirmation = authorRewards === "author";',
+    ],
+    [
+      'the panel condition reused',
+      'const needsConfirmation = authorRewards === "author" && rewardType !== "default";',
+    ],
+    [
+      'a local function wearing the resolver name',
+      'function emitsUneditableOperation(s) { return true; }\nconst needsConfirmation = emitsUneditableOperation(resolveRewardSelection(authorRewards, variables.rewardType));',
+    ],
+    [
+      'the clamp dropped',
+      `${IMPORTS}const needsConfirmation = emitsUneditableOperation(variables.rewardType);`,
+    ],
+    [
+      'the clamp replaced by a local one',
+      `${IMPORTS}function clamp(a, s) { return s; }\nconst needsConfirmation = emitsUneditableOperation(clamp(authorRewards, variables.rewardType));`,
+    ],
+  ])('refuses %s', (_label, code) => {
+    const rule = ruleOf(code);
+    const accepted =
+      rule?.outer === 'emitsUneditableOperation' &&
+      rule?.inner === 'resolveRewardSelection';
+    expect(accepted).toBe(false);
+  });
+
+  it('refuses a rule that reads a different object than the payload', () => {
+    // The ask has to be about the payload that goes out, not about a value
+    // that merely looks like part of one.
+    const rule = ruleOf(
+      `${IMPORTS}const needsConfirmation = emitsUneditableOperation(resolveRewardSelection(authorRewards, storedRewardType));`,
+    );
+    expect(rule?.args).not.toContain('variables.rewardType');
+  });
+
+  it('reports nothing when nothing decides at all', () => {
+    expect(ruleOf('const other = 1;')).toBeNull();
   });
 
   it('accepts the builder only inside the real gate', () => {
