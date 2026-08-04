@@ -347,7 +347,12 @@ def reconcile_client_ids(api_base: str, secret: str) -> dict:
         return json.load(response)
 
 
-def acquire_lock():
+# The open file description the run's lock lives on. Parked at module scope
+# deliberately: see acquire_lock.
+_LOCK_HANDLE = None
+
+
+def acquire_lock() -> None:
     """
     One run at a time.
 
@@ -357,13 +362,21 @@ def acquire_lock():
     whatever is on chain at the time and never removes anything, but it costs a
     broadcast and delays a new owner's login, so it is simply prevented. Exits
     quietly: a run skipped because the previous one is still going is not a fault.
+
+    Returns nothing on purpose. A flock lives on the open file description, so it
+    is released the moment the last reference to the handle goes away. Handing the
+    handle back made staying locked the caller's job, and the caller dropped it on
+    the floor: the lock was taken and released before the account was even read,
+    and the whole thing looked like it was working. There is now no return value
+    to discard, and `test_the_lock_outlives_the_call` fails if this stops holding.
     """
+    global _LOCK_HANDLE
     handle = open(LOCK_FILE, "w", encoding="utf-8")
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         raise SystemExit(0)
-    return handle
+    _LOCK_HANDLE = handle
 
 
 def report(account_name: str, existing: list[str], missing: list[str], serialized: str) -> None:

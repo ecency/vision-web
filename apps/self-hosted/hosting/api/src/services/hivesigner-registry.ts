@@ -26,9 +26,10 @@
  */
 
 import { callRPC } from '@ecency/sdk/hive';
+import { db } from '../db/client';
 import { TenantService } from './tenant-service';
 import { ConfigService, isPublishableTenant } from './config-service';
-import type { Tenant } from '../types';
+import { mapTenantFromDb, type Tenant, type TenantRow } from '../types';
 
 /**
  * The shared Hivesigner app. This is the only client id this service manages: an
@@ -232,33 +233,36 @@ export async function reconcileHivesignerClientIds(
   };
 
   for (const tenant of tenants) {
-    const action = decideClientId(
-      readPath(tenant.config, CLIENT_ID_PATH),
-      tenantRedirectUris(tenant),
-      registered,
-      appAccount
-    );
-
-    if (action === 'leave') {
+    // Decided from the listing only to skip the tenants that plainly need
+    // nothing, which in the steady state is all of them. The decision that is
+    // acted on is taken again below, against a row nobody else can move.
+    if (
+      decideClientId(
+        readPath(tenant.config, CLIENT_ID_PATH),
+        tenantRedirectUris(tenant),
+        registered,
+        appAccount
+      ) === 'leave'
+    ) {
       result.unchanged++;
       continue;
     }
 
     try {
-      const { tenant: updated } = await TenantService.applyConfigDocument(
-        tenant.username,
-        clientIdDocument(action === 'enable' ? appAccount : '')
-      );
-      // Publish so the change is live rather than only stored. Same entitlement
-      // gate every other publication path uses: nginx serves whatever file
-      // exists, with no subscription check.
-      if (isPublishableTenant(updated)) {
-        await ConfigService.generateConfigFile(updated);
+      const applied = await applyClientIdForTenant(tenant.username, registered, appAccount);
+      if (applied.action === 'leave' || !applied.updated) {
+        result.unchanged++;
+        continue;
       }
-      (action === 'enable' ? result.enabled : result.disabled).push(tenant.username);
+      // Publish so the change is live rather than only stored. No second
+      // entitlement check: isPublishableTenant already decided this inside the
+      // transaction, on the locked row, and repeating it here would be a check
+      // that can never fire dressed up as a safeguard.
+      await ConfigService.generateConfigFile(applied.updated);
+      (applied.action === 'enable' ? result.enabled : result.disabled).push(tenant.username);
     } catch (err) {
       console.error(
-        `[HivesignerRegistry] ${action} failed for ${tenant.username}:`,
+        `[HivesignerRegistry] client id update failed for ${tenant.username}:`,
         (err as Error).message
       );
       result.failed.push(tenant.username);
@@ -266,4 +270,62 @@ export async function reconcileHivesignerClientIds(
   }
 
   return result;
+}
+
+/**
+ * Decide and apply one tenant's client id against a row nobody else can move.
+ *
+ * The listing this loop iterates is a snapshot, and the two things the decision
+ * reads can both change under it. If an owner saves a client id of their own in
+ * that window, a decision taken from the snapshot writes the shared app over it
+ * and the value is simply gone: the next pass sees the shared id, recognises it
+ * as one it manages, and leaves it, so nothing ever puts the owner's app back.
+ * If a custom domain is verified in that window, the tenant needs a second URI
+ * that the snapshot did not know about, and enabling on the strength of the
+ * first one is the broken button this whole design exists to avoid.
+ *
+ * So the row is re-read FOR UPDATE and the decision is taken again from it,
+ * inside the transaction that then writes. A concurrent config save either
+ * commits first and is what this decides from, or waits and lands on top; there
+ * is no ordering in which its value is read and then discarded.
+ *
+ * Returns 'leave' when the fresh row no longer wants the change, which is the
+ * normal outcome of losing that race and is not an error.
+ */
+async function applyClientIdForTenant(
+  username: string,
+  registered: ReadonlySet<string>,
+  appAccount: string
+): Promise<{ action: ClientIdAction; updated?: Tenant }> {
+  return db.transaction(async (client) => {
+    const locked = await client.query<TenantRow>(
+      'SELECT * FROM tenants WHERE username = $1 FOR UPDATE',
+      [username.toLowerCase()]
+    );
+    const row = locked.rows[0];
+    if (!row) return { action: 'leave' as ClientIdAction };
+
+    const fresh = mapTenantFromDb(row);
+    // Standing can have changed since the listing too, and a tenant that may no
+    // longer be served should not be given a login method. The shared predicate,
+    // so this agrees with every other publication path by construction rather
+    // than by a copy of the rule that can drift.
+    if (!isPublishableTenant(fresh)) return { action: 'leave' as ClientIdAction };
+
+    const action = decideClientId(
+      readPath(fresh.config, CLIENT_ID_PATH),
+      tenantRedirectUris(fresh),
+      registered,
+      appAccount
+    );
+    if (action === 'leave') return { action };
+
+    const { tenant: updated } = await TenantService.applyConfigDocument(
+      username,
+      clientIdDocument(action === 'enable' ? appAccount : ''),
+      [],
+      client
+    );
+    return { action, updated };
+  });
 }

@@ -157,6 +157,12 @@ instance, and neither is a bug in the script.
   once on one bad RPC response.
 - **Overlapping runs are prevented** by a lock file, and would be harmless anyway: every pass
   merges onto whatever is on chain at the time and never removes an entry.
+- **A config save racing the reconcile cannot lose.** The listing the pass iterates is a
+  snapshot, so each tenant's row is re-read `FOR UPDATE` and the decision is taken again from
+  it, inside the transaction that then writes. Without that, an owner saving their own
+  Hivesigner app in that window would have it overwritten with the shared one and never
+  restored, and a custom domain verified in that window would be enabled on one origin while
+  the other was still unregistered.
 
 Report only, writing the payload someone else would broadcast (unchanged behaviour, no key
 needed):

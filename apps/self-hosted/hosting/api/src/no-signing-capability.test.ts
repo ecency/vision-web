@@ -139,6 +139,40 @@ export function parseImports(source: string): ModuleImport[] {
   return found;
 }
 
+/**
+ * How many lines plainly begin an import statement.
+ *
+ * The scanner above is not a JavaScript lexer, and the gap it cannot close on
+ * its own is a regex literal holding a quote: `/['"]/` is code, but the scanner
+ * reads that apostrophe as the start of a string and swallows everything up to
+ * the next one. Whatever it swallows is invisible to the guard, and an invisible
+ * import is exactly the false pass this file exists to not have.
+ *
+ * So rather than pretend to lex, the guard checks its own sight. A line starting
+ * with `import` is an import in any style this package is written in, and a
+ * comment never starts one because it starts with a slash. If the parser reports
+ * fewer than this counts, it lost something and the file is reported instead of
+ * being quietly certified clean.
+ */
+export function plainImportLines(source: string): number {
+  return (source.match(/^[ \t]*import[ \t(]/gm) ?? []).length;
+}
+
+/**
+ * The modules whose imports the parser could not fully see.
+ *
+ * A function rather than a loop inside a test so it can be exercised on an input
+ * that must be flagged. A loop that finds nothing passes whether or not it ran,
+ * and a check nobody has ever seen fire is not a check.
+ */
+export function unreadableModules(sources: Iterable<[string, string]>): string[] {
+  const out: string[] = [];
+  for (const [name, source] of sources) {
+    if (parseImports(source).length < plainImportLines(source)) out.push(name);
+  }
+  return out;
+}
+
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
@@ -193,8 +227,51 @@ describe('parseImports (the guard proves itself before it is trusted)', () => {
   });
 });
 
+describe('plainImportLines (the guard checks its own sight)', () => {
+  it('counts what the parser is expected to find', () => {
+    const code = "import { a } from 'x';\nimport 'y';\nconst z = await import('w');\n";
+    expect(plainImportLines(code)).toBe(2);
+    expect(parseImports(code).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('does not count an import inside a comment', () => {
+    expect(plainImportLines("// import { a } from 'x';\n")).toBe(0);
+  });
+
+  it('sees an import the scanner loses to a regex holding a quote', () => {
+    // The scanner reads that apostrophe as a string opener and swallows the
+    // import behind it. This is the case the cross-check exists for, so it is
+    // asserted as a real divergence rather than described in a comment.
+    const code = "const q = /['\"]/;\nimport { PrivateKey } from 'hive-tx';\n";
+    expect(parseImports(code)).toEqual([]);
+    expect(plainImportLines(code)).toBe(1);
+  });
+
+  it('flags the module whose imports were swallowed', () => {
+    const blind = "const q = /['\"]/;\nimport { PrivateKey } from 'hive-tx';\n";
+    expect(unreadableModules([['blind.ts', blind]])).toEqual(['blind.ts']);
+  });
+
+  it('does not flag a module the parser reads completely', () => {
+    expect(unreadableModules([['ok.ts', "import { callRPC } from '@ecency/sdk/hive';\n"]])).toEqual(
+      []
+    );
+  });
+});
+
 describe('the hosting API cannot sign a Hive transaction', () => {
   const files = sourceFiles(SRC);
+
+  it('can see every import the package plainly contains', () => {
+    // A file the parser cannot fully read is not a file it may certify. Anything
+    // reported here is a scanner blind spot, not a signing import, but the guard
+    // has to fail on it rather than conclude the module is clean.
+    expect(
+      unreadableModules(
+        files.map((file) => [path.relative(SRC, file), readFileSync(file, 'utf-8')])
+      )
+    ).toEqual([]);
+  });
 
   it('is looking at the real package, not an empty walk', () => {
     // Without this the whole suite passes when the walk finds nothing, which is

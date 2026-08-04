@@ -12,18 +12,28 @@ to check it.
     python3 -m unittest discover -p 'test_*.py'
 """
 
-import importlib.util
+import fcntl
 import os
 import stat
 import tempfile
+import types
 import unittest
 
-_SPEC = importlib.util.spec_from_file_location(
-    "hivesigner_redirect_uris",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "hivesigner-redirect-uris.py"),
-)
-registrar = importlib.util.module_from_spec(_SPEC)
-_SPEC.loader.exec_module(registrar)
+# The script is not importable by name (it has a dash and no .py-module identity),
+# so it is compiled from source here.
+#
+# Deliberately NOT loaded through importlib's file loader. That caches bytecode in
+# __pycache__ keyed on the source's mtime and size, and a same-second edit that
+# does not change the length silently reuses the stale copy: after a run that
+# flipped `SystemExit(0)` to `SystemExit(1)` and put the original back, the tests
+# went on testing the flipped version and reported a failure that was not in the
+# file. Compiling the bytes that are on disk, every time, cannot do that, and
+# leaves nothing behind in the working tree either.
+_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hivesigner-redirect-uris.py")
+registrar = types.ModuleType("hivesigner_redirect_uris")
+registrar.__file__ = _PATH
+with open(_PATH, encoding="utf-8") as _source:
+    exec(compile(_source.read(), _PATH, "exec"), registrar.__dict__)
 
 BASE = "blogs.ecency.com"
 
@@ -174,6 +184,57 @@ class ReadSecretFile(unittest.TestCase):
     def test_refuses_a_file_that_is_not_there(self):
         with self.assertRaises(SystemExit):
             registrar.read_secret_file("/nonexistent/posting.key", "posting key")
+
+
+class AcquireLock(unittest.TestCase):
+    """
+    The lock is what keeps two runs from each merging onto the state they read
+    and the later broadcast losing the earlier one's entries.
+    """
+
+    def setUp(self):
+        handle, path = tempfile.mkstemp()
+        os.close(handle)
+        self.path = path
+        self.original = registrar.LOCK_FILE
+        registrar.LOCK_FILE = path
+        self.addCleanup(self.restore)
+
+    def restore(self):
+        registrar.LOCK_FILE = self.original
+        if registrar._LOCK_HANDLE is not None:
+            registrar._LOCK_HANDLE.close()
+            registrar._LOCK_HANDLE = None
+        os.unlink(self.path)
+
+    def held(self):
+        """Whether anything currently holds an exclusive flock on the lock file."""
+        with open(self.path, "w", encoding="utf-8") as other:
+            try:
+                fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            fcntl.flock(other, fcntl.LOCK_UN)
+            return False
+
+    def test_nothing_holds_the_lock_to_begin_with(self):
+        self.assertFalse(self.held())
+
+    def test_the_lock_outlives_the_call(self):
+        # The regression this exists for: acquire_lock used to RETURN the handle
+        # and the caller dropped it, so CPython closed the file and released the
+        # flock before the first read. The lock was taken and given straight back
+        # while everything still looked like it was working.
+        registrar.acquire_lock()
+        self.assertTrue(self.held())
+
+    def test_a_second_run_exits_quietly_rather_than_waiting(self):
+        registrar.acquire_lock()
+        # A pass skipped because the previous one is still going is not a fault,
+        # so a timer must not see it as one.
+        with self.assertRaises(SystemExit) as caught:
+            registrar.acquire_lock()
+        self.assertEqual(caught.exception.code, 0)
 
 
 class Statuses(unittest.TestCase):
