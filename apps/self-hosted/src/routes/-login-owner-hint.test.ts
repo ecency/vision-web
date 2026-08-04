@@ -178,6 +178,63 @@ function orderedMethodsMap(sf: ts.SourceFile): ts.CallExpression | undefined {
   return mapCall;
 }
 
+interface SwitchShape {
+  cases: string[];
+  hasDefault: boolean;
+  /** Whether the default clause returns null or undefined, rendering nothing. */
+  defaultReturnsNothing: boolean;
+}
+
+/**
+ * The shape of the first switch statement inside `root`.
+ *
+ * Read from the syntax tree rather than from the text, because the method names
+ * appear in this file as import paths and component names too. What matters is
+ * which values the switch has a branch for and what it does with the rest.
+ */
+function switchInside(
+  root: ts.Node,
+  sf: ts.SourceFile,
+): SwitchShape | undefined {
+  let shape: SwitchShape | undefined;
+
+  walk(root, (node) => {
+    if (shape || !ts.isSwitchStatement(node)) return;
+
+    const cases: string[] = [];
+    let hasDefault = false;
+    let defaultReturnsNothing = false;
+
+    for (const clause of node.caseBlock.clauses) {
+      if (ts.isCaseClause(clause)) {
+        cases.push(
+          ts.isStringLiteral(clause.expression) ||
+            ts.isNoSubstitutionTemplateLiteral(clause.expression)
+            ? clause.expression.text
+            : `<computed:${clause.expression.getText(sf)}>`,
+        );
+        continue;
+      }
+      hasDefault = true;
+      for (const statement of clause.statements) {
+        if (!ts.isReturnStatement(statement)) continue;
+        const value = statement.expression;
+        if (
+          !value ||
+          value.kind === ts.SyntaxKind.NullKeyword ||
+          (ts.isIdentifier(value) && value.text === 'undefined')
+        ) {
+          defaultReturnsNothing = true;
+        }
+      }
+    }
+
+    shape = { cases, hasDefault, defaultReturnsNothing };
+  });
+
+  return shape;
+}
+
 /** Locales in `i18n.ts`, each mapped to its value for `key`, if it has one. */
 function localeValues(
   sf: ts.SourceFile,
@@ -313,6 +370,25 @@ describe('the login methods are offered in the order the resolver returns', () =
     );
     expect([...rendered].sort()).toEqual([...METHOD_COMPONENTS].sort());
   });
+
+  it('renders a card only for a method it knows, and nothing for one it does not', () => {
+    // `orderAuthMethods` reorders and deduplicates but never filters, so a name
+    // the config accepted and this page cannot render still arrives here. The
+    // shape this replaced tested `includes()` per known method and so could not
+    // render an unknown one by construction; mapping the list can, unless the
+    // switch is closed with a default.
+    const map = orderedMethodsMap(page)!;
+    const [callback] = map.arguments;
+    const shape = switchInside(callback, page);
+    expect(shape).toBeDefined();
+    expect([...shape!.cases].sort()).toEqual([
+      'hiveauth',
+      'hivesigner',
+      'keychain',
+    ]);
+    expect(shape!.hasDefault).toBe(true);
+    expect(shape!.defaultReturnsNothing).toBe(true);
+  });
 });
 
 describe('the hint is translated everywhere the app claims to be', () => {
@@ -427,6 +503,38 @@ describe('the guard catches the ways around it', () => {
       .filter((e) => !inside.has(e.node))
       .map((e) => e.tag);
     expect(outside).toEqual(['ExtensionLogin']);
+  });
+
+  it('sees a switch that lost its default, so an unknown method would render nothing safely', () => {
+    const open = parseSource(
+      [
+        'export const A = () => {',
+        '  const ordered = orderAuthMethods(m);',
+        '  return <div>{ordered.map((x) => {',
+        "    switch (x) { case 'hiveauth': return <HiveAuthLogin />; }",
+        '  })}</div>;',
+        '};',
+      ].join('\n'),
+    );
+    const shape = switchInside(orderedMethodsMap(open)!.arguments[0], open)!;
+    expect(shape.cases).toEqual(['hiveauth']);
+    expect(shape.hasDefault).toBe(false);
+  });
+
+  it('sees a default that renders something instead of nothing', () => {
+    const loud = parseSource(
+      [
+        'export const A = () => {',
+        '  const ordered = orderAuthMethods(m);',
+        '  return <div>{ordered.map((x) => {',
+        "    switch (x) { case 'hiveauth': return <HiveAuthLogin />; default: return <Unknown />; }",
+        '  })}</div>;',
+        '};',
+      ].join('\n'),
+    );
+    const shape = switchInside(orderedMethodsMap(loud)!.arguments[0], loud)!;
+    expect(shape.hasDefault).toBe(true);
+    expect(shape.defaultReturnsNothing).toBe(false);
   });
 
   it('reads a locale block that is missing the key', () => {

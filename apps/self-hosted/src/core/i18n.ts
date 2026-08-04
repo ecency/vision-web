@@ -263,7 +263,7 @@ const translations: Record<string, Translations> = {
     edit_read_failed:
       'Could not load the current version of this post. Editing stays closed until it loads, so a save cannot overwrite newer changes.',
     login_owner_hint:
-      'If this site is yours, sign in with the account that owns it. A settings button then appears, where you can change the title, logo, theme and layout.',
+      'If this site is yours, sign in with the account that owns it to change the title, logo, theme and layout. Those settings can only be saved from Hivesigner or a Hive browser extension; a HiveAuth session can vote and comment but cannot save them yet.',
   },
   es: {
     loading: 'Cargando...',
@@ -399,7 +399,7 @@ const translations: Record<string, Translations> = {
     edit_read_failed:
       'No se pudo cargar la versión actual de esta publicación. La edición permanece cerrada hasta que cargue, para que al guardar no se sobrescriban cambios más nuevos.',
     login_owner_hint:
-      'Si este sitio es tuyo, inicia sesión con la cuenta propietaria. Aparecerá entonces un botón de ajustes donde puedes cambiar el título, el logo, el tema y el diseño.',
+      'Si este sitio es tuyo, inicia sesión con la cuenta propietaria para cambiar el título, el logo, el tema y el diseño. Esos ajustes solo se pueden guardar desde Hivesigner o una extensión de navegador de Hive; una sesión de HiveAuth puede votar y comentar, pero todavía no puede guardarlos.',
   },
   de: {
     loading: 'Lädt...',
@@ -535,7 +535,7 @@ const translations: Record<string, Translations> = {
     edit_read_failed:
       'Die aktuelle Fassung dieses Beitrags konnte nicht geladen werden. Die Bearbeitung bleibt geschlossen, bis sie geladen ist, damit ein Speichern keine neueren Änderungen überschreibt.',
     login_owner_hint:
-      'Wenn diese Website Ihnen gehört, melden Sie sich mit dem Konto an, dem sie gehört. Danach erscheint eine Schaltfläche für Einstellungen, in der Sie Titel, Logo, Design und Layout ändern können.',
+      'Wenn diese Website Ihnen gehört, melden Sie sich mit dem Konto an, dem sie gehört, um Titel, Logo, Design und Layout zu ändern. Diese Einstellungen lassen sich nur über Hivesigner oder eine Hive-Browsererweiterung speichern; eine HiveAuth-Sitzung kann abstimmen und kommentieren, sie aber noch nicht speichern.',
   },
   fr: {
     loading: "Chargement...",
@@ -673,7 +673,7 @@ const translations: Record<string, Translations> = {
     edit_read_failed:
       "Impossible de charger la version actuelle de cet article. L'édition reste fermée tant qu'elle n'a pas chargé, pour qu'un enregistrement n'écrase pas des modifications plus récentes.",
     login_owner_hint:
-      "Si ce site est le vôtre, connectez-vous avec le compte qui en est propriétaire. Un bouton de réglages apparaît alors, pour modifier le titre, le logo, le thème et la mise en page.",
+      "Si ce site est le vôtre, connectez-vous avec le compte qui en est propriétaire pour modifier le titre, le logo, le thème et la mise en page. Ces réglages ne peuvent être enregistrés que depuis Hivesigner ou une extension de navigateur Hive ; une session HiveAuth peut voter et commenter, mais pas encore les enregistrer.",
   },
   ko: {
     loading: '로딩 중...',
@@ -806,7 +806,7 @@ const translations: Record<string, Translations> = {
     edit_read_failed:
       '이 게시물의 최신 버전을 불러오지 못했습니다. 저장할 때 더 새로운 변경 사항을 덮어쓰지 않도록, 불러올 때까지 편집을 열지 않습니다.',
     login_owner_hint:
-      '이 사이트가 회원님의 것이라면 소유 계정으로 로그인하세요. 로그인하면 제목, 로고, 테마, 레이아웃을 바꿀 수 있는 설정 버튼이 나타납니다.',
+      '이 사이트가 회원님의 것이라면 소유 계정으로 로그인해 제목, 로고, 테마, 레이아웃을 바꿀 수 있습니다. 이 설정은 Hivesigner 또는 Hive 브라우저 확장으로만 저장할 수 있습니다. HiveAuth 세션은 투표와 댓글은 되지만 아직 설정을 저장하지는 못합니다.',
   },
   ru: {
     loading: 'Загрузка...',
@@ -941,7 +941,7 @@ const translations: Record<string, Translations> = {
     edit_read_failed:
       'Не удалось загрузить текущую версию этого поста. Редактор не откроется, пока она не загрузится, чтобы сохранение не перезаписало более новые изменения.',
     login_owner_hint:
-      'Если это ваш сайт, войдите с аккаунта-владельца. После этого появится кнопка настроек, где можно изменить название, логотип, тему и макет.',
+      'Если это ваш сайт, войдите с аккаунта-владельца, чтобы изменить название, логотип, тему и макет. Эти настройки сохраняются только через Hivesigner или расширение браузера для Hive; сессия HiveAuth может голосовать и комментировать, но пока не может их сохранить.',
   },
 };
 
