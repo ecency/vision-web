@@ -232,6 +232,28 @@ describe("SearchAdvancedForm", () => {
         expect(pushedParams().get("q")).toBe("author:demo");
       });
 
+      it("keeps a filled-in field when the free text carries the same token", () => {
+        render(<SearchAdvancedForm />);
+
+        // The API keeps only the first author: match and the free text goes
+        // first, so the token would otherwise override the visible filter.
+        fireEvent.change(searchField(), { target: { value: "coffee author:alice" } });
+        fireEvent.change(authorField(), { target: { value: "bob" } });
+        fireEvent.click(applyButton());
+
+        expect(pushedParams().get("q")).toBe("coffee author:bob");
+      });
+
+      it("merges tags from both places, since the API joins every tag token", () => {
+        render(<SearchAdvancedForm />);
+
+        fireEvent.change(searchField(), { target: { value: "coffee tag:travel" } });
+        fireEvent.change(tagsField(), { target: { value: "photography" } });
+        fireEvent.click(applyButton());
+
+        expect(pushedParams().get("q")).toBe("coffee tag:travel,photography");
+      });
+
       it("keeps the Type select when the free text carries a broken type token", () => {
         render(<SearchAdvancedForm />);
 

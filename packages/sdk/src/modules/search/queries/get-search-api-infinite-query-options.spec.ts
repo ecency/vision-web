@@ -123,16 +123,18 @@ describe("getSearchApiInfiniteQueryOptions", () => {
       });
     });
 
-    it("does retry a 429", async () => {
+    it("does retry the transient 4xx statuses", async () => {
       const factory = await loadForEnv(false);
       const retry = retryOf(factory("coffee", "popularity", true));
 
-      // Rate limiting is about how often the request arrived, not what it
-      // contained, and backing off is exactly what resolves it. Failing on the
-      // first one is also sticky: with no pages, nothing retriggers the fetch.
-      expect(retry(0, rejection(429))).toBe(true);
-      expect(retry(2, rejection(429))).toBe(true);
-      expect(retry(3, rejection(429))).toBe(false);
+      // 429 and a gateway 408 describe when the request arrived, not what it
+      // contained, and backing off is exactly what resolves them. Failing on
+      // the first one is also sticky: with no pages, nothing retriggers.
+      [408, 429].forEach((status) => {
+        expect(retry(0, rejection(status))).toBe(true);
+        expect(retry(2, rejection(status))).toBe(true);
+        expect(retry(3, rejection(status))).toBe(false);
+      });
     });
 
     it("still retries a 5xx and a transport failure in the browser", async () => {

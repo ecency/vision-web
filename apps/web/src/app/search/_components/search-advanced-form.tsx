@@ -140,12 +140,15 @@ export function SearchAdvancedForm() {
     const parsed = new SearchQuery(built.q);
     const effective = buildSearchQuery({
       search: parsed.search,
-      author: parsed.author,
-      // A type: token in the free text shadows the select, because the API
-      // reads the first match. Letting the select win when it has a value
-      // drops the unusable token instead of the user's actual choice.
-      type: type || parsed.type,
-      category: parsed.category,
+      // The API keeps only the FIRST author:/type:/category: match, and the
+      // free text is placed ahead of the fields, so a token typed there would
+      // otherwise silently override the field the user filled in. Filling a
+      // field in is the more deliberate signal, so it wins; the token is used
+      // only when its field is empty. Tags are different on purpose: the API
+      // joins every tag: match, so both sources combine.
+      author: built.author || parsed.author,
+      type: built.type || parsed.type,
+      category: built.category || parsed.category,
       tags: parsed.tags
     });
 
