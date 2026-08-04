@@ -134,6 +134,16 @@ describe("getSearchApiInfiniteQueryOptions", () => {
       expect(error?.data).toBe("<html>bad gateway</html>");
     });
 
+    it("rejects a 2xx whose body is not JSON", async () => {
+      // Same rule as an empty body: an unparseable success is a failure. The
+      // raw text is only kept for a FAILED response, where it is a diagnostic.
+      fetchMock.mockResolvedValueOnce(response(200, undefined, "<html>maintenance</html>"));
+
+      await expect(
+        (options().queryFn as QueryFn)({ pageParam: undefined, signal: undefined })
+      ).rejects.toThrow("Response body was empty or invalid JSON");
+    });
+
     it("rejects an empty body rather than resolving with nothing", async () => {
       fetchMock.mockResolvedValueOnce(response(200, undefined, ""));
 

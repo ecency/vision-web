@@ -110,6 +110,22 @@ describe("search query options error and retry parity", () => {
       expect(error?.data).toBe("<html>bad gateway</html>");
     });
 
+    it("rejects a 2xx whose body is not JSON", async () => {
+      // A proxy can answer 200 with an HTML page. Handing that back as the
+      // parsed payload would cache a string as a SearchResponse: consumers
+      // reading .results would report an empty result set, and the
+      // controversial/rising pager would throw on resp.results.length.
+      fetchMock.mockResolvedValueOnce(
+        response(200, undefined, "<html>maintenance</html>")
+      );
+
+      await expect(
+        (searchQueryOptions("coffee", "relevance", "0").queryFn as QueryFn)({
+          signal: undefined,
+        })
+      ).rejects.toThrow("Response body was empty or invalid JSON");
+    });
+
     it("resolves with the parsed body on success", async () => {
       fetchMock.mockResolvedValueOnce(response(200, emptyPage));
 
