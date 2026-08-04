@@ -1,6 +1,8 @@
 import { InfiniteData, infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { CONFIG, INTERNAL_API_TIMEOUT_MS, withTimeoutSignal, QueryKeys } from "@/modules/core";
 import { SearchResponse } from "../types/search-response";
+import { parseJsonResponse } from "../parse-json-response";
+import { searchRetryPolicy } from "../retry-policy";
 
 export function searchQueryOptions(
   q: string,
@@ -36,12 +38,11 @@ export function searchQueryOptions(
         signal: withTimeoutSignal(INTERNAL_API_TIMEOUT_MS, signal),
       });
 
-      if (!response.ok) {
-        throw new Error(`Search failed: ${response.status}`);
-      }
-
-      return response.json() as Promise<SearchResponse>;
+      // Keeps the backend's own explanation of a rejected query on the error
+      // (status + body) instead of collapsing it to a status code.
+      return parseJsonResponse<SearchResponse>(response);
     },
+    retry: searchRetryPolicy,
   });
 }
 
@@ -123,11 +124,9 @@ export function getControversialRisingInfiniteQueryOptions(
         signal: withTimeoutSignal(INTERNAL_API_TIMEOUT_MS, signal),
       });
 
-      if (!response.ok) {
-        throw new Error(`Search failed: ${response.status}`);
-      }
-
-      return response.json() as Promise<SearchResponse>;
+      // Keeps the backend's own explanation of a rejected query on the error
+      // (status + body) instead of collapsing it to a status code.
+      return parseJsonResponse<SearchResponse>(response);
     },
 
     getNextPageParam: (resp: SearchResponse): PageParam => {
@@ -138,5 +137,6 @@ export function getControversialRisingInfiniteQueryOptions(
     },
 
     enabled,
+    retry: searchRetryPolicy,
   });
 }

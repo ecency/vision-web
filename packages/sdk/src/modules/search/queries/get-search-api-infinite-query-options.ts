@@ -1,12 +1,8 @@
-import { infiniteQueryOptions, isServer } from "@tanstack/react-query";
+import { infiniteQueryOptions } from "@tanstack/react-query";
 import { CONFIG, INTERNAL_API_TIMEOUT_MS, withTimeoutSignal, QueryKeys } from "@/modules/core";
 import { SearchResponse } from "../types/search-response";
-import { parseJsonResponse, type RequestError } from "../parse-json-response";
-
-// A `retry` callback replaces React Query's budget outright, so it has to be
-// restated: the library default of 3 in the browser, and none on the server,
-// where retrying a single-region search backend only stalls the render.
-const MAX_RETRIES = isServer ? 0 : 3;
+import { parseJsonResponse } from "../parse-json-response";
+import { searchRetryPolicy } from "../retry-policy";
 
 export function getSearchApiInfiniteQueryOptions(
   q: string,
@@ -61,22 +57,6 @@ export function getSearchApiInfiniteQueryOptions(
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage: SearchResponse) => lastPage?.scroll_id,
     enabled: !!q,
-    retry: (failureCount: number, error: Error) => {
-      // A 4xx is the backend rejecting the query itself (too many tags, over
-      // the length cap, nothing left to search once the filters are parsed
-      // out). Repeating it repeats the same answer, so the only effect is four
-      // requests over several seconds before the UI can say what to change.
-      // 408 and 429 are the exceptions: they describe when the request arrived
-      // rather than what it contained, and backing off is what resolves them.
-      // A client-side timeout aborts the fetch and carries no status at all,
-      // so this covers only a real 408 from a gateway in front of the API.
-      const { status } = error as RequestError;
-      const isTransient = status === 408 || status === 429;
-      if (status !== undefined && status >= 400 && status < 500 && !isTransient) {
-        return false;
-      }
-
-      return failureCount < MAX_RETRIES;
-    },
+    retry: searchRetryPolicy,
   });
 }
