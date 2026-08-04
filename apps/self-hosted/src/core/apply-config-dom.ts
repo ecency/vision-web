@@ -13,6 +13,13 @@
  * holds the raw JSON document it is editing.
  */
 
+import {
+  type AccentAppearance,
+  type FontPreset,
+  resolveAccent,
+  resolveFontPreset,
+} from './theme-appearance';
+
 export type ConfigReader = (path: string) => unknown;
 
 export interface ConfigDomAttribute {
@@ -126,6 +133,8 @@ const PATHS = {
   styleTemplate: 'configuration.general.styleTemplate',
   language: 'configuration.general.language',
   background: 'configuration.general.styles.background',
+  accent: 'configuration.general.styles.accent',
+  fontPreset: 'configuration.general.styles.fontPreset',
   instanceType: 'configuration.instanceConfiguration.type',
   title: 'configuration.instanceConfiguration.meta.title',
   listType: 'configuration.instanceConfiguration.layout.listType',
@@ -141,12 +150,45 @@ const PATHS = {
 
 export const DEFAULT_THEME = 'light';
 
+/** Everything `data-theme` is allowed to be, plus the one that resolves. */
+const THEMES = new Set(['system', 'light', 'dark']);
+
+/**
+ * The configured theme, lowercased and held to the closed set.
+ *
+ * `text()` neither lowercases nor validates, so `theme: "Dark"` used to reach
+ * the document as `data-theme="Dark"`, which matches no block in any stylesheet:
+ * the tenant asked for dark and got the light palette, silently. Anything
+ * outside the set resolves to the same default an absent value does, so the
+ * attribute this function feeds is always `light` or `dark` and always matches
+ * the blocks the templates declare. Normalising to a value that matched nothing
+ * would be the failure this replaces.
+ */
+function configuredTheme(read: ConfigReader): string {
+  const configured = text(read(PATHS.theme), DEFAULT_THEME).toLowerCase();
+  return THEMES.has(configured) ? configured : DEFAULT_THEME;
+}
+
 function resolveTheme(read: ConfigReader): string {
-  const configured = text(read(PATHS.theme), DEFAULT_THEME);
+  const configured = configuredTheme(read);
   if (configured === 'system') {
     return prefersDarkColorScheme() ? 'dark' : 'light';
   }
   return configured;
+}
+
+/**
+ * The accent knob is one colour and the font knob is one key; the properties
+ * below are derived from them. Resolving the whole set once per property keeps
+ * every entry a pure function of the config, which is what lets preview,
+ * snapshot and restore stay generic over the declaration.
+ */
+function accentOf(read: ConfigReader): AccentAppearance | null {
+  return resolveAccent(read(PATHS.accent));
+}
+
+function fontsOf(read: ConfigReader): FontPreset | null {
+  return resolveFontPreset(read(PATHS.fontPreset));
 }
 
 export const CONFIG_DOM_DECLARATION: ConfigDomDeclaration = {
@@ -186,11 +228,54 @@ export const CONFIG_DOM_DECLARATION: ConfigDomDeclaration = {
       resolve: (read) => flag(read(PATHS.hiveInformation)),
     },
   ],
-  // Nothing is driven by an inline custom property yet: the style templates
-  // declare their variables in CSS. This is where accent color and font
-  // presets attach, and the apply/snapshot/restore machinery already covers
-  // them.
-  cssVariables: [],
+  /**
+   * The owner-facing appearance knobs, as inline custom properties on <html>.
+   *
+   * An inline property beats every stylesheet block, so one accent applies in
+   * both modes and under every style template. A resolver returning null makes
+   * applyConfigDom remove the property, which is how "not configured" and "not
+   * a colour" both land on the template's own value rather than on nothing.
+   *
+   * Two knobs, eight properties: an owner picks one colour and one pairing, and
+   * a config that stored the derived values instead would have them go stale
+   * the moment the source changed.
+   */
+  cssVariables: [
+    {
+      variable: '--theme-accent',
+      resolve: (read) => accentOf(read)?.accent ?? null,
+    },
+    {
+      variable: '--theme-accent-hover',
+      resolve: (read) => accentOf(read)?.hover ?? null,
+    },
+    {
+      variable: '--theme-accent-contrast',
+      resolve: (read) => accentOf(read)?.contrast ?? null,
+    },
+    // Both mode variants are written and CSS picks between them, so an OS flip
+    // under `theme: system` re-resolves with no JS and cannot revert a preview.
+    {
+      variable: '--theme-accent-text-light',
+      resolve: (read) => accentOf(read)?.textLight ?? null,
+    },
+    {
+      variable: '--theme-accent-text-dark',
+      resolve: (read) => accentOf(read)?.textDark ?? null,
+    },
+    {
+      variable: '--theme-font-body',
+      resolve: (read) => fontsOf(read)?.body ?? null,
+    },
+    {
+      variable: '--theme-font-heading',
+      resolve: (read) => fontsOf(read)?.heading ?? null,
+    },
+    {
+      variable: '--theme-font-ui',
+      resolve: (read) => fontsOf(read)?.ui ?? null,
+    },
+  ],
   bodyClasses: {
     prefixes: ['bg-', 'from-', 'via-', 'to-'],
     resolve: (read) =>
@@ -334,7 +419,7 @@ export function applyConfigDom(
   document.title = title ?? baseline;
 
   if (options.syncSystemTheme) {
-    syncSystemTheme(text(read(PATHS.theme), DEFAULT_THEME) === 'system');
+    syncSystemTheme(configuredTheme(read) === 'system');
   }
 }
 

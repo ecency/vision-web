@@ -49,10 +49,22 @@
   --theme-link-decoration-color: rgba(0, 0, 0, 0.3);
   --theme-link-decoration-hover: rgba(0, 0, 0, 0.84);
 
-  /* Tag style */
-  --theme-tag-bg: rgba(0, 0, 0, 0.05);
-  --theme-tag-text: rgba(0, 0, 0, 0.68);
+  /*
+   * Tag style. The chip fill is a tint of the accent and is declared once in
+   * variables.css, so an owner's accent reaches the chips; the text stays the
+   * template's own until an accent is configured, and the radius is always the
+   * template's.
+   */
+  --theme-tag-text: var(--theme-accent-text-light, rgba(0, 0, 0, 0.68));
   --theme-tag-radius: 9999px;
+
+  /*
+   * Card treatment: none. Classic sets nothing apart from the page - the card
+   * is the page surface with a hairline rule, and --theme-shadow is none.
+   */
+  --theme-card-bg: var(--theme-bg-card);
+  --theme-card-border: 1px solid var(--theme-border);
+  --theme-card-backdrop: none;
 
   /* Layout - Medium: Classic editorial, comfortable reading */
   --theme-content-width: 680px;
@@ -88,6 +100,5 @@
   --theme-link-decoration-color: rgba(255, 255, 255, 0.3);
   --theme-link-decoration-hover: rgba(255, 255, 255, 0.92);
 
-  --theme-tag-bg: rgba(255, 255, 255, 0.08);
-  --theme-tag-text: rgba(255, 255, 255, 0.68);
+  --theme-tag-text: var(--theme-accent-text-dark, rgba(255, 255, 255, 0.68));
 }

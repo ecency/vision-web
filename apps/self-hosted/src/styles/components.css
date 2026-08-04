@@ -72,12 +72,27 @@
   );
 }
 
-/* Card Styles */
+/*
+ * Card Styles
+ *
+ * The three --theme-card-* tokens are how a template states what a card is.
+ * Four of the five say "the page surface with a hairline rule"; modern-gradient
+ * says glass, which is the treatment its name promises and which used to hang
+ * off a class no component renders. `background` rather than `background-color`
+ * for the same reason .tag-theme uses it: a template is free to name a gradient,
+ * and background-color drops a non-<color> at computed-value time.
+ *
+ * No hand-written -webkit-backdrop-filter. The build adds the prefix, and
+ * writing both makes its minifier keep only the prefixed one: the old glass
+ * rule shipped that way, so it would not have blurred outside WebKit even if
+ * something had rendered the class it named.
+ */
 .card-theme {
-  background-color: var(--theme-bg-card);
-  border: 1px solid var(--theme-border);
+  background: var(--theme-card-bg, var(--theme-bg-card));
+  border: var(--theme-card-border, 1px solid var(--theme-border));
   border-radius: var(--theme-radius);
   box-shadow: var(--theme-shadow);
+  backdrop-filter: var(--theme-card-backdrop, none);
 }
 
 /* Divider */

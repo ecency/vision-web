@@ -51,10 +51,14 @@
   --theme-link-decoration-color: rgba(0, 102, 204, 0.3);
   --theme-link-decoration-hover: #0066cc;
 
-  /* Tag style */
-  --theme-tag-bg: #f5f5f5;
-  --theme-tag-text: #4a4a4a;
+  /* Tag style - fill comes from the accent tint in variables.css */
+  --theme-tag-text: var(--theme-accent-text-light, #4a4a4a);
   --theme-tag-radius: 4px;
+
+  /* Card treatment: hairline rule on the page surface, soft shadow */
+  --theme-card-bg: var(--theme-bg-card);
+  --theme-card-border: 1px solid var(--theme-border);
+  --theme-card-backdrop: none;
 
   /* Layout - Minimal: Clean, spacious, focused */
   --theme-content-width: 640px;
@@ -87,6 +91,5 @@
   --theme-border: #2a2a2a;
   --theme-border-strong: #3a3a3a;
 
-  --theme-tag-bg: #222222;
-  --theme-tag-text: #b0b0b0;
+  --theme-tag-text: var(--theme-accent-text-dark, #b0b0b0);
 }

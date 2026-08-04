@@ -47,10 +47,14 @@
   --theme-link-decoration-color: #c5c0b8;
   --theme-link-decoration-hover: #8b4513;
 
-  /* Tag style */
-  --theme-tag-bg: #ebe7e0;
-  --theme-tag-text: #4a4540;
+  /* Tag style - fill comes from the accent tint in variables.css */
+  --theme-tag-text: var(--theme-accent-text-light, #4a4540);
   --theme-tag-radius: 2px;
+
+  /* Card treatment: white paper on the cream page, hairline rule */
+  --theme-card-bg: var(--theme-bg-card);
+  --theme-card-border: 1px solid var(--theme-border);
+  --theme-card-backdrop: none;
 
   /* Layout - Magazine: Wide, editorial, dramatic */
   --theme-content-width: 720px;
@@ -90,8 +94,7 @@
   --theme-link-decoration-color: #4a4540;
   --theme-link-decoration-hover: #d4a574;
 
-  --theme-tag-bg: #302d28;
-  --theme-tag-text: #c5c0b8;
+  --theme-tag-text: var(--theme-accent-text-dark, #c5c0b8);
 
   --theme-divider-style: 1px solid #4a4540;
 }

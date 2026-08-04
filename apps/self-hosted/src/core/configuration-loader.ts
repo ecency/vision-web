@@ -63,6 +63,14 @@ export interface InstanceConfig {
     };
       styles: {
         background: string;
+        /**
+         * `#rgb` or `#rrggbb`. Absent, empty and unparseable all mean "the
+         * style template's own accent stands", which is what every instance
+         * written before this field existed renders.
+         */
+        accent?: string;
+        /** A key of FONT_PRESETS, or absent for the template's own faces. */
+        fontPreset?: string;
       };
     };
     instanceConfiguration: {

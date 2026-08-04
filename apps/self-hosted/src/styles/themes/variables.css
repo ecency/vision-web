@@ -1,6 +1,17 @@
 /* Base CSS Variables - Default values overridden by theme files */
 
-:root {
+/*
+ * `[data-theme="light"]` as well as `:root`, matching the dark block below.
+ *
+ * A value derived from another with var() substitutes at computed-value time on
+ * the element carrying the declaration, and the RESULT is what inherits. A
+ * derived property declared on :root alone would resolve once against <html>
+ * and hand that one concrete colour to every descendant, including a subtree
+ * carrying its own data-theme. Both selectors match the same element today, so
+ * this changes nothing on the page and keeps every future derived token honest.
+ */
+:root,
+[data-theme="light"] {
   /* Typography - Font Families */
   --theme-font-body: "Georgia", "Times New Roman", serif;
   --theme-font-heading:
@@ -91,6 +102,36 @@
   /* Layout - Post Cards */
   --theme-post-card-image-height: 200px;
   --theme-post-card-image-radius: var(--theme-radius);
+
+  /* Card treatment: default surface, hairline rule, no glass */
+  --theme-card-bg: var(--theme-bg-card);
+  --theme-card-border: 1px solid var(--theme-border);
+  --theme-card-backdrop: none;
+
+  /*
+   * Values derived from --theme-accent.
+   *
+   * --theme-accent-text-light and -dark are written inline on <html> when an
+   * owner configures an accent, and nowhere else, so the fallback in each var()
+   * is what an instance that configures nothing renders: the template's own
+   * accent, and the template's own chip text. That is why this whole knob adds
+   * no pixel of change until someone uses it.
+   *
+   * The chip fill is the one exception and it is deliberate: it is a tint of
+   * whatever --theme-accent resolves to in this block, so the accent reaches
+   * the tag chips on every instance.
+   *
+   * The mix is written transparent-first on purpose. The build emits a
+   * pre-color-mix fallback for older browsers by taking the mix's FIRST colour,
+   * so `var(--theme-accent) 12%, transparent` would hand them a chip filled with
+   * the accent at full strength, with the template's quiet chip text on it: on
+   * medium that is near-black text on a near-black chip. Transparent-first makes
+   * the same fallback an unfilled chip, which is flat but readable everywhere.
+   */
+  --theme-accent-shade: #000000;
+  --theme-accent-text: var(--theme-accent-text-light, var(--theme-accent));
+  --theme-tag-bg: color-mix(in srgb, transparent 88%, var(--theme-accent));
+  --theme-tag-text: var(--theme-accent-text-light, var(--theme-text-secondary));
 }
 
 /* Dark Mode Overrides */
@@ -114,4 +155,10 @@
   --theme-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --theme-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   --theme-shadow-lg: 0 4px 6px rgba(0, 0, 0, 0.4);
+
+  /* Derived from --theme-accent; see the light block above */
+  --theme-accent-shade: #ffffff;
+  --theme-accent-text: var(--theme-accent-text-dark, var(--theme-accent));
+  --theme-tag-bg: color-mix(in srgb, transparent 88%, var(--theme-accent));
+  --theme-tag-text: var(--theme-accent-text-dark, var(--theme-text-secondary));
 }
