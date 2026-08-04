@@ -127,6 +127,32 @@ function callsFunction(expr: ts.Node, name: string): boolean {
   return found;
 }
 
+/** Does this node call `receiver.name(...)` anywhere inside it? */
+function callsMethod(node: ts.Node, name: string): boolean {
+  let found = false;
+  each(node, (n) => {
+    if (
+      ts.isCallExpression(n) &&
+      ts.isPropertyAccessExpression(n.expression) &&
+      n.expression.name.text === name
+    ) {
+      found = true;
+    }
+  });
+  return found;
+}
+
+/** Does this expression compare against this string literal anywhere inside it? */
+function mentionsLiteral(node: ts.Node, value: string): boolean {
+  let found = false;
+  each(node, (n) => {
+    if (ts.isStringLiteralLike(n) && n.text === value) {
+      found = true;
+    }
+  });
+  return found;
+}
+
 /** Does this expression read one of these bare identifiers? */
 function readsIdentifier(expr: ts.Node, names: Set<string>): boolean {
   let found = false;
@@ -315,6 +341,74 @@ describe('a failure does not take content off the screen', () => {
   }
 });
 
+describe('a surface that keeps content says the refresh failed', () => {
+  // Computing a stale outcome and then rendering as though nothing happened is
+  // worse than not computing it: to anyone reading the file it looks handled,
+  // and to the reader the content silently stops being current.
+  for (const surface of READING_SURFACES) {
+    const sf = parse(join(APP, surface));
+
+    it(`${surface} renders a failure notice under the stale outcome`, () => {
+      const announced: boolean[] = [];
+      each(sf, (n) => {
+        if (!ts.isJsxSelfClosingElement(n) && !ts.isJsxOpeningElement(n))
+          return;
+        if (n.tagName.getText(sf) !== 'InlineError') return;
+        announced.push(
+          dominators(n).some((test) => mentionsLiteral(test, 'stale')),
+        );
+      });
+      expect(announced).toContain(true);
+    });
+  }
+});
+
+describe('the editor waits for a read that succeeded', () => {
+  const file = 'src/routes/edit.$author.$permlink.tsx';
+  const sf = parse(join(APP, file));
+
+  it('does not open on the presence of a cached entry alone', () => {
+    // Every reading surface treats "there is an entry" as enough. This one
+    // cannot: the editor seeds title, body, tags and metadata from that entry
+    // and the update broadcast carries no version check, so a cached entry
+    // whose re-read failed lets a save overwrite the author's own newer post.
+    const gates: boolean[] = [];
+    each(sf, (n) => {
+      if (!ts.isJsxSelfClosingElement(n) && !ts.isJsxOpeningElement(n)) return;
+      if (n.tagName.getText(sf) !== 'EditPageContent') return;
+      gates.push(
+        dominators(n).some((test) =>
+          readsIdentifier(test, new Set(['readConfirmed'])),
+        ),
+      );
+    });
+    expect(gates).toEqual([true]);
+    expect(callsFunction(sf, 'isReadConfirmed')).toBe(true);
+  });
+});
+
+describe('keeping content is paired with a cache that was filtered', () => {
+  const file = 'src/core/dmca.ts';
+  const sf = ts.createSourceFile(
+    file,
+    readFileSync(join(APP, file), 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+
+  it('throws away post data that predates the lists', () => {
+    // The pairing this whole file exists to protect. The reading surfaces keep
+    // what they have when a request fails; that is only safe while everything
+    // cached was filtered under the lists currently in force. A post cached
+    // before the lists installed was filtered against nothing, so invalidating
+    // it, which only schedules a refetch, leaves takedown-listed content on
+    // screen for the rest of the session when that refetch fails.
+    expect(callsMethod(sf, 'resetQueries')).toBe(true);
+    expect(callsMethod(sf, 'invalidateQueries')).toBe(false);
+  });
+});
+
 describe('a failed page does not turn into a retry storm', () => {
   const file = 'src/features/blog/components/blog-posts-list.tsx';
   const sf = parse(join(APP, file));
@@ -336,6 +430,29 @@ describe('a failed page does not turn into a retry storm', () => {
       );
     });
     expect(sentinels).toEqual([true]);
+  });
+
+  it('retries the operation that failed, not the one that is available', () => {
+    // Choosing off hasNextPage gets the common case wrong: a failed refresh of
+    // the loaded pages while more pages exist would append a page, clearing
+    // the error while leaving every page the reader can see just as stale.
+    const retries: boolean[] = [];
+    each(sf, (n) => {
+      if (!ts.isJsxSelfClosingElement(n) && !ts.isJsxOpeningElement(n)) return;
+      if (n.tagName.getText(sf) !== 'InlineError') return;
+      for (const attr of n.attributes.properties) {
+        if (
+          !ts.isJsxAttribute(attr) ||
+          !ts.isIdentifier(attr.name) ||
+          attr.name.text !== 'onRetry' ||
+          !attr.initializer
+        ) {
+          continue;
+        }
+        retries.push(callsFunction(attr.initializer, 'chooseFeedRetry'));
+      }
+    });
+    expect(retries).toEqual([true]);
   });
 });
 

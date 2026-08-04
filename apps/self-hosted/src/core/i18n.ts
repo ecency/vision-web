@@ -122,7 +122,9 @@ type TranslationKey =
   | 'community_load_failed'
   | 'app_error_title'
   | 'app_error_description'
-  | 'reload_page';
+  | 'reload_page'
+  | 'community_refresh_failed'
+  | 'edit_read_failed';
 
 type Translations = Record<TranslationKey, string>;
 
@@ -256,6 +258,9 @@ const translations: Record<string, Translations> = {
     app_error_description:
       'This page could not be displayed. Reloading usually fixes it.',
     reload_page: 'Reload',
+    community_refresh_failed: 'Could not refresh community details.',
+    edit_read_failed:
+      'Could not load the current version of this post. Editing stays closed until it loads, so a save cannot overwrite newer changes.',
   },
   es: {
     loading: 'Cargando...',
@@ -386,6 +391,10 @@ const translations: Record<string, Translations> = {
     app_error_description:
       'No se pudo mostrar esta página. Recargar suele solucionarlo.',
     reload_page: 'Recargar',
+    community_refresh_failed:
+      'No se pudieron actualizar los datos de la comunidad.',
+    edit_read_failed:
+      'No se pudo cargar la versión actual de esta publicación. La edición permanece cerrada hasta que cargue, para que al guardar no se sobrescriban cambios más nuevos.',
   },
   de: {
     loading: 'Lädt...',
@@ -516,6 +525,10 @@ const translations: Record<string, Translations> = {
     app_error_description:
       'Diese Seite konnte nicht angezeigt werden. Ein Neuladen hilft meistens.',
     reload_page: 'Neu laden',
+    community_refresh_failed:
+      'Community-Daten konnten nicht aktualisiert werden.',
+    edit_read_failed:
+      'Die aktuelle Fassung dieses Beitrags konnte nicht geladen werden. Die Bearbeitung bleibt geschlossen, bis sie geladen ist, damit ein Speichern keine neueren Änderungen überschreibt.',
   },
   fr: {
     loading: "Chargement...",
@@ -648,6 +661,10 @@ const translations: Record<string, Translations> = {
     app_error_description:
       "Cette page n'a pas pu s'afficher. Recharger règle souvent le problème.",
     reload_page: 'Recharger',
+    community_refresh_failed:
+      'Impossible d\'actualiser les informations de la communauté.',
+    edit_read_failed:
+      "Impossible de charger la version actuelle de cet article. L'édition reste fermée tant qu'elle n'a pas chargé, pour qu'un enregistrement n'écrase pas des modifications plus récentes.",
   },
   ko: {
     loading: '로딩 중...',
@@ -776,6 +793,9 @@ const translations: Record<string, Translations> = {
     app_error_description:
       '이 페이지를 표시할 수 없습니다. 새로 고치면 대개 해결됩니다.',
     reload_page: '새로 고침',
+    community_refresh_failed: '커뮤니티 정보를 새로 고치지 못했습니다.',
+    edit_read_failed:
+      '이 게시물의 최신 버전을 불러오지 못했습니다. 저장할 때 더 새로운 변경 사항을 덮어쓰지 않도록, 불러올 때까지 편집을 열지 않습니다.',
   },
   ru: {
     loading: 'Загрузка...',
@@ -905,6 +925,10 @@ const translations: Record<string, Translations> = {
     app_error_description:
       'Не удалось отобразить эту страницу. Обычно помогает перезагрузка.',
     reload_page: 'Перезагрузить',
+    community_refresh_failed:
+      'Не удалось обновить данные сообщества.',
+    edit_read_failed:
+      'Не удалось загрузить текущую версию этого поста. Редактор не откроется, пока она не загрузится, чтобы сохранение не перезаписало более новые изменения.',
   },
 };
 

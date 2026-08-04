@@ -238,6 +238,16 @@ function CommunitySidebar() {
 
   return (
     <div className="lg:sticky lg:top-0 border-b lg:border-b-0 lg:border-l border-theme p-4 sm:p-6 lg:h-screen lg:overflow-y-auto -ml-4">
+      {/* The panel below is a previous response, still true as far as it goes.
+          Saying so is the point: computing the stale outcome and then rendering
+          as if nothing had happened reads as handled when it is not. */}
+      {outcome === "stale" && (
+        <InlineError
+          className="mb-4"
+          message={t("community_refresh_failed")}
+          onRetry={() => refetch()}
+        />
+      )}
       <div className="flex items-center gap-3 mb-4">
         {communityAvatarUrl ? (
           <img

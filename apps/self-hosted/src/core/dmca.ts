@@ -63,14 +63,23 @@ let pending: Promise<void> | undefined;
  * Loads the lists into the SDK config. Memoised: repeated calls share the first
  * request. Always resolves, and always applies whatever it managed to fetch.
  *
- * Post queries are refetched once the lists land. Nothing about rendering may
- * wait on a remote origin, so the fetch is not awaited, which leaves a window
- * where a query resolves first: filterDmcaEntry runs against an empty
- * configuration, and the unfiltered result is cached and displayed for the rest
- * of the session. Refetching closes it. Every post key starts with "posts", so
- * one invalidation reaches them all.
+ * Cached post data is thrown away once the lists land. Nothing about rendering
+ * may wait on a remote origin, so the fetch is not awaited, which leaves a
+ * window where a post query resolves first: filterDmcaEntry runs against an
+ * empty configuration and the unfiltered result is cached. Every post key
+ * starts with "posts", so one call reaches them all.
  *
- * Skipped when nothing was loaded, since there is then nothing to filter and
+ * `resetQueries`, not `invalidateQueries`. Invalidation only marks the data
+ * stale and schedules a refetch, and query-core keeps the existing `data`
+ * through a failed refetch. Reading surfaces now deliberately keep what they
+ * have when a request fails, so an invalidation whose refetch then failed would
+ * leave the pre-list, unfiltered entry on screen for the rest of the session.
+ * Resetting clears the data first, so what is kept through a later failure is
+ * only ever content that was filtered under the lists currently in force, and
+ * a failed refetch shows the failure rather than takedown-listed content.
+ *
+ * Skipped when nothing was loaded, since there is then nothing to filter: the
+ * empty lists are the lists in force, the cache already agrees with them, and
  * the refetch would be pure cost for every visitor whenever the lists are
  * unreachable.
  */
@@ -81,7 +90,7 @@ export function loadDmcaLists(queryClient?: QueryClient): Promise<void> {
     const listed =
       lists.accounts.length + lists.tags.length + lists.posts.length;
     if (listed > 0 && queryClient) {
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
+      queryClient.resetQueries({ queryKey: ['posts'] });
     }
   });
   return pending;

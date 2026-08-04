@@ -164,11 +164,11 @@ describe('loadDmcaLists', () => {
   it('refetches post queries once the lists land', async () => {
     vi.stubGlobal('fetch', respond(FULL));
     const loadDmcaLists = await importLoader();
-    const invalidateQueries = vi.fn();
+    const resetQueries = vi.fn();
 
-    await loadDmcaLists({ invalidateQueries } as never);
+    await loadDmcaLists({ resetQueries } as never);
 
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['posts'] });
+    expect(resetQueries).toHaveBeenCalledWith({ queryKey: ['posts'] });
   });
 
   it('does not refetch when the lists came back empty', async () => {
@@ -181,12 +181,84 @@ describe('loadDmcaLists', () => {
       }),
     );
     const loadDmcaLists = await importLoader();
-    const invalidateQueries = vi.fn();
+    const resetQueries = vi.fn();
 
-    await loadDmcaLists({ invalidateQueries } as never);
+    await loadDmcaLists({ resetQueries } as never);
 
     // Nothing to filter, so the refetch would cost every visitor a round of
-    // requests for no change whenever the lists are unreachable.
-    expect(invalidateQueries).not.toHaveBeenCalled();
+    // requests for no change whenever the lists are unreachable. The empty
+    // lists are the lists in force and the cache already agrees with them.
+    expect(resetQueries).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The property the reading surfaces depend on.
+ *
+ * Those surfaces deliberately keep what they have loaded when a request fails,
+ * because throwing away sixty posts over one timed-out page is worse than
+ * saying the page failed. That is only safe while everything in the cache was
+ * filtered under the lists currently in force. A post cached before the lists
+ * installed was filtered against nothing, so if it merely got marked stale and
+ * its refetch then failed, takedown-listed content would stay on screen.
+ *
+ * Checked against a real QueryClient rather than a spy, because the difference
+ * between invalidating and resetting is not visible in the call, only in what
+ * is left in the cache afterwards.
+ */
+describe('cached posts do not survive the lists installing', () => {
+  const KEY = ['posts', 'entry', '@baduser/stolen-post'];
+  const UNFILTERED = { author: 'baduser', permlink: 'stolen-post', body: 'x' };
+
+  async function seededClient() {
+    const { QueryClient } = await import('@tanstack/react-query');
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    // Exactly the losing side of the startup race: the query resolved while
+    // the lists were still in flight, so filterDmcaEntry ran against nothing.
+    client.setQueryData(KEY, UNFILTERED);
+    return client;
+  }
+
+  it('clears post data that predates the lists', async () => {
+    vi.stubGlobal('fetch', respond(FULL));
+    const loadDmcaLists = await importLoader();
+    const client = await seededClient();
+
+    await loadDmcaLists(client);
+
+    // Not "is marked stale": gone. A refetch that fails must not be able to
+    // put this back on screen.
+    expect(client.getQueryData(KEY)).toBeUndefined();
+    client.clear();
+  });
+
+  it('leaves nothing behind for a failed refetch to fall back to', async () => {
+    vi.stubGlobal('fetch', respond(FULL));
+    const loadDmcaLists = await importLoader();
+    const client = await seededClient();
+
+    await loadDmcaLists(client);
+
+    // Stand in for the refetch exhausting its retries. Under invalidation the
+    // entry is still there at this point, which is the hole.
+    const state = client.getQueryState(KEY);
+    expect(state?.data).toBeUndefined();
+    client.clear();
+  });
+
+  it('touches only post data', async () => {
+    vi.stubGlobal('fetch', respond(FULL));
+    const loadDmcaLists = await importLoader();
+    const client = await seededClient();
+    client.setQueryData(['accounts', 'alice'], { name: 'alice' });
+
+    await loadDmcaLists(client);
+
+    expect(client.getQueryData(['accounts', 'alice'])).toEqual({
+      name: 'alice',
+    });
+    client.clear();
   });
 });

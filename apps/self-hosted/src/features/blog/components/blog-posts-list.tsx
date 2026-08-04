@@ -10,6 +10,7 @@ import { t } from '@/core';
 import { BlogPostItem } from './blog-post-item';
 import { DetectBottom } from './detect-bottom';
 import { useInstanceConfig } from '../hooks/use-instance-config';
+import { chooseFeedRetry } from '../utils/feed-retry';
 import { ErrorMessage } from '@/features/shared/error-message';
 import { InlineError } from '@/features/shared/inline-error';
 import {
@@ -77,6 +78,8 @@ export function BlogPostsList({ filter = 'posts', limit = 20 }: Props) {
     hasNextPage,
     isEnabled,
     isError,
+    isFetchNextPageError,
+    isRefetchError,
     isSuccess,
     refetch,
   } = isCommunityMode ? communityQuery : blogQuery;
@@ -150,7 +153,12 @@ export function BlogPostsList({ filter = 'posts', limit = 20 }: Props) {
         <InlineError
           className="my-6"
           message={t('posts_load_failed')}
-          onRetry={() => (hasNextPage ? fetchNextPage() : refetch())}
+          onRetry={() =>
+            chooseFeedRetry({ isFetchNextPageError, isRefetchError }) ===
+            'next-page'
+              ? fetchNextPage()
+              : refetch()
+          }
         />
       )}
     </div>

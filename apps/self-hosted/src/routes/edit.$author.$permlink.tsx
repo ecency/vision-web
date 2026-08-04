@@ -3,15 +3,17 @@ import { getPostQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import { useIsAuthEnabled, useAuth } from "@/features/auth/hooks";
 import { BlogSidebar } from "@/features/blog/layout/blog-sidebar";
-import { type ReactNode, useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, useRef } from "react";
 import { t } from "@/core";
 import { ErrorMessage } from "@/features/shared/error-message";
+import { InlineError } from "@/features/shared/inline-error";
 import {
   nothingToShow,
   resolveQueryOutcome,
 } from "@/features/shared/query-outcome";
 import { EditPostEditor } from "@/features/publish/components/edit-post-editor";
 import { canEditEntry } from "@/features/publish/utils/can-edit-entry";
+import { isReadConfirmed } from "@/features/publish/utils/read-confirmed";
 
 export const Route = createFileRoute("/edit/$author/$permlink")({
   component: RouteComponent,
@@ -35,6 +37,9 @@ function RouteComponent() {
     }
   }, [isAuthEnabled, canEdit, navigate]);
 
+  /** Set once the post has been read successfully, and never cleared. */
+  const readConfirmed = useRef(false);
+
   const queryOptions = getPostQueryOptions(cleanAuthor, permlink);
   const {
     data: entry,
@@ -54,12 +59,33 @@ function RouteComponent() {
     hasContent: !!entry,
   });
 
+  // Latched during render rather than in an effect, so the editor appears on
+  // the same frame the read succeeds instead of flashing the notice first.
+  readConfirmed.current = isReadConfirmed(outcome, readConfirmed.current);
+
   if (!isAuthEnabled || !canEdit) {
     return null;
   }
 
-  if (entry) {
+  // Presence of an entry is not enough here, unlike every reading surface. A
+  // cached entry whose re-read failed can be older than the post on chain, and
+  // an update broadcast carries no version check, so saving it would overwrite
+  // the author's own newer work with no sign that anything had gone wrong.
+  if (entry && readConfirmed.current) {
     return <EditPageContent entry={entry} />;
+  }
+
+  if (outcome === "stale") {
+    return (
+      <EditShell>
+        <div className="py-12">
+          <InlineError
+            message={t("edit_read_failed")}
+            onRetry={() => refetch()}
+          />
+        </div>
+      </EditShell>
+    );
   }
 
   if (outcome === "failed") {
