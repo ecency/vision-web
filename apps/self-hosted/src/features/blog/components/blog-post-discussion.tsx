@@ -4,7 +4,14 @@ import { callRPC, type Entry, QueryKeys } from '@ecency/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { UilComment } from '@tooni/iconscout-unicons-react';
 import { useMemo, useState } from 'react';
+import { t } from '@/core';
 import { CommentForm } from '@/features/auth';
+import { InlineError } from '@/features/shared/inline-error';
+import {
+  nothingToShow,
+  resolveQueryOutcome,
+} from '@/features/shared/query-outcome';
+import { selectTopLevelComments } from '../utils/top-level-comments';
 import { BlogDiscussionList } from './blog-discussion-list';
 
 interface Props {
@@ -63,7 +70,13 @@ export function BlogPostDiscussion({ entry, isRawContent }: Props) {
   const [order, setOrder] = useState<SortOrder>('created');
   const entryData = entry.original_entry || entry;
 
-  const { data: allComments = [], isLoading } = useQuery({
+  const {
+    data: allComments = [],
+    isEnabled,
+    isError,
+    isSuccess,
+    refetch,
+  } = useQuery({
     // Use the SDK's canonical discussions key so useComment's post-broadcast invalidation
     // (which matches ["posts","discussions",author,permlink,...]) actually refetches this
     // list; a bespoke ["discussions",...] key never matched, so new comments only appeared
@@ -91,44 +104,24 @@ export function BlogPostDiscussion({ entry, isRawContent }: Props) {
   });
 
   const topLevelComments = useMemo(
-    () =>
-      allComments.filter(
-        (x) =>
-          x.parent_author === entryData.author &&
-          x.parent_permlink === entryData.permlink,
-      ),
+    () => selectTopLevelComments(entryData, allComments),
     [allComments, entryData],
   );
 
-  if (isLoading) {
-    return (
-      <div className="mb-8">
-        <CommentForm
-          parentAuthor={entryData.author}
-          parentPermlink={entryData.permlink}
-          className="mb-6"
-        />
-        <div className="text-center py-8 text-theme-muted">
-          Loading comments...
-        </div>
-      </div>
-    );
-  }
+  // Counted on the replies, not on the response: bridge.get_discussion carries
+  // the root post itself, so the response is never empty on a success and
+  // measuring it would make every outcome look like content.
+  const hasComments = topLevelComments.length > 0;
 
-  if (topLevelComments.length === 0) {
-    return (
-      <div className="mb-8">
-        <CommentForm
-          parentAuthor={entryData.author}
-          parentPermlink={entryData.permlink}
-          className="mb-6"
-        />
-        <div className="text-center py-8 text-theme-muted">
-          No comments yet. Be the first to comment!
-        </div>
-      </div>
-    );
-  }
+  // Was: destructuring only `{ data = [], isLoading }`, so once the retries
+  // were spent a failed fetch fell straight through to "No comments yet. Be
+  // the first to comment!" on a post that has a discussion.
+  const outcome = resolveQueryOutcome({
+    isEnabled,
+    isError,
+    isSuccess,
+    hasContent: hasComments,
+  });
 
   return (
     <div className="mb-6 sm:mb-8">
@@ -138,32 +131,60 @@ export function BlogPostDiscussion({ entry, isRawContent }: Props) {
         className="mb-6"
       />
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6 pb-4 sm:pb-6 border-b border-theme">
-        <div className="flex items-center gap-2">
-          <UilComment className="size-4 sm:size-5 text-theme-muted" />
-          <h2 className="text-lg sm:text-xl font-semibold heading-theme">
-            {topLevelComments.length}{' '}
-            {topLevelComments.length === 1 ? 'Comment' : 'Comments'}
-          </h2>
-        </div>
-        <select
-          value={order}
-          onChange={(e) => setOrder(e.target.value as SortOrder)}
-          className="px-3 py-2 border border-theme rounded-theme-sm text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-theme-accent focus:border-transparent transition-theme hover:opacity-70 w-full sm:w-auto bg-theme-primary text-theme-primary font-theme-ui"
-        >
-          <option value="trending">Trending</option>
-          <option value="author_reputation">Reputation</option>
-          <option value="votes">Votes</option>
-          <option value="created">Newest</option>
-        </select>
-      </div>
+      {hasComments && (
+        <>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6 pb-4 sm:pb-6 border-b border-theme">
+            <div className="flex items-center gap-2">
+              <UilComment className="size-4 sm:size-5 text-theme-muted" />
+              <h2 className="text-lg sm:text-xl font-semibold heading-theme">
+                {topLevelComments.length}{' '}
+                {topLevelComments.length === 1 ? 'Comment' : 'Comments'}
+              </h2>
+            </div>
+            <select
+              value={order}
+              onChange={(e) => setOrder(e.target.value as SortOrder)}
+              className="px-3 py-2 border border-theme rounded-theme-sm text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-theme-accent focus:border-transparent transition-theme hover:opacity-70 w-full sm:w-auto bg-theme-primary text-theme-primary font-theme-ui"
+            >
+              <option value="trending">Trending</option>
+              <option value="author_reputation">Reputation</option>
+              <option value="votes">Votes</option>
+              <option value="created">Newest</option>
+            </select>
+          </div>
 
-      <BlogDiscussionList
-        discussionList={allComments}
-        parent={entryData}
-        root={entryData}
-        isRawContent={isRawContent}
-      />
+          <BlogDiscussionList
+            discussionList={allComments}
+            parent={entryData}
+            root={entryData}
+            isRawContent={isRawContent}
+          />
+        </>
+      )}
+
+      {nothingToShow(outcome) && (
+        <div className="text-center py-8 text-theme-muted">
+          {t('comments_empty')}
+        </div>
+      )}
+
+      {outcome === 'pending' && (
+        <div className="text-center py-8 text-theme-muted">
+          {t('comments_loading')}
+        </div>
+      )}
+
+      {(outcome === 'failed' || outcome === 'stale') && (
+        <InlineError
+          className="mt-4"
+          message={
+            outcome === 'stale'
+              ? t('comments_incomplete')
+              : t('comments_load_failed')
+          }
+          onRetry={() => refetch()}
+        />
+      )}
     </div>
   );
 }

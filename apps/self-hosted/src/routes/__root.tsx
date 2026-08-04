@@ -7,6 +7,7 @@ import { FloatingMenu } from "@/features/floating-menu";
 import { AuthProvider, useIsBlogOwner } from "@/features/auth";
 import { ClaimLanding } from "@/features/claim";
 import { ErrorBoundary, SkipToContent } from "@/features/shared";
+import { CrashScreen, reportRenderCrash } from "@/features/shared/crash-screen";
 import {
   clearHiveAuthSession,
   clearUser,
@@ -84,7 +85,11 @@ function RootComponent() {
         </Suspense>
       )}
       <SkipToContent />
-      <ErrorBoundary>
+      {/* Both props are load-bearing. Without `fallback` the boundary prints
+          the raw exception message in a small box with a hardcoded English
+          retry; without `onError` a crash on a live instance is recorded
+          nowhere at all. */}
+      <ErrorBoundary fallback={<CrashScreen />} onError={reportRenderCrash}>
         {isTemplate ? (
           <ClaimLanding />
         ) : (

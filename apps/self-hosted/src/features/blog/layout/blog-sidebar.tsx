@@ -1,5 +1,10 @@
 import { formatMonthYear, InstanceConfigManager, t } from "@/core";
 import { useAuth } from "@/features/auth";
+import { InlineError } from "@/features/shared/inline-error";
+import {
+  nothingToShow,
+  resolveQueryOutcome,
+} from "@/features/shared/query-outcome";
 import { UserAvatar } from "@/features/shared/user-avatar";
 import { TipButton } from "@/features/tipping";
 import {
@@ -7,7 +12,7 @@ import {
   getCommunityContextQueryOptions,
 } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { type ReactNode, useMemo } from "react";
 import { CommunityJoinButton } from "../components/community-join-button";
 import {
   useCommunityData,
@@ -149,8 +154,23 @@ function BlogSidebarContent({ username }: { username: string }) {
   );
 }
 
+/** The panel chrome, so every state below sits in the same box. */
+function CommunitySidebarShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="lg:sticky lg:top-0 border-b lg:border-b-0 lg:border-l border-theme p-4 sm:p-6 lg:h-screen lg:overflow-y-auto">
+      {children}
+    </div>
+  );
+}
+
 function CommunitySidebar() {
-  const { data: community, isLoading } = useCommunityData();
+  const {
+    data: community,
+    isEnabled,
+    isError,
+    isSuccess,
+    refetch,
+  } = useCommunityData();
   const { communityId } = useInstanceConfig();
   const { user } = useAuth();
 
@@ -173,30 +193,61 @@ function CommunitySidebar() {
     return `${proxyBase}/u/${community.name}/avatar/medium`;
   }, [community?.name]);
 
-  if (isLoading) {
+  // Was: `if (!community)` renders "Community not found.", which is what the
+  // owner of a running community was shown whenever one bridge call failed.
+  // Only a response that came back empty says anything about existence.
+  const outcome = resolveQueryOutcome({
+    isEnabled,
+    isError,
+    isSuccess,
+    hasContent: !!community,
+  });
+
+  if (!community) {
+    if (outcome === "failed") {
+      return (
+        <CommunitySidebarShell>
+          <InlineError
+            message={t("community_load_failed")}
+            onRetry={() => refetch()}
+          />
+        </CommunitySidebarShell>
+      );
+    }
+
+    if (nothingToShow(outcome)) {
+      return (
+        <CommunitySidebarShell>
+          <div className="text-sm text-theme-muted">
+            {t("community_not_found")}
+          </div>
+        </CommunitySidebarShell>
+      );
+    }
+
     return (
-      <div className="lg:sticky lg:top-0 border-b lg:border-b-0 lg:border-l border-theme p-4 sm:p-6 lg:h-screen lg:overflow-y-auto">
+      <CommunitySidebarShell>
         <div className="animate-pulse">
           <div className="size-16 rounded-full bg-theme-tertiary mb-4" />
           <div className="h-4 w-32 bg-theme-tertiary rounded mb-2" />
           <div className="h-3 w-48 bg-theme-tertiary rounded" />
         </div>
-      </div>
-    );
-  }
-
-  if (!community) {
-    return (
-      <div className="lg:sticky lg:top-0 border-b lg:border-b-0 lg:border-l border-theme p-4 sm:p-6 lg:h-screen lg:overflow-y-auto">
-        <div className="text-sm text-theme-muted">
-          {t("community_not_found")}
-        </div>
-      </div>
+      </CommunitySidebarShell>
     );
   }
 
   return (
     <div className="lg:sticky lg:top-0 border-b lg:border-b-0 lg:border-l border-theme p-4 sm:p-6 lg:h-screen lg:overflow-y-auto -ml-4">
+      {/* The panel below is a previous response, still true as far as it goes.
+          Saying so is the point: computing the stale outcome and then rendering
+          as if nothing had happened reads as handled when it is not. */}
+      {outcome === "stale" && (
+        <InlineError
+          className="mb-4"
+          message={t("community_refresh_failed")}
+          onRetry={() => refetch()}
+        />
+      )}
       <div className="flex items-center gap-3 mb-4">
         {communityAvatarUrl ? (
           <img

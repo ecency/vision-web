@@ -13,6 +13,11 @@ import { BlogPostDiscussion } from './blog-post-discussion';
 import { BlogPostFooter } from './blog-post-footer';
 import { BlogPostHeader } from './blog-post-header';
 import { ErrorMessage } from '@/features/shared/error-message';
+import { InlineError } from '@/features/shared/inline-error';
+import {
+  nothingToShow,
+  resolveQueryOutcome,
+} from '@/features/shared/query-outcome';
 
 export function BlogPostPage() {
   const params = useParams({ strict: false });
@@ -30,10 +35,21 @@ export function BlogPostPage() {
 
   const {
     data: entry,
-    isLoading,
-    error,
+    isEnabled,
+    isError,
+    isSuccess,
     refetch,
   } = useQuery(getPostQueryOptions(author, permlink));
+
+  // `staleTime` is a minute and `refetchOnMount` is left at its default, so a
+  // reader who returns to an article triggers a background refetch of it. That
+  // refetch failing used to replace the article they were half way through.
+  const outcome = resolveQueryOutcome({
+    isEnabled,
+    isError,
+    isSuccess,
+    hasContent: !!entry,
+  });
 
   // Installed here rather than in BlogPostBody so one listener serves both the
   // post body and the comment bodies below it.
@@ -90,17 +106,31 @@ export function BlogPostPage() {
       : {},
   );
 
-  if (isLoading) {
+  // The article comes first, ahead of every failure branch. Once it has been
+  // read once it stays on screen, and a later failure is reported under it
+  // rather than in place of it.
+  if (entry) {
     return (
       <BlogLayout>
-        <div className="text-center py-12 text-theme-muted">
-          {t('loadingPost')}
-        </div>
+        <article className="space-y-4 sm:space-y-6">
+          <BlogPostHeader entry={entry} />
+          <BlogPostBody entry={entry} isRawContent={isRawContent} />
+          <BlogPostFooter entry={entry} />
+          {outcome === 'stale' && (
+            <InlineError
+              message={t('post_refresh_failed')}
+              onRetry={() => refetch()}
+            />
+          )}
+          {showComments && (
+            <BlogPostDiscussion entry={entry} isRawContent={isRawContent} />
+          )}
+        </article>
       </BlogLayout>
     );
   }
 
-  if (error) {
+  if (outcome === 'failed') {
     return (
       <BlogLayout>
         <ErrorMessage onRetry={() => refetch()} />
@@ -108,7 +138,7 @@ export function BlogPostPage() {
     );
   }
 
-  if (!entry) {
+  if (nothingToShow(outcome)) {
     return (
       <BlogLayout>
         <div className="text-center py-12 text-theme-muted">
@@ -118,16 +148,13 @@ export function BlogPostPage() {
     );
   }
 
+  // 'pending'. Every state above is named, so this is the only one left: the
+  // request is out, or paused because the browser is offline.
   return (
     <BlogLayout>
-      <article className="space-y-4 sm:space-y-6">
-        <BlogPostHeader entry={entry} />
-        <BlogPostBody entry={entry} isRawContent={isRawContent} />
-        <BlogPostFooter entry={entry} />
-        {showComments && (
-          <BlogPostDiscussion entry={entry} isRawContent={isRawContent} />
-        )}
-      </article>
+      <div className="text-center py-12 text-theme-muted">
+        {t('loadingPost')}
+      </div>
     </BlogLayout>
   );
 }

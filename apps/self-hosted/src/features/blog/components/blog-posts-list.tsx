@@ -10,7 +10,13 @@ import { t } from '@/core';
 import { BlogPostItem } from './blog-post-item';
 import { DetectBottom } from './detect-bottom';
 import { useInstanceConfig } from '../hooks/use-instance-config';
+import { chooseFeedRetry } from '../utils/feed-retry';
 import { ErrorMessage } from '@/features/shared/error-message';
+import { InlineError } from '@/features/shared/inline-error';
+import {
+  nothingToShow,
+  resolveQueryOutcome,
+} from '@/features/shared/query-outcome';
 
 interface Props {
   filter?: string;
@@ -65,9 +71,28 @@ export function BlogPostsList({ filter = 'posts', limit = 20 }: Props) {
     select: selectPosts,
   });
 
-  const { data = [], fetchNextPage, isFetching, hasNextPage, isError, refetch } = isCommunityMode
-    ? communityQuery
-    : blogQuery;
+  const {
+    data = [],
+    fetchNextPage,
+    isFetching,
+    hasNextPage,
+    isEnabled,
+    isError,
+    isFetchNextPageError,
+    isRefetchError,
+    isSuccess,
+    refetch,
+  } = isCommunityMode ? communityQuery : blogQuery;
+
+  // Was: `if (isError) return <ErrorMessage />` above the map. query-core keeps
+  // `data` through an error, so that discarded every page already rendered and
+  // the reader's place in them because one later page failed.
+  const outcome = resolveQueryOutcome({
+    isEnabled,
+    isError,
+    isSuccess,
+    hasContent: data.length > 0,
+  });
 
   const previousLengthRef = useRef(0);
 
@@ -80,13 +105,15 @@ export function BlogPostsList({ filter = 'posts', limit = 20 }: Props) {
     }
   }, [data.length]);
 
-  if (isError) {
+  // Nothing loaded and the request failed: there is no content to protect, so
+  // the full panel is still right. It is the only branch that may take over.
+  if (outcome === 'failed') {
     return <ErrorMessage onRetry={() => refetch()} />;
   }
 
   return (
     <div className="blog-posts-list">
-      {data.length === 0 && !isFetching && (
+      {nothingToShow(outcome) && !isFetching && (
         <div className="text-center py-12 text-theme-muted">{t('noPosts')}</div>
       )}
 
@@ -102,12 +129,37 @@ export function BlogPostsList({ filter = 'posts', limit = 20 }: Props) {
         );
       })}
 
-      {hasNextPage && <DetectBottom onBottom={() => fetchNextPage()} />}
+      {/* Unmounted while the last page is failing. The reader is sitting at the
+          bottom of the feed, so leaving it mounted would refire the same fetch
+          the moment the retries stop, in a loop. The strip below carries the
+          retry instead, as a deliberate one. */}
+      {hasNextPage && outcome !== 'stale' && (
+        <DetectBottom onBottom={() => fetchNextPage()} />
+      )}
 
       {isFetching && (
         <div className="text-center py-8 text-theme-muted">
           {t('loadingMore')}
         </div>
+      )}
+
+      {/* Asked, no answer, not fetching: a fetch paused while offline looks
+          exactly like this. It is not evidence that the author has no posts. */}
+      {outcome === 'pending' && !isFetching && (
+        <div className="text-center py-12 text-theme-muted">{t('loading')}</div>
+      )}
+
+      {outcome === 'stale' && !isFetching && (
+        <InlineError
+          className="my-6"
+          message={t('posts_load_failed')}
+          onRetry={() =>
+            chooseFeedRetry({ isFetchNextPageError, isRefetchError }) ===
+            'next-page'
+              ? fetchNextPage()
+              : refetch()
+          }
+        />
       )}
     </div>
   );
