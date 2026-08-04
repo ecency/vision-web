@@ -7,8 +7,11 @@ import { Link } from "@tanstack/react-router";
 import { useIsAuthEnabled, useIsAuthenticated, useIsBlogOwner } from "../hooks";
 import { resolveCreatePostTarget } from "../utils/create-post-target";
 
+// `no-underline` and `font-serif` carried a `!` because the unlayered `a` and
+// `*` rules in globals.css beat every utility. Those rules are in @layer base
+// now, so an ordinary utility wins and the `!important` is not needed.
 const BUTTON_CLASS =
-  "fixed bottom-6 right-30 z-50 px-4 py-2 flex items-center text-sm !no-underline rounded-full border border-gray-400 dark:border-gray-600 !font-serif";
+  "fixed bottom-6 right-30 z-50 px-4 py-2 flex items-center text-sm no-underline rounded-full border border-gray-400 dark:border-gray-600 font-serif";
 
 export function CreatePostButton() {
   const isBlogOwner = useIsBlogOwner();

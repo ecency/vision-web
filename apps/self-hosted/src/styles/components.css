@@ -1,117 +1,21 @@
-/* Component Utility Classes - Using Theme Variables */
-
-/* Text Colors */
-.text-theme-primary {
-  color: var(--theme-text-primary);
-}
-
-.text-theme-secondary {
-  color: var(--theme-text-secondary);
-}
-
-.text-theme-muted {
-  color: var(--theme-text-muted);
-}
-
-.text-theme-disabled {
-  color: var(--theme-text-disabled);
-}
-
-.text-theme-accent {
-  color: var(--theme-accent);
-}
-
-/* Background Colors */
-.bg-theme {
-  background-color: var(--theme-bg-primary);
-}
-
-.bg-theme-primary {
-  background-color: var(--theme-bg-primary);
-}
-
-.bg-theme-secondary {
-  background-color: var(--theme-bg-secondary);
-}
-
-.bg-theme-tertiary {
-  background-color: var(--theme-bg-tertiary);
-}
-
-.bg-theme-card {
-  background-color: var(--theme-bg-card);
-}
-
-.bg-theme-hover {
-  background-color: var(--theme-bg-secondary);
-}
-
-.hover\:bg-theme-hover:hover {
-  background-color: var(--theme-bg-tertiary);
-}
-
-/* Font Families */
-.font-theme-body {
-  font-family: var(--theme-font-body);
-}
-
-.font-theme-heading {
-  font-family: var(--theme-font-heading);
-}
-
-.font-theme-ui {
-  font-family: var(--theme-font-ui);
-}
-
-.font-theme-mono {
-  font-family: var(--theme-font-mono);
-}
-
-/* Borders */
-.border-theme {
-  border-color: var(--theme-border);
-}
-
-.border-theme-strong {
-  border-color: var(--theme-border-strong);
-}
-
-/* Selected-state border, the counterpart of .text-theme-accent. The tipping
-   currency cards already asked for this class; without it the selected card
-   fell back to Tailwind's default currentColor border. */
-.border-theme-accent {
-  border-color: var(--theme-accent);
-}
-
-/* Border Radius */
-.rounded-theme-sm {
-  border-radius: var(--theme-radius-sm);
-}
-
-.rounded-theme {
-  border-radius: var(--theme-radius);
-}
-
-.rounded-theme-lg {
-  border-radius: var(--theme-radius-lg);
-}
-
-.rounded-theme-full {
-  border-radius: var(--theme-radius-full);
-}
-
-/* Shadows */
-.shadow-theme-sm {
-  box-shadow: var(--theme-shadow-sm);
-}
-
-.shadow-theme {
-  box-shadow: var(--theme-shadow);
-}
-
-.shadow-theme-lg {
-  box-shadow: var(--theme-shadow-lg);
-}
+/*
+ * Composite theme classes.
+ *
+ * Invariant: no rule here may name a class that a namespace in
+ * theme-tokens.css generates. These rules are unlayered, so a survivor would
+ * beat the generated utility and, worse, keep every `hover:`, `focus:` and
+ * `placeholder:` variant of it dead. src/styles/theme-classes.test.ts fails on
+ * a class that is both generated and hand-written.
+ *
+ * What lives here: composites that set several properties at once, the few
+ * single-property classes Tailwind has no namespace for (`content-width-theme`,
+ * `layout-gap-theme`, `transition-theme`), and the ancestor-scoped [data-*]
+ * blocks that drive layout from the tenant config.
+ *
+ * These stay unlayered on purpose. A composite applied to an element that still
+ * carries the utilities it replaces produces the composite's look, not the old
+ * one, so a missed cleanup is visible rather than a silent no-op.
+ */
 
 /* Typography Combinations */
 .heading-theme {
@@ -192,19 +96,6 @@
 
 .transition-theme-slow {
   transition: all var(--theme-transition-slow);
-}
-
-/* Icon Colors (for use with SVG icons) */
-.icon-theme-primary {
-  color: var(--theme-text-primary);
-}
-
-.icon-theme-muted {
-  color: var(--theme-text-muted);
-}
-
-.icon-theme-accent {
-  color: var(--theme-accent);
 }
 
 /* Meta text style (for dates, stats, etc.) */

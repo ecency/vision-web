@@ -52,7 +52,7 @@ export function TippingWalletQr({
       alt="Wallet address QR code"
       width={size}
       height={size}
-      className={`rounded border border-theme ${className ?? ""}`}
+      className={`rounded border border-theme h-auto ${className ?? ""}`}
     />
   );
 }
