@@ -54,19 +54,24 @@
   --theme-link-decoration-color: color-mix(in srgb, var(--theme-accent) 40%, transparent);
   --theme-link-decoration-hover: var(--theme-accent);
 
-  /* Tag style - Gradient-friendly */
-  --theme-tag-bg: linear-gradient(
-    135deg,
-    rgba(124, 58, 237, 0.1),
-    rgba(37, 99, 235, 0.1)
-  );
-  --theme-tag-text: #7c3aed;
+  /* Tag style - fill comes from the accent tint in variables.css */
+  --theme-tag-text: var(--theme-accent-text-light, #7c3aed);
   --theme-tag-radius: 9999px;
 
   /* Glass morphism */
   --theme-glass-bg: rgba(255, 255, 255, 0.6);
   --theme-glass-border: rgba(255, 255, 255, 0.3);
   --theme-glass-blur: blur(20px);
+
+  /*
+   * Card treatment: glass. This is the one template whose cards are not a flat
+   * surface, and it is the reason the template is called modern-gradient. The
+   * tokens are var() references, so the dark block re-declaring --theme-glass-*
+   * re-substitutes here with no second card rule.
+   */
+  --theme-card-bg: var(--theme-glass-bg);
+  --theme-card-border: 1px solid var(--theme-glass-border);
+  --theme-card-backdrop: var(--theme-glass-blur);
 
   /* Gradients */
   --theme-gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -106,12 +111,7 @@
   --theme-border: rgba(148, 163, 184, 0.15);
   --theme-border-strong: rgba(148, 163, 184, 0.25);
 
-  --theme-tag-bg: linear-gradient(
-    135deg,
-    rgba(167, 139, 250, 0.15),
-    rgba(96, 165, 250, 0.15)
-  );
-  --theme-tag-text: #a78bfa;
+  --theme-tag-text: var(--theme-accent-text-dark, #a78bfa);
 
   --theme-glass-bg: rgba(30, 30, 50, 0.7);
   --theme-glass-border: rgba(255, 255, 255, 0.1);
@@ -120,17 +120,18 @@
   --theme-gradient-subtle: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
 }
 
-/* Modern Gradient specific styles */
-[data-style-template="modern-gradient"] .bg-theme-card {
-  background: var(--theme-glass-bg);
-  backdrop-filter: var(--theme-glass-blur);
-  -webkit-backdrop-filter: var(--theme-glass-blur);
-  border: 1px solid var(--theme-glass-border);
-}
+/*
+ * The glass card used to live here as `.bg-theme-card`, a rule no component
+ * could reach: `bg-theme-card` is a Tailwind utility name and nothing renders
+ * it, so the default template's defining treatment painted on nothing. It is
+ * now three card tokens in the block above, which `.card-theme` reads, and
+ * every other template states its own card treatment the same way.
+ */
 
 /* `.tag-theme` is the class the chips actually carry; `.theme-tag` matched
-   nothing, so this rule never applied. The gradient background now comes from
-   the shared .tag-theme rule; only the border is specific to this template. */
+   nothing, so this rule never applied. The chip fill is now a tint of the
+   accent, mixed once in variables.css so that an owner's accent reaches the
+   chips on every template; only the border is specific to this one. */
 [data-style-template="modern-gradient"] .tag-theme {
   border: 1px solid var(--theme-border);
 }

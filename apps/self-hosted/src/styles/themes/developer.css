@@ -52,10 +52,19 @@
   --theme-link-decoration-color: rgba(137, 180, 250, 0.4);
   --theme-link-decoration-hover: #89b4fa;
 
-  /* Tag style - Code-like */
-  --theme-tag-bg: #313244;
-  --theme-tag-text: #cdd6f4;
+  /*
+   * Tag style - Code-like. The fill comes from the accent tint in
+   * variables.css. This block is the DARK palette (developer is dark by
+   * default and [data-theme="light"] is the override), so the text reads the
+   * dark-mode correction.
+   */
+  --theme-tag-text: var(--theme-accent-text-dark, #cdd6f4);
   --theme-tag-radius: 4px;
+
+  /* Card treatment: terminal panel, same fill as the page, visible rule */
+  --theme-card-bg: var(--theme-bg-card);
+  --theme-card-border: 1px solid var(--theme-border);
+  --theme-card-backdrop: none;
 
   /* Code syntax colors (Catppuccin-inspired) */
   --theme-code-bg: #1e1e2e;
@@ -98,8 +107,7 @@
   --theme-border: #ccd0da;
   --theme-border-strong: #bcc0cc;
 
-  --theme-tag-bg: #ccd0da;
-  --theme-tag-text: #4c4f69;
+  --theme-tag-text: var(--theme-accent-text-light, #4c4f69);
 
   --theme-code-bg: #e6e9ef;
   --theme-code-text: #4c4f69;
