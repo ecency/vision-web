@@ -28,6 +28,7 @@ class PublishButton {
   inFlight = false;
   isPublishing = false;
   canPublish = true;
+  needsConfirmation = true;
   /** How many times a broadcast was actually started. */
   broadcasts = 0;
   readonly log: PublishPress[] = [];
@@ -45,6 +46,7 @@ class PublishButton {
       canPublish: this.canPublish,
       isPublishing: this.isPublishing,
       inFlight: this.inFlight,
+      needsConfirmation: this.needsConfirmation,
       armed: this.armed,
     };
   }
@@ -142,23 +144,95 @@ describe('one publish button, two presses, one broadcast', () => {
     expect(button.armed).toBe(false);
   });
 
-  it('publishes on exactly one of the sixteen states', () => {
+  it('publishes on exactly three of the thirty-two states', () => {
     // The whole truth table, so a later change that widens the publishing
     // condition shows up as a diff here rather than as a duplicate post.
     const publishing: PublishPressState[] = [];
     for (const canPublish of [false, true]) {
       for (const isPublishing of [false, true]) {
         for (const inFlight of [false, true]) {
-          for (const armed of [false, true]) {
-            const state = { canPublish, isPublishing, inFlight, armed };
-            if (nextPublishPress(state) === 'publish') publishing.push(state);
+          for (const needsConfirmation of [false, true]) {
+            for (const armed of [false, true]) {
+              const state = {
+                canPublish,
+                isPublishing,
+                inFlight,
+                needsConfirmation,
+                armed,
+              };
+              if (nextPublishPress(state) === 'publish') publishing.push(state);
+            }
           }
         }
       }
     }
 
     expect(publishing).toEqual([
-      { canPublish: true, isPublishing: false, inFlight: false, armed: true },
+      {
+        canPublish: true,
+        isPublishing: false,
+        inFlight: false,
+        needsConfirmation: false,
+        armed: false,
+      },
+      {
+        canPublish: true,
+        isPublishing: false,
+        inFlight: false,
+        needsConfirmation: false,
+        armed: true,
+      },
+      {
+        canPublish: true,
+        isPublishing: false,
+        inFlight: false,
+        needsConfirmation: true,
+        armed: true,
+      },
     ]);
+  });
+});
+
+describe('nothing irreversible means nothing to confirm', () => {
+  /**
+   * The finding this exists for: an instance that took the reward control off,
+   * or one clamped off because "Create post" points elsewhere, was made to
+   * press twice for a publish that adds nothing to the operation array. The
+   * second press protected nothing and was a behaviour change imposed on
+   * owners who opted out.
+   */
+  it('publishes on the first press when nothing extra is emitted', () => {
+    const button = new PublishButton();
+    button.needsConfirmation = false;
+    expect(button.press()).toBe('publish');
+    expect(button.broadcasts).toBe(1);
+  });
+
+  it('still cannot double fire without the confirm step', () => {
+    // The confirm step is not what stops a double click, and this is the path
+    // where it is absent, so the synchronous latch has to carry it alone.
+    const button = new PublishButton();
+    button.needsConfirmation = false;
+    for (let i = 0; i < 20; i += 1) button.press();
+    expect(button.broadcasts).toBe(1);
+  });
+
+  it('does nothing on an incomplete draft either', () => {
+    const button = new PublishButton();
+    button.needsConfirmation = false;
+    button.canPublish = false;
+    expect(button.press()).toBe('ignore');
+    expect(button.broadcasts).toBe(0);
+  });
+
+  it('asks again as soon as something irreversible is added', () => {
+    // Turning the reward selection to one that emits an operation puts the
+    // confirm step back, on the same button, with no reload.
+    const button = new PublishButton();
+    button.needsConfirmation = false;
+    button.needsConfirmation = true;
+    expect(button.press()).toBe('arm');
+    expect(button.broadcasts).toBe(0);
+    expect(button.press()).toBe('publish');
   });
 });

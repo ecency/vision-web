@@ -203,6 +203,45 @@ function importedBindings(sf: ts.SourceFile): Map<string, string> {
   return bindings;
 }
 
+/**
+ * Object literals bound once to a `const` in this file, by name.
+ *
+ * A payload does not stop being readable because it was given a name. The
+ * publish bar builds its variables once and both confirms and publishes that
+ * one object, which is the only way the confirmation can be for the payload
+ * that goes out, so the walk follows the name to the literal.
+ *
+ * Deliberately narrow. `const` only, since a `let` can be reassigned to
+ * anything after the walk has looked at it, and a name declared more than once
+ * in the file is ambiguous and stays unreadable rather than being guessed at.
+ */
+function constObjectLiterals(
+  sf: ts.SourceFile,
+): Map<string, ts.ObjectLiteralExpression | null> {
+  const found = new Map<string, ts.ObjectLiteralExpression | null>();
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.parent &&
+      ts.isVariableDeclarationList(node.parent)
+    ) {
+      const isConst =
+        (node.parent.flags & ts.NodeFlags.Const) === ts.NodeFlags.Const;
+      const name = node.name.text;
+      const literal =
+        isConst && node.initializer && ts.isObjectLiteralExpression(node.initializer)
+          ? node.initializer
+          : null;
+      // Declared twice, or not a const object literal: unreadable either way.
+      found.set(name, found.has(name) ? null : literal);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
+
 /** What a payload wrote at its `options` key. */
 type OptionsValue =
   | { kind: 'call'; callee: string; imported: string | null; text: string }
@@ -230,6 +269,7 @@ interface Payload {
 function payloadsIn(sf: ts.SourceFile, rel: string): Payload[] {
   const aliases = mutationAliases(sf);
   const bindings = importedBindings(sf);
+  const locals = constObjectLiterals(sf);
   const found: Payload[] = [];
 
   const readOptions = (property: ts.ObjectLiteralElementLike): OptionsValue => {
@@ -260,21 +300,29 @@ function payloadsIn(sf: ts.SourceFile, rel: string): Payload[] {
         /(^|\.)mutate$/.test(callee) ||
         aliases.has(callee);
 
-      const [first] = node.arguments;
+      const [argument] = node.arguments;
+      // An identifier is followed to its `const` object literal, if it has
+      // one. An identifier that resolves to nothing is unreadable, exactly as
+      // it was before this could follow anything at all.
+      const first =
+        argument && ts.isIdentifier(argument)
+          ? (locals.get(argument.text) ?? null)
+          : argument;
+
       if (isMutation) {
         const line =
           sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
         const where = `${rel}:${line}`;
 
-        if (!first) {
+        if (!argument) {
           // No payload at all cannot carry an options key.
           found.push({ where, file: rel, keys: [], argument: '<no argument>' });
-        } else if (!ts.isObjectLiteralExpression(first)) {
+        } else if (!first || !ts.isObjectLiteralExpression(first)) {
           found.push({
             where,
             file: rel,
             keys: null,
-            argument: first.getText(sf).replace(/\s+/g, ' '),
+            argument: argument.getText(sf).replace(/\s+/g, ' '),
           });
         } else {
           const keys: string[] = [];
@@ -479,6 +527,55 @@ describe('no deploy of this layer changes a broadcast payload', () => {
     }
   });
 
+  it('confirms the payload it publishes, not a second copy of it', () => {
+    // The confirmation is granted to a payload identity. If the object handed
+    // to `publishConfirmationKey` were built separately from the one handed to
+    // the mutation, the two could differ, and the author would be agreeing to
+    // something other than what goes out. Checked as an identity of syntax
+    // nodes: both arguments must be the same name, bound once, to one literal.
+    const rel = 'features/publish/components/publish-action-bar.tsx';
+    const sf = parse(join(SRC, ...rel.split('/')));
+    const aliases = mutationAliases(sf);
+    const locals = constObjectLiterals(sf);
+
+    const callsTo = (predicate: (callee: string) => boolean): string[][] => {
+      const calls: string[][] = [];
+      const visit = (node: ts.Node) => {
+        if (
+          ts.isCallExpression(node) &&
+          predicate(node.expression.getText(sf))
+        ) {
+          calls.push(node.arguments.map((argument) => argument.getText(sf)));
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sf);
+      return calls;
+    };
+
+    const published = callsTo((callee) => aliases.has(callee));
+    expect(published).toHaveLength(1);
+    expect(published[0]).toHaveLength(1);
+    const payload = published[0][0];
+
+    // Every function that decides whether a confirmation is held, or mints
+    // one, has to be looking at that same object.
+    const confirmations = callsTo(
+      (callee) =>
+        callee === 'publishConfirmationKey' || callee === 'isConfirmationHeld',
+    );
+    expect(confirmations.length).toBeGreaterThanOrEqual(2);
+    for (const call of confirmations) {
+      expect(call, `confirmation call does not read ${payload}`).toContain(
+        payload,
+      );
+    }
+
+    // And that name is one object literal, so "the same name" means the same
+    // object rather than two things that happen to be spelled alike.
+    expect(locals.get(payload)).toBeTruthy();
+  });
+
   it('pins the SDK gate the absence of options relies on', () => {
     // If this ever stops gating, "no options key" stops meaning "no operation".
     const report = gateReport(parse(SDK_COMMENT), SDK_GATE, SDK_BUILDER);
@@ -554,11 +651,29 @@ describe('the guard catches the ways around it', () => {
       'm.mutateAsync(options.payload);',
       'm.mutateAsync(buildPayload());',
       'm.mutate(payload as CommentPayload);',
+      // Named, but by something the walk cannot read through.
+      'const payload = buildPayload(); m.mutateAsync(payload);',
+      'let payload = { title: t }; payload = other; m.mutateAsync(payload);',
+      'const payload = { ...base }; m.mutateAsync(payload);',
+      // Two declarations of the name: which one reaches the call is not
+      // something this walk can decide, so it decides nothing.
+      'const payload = { title: t }; function f() { const payload = { options: o }; m.mutateAsync(payload); }',
     ]) {
       const [payload] = payloadsOf(code);
       expect(payload, code).toBeDefined();
       expect(payload.keys, code).toBeNull();
     }
+  });
+
+  it('follows a const object literal to its keys', () => {
+    // Naming the payload is allowed, and has to be: the publish bar confirms
+    // and publishes one object. It is read exactly as if it were written at
+    // the call site, options key and all.
+    const [payload] = payloadsOf(
+      'const variables = { title: t, options: o }; m.mutateAsync(variables);',
+    );
+    expect(payload.keys).toEqual(['options', 'title']);
+    expect(payload.options?.kind).toBe('other');
   });
 
   it('refuses a literal whose keys it cannot enumerate', () => {

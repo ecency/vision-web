@@ -4,13 +4,16 @@ import { useNavigate } from '@tanstack/react-router';
 // Imported from the module rather than the `@/core` barrel: the barrel pulls
 // in `configuration-loader`, which imports the build-time `config.json` that
 // only exists after an image build, so a test of this hook could not load it.
-import type { RewardType } from '@/core/hive-layer';
-import { resolveCommentOptions } from '@/core/hive-layer';
+import {
+  resolveCommentOptions,
+  resolveRewardSelection,
+} from '@/core/hive-layer';
 import { useAuth } from '@/features/auth/hooks';
 import { useHiveLayer } from '@/features/blog/hooks/use-hive-layer';
 import { useInstanceConfig } from '@/features/blog/hooks/use-instance-config';
 import { createBroadcastAdapter } from '@/providers/sdk';
 import { createPermlink } from '../utils/permlink';
+import type { PublishVariables } from '../utils/publish-variables';
 import { resolvePublishTarget } from '../utils/publish-target';
 
 export function usePublishPost({
@@ -28,17 +31,7 @@ export function usePublishPost({
 
   return useMutation({
     mutationKey: ['publish-post'],
-    mutationFn: async ({
-      title,
-      body,
-      tags,
-      rewardType,
-    }: {
-      title: string;
-      body: string;
-      tags: string[];
-      rewardType: RewardType;
-    }) => {
+    mutationFn: async ({ title, body, tags, rewardType }: PublishVariables) => {
       if (!user) {
         throw new Error('Authentication required to publish post');
       }
@@ -69,10 +62,10 @@ export function usePublishPost({
       // The instance is not allowed to choose a reward split, only whether the
       // author is asked at all. With the control switched off there is nothing
       // to honour, and a selection left in a stale draft must not survive the
-      // owner turning the panel off, so it collapses back to the untouched
-      // selection here rather than at the render site.
-      const rewardSelection =
-        authorRewards === 'author' ? rewardType : 'default';
+      // owner turning the panel off. Applied here, at the broadcast site, and
+      // through the same function the composer uses to decide what it is
+      // asking the author to confirm.
+      const rewardSelection = resolveRewardSelection(authorRewards, rewardType);
 
       await commentMutation.mutateAsync({
         author: user.username,

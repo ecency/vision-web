@@ -282,3 +282,38 @@ export function resolveCommentOptions(
     beneficiaries: [],
   };
 }
+
+/**
+ * The selection an instance will actually honour.
+ *
+ * One definition, used by the composer and by the publish hook, because the
+ * two have to agree. The hook applies it again at the broadcast site, which is
+ * where it is load-bearing; the composer applies it to know what it is about to
+ * ask the author to confirm. If each had its own expression, an instance could
+ * ask for a confirmation it then does not act on, or act without asking.
+ */
+export function resolveRewardSelection(
+  authorRewards: AuthorRewards,
+  selection: RewardType | undefined,
+): RewardType {
+  return authorRewards === 'author' ? resolveRewardType(selection) : 'default';
+}
+
+/**
+ * Whether publishing this selection would put something on chain that no later
+ * edit can reach.
+ *
+ * This is the rule for asking the author to press twice, and it is derived from
+ * `resolveCommentOptions` rather than from the posture flag on purpose. The
+ * second press exists because a `comment_options` operation cannot be edited or
+ * removed afterwards. Where none is emitted, the publish is an ordinary post
+ * that its author can edit, and there is nothing a confirmation would protect,
+ * so asking would be a behaviour change bought for nothing. Reading the answer
+ * off the same function that builds the operation means the question and the
+ * broadcast cannot drift apart.
+ */
+export function emitsUneditableOperation(
+  selection: RewardType | undefined,
+): boolean {
+  return resolveCommentOptions(selection) !== undefined;
+}

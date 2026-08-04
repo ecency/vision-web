@@ -6,8 +6,10 @@ import {
   HIVE_LAYER_SEED,
   PAYOUT_LABEL_MAX_LENGTH,
   type ResolvedHiveLayer,
+  emitsUneditableOperation,
   resolveCommentOptions,
   resolveHiveLayer,
+  resolveRewardSelection,
   resolveRewardType,
   UNLIMITED_MAX_ACCEPTED_PAYOUT,
 } from './hive-layer';
@@ -391,6 +393,58 @@ describe("what the author's reward choice puts on chain", () => {
       expect(
         ['maxAcceptedPayout', 'percentHbd', 'beneficiaries', 'rewardType'],
       ).not.toContain(key);
+    }
+  });
+});
+
+describe('what the instance honours, and what it has to ask about', () => {
+  /**
+   * One definition of the clamp, used by the composer and by the publish hook.
+   * Two expressions of it would let the composer ask for a confirmation the
+   * hook then ignores, or let the hook broadcast something nobody confirmed.
+   */
+  it('honours the author selection only where the control is offered', () => {
+    for (const selection of ['default', 'sp', 'dp'] as const) {
+      expect(resolveRewardSelection('author', selection)).toBe(selection);
+      expect(resolveRewardSelection('off', selection)).toBe('default');
+    }
+  });
+
+  it('collapses a selection it does not recognise, in either posture', () => {
+    for (const posture of ['author', 'off'] as const) {
+      expect(resolveRewardSelection(posture, 'SP' as never)).toBe('default');
+      expect(resolveRewardSelection(posture, undefined)).toBe('default');
+    }
+  });
+
+  /**
+   * The rule for asking twice. Read off the function that builds the
+   * operation, so "is there anything to confirm" and "here is what will be
+   * broadcast" are the same question asked once.
+   */
+  it('asks only where something uneditable would be emitted', () => {
+    expect(emitsUneditableOperation('default')).toBe(false);
+    expect(emitsUneditableOperation('sp')).toBe(true);
+    expect(emitsUneditableOperation('dp')).toBe(true);
+    expect(emitsUneditableOperation(undefined)).toBe(false);
+    expect(emitsUneditableOperation('decline' as never)).toBe(false);
+  });
+
+  it('never asks on an instance that does not offer the control', () => {
+    // The behaviour an owner who opted out keeps: one press, and an operation
+    // array identical to the one they had before this shipped.
+    for (const selection of ['default', 'sp', 'dp'] as const) {
+      const honoured = resolveRewardSelection('off', selection);
+      expect(emitsUneditableOperation(honoured), selection).toBe(false);
+      expect(resolveCommentOptions(honoured), selection).toBeUndefined();
+    }
+  });
+
+  it('agrees with itself: it asks exactly when an operation is built', () => {
+    for (const selection of ['default', 'sp', 'dp', 'nonsense'] as const) {
+      expect(emitsUneditableOperation(selection as never)).toBe(
+        resolveCommentOptions(selection as never) !== undefined,
+      );
     }
   });
 });

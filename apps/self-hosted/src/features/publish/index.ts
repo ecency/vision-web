@@ -16,4 +16,9 @@ export { useUpdatePost } from "./hooks/use-update-post";
 // Utils
 export { createPermlink } from "./utils/permlink";
 export { nextPublishPress } from "./utils/publish-press";
+export {
+  isConfirmationHeld,
+  publishConfirmationKey,
+} from "./utils/publish-variables";
+export type { PublishVariables } from "./utils/publish-variables";
 export { htmlToMarkdown, markdownToHtml } from "./utils/markdown";

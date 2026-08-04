@@ -1,12 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { usePublishState } from "../hooks/use-publish-state";
 import { usePublishPost } from "../hooks/use-publish-post";
 import { Link } from "@tanstack/react-router";
 import { UilArrowLeft } from "@tooni/iconscout-unicons-react";
 import { t } from "@/core";
+import {
+  emitsUneditableOperation,
+  resolveRewardSelection,
+} from "@/core/hive-layer";
 import { useHiveLayer } from "@/features/blog/hooks/use-hive-layer";
 import { PublishDisclosure } from "@/features/shared/hive-disclosure";
 import { nextPublishPress } from "../utils/publish-press";
+import type { PublishVariables } from "../utils/publish-variables";
+import {
+  isConfirmationHeld,
+  publishConfirmationKey,
+} from "../utils/publish-variables";
 import { PublishRewardSelector } from "./publish-reward-selector";
 
 interface Props {
@@ -26,8 +35,16 @@ export function PublishActionBar({ onSuccess }: Props) {
     error,
   } = usePublishPost({ beforeNavigate: clearAll });
 
-  /** A press has asked to publish and is waiting for a second one. */
-  const [armed, setArmed] = useState(false);
+  /**
+   * The publish variables a confirmation is currently held for, or null.
+   *
+   * Not a boolean. A confirmation belongs to one exact payload, so it is stored
+   * as that payload's identity and compared on every render. Editing the title,
+   * the body, the tags or the reward choice produces a different key and the
+   * button is no longer armed, with no render in between where it would still
+   * publish on the next press.
+   */
+  const [armedFor, setArmedFor] = useState<string | null>(null);
   /**
    * A broadcast has been started and has not settled.
    *
@@ -48,37 +65,46 @@ export function PublishActionBar({ onSuccess }: Props) {
     safeContent.trim().length > 0 &&
     safeTags.length > 0;
 
-  // Changing what would be broadcast withdraws the confirmation. Otherwise an
-  // author could arm the button on one reward split and publish another.
-  useEffect(() => {
-    setArmed(false);
-  }, [rewardType]);
+  // Built once and both confirmed and published, so the payload the author
+  // agreed to is the payload that goes out. A second object built for the
+  // confirmation could drift from this one the day a field is added.
+  const variables: PublishVariables = {
+    title: safeTitle,
+    body: safeContent,
+    tags: safeTags,
+    rewardType,
+  };
+  const armed = isConfirmationHeld(armedFor, variables);
+
+  // Ask a second time exactly when this publish would put something on chain
+  // that no later edit can reach. Where the instance offers no reward control,
+  // or the author left the selection alone, nothing irreversible is added and
+  // the button publishes on the first press as it always did.
+  const needsConfirmation = emitsUneditableOperation(
+    resolveRewardSelection(authorRewards, variables.rewardType),
+  );
 
   const handlePublish = async () => {
     const press = nextPublishPress({
       canPublish,
       isPublishing,
       inFlight: inFlight.current,
+      needsConfirmation,
       armed,
     });
 
     if (press === "ignore") return;
 
     if (press === "arm") {
-      setArmed(true);
+      setArmedFor(publishConfirmationKey(variables));
       return;
     }
 
     inFlight.current = true;
-    setArmed(false);
+    setArmedFor(null);
 
     try {
-      await publishPost({
-        title: safeTitle,
-        body: safeContent,
-        tags: safeTags,
-        rewardType,
-      });
+      await publishPost(variables);
       onSuccess?.();
     } catch (err) {
       // Error is handled by usePublishPost hook

@@ -4,6 +4,10 @@ import ts from 'typescript';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildCommentOp, buildCommentOptionsOp } from '@ecency/sdk';
 import type { AuthorRewards, RewardType } from '@/core/hive-layer';
+import {
+  emitsUneditableOperation,
+  resolveRewardSelection,
+} from '@/core/hive-layer';
 
 /**
  * What this app actually broadcasts when an author presses publish.
@@ -337,6 +341,24 @@ describe('the operation array an author actually signs', () => {
 
     expect(ops[1][1].max_accepted_payout).toBe('1000000.000 HBD');
     expect(ops[1][1].allow_votes).toBe(true);
+  });
+
+  it('asks for a confirmation exactly when the operation array grows', async () => {
+    // The publish button asks twice only where something uneditable is being
+    // added. Checked against the operation array this same file builds, so the
+    // rule cannot say one thing while the broadcast does another. The `off`
+    // rows are the behaviour an owner who took the control away keeps: one
+    // press, one operation.
+    for (const posture of ['author', 'off'] as const) {
+      for (const selection of ['default', 'sp', 'dp'] as const) {
+        authorRewards = posture;
+        const ops = buildOperations(await publish(selection));
+        const asks = emitsUneditableOperation(
+          resolveRewardSelection(posture, selection),
+        );
+        expect(asks, `${posture}/${selection}`).toBe(ops.length > 1);
+      }
+    }
   });
 
   it('keeps the rest of the payload exactly as it was', async () => {
