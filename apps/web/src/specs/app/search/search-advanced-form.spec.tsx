@@ -259,6 +259,13 @@ describe("SearchAdvancedForm", () => {
 
         // The API reads the FIRST type: match, so "prototype:v2" shadowed the
         // select with "v2" and the whole search came back 400.
+        //
+        // The truncation to "proto" is NOT desirable, it is this parser
+        // agreeing with the API's: both match a token inside an ordinary word.
+        // ecency/hivesearcher-api#11 anchors the token to a word boundary on
+        // the API side; the same change lands here once that is deployed, and
+        // this expectation becomes "prototype:v2 type:post". Anchoring only
+        // this side first would send text the deployed API still misreads.
         fireEvent.change(searchField(), { target: { value: "prototype:v2" } });
         fireEvent.change(typeSelect(), { target: { value: "post" } });
         fireEvent.click(applyButton());

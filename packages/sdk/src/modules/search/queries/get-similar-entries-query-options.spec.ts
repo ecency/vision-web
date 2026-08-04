@@ -24,6 +24,34 @@ const entry = {
 
 type QueryFn = (ctx: { signal?: AbortSignal }) => Promise<unknown>;
 
+/**
+ * Backed by a single readable body, like a real `Response`. The shared
+ * `parseJsonResponse` reads the body once with `text()`, so a double that only
+ * implements `json()` would pass here while the real thing failed.
+ */
+function response(
+  body: unknown,
+  { ok = true, status }: { ok?: boolean; status?: number } = {}
+) {
+  const text = JSON.stringify(body);
+  let consumed = false;
+
+  const read = async () => {
+    if (consumed) {
+      throw new TypeError("Body has already been consumed.");
+    }
+    consumed = true;
+    return text;
+  };
+
+  return {
+    ok,
+    status: status ?? (ok ? 200 : 500),
+    text: read,
+    json: async () => JSON.parse(await read()) as unknown,
+  } as unknown as Response;
+}
+
 function searchResponse(
   results: Partial<SearchResponse["results"][number]>[]
 ): SearchResponse {
@@ -88,15 +116,13 @@ describe("getSimilarEntriesQueryOptions", () => {
   });
 
   it("POSTs to /search-api/similar with title, tags, a truncated body and ~6 month since", async () => {
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () =>
+    fetchMock.mockResolvedValueOnce(response(
         searchResponse([
           { author: "c", permlink: "p2" },
           { author: "d", permlink: "p3" },
           { author: "e", permlink: "p4" },
-        ]),
-    });
+        ])
+    ));
 
     const options = getSimilarEntriesQueryOptions(entry);
     const result = (await (options.queryFn as QueryFn)({
@@ -122,7 +148,7 @@ describe("getSimilarEntriesQueryOptions", () => {
   });
 
   it("strips markdown image links and URLs from the body excerpt", async () => {
-    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => searchResponse([]) });
+    fetchMock.mockResolvedValueOnce(response(searchResponse([])));
 
     const e = {
       author: "a",
@@ -141,9 +167,7 @@ describe("getSimilarEntriesQueryOptions", () => {
   });
 
   it("excludes the source post and nsfw, dedupes by author, caps at 4", async () => {
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () =>
+    fetchMock.mockResolvedValueOnce(response(
         searchResponse([
           { author: "a", permlink: "my-post", tags: [] }, // same permlink → dropped
           { author: "b", permlink: "p1", tags: ["nsfw"] }, // nsfw → dropped
@@ -153,8 +177,8 @@ describe("getSimilarEntriesQueryOptions", () => {
           { author: "e", permlink: "p5", tags: [] },
           { author: "f", permlink: "p6", tags: [] },
           { author: "g", permlink: "p7", tags: [] }, // beyond cap of 4
-        ]),
-    });
+        ])
+    ));
 
     const options = getSimilarEntriesQueryOptions(entry);
     const result = (await (options.queryFn as QueryFn)({
@@ -165,7 +189,7 @@ describe("getSimilarEntriesQueryOptions", () => {
   });
 
   it("handles a post with no tags or body", async () => {
-    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => searchResponse([]) });
+    fetchMock.mockResolvedValueOnce(response(searchResponse([])));
 
     const options = getSimilarEntriesQueryOptions({ author: "a", permlink: "p" });
     const result = (await (options.queryFn as QueryFn)({
@@ -185,7 +209,7 @@ describe("getSimilarEntriesQueryOptions", () => {
     // json_metadata.tags as a bare string rather than an array. `?? []` only
     // guarded null/undefined, so `.filter` threw and crashed the entry-page
     // SSR prefetch. The call must not throw and the bad tags become [].
-    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => searchResponse([]) });
+    fetchMock.mockResolvedValueOnce(response(searchResponse([])));
 
     const e = {
       author: "a",
@@ -207,7 +231,7 @@ describe("getSimilarEntriesQueryOptions", () => {
   });
 
   it("throws on a failed request so the error surfaces (the strip then hides)", async () => {
-    fetchMock.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
+    fetchMock.mockResolvedValueOnce(response({}, { ok: false, status: 500 }));
 
     const options = getSimilarEntriesQueryOptions(entry);
     await expect(
@@ -228,7 +252,9 @@ describe("getSimilarEntriesQueryOptions", () => {
     // 2s cap on the server (so a slow cross-region call can't stall SSR) and the
     // 4s cap on the client (best-effort, doesn't block paint). Without this, a
     // refactor could silently fall back to the SDK's generic ~10s timeout.
-    fetchMock.mockResolvedValue({ ok: true, json: async () => searchResponse([]) });
+    // A fresh Response per call: one object cannot be read twice, and this
+    // test makes two requests.
+    fetchMock.mockImplementation(async () => response(searchResponse([])));
 
     // SSR context — no window.
     vi.stubGlobal("window", undefined);

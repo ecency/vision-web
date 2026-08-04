@@ -34,7 +34,9 @@ export function normalizeSearchAuthor(value: string): string {
 }
 
 export function normalizeSearchCategory(value: string): string {
-  return firstToken(value).toLowerCase();
+  // Leading "#" goes for the same reason it goes on tags: a category is matched
+  // by an exact term query, and users write categories the way they write tags.
+  return firstToken(value).replace(/^#+/, "").toLowerCase();
 }
 
 /**

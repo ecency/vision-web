@@ -14,14 +14,25 @@ export type RequestError = Error & { status?: number; data?: unknown };
  */
 export async function parseJsonResponse<T>(response: Response): Promise<T> {
   const parseBody = async (): Promise<unknown> => {
+    // Read the body ONCE. Calling json() and then falling back to text() on the
+    // same response cannot work: json() consumes the stream, so the fallback
+    // always threw and the raw body of a non-JSON failure (an HTML error page
+    // from a proxy) was silently lost.
+    let raw: string;
     try {
-      return await response.json();
+      raw = await response.text();
     } catch {
-      try {
-        return await response.text();
-      } catch {
-        return undefined;
-      }
+      return undefined;
+    }
+
+    if (raw === "") {
+      return undefined;
+    }
+
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return raw;
     }
   };
 

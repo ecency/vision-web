@@ -24,8 +24,8 @@ vi.mock("next/navigation", () => ({
 
 // The global spec setup mocks @ecency/sdk without the search options, so this
 // spec has to supply them. Everything except the queryFn stays faithful to the
-// real factory - `initialData` in the component only behaves the way finding 10
-// describes if getNextPageParam and `enabled` behave like production.
+// real factory: getNextPageParam and `enabled` have to behave like production
+// or neither the pagination nor the empty-query path means anything here.
 vi.mock("@ecency/sdk", () => ({
   getSearchApiInfiniteQueryOptions: (
     q: string,
@@ -100,8 +100,6 @@ function deferred<T>() {
 
 function renderSearch(search: string) {
   mocks.params = new URLSearchParams(search);
-  // Default staleTime: the seeded `initialData` is stale at once, so mounting
-  // requests page 1 - the job the bottom sentinel does in the browser.
   // refetchOnMount mirrors makeQueryClient(). Without it the app's real
   // bootstrap path is not the one under test: every fetch here would come from
   // a mount refetch production does not do, which is how a first page that
@@ -138,10 +136,8 @@ describe("SearchComment", () => {
 
       renderSearch("q=coffee");
 
-      // The query is seeded with initialData, so it is "success" with zero
-      // pages from the first paint and isLoading is never true. Without the
-      // pending guard the empty state renders here, before the request is even
-      // answered.
+      // The query is pending from the first paint with no cached data, and
+      // the empty state must wait for the answer rather than pre-empting it.
       expect(screen.queryByText(NO_MATCHES)).not.toBeInTheDocument();
       expect(screen.getByRole("progressbar")).toBeInTheDocument();
 

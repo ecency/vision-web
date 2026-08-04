@@ -146,6 +146,12 @@ describe("normalizeSearchCategory", () => {
   it("keeps only the first word", () => {
     expect(normalizeSearchCategory("My Category")).toBe("my");
   });
+
+  it("strips a leading hash, like tags do", () => {
+    // Categories are matched by the same exact term query as tags, and users
+    // write them the same way.
+    expect(normalizeSearchCategory("#Hive-125125")).toBe("hive-125125");
+  });
 });
 
 describe("normalizeSearchTags", () => {

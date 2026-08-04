@@ -15,12 +15,32 @@ const options = (q = "coffee") => getSearchApiInfiniteQueryOptions(q, "popularit
 const retryOf = (opts: ReturnType<typeof getSearchApiInfiniteQueryOptions>) =>
   opts.retry as RetryFn;
 
-function response(status: number, body: unknown) {
+/**
+ * Backed by a single readable body, like a real `Response`: reading it twice
+ * throws, and `json()` rejects when the body is not JSON. A permissive double
+ * (independent `json()`/`text()`, `json()` resolving for any input) hides
+ * exactly the bugs this parser can have - it let a `json()`-then-`text()`
+ * fallback that can never run look covered.
+ *
+ * Pass `raw` to send a body that is not JSON at all.
+ */
+function response(status: number, body: unknown, raw?: string) {
+  const text = raw ?? JSON.stringify(body);
+  let consumed = false;
+
+  const read = async () => {
+    if (consumed) {
+      throw new TypeError("Body has already been consumed.");
+    }
+    consumed = true;
+    return text;
+  };
+
   return {
     ok: status >= 200 && status < 300,
     status,
-    json: async () => body,
-    text: async () => JSON.stringify(body),
+    text: read,
+    json: async () => JSON.parse(await read()) as unknown,
   } as unknown as Response;
 }
 
@@ -95,6 +115,33 @@ describe("getSearchApiInfiniteQueryOptions", () => {
       expect(error?.data).toEqual({ message: { q: "Maximum 5 tags!" } });
     });
 
+    it("keeps a non-JSON failure body as the raw text", async () => {
+      // A proxy in front of the API answers with HTML, not JSON. The body is
+      // read once and JSON.parse decides what it was, so this text survives.
+      fetchMock.mockResolvedValueOnce(
+        response(502, undefined, "<html>bad gateway</html>")
+      );
+
+      const error = await (options().queryFn as QueryFn)({
+        pageParam: undefined,
+        signal: undefined,
+      }).then(
+        () => undefined,
+        (e: RequestError) => e
+      );
+
+      expect(error?.status).toBe(502);
+      expect(error?.data).toBe("<html>bad gateway</html>");
+    });
+
+    it("rejects an empty body rather than resolving with nothing", async () => {
+      fetchMock.mockResolvedValueOnce(response(200, undefined, ""));
+
+      await expect(
+        (options().queryFn as QueryFn)({ pageParam: undefined, signal: undefined })
+      ).rejects.toThrow("Response body was empty or invalid JSON");
+    });
+
     it("resolves with the parsed body on success", async () => {
       fetchMock.mockResolvedValueOnce(response(200, emptyPage));
 
@@ -165,14 +212,16 @@ describe("getSearchApiInfiniteQueryOptions", () => {
         defaultOptions: { queries: { retryDelay: 0 } },
       });
 
-      fetchMock.mockResolvedValue(response(400, { error: "Parsed query is empty!" }));
+      fetchMock.mockImplementation(async () => response(400, { error: "Parsed query is empty!" }));
       await expect(
         client.fetchInfiniteQuery(factory("author:demo", "popularity", true))
       ).rejects.toThrow();
       expect(fetchMock).toHaveBeenCalledTimes(1);
 
       fetchMock.mockReset();
-      fetchMock.mockResolvedValue(response(502, "<html>bad gateway</html>"));
+      // Fresh per attempt: a real retry gets a new Response, and a reused body
+      // would be unreadable after the first read.
+      fetchMock.mockImplementation(async () => response(502, undefined, "<html>bad gateway</html>"));
       await expect(
         client.fetchInfiniteQuery(factory("coffee", "popularity", true))
       ).rejects.toThrow();

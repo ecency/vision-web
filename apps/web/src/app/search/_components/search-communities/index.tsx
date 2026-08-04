@@ -41,10 +41,9 @@ export function SearchCommunities() {
             return <LinearProgress />;
           }
 
-          // Unlike the people and topics panels this query is never disabled,
-          // so undefined data means the lookup failed. Saying "no matches" for
-          // a dropped RPC is the same failure/empty conflation the results list
-          // just lost.
+          // A failed lookup leaves data undefined with isLoading false, the
+          // same shape as an empty result. Saying "no matches" for a dropped
+          // RPC is the failure/empty conflation the results list just lost.
           if (isError) {
             return <span className="text-gray-600">{i18next.t("search-comment.error-failed")}</span>;
           }
