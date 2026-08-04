@@ -12,7 +12,17 @@ export type RequestError = Error & { status?: number; data?: unknown };
  *
  * Module-internal on purpose - it is not part of the published SDK surface.
  */
-export async function parseJsonResponse<T>(response: Response): Promise<T> {
+export async function parseJsonResponse<T>(
+  response: Response,
+  /**
+   * Shape guard for a SUCCESSFUL body. JSON.parse happily accepts `null`,
+   * `"maintenance"` and `{"error": "..."}`, none of which are the payload the
+   * caller asked for, and all of which would otherwise be returned as `T` and
+   * cached as valid data. Callers that have a known shape pass a guard so an
+   * unexpected 200 fails here instead of at the first property access.
+   */
+  isValid?: (data: unknown) => boolean
+): Promise<T> {
   const parseBody = async (): Promise<unknown> => {
     // Read the body ONCE. Calling json() and then falling back to text() on the
     // same response cannot work: json() consumes the stream, so the fallback
@@ -51,9 +61,21 @@ export async function parseJsonResponse<T>(response: Response): Promise<T> {
     throw error;
   }
 
-  if (data === undefined) {
-    throw new Error("Response body was empty or invalid JSON");
+  if (data === undefined || (isValid !== undefined && !isValid(data))) {
+    throw new Error("Response body was empty, invalid JSON, or not the expected shape");
   }
 
   return data as T;
+}
+
+/**
+ * The contract every /search-api consumer relies on: an object carrying a
+ * `results` array. Enough to keep a stray 200 from reaching `resp.results.length`.
+ */
+export function isSearchResponse(data: unknown): boolean {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    Array.isArray((data as { results?: unknown }).results)
+  );
 }

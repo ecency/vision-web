@@ -141,7 +141,7 @@ describe("getSearchApiInfiniteQueryOptions", () => {
 
       await expect(
         (options().queryFn as QueryFn)({ pageParam: undefined, signal: undefined })
-      ).rejects.toThrow("Response body was empty or invalid JSON");
+      ).rejects.toThrow("Response body was empty, invalid JSON, or not the expected shape");
     });
 
     it("rejects an empty body rather than resolving with nothing", async () => {
@@ -149,7 +149,24 @@ describe("getSearchApiInfiniteQueryOptions", () => {
 
       await expect(
         (options().queryFn as QueryFn)({ pageParam: undefined, signal: undefined })
-      ).rejects.toThrow("Response body was empty or invalid JSON");
+      ).rejects.toThrow("Response body was empty, invalid JSON, or not the expected shape");
+    });
+
+
+    it.each([
+      ["a bare JSON string", '"maintenance"'],
+      ["null", "null"],
+      ["an error object with no results", '{"error":"upstream unavailable"}'],
+      ["an array where an object is expected", "[]"],
+    ])("rejects a 2xx carrying %s", async (_name, raw) => {
+      // JSON.parse accepts all of these, so the undefined check alone let them
+      // through as a SearchResponse. The pager then threw on resp.results.length
+      // and the query had already cached the value as valid data.
+      fetchMock.mockResolvedValueOnce(response(200, undefined, raw));
+
+      await expect(
+        (options().queryFn as QueryFn)({ pageParam: undefined, signal: undefined })
+      ).rejects.toThrow("not the expected shape");
     });
 
     it("resolves with the parsed body on success", async () => {

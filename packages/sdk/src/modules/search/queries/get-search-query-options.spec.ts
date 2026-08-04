@@ -123,7 +123,26 @@ describe("search query options error and retry parity", () => {
         (searchQueryOptions("coffee", "relevance", "0").queryFn as QueryFn)({
           signal: undefined,
         })
-      ).rejects.toThrow("Response body was empty or invalid JSON");
+      ).rejects.toThrow("Response body was empty, invalid JSON, or not the expected shape");
+    });
+
+
+    it.each([
+      ["a bare JSON string", '"maintenance"'],
+      ["null", "null"],
+      ["an error object with no results", '{"error":"upstream unavailable"}'],
+      ["an array where an object is expected", "[]"],
+    ])("rejects a 2xx carrying %s", async (_name, raw) => {
+      // JSON.parse accepts all of these, so the undefined check alone let them
+      // through as a SearchResponse. The pager then threw on resp.results.length
+      // and the query had already cached the value as valid data.
+      fetchMock.mockResolvedValueOnce(response(200, undefined, raw));
+
+      await expect(
+        (searchQueryOptions("coffee", "relevance", "0").queryFn as QueryFn)({
+          signal: undefined,
+        })
+      ).rejects.toThrow("not the expected shape");
     });
 
     it("resolves with the parsed body on success", async () => {

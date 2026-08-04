@@ -1,5 +1,5 @@
 import { isServer } from "@tanstack/react-query";
-import { RequestError } from "./parse-json-response";
+import type { RequestError } from "./parse-json-response";
 
 /**
  * The app-wide default the browser QueryClient uses. Restated because supplying
