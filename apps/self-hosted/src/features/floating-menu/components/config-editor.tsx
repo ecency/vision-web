@@ -2,40 +2,17 @@ import { memo, useEffect, useMemo, useState } from 'react';
 import { validateArrayDraft, validateArrayEntries } from '../array-field';
 import type { ConfigField } from '../config-fields';
 import { FLOATING_MENU_THEME } from '../constants';
+import {
+  displayedBooleanValue,
+  displayedSelectValue,
+  displayedStringValue,
+  getSectionIcon,
+} from '../field-display';
 import type {
   ConfigEditorProps,
   ConfigFieldEditorProps,
   ConfigValue,
 } from '../types';
-
-const sectionIcons: Record<string, string> = {
-  configuration: '⚙️',
-  general: '🌐',
-  styles: '🎨',
-  instanceConfiguration: '🔧',
-  meta: '📝',
-  layout: '📐',
-  search: '🔍',
-  sidebar: '📋',
-  followers: '👥',
-  following: '👤',
-  hiveInformation: '🐝',
-  features: '✨',
-  communities: '🏘️',
-  likes: '❤️',
-  wallet: '💳',
-  comments: '💬',
-  post: '📄',
-  text2Speech: '🔊',
-  hivesigner: '🔑',
-} as const;
-
-function getSectionIcon(label: string): string {
-  const key = Object.keys(sectionIcons).find(
-    (k) => k.toLowerCase() === label.toLowerCase().replace(/\s+/g, ''),
-  );
-  return key ? sectionIcons[key]! : '📦';
-}
 
 // Separate component for array fields to handle draft state
 interface ArrayFieldEditorProps {
@@ -163,7 +140,7 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
 
     switch (field.type) {
       case 'boolean': {
-        const isChecked = value === true;
+        const isChecked = displayedBooleanValue(field, value);
         return (
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-200 mb-2 font-sans">
@@ -247,7 +224,7 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
       }
 
       case 'select': {
-        const selectValue = typeof value === 'string' ? value : '';
+        const selectValue = displayedSelectValue(field, value);
         const options = field.options || [];
         return (
           <div className="mb-4">
@@ -289,7 +266,7 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
       }
 
       default: {
-        const stringValue = typeof value === 'string' ? value : '';
+        const stringValue = displayedStringValue(field, value);
         return (
           <div className="mb-4">
             <label
@@ -307,6 +284,7 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
               id={fullPath}
               type="text"
               value={stringValue}
+              maxLength={field.maxLength}
               onChange={(e) => handleChange(e.target.value)}
               className={inputClassName}
               style={inputStyle}

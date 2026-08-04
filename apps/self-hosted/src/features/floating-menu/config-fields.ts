@@ -1,3 +1,11 @@
+// Imported from the module rather than the `@/core` barrel on purpose: the
+// barrel pulls `configuration-loader`, which imports the build-time
+// `config.json`. That file is gitignored and absent in CI, so the barrel would
+// make this module, and every test that reads it, unloadable there.
+import {
+  HIVE_LAYER_CONFIG_DEFAULTS,
+  PAYOUT_LABEL_MAX_LENGTH,
+} from '@/core/hive-layer';
 import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
 
 export type ConfigFieldType =
@@ -21,6 +29,21 @@ export interface ConfigField {
    * holding objects and reports the save as successful anyway.
    */
   allowedValues?: readonly string[];
+  /**
+   * What the panel shows when the config carries no value at this path, which
+   * is every config written before the field existed.
+   *
+   * It must be the value the app resolves for an absent key, or the panel
+   * displays a state the site disagrees with. Displaying it writes nothing: a
+   * value reaches the document only through the field's `onChange`.
+   */
+  default?: string | boolean;
+  /**
+   * For `string` fields: the cap on the input, matching wherever the value is
+   * cut at render. The wire limit is the whole document, so this is about a
+   * sane control rather than storage.
+   */
+  maxLength?: number;
 }
 
 export const configFieldsMap: Record<string, ConfigField> = {
@@ -165,6 +188,72 @@ export const configFieldsMap: Record<string, ConfigField> = {
             label: 'Features',
             type: 'section',
             fields: {
+              /**
+               * Declared first so the posture question comes before the
+               * individual feature toggles. Only the order among sections is
+               * decided here: the editor renders every non-section field above
+               * every section regardless of declaration order.
+               *
+               * Four scalars, two selects and two strings. No `number` field,
+               * because the number input writes null when cleared, and no
+               * array, because the hosting API drops an array holding objects
+               * and still answers 200.
+               *
+               * Labels are hardcoded English, like every other label in this
+               * panel. This module is a module-level constant evaluated before
+               * the runtime config is loaded, so `t()` here would freeze
+               * whichever language the bundle started with.
+               */
+              hive: {
+                label: 'Hive layer',
+                type: 'section',
+                description:
+                  'How much of the Hive blockchain this site shows readers. Notices that voting, commenting and publishing are permanent are always shown and are not affected by these settings. Save and reload to see changes.',
+                fields: {
+                  readerLayer: {
+                    label: 'Show Hive activity to readers',
+                    type: 'select',
+                    // The value an absent key resolves to, so a config written
+                    // before this block existed reads correctly here instead of
+                    // showing an empty box.
+                    default: HIVE_LAYER_CONFIG_DEFAULTS.readerLayer,
+                    description:
+                      'Off shows no earnings and no links to Hive. Standard shows what a post earned, when its payout closes, and a link to it on Hive. Full also shows earnings on post cards in the list.',
+                    options: [
+                      { value: 'off', label: 'Off' },
+                      { value: 'standard', label: 'Standard' },
+                      { value: 'full', label: 'Full' },
+                    ],
+                  },
+                  authorRewards: {
+                    label: 'Reward controls when writing',
+                    type: 'select',
+                    default: HIVE_LAYER_CONFIG_DEFAULTS.authorRewards,
+                    description:
+                      'Off publishes with the usual Hive reward setting. Author chooses offers the writer all Hive Power or declining rewards, picked once at publish and not editable afterwards. Applies only to posts written here, so it does nothing when Create Post URL points at another site. The reward control itself is still being built, so this has no visible effect yet.',
+                    options: [
+                      { value: 'off', label: 'Off' },
+                      { value: 'author', label: 'Author chooses' },
+                    ],
+                  },
+                  payoutLabel: {
+                    label: 'Earnings label',
+                    type: 'string',
+                    default: HIVE_LAYER_CONFIG_DEFAULTS.payoutLabel,
+                    // Same cap the resolver cuts at, so nothing typed here can
+                    // be stored longer than it is shown.
+                    maxLength: PAYOUT_LABEL_MAX_LENGTH,
+                    description: `Your own word for what a post earned, for example Rewards or Tips from readers. Leave empty for the built-in wording. Longer than ${PAYOUT_LABEL_MAX_LENGTH} characters is cut where it is shown.`,
+                  },
+                  learnMoreUrl: {
+                    label: 'Learn more link',
+                    type: 'string',
+                    default: HIVE_LAYER_CONFIG_DEFAULTS.learnMoreUrl,
+                    description:
+                      'Leave empty to show the Hive note as plain text. Add a full https address and the note becomes a link to it.',
+                  },
+                },
+              },
               postsFilters: {
                 label: 'Post Filters',
                 type: 'array',

@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import {
+  HIVE_LAYER_CONFIG_DEFAULTS,
+  PAYOUT_LABEL_MAX_LENGTH,
+  resolveHiveLayer,
+} from '@/core/hive-layer';
 import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
 import type { ConfigField } from './config-fields';
 import { configFieldsMap } from './config-fields';
@@ -61,6 +66,136 @@ describe('hivesigner client id', () => {
 
   it('is pointed at from the login methods field', () => {
     expect(fieldAt(METHODS_PATH)?.description).toContain('Hivesigner');
+  });
+});
+
+const FEATURES_PATH = [
+  'configuration',
+  'instanceConfiguration',
+  'features',
+] as const;
+const HIVE_PATH = [...FEATURES_PATH, 'hive'] as const;
+
+/**
+ * The Hive layer resolves entirely from `features.hive`, and until these
+ * controls existed the only way to set it was a hand-written PATCH.
+ *
+ * Everything here is checked against the resolver rather than against a copy of
+ * its values, because a panel offering a value the app does not resolve, or
+ * defaulting to a different one, is worse than no panel: it reports a state the
+ * site disagrees with.
+ */
+describe('hive layer', () => {
+  it('is offered as a section under features', () => {
+    expect(fieldAt(HIVE_PATH)?.type).toBe('section');
+  });
+
+  /** `getSectionIcon` matches on the label, so this is what picks the glyph. */
+  it('is labelled Hive layer', () => {
+    expect(fieldAt(HIVE_PATH)?.label).toBe('Hive layer');
+  });
+
+  it('is the first section an owner meets under features', () => {
+    const sections = Object.entries(fieldAt(FEATURES_PATH)?.fields ?? {})
+      .filter(([, field]) => field.type === 'section')
+      .map(([key]) => key);
+    expect(sections[0]).toBe('hive');
+  });
+
+  it('offers a control for every key the resolver reads, and no others', () => {
+    expect(Object.keys(fieldAt(HIVE_PATH)?.fields ?? {}).sort()).toEqual(
+      Object.keys(HIVE_LAYER_CONFIG_DEFAULTS).sort(),
+    );
+  });
+
+  /**
+   * No `number`, because the number input writes null when cleared, and no
+   * `array`, because `isValidArrayReplacement` in the hosting API drops an
+   * array holding objects while the save still answers 200.
+   */
+  it('uses only selects and text inputs', () => {
+    for (const key of Object.keys(HIVE_LAYER_CONFIG_DEFAULTS)) {
+      expect(['select', 'string'], key).toContain(
+        fieldAt([...HIVE_PATH, key])?.type,
+      );
+    }
+  });
+
+  it('defaults every control to what the resolver reads for an absent key', () => {
+    for (const [key, expected] of Object.entries(HIVE_LAYER_CONFIG_DEFAULTS)) {
+      expect(fieldAt([...HIVE_PATH, key])?.default, key).toBe(expected);
+    }
+  });
+
+  it('lists the default first on every select', () => {
+    for (const key of Object.keys(HIVE_LAYER_CONFIG_DEFAULTS)) {
+      const field = fieldAt([...HIVE_PATH, key]);
+      if (field?.type !== 'select') continue;
+      expect(field.options?.[0]?.value, key).toBe(field.default);
+    }
+  });
+
+  it('offers only values the resolver accepts as given', () => {
+    const readerLayers = fieldAt([...HIVE_PATH, 'readerLayer'])?.options ?? [];
+    expect(readerLayers.map((option) => option.value)).toEqual([
+      'off',
+      'standard',
+      'full',
+    ]);
+    for (const { value } of readerLayers) {
+      const resolved = resolveHiveLayer({
+        features: { hive: { readerLayer: value } },
+        composerIsInternal: true,
+      });
+      // An option the resolver downgrades would be a posture the owner picked
+      // and did not get.
+      expect(resolved.readerLayer, value).toBe(value);
+    }
+
+    const rewards = fieldAt([...HIVE_PATH, 'authorRewards'])?.options ?? [];
+    expect(rewards.map((option) => option.value)).toEqual(['off', 'author']);
+    for (const { value } of rewards) {
+      const resolved = resolveHiveLayer({
+        features: { hive: { authorRewards: value } },
+        composerIsInternal: true,
+      });
+      expect(resolved.authorRewards, value).toBe(value);
+    }
+  });
+
+  /**
+   * The resolver cuts this label at render and never corrects what is stored,
+   * so the input has to stop at the same place or an owner stores text that is
+   * never shown, in a document capped at 64KB as a whole.
+   */
+  it('caps the earnings label where the resolver cuts it', () => {
+    expect(fieldAt([...HIVE_PATH, 'payoutLabel'])?.maxLength).toBe(
+      PAYOUT_LABEL_MAX_LENGTH,
+    );
+  });
+
+  it('says what an empty earnings label and an empty link mean', () => {
+    expect(fieldAt([...HIVE_PATH, 'payoutLabel'])?.description).toContain(
+      'Leave empty',
+    );
+    expect(fieldAt([...HIVE_PATH, 'learnMoreUrl'])?.description).toContain(
+      'Leave empty',
+    );
+  });
+
+  /** House rule, and these strings are read by owners, not developers. */
+  it('uses no em or en dashes in its copy', () => {
+    const section = fieldAt(HIVE_PATH);
+    const copy = [
+      section?.label,
+      section?.description,
+      ...Object.values(section?.fields ?? {}).flatMap((field) => [
+        field.label,
+        field.description,
+        ...(field.options ?? []).map((option) => option.label),
+      ]),
+    ].join(' ');
+    expect(copy).not.toMatch(/[—–]/);
   });
 });
 
