@@ -5,7 +5,7 @@ import i18next from "i18next";
 import { useSearchParams } from "next/navigation";
 import { getSearchAccountQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
-import { SearchQuery } from "@/utils/search-query";
+import { SearchQuery } from "@ecency/sdk";
 import { ProBadge } from "@/features/pro";
 import { truncate } from "@/utils";
 

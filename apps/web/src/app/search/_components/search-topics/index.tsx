@@ -6,7 +6,7 @@ import { makePath } from "@/utils";
 import { LinearProgress } from "@/features/shared";
 import i18next from "i18next";
 import { useSearchParams } from "next/navigation";
-import { SearchQuery } from "@/utils/search-query";
+import { SearchQuery } from "@ecency/sdk";
 import { getSearchTopicsQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 

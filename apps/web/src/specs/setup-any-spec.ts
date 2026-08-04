@@ -51,7 +51,7 @@ vi.mock("i18next", () => ({
   }
 }));
 
-vi.mock("@ecency/sdk", () => ({
+vi.mock("@ecency/sdk", async () => ({
   PrivateKey: { fromString: vi.fn(), fromLogin: vi.fn(), from: vi.fn() },
   PublicKey: { fromString: vi.fn(), from: vi.fn() },
   Signature: { from: vi.fn() },
@@ -168,7 +168,12 @@ vi.mock("@ecency/sdk", () => ({
   hiveTxUtils: { operations: {}, makeBitMaskFilter: vi.fn() },
   hiveTxConfig: { nodes: [], timeout: 1000, address_prefix: "STM" },
   dedupeAndSortKeyAuths: vi.fn((...args: any[]) => args[0] || []),
-  buildGrantPostingPermissionOp: vi.fn()
+  buildGrantPostingPermissionOp: vi.fn(),
+  // The search query builder is pure logic with no dependencies, and several
+  // components now import it from the SDK rather than from @/utils. Stubbing it
+  // would make every spec that parses or builds a query assert against nothing,
+  // so hand back the real implementation.
+  ...(await import("../../../../packages/sdk/src/modules/search/query-builder"))
 }));
 
 vi.mock("@/features/post-renderer", () => ({

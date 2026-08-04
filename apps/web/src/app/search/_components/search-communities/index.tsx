@@ -1,7 +1,7 @@
 import defaults from "@/defaults";
 import { LinearProgress, UserAvatar } from "@/features/shared";
 import { formattedNumber, makePath, truncate } from "@/utils";
-import { SearchQuery } from "@/utils/search-query";
+import { SearchQuery } from "@ecency/sdk";
 import { getCommunitiesQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import i18next from "i18next";

@@ -8,7 +8,7 @@ import { DeckGridContext } from "../../deck-manager";
 import { FormControl } from "@ui/input";
 import { Button } from "@ui/button";
 import i18next from "i18next";
-import { SearchType } from "@/utils/search-query";
+import { SearchType } from "@ecency/sdk";
 
 interface Props {
   id: string;

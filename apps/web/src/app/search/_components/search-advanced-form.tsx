@@ -8,7 +8,7 @@ import {
   MAX_SEARCH_TAGS,
   SearchQuery,
   SearchType
-} from "@/utils/search-query";
+} from "@ecency/sdk";
 import { DateOpt } from "@/enums";
 import { SearchSort } from "@/app/decks/_components/consts";
 import { ReadonlyURLSearchParams, useRouter, useSearchParams } from "next/navigation";
