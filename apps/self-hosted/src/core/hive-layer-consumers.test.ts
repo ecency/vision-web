@@ -48,15 +48,29 @@ const FLAG_CONSUMERS: Record<string, { file: string; component: string }> = {
 };
 
 /**
- * Non-boolean resolver output that has no consumer yet.
+ * Non-boolean resolver output and where it is read.
+ *
+ * Same rule as the render flags, and checked the same way. `authorRewards` sat
+ * in the list below for a release with nothing reading it, which was acceptable
+ * only because it could not be wrong: nothing rendered a reward control and the
+ * broadcast guard pinned that no `options` key reached any payload. Now that
+ * the composer reads it, it is held to the same standard as everything else.
+ */
+const VALUE_CONSUMERS: Record<string, { file: string; component: string }> = {
+  authorRewards: {
+    file: 'features/publish/components/publish-action-bar.tsx',
+    component: 'PublishRewardSelector',
+  },
+};
+
+/**
+ * Resolver output that has no consumer yet.
  *
  * Deliberate, like a DYNAMIC_LINKS entry: an entry here is an admission, so it
- * carries the reason and the thing that removes it. An empty list is the goal.
+ * carries the reason and the thing that removes it. Empty is the goal, and it
+ * is empty.
  */
-const AWAITING_CONSUMER: Record<string, string> = {
-  authorRewards:
-    'composer reward controls, the second half of this track. Kept resolved because the hosting seed already writes the field and its external-composer clamp reads createPostUrl, which every existing tenant carries',
-};
+const AWAITING_CONSUMER: Record<string, string> = {};
 
 /** Which postures differ, computed from the resolver rather than restated. */
 function flagsFor(readerLayer: string): Record<string, boolean> {
@@ -80,12 +94,21 @@ function parse(relative: string): ts.SourceFile {
   );
 }
 
-/** Every `x.<name>` property read in the file. */
+/**
+ * Every property the file reads off an object, by either spelling.
+ *
+ * `x.showPayoutOnPost` and `const { authorRewards } = useHiveLayer()` are the
+ * same read, so both count. Anchoring on one of them would have made a
+ * consumer's choice of syntax decide whether the guard could see it.
+ */
 function propertyReads(sf: ts.SourceFile): Set<string> {
   const names = new Set<string>();
   const visit = (node: ts.Node) => {
     if (ts.isPropertyAccessExpression(node)) {
       names.add(node.name.text);
+    }
+    if (ts.isBindingElement(node)) {
+      names.add((node.propertyName ?? node.name).getText(sf));
     }
     ts.forEachChild(node, visit);
   };
@@ -118,12 +141,14 @@ describe('no posture is advertised without something that renders it', () => {
 
   it('leaves no non-boolean output unaccounted for', () => {
     // readerLayer is the posture itself; payoutLabel and learnMoreUrl are read
-    // by the two components above. Anything else has to be listed with a reason.
+    // by the two components above. Anything else needs a consumer named in
+    // VALUE_CONSUMERS, which is checked, or a reason in AWAITING_CONSUMER.
     const named = new Set([
       'readerLayer',
       'payoutLabel',
       'learnMoreUrl',
       ...Object.keys(FLAG_CONSUMERS),
+      ...Object.keys(VALUE_CONSUMERS),
       ...Object.keys(AWAITING_CONSUMER),
     ]);
     expect(resolvedKeys.filter((key) => !named.has(key))).toEqual([]);
@@ -138,7 +163,7 @@ describe('no posture is advertised without something that renders it', () => {
     }
   });
 
-  it.each(Object.entries(FLAG_CONSUMERS))(
+  it.each(Object.entries({ ...FLAG_CONSUMERS, ...VALUE_CONSUMERS }))(
     '%s is read where it is declared to be',
     (flag, { file, component }) => {
       const sf = parse(file);

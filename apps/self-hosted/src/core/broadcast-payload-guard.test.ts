@@ -7,20 +7,24 @@ import { describe, expect, it } from 'vitest';
  * A deploy may change what a visitor sees. It may never change what gets
  * signed.
  *
- * This layer is a display layer. Nothing in it may cause a `comment_options`
- * operation to be broadcast where one is not broadcast today, because a
- * `comment_options` op is on chain forever and cannot be edited afterwards.
+ * The Hive layer is a display layer. Nothing in it may cause a
+ * `comment_options` operation to be broadcast, because such an operation is on
+ * chain forever and cannot be edited afterwards. Exactly one thing in this app
+ * may produce one: an author's own per post choice in the composer, and only
+ * through `resolveCommentOptions`, which returns undefined for the selection
+ * nobody touched.
  *
  * The mechanism it relies on is in the SDK: `use-comment.ts` gates the whole
- * second operation on `if (payload.options)`, so a payload without that key
- * produces a byte-identical operation array. Both halves are pinned here, the
- * gate and the absence of the key, because either one alone is an assumption.
+ * second operation on `if (payload.options)`, so a payload whose `options` is
+ * absent or undefined produces a byte-identical operation array. Both halves
+ * are pinned here, the gate and what may appear at that key, because either one
+ * alone is an assumption.
  *
  * The anchor is deliberate: `options` is a field of the payload passed to
  * `mutateAsync`, not an argument to `useComment`, whose second argument is
  * `{ adapter }`.
  *
- * Two rules this file holds itself to, because a guard that passes without
+ * Three rules this file holds itself to, because a guard that passes without
  * checking anything is worse than the defect it was written for:
  *
  *   - A payload it cannot read is a payload it cannot vouch for, so an
@@ -28,10 +32,17 @@ import { describe, expect, it } from 'vitest';
  *   - The SDK gate is asserted structurally, on the `if` statement that
  *     actually contains the builder call, never on the order two strings
  *     happen to appear in.
+ *   - The one permitted `options` expression is checked by resolving its callee
+ *     to an imported binding, not by the name written at the call site, so a
+ *     local function borrowing the name does not inherit its permission.
  *
  * The analysis functions are exercised against synthetic sources at the bottom,
  * so each of those rules is demonstrated to catch its bypass rather than
  * asserted to.
+ *
+ * What the emitted operation actually contains is not asserted here, because
+ * source shape cannot show it. `use-publish-post.broadcast.test.ts` runs the
+ * hook and the SDK's own builder and compares operation arrays.
  */
 
 const SRC = join(__dirname, '..');
@@ -73,6 +84,25 @@ const OPTIONS_FIELDS = [
   'allowCurationRewards',
   'beneficiaries',
 ];
+
+/**
+ * The one module allowed to name those fields: the resolver that builds the
+ * object, where every value is a literal a test can read and no config value
+ * can reach. One door to the chain.
+ */
+const OPTIONS_BUILDER_FILE = 'src/core/hive-layer.ts';
+
+/** The only function whose result may be handed to a payload's `options`. */
+const OPTIONS_FACTORY = 'resolveCommentOptions';
+
+/**
+ * The only payload allowed to carry an `options` key at all.
+ *
+ * A comment reply must never acquire one: nothing in this app offers a reply
+ * author a reward choice, so an `options` key appearing there would be a
+ * decision taken on someone's behalf.
+ */
+const OPTIONS_CALL_SITES = ['src/features/publish/hooks/use-publish-post.ts'];
 
 /** The truthiness test the absence of an `options` key relies on. */
 const SDK_GATE = 'payload.options';
@@ -152,8 +182,36 @@ function namesUsedIn(sf: ts.SourceFile): Set<string> {
   return names;
 }
 
+/**
+ * Local name to the name it was imported under.
+ *
+ * The guard on the `options` expression resolves through this rather than
+ * trusting the text at the call site. `import { resolveCommentOptions } from
+ * '@/core/hive-layer'` and a local `function resolveCommentOptions()` read
+ * identically at the call site and are not remotely the same thing.
+ */
+function importedBindings(sf: ts.SourceFile): Map<string, string> {
+  const bindings = new Map<string, string>();
+  const visit = (node: ts.Node) => {
+    if (ts.isImportSpecifier(node)) {
+      const imported = (node.propertyName ?? node.name).getText(sf);
+      bindings.set(node.name.getText(sf), imported);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return bindings;
+}
+
+/** What a payload wrote at its `options` key. */
+type OptionsValue =
+  | { kind: 'call'; callee: string; imported: string | null; text: string }
+  | { kind: 'other'; text: string };
+
 interface Payload {
   where: string;
+  /** Path relative to `src`, for the call-site allowlist. */
+  file: string;
   /**
    * The payload's own property names, or null when the argument is not
    * something this guard can read: an identifier, a call, a property access, a
@@ -164,12 +222,35 @@ interface Payload {
   keys: string[] | null;
   /** The argument as written, so a failure names the thing it could not read. */
   argument: string;
+  /** The `options` expression, when the payload has one. */
+  options?: OptionsValue;
 }
 
 /** Every payload handed to a mutation call in one file, readable or not. */
 function payloadsIn(sf: ts.SourceFile, rel: string): Payload[] {
   const aliases = mutationAliases(sf);
+  const bindings = importedBindings(sf);
   const found: Payload[] = [];
+
+  const readOptions = (property: ts.ObjectLiteralElementLike): OptionsValue => {
+    // A shorthand `{ options }` has no initializer to read, and neither does a
+    // spread. Both land in `other`, which fails.
+    if (!ts.isPropertyAssignment(property)) {
+      return { kind: 'other', text: property.getText(sf).replace(/\s+/g, ' ') };
+    }
+    const value = property.initializer;
+    const text = value.getText(sf).replace(/\s+/g, ' ');
+    if (!ts.isCallExpression(value) || !ts.isIdentifier(value.expression)) {
+      return { kind: 'other', text };
+    }
+    const callee = value.expression.text;
+    return {
+      kind: 'call',
+      callee,
+      imported: bindings.get(callee) ?? null,
+      text,
+    };
+  };
 
   const visit = (node: ts.Node) => {
     if (ts.isCallExpression(node)) {
@@ -187,16 +268,18 @@ function payloadsIn(sf: ts.SourceFile, rel: string): Payload[] {
 
         if (!first) {
           // No payload at all cannot carry an options key.
-          found.push({ where, keys: [], argument: '<no argument>' });
+          found.push({ where, file: rel, keys: [], argument: '<no argument>' });
         } else if (!ts.isObjectLiteralExpression(first)) {
           found.push({
             where,
+            file: rel,
             keys: null,
             argument: first.getText(sf).replace(/\s+/g, ' '),
           });
         } else {
           const keys: string[] = [];
           let readable = true;
+          let options: OptionsValue | undefined;
           for (const property of first.properties) {
             // Anything without a name this guard can read: a spread, which
             // carries whatever the spread object carries including `options`,
@@ -207,12 +290,16 @@ function payloadsIn(sf: ts.SourceFile, rel: string): Payload[] {
               readable = false;
               break;
             }
-            keys.push(property.name.getText(sf));
+            const name = property.name.getText(sf);
+            keys.push(name);
+            if (name === 'options') options = readOptions(property);
           }
           found.push({
             where,
+            file: rel,
             keys: readable ? keys.sort() : null,
             argument: first.getText(sf).replace(/\s+/g, ' '),
+            options,
           });
         }
       }
@@ -298,25 +385,67 @@ describe('no deploy of this layer changes a broadcast payload', () => {
     expect(opaque).toEqual([]);
   });
 
-  it('passes no options object to any mutation', () => {
-    // `options` is what turns on the second operation. Absent, the operation
-    // array is byte-identical to today's.
+  it('passes an options object from exactly one place', () => {
+    // `options` is what turns on the second operation. Everywhere else its
+    // absence keeps the operation array byte-identical to today's.
     const withOptions = payloads
       .filter((payload) => payload.keys?.includes('options'))
-      .map((payload) => payload.where);
-    expect(withOptions).toEqual([]);
+      .map((payload) => payload.file);
+    expect([...new Set(withOptions)].sort()).toEqual([...OPTIONS_CALL_SITES]);
   });
 
-  it('never uses a comment_options field anywhere in the app', () => {
+  it('builds every options object through the one resolver', () => {
+    // Read off the expression, not off the name at the call site: the callee
+    // has to resolve to an imported binding whose original name is the
+    // resolver's. A locally declared function of the same name is a different
+    // function and does not inherit its permission.
+    const offenders = payloads
+      .filter((payload) => payload.options)
+      .filter(
+        (payload) =>
+          payload.options?.kind !== 'call' ||
+          payload.options.imported !== OPTIONS_FACTORY,
+      )
+      .map((payload) => `${payload.where} -> options: ${payload.options?.text}`);
+    expect(offenders).toEqual([]);
+  });
+
+  it('names a comment_options field in exactly one module', () => {
+    // Elsewhere in the app these names have no legitimate use, and in that one
+    // module every value is a literal this suite reads.
     const offenders: string[] = [];
     for (const path of sourceFiles(SRC)) {
+      const rel = path.replace(SRC, 'src');
+      if (rel === OPTIONS_BUILDER_FILE) continue;
       const names = namesUsedIn(parse(path));
       for (const field of OPTIONS_FIELDS) {
-        if (names.has(field))
-          offenders.push(`${path.replace(SRC, 'src')}:${field}`);
+        if (names.has(field)) offenders.push(`${rel}:${field}`);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('never writes a beneficiary into the options it builds', () => {
+    // A beneficiary rewrites who gets paid. Seeding one on an author's behalf
+    // is not something this app may ever do, so the only value allowed at that
+    // key is an empty array literal, checked on the syntax tree rather than by
+    // trusting the resolver's unit test to keep looking at the same thing.
+    const sf = parse(join(SRC, ...OPTIONS_BUILDER_FILE.split('/').slice(1)));
+    const written: string[] = [];
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isPropertyAssignment(node) &&
+        node.name.getText(sf) === 'beneficiaries'
+      ) {
+        const value = node.initializer;
+        const empty =
+          ts.isArrayLiteralExpression(value) && value.elements.length === 0;
+        if (!empty) written.push(value.getText(sf).replace(/\s+/g, ' '));
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    expect(written).toEqual([]);
   });
 
   it('pins the exact key set of every comment payload', () => {
@@ -329,6 +458,23 @@ describe('no deploy of this layer changes a broadcast payload', () => {
     // comment-form, use-publish-post, use-update-post.
     expect(commentPayloads.map((payload) => payload.where)).toHaveLength(3);
     for (const payload of commentPayloads) {
+      const allowed = OPTIONS_CALL_SITES.includes(payload.file)
+        ? [...EXPECTED_PAYLOAD_KEYS, 'options'].sort()
+        : EXPECTED_PAYLOAD_KEYS;
+      expect(payload.keys, payload.where).toEqual(allowed);
+    }
+  });
+
+  it('leaves the edit path with no options key at all', () => {
+    // Editing a post cannot change its reward settings: `comment_options` is
+    // written once and is not editable afterwards, so an `options` key here
+    // would be a control that silently does nothing, or worse, one that
+    // rebroadcasts a different split the author never chose.
+    const edit = payloads.filter((payload) =>
+      payload.file.includes('use-update-post'),
+    );
+    expect(edit).not.toHaveLength(0);
+    for (const payload of edit) {
       expect(payload.keys, payload.where).toEqual(EXPECTED_PAYLOAD_KEYS);
     }
   });
@@ -349,6 +495,55 @@ describe('the guard catches the ways around it', () => {
   it('reads a plain object literal', () => {
     const [payload] = payloadsOf('m.mutateAsync({ author: a, options: o });');
     expect(payload.keys).toEqual(['author', 'options']);
+  });
+
+  it('accepts the resolver call, imported, however it is spelled locally', () => {
+    for (const code of [
+      "import { resolveCommentOptions } from '@/core/hive-layer';\nm.mutateAsync({ author: a, options: resolveCommentOptions(s) });",
+      // Aliased on import: a different name at the call site, the same
+      // function. The binding is what is checked, so this passes.
+      "import { resolveCommentOptions as ro } from '@/core/hive-layer';\nm.mutateAsync({ author: a, options: ro(s) });",
+    ]) {
+      const [payload] = payloadsOf(code);
+      expect(payload.options?.kind, code).toBe('call');
+      expect(
+        payload.options?.kind === 'call' ? payload.options.imported : null,
+        code,
+      ).toBe('resolveCommentOptions');
+    }
+  });
+
+  it.each([
+    [
+      'a local function wearing the resolver name',
+      'function resolveCommentOptions(s) { return { percentHbd: 0 }; }\nm.mutateAsync({ options: resolveCommentOptions(s) });',
+    ],
+    [
+      'an object literal written inline',
+      "m.mutateAsync({ options: { maxAcceptedPayout: '0.000 HBD' } });",
+    ],
+    [
+      'a variable holding one',
+      'm.mutateAsync({ options: chosenOptions });',
+    ],
+    [
+      'a shorthand property',
+      'm.mutateAsync({ author, options });',
+    ],
+    [
+      'a conditional around the resolver',
+      "import { resolveCommentOptions } from '@/core/hive-layer';\nm.mutateAsync({ options: x ? resolveCommentOptions(s) : { percentHbd: 0 } });",
+    ],
+    [
+      'a method call that merely looks right',
+      "import { resolveCommentOptions } from '@/core/hive-layer';\nm.mutateAsync({ options: helpers.resolveCommentOptions(s) });",
+    ],
+  ])('refuses %s', (_label, code) => {
+    const [payload] = payloadsOf(code);
+    const accepted =
+      payload.options?.kind === 'call' &&
+      payload.options.imported === 'resolveCommentOptions';
+    expect(accepted).toBe(false);
   });
 
   it('refuses an identifier argument instead of ignoring it', () => {

@@ -1,7 +1,13 @@
 import { useComment } from '@ecency/sdk';
 import { useMutation } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+// Imported from the module rather than the `@/core` barrel: the barrel pulls
+// in `configuration-loader`, which imports the build-time `config.json` that
+// only exists after an image build, so a test of this hook could not load it.
+import type { RewardType } from '@/core/hive-layer';
+import { resolveCommentOptions } from '@/core/hive-layer';
 import { useAuth } from '@/features/auth/hooks';
+import { useHiveLayer } from '@/features/blog/hooks/use-hive-layer';
 import { useInstanceConfig } from '@/features/blog/hooks/use-instance-config';
 import { createBroadcastAdapter } from '@/providers/sdk';
 import { createPermlink } from '../utils/permlink';
@@ -15,6 +21,7 @@ export function usePublishPost({
   const { user } = useAuth();
   const navigate = useNavigate();
   const { isCommunityMode, communityId } = useInstanceConfig();
+  const { authorRewards } = useHiveLayer();
 
   const adapter = createBroadcastAdapter();
   const commentMutation = useComment(user?.username, { adapter });
@@ -25,10 +32,12 @@ export function usePublishPost({
       title,
       body,
       tags,
+      rewardType,
     }: {
       title: string;
       body: string;
       tags: string[];
+      rewardType: RewardType;
     }) => {
       if (!user) {
         throw new Error('Authentication required to publish post');
@@ -57,6 +66,14 @@ export function usePublishPost({
         communityId,
       });
 
+      // The instance is not allowed to choose a reward split, only whether the
+      // author is asked at all. With the control switched off there is nothing
+      // to honour, and a selection left in a stale draft must not survive the
+      // owner turning the panel off, so it collapses back to the untouched
+      // selection here rather than at the render site.
+      const rewardSelection =
+        authorRewards === 'author' ? rewardType : 'default';
+
       await commentMutation.mutateAsync({
         author: user.username,
         permlink,
@@ -69,6 +86,11 @@ export function usePublishPost({
           app: 'ecency-selfhost/1.0',
           format: 'markdown',
         },
+        // The only door to a `comment_options` operation in this app, and it
+        // returns undefined for every author who did not choose otherwise,
+        // which the SDK's `if (payload.options)` gate turns into an operation
+        // array byte-identical to the one published before this existed.
+        options: resolveCommentOptions(rewardSelection),
       });
 
       // Return where the new post lives so onSuccess can land the author ON it.

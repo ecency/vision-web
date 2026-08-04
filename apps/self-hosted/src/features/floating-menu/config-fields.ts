@@ -230,7 +230,7 @@ export const configFieldsMap: Record<string, ConfigField> = {
                     type: 'select',
                     default: HIVE_LAYER_CONFIG_DEFAULTS.authorRewards,
                     description:
-                      'Off publishes with the usual Hive reward setting. Author chooses offers the writer all Hive Power or declining rewards, picked once at publish and not editable afterwards. Applies only to posts written here, so it does nothing when Create Post URL points at another site. The reward control itself is still being built, so this has no visible effect yet.',
+                      'Off publishes with the usual Hive reward setting. Author chooses offers the writer all Hive Power or declining rewards, picked once at publish and not editable afterwards. Applies only to posts written here, so it does nothing when Create Post URL points at another site.',
                     options: [
                       { value: 'off', label: 'Off' },
                       { value: 'author', label: 'Author chooses' },
