@@ -203,7 +203,7 @@ def wanted_uris(database_url: str, base_domain: str) -> list[str]:
     try:
         import psycopg
     except ImportError:  # pragma: no cover - depends on the operator's box
-        raise SystemExit("psycopg is required: pip install 'psycopg[binary]'")
+        raise SystemExit("psycopg is required: pip install 'psycopg[binary]'") from None
 
     uris: list[str] = []
     with psycopg.connect(database_url) as connection:
@@ -256,7 +256,7 @@ def read_secret_file(path: str, label: str) -> str:
     try:
         mode = os.stat(path).st_mode
     except OSError as error:
-        raise SystemExit(f"cannot read the {label} file: {error.strerror}")
+        raise SystemExit(f"cannot read the {label} file: {error.strerror}") from error
     if mode & (stat.S_IRWXG | stat.S_IRWXO):
         raise SystemExit(f"the {label} file is readable by group or other; chmod 600 it")
     with open(path, encoding="utf-8") as handle:
@@ -309,7 +309,7 @@ def broadcast_metadata(
         from lighthive.client import Client
         from lighthive.datastructures import Operation
     except ImportError:  # pragma: no cover - depends on the operator's box
-        raise SystemExit("lighthive is required to broadcast: pip install lighthive")
+        raise SystemExit("lighthive is required to broadcast: pip install lighthive") from None
 
     client = Client(nodes=nodes, keys=[key])
     client.broadcast_sync(
@@ -436,7 +436,10 @@ def acquire_lock() -> None:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         handle.close()
-        raise SystemExit(0)
+        # `from None`: a run skipped because the previous one is still
+        # going is the normal case, not a fault, and chaining the
+        # BlockingIOError onto it prints a traceback for a clean exit.
+        raise SystemExit(0) from None
     _LOCK_HANDLE = handle
 
 
