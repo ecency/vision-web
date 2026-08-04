@@ -106,7 +106,13 @@ export function BlogNavigation() {
 
       {/* Single rule under the tabs: the nav carries the divider and the active tab's
           2px indicator overlaps it (-mb-px). no-underline kills the template's global
-          link underline, which stacked a third line under the labels. */}
+          link underline, which stacked a third line under the labels.
+
+          The active indicator is the accent, not --theme-border-strong, which
+          measured 1.38:1 to 1.87:1 against the page across all twelve palettes,
+          against the 3:1 WCAG 1.4.11 asks of a state indicator. The accent
+          measures 4.34:1 to 15.86:1 over the same set. font-medium is the
+          second, non-colour cue. */}
       <nav className="flex gap-4 sm:gap-6 pt-3 sm:pt-4 overflow-x-auto border-b border-theme">
         {availableFilters.map((filter) => {
           const isActive = currentFilter === filter;
@@ -118,7 +124,7 @@ export function BlogNavigation() {
               className={clsx(
                 'text-sm font-normal transition-theme pb-2 border-b-2 -mb-px no-underline font-theme-ui whitespace-nowrap',
                 isActive
-                  ? 'border-theme-strong text-theme-primary'
+                  ? 'border-theme-accent text-theme-primary font-medium'
                   : 'border-transparent text-theme-muted hover:text-theme-primary hover:border-theme',
               )}
             >

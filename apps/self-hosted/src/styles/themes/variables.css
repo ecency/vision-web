@@ -56,6 +56,8 @@
 
   --theme-accent: #0969da;
   --theme-accent-hover: #0550ae;
+  /* 5.19:1. See the note on --theme-accent-contrast in the derived block. */
+  --theme-accent-contrast: #ffffff;
 
   --theme-border: rgba(0, 0, 0, 0.1);
   --theme-border-strong: rgba(0, 0, 0, 0.2);
@@ -132,6 +134,28 @@
   --theme-accent-text: var(--theme-accent-text-light, var(--theme-accent));
   --theme-tag-bg: color-mix(in srgb, transparent 88%, var(--theme-accent));
   --theme-tag-text: var(--theme-accent-text-light, var(--theme-text-secondary));
+
+  /*
+   * Article link underlines, derived rather than declared.
+   *
+   * .markdown-body a reads both of these, and every template used to name a
+   * literal here, so an owner's accent stopped at the edge of an article. The
+   * var() substitutes against whichever block wins for --theme-accent on this
+   * element, so a template that re-declares the accent re-derives its own
+   * underline with nothing further to write.
+   *
+   * Accent-first in the mix, unlike --theme-tag-bg above and for the same
+   * reason: the build's pre-color-mix fallback keeps the FIRST colour, so
+   * accent-first degrades to a full-strength underline (which is the hover
+   * state) while transparent-first would degrade to no underline at all, and
+   * the underline is the affordance that says a run of body text is a link.
+   */
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent);
 }
 
 /* Dark Mode Overrides */
@@ -148,6 +172,16 @@
 
   --theme-accent: #58a6ff;
   --theme-accent-hover: #79c0ff;
+  /*
+   * The ink that goes ON the accent, not next to it: 7.02:1 here, against 2.53:1
+   * for white. It is mode-independent by construction (both operands are the
+   * accent and a fixed ink), which is why applyConfigDom can write one inline
+   * value for a configured accent and never re-run on an OS theme flip. Every
+   * block that declares --theme-accent declares this beside it, so whichever
+   * block wins the cascade for the fill also wins for the ink and no
+   * cross-block pairing is possible.
+   */
+  --theme-accent-contrast: #111827;
 
   --theme-border: rgba(255, 255, 255, 0.1);
   --theme-border-strong: rgba(255, 255, 255, 0.2);
@@ -161,4 +195,10 @@
   --theme-accent-text: var(--theme-accent-text-dark, var(--theme-accent));
   --theme-tag-bg: color-mix(in srgb, transparent 88%, var(--theme-accent));
   --theme-tag-text: var(--theme-accent-text-dark, var(--theme-text-secondary));
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent);
 }

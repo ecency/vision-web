@@ -5,7 +5,10 @@ import { describe, expect, it } from 'vitest';
 import {
   ACCENT_CONTRAST_TARGET,
   ACCENT_TINT_PERCENT,
+  accentContrastColor,
+  accentTextForMode,
   contrastRatio,
+  formatHexColor,
   parseHexColor,
   type Rgb,
   relativeLuminance,
@@ -40,12 +43,14 @@ interface Block {
   declarations: Map<string, string>;
 }
 
-/** Top-level `selector { ... }` blocks of a stylesheet, comments removed. */
+/** Top-level `selector { ... }` blocks of a theme file, comments removed. */
 function blocks(file: string): Block[] {
-  const css = readFileSync(join(THEMES, file), 'utf8').replace(
-    /\/\*[\s\S]*?\*\//g,
-    '',
-  );
+  return parseBlocks(readFileSync(join(THEMES, file), 'utf8'), file);
+}
+
+/** Top-level `selector { ... }` blocks of a stylesheet, comments removed. */
+function parseBlocks(source: string, file: string): Block[] {
+  const css = source.replace(/\/\*[\s\S]*?\*\//g, '');
   const out: Block[] = [];
   let prelude = '';
   let depth = 0;
@@ -384,5 +389,615 @@ describe('theme files', () => {
     }
 
     expect(offenders).toEqual([]);
+  });
+});
+
+// =============================================================================
+// Accent plumbing: the tokens the accent reaches once it is wired
+// =============================================================================
+
+/**
+ * Everything below resolves a declaration to an actual colour before asserting
+ * anything about it. Nothing here matches on a token's spelling, because a
+ * guard that greps for `var(--theme-accent)` passes on
+ * `color-mix(in srgb, var(--theme-accent) 0%, transparent)` and on a value that
+ * names the accent in a property nothing reads.
+ */
+
+/** A colour with its alpha, before it is put on any surface. */
+interface Colour {
+  rgb: Rgb;
+  alpha: number;
+}
+
+const COLOUR_KEYWORDS: Record<string, Colour> = {
+  transparent: { rgb: [0, 0, 0], alpha: 0 },
+};
+
+/**
+ * A declaration value resolved to a colour, substituting the custom properties
+ * the SAME block declares.
+ *
+ * Same block, deliberately: a var() in a custom property substitutes at
+ * computed-value time on the element carrying the declaration, and every block
+ * here matches <html>. Resolving against the declaring block is what makes
+ * "this template derives its own underline" checkable one block at a time
+ * instead of by simulating the cascade.
+ *
+ * A `var(--x, fallback)` whose --x no block declares takes the fallback, which
+ * is exactly the instance-with-no-accent-configured case: --theme-accent-text-*
+ * is written inline on <html> by applyConfigDom and never appears in CSS.
+ */
+function resolveColour(value: string, block: Block, depth = 0): Colour | null {
+  if (depth > 8) return null;
+  const raw = value.trim();
+
+  const keyword = COLOUR_KEYWORDS[raw.toLowerCase()];
+  if (keyword) return keyword;
+
+  const literal = parseColor(raw);
+  if (literal) return literal;
+
+  const varMatch = /^var\(\s*(--[a-z0-9-]+)\s*(?:,([\s\S]+))?\)$/i.exec(raw);
+  if (varMatch) {
+    const declared = block.declarations.get(varMatch[1]);
+    if (declared !== undefined)
+      return resolveColour(declared, block, depth + 1);
+    if (varMatch[2] === undefined) return null;
+    return resolveColour(varMatch[2], block, depth + 1);
+  }
+
+  // color-mix(in <space>, A p%, B) with one side transparent, which is the only
+  // shape the theme files use. Percentages are read, not assumed.
+  const mix = /^color-mix\(\s*in\s+[a-z-]+\s*,([\s\S]+)\)$/i.exec(raw);
+  if (mix) {
+    const parts = splitTopLevel(mix[1]);
+    if (parts.length !== 2) return null;
+    const sides = parts.map((part) => {
+      const percent = /\s(\d+(?:\.\d+)?)%\s*$/.exec(part);
+      return {
+        colour: part.replace(/\s(\d+(?:\.\d+)?)%\s*$/, '').trim(),
+        percent: percent ? Number(percent[1]) : null,
+      };
+    });
+    const opaqueAt = sides.findIndex(
+      (side) => side.colour.toLowerCase() !== 'transparent',
+    );
+    if (opaqueAt < 0) return null;
+    const opaque = sides[opaqueAt];
+    const other = sides[1 - opaqueAt];
+    if (other.colour.toLowerCase() !== 'transparent') return null;
+    const share =
+      opaque.percent !== null
+        ? opaque.percent
+        : other.percent !== null
+          ? 100 - other.percent
+          : null;
+    if (share === null) return null;
+    const base = resolveColour(opaque.colour, block, depth + 1);
+    if (!base) return null;
+    return { rgb: base.rgb, alpha: base.alpha * (share / 100) };
+  }
+
+  return null;
+}
+
+/** Split on commas that are not inside parentheses. */
+function splitTopLevel(input: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const char of input) {
+    if (char === '(') depth += 1;
+    if (char === ')') depth -= 1;
+    if (char === ',' && depth === 0) {
+      out.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  out.push(current);
+  return out.map((part) => part.trim()).filter((part) => part.length > 0);
+}
+
+/** The colour a declaration paints when it lands on that block's own page. */
+function onPage(value: string, block: Block): Rgb | null {
+  const colour = resolveColour(value, block);
+  const page = parseColor(block.declarations.get('--theme-bg-primary') ?? '');
+  if (!colour || !page) return null;
+  return composite(colour, page.rgb);
+}
+
+function near(a: Rgb, b: Rgb): boolean {
+  return a.every((channel, index) => Math.abs(channel - b[index]) < 0.75);
+}
+
+function label(block: Block): string {
+  return `${block.file} ${block.selector}`;
+}
+
+/** The accent fill each block paints, which is what everything here is against. */
+function accentFill(block: Block): Rgb {
+  const fill = onPage('var(--theme-accent)', block);
+  if (!fill) throw new Error(`${label(block)}: unresolvable --theme-accent`);
+  return fill;
+}
+
+function page(block: Block): Rgb {
+  const surface = parseColor(
+    block.declarations.get('--theme-bg-primary') ?? '',
+  );
+  if (!surface)
+    throw new Error(`${label(block)}: unresolvable --theme-bg-primary`);
+  return surface.rgb;
+}
+
+/** WCAG 1.4.11: a non-text state indicator wants 3:1 against what surrounds it. */
+const INDICATOR_TARGET = 3;
+
+const COMPONENT_BLOCKS = parseBlocks(
+  readFileSync(COMPONENTS, 'utf8'),
+  'components.css',
+);
+
+function componentRule(selector: string): Block {
+  const found = COMPONENT_BLOCKS.find((block) => block.selector === selector);
+  if (!found) throw new Error(`components.css has no ${selector} rule`);
+  return found;
+}
+
+/** The colour at the end of a `box-shadow` or `outline` shorthand. */
+function trailingColour(value: string): string {
+  const match =
+    /(var\((?:[^()]|\([^()]*\))*\)|color-mix\((?:[^()]|\([^()]*\))*\)|rgba?\([^()]*\)|#[0-9a-f]{3,8}|[a-z]+)\s*$/i.exec(
+      value.trim(),
+    );
+  if (!match) throw new Error(`no trailing colour in "${value}"`);
+  return match[1];
+}
+
+describe('the ink that goes on the accent', () => {
+  it('is declared by every block that declares an accent', () => {
+    // Whichever block wins the cascade for the fill wins for the ink, so the
+    // two can never come from different palettes. Twelve blocks, no exceptions.
+    const missing = accentBlocks
+      .filter((block) => !block.declarations.has('--theme-accent-contrast'))
+      .map(label);
+
+    expect(missing).toEqual([]);
+  });
+
+  it('clears 4.5:1 on the fill it is placed on', () => {
+    const failures: string[] = [];
+
+    for (const block of accentBlocks) {
+      const fill = accentFill(block);
+      const ink = onPage(
+        block.declarations.get('--theme-accent-contrast') ?? '',
+        block,
+      );
+      if (!ink) {
+        failures.push(`${label(block)}: unresolvable ink`);
+        continue;
+      }
+      const ratio = contrastRatio(fill, ink);
+      if (ratio < ACCENT_CONTRAST_TARGET) {
+        failures.push(`${label(block)}: ${ratio.toFixed(2)}:1`);
+      }
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  it('is the ink the module would have chosen for the same fill', () => {
+    // An owner who configures an accent gets this value written inline on
+    // <html> by applyConfigDom; an owner who configures nothing gets it from
+    // the block. If the two disagreed, the same fill would carry two different
+    // labels depending on a config key, and only one of them would be checked.
+    const disagreements: string[] = [];
+
+    for (const block of accentBlocks) {
+      const fill = accentFill(block);
+      const rounded = formatHexColor([
+        Math.round(fill[0]),
+        Math.round(fill[1]),
+        Math.round(fill[2]),
+      ]);
+      const expected = accentContrastColor(rounded);
+      const declared = block.declarations.get('--theme-accent-contrast');
+      const declaredRgb = declared ? resolveColour(declared, block) : null;
+      const expectedRgb = expected ? parseHexColor(expected) : null;
+      if (!declaredRgb || !expectedRgb || !near(declaredRgb.rgb, expectedRgb)) {
+        disagreements.push(`${label(block)}: ${declared} vs ${expected}`);
+      }
+    }
+
+    expect(disagreements).toEqual([]);
+  });
+});
+
+describe('article link underlines', () => {
+  it('are stated by every block that declares an accent', () => {
+    // Both blocks of a template match <html>, and the more specific one only
+    // outranks the other for what it declares. A pair declared once as a
+    // literal was therefore the OTHER mode's underline too: minimal's dark page
+    // underlined in the light accent and developer's light page in the dark one.
+    const missing: string[] = [];
+    for (const block of accentBlocks) {
+      for (const property of [
+        '--theme-link-decoration-color',
+        '--theme-link-decoration-hover',
+      ]) {
+        if (!block.declarations.has(property))
+          missing.push(`${label(block)}: ${property}`);
+      }
+    }
+
+    expect(missing).toEqual([]);
+  });
+
+  it('resolve on hover to the accent of the block they belong to', () => {
+    const wrong: string[] = [];
+
+    for (const block of accentBlocks) {
+      const hover = onPage(
+        block.declarations.get('--theme-link-decoration-hover') ?? '',
+        block,
+      );
+      if (!hover || !near(hover, accentFill(block))) {
+        wrong.push(`${label(block)}: ${hover?.map(Math.round).join(',')}`);
+      }
+    }
+
+    expect(wrong).toEqual([]);
+  });
+
+  it('resolve at rest to a tint of that same accent, not to a colour of their own', () => {
+    // This is what a hardcoded #c5c0b8 fails and what a re-spelled accent
+    // passes, so it is a statement about the pixel rather than about the token.
+    const wrong: string[] = [];
+
+    for (const block of accentBlocks) {
+      const resting = onPage(
+        block.declarations.get('--theme-link-decoration-color') ?? '',
+        block,
+      );
+      const tint = composite(
+        { rgb: accentFill(block), alpha: 1 },
+        page(block),
+        0.4,
+      );
+      if (!resting || !near(resting, tint)) {
+        wrong.push(`${label(block)}: ${resting?.map(Math.round).join(',')}`);
+      }
+    }
+
+    expect(wrong).toEqual([]);
+  });
+
+  it('are quiet at rest and reach 3:1 under the pointer', () => {
+    // The resting underline is deliberately faint: it is a decoration under
+    // text that carries its own contrast. The hover state is the feedback, and
+    // it is the one that has to be seen.
+    const failures: string[] = [];
+
+    for (const block of accentBlocks) {
+      const resting = onPage(
+        block.declarations.get('--theme-link-decoration-color') ?? '',
+        block,
+      );
+      const hover = onPage(
+        block.declarations.get('--theme-link-decoration-hover') ?? '',
+        block,
+      );
+      if (!resting || !hover) {
+        failures.push(`${label(block)}: unresolvable`);
+        continue;
+      }
+      const restingRatio = contrastRatio(resting, page(block));
+      const hoverRatio = contrastRatio(hover, page(block));
+      if (hoverRatio < INDICATOR_TARGET) {
+        failures.push(`${label(block)}: hover ${hoverRatio.toFixed(2)}:1`);
+      }
+      if (restingRatio > hoverRatio) {
+        failures.push(
+          `${label(block)}: rest ${restingRatio.toFixed(2)} louder than hover ${hoverRatio.toFixed(2)}`,
+        );
+      }
+      if (restingRatio <= 1.05) {
+        failures.push(`${label(block)}: rest invisible`);
+      }
+    }
+
+    expect(failures).toEqual([]);
+  });
+});
+
+describe('the primary button', () => {
+  const rest = componentRule('.btn-theme-primary');
+  const hover = componentRule('.btn-theme-primary:hover:not(:disabled)');
+  const focus = componentRule('.btn-theme-primary:focus-visible');
+
+  it('fills with the accent of whichever block wins', () => {
+    const wrong: string[] = [];
+    for (const block of accentBlocks) {
+      const fill = resolveColour(
+        rest.declarations.get('background-color') ?? '',
+        block,
+      );
+      if (!fill || !near(composite(fill, page(block)), accentFill(block))) {
+        wrong.push(label(block));
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it('keeps its label readable at rest and under the pointer', () => {
+    // Under the pointer as well as at rest, because a hover colour that moves
+    // AWAY from the label is invisible until someone hovers: developer's light
+    // hover was #7287fd, which left white text at 3.18:1 while every other
+    // palette sat between 7.10:1 and 21:1.
+    const failures: string[] = [];
+
+    for (const block of accentBlocks) {
+      const ink = resolveColour(rest.declarations.get('color') ?? '', block);
+      const restFill = resolveColour(
+        rest.declarations.get('background-color') ?? '',
+        block,
+      );
+      const hoverFill = resolveColour(
+        hover.declarations.get('background-color') ?? '',
+        block,
+      );
+      if (!ink || !restFill || !hoverFill) {
+        failures.push(`${label(block)}: unresolvable`);
+        continue;
+      }
+      const inkOn = (fill: Colour) =>
+        contrastRatio(
+          composite(ink, composite(fill, page(block))),
+          composite(fill, page(block)),
+        );
+      const atRest = inkOn(restFill);
+      const onHover = inkOn(hoverFill);
+      if (atRest < ACCENT_CONTRAST_TARGET)
+        failures.push(`${label(block)}: rest ${atRest.toFixed(2)}:1`);
+      if (onHover < ACCENT_CONTRAST_TARGET)
+        failures.push(`${label(block)}: hover ${onHover.toFixed(2)}:1`);
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  it('falls back to a literal colour for its label, never to the inherited one', () => {
+    // `color` inherits, so a var() with no fallback that is invalid at
+    // computed-value time resolves to the page text colour: near-black label
+    // text on a dark accent fill. The fallback caps the damage of a block that
+    // ever loses the token at white-on-accent.
+    const value = rest.declarations.get('color') ?? '';
+    const fallback = /^var\(\s*--[a-z0-9-]+\s*,([\s\S]+)\)$/i.exec(
+      value.trim(),
+    );
+
+    expect(fallback).not.toBeNull();
+    expect(parseColor(fallback?.[1] ?? '')).not.toBeNull();
+  });
+
+  it('is focusable visibly, against the page rather than against its own fill', () => {
+    // outline-offset is what makes this measurable against the page: without
+    // it the ring would sit on a fill of its own colour and disappear.
+    expect(focus.declarations.get('outline-offset')).toBeTruthy();
+
+    const failures: string[] = [];
+    const ring = trailingColour(focus.declarations.get('outline') ?? '');
+    for (const block of accentBlocks) {
+      const colour = resolveColour(ring, block);
+      if (!colour) {
+        failures.push(`${label(block)}: unresolvable ring`);
+        continue;
+      }
+      const ratio = contrastRatio(composite(colour, page(block)), page(block));
+      if (ratio < INDICATOR_TARGET)
+        failures.push(`${label(block)}: ${ratio.toFixed(2)}:1`);
+    }
+
+    expect(failures).toEqual([]);
+  });
+});
+
+describe('the text input focus ring', () => {
+  const focus = componentRule('.input-theme:focus');
+
+  it('carries no colour of its own', () => {
+    // It was rgba(59, 130, 246, 0.3): a fixed blue no template asked for, at
+    // 1.19:1 on the default light page.
+    const ring = trailingColour(focus.declarations.get('box-shadow') ?? '');
+    expect(parseColor(ring)).toBeNull();
+  });
+
+  it('clears 3:1 against every page it can appear on', () => {
+    // 40% of the accent, which is what the underline uses and what was
+    // proposed here, measures 1.74:1 to 3.42:1 and fails eleven of twelve. This
+    // assertion is the reason the ring is the accent at full strength.
+    const ring = trailingColour(focus.declarations.get('box-shadow') ?? '');
+    const failures: string[] = [];
+
+    for (const block of accentBlocks) {
+      const colour = resolveColour(ring, block);
+      if (!colour) {
+        failures.push(`${label(block)}: unresolvable`);
+        continue;
+      }
+      const ratio = contrastRatio(composite(colour, page(block)), page(block));
+      if (ratio < INDICATOR_TARGET)
+        failures.push(`${label(block)}: ${ratio.toFixed(2)}:1`);
+    }
+
+    expect(failures).toEqual([]);
+  });
+});
+
+describe('the accent as a state indicator', () => {
+  // border-theme-accent marks the active feed tab and the selected tipping
+  // currency. Which token it reads is decided in theme-tokens.css, so read it
+  // from there rather than restating it.
+  const tokenSource = readFileSync(TOKENS, 'utf8').replace(
+    /\/\*[\s\S]*?\*\//g,
+    '',
+  );
+  const namespace = declarations(
+    tokenSource.slice(
+      tokenSource.indexOf('{') + 1,
+      tokenSource.lastIndexOf('}'),
+    ),
+  );
+  // Narrower namespaces win over --color-* for the utility they name, which is
+  // how text-theme-accent already differs from bg-theme-accent.
+  const borderSource =
+    namespace.get('--border-color-theme-accent') ??
+    namespace.get('--color-theme-accent') ??
+    '';
+
+  it('is what a border-theme-accent resolves to in every palette', () => {
+    expect(borderSource).not.toBe('');
+    const wrong: string[] = [];
+    for (const block of accentBlocks) {
+      const colour = resolveColour(borderSource, block);
+      if (!colour || !near(composite(colour, page(block)), accentFill(block))) {
+        wrong.push(label(block));
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it('clears 3:1 against its own page, which --theme-border-strong did not', () => {
+    // The active tab used to be border-theme-strong, which measures 1.38:1 to
+    // 1.87:1 against the page: a state indicator nobody could see. Both
+    // numbers are computed here so that swapping the token back fails.
+    const failures: string[] = [];
+    const strongFailures: string[] = [];
+
+    for (const block of accentBlocks) {
+      const indicator = onPage(borderSource, block);
+      if (!indicator) {
+        failures.push(`${label(block)}: unresolvable`);
+        continue;
+      }
+      const ratio = contrastRatio(indicator, page(block));
+      if (ratio < INDICATOR_TARGET)
+        failures.push(`${label(block)}: ${ratio.toFixed(2)}:1`);
+
+      const strong = onPage('var(--theme-border-strong)', block);
+      if (strong && contrastRatio(strong, page(block)) < INDICATOR_TARGET) {
+        strongFailures.push(label(block));
+      }
+    }
+
+    expect(failures).toEqual([]);
+    // The token this replaced still fails everywhere, so the swap was the fix
+    // and not a coincidence of one palette.
+    expect(strongFailures.length).toBe(accentBlocks.length);
+  });
+});
+
+describe('author and tag chips inside an article', () => {
+  const markdown = parseBlocks(
+    readFileSync(join(HERE, 'blog-markdown.css'), 'utf8'),
+    'blog-markdown.css',
+  );
+
+  const chips = markdown.filter((block) =>
+    /\.er-(author|tag)-link$/.test(block.selector),
+  );
+
+  const variablesBlocks = blocks('variables.css');
+
+  /**
+   * The declarations that apply to <html> for one palette: the block's own,
+   * plus the derived tokens variables.css declares for the matching mode and
+   * the block does not override, plus the chip rule's own.
+   *
+   * `mode` is read from the block's page rather than from its selector, because
+   * developer's unqualified block is its DARK palette.
+   */
+  function asRendered(block: Block, chip: Block, overrides: string[][]): Block {
+    const mode = relativeLuminance(page(block)) >= 0.5 ? 'light' : 'dark';
+    const base = variablesBlocks.find((candidate) =>
+      mode === 'dark'
+        ? candidate.selector.includes('[data-theme="dark"]')
+        : candidate.selector.startsWith(':root'),
+    );
+    const merged = new Map(base?.declarations ?? []);
+    for (const [key, value] of block.declarations) merged.set(key, value);
+    for (const [key, value] of chip.declarations) merged.set(key, value);
+    for (const [key, value] of overrides) merged.set(key, value);
+    return {
+      ...block,
+      selector: `${block.selector} ${chip.selector}`,
+      declarations: merged,
+    };
+  }
+
+  it('render the template accent unchanged when no accent is configured', () => {
+    // 27 of 27 instances. --theme-accent-text falls through to the accent, so
+    // this pins that reading the corrected token cost nobody a pixel.
+    expect(chips.length).toBe(2);
+    const wrong: string[] = [];
+
+    for (const chip of chips) {
+      for (const block of accentBlocks) {
+        const rendered = asRendered(block, chip, []);
+        const colour = resolveColour(
+          chip.declarations.get('color') ?? '',
+          rendered,
+        );
+        if (!colour || !near(composite(colour, page(block)), accentFill(block)))
+          wrong.push(rendered.selector);
+      }
+    }
+
+    expect(wrong).toEqual([]);
+  });
+
+  it('correct an owner accent that would be illegible as text', () => {
+    // Yellow is the case the whole correction exists for: 1.07:1 as text on a
+    // white page. applyConfigDom writes the accent AND both corrected variants
+    // inline on <html>, so a chip reading the raw token would render the yellow
+    // and a chip reading the corrected one renders the olive.
+    const OWNER_ACCENT = '#ffff00';
+    const failures: string[] = [];
+
+    for (const chip of chips) {
+      for (const block of accentBlocks) {
+        const rendered = asRendered(block, chip, [
+          ['--theme-accent', OWNER_ACCENT],
+          [
+            '--theme-accent-text-light',
+            accentTextForMode(OWNER_ACCENT, 'light') ?? '',
+          ],
+          [
+            '--theme-accent-text-dark',
+            accentTextForMode(OWNER_ACCENT, 'dark') ?? '',
+          ],
+        ]);
+        const colour = resolveColour(
+          chip.declarations.get('color') ?? '',
+          rendered,
+        );
+        if (!colour) {
+          failures.push(`${rendered.selector}: unresolvable`);
+          continue;
+        }
+        const ratio = contrastRatio(
+          composite(colour, page(block)),
+          page(block),
+        );
+        if (ratio < ACCENT_CONTRAST_TARGET)
+          failures.push(`${rendered.selector}: ${ratio.toFixed(2)}:1`);
+      }
+    }
+
+    expect(failures).toEqual([]);
   });
 });

@@ -33,6 +33,12 @@
   /* Terminal-inspired accent colors */
   --theme-accent: #89b4fa;
   --theme-accent-hover: #b4befe;
+  /*
+   * Ink on the accent fill: 8.42:1, against 2.11:1 for #ffffff. This block is
+   * the DARK palette, so a guard that picked the ink from the selector rather
+   * than from --theme-bg-primary would get this one backwards.
+   */
+  --theme-accent-contrast: #111827;
 
   --theme-border: #313244;
   --theme-border-strong: #45475a;
@@ -47,10 +53,14 @@
   --theme-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   --theme-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
 
-  /* Link style */
+  /* Link style, derived from the accent; see variables.css */
   --theme-link-decoration: underline;
-  --theme-link-decoration-color: rgba(137, 180, 250, 0.4);
-  --theme-link-decoration-hover: #89b4fa;
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent);
 
   /*
    * Tag style - Code-like. The fill comes from the accent tint in
@@ -102,10 +112,29 @@
   --theme-text-muted: #7c7f93;
 
   --theme-accent: #1e66f5;
-  --theme-accent-hover: #7287fd;
+  /*
+   * Darker than the accent, not lighter. #7287fd went the wrong way on a light
+   * page: it left white label text on the hovered button at 3.18:1 (every other
+   * palette is 7.10:1 to 21:1) and the hovered author chip at 2.65:1 against
+   * the page. This is the only block whose hover moved away from its own ink.
+   * #1a5ad9 is 5.99:1 against the label and 5.29:1 against the page.
+   */
+  --theme-accent-hover: #1a5ad9;
+  /* 4.91:1, against 3.61:1 for #111827. The lowest of the twelve. */
+  --theme-accent-contrast: #ffffff;
 
   --theme-border: #ccd0da;
   --theme-border-strong: #bcc0cc;
+
+  /* Both blocks match <html>; this one only outranks the base block for what it
+     declares, so the base block's literal rgba(137, 180, 250, 0.4) was this
+     light page's underline too. */
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent);
 
   --theme-tag-text: var(--theme-accent-text-light, #4c4f69);
 

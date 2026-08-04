@@ -57,6 +57,47 @@
   opacity: 0.7;
 }
 
+/*
+ * Primary button.
+ *
+ * The one composite that reads the accent as a FILL, and so the one that needs
+ * an ink chosen for it. --theme-accent-contrast is white or near-black,
+ * whichever wins against that block's own accent; every block that declares an
+ * accent declares it alongside, and applyConfigDom writes it inline on <html>
+ * when an owner configures one, so the pair can never come from two different
+ * palettes.
+ *
+ * The literal fallback on `color` is load-bearing and is not defensive
+ * padding. `color` inherits, so a var() with no fallback that is invalid at
+ * computed-value time resolves to the INHERITED page text colour rather than
+ * to white: a block that forgot the token would put near-black label text on a
+ * dark accent fill. With the fallback, the worst a missed block can do is
+ * white on the accent.
+ *
+ * The focus outline is the accent as well, and `outline-offset` is what makes
+ * it visible: two pixels of page between the fill and the ring, so the ring is
+ * measured against the page (4.34:1 to 15.86:1 across the twelve palettes)
+ * rather than against a fill of its own colour.
+ *
+ * Hover excludes :disabled because every call site pairs this with
+ * disabled:opacity-50, and a dimmed button that still lights up under the
+ * pointer reads as clickable when it is not.
+ */
+.btn-theme-primary {
+  background-color: var(--theme-accent);
+  color: var(--theme-accent-contrast, #ffffff);
+  border-radius: var(--theme-radius);
+}
+
+.btn-theme-primary:hover:not(:disabled) {
+  background-color: var(--theme-accent-hover);
+}
+
+.btn-theme-primary:focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 2px;
+}
+
 /* Link Styles */
 .link-theme {
   color: inherit;
@@ -133,10 +174,21 @@
   border-radius: var(--theme-radius);
 }
 
+/*
+ * The ring is the accent at full strength, not a tint of it.
+ *
+ * It replaces a hardcoded rgba(59, 130, 246, 0.3), which measured 1.19:1
+ * against the default light page: a focus indicator nobody could see, in a
+ * fixed blue no template asked for. WCAG 1.4.11 wants 3:1 for a state
+ * indicator, and 40% of the accent does not get there either (1.74:1 to 3.42:1
+ * across the twelve palettes). Full strength measures 4.34:1 to 15.86:1, and
+ * matches .focus-ring-theme below, which is the convention this file already
+ * had.
+ */
 .input-theme:focus {
   outline: none;
   border-color: var(--theme-accent);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 0 2px var(--theme-accent);
 }
 
 .input-theme::placeholder {

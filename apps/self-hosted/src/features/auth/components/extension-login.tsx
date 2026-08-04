@@ -216,7 +216,7 @@ export function ExtensionLogin({ onSuccess, onError }: ExtensionLoginProps) {
             type="button"
             onClick={handleLogin}
             disabled={loading || !username.trim() || !selected}
-            className="flex-1 px-4 py-2 rounded-theme bg-blue-600 text-white hover:bg-blue-700 transition-theme disabled:opacity-50 disabled:cursor-not-allowed font-theme-ui"
+            className="btn-theme-primary flex-1 px-4 py-2 transition-theme disabled:opacity-50 disabled:cursor-not-allowed font-theme-ui"
           >
             {loading ? 'Connecting...' : 'Login'}
           </button>

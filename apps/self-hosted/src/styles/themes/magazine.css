@@ -28,6 +28,8 @@
 
   --theme-accent: #8b4513;
   --theme-accent-hover: #6b3410;
+  /* Ink on the accent fill: 7.10:1, against 2.50:1 for #111827. */
+  --theme-accent-contrast: #ffffff;
 
   --theme-border: #e0dcd5;
   --theme-border-strong: #c5c0b8;
@@ -42,10 +44,14 @@
   --theme-shadow: 0 2px 6px rgba(44, 40, 37, 0.08);
   --theme-shadow-lg: 0 6px 16px rgba(44, 40, 37, 0.1);
 
-  /* Link style - Elegant underline */
+  /* Link style - Elegant underline, derived from the accent */
   --theme-link-decoration: underline;
-  --theme-link-decoration-color: #c5c0b8;
-  --theme-link-decoration-hover: #8b4513;
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent);
 
   /* Tag style - fill comes from the accent tint in variables.css */
   --theme-tag-text: var(--theme-accent-text-light, #4a4540);
@@ -87,12 +93,18 @@
 
   --theme-accent: #d4a574;
   --theme-accent-hover: #e5c090;
+  /* 7.97:1, against 2.23:1 for #ffffff. */
+  --theme-accent-contrast: #111827;
 
   --theme-border: #3a3530;
   --theme-border-strong: #4a4540;
 
-  --theme-link-decoration-color: #4a4540;
-  --theme-link-decoration-hover: #d4a574;
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent);
 
   --theme-tag-text: var(--theme-accent-text-dark, #c5c0b8);
 

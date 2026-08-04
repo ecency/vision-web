@@ -32,6 +32,8 @@
 
   --theme-accent: #0066cc;
   --theme-accent-hover: #0052a3;
+  /* Ink on the accent fill: 5.57:1, against 3.19:1 for #111827. */
+  --theme-accent-contrast: #ffffff;
 
   --theme-border: #eaeaea;
   --theme-border-strong: #d0d0d0;
@@ -46,10 +48,14 @@
   --theme-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
   --theme-shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.08);
 
-  /* Link style */
+  /* Link style, derived from the accent; see variables.css */
   --theme-link-decoration: underline;
-  --theme-link-decoration-color: rgba(0, 102, 204, 0.3);
-  --theme-link-decoration-hover: #0066cc;
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent);
 
   /* Tag style - fill comes from the accent tint in variables.css */
   --theme-tag-text: var(--theme-accent-text-light, #4a4a4a);
@@ -87,9 +93,26 @@
 
   --theme-accent: #4da6ff;
   --theme-accent-hover: #80c0ff;
+  /* 6.94:1, against 2.56:1 for #ffffff. */
+  --theme-accent-contrast: #111827;
 
   --theme-border: #2a2a2a;
   --theme-border-strong: #3a3a3a;
+
+  /*
+   * Declared here as well as in the light block, which it did not use to be.
+   * Both blocks match <html>, and this one only outranks the light block for
+   * the properties it actually declares, so a LITERAL in the light block was
+   * the dark page's underline too: rgba(0, 102, 204, 0.3) on #111111, 1.26:1.
+   * A derived value would have re-substituted on its own, but stating the pair
+   * in every accent block is what makes that checkable per block.
+   */
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent);
 
   --theme-tag-text: var(--theme-accent-text-dark, #b0b0b0);
 }
