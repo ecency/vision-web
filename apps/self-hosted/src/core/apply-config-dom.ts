@@ -253,6 +253,13 @@ export const CONFIG_DOM_DECLARATION: ConfigDomDeclaration = {
       variable: '--theme-accent-contrast',
       resolve: (read) => accentOf(read)?.contrast ?? null,
     },
+    // The direction the hover walks the fill, which has to come from the ink
+    // rather than from the mode or the hovered button loses its own label. The
+    // CSS declaration is the no-accent-configured fallback; see accentShadeFor.
+    {
+      variable: '--theme-accent-shade',
+      resolve: (read) => accentOf(read)?.shade ?? null,
+    },
     // Both mode variants are written and CSS picks between them, so an OS flip
     // under `theme: system` re-resolves with no JS and cannot revert a preview.
     {

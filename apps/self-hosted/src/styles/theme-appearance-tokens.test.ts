@@ -536,6 +536,20 @@ function page(block: Block): Rgb {
 /** WCAG 1.4.11: a non-text state indicator wants 3:1 against what surrounds it. */
 const INDICATOR_TARGET = 3;
 
+/**
+ * The resting underline is a decoration, not a state indicator, and is meant to
+ * be quiet: the twelve palettes ship it between 1.74:1 and 3.42:1. WCAG sets no
+ * minimum for a text decoration, so this floor is empirical rather than
+ * borrowed, and it exists to catch one thing: an underline that reaches the
+ * page colour and stops being a mark at all.
+ *
+ * 1.6 is the measured worst case over the four page-coloured accents and all
+ * twelve palettes, which is 1.67 on the darkest light surface. Reading the raw
+ * accent instead puts the same case at 1.00, identical to the page, which is
+ * the defect this pins. The hover state carries the real target separately.
+ */
+const UNDERLINE_REST_FLOOR = 1.6;
+
 const VARIABLES_BLOCKS = blocks('variables.css');
 
 /**
@@ -631,6 +645,39 @@ describe('the ink that goes on the accent', () => {
     expect(failures).toEqual([]);
   });
 
+  it('has a shade on the opposite side, so the hover moves away from it', () => {
+    // --theme-accent-shade is the direction --theme-accent-hover walks the fill,
+    // and its only consumer is that inline formula. The CSS pair is the
+    // no-accent-configured fallback, declared per mode, and the rule it has to
+    // satisfy is "away from the ink" rather than "the mode's own shade". For
+    // these twelve the two coincide, which is exactly the sort of coincidence
+    // that hides a bug, so it is computed from the ink here rather than assumed
+    // from the selector.
+    const wrong: string[] = [];
+
+    for (const block of accentBlocks) {
+      const view = rendered(block);
+      const ink = resolveColour(
+        block.declarations.get('--theme-accent-contrast') ?? '',
+        view,
+      );
+      const shade = resolveColour(
+        view.declarations.get('--theme-accent-shade') ?? '',
+        view,
+      );
+      if (!ink || !shade) {
+        wrong.push(`${label(block)}: unresolvable`);
+        continue;
+      }
+      if (relativeLuminance(ink.rgb) > 0.5 === relativeLuminance(shade.rgb) > 0.5)
+        wrong.push(
+          `${label(block)}: ink and shade on the same side of the range`,
+        );
+    }
+
+    expect(wrong).toEqual([]);
+  });
+
   it('is the ink the module would have chosen for the same fill', () => {
     // An owner who configures an accent gets this value written inline on
     // <html> by applyConfigDom; an owner who configures nothing gets it from
@@ -682,9 +729,10 @@ describe('article link underlines', () => {
     const wrong: string[] = [];
 
     for (const block of accentBlocks) {
+      const view = rendered(block);
       const hover = onPage(
         block.declarations.get('--theme-link-decoration-hover') ?? '',
-        block,
+        view,
       );
       if (!hover || !near(hover, accentFill(block))) {
         wrong.push(`${label(block)}: ${hover?.map(Math.round).join(',')}`);
@@ -702,7 +750,7 @@ describe('article link underlines', () => {
     for (const block of accentBlocks) {
       const resting = onPage(
         block.declarations.get('--theme-link-decoration-color') ?? '',
-        block,
+        rendered(block),
       );
       const tint = composite(
         { rgb: accentFill(block), alpha: 1 },
@@ -728,9 +776,10 @@ describe('article link underlines', () => {
         block.declarations.get('--theme-link-decoration-color') ?? '',
         block,
       );
+      const view = rendered(block);
       const hover = onPage(
         block.declarations.get('--theme-link-decoration-hover') ?? '',
-        block,
+        view,
       );
       if (!resting || !hover) {
         failures.push(`${label(block)}: unresolvable`);
@@ -748,6 +797,49 @@ describe('article link underlines', () => {
       }
       if (restingRatio <= 1.05) {
         failures.push(`${label(block)}: rest invisible`);
+      }
+    }
+
+    expect(failures).toEqual([]);
+  });
+  it('survive a configured accent that is the page colour, in both states', () => {
+    // The underline is the only thing telling a reader that a run of prose is a
+    // link: .markdown-body a takes its COLOUR from --theme-text-primary, so
+    // there is no second cue. A raw accent is whatever the owner typed, so a
+    // white accent on a light page gave a white underline and a white hover,
+    // and both vanished together. Reading the corrected accent bounds how faint
+    // either state can get, because that token clears 4.5:1 against the worst
+    // surface of its mode before it is tinted.
+    const failures: string[] = [];
+
+    for (const owner of ['#ffffff', '#000000', '#f8fafc', '#0d1117']) {
+      for (const block of accentBlocks) {
+        const view = rendered(block, configured(owner));
+        const resting = onPage(
+          block.declarations.get('--theme-link-decoration-color') ?? '',
+          view,
+        );
+        const hover = onPage(
+          block.declarations.get('--theme-link-decoration-hover') ?? '',
+          view,
+        );
+        if (!resting || !hover) {
+          failures.push(`${owner} ${label(block)}: unresolvable`);
+          continue;
+        }
+        const restingRatio = contrastRatio(resting, page(block));
+        const hoverRatio = contrastRatio(hover, page(block));
+        // The hover is the interactive feedback and is held to the state
+        // indicator target. The resting state is a decoration under text that
+        // carries its own contrast, so it only has to remain a visible mark.
+        if (hoverRatio < INDICATOR_TARGET)
+          failures.push(
+            `${owner} ${label(block)}: hover ${hoverRatio.toFixed(2)}:1`,
+          );
+        if (restingRatio < UNDERLINE_REST_FLOOR)
+          failures.push(
+            `${owner} ${label(block)}: rest ${restingRatio.toFixed(2)}:1`,
+          );
       }
     }
 

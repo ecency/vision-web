@@ -130,6 +130,19 @@
    * medium that is near-black text on a near-black chip. Transparent-first makes
    * the same fallback an unfilled chip, which is flat but readable everywhere.
    */
+  /*
+   * The end --theme-accent-hover walks the fill towards. Its only consumer is
+   * the inline hover formula, so this pair is the fallback for an instance that
+   * configures no accent; applyConfigDom writes the property itself when one is
+   * configured, taking the direction from the ink rather than from the mode.
+   *
+   * The rule is "away from --theme-accent-contrast", and these two values
+   * satisfy it rather than contradict it: every light palette here declares a
+   * white ink and every dark one a near-black ink, so away-from-the-ink and the
+   * mode's own shade coincide for all twelve. A template whose accent sat on
+   * the other side of its mode would break that coincidence, which is why the
+   * guard computes the direction from the ink instead of from the selector.
+   */
   --theme-accent-shade: #000000;
   --theme-accent-text: var(--theme-accent-text-light, var(--theme-accent));
   --theme-tag-bg: color-mix(in srgb, transparent 88%, var(--theme-accent));
@@ -149,13 +162,23 @@
    * accent-first degrades to a full-strength underline (which is the hover
    * state) while transparent-first would degrade to no underline at all, and
    * the underline is the affordance that says a run of body text is a link.
+   *
+   * The CORRECTED accent, for the same reason the focus rings use it, and this
+   * is the one place where that reasoning matters most. Link text inside an
+   * article inherits the body colour: the underline is the only thing telling a
+   * reader that a run of prose is a link. A raw accent is whatever the owner
+   * typed, so a white accent on a light page gave a white underline under body
+   * text, and both states vanished at once. --theme-accent-text clears 4.5:1
+   * against the worst surface of its mode, which bounds how faint either state
+   * can get, and falls through to --theme-accent when nothing is configured, so
+   * every template renders exactly what it rendered before.
    */
   --theme-link-decoration-color: color-mix(
     in srgb,
-    var(--theme-accent) 40%,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
     transparent
   );
-  --theme-link-decoration-hover: var(--theme-accent);
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
 }
 
 /* Dark Mode Overrides */
@@ -197,8 +220,8 @@
   --theme-tag-text: var(--theme-accent-text-dark, var(--theme-text-secondary));
   --theme-link-decoration-color: color-mix(
     in srgb,
-    var(--theme-accent) 40%,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
     transparent
   );
-  --theme-link-decoration-hover: var(--theme-accent);
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
 }

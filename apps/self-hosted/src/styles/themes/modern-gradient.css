@@ -55,10 +55,10 @@
   --theme-link-decoration: underline;
   --theme-link-decoration-color: color-mix(
     in srgb,
-    var(--theme-accent) 40%,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
     transparent
   );
-  --theme-link-decoration-hover: var(--theme-accent);
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
 
   /* Tag style - fill comes from the accent tint in variables.css */
   --theme-tag-text: var(--theme-accent-text-light, #7c3aed);
@@ -123,10 +123,10 @@
      block at a time rather than by simulating the cascade. */
   --theme-link-decoration-color: color-mix(
     in srgb,
-    var(--theme-accent) 40%,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
     transparent
   );
-  --theme-link-decoration-hover: var(--theme-accent);
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
 
   --theme-tag-text: var(--theme-accent-text-dark, #a78bfa);
 
