@@ -5,7 +5,20 @@ import { describe, expect, it } from 'vitest';
 import { HIVE_LAYER_CONFIG_DEFAULTS } from '@/core/hive-layer';
 import { parseHexColor } from '@/core/theme-appearance';
 import type { ConfigField } from './config-fields';
-import { configFieldsMap } from './config-fields';
+import { translations } from '@/core/i18n-strings';
+import { buildConfigFields } from './config-fields';
+
+/*
+ * English, read from the strings module directly.
+ *
+ * Not `t` from `@/core/i18n`: that reads the running config and would pull the
+ * gitignored build-time `config.json`, which is absent in CI. This is the same
+ * lookup `t` performs once the language resolves to `en`, so these assertions
+ * are about the copy an English reader sees.
+ */
+const configFieldsMap = buildConfigFields(
+  (key) => translations.en[key] ?? key,
+);
 import {
   COLOR_UNSET_HINT,
   colorInputMessage,

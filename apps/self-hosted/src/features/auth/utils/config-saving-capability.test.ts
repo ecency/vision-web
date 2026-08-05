@@ -38,7 +38,10 @@ import {
 const SRC = join(__dirname, '..', '..', '..');
 
 const HOSTING_TOKEN_MODULE = 'features/auth/utils/hosting-token.ts';
-const I18N_MODULE = 'core/i18n.ts';
+// The strings moved to their own module so they can be read without pulling
+// `configuration-loader` and its gitignored build-time config. `i18n.ts` is now
+// just `t()` and the language lookup.
+const I18N_MODULE = 'core/i18n-strings.ts';
 
 const HINT_KEY = 'login_owner_hint';
 
