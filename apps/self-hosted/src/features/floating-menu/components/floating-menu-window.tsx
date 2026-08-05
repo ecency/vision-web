@@ -92,6 +92,9 @@ export function FloatingMenuWindow({
   });
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  // HiveAuth sends the signing request to a phone, so the owner has to be told
+  // to go and look at it. Every other method prompts on this screen.
+  const [awaitingWallet, setAwaitingWallet] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>(
     'idle',
   );
@@ -170,6 +173,7 @@ export function FloatingMenuWindow({
     }
 
     setIsSaving(true);
+    setAwaitingWallet(false);
     setSaveStatus('idle');
     setSaveError(null);
     // Last line of defence for a document that already carries filters from
@@ -191,11 +195,17 @@ export function FloatingMenuWindow({
           signal: AbortSignal.timeout(HOSTING_FETCH_TIMEOUT_MS),
         });
 
-      let response = await saveWith(await getHostingToken(HOSTING_API_URL));
+      const tokenCallbacks = { onWalletWaiting: () => setAwaitingWallet(true) };
+
+      let response = await saveWith(
+        await getHostingToken(HOSTING_API_URL, tokenCallbacks),
+      );
       if (response.status === 401) {
         // Cached hosting token no longer accepted; get a fresh one and retry once.
         clearHostingToken();
-        response = await saveWith(await getHostingToken(HOSTING_API_URL));
+        response = await saveWith(
+          await getHostingToken(HOSTING_API_URL, tokenCallbacks),
+        );
       }
 
       if (!response.ok) {
@@ -244,6 +254,10 @@ export function FloatingMenuWindow({
       }, 8000);
     } finally {
       setIsSaving(false);
+      // Cleared here rather than on success: a rejected or expired HiveAuth
+      // request also ends the wait, and leaving this set would strand the
+      // button on "Approve on your phone" with nothing pending.
+      setAwaitingWallet(false);
     }
   }, [config]);
 
@@ -455,7 +469,9 @@ export function FloatingMenuWindow({
                   aria-label="Save configuration"
                 >
                   {isSaving
-                    ? 'Saving...'
+                    ? awaitingWallet
+                      ? 'Approve on your phone'
+                      : 'Saving...'
                     : saveStatus === 'success'
                       ? 'Saved!'
                       : saveStatus === 'error'

@@ -225,6 +225,54 @@ export async function broadcastWithHiveAuth(
 }
 
 /**
+ * Ask the wallet to sign an arbitrary string with the account's posting key.
+ *
+ * Distinct from `broadcastWithHiveAuth`. The wrapper has no `broadcast: false`
+ * for transactions, which is why `signWithHiveAuth` was removed with the HAS
+ * protocol work, and that was repeatedly over-generalised into "HiveAuth cannot
+ * sign anything". It can: `HAS.challenge` is a separate command, and signing a
+ * challenge is all the hosting API's `/v1/auth/verify` ever needed.
+ *
+ * The acknowledgement carries the signature under `data.challenge`, which reads
+ * as the string that was sent rather than the signature over it. `data.pubkey`
+ * is the key that signed.
+ *
+ * Not verified here. The server re-derives `sha256(challenge)` and checks it
+ * against every posting `key_auth` whose weight meets the account's threshold,
+ * so a client-side check would be a second opinion that cannot be trusted and
+ * would reject nothing the server accepts.
+ */
+export async function signChallengeWithHiveAuth(
+  session: HiveAuthSession,
+  challenge: string,
+  callbacks?: HiveAuthSignCallback,
+): Promise<string> {
+  HAS.setOptions({ host: HIVEAUTH_API });
+
+  try {
+    const response = await HAS.challenge(
+      toHiveAuthCredentials(session),
+      { key_type: 'posting', challenge },
+      () => callbacks?.onWaiting?.(),
+    );
+
+    const signature = response?.data?.challenge;
+    if (typeof signature !== 'string' || signature === '') {
+      // An approved request that carried nothing is not a rejection, so it
+      // would otherwise surface as a confusing success further up.
+      throw new Error('HiveAuth returned no signature');
+    }
+
+    callbacks?.onSuccess?.(signature);
+    return signature;
+  } catch (error) {
+    const message = describeHiveAuthError(error);
+    callbacks?.onError?.(message);
+    throw new Error(message);
+  }
+}
+
+/**
  * Check if HiveAuth session is valid
  */
 export function isHiveAuthSessionValid(

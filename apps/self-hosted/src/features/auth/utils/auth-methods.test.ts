@@ -52,11 +52,15 @@ describe('methods offered to a visitor', () => {
  * capability list to the switch that decides it.
  */
 describe('the order methods are offered in', () => {
-  it('offers both saving methods before the one that cannot save', () => {
+  it('offers the two that work on a phone before the desktop-only one', () => {
+    // All three can save since #1356, so the old tiebreaker (which of them can
+    // finish the task at all) no longer separates them and the ranking falls to
+    // the device. keychain is a desktop browser extension; the other two are
+    // not, and hiveauth's wallet IS the phone.
     expect(orderAuthMethods(['keychain', 'hivesigner', 'hiveauth'])).toEqual([
       'hivesigner',
-      'keychain',
       'hiveauth',
+      'keychain',
     ]);
   });
 
@@ -66,17 +70,17 @@ describe('the order methods are offered in', () => {
     );
   });
 
-  it('still puts the extension ahead of hiveauth on a default instance', () => {
-    // What availableAuthMethods actually hands this function on the stock
-    // config: hivesigner is dropped for want of a client id, so the only
-    // method left that can save is the extension, and it has to come first
-    // even though it cannot complete on a phone. Nothing offered on a stock
-    // instance both saves and works on a phone, which is why the hint says so.
+  it('leads with hiveauth on a default instance, where it is the phone-capable one', () => {
+    // What availableAuthMethods hands this function on the stock config:
+    // hivesigner is dropped for want of a client id. Both survivors can save
+    // now, so the extension no longer has to lead on capability grounds, and
+    // hiveauth is the one an owner can finish on the device in their hand.
+    // This reverses the previous expectation deliberately.
     const offered = availableAuthMethods(
       ['keychain', 'hivesigner', 'hiveauth'],
       null,
     );
-    expect(orderAuthMethods(offered)).toEqual(['keychain', 'hiveauth']);
+    expect(orderAuthMethods(offered)).toEqual(['hiveauth', 'keychain']);
   });
 
   it('is a reordering, never a filter', () => {
@@ -95,7 +99,7 @@ describe('the order methods are offered in', () => {
       'keychain',
       'hiveauth',
     ] as unknown as AuthMethod[]);
-    expect(ordered).toEqual(['keychain', 'hiveauth', 'made-up']);
+    expect(ordered).toEqual(['hiveauth', 'keychain', 'made-up']);
   });
 
   it('keeps unranked methods in the order they were configured', () => {
@@ -130,8 +134,8 @@ describe('the order methods are offered in', () => {
 describe('a method configured more than once', () => {
   it('is offered exactly one card', () => {
     expect(orderAuthMethods(['keychain', 'keychain', 'hiveauth'])).toEqual([
-      'keychain',
       'hiveauth',
+      'keychain',
     ]);
   });
 
@@ -145,7 +149,7 @@ describe('a method configured more than once', () => {
       'hivesigner',
     ]);
     expect(new Set(ordered).size).toBe(ordered.length);
-    expect(ordered).toEqual(['hivesigner', 'keychain', 'hiveauth']);
+    expect(ordered).toEqual(['hivesigner', 'hiveauth', 'keychain']);
   });
 
   it('deduplicates an unknown method too, and still does not rank it', () => {
@@ -178,8 +182,11 @@ describe('which methods can save a configuration change', () => {
     expect(canSaveConfiguration('keychain')).toBe(true);
   });
 
-  it('says no for hiveauth, which cannot sign the login challenge', () => {
-    expect(canSaveConfiguration('hiveauth')).toBe(false);
+  it('says yes for hiveauth, which signs the login challenge via HAS.challenge', () => {
+    // The wrapper has no offline TRANSACTION signing, which is what the old
+    // "false" here was really about. Signing a challenge is a separate command
+    // and is all getHostingToken needs. Corrected in #1356.
+    expect(canSaveConfiguration('hiveauth')).toBe(true);
   });
 
   it('says no for a method it has never heard of', () => {

@@ -50,6 +50,16 @@ declare module 'hive-auth-wrapper' {
     broadcast?: boolean;
   }
 
+  /** A `challenge_ack`, whose `data` the wrapper has already decrypted. */
+  export interface HasChallengeResponse extends HasResponse {
+    data?: {
+      /** The signature over sha256 of the string that was sent, as hex. */
+      challenge?: string;
+      /** The public key that produced it. */
+      pubkey?: string;
+    };
+  }
+
   export interface HasOptions {
     host?: string;
     auth_key_secret?: string;
@@ -73,11 +83,23 @@ declare module 'hive-auth-wrapper' {
       ops: unknown[],
       cbWait?: (evt: HasWaitEvent) => void,
     ): Promise<HasResponse>;
+    /**
+     * Sign an arbitrary string with one of the account's keys.
+     *
+     * Separate from `broadcast`, and the reason "HiveAuth cannot sign" is
+     * wrong: the wrapper has no offline transaction signing, but it has this.
+     *
+     * The acknowledgement is decrypted by the wrapper before it resolves, and
+     * `data.challenge` is the SIGNATURE, not the string that was sent. Verified
+     * against the wrapper source (`has-wrapper.js`, the `CHALLENGE_ACK` branch)
+     * and its README, which checks `Signature.fromHex(res.data.challenge)`
+     * against `res.data.pubkey`, rather than against this file.
+     */
     challenge(
       auth: HasAuth,
       challengeData: HasChallengeData,
       cbWait?: (evt: HasWaitEvent) => void,
-    ): Promise<HasResponse>;
+    ): Promise<HasChallengeResponse>;
   };
 
   export default HAS;
