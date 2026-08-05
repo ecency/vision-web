@@ -121,6 +121,30 @@ function switchOn(
   return shape;
 }
 
+/** Every locale block declared in `translations`, read from the source. */
+function localeNames(sf: ts.SourceFile): string[] {
+  const names: string[] = [];
+
+  walk(sf, (node) => {
+    if (
+      !ts.isVariableDeclaration(node) ||
+      !ts.isIdentifier(node.name) ||
+      node.name.text !== 'translations' ||
+      !node.initializer ||
+      !ts.isObjectLiteralExpression(node.initializer)
+    ) {
+      return;
+    }
+    for (const block of node.initializer.properties) {
+      if (ts.isPropertyAssignment(block) && ts.isIdentifier(block.name)) {
+        names.push(block.name.text);
+      }
+    }
+  });
+
+  return names;
+}
+
 /** The value of `key` in the given locale block of `i18n.ts`. */
 function localeValue(
   sf: ts.SourceFile,
@@ -272,18 +296,42 @@ describe('the hint names every method on the right side of the line', () => {
   });
 
   /**
-   * Every locale, not just English. The caveat was translated into all five, so
-   * removing it from one would leave a Spanish or Korean owner reading that
-   * their session cannot do what it now does.
+   * Every locale, and the list is READ FROM THE SOURCE rather than written
+   * here.
+   *
+   * A hand-kept list is the bug this whole series keeps naming, and it bit
+   * here: the first version of this test enumerated five locales and the
+   * caveat survived in the sixth, French, telling an owner their session
+   * cannot do what it now does. Deriving the list means a locale added later
+   * cannot dodge the guard either.
    */
-  it.each(['en', 'es', 'de', 'ko', 'ru'])(
-    'has no stale HiveAuth caveat in %s',
-    (locale) => {
+  it('covers every locale the file declares', () => {
+    // Guards the reader: an empty list would make the check below vacuous.
+    const locales = localeNames(i18n);
+    expect(locales.length).toBeGreaterThan(1);
+    expect(locales).toContain('fr');
+  });
+
+  it('has no stale HiveAuth caveat in any locale', () => {
+    const stale = localeNames(i18n).filter((locale) => {
       const text = localeValue(i18n, locale, HINT_KEY);
-      expect(text, locale).toBeDefined();
-      expect(text!.toLowerCase(), locale).not.toContain('hiveauth');
-    },
-  );
+      return text !== undefined && text.toLowerCase().includes('hiveauth');
+    });
+    expect(stale).toEqual([]);
+  });
+
+  /**
+   * Non-empty, not merely present. Deleting the caveat by emptying the whole
+   * string satisfies the check above and leaves that locale's owner with no
+   * hint at all; an earlier version of this test passed on exactly that.
+   */
+  it('still has a non-empty hint in every locale, so none was emptied instead', () => {
+    const missing = localeNames(i18n).filter((locale) => {
+      const text = localeValue(i18n, locale, HINT_KEY);
+      return text === undefined || text.trim() === '';
+    });
+    expect(missing).toEqual([]);
+  });
 });
 
 describe('the guard catches the ways around it', () => {

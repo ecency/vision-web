@@ -712,7 +712,7 @@ const translations: Record<string, Translations> = {
     edit_read_failed:
       "Impossible de charger la version actuelle de cet article. L'édition reste fermée tant qu'elle n'a pas chargé, pour qu'un enregistrement n'écrase pas des modifications plus récentes.",
     login_owner_hint:
-      "Si ce site est le vôtre, connectez-vous avec le compte qui en est propriétaire pour modifier le titre, le logo, le thème et la mise en page. Ces réglages ne peuvent être enregistrés que depuis Hivesigner ou une extension de navigateur Hive ; une session HiveAuth peut voter et commenter, mais pas encore les enregistrer.",
+      "Si ce site est le vôtre, connectez-vous avec le compte qui en est propriétaire pour modifier le titre, le logo, le thème et la mise en page.",
   },
   ko: {
     loading: '로딩 중...',

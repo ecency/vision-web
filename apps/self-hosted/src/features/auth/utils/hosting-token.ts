@@ -12,13 +12,13 @@
  */
 
 import { authenticationStore } from '@/store';
+import { getHiveAuthSession } from '../storage';
 import type { HiveExtensionId } from '../types';
-import { getExtensionName, signBufferWithExtension } from './hive-extensions';
 import {
   isHiveAuthSessionValid,
   signChallengeWithHiveAuth,
 } from './hive-auth';
-import { getHiveAuthSession } from '../storage';
+import { getExtensionName, signBufferWithExtension } from './hive-extensions';
 
 const STORAGE_KEY = 'ecency_hosting_token';
 // Refuse a cached token that expires within a minute so an in-flight save can't outlive it.
@@ -118,7 +118,23 @@ export function extensionCancelledMessage(
  * Get a hosting API token for the logged-in user, exchanging the current session for one
  * when there is no valid cached token. Throws with a user-readable message on failure.
  */
-export async function getHostingToken(apiBase: string): Promise<string> {
+export interface HostingTokenCallbacks {
+  /**
+   * The session is waiting on a wallet the owner has to reach for.
+   *
+   * Only HiveAuth fires this. Keychain and its siblings pop a dialog over the
+   * page the owner is already looking at, so there is nothing to tell them;
+   * HiveAuth sends the request to a phone, and without this the panel says
+   * "Saving..." while the owner waits for a screen that is not in front of
+   * them.
+   */
+  onWalletWaiting?: () => void;
+}
+
+export async function getHostingToken(
+  apiBase: string,
+  callbacks?: HostingTokenCallbacks,
+): Promise<string> {
   const user = authenticationStore.getState().user;
   if (!user) {
     throw new Error('Log in first to save changes.');
@@ -183,6 +199,7 @@ export async function getHostingToken(apiBase: string): Promise<string> {
       const signature = await signChallengeWithHiveAuth(
         session,
         challengeResponse.challenge,
+        { onWaiting: callbacks?.onWalletWaiting },
       );
       result = await postJson<TokenResponse>(`${apiBase}/v1/auth/verify`, {
         username: user.username,
