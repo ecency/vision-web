@@ -53,8 +53,10 @@
   transition: opacity var(--theme-transition);
 }
 
-.tag-theme:hover {
-  opacity: 0.7;
+@media (hover: hover) {
+  .tag-theme:hover {
+    opacity: 0.7;
+  }
 }
 
 /*
@@ -90,8 +92,10 @@
   border-radius: var(--theme-radius);
 }
 
-.btn-theme-primary:hover:not(:disabled) {
-  background-color: var(--theme-accent-hover);
+@media (hover: hover) {
+  .btn-theme-primary:hover:not(:disabled) {
+    background-color: var(--theme-accent-hover);
+  }
 }
 
 .btn-theme-primary:focus-visible {
@@ -107,11 +111,13 @@
   transition: all var(--theme-transition);
 }
 
-.link-theme:hover {
-  text-decoration-color: var(
-    --theme-link-decoration-hover,
-    var(--theme-accent)
-  );
+@media (hover: hover) {
+  .link-theme:hover {
+    text-decoration-color: var(
+      --theme-link-decoration-hover,
+      var(--theme-accent)
+    );
+  }
 }
 
 /*
