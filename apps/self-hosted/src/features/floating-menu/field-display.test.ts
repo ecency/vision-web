@@ -3,9 +3,13 @@ import { join } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { HIVE_LAYER_CONFIG_DEFAULTS } from '@/core/hive-layer';
+import { parseHexColor } from '@/core/theme-appearance';
 import type { ConfigField } from './config-fields';
 import { configFieldsMap } from './config-fields';
 import {
+  COLOR_UNSET_HINT,
+  colorInputMessage,
+  colorPickerValue,
   displayedBooleanValue,
   displayedSelectValue,
   displayedStringValue,
@@ -394,5 +398,144 @@ describe('a select whose resolver normalizes', () => {
       default: 'off',
     };
     expect(displayedSelectValue(strict, 'Standard')).toBe('off');
+  });
+});
+
+/**
+ * A bare text field accepted `banana`, saved it, and the site kept the template
+ * colour with nothing said. The save succeeded, so the natural reading was that
+ * the feature was broken.
+ *
+ * Everything here is checked against `parseHexColor`, the function the
+ * appearance engine itself uses, rather than against a second regex. A panel
+ * with its own opinion about the same string is how the panel and the site come
+ * to disagree.
+ */
+describe('color input', () => {
+  it('says nothing about a value the engine accepts', () => {
+    for (const accepted of ['#0969da', '#abc', '#ABC', '  #0969da  ']) {
+      expect(colorInputMessage(accepted), accepted).toBeNull();
+    }
+  });
+
+  it('warns about anything the engine will not apply', () => {
+    for (const rejected of ['banana', '#12', '#0969d', 'rgb(1,2,3)', '0969da']) {
+      const note = colorInputMessage(rejected);
+      expect(note?.invalid, rejected).toBe(true);
+    }
+  });
+
+  /**
+   * Alpha is refused by the engine on purpose: a translucent fill is a
+   * readability hole no contrast correction can close. The panel has to refuse
+   * it too, or it silently accepts a colour the site drops.
+   */
+  it('warns about an alpha hex, which the engine refuses', () => {
+    expect(colorInputMessage('#0969daff')?.invalid).toBe(true);
+  });
+
+  /** Empty is a real state, not an error: it means the template's own colour. */
+  it('explains empty rather than flagging it', () => {
+    const note = colorInputMessage('');
+    expect(note?.invalid).toBe(false);
+    expect(note?.message).toBe(COLOR_UNSET_HINT);
+    expect(colorInputMessage('   ')?.invalid).toBe(false);
+  });
+
+  /**
+   * The warning has to say what happens, because what happens is the confusing
+   * part: the save succeeds and the site does not change.
+   */
+  it('says what the site will do with a value it refuses', () => {
+    expect(colorInputMessage('banana')?.message).toMatch(/template/i);
+  });
+
+  /**
+   * Agreement with the engine, asserted as a property over both rather than as
+   * two lists someone kept in step.
+   */
+  it.each([
+    '#0969da',
+    '#abc',
+    'banana',
+    '',
+    '#0969daff',
+    'rgb(0,0,0)',
+    '#GGGGGG',
+  ])('flags %s exactly when the engine refuses it', (text) => {
+    const engineAccepts = parseHexColor(text) !== null;
+    const panelFlags = colorInputMessage(text)?.invalid === true;
+    // Empty is the one value that is neither accepted nor an error.
+    if (text.trim() === '') {
+      expect(panelFlags).toBe(false);
+      return;
+    }
+    expect(panelFlags).toBe(!engineAccepts);
+  });
+});
+
+describe('color swatch value', () => {
+  /** `<input type="color">` only accepts `#rrggbb`, so `#abc` has to expand. */
+  it('expands a short hex the native control cannot take', () => {
+    expect(colorPickerValue('#abc')).toBe('#aabbcc');
+  });
+
+  it('passes a full hex through, lower-cased and trimmed', () => {
+    expect(colorPickerValue('  #0969DA ')).toBe('#0969da');
+  });
+
+  /**
+   * The swatch has no empty state, so it needs something concrete. Displaying
+   * it must not write it: a value reaches the document only through onChange,
+   * so an owner who opens the panel and saves without touching the swatch
+   * stores nothing.
+   */
+  it('falls back for unset and unparseable values without inventing one', () => {
+    expect(colorPickerValue('')).toBe('#888888');
+    expect(colorPickerValue('banana')).toBe('#888888');
+    expect(colorPickerValue('', '#123456')).toBe('#123456');
+  });
+});
+
+/**
+ * That the renderer actually uses the validation above.
+ *
+ * Every test in this file passed with the entire `case 'color'` block deleted
+ * from `config-editor.tsx`, which is the whole point of the change: the helpers
+ * being correct means nothing if the panel does not call them. Nothing in a
+ * `.tsx` is renderable under this runner, so the call is what can be asserted,
+ * and here the call IS the mechanism.
+ */
+describe('the editor renders colour fields with the shared validation', () => {
+  const EDITOR = join(__dirname, 'components', 'config-editor.tsx');
+
+  function calledFunctions(source: string): Set<string> {
+    const file = ts.createSourceFile(
+      'config-editor.tsx',
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    const called = new Set<string>();
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+        called.add(node.expression.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+    return called;
+  }
+
+  it('handles the color type and uses both helpers', () => {
+    const source = readFileSync(EDITOR, 'utf8');
+    const called = calledFunctions(source);
+
+    expect(source).toContain("case 'color'");
+    // The message, or an invalid value is stored with nothing said.
+    expect(called).toContain('colorInputMessage');
+    // The swatch value, or the native control gets a string it cannot take.
+    expect(called).toContain('colorPickerValue');
   });
 });

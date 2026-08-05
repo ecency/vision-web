@@ -1,3 +1,4 @@
+import { formatHexColor, parseHexColor } from '@/core/theme-appearance';
 import type { ConfigField } from './config-fields';
 import type { ConfigValue } from './types';
 
@@ -124,4 +125,49 @@ export function displayedStringValue(
 ): string {
   if (typeof value === 'string') return value;
   return typeof field.default === 'string' ? field.default : '';
+}
+
+/** Shown under a colour input that is empty, which is a valid, meaningful state. */
+export const COLOR_UNSET_HINT =
+  "Empty, so the style template's own colour is used.";
+
+/**
+ * Shown under a colour input holding something the engine will not apply.
+ *
+ * Says what happens rather than only that it is wrong, because what happens is
+ * the confusing part: the save succeeds, the value is stored, and the site does
+ * not change.
+ */
+export const COLOR_INVALID_MESSAGE =
+  'Not a colour, so the site keeps the style template\'s own. Use a hex value like #0969da.';
+
+/**
+ * The message under a colour input, or null when there is nothing to say.
+ *
+ * Validated with `parseHexColor`, the function the appearance engine itself
+ * uses, so the panel cannot accept something the site then ignores or warn
+ * about something the site accepts. Anything else here would be a second
+ * opinion about the same string.
+ */
+export function colorInputMessage(text: string): {
+  message: string;
+  invalid: boolean;
+} | null {
+  if (text.trim() === '') return { message: COLOR_UNSET_HINT, invalid: false };
+  return parseHexColor(text) === null
+    ? { message: COLOR_INVALID_MESSAGE, invalid: true }
+    : null;
+}
+
+/**
+ * What the native colour swatch shows.
+ *
+ * `<input type="color">` has no empty state and only accepts `#rrggbb`, so an
+ * unset or half-typed value needs something concrete, and `#rgb` needs
+ * expanding. Purely what is displayed: nothing here reaches the document unless
+ * the owner actually moves the picker.
+ */
+export function colorPickerValue(text: string, fallback = '#888888'): string {
+  const rgb = parseHexColor(text);
+  return rgb ? formatHexColor(rgb) : fallback;
 }

@@ -287,7 +287,12 @@ describe('appearance knobs', () => {
    * font preset out with it.
    */
   it('takes the accent as text', () => {
-    expect(fieldAt(ACCENT_PATH)?.type).toBe('string');
+    // `color` renders a swatch beside a text input and writes strings, so the
+    // property this has always been about is preserved: never `number`, whose
+    // input writes null when cleared, and null erases the whole stored styles
+    // section on merge, taking `background` and the font preset with it.
+    expect(['string', 'color']).toContain(fieldAt(ACCENT_PATH)?.type);
+    expect(fieldAt(ACCENT_PATH)?.type).not.toBe('number');
   });
 
   it('offers the font preset where the appearance engine reads it', () => {
