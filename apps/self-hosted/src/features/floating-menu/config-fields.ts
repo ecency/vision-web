@@ -19,7 +19,22 @@ export type ConfigFieldType =
   // express "unset", which is the value every instance holds today and the one
   // an owner has to be able to get back to.
   | 'color'
-  | 'number'
+  /*
+   * No `number`.
+   *
+   * The number input writes `null` when cleared, and `null` erases the stored
+   * section on merge. Every section below already carries a comment saying so,
+   * which is a convention held by memory; the type not existing makes it
+   * unreachable instead.
+   *
+   * The one field that used it was `version`, and that was the worst possible
+   * place for it: `configuration-loader` applies a served config only when
+   * `runtimeConfig?.version` is truthy, so an owner who cleared that box
+   * shipped `version: null` and every visitor's browser then discarded the
+   * whole document and rendered the bare skeleton. No title, no logo, no theme.
+   * A schema version is not an owner setting, so it has no control at all now;
+   * the value still rides along in the document, which is saved whole.
+   */
   | 'boolean'
   | 'array'
   | 'section'
@@ -89,11 +104,6 @@ export interface ConfigField {
 }
 
 export const configFieldsMap: Record<string, ConfigField> = {
-  version: {
-    label: 'Version',
-    type: 'number',
-    description: 'Configuration version number',
-  },
   configuration: {
     label: 'Configuration',
     type: 'section',

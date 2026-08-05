@@ -183,37 +183,6 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
         );
       }
 
-      case 'number': {
-        const numValue = typeof value === 'number' ? value : undefined;
-        return (
-          <div className="mb-4">
-            <label
-              htmlFor={fullPath}
-              className="block text-sm font-medium text-gray-200 mb-2 font-sans"
-            >
-              {field.label}
-            </label>
-            {field.description && (
-              <p className="text-xs text-gray-400 mb-2 font-sans">
-                {field.description}
-              </p>
-            )}
-            <input
-              id={fullPath}
-              type="number"
-              value={numValue ?? ''}
-              onChange={(e) =>
-                handleChange(
-                  e.target.value === '' ? null : Number(e.target.value),
-                )
-              }
-              className={inputClassName}
-              style={inputStyle}
-            />
-          </div>
-        );
-      }
-
       case 'array': {
         return (
           <ArrayFieldEditor

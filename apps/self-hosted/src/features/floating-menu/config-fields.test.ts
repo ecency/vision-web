@@ -607,3 +607,45 @@ describe('create post url on a community instance', () => {
     expect(validate('example.com/write')).toMatch(/not a web address/i);
   });
 });
+
+/**
+ * The panel must not offer a control that can blank the whole site.
+ *
+ * `configuration-loader` applies a served config only when
+ * `runtimeConfig?.version` is truthy. The editor's number input writes `null`
+ * when cleared, and `version` was the one field using it, so an owner who
+ * emptied that box shipped `version: null` and every visitor's browser then
+ * discarded the entire document and rendered the bare skeleton: no title, no
+ * logo, no theme, default everything.
+ *
+ * A schema version is not an owner setting. The value still rides along in the
+ * saved document, which goes out whole, so removing the control loses nothing.
+ */
+describe('fields that must not be editable', () => {
+  it('offers no control for the config version', () => {
+    expect(fieldAt(['version'])).toBeUndefined();
+  });
+
+  /**
+   * The general rule, not just the one field. Asserted over the whole map
+   * because the hazard is the input type rather than the path: null erases the
+   * stored section on merge wherever it lands.
+   */
+  it('offers no number input anywhere', () => {
+    const numeric: string[] = [];
+    const visit = (
+      fields: Record<string, ConfigField>,
+      path: string[],
+    ): void => {
+      for (const [key, field] of Object.entries(fields)) {
+        if ((field.type as string) === 'number') {
+          numeric.push([...path, key].join('.'));
+        }
+        if (field.fields) visit(field.fields, [...path, key]);
+      }
+    };
+    visit(configFieldsMap, []);
+
+    expect(numeric).toEqual([]);
+  });
+});
