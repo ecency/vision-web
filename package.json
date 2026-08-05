@@ -1,5 +1,5 @@
 {
-  "name": "vision-next",
+  "name": "vision-web",
   "private": true,
   "workspaces": [
     "apps/*",

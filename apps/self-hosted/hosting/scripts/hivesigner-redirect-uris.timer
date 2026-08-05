@@ -1,6 +1,6 @@
 [Unit]
 Description=Periodic Hivesigner redirect-URI registration for managed blogs
-Documentation=https://github.com/ecency/vision-next/blob/develop/apps/self-hosted/hosting/README.md
+Documentation=https://github.com/ecency/vision-web/blob/develop/apps/self-hosted/hosting/README.md
 
 [Timer]
 # Five minutes, matching the two sync loops a new instance already waits on: the

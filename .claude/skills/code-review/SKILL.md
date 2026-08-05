@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review code changes for bugs, patterns violations, and common pitfalls in the vision-next codebase
+description: Review code changes for bugs, patterns violations, and common pitfalls in the vision-web codebase
 argument-hint: [file-or-branch]
 disable-model-invocation: true
 ---

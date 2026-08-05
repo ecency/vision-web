@@ -24,8 +24,8 @@ Deploy your own blog powered by the Hive blockchain. This guide covers Docker de
 
 ```bash
 # Clone the repository
-git clone https://github.com/ecency/vision-next.git
-cd vision-next/apps/self-hosted
+git clone https://github.com/ecency/vision-web.git
+cd vision-web/apps/self-hosted
 
 # Copy the config template
 cp config.template.json config.json
@@ -511,7 +511,7 @@ Memo: blog:YOUR_HIVE_USERNAME:6
 
 ## Support
 
-- GitHub Issues: https://github.com/ecency/vision-next/issues
+- GitHub Issues: https://github.com/ecency/vision-web/issues
 - Discord: https://discord.me/ecency
 - Hive: @ecency
 

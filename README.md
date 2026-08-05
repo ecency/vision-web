@@ -1,4 +1,4 @@
-<a href="https://discord.gg/WywwJEu">![Discord](https://img.shields.io/discord/385034494555455488?label=Ecency%20discord&logo=discord)</a> <a href="https://x.com/ecency_official">![Twitter Follow](https://img.shields.io/twitter/follow/ecency_official?style=social)</a> <a href="https://github.com/ecency/vision-next/stargazers">![GitHub Repo stars](https://img.shields.io/github/stars/ecency/vision-next?style=social)</a>
+<a href="https://discord.gg/WywwJEu">![Discord](https://img.shields.io/discord/385034494555455488?label=Ecency%20discord&logo=discord)</a> <a href="https://x.com/ecency_official">![Twitter Follow](https://img.shields.io/twitter/follow/ecency_official?style=social)</a> <a href="https://github.com/ecency/vision-web/stargazers">![GitHub Repo stars](https://img.shields.io/github/stars/ecency/vision-web?style=social)</a>
 
 # [Ecency vision][ecency_vision] – Ecency Web client
 
@@ -171,9 +171,9 @@ cookie**, and **preserve `x-cache-tier`** in the response headers.
 
 ##### Clone
 
-`$ git clone https://github.com/ecency/vision-next`
+`$ git clone https://github.com/ecency/vision-web`
 
-`$ cd vision-next`
+`$ cd vision-web`
 
 ### Working with pnpm
 
@@ -281,10 +281,10 @@ See `src/config/vision-config.template.yml`.
 ***
 ## Docker
 
-You can use official `ecency/vision-next:latest` image to run Vision locally, deploy it to staging or even production environment. The simplest way is to run it with following command:
+You can use official `ecency/vision-web:latest` image to run Vision locally, deploy it to staging or even production environment. The simplest way is to run it with following command:
 
 ```bash
-docker run -it --rm -p 3000:3000 ecency/vision-next:latest
+docker run -it --rm -p 3000:3000 ecency/vision-web:latest
 ```
 
 Configure the instance using following environment variables:
@@ -292,7 +292,7 @@ Configure the instance using following environment variables:
 - ~~`USE_PRIVATE`~~ See extended configuration above.
 
 ```bash
-docker run -it --rm -p 3000:3000 -e USE_PRIVATE=1 ecency/vision-next:latest
+docker run -it --rm -p 3000:3000 -e USE_PRIVATE=1 ecency/vision-web:latest
 ```
 
 ### Swarm
@@ -306,7 +306,7 @@ docker stack deploy -c docker-compose.yml -c docker-compose.production.yml visio
 ***
 ## Contributors
 
-[![Contributors](https://contrib.rocks/image?repo=ecency/vision-next)](https://github.com/ecency/vision-next/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=ecency/vision-web)](https://github.com/ecency/vision-web/graphs/contributors)
 
 
 ***
@@ -338,4 +338,4 @@ We will evaluate the risk and make a patch available before filing the issue.
 [//]: # "LINKS"
 [ecency_vision]: https://ecency.com
 [ecency_alpha]: https://alpha.ecency.com
-[ecency_release]: https://github.com/ecency/vision-next/releases
+[ecency_release]: https://github.com/ecency/vision-web/releases

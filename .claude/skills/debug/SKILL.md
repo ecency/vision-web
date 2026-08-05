@@ -1,6 +1,6 @@
 ---
 name: debug
-description: Debug common issues in the vision-next Hive web app with known solutions and investigation patterns
+description: Debug common issues in the vision-web Hive web app with known solutions and investigation patterns
 argument-hint: [issue-description]
 disable-model-invocation: true
 ---

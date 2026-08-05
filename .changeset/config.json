@@ -3,7 +3,7 @@
   "changelog": [
     "@changesets/changelog-github",
     {
-      "repo": "ecency/vision-next"
+      "repo": "ecency/vision-web"
     }
   ],
   "commit": false,

@@ -1,6 +1,6 @@
 ---
 name: add-test
-description: Add tests for a component or utility in the vision-next web app following established patterns and avoiding common pitfalls
+description: Add tests for a component or utility in the vision-web app following established patterns and avoiding common pitfalls
 argument-hint: [component-or-file-path]
 disable-model-invocation: true
 ---

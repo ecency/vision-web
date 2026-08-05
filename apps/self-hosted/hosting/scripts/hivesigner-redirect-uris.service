@@ -1,6 +1,6 @@
 [Unit]
 Description=Register managed-blog Hivesigner redirect URIs and enable the login method
-Documentation=https://github.com/ecency/vision-next/blob/develop/apps/self-hosted/hosting/README.md
+Documentation=https://github.com/ecency/vision-web/blob/develop/apps/self-hosted/hosting/README.md
 # Nothing to do without a network, and a run that fails on DNS is noise.
 After=network-online.target
 Wants=network-online.target

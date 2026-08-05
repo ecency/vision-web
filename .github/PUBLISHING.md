@@ -1,6 +1,6 @@
 # Package Publishing Guide
 
-This document explains how packages in the vision-next monorepo are published to npm.
+This document explains how packages in the vision-web monorepo are published to npm.
 
 ## Overview
 

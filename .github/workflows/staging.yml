@@ -76,7 +76,7 @@ jobs:
           context: .
           file: ./apps/web/Dockerfile
           push: true
-          tags: ecency/vision-next:develop
+          tags: ecency/vision-web:develop
           build-args: |
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
             SENTRY_ORG=ecency
@@ -156,11 +156,11 @@ jobs:
           export SEO_CRON_SECRET=$SEO_CRON_SECRET
           export SEO_BLACKLIST_URL=$SEO_BLACKLIST_URL
           export TURNSTILE_SECRET=$TURNSTILE_SECRET
-          cd ~/vision-next
+          cd ~/vision-web
           git pull origin develop
           cd apps/web
           docker network create --driver overlay vision || true
-          web_pull="$(docker pull ecency/vision-next:develop)"; printf '%s\n' "$web_pull"
+          web_pull="$(docker pull ecency/vision-web:develop)"; printf '%s\n' "$web_pull"
           docker stack deploy -c <(docker-compose config) vision
           # Don't report a green deploy unless the new image actually rolled out.
           # `docker stack deploy` returns as soon as the spec is committed to Raft
