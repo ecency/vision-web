@@ -16,7 +16,8 @@ import {
   getHostingToken,
   HOSTING_FETCH_TIMEOUT_MS,
 } from '@/features/auth/utils/hosting-token';
-import { configFieldsMap } from '../config-fields';
+import { buildConfigFields } from '../config-fields';
+import { getCurrentLanguage, t } from '@/core/i18n';
 import { FLOATING_MENU_THEME } from '../constants';
 import { getHivesignerSetupNotice } from '../hivesigner-setup';
 import {
@@ -103,6 +104,16 @@ export function FloatingMenuWindow({
   const originalStateRef = useRef<ConfigDomSnapshot | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const managed = useMemo(() => isManagedHosting(), []);
+
+  /*
+   * Built here rather than imported as a constant, because the labels come from
+   * `t()` and that reads the language out of the loaded config. Keyed on the
+   * language so a saved language change is picked up: the panel edits a local
+   * copy of the document, and `t()` reads the APPLIED one, so the two only
+   * agree again after a save.
+   */
+  const language = getCurrentLanguage();
+  const configFields = useMemo(() => buildConfigFields(t), [language]);
 
   // Everything the owner is being told, in one place. This window is the whole
   // audience: it is rendered for the instance owner only, so a setting that
@@ -543,7 +554,7 @@ export function FloatingMenuWindow({
             <div className="container mx-auto max-w-7xl">
               <ConfigEditor
                 config={config}
-                fields={configFieldsMap}
+                fields={configFields}
                 onUpdate={handleUpdate}
               />
             </div>

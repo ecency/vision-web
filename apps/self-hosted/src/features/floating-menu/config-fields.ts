@@ -10,6 +10,7 @@ import {
 import { isCommunityConfig } from '@/core/instance-mode';
 import { FONT_PRESET_OPTIONS } from '@/core/theme-appearance';
 import type { ConfigValue } from './types';
+import type { TranslationKey } from '@/core/i18n-strings';
 import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
 import { isRefusedCreatePostUrl } from '@/features/auth/utils/create-post-target';
 
@@ -103,132 +104,156 @@ export interface ConfigField {
   ) => string | null;
 }
 
-export const configFieldsMap: Record<string, ConfigField> = {
+/**
+ * Built on call, not held as a constant.
+ *
+ * It was a module-level constant, and that is why every label here was
+ * hardcoded English: the module is evaluated when the bundle loads, which is
+ * before `InstanceConfigManager.initialize()` resolves, so a `t()` at that
+ * point would have captured whatever language the bundle started with and
+ * frozen it.
+ *
+ * `index.tsx` awaits that initialize before `createRoot().render()`, so by the
+ * time anything calls this the config, and therefore the language, is loaded.
+ *
+ * The translator is passed in rather than imported. `t` reads the running
+ * config, so importing it here would pull `configuration-loader` and its
+ * build-time `config.json`, which is gitignored and absent in CI: this module
+ * and every test that reads it would stop loading there. The same reason the
+ * header comment gives for avoiding the `@/core` barrel.
+ */
+/** Looks a key up in the current language. `t` from `@/core/i18n` in the app. */
+export type Translate = (key: TranslationKey) => string;
+
+export function buildConfigFields(
+  t: Translate,
+): Record<string, ConfigField> {
+  return {
   configuration: {
-    label: 'Configuration',
+    label: t('panel_configuration_label'),
     type: 'section',
     fields: {
       instanceConfiguration: {
-        label: 'Instance Configuration',
+        label: t('panel_configuration_instance_configuration_label'),
         type: 'section',
         fields: {
           type: {
-            label: 'Instance Type',
+            label: t('panel_configuration_instance_configuration_type_label'),
             type: 'select',
-            description: 'Blog (personal) or Community mode',
+            description: t('panel_configuration_instance_configuration_type_description'),
             options: [
-              { value: 'blog', label: 'Blog (Personal)' },
-              { value: 'community', label: 'Community' },
+              { value: 'blog', label: t('panel_configuration_instance_configuration_type_blog_option') },
+              { value: 'community', label: t('panel_configuration_instance_configuration_type_community_option') },
             ],
           },
           username: {
-            label: 'Username',
+            label: t('panel_configuration_instance_configuration_username_label'),
             type: 'string',
-            description: 'Blog owner username (for blog mode)',
+            description: t('panel_configuration_instance_configuration_username_description'),
           },
           communityId: {
-            label: 'Community ID',
+            label: t('panel_configuration_instance_configuration_community_id_label'),
             type: 'string',
-            description: 'Hive community ID (e.g., hive-123456) for community mode',
+            description: t('panel_configuration_instance_configuration_community_id_description'),
           },
           meta: {
-            label: 'Meta Information',
+            label: t('panel_configuration_instance_configuration_meta_label'),
             type: 'section',
             fields: {
               title: {
-                label: 'Title',
+                label: t('panel_configuration_instance_configuration_meta_title_label'),
                 type: 'string',
-                description: 'Site title',
+                description: t('panel_configuration_instance_configuration_meta_title_description'),
               },
               description: {
-                label: 'Description',
+                label: t('panel_configuration_instance_configuration_meta_description_label'),
                 type: 'string',
-                description: 'Site description',
+                description: t('panel_configuration_instance_configuration_meta_description_description'),
               },
               logo: {
-                label: 'Logo URL',
+                label: t('panel_configuration_instance_configuration_meta_logo_label'),
                 type: 'string',
-                description: 'Logo image URL',
+                description: t('panel_configuration_instance_configuration_meta_logo_description'),
               },
               favicon: {
-                label: 'Favicon URL',
+                label: t('panel_configuration_instance_configuration_meta_favicon_label'),
                 type: 'string',
-                description: 'Favicon image URL',
+                description: t('panel_configuration_instance_configuration_meta_favicon_description'),
               },
               keywords: {
-                label: 'Keywords',
+                label: t('panel_configuration_instance_configuration_meta_keywords_label'),
                 type: 'string',
-                description: 'SEO keywords',
+                description: t('panel_configuration_instance_configuration_meta_keywords_description'),
               },
             },
           },
           layout: {
-            label: 'Layout Settings',
+            label: t('panel_configuration_instance_configuration_layout_label'),
             type: 'section',
             fields: {
               listType: {
-                label: 'List Type',
+                label: t('panel_configuration_instance_configuration_layout_list_type_label'),
                 type: 'select',
-                description: 'Type of list display',
+                description: t('panel_configuration_instance_configuration_layout_list_type_description'),
                 options: [
-                  { value: 'list', label: 'List View' },
-                  { value: 'grid', label: 'Grid View' },
+                  { value: 'list', label: t('panel_configuration_instance_configuration_layout_list_type_list_option') },
+                  { value: 'grid', label: t('panel_configuration_instance_configuration_layout_list_type_grid_option') },
                 ],
               },
               search: {
-                label: 'Search',
+                label: t('panel_configuration_instance_configuration_layout_search_label'),
                 type: 'section',
                 fields: {
                   enabled: {
-                    label: 'Enabled',
+                    label: t('panel_configuration_instance_configuration_layout_search_enabled_label'),
                     type: 'boolean',
-                    description: 'Enable search functionality',
+                    description: t('panel_configuration_instance_configuration_layout_search_enabled_description'),
                   },
                 },
               },
               sidebar: {
-                label: 'Sidebar',
+                label: t('panel_configuration_instance_configuration_layout_sidebar_label'),
                 type: 'section',
                 fields: {
                   placement: {
-                    label: 'Placement',
+                    label: t('panel_configuration_instance_configuration_layout_sidebar_placement_label'),
                     type: 'select',
-                    description: 'Sidebar placement',
+                    description: t('panel_configuration_instance_configuration_layout_sidebar_placement_description'),
                     options: [
-                      { value: 'left', label: 'Left' },
-                      { value: 'right', label: 'Right' },
+                      { value: 'left', label: t('panel_configuration_instance_configuration_layout_sidebar_placement_left_option') },
+                      { value: 'right', label: t('panel_configuration_instance_configuration_layout_sidebar_placement_right_option') },
                     ],
                   },
                   followers: {
-                    label: 'Followers',
+                    label: t('panel_configuration_instance_configuration_layout_sidebar_followers_label'),
                     type: 'section',
                     fields: {
                       enabled: {
-                        label: 'Enabled',
+                        label: t('panel_configuration_instance_configuration_layout_sidebar_followers_enabled_label'),
                         type: 'boolean',
-                        description: 'Show followers section',
+                        description: t('panel_configuration_instance_configuration_layout_sidebar_followers_enabled_description'),
                       },
                     },
                   },
                   following: {
-                    label: 'Following',
+                    label: t('panel_configuration_instance_configuration_layout_sidebar_following_label'),
                     type: 'section',
                     fields: {
                       enabled: {
-                        label: 'Enabled',
+                        label: t('panel_configuration_instance_configuration_layout_sidebar_following_enabled_label'),
                         type: 'boolean',
-                        description: 'Show following section',
+                        description: t('panel_configuration_instance_configuration_layout_sidebar_following_enabled_description'),
                       },
                     },
                   },
                   hiveInformation: {
-                    label: 'Hive Information',
+                    label: t('panel_configuration_instance_configuration_layout_sidebar_hive_information_label'),
                     type: 'section',
                     fields: {
                       enabled: {
-                        label: 'Enabled',
+                        label: t('panel_configuration_instance_configuration_layout_sidebar_hive_information_enabled_label'),
                         type: 'boolean',
-                        description: 'Show Hive information',
+                        description: t('panel_configuration_instance_configuration_layout_sidebar_hive_information_enabled_description'),
                       },
                     },
                   },
@@ -237,7 +262,7 @@ export const configFieldsMap: Record<string, ConfigField> = {
             },
           },
           features: {
-            label: 'Features',
+            label: t('panel_configuration_instance_configuration_features_label'),
             type: 'section',
             fields: {
               /**
@@ -257,52 +282,54 @@ export const configFieldsMap: Record<string, ConfigField> = {
                * whichever language the bundle started with.
                */
               hive: {
-                label: 'Hive layer',
+                label: t('panel_configuration_instance_configuration_features_hive_label'),
                 type: 'section',
-                description:
-                  'How much of the Hive blockchain this site shows readers. Notices that voting, commenting and publishing are permanent are always shown and are not affected by these settings. Save and reload to see changes.',
+                description: t('panel_configuration_instance_configuration_features_hive_description'),
                 fields: {
                   readerLayer: {
-                    label: 'Show Hive activity to readers',
+                    label: t('panel_configuration_instance_configuration_features_hive_reader_layer_label'),
                     type: 'select',
                     // The value an absent key resolves to, so a config written
                     // before this block existed reads correctly here instead of
                     // showing an empty box.
                     default: HIVE_LAYER_CONFIG_DEFAULTS.readerLayer,
-                    description:
-                      'Off shows no earnings and no links to Hive. Standard shows what a post earned, when its payout closes, and a link to it on Hive. Full also shows earnings on post cards in the list.',
+                    description: t('panel_configuration_instance_configuration_features_hive_reader_layer_description'),
                     options: [
-                      { value: 'off', label: 'Off' },
-                      { value: 'standard', label: 'Standard' },
-                      { value: 'full', label: 'Full' },
+                      { value: 'off', label: t('panel_configuration_instance_configuration_features_hive_reader_layer_off_option') },
+                      { value: 'standard', label: t('panel_configuration_instance_configuration_features_hive_reader_layer_standard_option') },
+                      { value: 'full', label: t('panel_configuration_instance_configuration_features_hive_reader_layer_full_option') },
                     ],
                   },
                   authorRewards: {
-                    label: 'Reward controls when writing',
+                    label: t('panel_configuration_instance_configuration_features_hive_author_rewards_label'),
                     type: 'select',
                     default: HIVE_LAYER_CONFIG_DEFAULTS.authorRewards,
-                    description:
-                      'Off publishes with the usual Hive reward setting. Author chooses offers the writer all Hive Power or declining rewards, picked once at publish and not editable afterwards. Applies only to posts written here, so it does nothing when Create Post URL points at another site.',
+                    description: t('panel_configuration_instance_configuration_features_hive_author_rewards_description'),
                     options: [
-                      { value: 'off', label: 'Off' },
-                      { value: 'author', label: 'Author chooses' },
+                      { value: 'off', label: t('panel_configuration_instance_configuration_features_hive_author_rewards_off_option') },
+                      { value: 'author', label: t('panel_configuration_instance_configuration_features_hive_author_rewards_author_option') },
                     ],
                   },
                   payoutLabel: {
-                    label: 'Earnings label',
+                    label: t('panel_configuration_instance_configuration_features_hive_payout_label_label'),
                     type: 'string',
                     default: HIVE_LAYER_CONFIG_DEFAULTS.payoutLabel,
                     // Same cap the resolver cuts at, so nothing typed here can
                     // be stored longer than it is shown.
                     maxLength: PAYOUT_LABEL_MAX_LENGTH,
-                    description: `Your own word for what a post earned, for example Rewards or Tips from readers. Leave empty for the built-in wording. Longer than ${PAYOUT_LABEL_MAX_LENGTH} characters is cut where it is shown.`,
+                    // `t()` returns a plain string, so the cap goes in as a token
+                    // the translation carries and this substitutes. A translator
+                    // can move {max} wherever their grammar wants it.
+                    description: t('panel_configuration_instance_configuration_features_hive_payout_label_description').replace(
+                      '{max}',
+                      String(PAYOUT_LABEL_MAX_LENGTH),
+                    ),
                   },
                   learnMoreUrl: {
-                    label: 'Learn more link',
+                    label: t('panel_configuration_instance_configuration_features_hive_learn_more_url_label'),
                     type: 'string',
                     default: HIVE_LAYER_CONFIG_DEFAULTS.learnMoreUrl,
-                    description:
-                      'Leave empty to show the Hive note as plain text. Add a full https address and the note becomes a link to it.',
+                    description: t('panel_configuration_instance_configuration_features_hive_learn_more_url_description'),
                     // The resolver's own rule, not a copy of it. It refuses a
                     // relative address and any scheme but http(s), because the
                     // value becomes an href and a javascript: one must not
@@ -311,113 +338,112 @@ export const configFieldsMap: Record<string, ConfigField> = {
                     validate: (value) =>
                       value.trim() === '' || resolveLearnMoreUrl(value) !== null
                         ? null
-                        : 'Not a web address the site will link to, so the note stays plain text. Use a full https address.',
+                        : t('panel_validation_learn_more_url'),
                   },
                 },
               },
               postsFilters: {
-                label: 'Post Filters',
+                label: t('panel_configuration_instance_configuration_features_posts_filters_label'),
                 type: 'array',
-                description: 'Available post filter types (blog: blog, posts, comments, replies | community: trending, hot, created)',
+                description: t('panel_configuration_instance_configuration_features_posts_filters_description'),
               },
               likes: {
-                label: 'Likes',
+                label: t('panel_configuration_instance_configuration_features_likes_label'),
                 type: 'section',
                 fields: {
                   enabled: {
-                    label: 'Enabled',
+                    label: t('panel_configuration_instance_configuration_features_likes_enabled_label'),
                     type: 'boolean',
-                    description: 'Enable likes feature',
+                    description: t('panel_configuration_instance_configuration_features_likes_enabled_description'),
                   },
                 },
               },
               comments: {
-                label: 'Comments',
+                label: t('panel_configuration_instance_configuration_features_comments_label'),
                 type: 'section',
                 fields: {
                   enabled: {
-                    label: 'Enabled',
+                    label: t('panel_configuration_instance_configuration_features_comments_enabled_label'),
                     type: 'boolean',
-                    description: 'Enable comments feature',
+                    description: t('panel_configuration_instance_configuration_features_comments_enabled_description'),
                   },
                 },
               },
               post: {
-                label: 'Post',
+                label: t('panel_configuration_instance_configuration_features_post_label'),
                 type: 'section',
                 fields: {
                   text2Speech: {
-                    label: 'Text to Speech',
+                    label: t('panel_configuration_instance_configuration_features_post_text2_speech_label'),
                     type: 'section',
                     fields: {
                       enabled: {
-                        label: 'Enabled',
+                        label: t('panel_configuration_instance_configuration_features_post_text2_speech_enabled_label'),
                         type: 'boolean',
-                        description: 'Enable text to speech',
+                        description: t('panel_configuration_instance_configuration_features_post_text2_speech_enabled_description'),
                       },
                     },
                   },
                 },
               },
               tipping: {
-                label: 'Tipping',
+                label: t('panel_configuration_instance_configuration_features_tipping_label'),
                 type: 'section',
-                description: 'Tip button in posts and sidebar',
+                description: t('panel_configuration_instance_configuration_features_tipping_description'),
                 fields: {
                   general: {
-                    label: 'Sidebar (General)',
+                    label: t('panel_configuration_instance_configuration_features_tipping_general_label'),
                     type: 'section',
                     fields: {
                       enabled: {
-                        label: 'Enabled',
+                        label: t('panel_configuration_instance_configuration_features_tipping_general_enabled_label'),
                         type: 'boolean',
-                        description: 'Show Tip button in sidebar',
+                        description: t('panel_configuration_instance_configuration_features_tipping_general_enabled_description'),
                       },
                       buttonLabel: {
-                        label: 'Button Label',
+                        label: t('panel_configuration_instance_configuration_features_tipping_general_button_label_label'),
                         type: 'string',
-                        description: 'Custom label for Tip button (e.g. Tip)',
+                        description: t('panel_configuration_instance_configuration_features_tipping_general_button_label_description'),
                       },
                     },
                   },
                   post: {
-                    label: 'Post',
+                    label: t('panel_configuration_instance_configuration_features_tipping_post_label'),
                     type: 'section',
                     fields: {
                       enabled: {
-                        label: 'Enabled',
+                        label: t('panel_configuration_instance_configuration_features_tipping_post_enabled_label'),
                         type: 'boolean',
-                        description: 'Show Tip button in post footer',
+                        description: t('panel_configuration_instance_configuration_features_tipping_post_enabled_description'),
                       },
                       buttonLabel: {
-                        label: 'Button Label',
+                        label: t('panel_configuration_instance_configuration_features_tipping_post_button_label_label'),
                         type: 'string',
-                        description: 'Custom label for Tip button (e.g. Tip)',
+                        description: t('panel_configuration_instance_configuration_features_tipping_post_button_label_description'),
                       },
                     },
                   },
                   amounts: {
-                    label: 'Preset Amounts',
+                    label: t('panel_configuration_instance_configuration_features_tipping_amounts_label'),
                     type: 'array',
-                    description: 'Preset amounts in USD for tip buttons (e.g. 1, 5, 10)',
+                    description: t('panel_configuration_instance_configuration_features_tipping_amounts_description'),
                   },
                 },
               },
               auth: {
-                label: 'Authentication',
+                label: t('panel_configuration_instance_configuration_features_auth_label'),
                 type: 'section',
                 fields: {
                   enabled: {
-                    label: 'Enabled',
+                    label: t('panel_configuration_instance_configuration_features_auth_enabled_label'),
                     type: 'boolean',
-                    description: 'Enable user authentication for interactions',
+                    description: t('panel_configuration_instance_configuration_features_auth_enabled_description'),
                   },
                   methods: {
-                    label: 'Auth Methods',
+                    label: t('panel_configuration_instance_configuration_features_auth_methods_label'),
                     type: 'array',
                     allowedValues: AUTH_METHODS,
-                    description:
-                      'Available login methods: keychain, hivesigner, hiveauth. Hivesigner also needs a client id under General Settings > Hivesigner, which blogs hosted by Ecency are given automatically.',
+                    description: t('panel_configuration_instance_configuration_features_auth_methods_description'),
                   },
                 },
               },
@@ -426,85 +452,84 @@ export const configFieldsMap: Record<string, ConfigField> = {
         },
       },
       general: {
-        label: 'General Settings',
+        label: t('panel_configuration_general_label'),
         type: 'section',
         fields: {
           theme: {
-            label: 'Theme',
+            label: t('panel_configuration_general_theme_label'),
             type: 'select',
-            description: 'Theme setting (system, light, dark)',
+            description: t('panel_configuration_general_theme_description'),
             options: [
-              { value: 'system', label: 'System' },
-              { value: 'light', label: 'Light' },
-              { value: 'dark', label: 'Dark' },
+              { value: 'system', label: t('panel_configuration_general_theme_system_option') },
+              { value: 'light', label: t('panel_configuration_general_theme_light_option') },
+              { value: 'dark', label: t('panel_configuration_general_theme_dark_option') },
             ],
           },
           styleTemplate: {
-            label: 'Style Template',
+            label: t('panel_configuration_general_style_template_label'),
             type: 'select',
-            description: 'Visual style template for the blog',
+            description: t('panel_configuration_general_style_template_description'),
             options: [
-              { value: 'medium', label: 'Medium (Editorial)' },
-              { value: 'minimal', label: 'Minimal (Clean)' },
-              { value: 'magazine', label: 'Magazine (Editorial)' },
-              { value: 'developer', label: 'Developer (Tech)' },
-              { value: 'modern-gradient', label: 'Modern Gradient' },
+              { value: 'medium', label: t('panel_configuration_general_style_template_medium_option') },
+              { value: 'minimal', label: t('panel_configuration_general_style_template_minimal_option') },
+              { value: 'magazine', label: t('panel_configuration_general_style_template_magazine_option') },
+              { value: 'developer', label: t('panel_configuration_general_style_template_developer_option') },
+              { value: 'modern-gradient', label: t('panel_configuration_general_style_template_modern_gradient_option') },
             ],
           },
           language: {
-            label: 'Language',
+            label: t('panel_configuration_general_language_label'),
             type: 'select',
-            description: 'Default language',
+            description: t('panel_configuration_general_language_description'),
             options: [
-              { value: 'en', label: 'English' },
-              { value: 'es', label: 'Spanish' },
-              { value: 'de', label: 'German' },
-              { value: 'fr', label: 'French' },
-              { value: 'ko', label: 'Korean' },
-              { value: 'ru', label: 'Russian' },
-              { value: 'pt', label: 'Portuguese' },
-              { value: 'ja', label: 'Japanese' },
-              { value: 'zh', label: 'Chinese' },
-              { value: 'it', label: 'Italian' },
-              { value: 'pl', label: 'Polish' },
-              { value: 'tr', label: 'Turkish' },
+              { value: 'en', label: t('panel_configuration_general_language_en_option') },
+              { value: 'es', label: t('panel_configuration_general_language_es_option') },
+              { value: 'de', label: t('panel_configuration_general_language_de_option') },
+              { value: 'fr', label: t('panel_configuration_general_language_fr_option') },
+              { value: 'ko', label: t('panel_configuration_general_language_ko_option') },
+              { value: 'ru', label: t('panel_configuration_general_language_ru_option') },
+              { value: 'pt', label: t('panel_configuration_general_language_pt_option') },
+              { value: 'ja', label: t('panel_configuration_general_language_ja_option') },
+              { value: 'zh', label: t('panel_configuration_general_language_zh_option') },
+              { value: 'it', label: t('panel_configuration_general_language_it_option') },
+              { value: 'pl', label: t('panel_configuration_general_language_pl_option') },
+              { value: 'tr', label: t('panel_configuration_general_language_tr_option') },
             ],
           },
           timezone: {
-            label: 'Timezone',
+            label: t('panel_configuration_general_timezone_label'),
             type: 'string',
-            description: 'Default timezone',
+            description: t('panel_configuration_general_timezone_description'),
           },
           dateFormat: {
-            label: 'Date Format',
+            label: t('panel_configuration_general_date_format_label'),
             type: 'string',
-            description: 'Date format pattern',
+            description: t('panel_configuration_general_date_format_description'),
           },
           timeFormat: {
-            label: 'Time Format',
+            label: t('panel_configuration_general_time_format_label'),
             type: 'string',
-            description: 'Time format pattern',
+            description: t('panel_configuration_general_time_format_description'),
           },
           dateTimeFormat: {
-            label: 'Date Time Format',
+            label: t('panel_configuration_general_date_time_format_label'),
             type: 'string',
-            description: 'Date and time format pattern',
+            description: t('panel_configuration_general_date_time_format_description'),
           },
           imageProxy: {
-            label: 'Image Proxy URL',
+            label: t('panel_configuration_general_image_proxy_label'),
             type: 'string',
-            description: 'Image proxy base URL (e.g., https://i.ecency.com)',
+            description: t('panel_configuration_general_image_proxy_description'),
           },
           profileBaseUrl: {
-            label: 'Profile Base URL',
+            label: t('panel_configuration_general_profile_base_url_label'),
             type: 'string',
-            description: 'Base URL for user profiles (e.g., https://ecency.com/@)',
+            description: t('panel_configuration_general_profile_base_url_description'),
           },
           createPostUrl: {
-            label: 'Create Post URL',
+            label: t('panel_configuration_general_create_post_url_label'),
             type: 'string',
-            description:
-              'Optional external composer for the Create post button. Leave empty to write here with the built-in editor. The old default https://ecency.com/publish also means the built-in editor.',
+            description: t('panel_configuration_general_create_post_url_description'),
             // Two different silences, and they need different sentences.
             //
             // A community instance ignores this field entirely, valid or not:
@@ -519,29 +544,28 @@ export const configFieldsMap: Record<string, ConfigField> = {
             validate: (value, config) => {
               if (value.trim() === '') return null;
               if (isCommunityConfig(config)) {
-                return 'Community sites always use the built-in editor, so this address is not used. The built-in editor carries the community target, which an external composer would lose.';
+                return t('panel_validation_create_post_url_community');
               }
               return isRefusedCreatePostUrl(value)
-                ? 'Not a web address the site will open, so the Create post button uses the built-in editor. Use a full https address.'
+                ? t('panel_validation_create_post_url_refused')
                 : null;
             },
           },
           hivesigner: {
-            label: 'Hivesigner',
+            label: t('panel_configuration_general_hivesigner_label'),
             type: 'section',
             fields: {
               clientId: {
-                label: 'Hivesigner Client ID',
+                label: t('panel_configuration_general_hivesigner_client_id_label'),
                 // A text input, never a number one: the number input writes null
                 // when cleared, and null erases the stored section on merge.
                 type: 'string',
-                description:
-                  "Hivesigner login stays hidden until this is set. On a blog hosted by Ecency the shared ecency.app app is filled in for you, once this site's /auth address has been registered on chain, so there is normally nothing to do here. To use a different app instead, register your own and put its id here; it is never overwritten. On a self-hosted instance nothing fills this in for you: either register your own app and put its id here, or email hello@ecency.com to get this site's /auth address registered on the shared app and then put ecency.app here.",
+                description: t('panel_configuration_general_hivesigner_client_id_description'),
               },
             },
           },
           styles: {
-            label: 'Styles',
+            label: t('panel_configuration_general_styles_label'),
             type: 'section',
             fields: {
               /**
@@ -557,17 +581,15 @@ export const configFieldsMap: Record<string, ConfigField> = {
                * which is the value every instance currently holds.
                */
               accent: {
-                label: 'Accent color',
+                label: t('panel_configuration_general_styles_accent_label'),
                 type: 'color',
-                description:
-                  "One color, as a hex value such as #0969da. Buttons, links, the active feed tab and focus rings derive from it, and the text that sits on it is corrected automatically to stay readable. Leave empty to keep the style template's own color.",
+                description: t('panel_configuration_general_styles_accent_description'),
                 maxLength: 32,
               },
               fontPreset: {
-                label: 'Fonts',
+                label: t('panel_configuration_general_styles_font_preset_label'),
                 type: 'select',
-                description:
-                  'A body and heading pairing. Leave on Theme default to keep the faces the style template ships with.',
+                description: t('panel_configuration_general_styles_font_preset_description'),
                 // The exported list, not a copy: it already carries the empty
                 // "Theme default" entry that is the only way back after a
                 // preset has been chosen, and a second list here would drift.
@@ -580,9 +602,9 @@ export const configFieldsMap: Record<string, ConfigField> = {
                 normalizesCase: true,
               },
               background: {
-                label: 'Background',
+                label: t('panel_configuration_general_styles_background_label'),
                 type: 'string',
-                description: 'CSS classes for background styling',
+                description: t('panel_configuration_general_styles_background_description'),
               },
             },
           },
@@ -591,3 +613,4 @@ export const configFieldsMap: Record<string, ConfigField> = {
     },
   },
 };
+}

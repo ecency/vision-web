@@ -12,7 +12,20 @@ import {
 import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
 import { resolveCreatePostTarget } from '@/features/auth/utils/create-post-target';
 import type { ConfigField } from './config-fields';
-import { configFieldsMap } from './config-fields';
+import { translations } from '@/core/i18n-strings';
+import { buildConfigFields } from './config-fields';
+
+/*
+ * English, read from the strings module directly.
+ *
+ * Not `t` from `@/core/i18n`: that reads the running config and would pull the
+ * gitignored build-time `config.json`, which is absent in CI. This is the same
+ * lookup `t` performs once the language resolves to `en`, so these assertions
+ * are about the copy an English reader sees.
+ */
+const configFieldsMap = buildConfigFields(
+  (key) => translations.en[key] ?? key,
+);
 import { displayedSelectValue } from './field-display';
 
 /** The field at a config path, or undefined when the editor does not offer it. */
@@ -648,4 +661,158 @@ describe('fields that must not be editable', () => {
 
     expect(numeric).toEqual([]);
   });
+});
+
+/**
+ * Every label and description resolves to real copy.
+ *
+ * `t()` returns the KEY when it has no entry, so a typo or a key added to the
+ * panel but not to `en` renders as `panel_configuration_general_styles_accent_label`
+ * in the settings panel and nothing throws. That is the failure mode this whole
+ * change introduces, so it is the one worth pinning.
+ */
+describe('panel copy resolves', () => {
+  /** Every string the built map puts on screen, with the path that produced it. */
+  function copyStrings(): Array<{ path: string; value: string }> {
+    const found: Array<{ path: string; value: string }> = [];
+    const visit = (fields: Record<string, ConfigField>, path: string[]): void => {
+      for (const [key, field] of Object.entries(fields)) {
+        const here = [...path, key].join('.');
+        found.push({ path: `${here}.label`, value: field.label });
+        // `!== undefined`, not truthiness: an empty description is exactly
+        // what the blank check below exists to catch, and skipping it hid one.
+        if (field.description !== undefined) {
+          found.push({ path: `${here}.description`, value: field.description });
+        }
+        for (const option of field.options ?? []) {
+          found.push({ path: `${here}.option`, value: option.label });
+        }
+        if (field.fields) visit(field.fields, [...path, key]);
+      }
+    };
+    visit(configFieldsMap, []);
+    return found;
+  }
+
+  it('finds the strings to check', () => {
+    // Guards the reader: an empty list would make everything below vacuous.
+    expect(copyStrings().length).toBeGreaterThan(100);
+  });
+
+  it('shows no raw translation key', () => {
+    const unresolved = copyStrings()
+      .filter(({ value }) => /^panel_[a-z0-9_]+$/.test(value))
+      .map(({ path }) => path);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('leaves nothing blank', () => {
+    const blank = copyStrings()
+      .filter(({ value }) => value.trim() === '')
+      .map(({ path }) => path);
+    expect(blank).toEqual([]);
+  });
+
+  /**
+   * Which KEYS the panel asks for, recorded by the translator itself.
+   *
+   * The first version of this compared rendered English values, and that has a
+   * blind spot the en table walks straight into: "Enabled" is the value of ten
+   * different keys, and "Off", "Post" and "Button Label" repeat too. An
+   * orphaned key whose text happens to match a live one would have counted as
+   * used. Recording the key at lookup time cannot collide, and it catches the
+   * reverse case as well, a key the panel asks for that `en` never declares.
+   */
+  function requestedKeys(): Set<string> {
+    const asked = new Set<string>();
+    const fields = buildConfigFields((key) => {
+      asked.add(key);
+      return translations.en[key] ?? key;
+    });
+
+    /*
+     * Validators are closures, so building the map does not run them and their
+     * keys looked orphaned. Exercising them is not a workaround for the test:
+     * an unresolvable key in a validation message is exactly as broken as one
+     * in a label, and it only shows once someone types something wrong.
+     *
+     * Inputs chosen to reach every branch: refused, accepted, empty, and a
+     * community document, whose message differs from the blog one.
+     */
+    const community = {
+      configuration: {
+        instanceConfiguration: { type: 'community', communityId: 'hive-1' },
+      },
+    } as unknown as Record<string, never>;
+
+    const runValidators = (map: Record<string, ConfigField>): void => {
+      for (const field of Object.values(map)) {
+        for (const input of ['', 'not a url', 'https://example.com/x']) {
+          field.validate?.(input);
+          field.validate?.(input, community);
+        }
+        if (field.fields) runValidators(field.fields);
+      }
+    };
+    runValidators(fields);
+
+    return asked;
+  }
+
+  const declaredPanelKeys = () =>
+    Object.keys(translations.en).filter((k) => k.startsWith('panel_'));
+
+  it('declares a key for everything the panel asks for', () => {
+    const declared = new Set(declaredPanelKeys());
+    const missing = [...requestedKeys()].filter((k) => !declared.has(k));
+    expect(missing).toEqual([]);
+  });
+
+  it('declares no panel key the panel never asks for', () => {
+    const asked = requestedKeys();
+    const declared = declaredPanelKeys();
+    expect(declared.length).toBeGreaterThan(100);
+    expect(declared.filter((k) => !asked.has(k))).toEqual([]);
+  });
+});
+
+/**
+ * What the other locales currently do with the panel, stated rather than
+ * implied.
+ *
+ * `t()` falls back `language -> en -> key`, so a Spanish owner sees the panel
+ * in English until someone who speaks Spanish writes these. That is the
+ * deliberate state: machine-translating a hundred and forty settings labels
+ * would read as translated while being unverified, and a wrong label on a
+ * control that changes a live site is worse than an English one.
+ *
+ * This test is a ratchet, not a rule. When a locale gains panel keys it starts
+ * failing, which is the prompt to move it to the translated list rather than a
+ * reason to delete the translations.
+ */
+describe('panel translations, per locale', () => {
+  const panelKeys = (locale: string) =>
+    Object.keys(translations[locale] ?? {}).filter((k) => k.startsWith('panel_'));
+
+  it('is complete in English', () => {
+    expect(panelKeys('en').length).toBeGreaterThan(100);
+  });
+
+  // Derived, so a seventh locale added later is covered without anyone
+  // remembering to add it here.
+  const otherLocales = Object.keys(translations).filter((l) => l !== 'en');
+
+  it('finds the locales to check', () => {
+    expect(otherLocales.length).toBeGreaterThan(3);
+  });
+
+  it.each(otherLocales)(
+    '%s has no panel keys yet, so it falls back to English',
+    (locale) => {
+      // The locale itself is still shipped and still translated for everything
+      // else; this is only about the settings panel.
+      expect(Object.keys(translations[locale] ?? {}).length).toBeGreaterThan(50);
+      expect(panelKeys(locale)).toEqual([]);
+    },
+  );
 });
