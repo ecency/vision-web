@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   BROWSER_EXTENSION_LABEL,
   callbackCapableExtensions,
@@ -9,9 +9,11 @@ import {
   getDetectedExtensions,
   getExtensionName,
   hasKeychainLikeExtension,
+  signBufferWithExtension,
   VALID_EXTENSION_IDS,
   type DetectedExtension,
 } from './hive-extensions';
+import { extensionCancelledMessage } from './hosting-token';
 
 /**
  * `keychain` is the login type for every Hive wallet extension, not the
@@ -250,5 +252,170 @@ describe('the payment dialog labels from the list it gates on', () => {
     visit(file);
 
     expect(argumentSources).toEqual(['callbackCapableExtensions()']);
+  });
+});
+
+/**
+ * Which wallet actually signed, as opposed to which one was asked for.
+ *
+ * `signBufferWithExtension` takes a preferred id, and when that wallet has been
+ * uninstalled mid-session it falls through to Keeper-first detection rather
+ * than failing. The caller then knows only the id it passed in, so a message
+ * about the prompt the user just saw named a wallet they no longer have. That
+ * is the same wrong-name class #1360 and #1362 fixed on other surfaces, and the
+ * only one those could not reach, because it is not a hardcoded string.
+ */
+describe('the signer reports itself', () => {
+  const realWindow = (globalThis as { window?: unknown }).window;
+
+  /** A Keychain-shaped stub whose callback resolves with a signature. */
+  function wallet(): Record<string, unknown> {
+    return {
+      requestSignBuffer: (
+        _account: string,
+        _message: string,
+        _authType: string,
+        cb: (r: { success: boolean; result: string }) => void,
+      ) => cb({ success: true, result: 'SIGNATURE' }),
+      requestHandshake: (cb: () => void) => cb(),
+    };
+  }
+
+  function withWallets(w: Record<string, unknown>): void {
+    (globalThis as { window?: unknown }).window = w;
+  }
+
+  // The preference store reads localStorage, which this runner has no DOM for.
+  // Its own try/catch would swallow the absence and return null, which happens
+  // to be the value these cases want, but that would mean the tests pass for a
+  // reason unrelated to what they assert. A real store makes the preference
+  // path actually run.
+  const store = new Map<string, string>();
+  beforeEach(() => {
+    store.clear();
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+      clear: () => store.clear(),
+    };
+  });
+
+  afterEach(() => {
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+    if (realWindow === undefined) {
+      delete (globalThis as { window?: unknown }).window;
+    } else {
+      (globalThis as { window?: unknown }).window = realWindow;
+    }
+  });
+
+  it('names the wallet it was asked for when that one is installed', async () => {
+    withWallets({ hive_keychain: wallet() });
+
+    const signed = await signBufferWithExtension(
+      'alice',
+      'challenge',
+      'Posting',
+      'keychain',
+    );
+    expect(signed.extension).toBe('keychain');
+    expect(signed.result).toBe('SIGNATURE');
+  });
+
+  /**
+   * The case the issue is about. Keychain was recorded for the session, has
+   * since been uninstalled, and Keeper is present: Keeper prompts, so Keeper is
+   * what any message about that prompt has to name.
+   */
+  it('names the wallet that actually prompted after a mid-session uninstall', async () => {
+    withWallets({ hive: { isKeeper: true, ...wallet() } });
+
+    const signed = await signBufferWithExtension(
+      'alice',
+      'challenge',
+      'Posting',
+      'keychain',
+    );
+    expect(signed.extension).toBe('hive-keeper');
+    expect(signed.extension).not.toBe('keychain');
+  });
+
+  /**
+   * Keeper aliases itself onto `window.hive_keychain`, so an implementation
+   * that mapped the resolved instance back to an id by object identity would
+   * call Keeper "Keychain" on a Keeper-only browser. That is the confusion this
+   * work exists to remove, so it must not be reintroduced by the fix.
+   */
+  it('does not call Keeper "Keychain" via its backward-compat alias', async () => {
+    const keeper = { isKeeper: true, ...wallet() };
+    withWallets({ hive: keeper, hive_keychain: keeper });
+
+    const signed = await signBufferWithExtension('alice', 'challenge');
+    expect(signed.extension).toBe('hive-keeper');
+  });
+
+  it('still rejects when nothing is installed', async () => {
+    withWallets({});
+    await expect(
+      signBufferWithExtension('alice', 'challenge'),
+    ).rejects.toThrow(/no hive browser extension/i);
+  });
+
+  /**
+   * The message and the signer have to agree. Asserted together because each is
+   * right on its own in the bug: the message function names whatever id it is
+   * handed, and the id it was handed was the stale one.
+   */
+  it('produces a cancellation message naming the wallet that prompted', async () => {
+    withWallets({ hive: { isKeeper: true, ...wallet() } });
+
+    const signed = await signBufferWithExtension(
+      'alice',
+      'challenge',
+      'Posting',
+      'keychain',
+    );
+    const message = extensionCancelledMessage(signed.extension);
+    expect(message).toContain(getExtensionName('hive-keeper'));
+    expect(message).not.toContain(getExtensionName('keychain'));
+  });
+});
+
+/**
+ * That the save path names the wallet the signer reported.
+ *
+ * Every behaviour test above passed with `getHostingToken` reverted to
+ * `user.extension`, the stale session preference, which is the entire bug. The
+ * pieces being right is not the property; the caller using them is, and
+ * `getHostingToken` cannot be driven here because it opens a real socket to the
+ * hosting API.
+ */
+describe('the save path names the reported signer', () => {
+  it('passes signed.extension to the cancellation message', () => {
+    const source = readFileSync(join(__dirname, 'hosting-token.ts'), 'utf8');
+    const sf = ts.createSourceFile(
+      'hosting-token.ts',
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+
+    const args: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'extensionCancelledMessage'
+      ) {
+        args.push(...node.arguments.map((a) => a.getText(sf)));
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+
+    // Exactly one call, and it reads the signing result rather than the user.
+    expect(args).toEqual(['signed.extension']);
   });
 });

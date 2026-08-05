@@ -52,16 +52,28 @@ export async function login(
 
       // Prove control of a posting key by signing a throwaway challenge.
       const challenge = `Login to Ecency Blog: ${Date.now()}`;
-      await signBufferWithExtension(username, challenge, 'Posting', chosen);
+      const signed = await signBufferWithExtension(
+        username,
+        challenge,
+        'Posting',
+        chosen,
+      );
+
+      // The wallet that signed, not the one asked for. `chosen` can name an
+      // extension that is no longer installed, in which case the request fell
+      // through to auto-detect and a different wallet prompted. Recording the
+      // asked-for one would persist a preference the browser cannot honour,
+      // and every later message about signing would name it.
+      const signer = signed.extension;
 
       const newUser: AuthUser = {
         username,
         loginType: 'keychain',
-        ...(chosen ? { extension: chosen } : {}),
+        extension: signer,
       };
       setUser(newUser);
       saveUser(newUser);
-      if (chosen) setPreferredExtensionId(username, chosen);
+      setPreferredExtensionId(username, signer);
       break;
     }
 

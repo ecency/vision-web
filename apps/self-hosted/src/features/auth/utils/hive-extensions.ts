@@ -328,6 +328,59 @@ const NO_EXTENSION_ERROR =
   'No Hive browser extension found. Please install Hive Keeper, Keychain, or Peak Vault.';
 
 /**
+ * A signing result together with the wallet that actually produced it.
+ *
+ * The wallet that signs is not always the one the caller asked for: an explicit
+ * preference whose extension has been uninstalled falls through to Keeper-first
+ * auto-detect. A caller naming the id it passed in is then describing a popup
+ * the user never saw.
+ */
+export interface SignedByExtension extends KeychainResponse {
+  /** The wallet that was actually asked to sign. */
+  extension: HiveExtensionId;
+}
+
+async function withSigner(
+  extension: HiveExtensionId,
+  signing: Promise<KeychainResponse>,
+): Promise<SignedByExtension> {
+  return { ...(await signing), extension };
+}
+
+/**
+ * `resolveKeychainLikeInstance`, but reporting which wallet it resolved to.
+ *
+ * The instance alone cannot be mapped back to an id: Keeper aliases itself onto
+ * `window.hive_keychain`, so comparing object identity against
+ * `getKeychainInstance()` would call Keeper "Keychain" on a Keeper-only
+ * browser, which is the exact confusion this whole line of work exists to
+ * remove.
+ */
+function resolveKeychainLikeDetected(
+  username?: string,
+): { id: HiveExtensionId; instance: HiveKeychain } | null {
+  if (typeof window === 'undefined') return null;
+
+  const preferred = getPreferredExtensionId(username);
+  if (preferred === 'keychain') {
+    const instance = getKeychainInstance();
+    return instance ? { id: 'keychain', instance } : null;
+  }
+  if (preferred === 'hive-keeper') {
+    const instance = getHiveKeeperInstance();
+    return instance ? { id: 'hive-keeper', instance } : null;
+  }
+  // Peak Vault has no callback API for these requests, and prompting a
+  // different wallet than the one chosen is worse than a clear error.
+  if (preferred === 'peakvault') return null;
+
+  const keeper = getHiveKeeperInstance();
+  if (keeper) return { id: 'hive-keeper', instance: keeper };
+  const keychain = getKeychainInstance();
+  return keychain ? { id: 'keychain', instance: keychain } : null;
+}
+
+/**
  * Fast liveness ping (ported from the main app). Keychain-compatible extensions
  * run a Manifest V3 service worker that idles after ~30s; the first request to
  * a sleeping or crashed worker can silently never call back. requestHandshake
@@ -432,30 +485,54 @@ async function broadcastViaPeakVault(
  * `preferredId` overrides the stored preference, e.g. during login before the
  * choice is persisted.
  */
-export function signBufferWithExtension(
+export async function signBufferWithExtension(
   account: string,
   message: string,
   authType: AuthorityType = 'Posting',
   preferredId?: HiveExtensionId,
-): Promise<KeychainResponse> {
+): Promise<SignedByExtension> {
   const extId = preferredId ?? getPreferredExtensionId(account);
   if (extId === 'peakvault') {
     const pv = getPeakVaultInstance();
-    if (pv) return signBufferViaPeakVault(pv, account, message, authType);
+    if (pv) {
+      return withSigner(
+        'peakvault',
+        signBufferViaPeakVault(pv, account, message, authType),
+      );
+    }
   } else if (extId) {
     const instance =
       extId === 'hive-keeper' ? getHiveKeeperInstance() : getKeychainInstance();
-    if (instance)
-      return signViaKeychainLike(instance, account, message, authType);
+    if (instance) {
+      return withSigner(
+        extId,
+        signViaKeychainLike(instance, account, message, authType),
+      );
+    }
     // Chosen extension is gone (uninstalled); forget the stale preference.
     if (!preferredId) setPreferredExtensionId(account, null);
   }
 
-  const keychainLike = resolveKeychainLikeInstance();
-  if (keychainLike)
-    return signViaKeychainLike(keychainLike, account, message, authType);
+  // Fallback, and the reason this function reports its signer at all.
+  //
+  // An explicit `preferredId` whose wallet has been uninstalled mid-session
+  // lands here, and this is Keeper-first regardless of what was asked for. The
+  // caller knows only the id it passed in, so naming that in a message about
+  // the prompt the user just saw names the wrong wallet.
+  const keychainLike = resolveKeychainLikeDetected();
+  if (keychainLike) {
+    return withSigner(
+      keychainLike.id,
+      signViaKeychainLike(keychainLike.instance, account, message, authType),
+    );
+  }
   const pv = getPeakVaultInstance();
-  if (pv) return signBufferViaPeakVault(pv, account, message, authType);
+  if (pv) {
+    return withSigner(
+      'peakvault',
+      signBufferViaPeakVault(pv, account, message, authType),
+    );
+  }
   return Promise.reject(new Error(NO_EXTENSION_ERROR));
 }
 
