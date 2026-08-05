@@ -4,6 +4,7 @@ import {
   PAYOUT_LABEL_MAX_LENGTH,
   resolveHiveLayer,
 } from '@/core/hive-layer';
+import { FONT_PRESET_OPTIONS } from '@/core/theme-appearance';
 import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
 import type { ConfigField } from './config-fields';
 import { configFieldsMap } from './config-fields';
@@ -243,5 +244,71 @@ describe('login methods', () => {
 
   it('accepts only the methods the app can serve', () => {
     expect(fieldAt(METHODS_PATH)?.allowedValues).toEqual(AUTH_METHODS);
+  });
+});
+
+const ACCENT_PATH = [
+  'configuration',
+  'general',
+  'styles',
+  'accent',
+] as const;
+const FONT_PRESET_PATH = [
+  'configuration',
+  'general',
+  'styles',
+  'fontPreset',
+] as const;
+
+/**
+ * `apply-config-dom` has read `configuration.general.styles.accent` and
+ * `.fontPreset` since the appearance work shipped, and `theme-appearance`
+ * derives the palette and type scale from them. The editor described neither,
+ * so the only way to set either was to write the config document by hand, which
+ * no owner does. The engine and the panel disagreeing that way is invisible:
+ * everything is green, every instance just silently keeps the default.
+ *
+ * The path strings below are the contract. They have to stay equal to the ones
+ * in `apply-config-dom`'s PATHS, which is module-private, so this asserts the
+ * editor side and the appearance tests assert the reader side.
+ */
+describe('appearance knobs', () => {
+  it('offers the accent where the appearance engine reads it', () => {
+    expect(fieldAt(ACCENT_PATH)).toBeDefined();
+  });
+
+  /**
+   * Text, never `number`. The number input writes null when cleared and null
+   * erases the stored section on merge, which would take `background` and the
+   * font preset out with it.
+   */
+  it('takes the accent as text', () => {
+    expect(fieldAt(ACCENT_PATH)?.type).toBe('string');
+  });
+
+  it('offers the font preset where the appearance engine reads it', () => {
+    expect(fieldAt(FONT_PRESET_PATH)).toBeDefined();
+  });
+
+  /**
+   * The exported list itself, not a hand-copied one. A second list here would
+   * drift from the presets the engine can actually resolve, and an owner would
+   * pick a pairing that silently resolves to null.
+   */
+  it('offers exactly the presets the engine can resolve', () => {
+    expect(fieldAt(FONT_PRESET_PATH)?.options).toEqual([
+      ...FONT_PRESET_OPTIONS,
+    ]);
+  });
+
+  /**
+   * Every instance currently stores no preset, so the panel has to have a value
+   * that means that, and it has to be reachable again after a change. Without
+   * the empty entry the first selection is permanent.
+   */
+  it('keeps a way back to the template default', () => {
+    const options = fieldAt(FONT_PRESET_PATH)?.options ?? [];
+    expect(options.some((option) => option.value === '')).toBe(true);
+    expect(fieldAt(FONT_PRESET_PATH)?.default).toBe('');
   });
 });

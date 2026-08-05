@@ -6,6 +6,7 @@ import {
   HIVE_LAYER_CONFIG_DEFAULTS,
   PAYOUT_LABEL_MAX_LENGTH,
 } from '@/core/hive-layer';
+import { FONT_PRESET_OPTIONS } from '@/core/theme-appearance';
 import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
 
 export type ConfigFieldType =
@@ -463,6 +464,36 @@ export const configFieldsMap: Record<string, ConfigField> = {
             label: 'Styles',
             type: 'section',
             fields: {
+              /**
+               * The two knobs `theme-appearance` derives the whole palette and
+               * type scale from. They were read by `apply-config-dom` from the
+               * moment that shipped, but no field described them, so the only
+               * way to set either was to have written the config by hand.
+               *
+               * A text input rather than a colour input, matching `background`
+               * beside it. The editor renders `string`, `select`, `boolean`,
+               * `number` and `array`; a colour type would need a case of its
+               * own, and a bare `<input type="color">` cannot express "unset",
+               * which is the value every instance currently holds.
+               */
+              accent: {
+                label: 'Accent colour',
+                type: 'string',
+                description:
+                  'One colour, as a hex value such as #0969da. Buttons, links, the active feed tab and focus rings derive from it, and the text that sits on it is corrected automatically to stay readable. Leave empty to keep the style template\'s own colour.',
+                maxLength: 32,
+              },
+              fontPreset: {
+                label: 'Fonts',
+                type: 'select',
+                description:
+                  'A body and heading pairing. Leave on Theme default to keep the faces the style template ships with.',
+                // The exported list, not a copy: it already carries the empty
+                // "Theme default" entry that is the only way back after a
+                // preset has been chosen, and a second list here would drift.
+                options: [...FONT_PRESET_OPTIONS],
+                default: '',
+              },
               background: {
                 label: 'Background',
                 type: 'string',

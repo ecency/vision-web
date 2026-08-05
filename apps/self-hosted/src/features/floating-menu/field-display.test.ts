@@ -230,17 +230,35 @@ describe('a config written before the Hive layer existed', () => {
     }
   });
 
-  it('leaves no select blank when it declares a default', () => {
+  /**
+   * What this is really guarding is that a select never renders an unlabelled
+   * empty control, which reads as broken and tells the owner nothing about what
+   * the site is currently doing.
+   *
+   * That is not the same as "the value is never the empty string". The font
+   * preset offers `''` as a named choice, "Theme default", because an instance
+   * that has never chosen a pairing is in exactly that state and has to be able
+   * to return to it after picking one. There the control shows a label, so the
+   * thing this test exists to prevent has not happened.
+   *
+   * So the rule is: the shown value must be one of the offered options, and if
+   * it is blank that option must carry a label. Stricter than the old
+   * `not.toBe('')`, which let an unlabelled blank option through.
+   */
+  it('leaves no select showing an unlabelled blank when it declares a default', () => {
     for (const leaf of leaves) {
       if (leaf.field.type !== 'select' || leaf.field.default === undefined) {
         continue;
       }
       const shown = displayedSelectValue(leaf.field, leaf.value as ConfigValue);
-      expect(shown, leaf.path).not.toBe('');
+      const options = leaf.field.options ?? [];
       expect(
-        leaf.field.options?.map((option) => option.value),
+        options.map((option) => option.value),
         leaf.path,
       ).toContain(shown);
+
+      const label = options.find((option) => option.value === shown)?.label;
+      expect(label ?? '', leaf.path).not.toBe('');
     }
   });
 
