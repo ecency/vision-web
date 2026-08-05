@@ -520,3 +520,90 @@ describe('string field validation', () => {
     }
   });
 });
+
+
+/**
+ * The composer rule depends on the instance TYPE, not just the value.
+ *
+ * A community instance ignores this field entirely, valid address or not: the
+ * built-in editor carries the community target, which an external composer
+ * would lose. So the owner most likely to set it is the one it does nothing
+ * for, and before this they got no composer and no explanation.
+ *
+ * This is why `validate` takes the whole document. The instance type lives in a
+ * different branch of the tree from the field being validated.
+ */
+describe('create post url on a community instance', () => {
+  const CREATE_POST_PATH = [
+    'configuration',
+    'general',
+    'createPostUrl',
+  ] as const;
+
+  const doc = (type: string, communityId?: string) => ({
+    configuration: {
+      instanceConfiguration: {
+        type,
+        ...(communityId === undefined ? {} : { communityId }),
+      },
+    },
+  });
+
+  const validate = (value: string, config?: unknown) =>
+    fieldAt(CREATE_POST_PATH)?.validate?.(
+      value,
+      config as Record<string, never>,
+    ) ?? null;
+
+  it('says the address is unused, even when it is a valid one', () => {
+    const note = validate(
+      'https://example.com/write',
+      doc('community', 'hive-125125'),
+    );
+    expect(note).not.toBeNull();
+    expect(note).toMatch(/built-in editor/i);
+  });
+
+  /**
+   * Different sentence from the blog-mode one. "Not a web address" would be a
+   * lie here: the address is fine, the instance type is what ignores it.
+   */
+  it('does not call a valid address invalid', () => {
+    const note = validate(
+      'https://example.com/write',
+      doc('community', 'hive-125125'),
+    );
+    expect(note).not.toMatch(/not a web address/i);
+  });
+
+  /**
+   * Typed community with no id is a blog everywhere else in the app, so the
+   * blog rule applies and a valid address is honoured.
+   */
+  it('treats a community with no id as a blog, like the rest of the app', () => {
+    expect(validate('https://example.com/write', doc('community'))).toBeNull();
+    expect(validate('https://example.com/write', doc('community', ''))).toBeNull();
+  });
+
+  it('still flags a refused address on a blog instance', () => {
+    expect(validate('example.com/write', doc('blog'))).toMatch(
+      /not a web address/i,
+    );
+  });
+
+  /** Empty means the built-in editor everywhere, and is never an error. */
+  it('says nothing about an empty value on either kind', () => {
+    expect(validate('', doc('community', 'hive-1'))).toBeNull();
+    expect(validate('', doc('blog'))).toBeNull();
+  });
+
+  /**
+   * The document is optional on the hook. Without it the field falls back to
+   * the blog rule rather than throwing, since that is what a config with no
+   * instance type resolves to.
+   */
+  it('falls back to the blog rule when handed no document', () => {
+    expect(validate('https://example.com/write')).toBeNull();
+    expect(validate('example.com/write')).toMatch(/not a web address/i);
+  });
+});

@@ -561,7 +561,7 @@ describe('the editor runs string validators', () => {
       ts.ScriptKind.TSX,
     );
 
-    let calls = 0;
+    const argumentLists: string[][] = [];
     const visit = (node: ts.Node): void => {
       // `field.validate?.(...)` parses as a call whose expression is the
       // property access, so match on the accessed name.
@@ -572,12 +572,23 @@ describe('the editor runs string validators', () => {
           : ts.isNonNullExpression(target) || ts.isParenthesizedExpression(target)
             ? ''
             : '';
-        if (text === 'validate') calls += 1;
+        if (text === 'validate') {
+          argumentLists.push(node.arguments.map((a) => a.getText(file)));
+        }
       }
       ts.forEachChild(node, visit);
     };
     visit(file);
 
-    expect(calls).toBeGreaterThan(0);
+    expect(argumentLists.length).toBeGreaterThan(0);
+
+    // With the value AND the whole document. Asserting only that the call
+    // happens let the document argument be dropped silently, which turns every
+    // rule about a combination of fields into a rule about one field: the
+    // community-mode composer check then reads as though it were a blog.
+    for (const args of argumentLists) {
+      expect(args).toHaveLength(2);
+      expect(args[1]).toBe('root');
+    }
   });
 });

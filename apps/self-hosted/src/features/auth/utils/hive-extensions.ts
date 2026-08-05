@@ -536,33 +536,56 @@ export async function signBufferWithExtension(
 }
 
 /** Broadcast operations with the account's chosen extension (or best available). */
-export function broadcastWithExtension(
+export async function broadcastWithExtension(
   account: string,
   operations: Operation[],
   authType: AuthorityType = 'Posting',
   preferredId?: HiveExtensionId,
-): Promise<KeychainResponse> {
+): Promise<SignedByExtension> {
   const extId = preferredId ?? getPreferredExtensionId(account);
   if (extId === 'peakvault') {
     const pv = getPeakVaultInstance();
-    if (pv) return broadcastViaPeakVault(pv, account, operations, authType);
+    if (pv) {
+      return withSigner(
+        'peakvault',
+        broadcastViaPeakVault(pv, account, operations, authType),
+      );
+    }
   } else if (extId) {
     const instance =
       extId === 'hive-keeper' ? getHiveKeeperInstance() : getKeychainInstance();
-    if (instance)
-      return broadcastViaKeychainLike(instance, account, operations, authType);
+    if (instance) {
+      return withSigner(
+        extId,
+        broadcastViaKeychainLike(instance, account, operations, authType),
+      );
+    }
     if (!preferredId) setPreferredExtensionId(account, null);
   }
 
-  const keychainLike = resolveKeychainLikeInstance();
-  if (keychainLike)
-    return broadcastViaKeychainLike(
-      keychainLike,
-      account,
-      operations,
-      authType,
+  // The same uninstalled-mid-session fall-through the signing path has, and the
+  // same reason for reporting it: nothing names a wallet on this path today,
+  // but the first broadcast failure message that does would name the stale
+  // preference rather than the wallet that actually prompted.
+  const keychainLike = resolveKeychainLikeDetected();
+  if (keychainLike) {
+    return withSigner(
+      keychainLike.id,
+      broadcastViaKeychainLike(
+        keychainLike.instance,
+        account,
+        operations,
+        authType,
+      ),
     );
+  }
   const pv = getPeakVaultInstance();
-  if (pv) return broadcastViaPeakVault(pv, account, operations, authType);
+  if (pv) {
+    return withSigner(
+      'peakvault',
+      broadcastViaPeakVault(pv, account, operations, authType),
+    );
+  }
   return Promise.reject(new Error(NO_EXTENSION_ERROR));
 }
+
