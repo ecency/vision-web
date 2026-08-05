@@ -679,7 +679,9 @@ describe('panel copy resolves', () => {
       for (const [key, field] of Object.entries(fields)) {
         const here = [...path, key].join('.');
         found.push({ path: `${here}.label`, value: field.label });
-        if (field.description) {
+        // `!== undefined`, not truthiness: an empty description is exactly
+        // what the blank check below exists to catch, and skipping it hid one.
+        if (field.description !== undefined) {
           found.push({ path: `${here}.description`, value: field.description });
         }
         for (const option of field.options ?? []) {
@@ -712,22 +714,65 @@ describe('panel copy resolves', () => {
   });
 
   /**
-   * The keys are derived from the config path, so a field that moves gets a new
-   * key and the old one is orphaned. Nothing catches an orphan at runtime, since
-   * an unused entry is harmless, but it accumulates.
+   * Which KEYS the panel asks for, recorded by the translator itself.
+   *
+   * The first version of this compared rendered English values, and that has a
+   * blind spot the en table walks straight into: "Enabled" is the value of ten
+   * different keys, and "Off", "Post" and "Button Label" repeat too. An
+   * orphaned key whose text happens to match a live one would have counted as
+   * used. Recording the key at lookup time cannot collide, and it catches the
+   * reverse case as well, a key the panel asks for that `en` never declares.
    */
-  it('uses every panel key that en declares', () => {
-    const used = new Set(
-      Object.entries(translations.en)
-        .filter(([key]) => key.startsWith('panel_'))
-        .filter(([, value]) => copyStrings().some((s) => s.value === value))
-        .map(([key]) => key),
-    );
-    const declared = Object.keys(translations.en).filter((k) =>
-      k.startsWith('panel_'),
-    );
+  function requestedKeys(): Set<string> {
+    const asked = new Set<string>();
+    const fields = buildConfigFields((key) => {
+      asked.add(key);
+      return translations.en[key] ?? key;
+    });
+
+    /*
+     * Validators are closures, so building the map does not run them and their
+     * keys looked orphaned. Exercising them is not a workaround for the test:
+     * an unresolvable key in a validation message is exactly as broken as one
+     * in a label, and it only shows once someone types something wrong.
+     *
+     * Inputs chosen to reach every branch: refused, accepted, empty, and a
+     * community document, whose message differs from the blog one.
+     */
+    const community = {
+      configuration: {
+        instanceConfiguration: { type: 'community', communityId: 'hive-1' },
+      },
+    } as unknown as Record<string, never>;
+
+    const runValidators = (map: Record<string, ConfigField>): void => {
+      for (const field of Object.values(map)) {
+        for (const input of ['', 'not a url', 'https://example.com/x']) {
+          field.validate?.(input);
+          field.validate?.(input, community);
+        }
+        if (field.fields) runValidators(field.fields);
+      }
+    };
+    runValidators(fields);
+
+    return asked;
+  }
+
+  const declaredPanelKeys = () =>
+    Object.keys(translations.en).filter((k) => k.startsWith('panel_'));
+
+  it('declares a key for everything the panel asks for', () => {
+    const declared = new Set(declaredPanelKeys());
+    const missing = [...requestedKeys()].filter((k) => !declared.has(k));
+    expect(missing).toEqual([]);
+  });
+
+  it('declares no panel key the panel never asks for', () => {
+    const asked = requestedKeys();
+    const declared = declaredPanelKeys();
     expect(declared.length).toBeGreaterThan(100);
-    expect(declared.filter((k) => !used.has(k))).toEqual([]);
+    expect(declared.filter((k) => !asked.has(k))).toEqual([]);
   });
 });
 
@@ -753,7 +798,15 @@ describe('panel translations, per locale', () => {
     expect(panelKeys('en').length).toBeGreaterThan(100);
   });
 
-  it.each(['es', 'de', 'fr', 'ko', 'ru'])(
+  // Derived, so a seventh locale added later is covered without anyone
+  // remembering to add it here.
+  const otherLocales = Object.keys(translations).filter((l) => l !== 'en');
+
+  it('finds the locales to check', () => {
+    expect(otherLocales.length).toBeGreaterThan(3);
+  });
+
+  it.each(otherLocales)(
     '%s has no panel keys yet, so it falls back to English',
     (locale) => {
       // The locale itself is still shipped and still translated for everything

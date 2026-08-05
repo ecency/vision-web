@@ -317,7 +317,13 @@ export function buildConfigFields(
                     // Same cap the resolver cuts at, so nothing typed here can
                     // be stored longer than it is shown.
                     maxLength: PAYOUT_LABEL_MAX_LENGTH,
-                    description: `Your own word for what a post earned, for example Rewards or Tips from readers. Leave empty for the built-in wording. Longer than ${PAYOUT_LABEL_MAX_LENGTH} characters is cut where it is shown.`,
+                    // `t()` returns a plain string, so the cap goes in as a token
+                    // the translation carries and this substitutes. A translator
+                    // can move {max} wherever their grammar wants it.
+                    description: t('panel_configuration_instance_configuration_features_hive_payout_label_description').replace(
+                      '{max}',
+                      String(PAYOUT_LABEL_MAX_LENGTH),
+                    ),
                   },
                   learnMoreUrl: {
                     label: t('panel_configuration_instance_configuration_features_hive_learn_more_url_label'),
@@ -332,7 +338,7 @@ export function buildConfigFields(
                     validate: (value) =>
                       value.trim() === '' || resolveLearnMoreUrl(value) !== null
                         ? null
-                        : 'Not a web address the site will link to, so the note stays plain text. Use a full https address.',
+                        : t('panel_validation_learn_more_url'),
                   },
                 },
               },
@@ -538,10 +544,10 @@ export function buildConfigFields(
             validate: (value, config) => {
               if (value.trim() === '') return null;
               if (isCommunityConfig(config)) {
-                return 'Community sites always use the built-in editor, so this address is not used. The built-in editor carries the community target, which an external composer would lose.';
+                return t('panel_validation_create_post_url_community');
               }
               return isRefusedCreatePostUrl(value)
-                ? 'Not a web address the site will open, so the Create post button uses the built-in editor. Use a full https address.'
+                ? t('panel_validation_create_post_url_refused')
                 : null;
             },
           },

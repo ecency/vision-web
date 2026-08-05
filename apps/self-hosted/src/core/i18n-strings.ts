@@ -284,7 +284,11 @@ export type TranslationKey =
   | 'panel_configuration_general_styles_font_preset_label'
   | 'panel_configuration_general_styles_font_preset_description'
   | 'panel_configuration_general_styles_background_label'
-  | 'panel_configuration_general_styles_background_description';
+  | 'panel_configuration_general_styles_background_description'
+  | 'panel_configuration_instance_configuration_features_hive_payout_label_description'
+  | 'panel_validation_learn_more_url'
+  | 'panel_validation_create_post_url_community'
+  | 'panel_validation_create_post_url_refused';
 
 export type Translations = Record<TranslationKey, string>;
 
@@ -600,6 +604,10 @@ export const translations: { en: Translations } & Record<
     panel_configuration_general_styles_font_preset_description: 'A body and heading pairing. Leave on Theme default to keep the faces the style template ships with.',
     panel_configuration_general_styles_background_label: 'Background',
     panel_configuration_general_styles_background_description: 'CSS classes for background styling',
+    panel_configuration_instance_configuration_features_hive_payout_label_description: 'Your own word for what a post earned, for example Rewards or Tips from readers. Leave empty for the built-in wording. Longer than {max} characters is cut where it is shown.',
+    panel_validation_learn_more_url: 'Not a web address the site will link to, so the note stays plain text. Use a full https address.',
+    panel_validation_create_post_url_community: 'Community sites always use the built-in editor, so this address is not used. The built-in editor carries the community target, which an external composer would lose.',
+    panel_validation_create_post_url_refused: 'Not a web address the site will open, so the Create post button uses the built-in editor. Use a full https address.',
   },
   es: {
     loading: 'Cargando...',
