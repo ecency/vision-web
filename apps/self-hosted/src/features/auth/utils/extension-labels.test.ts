@@ -419,3 +419,52 @@ describe('the save path names the reported signer', () => {
     expect(args).toEqual(['signed.extension']);
   });
 });
+
+/**
+ * That the instance-only resolver delegates rather than repeating the decision
+ * tree.
+ *
+ * They were two copies of the same preference branches and Keeper-first
+ * fallback, which is the lockstep-drift class this module keeps running into.
+ * `sign-payment.ts` and `broadcastWithExtension` still use the instance-only
+ * one, so a divergence would send those to a different wallet than the signing
+ * path names.
+ *
+ * Delegation makes that impossible by construction, so there is no behaviour
+ * left to compare: a test calling both would be comparing a function with
+ * itself. What can regress is someone re-inlining the tree, and that is what
+ * this pins.
+ */
+describe('the instance resolver does not repeat the decision tree', () => {
+  it('delegates to the resolver that reports its id', () => {
+    const source = readFileSync(join(__dirname, 'hive-extensions.ts'), 'utf8');
+    const sf = ts.createSourceFile(
+      'hive-extensions.ts',
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+
+    let body = '';
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isFunctionDeclaration(node) &&
+        node.name?.text === 'resolveKeychainLikeInstance' &&
+        node.body
+      ) {
+        body = node.body.getText(sf);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+
+    expect(body).not.toBe('');
+    expect(body).toContain('resolveKeychainLikeDetected');
+    // The branches belong to the delegate now. Any of these reappearing here
+    // means the tree was copied back.
+    expect(body).not.toContain("'peakvault'");
+    expect(body).not.toContain('getHiveKeeperInstance');
+    expect(body).not.toContain('getKeychainInstance');
+  });
+});

@@ -312,12 +312,11 @@ function getPeakVaultInstance(): PeakVaultApi | null {
 export function resolveKeychainLikeInstance(
   username?: string,
 ): HiveKeychain | null {
-  if (typeof window === 'undefined') return null;
-  const extId = getPreferredExtensionId(username);
-  if (extId === 'keychain') return getKeychainInstance();
-  if (extId === 'hive-keeper') return getHiveKeeperInstance();
-  if (extId === 'peakvault') return null;
-  return getHiveKeeperInstance() || getKeychainInstance();
+  // Delegates rather than repeating the decision tree. Two hand-kept copies of
+  // the same resolution order is the lockstep-drift class this module keeps
+  // running into, and the one that reports its id is the one that must stay
+  // authoritative, since a wrong id is how the wrong wallet gets named.
+  return resolveKeychainLikeDetected(username)?.instance ?? null;
 }
 
 // ---------------------------------------------------------------------------
