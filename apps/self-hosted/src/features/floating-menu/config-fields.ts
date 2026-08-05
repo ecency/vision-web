@@ -356,7 +356,7 @@ export const configFieldsMap: Record<string, ConfigField> = {
                     type: 'array',
                     allowedValues: AUTH_METHODS,
                     description:
-                      'Available login methods: keychain, hivesigner, hiveauth. Hivesigner also needs a client id, set under General Settings > Hivesigner.',
+                      'Available login methods: keychain, hivesigner, hiveauth. Hivesigner also needs a client id under General Settings > Hivesigner, which blogs hosted by Ecency are given automatically.',
                   },
                 },
               },
@@ -455,7 +455,7 @@ export const configFieldsMap: Record<string, ConfigField> = {
                 // when cleared, and null erases the stored section on merge.
                 type: 'string',
                 description:
-                  "Hivesigner login stays hidden until this is set. Either register your own Hivesigner app and put its id here, or email hello@ecency.com to get this site's /auth address registered on the shared ecency.app app, then put ecency.app here.",
+                  "Hivesigner login stays hidden until this is set. On a blog hosted by Ecency the shared ecency.app app is filled in for you, once this site's /auth address has been registered on chain, so there is normally nothing to do here. To use a different app instead, register your own and put its id here; it is never overwritten. On a self-hosted instance nothing fills this in for you: either register your own app and put its id here, or email hello@ecency.com to get this site's /auth address registered on the shared app and then put ecency.app here.",
               },
             },
           },

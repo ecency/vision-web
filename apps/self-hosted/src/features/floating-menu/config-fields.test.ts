@@ -64,6 +64,42 @@ describe('hivesigner client id', () => {
     expect(description).toContain('ecency.app');
   });
 
+  /**
+   * A managed tenant's client id is written by the registration job, not by the
+   * owner, so copy telling them to set it themselves describes work they will
+   * never do and a login they will believe is broken until they do it.
+   *
+   * Asserted on the field an owner actually reads rather than on the job, because
+   * the job being right is what makes this text wrong: the two drifted apart once
+   * already, with the editor promising a manual step the reconcile had removed.
+   */
+  it('says the hosted case is automatic, and that an own id survives it', () => {
+    const description = fieldAt(CLIENT_ID_PATH)?.description ?? '';
+
+    expect(description).toMatch(/hosted by Ecency/i);
+    expect(description).toMatch(/filled in for you|automatically/i);
+    // The reconcile leaves a non-shared value alone; the owner has to be told so,
+    // or setting their own app reads as a change something else may undo.
+    expect(description).toMatch(/never overwritten|not be overwritten/i);
+  });
+
+  /**
+   * The email route is only half an instruction. Nothing writes the field on a
+   * self-hosted instance: the reconcile iterates the hosting database, so an
+   * owner who emails us and waits sees the button stay hidden for a step that
+   * was never going to happen on its own.
+   *
+   * `gives both routes to a working setup` does not cover this. It asserts the
+   * three substrings are present, and they all were in a revision that had
+   * dropped the save step, which is how this shipped for review.
+   */
+  it('tells a self-hoster taking the email route to save ecency.app themselves', () => {
+    const description = fieldAt(CLIENT_ID_PATH)?.description ?? '';
+
+    expect(description).toMatch(/self-hosted/i);
+    expect(description).toMatch(/put ecency\.app here/i);
+  });
+
   it('is pointed at from the login methods field', () => {
     expect(fieldAt(METHODS_PATH)?.description).toContain('Hivesigner');
   });
