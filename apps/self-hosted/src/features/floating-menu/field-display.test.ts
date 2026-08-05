@@ -540,7 +540,6 @@ describe('the editor renders colour fields with the shared validation', () => {
   });
 });
 
-
 /**
  * That the text input actually calls `field.validate`.
  *
