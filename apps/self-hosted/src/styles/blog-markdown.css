@@ -750,9 +750,7 @@
   .markdown-body h6:hover .anchor {
     text-decoration: none;
   }
-}
 
-@media (hover: hover) {
   .markdown-body h1:hover .anchor .octicon-link,
   .markdown-body h2:hover .anchor .octicon-link,
   .markdown-body h3:hover .anchor .octicon-link,
@@ -1329,17 +1327,32 @@
   margin: 0 -1.6em 0.25em 0.2em;
 }
 
+/*
+ * Split, because the two halves are not the same kind of affordance.
+ *
+ * `:focus-within` is reached by keyboard, and a touch device with a hardware
+ * keyboard reports `hover: none`, so gating it would take the reveal away from
+ * exactly the people who navigate that way. Only the pointer half belongs
+ * inside the guard.
+ */
 @media (hover: hover) {
-  .markdown-body .contains-task-list:hover .task-list-item-convert-container,
-  .markdown-body
-    .contains-task-list:focus-within
-    .task-list-item-convert-container {
+  .markdown-body .contains-task-list:hover .task-list-item-convert-container {
     display: block;
     width: auto;
     height: 24px;
     overflow: visible;
     clip: auto;
   }
+}
+
+.markdown-body
+  .contains-task-list:focus-within
+  .task-list-item-convert-container {
+  display: block;
+  width: auto;
+  height: 24px;
+  overflow: visible;
+  clip: auto;
 }
 
 .markdown-body ::-webkit-calendar-picker-indicator {

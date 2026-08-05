@@ -32,7 +32,13 @@ function cssFiles(dir: string): string[] {
  * Selectors containing `:hover` that are NOT inside an `@media (hover: ...)`
  * block, found by tracking brace depth and which `@media` opened each level.
  */
-function bareHoverSelectors(source: string): string[] {
+function bareHoverSelectors(rawSource: string): string[] {
+  // Comments first, for two separate reasons found by testing the detector
+  // rather than trusting it: a comment that merely MENTIONS :hover was reported
+  // as a bare rule, and a comment containing a brace desynced the depth
+  // tracking and produced garbage selectors. `parseBlocks` in the sibling test
+  // strips them for the same reason.
+  const source = rawSource.replace(/\/\*[\s\S]*?\*\//g, '');
   const bare: string[] = [];
   const openers: string[] = [];
   let i = 0;
@@ -52,7 +58,12 @@ function bareHoverSelectors(source: string): string[] {
     }
 
     const selector = head.split('}').pop()!.trim();
-    const insideHoverMedia = openers.some((o) => /@media[^{]*\(\s*hover/.test(o));
+    // `hover: hover` specifically. A looser test also accepted
+    // `@media (hover: none)`, which is the opposite condition and would have
+    // counted a rule that only applies on touch as correctly gated.
+    const insideHoverMedia = openers.some((o) =>
+      /@media[^{]*\(\s*(?:any-)?hover\s*:\s*hover\s*\)/.test(o),
+    );
 
     if (selector.includes(':hover') && !selector.startsWith('@') && !insideHoverMedia) {
       bare.push(selector.replace(/\s+/g, ' ').slice(0, 100));
@@ -93,5 +104,36 @@ describe('hover styling is gated on hover-capable devices', () => {
       bareHoverSelectors('@media (hover: hover) { .a:hover { opacity: 0.5; } }'),
     ).toEqual([]);
     expect(bareHoverSelectors('.a { color: red; }')).toEqual([]);
+  });
+
+  /** A comment that talks about hover is not a rule that uses it. */
+  it('ignores :hover inside comments', () => {
+    expect(
+      bareHoverSelectors('/* keep :hover out of here */ .a { color: red; }'),
+    ).toEqual([]);
+  });
+
+  /** A brace in a comment used to desync the depth tracking entirely. */
+  it('survives a brace inside a comment', () => {
+    expect(
+      bareHoverSelectors('/* a { b } */ @media (hover: hover) { .a:hover { x: 1; } }'),
+    ).toEqual([]);
+  });
+
+  /**
+   * `hover: none` is the opposite condition. Accepting it as a gate would pass
+   * a rule that applies only where the problem is.
+   */
+  it('does not accept hover: none as a gate', () => {
+    expect(
+      bareHoverSelectors('@media (hover: none) { .a:hover { x: 1; } }'),
+    ).toEqual(['.a:hover']);
+  });
+
+  /** `any-hover: hover` is a legitimate gate and must be accepted. */
+  it('accepts any-hover: hover', () => {
+    expect(
+      bareHoverSelectors('@media (any-hover: hover) { .a:hover { x: 1; } }'),
+    ).toEqual([]);
   });
 });

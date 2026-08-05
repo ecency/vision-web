@@ -48,7 +48,19 @@ function blocks(file: string): Block[] {
   return parseBlocks(readFileSync(join(THEMES, file), 'utf8'), file);
 }
 
-/** Top-level `selector { ... }` blocks of a stylesheet, comments removed. */
+/**
+ * Every `selector { ... }` rule of a stylesheet, comments removed.
+ *
+ * At-rule bodies are recursed into and their rules FLATTENED into the same
+ * list, not skipped: hover rules now live inside `@media (hover: hover)`, and
+ * treating an at-rule as opaque hid them from every assertion about them.
+ *
+ * Two consequences of flattening, both fine here and both worth knowing. Order
+ * is source order, so a rule inside a media block appears after the base rule
+ * it overrides. And the same selector can appear twice, once bare and once
+ * media-scoped; `componentRule` takes the first match, which is the base rule,
+ * because that is the one these assertions are about.
+ */
 function parseBlocks(source: string, file: string): Block[] {
   const css = source.replace(/\/\*[\s\S]*?\*\//g, '');
   const out: Block[] = [];
