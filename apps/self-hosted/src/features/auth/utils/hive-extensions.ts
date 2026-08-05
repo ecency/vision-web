@@ -141,9 +141,53 @@ export function getExtensionName(id: HiveExtensionId): string {
   return EXTENSION_META[id]?.name ?? id;
 }
 
-/** True when a Keychain-compatible (callback API) extension is present. */
+/**
+ * The detected extensions that can sign a transaction here.
+ *
+ * Peak Vault is a real, detected wallet, but it exposes only a promise-based
+ * API with no callback path for specialized requests, so transaction signing
+ * cannot use it. Anything that gates on that capability and anything that
+ * describes it have to be reading the same list: the payment dialog gated on
+ * `hasKeychainLikeExtension` while labelling itself from the unfiltered set,
+ * so a browser with only Peak Vault installed rendered a button named
+ * "Peak Vault" above the words "Extension not detected", disabled.
+ */
+export function callbackCapableExtensions(): DetectedExtension[] {
+  return getDetectedExtensions().filter((e) => e.id !== 'peakvault');
+}
+
+/**
+ * True when a Keychain-compatible (callback API) extension is present.
+ *
+ * Defined in terms of the list above so the gate and the label cannot disagree
+ * about what counts, which is how they came apart.
+ */
 export function hasKeychainLikeExtension(): boolean {
-  return getDetectedExtensions().some((e) => e.id !== 'peakvault');
+  return callbackCapableExtensions().length > 0;
+}
+
+/** The generic name for the method, used whenever one wallet cannot be named. */
+export const BROWSER_EXTENSION_LABEL = 'Browser extension';
+
+/**
+ * What to call the extension signing method on a button.
+ *
+ * A fixed "Hive Keychain" label was wrong for two of the three wallets this app
+ * supports, and it is the one it recommends first that it was most wrong for.
+ * Naming the wallet when exactly one is installed is both accurate and more
+ * useful than the generic term, since it tells the owner which popup to expect.
+ *
+ * With several installed, no single name is right: the choice is made later,
+ * from the stored preference. With none, the generic term is all that can
+ * honestly be said, and the button is disabled anyway.
+ *
+ * Takes the detected list rather than reading `window`, so it is testable under
+ * a `node` runner. Nothing in a `.tsx` file is.
+ */
+export function extensionMethodLabel(
+  detected: readonly DetectedExtension[],
+): string {
+  return detected.length === 1 ? detected[0].name : BROWSER_EXTENSION_LABEL;
 }
 
 // ---------------------------------------------------------------------------

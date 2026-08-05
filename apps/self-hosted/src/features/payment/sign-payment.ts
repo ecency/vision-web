@@ -65,7 +65,9 @@ export async function signX402Payment(
       try {
         signedTx = JSON.parse(resp.result);
       } catch (e) {
-        throw new Error(`Failed to parse Keychain signed transaction: ${e instanceof Error ? e.message : e}`);
+        // The line above already says "the extension"; this one named Keychain,
+        // which is the login type rather than the product that signed.
+        throw new Error(`Failed to parse the signed transaction from the extension: ${e instanceof Error ? e.message : e}`);
       }
       break;
     }

@@ -4,7 +4,11 @@ import clsx from 'clsx';
 import { useState } from 'react';
 import type { PaymentRequirements } from '../x402-client';
 import { signX402Payment, type PaymentSignMethod } from '../sign-payment';
-import { hasKeychainLikeExtension } from '../../auth/utils/hive-extensions';
+import {
+  callbackCapableExtensions,
+  extensionMethodLabel,
+  hasKeychainLikeExtension,
+} from '../../auth/utils/hive-extensions';
 
 interface PaymentDialogProps {
   requirements: PaymentRequirements;
@@ -26,6 +30,10 @@ export function PaymentDialog({
 
   // Transaction signing needs the callback API (Keychain or Hive Keeper).
   const keychainAvailable = hasKeychainLikeExtension();
+  // From the SAME list the gate above reads. Labelling from every detected
+  // wallet named Peak Vault as the method while the button said "Extension not
+  // detected" and stayed disabled, because Peak Vault cannot sign here.
+  const extensionLabel = extensionMethodLabel(callbackCapableExtensions());
 
   async function handleSign(method: PaymentSignMethod) {
     setLoadingMethod(method);
@@ -96,7 +104,7 @@ export function PaymentDialog({
           >
             <div className="flex-1">
               <div className="font-medium text-theme-primary">
-                Hive Keychain
+                {extensionLabel}
               </div>
               <div className="text-xs text-theme-muted">
                 {keychainAvailable
