@@ -152,7 +152,12 @@ export function hasKeychainLikeExtension(): boolean {
 
 const PREFERRED_EXTENSION_MAP_KEY = 'ecency_preferred_hive_extension_by_user';
 
-const VALID_EXTENSION_IDS: readonly HiveExtensionId[] = [
+/**
+ * Every extension this app knows how to sign with. Exported so callers that
+ * have to cover all of them, such as the signing copy, cannot fall behind a
+ * fourth wallet being added here.
+ */
+export const VALID_EXTENSION_IDS: readonly HiveExtensionId[] = [
   'keychain',
   'hive-keeper',
   'peakvault',
