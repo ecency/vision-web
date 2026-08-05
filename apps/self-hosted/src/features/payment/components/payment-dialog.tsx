@@ -4,7 +4,11 @@ import clsx from 'clsx';
 import { useState } from 'react';
 import type { PaymentRequirements } from '../x402-client';
 import { signX402Payment, type PaymentSignMethod } from '../sign-payment';
-import { hasKeychainLikeExtension } from '../../auth/utils/hive-extensions';
+import {
+  extensionMethodLabel,
+  getDetectedExtensions,
+  hasKeychainLikeExtension,
+} from '../../auth/utils/hive-extensions';
 
 interface PaymentDialogProps {
   requirements: PaymentRequirements;
@@ -26,6 +30,9 @@ export function PaymentDialog({
 
   // Transaction signing needs the callback API (Keychain or Hive Keeper).
   const keychainAvailable = hasKeychainLikeExtension();
+  // Named when exactly one wallet is installed, generic otherwise. A fixed
+  // "Hive Keychain" was wrong for two of the three this app supports.
+  const extensionLabel = extensionMethodLabel(getDetectedExtensions());
 
   async function handleSign(method: PaymentSignMethod) {
     setLoadingMethod(method);
@@ -96,7 +103,7 @@ export function PaymentDialog({
           >
             <div className="flex-1">
               <div className="font-medium text-theme-primary">
-                Hive Keychain
+                {extensionLabel}
               </div>
               <div className="text-xs text-theme-muted">
                 {keychainAvailable

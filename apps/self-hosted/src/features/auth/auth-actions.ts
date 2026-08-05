@@ -187,7 +187,11 @@ export async function broadcast(
       // that tells the author nothing about why their tip did not send.
       if (authorityType !== 'Posting') {
         throw new Error(
-          `Hivesigner cannot sign with ${authorityType.toLowerCase()} authority. Sign in with Keychain or HiveAuth to do this.`,
+          // "a browser extension", not "Keychain": `keychain` is the login type
+          // for every Hive wallet extension, and this sentence is instructional,
+          // so naming one product sends Keeper and Peak Vault users to install
+          // something they do not need.
+          `Hivesigner cannot sign with ${authorityType.toLowerCase()} authority. Sign in with a browser extension or HiveAuth to do this.`,
         );
       }
       return broadcastWithHivesigner(user.accessToken, operations);

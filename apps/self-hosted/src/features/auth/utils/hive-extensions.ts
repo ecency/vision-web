@@ -146,6 +146,30 @@ export function hasKeychainLikeExtension(): boolean {
   return getDetectedExtensions().some((e) => e.id !== 'peakvault');
 }
 
+/** The generic name for the method, used whenever one wallet cannot be named. */
+export const BROWSER_EXTENSION_LABEL = 'Browser extension';
+
+/**
+ * What to call the extension signing method on a button.
+ *
+ * A fixed "Hive Keychain" label was wrong for two of the three wallets this app
+ * supports, and it is the one it recommends first that it was most wrong for.
+ * Naming the wallet when exactly one is installed is both accurate and more
+ * useful than the generic term, since it tells the owner which popup to expect.
+ *
+ * With several installed, no single name is right: the choice is made later,
+ * from the stored preference. With none, the generic term is all that can
+ * honestly be said, and the button is disabled anyway.
+ *
+ * Takes the detected list rather than reading `window`, so it is testable under
+ * a `node` runner. Nothing in a `.tsx` file is.
+ */
+export function extensionMethodLabel(
+  detected: readonly DetectedExtension[],
+): string {
+  return detected.length === 1 ? detected[0].name : BROWSER_EXTENSION_LABEL;
+}
+
 // ---------------------------------------------------------------------------
 // Per-user preference (same storage keys as the main web app)
 // ---------------------------------------------------------------------------
