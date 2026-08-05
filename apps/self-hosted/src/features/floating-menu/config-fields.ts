@@ -7,7 +7,9 @@ import {
   PAYOUT_LABEL_MAX_LENGTH,
   resolveLearnMoreUrl,
 } from '@/core/hive-layer';
+import { isCommunityConfig } from '@/core/instance-mode';
 import { FONT_PRESET_OPTIONS } from '@/core/theme-appearance';
+import type { ConfigValue } from './types';
 import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
 import { isRefusedCreatePostUrl } from '@/features/auth/utils/create-post-target';
 
@@ -74,8 +76,16 @@ export interface ConfigField {
    * Only fields whose resolver already refuses a value have one. Inventing a
    * rule the app does not enforce would reject input the site would have
    * accepted.
+   *
+   * `config` is the WHOLE document, not the section this field sits in, because
+   * some rules are about combinations rather than single values: an external
+   * composer is ignored outright on a community instance, and the instance type
+   * lives in a different branch of the tree.
    */
-  validate?: (value: string) => string | null;
+  validate?: (
+    value: string,
+    config?: Record<string, ConfigValue>,
+  ) => string | null;
 }
 
 export const configFieldsMap: Record<string, ConfigField> = {
@@ -485,15 +495,26 @@ export const configFieldsMap: Record<string, ConfigField> = {
             type: 'string',
             description:
               'Optional external composer for the Create post button. Leave empty to write here with the built-in editor. The old default https://ecency.com/publish also means the built-in editor.',
-            // Asked of the module that owns the rule. `resolveCreatePostTarget`
-            // collapses "left empty" and "refused" into the same `internal`
-            // result, so the panel cannot tell them apart; the owner who typed
-            // an external composer and silently got the built-in editor is the
-            // case worth naming.
-            validate: (value) =>
-              isRefusedCreatePostUrl(value)
+            // Two different silences, and they need different sentences.
+            //
+            // A community instance ignores this field entirely, valid or not:
+            // the built-in editor is what carries the community target, and an
+            // external composer would publish to the member's own blog instead.
+            // So a community owner setting a perfectly good address gets no
+            // composer and, before this, no explanation either.
+            //
+            // On a blog instance the question is the resolver's, asked of the
+            // module that owns it, since `resolveCreatePostTarget` collapses
+            // "left empty" and "refused" into one `internal` result.
+            validate: (value, config) => {
+              if (value.trim() === '') return null;
+              if (isCommunityConfig(config)) {
+                return 'Community sites always use the built-in editor, so this address is not used. The built-in editor carries the community target, which an external composer would lose.';
+              }
+              return isRefusedCreatePostUrl(value)
                 ? 'Not a web address the site will open, so the Create post button uses the built-in editor. Use a full https address.'
-                : null,
+                : null;
+            },
           },
           hivesigner: {
             label: 'Hivesigner',

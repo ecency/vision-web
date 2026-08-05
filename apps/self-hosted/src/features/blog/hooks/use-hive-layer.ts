@@ -1,3 +1,4 @@
+import { isCommunityInstance } from '@/core/instance-mode';
 import { useMemo } from 'react';
 import type { ResolvedHiveLayer } from '@/core';
 import { InstanceConfigManager, resolveHiveLayer } from '@/core';
@@ -18,12 +19,10 @@ export function useHiveLayer(): ResolvedHiveLayer {
     const { configuration } = InstanceConfigManager.getConfig();
     const instance = configuration.instanceConfiguration;
 
-    // Same expression as use-instance-config, deliberately: a second definition
-    // of "is a community" would disagree with the sidebar on an instance typed
-    // community with no communityId. The resolver does not take it today; the
-    // downvote clamp that needs it returns with the vote controls.
-    const isCommunityMode =
-      instance?.type === 'community' && !!instance?.communityId;
+    // One definition, in core/instance-mode. This used to be the same
+    // expression written out again, kept in step with use-instance-config by a
+    // comment; a third copy was about to be written for the config editor.
+    const isCommunityMode = isCommunityInstance(instance);
 
     const composer = resolveCreatePostTarget({
       createPostUrl: configuration.general?.createPostUrl,

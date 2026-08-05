@@ -1,3 +1,4 @@
+import { isCommunityInstance } from '@/core/instance-mode';
 import { useQuery } from '@tanstack/react-query';
 import { InstanceConfigManager } from '@/core';
 import { getCommunityQueryOptions } from '../queries/community-queries';
@@ -19,7 +20,7 @@ export function useInstanceConfig() {
       (configuration.instanceConfiguration.communityId as string) || ''
   );
 
-  const isCommunityMode = type === 'community' && !!communityId;
+  const isCommunityMode = isCommunityInstance({ type, communityId });
   const isBlogMode = type === 'blog';
 
   return {

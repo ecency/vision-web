@@ -100,7 +100,7 @@ function ArrayFieldEditor({
 }
 
 const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
-  ({ field, fieldKey, value, path, onUpdate }) => {
+  ({ field, fieldKey, value, path, onUpdate, root }) => {
     const fullPath = path ? `${path}.${fieldKey}` : fieldKey;
 
     if (field.type === 'section' && field.fields) {
@@ -124,6 +124,7 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
               fields={field.fields}
               path={fullPath}
               onUpdate={onUpdate}
+              root={root}
             />
           </div>
         </section>
@@ -357,7 +358,7 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
         const stringValue = displayedStringValue(field, value);
         // Only fields whose resolver refuses something carry `validate`, so
         // most string inputs are unchanged and render no region at all.
-        const stringNote = field.validate?.(stringValue) ?? null;
+        const stringNote = field.validate?.(stringValue, root) ?? null;
         return (
           <div className="mb-4">
             <label
@@ -412,7 +413,10 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
 ConfigFieldEditor.displayName = 'ConfigFieldEditor';
 
 export const ConfigEditor = memo<ConfigEditorProps>(
-  ({ config, fields, path, onUpdate }) => {
+  ({ config, fields, path, onUpdate, root }) => {
+    // The top call has no `root`, and there `config` IS the whole document.
+    // Every deeper call receives it unchanged.
+    const document = root ?? config;
     const { sections, regularFields } = useMemo(() => {
       const sectionsList: Array<[string, ConfigField]> = [];
       const regularList: Array<[string, ConfigField]> = [];
@@ -446,6 +450,7 @@ export const ConfigEditor = memo<ConfigEditorProps>(
                   value={value}
                   path={path}
                   onUpdate={onUpdate}
+                  root={document}
                 />
               );
             })}
@@ -463,6 +468,7 @@ export const ConfigEditor = memo<ConfigEditorProps>(
               value={value}
               path={path}
               onUpdate={onUpdate}
+              root={document}
             />
           );
         })}
