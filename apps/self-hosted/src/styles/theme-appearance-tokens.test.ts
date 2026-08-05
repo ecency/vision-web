@@ -72,7 +72,13 @@ function parseBlocks(source: string, file: string): Block[] {
       depth -= 1;
       if (depth > 0) continue;
       const selector = prelude.trim().replace(/\s+/g, ' ');
-      if (!selector.startsWith('@')) {
+      if (selector.startsWith('@')) {
+        // Recurse rather than discard. Hover rules now live inside
+        // `@media (hover: hover)`, so treating an at-rule's body as opaque
+        // hid `.btn-theme-primary:hover:not(:disabled)` from every assertion
+        // about it and failed with "components.css has no such rule".
+        out.push(...parseBlocks(css.slice(start, index), file));
+      } else {
         out.push({
           file,
           selector,
