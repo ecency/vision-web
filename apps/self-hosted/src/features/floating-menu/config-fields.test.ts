@@ -286,8 +286,15 @@ describe('appearance knobs', () => {
    * erases the stored section on merge, which would take `background` and the
    * font preset out with it.
    */
-  it('takes the accent as text', () => {
-    expect(fieldAt(ACCENT_PATH)?.type).toBe('string');
+  it('takes the accent as a color field, which writes text', () => {
+    // Pinned exactly: a regression to a bare `string` would drop the swatch
+    // and the inline validation while every other guard stayed green, because
+    // the orphaned `case 'color'` block would keep the call-site test passing.
+    // `color` writes strings, so the invariant this test has always been about
+    // holds too: never `number`, whose input writes null when cleared, and
+    // null erases the whole stored styles section on merge, taking
+    // `background` and the font preset with it.
+    expect(fieldAt(ACCENT_PATH)?.type).toBe('color');
   });
 
   it('offers the font preset where the appearance engine reads it', () => {

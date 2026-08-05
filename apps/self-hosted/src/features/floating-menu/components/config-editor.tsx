@@ -1,8 +1,11 @@
 import { memo, useEffect, useMemo, useState } from 'react';
+import { LiveRegion } from '@/features/shared/live-region';
 import { validateArrayDraft, validateArrayEntries } from '../array-field';
 import type { ConfigField } from '../config-fields';
 import { FLOATING_MENU_THEME } from '../constants';
 import {
+  colorInputMessage,
+  colorPickerValue,
   displayedBooleanValue,
   displayedSelectValue,
   displayedStringValue,
@@ -261,6 +264,91 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
                 </option>
               ))}
             </select>
+          </div>
+        );
+      }
+
+      case 'color': {
+        const colorText = displayedStringValue(field, value);
+        const note = colorInputMessage(colorText);
+        return (
+          <div className="mb-4">
+            <label
+              htmlFor={fullPath}
+              className="block text-sm font-medium text-gray-200 mb-2 font-sans"
+            >
+              {field.label}
+            </label>
+            {field.description && (
+              <p className="text-xs text-gray-400 mb-2 font-sans">
+                {field.description}
+              </p>
+            )}
+            <div className="flex items-center gap-2">
+              {/*
+                A swatch beside the text, not instead of it. The native control
+                has no empty state, so it can pick a colour but can never say
+                "use the template's", which is where every instance starts.
+              */}
+              <input
+                type="color"
+                value={colorPickerValue(colorText)}
+                onChange={(e) => handleChange(e.target.value)}
+                className="h-9 w-12 shrink-0 cursor-pointer rounded bg-transparent"
+                style={{
+                  border: `1px solid ${FLOATING_MENU_THEME.borderColorStrong}`,
+                }}
+                aria-label={`${field.label} swatch`}
+              />
+              <input
+                id={fullPath}
+                type="text"
+                value={colorText}
+                maxLength={field.maxLength}
+                onChange={(e) => handleChange(e.target.value)}
+                placeholder="#0969da"
+                spellCheck={false}
+                className={`${inputClassName} font-mono`}
+                style={{
+                  ...inputStyle,
+                  borderColor: note?.invalid
+                    ? '#ef4444'
+                    : FLOATING_MENU_THEME.borderColorStrong,
+                }}
+                aria-invalid={note?.invalid ? true : undefined}
+                aria-describedby={`${fullPath}-note`}
+              />
+              {colorText !== '' && (
+                <button
+                  type="button"
+                  onClick={() => handleChange('')}
+                  className="shrink-0 px-2 py-2 text-xs text-gray-400 hover:text-gray-200 font-sans"
+                  // The way back to the template's own colour, which is what
+                  // the font preset spells out as "Theme default". Without it
+                  // the first colour an owner picks is permanent.
+                  title="Clear, and use the style template's color"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {/*
+              Both regions stay mounted from the first render, because a live
+              region that appears together with its first message is usually
+              not announced at all. The id ties whichever message is showing to
+              the input, so the note is also read when the field gets focus.
+            */}
+            <div id={`${fullPath}-note`}>
+              <LiveRegion
+                className="block text-xs mt-1 font-sans text-gray-400"
+                message={note && !note.invalid ? note.message : null}
+              />
+              <LiveRegion
+                urgency="assertive"
+                className="block text-xs mt-1 font-sans text-red-400"
+                message={note?.invalid ? note.message : null}
+              />
+            </div>
           </div>
         );
       }

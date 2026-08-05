@@ -11,6 +11,10 @@ import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
 
 export type ConfigFieldType =
   | 'string'
+  // A hex colour: a native swatch beside a text input. The swatch alone cannot
+  // express "unset", which is the value every instance holds today and the one
+  // an owner has to be able to get back to.
+  | 'color'
   | 'number'
   | 'boolean'
   | 'array'
@@ -488,7 +492,7 @@ export const configFieldsMap: Record<string, ConfigField> = {
                */
               accent: {
                 label: 'Accent color',
-                type: 'string',
+                type: 'color',
                 description:
                   "One color, as a hex value such as #0969da. Buttons, links, the active feed tab and focus rings derive from it, and the text that sits on it is corrected automatically to stay readable. Leave empty to keep the style template's own color.",
                 maxLength: 32,
