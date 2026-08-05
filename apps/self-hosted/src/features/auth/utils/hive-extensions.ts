@@ -153,15 +153,17 @@ export function hasKeychainLikeExtension(): boolean {
 const PREFERRED_EXTENSION_MAP_KEY = 'ecency_preferred_hive_extension_by_user';
 
 /**
- * Every extension this app knows how to sign with. Exported so callers that
- * have to cover all of them, such as the signing copy, cannot fall behind a
- * fourth wallet being added here.
+ * Every extension this app knows how to sign with.
+ *
+ * Derived from `EXTENSION_META` rather than written out again. That is a
+ * `Record<HiveExtensionId, DetectedExtension>`, so the type checker already
+ * forces an entry per id; a hand-written list would typecheck perfectly while
+ * missing one, and everything reading this, including the signing copy and its
+ * test, would silently cover only the ids someone remembered.
  */
-export const VALID_EXTENSION_IDS: readonly HiveExtensionId[] = [
-  'keychain',
-  'hive-keeper',
-  'peakvault',
-];
+export const VALID_EXTENSION_IDS: readonly HiveExtensionId[] = Object.keys(
+  EXTENSION_META,
+) as HiveExtensionId[];
 
 function asHiveExtensionId(value: unknown): HiveExtensionId | null {
   return typeof value === 'string' &&
