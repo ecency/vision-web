@@ -45,6 +45,16 @@ export interface ConfigField {
    * sane control rather than storage.
    */
   maxLength?: number;
+  /**
+   * For `select` fields whose resolver accepts a value that is not spelled
+   * exactly like the option, so the panel can show what the site is actually
+   * doing.
+   *
+   * Opt-in, never the default. `resolveFontPreset` trims and lower-cases;
+   * `oneOf` in core/hive-layer matches with a bare `includes`. Applying either
+   * rule to the other's fields would make the panel disagree with the site.
+   */
+  normalizesCase?: boolean;
 }
 
 export const configFieldsMap: Record<string, ConfigField> = {
@@ -477,10 +487,10 @@ export const configFieldsMap: Record<string, ConfigField> = {
                * which is the value every instance currently holds.
                */
               accent: {
-                label: 'Accent colour',
+                label: 'Accent color',
                 type: 'string',
                 description:
-                  'One colour, as a hex value such as #0969da. Buttons, links, the active feed tab and focus rings derive from it, and the text that sits on it is corrected automatically to stay readable. Leave empty to keep the style template\'s own colour.',
+                  "One color, as a hex value such as #0969da. Buttons, links, the active feed tab and focus rings derive from it, and the text that sits on it is corrected automatically to stay readable. Leave empty to keep the style template's own color.",
                 maxLength: 32,
               },
               fontPreset: {
@@ -493,6 +503,11 @@ export const configFieldsMap: Record<string, ConfigField> = {
                 // preset has been chosen, and a second list here would drift.
                 options: [...FONT_PRESET_OPTIONS],
                 default: '',
+                // resolveFontPreset trims and lower-cases, so a hand-written
+                // `"Classic"` applies the Classic pairing. Without this the
+                // panel would match the options exactly, show "Theme default",
+                // and disagree with the site it is describing.
+                normalizesCase: true,
               },
               background: {
                 label: 'Background',

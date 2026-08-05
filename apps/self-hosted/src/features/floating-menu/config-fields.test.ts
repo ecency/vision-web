@@ -4,10 +4,14 @@ import {
   PAYOUT_LABEL_MAX_LENGTH,
   resolveHiveLayer,
 } from '@/core/hive-layer';
-import { FONT_PRESET_OPTIONS } from '@/core/theme-appearance';
+import {
+  FONT_PRESET_OPTIONS,
+  resolveFontPreset,
+} from '@/core/theme-appearance';
 import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
 import type { ConfigField } from './config-fields';
 import { configFieldsMap } from './config-fields';
+import { displayedSelectValue } from './field-display';
 
 /** The field at a config path, or undefined when the editor does not offer it. */
 function fieldAt(path: readonly string[]): ConfigField | undefined {
@@ -311,4 +315,38 @@ describe('appearance knobs', () => {
     expect(options.some((option) => option.value === '')).toBe(true);
     expect(fieldAt(FONT_PRESET_PATH)?.default).toBe('');
   });
+});
+
+/**
+ * Tied to the real field and the real resolver, not a fixture.
+ *
+ * field-display.test.ts proves the mechanism with a local select, which would
+ * keep passing if `normalizesCase` were dropped from the field itself. This is
+ * the assertion that fails in that case: for any spelling the engine resolves,
+ * the panel has to show the matching option rather than falling back to
+ * "Theme default" and describing a site that is not what the reader sees.
+ */
+describe('font preset panel agrees with the engine', () => {
+  const FONT_PRESET_PATH_REAL = [
+    'configuration',
+    'general',
+    'styles',
+    'fontPreset',
+  ] as const;
+
+  it.each([' Classic ', 'MODERN', 'Editorial'])(
+    'shows a real option for %s, which the engine resolves',
+    (stored) => {
+      // Guard the premise: if the engine stopped resolving these, the panel
+      // falling back would be correct and this test would be asserting nothing.
+      expect(resolveFontPreset(stored)).not.toBeNull();
+
+      const field = fieldAt(FONT_PRESET_PATH_REAL);
+      if (!field) throw new Error('no font preset field');
+      const shown = displayedSelectValue(field, stored);
+
+      expect(shown).not.toBe('');
+      expect(shown).toBe(stored.trim().toLowerCase());
+    },
+  );
 });

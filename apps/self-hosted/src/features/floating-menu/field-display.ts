@@ -94,7 +94,25 @@ export function displayedSelectValue(
 
   const options = field.options;
   if (options && options.length > 0) {
-    return options.some((option) => option.value === value) ? value : fallback;
+    const match = options.find((option) => option.value === value);
+    if (match) return match.value;
+
+    // Only for fields whose resolver normalizes, and it has to be opt-in rather
+    // than the rule for every select. `oneOf` in core/hive-layer matches with a
+    // bare `includes`, no trim and no case folding, so being lenient everywhere
+    // would show a Hive layer value as set while the site rejected it and used
+    // the default: the same disagreement this fixes, pointing the other way.
+    if (field.normalizesCase) {
+      const wanted = value.trim().toLowerCase();
+      const loose = options.find(
+        (option) => option.value.trim().toLowerCase() === wanted,
+      );
+      // The option's own value, not what was stored, so the control shows the
+      // canonical spelling the engine resolved to.
+      if (loose) return loose.value;
+    }
+
+    return fallback;
   }
   return value;
 }
