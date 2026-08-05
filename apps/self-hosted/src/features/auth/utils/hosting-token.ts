@@ -170,7 +170,11 @@ export async function getHostingToken(
         user.extension,
       );
       if (typeof signed.result !== 'string' || signed.result.length === 0) {
-        throw new Error(extensionCancelledMessage(user.extension));
+        // The wallet that SIGNED, not the one recorded for the session. They
+        // differ when the recorded one was uninstalled mid-session and the
+        // request fell through to Keeper-first detection, which is exactly the
+        // case that would otherwise name a wallet the owner no longer has.
+        throw new Error(extensionCancelledMessage(signed.extension));
       }
       result = await postJson<TokenResponse>(`${apiBase}/v1/auth/verify`, {
         username: user.username,
