@@ -5,7 +5,8 @@
  * HiveSigner access token. This module exchanges the current session for a hosting token:
  *  - hivesigner: the access token is verified server-side and swapped for a hosting token
  *  - keychain:   a login challenge is signed with the posting key and verified
- *  - hiveauth:   not supported yet (cannot sign an arbitrary challenge here)
+ *  - hiveauth:   the wallet signs the same challenge; HAS.challenge is separate from
+ *                broadcast, so this works even though offline tx signing does not
  *
  * Tokens are cached per-username in localStorage until shortly before expiry.
  */
@@ -13,6 +14,11 @@
 import { authenticationStore } from '@/store';
 import type { HiveExtensionId } from '../types';
 import { getExtensionName, signBufferWithExtension } from './hive-extensions';
+import {
+  isHiveAuthSessionValid,
+  signChallengeWithHiveAuth,
+} from './hive-auth';
+import { getHiveAuthSession } from '../storage';
 
 const STORAGE_KEY = 'ecency_hosting_token';
 // Refuse a cached token that expires within a minute so an in-flight save can't outlive it.
@@ -158,9 +164,37 @@ export async function getHostingToken(apiBase: string): Promise<string> {
       break;
     }
 
+    case 'hiveauth': {
+      // HiveAuth signs a challenge even though it cannot sign a transaction
+      // offline, and a challenge is all this exchange ever needed. Worth having
+      // beyond parity: it is the only method that both saves config and works
+      // on a phone without an extension, since the wallet is the phone.
+      const session = getHiveAuthSession();
+      if (!isHiveAuthSessionValid(session) || !session) {
+        throw new Error(
+          'Your HiveAuth session has expired. Log in again to save changes.',
+        );
+      }
+
+      const challengeResponse = await postJson<ChallengeResponse>(
+        `${apiBase}/v1/auth/challenge`,
+        { username: user.username },
+      );
+      const signature = await signChallengeWithHiveAuth(
+        session,
+        challengeResponse.challenge,
+      );
+      result = await postJson<TokenResponse>(`${apiBase}/v1/auth/verify`, {
+        username: user.username,
+        signature,
+        challenge: challengeResponse.challenge,
+      });
+      break;
+    }
+
     default:
       throw new Error(
-        'Saving with a HiveAuth session is not supported yet. Log in with a browser extension or HiveSigner to save changes.',
+        'This login method cannot save changes. Log in with a browser extension, HiveSigner or HiveAuth.',
       );
   }
 
