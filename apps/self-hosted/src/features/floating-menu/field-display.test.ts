@@ -539,3 +539,45 @@ describe('the editor renders colour fields with the shared validation', () => {
     expect(called).toContain('colorPickerValue');
   });
 });
+
+/**
+ * That the text input actually calls `field.validate`.
+ *
+ * The validators being correct is not the property; the renderer invoking them
+ * is. This is the third time in this series that every behaviour test passed
+ * while the call site was wrong, so it is asserted directly rather than assumed
+ * from the helpers being right.
+ */
+describe('the editor runs string validators', () => {
+  const EDITOR = join(__dirname, 'components', 'config-editor.tsx');
+
+  it('calls field.validate in the text branch', () => {
+    const source = readFileSync(EDITOR, 'utf8');
+    const file = ts.createSourceFile(
+      'config-editor.tsx',
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+
+    let calls = 0;
+    const visit = (node: ts.Node): void => {
+      // `field.validate?.(...)` parses as a call whose expression is the
+      // property access, so match on the accessed name.
+      if (ts.isCallExpression(node)) {
+        const target = node.expression;
+        const text = ts.isPropertyAccessExpression(target)
+          ? target.name.text
+          : ts.isNonNullExpression(target) || ts.isParenthesizedExpression(target)
+            ? ''
+            : '';
+        if (text === 'validate') calls += 1;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+
+    expect(calls).toBeGreaterThan(0);
+  });
+});

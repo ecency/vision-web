@@ -116,3 +116,28 @@ export function resolveCreatePostTarget({
 
   return toExternalTarget(configured) ?? { kind: 'internal' };
 }
+
+/**
+ * Whether a configured composer address was REFUSED, as opposed to meaning the
+ * built-in editor.
+ *
+ * `resolveCreatePostTarget` collapses both into `{ kind: 'internal' }`, so a
+ * caller outside this module cannot tell an owner who left the field empty
+ * from one who typed an address the resolver would not honour. The second is
+ * worth saying out loud: they asked for an external composer and silently got
+ * the built-in one.
+ *
+ * Lives here rather than in the config editor because the rule for what counts
+ * as a legacy default belongs to this module, and a panel restating it would
+ * drift the first time another default is retired.
+ */
+export function isRefusedCreatePostUrl(value: string): boolean {
+  const configured = value.trim();
+  if (!configured) return false;
+
+  const normalized = normalize(configured);
+  if (normalized === INTERNAL_PUBLISH_ROUTE) return false;
+  if (LEGACY_EXTERNAL_DEFAULTS.has(normalized)) return false;
+
+  return toExternalTarget(configured) === null;
+}

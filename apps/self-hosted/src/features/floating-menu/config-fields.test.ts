@@ -3,12 +3,14 @@ import {
   HIVE_LAYER_CONFIG_DEFAULTS,
   PAYOUT_LABEL_MAX_LENGTH,
   resolveHiveLayer,
+  resolveLearnMoreUrl,
 } from '@/core/hive-layer';
 import {
   FONT_PRESET_OPTIONS,
   resolveFontPreset,
 } from '@/core/theme-appearance';
 import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
+import { resolveCreatePostTarget } from '@/features/auth/utils/create-post-target';
 import type { ConfigField } from './config-fields';
 import { configFieldsMap } from './config-fields';
 import { displayedSelectValue } from './field-display';
@@ -356,4 +358,165 @@ describe('font preset panel agrees with the engine', () => {
       expect(shown).toBe(stored.trim().toLowerCase());
     },
   );
+});
+
+/**
+ * Inline validation for `string` fields.
+ *
+ * The colour field got its own surface in #1358; every other text field still
+ * accepted anything, stored it, and let the site quietly ignore it. Two fields
+ * have a resolver that genuinely refuses a value, and both fail the same way:
+ * the save succeeds and the site keeps doing what it did before.
+ *
+ * Each rule is checked AGAINST the resolver that owns it, never against a
+ * second copy of the rule, so the panel cannot warn about something the site
+ * accepts or accept something the site drops.
+ */
+describe('string field validation', () => {
+  const LEARN_MORE_PATH = [
+    'configuration',
+    'instanceConfiguration',
+    'features',
+    'hive',
+    'learnMoreUrl',
+  ] as const;
+  const CREATE_POST_PATH = [
+    'configuration',
+    'general',
+    'createPostUrl',
+  ] as const;
+
+  describe('learn more link', () => {
+    const validate = (value: string) =>
+      fieldAt(LEARN_MORE_PATH)?.validate?.(value) ?? null;
+
+    it('has a validator at all', () => {
+      expect(fieldAt(LEARN_MORE_PATH)?.validate).toBeTypeOf('function');
+    });
+
+    it('says nothing about a link the resolver will use', () => {
+      for (const ok of ['https://hive.io', 'http://example.com/x']) {
+        expect(resolveLearnMoreUrl(ok), ok).not.toBeNull();
+        expect(validate(ok), ok).toBeNull();
+      }
+    });
+
+    /**
+     * `javascript:` is the one that matters: the value becomes an href, and the
+     * resolver refuses it so it cannot reach the DOM. The panel accepting it
+     * silently would suggest the site had taken it.
+     */
+    it('warns about anything the resolver refuses', () => {
+      for (const bad of ['hive.io', '/relative', 'javascript:alert(1)']) {
+        expect(resolveLearnMoreUrl(bad), bad).toBeNull();
+        expect(validate(bad), bad).not.toBeNull();
+      }
+    });
+
+    it('treats empty as the documented "plain text" state, not an error', () => {
+      expect(validate('')).toBeNull();
+      expect(validate('   ')).toBeNull();
+    });
+
+    it('flags exactly what the resolver refuses, as a property', () => {
+      const samples = [
+        'https://hive.io',
+        'hive.io',
+        'javascript:alert(1)',
+        'http://a.b',
+        '/x',
+        'ftp://a.b',
+      ];
+      for (const sample of samples) {
+        const refused = resolveLearnMoreUrl(sample) === null;
+        expect(validate(sample) !== null, sample).toBe(refused);
+      }
+    });
+  });
+
+  describe('create post url', () => {
+    const validate = (value: string) =>
+      fieldAt(CREATE_POST_PATH)?.validate?.(value) ?? null;
+
+    it('has a validator at all', () => {
+      expect(fieldAt(CREATE_POST_PATH)?.validate).toBeTypeOf('function');
+    });
+
+    /**
+     * Empty and the legacy defaults all mean the built-in editor deliberately.
+     * Flagging them would tell an owner something is wrong with a setting the
+     * product documents as the normal one.
+     */
+    it('says nothing about the values that mean the built-in editor', () => {
+      for (const internal of [
+        '',
+        '   ',
+        '/publish',
+        'https://ecency.com/publish',
+        'https://ecency.com/submit',
+      ]) {
+        expect(
+          resolveCreatePostTarget({
+            createPostUrl: internal,
+            isCommunityMode: false,
+          }).kind,
+          internal,
+        ).toBe('internal');
+        expect(validate(internal), internal).toBeNull();
+      }
+    });
+
+    it('says nothing about a composer the site will open', () => {
+      const external = 'https://example.com/write';
+      expect(
+        resolveCreatePostTarget({
+          createPostUrl: external,
+          isCommunityMode: false,
+        }).kind,
+      ).toBe('external');
+      expect(validate(external)).toBeNull();
+    });
+
+    /**
+     * The case that was silent: a refused address falls back to the built-in
+     * editor, so the owner who asked for an external composer got the internal
+     * one and no reason.
+     */
+    it('warns about an address that silently falls back', () => {
+      for (const bad of ['example.com/write', 'javascript:alert(1)', 'notaurl']) {
+        expect(
+          resolveCreatePostTarget({
+            createPostUrl: bad,
+            isCommunityMode: false,
+          }).kind,
+          bad,
+        ).toBe('internal');
+        expect(validate(bad), bad).not.toBeNull();
+      }
+    });
+  });
+
+  /**
+   * A validator on a field the editor renders as something other than a text
+   * input would never run. The colour field has its own surface and must not
+   * grow a second one.
+   */
+  it('only puts validators on string fields', () => {
+    const withValidator: string[] = [];
+    const visit = (
+      fields: Record<string, ConfigField>,
+      path: string[],
+    ): void => {
+      for (const [key, field] of Object.entries(fields)) {
+        if (field.validate) withValidator.push(`${[...path, key].join('.')}:${field.type}`);
+        if (field.fields) visit(field.fields, [...path, key]);
+      }
+    };
+    visit(configFieldsMap, []);
+
+    expect(withValidator.length).toBeGreaterThan(0);
+    for (const entry of withValidator) {
+      expect(entry.endsWith(':string'), entry).toBe(true);
+    }
+  });
 });
