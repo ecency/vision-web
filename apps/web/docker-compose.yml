@@ -43,7 +43,7 @@ services:
       - vision
 
   web:
-    image: ecency/vision-next:develop
+    image: ecency/vision-web:develop
     stop_grace_period: 30s
     deploy:
       # Staging runs a single web replica — the staging environment serves

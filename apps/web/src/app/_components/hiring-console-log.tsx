@@ -18,7 +18,7 @@ export function HiringConsoleLog() {
       console.log(
         "%c%s",
         "font-size: 12px;",
-        "Are you developer, looking ways to contribute? Website is opensource: \nhttps://github.com/ecency/vision-next \n\n"
+        "Are you developer, looking ways to contribute? Website is opensource: \nhttps://github.com/ecency/vision-web \n\n"
       );
     }
   });

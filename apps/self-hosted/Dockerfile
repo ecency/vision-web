@@ -94,7 +94,7 @@ FROM nginx:alpine AS production
 # Add labels for container metadata
 LABEL org.opencontainers.image.title="Ecency Self-Hosted Blog"
 LABEL org.opencontainers.image.description="Self-hosted blog powered by Hive blockchain"
-LABEL org.opencontainers.image.source="https://github.com/ecency/vision-next"
+LABEL org.opencontainers.image.source="https://github.com/ecency/vision-web"
 LABEL org.opencontainers.image.vendor="Ecency"
 
 # Copy nginx configuration

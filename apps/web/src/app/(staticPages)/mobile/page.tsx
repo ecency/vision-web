@@ -75,7 +75,7 @@ export default function MobilePage() {
       external: false
     },
     {
-      href: "https://github.com/ecency/ecency-mobile",
+      href: "https://github.com/ecency/vision-mobile",
       label: i18next.t("static.mobile.resources.github"),
       external: true
     }

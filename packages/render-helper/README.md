@@ -19,7 +19,7 @@ Built and maintained by [Ecency](https://ecency.com), an open-source social plat
 - `pnpm publish:render-helper` - Manually publish to npm
 
 ### CI/CD
-- Part of vision-next monorepo with centralized GitHub Actions (`.github/workflows/packages.yml`)
+- Part of vision-web monorepo with centralized GitHub Actions (`.github/workflows/packages.yml`)
 - Automatically detects changes to `packages/render-helper/**` using git diff
 - On push to `develop` branch, builds and publishes to npm
 - Uses OIDC (OpenID Connect) for secure npm authentication
@@ -128,7 +128,7 @@ src/
 
 ## Build System
 
-- Uses **tsup** for bundling (shared with other vision-next packages)
+- Uses **tsup** for bundling (shared with other vision-web packages)
 - TypeScript 5.6+ with strict mode enabled
 - Outputs three bundles:
     - `dist/browser/index.js` - Browser ESM with TypeScript declarations
@@ -173,6 +173,6 @@ const summary = postBodySummary(entry, 200, 'react-native')
 - When adding embed support for new platforms, implement server-side rendering only
 - All external content must go through sanitization
 - Version bumps required for auto-publish via CI
-- Part of vision-next monorepo - changes require updating across dependent packages
+- Part of vision-web monorepo - changes require updating across dependent packages
 - The `@ecency/renderer` package uses this as a workspace dependency
 - Exports are optimized for tree-shaking with proper ESM structure

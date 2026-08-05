@@ -44,7 +44,7 @@ services:
       - vision
 
   web:
-    image: ecency/vision-next:latest
+    image: ecency/vision-web:latest
     stop_grace_period: 30s
     deploy:
       replicas: ${WEB_REPLICAS:-4}
