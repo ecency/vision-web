@@ -230,17 +230,35 @@ describe('a config written before the Hive layer existed', () => {
     }
   });
 
-  it('leaves no select blank when it declares a default', () => {
+  /**
+   * What this is really guarding is that a select never renders an unlabelled
+   * empty control, which reads as broken and tells the owner nothing about what
+   * the site is currently doing.
+   *
+   * That is not the same as "the value is never the empty string". The font
+   * preset offers `''` as a named choice, "Theme default", because an instance
+   * that has never chosen a pairing is in exactly that state and has to be able
+   * to return to it after picking one. There the control shows a label, so the
+   * thing this test exists to prevent has not happened.
+   *
+   * So the rule is: the shown value must be one of the offered options, and if
+   * it is blank that option must carry a label. Stricter than the old
+   * `not.toBe('')`, which let an unlabelled blank option through.
+   */
+  it('leaves no select showing an unlabelled blank when it declares a default', () => {
     for (const leaf of leaves) {
       if (leaf.field.type !== 'select' || leaf.field.default === undefined) {
         continue;
       }
       const shown = displayedSelectValue(leaf.field, leaf.value as ConfigValue);
-      expect(shown, leaf.path).not.toBe('');
+      const options = leaf.field.options ?? [];
       expect(
-        leaf.field.options?.map((option) => option.value),
+        options.map((option) => option.value),
         leaf.path,
       ).toContain(shown);
+
+      const label = options.find((option) => option.value === shown)?.label;
+      expect(label ?? '', leaf.path).not.toBe('');
     }
   });
 
@@ -325,5 +343,56 @@ describe('the editor renders through these', () => {
    */
   it('caps a text input at the field maxLength', () => {
     expect(jsxAttributeValues('maxLength')).toContain('{field.maxLength}');
+  });
+});
+
+/**
+ * The panel and the site have to agree about a value the site accepted.
+ *
+ * `resolveFontPreset` trims and lower-cases, so a hand-written `"Classic"`
+ * renders the Classic pairing. Matching the options exactly would show
+ * "Theme default" next to a site using Classic fonts, and the owner would be
+ * reading a control that describes a state the site is not in. Managed tenants
+ * cannot reach this, since they can only pick from the list, but a self-hoster
+ * writes config.json by hand.
+ */
+describe('a select whose resolver normalizes', () => {
+  const fontPreset: ConfigField = {
+    label: 'Fonts',
+    type: 'select',
+    options: [
+      { value: '', label: 'Theme default' },
+      { value: 'classic', label: 'Classic' },
+      { value: 'modern', label: 'Modern' },
+    ],
+    default: '',
+    normalizesCase: true,
+  };
+
+  it('shows the canonical option for a differently spelled stored value', () => {
+    expect(displayedSelectValue(fontPreset, ' Classic ')).toBe('classic');
+    expect(displayedSelectValue(fontPreset, 'MODERN')).toBe('modern');
+  });
+
+  it('still falls back for a value no option matches', () => {
+    expect(displayedSelectValue(fontPreset, 'banana')).toBe('');
+  });
+
+  /**
+   * The leniency is per field, not a rule for every select. `oneOf` in
+   * core/hive-layer matches with a bare `includes`, so a Hive layer select
+   * showing "off" for a stored "Off" would claim a state the site rejected.
+   */
+  it('does not leak leniency to selects that did not ask for it', () => {
+    const strict: ConfigField = {
+      label: 'Show Hive activity to readers',
+      type: 'select',
+      options: [
+        { value: 'off', label: 'Off' },
+        { value: 'standard', label: 'Standard' },
+      ],
+      default: 'off',
+    };
+    expect(displayedSelectValue(strict, 'Standard')).toBe('off');
   });
 });
