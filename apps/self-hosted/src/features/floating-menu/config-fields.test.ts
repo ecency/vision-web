@@ -83,6 +83,23 @@ describe('hivesigner client id', () => {
     expect(description).toMatch(/never overwritten|not be overwritten/i);
   });
 
+  /**
+   * The email route is only half an instruction. Nothing writes the field on a
+   * self-hosted instance: the reconcile iterates the hosting database, so an
+   * owner who emails us and waits sees the button stay hidden for a step that
+   * was never going to happen on its own.
+   *
+   * `gives both routes to a working setup` does not cover this. It asserts the
+   * three substrings are present, and they all were in a revision that had
+   * dropped the save step, which is how this shipped for review.
+   */
+  it('tells a self-hoster taking the email route to save ecency.app themselves', () => {
+    const description = fieldAt(CLIENT_ID_PATH)?.description ?? '';
+
+    expect(description).toMatch(/self-hosted/i);
+    expect(description).toMatch(/put ecency\.app here/i);
+  });
+
   it('is pointed at from the login methods field', () => {
     expect(fieldAt(METHODS_PATH)?.description).toContain('Hivesigner');
   });
