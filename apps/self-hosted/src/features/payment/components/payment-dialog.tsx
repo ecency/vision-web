@@ -5,8 +5,8 @@ import { useState } from 'react';
 import type { PaymentRequirements } from '../x402-client';
 import { signX402Payment, type PaymentSignMethod } from '../sign-payment';
 import {
+  callbackCapableExtensions,
   extensionMethodLabel,
-  getDetectedExtensions,
   hasKeychainLikeExtension,
 } from '../../auth/utils/hive-extensions';
 
@@ -30,9 +30,10 @@ export function PaymentDialog({
 
   // Transaction signing needs the callback API (Keychain or Hive Keeper).
   const keychainAvailable = hasKeychainLikeExtension();
-  // Named when exactly one wallet is installed, generic otherwise. A fixed
-  // "Hive Keychain" was wrong for two of the three this app supports.
-  const extensionLabel = extensionMethodLabel(getDetectedExtensions());
+  // From the SAME list the gate above reads. Labelling from every detected
+  // wallet named Peak Vault as the method while the button said "Extension not
+  // detected" and stayed disabled, because Peak Vault cannot sign here.
+  const extensionLabel = extensionMethodLabel(callbackCapableExtensions());
 
   async function handleSign(method: PaymentSignMethod) {
     setLoadingMethod(method);

@@ -141,9 +141,29 @@ export function getExtensionName(id: HiveExtensionId): string {
   return EXTENSION_META[id]?.name ?? id;
 }
 
-/** True when a Keychain-compatible (callback API) extension is present. */
+/**
+ * The detected extensions that can sign a transaction here.
+ *
+ * Peak Vault is a real, detected wallet, but it exposes only a promise-based
+ * API with no callback path for specialized requests, so transaction signing
+ * cannot use it. Anything that gates on that capability and anything that
+ * describes it have to be reading the same list: the payment dialog gated on
+ * `hasKeychainLikeExtension` while labelling itself from the unfiltered set,
+ * so a browser with only Peak Vault installed rendered a button named
+ * "Peak Vault" above the words "Extension not detected", disabled.
+ */
+export function callbackCapableExtensions(): DetectedExtension[] {
+  return getDetectedExtensions().filter((e) => e.id !== 'peakvault');
+}
+
+/**
+ * True when a Keychain-compatible (callback API) extension is present.
+ *
+ * Defined in terms of the list above so the gate and the label cannot disagree
+ * about what counts, which is how they came apart.
+ */
 export function hasKeychainLikeExtension(): boolean {
-  return getDetectedExtensions().some((e) => e.id !== 'peakvault');
+  return callbackCapableExtensions().length > 0;
 }
 
 /** The generic name for the method, used whenever one wallet cannot be named. */
