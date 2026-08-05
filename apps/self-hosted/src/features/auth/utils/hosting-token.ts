@@ -11,7 +11,8 @@
  */
 
 import { authenticationStore } from '@/store';
-import { signBufferWithExtension } from './hive-extensions';
+import type { HiveExtensionId } from '../types';
+import { getExtensionName, signBufferWithExtension } from './hive-extensions';
 
 const STORAGE_KEY = 'ecency_hosting_token';
 // Refuse a cached token that expires within a minute so an in-flight save can't outlive it.
@@ -88,6 +89,26 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 }
 
 /**
+ * What to say when an extension signing request comes back empty.
+ *
+ * `keychain` is the login type for every Hive browser extension, not the
+ * Keychain product: the same branch runs for Hive Keeper and Peak Vault, which
+ * are what this app offers first. Naming Keychain there sent a Keeper user to
+ * check a wallet they never installed.
+ *
+ * Exported so it can be asserted directly. Nothing in a `.tsx` file is testable
+ * under this runner, and the copy for a login method has already drifted from
+ * what the code does once.
+ */
+export function extensionCancelledMessage(
+  extension: HiveExtensionId | undefined,
+): string {
+  return extension
+    ? `Signing with ${getExtensionName(extension)} was cancelled.`
+    : 'Signing with your browser extension was cancelled.';
+}
+
+/**
  * Get a hosting API token for the logged-in user, exchanging the current session for one
  * when there is no valid cached token. Throws with a user-readable message on failure.
  */
@@ -127,7 +148,7 @@ export async function getHostingToken(apiBase: string): Promise<string> {
         user.extension,
       );
       if (typeof signed.result !== 'string' || signed.result.length === 0) {
-        throw new Error('Keychain signing was cancelled.');
+        throw new Error(extensionCancelledMessage(user.extension));
       }
       result = await postJson<TokenResponse>(`${apiBase}/v1/auth/verify`, {
         username: user.username,
