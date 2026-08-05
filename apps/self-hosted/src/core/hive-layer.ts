@@ -138,7 +138,7 @@ function resolvePayoutLabel(value: unknown): string | null {
  * produce a link that goes nowhere, matching `create-post-target.ts`. Refusing
  * renders the Hive note as plain text, which still reads correctly.
  */
-function resolveLearnMoreUrl(value: unknown): string | null {
+export function resolveLearnMoreUrl(value: unknown): string | null {
   if (typeof value !== 'string' || value.trim() === '') return null;
   let url: URL;
   try {

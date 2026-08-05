@@ -5,9 +5,11 @@
 import {
   HIVE_LAYER_CONFIG_DEFAULTS,
   PAYOUT_LABEL_MAX_LENGTH,
+  resolveLearnMoreUrl,
 } from '@/core/hive-layer';
 import { FONT_PRESET_OPTIONS } from '@/core/theme-appearance';
 import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
+import { isRefusedCreatePostUrl } from '@/features/auth/utils/create-post-target';
 
 export type ConfigFieldType =
   | 'string'
@@ -59,6 +61,21 @@ export interface ConfigField {
    * rule to the other's fields would make the panel disagree with the site.
    */
   normalizesCase?: boolean;
+  /**
+   * A message for a value the app will not use, or null when there is nothing
+   * to say. `string` fields only; `color` has its own surface.
+   *
+   * Every rule here is BORROWED from the resolver that reads the field, never
+   * restated. A panel that forms its own opinion about the same string is how
+   * the panel and the site come to disagree, and the config editor has no way
+   * to know it has done so: the save succeeds either way and the site quietly
+   * keeps its old behaviour.
+   *
+   * Only fields whose resolver already refuses a value have one. Inventing a
+   * rule the app does not enforce would reject input the site would have
+   * accepted.
+   */
+  validate?: (value: string) => string | null;
 }
 
 export const configFieldsMap: Record<string, ConfigField> = {
@@ -266,6 +283,15 @@ export const configFieldsMap: Record<string, ConfigField> = {
                     default: HIVE_LAYER_CONFIG_DEFAULTS.learnMoreUrl,
                     description:
                       'Leave empty to show the Hive note as plain text. Add a full https address and the note becomes a link to it.',
+                    // The resolver's own rule, not a copy of it. It refuses a
+                    // relative address and any scheme but http(s), because the
+                    // value becomes an href and a javascript: one must not
+                    // reach the DOM. A refused link renders as plain text, so
+                    // without this the owner sees no link and no reason.
+                    validate: (value) =>
+                      value.trim() === '' || resolveLearnMoreUrl(value) !== null
+                        ? null
+                        : 'Not a web address the site will link to, so the note stays plain text. Use a full https address.',
                   },
                 },
               },
@@ -459,6 +485,15 @@ export const configFieldsMap: Record<string, ConfigField> = {
             type: 'string',
             description:
               'Optional external composer for the Create post button. Leave empty to write here with the built-in editor. The old default https://ecency.com/publish also means the built-in editor.',
+            // Asked of the module that owns the rule. `resolveCreatePostTarget`
+            // collapses "left empty" and "refused" into the same `internal`
+            // result, so the panel cannot tell them apart; the owner who typed
+            // an external composer and silently got the built-in editor is the
+            // case worth naming.
+            validate: (value) =>
+              isRefusedCreatePostUrl(value)
+                ? 'Not a web address the site will open, so the Create post button uses the built-in editor. Use a full https address.'
+                : null,
           },
           hivesigner: {
             label: 'Hivesigner',

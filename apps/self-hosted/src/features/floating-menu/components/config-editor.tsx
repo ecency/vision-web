@@ -355,6 +355,9 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
 
       default: {
         const stringValue = displayedStringValue(field, value);
+        // Only fields whose resolver refuses something carry `validate`, so
+        // most string inputs are unchanged and render no region at all.
+        const stringNote = field.validate?.(stringValue) ?? null;
         return (
           <div className="mb-4">
             <label
@@ -375,8 +378,30 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
               maxLength={field.maxLength}
               onChange={(e) => handleChange(e.target.value)}
               className={inputClassName}
-              style={inputStyle}
+              style={{
+                ...inputStyle,
+                borderColor: stringNote
+                  ? '#ef4444'
+                  : FLOATING_MENU_THEME.borderColorStrong,
+              }}
+              aria-invalid={stringNote ? true : undefined}
+              aria-describedby={field.validate ? `${fullPath}-note` : undefined}
             />
+            {/*
+              Mounted from the first render whenever the field can produce a
+              message at all, because a live region that appears together with
+              its first message is usually not announced. Fields without
+              `validate` render nothing here.
+            */}
+            {field.validate && (
+              <div id={`${fullPath}-note`}>
+                <LiveRegion
+                  urgency="assertive"
+                  className="block text-xs mt-1 font-sans text-red-400"
+                  message={stringNote}
+                />
+              </div>
+            )}
           </div>
         );
       }
