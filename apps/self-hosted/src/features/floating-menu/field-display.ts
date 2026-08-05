@@ -129,7 +129,7 @@ export function displayedStringValue(
 
 /** Shown under a colour input that is empty, which is a valid, meaningful state. */
 export const COLOR_UNSET_HINT =
-  "Empty, so the style template's own colour is used.";
+  "Empty, so the style template's own color is used.";
 
 /**
  * Shown under a colour input holding something the engine will not apply.
@@ -139,7 +139,7 @@ export const COLOR_UNSET_HINT =
  * not change.
  */
 export const COLOR_INVALID_MESSAGE =
-  'Not a colour, so the site keeps the style template\'s own. Use a hex value like #0969da.';
+  "Not a color, so the site keeps the style template's own. Use a hex value like #0969da.";
 
 /**
  * The message under a colour input, or null when there is nothing to say.

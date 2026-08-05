@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
+import { LiveRegion } from '@/features/shared/live-region';
 import { validateArrayDraft, validateArrayEntries } from '../array-field';
 import type { ConfigField } from '../config-fields';
 import { FLOATING_MENU_THEME } from '../constants';
@@ -315,6 +316,7 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
                     : FLOATING_MENU_THEME.borderColorStrong,
                 }}
                 aria-invalid={note?.invalid ? true : undefined}
+                aria-describedby={`${fullPath}-note`}
               />
               {colorText !== '' && (
                 <button
@@ -330,13 +332,23 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
                 </button>
               )}
             </div>
-            {note && (
-              <p
-                className={`text-xs mt-1 font-sans ${note.invalid ? 'text-red-400' : 'text-gray-400'}`}
-              >
-                {note.message}
-              </p>
-            )}
+            {/*
+              Both regions stay mounted from the first render, because a live
+              region that appears together with its first message is usually
+              not announced at all. The id ties whichever message is showing to
+              the input, so the note is also read when the field gets focus.
+            */}
+            <div id={`${fullPath}-note`}>
+              <LiveRegion
+                className="block text-xs mt-1 font-sans text-gray-400"
+                message={note && !note.invalid ? note.message : null}
+              />
+              <LiveRegion
+                urgency="assertive"
+                className="block text-xs mt-1 font-sans text-red-400"
+                message={note?.invalid ? note.message : null}
+              />
+            </div>
           </div>
         );
       }
