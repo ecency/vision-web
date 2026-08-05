@@ -64,6 +64,25 @@ describe('hivesigner client id', () => {
     expect(description).toContain('ecency.app');
   });
 
+  /**
+   * A managed tenant's client id is written by the registration job, not by the
+   * owner, so copy telling them to set it themselves describes work they will
+   * never do and a login they will believe is broken until they do it.
+   *
+   * Asserted on the field an owner actually reads rather than on the job, because
+   * the job being right is what makes this text wrong: the two drifted apart once
+   * already, with the editor promising a manual step the reconcile had removed.
+   */
+  it('says the hosted case is automatic, and that an own id survives it', () => {
+    const description = fieldAt(CLIENT_ID_PATH)?.description ?? '';
+
+    expect(description).toMatch(/hosted by Ecency/i);
+    expect(description).toMatch(/filled in for you|automatically/i);
+    // The reconcile leaves a non-shared value alone; the owner has to be told so,
+    // or setting their own app reads as a change something else may undo.
+    expect(description).toMatch(/never overwritten|not be overwritten/i);
+  });
+
   it('is pointed at from the login methods field', () => {
     expect(fieldAt(METHODS_PATH)?.description).toContain('Hivesigner');
   });
