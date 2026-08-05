@@ -509,7 +509,7 @@ export const configFieldsMap: Record<string, ConfigField> = {
             validate: (value, config) => {
               if (value.trim() === '') return null;
               if (isCommunityConfig(config)) {
-                return 'Community sites always use the built-in editor, so this address is not used. It carries the community target, which an external composer would lose.';
+                return 'Community sites always use the built-in editor, so this address is not used. The built-in editor carries the community target, which an external composer would lose.';
               }
               return isRefusedCreatePostUrl(value)
                 ? 'Not a web address the site will open, so the Create post button uses the built-in editor. Use a full https address.'

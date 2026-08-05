@@ -588,4 +588,3 @@ export async function broadcastWithExtension(
   }
   return Promise.reject(new Error(NO_EXTENSION_ERROR));
 }
-
