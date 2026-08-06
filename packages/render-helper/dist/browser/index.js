@@ -1069,9 +1069,9 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
       if (el.textContent === href) {
         el.textContent = `@${author}/${section}`;
       }
-      if (forApp) {
-        const ha = `https://ecency.com/@${author}/${section}`;
-        el.setAttribute("href", ha);
+      const external1 = renderOptions?.externalProfileBase;
+      if (forApp || external1) {
+        el.setAttribute("href", `${external1 ?? "https://ecency.com"}/@${author}/${section}`);
       } else {
         const h = `/@${author}/${section}`;
         el.setAttribute("href", h);
@@ -1139,9 +1139,9 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
       if (el.textContent === href) {
         el.textContent = `@${author}/${section}`;
       }
-      if (forApp) {
-        const ha = `https://ecency.com/@${author}/${section}`;
-        el.setAttribute("href", ha);
+      const external2 = renderOptions?.externalProfileBase;
+      if (forApp || external2) {
+        el.setAttribute("href", `${external2 ?? "https://ecency.com"}/@${author}/${section}`);
       } else {
         const h = `/@${author}/${section}`;
         el.setAttribute("href", h);
@@ -1799,7 +1799,8 @@ function linkify(content, forApp, renderOptions) {
       const permlink = sanitizePermlink(p3);
       if (!isValidPermlink(permlink)) return match;
       if (SECTION_LIST.includes(permlink)) {
-        const attrs = forApp ? `href="https://ecency.com/@${authorLower}/${permlink}"` : `href="/@${authorLower}/${permlink}"`;
+        const external = renderOptions?.externalProfileBase;
+        const attrs = forApp || external ? `href="${external ?? "https://ecency.com"}/@${authorLower}/${permlink}"` : `href="/@${authorLower}/${permlink}"`;
         return `${preceding}<a class="markdown-profile-link" ${attrs}>@${authorLower}/${permlink}</a>`;
       } else {
         const attrs = forApp ? `data-author="${authorLower}" data-tag="${tag}" data-permlink="${permlink}"` : `href="/@${authorLower}/${permlink}"`;
@@ -1814,7 +1815,8 @@ function linkify(content, forApp, renderOptions) {
       const permlink = sanitizePermlink(p3);
       if (!isValidPermlink(permlink)) return match;
       if (SECTION_LIST.includes(permlink)) {
-        const attrs = forApp ? `href="https://ecency.com/@${uu}/${permlink}"` : `href="/@${uu}/${permlink}"`;
+        const external = renderOptions?.externalProfileBase;
+        const attrs = forApp || external ? `href="${external ?? "https://ecency.com"}/@${uu}/${permlink}"` : `href="/@${uu}/${permlink}"`;
         return ` <a class="markdown-profile-link" ${attrs}>@${uu}/${permlink}</a>`;
       } else {
         const attrs = forApp ? `data-author="${uu}" data-tag="post" data-permlink="${permlink}"` : `href="/@${uu}/${permlink}"`;
@@ -2161,7 +2163,7 @@ function markdown2Html(obj, forApp = true, _webp = false, parentDomain = "ecency
     logIfSlow(performance.now() - t02, `body_len=${obj.length}`);
     return res2;
   }
-  const key = `${makeEntryCacheKey(obj)}-md-${forApp ? "app" : "site"}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ""}-${seoContext.postPayout ?? ""}` : ""}${renderOptions?.embedVideosDirectly ? "-embed" : ""}${renderOptions?.inertAuthorAndTagChips ? "-inert" : ""}`;
+  const key = `${makeEntryCacheKey(obj)}-md-${forApp ? "app" : "site"}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ""}-${seoContext.postPayout ?? ""}` : ""}${renderOptions?.embedVideosDirectly ? "-embed" : ""}${renderOptions?.inertAuthorAndTagChips ? "-inert" : ""}${renderOptions?.externalProfileBase ? "-ext" + renderOptions.externalProfileBase : ""}`;
   const item = cacheGet(key);
   if (item) {
     return item;

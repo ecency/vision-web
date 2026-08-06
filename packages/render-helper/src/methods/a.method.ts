@@ -374,9 +374,12 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
       if (el.textContent === href) {
         el.textContent = `@${author}/${section}`
       }
-      if (forApp) {
-        const ha = `https://ecency.com/@${author}/${section}`
-        el.setAttribute('href', ha)
+      // A section, not a permlink. A consumer whose only matching route is
+      // /:author/:permlink routes this as a post and tries to load one called
+      // `wallet`, so it needs an origin it can actually serve.
+      const external1 = renderOptions?.externalProfileBase
+      if (forApp || external1) {
+        el.setAttribute('href', `${external1 ?? 'https://ecency.com'}/@${author}/${section}`)
       } else {
         const h = `/@${author}/${section}`
         el.setAttribute('href', h)
@@ -463,9 +466,12 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
       if (el.textContent === href) {
         el.textContent = `@${author}/${section}`
       }
-      if (forApp) {
-        const ha = `https://ecency.com/@${author}/${section}`
-        el.setAttribute('href', ha)
+      // A section, not a permlink. A consumer whose only matching route is
+      // /:author/:permlink routes this as a post and tries to load one called
+      // `wallet`, so it needs an origin it can actually serve.
+      const external2 = renderOptions?.externalProfileBase
+      if (forApp || external2) {
+        el.setAttribute('href', `${external2 ?? 'https://ecency.com'}/@${author}/${section}`)
       } else {
         const h = `/@${author}/${section}`
         el.setAttribute('href', h)

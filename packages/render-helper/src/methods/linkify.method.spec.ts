@@ -1,3 +1,4 @@
+import { markdown2Html } from '../markdown-2-html'
 import { linkify } from './linkify.method'
 
 describe('linkify() method - Content Linkification', () => {
@@ -402,5 +403,82 @@ describe('linkify() method - Content Linkification', () => {
       expect(result).not.toContain('er-author-link')
       expect(result).not.toContain('er-tag-link')
     })
+  })
+})
+
+describe('externalProfileBase option', () => {
+  const ext = { externalProfileBase: 'https://ecency.com' }
+
+  /**
+   * A profile section is not a post, but it is emitted as an ordinary link, so
+   * a consumer whose only matching route is `/:author/:permlink` routes it as
+   * one and tries to load a post whose permlink is `wallet`. No route guard
+   * catches that, because the route exists, and `inertAuthorAndTagChips` does
+   * not, because this is not a chip.
+   */
+  it('sends profile sections to the external base', () => {
+    const out = linkify('/@alice/wallet', false, ext)
+    expect(out).toContain('href="https://ecency.com/@alice/wallet"')
+    expect(out).not.toContain('href="/@alice/wallet"')
+  })
+
+  it('does the same for the category form', () => {
+    const out = linkify('/hive-125125/@alice/followers', false, ext)
+    expect(out).toContain('href="https://ecency.com/@alice/followers"')
+  })
+
+  /**
+   * The point of the option is what it does NOT touch. A post link is real
+   * content the consumer resolves from the chain, and keeping it internal is
+   * the whole reason a self-hosted blog exists.
+   */
+  it('leaves real post links internal', () => {
+    const out = linkify('/@alice/my-first-post', false, ext)
+    expect(out).toContain('href="/@alice/my-first-post"')
+    expect(out).not.toContain('ecency.com/@alice/my-first-post')
+  })
+
+  it('leaves the category post form internal too', () => {
+    const out = linkify('/hive-125125/@alice/my-first-post', false, ext)
+    expect(out).toContain('href="/@alice/my-first-post"')
+  })
+
+  /** Unset is the old behaviour exactly, so no existing consumer moves. */
+  it('changes nothing when the option is absent', () => {
+    expect(linkify('/@alice/wallet', false)).toContain('href="/@alice/wallet"')
+  })
+})
+
+/**
+ * Through `markdown2Html`, the entry point consumers actually call.
+ *
+ * `linkify` above proves the branch; this proves the option survives the
+ * journey, since it has to pass through markdown2Html into markdownToHTML and
+ * be part of the memo cache key. An option that is correct and never arrives
+ * looks exactly like one that does nothing.
+ */
+describe('externalProfileBase through markdown2Html', () => {
+  const opts = {
+    inertAuthorAndTagChips: true,
+    externalProfileBase: 'https://ecency.com',
+  }
+
+  it('externalizes a profile section and keeps a post link internal', () => {
+    const out = markdown2Html('/@alice/wallet and /@alice/my-post', false, false, 'ecency.com', undefined, opts)
+    expect(out).toContain('https://ecency.com/@alice/wallet')
+    expect(out).toContain('href="/@alice/my-post"')
+  })
+
+  /**
+   * The cache key has to carry the option or the first render for a body wins
+   * for every later one, and a consumer that passes it would get whatever the
+   * previous consumer got.
+   */
+  it('does not serve a cached render made without the option', () => {
+    const body = '/@bob/followers is here'
+    const plain = markdown2Html(body, false, false, 'ecency.com', undefined, { inertAuthorAndTagChips: true })
+    const external = markdown2Html(body, false, false, 'ecency.com', undefined, opts)
+    expect(plain).toContain('href="/@bob/followers"')
+    expect(external).toContain('https://ecency.com/@bob/followers')
   })
 })

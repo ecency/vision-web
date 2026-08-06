@@ -21,6 +21,13 @@ export function BlogPostBody({ entry, isRawContent }: Props) {
     () =>
       renderPostBody(entryData.body, false, false, 'ecency.com', undefined, {
         embedVideosDirectly: true,
+        // externalProfileBase: a profile SECTION link (/@user/wallet and the rest
+        // of SECTION_LIST) is emitted as an ordinary link, so it lands on
+        // /$author/$permlink here and tries to load a post called "wallet".
+        // The route exists, so no route guard sees it, and it is not a chip,
+        // so inertAuthorAndTagChips does not either. Real post links stay
+        // internal on purpose: that content resolves from the chain.
+        externalProfileBase: 'https://ecency.com',
         inertAuthorAndTagChips: true,
       }),
     [entryData.body],

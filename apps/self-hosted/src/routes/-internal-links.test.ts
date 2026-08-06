@@ -97,7 +97,7 @@ const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
   'src/features/blog/components/hive-post-note.tsx:hiveUrl': {
     occurrences: 1,
     reason:
-      'absolute https template to the chain record; the checker widens it to string',
+      'runtime config general.profileBaseUrl + author/permlink, defaults to https://ecency.com/@; the checker widens it to string',
   },
   'src/features/blog/components/hive-post-note.tsx:learnMoreUrl': {
     occurrences: 1,

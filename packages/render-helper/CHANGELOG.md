@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.26
+
+### Patch Changes
+
+- Self-hosted: send "View this post on Hive" to Ecency, not hivehub.dev (#1375)
+
 ## 2.5.25
 
 ### Patch Changes
