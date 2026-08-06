@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.77
+
+### Patch Changes
+
+- SDK: update useAccountUpdateRecovery to use AuthContextV2 adapter (#1376)
+
 ## 2.3.76
 
 ### Patch Changes
