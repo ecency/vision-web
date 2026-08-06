@@ -1,7 +1,7 @@
 'use client';
 
 import { UilExternalLinkAlt } from '@tooni/iconscout-unicons-react';
-import { t } from '@/core';
+import { InstanceConfigManager, t } from '@/core';
 
 interface Props {
   author: string;
@@ -29,9 +29,29 @@ export function HivePostNote({
 }: Props) {
   if (!showNote && !showPermalink) return null;
 
-  // An absolute https literal the type checker cannot fold, so the dead-route
-  // guard files it as unresolved and it carries a DYNAMIC_LINKS entry.
-  const hiveUrl = `https://hivehub.dev/@${author}/${permlink}`;
+  /*
+   * Ecency, not a third-party frontend.
+   *
+   * This was hardcoded to hivehub.dev, so the one link on a hosted blog that
+   * says "go see this elsewhere" sent the reader to a competitor, from a site
+   * the owner pays us to run, while profile links in the same app already went
+   * to ecency.com.
+   *
+   * Derived from `general.profileBaseUrl` rather than given a base of its own.
+   * That value is already `https://ecency.com/@` by default and already decides
+   * where an author link goes, so the two cannot drift, and a self-hoster who
+   * repoints one has repointed both. `${base}${author}/${permlink}` is the post
+   * URL on every Hive frontend that serves `${base}${author}`.
+   *
+   * Still an absolute https template the type checker cannot fold, so the
+   * dead-route guard files it as unresolved and it keeps its DYNAMIC_LINKS
+   * entry.
+   */
+  const profileBaseUrl = InstanceConfigManager.getConfigValue(
+    ({ configuration }) =>
+      configuration.general.profileBaseUrl || 'https://ecency.com/@',
+  );
+  const hiveUrl = `${profileBaseUrl}${author}/${permlink}`;
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-3 text-xs text-theme-muted">
