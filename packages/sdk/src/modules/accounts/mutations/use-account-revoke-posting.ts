@@ -8,7 +8,7 @@ import {
 import { getAccountFullQueryOptions } from "../queries";
 import { FullAccount } from "../types";
 import hs from "hivesigner";
-import type { AuthContext } from "@/modules/core/types";
+import type { AuthContextV2 } from "@/modules/core/types";
 import { broadcastOperations } from "@/modules/core/hive-tx";
 
 type SignType = "key" | "keychain" | "hivesigner";
@@ -29,7 +29,7 @@ type RevokePostingOptions = Pick<
 export function useAccountRevokePosting(
   username: string | undefined,
   options: RevokePostingOptions,
-  auth?: AuthContext
+  auth?: AuthContextV2
 ) {
   const queryClient = useQueryClient();
 
@@ -60,10 +60,14 @@ export function useAccountRevokePosting(
       if (type === "key" && key) {
         return broadcastOperations([["account_update", operationBody]], key);
       } else if (type === "keychain") {
-        if (!auth?.broadcast) {
+        if (!auth?.adapter?.broadcastWithKeychain) {
           throw new Error("[SDK][Accounts] – missing keychain broadcaster");
         }
-        return auth.broadcast([["account_update", operationBody]], "active");
+        return auth.adapter.broadcastWithKeychain(
+          data.name,
+          [["account_update", operationBody]],
+          "active"
+        );
       } else {
         if (!options.hsCallbackUrl && process.env.NODE_ENV === "development") {
           console.warn("[SDK][Accounts] hsCallbackUrl not provided for HiveSigner revoke-posting; user will not be redirected after signing.");
