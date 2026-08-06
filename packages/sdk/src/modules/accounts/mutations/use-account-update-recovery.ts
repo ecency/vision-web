@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-query";
 import hs from "hivesigner";
 import { getAccountFullQueryOptions } from "../queries";
-import type { AuthContext } from "@/modules/core/types";
+import type { AuthContextV2 } from "@/modules/core/types";
 import { broadcastOperations } from "@/modules/core/hive-tx";
 
 type SignType = "key" | "keychain" | "hivesigner" | "ecency";
@@ -30,7 +30,7 @@ export function useAccountUpdateRecovery(
   username: string | undefined,
   code: string | undefined,
   options: UpdateRecoveryOptions,
-  auth?: AuthContext
+  auth?: AuthContextV2
 ) {
   const { data } = useQuery(getAccountFullQueryOptions(username));
 
@@ -86,10 +86,10 @@ export function useAccountUpdateRecovery(
           key
         );
       } else if (type === "keychain") {
-        if (!auth?.broadcast) {
+        if (!auth?.adapter?.broadcastWithKeychain) {
           throw new Error("[SDK][Accounts] – missing keychain broadcaster");
         }
-        return auth.broadcast([["change_recovery_account", operationBody]], "owner");
+        return auth.adapter.broadcastWithKeychain(data.name, [["change_recovery_account", operationBody]], "owner");
       } else {
         if (!options.hsCallbackUrl && process.env.NODE_ENV === "development") {
           console.warn("[SDK][Accounts] hsCallbackUrl not provided for HiveSigner update-recovery; user will not be redirected after signing.");
