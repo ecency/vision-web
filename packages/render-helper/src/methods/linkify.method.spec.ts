@@ -470,15 +470,52 @@ describe('externalProfileBase through markdown2Html', () => {
   })
 
   /**
-   * The cache key has to carry the option or the first render for a body wins
-   * for every later one, and a consumer that passes it would get whatever the
-   * previous consumer got.
+   * The cache key has to carry the option, or the first render of an entry wins
+   * for every later one and a consumer that passes it gets whatever the
+   * previous consumer produced.
+   *
+   * An ENTRY, not a string. `markdown2Html` returns early for a string, before
+   * `cacheGet` and `cacheSet` are ever reached, so the first version of this
+   * test passed with the option removed from the key entirely: it never touched
+   * the cache it claimed to be testing. Only the entry overload does.
+   *
+   * The identity is `author-permlink-last_update-updated`, so both calls use
+   * the same fixture and the key differs only by the option.
    */
   it('does not serve a cached render made without the option', () => {
-    const body = '/@bob/followers is here'
-    const plain = markdown2Html(body, false, false, 'ecency.com', undefined, { inertAuthorAndTagChips: true })
-    const external = markdown2Html(body, false, false, 'ecency.com', undefined, opts)
+    const entry = {
+      author: 'bob',
+      permlink: 'cache-key-fixture',
+      last_update: '2026-08-06T00:00:00',
+      updated: '2026-08-06T00:00:00',
+      body: '/@bob/followers is here',
+    } as never
+
+    const plain = markdown2Html(entry, false, false, 'ecency.com', undefined, {
+      inertAuthorAndTagChips: true,
+    })
+    const external = markdown2Html(entry, false, false, 'ecency.com', undefined, opts)
+
     expect(plain).toContain('href="/@bob/followers"')
     expect(external).toContain('https://ecency.com/@bob/followers')
+  })
+
+  /** Order-independent: the cached-first path must hold in reverse too. */
+  it('does not serve the option render to a caller that passed none', () => {
+    const entry = {
+      author: 'carol',
+      permlink: 'cache-key-fixture-reverse',
+      last_update: '2026-08-06T00:00:00',
+      updated: '2026-08-06T00:00:00',
+      body: '/@carol/followers is here',
+    } as never
+
+    const external = markdown2Html(entry, false, false, 'ecency.com', undefined, opts)
+    const plain = markdown2Html(entry, false, false, 'ecency.com', undefined, {
+      inertAuthorAndTagChips: true,
+    })
+
+    expect(external).toContain('https://ecency.com/@carol/followers')
+    expect(plain).toContain('href="/@carol/followers"')
   })
 })
