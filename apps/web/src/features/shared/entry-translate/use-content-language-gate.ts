@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import i18next from "i18next";
 import { postBodySummary } from "@ecency/render-helper";
 import { detectLanguage } from "@/api/translation";
+import { useGlobalStore } from "@/core/global-store";
 import {
   francToIso1,
   LIBRETRANSLATE_TARGETS,
@@ -83,7 +84,11 @@ interface GateOptions {
   // Full-post view: confirm/refine the franc guess with the server /detect
   // endpoint (accurate source-language name, catches franc-unsupported langs,
   // corrects confident misdetections). NEVER enable for feed/wave chips — it
-  // would fan out one network call per rendered item.
+  // would fan out one network call per rendered item. Only honored for
+  // logged-in readers: search crawlers and headless scrapers execute this
+  // code while rendering post pages, and their per-view /detect calls were
+  // enough traffic to overload the translate backend. Logged-out readers get
+  // the franc guess, the same fallback as when /detect is unreachable.
   serverConfirm?: boolean;
   // Skip detection entirely (e.g. raw/edit view, NSFW not yet revealed).
   disabled?: boolean;
@@ -106,6 +111,9 @@ export function useContentLanguageGate(
   { serverConfirm = false, disabled = false }: GateOptions = {}
 ): TranslateCtaDecision | null {
   const [decision, setDecision] = useState<TranslateCtaDecision | null>(null);
+  const activeUsername = useGlobalStore((state) => state.activeUser?.username);
+  // Server /detect is a logged-in-only escalation (see GateOptions.serverConfirm).
+  const canServerConfirm = serverConfirm && !!activeUsername;
 
   const author = entry?.author;
   const permlink = entry?.permlink;
@@ -128,7 +136,7 @@ export function useContentLanguageGate(
     const reader = resolveReaderLang();
 
     const cached = contentLangCache.get(key);
-    if (cached && (cached.confirmed || !serverConfirm)) {
+    if (cached && (cached.confirmed || !canServerConfirm)) {
       // A cached lang implies the body was already long enough when detected.
       setDecision(
         resolveTranslateCta({ detected: cached.lang, reader, textLength: MIN_DETECT_CHARS })
@@ -165,7 +173,7 @@ export function useContentLanguageGate(
           // franc is confident it's the reader's own language — no CTA, and no
           // need to spend a /detect call. Safe to treat as confirmed.
           confirmed = true;
-        } else if (serverConfirm) {
+        } else if (canServerConfirm) {
           // Full-post: get the authoritative source language. Covers franc
           // 'und'/unsupported langs and corrects confident misdetections
           // (e.g. Danish reported as Dutch) so the banner names the real one.
@@ -199,7 +207,7 @@ export function useContentLanguageGate(
     return () => {
       cancelled = true;
     };
-  }, [author, permlink, body, serverConfirm, disabled]);
+  }, [author, permlink, body, canServerConfirm, disabled]);
 
   return decision;
 }
