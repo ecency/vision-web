@@ -1,10 +1,10 @@
 import type { Operation } from "../../../hive-tx";
 import { useMutation } from "@tanstack/react-query";
-import type { AuthContext } from "@/modules/core/types";
+import type { AuthContextV2 } from "@/modules/core/types";
 
 export function useSignOperationByKeychain(
   username: string | undefined,
-  auth?: AuthContext,
+  auth?: AuthContextV2,
   keyType: "owner" | "active" | "posting" | "memo" = "active"
 ) {
   return useMutation({
@@ -15,11 +15,11 @@ export function useSignOperationByKeychain(
           "[SDK][Keychain] – cannot sign operation with anon user"
         );
       }
-      if (!auth?.broadcast) {
+      if (!auth?.adapter?.broadcastWithKeychain) {
         throw new Error("[SDK][Keychain] – missing keychain broadcaster");
       }
 
-      return auth.broadcast([operation], keyType);
+      return auth.adapter.broadcastWithKeychain(username, [operation], keyType);
     },
   });
 }

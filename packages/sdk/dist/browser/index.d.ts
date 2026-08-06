@@ -990,7 +990,7 @@ declare function useBroadcastMutation<T>(mutationKey: MutationKey | undefined, u
     broadcastMode?: BroadcastMode;
 }): _tanstack_react_query.UseMutationResult<unknown, Error, T, unknown>;
 
-declare function broadcastJson<T>(username: string | undefined, id: string, payload: T, auth?: AuthContext): Promise<any>;
+declare function broadcastJson<T>(username: string | undefined, id: string, payload: T, auth?: AuthContextV2): Promise<any>;
 
 /**
  * Delay (ms) before invalidating chain-derived queries after an async
@@ -2255,7 +2255,7 @@ interface CommonPayload$1 {
 type RevokePostingOptions = Pick<UseMutationOptions<unknown, Error, CommonPayload$1>, "onSuccess" | "onError"> & {
     hsCallbackUrl?: string;
 };
-declare function useAccountRevokePosting(username: string | undefined, options: RevokePostingOptions, auth?: AuthContext): _tanstack_react_query.UseMutationResult<unknown, Error, CommonPayload$1, unknown>;
+declare function useAccountRevokePosting(username: string | undefined, options: RevokePostingOptions, auth?: AuthContextV2): _tanstack_react_query.UseMutationResult<string | void | TransactionConfirmation, Error, CommonPayload$1, unknown>;
 
 type SignType = "key" | "keychain" | "hivesigner" | "ecency";
 interface CommonPayload {
@@ -2267,7 +2267,7 @@ interface CommonPayload {
 type UpdateRecoveryOptions = Pick<UseMutationOptions<unknown, Error, CommonPayload>, "onSuccess" | "onError"> & {
     hsCallbackUrl?: string;
 };
-declare function useAccountUpdateRecovery(username: string | undefined, code: string | undefined, options: UpdateRecoveryOptions, auth?: AuthContext): _tanstack_react_query.UseMutationResult<unknown, Error, CommonPayload, unknown>;
+declare function useAccountUpdateRecovery(username: string | undefined, code: string | undefined, options: UpdateRecoveryOptions, auth?: AuthContextV2): _tanstack_react_query.UseMutationResult<string | void | Response | TransactionConfirmation, Error, CommonPayload, unknown>;
 
 interface Payload {
     currentKey: PrivateKey;
@@ -3028,7 +3028,7 @@ declare function useSignOperationByKey(username: string | undefined): _tanstack_
     keyOrSeed: string;
 }, unknown>;
 
-declare function useSignOperationByKeychain(username: string | undefined, auth?: AuthContext, keyType?: "owner" | "active" | "posting" | "memo"): _tanstack_react_query.UseMutationResult<unknown, Error, {
+declare function useSignOperationByKeychain(username: string | undefined, auth?: AuthContextV2, keyType?: "owner" | "active" | "posting" | "memo"): _tanstack_react_query.UseMutationResult<TransactionConfirmation, Error, {
     operation: Operation;
 }, unknown>;
 
