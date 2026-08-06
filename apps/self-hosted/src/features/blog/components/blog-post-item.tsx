@@ -153,6 +153,13 @@ export function BlogPostItem({ entry }: Props) {
             // inertAuthorAndTagChips: no profile or tag routes exist here, and a
             // link inside this card would nest inside the card's own post link.
             __html: renderPostBody(summary, false, false, 'ecency.com', undefined, {
+              // externalProfileBase: a profile SECTION link (/@user/wallet and the rest
+              // of SECTION_LIST) is emitted as an ordinary link, so it lands on
+              // /$author/$permlink here and tries to load a post called "wallet".
+              // The route exists, so no route guard sees it, and it is not a chip,
+              // so inertAuthorAndTagChips does not either. Real post links stay
+              // internal on purpose: that content resolves from the chain.
+              externalProfileBase: 'https://ecency.com',
               inertAuthorAndTagChips: true,
             }),
           }}

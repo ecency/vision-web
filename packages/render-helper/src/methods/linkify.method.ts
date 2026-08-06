@@ -60,7 +60,12 @@ export function linkify(content: string, forApp: boolean, renderOptions?: Render
       if (!isValidPermlink(permlink)) return match;
 
       if (SECTION_LIST.includes(permlink)) {
-        const attrs = forApp ? `href="https://ecency.com/@${authorLower}/${permlink}"` : `href="/@${authorLower}/${permlink}"`
+        // A profile section, not a post. A consumer with no profile route sends
+        // it to `/:author/:permlink` and tries to load a post called `wallet`.
+        const external = renderOptions?.externalProfileBase
+        const attrs = forApp || external
+          ? `href="${external ?? 'https://ecency.com'}/@${authorLower}/${permlink}"`
+          : `href="/@${authorLower}/${permlink}"`
         return `${preceding}<a class="markdown-profile-link" ${attrs}>@${authorLower}/${permlink}</a>`
       } else {
         const attrs = forApp ? `data-author="${authorLower}" data-tag="${tag}" data-permlink="${permlink}"` : `href="/@${authorLower}/${permlink}"`
@@ -78,7 +83,12 @@ export function linkify(content: string, forApp: boolean, renderOptions?: Render
       if (!isValidPermlink(permlink)) return match;
 
       if (SECTION_LIST.includes(permlink)) {
-        const attrs = forApp ? `href="https://ecency.com/@${uu}/${permlink}"` : `href="/@${uu}/${permlink}"`
+        // Same as above: a section name, routed as a permlink by any consumer
+        // whose only match is `/:author/:permlink`.
+        const external = renderOptions?.externalProfileBase
+        const attrs = forApp || external
+          ? `href="${external ?? 'https://ecency.com'}/@${uu}/${permlink}"`
+          : `href="/@${uu}/${permlink}"`
         return ` <a class="markdown-profile-link" ${attrs}>@${uu}/${permlink}</a>`
       } else {
         const attrs = forApp ? `data-author="${uu}" data-tag="post" data-permlink="${permlink}"` : `href="/@${uu}/${permlink}"`
