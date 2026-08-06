@@ -27,8 +27,28 @@ export interface AuthContext {
   /** Login method used ('key', 'hivesigner', 'keychain', 'hiveauth') */
   loginType?: string | null;
   /**
-   * Custom broadcast function for platform-specific signing.
-   * @deprecated Use platform adapter's broadcastWithKeychain/broadcastWithHiveAuth instead.
+   * A caller-supplied broadcaster, for signing the platform adapter cannot do.
+   *
+   * NOT deprecated, and not a legacy path. `useBroadcastMutation` reaches it as
+   * `case 'custom'`, the last link of the default fallback chain, and two call
+   * sites in the web app need it because no adapter method fits:
+   *
+   * - `use-login-by-key.ts` grants posting permission DURING login, before the
+   *   user exists to the adapter, so the key comes from a ref instead.
+   * - `wallet-operations-sign.tsx` dispatches on a signing method the user picks
+   *   mid-flow, which is a decision the adapter has no way to know about.
+   *
+   * It carried an `@deprecated` tag pointing at `broadcastWithKeychain`, and
+   * that reading is what went wrong: four SDK mutations treated this as "the
+   * keychain path", checked it, and threw when a caller passed an
+   * `AuthContextV2` that legitimately has no `broadcast`. Every field here is
+   * optional, so V2 satisfies `AuthContext` structurally and the type checker
+   * saw nothing; each site failed only when a real user reached it. Migrated in
+   * #1376.
+   *
+   * So: reach for the adapter when you mean "sign with the user's wallet". Reach
+   * for this only when you are supplying the signing yourself, and never as a
+   * way to detect Keychain.
    */
   broadcast?: (
     operations: Operation[],
