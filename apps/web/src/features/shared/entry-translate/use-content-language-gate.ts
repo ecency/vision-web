@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import i18next from "i18next";
 import { postBodySummary } from "@ecency/render-helper";
 import { detectLanguage } from "@/api/translation";
-import { useGlobalStore } from "@/core/global-store";
+import { useActiveAccount } from "@/core/hooks/use-active-account";
 import {
   francToIso1,
   LIBRETRANSLATE_TARGETS,
@@ -111,7 +111,7 @@ export function useContentLanguageGate(
   { serverConfirm = false, disabled = false }: GateOptions = {}
 ): TranslateCtaDecision | null {
   const [decision, setDecision] = useState<TranslateCtaDecision | null>(null);
-  const activeUsername = useGlobalStore((state) => state.activeUser?.username);
+  const { username: activeUsername } = useActiveAccount();
   // Server /detect is a logged-in-only escalation (see GateOptions.serverConfirm).
   const canServerConfirm = serverConfirm && !!activeUsername;
 

@@ -1,7 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ActiveUser } from "@/entities";
-import { useGlobalStore } from "@/core/global-store";
+import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useContentLanguageGate } from "@/features/shared/entry-translate/use-content-language-gate";
 import { detectLanguage } from "@/api/translation";
 
@@ -18,12 +17,26 @@ const SPANISH_BODY =
   "Este es un texto de prueba lo suficientemente largo para que la deteccion " +
   "de idioma funcione correctamente en la vista completa de la publicacion.";
 
-const loggedIn = { username: "alice", data: {} } as ActiveUser;
+// useActiveAccount is globally mocked (setup-any-spec) to a logged-out shape;
+// tests override the resolved username per case.
+function setLoggedIn(username: string | null) {
+  vi.mocked(useActiveAccount).mockReturnValue({
+    activeUser: username ? { username } : null,
+    username,
+    account: null,
+    isLoading: false,
+    isPending: false,
+    isError: false,
+    isSuccess: false,
+    error: null,
+    refetch: vi.fn()
+  } as unknown as ReturnType<typeof useActiveAccount>);
+}
 
 describe("useContentLanguageGate server /detect gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useGlobalStore.setState({ activeUser: null });
+    setLoggedIn(null);
   });
 
   it("does not call /detect for logged-out readers even with serverConfirm", async () => {
@@ -40,7 +53,7 @@ describe("useContentLanguageGate server /detect gating", () => {
   });
 
   it("calls /detect for logged-in readers with serverConfirm", async () => {
-    useGlobalStore.setState({ activeUser: loggedIn });
+    setLoggedIn("alice");
 
     const { result } = renderHook(() =>
       useContentLanguageGate(
@@ -54,7 +67,7 @@ describe("useContentLanguageGate server /detect gating", () => {
   });
 
   it("never calls /detect on the feed path regardless of login", async () => {
-    useGlobalStore.setState({ activeUser: loggedIn });
+    setLoggedIn("alice");
 
     const { result } = renderHook(() =>
       useContentLanguageGate({ author: "author3", permlink: "gate-feed", body: SPANISH_BODY })
