@@ -23,17 +23,14 @@ import {
   useMattermostJoinChannel
 } from "./mattermost-api";
 import { usePendingPosts } from "./hooks/use-pending-posts";
-import { useChannelAdmin } from "./hooks/use-channel-admin";
 import { useDmWarning } from "./hooks/use-dm-warning";
 import { useDeepLinking } from "./hooks/use-deep-linking";
 import { useChannelWebSocket } from "./hooks/use-channel-websocket";
 import { usePostActions } from "./hooks/use-post-actions";
 import { useMessageRendering } from "./hooks/use-message-rendering";
 import { useChannelMetadata } from "./hooks/use-channel-metadata";
-import { AdminPanel } from "./components/admin-panel";
 import { KeyboardShortcutsModal } from "./components/keyboard-shortcuts-modal";
 import { ChannelHeader } from "./components/channel-header";
-import { useChatAdminStore } from "./chat-admin-store";
 import {
   ensureEmojiDataReady,
   searchEmojis,
@@ -107,8 +104,6 @@ export function MattermostChannelView({ channelId }: Props) {
   const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { activeUser } = useActiveAccount();
-  const isEcencyAdmin = activeUser?.username?.toLowerCase() === "ecency";
-  const channelAdmin = useChannelAdmin(isEcencyAdmin);
   const { data: channels } = useMattermostChannels(Boolean(channelId));
   const directChannelMutation = useMattermostDirectChannel();
   const joinChannelMutation = useMattermostJoinChannel();
@@ -124,7 +119,6 @@ export function MattermostChannelView({ channelId }: Props) {
   const [unreadCountBelowScroll, setUnreadCountBelowScroll] = useState(0);
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const queryClient = useQueryClient();
-  const showAdminTools = useChatAdminStore((state) => state.showAdminTools);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
   const gifButtonRef = useRef<HTMLButtonElement | null>(null);
   const gifPickerRef = useRef<HTMLDivElement | null>(null);
@@ -1063,8 +1057,6 @@ export function MattermostChannelView({ channelId }: Props) {
             Reconnecting…
           </div>
         )}
-
-        {isEcencyAdmin && showAdminTools && <AdminPanel admin={channelAdmin} />}
 
         <div className="flex flex-1 min-h-0 flex-col">
           <div className="relative flex-1 min-h-0 overflow-hidden pb-[72px] md:pb-0 md:min-h-[340px]">
