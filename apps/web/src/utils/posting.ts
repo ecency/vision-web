@@ -112,6 +112,36 @@ export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaD
 
 export const makeApp = (appVer: string) => `ecency/${appVer}-vision`;
 
+/** Maximum tag length enforced by the Hive blockchain (fixed_string<16>). */
+const HIVE_TAG_MAX_LENGTH = 16;
+
+/**
+ * Sanitizes a list of tags so they conform to Hive's blockchain constraints:
+ * - Removes commas and any character that isn't lowercase alphanumeric or a hyphen.
+ * - Truncates each tag to HIVE_TAG_MAX_LENGTH (16) characters.
+ * - Filters out empty tags and deduplicates.
+ *
+ * This guards against malformed tags stored in external post metadata (e.g.
+ * "aliveandthriving," with a trailing comma) that would otherwise cause
+ * RPCError: Input too large for fixed size string when broadcasting a reply.
+ */
+export const sanitizeTagsForBroadcast = (tags: string[]): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of tags) {
+    const sanitized = raw
+      .toLowerCase()
+      .replace(/[,#]/g, "")          // strip commas and hashes
+      .replace(/[^a-z0-9-]/g, "")   // keep only alphanumeric and hyphens
+      .slice(0, HIVE_TAG_MAX_LENGTH); // enforce blockchain limit
+    if (sanitized && !seen.has(sanitized)) {
+      seen.add(sanitized);
+      result.push(sanitized);
+    }
+  }
+  return result;
+};
+
 export const makeJsonMetaData = (
   meta: MetaData,
   tags: string[],
@@ -126,7 +156,7 @@ export const makeJsonMetaData = (
   });
 
 export const makeJsonMetaDataReply = (tags: string[], appVer: string) => ({
-  tags,
+  tags: sanitizeTagsForBroadcast(tags),
   app: makeApp(appVer),
   format: "markdown+html"
 });
