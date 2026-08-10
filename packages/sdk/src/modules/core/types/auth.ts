@@ -27,7 +27,7 @@ export interface AuthContext {
   /** Login method used ('key', 'hivesigner', 'keychain', 'hiveauth') */
   loginType?: string | null;
   /**
-   * A caller-supplied broadcaster, for signing the platform adapter cannot do.
+   * A caller-supplied broadcaster for signing operations that the platform adapter cannot perform.
    *
    * NOT deprecated, and not a legacy path. `useBroadcastMutation` reaches it as
    * `case 'custom'`, the last link of the default fallback chain, and two call

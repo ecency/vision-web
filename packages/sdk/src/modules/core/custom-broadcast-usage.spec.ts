@@ -43,11 +43,40 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-/** True when the file reads `.broadcast` off something named like an auth ctx. */
-function readsAuthBroadcast(file: string): boolean {
+function unwrapExpression(expression: ts.Expression): ts.Expression {
+  let current = expression;
+
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isNonNullExpression(current)
+  ) {
+    current = current.expression;
+  }
+
+  return current;
+}
+
+function isAuthExpression(expression: ts.Expression): boolean {
+  const unwrapped = unwrapExpression(expression);
+  return ts.isIdentifier(unwrapped) && /^auth$/i.test(unwrapped.text);
+}
+
+function isBroadcastBinding(element: ts.BindingElement): boolean {
+  const name = element.propertyName ?? element.name;
+  return (
+    (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) &&
+    name.text === "broadcast"
+  );
+}
+
+/** True when the source reads `.broadcast` off something named like an auth ctx. */
+function sourceReadsAuthBroadcast(source: string, file = "<source>"): boolean {
   const sf = ts.createSourceFile(
     file,
-    readFileSync(file, "utf8"),
+    source,
     ts.ScriptTarget.Latest,
     true,
     ts.ScriptKind.TS
@@ -55,11 +84,22 @@ function readsAuthBroadcast(file: string): boolean {
 
   let found = false;
   const visit = (node: ts.Node): void => {
-    if (
+    const propertyAccess =
       ts.isPropertyAccessExpression(node) &&
       node.name.text === "broadcast" &&
-      /^auth$/i.test(node.expression.getText(sf).replace(/[?!]/g, ""))
-    ) {
+      isAuthExpression(node.expression);
+    const elementAccess =
+      ts.isElementAccessExpression(node) &&
+      ts.isStringLiteralLike(node.argumentExpression) &&
+      node.argumentExpression.text === "broadcast" &&
+      isAuthExpression(node.expression);
+    const destructuring =
+      ts.isVariableDeclaration(node) &&
+      Boolean(node.initializer && isAuthExpression(node.initializer)) &&
+      ts.isObjectBindingPattern(node.name) &&
+      node.name.elements.some(isBroadcastBinding);
+
+    if (propertyAccess || elementAccess || destructuring) {
       found = true;
     }
     ts.forEachChild(node, visit);
@@ -68,12 +108,19 @@ function readsAuthBroadcast(file: string): boolean {
   return found;
 }
 
+function readsAuthBroadcast(file: string): boolean {
+  return sourceReadsAuthBroadcast(readFileSync(file, "utf8"), file);
+}
+
 describe("auth.broadcast is only read where it is the feature", () => {
   const files = sourceFiles(MODULES);
 
   it("finds the modules to scan", () => {
     // Guards the reader: an empty list would make the sweep vacuous.
-    expect(files.length).toBeGreaterThan(50);
+    expect(files).toContain(
+      join(MODULES, "core/mutations/use-broadcast-mutation.ts"),
+    );
+    expect(files).toContain(join(MODULES, "core/mutations/broadcast-json.ts"));
   });
 
   it("is read only in sanctioned places", () => {
@@ -97,5 +144,18 @@ describe("auth.broadcast is only read where it is the feature", () => {
     // A file that only MENTIONS it in a comment must not register.
     const proseOnly = join(MODULES, "core/types/auth.ts");
     expect(readsAuthBroadcast(proseOnly)).toBe(false);
+  });
+
+  it.each([
+    ["dot access", "auth.broadcast"],
+    ["optional access", "auth?.broadcast"],
+    ["non-null access", "auth!.broadcast"],
+    ["string element access", 'auth["broadcast"]'],
+    ["parenthesized assertion", "(auth as AuthContext).broadcast"],
+    ["angle-bracket assertion", "(<AuthContext>auth).broadcast"],
+    ["destructuring", "const { broadcast } = auth"],
+    ["renamed destructuring", "const { broadcast: customBroadcast } = auth"],
+  ])("detects %s", (_label, source) => {
+    expect(sourceReadsAuthBroadcast(source)).toBe(true);
   });
 });
