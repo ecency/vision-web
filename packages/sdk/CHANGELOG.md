@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.78
+
+### Patch Changes
+
+- SDK: auth.broadcast is not deprecated, and a guard so it is not misread again (#1378)
+
 ## 2.3.77
 
 ### Patch Changes
