@@ -25,10 +25,9 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { FormControl } from "@ui/input";
 import { Button } from "@ui/button";
 import { Dropdown, DropdownItemWithIcon, DropdownMenu, DropdownToggle } from "@ui/dropdown";
-import { checkSvg, dotsHorizontal, settingsSvg, volumeOffSvg } from "@ui/svg";
+import { checkSvg, dotsHorizontal, volumeOffSvg } from "@ui/svg";
 import { ChangeEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { useChatAdminStore } from "@/features/chat/chat-admin-store";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 const TOWN_HALL_CHANNEL_NAME = "town-hall";
@@ -79,8 +78,6 @@ export function ChatsClient() {
   const directChannelMutation = useMattermostDirectChannel();
   const { data: unreadSummary } = useMattermostUnread(Boolean(bootstrap?.ok && activeUser && hydrated));
   const params = useParams<{ id?: string }>();
-  const isSuperAdmin = activeUser?.username?.toLowerCase() === "ecency";
-  const { showAdminTools, toggleAdminTools } = useChatAdminStore();
 
   const channelOrder = useMemo(() => {
     return new Map((channels?.channels || []).map((channel, index) => [channel.id, index]));
@@ -420,16 +417,6 @@ export function ChatsClient() {
             <p className="text-xs text-[--text-muted]">{i18next.t("chat.page-title")}</p>
           </div>
           <div className="flex items-center gap-2">
-            {isSuperAdmin && (
-              <Button
-                type="button"
-                appearance="gray-link"
-                icon={settingsSvg}
-                aria-pressed={showAdminTools}
-                title={showAdminTools ? "Hide admin tools" : "Show admin tools"}
-                onClick={() => toggleAdminTools()}
-              />
-            )}
             {(isLoading || channelsLoading) && (
               <div className="text-xs text-[--text-muted]">{i18next.t("chat.loading")}</div>
             )}
