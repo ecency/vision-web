@@ -46,7 +46,7 @@ export async function encryptMemo(
     throw new Error("Account not found");
   }
 
-  return Memo.encode(
+  return await Memo.encode(
     PrivateKey.fromString(memoKey),
     account.memo_key,
     `#${memo}`
@@ -93,7 +93,7 @@ export async function decryptMemo(
   // (`return '#' + readVString()`). Strip it here so all decryptMemo paths
   // (Keychain / HiveSigner / key) return clean plaintext, and the UI can
   // render it verbatim without an extra "#".
-  const decoded = Memo.decode(PrivateKey.fromString(memoKey), encryptedMemo);
+  const decoded = await Memo.decode(PrivateKey.fromString(memoKey), encryptedMemo);
   return decoded.startsWith("#") ? decoded.slice(1) : decoded;
 }
 

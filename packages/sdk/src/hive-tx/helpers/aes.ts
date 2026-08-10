@@ -1,25 +1,24 @@
 import { ByteBuffer } from './ByteBuffer'
-import { cbc as AESCBC } from '@noble/ciphers/aes.js'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { sha256, sha512 } from '@noble/hashes/sha2.js'
 import { PrivateKey } from './PrivateKey'
 import { PublicKey } from './PublicKey'
 
-export const encrypt = (
+export const encrypt = async (
   privateKey: PrivateKey,
   publicKey: PublicKey,
   message: Uint8Array,
   nonce: bigint = uniqueNonce()
 ) => crypt(privateKey, publicKey, nonce, message)
 
-export const decrypt = (
+export const decrypt = async (
   privateKey: PrivateKey,
   publicKey: PublicKey,
   nonce: bigint,
   message: Uint8Array,
   checksum: number
-): Uint8Array => {
-  const d = crypt(privateKey, publicKey, nonce, message, checksum)
+): Promise<Uint8Array> => {
+  const d = await crypt(privateKey, publicKey, nonce, message, checksum)
   return d.message
 }
 
@@ -27,13 +26,13 @@ export const decrypt = (
  * @arg message - Encrypted or plain text message (see checksum)
  * @arg checksum - shared secret checksum (null to encrypt, non-null to decrypt)
  */
-const crypt = (
+const crypt = async (
   privateKey: PrivateKey,
   publicKey: PublicKey,
   nonce: bigint,
   message: Uint8Array,
   checksum?: number
-): { nonce: bigint; message: Uint8Array; checksum: number } => {
+): Promise<{ nonce: bigint; message: Uint8Array; checksum: number }> => {
   const nonceL = nonce
   const S = privateKey.getSharedSecret(publicKey)
   let ebuf = new ByteBuffer(ByteBuffer.DEFAULT_CAPACITY, ByteBuffer.LITTLE_ENDIAN)
@@ -55,39 +54,39 @@ const crypt = (
     if (check32 !== checksum) {
       throw new Error('Invalid key')
     }
-    message = cryptoJsDecrypt(message, tag, iv)
+    message = await cryptoJsDecrypt(message, tag, iv)
   } else {
-    message = cryptoJsEncrypt(message, tag, iv)
+    message = await cryptoJsEncrypt(message, tag, iv)
   }
   return { nonce: nonceL, message, checksum: check32 }
 }
 
 /**
- * This method does not use a checksum, the returned data must be validated some other way.
- * @arg {string|Uint8Array} ciphertext - binary format
- * @return {Uint8Array} the decrypted message
+ * AES-256-CBC decrypt using the Web Crypto API (crypto.subtle).
+ * This method does not use a checksum; the returned data must be validated some other way.
+ * @arg ciphertext - binary format
+ * @return decrypted Uint8Array
  */
-const cryptoJsDecrypt = (message: Uint8Array, tag: Uint8Array, iv: Uint8Array): Uint8Array => {
-  let messageBuffer = message
-  const decipher = AESCBC(tag, iv)
-  messageBuffer = decipher.decrypt(messageBuffer)
-  return messageBuffer
+const cryptoJsDecrypt = async (message: Uint8Array, tag: Uint8Array, iv: Uint8Array): Promise<Uint8Array> => {
+  const key = await crypto.subtle.importKey('raw', tag, { name: 'AES-CBC' }, false, ['decrypt'])
+  const decrypted = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, message)
+  return new Uint8Array(decrypted)
 }
 
 /**
- * This method does not use a checksum, the returned data must be validated some other way.
- * @arg {string|Uint8Array} plaintext - binary format
- * @return {Uint8Array} binary
+ * AES-256-CBC encrypt using the Web Crypto API (crypto.subtle).
+ * This method does not use a checksum; the returned data must be validated some other way.
+ * @arg plaintext - binary format
+ * @return encrypted Uint8Array
  */
-export const cryptoJsEncrypt = (
+export const cryptoJsEncrypt = async (
   message: Uint8Array,
   tag: Uint8Array,
   iv: Uint8Array
-): Uint8Array => {
-  let messageBuffer = message
-  const cipher = AESCBC(tag, iv)
-  messageBuffer = cipher.encrypt(messageBuffer)
-  return messageBuffer
+): Promise<Uint8Array> => {
+  const key = await crypto.subtle.importKey('raw', tag, { name: 'AES-CBC' }, false, ['encrypt'])
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, key, message)
+  return new Uint8Array(encrypted)
 }
 
 let uniqueNonceEntropy: number | null = null

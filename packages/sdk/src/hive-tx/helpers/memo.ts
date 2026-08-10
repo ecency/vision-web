@@ -15,12 +15,12 @@ export type Memo = {
     publicKey: string | PublicKey,
     memo: string,
     testNonce?: any
-  ): string
+  ): Promise<string>
 
   /**
    * Decrypts a memo message
    */
-  decode(privateKey: string | PrivateKey, memo: string): string
+  decode(privateKey: string | PrivateKey, memo: string): Promise<string>
 }
 
 /**
@@ -34,23 +34,23 @@ export type Memo = {
  * @returns Encrypted memo string prefixed with '#'
  * @throws Error if encryption is not supported in current environment
  */
-const encode = (
+const encode = async (
   privateKey: string | PrivateKey,
   publicKey: string | PublicKey,
   memo: string,
   testNonce?: any
-): string => {
+): Promise<string> => {
   if (!memo.startsWith('#')) {
     return memo
   }
   memo = memo.substring(1)
-  checkEncryption()
+  await checkEncryption()
   privateKey = toPrivateObj(privateKey)
   publicKey = toPublicObj(publicKey)
   const mbuf = new ByteBuffer(ByteBuffer.DEFAULT_CAPACITY, ByteBuffer.LITTLE_ENDIAN)
   mbuf.writeVString(memo)
   const memoBuffer = new Uint8Array(mbuf.copy(0, mbuf.offset).toBuffer())
-  const { nonce, message, checksum } = Aes.encrypt(privateKey, publicKey, memoBuffer, testNonce)
+  const { nonce, message, checksum } = await Aes.encrypt(privateKey, publicKey, memoBuffer, testNonce)
   const mbuf2 = new ByteBuffer(ByteBuffer.DEFAULT_CAPACITY, ByteBuffer.LITTLE_ENDIAN)
   Serializer.Memo(mbuf2, {
     check: checksum,
@@ -73,12 +73,12 @@ const encode = (
  * @returns Decrypted memo content with '#' prefix
  * @throws Error if decryption fails or encryption not supported in current environment
  */
-const decode = (privateKey: string | PrivateKey, memo: string): string => {
+const decode = async (privateKey: string | PrivateKey, memo: string): Promise<string> => {
   if (!memo.startsWith('#')) {
     return memo
   }
   memo = memo.substring(1)
-  checkEncryption()
+  await checkEncryption()
   privateKey = toPrivateObj(privateKey)
   // memo = bs58.decode(memo)
   let memoBuffer = Deserializer.Memo(bs58.decode(memo))
@@ -86,23 +86,23 @@ const decode = (privateKey: string | PrivateKey, memo: string): string => {
   const pubkey = privateKey.createPublic().toString()
   const otherpub =
     pubkey === new PublicKey(from.key).toString() ? new PublicKey(to.key) : new PublicKey(from.key)
-  memoBuffer = Aes.decrypt(privateKey, otherpub, nonce, encrypted, check)
+  const decrypted = await Aes.decrypt(privateKey, otherpub, nonce, encrypted, check)
   const mbuf = new ByteBuffer(ByteBuffer.DEFAULT_CAPACITY, ByteBuffer.LITTLE_ENDIAN)
-  mbuf.append(memoBuffer)
+  mbuf.append(decrypted)
   mbuf.flip()
   return '#' + mbuf.readVString()
 }
 
 let encodeTest: boolean | undefined
-const checkEncryption = () => {
+const checkEncryption = async () => {
   if (encodeTest === undefined) {
     let plaintext
-    encodeTest = true // prevent infinate looping
+    encodeTest = true // prevent infinite looping
     try {
       const wif = '5JdeC9P7Pbd1uGdFVEsJ41EkEnADbbHGq6p1BwFxm6txNBsQnsw'
       const pubkey = 'STM8m5UgaFAAYQRuaNejYdS8FVLVp9Ss3K1qAVk5de6F8s3HnVbvA'
-      const cyphertext = encode(wif, pubkey, '#memo爱')
-      plaintext = decode(wif, cyphertext)
+      const cyphertext = await encode(wif, pubkey, '#memo爱')
+      plaintext = await decode(wif, cyphertext)
     } finally {
       encodeTest = plaintext === '#memo爱'
     }
@@ -139,10 +139,10 @@ const toPublicObj = (o: string | PublicKey): PublicKey => {
  * import { Memo, PrivateKey, PublicKey } from 'hive-tx'
  *
  * // Encrypt a message
- * const encrypted = Memo.encode(senderPrivateKey, recipientPublicKey, '#Hello World')
+ * const encrypted = await Memo.encode(senderPrivateKey, recipientPublicKey, '#Hello World')
  *
  * // Decrypt a message
- * const decrypted = Memo.decode(recipientPrivateKey, encrypted)
+ * const decrypted = await Memo.decode(recipientPrivateKey, encrypted)
  * console.log(decrypted) // '#Hello World'
  * ```
  */
