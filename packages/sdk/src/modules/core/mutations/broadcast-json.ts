@@ -47,11 +47,11 @@ export async function broadcastJson<T>(
   /*
    * Adapter, as a last resort rather than first.
    *
-   * `auth.broadcast` above is the deprecated V1 field, and an AuthContextV2
-   * does not carry it, so a Keychain user whose posting key is not stored and
-   * who has no HiveSigner token reached the throw below instead of being asked
-   * to sign. The web app passes V2 everywhere (`getSdkAuthContext`), so this is
-   * reachable today from follow and unfollow.
+   * `auth.broadcast` above is the supported caller-supplied path inherited by
+   * AuthContextV2, but the web app's `getSdkAuthContext` does not populate it.
+   * A Keychain user whose posting key is not stored and who has no HiveSigner
+   * token therefore reached the throw below instead of being asked to sign.
+   * This is reachable today from follow and unfollow.
    *
    * Placed last on purpose: every branch above already works for the sessions
    * that reach it, and reordering would change which method signs for people
