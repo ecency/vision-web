@@ -29,3 +29,24 @@ describe('theme manifest registry', () => {
     expect(getThemeManifest('magazine').id).toBe('magazine');
   });
 });
+
+describe('component resolution', () => {
+  it('every roster template resolves to exactly the shared defaults today', async () => {
+    const { DEFAULT_THEME_COMPONENTS, resolveThemeComponents } = await import(
+      './use-theme-components'
+    );
+    for (const id of STYLE_TEMPLATES) {
+      const resolved = resolveThemeComponents(id);
+      // Identity per seam, not just deep equality: the no-op migration means
+      // the very same component functions render, so nothing remounts.
+      for (const key of Object.keys(DEFAULT_THEME_COMPONENTS) as Array<
+        keyof typeof DEFAULT_THEME_COMPONENTS
+      >) {
+        expect(resolved[key], `${id}.${key}`).toBe(DEFAULT_THEME_COMPONENTS[key]);
+      }
+    }
+    expect(resolveThemeComponents(undefined)).toEqual(
+      resolveThemeComponents('medium'),
+    );
+  });
+});

@@ -28,15 +28,17 @@ export const DEFAULT_THEME_COMPONENTS: ThemeComponents = {
  * store) restyles AND restructures live, and exiting preview restores the
  * baseline components.
  */
+/** The pure half of the hook, separated so the resolution is testable. */
+export function resolveThemeComponents(styleTemplate: unknown): ThemeComponents {
+  return {
+    ...DEFAULT_THEME_COMPONENTS,
+    ...getThemeManifest(styleTemplate).components,
+  };
+}
+
 export function useThemeComponents(): ThemeComponents {
   const styleTemplate = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.general.styleTemplate,
   );
-  return useMemo(
-    () => ({
-      ...DEFAULT_THEME_COMPONENTS,
-      ...getThemeManifest(styleTemplate).components,
-    }),
-    [styleTemplate],
-  );
+  return useMemo(() => resolveThemeComponents(styleTemplate), [styleTemplate]);
 }
