@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
+import { isFieldVisible } from '../config-fields';
 import { LiveRegion } from '@/features/shared/live-region';
 import { validateArrayDraft, validateArrayEntries } from '../array-field';
 import type { ConfigField } from '../config-fields';
@@ -391,6 +392,9 @@ export const ConfigEditor = memo<ConfigEditorProps>(
       const regularList: Array<[string, ConfigField]> = [];
 
       Object.entries(fields).forEach(([key, field]) => {
+        // Visibility is decided against the whole document, so an option can
+        // depend on a value in another branch (the style template, above all).
+        if (!isFieldVisible(field, document)) return;
         if (field.type === 'section') {
           sectionsList.push([key, field]);
         } else {
@@ -402,7 +406,7 @@ export const ConfigEditor = memo<ConfigEditorProps>(
         sections: sectionsList,
         regularFields: regularList,
       };
-    }, [fields]);
+    }, [fields, document]);
 
     return (
       <div className="space-y-4">

@@ -13,7 +13,9 @@ import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
 import { resolveCreatePostTarget } from '@/features/auth/utils/create-post-target';
 import type { ConfigField } from './config-fields';
 import { translations } from '@/core/i18n-strings';
-import { buildConfigFields } from './config-fields';
+import { buildConfigFields,
+  isFieldVisible,
+} from './config-fields';
 
 /*
  * English, read from the strings module directly.
@@ -815,4 +817,41 @@ describe('panel translations, per locale', () => {
       expect(panelKeys(locale)).toEqual([]);
     },
   );
+});
+
+describe('isFieldVisible (the visibleWhen capability)', () => {
+  const doc = {
+    configuration: {
+      general: { styleTemplate: 'magazine' },
+    },
+  } as unknown as Record<string, import('./types').ConfigValue>;
+
+  it('a field with no predicate is always visible', () => {
+    expect(isFieldVisible({ label: 'X', type: 'string' } as any, doc)).toBe(true);
+  });
+
+  it('the predicate decides against the WHOLE document', () => {
+    const onlyMagazine = {
+      label: 'X',
+      type: 'select',
+      visibleWhen: (d: any) => d?.configuration?.general?.styleTemplate === 'magazine',
+    } as any;
+    expect(isFieldVisible(onlyMagazine, doc)).toBe(true);
+    expect(
+      isFieldVisible(onlyMagazine, {
+        configuration: { general: { styleTemplate: 'medium' } },
+      } as any),
+    ).toBe(false);
+  });
+
+  it('a throwing predicate hides nothing (no panel lockout)', () => {
+    const broken = {
+      label: 'X',
+      type: 'string',
+      visibleWhen: () => {
+        throw new Error('boom');
+      },
+    } as any;
+    expect(isFieldVisible(broken, doc)).toBe(true);
+  });
 });
