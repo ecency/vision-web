@@ -29,7 +29,8 @@ import { checkSvg, dotsHorizontal, volumeOffSvg } from "@ui/svg";
 import { ChangeEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { formatChatBanNotice, getChatBanInfo } from "@/features/chat/chat-ban-notice";
+import { getChatBanInfo } from "@/features/chat/chat-ban-notice";
+import { ChatBanScreen } from "@/features/chat/components/chat-ban-screen";
 
 const TOWN_HALL_CHANNEL_NAME = "town-hall";
 
@@ -361,16 +362,7 @@ export function ChatsClient() {
     // (their own handle and an ISO timestamp) on the chats page.
     const bootstrapBan = getChatBanInfo(error);
     if (bootstrapBan) {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-3 p-4">
-          <div
-            role="status"
-            className="max-w-md rounded border border-[--border-color] bg-[--surface-color] p-4 text-center text-sm text-[--text-muted]"
-          >
-            {formatChatBanNotice(bootstrapBan)}
-          </div>
-        </div>
-      );
+      return <ChatBanScreen info={bootstrapBan} onExpire={refetchBootstrap} />;
     }
 
     const errorMessage = error?.message?.toLowerCase() || "";
