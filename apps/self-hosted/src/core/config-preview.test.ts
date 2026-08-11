@@ -215,10 +215,14 @@ describe('config preview through the store', () => {
         get matches() {
           return matches;
         },
-        addEventListener: (_type: string, fn: (event: { matches: boolean }) => void) =>
-          listeners.add(fn),
-        removeEventListener: (_type: string, fn: (event: { matches: boolean }) => void) =>
-          listeners.delete(fn),
+        addEventListener: (
+          _type: string,
+          fn: (event: { matches: boolean }) => void,
+        ) => listeners.add(fn),
+        removeEventListener: (
+          _type: string,
+          fn: (event: { matches: boolean }) => void,
+        ) => listeners.delete(fn),
       };
       window.matchMedia = (() => mql) as unknown as typeof window.matchMedia;
       return {
