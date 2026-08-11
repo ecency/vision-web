@@ -43,6 +43,37 @@ export function getQuestCatalogEntry(tier: QuestTier, id: string) {
   return QUEST_CATALOG.find((q) => q.tier === tier && q.id === id);
 }
 
+/**
+ * Shortest body that earns points and counts toward the post/comment quests.
+ *
+ * MIRRORS the ePoints `CONTENT_MIN_LENGTH` - the backend is the source of truth and
+ * rejects anything at or below it, silently. This exists so a client can say so in the
+ * composer instead of leaving the user to wonder why their reply never counted.
+ */
+export const QUEST_MIN_CONTENT_LENGTH = 25;
+
+/**
+ * The length the backend actually measures. URLs are stripped first, so a reply that is
+ * nothing but an image link measures as empty however long it looks. Mirrors the
+ * `http(s)://\S+` strip in the ePoints verifier, including the absence of any trimming.
+ *
+ * Counts code points, not UTF-16 code units, because the backend measures with Python's
+ * `len` on a str. `String.length` would score an astral character (most emoji) as 2,
+ * so a reply of 13 emoji would look like 26 here and 13 there: the client would promise
+ * points the backend then refuses, which is the exact confusion this is meant to end.
+ */
+export function measureQuestContentLength(body: string | null | undefined): number {
+  return Array.from((body ?? "").replace(/https?:\/\/\S+/g, "")).length;
+}
+
+/**
+ * Whether a post or comment body is long enough to earn points and quest credit.
+ * Strictly greater than the minimum, matching the backend comparison.
+ */
+export function earnsQuestContentCredit(body: string | null | undefined): boolean {
+  return measureQuestContentLength(body) > QUEST_MIN_CONTENT_LENGTH;
+}
+
 // Streak Freeze display config. MIRRORS the ePoints constants
 // (STREAK_FREEZE_PRICE / STREAK_FREEZE_MAX_OWNED) — the server is the source of truth
 // and validates every purchase; these drive the label + button state only, so a drift

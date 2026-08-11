@@ -1,10 +1,16 @@
 # Changelog
 
-## 2.3.79
+## 2.3.80
 
 ### Patch Changes
 
 - fix(sdk): correct account-history pagination and stop dropping requested ops (#1396)
+
+## 2.3.79
+
+### Patch Changes
+
+- quests: refresh after the backend credits an action, and warn on short replies (#1394)
 
 ## 2.3.78
 

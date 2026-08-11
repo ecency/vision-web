@@ -1203,7 +1203,8 @@
     "delete-success": "Comment deleted successfully",
     "delete-error-hint": "Could not delete comment. Please try again",
     "retry-hint": "Your text is preserved below - please try again",
-    "rc-error-hint": "Insufficient Resource Credits - your text is preserved below"
+    "rc-error-hint": "Insufficient Resource Credits - your text is preserved below",
+    "short-reply-hint": "Replies of {{n}} characters or fewer do not earn points (links do not count)"
   },
   "discussion": {
     "join": "Join the conversation now",
@@ -2170,7 +2171,7 @@
     "header-reward": "Reward",
     "header-votes": "Votes",
     "header-votes-tip": "Number of votes in this period",
-    "quests-done": "Completed all daily quests today"
+    "quests-done": "Completed all daily quests today (UTC)"
   },
   "discover": {
     "title": "Discover",

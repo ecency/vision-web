@@ -1,7 +1,23 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { QueryKeys } from "@ecency/sdk";
 
-let timer: ReturnType<typeof setTimeout> | null = null;
+/**
+ * One pending refresh per account. A single shared timer would let a second account
+ * cancel the first one's only scheduled invalidation, and at this delay the window is
+ * wide enough for an account switch to land inside it.
+ */
+const timers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * How long to wait before asking the backend for updated quest progress.
+ *
+ * A blockchain action is not credited the moment it is broadcast: it has to be
+ * verified against the chain and then processed before it counts, which lands a
+ * little over a minute after the fact. Refreshing sooner just re-reads the
+ * pre-action numbers and, because the answer is then fresh for the query's
+ * staleTime, actively prevents the real update from being picked up.
+ */
+const QUESTS_REFRESH_DELAY = 70_000;
 
 /**
  * Debounced refresh of the quests/streak query so the ambient navbar streak pill
@@ -21,11 +37,15 @@ export function scheduleQuestsRefresh(queryClient: QueryClient, username?: strin
   if (!name) {
     return;
   }
-  if (timer) {
-    clearTimeout(timer);
+  const pending = timers.get(name);
+  if (pending) {
+    clearTimeout(pending);
   }
-  timer = setTimeout(() => {
-    timer = null;
-    queryClient.invalidateQueries({ queryKey: QueryKeys.quests.status(name) });
-  }, 4000);
+  timers.set(
+    name,
+    setTimeout(() => {
+      timers.delete(name);
+      queryClient.invalidateQueries({ queryKey: QueryKeys.quests.status(name) });
+    }, QUESTS_REFRESH_DELAY)
+  );
 }
