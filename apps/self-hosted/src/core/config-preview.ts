@@ -8,9 +8,13 @@
  * same declaration, so there is no snapshot to drift from what boot produces:
  * restore IS a fresh apply of the running config.
  *
- * applyConfigDom runs without syncSystemTheme in both directions. The listener
- * the boot path registered stays in place and keeps answering for the baseline
- * theme, and a keystroke in the editor cannot register listeners.
+ * applyConfigDom runs WITH syncSystemTheme in both directions, keyed to the
+ * document being applied: a draft with a fixed theme removes the baseline's
+ * OS listener for the duration of the preview, so an OS flip cannot overwrite
+ * what the owner is looking at, and a draft with `theme: system` follows the
+ * OS while previewed. Ending preview re-synchronizes to the baseline. The
+ * listener is a single idempotent module slot (remove then add), so applying
+ * on every draft change cannot accumulate listeners.
  */
 
 import { applyConfigDom } from './apply-config-dom';
@@ -22,7 +26,7 @@ import {
 /** Begin preview, or update the active one with a newer draft. */
 export function previewConfigDraft(draft: unknown): void {
   InstanceConfigManager.setPreviewConfig(draft as InstanceConfig);
-  applyConfigDom(draft);
+  applyConfigDom(draft, { syncSystemTheme: true });
 }
 
 /**
@@ -32,5 +36,7 @@ export function previewConfigDraft(draft: unknown): void {
  */
 export function endConfigPreview(): void {
   InstanceConfigManager.clearPreviewConfig();
-  applyConfigDom(InstanceConfigManager.getBaseConfig());
+  applyConfigDom(InstanceConfigManager.getBaseConfig(), {
+    syncSystemTheme: true,
+  });
 }

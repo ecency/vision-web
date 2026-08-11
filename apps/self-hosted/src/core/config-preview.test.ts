@@ -201,4 +201,112 @@ describe('config preview through the store', () => {
     expect(listener).not.toHaveBeenCalled();
     unsubscribe();
   });
+
+  describe('system-theme listener across preview', () => {
+    /**
+     * jsdom has no matchMedia, so syncSystemTheme is inert in every other
+     * case. This stub makes the OS theme controllable: flip() plays an OS
+     * appearance change into whatever listener applyConfigDom registered.
+     */
+    function stubMatchMedia() {
+      const listeners = new Set<(event: { matches: boolean }) => void>();
+      let matches = false;
+      const mql = {
+        get matches() {
+          return matches;
+        },
+        addEventListener: (_type: string, fn: (event: { matches: boolean }) => void) =>
+          listeners.add(fn),
+        removeEventListener: (_type: string, fn: (event: { matches: boolean }) => void) =>
+          listeners.delete(fn),
+      };
+      window.matchMedia = (() => mql) as unknown as typeof window.matchMedia;
+      return {
+        flip(next: boolean) {
+          matches = next;
+          for (const fn of listeners) fn({ matches: next });
+        },
+        listenerCount: () => listeners.size,
+        cleanup() {
+          // Re-apply a fixed-theme document with sync on, which removes any
+          // registered listener, then drop the stub so later cases see the
+          // plain jsdom environment again.
+          applyConfigDom(structuredClone(BASE), { syncSystemTheme: true });
+          window.matchMedia = undefined as unknown as typeof window.matchMedia;
+        },
+      };
+    }
+
+    function withTheme(theme: string) {
+      const doc = structuredClone(BASE) as unknown as {
+        configuration: { general: Record<string, unknown> };
+      };
+      doc.configuration.general.theme = theme;
+      return doc;
+    }
+
+    it('an OS flip cannot overwrite a previewed fixed theme', () => {
+      const os = stubMatchMedia();
+      try {
+        // Baseline follows the OS: boot registers the listener.
+        const systemBase = withTheme('system');
+        InstanceConfigManager.updateConfig(
+          systemBase as unknown as InstanceConfig,
+        );
+        applyConfigDom(systemBase, { syncSystemTheme: true });
+        expect(os.listenerCount()).toBe(1);
+
+        // Previewing a FIXED theme suspends the OS listener for the duration.
+        previewConfigDraft(withTheme('dark'));
+        expect(document.documentElement.getAttribute('data-theme')).toBe(
+          'dark',
+        );
+        expect(os.listenerCount()).toBe(0);
+        os.flip(false);
+        expect(document.documentElement.getAttribute('data-theme')).toBe(
+          'dark',
+        );
+
+        // Exiting re-synchronizes to the baseline: system again, listener back.
+        endConfigPreview();
+        expect(os.listenerCount()).toBe(1);
+        os.flip(true);
+        expect(document.documentElement.getAttribute('data-theme')).toBe(
+          'dark',
+        );
+        os.flip(false);
+        expect(document.documentElement.getAttribute('data-theme')).toBe(
+          'light',
+        );
+      } finally {
+        os.cleanup();
+      }
+    });
+
+    it('previewing system over a fixed baseline follows the OS, then stops', () => {
+      const os = stubMatchMedia();
+      try {
+        // BASE is theme light: fixed, so no listener after baseline apply.
+        applyConfigDom(InstanceConfigManager.getBaseConfig(), {
+          syncSystemTheme: true,
+        });
+        expect(os.listenerCount()).toBe(0);
+
+        previewConfigDraft(withTheme('system'));
+        expect(os.listenerCount()).toBe(1);
+        os.flip(true);
+        expect(document.documentElement.getAttribute('data-theme')).toBe(
+          'dark',
+        );
+
+        endConfigPreview();
+        expect(os.listenerCount()).toBe(0);
+        expect(document.documentElement.getAttribute('data-theme')).toBe(
+          'light',
+        );
+      } finally {
+        os.cleanup();
+      }
+    });
+  });
 });
