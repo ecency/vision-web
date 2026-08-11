@@ -64,7 +64,11 @@ vi.mock("@ecency/sdk", () => ({
     queryFn: async () => ({})
   })),
   getCommunityPermissions: vi.fn(() => ({ canComment: true })),
-  getCommunityType: vi.fn(() => -1)
+  getCommunityType: vi.fn(() => -1),
+  // Real pure impls so the short-reply hint behaves like production here.
+  QUEST_MIN_CONTENT_LENGTH: 25,
+  earnsQuestContentCredit: (body?: string | null) =>
+    (body ?? "").replace(/https?:\/\/\S+/g, "").length > 25
 }));
 
 // Inline mock (no importActual) so we don't pull the real utils → consts → sdk
@@ -130,6 +134,38 @@ describe("Comment composer", () => {
     fireEvent.keyDown(container.querySelector(".comment-body")!, { key: "Enter", metaKey: true });
 
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  test("warns that a reply too short to earn points will not count", () => {
+    const { getByTestId, container } = renderComment();
+
+    type(getByTestId, "Thank you");
+
+    expect(container.querySelector(".comment-short-reply-hint")).not.toBeNull();
+  });
+
+  test("counts a link-only reply as too short, matching the backend rule", () => {
+    const { getByTestId, container } = renderComment();
+
+    type(getByTestId, "https://i.example.com/a-very-long-image-url-here.gif");
+
+    expect(container.querySelector(".comment-short-reply-hint")).not.toBeNull();
+  });
+
+  test("drops the warning once the reply is long enough to earn", () => {
+    const { getByTestId, container } = renderComment();
+
+    type(getByTestId, "Thank you");
+    expect(container.querySelector(".comment-short-reply-hint")).not.toBeNull();
+
+    type(getByTestId, "Thank you, this is a genuinely useful reply with something to say");
+    expect(container.querySelector(".comment-short-reply-hint")).toBeNull();
+  });
+
+  test("stays quiet on an empty composer", () => {
+    const { container } = renderComment();
+
+    expect(container.querySelector(".comment-short-reply-hint")).toBeNull();
   });
 
   test("Cmd/Ctrl+Enter is suppressed while the mention dropdown is open", () => {

@@ -4,6 +4,17 @@ import { QueryKeys } from "@ecency/sdk";
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 /**
+ * How long to wait before asking the backend for updated quest progress.
+ *
+ * A blockchain action is not credited the moment it is broadcast: it has to be
+ * verified against the chain and then processed before it counts, which lands a
+ * little over a minute after the fact. Refreshing sooner just re-reads the
+ * pre-action numbers and, because the answer is then fresh for the query's
+ * staleTime, actively prevents the real update from being picked up.
+ */
+const QUESTS_REFRESH_DELAY = 70_000;
+
+/**
  * Debounced refresh of the quests/streak query so the ambient navbar streak pill
  * and the /perks tiles update shortly after a points-earning action.
  *
@@ -27,5 +38,5 @@ export function scheduleQuestsRefresh(queryClient: QueryClient, username?: strin
   timer = setTimeout(() => {
     timer = null;
     queryClient.invalidateQueries({ queryKey: QueryKeys.quests.status(name) });
-  }, 4000);
+  }, QUESTS_REFRESH_DELAY);
 }

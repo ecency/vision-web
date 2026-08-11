@@ -27,9 +27,11 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useIsMobile } from "@/features/ui/util/use-is-mobile";
 import { useQuery } from "@tanstack/react-query";
 import {
+  earnsQuestContentCredit,
   getCommunityContextQueryOptions,
   getCommunityPermissions,
-  getCommunityType
+  getCommunityType,
+  QUEST_MIN_CONTENT_LENGTH
 } from "@ecency/sdk";
 import { isCommunity } from "@/utils";
 import { EntryPageContext } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/context";
@@ -257,6 +259,12 @@ export function Comment({
   const showEditor = !isMobile || mobileView === "write";
   const showPreview = !isMobile || mobileView === "preview";
 
+  // The backend drops a reply this short without telling anyone, so the user posts,
+  // watches the quest counter stay put and reports it as a bug. An edit never earns
+  // either (the original already claimed the reward), so there is nothing to say there.
+  const showShortReplyHint =
+    !!activeUser && !isEdit && !!text?.trim() && !earnsQuestContentCredit(text);
+
   return (
     <>
       <div className="comment-box" role="presentation" ref={boxRef}>
@@ -325,6 +333,11 @@ export function Comment({
           </div>
         </div>
         <RcPrecheckBanner operation="comment_operation" className="mt-2" />
+        {showShortReplyHint && (
+          <div className="comment-short-reply-hint mt-2 text-xs opacity-60">
+            {i18next.t("comment.short-reply-hint", { n: QUEST_MIN_CONTENT_LENGTH })}
+          </div>
+        )}
         <div className="comment-buttons flex items-center mt-3">
           {!isMobile && (
             <span className="comment-submit-hint mr-auto text-xs opacity-60">
