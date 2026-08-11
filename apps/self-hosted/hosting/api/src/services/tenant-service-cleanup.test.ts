@@ -82,8 +82,12 @@ describe('TenantService.create (revives abandoned reservations)', () => {
     // active checkout is not swept mid-payment.
     expect(sql).toMatch(/tenants\.subscription_status = 'inactive' AND tenants\.owner = EXCLUDED\.owner/);
     expect(sql).toMatch(/created_at = NOW\(\)/);
-    // Config/owner are only overwritten for the abandoned (reclaim) branch, never on a resume.
-    expect(sql).toMatch(/config = CASE WHEN tenants\.subscription_status = 'abandoned'/);
+    // The owner is only overwritten for the abandoned (reclaim) branch, but the CONFIG takes
+    // the new submission on BOTH branches: a same-owner unpaid reservation is the customize
+    // step re-submitting, and the latest look must win (silently keeping the old config is
+    // the bug this line used to pin as intended behavior).
+    expect(sql).toMatch(/owner = CASE WHEN tenants\.subscription_status = 'abandoned'/);
+    expect(sql).toMatch(/config = EXCLUDED\.config/);
     expect(params[3]).toBe(ABANDONED_REREGISTER_QUARANTINE_HOURS);
   });
 

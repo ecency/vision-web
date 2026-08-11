@@ -220,12 +220,13 @@ export const TenantService = {
     //  - 'abandoned' (past the re-registration quarantine): a fresh reservation RECLAIMS the name —
     //    overwrite owner + config. The quarantine (updated_at older than the window) protects a row
     //    whose earlier payment may still be in flight.
-    //  - 'inactive' owned by the SAME owner: this is a re-entry into checkout for an existing
-    //    reservation. REFRESH its grace clock (created_at = NOW) so the abandoned sweep can't
-    //    reclaim it while it is actively being paid for — closing the window where an old reservation
-    //    is swept mid-checkout and then overwritten before a slow payment (e.g. a card order ePoints
-    //    retries with backoff for far longer than the quarantine) is finally recorded. Keep owner +
-    //    config unchanged here (via CASE) so re-entry never overwrites an unpaid reservation's config.
+    //  - 'inactive' owned by the SAME owner: this is the customize step re-submitting (or a
+    //    re-entry into checkout) for an existing unpaid reservation. REFRESH its grace clock
+    //    (created_at = NOW) so the abandoned sweep can't reclaim it while it is actively being
+    //    paid for, and TAKE the newly submitted config: the reservation is unpaid and the signup
+    //    UI promises that the look on screen is the look that activates, so the latest
+    //    submission wins. (This used to keep the stored config, which silently discarded every
+    //    re-customization.)
     //
     // Any other row (live tenant, or a different owner's inactive reservation) leaves the WHERE
     // unsatisfied, returns no row, and is surfaced as a conflict. A brand-new username inserts.
@@ -235,8 +236,7 @@ export const TenantService = {
        ON CONFLICT (username) DO UPDATE
          SET owner = CASE WHEN tenants.subscription_status = 'abandoned'
                           THEN EXCLUDED.owner ELSE tenants.owner END,
-             config = CASE WHEN tenants.subscription_status = 'abandoned'
-                           THEN EXCLUDED.config ELSE tenants.config END,
+             config = EXCLUDED.config,
              subscription_plan = 'standard',
              subscription_status = 'inactive',
              created_at = NOW(),
@@ -1212,6 +1212,12 @@ export const TenantService = {
     };
     if (configOverrides.theme) normalized.configuration.general.theme = configOverrides.theme;
     if (configOverrides.styleTemplate) normalized.configuration.general.styleTemplate = configOverrides.styleTemplate;
+    // Appearance knobs land under general.styles, the same paths the editor writes.
+    if (configOverrides.accent || configOverrides.fontPreset) {
+      normalized.configuration.general.styles = {};
+      if (configOverrides.accent) normalized.configuration.general.styles.accent = configOverrides.accent;
+      if (configOverrides.fontPreset) normalized.configuration.general.styles.fontPreset = configOverrides.fontPreset;
+    }
     if (configOverrides.type) normalized.configuration.instanceConfiguration.type = configOverrides.type;
     if (configOverrides.communityId) normalized.configuration.instanceConfiguration.communityId = configOverrides.communityId;
     // undefined means "not provided"; an explicit empty string clears the field.

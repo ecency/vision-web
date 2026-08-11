@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { renderWithQueryClient } from "@/specs/test-utils";
 
 // One-click HBD pay: clicking "Pay with Hive" must broadcast the EXACT payment instructions
 // (to / amount / memo) through the user's transfer mutation, then poll the tenant and advance to
@@ -9,8 +10,10 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 const mocks = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
   authLoginType: "keychain" as string,
+  profiles: {} as Record<string, any>,
   hostingApi: {
     paymentMethods: vi.fn(),
+    templates: vi.fn(),
     createTenant: vi.fn(),
     paymentInstructions: vi.fn(),
     tenant: vi.fn(),
@@ -43,6 +46,7 @@ vi.mock("@/core/global-store", () => ({
 }));
 
 import { HostingSignup } from "@/features/hosting-signup/hosting-signup";
+import { getAccountFullQueryOptions } from "@ecency/sdk";
 
 const INSTRUCTIONS = { to: "ecency.hosting", amount: "2.000 HBD", memo: "blog:alice" };
 
@@ -50,6 +54,7 @@ describe("HostingSignup one-click HBD pay", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    localStorage.clear();
     window.history.replaceState(null, "", "/"); // clear any ?resume= from a prior test
     mocks.authLoginType = "keychain";
     // Card disabled so the payment step defaults to the HBD rail (where the one-click lives).
@@ -66,6 +71,26 @@ describe("HostingSignup one-click HBD pay", () => {
       }
     });
     hostingApi.paymentInstructions.mockResolvedValue(INSTRUCTIONS);
+    hostingApi.templates.mockResolvedValue({
+      templates: [
+        {
+          id: "medium",
+          name: "Medium",
+          tagline: "Clean",
+          isDefault: true,
+          colors: { background: "#fff", surface: "#fafafa", accent: "#111", text: "#111" },
+          headingStyle: "serif"
+        },
+        {
+          id: "magazine",
+          name: "Magazine",
+          tagline: "Editorial",
+          isDefault: false,
+          colors: { background: "#faf8f5", surface: "#f5f2ed", accent: "#8b4513", text: "#2c2825" },
+          headingStyle: "serif"
+        }
+      ]
+    });
     // First activation: no baseline expiry, so "active" alone confirms.
     hostingApi.tenant.mockResolvedValue({
       username: "alice",
@@ -81,7 +106,7 @@ describe("HostingSignup one-click HBD pay", () => {
       tenants: [{ username: "alice", type: "blog", subscriptionStatus: "inactive", owner: "alice" }]
     });
     window.history.replaceState(null, "", "/hosting?resume=alice");
-    render(<HostingSignup />);
+    renderWithQueryClient(<HostingSignup />);
     // Verified against the owned list, then resumes the reservation at payment (createTenant
     // refreshes it), and the resume param is consumed from the URL.
     await waitFor(() =>
@@ -94,7 +119,7 @@ describe("HostingSignup one-click HBD pay", () => {
   it("ignores a ?resume= for a name the user does not own (no reservation created)", async () => {
     hostingApi.tenantsByOwner.mockResolvedValue({ tenants: [] }); // alice owns nothing matching
     window.history.replaceState(null, "", "/hosting?resume=victim");
-    render(<HostingSignup />);
+    renderWithQueryClient(<HostingSignup />);
     // Give the async owned-tenants check time to resolve, then assert no tenant was created and we
     // stayed on the first step.
     await waitFor(() => expect(hostingApi.tenantsByOwner).toHaveBeenCalled());
@@ -103,7 +128,7 @@ describe("HostingSignup one-click HBD pay", () => {
   });
 
   it("fetches custom-domain (:domain) HBD instructions when the add-on is toggled", async () => {
-    render(<HostingSignup />);
+    renderWithQueryClient(<HostingSignup />);
     fireEvent.click(screen.getByText("g.continue"));
     fireEvent.click(await screen.findByText("g.continue"));
     // Standard HBD instructions are fetched first (domain = false).
@@ -119,7 +144,7 @@ describe("HostingSignup one-click HBD pay", () => {
   });
 
   it("broadcasts the exact transfer and advances to success", async () => {
-    render(<HostingSignup />);
+    renderWithQueryClient(<HostingSignup />);
 
     // Username step (username pre-filled with the active account) -> configure -> payment.
     fireEvent.click(screen.getByText("g.continue"));
@@ -145,7 +170,7 @@ describe("HostingSignup one-click HBD pay", () => {
   });
 
   it("does not broadcast until the user clicks pay (no accidental transfer)", async () => {
-    render(<HostingSignup />);
+    renderWithQueryClient(<HostingSignup />);
     fireEvent.click(screen.getByText("g.continue"));
     fireEvent.click(await screen.findByText("g.continue"));
     await screen.findByText("hosting.pay-hbd-oneclick");
@@ -158,7 +183,7 @@ describe("HostingSignup one-click HBD pay", () => {
       "ecency:hosting:pending-hbd",
       JSON.stringify({ tenant: "alice", blogUrl: "https://alice.blogs.ecency.com", baseline: null })
     );
-    render(<HostingSignup />);
+    renderWithQueryClient(<HostingSignup />);
     await screen.findByText("hosting.success-title");
     // Marker is cleared after a successful resume.
     expect(sessionStorage.getItem("ecency:hosting:pending-hbd")).toBeNull();
@@ -171,7 +196,7 @@ describe("HostingSignup one-click HBD pay", () => {
       subscriptionStatus: "inactive",
       subscriptionExpiresAt: null
     });
-    render(<HostingSignup />);
+    renderWithQueryClient(<HostingSignup />);
     fireEvent.click(screen.getByText("g.continue"));
     fireEvent.click(await screen.findByText("g.continue"));
     const payBtn = (await screen.findByRole("button", {
@@ -192,12 +217,262 @@ describe("HostingSignup one-click HBD pay", () => {
 
   it("falls back to manual (no one-click) for a redirecting login like HiveSigner", async () => {
     mocks.authLoginType = "hivesigner";
-    render(<HostingSignup />);
+    renderWithQueryClient(<HostingSignup />);
     fireEvent.click(screen.getByText("g.continue"));
     fireEvent.click(await screen.findByText("g.continue"));
     // Manual path is shown; the in-page one-click button is not offered (it would be abandoned by
     // the HiveSigner page redirect mid-transfer).
     await screen.findByText("hosting.ive-paid");
     expect(screen.queryByText("hosting.pay-hbd-oneclick")).toBeNull();
+  });
+});
+
+describe("HostingSignup customize step", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    localStorage.clear();
+    window.history.replaceState(null, "", "/");
+    mocks.authLoginType = "keychain";
+    hostingApi.paymentMethods.mockResolvedValue({
+      hbd: { enabled: true, monthly: "2.000", account: "ecency.hosting" },
+      x402: { enabled: false, monthly: "2.000" },
+      card: { enabled: false, monthlyUsdCents: 200 }
+    });
+    hostingApi.templates.mockResolvedValue({
+      templates: [
+        {
+          id: "medium",
+          name: "Medium",
+          tagline: "Clean",
+          isDefault: true,
+          colors: { background: "#fff", surface: "#fafafa", accent: "#111", text: "#111" },
+          headingStyle: "serif"
+        },
+        {
+          id: "magazine",
+          name: "Magazine",
+          tagline: "Editorial",
+          isDefault: false,
+          colors: { background: "#faf8f5", surface: "#f5f2ed", accent: "#8b4513", text: "#2c2825" },
+          headingStyle: "serif"
+        }
+      ]
+    });
+    hostingApi.createTenant.mockResolvedValue({
+      tenant: {
+        username: "alice",
+        subscriptionStatus: "inactive",
+        blogUrl: "https://alice.blogs.ecency.com"
+      }
+    });
+    hostingApi.paymentInstructions.mockResolvedValue(INSTRUCTIONS);
+  });
+
+  it("sends the chosen template and accent with tenant creation", async () => {
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+
+    // Pick the Magazine card once the catalog loads.
+    fireEvent.click(await screen.findByRole("radio", { name: /Magazine/ }));
+    // Pick an accent via the free field.
+    fireEvent.change(screen.getByLabelText("hosting.accent-label"), {
+      target: { value: "#ff6600" }
+    });
+    fireEvent.click(screen.getByText("g.continue"));
+
+    await waitFor(() => expect(hostingApi.createTenant).toHaveBeenCalled());
+    const config = hostingApi.createTenant.mock.calls[0][2];
+    expect(config.styleTemplate).toBe("magazine");
+    expect(config.accent).toBe("#ff6600");
+  });
+
+  it("skipping every choice produces a creation payload with no style overrides", async () => {
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    await screen.findByRole("radio", { name: /Medium/ });
+    fireEvent.click(screen.getByText("g.continue"));
+
+    await waitFor(() => expect(hostingApi.createTenant).toHaveBeenCalled());
+    const config = hostingApi.createTenant.mock.calls[0][2];
+    expect(config.styleTemplate).toBeUndefined();
+    expect(config.accent).toBeUndefined();
+    expect(config.fontPreset).toBeUndefined();
+  });
+
+  it("an invalid accent blocks Continue until fixed or cleared", async () => {
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    await screen.findByRole("radio", { name: /Medium/ });
+
+    fireEvent.change(screen.getByLabelText("hosting.accent-label"), {
+      target: { value: "not-a-color" }
+    });
+    expect(screen.getByText("hosting.accent-invalid")).toBeTruthy();
+    fireEvent.click(screen.getByText("g.continue"));
+    expect(hostingApi.createTenant).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("hosting.accent-label"), {
+      target: { value: "#0af" }
+    });
+    fireEvent.click(screen.getByText("g.continue"));
+    await waitFor(() => expect(hostingApi.createTenant).toHaveBeenCalled());
+    expect(hostingApi.createTenant.mock.calls[0][2].accent).toBe("#0af");
+  });
+
+  it("keeps working as a plain form when the catalog cannot load", async () => {
+    hostingApi.templates.mockRejectedValue(new Error("down"));
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+
+    await screen.findByText("hosting.template-load-failed");
+    fireEvent.click(screen.getByText("g.continue"));
+    await waitFor(() => expect(hostingApi.createTenant).toHaveBeenCalled());
+    expect(hostingApi.createTenant.mock.calls[0][2].styleTemplate).toBeUndefined();
+  });
+});
+
+describe("HostingSignup customize step: coverage the mutation review demanded", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    localStorage.clear();
+    window.history.replaceState(null, "", "/");
+    mocks.authLoginType = "keychain";
+    mocks.profiles = {};
+    // The global SDK mock resolves account queries to undefined; the prefill tests need a
+    // controllable profile per name.
+    vi.mocked(getAccountFullQueryOptions as any).mockImplementation((username: string) => ({
+      queryKey: ["spec-account", username],
+      queryFn: async () => mocks.profiles[username] ?? null
+    }));
+    hostingApi.paymentMethods.mockResolvedValue({
+      hbd: { enabled: true, monthly: "2.000", account: "ecency.hosting" },
+      x402: { enabled: false, monthly: "2.000" },
+      card: { enabled: false, monthlyUsdCents: 200 }
+    });
+    hostingApi.templates.mockResolvedValue({
+      templates: [
+        {
+          id: "medium",
+          name: "Medium",
+          tagline: "Clean",
+          isDefault: true,
+          colors: { background: "#fff", surface: "#fafafa", accent: "#111", text: "#111" },
+          headingStyle: "serif"
+        },
+        {
+          id: "magazine",
+          name: "Magazine",
+          tagline: "Editorial",
+          isDefault: false,
+          colors: { background: "#faf8f5", surface: "#f5f2ed", accent: "#8b4513", text: "#2c2825" },
+          headingStyle: "serif"
+        }
+      ]
+    });
+    hostingApi.createTenant.mockResolvedValue({
+      tenant: {
+        username: "alice",
+        subscriptionStatus: "inactive",
+        blogUrl: "https://alice.blogs.ecency.com"
+      }
+    });
+    hostingApi.paymentInstructions.mockResolvedValue(INSTRUCTIONS);
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "active",
+      subscriptionExpiresAt: "2026-08-16T00:00:00.000Z"
+    });
+    mutateAsync.mockResolvedValue({ id: "tx1" });
+  });
+
+  it("a chosen font preset reaches the creation payload", async () => {
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    await screen.findByRole("radio", { name: /Medium/ });
+
+    fireEvent.change(screen.getByLabelText("hosting.fonts-label"), {
+      target: { value: "technical" }
+    });
+    fireEvent.click(screen.getByText("g.continue"));
+
+    await waitFor(() => expect(hostingApi.createTenant).toHaveBeenCalled());
+    expect(hostingApi.createTenant.mock.calls[0][2].fontPreset).toBe("technical");
+  });
+
+  it("restores a saved draft for the name and clears it after success", async () => {
+    localStorage.setItem(
+      "ecency:hosting:customize:alice",
+      JSON.stringify({ styleTemplate: "magazine", accent: "#0af", fontPreset: null })
+    );
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    await screen.findByRole("radio", { name: /Magazine/ });
+
+    // The draft restored into the pickers and flows into the payload untouched.
+    fireEvent.click(screen.getByText("g.continue"));
+    await waitFor(() => expect(hostingApi.createTenant).toHaveBeenCalled());
+    const config = hostingApi.createTenant.mock.calls[0][2];
+    expect(config.styleTemplate).toBe("magazine");
+    expect(config.accent).toBe("#0af");
+
+    // Pay via one-click HBD and reach success: the draft has served its purpose.
+    const payBtn = (await screen.findByRole("button", {
+      name: "hosting.pay-hbd-oneclick"
+    })) as HTMLButtonElement;
+    await waitFor(() => expect(payBtn.disabled).toBe(false));
+    fireEvent.click(payBtn);
+    await screen.findByText("hosting.success-title");
+    expect(localStorage.getItem("ecency:hosting:customize:alice")).toBeNull();
+  });
+
+  it("prefills empty identity from the profile and takes it back out on a name change", async () => {
+    mocks.profiles.alice = { profile: { name: "Alice W", about: "Alice writes here" } };
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+
+    // Prefilled from alice's profile into the EMPTY fields.
+    await waitFor(() =>
+      expect(
+        (screen.getByPlaceholderText("hosting.blog-title-placeholder") as HTMLInputElement).value
+      ).toBe("Alice W")
+    );
+
+    // Change the name: the planted identity must not ride into bob's tenant.
+    fireEvent.click(screen.getByText("g.back"));
+    fireEvent.change(screen.getByPlaceholderText("yourname"), { target: { value: "bob" } });
+    fireEvent.click(screen.getByText("g.continue"));
+    await waitFor(() =>
+      expect(
+        (screen.getByPlaceholderText("hosting.blog-title-placeholder") as HTMLInputElement).value
+      ).not.toBe("Alice W")
+    );
+    fireEvent.click(screen.getByText("g.continue"));
+    await waitFor(() => expect(hostingApi.createTenant).toHaveBeenCalled());
+    expect(hostingApi.createTenant.mock.calls[0][2].title).not.toBe("Alice W");
+  });
+
+  it("re-customizing after an abandoned reservation re-sends creation with the new look", async () => {
+    // First visit: reserve with the default look, then abandon before paying (payment has
+    // no back button, so the real re-entry path is a fresh page load with the draft).
+    const first = renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    await screen.findByRole("radio", { name: /Medium/ });
+    fireEvent.click(screen.getByText("g.continue"));
+    await waitFor(() => expect(hostingApi.createTenant).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    // Second visit: the draft restores the step; pick a different look and continue.
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByRole("radio", { name: /Magazine/ }));
+    fireEvent.click(screen.getByText("g.continue"));
+
+    // The reservation is re-sent with the NEW config; the server refreshes the unpaid
+    // reservation so the look on screen is the look that activates.
+    await waitFor(() => expect(hostingApi.createTenant).toHaveBeenCalledTimes(2));
+    expect(hostingApi.createTenant.mock.calls[1][2].styleTemplate).toBe("magazine");
   });
 });

@@ -16,10 +16,16 @@ import {
   hostingSkuForMonths,
   hostingProSkuForMonths,
   isValidCommunityId,
+  ACCENT_HEX_PATTERN,
   HOSTING_CUSTOM_DOMAIN_MONTHLY_USD,
-  type HostingPaymentMethods
+  type HostingPaymentMethods,
+  type HostingTemplate
 } from "./hosting-api";
 import { CustomDomainManager } from "./custom-domain-manager";
+import { TemplatePicker } from "./template-picker";
+import { AccentPicker } from "./accent-picker";
+import { getAccountFullQueryOptions } from "@ecency/sdk";
+import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 
 // Lazy-load the card checkout so /hosting doesn't pull @stripe/stripe-js (which injects the
@@ -36,11 +42,36 @@ const HostingCardCheckout = dynamic(
   }
 );
 
-type Step = "username" | "configure" | "payment" | "success";
+type Step = "username" | "customize" | "payment" | "success";
 type Method = "hbd" | "card";
 type InstanceType = "blog" | "community";
 
 const TERMS = [1, 3, 6, 12];
+
+/** Font pairing keys the hosting API accepts; labels live in i18n. */
+const FONT_PRESETS = ["classic", "editorial", "modern", "technical", "system"] as const;
+
+/** localStorage key for an in-progress customization, so an abandoned tab resumes. */
+const customizeDraftKey = (name: string) => `ecency:hosting:customize:${name}`;
+
+interface CustomizeDraft {
+  styleTemplate?: string | null;
+  accent?: string | null;
+  fontPreset?: string | null;
+  title?: string;
+  description?: string;
+}
+
+function readCustomizeDraft(name: string): CustomizeDraft | null {
+  try {
+    const raw = localStorage.getItem(customizeDraftKey(name));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as CustomizeDraft) : null;
+  } catch {
+    return null;
+  }
+}
 
 // sessionStorage key for a one-click HBD payment that was broadcast but not yet confirmed. Lets a
 // redirecting signer (or a page reload) resume polling for activation on return. Session-scoped so
@@ -70,6 +101,14 @@ export function HostingSignup() {
   const [communityId, setCommunityId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  // The look, chosen on the customize step. null everywhere means the default
+  // look: skipping the step entirely must produce exactly today's defaults.
+  const [styleTemplate, setStyleTemplate] = useState<string | null>(null);
+  const [accent, setAccent] = useState<string | null>(null);
+  const [accentInput, setAccentInput] = useState("");
+  const [fontPreset, setFontPreset] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<HostingTemplate[] | null>(null);
+  const [templatesFailed, setTemplatesFailed] = useState(false);
   const [months, setMonths] = useState(1);
   // Custom domain add-on: switches to the $3/mo "prohosting" plan so the tenant activates on the
   // internal pro plan and can attach a custom domain after checkout.
@@ -82,10 +121,12 @@ export function HostingSignup() {
   const [busy, setBusy] = useState(false);
   // Card confirmed -> the term/method are locked so a remount can't cancel the activation poll.
   const [paying, setPaying] = useState(false);
-  // The username we actually created a tenant for; if the user goes back and changes it,
-  // we must create the new one before payment (a stale guard would let them pay for a blog
-  // that was never created and never activates).
-  const createdForRef = useRef("");
+  // What we last reserved: the name AND the exact config sent. Going back and changing
+  // anything (name, look, identity) must re-send createTenant before payment: the server
+  // refreshes a same-owner unpaid reservation with the latest submission, so the look on
+  // screen is the look that activates. A stale guard would either let the user pay for a
+  // blog that was never created, or silently activate an older look.
+  const createdForRef = useRef<{ name: string; payload: string } | null>(null);
   // Expiry of an ALREADY-ACTIVE tenant captured when entering the payment step (renewal).
   // "I've sent the payment" must then require the expiry to move FORWARD, otherwise a
   // renewing owner sees "your blog is live" without any payment having landed.
@@ -137,7 +178,7 @@ export function HostingSignup() {
     if (!canManageDomain && customDomain) setCustomDomain(false);
   }, [canManageDomain, customDomain]);
 
-  const goConfigure = () => {
+  const goCustomize = () => {
     setError("");
     if (isCommunity) {
       // The owner (creator) must be logged in: the owner comes from the active account.
@@ -156,8 +197,95 @@ export function HostingSignup() {
         return;
       }
     }
-    setStep("configure");
+    // The previous name's auto-prefilled identity must not ride into a different name's
+    // tenant: take back exactly what the prefill planted, if the user has not edited it.
+    // Computed locally so the draft restore below sees the cleared values, not the stale
+    // state of this closure.
+    let nextTitle = title;
+    let nextDescription = description;
+    const planted = plantedRef.current;
+    if (planted && planted.name !== tenantUsername) {
+      if (planted.title && nextTitle === planted.title) nextTitle = "";
+      if (planted.description && nextDescription === planted.description) nextDescription = "";
+      plantedRef.current = null;
+    }
+    // An abandoned tab resumes its customization for the same name.
+    const draft = readCustomizeDraft(tenantUsername);
+    if (draft) {
+      if (draft.styleTemplate !== undefined) setStyleTemplate(draft.styleTemplate);
+      if (draft.accent !== undefined) {
+        setAccent(draft.accent);
+        setAccentInput(draft.accent ?? "");
+      }
+      if (draft.fontPreset !== undefined) setFontPreset(draft.fontPreset);
+      if (draft.title && !nextTitle) nextTitle = draft.title;
+      if (draft.description && !nextDescription) nextDescription = draft.description;
+    }
+    setTitle(nextTitle);
+    setDescription(nextDescription);
+    setStep("customize");
   };
+
+  // Template catalog, fetched once when the customize step is first shown. A failed
+  // fetch must not block signup: the picker explains and the instance starts on the
+  // default look. Optional call: an older service without the endpoint behaves like
+  // a failed fetch.
+  useEffect(() => {
+    if (step !== "customize" || templates || templatesFailed) return;
+    Promise.resolve()
+      .then(() => hostingApi.templates?.())
+      .then((r) => {
+        if (r && Array.isArray(r.templates)) setTemplates(r.templates);
+        else setTemplatesFailed(true);
+      })
+      .catch(() => setTemplatesFailed(true));
+  }, [step, templates, templatesFailed]);
+
+  // Prefill identity from the account's profile so the step starts with the owner's
+  // own words instead of empty boxes. Only for a personal blog (a community's title
+  // is resolved server-side from the community record), only into EMPTY fields, and
+  // only once per name so typing is never fought.
+  const { data: prefillAccount } = useQuery({
+    ...getAccountFullQueryOptions(tenantUsername),
+    enabled: step === "customize" && !isCommunity && tenantUsername.length >= 3
+  });
+  const prefilledForRef = useRef("");
+  // What the prefill planted and for whom, so a NAME CHANGE can take it back out again:
+  // without this, bob's signup would silently carry alice's profile title and bio because
+  // the empty-field guard sees them as already filled.
+  const plantedRef = useRef<{ name: string; title: string; description: string } | null>(null);
+  useEffect(() => {
+    if (step !== "customize" || isCommunity || !prefillAccount) return;
+    if (prefilledForRef.current === tenantUsername) return;
+    prefilledForRef.current = tenantUsername;
+    const profile = (prefillAccount as any)?.profile;
+    const plantedTitle = profile?.name && !title ? String(profile.name).slice(0, 100) : "";
+    const plantedDescription =
+      profile?.about && !description ? String(profile.about).slice(0, 500) : "";
+    if (plantedTitle) setTitle(plantedTitle);
+    if (plantedDescription) setDescription(plantedDescription);
+    if (plantedTitle || plantedDescription) {
+      plantedRef.current = {
+        name: tenantUsername,
+        title: plantedTitle,
+        description: plantedDescription
+      };
+    }
+  }, [step, isCommunity, prefillAccount, tenantUsername, title, description]);
+
+  // Persist the in-progress customization per name.
+  useEffect(() => {
+    if (step !== "customize" || !tenantUsername) return;
+    try {
+      localStorage.setItem(
+        customizeDraftKey(tenantUsername),
+        JSON.stringify({ styleTemplate, accent, fontPreset, title, description })
+      );
+    } catch {}
+  }, [step, tenantUsername, styleTemplate, accent, fontPreset, title, description]);
+
+  const accentPending =
+    accentInput.trim().length > 0 && !ACCENT_HEX_PATTERN.test(accentInput.trim());
 
   // Create the (inactive) tenant for the CURRENT username, then move to payment. Payment
   // activates it. Re-creates when the username changed since the last creation.
@@ -169,14 +297,19 @@ export function HostingSignup() {
     // blog account itself (which may pay by HBD while logged out).
     const owner = isCommunity ? (activeUser?.username ?? "") : uname;
     try {
-      if (createdForRef.current !== uname) {
-        const res = await hostingApi.createTenant(uname, owner, {
-          theme: "system",
-          title: title.trim() || undefined,
-          description: description.trim() || undefined,
-          ...(isCommunity ? { type: "community", communityId: uname } : {})
-        });
-        createdForRef.current = uname;
+      const config = {
+        theme: "system" as const,
+        title: title.trim() || undefined,
+        description: description.trim() || undefined,
+        styleTemplate: styleTemplate ?? undefined,
+        accent: accent ?? undefined,
+        fontPreset: fontPreset ?? undefined,
+        ...(isCommunity ? { type: "community" as const, communityId: uname } : {})
+      };
+      const payload = JSON.stringify(config);
+      if (createdForRef.current?.name !== uname || createdForRef.current?.payload !== payload) {
+        const res = await hostingApi.createTenant(uname, owner, config);
+        createdForRef.current = { name: uname, payload };
         setBlogUrl(res.tenant.blogUrl);
         renewBaselineExpiryRef.current = null; // freshly created, inactive
       }
@@ -211,7 +344,10 @@ export function HostingSignup() {
         setError(i18next.t("hosting.already-registered"));
         return;
       }
-      createdForRef.current = uname;
+      // A 409 now only means an active/expired tenant (renewal) or someone else's
+      // reservation; unpaid same-owner reservations are refreshed above. Record the name
+      // with no payload so a later look change still attempts a fresh create.
+      createdForRef.current = { name: uname, payload: "" };
       setBlogUrl(`https://${uname}.${baseDomain}`);
       // Renewal of an already-active tenant: remember the current expiry so activation is only
       // confirmed once it advances. null (an inactive tenant resuming its first payment) means
@@ -222,7 +358,15 @@ export function HostingSignup() {
     } finally {
       setBusy(false);
     }
-  }, [tenantUsername, isCommunity, title, description, activeUser]);
+  }, [tenantUsername, isCommunity, title, description, styleTemplate, accent, fontPreset, activeUser]);
+
+  // The reservation is made and paid for; the in-progress draft has served its purpose.
+  useEffect(() => {
+    if (step !== "success" || !tenantUsername) return;
+    try {
+      localStorage.removeItem(customizeDraftKey(tenantUsername));
+    } catch {}
+  }, [step, tenantUsername]);
 
   // Deep-link from the "Your hosted sites" manage panel: ?resume=<username>[&type=community] jumps
   // straight to the payment step for an existing reservation, so an "Awaiting payment" tenant has a
@@ -576,17 +720,55 @@ export function HostingSignup() {
               </p>
             </>
           )}
-          <Button onClick={goConfigure} full={true}>
+          <Button onClick={goCustomize} full={true}>
             {i18next.t("g.continue")}
           </Button>
         </div>
       )}
 
-      {step === "configure" && (
+      {step === "customize" && (
         <div className="flex flex-col gap-3">
-          <p className="text-sm opacity-75">
-            {i18next.t(isCommunity ? "hosting.configure-hint-community" : "hosting.configure-hint-blog")}
-          </p>
+          <p className="text-sm opacity-75">{i18next.t("hosting.customize-hint")}</p>
+
+          <label className="text-sm font-semibold">{i18next.t("hosting.template-label")}</label>
+          <TemplatePicker
+            templates={templates}
+            failed={templatesFailed}
+            value={styleTemplate}
+            onChange={setStyleTemplate}
+          />
+
+          <label className="text-sm font-semibold">{i18next.t("hosting.accent-label")}</label>
+          <AccentPicker
+            value={accent}
+            input={accentInput}
+            onInput={(raw) => {
+              setAccentInput(raw);
+              const trimmed = raw.trim();
+              if (!trimmed) setAccent(null);
+              else if (ACCENT_HEX_PATTERN.test(trimmed)) setAccent(trimmed);
+            }}
+            onPick={(hex) => {
+              setAccent(hex);
+              setAccentInput(hex ?? "");
+            }}
+          />
+
+          <label className="text-sm font-semibold">{i18next.t("hosting.fonts-label")}</label>
+          <select
+            value={fontPreset ?? ""}
+            onChange={(e) => setFontPreset(e.target.value || null)}
+            aria-label={i18next.t("hosting.fonts-label")}
+            className="px-3 py-2 rounded-lg border border-[--border-color] bg-transparent text-sm"
+          >
+            <option value="">{i18next.t("hosting.font-default")}</option>
+            {FONT_PRESETS.map((key) => (
+              <option key={key} value={key}>
+                {i18next.t(`hosting.font-${key}`)}
+              </option>
+            ))}
+          </select>
+
           <label className="text-sm font-semibold">
             {i18next.t(isCommunity ? "hosting.community-title-label" : "hosting.blog-title-label")}
           </label>
@@ -607,11 +789,14 @@ export function HostingSignup() {
               isCommunity ? "hosting.community-desc-placeholder" : "hosting.blog-desc-placeholder"
             )}
           />
+
+          <p className="text-sm opacity-60">{i18next.t("hosting.changeable-later")}</p>
+
           <div className="flex gap-2">
             <Button appearance="secondary" onClick={() => setStep("username")}>
               {i18next.t("g.back")}
             </Button>
-            <Button onClick={goPayment} disabled={busy} isLoading={busy} full={true}>
+            <Button onClick={goPayment} disabled={busy || accentPending} isLoading={busy} full={true}>
               {i18next.t("g.continue")}
             </Button>
           </div>
