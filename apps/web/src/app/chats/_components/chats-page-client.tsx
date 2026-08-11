@@ -3,6 +3,8 @@
 import { useMemo } from "react";
 import { useHydrated } from "@/api/queries";
 import { useMattermostBootstrap, useMattermostChannels } from "@/features/chat/mattermost-api";
+import { getChatBanInfo } from "@/features/chat/chat-ban-notice";
+import { ChatBanScreen } from "@/features/chat/components/chat-ban-screen";
 import { MattermostChannelView } from "@/features/chat/mattermost-channel-view";
 import { ChatErrorBoundary } from "@/features/chat/chat-error-boundary";
 import { LoginRequired } from "@/features/shared";
@@ -45,6 +47,14 @@ export function ChatsPageClient() {
 
   // Handle all authentication errors
   if (!bootstrap && !isLoading && error) {
+    // Checked by payload and BEFORE the message-text heuristics below. A ban is not an auth
+    // failure, and matching on wording would be fragile: the operator string embeds the account
+    // name and an ISO date, neither of which is a stable thing to pattern-match on.
+    const bootstrapBan = getChatBanInfo(error);
+    if (bootstrapBan) {
+      return <ChatBanScreen info={bootstrapBan} onExpire={refetch} />;
+    }
+
     const errorMessage = error?.message?.toLowerCase() || "";
     const isAuthError =
       errorMessage.includes("unauthorized") ||

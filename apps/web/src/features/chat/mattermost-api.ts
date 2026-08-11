@@ -202,12 +202,9 @@ export function useMattermostBootstrap(community?: string) {
       }
 
       if (!res.ok) {
-        const data = await safeJson<{ error?: string; bannedUntil?: number }>(res);
-        // bannedUntil rides along so the ban can expire without a reload.
-        throw Object.assign(new Error(data?.error || "Unable to initialize chat"), {
-          status: res.status,
-          bannedUntil: data?.bannedUntil
-        });
+        // bannedUntil + reason ride along so the ban can expire without a reload and the
+        // client can explain it instead of quoting the operator string.
+        await throwWithBanContext(res, "Unable to initialize chat");
       }
 
       const bootstrap = (await safeJson(res)) as {
@@ -369,6 +366,25 @@ export function useMattermostJoinChannel() {
         queryClient.invalidateQueries({ queryKey: ["mattermost-posts-infinite", channelId], exact: false })
       ]);
     }
+  });
+}
+
+/**
+ * Rethrows a failed response while PRESERVING the ban payload.
+ *
+ * A plain `new Error(data.error)` drops `bannedUntil`/`reason`, and the ban notice then has
+ * nothing to key on: the UI silently falls back to displaying the operator-facing string it
+ * exists to replace. The failure is invisible in tests that only exercise the formatter, so keep
+ * every ban-capable request going through this.
+ */
+async function throwWithBanContext(res: Response, fallback: string): Promise<never> {
+  const data = await safeJson<{ error?: string; bannedUntil?: number; reason?: string }>(res).catch(
+    () => null
+  );
+  throw Object.assign(new Error(data?.error || fallback), {
+    status: res.status,
+    bannedUntil: data?.bannedUntil,
+    reason: data?.reason
   });
 }
 
@@ -719,8 +735,7 @@ export function useMattermostSendMessage(channelId: string | undefined, options?
       });
 
       if (!res.ok) {
-        const data = await safeJson<{ error?: string }>(res).catch(() => null);
-        throw new Error(data?.error || `Unable to send message (${res.status})`);
+        await throwWithBanContext(res, `Unable to send message (${res.status})`);
       }
 
       return (await safeJson(res)) as { post: MattermostPost };

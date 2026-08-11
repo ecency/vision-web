@@ -1,4 +1,5 @@
 import React, { type ChangeEvent, useState } from "react";
+import { ChatBanInfo, formatChatBanNotice } from "../chat-ban-notice";
 import { Button } from "@ui/button";
 import { ImageUploadButton, UserAvatar } from "@/features/shared";
 import { emojiIconSvg } from "@ui/icons";
@@ -28,6 +29,10 @@ interface MessageInputProps {
   setMessage: (message: string | ((prev: string) => string)) => void;
   messageError: string | null;
   setMessageError: (error: string | null) => void;
+  /** Present while a chat ban is live; renders a standing notice instead of a transient error. */
+  banInfo?: ChatBanInfo | null;
+  /** Ticking clock from the owner, so the countdown re-renders instead of freezing. */
+  banNow?: number;
 
   // Editing/Reply state
   editingPost: MattermostPost | null;
@@ -105,6 +110,8 @@ export function MessageInput({
   message,
   setMessage,
   messageError,
+  banInfo,
+  banNow,
   setMessageError,
   editingPost,
   setEditingPost,
@@ -234,6 +241,14 @@ export function MessageInput({
               <div className="line-clamp-2 text-[--text-muted]">
                 {renderMessageContent(getDecodedDisplayMessage(replyingTo))}
               </div>
+            </div>
+          )}
+          {banInfo && (
+            <div
+              role="status"
+              className="mb-2 rounded border border-[--border-color] bg-[--surface-color] p-3 text-sm text-[--text-muted]"
+            >
+              {formatChatBanNotice(banInfo, banNow)}
             </div>
           )}
           {messageError && <div className="text-sm text-red-500">{messageError}</div>}

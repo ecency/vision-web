@@ -9,6 +9,7 @@ import {
   MattermostChannel,
   getMattermostTokenFromCookies,
   mmUserFetch,
+  getUserChatBanReason,
   isUserChatBanned,
   CHAT_BAN_PROP
 } from "@/server/mattermost";
@@ -345,10 +346,14 @@ export async function POST(
     if (bannedUntil) {
       return NextResponse.json(
         {
+          // `error` stays the operator-facing string. The client builds what the user
+          // actually reads from bannedUntil + reason, so it can localise it and show a
+          // countdown instead of an ISO timestamp.
           error: `@${currentUser.username} is banned from chat until ${new Date(
             Number(bannedUntil)
           ).toISOString()}`,
           bannedUntil,
+          reason: getUserChatBanReason(currentUser),
           prop: CHAT_BAN_PROP
         },
         { status: 403 }

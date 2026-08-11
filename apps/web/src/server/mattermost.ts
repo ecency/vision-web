@@ -9,6 +9,15 @@ const MATTERMOST_ADMIN_TOKEN = process.env.MATTERMOST_ADMIN_TOKEN;
 const MATTERMOST_TEAM_ID = process.env.MATTERMOST_TEAM_ID;
 const MATTERMOST_TOKEN_COOKIE = "mm_pat";
 export const CHAT_BAN_PROP = "ecency_chat_banned_until";
+// Why the ban was applied, written alongside the expiry by the moderation service.
+// Lets the clients explain what happened instead of quoting a timestamp. Absent on
+// older bans, so every consumer must tolerate undefined.
+//
+// Known values are "mass-dm", "spray" and "manual", but this stays an open string end to end
+// on purpose: a newer moderation service can add a reason this build has never seen, and that
+// must degrade to the generic message rather than fail a union check.
+export const CHAT_BAN_REASON_PROP = "ecency_chat_ban_reason";
+
 export const CHAT_DM_PRIVACY_PROP = "ecency_dm_privacy";
 export const CHAT_LEFT_CHANNELS_PROP = "ecency_left_channels";
 const CHAT_PAT_PROP = "ecency_pat";
@@ -61,12 +70,14 @@ class MattermostError extends Error {
 export class ChatBannedError extends Error {
   readonly username: string;
   readonly bannedUntil: number;
+  readonly reason?: string;
 
-  constructor(username: string, bannedUntil: number) {
+  constructor(username: string, bannedUntil: number, reason?: string) {
     super(`@${username} is banned from chat until ${new Date(bannedUntil).toISOString()}`);
     this.name = "ChatBannedError";
     this.username = username;
     this.bannedUntil = bannedUntil;
+    this.reason = reason;
   }
 }
 
@@ -167,7 +178,7 @@ export async function reactivateMattermostUser(userId: string, signal?: AbortSig
 function assertReactivationAllowed(user: MattermostUserWithProps) {
   const bannedUntil = isUserChatBanned(user);
   if (bannedUntil) {
-    throw new ChatBannedError(user.username, bannedUntil);
+    throw new ChatBannedError(user.username, bannedUntil, getUserChatBanReason(user));
   }
 }
 
@@ -745,6 +756,12 @@ export async function deleteMattermostPostAsAdmin(postId: string) {
     method: "DELETE",
     headers: getAdminHeaders()
   });
+}
+
+export function getUserChatBanReason(
+  user: Pick<MattermostUserWithProps, "props">
+): string | undefined {
+  return user.props?.[CHAT_BAN_REASON_PROP] || undefined;
 }
 
 export function isUserChatBanned(user: Pick<MattermostUserWithProps, "props">) {

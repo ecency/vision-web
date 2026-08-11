@@ -23,6 +23,7 @@ import {
   useMattermostJoinChannel
 } from "./mattermost-api";
 import { usePendingPosts } from "./hooks/use-pending-posts";
+import { BAN_NOTICE_TICK_MS, ChatBanInfo, getChatBanInfo } from "./chat-ban-notice";
 import { useDmWarning } from "./hooks/use-dm-warning";
 import { useDeepLinking } from "./hooks/use-deep-linking";
 import { useChannelWebSocket } from "./hooks/use-channel-websocket";
@@ -99,6 +100,12 @@ export function MattermostChannelView({ channelId }: Props) {
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<MattermostPost | null>(null);
   const [messageError, setMessageError] = useState<string | null>(null);
+  // Held separately from messageError so the notice PERSISTS while the ban is live.
+  // messageError is cleared on every new send attempt; a ban is a standing state, not a
+  // one-off failure, so clearing it there would hide the explanation after one keystroke.
+  const [banInfo, setBanInfo] = useState<ChatBanInfo | null>(null);
+  // Drives the countdown re-render; see the ticking effect below.
+  const [banNow, setBanNow] = useState(() => Date.now());
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -119,6 +126,31 @@ export function MattermostChannelView({ channelId }: Props) {
   const [unreadCountBelowScroll, setUnreadCountBelowScroll] = useState(0);
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const queryClient = useQueryClient();
+
+  // Tick while a ban is live: refreshes the countdown and clears the notice once it lapses, so a
+  // 48h timeout doesn't look permanent to someone who left the tab open.
+  //
+  // A single setTimeout(remaining) is WRONG here and fails in the worst direction: setTimeout
+  // takes a 32-bit signed delay, so anything past ~24.8 days overflows and fires almost
+  // immediately. A 3-year ban would clear its own notice within a millisecond — the notice would
+  // vanish for exactly the users who are most banned. A bounded interval avoids the cliff
+  // entirely and keeps the relative time fresh instead of freezing at first render.
+  useEffect(() => {
+    if (!banInfo) return;
+    if (Date.now() >= banInfo.bannedUntil) {
+      setBanInfo(null);
+      return;
+    }
+    const id = setInterval(() => {
+      const t = Date.now();
+      if (t >= banInfo.bannedUntil) {
+        setBanInfo(null);
+      } else {
+        setBanNow(t);
+      }
+    }, BAN_NOTICE_TICK_MS);
+    return () => clearInterval(id);
+  }, [banInfo]);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
   const gifButtonRef = useRef<HTMLButtonElement | null>(null);
   const gifPickerRef = useRef<HTMLDivElement | null>(null);
@@ -895,7 +927,16 @@ export function MattermostChannelView({ channelId }: Props) {
           if ((err as Error)?.name === "AbortError") {
             return;
           }
-          setMessageError((err as Error)?.message || "Unable to send message");
+          const ban = getChatBanInfo(err);
+          if (ban) {
+            // The server's `error` names the account and quotes an ISO timestamp: operator copy,
+            // not something to show the banned user. The notice is rendered from ban info instead.
+            setBanInfo(ban);
+            setBanNow(Date.now());
+            setMessageError(null);
+          } else {
+            setMessageError((err as Error)?.message || "Unable to send message");
+          }
           lastSentPendingIdRef.current = null;
         },
         onSuccess: (_data, variables) => {
@@ -1163,6 +1204,8 @@ export function MattermostChannelView({ channelId }: Props) {
         setMessage={setMessage}
         messageError={messageError}
         setMessageError={setMessageError}
+        banInfo={banInfo}
+        banNow={banNow}
         editingPost={editingPost}
         setEditingPost={setEditingPost}
         replyingTo={replyingTo}

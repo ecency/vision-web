@@ -2510,7 +2510,16 @@
     "unpin-message": "Unpin message",
     "dm-not-allowed": "@{{username}} doesn't accept messages from you",
     "dm-followers-only": "Only accepts DMs from people they follow",
-    "dm-disabled": "Has disabled direct messages"
+    "dm-disabled": "Has disabled direct messages",
+    "ban-reason-spray": "You're paused from posting because the same message went to several channels at once.",
+    "ban-reason-mass-dm": "You're paused from posting because a message was sent to many people at once.",
+    "ban-reason-generic": "You're paused from posting in chat.",
+    "ban-can-still-read": "You can still read chat.",
+    "ban-unlocks": "Posting unlocks {{when}}.",
+    "ban-remaining-soon": "in under a minute",
+    "ban-remaining-minutes": "in about {{count}} minutes",
+    "ban-remaining-hours": "in about {{count}} hours",
+    "ban-remaining-days": "in about {{count}} days"
   },
   "add-image": {
     "title": "Add Image",

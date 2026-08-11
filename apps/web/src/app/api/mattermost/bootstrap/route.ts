@@ -180,7 +180,12 @@ async function handleBootstrap(req: Request, signal: AbortSignal): Promise<NextR
               bannedUntil: e.bannedUntil
             });
             return NextResponse.json(
-                { error: e.message, bannedUntil: e.bannedUntil, prop: CHAT_BAN_PROP },
+                {
+                  error: e.message,
+                  bannedUntil: e.bannedUntil,
+                  reason: e.reason,
+                  prop: CHAT_BAN_PROP
+                },
                 { status: 403 }
             );
         }
