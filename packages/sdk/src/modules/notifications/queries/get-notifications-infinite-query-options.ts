@@ -43,7 +43,8 @@ export function getNotificationsInfiniteQueryOptions(
       }
     },
     enabled: !!activeUsername && !!code,
-    initialData: { pages: [], pageParams: [] },
+    // No initialData here: an empty seed counts as fresh for the whole staleTime,
+    // so consumers that only read `data` would render an empty list with no fetch.
     initialPageParam: "",
     getNextPageParam: (lastPage) => lastPage?.[lastPage.length - 1]?.id ?? "",
     refetchOnMount: true,

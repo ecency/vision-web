@@ -6631,8 +6631,8 @@ interface Spotlight {
     };
 }
 
-declare function getNotificationsInfiniteQueryOptions(activeUsername: string | undefined, code: string | undefined, filter?: NotificationFilter | undefined): _tanstack_react_query.UseInfiniteQueryOptions<ApiNotification[], Error, _tanstack_react_query.InfiniteData<ApiNotification[], unknown>, (string | undefined)[], string> & {
-    initialData: _tanstack_react_query.InfiniteData<ApiNotification[], string> | (() => _tanstack_react_query.InfiniteData<ApiNotification[], string>) | undefined;
+declare function getNotificationsInfiniteQueryOptions(activeUsername: string | undefined, code: string | undefined, filter?: NotificationFilter | undefined): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseInfiniteQueryOptions<ApiNotification[], Error, _tanstack_react_query.InfiniteData<ApiNotification[], unknown>, (string | undefined)[], string>, "queryFn"> & {
+    queryFn?: _tanstack_react_query.QueryFunction<ApiNotification[], (string | undefined)[], string> | undefined;
 } & {
     queryKey: (string | undefined)[] & {
         [dataTagSymbol]: _tanstack_react_query.InfiniteData<ApiNotification[], unknown>;

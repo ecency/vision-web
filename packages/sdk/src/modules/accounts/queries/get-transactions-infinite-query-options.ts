@@ -176,43 +176,68 @@ export function getTransactionsInfiniteQueryOptions(
         return { entries: [], currentPage: 0 };
       }
 
-      const params: Record<string, string | number> = {
-        "account-name": username,
-        "operation-types": operationTypes.join(","),
-        "page-size": limit,
+      const fetchPage = async (page: TxCursor) => {
+        const params: Record<string, string | number> = {
+          "account-name": username,
+          "operation-types": operationTypes.join(","),
+          "page-size": limit,
+        };
+
+        // First call: omit page to get newest data
+        // Subsequent calls: pass specific page number (decrementing)
+        if (page !== null) {
+          params.page = page;
+        }
+
+        return (await callREST(
+          "hafah",
+          "/accounts/{account-name}/operations",
+          params,
+          undefined,
+          undefined,
+          signal
+        )) as HafahResponse;
       };
 
-      // First call: omit page to get newest data
-      // Subsequent calls: pass specific page number (decrementing)
-      if (pageParam !== null) {
-        params.page = pageParam;
+      const toEntries = (response: HafahResponse) =>
+        response.operations_result.map((entry) => {
+          const type = normalizeOpType(entry.op.type);
+          const value = normalizeOpValue(entry.op.value);
+          return {
+            ...value,
+            num: deriveNum(entry),
+            type,
+            timestamp: entry.timestamp,
+            trx_id: entry.trx_id,
+          } as Transaction;
+        });
+
+      const response = await fetchPage(pageParam);
+      let entries = toEntries(response);
+      let currentPage = pageParam ?? response.total_pages;
+
+      // hafah pages oldest-first, so the newest page (what an omitted `page`
+      // returns) is the remainder bucket: total_operations mod page-size rows,
+      // anywhere from 1 to page-size. Requesting page=total_pages explicitly
+      // returns the same short bucket, so the only way to a full-size first
+      // screen is chaining the next older page in.
+      if (pageParam === null && entries.length < limit && response.total_pages > 1) {
+        try {
+          const chained = await fetchPage(response.total_pages - 1);
+          entries = [...entries, ...toEntries(chained)];
+          currentPage = response.total_pages - 1;
+        } catch (e) {
+          // Caller cancellation is not a node failure: rethrow so the query
+          // settles as cancelled instead of resolving with a partial page.
+          if (signal?.aborted) {
+            throw e;
+          }
+          // Keep the short remainder page; the cursor stays at total_pages so
+          // the page that failed here is fetchNextPage's next target, not lost.
+        }
       }
 
-      const response = (await callREST(
-        "hafah",
-        "/accounts/{account-name}/operations",
-        params,
-        undefined,
-        undefined,
-        signal
-      )) as HafahResponse;
-
-      const entries = response.operations_result.map((entry) => {
-        const type = normalizeOpType(entry.op.type);
-        const value = normalizeOpValue(entry.op.value);
-        return {
-          ...value,
-          num: deriveNum(entry),
-          type,
-          timestamp: entry.timestamp,
-          trx_id: entry.trx_id,
-        } as Transaction;
-      });
-
-      return {
-        entries,
-        currentPage: pageParam ?? response.total_pages,
-      };
+      return { entries, currentPage };
     },
 
     getNextPageParam: (lastPage) => {
