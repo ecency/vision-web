@@ -13,6 +13,25 @@ import type { ConfigValue } from './types';
 import type { TranslationKey } from '@/core/i18n-strings';
 import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
 import { isRefusedCreatePostUrl } from '@/features/auth/utils/create-post-target';
+import {
+  STYLE_TEMPLATES,
+  type StyleTemplate,
+} from '../../../hosting/api/src/style-templates';
+
+/**
+ * One label key per roster entry, `satisfies` so adding a template to the
+ * roster fails typecheck here until its label exists. This is the editor's
+ * half of the single-source contract; the CSS half is guarded by
+ * src/styles/style-template-roster.test.ts.
+ */
+const STYLE_TEMPLATE_LABEL_KEYS = {
+  medium: 'panel_configuration_general_style_template_medium_option',
+  minimal: 'panel_configuration_general_style_template_minimal_option',
+  magazine: 'panel_configuration_general_style_template_magazine_option',
+  developer: 'panel_configuration_general_style_template_developer_option',
+  'modern-gradient':
+    'panel_configuration_general_style_template_modern_gradient_option',
+} satisfies Record<StyleTemplate, TranslationKey>;
 
 export type ConfigFieldType =
   | 'string'
@@ -469,13 +488,10 @@ export function buildConfigFields(
             label: t('panel_configuration_general_style_template_label'),
             type: 'select',
             description: t('panel_configuration_general_style_template_description'),
-            options: [
-              { value: 'medium', label: t('panel_configuration_general_style_template_medium_option') },
-              { value: 'minimal', label: t('panel_configuration_general_style_template_minimal_option') },
-              { value: 'magazine', label: t('panel_configuration_general_style_template_magazine_option') },
-              { value: 'developer', label: t('panel_configuration_general_style_template_developer_option') },
-              { value: 'modern-gradient', label: t('panel_configuration_general_style_template_modern_gradient_option') },
-            ],
+            options: STYLE_TEMPLATES.map((id) => ({
+              value: id,
+              label: t(STYLE_TEMPLATE_LABEL_KEYS[id]),
+            })),
           },
           language: {
             label: t('panel_configuration_general_language_label'),

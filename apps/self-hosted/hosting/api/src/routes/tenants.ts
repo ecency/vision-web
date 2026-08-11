@@ -5,6 +5,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
+import { STYLE_TEMPLATES } from '../style-templates';
 import { db } from '../db/client';
 import {
   TenantService,
@@ -31,7 +32,7 @@ const createTenantSchema = z.object({
   owner: z.string().min(3).max(16).regex(/^[a-z][a-z0-9.-]*$/).optional(),
   config: z.object({
     theme: z.enum(['light', 'dark', 'system']).optional(),
-    styleTemplate: z.enum(['medium', 'minimal', 'magazine', 'developer', 'modern-gradient']).optional(),
+    styleTemplate: z.enum(STYLE_TEMPLATES).optional(),
     type: z.enum(['blog', 'community']).optional(),
     communityId: z.string().optional(),
     title: z.string().max(100).optional(),
@@ -57,7 +58,7 @@ const fullConfigDocSchema = z.object({
 // `configuration` key, so it is unambiguous.
 const flatConfigUpdateSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']).optional(),
-  styleTemplate: z.enum(['medium', 'minimal', 'magazine', 'developer', 'modern-gradient']).optional(),
+  styleTemplate: z.enum(STYLE_TEMPLATES).optional(),
   title: z.string().max(100).optional(),
   description: z.string().max(500).optional(),
   listType: z.enum(['list', 'grid']).optional(),

@@ -195,3 +195,48 @@ describe('discarded values are reported back', () => {
     expect(merged.configuration.general.theme).toBe('system');
   });
 });
+
+/**
+ * The style template roster (style-templates.ts) is closed: an off-roster id reaches the DOM
+ * as data-style-template="<id>", matches no stylesheet and the site loses its template
+ * styles. The editor's select cannot produce one, so this only guards hand-edited documents.
+ */
+describe('style template is clamped to the roster', () => {
+  it('drops an off-roster value, reports it and the merge keeps the stored template', async () => {
+    const stored = await TenantService.buildConfig('alice', undefined, 'alice');
+    const discarded: DiscardedField[] = [];
+    const clean = TenantService.sanitizeConfigDocument(
+      { configuration: { general: { styleTemplate: 'unlisted' } } },
+      BLOG_PINS,
+      discarded
+    );
+
+    expect(clean.configuration.general.styleTemplate).toBeUndefined();
+    expect(paths(discarded)).toContain('configuration.general.styleTemplate');
+
+    const merged = TenantService.mergeConfigGuarded(stored, clean);
+    expect(merged.configuration.general.styleTemplate).toBe('medium');
+  });
+
+  it('stores a roster value untouched and reports nothing', () => {
+    const discarded: DiscardedField[] = [];
+    const clean = TenantService.sanitizeConfigDocument(
+      { configuration: { general: { styleTemplate: 'magazine' } } },
+      BLOG_PINS,
+      discarded
+    );
+
+    expect(clean.configuration.general.styleTemplate).toBe('magazine');
+    expect(paths(discarded)).toEqual([]);
+  });
+
+  it('a document without the key is not reported', () => {
+    const discarded: DiscardedField[] = [];
+    TenantService.sanitizeConfigDocument(
+      { configuration: { general: { language: 'en' } } },
+      BLOG_PINS,
+      discarded
+    );
+    expect(paths(discarded)).toEqual([]);
+  });
+});
