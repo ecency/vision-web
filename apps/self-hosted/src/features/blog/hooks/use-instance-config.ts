@@ -6,16 +6,16 @@ import { getCommunityQueryOptions } from '../queries/community-queries';
 export type InstanceType = 'blog' | 'community';
 
 export function useInstanceConfig() {
-  const type = InstanceConfigManager.getConfigValue(
+  const type = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       (configuration.instanceConfiguration.type as InstanceType) || 'blog'
   );
 
-  const username = InstanceConfigManager.getConfigValue(
+  const username = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.instanceConfiguration.username
   );
 
-  const communityId = InstanceConfigManager.getConfigValue(
+  const communityId = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       (configuration.instanceConfiguration.communityId as string) || ''
   );

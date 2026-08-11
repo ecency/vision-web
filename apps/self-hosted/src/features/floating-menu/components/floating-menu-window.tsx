@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyConfigDom,
-  type ConfigDomSnapshot,
   defaultPostsFiltersFor,
+  endConfigPreview,
   type InstanceConfig,
   InstanceConfigManager,
   type InstanceType,
-  restoreConfigDom,
-  snapshotConfigDom,
+  previewConfigDraft,
   toInstanceType,
   withPinnedInstanceType,
 } from '@/core';
@@ -35,9 +34,11 @@ function isManagedHosting(): boolean {
   if (typeof window === 'undefined') return false;
   if (window.location.hostname.endsWith('.blogs.ecency.com')) return true;
   // Verified custom domains serve a config with the managed flag injected by the hosting
-  // API; a truly self-hosted config never carries it.
+  // API; a truly self-hosted config never carries it. Read from the baseline:
+  // a drafted document under preview must not change which server contract
+  // applies.
   return (
-    InstanceConfigManager.getConfigValue(
+    InstanceConfigManager.getBaseConfigValue(
       ({ configuration }) => configuration.instanceConfiguration.managed,
     ) === true
   );
@@ -49,9 +50,11 @@ function getTenantUsername(): string | null {
   const match = hostname.match(/^([a-z0-9-]+)\.blogs\.ecency\.com$/);
   if (match) return match[1];
   if (!isManagedHosting()) return null;
-  // Custom domain: the tenant name comes from the served config instead of the hostname.
+  // Custom domain: the tenant name comes from the served config instead of the
+  // hostname. Baseline read: the save must target the real tenant even if the
+  // draft edited the username field.
   return (
-    InstanceConfigManager.getConfigValue(
+    InstanceConfigManager.getBaseConfigValue(
       ({ configuration }) => configuration.instanceConfiguration.username,
     ) || null
   );
@@ -70,7 +73,7 @@ const POSTS_FILTERS_PATH =
 function getPinnedInstanceType(): InstanceType | null {
   if (!isManagedHosting()) return null;
   return toInstanceType(
-    InstanceConfigManager.getConfigValue(
+    InstanceConfigManager.getBaseConfigValue(
       ({ configuration }) => configuration.instanceConfiguration.type,
     ),
   );
@@ -101,7 +104,6 @@ export function FloatingMenuWindow({
   );
   const [saveError, setSaveError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const originalStateRef = useRef<ConfigDomSnapshot | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const managed = useMemo(() => isManagedHosting(), []);
 
@@ -229,23 +231,20 @@ export function FloatingMenuWindow({
             `Save failed (${response.status})`,
         );
       }
-      // A save becomes the new baseline. Without this the PATCH landed but the
-      // running app kept the old config, and leaving preview restored the
-      // pre-save snapshot, so the owner watched the saved change revert and
-      // concluded the save had failed.
+      // A save becomes the new baseline. updateConfig also drops any active
+      // preview overlay, so exiting preview later lands on the document that
+      // was just stored instead of rolling it back; while preview mode stays
+      // on, the config-change effect below re-previews the saved draft, which
+      // is now identical to the baseline.
       const payload = await response.json().catch(() => null);
       const saved = readSavedConfig(payload);
-      // Read before updateConfig replaces what isManagedHosting() consults.
-      const managed = InstanceConfigManager.getConfigValue(
+      const managed = InstanceConfigManager.getBaseConfigValue(
         ({ configuration }) => configuration.instanceConfiguration.managed,
       );
       const baseline = saved ? withServedOnlyMarkers(saved, managed) : outgoing;
       setConfig(baseline);
       InstanceConfigManager.updateConfig(baseline as unknown as InstanceConfig);
       applyConfigDom(baseline, { syncSystemTheme: true });
-      // Re-take the restore point so exiting preview cannot roll back what was
-      // just saved.
-      originalStateRef.current = snapshotConfigDom();
 
       const discarded = readDiscarded(payload);
       setNotice(
@@ -273,50 +272,37 @@ export function FloatingMenuWindow({
   }, [config]);
 
   const handleTogglePreview = useCallback(() => {
-    setIsPreviewMode((prev) => {
-      if (!prev) {
-        // Entering preview mode - capture everything the config can touch
-        originalStateRef.current = snapshotConfigDom();
-        applyConfigDom(config);
-      } else {
-        // Exiting preview mode - restore original state
-        if (originalStateRef.current) {
-          restoreConfigDom(originalStateRef.current);
-          originalStateRef.current = null;
-        }
-      }
-      return !prev;
-    });
-  }, [config]);
+    // Preview runs through the config store, so components re-render with the
+    // draft, plus applyConfigDom for what no component renders. Exiting drops
+    // the overlay and re-applies the baseline; there is no snapshot to manage.
+    if (!isPreviewMode) {
+      previewConfigDraft(config);
+    } else {
+      endConfigPreview();
+    }
+    setIsPreviewMode(!isPreviewMode);
+  }, [isPreviewMode, config]);
 
-  // Handle cleanup when exiting preview mode or unmounting
-  // This effect ONLY depends on isPreviewMode to avoid restore/reapply loops
+  // End preview when the window unmounts mid-preview. endConfigPreview is
+  // idempotent, so the exit button having already run it is fine.
   useEffect(() => {
     if (!isPreviewMode) {
       return;
     }
-
-    // Cleanup: restore original state only when exiting preview mode
     return () => {
-      if (originalStateRef.current) {
-        restoreConfigDom(originalStateRef.current);
-      }
+      endConfigPreview();
     };
   }, [isPreviewMode]);
 
-  // Apply preview config when config changes while in preview mode
-  // This effect has NO cleanup to avoid restore/reapply flicker
+  // Re-preview when the draft changes while in preview mode
   useEffect(() => {
     if (isPreviewMode) {
-      applyConfigDom(config);
+      previewConfigDraft(config);
     }
   }, [config, isPreviewMode]);
 
   const handleExitPreview = useCallback(() => {
-    if (originalStateRef.current) {
-      restoreConfigDom(originalStateRef.current);
-      originalStateRef.current = null;
-    }
+    endConfigPreview();
     setIsPreviewMode(false);
   }, []);
 

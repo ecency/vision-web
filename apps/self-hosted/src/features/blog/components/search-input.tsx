@@ -11,7 +11,7 @@ export function SearchInput() {
   const [query, setQuery] = useState('');
   const navigate = useNavigate();
 
-  const isSearchEnabled = InstanceConfigManager.getConfigValue(
+  const isSearchEnabled = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.instanceConfiguration.layout.search?.enabled ?? false,
   );

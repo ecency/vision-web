@@ -150,6 +150,13 @@ type ConfigListener = () => void;
 
 class ConfigStore {
   private config: InstanceConfig;
+  /**
+   * The Configuration Editor's preview overlay. While set, every read that
+   * drives rendering serves it, so React subscribers re-render with the draft.
+   * The baseline underneath stays untouched, which is what ending preview and
+   * every identity read (getBaseConfig) go back to.
+   */
+  private previewConfig: InstanceConfig | null = null;
   private listeners: Set<ConfigListener> = new Set();
   private initialized = false;
   private initPromise: Promise<void> | null = null;
@@ -219,9 +226,20 @@ class ConfigStore {
   }
 
   /**
-   * Get current config (synchronous)
+   * Get current config (synchronous). Serves the preview overlay while one is
+   * active, so a component reading during preview renders the draft.
    */
   getConfig(): InstanceConfig {
+    return this.previewConfig ?? this.config;
+  }
+
+  /**
+   * The baseline config, ignoring any active preview overlay. Reads that decide
+   * authority or identity (the ownership gate, managed-hosting detection, the
+   * pinned instance type) belong here: a drafted document must never change who
+   * the owner is or which server contract applies.
+   */
+  getBaseConfig(): InstanceConfig {
     return this.config;
   }
 
@@ -229,7 +247,7 @@ class ConfigStore {
    * Get snapshot for useSyncExternalStore
    */
   getSnapshot = (): InstanceConfig => {
-    return this.config;
+    return this.previewConfig ?? this.config;
   };
 
   /**
@@ -252,7 +270,27 @@ class ConfigStore {
    */
   updateConfig(newConfig: InstanceConfig): void {
     this.config = newConfig;
+    // A successful save establishes a new baseline. An overlay left in place
+    // would keep serving the pre-save draft over the document just stored.
+    this.previewConfig = null;
     this.notifyListeners();
+  }
+
+  /** Set or replace the preview overlay and re-render subscribers with it. */
+  setPreviewConfig(draft: InstanceConfig): void {
+    this.previewConfig = draft;
+    this.notifyListeners();
+  }
+
+  /** Drop the preview overlay. No-op (and no notify) when none is active. */
+  clearPreviewConfig(): void {
+    if (this.previewConfig === null) return;
+    this.previewConfig = null;
+    this.notifyListeners();
+  }
+
+  isPreviewing(): boolean {
+    return this.previewConfig !== null;
   }
 
   /**
@@ -425,6 +463,34 @@ export namespace InstanceConfigManager {
    */
   export function updateConfig(newConfig: InstanceConfig): void {
     configStore.updateConfig(newConfig);
+  }
+
+  /**
+   * The baseline config, ignoring any active editor preview. Use for reads
+   * that decide authority or identity; see ConfigStore.getBaseConfig.
+   */
+  export function getBaseConfig(): InstanceConfig {
+    return configStore.getBaseConfig();
+  }
+
+  export function getBaseConfigValue<T>(condition: ConfigBasedCondition<T>): T {
+    return condition(configStore.getBaseConfig());
+  }
+
+  /**
+   * Store half of the preview lifecycle. Callers should go through
+   * config-preview.ts, which pairs these with the DOM apply.
+   */
+  export function setPreviewConfig(draft: InstanceConfig): void {
+    configStore.setPreviewConfig(draft);
+  }
+
+  export function clearPreviewConfig(): void {
+    configStore.clearPreviewConfig();
+  }
+
+  export function isPreviewing(): boolean {
+    return configStore.isPreviewing();
   }
 
   /**

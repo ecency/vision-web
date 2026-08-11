@@ -27,8 +27,6 @@ export function HivePostNote({
   showPermalink,
   learnMoreUrl,
 }: Props) {
-  if (!showNote && !showPermalink) return null;
-
   /*
    * Ecency, not a third-party frontend.
    *
@@ -47,10 +45,14 @@ export function HivePostNote({
    * dead-route guard files it as unresolved and it keeps its DYNAMIC_LINKS
    * entry.
    */
-  const profileBaseUrl = InstanceConfigManager.getConfigValue(
+  const profileBaseUrl = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.general.profileBaseUrl || 'https://ecency.com/@',
   );
+
+  // A hook cannot sit below a conditional return, so the guard follows the read.
+  if (!showNote && !showPermalink) return null;
+
   const hiveUrl = `${profileBaseUrl}${author}/${permlink}`;
 
   return (

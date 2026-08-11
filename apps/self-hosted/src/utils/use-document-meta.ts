@@ -55,9 +55,14 @@ function restoreOrRemoveMeta(
  * Sets document title and OG/Twitter meta tags. Restores previous values on unmount.
  */
 export function useDocumentMeta(meta: DocumentMeta) {
+  // Subscribed, not a one-shot read: the Configuration Editor's preview serves
+  // a draft through the store, and the page title must follow it in and back
+  // out again when preview ends.
+  const defaultTitle = InstanceConfigManager.useConfig(
+    ({ configuration }) => configuration.instanceConfiguration.meta.title || "Blog",
+  );
+
   useEffect(() => {
-    const config = InstanceConfigManager.getConfig();
-    const defaultTitle = config.configuration.instanceConfiguration.meta.title || "Blog";
     const previousTitle = document.title;
 
     // Snapshot current meta values before overwriting
@@ -98,5 +103,5 @@ export function useDocumentMeta(meta: DocumentMeta) {
         restoreOrRemoveMeta(property, previous, attribute);
       }
     };
-  }, [meta.title, meta.description, meta.ogTitle, meta.ogDescription, meta.ogImage, meta.ogType, meta.ogUrl, meta.twitterCard]);
+  }, [defaultTitle, meta.title, meta.description, meta.ogTitle, meta.ogDescription, meta.ogImage, meta.ogType, meta.ogUrl, meta.twitterCard]);
 }

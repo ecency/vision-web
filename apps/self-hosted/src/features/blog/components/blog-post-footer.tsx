@@ -20,15 +20,15 @@ export function BlogPostFooter({ entry }: Props) {
   const hiveLayer = useHiveLayer();
   const isAuthEnabled = useIsAuthEnabled();
 
-  const showLikes = InstanceConfigManager.getConfigValue(
+  const showLikes = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.instanceConfiguration.features.likes?.enabled ?? true,
   );
-  const showComments = InstanceConfigManager.getConfigValue(
+  const showComments = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.instanceConfiguration.features.comments?.enabled ?? true,
   );
-  const showTippingPost = InstanceConfigManager.getConfigValue(
+  const showTippingPost = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.instanceConfiguration.features.tipping?.post?.enabled ?? false,
   );

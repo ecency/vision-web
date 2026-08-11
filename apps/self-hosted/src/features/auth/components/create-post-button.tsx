@@ -19,14 +19,16 @@ export function CreatePostButton() {
   const isAuthenticated = useIsAuthenticated();
   const { isCommunityMode } = useInstanceConfig();
 
+  const createPostUrl = InstanceConfigManager.useConfig(
+    ({ configuration }) => configuration.general.createPostUrl,
+  );
+
   // Blog instances use the built-in editor by default too, so the owner writes
   // on their own domain instead of being handed off elsewhere. An owner who has
   // deliberately set general.createPostUrl still goes there. resolveCreatePostTarget
   // owns the whole decision, including why community mode ignores the config.
   const target = resolveCreatePostTarget({
-    createPostUrl: InstanceConfigManager.getConfigValue(
-      ({ configuration }) => configuration.general.createPostUrl,
-    ),
+    createPostUrl,
     isCommunityMode,
   });
 

@@ -29,7 +29,7 @@ export function BlogDiscussionItem({
   // consumer because the preview flow applies edits via DOM attributes, not the config store;
   // making it live is an app-wide preview change (store-based preview re-renders the whole
   // tree per keystroke), out of scope here. For real visitors the config is static per load.
-  const showLikes = InstanceConfigManager.getConfigValue(
+  const showLikes = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.instanceConfiguration.features.likes?.enabled ?? true,
   );

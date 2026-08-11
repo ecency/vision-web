@@ -18,13 +18,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const { user, setUser, setSession } = useAuthStore();
 
   // Get auth config
-  const authConfig = InstanceConfigManager.getConfigValue(
+  const authConfig = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.instanceConfiguration.features.auth,
   );
 
   const isAuthEnabled = authConfig?.enabled ?? false;
   const hivesignerClientId = resolveHivesignerClientId(
-    InstanceConfigManager.getConfigValue(
+    InstanceConfigManager.useConfig(
       ({ configuration }) => configuration.general?.hivesigner?.clientId,
     ),
   );
@@ -43,7 +43,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // configs that predate the `owner` field (blog instances where the owner and
   // the showcased account are the same). In community instances the showcased
   // username is the community (hive-NNNNN), so the owner must be used instead.
-  const blogOwner = InstanceConfigManager.getConfigValue(
+  // Read from the BASELINE config: the Configuration Editor's preview overlays
+  // a drafted document over every ordinary read, and a drafted identity field
+  // must not change who the owner is mid-preview.
+  const blogOwner = InstanceConfigManager.getBaseConfigValue(
     ({ configuration }) =>
       configuration.instanceConfiguration.owner ||
       configuration.instanceConfiguration.username,
