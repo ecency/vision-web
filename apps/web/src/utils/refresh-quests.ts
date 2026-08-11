@@ -1,7 +1,12 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { QueryKeys } from "@ecency/sdk";
 
-let timer: ReturnType<typeof setTimeout> | null = null;
+/**
+ * One pending refresh per account. A single shared timer would let a second account
+ * cancel the first one's only scheduled invalidation, and at this delay the window is
+ * wide enough for an account switch to land inside it.
+ */
+const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /**
  * How long to wait before asking the backend for updated quest progress.
@@ -32,11 +37,15 @@ export function scheduleQuestsRefresh(queryClient: QueryClient, username?: strin
   if (!name) {
     return;
   }
-  if (timer) {
-    clearTimeout(timer);
+  const pending = timers.get(name);
+  if (pending) {
+    clearTimeout(pending);
   }
-  timer = setTimeout(() => {
-    timer = null;
-    queryClient.invalidateQueries({ queryKey: QueryKeys.quests.status(name) });
-  }, QUESTS_REFRESH_DELAY);
+  timers.set(
+    name,
+    setTimeout(() => {
+      timers.delete(name);
+      queryClient.invalidateQueries({ queryKey: QueryKeys.quests.status(name) });
+    }, QUESTS_REFRESH_DELAY)
+  );
 }

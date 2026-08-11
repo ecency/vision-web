@@ -48,6 +48,19 @@ describe("scheduleQuestsRefresh", () => {
     expect(queryKey).not.toContain("@alice");
   });
 
+  it("keeps a pending refresh per account, so a switch cannot cancel the other", () => {
+    scheduleQuestsRefresh(queryClient, "alice");
+    vi.advanceTimersByTime(5_000);
+    scheduleQuestsRefresh(queryClient, "bob");
+
+    vi.advanceTimersByTime(75_000);
+
+    expect(invalidateQueries).toHaveBeenCalledTimes(2);
+    const keys = invalidateQueries.mock.calls.map(([{ queryKey }]: any) => queryKey);
+    expect(keys.some((k: string[]) => k.includes("alice"))).toBe(true);
+    expect(keys.some((k: string[]) => k.includes("bob"))).toBe(true);
+  });
+
   it("does nothing without a username", () => {
     scheduleQuestsRefresh(queryClient, undefined);
     scheduleQuestsRefresh(queryClient, null);
