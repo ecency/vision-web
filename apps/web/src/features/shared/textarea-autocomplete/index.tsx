@@ -107,17 +107,25 @@ export const TextareaAutocomplete = forwardRef<HTMLTextAreaElement, any>((props,
                   ];
                   let searchIsInvalid = ignoreList.some((item) => token.includes(`/${item}`));
                   if (!searchIsInvalid) {
-                    searchPath(token).then((resp) => {
-                      resolve(resp);
-                    });
+                    // No suggestions is the only sensible answer to a failed lookup,
+                    // and this promise has no rejection handler: the executor runs
+                    // inside a setTimeout, so anything thrown here escapes as an
+                    // unhandled rejection rather than reaching the caller.
+                    searchPath(token)
+                      .then((resp) => resolve(resp))
+                      .catch(() => resolve([]));
                   } else {
                     resolve([]);
                   }
                 } else {
-                  let suggestions = await queryClient.fetchQuery(
-                    lookupAccountsQueryOptions(token.toLowerCase(), 5)
-                  );
-                  resolve(suggestions);
+                  try {
+                    const suggestions = await queryClient.fetchQuery(
+                      lookupAccountsQueryOptions(token.toLowerCase(), 5)
+                    );
+                    resolve(suggestions);
+                  } catch {
+                    resolve([]);
+                  }
                 }
               }, 300);
             });
