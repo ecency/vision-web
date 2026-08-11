@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.81
+
+### Patch Changes
+
+- fix(sdk): reach the head of account history and keep the savings fill on its own asset (#1404)
+
 ## 2.3.80
 
 ### Patch Changes

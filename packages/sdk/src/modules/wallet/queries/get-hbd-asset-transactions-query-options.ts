@@ -49,6 +49,10 @@ export function getHbdAssetTransactionsQueryOptions(
               return parseAsset(item.amount).symbol === "HBD";
 
             case "transfer_from_savings" as HiveOperationName:
+            // The completed withdrawal carries the same asset as the request that
+            // opened it, so it needs the same guard. Without a case of its own it
+            // falls to the default below, which has no symbol check.
+            case "fill_transfer_from_savings" as HiveOperationName:
               return parseAsset((item as any).amount).symbol === "HBD";
 
             case "fill_recurrent_transfer":
