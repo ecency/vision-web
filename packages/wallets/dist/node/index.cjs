@@ -652,15 +652,17 @@ function getTokenOperationsQueryOptions(token, username, isForOwner = false, cur
 }
 
 // src/modules/wallets/mutations/save-wallet-information-to-metadata.ts
+var isChainToken = ({
+  type,
+  symbol
+}) => type === "CHAIN" || Object.values(EcencyWalletCurrency).includes(symbol);
 function getGroupedChainTokens(tokens, defaultShow) {
   if (!tokens) {
     return {};
   }
   return R__namespace.pipe(
     tokens,
-    R__namespace.filter(
-      ({ type, symbol }) => type === "CHAIN" || Object.values(EcencyWalletCurrency).includes(symbol)
-    ),
+    R__namespace.filter(isChainToken),
     R__namespace.map((item) => {
       const meta = {
         ...item.meta ?? {}
@@ -680,6 +682,35 @@ function getGroupedChainTokens(tokens, defaultShow) {
     )
   );
 }
+function buildTokensPayload(existingTokens, tokens) {
+  const profileChainTokens = getGroupedChainTokens(existingTokens);
+  const payloadTokens = tokens.map(({ currency, type, privateKey, username, ...meta }) => ({
+    symbol: currency,
+    type: type ?? (Object.values(EcencyWalletCurrency).includes(currency) ? "CHAIN" : void 0),
+    meta
+  })) ?? [];
+  const payloadChainTokens = getGroupedChainTokens(payloadTokens, true);
+  const payloadNonChainTokens = (payloadTokens ?? []).filter(
+    (token) => !isChainToken(token)
+  );
+  const mergedChainTokens = R__namespace.pipe(
+    profileChainTokens,
+    R__namespace.mergeDeep(payloadChainTokens),
+    R__namespace.values()
+  );
+  const managesNonChainTokens = payloadNonChainTokens.length > 0;
+  const payloadSymbols = new Set(
+    (payloadTokens ?? []).map(({ symbol }) => symbol)
+  );
+  const preservedTokens = managesNonChainTokens ? [] : (existingTokens ?? []).filter(
+    (token) => !isChainToken(token) && !payloadSymbols.has(token.symbol)
+  );
+  return [
+    ...preservedTokens,
+    ...payloadNonChainTokens,
+    ...mergedChainTokens
+  ];
+}
 function useSaveWalletInformationToMetadata(username, auth, options2) {
   const queryClient = reactQuery.useQueryClient();
   const { data: accountData } = reactQuery.useQuery(sdk.getAccountFullQueryOptions(username));
@@ -694,28 +725,8 @@ function useSaveWalletInformationToMetadata(username, auth, options2) {
       if (!accountData) {
         throw new Error("[SDK][Wallets] \u2013 no account data to save wallets");
       }
-      const profileChainTokens = getGroupedChainTokens(
-        accountData.profile?.tokens
-      );
-      const payloadTokens = tokens.map(({ currency, type, privateKey, username: username2, ...meta }) => ({
-        symbol: currency,
-        type: type ?? (Object.values(EcencyWalletCurrency).includes(currency) ? "CHAIN" : void 0),
-        meta
-      })) ?? [];
-      const payloadChainTokens = getGroupedChainTokens(payloadTokens, true);
-      const payloadNonChainTokens = payloadTokens.filter(
-        ({ type, symbol }) => type !== "CHAIN" && !Object.values(EcencyWalletCurrency).includes(symbol)
-      );
-      const mergedChainTokens = R__namespace.pipe(
-        profileChainTokens,
-        R__namespace.mergeDeep(payloadChainTokens),
-        R__namespace.values()
-      );
       return updateProfile({
-        tokens: [
-          ...payloadNonChainTokens,
-          ...mergedChainTokens
-        ]
+        tokens: buildTokensPayload(accountData.profile?.tokens, tokens)
       });
     },
     onError: options2?.onError,
@@ -1322,6 +1333,7 @@ Object.defineProperty(exports, "vestsToHp", {
 exports.EcencyWalletBasicTokens = EcencyWalletBasicTokens;
 exports.EcencyWalletCurrency = EcencyWalletCurrency;
 exports.EcencyWalletsPrivateApi = private_api_exports;
+exports.buildTokensPayload = buildTokensPayload;
 exports.deriveHiveKey = deriveHiveKey;
 exports.deriveHiveKeys = deriveHiveKeys;
 exports.deriveHiveMasterPasswordKey = deriveHiveMasterPasswordKey;

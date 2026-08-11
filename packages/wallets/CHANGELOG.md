@@ -1,5 +1,11 @@
 # @ecency/wallets
 
+## 5.0.82
+
+### Patch Changes
+
+- fix(wallets): saving chain addresses no longer deletes engine tokens (#1408)
+
 ## 5.0.81
 
 ### Patch Changes
