@@ -1,5 +1,12 @@
 # @ecency/wallets
 
+## 5.0.79
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ecency/sdk@2.3.79
+
 ## 5.0.78
 
 ### Patch Changes

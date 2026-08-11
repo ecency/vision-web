@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.79
+
+### Patch Changes
+
+- fix(sdk): correct account-history pagination and stop dropping requested ops (#1396)
+
 ## 2.3.78
 
 ### Patch Changes
