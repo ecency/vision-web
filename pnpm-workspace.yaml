@@ -31,6 +31,17 @@ overrides:
   js-cookie: "^3.0.6"
   uuid: "^11.1.1"
   esbuild: "^0.28.1"
+  # Crash fix, not an advisory: 1.41.2's updateDraggedNode resolved a drag position
+  # captured against the PREVIOUS doc against the new one with no upper bound, so a
+  # paste that shrinks the doc threw "Position N outside of fragment" out of the
+  # publish editor (ECENCY-NEXT-1GK1, issue #1431). Upstream added both bounds checks.
+  # Transitive via @tiptap/pm, so an override is the only place to pin it forward.
+  # prosemirror-model rides along: 1.42.2 wants a newer patch than the 1.25.3 the rest
+  # of the ProseMirror graph resolved to, and without this it installs a SECOND copy —
+  # two prosemirror-model instances mean nodes and schemas fail cross-copy identity
+  # checks inside the editor. Both must stay single-version.
+  prosemirror-view: "^1.42.2"
+  prosemirror-model: "^1.25.11"
   # NOTE: @opentelemetry/core is intentionally NOT overridden — forcing 2.8.x breaks
   # @sentry/nextjs' pinned OpenTelemetry graph (undefined `AlwaysOn`). Its advisory stays
   # until @sentry/nextjs is bumped.
