@@ -336,5 +336,31 @@ export function beforeSend(event: SentryErrorEvent): SentryErrorEvent | null {
     return null;
   }
 
+  // ECENCY-NEXT-1GKP + 28 sibling buckets (issue #1433): @noble/ciphers fails its OWN
+  // module-init self-test on some engines. `_polyval.js` builds a throwaway instance at
+  // module evaluation (`hashCons(new Uint8Array(16), 0)`), whose GHASH constructor runs
+  // `abytes(key, 16, "key")`. On the browser that reported this (a games console's
+  // WebKit) the intermediate `Uint8Array.from()` returns a value that fails the library's
+  // own isBytes check, so a freshly-built 16-byte array is rejected. Nothing we pass is
+  // wrong and there is no fix on our side; it is an engine defect on one device family.
+  // Because it throws during module evaluation the failure is per-require, so a single
+  // visitor produced 29 SEPARATE issues: Sentry grouped them by the minified webpack
+  // require frame, which differs per importing module. Reclassify into ONE fingerprint
+  // so the fan-out stops, at warning level (the page still worked — every event is
+  // handled), while a spike stays visible if this ever reaches real traffic.
+  // Gated on the message alone ON PURPOSE: beforeSend runs in the browser, BEFORE
+  // symbolication, so frames here carry minified chunk URLs — a `_polyval.js` frame gate
+  // would look tighter and never match. The message is precise enough on its own: the
+  // `"key"` title with length 16 exists only in GHASH's constructor, i.e. GCM/POLYVAL,
+  // which nothing in the app calls (we use CBC, whose length-16 asserts are titled
+  // "nonce"/"block"). A genuine runtime memo-encryption failure therefore still reports
+  // at error level.
+  if (/"key" expected Uint8Array of length 16/.test(message)) {
+    event.level = "warning";
+    event.tags = { ...event.tags, crypto_module_init: "true" };
+    event.fingerprint = ["noble-ciphers-module-init"];
+    return event;
+  }
+
   return event;
 }

@@ -653,3 +653,53 @@ describe("beforeSend — unhandled cancellation AbortError is reclassified", () 
     expect(out!.fingerprint).toBeUndefined();
   });
 });
+
+describe("beforeSend — @noble/ciphers module-init self-test failure is reclassified", () => {
+  // ECENCY-NEXT-1GKP and 28 siblings (issue #1433). One visitor on a games-console
+  // browser produced 29 separate issues, because the throw happens while a module is
+  // being required and Sentry grouped on the minified require frame — which differs per
+  // importing module. One fingerprint, one bucket.
+  const NOBLE_MESSAGE = '"key" expected Uint8Array of length 16, got type=object';
+
+  it("reclassifies the module-init assertion into a single fingerprint", () => {
+    const ev = makeEvent(NOBLE_MESSAGE, [WEBPACK_FRAME, APP_FRAME], {
+      type: "Error",
+      handled: true
+    });
+    const out = beforeSend(ev);
+    expect(out).not.toBeNull();
+    expect(out!.level).toBe("warning");
+    expect(out!.tags?.crypto_module_init).toBe("true");
+    expect(out!.fingerprint).toEqual(["noble-ciphers-module-init"]);
+  });
+
+  it("groups every importing module's copy into the SAME bucket", () => {
+    // The 29 buckets differed only by which module the require chain was in, i.e.
+    // by frames — so the rule must not read frames at all.
+    const a = beforeSend(makeEvent(NOBLE_MESSAGE, [WEBPACK_FRAME], { type: "Error" }));
+    const b = beforeSend(
+      makeEvent(NOBLE_MESSAGE, [{ filename: "app:///_next/static/chunks/4821-abc.js" }], {
+        type: "Error"
+      })
+    );
+    expect(a!.fingerprint).toEqual(b!.fingerprint);
+  });
+
+  it("does NOT touch the CBC runtime path's length-16 assertion (titled 'nonce')", () => {
+    // aes.js asserts `abytes(nonce, BLOCK_SIZE, "nonce")` — a real bug in our memo
+    // encryption must stay an error-level issue with its own grouping.
+    const ev = makeEvent('"nonce" expected Uint8Array of length 16, got type=undefined', [], {
+      type: "Error"
+    });
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch an untitled Uint8Array assertion (bad key handed to encrypt)", () => {
+    const ev = makeEvent("expected Uint8Array, got type=string", [], { type: "Error" });
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+});
