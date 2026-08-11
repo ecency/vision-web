@@ -2,6 +2,7 @@
  * Tenant Service
  */
 
+import { DEFAULT_STYLE_TEMPLATE } from '../style-templates';
 import { db, type SqlExecutor } from '../db/client';
 import { callRPC, config as hiveTxConfig } from '@ecency/sdk/hive';
 import { Tenant, TenantRow, mapTenantFromDb } from '../types';
@@ -1230,7 +1231,7 @@ export const TenantService = {
       configuration: {
         general: {
           theme: 'system',
-          styleTemplate: 'medium',
+          styleTemplate: DEFAULT_STYLE_TEMPLATE,
           language: 'en',
           timezone: 'UTC',
           dateFormat: 'YYYY-MM-DD',

@@ -13,6 +13,7 @@
  * holds the raw JSON document it is editing.
  */
 
+import { DEFAULT_STYLE_TEMPLATE } from '../../hosting/api/src/style-templates';
 import {
   type AccentAppearance,
   type FontPreset,
@@ -199,7 +200,8 @@ export const CONFIG_DOM_DECLARATION: ConfigDomDeclaration = {
     { attribute: 'data-theme', resolve: resolveTheme },
     {
       attribute: 'data-style-template',
-      resolve: (read) => text(read(PATHS.styleTemplate), 'medium'),
+      resolve: (read) =>
+        text(read(PATHS.styleTemplate), DEFAULT_STYLE_TEMPLATE),
     },
     { attribute: 'lang', resolve: (read) => text(read(PATHS.language), 'en') },
     {

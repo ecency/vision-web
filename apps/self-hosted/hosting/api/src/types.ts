@@ -2,6 +2,8 @@
  * Ecency Hosting API - Type Definitions
  */
 
+import type { StyleTemplate } from './style-templates';
+
 // =============================================================================
 // Tenant Types
 // =============================================================================
@@ -36,7 +38,7 @@ export interface BlogConfig {
   configuration: {
     general: {
       theme: 'light' | 'dark' | 'system';
-      styleTemplate: 'medium' | 'minimal' | 'magazine' | 'developer' | 'modern-gradient';
+      styleTemplate: StyleTemplate;
       language: string;
       imageProxy: string;
       profileBaseUrl: string;
