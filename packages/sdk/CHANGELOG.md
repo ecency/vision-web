@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.83
+
+### Patch Changes
+
+- fix(sdk): full-size first page for hafah transactions, no initialData seed on notifications (#1427)
+
 ## 2.3.82
 
 ### Patch Changes
