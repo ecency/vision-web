@@ -18,6 +18,7 @@ vi.mock("i18next", () => ({
 }));
 
 import {
+  BAN_NOTICE_TICK_MS,
   formatBanRemaining,
   formatChatBanNotice,
   getChatBanInfo
@@ -70,6 +71,36 @@ describe("formatBanRemaining", () => {
   it("uses hours up to two days, then days", () => {
     expect(formatBanRemaining(hours(47), NOW)).toContain("hours");
     expect(formatBanRemaining(hours(49), NOW)).toContain("days");
+  });
+
+  it("never phrases a count as 1, so no band can read '1 hours'", () => {
+    // every band hands {{count}} >= 2; the 1-hour case falls into the minutes band
+    for (const until of [mins(59), mins(89), hours(1), hours(1.4), hours(2), days(1), days(400)]) {
+      const text = formatBanRemaining(until, NOW);
+      const m = text.match(/about (\d+)/);
+      if (m) {
+        expect(Number(m[1])).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it("handles a multi-year ban without overflowing", () => {
+    // 3y is the containment default. It must render as days, not silently degrade.
+    const threeYears = NOW + 3 * 365 * 86_400_000;
+    expect(formatBanRemaining(threeYears, NOW)).toContain("1095 days");
+  });
+});
+
+describe("BAN_NOTICE_TICK_MS", () => {
+  it("stays inside the 32-bit setTimeout limit", () => {
+    // Deriving a timer delay from bannedUntil overflows for long bans: setTimeout takes a
+    // 32-bit signed delay, so a 3-year ban fires in ~1ms and clears its own notice instantly.
+    // The tick is a fixed bounded interval precisely so that cliff cannot be reached.
+    expect(BAN_NOTICE_TICK_MS).toBeGreaterThan(0);
+    expect(BAN_NOTICE_TICK_MS).toBeLessThan(2_147_483_647);
+
+    const threeYearsMs = 3 * 365 * 86_400_000;
+    expect(threeYearsMs).toBeGreaterThan(2_147_483_647); // the delay we must never pass to setTimeout
   });
 });
 

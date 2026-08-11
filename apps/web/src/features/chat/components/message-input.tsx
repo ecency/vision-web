@@ -31,6 +31,8 @@ interface MessageInputProps {
   setMessageError: (error: string | null) => void;
   /** Present while a chat ban is live; renders a standing notice instead of a transient error. */
   banInfo?: ChatBanInfo | null;
+  /** Ticking clock from the owner, so the countdown re-renders instead of freezing. */
+  banNow?: number;
 
   // Editing/Reply state
   editingPost: MattermostPost | null;
@@ -109,6 +111,7 @@ export function MessageInput({
   setMessage,
   messageError,
   banInfo,
+  banNow,
   setMessageError,
   editingPost,
   setEditingPost,
@@ -245,7 +248,7 @@ export function MessageInput({
               role="status"
               className="mb-2 rounded border border-[--border-color] bg-[--surface-color] p-3 text-sm text-[--text-muted]"
             >
-              {formatChatBanNotice(banInfo)}
+              {formatChatBanNotice(banInfo, banNow)}
             </div>
           )}
           {messageError && <div className="text-sm text-red-500">{messageError}</div>}

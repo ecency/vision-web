@@ -12,11 +12,12 @@ export const CHAT_BAN_PROP = "ecency_chat_banned_until";
 // Why the ban was applied, written alongside the expiry by the moderation service.
 // Lets the clients explain what happened instead of quoting a timestamp. Absent on
 // older bans, so every consumer must tolerate undefined.
+//
+// Known values are "mass-dm", "spray" and "manual", but this stays an open string end to end
+// on purpose: a newer moderation service can add a reason this build has never seen, and that
+// must degrade to the generic message rather than fail a union check.
 export const CHAT_BAN_REASON_PROP = "ecency_chat_ban_reason";
 
-// Kept as a loose string on the wire: an unrecognised reason from a newer service
-// version must degrade to the generic message, never break the response.
-export type ChatBanReason = "mass-dm" | "spray" | "manual";
 export const CHAT_DM_PRIVACY_PROP = "ecency_dm_privacy";
 export const CHAT_LEFT_CHANNELS_PROP = "ecency_left_channels";
 const CHAT_PAT_PROP = "ecency_pat";

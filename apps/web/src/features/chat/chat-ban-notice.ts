@@ -12,6 +12,10 @@ import i18next from "i18next";
  * message rather than failing, because older bans predate the reason prop and a newer service
  * version may add reasons this build has never heard of.
  */
+/** How often the live notice re-renders. Bounded on purpose: see the ticking effect in
+ *  mattermost-channel-view — a delay derived from `bannedUntil` overflows setTimeout. */
+export const BAN_NOTICE_TICK_MS = 30_000;
+
 export type ChatBanInfo = {
   bannedUntil: number;
   reason?: string;
@@ -43,7 +47,11 @@ export function formatBanRemaining(bannedUntil: number, now = Date.now()): strin
   if (minutes <= 1) {
     return i18next.t("chat.ban-remaining-soon", { defaultValue: "in under a minute" });
   }
-  if (minutes < 60) {
+
+  // Each band below hands {{count}} a value of 2 or more, so no phrasing ever comes out as
+  // "1 hours". That keeps these as plain keys, matching how the rest of the locale file counts,
+  // instead of needing plural variants for a string that can never be singular.
+  if (minutes < 90) {
     return i18next.t("chat.ban-remaining-minutes", {
       defaultValue: "in about {{count}} minutes",
       count: minutes
@@ -54,14 +62,13 @@ export function formatBanRemaining(bannedUntil: number, now = Date.now()): strin
   if (hours < 48) {
     return i18next.t("chat.ban-remaining-hours", {
       defaultValue: "in about {{count}} hours",
-      count: Math.max(1, hours)
+      count: hours
     });
   }
 
-  const days = Math.round(ms / 86400000);
   return i18next.t("chat.ban-remaining-days", {
     defaultValue: "in about {{count}} days",
-    count: days
+    count: Math.round(ms / 86400000)
   });
 }
 
