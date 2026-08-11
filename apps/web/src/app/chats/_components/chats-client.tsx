@@ -29,6 +29,7 @@ import { checkSvg, dotsHorizontal, volumeOffSvg } from "@ui/svg";
 import { ChangeEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { formatChatBanNotice, getChatBanInfo } from "@/features/chat/chat-ban-notice";
 
 const TOWN_HALL_CHANNEL_NAME = "town-hall";
 
@@ -354,6 +355,24 @@ export function ChatsClient() {
 
   // Handle authentication errors from bootstrap
   if (!bootstrap && !isLoading && error) {
+    // A ban is checked FIRST and by payload, not by message text. Bootstrap fails for a
+    // deactivated+banned account, so the channel view never mounts and its composer notice is
+    // unreachable — without this branch the fallback below prints the operator-facing string
+    // (their own handle and an ISO timestamp) on the chats page.
+    const bootstrapBan = getChatBanInfo(error);
+    if (bootstrapBan) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-4">
+          <div
+            role="status"
+            className="max-w-md rounded border border-[--border-color] bg-[--surface-color] p-4 text-center text-sm text-[--text-muted]"
+          >
+            {formatChatBanNotice(bootstrapBan)}
+          </div>
+        </div>
+      );
+    }
+
     const errorMessage = error?.message?.toLowerCase() || "";
     const isAuthError =
       errorMessage.includes("unauthorized") ||
