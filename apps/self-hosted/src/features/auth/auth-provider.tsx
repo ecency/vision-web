@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store';
 import { clearHiveAuthSession, clearUser } from './storage';
 import type { AuthContextValue, AuthUser } from './types';
 import { availableAuthMethods } from './utils/auth-methods';
-import { consumeSetupHandoff } from './setup-handoff';
+import { actOnLoginRequest } from './setup-handoff';
 import { resolveHivesignerClientId } from './utils/hivesigner';
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -53,16 +53,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
       configuration.instanceConfiguration.username,
   );
 
-  // Signed-in handoff from the signup success screen: consume ?setup=1 and
-  // ?login=hivesigner exactly once per load. The login param only STARTS this
-  // instance's own OAuth flow (nonce issued here, verified at /auth), and only
-  // when the method is actually offered and nobody is signed in.
-  const canHandoffLogin = isAuthEnabled && availableMethods.includes('hivesigner') && !user;
+  // Act on a boot-captured login intent (see setup-handoff.ts): start this
+  // instance's own Hivesigner flow when it is offered and nobody is signed
+  // in. Honest deps; the intent clears itself on the first decisive run.
+  const canHandoffLogin = isAuthEnabled && availableMethods.includes('hivesigner');
+  const isAuthenticated = !!user;
   useEffect(() => {
-    consumeSetupHandoff({ canLoginWithHivesigner: canHandoffLogin });
-    // Intentionally once: the params are consumed from the URL on first run.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    actOnLoginRequest({ canLoginWithHivesigner: canHandoffLogin, isAuthenticated });
+  }, [canHandoffLogin, isAuthenticated]);
 
   // Check if current user is the instance owner
   const isBlogOwner = useMemo(() => {

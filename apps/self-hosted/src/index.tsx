@@ -4,6 +4,7 @@ import { StrictMode } from 'react';
 import ReactDOM from 'react-dom/client';
 import './globals.css';
 import { applyConfigDom, InstanceConfigManager } from './core';
+import { captureSetupParams } from './features/auth/setup-handoff';
 import { getRssFeedUrl } from './utils/rss-feed-url';
 import { routeTree } from './routeTree.gen';
 
@@ -113,6 +114,9 @@ function applyConfig() {
 }
 
 async function main() {
+  // Handoff params are captured before anything renders, so no component's
+  // effect order can decide whether the setup intent is seen.
+  captureSetupParams();
   // Fetch runtime config before rendering
   await InstanceConfigManager.initialize();
 
