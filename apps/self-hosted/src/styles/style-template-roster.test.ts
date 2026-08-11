@@ -31,6 +31,15 @@ function cssTemplateIds(): string[] {
     .sort();
 }
 
+/**
+ * Both assertions below read CSS with comments removed first: a commented-out
+ * `@import` or selector block is exactly the disabled state this suite exists
+ * to catch, and a substring or line match alone would accept it.
+ */
+function activeCss(path: string): string {
+  return readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
 describe('style template roster', () => {
   it('matches the CSS theme files one to one', () => {
     expect([...STYLE_TEMPLATES].sort()).toEqual(cssTemplateIds());
@@ -38,7 +47,7 @@ describe('style template roster', () => {
 
   it('every template CSS file declares its own data-style-template block', () => {
     for (const id of STYLE_TEMPLATES) {
-      const css = readFileSync(join(THEMES_DIR, `${id}.css`), 'utf8');
+      const css = activeCss(join(THEMES_DIR, `${id}.css`));
       expect(css, `${id}.css must scope to its template id`).toContain(
         `[data-style-template="${id}"]`,
       );
@@ -46,10 +55,11 @@ describe('style template roster', () => {
   });
 
   it('every template CSS file is imported by the registry index', () => {
-    const index = readFileSync(join(THEMES_DIR, 'index.css'), 'utf8');
+    const index = activeCss(join(THEMES_DIR, 'index.css'));
     for (const id of STYLE_TEMPLATES) {
       // An exact active @import declaration, not toContain: a filename inside
-      // a comment or a longer path must not satisfy this.
+      // a longer path must not satisfy this, and comment stripping above has
+      // already removed any disabled declaration.
       expect(index, `index.css must import ${id}.css`).toMatch(
         new RegExp(`^\\s*@import\\s+["']\\./${id}\\.css["'];`, 'm'),
       );
