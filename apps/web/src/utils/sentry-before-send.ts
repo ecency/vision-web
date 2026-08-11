@@ -346,16 +346,24 @@ export function beforeSend(event: SentryErrorEvent): SentryErrorEvent | null {
   // Because it throws during module evaluation the failure is per-require, so a single
   // visitor produced 29 SEPARATE issues: Sentry grouped them by the minified webpack
   // require frame, which differs per importing module. Reclassify into ONE fingerprint
-  // so the fan-out stops, at warning level (the page still worked — every event is
-  // handled), while a spike stays visible if this ever reaches real traffic.
-  // Gated on the message alone ON PURPOSE: beforeSend runs in the browser, BEFORE
-  // symbolication, so frames here carry minified chunk URLs — a `_polyval.js` frame gate
-  // would look tighter and never match. The message is precise enough on its own: the
+  // so the fan-out stops, while a spike stays visible if this ever reaches real traffic.
+  // ONLY for events the app caught (`mechanism.handled === true`), which is what every
+  // observed event was: the visitor still got a working page, so warning is the honest
+  // level. An UNHANDLED copy of the same assertion is a different severity claim - it
+  // escaped, so it may have taken a chunk down with it - and an unknown mechanism is no
+  // evidence either way. Both are left exactly as they arrive, at error level with their
+  // own grouping, rather than being buried in this bucket.
+  // Gated on the message otherwise, ON PURPOSE: beforeSend runs in the browser, BEFORE
+  // symbolication, so frames here carry minified chunk URLs and a `_polyval.js` frame
+  // gate would look tighter while never matching. The message is precise on its own: the
   // `"key"` title with length 16 exists only in GHASH's constructor, i.e. GCM/POLYVAL,
   // which nothing in the app calls (we use CBC, whose length-16 asserts are titled
   // "nonce"/"block"). A genuine runtime memo-encryption failure therefore still reports
   // at error level.
-  if (/"key" expected Uint8Array of length 16/.test(message)) {
+  if (
+    /"key" expected Uint8Array of length 16/.test(message) &&
+    event.exception?.values?.[0]?.mechanism?.handled === true
+  ) {
     event.level = "warning";
     event.tags = { ...event.tags, crypto_module_init: "true" };
     event.fingerprint = ["noble-ciphers-module-init"];

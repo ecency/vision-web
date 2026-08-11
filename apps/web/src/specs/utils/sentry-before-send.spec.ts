@@ -675,21 +675,47 @@ describe("beforeSend — @noble/ciphers module-init self-test failure is reclass
 
   it("groups every importing module's copy into the SAME bucket", () => {
     // The 29 buckets differed only by which module the require chain was in, i.e.
-    // by frames — so the rule must not read frames at all.
-    const a = beforeSend(makeEvent(NOBLE_MESSAGE, [WEBPACK_FRAME], { type: "Error" }));
+    // by frames, so the rule must not read frames at all.
+    const a = beforeSend(
+      makeEvent(NOBLE_MESSAGE, [WEBPACK_FRAME], { type: "Error", handled: true })
+    );
     const b = beforeSend(
       makeEvent(NOBLE_MESSAGE, [{ filename: "app:///_next/static/chunks/4821-abc.js" }], {
-        type: "Error"
+        type: "Error",
+        handled: true
       })
     );
-    expect(a!.fingerprint).toEqual(b!.fingerprint);
+    expect(a!.fingerprint).toEqual(["noble-ciphers-module-init"]);
+    expect(b!.fingerprint).toEqual(a!.fingerprint);
+  });
+
+  it("does NOT downgrade an UNHANDLED copy of the same assertion", () => {
+    // Every observed event was caught and the page kept working, which is what makes
+    // warning honest. An unhandled one escaped, so it may have taken a chunk down with
+    // it: that must stay an error with its own grouping, not be buried in this bucket.
+    const ev = makeEvent(NOBLE_MESSAGE, [WEBPACK_FRAME], { type: "Error", handled: false });
+    const out = beforeSend(ev);
+    expect(out).not.toBeNull();
+    expect(out!.level).toBeUndefined();
+    expect(out!.tags?.crypto_module_init).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT downgrade when the mechanism is absent (no evidence it was caught)", () => {
+    const ev = makeEvent(NOBLE_MESSAGE, [WEBPACK_FRAME], { type: "Error" });
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
   });
 
   it("does NOT touch the CBC runtime path's length-16 assertion (titled 'nonce')", () => {
     // aes.js asserts `abytes(nonce, BLOCK_SIZE, "nonce")` — a real bug in our memo
     // encryption must stay an error-level issue with its own grouping.
+    // handled: true on purpose, so this proves the MESSAGE gate rejects it rather than
+    // passing only because the mechanism gate did.
     const ev = makeEvent('"nonce" expected Uint8Array of length 16, got type=undefined', [], {
-      type: "Error"
+      type: "Error",
+      handled: true
     });
     const out = beforeSend(ev);
     expect(out!.level).toBeUndefined();
@@ -697,7 +723,10 @@ describe("beforeSend — @noble/ciphers module-init self-test failure is reclass
   });
 
   it("does NOT touch an untitled Uint8Array assertion (bad key handed to encrypt)", () => {
-    const ev = makeEvent("expected Uint8Array, got type=string", [], { type: "Error" });
+    const ev = makeEvent("expected Uint8Array, got type=string", [], {
+      type: "Error",
+      handled: true
+    });
     const out = beforeSend(ev);
     expect(out!.level).toBeUndefined();
     expect(out!.fingerprint).toBeUndefined();
