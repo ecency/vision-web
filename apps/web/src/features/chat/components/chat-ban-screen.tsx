@@ -26,8 +26,12 @@ export function ChatBanScreen({ info, onExpire }: Props) {
   const [now, setNow] = useState(() => Date.now());
 
   // Held in a ref so an inline arrow from the caller doesn't restart the interval every render.
+  // Assigned in an effect rather than during render: a render React discards could otherwise
+  // mutate the ref that the already-committed interval reads from.
   const onExpireRef = useRef(onExpire);
-  onExpireRef.current = onExpire;
+  useEffect(() => {
+    onExpireRef.current = onExpire;
+  }, [onExpire]);
 
   useEffect(() => {
     const id = setInterval(() => {

@@ -26,7 +26,10 @@ export function getChatBanInfo(error: unknown, now = Date.now()): ChatBanInfo | 
   const e = error as { status?: number; bannedUntil?: unknown; reason?: unknown } | null;
   const bannedUntil = Number(e?.bannedUntil);
 
-  if (!e?.bannedUntil || Number.isNaN(bannedUntil) || bannedUntil <= now) {
+  // isFinite, not isNaN: Infinity survives an isNaN check and is also greater than `now`, so
+  // both guards would let it through. The notice would then show an endless duration and never
+  // expire. Returning null routes the caller to its ordinary error handling instead.
+  if (!e?.bannedUntil || !Number.isFinite(bannedUntil) || bannedUntil <= now) {
     return null;
   }
 
