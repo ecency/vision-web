@@ -15,6 +15,7 @@ import {
   ProfileWalletTokenHistoryCard,
   AggregatedBalanceCard,
   BalanceHistoryChart,
+  WalletHistoryLoadMore,
 } from "../_components";
 import { HiveTransactionRow, HpAboutCard, HpDelegationsCard } from "./_components";
 import i18next from "i18next";
@@ -37,7 +38,8 @@ export function HpPage() {
     cleanUsername = (username as string).replace(/^@/, "");
   }
 
-  const { data, refetch, isFetching } = useInfiniteQuery(
+  const { data, refetch, isFetching, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteQuery(
     getHivePowerAssetTransactionsQueryOptions(
       cleanUsername,
       1000,
@@ -107,6 +109,13 @@ export function HpPage() {
           sortedTransactions.map((item, i) => (
             <HiveTransactionRow transaction={item} key={i} />
           ))
+        )}
+        {!showSpinner && (
+          <WalletHistoryLoadMore
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            onLoadMore={fetchNextPage}
+          />
         )}
       </ProfileWalletTokenHistoryCard>
     </>

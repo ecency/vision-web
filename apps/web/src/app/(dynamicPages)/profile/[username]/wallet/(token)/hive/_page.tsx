@@ -15,6 +15,7 @@ import {
   ProfileWalletTokenHistoryCard,
   AggregatedBalanceCard,
   BalanceHistoryChart,
+  WalletHistoryLoadMore,
 } from "../_components";
 import { HiveTransactionRow } from "./_components";
 import { Button } from "@/features/ui";
@@ -37,7 +38,8 @@ export function HivePage() {
     HIVE_TOKEN_OPERATION_FILTERS
   );
 
-  const { data, refetch, isFetching } = useInfiniteQuery(
+  const { data, refetch, isFetching, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteQuery(
     getHiveAssetTransactionsQueryOptions(username, 1000, filters)
   );
   const dataFlow = useInfiniteDataFlow(data);
@@ -98,6 +100,13 @@ export function HivePage() {
           sortedTransactions.map((item, i) => (
             <HiveTransactionRow transaction={item} key={i} />
           ))
+        )}
+        {!showSpinner && (
+          <WalletHistoryLoadMore
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            onLoadMore={fetchNextPage}
+          />
         )}
       </ProfileWalletTokenHistoryCard>
     </>
