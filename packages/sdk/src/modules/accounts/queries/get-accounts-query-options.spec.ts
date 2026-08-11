@@ -68,4 +68,27 @@ describe("getAccountsQueryOptions", () => {
       await expect(runQuery(getAccountsQueryOptions(["alice"]))).resolves.toEqual([]);
     });
   });
+
+  // Regression: #1403. get_accounts takes account_name_type, so a name the chain
+  // cannot hold asserts on deserialisation instead of answering "no such account",
+  // and one bad entry takes the whole batch down with it.
+  describe("names the chain cannot hold", () => {
+    it("does not call the node at all when every name is unqueryable", async () => {
+      await expect(
+        runQuery(getAccountsQueryOptions(["aliveandthriving,"]))
+      ).resolves.toEqual([]);
+      expect(mockCallRPC).not.toHaveBeenCalled();
+    });
+
+    it("keeps the batch alive by dropping only the bad entry", async () => {
+      mockCallRPC.mockResolvedValue([{ name: "alice" }]);
+
+      const result = await runQuery(
+        getAccountsQueryOptions(["alice", "sebastián.bilbao"])
+      );
+
+      expect(mockCallRPC.mock.calls[0]?.[1]).toEqual([["alice"]]);
+      expect(result).toHaveLength(1);
+    });
+  });
 });

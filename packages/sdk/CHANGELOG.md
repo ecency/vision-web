@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.82
+
+### Patch Changes
+
+- fix(sdk): stop sending account names the node refuses to parse (#1407)
+
 ## 2.3.81
 
 ### Patch Changes
