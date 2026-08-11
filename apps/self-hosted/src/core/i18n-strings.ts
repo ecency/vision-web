@@ -81,6 +81,11 @@ export type TranslationKey =
   | 'claim_title_community'
   | 'claim_subtitle'
   | 'claim_cta'
+  | 'claim_preview_cta'
+  | 'claim_preview_banner_blog'
+  | 'claim_preview_banner_community'
+  | 'claim_preview_claim'
+  | 'claim_preview_exit'
   | 'edit_post'
   | 'updating'
   | 'update'
@@ -379,6 +384,13 @@ export const translations: { en: Translations } & Record<
     claim_title_community: "This community isn't set up yet",
     claim_subtitle: 'Is this yours? Claim it and launch on Ecency in minutes.',
     claim_cta: 'Claim on Ecency',
+    claim_preview_cta: 'Preview this blog first',
+    claim_preview_banner_blog:
+      "A live preview built from this account's public Hive posts. The name is not claimed yet.",
+    claim_preview_banner_community:
+      "A live preview built from this community's public Hive posts. The name is not claimed yet.",
+    claim_preview_claim: 'Claim this name',
+    claim_preview_exit: 'Exit preview',
     edit_post: 'Edit',
     updating: 'Updating...',
     update: 'Update',

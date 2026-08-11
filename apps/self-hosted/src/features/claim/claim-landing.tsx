@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { t } from "@/core";
 import { parseClaimTarget } from "./parse-claim-target";
+import { enterClaimPreview, isClaimPreviewRequested } from "./claim-preview";
 
 /**
  * Shown on an UNCLAIMED *.blogs.ecency.com subdomain, which nginx serves the shared default
@@ -22,6 +23,15 @@ export function ClaimLanding() {
   const { name, isCommunity } = parseClaimTarget(host);
   const title = isCommunity ? t("claim_title_community") : t("claim_title_blog");
   const claimHref = `${HOSTING_URL}?claim=${encodeURIComponent(name)}`;
+
+  // Deep-linked preview (the signup funnel or a shared link): boot straight into the live
+  // preview instead of the CTA. Behind an explicit param so crawlers and casual hits keep
+  // getting the lightweight landing.
+  useEffect(() => {
+    if (name && isClaimPreviewRequested(window.location.search)) {
+      enterClaimPreview(name, isCommunity);
+    }
+  }, [name, isCommunity]);
 
   useEffect(() => {
     const prevTitle = document.title;
@@ -51,6 +61,15 @@ export function ClaimLanding() {
         >
           {t("claim_cta")}
         </a>
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => enterClaimPreview(name, isCommunity)}
+            className="text-theme-muted underline hover:no-underline"
+          >
+            {t("claim_preview_cta")}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -82,6 +82,10 @@ const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
     occurrences: 1,
     reason: 'built from the imported HOSTING_URL constant, absolute',
   },
+  'src/features/claim/claim-preview-banner.tsx:claimHref': {
+    occurrences: 1,
+    reason: 'built from the imported HOSTING_URL constant, absolute',
+  },
   'src/features/blog/components/blog-post-header.tsx:`${profileBaseUrl}${entryData.author}`':
     {
       occurrences: 1,

@@ -6,6 +6,8 @@ import { queryClient } from "@/consts/react-query";
 import { FloatingMenu } from "@/features/floating-menu";
 import { AuthProvider, useIsBlogOwner } from "@/features/auth";
 import { ClaimLanding } from "@/features/claim";
+import { ClaimPreviewBanner } from "@/features/claim/claim-preview-banner";
+import { isClaimPreviewActive } from "@/features/claim/claim-preview";
 import { ErrorBoundary, SkipToContent } from "@/features/shared";
 import { CrashScreen, reportRenderCrash } from "@/features/shared/crash-screen";
 import {
@@ -76,6 +78,9 @@ function RootComponent() {
   const isTemplate = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.instanceConfiguration.template === true
   );
+  // Claim preview: the real app over a synthesized config for an unclaimed host, with a
+  // persistent banner carrying the claim link (and the noindex the landing gave up).
+  const isClaimPreview = InstanceConfigManager.useConfig(isClaimPreviewActive);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -96,6 +101,7 @@ function RootComponent() {
           <AuthProvider>
             <Outlet />
             <AuthorizedFloatingMenu />
+            {isClaimPreview && <ClaimPreviewBanner />}
           </AuthProvider>
         )}
       </ErrorBoundary>
