@@ -9,11 +9,27 @@ export const config = {
   /**
    * Array of Hive API node endpoints for load balancing and failover.
    */
+  /*
+   * techcoderx.com is deliberately absent: its condenser_api.get_accounts serves
+   * account rows with posting_json_metadata stripped to "" while balances and
+   * reputation are correct. That is a well-formed result, so it passes shape
+   * validation and the health tracker keeps it ranked by latency alone.
+   *
+   * Wallet token visibility is read entirely from profile.tokens[].meta.show in
+   * that metadata, so a stripped row reads as "this user enabled nothing" and the
+   * wallet silently falls back to HIVE/HP/HBD/Points. getAccountFullQueryOptions
+   * cross-checks against the hivemind profile and re-reads, but that guard only
+   * fires when hivemind reports profile *values* — an account whose metadata is
+   * just `tokens` (no name/about/image) has none, so it would slip through.
+   * Keeping the node out of the pool removes the dependency on that guard.
+   *
+   * Note this is RPC-only: the same host serves full metadata over its REST
+   * (hafbe) endpoint, so it remains valid in `restNodes`.
+   */
   nodes: [
     'https://api.hive.blog',
     'https://api.deathwing.me',
     'https://api.openhive.network',
-    'https://techcoderx.com',
     'https://api.syncad.com',
     'https://rpc.mahdiyari.info',
   ],
