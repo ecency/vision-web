@@ -1,7 +1,12 @@
 import { useEffect } from "react";
 import { t } from "@/core";
 import { parseClaimTarget } from "./parse-claim-target";
-import { enterClaimPreview, isClaimPreviewRequested } from "./claim-preview";
+import {
+  enterClaimPreview,
+  isClaimPreviewActive,
+  isClaimPreviewRequested,
+} from "./claim-preview";
+import { InstanceConfigManager } from "@/core";
 
 /**
  * Shown on an UNCLAIMED *.blogs.ecency.com subdomain, which nginx serves the shared default
@@ -42,8 +47,13 @@ export function ClaimLanding() {
     meta.content = "noindex, nofollow";
     document.head.appendChild(meta);
     return () => {
-      document.title = prevTitle;
       meta.remove();
+      // Entering the live preview unmounts this landing AFTER applyConfigDom
+      // already set the preview's own title; restoring the pre-landing title
+      // here would stomp it. The preview banner owns noindex from here on.
+      if (!isClaimPreviewActive(InstanceConfigManager.getConfig())) {
+        document.title = prevTitle;
+      }
     };
   }, [title]);
 
