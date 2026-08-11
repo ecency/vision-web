@@ -48,8 +48,10 @@ describe('style template roster', () => {
   it('every template CSS file is imported by the registry index', () => {
     const index = readFileSync(join(THEMES_DIR, 'index.css'), 'utf8');
     for (const id of STYLE_TEMPLATES) {
-      expect(index, `index.css must import ${id}.css`).toContain(
-        `./${id}.css`,
+      // An exact active @import declaration, not toContain: a filename inside
+      // a comment or a longer path must not satisfy this.
+      expect(index, `index.css must import ${id}.css`).toMatch(
+        new RegExp(`^\\s*@import\\s+["']\\./${id}\\.css["'];`, 'm'),
       );
     }
   });

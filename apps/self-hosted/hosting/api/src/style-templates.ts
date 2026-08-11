@@ -17,13 +17,13 @@
  * fails until the CSS side agrees, and the editor's label map fails typecheck
  * until the label exists.
  */
-export const STYLE_TEMPLATES = [
+export const STYLE_TEMPLATES = Object.freeze([
   'medium',
   'minimal',
   'magazine',
   'developer',
   'modern-gradient',
-] as const;
+] as const);
 
 export type StyleTemplate = (typeof STYLE_TEMPLATES)[number];
 

@@ -2,7 +2,7 @@
  * Tenant Service
  */
 
-import { DEFAULT_STYLE_TEMPLATE } from '../style-templates';
+import { DEFAULT_STYLE_TEMPLATE, STYLE_TEMPLATES } from '../style-templates';
 import { db, type SqlExecutor } from '../db/client';
 import { callRPC, config as hiveTxConfig } from '@ecency/sdk/hive';
 import { Tenant, TenantRow, mapTenantFromDb } from '../types';
@@ -742,6 +742,26 @@ export const TenantService = {
     // that switches the instance type carries the other type's filters with it, and storing
     // those while the type stays put leaves every feed tab querying a sort its API rejects.
     this.normalizePostsFilters(instance, pins.type, discarded);
+
+    // The style template is a closed roster (style-templates.ts). A value outside it reaches
+    // the DOM as data-style-template="<id>", matches no stylesheet and the site renders
+    // without its template styles. The editor's select cannot produce one, so an off-roster
+    // value is a hand-edited document; drop the key so the merge keeps the stored value, and
+    // say so.
+    const general = clean.configuration.general;
+    if (
+      general &&
+      typeof general === 'object' &&
+      !Array.isArray(general) &&
+      general.styleTemplate !== undefined &&
+      !(STYLE_TEMPLATES as readonly string[]).includes(general.styleTemplate)
+    ) {
+      discarded?.push({
+        path: 'configuration.general.styleTemplate',
+        reason: `not a known style template; valid values: ${STYLE_TEMPLATES.join(', ')}`,
+      });
+      delete general.styleTemplate;
+    }
 
     return clean;
   },
