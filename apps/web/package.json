@@ -89,7 +89,7 @@
     "decimal.js": "^10.6.0",
     "diff-match-patch": "^1.0.5",
     "domhandler": "^5.0.3",
-    "dompurify": "^3.4.12",
+    "dompurify": "^3.4.13",
     "emoji-mart": "^5.5.2",
     "formidable": "^3.5.4",
     "franc-min": "^6.2.0",
