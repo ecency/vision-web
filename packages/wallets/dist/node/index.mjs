@@ -631,15 +631,17 @@ function getTokenOperationsQueryOptions(token, username, isForOwner = false, cur
 }
 
 // src/modules/wallets/mutations/save-wallet-information-to-metadata.ts
+var isChainToken = ({
+  type,
+  symbol
+}) => type === "CHAIN" || Object.values(EcencyWalletCurrency).includes(symbol);
 function getGroupedChainTokens(tokens, defaultShow) {
   if (!tokens) {
     return {};
   }
   return R.pipe(
     tokens,
-    R.filter(
-      ({ type, symbol }) => type === "CHAIN" || Object.values(EcencyWalletCurrency).includes(symbol)
-    ),
+    R.filter(isChainToken),
     R.map((item) => {
       const meta = {
         ...item.meta ?? {}
@@ -659,6 +661,35 @@ function getGroupedChainTokens(tokens, defaultShow) {
     )
   );
 }
+function buildTokensPayload(existingTokens, tokens) {
+  const profileChainTokens = getGroupedChainTokens(existingTokens);
+  const payloadTokens = tokens.map(({ currency, type, privateKey, username, ...meta }) => ({
+    symbol: currency,
+    type: type ?? (Object.values(EcencyWalletCurrency).includes(currency) ? "CHAIN" : void 0),
+    meta
+  })) ?? [];
+  const payloadChainTokens = getGroupedChainTokens(payloadTokens, true);
+  const payloadNonChainTokens = (payloadTokens ?? []).filter(
+    (token) => !isChainToken(token)
+  );
+  const mergedChainTokens = R.pipe(
+    profileChainTokens,
+    R.mergeDeep(payloadChainTokens),
+    R.values()
+  );
+  const managesNonChainTokens = payloadNonChainTokens.length > 0;
+  const payloadSymbols = new Set(
+    (payloadTokens ?? []).map(({ symbol }) => symbol)
+  );
+  const preservedTokens = managesNonChainTokens ? [] : (existingTokens ?? []).filter(
+    (token) => !isChainToken(token) && !payloadSymbols.has(token.symbol)
+  );
+  return [
+    ...preservedTokens,
+    ...payloadNonChainTokens,
+    ...mergedChainTokens
+  ];
+}
 function useSaveWalletInformationToMetadata(username, auth, options2) {
   const queryClient = useQueryClient();
   const { data: accountData } = useQuery(getAccountFullQueryOptions(username));
@@ -673,28 +704,8 @@ function useSaveWalletInformationToMetadata(username, auth, options2) {
       if (!accountData) {
         throw new Error("[SDK][Wallets] \u2013 no account data to save wallets");
       }
-      const profileChainTokens = getGroupedChainTokens(
-        accountData.profile?.tokens
-      );
-      const payloadTokens = tokens.map(({ currency, type, privateKey, username: username2, ...meta }) => ({
-        symbol: currency,
-        type: type ?? (Object.values(EcencyWalletCurrency).includes(currency) ? "CHAIN" : void 0),
-        meta
-      })) ?? [];
-      const payloadChainTokens = getGroupedChainTokens(payloadTokens, true);
-      const payloadNonChainTokens = payloadTokens.filter(
-        ({ type, symbol }) => type !== "CHAIN" && !Object.values(EcencyWalletCurrency).includes(symbol)
-      );
-      const mergedChainTokens = R.pipe(
-        profileChainTokens,
-        R.mergeDeep(payloadChainTokens),
-        R.values()
-      );
       return updateProfile({
-        tokens: [
-          ...payloadNonChainTokens,
-          ...mergedChainTokens
-        ]
+        tokens: buildTokensPayload(accountData.profile?.tokens, tokens)
       });
     },
     onError: options2?.onError,
@@ -1142,6 +1153,6 @@ async function getHivePublicKeys() {
 // src/index.ts
 rememberScryptBsvVersion();
 
-export { EcencyWalletBasicTokens, EcencyWalletCurrency, private_api_exports as EcencyWalletsPrivateApi, deriveHiveKey, deriveHiveKeys, deriveHiveMasterPasswordKey, deriveHiveMasterPasswordKeys, detectHiveKeyDerivation, discoverMetaMaskWallets, ensureEvmChain, estimateEvmGas, fetchEvmAddress, fetchMultichainAddresses, formatLamports, formatWei, getAccountWalletListQueryOptions, getAllTokensListQueryOptions, getEvmChainConfig, getEvmExplorerUrl, getHivePublicKeys, getSolExplorerUrl, getTokenOperationsQueryOptions, getTokenPriceQueryOptions, installHiveSnap, parseToLamports, parseToWei, sendEvmTransfer, sendSolTransfer, useExternalTransfer, useGetExternalWalletBalanceQuery, useSaveWalletInformationToMetadata };
+export { EcencyWalletBasicTokens, EcencyWalletCurrency, private_api_exports as EcencyWalletsPrivateApi, buildTokensPayload, deriveHiveKey, deriveHiveKeys, deriveHiveMasterPasswordKey, deriveHiveMasterPasswordKeys, detectHiveKeyDerivation, discoverMetaMaskWallets, ensureEvmChain, estimateEvmGas, fetchEvmAddress, fetchMultichainAddresses, formatLamports, formatWei, getAccountWalletListQueryOptions, getAllTokensListQueryOptions, getEvmChainConfig, getEvmExplorerUrl, getHivePublicKeys, getSolExplorerUrl, getTokenOperationsQueryOptions, getTokenPriceQueryOptions, installHiveSnap, parseToLamports, parseToWei, sendEvmTransfer, sendSolTransfer, useExternalTransfer, useGetExternalWalletBalanceQuery, useSaveWalletInformationToMetadata };
 //# sourceMappingURL=index.mjs.map
 //# sourceMappingURL=index.mjs.map
