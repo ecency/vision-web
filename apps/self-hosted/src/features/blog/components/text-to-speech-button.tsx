@@ -18,12 +18,12 @@ export function TextToSpeechButton({ text, title, className }: Props) {
   const [status, setStatus] = useState<TTSStatus>('idle');
   const [isSupported, setIsSupported] = useState(false);
 
-  const isEnabled = InstanceConfigManager.getConfigValue(
+  const isEnabled = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.instanceConfiguration.features.post?.text2Speech?.enabled ?? false,
   );
 
-  const language = InstanceConfigManager.getConfigValue(
+  const language = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.general.language || 'en',
   );
 

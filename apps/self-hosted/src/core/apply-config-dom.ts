@@ -73,9 +73,12 @@ export interface ApplyConfigDomOptions {
   declaration?: ConfigDomDeclaration;
   /**
    * Keep data-theme in step with the operating system while the configured
-   * theme is 'system'. Only the paths that establish a new baseline (boot, a
-   * successful save) ask for this; preview must not, so a keystroke in the
-   * editor cannot register a listener per render.
+   * theme is 'system'. Boot, a successful save and both directions of the
+   * editor's preview (config-preview.ts) ask for this, each keyed to the
+   * document being applied, so the listener always answers for what is on
+   * screen. Safe to request on every apply: syncSystemTheme holds a single
+   * module-level listener slot and removes the previous listener before
+   * registering, so repeated applies cannot accumulate listeners.
    */
   syncSystemTheme?: boolean;
 }

@@ -7,16 +7,16 @@ import { resolveCreatePostTarget } from '@/features/auth/utils/create-post-targe
 /**
  * The resolved Hive layer for this instance.
  *
- * A non-reactive `getConfig()` read behind a `useMemo`, in exactly the shape
- * `use-tipping-config.ts` already uses. Config is loaded once before the app
- * renders and the editor's preview channel is DOM attributes, which cannot
- * express a React render decision anyway. Introducing a second, reactive read
- * idiom for one corner of the app is how the panel and the site end up
- * disagreeing; saving and reloading is how every other field behaves today.
+ * A reactive read: the Configuration Editor's preview serves a draft config
+ * through the store, so this hook must recompute when the store notifies, or
+ * a page opened mid-preview would keep rendering drafted payout labels and
+ * composer targets after preview ends. The memo is keyed on the config object
+ * the store served, which changes identity exactly when a notify fires.
  */
 export function useHiveLayer(): ResolvedHiveLayer {
+  const config = InstanceConfigManager.useFullConfig();
   return useMemo(() => {
-    const { configuration } = InstanceConfigManager.getConfig();
+    const { configuration } = config;
     const instance = configuration.instanceConfiguration;
 
     // One definition, in core/instance-mode. This used to be the same
@@ -33,5 +33,5 @@ export function useHiveLayer(): ResolvedHiveLayer {
       features: instance?.features,
       composerIsInternal: composer.kind === 'internal',
     });
-  }, []);
+  }, [config]);
 }

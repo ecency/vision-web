@@ -31,10 +31,10 @@ function calculateReadTime(body: string): number {
 export function BlogPostHeader({ entry }: Props) {
   const { user } = useAuth();
   const entryData = entry.original_entry || entry;
-  const instanceType = InstanceConfigManager.getConfigValue(
+  const instanceType = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.instanceConfiguration.type ?? 'blog',
   );
-  const profileBaseUrl = InstanceConfigManager.getConfigValue(
+  const profileBaseUrl = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.general.profileBaseUrl || 'https://ecency.com/@',
   );
   const isCommunity = instanceType === 'community';

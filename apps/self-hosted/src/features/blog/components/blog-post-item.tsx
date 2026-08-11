@@ -24,21 +24,21 @@ interface Props {
 
 export function BlogPostItem({ entry }: Props) {
   const hiveLayer = useHiveLayer();
-  const listType = InstanceConfigManager.getConfigValue(
+  const listType = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.instanceConfiguration.layout.listType,
   );
-  const showLikes = InstanceConfigManager.getConfigValue(
+  const showLikes = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.instanceConfiguration.features.likes?.enabled ?? true,
   );
-  const showComments = InstanceConfigManager.getConfigValue(
+  const showComments = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.instanceConfiguration.features.comments?.enabled ?? true,
   );
-  const instanceType = InstanceConfigManager.getConfigValue(
+  const instanceType = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.instanceConfiguration.type ?? 'blog',
   );
-  const profileBaseUrl = InstanceConfigManager.getConfigValue(
+  const profileBaseUrl = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.general.profileBaseUrl || 'https://ecency.com/@',
   );
   const entryData = entry.original_entry || entry;

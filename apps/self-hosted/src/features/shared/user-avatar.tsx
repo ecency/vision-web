@@ -10,7 +10,7 @@ export type UserAvatarProps = Omit<BaseUserAvatarProps, 'imageProxyBase'>;
  * Re-exports @ecency/ui UserAvatar with imageProxyBase pre-filled from config.
  */
 export function UserAvatar(props: UserAvatarProps) {
-  const imageProxyBase = InstanceConfigManager.getConfigValue(
+  const imageProxyBase = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.general.imageProxy || 'https://i.ecency.com',
   );
 

@@ -39,28 +39,29 @@ export function BlogNavigation() {
     return defaultFilter;
   }, [location.search, availableFilters]);
 
-  const blogTitle = InstanceConfigManager.getConfigValue(
+  const blogTitle = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.instanceConfiguration.meta.title,
   );
 
-  const blogLogo = InstanceConfigManager.getConfigValue(
+  const blogLogo = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.instanceConfiguration.meta.logo,
   );
 
   // Use community title if available and in community mode
   const displayTitle = isCommunityMode && community?.title ? community.title : blogTitle;
 
+  const proxyBase = InstanceConfigManager.useConfig(
+    ({ configuration }) => configuration.general.imageProxy || 'https://i.ecency.com',
+  );
+
   // Use community avatar from image proxy if no custom logo
   const displayLogo = useMemo(() => {
     if (blogLogo) return blogLogo;
     if (isCommunityMode && community?.name) {
-      const proxyBase = InstanceConfigManager.getConfigValue(
-        ({ configuration }) => configuration.general.imageProxy || 'https://i.ecency.com',
-      );
       return `${proxyBase}/u/${community.name}/avatar/medium`;
     }
     return null;
-  }, [blogLogo, isCommunityMode, community?.name]);
+  }, [blogLogo, isCommunityMode, community?.name, proxyBase]);
 
   // Get localized filter label
   const getFilterLabel = (filter: string): string => {

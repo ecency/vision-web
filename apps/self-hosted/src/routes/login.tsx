@@ -60,7 +60,7 @@ function LoginPage() {
   const availableMethods = useAvailableAuthMethods();
   const [error, setError] = useState<string | null>(null);
 
-  const blogTitle = InstanceConfigManager.getConfigValue(
+  const blogTitle = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.instanceConfiguration.meta.title
   );
 

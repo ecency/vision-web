@@ -19,7 +19,7 @@ function RouteComponent() {
   // bookmarked /search?q= would still query Hive; send it home instead. Snapshot read (as
   // elsewhere in the app); a live owner-preview toggle isn't reflected because preview edits
   // are applied via DOM attributes, not the config store. Config is static per real load.
-  const searchEnabled = InstanceConfigManager.getConfigValue(
+  const searchEnabled = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.instanceConfiguration.layout.search?.enabled ?? true,
   );

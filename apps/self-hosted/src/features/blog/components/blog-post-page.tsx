@@ -23,7 +23,7 @@ export function BlogPostPage() {
   const params = useParams({ strict: false });
   const search = useSearch({ strict: false });
 
-  const showComments = InstanceConfigManager.getConfigValue(
+  const showComments = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.instanceConfiguration.features.comments?.enabled ?? true,
   );

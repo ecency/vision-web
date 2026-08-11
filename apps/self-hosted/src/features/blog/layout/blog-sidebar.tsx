@@ -43,7 +43,7 @@ function BlogSidebarContent({ username }: { username: string }) {
     enabled: !!username,
   });
 
-  const showTippingGeneral = InstanceConfigManager.getConfigValue(
+  const showTippingGeneral = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.instanceConfiguration.features.tipping?.general?.enabled ?? false
   );
@@ -182,16 +182,17 @@ function CommunitySidebar() {
   );
   const isModerator = isModeratorRole(context?.role);
 
+  const proxyBase = InstanceConfigManager.useConfig(
+    ({ configuration }) =>
+      configuration.general.imageProxy || "https://i.ecency.com",
+  );
+
   // Get the community avatar URL from the image proxy
   const communityAvatarUrl = useMemo(() => {
     if (!community?.name) return null;
-    const proxyBase = InstanceConfigManager.getConfigValue(
-      ({ configuration }) =>
-        configuration.general.imageProxy || "https://i.ecency.com",
-    );
     // Community avatars use the same pattern as user avatars
     return `${proxyBase}/u/${community.name}/avatar/medium`;
-  }, [community?.name]);
+  }, [community?.name, proxyBase]);
 
   // Was: `if (!community)` renders "Community not found.", which is what the
   // owner of a running community was shown whenever one bridge call failed.
