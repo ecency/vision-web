@@ -226,7 +226,12 @@ export function getTransactionsInfiniteQueryOptions(
           const chained = await fetchPage(response.total_pages - 1);
           entries = [...entries, ...toEntries(chained)];
           currentPage = response.total_pages - 1;
-        } catch {
+        } catch (e) {
+          // Caller cancellation is not a node failure: rethrow so the query
+          // settles as cancelled instead of resolving with a partial page.
+          if (signal?.aborted) {
+            throw e;
+          }
           // Keep the short remainder page; the cursor stays at total_pages so
           // the page that failed here is fetchNextPage's next target, not lost.
         }

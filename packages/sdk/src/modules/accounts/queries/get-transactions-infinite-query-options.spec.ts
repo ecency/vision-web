@@ -105,6 +105,25 @@ describe("getTransactionsInfiniteQueryOptions", () => {
     expect(page.currentPage).toBe(146);
   });
 
+  it("rethrows when the chained fetch fails because the caller aborted", async () => {
+    const controller = new AbortController();
+    mockCallREST
+      .mockResolvedValueOnce(hafahResponse(146, [300]))
+      .mockImplementationOnce(() => {
+        controller.abort();
+        return Promise.reject(new Error("Aborted"));
+      });
+
+    const options = getTransactionsInfiniteQueryOptions("alice", 3);
+    const run = (options.queryFn as unknown as QueryFn)({
+      pageParam: null,
+      signal: controller.signal,
+    });
+
+    // Cancellation must not resolve into a partial page.
+    await expect(run).rejects.toThrow("Aborted");
+  });
+
   it("walks pages downward and stops below page 1", () => {
     const options = getTransactionsInfiniteQueryOptions("alice", 3);
     const next = options.getNextPageParam as (lastPage: { currentPage: number }) => number | undefined;
