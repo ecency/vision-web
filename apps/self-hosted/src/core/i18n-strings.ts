@@ -81,6 +81,12 @@ export type TranslationKey =
   | 'claim_title_community'
   | 'claim_subtitle'
   | 'claim_cta'
+  | 'first_run_title'
+  | 'first_run_item_theme'
+  | 'first_run_item_accent'
+  | 'first_run_item_title'
+  | 'first_run_open'
+  | 'first_run_dismiss'
   | 'edit_post'
   | 'updating'
   | 'update'
@@ -379,6 +385,12 @@ export const translations: { en: Translations } & Record<
     claim_title_community: "This community isn't set up yet",
     claim_subtitle: 'Is this yours? Claim it and launch on Ecency in minutes.',
     claim_cta: 'Claim on Ecency',
+    first_run_title: 'Make this site yours',
+    first_run_item_theme: 'Pick a style that fits your writing',
+    first_run_item_accent: 'Set your accent color',
+    first_run_item_title: 'Check your title and description',
+    first_run_open: 'Open settings',
+    first_run_dismiss: 'Maybe later',
     edit_post: 'Edit',
     updating: 'Updating...',
     update: 'Update',

@@ -1004,6 +1004,25 @@ export function HostingSignup() {
             </div>
           </Alert>
 
+          {/* Land the owner on their new site with the settings panel opening by itself.
+              A Hivesigner session can carry over: the link only asks the instance to START
+              its own OAuth flow, so identity is verified there exactly like a manual login.
+              Other login types sign in on the instance with their extension as usual. */}
+          {safeBlogUrl && (
+            <a
+              href={`${safeBlogUrl}${
+                activeUser && getLoginType(activeUser.username) === "hivesigner"
+                  ? "?login=hivesigner&setup=1"
+                  : "?setup=1"
+              }`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block text-center px-4 py-3 rounded-lg bg-blue-dark-sky text-white font-semibold hover:opacity-90"
+            >
+              {i18next.t("hosting.customize-your-blog")}
+            </a>
+          )}
+
           {/* The site starts on a default template; without these steps owners don't discover
               that they can sign in on their new site and configure it (settings button). */}
           <div className="rounded-lg border border-[--border-color] p-4 flex flex-col gap-2">
