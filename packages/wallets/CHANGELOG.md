@@ -5,6 +5,8 @@
 ### Patch Changes
 
 - fix(wallets): saving chain addresses no longer deletes engine tokens (#1408)
+- Updated dependencies []:
+  - @ecency/sdk@2.3.82
 
 ## 5.0.81
 
