@@ -148,7 +148,10 @@ export function HiveTransactionRow({ entry, transaction: tr }: Props) {
         </div>
       </div>
     );
-  } else if (tr.type === "transfer_from_savings") {
+  } else if (
+    tr.type === "transfer_from_savings" ||
+    tr.type === "fill_transfer_from_savings"
+  ) {
     icon = <UilArrowRight className="size-4" />;
     details = (
       <div className="space-y-2">

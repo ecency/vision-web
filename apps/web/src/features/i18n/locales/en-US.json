@@ -1816,6 +1816,7 @@
     "type-collateralized_convert-detail": "Request id: <strong>{{request}}</strong>",
     "type-update_proposal_vote-detail": "Proposal id: <strong>{{pid}}</strong>",
     "type-transfer_from_savings": "Transfer from savings",
+    "type-fill_transfer_from_savings": "Savings withdrawal completed",
     "type-limit_order_create": "New trade created",
     "type-limit_order_create2": "New trade created",
     "type-limit_order_cancel": "Open trade cancelled",

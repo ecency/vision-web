@@ -213,6 +213,20 @@ export function TransactionRow({ entry, transaction: item }: Props) {
     numbers = <span className="number">{aam}</span>;
   }
 
+  if (tr.type === "fill_transfer_from_savings") {
+    flag = true;
+    // @ts-ignore
+    icon = <TwoUserAvatar from={tr.from} to={tr.to} size="small" />;
+
+    details = (
+      <span>
+        <strong>@{tr.from}</strong> -&gt; <strong>@{tr.to}</strong>
+      </span>
+    );
+
+    numbers = <span className="number">{tr.amount}</span>;
+  }
+
   if (tr.type === "cancel_transfer_from_savings") {
     flag = true;
     icon = closeSvg;

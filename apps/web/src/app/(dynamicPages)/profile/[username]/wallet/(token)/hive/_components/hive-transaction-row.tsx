@@ -115,7 +115,8 @@ export function HiveTransactionRow({ entry, transaction: tr }: Props) {
     tr.type === "transfer" ||
     tr.type === "transfer_to_vesting" ||
     tr.type === "transfer_to_savings" ||
-    tr.type === "transfer_from_savings"
+    tr.type === "transfer_from_savings" ||
+    tr.type === "fill_transfer_from_savings"
   ) {
     flag = true;
     icon = <UilArrowRight className="size-4" />;

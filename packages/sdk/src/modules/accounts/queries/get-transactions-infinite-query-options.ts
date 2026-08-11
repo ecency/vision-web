@@ -13,10 +13,13 @@ export const ACCOUNT_OPERATION_GROUPS: Record<OperationGroup, number[]> = {
     ops.transfer_to_savings,
     ops.transfer_from_savings,
     ops.cancel_transfer_from_savings,
+    // The virtual op emitted when a savings withdrawal completes. It used to be a
+    // second copy of fill_recurrent_transfer, so a completed savings withdrawal was
+    // never returned by the transfers group nor by ALL_ACCOUNT_OPERATIONS.
+    ops.fill_transfer_from_savings,
     ops.recurrent_transfer,
     ops.fill_recurrent_transfer,
     ops.escrow_transfer,
-    ops.fill_recurrent_transfer,
   ],
   "market-orders": [
     ops.fill_convert_request,
@@ -48,9 +51,13 @@ export const ACCOUNT_OPERATION_GROUPS: Record<OperationGroup, number[]> = {
   ],
 };
 
-export const ALL_ACCOUNT_OPERATIONS = [...Object.values(ACCOUNT_OPERATION_GROUPS)].reduce(
-  (acc, val) => acc.concat(val),
-  []
+/**
+ * Every operation any group asks for, de-duplicated. Groups overlap (an op can be
+ * meaningful to more than one), and the raw concatenation used to repeat ids in the
+ * `operation-types` query string sent to hafah.
+ */
+export const ALL_ACCOUNT_OPERATIONS = Array.from(
+  new Set(Object.values(ACCOUNT_OPERATION_GROUPS).flat())
 );
 
 interface TxPageRaw {
