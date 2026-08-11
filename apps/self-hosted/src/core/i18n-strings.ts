@@ -384,7 +384,7 @@ export const translations: { en: Translations } & Record<
     claim_title_community: "This community isn't set up yet",
     claim_subtitle: 'Is this yours? Claim it and launch on Ecency in minutes.',
     claim_cta: 'Claim on Ecency',
-    claim_preview_cta: 'Preview this blog first',
+    claim_preview_cta: 'See a live preview first',
     claim_preview_banner_blog:
       "A live preview built from this account's public Hive posts. The name is not claimed yet.",
     claim_preview_banner_community:

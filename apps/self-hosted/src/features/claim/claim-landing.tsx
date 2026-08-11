@@ -61,6 +61,7 @@ export function ClaimLanding() {
         >
           {t("claim_cta")}
         </a>
+        {name && (
         <div className="mt-4">
           <button
             type="button"
@@ -70,6 +71,7 @@ export function ClaimLanding() {
             {t("claim_preview_cta")}
           </button>
         </div>
+        )}
       </div>
     </div>
   );
