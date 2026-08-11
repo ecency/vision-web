@@ -846,6 +846,15 @@ export function HostingSignup() {
 
       {step === "payment" && (
         <div className="flex flex-col gap-4">
+          {/* A fresh reservation is held with its customized look for a limited window; say so
+              plainly (pay to keep it). Renewals (an expiry baseline exists) are not reservations
+              and skip the line. The window comes from the API so this number cannot drift from
+              the sweep's configuration. */}
+          {renewBaselineExpiryRef.current === null && !!methods?.reservation?.graceDays && (
+            <p className="text-sm opacity-75">
+              {i18next.t("hosting.reservation-grace", { n: methods.reservation.graceDays })}
+            </p>
+          )}
           {/* Term */}
           <div className="flex gap-2 flex-wrap">
             {TERMS.map((m) => (

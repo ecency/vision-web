@@ -13,6 +13,8 @@ export interface HostingPaymentMethods {
   hbd: { enabled: boolean; monthly: string; account: string };
   x402: { enabled: boolean; monthly: string };
   card: { enabled: boolean; monthlyUsdCents: number };
+  /** How long an unpaid reservation (and its customized look) is held before release. */
+  reservation?: { graceDays: number };
 }
 
 export interface HostingConfigInput {

@@ -8,7 +8,7 @@
 import { callRPC, setNodes } from '@ecency/sdk/hive';
 import { db } from './db/client';
 import { COMMUNITY_NAME, TenantService } from './services/tenant-service';
-import { parseGraceDays } from './services/subscription';
+import { parseGraceDays, reservationGraceDays } from './services/subscription';
 import { ConfigService } from './services/config-service';
 import { parseMemo, mapTenantFromDb, type ParsedMemo } from './types';
 import { AuditService } from './services/audit-service';
@@ -40,7 +40,7 @@ const CONFIG = {
   // it 'abandoned'). Must be a positive integer: a zero/negative/NaN value would make the SQL
   // cutoff `NOW() - (n * INTERVAL '1 day')` land at or after now and sweep EVERY inactive tenant,
   // so a misconfigured env falls back to 7 rather than mass-reclaiming.
-  ABANDONED_GRACE_DAYS: parseAbandonedGraceDays(process.env.ABANDONED_TENANT_GRACE_DAYS),
+  ABANDONED_GRACE_DAYS: reservationGraceDays(),
   UNVERIFIED_DOMAIN_CLAIM_DAYS: parseGraceDays(
     process.env.UNVERIFIED_DOMAIN_CLAIM_DAYS,
     DEFAULT_UNVERIFIED_DOMAIN_CLAIM_DAYS

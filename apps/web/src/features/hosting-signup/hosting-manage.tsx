@@ -28,6 +28,16 @@ export function HostingManage() {
   });
   const tenants = data?.tenants ?? [];
 
+  // The reservation window, for the awaiting-payment note below. Fetched only when an
+  // unpaid reservation is actually listed.
+  const hasInactive = tenants.some((t) => t.subscriptionStatus === "inactive");
+  const { data: methods } = useQuery({
+    queryKey: ["hosting", "payment-methods"],
+    queryFn: () => hostingApi.paymentMethods(),
+    enabled: hasInactive
+  });
+  const graceDays = methods?.reservation?.graceDays;
+
   useEffect(() => {
     setDomainOpenFor(null);
     setUpgradeOpenFor(null);
@@ -108,13 +118,18 @@ export function HostingManage() {
           {/* Awaiting payment (never activated): let the owner jump straight back into the payment
               step for this reservation instead of dead-ending on the status label. */}
           {t.subscriptionStatus === "inactive" && (
-            <div className="text-sm">
+            <div className="text-sm flex flex-col gap-1">
               <a
                 href={`/hosting?resume=${encodeURIComponent(t.username)}`}
                 className="text-blue-dark-sky hover:underline"
               >
                 {i18next.t("hosting.manage-continue-payment")}
               </a>
+              {!!graceDays && (
+                <span className="opacity-60">
+                  {i18next.t("hosting.reservation-grace-manage", { n: graceDays })}
+                </span>
+              )}
             </div>
           )}
 
