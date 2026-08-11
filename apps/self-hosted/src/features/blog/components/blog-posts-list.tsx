@@ -7,7 +7,7 @@ import {
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
 import { t } from '@/core';
-import { BlogPostItem } from './blog-post-item';
+import { useThemeComponents } from '@/themes/use-theme-components';
 import { DetectBottom } from './detect-bottom';
 import { useInstanceConfig } from '../hooks/use-instance-config';
 import { chooseFeedRetry } from '../utils/feed-retry';
@@ -35,6 +35,9 @@ const communityFilterMap: Record<string, string> = {
 };
 
 export function BlogPostsList({ filter = 'posts', limit = 20 }: Props) {
+  // The card resolves through the theme registry: a theme can restyle every
+  // entry without owning the whole feed (fetching, paging, error states).
+  const { PostCard } = useThemeComponents();
   const { username, communityId, isCommunityMode } = useInstanceConfig();
 
   // Use different query based on instance type
@@ -121,7 +124,7 @@ export function BlogPostsList({ filter = 'posts', limit = 20 }: Props) {
         const isNewItem = index >= previousLengthRef.current;
         const batchIndex = isNewItem ? index - previousLengthRef.current : 0;
         return (
-          <BlogPostItem
+          <PostCard
             key={`${post.author}/${post.permlink}`}
             entry={post}
             index={batchIndex}
