@@ -76,6 +76,25 @@ export interface TransferToSavings extends BaseTransaction {
   to: string;
 }
 
+export interface TransferFromSavings extends BaseTransaction {
+  type: "transfer_from_savings";
+  amount: string;
+  memo?: string;
+  from: string;
+  to: string;
+  request_id: number;
+}
+
+/** Virtual op emitted when a savings withdrawal's three-day timer completes. */
+export interface FillTransferFromSavings extends BaseTransaction {
+  type: "fill_transfer_from_savings";
+  amount: string;
+  memo?: string;
+  from: string;
+  to: string;
+  request_id: number;
+}
+
 export interface CancelTransferFromSavings extends BaseTransaction {
   from: string;
   request_id: number;
@@ -234,6 +253,8 @@ export type Transaction =
   | Transfer
   | TransferToVesting
   | TransferToSavings
+  | TransferFromSavings
+  | FillTransferFromSavings
   | CancelTransferFromSavings
   | WithdrawVesting
   | SetWithdrawRoute

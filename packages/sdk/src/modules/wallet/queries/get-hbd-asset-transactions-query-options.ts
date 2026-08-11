@@ -8,6 +8,7 @@ import type {
 } from "../types";
 import type { HiveTransaction } from "../types";
 import {
+  collectRequestedOperations,
   getHiveAssetTransactionsQueryOptions,
   resolveHiveOperationFilters,
 } from "./get-hive-asset-transactions-query-options";
@@ -18,6 +19,7 @@ export function getHbdAssetTransactionsQueryOptions(
   filters: HiveOperationFilter = []
 ) {
   const { filterKey } = resolveHiveOperationFilters(filters);
+  const requestedOperations = collectRequestedOperations(filters);
 
   return infiniteQueryOptions<HiveTransaction[]>({
     ...getHiveAssetTransactionsQueryOptions(username, limit, filters),
@@ -66,7 +68,10 @@ export function getHbdAssetTransactionsQueryOptions(
             case "limit_order_create2" as HiveOperationName:
               return true;
             default:
-              return false;
+              // See the HIVE options: keep an operation the caller named explicitly,
+              // otherwise the filter UI offers operations this switch throws away.
+              // Unfiltered requests still fall through to `false`.
+              return requestedOperations.has(item.type);
           }
         })
       ),

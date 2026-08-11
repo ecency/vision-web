@@ -74,6 +74,47 @@ export function resolveHiveOperationFilters(filters: HiveOperationFilter): {
   };
 }
 
+/**
+ * The operation names the caller asked for explicitly, ignoring group aliases.
+ *
+ * Used by the per-asset `select` filters so an operation a caller deliberately
+ * requested is never silently dropped just because the asset filter has no opinion
+ * about it. Passing no filter at all keeps the historical behaviour: the asset's own
+ * allow-list decides, and nothing extra leaks in.
+ */
+export function collectRequestedOperations(
+  filters: HiveOperationFilter
+): Set<string> {
+  const rawValues = Array.isArray(filters) ? filters : [filters];
+  return new Set(
+    rawValues.filter(
+      (value): value is HiveOperationFilterValue =>
+        value !== undefined && value !== null && value !== ("" as HiveOperationGroup)
+    )
+  );
+}
+
+/**
+ * Cursor for `condenser_api.get_account_history`.
+ *
+ * A page comes back in ASCENDING `num` order, so the OLDEST entry is at index 0 and
+ * walking backwards means `page[0].num - 1`. Reading the LAST entry instead takes the
+ * NEWEST row, which advances the window by a single operation per page (a page of 1000
+ * overlaps its predecessor by 999) and, once `num` reaches 0, yields -1 — the "newest"
+ * sentinel `initialPageParam` uses — so the walk restarts at the head of the history and
+ * never terminates.
+ */
+export function getNextAccountHistoryPageParam(
+  lastPage: HiveTransaction[] | undefined
+): number | undefined {
+  if (!lastPage?.length) {
+    return undefined;
+  }
+
+  const oldest = Number(lastPage[0]?.num ?? 0);
+  return Number.isFinite(oldest) && oldest > 0 ? oldest - 1 : undefined;
+}
+
 function makeBitMaskFilter(allowedOperations: number[]) {
   let low = 0n;
   let high = 0n;
@@ -98,13 +139,12 @@ export function getHiveAssetTransactionsQueryOptions(
   filters: HiveOperationFilter = []
 ) {
   const { filterArgs, filterKey } = resolveHiveOperationFilters(filters);
+  const requestedOperations = collectRequestedOperations(filters);
 
   return infiniteQueryOptions<HiveTransaction[]>({
     queryKey: ["assets", "hive", "transactions", username, limit, filterKey],
-    initialData: { pages: [], pageParams: [] },
     initialPageParam: -1,
-    getNextPageParam: (lastPage, __) =>
-      lastPage ? +(lastPage[lastPage.length - 1]?.num ?? 0) - 1 : -1,
+    getNextPageParam: getNextAccountHistoryPageParam,
 
     queryFn: async ({ pageParam }) => {
       const response = await callRPC(
@@ -165,7 +205,13 @@ export function getHiveAssetTransactionsQueryOptions(
             case "limit_order_create2" as HiveOperationName:
               return true;
             default:
-              return false;
+              // Keep an operation the caller asked for by name. Without this the
+              // filter UI advertises every operation while this switch silently
+              // discards the ones it has no opinion about, so picking e.g.
+              // `fill_transfer_from_savings` returns an empty list. Requests that
+              // pass no filter still fall through to `false`, so the unfiltered
+              // HIVE view is unchanged.
+              return requestedOperations.has(item.type);
           }
         })
       ),
