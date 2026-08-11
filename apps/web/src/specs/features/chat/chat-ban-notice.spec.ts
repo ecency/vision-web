@@ -49,6 +49,15 @@ describe("getChatBanInfo", () => {
     expect(getChatBanInfo({ bannedUntil: hours(1) }, NOW)?.reason).toBeUndefined();
   });
 
+  it("rejects a non-finite expiry", () => {
+    // Infinity survives an isNaN check and is also greater than now, so both original guards
+    // passed it: the notice would render an endless duration and never expire.
+    expect(getChatBanInfo({ bannedUntil: Infinity }, NOW)).toBeNull();
+    expect(getChatBanInfo({ bannedUntil: -Infinity }, NOW)).toBeNull();
+    expect(getChatBanInfo({ bannedUntil: "Infinity" }, NOW)).toBeNull();
+    expect(getChatBanInfo({ bannedUntil: "not-a-number" }, NOW)).toBeNull();
+  });
+
   it("drops a non-string reason rather than rendering it", () => {
     expect(getChatBanInfo({ bannedUntil: hours(1), reason: { x: 1 } }, NOW)?.reason).toBeUndefined();
   });
