@@ -16,7 +16,8 @@ import { useIsMobile } from "@/features/ui/util/use-is-mobile";
 import { WaveFormToolbar } from "@/features/waves/components/wave-form/wave-form-toolbar";
 import { useWaveSubmit } from "@/features/waves";
 import axios from "axios";
-import { uploadImage } from "@ecency/sdk";
+import { QUEST_MIN_CONTENT_LENGTH, uploadImage } from "@ecency/sdk";
+import { shouldShowShortContentHint } from "@/utils/short-content-hint";
 import { ensureValidToken } from "@/utils";
 import { error } from "@/features/shared";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -83,6 +84,16 @@ const WaveFormComponent = ({
   const characterLimit = isReply ? 750 : 250;
   const textLength = text?.length ?? 0;
   const exceedsCharacterLimit = textLength > characterLimit;
+
+  // A wave is a comment on the chain, so the points backend applies the same minimum
+  // length to it as to a reply, silently. Waves are short by design, which is exactly why
+  // it bites here. Not gated on `isReply`: a reply to a wave is a comment too and earns
+  // on the same rule.
+  const showShortContentHint = shouldShowShortContentHint({
+    username: activeUsername,
+    isEditing: !!entry,
+    text
+  });
 
   const poll = useEntryPollExtractor(entry);
   useEffect(() => {
@@ -340,6 +351,12 @@ const WaveFormComponent = ({
         )}
 
         <QuestStreakChip className="mb-1.5" />
+
+        {showShortContentHint && (
+          <div className="mb-1.5 text-xs opacity-60" role="status">
+            {i18next.t("waves.short-content-hint", { n: QUEST_MIN_CONTENT_LENGTH })}
+          </div>
+        )}
 
         <WaveFormToolbar
           isEdit={!!entry}
