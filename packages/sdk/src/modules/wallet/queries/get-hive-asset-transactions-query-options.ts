@@ -75,7 +75,8 @@ export function resolveHiveOperationFilters(filters: HiveOperationFilter): {
 }
 
 /**
- * The operation names the caller asked for explicitly, ignoring group aliases.
+ * The filter values the caller passed, minus the "all" sentinel. Group aliases are
+ * kept as-is: they never equal an operation name, so they simply never match.
  *
  * Used by the per-asset `select` filters so an operation a caller deliberately
  * requested is never silently dropped just because the asset filter has no opinion
@@ -115,6 +116,29 @@ export function getNextAccountHistoryPageParam(
   return Number.isFinite(oldest) && oldest > 0 ? oldest - 1 : undefined;
 }
 
+/**
+ * The `limit` to request for a given cursor.
+ *
+ * `condenser_api.get_account_history` asserts `start >= limit - 1`, because `start` is a
+ * 0-based index into the account's operation list and the node walks `limit` entries back
+ * from it. The cursor above is derived from `num` alone, so the last window before the
+ * start of history is necessarily shorter than `limit`, and asking for the full `limit`
+ * there fails the assert instead of returning the remaining rows.
+ *
+ * Narrowing the window to `pageParam + 1` asks for exactly what is left. The `-1`
+ * sentinel ("give me the newest") is not an index and passes through untouched.
+ */
+export function resolveAccountHistoryLimit(
+  pageParam: number,
+  limit: number
+): number {
+  if (!Number.isFinite(pageParam) || pageParam < 0) {
+    return limit;
+  }
+
+  return Math.min(limit, pageParam + 1);
+}
+
 function makeBitMaskFilter(allowedOperations: number[]) {
   let low = 0n;
   let high = 0n;
@@ -149,7 +173,12 @@ export function getHiveAssetTransactionsQueryOptions(
     queryFn: async ({ pageParam }) => {
       const response = await callRPC(
         "condenser_api.get_account_history",
-        [username, pageParam, limit, ...filterArgs]
+        [
+          username,
+          pageParam,
+          resolveAccountHistoryLimit(Number(pageParam), limit),
+          ...filterArgs,
+        ]
       );
 
       return response.map(
@@ -181,6 +210,10 @@ export function getHiveAssetTransactionsQueryOptions(
               return parseAsset(item.amount).symbol === "HIVE";
 
             case "transfer_from_savings" as HiveOperationName:
+            // The completed withdrawal carries the same asset as the request that
+            // opened it, so it needs the same guard. Without a case of its own it
+            // falls to the default below, which has no symbol check.
+            case "fill_transfer_from_savings" as HiveOperationName:
               return parseAsset((item as any).amount).symbol === "HIVE";
 
             case "fill_recurrent_transfer":

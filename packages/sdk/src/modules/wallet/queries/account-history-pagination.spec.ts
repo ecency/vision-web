@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   collectRequestedOperations,
+  getHiveAssetTransactionsQueryOptions,
   getNextAccountHistoryPageParam,
+  resolveAccountHistoryLimit,
 } from "./get-hive-asset-transactions-query-options";
+import { getHbdAssetTransactionsQueryOptions } from "./get-hbd-asset-transactions-query-options";
 import { ALL_ACCOUNT_OPERATIONS, ACCOUNT_OPERATION_GROUPS } from "../../accounts";
 import type { HiveTransaction } from "../types";
 
@@ -35,6 +38,87 @@ describe("getNextAccountHistoryPageParam", () => {
   it("terminates on an empty or missing page", () => {
     expect(getNextAccountHistoryPageParam([])).toBeUndefined();
     expect(getNextAccountHistoryPageParam(undefined)).toBeUndefined();
+  });
+});
+
+describe("resolveAccountHistoryLimit", () => {
+  it("passes the newest-page sentinel through untouched", () => {
+    expect(resolveAccountHistoryLimit(-1, 1000)).toBe(1000);
+  });
+
+  it("leaves a full window alone", () => {
+    expect(resolveAccountHistoryLimit(5000, 1000)).toBe(1000);
+  });
+
+  // The node asserts `start >= limit - 1`, so the short window before the start of
+  // history has to be asked for at its real size. Requesting the full limit there
+  // fails the assert instead of returning the rows that are left.
+  it("narrows the last window to what is left", () => {
+    expect(resolveAccountHistoryLimit(500, 1000)).toBe(501);
+    expect(resolveAccountHistoryLimit(0, 1000)).toBe(1);
+  });
+
+  it("satisfies start >= limit - 1 for every cursor the walk can emit", () => {
+    for (const start of [0, 1, 18, 19, 499, 500, 998, 999, 1000, 12345]) {
+      expect(start).toBeGreaterThanOrEqual(
+        resolveAccountHistoryLimit(start, 1000) - 1
+      );
+    }
+  });
+});
+
+describe("per-asset filtering of fill_transfer_from_savings", () => {
+  const savingsPage = () =>
+    [
+      {
+        num: 0,
+        type: "fill_transfer_from_savings",
+        timestamp: "",
+        trx_id: "",
+        amount: "1.000 HIVE",
+        from: "alice",
+        to: "bob",
+        request_id: 1,
+      },
+      {
+        num: 1,
+        type: "fill_transfer_from_savings",
+        timestamp: "",
+        trx_id: "",
+        amount: "2.000 HBD",
+        from: "alice",
+        to: "bob",
+        request_id: 2,
+      },
+    ] as unknown as HiveTransaction[];
+
+  const amountsAfterSelect = (options: {
+    select?: (data: any) => { pages: HiveTransaction[][] };
+  }) =>
+    options
+      .select!({ pages: [savingsPage()], pageParams: [-1] })
+      .pages[0].map((item) => (item as unknown as { amount: string }).amount);
+
+  // The op carries either asset, so without a case of its own it reaches the default,
+  // which keeps anything the caller named and never checks the symbol.
+  it("keeps only HIVE on the HIVE wallet", () => {
+    expect(
+      amountsAfterSelect(
+        getHiveAssetTransactionsQueryOptions("alice", 1000, [
+          "fill_transfer_from_savings",
+        ])
+      )
+    ).toEqual(["1.000 HIVE"]);
+  });
+
+  it("keeps only HBD on the HBD wallet", () => {
+    expect(
+      amountsAfterSelect(
+        getHbdAssetTransactionsQueryOptions("alice", 1000, [
+          "fill_transfer_from_savings",
+        ])
+      )
+    ).toEqual(["2.000 HBD"]);
   });
 });
 
