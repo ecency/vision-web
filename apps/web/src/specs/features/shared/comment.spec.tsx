@@ -64,7 +64,11 @@ vi.mock("@ecency/sdk", () => ({
     queryFn: async () => ({})
   })),
   getCommunityPermissions: vi.fn(() => ({ canComment: true })),
-  getCommunityType: vi.fn(() => -1)
+  getCommunityType: vi.fn(() => -1),
+  // Real pure impls so the short-reply hint behaves like production here.
+  QUEST_MIN_CONTENT_LENGTH: 25,
+  earnsQuestContentCredit: (body?: string | null) =>
+    Array.from((body ?? "").replace(/https?:\/\/\S+/g, "")).length > 25
 }));
 
 // Inline mock (no importActual) so we don't pull the real utils → consts → sdk
@@ -130,6 +134,48 @@ describe("Comment composer", () => {
     fireEvent.keyDown(container.querySelector(".comment-body")!, { key: "Enter", metaKey: true });
 
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  test("warns that a reply too short to earn points will not count", () => {
+    const { getByTestId, getByRole } = renderComment();
+
+    type(getByTestId, "Thank you");
+
+    expect(getByRole("status")).toBeTruthy();
+  });
+
+  test("counts a link-only reply as too short, matching the backend rule", () => {
+    const { getByTestId, getByRole } = renderComment();
+
+    type(getByTestId, "https://i.example.com/a-very-long-image-url-here.gif");
+
+    expect(getByRole("status")).toBeTruthy();
+  });
+
+  test("counts emoji as the backend does, not as UTF-16 code units", () => {
+    const { getByTestId, getByRole } = renderComment();
+
+    // 13 astral emoji measure as 13 code points, under the minimum. Counting UTF-16
+    // units would score them as 26 and wrongly promise points.
+    type(getByTestId, "😂".repeat(13));
+
+    expect(getByRole("status")).toBeTruthy();
+  });
+
+  test("drops the warning once the reply is long enough to earn", () => {
+    const { getByTestId, getByRole, queryByRole } = renderComment();
+
+    type(getByTestId, "Thank you");
+    expect(getByRole("status")).toBeTruthy();
+
+    type(getByTestId, "Thank you, this is a genuinely useful reply with something to say");
+    expect(queryByRole("status")).toBeNull();
+  });
+
+  test("stays quiet on an empty composer", () => {
+    const { queryByRole } = renderComment();
+
+    expect(queryByRole("status")).toBeNull();
   });
 
   test("Cmd/Ctrl+Enter is suppressed while the mention dropdown is open", () => {

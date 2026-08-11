@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.79
+
+### Patch Changes
+
+- quests: refresh after the backend credits an action, and warn on short replies (#1394)
+
 ## 2.3.78
 
 ### Patch Changes
