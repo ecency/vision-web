@@ -3312,6 +3312,7 @@
       "all-done-subtitle": "You're all set. Keep the waves coming!"
     },
     "sources": "Sources",
+    "short-content-hint": "Too short to earn points ({{n}} characters or fewer, links excluded)",
     "reply-form-title": "Replying to",
     "hide-replies": "Hide replies",
     "no-replies": "There aren't replies yet. Be first!",

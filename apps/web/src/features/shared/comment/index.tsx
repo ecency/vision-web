@@ -27,13 +27,13 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useIsMobile } from "@/features/ui/util/use-is-mobile";
 import { useQuery } from "@tanstack/react-query";
 import {
-  earnsQuestContentCredit,
   getCommunityContextQueryOptions,
   getCommunityPermissions,
   getCommunityType,
   QUEST_MIN_CONTENT_LENGTH
 } from "@ecency/sdk";
 import { isCommunity } from "@/utils";
+import { shouldShowShortContentHint } from "@/utils/short-content-hint";
 import { EntryPageContext } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/context";
 import { RcPrecheckBanner } from "@/features/shared/rc-precheck";
 
@@ -262,8 +262,11 @@ export function Comment({
   // The backend drops a reply this short without telling anyone, so the user posts,
   // watches the quest counter stay put and reports it as a bug. An edit never earns
   // either (the original already claimed the reward), so there is nothing to say there.
-  const showShortReplyHint =
-    !!activeUser && !isEdit && !!text?.trim() && !earnsQuestContentCredit(text);
+  const showShortReplyHint = shouldShowShortContentHint({
+    username: activeUser?.username,
+    isEditing: isEdit,
+    text
+  });
 
   return (
     <>
