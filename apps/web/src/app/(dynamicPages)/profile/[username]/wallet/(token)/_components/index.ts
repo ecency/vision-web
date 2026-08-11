@@ -13,3 +13,4 @@ export * from "./profile-wallet-promo-carousel";
 export * from "./hive-operation-filter-select";
 export * from "./balance-history-chart";
 export * from "./aggregated-balance-card";
+export * from "./wallet-history-load-more";
