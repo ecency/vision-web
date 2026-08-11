@@ -104,9 +104,9 @@ vi.mock("@ecency/sdk", async () => ({
   // Real pure impls (no deps) so the composer's short-reply hint behaves like production.
   QUEST_MIN_CONTENT_LENGTH: 25,
   measureQuestContentLength: (body?: string | null) =>
-    (body ?? "").replace(/https?:\/\/\S+/g, "").length,
+    Array.from((body ?? "").replace(/https?:\/\/\S+/g, "")).length,
   earnsQuestContentCredit: (body?: string | null) =>
-    (body ?? "").replace(/https?:\/\/\S+/g, "").length > 25,
+    Array.from((body ?? "").replace(/https?:\/\/\S+/g, "")).length > 25,
   // Only the key builders the web app reaches for directly. Pure string arrays, so a
   // partial stand-in is safe; add more branches as consumers need them.
   QueryKeys: {

@@ -36,6 +36,16 @@ describe("quest content rule", () => {
     expect(earnsQuestContentCredit("")).toBe(false);
   });
 
+  it("counts code points, so emoji score the same here as on the backend", () => {
+    // Python's len() counts code points; String.length would score each of these as 2
+    // and wrongly promise points the backend then refuses.
+    const thirteenEmoji = "😂".repeat(13);
+
+    expect(measureQuestContentLength(thirteenEmoji)).toBe(13);
+    expect(earnsQuestContentCredit(thirteenEmoji)).toBe(false);
+    expect(earnsQuestContentCredit("😂".repeat(QUEST_MIN_CONTENT_LENGTH + 1))).toBe(true);
+  });
+
   it("is strictly greater than the minimum, matching the backend comparison", () => {
     const exactly = "a".repeat(QUEST_MIN_CONTENT_LENGTH);
     const oneMore = "a".repeat(QUEST_MIN_CONTENT_LENGTH + 1);

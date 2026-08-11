@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
 import { scheduleQuestsRefresh } from "@/utils/refresh-quests";
 
-const invalidateQueries = vi.fn();
-const queryClient = { invalidateQueries } as any;
+// A real client, spied on, so the test is held to the actual invalidateQueries
+// contract rather than an `as any` stand-in that would survive a signature change.
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue(undefined);
 
 describe("scheduleQuestsRefresh", () => {
   beforeEach(() => {
@@ -20,11 +23,12 @@ describe("scheduleQuestsRefresh", () => {
 
     // A chain action is verified and processed a little over a minute after it is
     // broadcast. Refreshing at 4s (the old delay) re-read the pre-action numbers and
-    // then marked them fresh, so the real update was never picked up.
-    vi.advanceTimersByTime(10_000);
+    // then marked them fresh, so the real update was never picked up. The lower bound
+    // is tight on purpose: a regression to any sub-minute delay has to fail here.
+    vi.advanceTimersByTime(59_999);
     expect(invalidateQueries).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(65_000);
+    vi.advanceTimersByTime(15_001);
     expect(invalidateQueries).toHaveBeenCalledTimes(1);
   });
 

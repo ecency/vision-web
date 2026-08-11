@@ -334,7 +334,7 @@ export function Comment({
         </div>
         <RcPrecheckBanner operation="comment_operation" className="mt-2" />
         {showShortReplyHint && (
-          <div className="comment-short-reply-hint mt-2 text-xs opacity-60">
+          <div className="comment-short-reply-hint mt-2 text-xs opacity-60" role="status">
             {i18next.t("comment.short-reply-hint", { n: QUEST_MIN_CONTENT_LENGTH })}
           </div>
         )}

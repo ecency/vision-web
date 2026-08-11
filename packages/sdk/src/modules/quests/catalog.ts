@@ -56,9 +56,14 @@ export const QUEST_MIN_CONTENT_LENGTH = 25;
  * The length the backend actually measures. URLs are stripped first, so a reply that is
  * nothing but an image link measures as empty however long it looks. Mirrors the
  * `http(s)://\S+` strip in the ePoints verifier, including the absence of any trimming.
+ *
+ * Counts code points, not UTF-16 code units, because the backend measures with Python's
+ * `len` on a str. `String.length` would score an astral character (most emoji) as 2,
+ * so a reply of 13 emoji would look like 26 here and 13 there: the client would promise
+ * points the backend then refuses, which is the exact confusion this is meant to end.
  */
 export function measureQuestContentLength(body: string | null | undefined): number {
-  return (body ?? "").replace(/https?:\/\/\S+/g, "").length;
+  return Array.from((body ?? "").replace(/https?:\/\/\S+/g, "")).length;
 }
 
 /**
