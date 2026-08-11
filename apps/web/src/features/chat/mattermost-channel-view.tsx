@@ -23,6 +23,7 @@ import {
   useMattermostJoinChannel
 } from "./mattermost-api";
 import { usePendingPosts } from "./hooks/use-pending-posts";
+import { ChatBanInfo, getChatBanInfo } from "./chat-ban-notice";
 import { useDmWarning } from "./hooks/use-dm-warning";
 import { useDeepLinking } from "./hooks/use-deep-linking";
 import { useChannelWebSocket } from "./hooks/use-channel-websocket";
@@ -99,6 +100,10 @@ export function MattermostChannelView({ channelId }: Props) {
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<MattermostPost | null>(null);
   const [messageError, setMessageError] = useState<string | null>(null);
+  // Held separately from messageError so the notice PERSISTS while the ban is live.
+  // messageError is cleared on every new send attempt; a ban is a standing state, not a
+  // one-off failure, so clearing it there would hide the explanation after one keystroke.
+  const [banInfo, setBanInfo] = useState<ChatBanInfo | null>(null);
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -119,6 +124,19 @@ export function MattermostChannelView({ channelId }: Props) {
   const [unreadCountBelowScroll, setUnreadCountBelowScroll] = useState(0);
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const queryClient = useQueryClient();
+
+  // Let the notice clear itself when the ban lapses, so a 48h timeout doesn't look permanent
+  // to someone who left the tab open.
+  useEffect(() => {
+    if (!banInfo) return;
+    const remaining = banInfo.bannedUntil - Date.now();
+    if (remaining <= 0) {
+      setBanInfo(null);
+      return;
+    }
+    const timer = setTimeout(() => setBanInfo(null), remaining);
+    return () => clearTimeout(timer);
+  }, [banInfo]);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
   const gifButtonRef = useRef<HTMLButtonElement | null>(null);
   const gifPickerRef = useRef<HTMLDivElement | null>(null);
@@ -895,7 +913,15 @@ export function MattermostChannelView({ channelId }: Props) {
           if ((err as Error)?.name === "AbortError") {
             return;
           }
-          setMessageError((err as Error)?.message || "Unable to send message");
+          const ban = getChatBanInfo(err);
+          if (ban) {
+            // The server's `error` names the account and quotes an ISO timestamp: operator copy,
+            // not something to show the banned user. The notice is rendered from ban info instead.
+            setBanInfo(ban);
+            setMessageError(null);
+          } else {
+            setMessageError((err as Error)?.message || "Unable to send message");
+          }
           lastSentPendingIdRef.current = null;
         },
         onSuccess: (_data, variables) => {
@@ -1163,6 +1189,7 @@ export function MattermostChannelView({ channelId }: Props) {
         setMessage={setMessage}
         messageError={messageError}
         setMessageError={setMessageError}
+        banInfo={banInfo}
         editingPost={editingPost}
         setEditingPost={setEditingPost}
         replyingTo={replyingTo}
