@@ -135,6 +135,24 @@ async function syncTenantConfigs(): Promise<void> {
   }
 }
 
+// Static SEO files (robots/sitemap/rss) refresh on their own loop with their
+// own single-flight: they spend chain calls, and sharing the config sync's
+// serial pass let a slow RPC delay config publication for every tenant
+// behind it.
+let seoSyncRunning = false;
+async function syncSeoFiles(): Promise<void> {
+  if (seoSyncRunning) return;
+  seoSyncRunning = true;
+  try {
+    const tenants = await TenantService.getActiveTenants();
+    await ConfigService.syncAllSeoFiles(tenants);
+  } catch (e) {
+    console.error('[Startup] SEO sync failed:', (e as Error).message);
+  } finally {
+    seoSyncRunning = false;
+  }
+}
+
 // Say once, at boot, what state the internal shared secret is in. Without this the two
 // misconfigurations are indistinguishable in production: both simply reject every call,
 // one because the operator meant to disable card activation and one because the value
@@ -178,3 +196,10 @@ startVerifiedDomainRefresh();
 // startup deadline) converges within a few minutes; identical files are not rewritten.
 const configSyncTimer = setInterval(() => void syncTenantConfigs(), 5 * 60 * 1000);
 configSyncTimer.unref?.();
+
+// The SEO pass first runs shortly after boot (never blocking startup) and
+// then every five minutes; the freshness window makes most passes free.
+const seoSyncKickoff = setTimeout(() => void syncSeoFiles(), 30 * 1000);
+seoSyncKickoff.unref?.();
+const seoSyncTimer = setInterval(() => void syncSeoFiles(), 5 * 60 * 1000);
+seoSyncTimer.unref?.();

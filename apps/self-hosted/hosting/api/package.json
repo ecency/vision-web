@@ -8,7 +8,8 @@
     "start": "tsx src/index.ts",
     "start:listener": "tsx src/payment-listener.ts",
     "db:migrate": "tsx src/db/migrate.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "generate-seo": "tsx scripts/generate-seo.ts"
   },
   "dependencies": {
     "@ecency/render-helper": "^2.5.26",

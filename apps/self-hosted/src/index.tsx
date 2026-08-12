@@ -104,6 +104,7 @@ function applyConfig() {
     instanceConfiguration.username,
     instanceConfiguration.communityId,
     instanceConfiguration.managed === true,
+    config.configuration.general.rssFeedUrl,
   );
   const existingRssLink = document.querySelector('link[rel="alternate"][type="application/rss+xml"]') as HTMLLinkElement | null;
   if (rssUrl) {

@@ -74,18 +74,16 @@ function isCommunityTenant(tenant: Tenant): {
   };
 }
 
-async function bounded<T>(work: Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+/**
+ * A bounded AND aborted chain call: the per-attempt timeout goes to the SDK
+ * and the controller cancels the request outright at the same deadline, so a
+ * timed-out fetch stops consuming a socket instead of racing on unobserved.
+ */
+async function boundedCall<T>(method: string, params: object): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
   try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error('seo rpc timeout')),
-          RPC_TIMEOUT_MS,
-        );
-      }),
-    ]);
+    return await callRPC<T>(method, params, RPC_TIMEOUT_MS, undefined, controller.signal);
   } finally {
     clearTimeout(timer);
   }
@@ -95,27 +93,46 @@ async function bounded<T>(work: Promise<T>): Promise<T> {
 export async function fetchTenantPosts(tenant: Tenant): Promise<TenantPost[]> {
   const { community, communityId } = isCommunityTenant(tenant);
   const raw = community
-    ? await bounded(
-        callRPC('bridge.get_ranked_posts', {
-          sort: 'created',
-          tag: communityId,
-          limit: POST_LIMIT,
-          observer: '',
-        }),
-      )
-    : await bounded(
-        callRPC('bridge.get_account_posts', {
-          sort: 'posts',
-          account: tenant.username,
-          limit: POST_LIMIT,
-          observer: '',
-        }),
-      );
-  if (!Array.isArray(raw)) return [];
-  return raw.filter(
-    (p: any): p is TenantPost =>
-      typeof p?.author === 'string' && typeof p?.permlink === 'string',
-  );
+    ? await boundedCall<unknown>('bridge.get_ranked_posts', {
+        sort: 'created',
+        tag: communityId,
+        limit: POST_LIMIT,
+        observer: '',
+      })
+    : await boundedCall<unknown>('bridge.get_account_posts', {
+        sort: 'posts',
+        account: tenant.username,
+        limit: POST_LIMIT,
+        observer: '',
+      });
+  // A malformed answer is an ERROR, never an empty blog: returning [] here
+  // would overwrite a good sitemap and feed with empty ones and mark them
+  // fresh, while throwing lets the sync pass keep yesterday's files.
+  if (!Array.isArray(raw)) {
+    throw new Error('malformed bridge feed response');
+  }
+  // Every field the builders touch is type-checked here: a malformed record
+  // (a numeric date, a missing permlink) is dropped or normalized instead of
+  // failing the tenant's whole SEO pass on an .endsWith of a number.
+  const posts: TenantPost[] = [];
+  for (const p of raw as any[]) {
+    if (
+      typeof p?.author !== 'string' ||
+      typeof p?.permlink !== 'string' ||
+      typeof p?.created !== 'string'
+    ) {
+      continue;
+    }
+    posts.push({
+      author: p.author,
+      permlink: p.permlink,
+      title: typeof p.title === 'string' ? p.title : '',
+      created: p.created,
+      updated: typeof p.updated === 'string' ? p.updated : undefined,
+      body: typeof p.body === 'string' ? p.body : undefined,
+    });
+  }
+  return posts;
 }
 
 export function buildRobotsTxt(tenant: Tenant): string {

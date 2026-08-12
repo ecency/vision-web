@@ -129,7 +129,10 @@ function RssFeedLink() {
     ({ configuration }) =>
       configuration.instanceConfiguration.managed === true,
   );
-  const rssUrl = getRssFeedUrl(type, username, communityId, managed);
+  const rssOverride = InstanceConfigManager.useConfig(
+    ({ configuration }) => configuration.general.rssFeedUrl,
+  );
+  const rssUrl = getRssFeedUrl(type, username, communityId, managed, rssOverride);
 
   if (!rssUrl) return null;
 

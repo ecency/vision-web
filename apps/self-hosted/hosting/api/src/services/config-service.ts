@@ -231,7 +231,19 @@ export const ConfigService = {
         break;
       }
     }
-    if (fresh) return;
+    // mtime alone misses a DOMAIN change: verifying or removing a custom
+    // domain rewrites every embedded URL, and files can advertise the old
+    // address for the whole window. robots costs no RPC to rebuild, so its
+    // content doubles as the domain fingerprint.
+    if (fresh) {
+      try {
+        const currentRobots = await fs.readFile(paths.robots, 'utf-8');
+        if (currentRobots === buildRobotsTxt(tenant)) return;
+      } catch {
+        // Unreadable robots: regenerate.
+      }
+      fresh = false;
+    }
 
     // One bounded chain page; a failure here is caught by the sync pass's
     // per-tenant isolation and yesterday's files keep serving.
@@ -308,6 +320,44 @@ export const ConfigService = {
   },
 
   /**
+   * Refresh every active tenant's static SEO files, decoupled from the
+   * config sync: each stale tenant costs one bounded chain call, and running
+   * them inside the serial config pass let an RPC outage delay config
+   * publication and cleanup by tenant-count times the timeout while the
+   * single-flight guard skipped the next passes. A small worker pool keeps
+   * the wall clock flat; the freshness window keeps quiet passes free.
+   */
+  async syncAllSeoFiles(activeTenants: Tenant[], concurrency = 4): Promise<void> {
+    const queue = [...activeTenants];
+    let failed = 0;
+    const worker = async () => {
+      for (;;) {
+        const tenant = queue.shift();
+        if (!tenant) return;
+        try {
+          await withTenantWriteLock(tenant.username, async () => {
+            const fresh = await TenantService.getByUsername(tenant.username);
+            if (!fresh || !isPublishableTenant(fresh)) return;
+            await this.writeSeoFilesIfStale(fresh);
+          });
+        } catch (err) {
+          failed++;
+          console.error(
+            `[ConfigService] SEO sync failed for ${tenant.username}:`,
+            (err as Error).message
+          );
+        }
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.max(1, concurrency) }, () => worker())
+    );
+    if (failed > 0) {
+      console.error(`[ConfigService] SEO sync finished with ${failed} failure(s)`);
+    }
+  },
+
+  /**
    * List every tenant username that has ANY served file on disk (config .json OR .meta.html).
    * The reconcile sweep keys off this, so a tenant whose .json was removed but whose
    * .meta.html lingered (partial delete failure) is still revisited and cleaned up.
@@ -367,7 +417,6 @@ export const ConfigService = {
           const fresh = await TenantService.getByUsername(tenant.username);
           if (!fresh || !isPublishableTenant(fresh)) return;
           await this.writeConfigFile(fresh);
-          await this.writeSeoFilesIfStale(fresh);
         });
       } catch (err) {
         failed++;

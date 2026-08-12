@@ -118,6 +118,9 @@ describe('fetchTenantPosts', () => {
     expect(mocks.callRPC).toHaveBeenCalledWith(
       'bridge.get_account_posts',
       expect.objectContaining({ account: 'alice', sort: 'posts' }),
+      expect.any(Number),
+      undefined,
+      expect.any(AbortSignal),
     );
 
     const community = {
@@ -132,11 +135,32 @@ describe('fetchTenantPosts', () => {
     expect(mocks.callRPC).toHaveBeenCalledWith(
       'bridge.get_ranked_posts',
       expect.objectContaining({ tag: 'hive-1', sort: 'created' }),
+      expect.any(Number),
+      undefined,
+      expect.any(AbortSignal),
     );
   });
 
-  it('answers an empty list for a malformed response', async () => {
+  it('throws on a malformed response so stale files are kept, never blanked', async () => {
     mocks.callRPC.mockResolvedValue({ nope: true });
-    expect(await fetchTenantPosts(TENANT)).toEqual([]);
+    await expect(fetchTenantPosts(TENANT)).rejects.toThrow('malformed');
+  });
+
+  it('drops or normalizes malformed records instead of failing the pass', async () => {
+    mocks.callRPC.mockResolvedValue([
+      { author: 'a', permlink: 'p', created: 1 },
+      { author: 'a', permlink: 'q', created: '2026-08-01T00:00:00', updated: 7, title: 9 },
+    ]);
+    const posts = await fetchTenantPosts(TENANT);
+    expect(posts).toEqual([
+      {
+        author: 'a',
+        permlink: 'q',
+        title: '',
+        created: '2026-08-01T00:00:00',
+        updated: undefined,
+        body: undefined,
+      },
+    ]);
   });
 });
