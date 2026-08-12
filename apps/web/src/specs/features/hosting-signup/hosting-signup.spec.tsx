@@ -211,6 +211,32 @@ describe("HostingSignup one-click HBD pay", () => {
     expect(customize.getAttribute("href")).toBe("https://alice.blogs.ecency.com/?setup=1");
   });
 
+  it("never opens a code past its server TTL", async () => {
+    // A stalled refresh must not leave a dead code clickable: the click takes
+    // the fallback navigation and mints a replacement instead.
+    hostingApi.mintHandoff.mockResolvedValue({
+      code: "expired-code",
+      username: "alice",
+      expiresAt: new Date(Date.now() - 1000).toISOString()
+    });
+    hostingApi.tenantsByOwner.mockResolvedValue({ tenants: [] });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    const payBtn = (await screen.findByRole("button", {
+      name: "hosting.pay-hbd-oneclick"
+    })) as HTMLButtonElement;
+    await waitFor(() => expect(payBtn.disabled).toBe(false));
+    fireEvent.click(payBtn);
+    await screen.findByText("hosting.success-title");
+    await waitFor(() => expect(hostingApi.mintHandoff).toHaveBeenCalled());
+
+    const customize = screen.getByText("hosting.customize-your-blog") as HTMLAnchorElement;
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    fireEvent.click(customize);
+    expect(open).not.toHaveBeenCalled();
+  });
+
   it("falls back to the credential-free href when minting fails", async () => {
     // The hosting API is down: no code means the default navigation, never a
     // bearer smuggled back into the URL as a substitute.

@@ -407,11 +407,17 @@ export function HostingSignup() {
   // worthless afterwards. Re-minted on an interval while the screen stays
   // open (codes outlive nobody's coffee break); a failed mint leaves the
   // click on the credential-free fallback href.
-  const [handoffCode, setHandoffCode] = useState<string | null>(null);
+  const [handoff, setHandoff] = useState<{ code: string; expiresAt: number } | null>(
+    null
+  );
   // Bumped by a click: the opened code is consumed by the instance, so the
   // click clears it and this forces a fresh mint for any further click.
   const [mintNonce, setMintNonce] = useState(0);
   useEffect(() => {
+    // Whatever code exists belongs to the PREVIOUS context (another account,
+    // a logout, an earlier screen) and must never ride the button into this
+    // one: cleared before anything else, minted fresh below if eligible.
+    setHandoff(null);
     if (step !== "success" || !activeUser) return;
     let cancelled = false;
     const mint = async () => {
@@ -419,9 +425,16 @@ export function HostingSignup() {
         const token = await ensureValidToken(activeUser.username);
         if (!token || cancelled) return;
         const minted = await hostingApi.mintHandoff(token);
-        if (!cancelled) setHandoffCode(minted.code);
+        if (!cancelled) {
+          setHandoff({
+            code: minted.code,
+            // The server's word on the TTL; an unparseable answer counts as
+            // already stale rather than forever fresh.
+            expiresAt: Date.parse(minted.expiresAt) || 0
+          });
+        }
       } catch {
-        if (!cancelled) setHandoffCode(null);
+        if (!cancelled) setHandoff(null);
       }
     };
     mint();
@@ -1077,18 +1090,26 @@ export function HostingSignup() {
                 // consumes the code (the instance's exchange deletes it), so
                 // it is cleared here and a fresh one is minted for any
                 // further click.
-                if (!handoffCode) return;
+                if (!handoff) return;
+                // A code past (or within thirty seconds of) its server TTL
+                // would exchange as dead: take the fallback navigation and
+                // mint a replacement instead of opening it.
+                if (handoff.expiresAt - 30_000 < Date.now()) {
+                  setHandoff(null);
+                  setMintNonce((n) => n + 1);
+                  return;
+                }
                 e.preventDefault();
                 const loginParam =
                   activeUser && getLoginType(activeUser.username) === "hivesigner"
                     ? "&login=hivesigner"
                     : "";
                 window.open(
-                  `${safeBlogUrl}?setup=1${loginParam}#hc=${encodeURIComponent(handoffCode)}`,
+                  `${safeBlogUrl}?setup=1${loginParam}#hc=${encodeURIComponent(handoff.code)}`,
                   "_blank",
                   "noopener,noreferrer"
                 );
-                setHandoffCode(null);
+                setHandoff(null);
                 setMintNonce((n) => n + 1);
               }}
               className="inline-block text-center px-4 py-3 rounded-lg bg-blue-dark-sky text-white font-semibold hover:opacity-90"
