@@ -74,8 +74,10 @@ describe('buildMetaForUri', () => {
     });
     expect(html).not.toContain('<script>');
     expect(html).toContain('og:type" content="article"');
-    expect(html).toContain(
-      'og:image" content="https://i.ecency.com/1200x630/https://img.example/meta.png"',
+    // render-helper's modern proxy path: a hashed /p/ URL with explicit
+    // dimensions, not the legacy redirecting /WxH/ route.
+    expect(html).toMatch(
+      /og:image" content="https:\/\/i\.ecency\.com\/p\/[A-Za-z0-9]+\?format=match&amp;mode=fit&amp;width=1200&amp;height=630"/,
     );
     expect(html).toContain('Some words to read here');
     expect(html).toContain(

@@ -16,7 +16,10 @@ vi.mock('../db/client', () => ({
 }));
 
 vi.mock('./tenant-service', () => ({
-  TenantService: { getByUsername: mocks.getByUsername },
+  TenantService: {
+    getByUsername: mocks.getByUsername,
+    getBlogUrl: (t: any) => `https://${t.username}.blogs.ecency.com`,
+  },
 }));
 
 const { ConfigService } = await import('./config-service');

@@ -36,6 +36,7 @@ vi.mock('../db/client', () => ({
 
 vi.mock('./tenant-service', () => ({
   TenantService: {
+    getBlogUrl: (t: any) => `https://${t.username}.blogs.ecency.com`,
     getActiveTenants: mocks.getActiveTenants,
     applyConfigDocument: mocks.applyConfigDocument,
     getByUsername: mocks.getByUsername,

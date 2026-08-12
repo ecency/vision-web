@@ -1,7 +1,24 @@
+import { createRequire } from 'node:module';
 import { callRPC } from '@ecency/sdk/hive';
+
+// render-helper through its CJS build: the package's node ESM entry carries
+// a directory import ('remarkable/linkify') that Node refuses, so the ESM
+// path crashes at module load. Tracked as a render-helper packaging fix;
+// until it ships, CJS resolution handles the directory import fine.
+const requireCjs = createRequire(import.meta.url);
+const { catchPostImage } = requireCjs('@ecency/render-helper') as {
+  catchPostImage: (
+    entry: unknown,
+    width?: number,
+    height?: number,
+    format?: string,
+  ) => string | null;
+};
 import type { Tenant } from '../types';
 import { ConfigService, escapeHtml } from './config-service';
 import { TenantService } from './tenant-service';
+import { canonicalPostUrl } from './seo-files';
+import { excerptOf } from '../utils/excerpt';
 
 /**
  * Per-post head metadata for link unfurls. The SPA sets OG tags client-side,
@@ -85,43 +102,6 @@ async function getPostCached(author: string, permlink: string): Promise<any | nu
   return post;
 }
 
-/** Strip markdown/html noise the way an excerpt should read. */
-function excerptOf(body: unknown, max = 200): string {
-  if (typeof body !== 'string') return '';
-  const text = body
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/[`*_>~|]/g, ' ')
-    .replace(/https?:\/\/\S+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
-}
-
-/** The post's cover: json_metadata image first, then the first body image. */
-function coverOf(post: any): string | null {
-  const metaImage = post?.json_metadata?.image?.[0];
-  if (typeof metaImage === 'string' && /^https?:\/\//i.test(metaImage)) {
-    return metaImage;
-  }
-  const body = typeof post?.body === 'string' ? post.body : '';
-  const md = /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/.exec(body);
-  if (md) return md[1];
-  const html = /<img[^>]+src=["'](https?:\/\/[^\s"']+)["']/.exec(body);
-  if (html) return html[1];
-  return null;
-}
-
-function proxyBaseOf(tenant: Tenant): string {
-  const configured = (tenant.config as any)?.configuration?.general?.imageProxy;
-  return typeof configured === 'string' && /^https?:\/\//i.test(configured)
-    ? configured.replace(/\/+$/, '')
-    : 'https://i.ecency.com';
-}
-
 /**
  * The head snippet for one post. Falls back to the tenant snippet whenever
  * the URI is not a post or the post cannot be resolved, so this endpoint
@@ -149,12 +129,12 @@ export async function buildMetaForUri(tenant: Tenant, uri: unknown): Promise<str
     excerptOf(post.body) || `A post by @${parsed.author}`,
   );
 
-  const coverRaw = coverOf(post);
-  // Unfurl targets get a crawler-friendly size through the image proxy; the
-  // raw URL is chain-authored and untrusted, so it is escaped like the rest.
-  const ogImage = coverRaw
-    ? escapeHtml(`${proxyBaseOf(tenant)}/1200x630/${coverRaw}`)
-    : null;
+  // render-helper's own cover extraction and proxying, the same pipeline the
+  // apps render with: it understands string-form metadata, entities and code
+  // fences, and emits the modern proxy path instead of the legacy sized
+  // route that answers with a redirect. Chain-authored, so escaped.
+  const coverProxied = catchPostImage(post, 1200, 630, 'match');
+  const ogImage = coverProxied ? escapeHtml(coverProxied) : null;
 
   const canonical = escapeHtml(
     `${TenantService.getBlogUrl(tenant)}/@${parsed.author}/${parsed.permlink}`,
@@ -175,6 +155,9 @@ export async function buildMetaForUri(tenant: Tenant, uri: unknown): Promise<str
         ]
       : []),
     `<meta name="twitter:card" content="${ogImage ? 'summary_large_image' : 'summary'}" />`,
+    // Same canonical policy as the tenant snippet: the owner's own domain
+    // when one is verified, the ecency.com SSR post otherwise.
+    `<link rel="canonical" href="${escapeHtml(canonicalPostUrl(tenant, parsed.author, parsed.permlink))}" />`,
     '',
   ].join('\n');
 }

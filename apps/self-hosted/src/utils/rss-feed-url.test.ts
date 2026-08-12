@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { getRssFeedUrl } from './rss-feed-url';
 
@@ -33,4 +34,19 @@ describe('getRssFeedUrl', () => {
   it('returns null for community type with whitespace communityId', () => {
     expect(getRssFeedUrl('community', '', '   ')).toBeNull();
   });
+
+  it('a managed instance serves its own feed instead of the ecency.com one', () => {
+    // jsdom's origin stands in for the tenant's; the point is the SELF feed.
+    expect(getRssFeedUrl('blog', 'alice', undefined, true)).toBe(
+      `${window.location.origin}/rss.xml`,
+    );
+    expect(getRssFeedUrl('community', undefined, 'hive-1', true)).toBe(
+      `${window.location.origin}/rss.xml`,
+    );
+    // Unmanaged keeps the ecency.com stand-in, never a 404 on itself.
+    expect(getRssFeedUrl('blog', 'alice', undefined, false)).toBe(
+      'https://ecency.com/@alice/rss',
+    );
+  });
+
 });

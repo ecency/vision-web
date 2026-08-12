@@ -1,4 +1,5 @@
 import {
+  buildSrcSet,
   catchPostImage,
   postBodySummary,
   renderPostBody,
@@ -97,6 +98,15 @@ export function BlogPostItem({ entry }: Props) {
     return catchPostImage(entryData, 800, 600) || null;
   }, [entryData]);
 
+  // Width variants of the same proxied image, so a phone never downloads the
+  // 800px cut a desktop grid cell needs. Sizes below mirror each layout's
+  // actual box; the CSS height token already pins the box, so no CLS either
+  // way.
+  const imageSrcSet = useMemo(
+    () => (imageUrl ? buildSrcSet(imageUrl) || undefined : undefined),
+    [imageUrl],
+  );
+
   // Router navigation, not a document load: an <a href> here tore down the SPA
   // on every feed-to-post click, refetching the instance config and throwing
   // away the query cache the feed had just filled. The route param carries the
@@ -140,6 +150,8 @@ export function BlogPostItem({ entry }: Props) {
           <Link to="/$author/$permlink" params={postParams} search={postSearch}>
             <img
               src={imageUrl}
+              srcSet={imageSrcSet}
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
               alt={entryData.title}
               className="w-full object-cover post-card-image-theme"
               loading="lazy"
@@ -259,6 +271,8 @@ export function BlogPostItem({ entry }: Props) {
             >
               <img
                 src={imageUrl}
+                srcSet={imageSrcSet}
+                sizes="(max-width: 640px) 100vw, 200px"
                 alt={entryData.title}
                 className="w-full h-48 sm:h-32 object-cover rounded-theme"
                 loading="lazy"
