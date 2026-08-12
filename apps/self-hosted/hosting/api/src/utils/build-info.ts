@@ -1,26 +1,12 @@
-import { readFileSync } from 'node:fs';
-
 /**
- * The build identity /health answers beside its status: the package version
- * and the CI-baked commit sha, so skew between the paired blog and API
+ * The build identity /health answers beside its status. The version is the
+ * CANONICAL release version baked by a self-hosted-vX.Y.Z tag build — the
+ * tag is the single product-version source, so a sha-only build answers
+ * 'untagged' rather than some package.json number nothing enforces. The sha
+ * is baked by every CI build, so skew between the paired blog and API
  * images (built from one commit, tagged independently) is observable.
- *
- * package.json is read with fs, not a JSON import: this package is ESM and
- * Node's JSON modules need import attributes and carry no named exports, so
- * the import form that typechecks under bundler resolution crashes tsx at
- * boot.
  */
-export function readApiVersion(
-  url: URL = new URL('../../package.json', import.meta.url),
-): string {
-  try {
-    return JSON.parse(readFileSync(url, 'utf8')).version as string;
-  } catch {
-    return 'unknown';
-  }
-}
-
-export function buildHealthPayload(version: string): {
+export function buildHealthPayload(): {
   status: 'ok';
   timestamp: string;
   version: string;
@@ -29,7 +15,7 @@ export function buildHealthPayload(version: string): {
   return {
     status: 'ok',
     timestamp: new Date().toISOString(),
-    version,
+    version: process.env.RELEASE_VERSION || 'untagged',
     sha: process.env.GIT_SHA || 'unknown',
   };
 }

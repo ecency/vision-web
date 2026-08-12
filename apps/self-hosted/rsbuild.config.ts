@@ -15,6 +15,8 @@ export default defineConfig({
       // after a partial deploy or rollback becomes observable. 'unknown'
       // for local builds.
       __BUILD_SHA__: JSON.stringify(process.env.GIT_SHA || 'unknown'),
+      // The canonical product version, set only by release-tag builds.
+      __BUILD_VERSION__: JSON.stringify(process.env.RELEASE_VERSION || ''),
     },
   },
   html: {

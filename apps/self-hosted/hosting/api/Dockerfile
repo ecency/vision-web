@@ -25,9 +25,13 @@ RUN npm run build
 FROM node:24-alpine
 
 # Baked by CI so /health can answer which build is running; defaults keep
-# local builds working.
+# local builds working. RELEASE_VERSION is the canonical product version,
+# set only by release-tag builds (the tag IS the single version source);
+# sha-only builds answer untagged.
 ARG GIT_SHA=unknown
 ENV GIT_SHA=$GIT_SHA
+ARG RELEASE_VERSION=""
+ENV RELEASE_VERSION=$RELEASE_VERSION
 
 WORKDIR /app
 

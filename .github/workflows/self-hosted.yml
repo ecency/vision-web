@@ -190,6 +190,7 @@ jobs:
           push: true
           build-args: |
             GIT_SHA=${{ github.sha }}
+            RELEASE_VERSION=${{ steps.tag.outputs.version }}
           tags: |
             ecency/self-hosted:${{ steps.tag.outputs.sha }}
             ecency/self-hosted:${{ steps.tag.outputs.channel }}
@@ -249,6 +250,7 @@ jobs:
           push: true
           build-args: |
             GIT_SHA=${{ github.sha }}
+            RELEASE_VERSION=${{ steps.tag.outputs.version }}
           tags: |
             ecency/hosting-api:${{ steps.tag.outputs.sha }}
             ecency/hosting-api:${{ steps.tag.outputs.channel }}
