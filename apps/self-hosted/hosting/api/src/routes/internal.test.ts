@@ -528,6 +528,10 @@ describe('internal endpoint audit trail', () => {
     const created = await post('/claim-blog', { username: 'alice' });
 
     expect(created.status).toBe(200);
+    // The flag the claiming UI distinguishes on: an existing tenant comes
+    // back unchanged with none of the customization applied, and the UI must
+    // not present that as a fresh provision.
+    expect(await created.json()).toMatchObject({ created: true });
     expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({
       tenantId: 'tenant-9',
       eventType: 'tenant.pro_blog_claimed',
@@ -545,6 +549,7 @@ describe('internal endpoint audit trail', () => {
     const existing = await post('/claim-blog', { username: 'alice' });
 
     expect(existing.status).toBe(200);
+    expect(await existing.json()).toMatchObject({ created: false });
     expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({
       eventType: 'tenant.pro_blog_claimed',
       eventData: { created: false },

@@ -9,7 +9,8 @@ import { renderWithQueryClient } from "@/specs/test-utils";
 
 const mocks = vi.hoisted(() => ({
   accessToken: "tok-alice" as string | undefined,
-  templates: vi.fn()
+  templates: vi.fn(),
+  tenant: vi.fn()
 }));
 
 vi.mock("@/utils", () => ({
@@ -19,7 +20,10 @@ vi.mock("@/utils", () => ({
 
 vi.mock("@/features/hosting-signup/hosting-api", async () => {
   const actual = await vi.importActual<any>("@/features/hosting-signup/hosting-api");
-  return { ...actual, hostingApi: { ...actual.hostingApi, templates: mocks.templates } };
+  return {
+    ...actual,
+    hostingApi: { ...actual.hostingApi, templates: mocks.templates, tenant: mocks.tenant }
+  };
 });
 
 import { ProBlogClaim } from "@/features/pro/pro-blog-claim";
@@ -51,6 +55,8 @@ describe("ProBlogClaim customize step", () => {
     vi.clearAllMocks();
     mocks.accessToken = "tok-alice";
     mocks.templates.mockResolvedValue({ templates: TEMPLATES });
+    // No blog yet: the probe 404s, so the customize form renders.
+    mocks.tenant.mockRejectedValue(new Error("Tenant not found"));
     vi.mocked(getAccountFullQueryOptions as any).mockImplementation(() => ({
       queryKey: QueryKeys.accounts.full("alice"),
       queryFn: async () => ({
@@ -60,7 +66,10 @@ describe("ProBlogClaim customize step", () => {
     fetchSpy = vi.spyOn(globalThis, "fetch" as any).mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ tenant: { blogUrl: "https://alice.blogs.ecency.com" } })
+      json: async () => ({
+        created: true,
+        tenant: { blogUrl: "https://alice.blogs.ecency.com" }
+      })
     } as any);
   });
 
@@ -96,6 +105,57 @@ describe("ProBlogClaim customize step", () => {
 
     // Success shows the claimed blog link.
     await screen.findByText("pro-blog.claimed-title");
+  });
+
+  it("shows the manage pointer instead of the form when the blog already exists", async () => {
+    // The claim endpoint returns an existing live tenant UNCHANGED, so a form
+    // whose every field would be silently discarded must not render at all.
+    mocks.tenant.mockResolvedValue({
+      username: "alice",
+      subscriptionStatus: "active",
+      blogUrl: "https://alice.blogs.ecency.com"
+    });
+    renderWithQueryClient(<ProBlogClaim username="alice" />);
+
+    await screen.findByText("pro-blog.already-title");
+    expect(screen.queryByRole("button", { name: "pro-blog.claim" })).toBeNull();
+    expect(screen.getByText("https://alice.blogs.ecency.com")).toBeTruthy();
+  });
+
+  it("reports a raced claim as already existing, never as an applied customization", async () => {
+    // The blog appeared between the probe and the click (another tab): the
+    // endpoint returns it unchanged and flags created: false.
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        created: false,
+        tenant: { blogUrl: "https://alice.blogs.ecency.com" }
+      })
+    } as any);
+    renderWithQueryClient(<ProBlogClaim username="alice" />);
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("Alice in Chains")).toBeTruthy()
+    );
+    const button = screen.getByRole("button", {
+      name: "pro-blog.claim"
+    }) as HTMLButtonElement;
+    await waitFor(() => expect(button.disabled).toBe(false));
+    fireEvent.click(button);
+
+    await screen.findByText("pro-blog.already-title");
+    expect(screen.queryByText("pro-blog.claimed-title")).toBeNull();
+  });
+
+  it("degrades a stalled catalog to a failure instead of disabling the claim forever", async () => {
+    mocks.templates.mockReturnValue(new Promise(() => {}));
+    renderWithQueryClient(<ProBlogClaim username="alice" catalogTimeoutMs={20} />);
+
+    await screen.findByText("hosting.template-load-failed");
+    const button = screen.getByRole("button", {
+      name: "pro-blog.claim"
+    }) as HTMLButtonElement;
+    await waitFor(() => expect(button.disabled).toBe(false));
   });
 
   it("blocks the claim until the catalog and prefill settle", async () => {

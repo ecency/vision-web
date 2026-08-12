@@ -613,6 +613,11 @@ internalRoutes.post('/claim-blog', async (c) => {
     });
 
     return c.json({
+      // Surfaced so the claiming UI can tell a fresh provision from an
+      // existing tenant returned unchanged: the latter applied NONE of the
+      // customization the claimant may have filled in, and reporting it as a
+      // plain success would claim otherwise.
+      created: result.created,
       tenant: {
         username: tenant.username,
         blogUrl: TenantService.getBlogUrl(tenant),

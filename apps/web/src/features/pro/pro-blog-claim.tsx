@@ -23,6 +23,18 @@ const BASE_DOMAIN = "blogs.ecency.com";
 interface Props {
   /** The authenticated Ecency Pro member. Its HiveSigner token authorizes the claim. */
   username: string;
+  /**
+   * How long the template catalog may keep the claim waiting before it
+   * degrades to an ordinary load failure. The claim gates on the catalog
+   * settling, and a connection that neither resolves nor rejects must not
+   * disable claiming forever.
+   */
+  catalogTimeoutMs?: number;
+}
+
+/** What the mount probe and a raced claim know about an existing blog. */
+interface ExistingBlog {
+  blogUrl?: string;
 }
 
 /**
@@ -35,10 +47,14 @@ interface Props {
  * and an identity prefilled from the member's profile, so a claimed blog starts out looking like
  * its owner rather than like the default template.
  */
-export function ProBlogClaim({ username }: Props) {
+export function ProBlogClaim({ username, catalogTimeoutMs = 10_000 }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [blogUrl, setBlogUrl] = useState("");
+  // 'pending' while the mount probe runs; an ExistingBlog replaces the whole
+  // form (the claim would return it unchanged, applying none of the fields);
+  // null means claimable.
+  const [existing, setExisting] = useState<ExistingBlog | "pending" | null>("pending");
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -56,22 +72,66 @@ export function ProBlogClaim({ username }: Props) {
   const accentPending =
     accentInput.trim().length > 0 && !ACCENT_HEX_PATTERN.test(accentInput.trim());
 
-  // The template catalog, like the paid signup: a load failure must not block
-  // the claim, the blog just starts on the default look.
+  // The template catalog, like the paid signup: a load failure must not
+  // block the claim, the blog just starts on the default look. Bounded: the
+  // claim button waits for the catalog to settle, so a request that neither
+  // resolves nor rejects times out into the same failure state instead of
+  // disabling the claim forever. First outcome wins; a late arrival after
+  // the timeout is ignored rather than un-failing a form the member may
+  // already be reading.
   useEffect(() => {
     let cancelled = false;
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!cancelled && !settled) {
+        settled = true;
+        setTemplatesFailed(true);
+      }
+    }, catalogTimeoutMs);
     hostingApi
       .templates()
       .then((r) => {
-        if (!cancelled) setTemplates(r.templates);
+        if (!cancelled && !settled) {
+          settled = true;
+          setTemplates(r.templates);
+        }
       })
       .catch(() => {
-        if (!cancelled) setTemplatesFailed(true);
+        if (!cancelled && !settled) {
+          settled = true;
+          setTemplatesFailed(true);
+        }
+      })
+      .finally(() => clearTimeout(timer));
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [catalogTimeoutMs]);
+
+  // Whether this member's blog already exists: the claim endpoint returns an
+  // existing live tenant UNCHANGED, so presenting editable customization for
+  // it would report success while applying nothing. An existing blog swaps
+  // the form for a manage pointer; only an unknown name (or an abandoned
+  // reservation, which a claim revives) is claimable. Fail open on probe
+  // errors: the form still works and the claim itself answers honestly.
+  useEffect(() => {
+    let cancelled = false;
+    hostingApi
+      .tenant(username)
+      .then((t) => {
+        if (cancelled) return;
+        setExisting(
+          t.subscriptionStatus === "abandoned" ? null : { blogUrl: t.blogUrl }
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setExisting(null);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [username]);
 
   // Identity prefill from the member's profile, once. The claimant is fixed
   // (their own account), so the signup's name-change bookkeeping is not
@@ -81,10 +141,12 @@ export function ProBlogClaim({ username }: Props) {
   );
 
   // The claim is one-shot (an existing live tenant is returned unchanged), so
-  // a click before the catalog and the profile prefill SETTLE would lock in a
-  // default-looking config the claimant never saw coming. Failures still
-  // settle: a dead catalog or profile degrades to claiming without them.
-  const customizeSettled = (templates !== null || templatesFailed) && prefillSettled;
+  // a click before the catalog, the profile prefill and the existence probe
+  // SETTLE would lock in a default-looking config the claimant never saw
+  // coming. Failures still settle: a dead catalog or profile degrades to
+  // claiming without them, and the catalog settles by timeout at the latest.
+  const customizeSettled =
+    (templates !== null || templatesFailed) && prefillSettled && existing !== "pending";
 
   const prefilledRef = useRef(false);
   useEffect(() => {
@@ -125,6 +187,13 @@ export function ProBlogClaim({ username }: Props) {
         else setError(data?.error || i18next.t("pro-blog.claim-failed"));
         return;
       }
+      // A raced claim (the blog appeared between the probe and the click) is
+      // returned unchanged with none of the customization applied; showing
+      // the plain success would claim otherwise.
+      if (data?.created === false) {
+        setExisting({ blogUrl: data?.tenant?.blogUrl || `https://${subdomain}` });
+        return;
+      }
       setBlogUrl(data?.tenant?.blogUrl || `https://${subdomain}`);
     } catch {
       setError(i18next.t("pro-blog.claim-failed"));
@@ -132,6 +201,33 @@ export function ProBlogClaim({ username }: Props) {
       setBusy(false);
     }
   }, [username, subdomain, title, description, styleTemplate, accent, fontPreset]);
+
+  // Already set up: the claim would return this blog unchanged, so instead of
+  // a form whose every field would be silently discarded, point at the blog
+  // and at the manage panel where settings can actually be changed.
+  if (existing && existing !== "pending") {
+    return (
+      <Alert appearance="primary">
+        <div className="flex flex-col gap-2">
+          <strong>{i18next.t("pro-blog.already-title")}</strong>
+          {existing.blogUrl && (
+            <a
+              href={existing.blogUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-dark-sky underline"
+            >
+              {existing.blogUrl}
+            </a>
+          )}
+          <p className="text-sm opacity-75">{i18next.t("pro-blog.already-note")}</p>
+          <Link href="/hosting" className="text-blue-dark-sky hover:underline text-sm font-semibold">
+            {i18next.t("pro-blog.manage-link")}
+          </Link>
+        </div>
+      </Alert>
+    );
+  }
 
   if (blogUrl) {
     return (

@@ -127,6 +127,9 @@
     "not-pro": "Ecency Pro membership is required to claim a free blog.",
     "unavailable": "Blog hosting is not available right now.",
     "claimed-title": "Your blog is ready",
+    "already-title": "Your blog is already set up",
+    "already-note": "Claiming again does not change its settings. Manage the title, look and domain from Your hosted sites.",
+    "manage-link": "Go to Your hosted sites",
     "custom-domain-upsell": "Want your own domain like blog.yoursite.com? Add a custom domain for $3/mo.",
     "add-custom-domain": "Add a custom domain"
   },
