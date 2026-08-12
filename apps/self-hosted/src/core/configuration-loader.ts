@@ -40,6 +40,14 @@ const CONFIG_SKELETON = {
 // =============================================================================
 
 export interface InstanceConfig {
+  /**
+   * The config SCHEMA major, not an app or document revision. Semantics
+   * defined 2026-08: it stays 1 until a change makes older documents
+   * unreadable, and it must never be bumped without a migration reading the
+   * old shape here (the loader is the single place every document passes
+   * through). Today's only consumer is the truthiness gate below that
+   * distinguishes a real config from an error page.
+   */
   version: number;
   configuration: {
     general: {

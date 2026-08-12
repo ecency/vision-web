@@ -539,4 +539,20 @@ describe('document title round trip', () => {
 
     expect(document.title).toBe('Two');
   });
+  it('clamps an unknown template id to the default, matching the registry', () => {
+    // A newer config meeting an older image (rollback) names a template this
+    // build lacks; the DOM applier and the component registry must agree on
+    // the fallback or the page renders unstyled while components render
+    // medium.
+    applyConfigDom({
+      configuration: {
+        general: { styleTemplate: 'from-the-future' },
+        instanceConfiguration: {},
+      },
+    });
+    expect(
+      document.documentElement.getAttribute('data-style-template'),
+    ).toBe('medium');
+  });
+
 });

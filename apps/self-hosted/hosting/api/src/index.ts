@@ -5,6 +5,7 @@
  */
 
 import { Hono } from 'hono';
+import { buildHealthPayload } from './utils/build-info';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
@@ -53,8 +54,9 @@ app.use('*', cors({
   exposeHeaders: ['x-payment', 'x-payment-response'],
 }));
 
-// Health check (before rate limiting so container probes are never throttled)
-app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
+// Health check (before rate limiting so container probes are never throttled).
+// Version and sha identify the running build; see utils/build-info.ts.
+app.get('/health', (c) => c.json(buildHealthPayload()));
 
 // Per-IP rate limiting. A general budget on all public routes caps the unauthenticated
 // tenant-creation + RPC-amplification abuse; a tighter budget on /v1/auth throttles the

@@ -8,6 +8,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [pluginReact()],
+  source: {
+    define: {
+      // Baked at build time so the served bundle can say WHICH build it is
+      // (the paired hosting-api answers the same from /health): image skew
+      // after a partial deploy or rollback becomes observable. 'unknown'
+      // for local builds.
+      __BUILD_SHA__: JSON.stringify(process.env.GIT_SHA || 'unknown'),
+      // The canonical product version, set only by release-tag builds.
+      __BUILD_VERSION__: JSON.stringify(process.env.RELEASE_VERSION || ''),
+    },
+  },
   html: {
     // Custom template whose head carries an SSI marker: the serving nginx injects the
     // tenant's real <title>/description/OG tags there (see hosting/nginx-multi-tenant.conf

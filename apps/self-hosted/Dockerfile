@@ -83,7 +83,12 @@ RUN pnpm --filter @ecency/sdk build && \
     pnpm --filter @ecency/ui build && \
     pnpm --filter @ecency/wallets build
 
-# Build the self-hosted app
+# Build the self-hosted app. GIT_SHA lands in the bundle as __BUILD_SHA__
+# (rsbuild define) so the running page can say which build it is.
+ARG GIT_SHA="unknown"
+ENV GIT_SHA=$GIT_SHA
+ARG RELEASE_VERSION=""
+ENV RELEASE_VERSION=$RELEASE_VERSION
 RUN pnpm --filter @ecency/self-hosted build
 
 # -----------------------------------------------------------------------------

@@ -13,7 +13,10 @@
  * holds the raw JSON document it is editing.
  */
 
-import { DEFAULT_STYLE_TEMPLATE } from '../../hosting/api/src/style-templates';
+import {
+  DEFAULT_STYLE_TEMPLATE,
+  STYLE_TEMPLATES,
+} from '../../hosting/api/src/style-templates';
 import {
   type AccentAppearance,
   type FontPreset,
@@ -200,8 +203,17 @@ export const CONFIG_DOM_DECLARATION: ConfigDomDeclaration = {
     { attribute: 'data-theme', resolve: resolveTheme },
     {
       attribute: 'data-style-template',
-      resolve: (read) =>
-        text(read(PATHS.styleTemplate), DEFAULT_STYLE_TEMPLATE),
+      // Clamped to the roster, matching the component registry's fallback:
+      // an id this build does not know (a newer config meeting an older
+      // image, or plain junk) must render the default template, not an
+      // unstyled page. The two fallbacks disagreeing was exactly the
+      // rollback failure mode.
+      resolve: (read) => {
+        const configured = text(read(PATHS.styleTemplate), DEFAULT_STYLE_TEMPLATE);
+        return (STYLE_TEMPLATES as readonly string[]).includes(configured)
+          ? configured
+          : DEFAULT_STYLE_TEMPLATE;
+      },
     },
     { attribute: 'lang', resolve: (read) => text(read(PATHS.language), 'en') },
     {

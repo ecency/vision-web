@@ -114,6 +114,13 @@ function applyConfig() {
 }
 
 async function main() {
+  // Which build is running, inspectable without tooling: pairs with the
+  // hosting API's /health so image skew is observable. The version exists
+  // only on release-tag builds; the sha always does.
+  document.documentElement.setAttribute('data-build', __BUILD_SHA__);
+  if (__BUILD_VERSION__) {
+    document.documentElement.setAttribute('data-version', __BUILD_VERSION__);
+  }
   // Handoff params are captured before anything renders, so no component's
   // effect order can decide whether the setup intent is seen.
   captureSetupParams();
