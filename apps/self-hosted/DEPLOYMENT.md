@@ -66,9 +66,16 @@ Pick an image tag first. `TAG` is required and has no default, so a
 deployment always states what it runs; see [Choosing an image
 tag](#choosing-an-image-tag).
 
+Put it in a `.env` file beside `docker-compose.yml` rather than in front of a
+single command: compose reads that file for EVERY invocation, so `logs`,
+`restart` and `down` keep working afterwards.
+
 ```bash
+# Pin the image build
+echo "TAG=sha-abc1234" > .env
+
 # Pull and start
-TAG=sha-abc1234 docker compose up -d
+docker compose up -d
 
 # View logs
 docker compose logs -f
@@ -206,21 +213,22 @@ or read what the managed platform runs from
 
 ### Option 1: Docker Compose (Recommended)
 
-```bash
-# Start in detached mode
-TAG=sha-abc1234 docker compose up -d
-
-# Custom port (the container always listens on 80 inside)
-TAG=sha-abc1234 PORT=8080 docker compose up -d
-```
-
-Put `TAG` in a `.env` file beside `docker-compose.yml` so it applies to every
-compose command, including `docker compose logs` and `docker compose down`:
+Settings live in `.env` beside `docker-compose.yml`, which compose reads on
+every invocation:
 
 ```bash
-echo "TAG=sha-abc1234" > .env
+cat > .env <<'ENV'
+TAG=sha-abc1234
+PORT=3000
+ENV
+
 docker compose up -d
 ```
+
+`PORT` is what the site is published on; the container always listens on 80
+inside. A one-off command can still override either (`PORT=8080 docker
+compose up -d`), but a value only on the command line is gone by the next
+compose command, and `${TAG:?...}` will stop that one.
 
 ### Option 2: Docker Run
 
@@ -461,14 +469,14 @@ sudo certbot certonly --standalone -d blog.yourdomain.com
 Upgrading is a one-line change: point `TAG` at the newer build.
 
 ```bash
-# Pick the new tag, pull it, restart onto it
-TAG=sha-def5678 docker compose pull
-TAG=sha-def5678 docker compose up -d
+# Edit TAG in .env to the newer tag, then:
+docker compose pull
+docker compose up -d
 ```
 
-Rolling back is the same move with the previous tag, which is exactly why
-the tag is pinned rather than floating. Keep the last known-good value
-somewhere (the `.env` file's previous line is enough).
+Rolling back is the same two commands with the previous tag, which is
+exactly why the tag is pinned rather than floating. Keep the last known-good
+value somewhere; the line you just replaced in `.env` is enough.
 
 Your `config.json` is untouched by an upgrade: it is mounted, not baked.
 

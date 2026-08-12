@@ -126,6 +126,24 @@ describe('POST /v1/tools/compose-config', () => {
     expect(res.status).toBe(400);
   });
 
+  it('treats a hive-NNNN name as a community even when the body does not say so', async () => {
+    // Reading only config.type let this compose a BLOG owned by the keyless
+    // community account: the real administrator could never open the editor,
+    // and the feed would read an account that never posts.
+    for (const config of [undefined, { type: 'blog' as const }]) {
+      const { res, body } = await compose({ username: 'hive-125125', owner: 'alice', config });
+      expect(res.status, JSON.stringify(config)).toBe(200);
+      const instance = body.config.configuration.instanceConfiguration;
+      expect(instance.owner).toBe('alice');
+      expect(instance.type).toBe('community');
+      expect(instance.communityId).toBe('hive-125125');
+    }
+
+    // And it still refuses without a separate owner, by the same rule.
+    const noOwner = await compose({ username: 'hive-125125' });
+    expect(noOwner.res.status).toBe(400);
+  });
+
   it('rejects a community id that is not shaped like one', async () => {
     const { res } = await compose({
       username: 'notacommunity',

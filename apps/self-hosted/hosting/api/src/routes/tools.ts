@@ -104,13 +104,19 @@ const composeLimit = rateLimit({ name: 'tools-compose', limit: 20, windowMs: 60_
 toolsRoutes.post('/compose-config', composeLimit, zValidator('json', composeConfigSchema), async (c) => {
   const body = c.req.valid('json');
   const username = body.username.toLowerCase();
-  const isCommunity = body.config?.type === 'community';
+  // Derived exactly as the managed create path derives it: a hive-NNNN name
+  // IS a community whatever the body claims. Reading only config.type let a
+  // request for a community name with no type compose a blog owned by the
+  // community account itself, which holds nobody's keys, so the real
+  // administrator would be locked out of the editor for good.
+  const isCommunity = COMMUNITY_NAME.test(username) || body.config?.type === 'community';
 
   // The owner rule, and the ONLY validation this route needs. Nothing here
   // is registered anywhere, so account existence and community control are
   // the deployer's business; but the owner value IS load-bearing, because
   // the instance reads it to decide who may open its editor.
   let owner: string;
+  let overrides = body.config;
   if (isCommunity) {
     const communityId = (body.config?.communityId || username).toLowerCase();
     if (!COMMUNITY_NAME.test(communityId)) {
@@ -123,11 +129,15 @@ toolsRoutes.post('/compose-config', composeLimit, zValidator('json', composeConf
       return c.json({ error: 'A community instance requires a separate owner account' }, 400);
     }
     owner = body.owner.toLowerCase();
+    // Say so in the document too, or a community name sent without a type
+    // composes a BLOG whose feed reads a keyless account and is always
+    // empty. The ownership rule and the composed mode have to agree.
+    overrides = { ...body.config, type: 'community', communityId };
   } else {
     // A personal blog is always controlled by its own account.
     owner = username;
   }
 
-  const document = await TenantService.buildConfig(username, body.config, owner);
+  const document = await TenantService.buildConfig(username, overrides, owner);
   return c.json({ config: withoutServedOnlyMarkers(document) });
 });
