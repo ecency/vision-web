@@ -111,24 +111,29 @@ describe('buildMetaForUri', () => {
     expect(html).not.toContain('i.ecency.com/p/');
   });
 
-  it('a junk imageProxy value stays on the default proxy', async () => {
+  it('junk imageProxy values stay on the default proxy', async () => {
     mocks.callRPC.mockResolvedValue({
       title: 'Junk proxy',
       body: 'Some words to read here.',
       json_metadata: { image: ['https://img.example/meta.png'] },
     });
-    const tenant = {
-      ...TENANT,
-      config: {
-        configuration: {
-          general: { imageProxy: 'javascript:alert(1)' },
-          instanceConfiguration: { meta: { title: 'Alice writes' } },
+    // A protocol prefix alone must not pass: "https://" and "https://?x"
+    // would rebase onto a hostless base and emit malformed URLs.
+    const junkValues = ['javascript:alert(1)', 'https://', 'https://?invalid', 'not a url'];
+    for (const [i, imageProxy] of junkValues.entries()) {
+      const tenant = {
+        ...TENANT,
+        config: {
+          configuration: {
+            general: { imageProxy },
+            instanceConfiguration: { meta: { title: 'Alice writes' } },
+          },
         },
-      },
-    } as any;
+      } as any;
 
-    const html = await buildMetaForUri(tenant, '/@alice/junk-proxy');
-    expect(html).toMatch(/og:image" content="https:\/\/i\.ecency\.com\/p\//);
+      const html = await buildMetaForUri(tenant, `/@alice/junk-proxy-${i}`);
+      expect(html).toMatch(/og:image" content="https:\/\/i\.ecency\.com\/p\//);
+    }
   });
 
   it('caches the chain lookup: one RPC serves repeat unfurls', async () => {

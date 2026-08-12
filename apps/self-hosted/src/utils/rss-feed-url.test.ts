@@ -54,10 +54,13 @@ describe('getRssFeedUrl', () => {
     expect(
       getRssFeedUrl('blog', 'alice', undefined, true, 'https://blog.example/rss.xml'),
     ).toBe('https://blog.example/rss.xml');
-    // Not a web URL: fall through to the normal resolution.
-    expect(
-      getRssFeedUrl('blog', 'alice', undefined, false, 'javascript:alert(1)'),
-    ).toBe('https://ecency.com/@alice/rss');
+    // Not a web URL: fall through to the normal resolution. A protocol
+    // prefix alone is not enough; hostless values must not become the link.
+    for (const junk of ['javascript:alert(1)', 'https://', 'https://?invalid', 'not a url']) {
+      expect(getRssFeedUrl('blog', 'alice', undefined, false, junk)).toBe(
+        'https://ecency.com/@alice/rss',
+      );
+    }
   });
 
 });

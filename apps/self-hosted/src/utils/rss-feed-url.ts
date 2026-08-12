@@ -13,8 +13,17 @@ export function getRssFeedUrl(
   managed?: boolean,
   override?: string,
 ): string | null {
-  if (typeof override === 'string' && /^https?:\/\//i.test(override.trim())) {
-    return override.trim();
+  // Parsed, not prefix-matched: "https://" or "https://?x" would pass a
+  // protocol regex and render a dead feed link instead of the fallback.
+  if (typeof override === 'string') {
+    try {
+      const parsed = new URL(override.trim());
+      if (/^https?:$/.test(parsed.protocol) && parsed.hostname) {
+        return override.trim();
+      }
+    } catch {
+      // Malformed override: fall through to the derived URLs.
+    }
   }
   if (managed && typeof window !== 'undefined') {
     return `${window.location.origin}/rss.xml`;

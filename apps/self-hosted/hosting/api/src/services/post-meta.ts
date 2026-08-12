@@ -65,12 +65,22 @@ export function resetPostMetaCache(): void {
 // the second layer.
 const RPC_TIMEOUT_MS = 2500;
 
-/** A tenant's own image proxy, when the config carries a valid one. */
+/**
+ * A tenant's own image proxy, when the config carries a valid one. Parsed,
+ * not prefix-matched: "https://" or "https://?x" would pass a protocol
+ * regex and produce malformed social-image URLs instead of the default
+ * proxy. Query and fragment are dropped; a path prefix is kept.
+ */
 function proxyBaseOf(tenant: Tenant): string | null {
   const configured = (tenant.config as any)?.configuration?.general?.imageProxy;
-  return typeof configured === 'string' && /^https?:\/\//i.test(configured)
-    ? configured.replace(/\/+$/, '')
-    : null;
+  if (typeof configured !== 'string') return null;
+  try {
+    const parsed = new URL(configured);
+    if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname) return null;
+    return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
 }
 
 /**

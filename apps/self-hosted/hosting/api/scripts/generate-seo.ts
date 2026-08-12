@@ -45,10 +45,31 @@ async function main(): Promise<void> {
   const configPath = arg('config');
   const url = arg('url');
   const outDir = arg('out') || '.';
-  if (!configPath || !url || !/^https:\/\/[^/]+$/i.test(url)) {
+  if (!configPath || !url) {
     console.error(
       'Usage: npm run generate-seo -- --config <config.json> --url https://your.domain --out <dir>',
     );
+    process.exit(1);
+  }
+  // A parsed origin, not a prefix match: a trailing slash is accepted, and
+  // user-info, a path, a query or a fragment (all silently discarded by the
+  // host extraction below) are rejected instead.
+  let siteUrl: URL;
+  try {
+    siteUrl = new URL(url);
+  } catch {
+    console.error('--url must be a plain https origin, e.g. https://blog.example.com');
+    process.exit(1);
+  }
+  if (
+    siteUrl.protocol !== 'https:' ||
+    siteUrl.username ||
+    siteUrl.password ||
+    siteUrl.search ||
+    siteUrl.hash ||
+    siteUrl.pathname !== '/'
+  ) {
+    console.error('--url must be a plain https origin, e.g. https://blog.example.com');
     process.exit(1);
   }
 
@@ -64,7 +85,7 @@ async function main(): Promise<void> {
   // builders then emit that domain everywhere, and the canonical policy
   // (own domain = canonicalize to self) applies exactly as it does for a
   // managed custom-domain tenant.
-  const host = new URL(url).host;
+  const host = siteUrl.host;
   const tenant = {
     username,
     customDomain: host,

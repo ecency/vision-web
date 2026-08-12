@@ -1,6 +1,9 @@
 /**
- * XML 1.0 forbids most control characters and non-characters outright, and
- * lone surrogate halves are invalid in any well-formed document. One
+ * XML 1.0 forbids C0 control characters (beyond tab, LF, CR), U+FFFE/FFFF
+ * and lone surrogate halves outright. The C1 controls (U+007F-9F ranges)
+ * and the U+FDD0-FDEF non-characters are Char-valid but sit on the spec's
+ * own discouraged list (XML 1.0 5e, section 2.2) and are flagged by the
+ * W3C feed validator; neither kind carries content, so both sets go. One
  * chain-authored post carrying a stray \u000B must not make a tenant's
  * entire feed or sitemap unparsable, so invalid code points are REMOVED
  * before entity escaping. HTML meta snippets go through the same path;

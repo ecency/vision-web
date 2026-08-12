@@ -17,7 +17,10 @@ import { formatDate, InstanceConfigManager, t } from '@/core';
 import { UserAvatar } from '@/features/shared/user-avatar';
 import { useHiveLayer } from '../hooks/use-hive-layer';
 import { estimateReadMinutes } from '../utils/read-time';
-import { useThemeShowsReadTime } from '@/themes/use-theme-components';
+import {
+  useThemeGridSizes,
+  useThemeShowsReadTime,
+} from '@/themes/use-theme-components';
 import { PostPayout } from './post-payout';
 
 interface Props {
@@ -99,13 +102,14 @@ export function BlogPostItem({ entry }: Props) {
   }, [entryData]);
 
   // Width variants of the same proxied image, so a phone never downloads the
-  // 800px cut a desktop grid cell needs. Sizes below mirror each layout's
-  // actual box; the CSS height token already pins the box, so no CLS either
-  // way.
+  // 800px cut a desktop grid cell needs. The grid sizes come from the
+  // theme's own column variables; the CSS height token already pins the
+  // box, so no CLS either way.
   const imageSrcSet = useMemo(
     () => (imageUrl ? buildSrcSet(imageUrl) || undefined : undefined),
     [imageUrl],
   );
+  const gridSizes = useThemeGridSizes();
 
   // Router navigation, not a document load: an <a href> here tore down the SPA
   // on every feed-to-post click, refetching the instance config and throwing
@@ -151,7 +155,7 @@ export function BlogPostItem({ entry }: Props) {
             <img
               src={imageUrl}
               srcSet={imageSrcSet}
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              sizes={gridSizes}
               alt={entryData.title}
               className="w-full object-cover post-card-image-theme"
               loading="lazy"
