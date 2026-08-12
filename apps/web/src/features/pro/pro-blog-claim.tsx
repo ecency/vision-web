@@ -76,7 +76,16 @@ export function ProBlogClaim({ username }: Props) {
   // Identity prefill from the member's profile, once. The claimant is fixed
   // (their own account), so the signup's name-change bookkeeping is not
   // needed here; empty fields are simply seeded and stay editable.
-  const { data: prefillAccount } = useQuery(getAccountFullQueryOptions(username));
+  const { data: prefillAccount, isFetched: prefillSettled } = useQuery(
+    getAccountFullQueryOptions(username)
+  );
+
+  // The claim is one-shot (an existing live tenant is returned unchanged), so
+  // a click before the catalog and the profile prefill SETTLE would lock in a
+  // default-looking config the claimant never saw coming. Failures still
+  // settle: a dead catalog or profile degrades to claiming without them.
+  const customizeSettled = (templates !== null || templatesFailed) && prefillSettled;
+
   const prefilledRef = useRef(false);
   useEffect(() => {
     if (prefilledRef.current || !prefillAccount) return;
@@ -210,7 +219,7 @@ export function ProBlogClaim({ username }: Props) {
           input is exactly the surprise this guards against. */}
       <Button
         onClick={claim}
-        disabled={busy || accentPending}
+        disabled={busy || accentPending || !customizeSettled}
         isLoading={busy}
         full={true}
       >

@@ -98,6 +98,24 @@ describe("ProBlogClaim customize step", () => {
     await screen.findByText("pro-blog.claimed-title");
   });
 
+  it("blocks the claim until the catalog and prefill settle", async () => {
+    // The claim is one-shot on the hosting side (an existing live tenant is
+    // returned unchanged), so a quick click before the customization data
+    // arrives would permanently lock in a default-looking config.
+    mocks.templates.mockReturnValue(new Promise(() => {}));
+    renderWithQueryClient(<ProBlogClaim username="alice" />);
+
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("Alice in Chains")).toBeTruthy()
+    );
+    const button = screen.getByRole("button", {
+      name: "pro-blog.claim"
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("still claims with no customization when the catalog fails to load", async () => {
     mocks.templates.mockRejectedValue(new Error("down"));
     vi.mocked(getAccountFullQueryOptions as any).mockImplementation(() => ({
