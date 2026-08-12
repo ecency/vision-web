@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { CustomDomainManager } from "./custom-domain-manager";
 import { CustomDomainUpgrade } from "./custom-domain-upgrade";
 import { hostingApi, type OwnedTenant } from "./hosting-api";
+import { TenantSettings } from "./tenant-settings";
 
 /**
  * Compact "your hosted sites" panel for the /hosting page. Signup used to be the only surface,
@@ -19,6 +20,7 @@ export function HostingManage() {
   const username = activeUser?.username ?? "";
   const [domainOpenFor, setDomainOpenFor] = useState<string | null>(null);
   const [upgradeOpenFor, setUpgradeOpenFor] = useState<string | null>(null);
+  const [settingsOpenFor, setSettingsOpenFor] = useState<string | null>(null);
 
   // Keyed by owner so switching accounts can never render the previous account's tenants.
   const { data, refetch } = useQuery({
@@ -41,6 +43,7 @@ export function HostingManage() {
   useEffect(() => {
     setDomainOpenFor(null);
     setUpgradeOpenFor(null);
+    setSettingsOpenFor(null);
   }, [username]);
 
   if (!activeUser || tenants.length === 0) {
@@ -91,6 +94,23 @@ export function HostingManage() {
               )}
             </div>
             <span className="text-sm opacity-75">{statusLabel(t)}</span>
+          </div>
+
+          {/* Remote settings: title, look and theme PATCH straight to the
+              hosting API with a token obtained in place, no instance visit.
+              Offered for every status, since the PATCH persists for a tenant
+              that is still activating and publishes on activation. */}
+          <div className="text-sm">
+            {settingsOpenFor === t.username ? (
+              <TenantSettings tenant={t} owner={username} />
+            ) : (
+              <button
+                className="text-blue-dark-sky hover:underline"
+                onClick={() => setSettingsOpenFor(t.username)}
+              >
+                {i18next.t("hosting.manage-settings")}
+              </button>
+            )}
           </div>
 
           {t.subscriptionPlan === "pro" && t.subscriptionStatus === "active" && (
