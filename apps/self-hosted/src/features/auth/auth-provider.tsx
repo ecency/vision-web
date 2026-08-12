@@ -3,10 +3,10 @@
 import { createContext, type ReactNode, useEffect, useMemo } from 'react';
 import { InstanceConfigManager } from '@/core';
 import { useAuthStore } from '@/store';
-import { clearHiveAuthSession, clearUser } from './storage';
+import { clearHiveAuthSession, clearUser, saveUser } from './storage';
 import type { AuthContextValue, AuthUser } from './types';
 import { availableAuthMethods } from './utils/auth-methods';
-import { actOnLoginRequest } from './setup-handoff';
+import { actOnLoginRequest, actOnTokenHandoff } from './setup-handoff';
 import { resolveHivesignerClientId } from './utils/hivesigner';
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -61,6 +61,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     actOnLoginRequest({ canLoginWithHivesigner: canHandoffLogin, isAuthenticated });
   }, [canHandoffLogin, isAuthenticated]);
+
+  // A session carried over from ecency.com (boot-captured fragment token):
+  // identity resolves from Hivesigner /me, never from the URL, and only the
+  // instance owner's own session is accepted (any other account is refused —
+  // see actOnTokenHandoff). Works for every ecency.com login method, since
+  // they all hold a Hivesigner-compatible access token. The attempt is shared
+  // module-wide, so StrictMode's replayed setup observes the same outcome.
+  useEffect(() => {
+    let cancelled = false;
+    actOnTokenHandoff({
+      isAuthEnabled,
+      isAuthenticated,
+      ownerUsername: blogOwner,
+    }).then((carried) => {
+      if (cancelled || !carried) return;
+      setUser(carried);
+      saveUser(carried);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthEnabled, isAuthenticated, blogOwner, setUser]);
 
   // Check if current user is the instance owner
   const isBlogOwner = useMemo(() => {

@@ -10,6 +10,7 @@ import { renderWithQueryClient } from "@/specs/test-utils";
 const mocks = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
   authLoginType: "keychain" as string,
+  accessToken: undefined as string | undefined,
   profiles: {} as Record<string, any>,
   hostingApi: {
     paymentMethods: vi.fn(),
@@ -38,7 +39,9 @@ vi.mock("@/core/hooks/use-active-account", () => ({
 // getLoginType drives whether the in-page one-click button is offered: Keychain-family extensions
 // sign in-page, while HiveSigner/keychain-mobile redirect and must fall back to manual.
 vi.mock("@/utils/user-token", () => ({
-  getLoginType: () => mocks.authLoginType
+  getLoginType: () => mocks.authLoginType,
+  getAccessToken: () => mocks.accessToken,
+  ensureValidToken: vi.fn(async () => mocks.accessToken)
 }));
 
 vi.mock("@/core/global-store", () => ({
@@ -57,6 +60,7 @@ describe("HostingSignup one-click HBD pay", () => {
     localStorage.clear();
     window.history.replaceState(null, "", "/"); // clear any ?resume= from a prior test
     mocks.authLoginType = "keychain";
+    mocks.accessToken = "tok-alice";
     // Card disabled so the payment step defaults to the HBD rail (where the one-click lives).
     hostingApi.paymentMethods.mockResolvedValue({
       hbd: { enabled: true, monthly: "2.000", account: "ecency.hosting" },
@@ -168,10 +172,66 @@ describe("HostingSignup one-click HBD pay", () => {
     // Poll saw an active tenant -> success screen (findByText throws if absent).
     await screen.findByText("hosting.success-title");
 
-    // The primary action lands the owner on their site with setup pending. A keychain
-    // session cannot carry over, so no login param is attached for it.
+    // The primary action lands the owner on their site with setup pending and
+    // the session carried as a FRAGMENT token, attached at CLICK time only: the
+    // at-rest href must stay credential-free ("Copy link address" on the most
+    // prominent button must never yield a bearer).
     const customize = screen.getByText("hosting.customize-your-blog") as HTMLAnchorElement;
     expect(customize.getAttribute("href")).toBe("https://alice.blogs.ecency.com/?setup=1");
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    fireEvent.click(customize);
+    expect(open).toHaveBeenCalledWith(
+      "https://alice.blogs.ecency.com/?setup=1#hs=tok-alice",
+      "_blank",
+      "noopener,noreferrer"
+    );
+    // The tokened URL replaced the default navigation; the clean href never
+    // gained the fragment.
+    expect(customize.getAttribute("href")).toBe("https://alice.blogs.ecency.com/?setup=1");
+  });
+
+  it("falls back to a plain setup intent when no access token is stored", async () => {
+    mocks.accessToken = undefined;
+    hostingApi.tenantsByOwner.mockResolvedValue({ tenants: [] });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    const payBtn = (await screen.findByRole("button", {
+      name: "hosting.pay-hbd-oneclick"
+    })) as HTMLButtonElement;
+    await waitFor(() => expect(payBtn.disabled).toBe(false));
+    fireEvent.click(payBtn);
+    await screen.findByText("hosting.success-title");
+    const customize = screen.getByText("hosting.customize-your-blog") as HTMLAnchorElement;
+    expect(customize.getAttribute("href")).toBe("https://alice.blogs.ecency.com/?setup=1");
+    // Without a token the click takes the default navigation (no window.open).
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    fireEvent.click(customize);
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("offers the instance-side OAuth fallback for Hivesigner sessions", async () => {
+    // A hivesigner login's at-rest href carries the login hint (safe, not a
+    // credential), so a middle-click or a failed token read still lands the
+    // owner in a login flow instead of stranding them logged out. Hivesigner
+    // logins have no one-click pay button, so the flow is driven as keychain
+    // and the login type flips before the success render computes the href.
+    mocks.accessToken = undefined;
+    hostingApi.tenantsByOwner.mockResolvedValue({ tenants: [] });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    const payBtn = (await screen.findByRole("button", {
+      name: "hosting.pay-hbd-oneclick"
+    })) as HTMLButtonElement;
+    await waitFor(() => expect(payBtn.disabled).toBe(false));
+    fireEvent.click(payBtn);
+    mocks.authLoginType = "hivesigner";
+    await screen.findByText("hosting.success-title");
+    const customize = screen.getByText("hosting.customize-your-blog") as HTMLAnchorElement;
+    expect(customize.getAttribute("href")).toBe(
+      "https://alice.blogs.ecency.com/?setup=1&login=hivesigner"
+    );
   });
 
   it("does not broadcast until the user clicks pay (no accidental transfer)", async () => {
