@@ -43,8 +43,21 @@ export function canonicalPostUrl(
   return `https://ecency.com/@${author}/${permlink}`;
 }
 
-/** How many posts feeds and sitemaps carry; one bridge page. */
+/**
+ * How many posts feeds and sitemaps carry, and how they are collected.
+ *
+ * The bridge asserts `limit` into [1:20] and answers an ERROR, not a shorter
+ * list, when asked for more: a single limit=100 call failed every tenant's
+ * pass in production, so the wanted depth is PAGED at the bridge's own page
+ * size. The whole walk carries one deadline as well as the per-call one, so
+ * a chain that answers slowly costs a bounded pass rather than page count
+ * times the per-call timeout.
+ */
 const POST_LIMIT = 100;
+const BRIDGE_PAGE_LIMIT = 20;
+const FETCH_BUDGET_MS = 30_000;
+/** Below this much budget left, a further page is not worth starting. */
+const MIN_CALL_MS = 1_000;
 /** A pass regenerates a tenant's files only when they are older than this. */
 export const SEO_FRESH_MS = 30 * 60 * 1000;
 /** The background pass is patient but never unbounded. */
@@ -57,6 +70,33 @@ interface TenantPost {
   created: string;
   updated?: string;
   body?: string;
+}
+
+/**
+ * One feed record, narrowed from an unknown chain answer. Every field the
+ * builders touch is checked here: a malformed record (a numeric date, a
+ * missing permlink) is dropped or normalized instead of failing the
+ * tenant's whole SEO pass on an .endsWith of a number.
+ */
+function toTenantPost(entry: unknown): TenantPost | null {
+  if (typeof entry !== 'object' || entry === null) return null;
+  const record = entry as Record<string, unknown>;
+  const { author, permlink, created, title, updated, body } = record;
+  if (
+    typeof author !== 'string' ||
+    typeof permlink !== 'string' ||
+    typeof created !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    author,
+    permlink,
+    created,
+    title: typeof title === 'string' ? title : '',
+    updated: typeof updated === 'string' ? updated : undefined,
+    body: typeof body === 'string' ? body : undefined,
+  };
 }
 
 function isCommunityTenant(tenant: Tenant): {
@@ -79,11 +119,15 @@ function isCommunityTenant(tenant: Tenant): {
  * and the controller cancels the request outright at the same deadline, so a
  * timed-out fetch stops consuming a socket instead of racing on unobserved.
  */
-async function boundedCall<T>(method: string, params: object): Promise<T> {
+async function boundedCall<T>(
+  method: string,
+  params: object,
+  timeoutMs: number = RPC_TIMEOUT_MS,
+): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await callRPC<T>(method, params, RPC_TIMEOUT_MS, undefined, controller.signal);
+    return await callRPC<T>(method, params, timeoutMs, undefined, controller.signal);
   } finally {
     clearTimeout(timer);
   }
@@ -92,47 +136,65 @@ async function boundedCall<T>(method: string, params: object): Promise<T> {
 /** The tenant's latest posts, the same feeds the archive itself pages. */
 export async function fetchTenantPosts(tenant: Tenant): Promise<TenantPost[]> {
   const { community, communityId } = isCommunityTenant(tenant);
-  const raw = community
-    ? await boundedCall<unknown>('bridge.get_ranked_posts', {
-        sort: 'created',
-        tag: communityId,
-        limit: POST_LIMIT,
-        observer: '',
-      })
-    : await boundedCall<unknown>('bridge.get_account_posts', {
-        sort: 'posts',
-        account: tenant.username,
-        limit: POST_LIMIT,
-        observer: '',
-      });
-  // A malformed answer is an ERROR, never an empty blog: returning [] here
-  // would overwrite a good sitemap and feed with empty ones and mark them
-  // fresh, while throwing lets the sync pass keep yesterday's files.
-  if (!Array.isArray(raw)) {
-    throw new Error('malformed bridge feed response');
-  }
-  // Every field the builders touch is type-checked here: a malformed record
-  // (a numeric date, a missing permlink) is dropped or normalized instead of
-  // failing the tenant's whole SEO pass on an .endsWith of a number.
+  const method = community
+    ? 'bridge.get_ranked_posts'
+    : 'bridge.get_account_posts';
+  const feedParams = community
+    ? { sort: 'created', tag: communityId, observer: '' }
+    : { sort: 'posts', account: tenant.username, observer: '' };
+
   const posts: TenantPost[] = [];
-  for (const p of raw as any[]) {
-    if (
-      typeof p?.author !== 'string' ||
-      typeof p?.permlink !== 'string' ||
-      typeof p?.created !== 'string'
-    ) {
-      continue;
+  const seen = new Set<string>();
+  const deadline = Date.now() + FETCH_BUDGET_MS;
+  let cursor: { start_author: string; start_permlink: string } | null = null;
+
+  while (posts.length < POST_LIMIT) {
+    // The whole-walk budget bounds the NEXT call rather than being noticed
+    // after it: checking only afterwards let a page that starts just inside
+    // the budget run a further full per-call timeout past it.
+    const remaining = deadline - Date.now();
+    if (remaining <= MIN_CALL_MS) break;
+    // One extra slot on follow-up pages. Cursor inclusivity varies by node
+    // (today's answer both feeds exclusively, this repo's own paginator
+    // documents the opposite), and on an inclusive node the echoed cursor
+    // would eat a slot from the last short ask and end the walk one post
+    // early. The identity set below still does the actual de-duplication.
+    const need = POST_LIMIT - posts.length;
+    const ask = Math.min(BRIDGE_PAGE_LIMIT, cursor ? need + 1 : need);
+    const raw = await boundedCall<unknown>(
+      method,
+      { ...feedParams, limit: ask, ...(cursor ?? {}) },
+      Math.min(RPC_TIMEOUT_MS, remaining),
+    );
+    // A malformed answer is an ERROR, never an empty blog: returning [] here
+    // would overwrite a good sitemap and feed with empty ones and mark them
+    // fresh, while throwing lets the sync pass keep yesterday's files.
+    if (!Array.isArray(raw)) {
+      throw new Error('malformed bridge feed response');
     }
-    posts.push({
-      author: p.author,
-      permlink: p.permlink,
-      title: typeof p.title === 'string' ? p.title : '',
-      created: p.created,
-      updated: typeof p.updated === 'string' ? p.updated : undefined,
-      body: typeof p.body === 'string' ? p.body : undefined,
-    });
+    const page: unknown[] = raw;
+    let added = 0;
+    let last: { author: string; permlink: string } | null = null;
+    for (const entry of page) {
+      const post = toTenantPost(entry);
+      if (!post) continue;
+      last = { author: post.author, permlink: post.permlink };
+      // The cursor is exclusive on today's bridge, but a node that echoes the
+      // start post back would otherwise repeat a page forever; the identity
+      // set makes the walk terminate either way.
+      const key = `${post.author}/${post.permlink}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      added++;
+      posts.push(post);
+    }
+    // A page shorter than what it was ASKED for is the end of the feed; no
+    // new posts or no usable record means paging further cannot help.
+    if (page.length < ask || added === 0 || !last) break;
+    cursor = { start_author: last.author, start_permlink: last.permlink };
   }
-  return posts;
+  // The reserved slot can overshoot by one on an exclusive node.
+  return posts.slice(0, POST_LIMIT);
 }
 
 export function buildRobotsTxt(tenant: Tenant): string {

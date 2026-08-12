@@ -40,6 +40,20 @@ const CUSTOM_TENANT = {
   customDomainVerified: true,
 } as any;
 
+/** The feed params the walk sends, as the mocks below read them. */
+interface FeedParams {
+  limit: number;
+  start_author?: string;
+  start_permlink?: string;
+}
+
+/** One record as the bridge answers it, shaped for these mocks. */
+interface FeedRecord {
+  author: string;
+  permlink: string;
+  created: string;
+}
+
 const POSTS = [
   {
     author: 'alice',
@@ -122,6 +136,11 @@ describe('fetchTenantPosts', () => {
       undefined,
       expect.any(AbortSignal),
     );
+    // The bridge asserts limit into [1:20] and ERRORS above it, so a page may
+    // never ask for more; asking for 100 failed every tenant in production.
+    for (const call of mocks.callRPC.mock.calls) {
+      expect(call[1].limit).toBeLessThanOrEqual(20);
+    }
 
     const community = {
       ...TENANT,
@@ -139,6 +158,113 @@ describe('fetchTenantPosts', () => {
       undefined,
       expect.any(AbortSignal),
     );
+  });
+
+  it('walks pages with an exclusive cursor up to the wanted depth', async () => {
+    // Six full pages exist; the walk wants 100 posts, so it stops after five.
+    const page = (n: number) =>
+      Array.from({ length: 20 }, (_, i) => ({
+        author: 'alice',
+        permlink: `p${n}-${i}`,
+        created: '2026-08-01T00:00:00',
+      }));
+    mocks.callRPC.mockImplementation(async (_m: string, params: FeedParams) =>
+      page(Number(params.start_permlink?.split('-')[0]?.replace('p', '') ?? -1) + 1),
+    );
+
+    const posts = await fetchTenantPosts(TENANT);
+    expect(posts).toHaveLength(100);
+    expect(mocks.callRPC).toHaveBeenCalledTimes(5);
+    // Each page after the first carries the previous page's last post as the
+    // cursor, and every returned post is distinct.
+    expect(mocks.callRPC.mock.calls[1][1]).toMatchObject({
+      start_author: 'alice',
+      start_permlink: 'p0-19',
+    });
+    expect(new Set(posts.map((p) => p.permlink)).size).toBe(100);
+  });
+
+  it('reaches full depth on a node whose cursor is inclusive', async () => {
+    // Such a node echoes the cursor post back as the first entry. Without a
+    // reserved slot the final short ask spends one on the duplicate and the
+    // walk ends one post shy of the wanted depth.
+    let n = 0;
+    mocks.callRPC.mockImplementation(async (_m: string, params: FeedParams) => {
+      const page: FeedRecord[] = [];
+      if (params.start_permlink) {
+        page.push({
+          author: 'alice',
+          permlink: params.start_permlink,
+          created: '2026-08-01T00:00:00',
+        });
+      }
+      while (page.length < params.limit) {
+        page.push({ author: 'alice', permlink: `q${n++}`, created: '2026-08-01T00:00:00' });
+      }
+      return page;
+    });
+
+    const posts = await fetchTenantPosts(TENANT);
+    expect(posts).toHaveLength(100);
+    expect(new Set(posts.map((p) => p.permlink)).size).toBe(100);
+    // Follow-up pages ask for one more than they need, never above the cap.
+    for (const call of mocks.callRPC.mock.calls) {
+      expect(call[1].limit).toBeLessThanOrEqual(20);
+    }
+  });
+
+  it('never starts a page that cannot finish inside the walk budget', async () => {
+    // Each page eats most of the budget; the walk must stop rather than let
+    // a further per-call timeout run past the deadline.
+    let elapsed = 0;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => elapsed);
+    try {
+      mocks.callRPC.mockImplementation(async (_m: string, params: FeedParams) => {
+        elapsed += 9_000;
+        return Array.from({ length: params.limit }, (_, i) => ({
+          author: 'alice',
+          permlink: `r${elapsed}-${i}`,
+          created: '2026-08-01T00:00:00',
+        }));
+      });
+
+      await fetchTenantPosts(TENANT);
+      // 30s budget, 9s per page: four pages fit, the fifth is not started.
+      expect(mocks.callRPC).toHaveBeenCalledTimes(4);
+      // The last call is bounded by what is LEFT of the budget, not the
+      // full per-call timeout.
+      const lastTimeout = mocks.callRPC.mock.calls.at(-1)![2];
+      expect(lastTimeout).toBeLessThanOrEqual(30_000 - 27_000);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('stops on a short page instead of asking for one more', async () => {
+    mocks.callRPC.mockResolvedValue(
+      Array.from({ length: 3 }, (_, i) => ({
+        author: 'alice',
+        permlink: `only-${i}`,
+        created: '2026-08-01T00:00:00',
+      })),
+    );
+    const posts = await fetchTenantPosts(TENANT);
+    expect(posts).toHaveLength(3);
+    expect(mocks.callRPC).toHaveBeenCalledTimes(1);
+  });
+
+  it('terminates when a node echoes the cursor post back forever', async () => {
+    // An inclusive-cursor node would otherwise repeat its last page for ever:
+    // a full page whose posts are all already seen ends the walk.
+    const repeated = Array.from({ length: 20 }, (_, i) => ({
+      author: 'alice',
+      permlink: `same-${i}`,
+      created: '2026-08-01T00:00:00',
+    }));
+    mocks.callRPC.mockResolvedValue(repeated);
+    const posts = await fetchTenantPosts(TENANT);
+    expect(posts).toHaveLength(20);
+    expect(mocks.callRPC).toHaveBeenCalledTimes(2);
   });
 
   it('throws on a malformed response so stale files are kept, never blanked', async () => {
