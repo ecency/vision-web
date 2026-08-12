@@ -67,23 +67,26 @@ export function JournalPostCard({ entry }: Props) {
             <p className="text-theme-secondary leading-relaxed">{summary}</p>
           )}
         </div>
+        {/* A quiet side thumbnail, sized like marginalia rather than a hero:
+            the whole flex item disappears on the narrowest screens (hiding
+            only the img would leave a zero-width item still costing the
+            parent's gap), and the size stays a fixed square here rather
+            than the shared post-card-image-theme class, whose unlayered
+            height token would override the Tailwind size. */}
         {imageUrl && (
           <Link
             to="/$author/$permlink"
             params={postParams}
             search={postSearch}
-            className="shrink-0 mt-1"
+            className="hidden sm:block shrink-0 mt-1"
             tabIndex={-1}
             aria-hidden="true"
           >
-            {/* A quiet side thumbnail, sized like marginalia rather than a
-                hero: hidden on the narrowest screens where it would crowd
-                the measure-width column. */}
             <img
               src={imageUrl}
               alt=""
               loading="lazy"
-              className="hidden sm:block size-28 object-cover post-card-image-theme"
+              className="size-28 object-cover rounded-[var(--theme-post-card-image-radius)]"
             />
           </Link>
         )}
