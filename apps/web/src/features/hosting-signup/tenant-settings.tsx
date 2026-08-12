@@ -44,6 +44,9 @@ export function TenantSettings({ tenant, owner }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  // The server's word on whether the saved change is live or only stored;
+  // the listed subscription status can be stale by the time a save lands.
+  const [publishedResult, setPublishedResult] = useState<boolean | null>(null);
 
   // What the instance currently stores, so only actual edits are sent.
   const initialRef = useRef({
@@ -117,7 +120,10 @@ export function TenantSettings({ tenant, owner }: Props) {
     setSaved(false);
     try {
       const token = await obtainHostingToken(owner);
-      await hostingApi.updateTenant(tenant.username, token, changes);
+      const result = await hostingApi.updateTenant(tenant.username, token, changes);
+      setPublishedResult(
+        result.published ?? tenant.subscriptionStatus === "active"
+      );
       initialRef.current = {
         title: changes.title ?? initial.title,
         description: changes.description ?? initial.description,
@@ -186,12 +192,13 @@ export function TenantSettings({ tenant, owner }: Props) {
       />
 
       {error && <Alert appearance="danger">{error}</Alert>}
-      {/* Persisting is not publishing: before activation the PATCH only
-          stores the config, so the message must not promise a live site. */}
+      {/* Persisting is not publishing: the message follows the PATCH
+          response's authoritative published flag, since the listed status can
+          have gone stale between fetching the panel and saving. */}
       {saved && !hasChanges && (
         <Alert appearance="success">
           {i18next.t(
-            tenant.subscriptionStatus === "active"
+            publishedResult
               ? "hosting.settings-saved"
               : "hosting.settings-saved-pending"
           )}

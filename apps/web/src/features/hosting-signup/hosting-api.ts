@@ -173,9 +173,14 @@ export const hostingApi = {
 
   /** Update a tenant's config remotely with flat keys (title, description, theme, accent...).
    *  Requires a hosting token for the tenant's OWNER; persists for inactive tenants too and
-   *  publishes on activation. */
+   *  publishes on activation. `published` is the server's authoritative word on whether the
+   *  change is live or only stored. */
   updateTenant: (username: string, token: string, config: HostingConfigInput) =>
-    patch<{ message?: string }>(`/v1/tenants/${encodeURIComponent(username)}`, token, { config })
+    patch<{ message?: string; published?: boolean }>(
+      `/v1/tenants/${encodeURIComponent(username)}`,
+      token,
+      { config }
+    )
 };
 
 export interface HostingAuthResult {

@@ -45,7 +45,10 @@ describe("TenantSettings remote editor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.obtainHostingToken.mockResolvedValue("hosting-jwt");
-    mocks.updateTenant.mockResolvedValue({ message: "Configuration updated" });
+    mocks.updateTenant.mockResolvedValue({
+      message: "Configuration updated",
+      published: true
+    });
     mocks.tenantConfig.mockResolvedValue({
       configuration: {
         general: { theme: "light", styles: { accent: "#0066cc" } },
@@ -85,6 +88,10 @@ describe("TenantSettings remote editor", () => {
 
   it("edits an activating tenant blind: no prefill, entered fields sent as-is", async () => {
     const inactive = { ...ACTIVE_TENANT, subscriptionStatus: "inactive" as const };
+    mocks.updateTenant.mockResolvedValue({
+      message: "Configuration saved. It goes live once the subscription is active.",
+      published: false
+    });
     renderWithQueryClient(<TenantSettings tenant={inactive} owner="alice" />);
 
     expect(mocks.tenantConfig).not.toHaveBeenCalled();
@@ -105,6 +112,25 @@ describe("TenantSettings remote editor", () => {
     // Persisting is not publishing: before activation the message must not
     // promise a live site.
     await screen.findByText("hosting.settings-saved-pending");
+  });
+
+  it("trusts the PATCH response over a stale listed status", async () => {
+    // The tenant activated after the manage list was fetched: the server's
+    // published flag is authoritative, so the save reports live, not pending.
+    const staleInactive = { ...ACTIVE_TENANT, subscriptionStatus: "inactive" as const };
+    mocks.updateTenant.mockResolvedValue({
+      message: "Configuration updated",
+      published: true
+    });
+    renderWithQueryClient(<TenantSettings tenant={staleInactive} owner="alice" />);
+
+    fireEvent.change(screen.getByLabelText("hosting.settings-theme-label"), {
+      target: { value: "dark" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "hosting.settings-save" }));
+
+    await screen.findByText("hosting.settings-saved");
+    expect(screen.queryByText("hosting.settings-saved-pending")).toBeNull();
   });
 
   it("never lets a slow prefill eat keystrokes", async () => {
