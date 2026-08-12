@@ -9,6 +9,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
 import { tenantRoutes } from './routes/tenants';
+import { templateRoutes } from './routes/templates';
 import { domainRoutes } from './routes/domains';
 import { paymentRoutes } from './routes/payments';
 import { authRoutes } from './routes/auth';
@@ -68,6 +69,7 @@ app.use('/v1/tenants/*', generalLimit);
 app.use('/v1/tenants', generalLimit);
 app.use('/v1/domains/*', generalLimit);
 app.use('/v1/payments/*', generalLimit);
+app.use('/v1/templates', generalLimit);
 app.use('/v1/auth/*', generalLimit);
 app.use('/v1/auth/*', authLimit);
 
@@ -85,6 +87,7 @@ app.use('/v1/internal/*', internalLimit);
 
 // API Routes
 app.route('/v1/tenants', tenantRoutes);
+app.route('/v1/templates', templateRoutes);
 app.route('/v1/domains', domainRoutes);
 app.route('/v1/payments', paymentRoutes);
 app.route('/v1/auth', authRoutes);

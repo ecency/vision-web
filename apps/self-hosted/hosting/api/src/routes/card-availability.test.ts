@@ -49,3 +49,28 @@ describe('card rail availability', () => {
     expect(await cardEnabled()).toBe(false);
   });
 });
+
+describe('GET /v1/payments/methods reservation window', () => {
+  const originalGrace = process.env.ABANDONED_TENANT_GRACE_DAYS;
+  afterEach(() => {
+    // Restore even when an assertion throws, so a leaked value cannot skew later suites.
+    if (originalGrace === undefined) delete process.env.ABANDONED_TENANT_GRACE_DAYS;
+    else process.env.ABANDONED_TENANT_GRACE_DAYS = originalGrace;
+  });
+
+  it('reports the same grace window the sweep enforces, fail-safe 7', async () => {
+    delete process.env.ABANDONED_TENANT_GRACE_DAYS;
+    process.env.HOSTING_INTERNAL_SECRET = STRONG;
+    const res = await paymentRoutes.request('http://localhost/methods');
+    const body = (await res.json()) as { reservation: { graceDays: number } };
+    expect(body.reservation.graceDays).toBe(7);
+  });
+
+  it('follows a configured window', async () => {
+    process.env.ABANDONED_TENANT_GRACE_DAYS = '14';
+    process.env.HOSTING_INTERNAL_SECRET = STRONG;
+    const res = await paymentRoutes.request('http://localhost/methods');
+    const body = (await res.json()) as { reservation: { graceDays: number } };
+    expect(body.reservation.graceDays).toBe(14);
+  });
+});

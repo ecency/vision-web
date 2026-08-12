@@ -86,6 +86,12 @@ export type TranslationKey =
   | 'claim_preview_banner_community'
   | 'claim_preview_claim'
   | 'claim_preview_exit'
+  | 'first_run_title'
+  | 'first_run_item_theme'
+  | 'first_run_item_accent'
+  | 'first_run_item_title'
+  | 'first_run_open'
+  | 'first_run_dismiss'
   | 'edit_post'
   | 'updating'
   | 'update'
@@ -391,6 +397,12 @@ export const translations: { en: Translations } & Record<
       "A live preview built from this community's public Hive posts. The name is not claimed yet.",
     claim_preview_claim: 'Claim this name',
     claim_preview_exit: 'Exit preview',
+    first_run_title: 'Make this site yours',
+    first_run_item_theme: 'Pick a style that fits your writing',
+    first_run_item_accent: 'Set your accent color',
+    first_run_item_title: 'Check your title and description',
+    first_run_open: 'Open settings',
+    first_run_dismiss: 'Maybe later',
     edit_post: 'Edit',
     updating: 'Updating...',
     update: 'Update',
