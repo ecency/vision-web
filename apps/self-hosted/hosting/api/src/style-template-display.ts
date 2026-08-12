@@ -92,6 +92,17 @@ export const STYLE_TEMPLATE_DISPLAY = {
     },
     headingStyle: 'serif',
   },
+  reader: {
+    name: 'Reader',
+    tagline: 'Your archive beside the open post, the way a feed reader works',
+    colors: {
+      background: '#ffffff',
+      surface: '#f6f6f4',
+      accent: '#17677a',
+      text: '#1c1e21',
+    },
+    headingStyle: 'sans',
+  },
 } satisfies Record<StyleTemplate, StyleTemplateDisplay>;
 
 export function templateCatalog() {

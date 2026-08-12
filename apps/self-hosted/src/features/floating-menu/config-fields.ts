@@ -46,6 +46,7 @@ const STYLE_TEMPLATE_LABEL_KEYS = {
   'modern-gradient':
     'panel_configuration_general_style_template_modern_gradient_option',
   journal: 'panel_configuration_general_style_template_journal_option',
+  reader: 'panel_configuration_general_style_template_reader_option',
 } satisfies Record<StyleTemplate, TranslationKey>;
 
 export type ConfigFieldType =

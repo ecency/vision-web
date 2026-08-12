@@ -37,6 +37,18 @@ describe('theme manifest registry', () => {
     expect(journal.unsupportedOptions).toEqual(['sidebar', 'listType']);
   });
 
+  it('reader owns its shell and archive pane, declares what it does not consume', () => {
+    const reader = getThemeManifest('reader');
+    expect(reader.components?.Shell).toBeTypeOf('function');
+    // The rail owns the archive, so the feed route's ArchiveList seam becomes
+    // the reading-pane greeting rather than a second copy of the feed.
+    expect(reader.components?.ArchiveList).toBeTypeOf('function');
+    // Cards stay the shared default: search results render them in the pane.
+    expect(reader.components?.PostCard).toBeUndefined();
+    expect(reader.components?.Navigation).toBeUndefined();
+    expect(reader.unsupportedOptions).toEqual(['sidebar', 'listType']);
+  });
+
   it('unknown and absent ids resolve to the default template', () => {
     expect(getThemeManifest(undefined).id).toBe('medium');
     expect(getThemeManifest('no-such-theme').id).toBe('medium');
@@ -55,7 +67,8 @@ const { DEFAULT_THEME_COMPONENTS, resolveThemeComponents } = await import(
 
 describe('component resolution', () => {
   it('every CSS-only template resolves to exactly the shared defaults', () => {
-    for (const id of STYLE_TEMPLATES.filter((t) => t !== 'journal')) {
+    const layoutThemes = new Set(['journal', 'reader']);
+    for (const id of STYLE_TEMPLATES.filter((t) => !layoutThemes.has(t))) {
       const resolved = resolveThemeComponents(id);
       // Identity per seam, not just deep equality: the no-op migration means
       // the very same component functions render, so nothing remounts.
@@ -78,6 +91,16 @@ describe('component resolution', () => {
     expect(resolved.Navigation).toBe(DEFAULT_THEME_COMPONENTS.Navigation);
     expect(resolved.Sidebar).toBe(DEFAULT_THEME_COMPONENTS.Sidebar);
     expect(resolved.ArchiveList).toBe(DEFAULT_THEME_COMPONENTS.ArchiveList);
+  });
+
+  it('reader resolves its own shell and archive pane, defaults for the rest', () => {
+    const reader = getThemeManifest('reader');
+    const resolved = resolveThemeComponents('reader');
+    expect(resolved.Shell).toBe(reader.components?.Shell);
+    expect(resolved.ArchiveList).toBe(reader.components?.ArchiveList);
+    expect(resolved.Navigation).toBe(DEFAULT_THEME_COMPONENTS.Navigation);
+    expect(resolved.Sidebar).toBe(DEFAULT_THEME_COMPONENTS.Sidebar);
+    expect(resolved.PostCard).toBe(DEFAULT_THEME_COMPONENTS.PostCard);
   });
 
   it('option support reads the manifest declaration', async () => {

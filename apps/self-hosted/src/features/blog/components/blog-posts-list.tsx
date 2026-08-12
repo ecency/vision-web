@@ -1,15 +1,10 @@
 'use client';
 
-import {
-  getAccountPostsInfiniteQueryOptions,
-  getPostsRankedInfiniteQueryOptions,
-} from '@ecency/sdk';
-import { useInfiniteQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { t } from '@/core';
 import { useThemeComponents } from '@/themes/use-theme-components';
 import { DetectBottom } from './detect-bottom';
-import { useInstanceConfig } from '../hooks/use-instance-config';
+import { useArchiveFeed } from '../hooks/use-archive-feed';
 import { chooseFeedRetry } from '../utils/feed-retry';
 import { ErrorMessage } from '@/features/shared/error-message';
 import { InlineError } from '@/features/shared/inline-error';
@@ -23,57 +18,13 @@ interface Props {
   limit?: number;
 }
 
-// Map blog filters to community sort options
-const communityFilterMap: Record<string, string> = {
-  posts: 'created',
-  blog: 'created',
-  trending: 'trending',
-  hot: 'hot',
-  new: 'created',
-  payout: 'payout',
-  muted: 'muted',
-};
-
 export function BlogPostsList({ filter = 'posts', limit = 20 }: Props) {
   // The card resolves through the theme registry: a theme can restyle every
   // entry without owning the whole feed (fetching, paging, error states).
   const { PostCard } = useThemeComponents();
-  const { username, communityId, isCommunityMode } = useInstanceConfig();
 
-  // Use different query based on instance type
-  const communitySort = communityFilterMap[filter] || 'created';
-
-  // Memoize select function to avoid creating new reference on each render
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const selectPosts = useCallback(
-    (data: { pages: any[][] }) => data.pages.flat(),
-    []
-  );
-
-  // Get query options and preserve their built-in enabled guards
-  const accountOptions = getAccountPostsInfiniteQueryOptions(username, filter, limit);
-  // The SDK's ranked-posts query, not a local bridge call: it is the path that
-  // applies DMCA post filtering and drops a tag that is itself listed. A
-  // bespoke get_ranked_posts call here served takedown-listed content.
-  const communityOptions = getPostsRankedInfiniteQueryOptions(
-    communitySort,
-    communityId,
-    limit,
-    '',
-    !!communityId && isCommunityMode,
-  );
-
-  const blogQuery = useInfiniteQuery({
-    ...accountOptions,
-    select: selectPosts,
-    enabled: accountOptions.enabled && !isCommunityMode,
-  });
-
-  const communityQuery = useInfiniteQuery({
-    ...communityOptions,
-    select: selectPosts,
-  });
-
+  // Fetching lives in the shared hook, so a theme's own archive surface (the
+  // Reader rail) pages through exactly the same queries as this seam default.
   const {
     data = [],
     fetchNextPage,
@@ -85,7 +36,7 @@ export function BlogPostsList({ filter = 'posts', limit = 20 }: Props) {
     isRefetchError,
     isSuccess,
     refetch,
-  } = isCommunityMode ? communityQuery : blogQuery;
+  } = useArchiveFeed(filter, limit);
 
   // Was: `if (isError) return <ErrorMessage />` above the map. query-core keeps
   // `data` through an error, so that discarded every page already rendered and

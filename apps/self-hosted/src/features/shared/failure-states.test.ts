@@ -45,6 +45,7 @@ const EMPTINESS_CLAIMS = new Set([
  */
 const GUARDED_CLAIMS: Record<string, number> = {
   'src/features/blog/components/blog-posts-list.tsx:noPosts': 1,
+  'src/themes/reader/reader-rail.tsx:noPosts': 1,
   'src/features/blog/components/blog-post-page.tsx:postNotFound': 1,
   'src/features/blog/components/blog-post-discussion.tsx:comments_empty': 1,
   'src/features/blog/layout/blog-sidebar.tsx:community_not_found': 1,
