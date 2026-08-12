@@ -6,7 +6,7 @@ import clsx from 'clsx';
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { logout } from '../auth-actions';
 import { useAuth, useIsAuthenticated, useIsAuthEnabled } from '../hooks';
-import { t } from '@/core';
+import { InstanceConfigManager, t } from '@/core';
 
 interface UserMenuProps {
   className?: string;
@@ -18,6 +18,18 @@ export function UserMenu({ className }: UserMenuProps) {
   const isAuthEnabled = useIsAuthEnabled();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // The signed-in account's avatar through the instance's image proxy, the
+  // same base every other avatar on the page resolves through. The letter
+  // circle stays as the fallback for accounts without one (the proxy answers
+  // errors for those) rather than the resting state for everybody.
+  const proxyBase = InstanceConfigManager.useConfig(
+    ({ configuration }) => configuration.general.imageProxy || 'https://i.ecency.com',
+  );
+  const username = user?.username;
+  const avatarUrl = username ? `${proxyBase}/u/${username}/avatar/small` : null;
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  useEffect(() => setAvatarFailed(false), [username]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -66,9 +78,19 @@ export function UserMenu({ className }: UserMenuProps) {
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-theme-hover transition-colors"
       >
-        <div className="size-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
-          {user?.username?.charAt(0).toUpperCase()}
-        </div>
+        {avatarUrl && !avatarFailed ? (
+          <img
+            src={avatarUrl}
+            alt=""
+            aria-hidden="true"
+            onError={() => setAvatarFailed(true)}
+            className="size-7 rounded-full object-cover"
+          />
+        ) : (
+          <div className="size-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
+            {user?.username?.charAt(0).toUpperCase()}
+          </div>
+        )}
         <span className="text-sm text-theme-primary font-medium hidden sm:inline">
           {user?.username}
         </span>

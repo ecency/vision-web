@@ -2,7 +2,7 @@
 
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useTransferMutation } from "@/api/sdk-mutations";
-import { getLoginType } from "@/utils/user-token";
+import { ensureValidToken, getLoginType } from "@/utils/user-token";
 import { useGlobalStore } from "@/core/global-store";
 import { getUsernameError } from "@/utils/username-validation";
 import { Alert } from "@ui/alert";
@@ -398,6 +398,27 @@ export function HostingSignup() {
       setBusy(false);
     }
   }, [tenantUsername, isCommunity, title, description, styleTemplate, accent, fontPreset, activeUser]);
+
+  // Resolve the session token as soon as the success screen shows: the
+  // Customize link carries it over to the new instance at CLICK time (see the
+  // anchor's onClick), and a long-lived login's stored token may be stale.
+  // Only a token that survived ensureValidToken is ever carried; while the
+  // refresh is in flight, or if it fails, the click takes the credential-free
+  // fallback href instead of shipping a stale bearer the instance would
+  // reject.
+  const [handoffToken, setHandoffToken] = useState<string | null>(null);
+  useEffect(() => {
+    if (step !== "success" || !activeUser) return;
+    let cancelled = false;
+    ensureValidToken(activeUser.username)
+      .then((token) => {
+        if (!cancelled && token) setHandoffToken(token);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [step, activeUser]);
 
   // The reservation is made and paid for; the in-progress draft has served its purpose.
   useEffect(() => {
@@ -1013,19 +1034,39 @@ export function HostingSignup() {
             </div>
           </Alert>
 
-          {/* Land the owner on their new site with the settings panel opening by itself.
-              A Hivesigner session can carry over: the link only asks the instance to START
-              its own OAuth flow, so identity is verified there exactly like a manual login.
-              Other login types sign in on the instance with their extension as usual. */}
+          {/* Land the owner on their new site signed in, with the settings panel
+              opening by itself. Every ecency.com login method holds a
+              Hivesigner-compatible access token, so the session carries over as a
+              URL FRAGMENT (never a query param: fragments reach no server or log).
+              The instance resolves identity from Hivesigner /me by the token
+              itself, accepts only the instance owner's session, and scrubs the
+              fragment before rendering. The token is attached at CLICK time and
+              never sits in the DOM: an href holding a bearer is one right-click
+              "Copy link address" away from being pasted somewhere public. The
+              at-rest href is the safe fallback — the instance-side OAuth start
+              for Hivesigner sessions, or a plain setup intent that opens the
+              panel after a manual login — and is what a middle-click gets. */}
           {safeBlogUrl && (
             <a
-              href={`${safeBlogUrl}${
+              href={`${safeBlogUrl}?setup=1${
                 activeUser && getLoginType(activeUser.username) === "hivesigner"
-                  ? "?login=hivesigner&setup=1"
-                  : "?setup=1"
+                  ? "&login=hivesigner"
+                  : ""
               }`}
               target="_blank"
               rel="noreferrer"
+              onClick={(e) => {
+                // Synchronous within the gesture, so popup blockers allow the
+                // open. Only the mount-resolved token is carried; without it
+                // the default navigation takes the fallback href.
+                if (!handoffToken) return;
+                e.preventDefault();
+                window.open(
+                  `${safeBlogUrl}?setup=1#hs=${encodeURIComponent(handoffToken)}`,
+                  "_blank",
+                  "noopener,noreferrer"
+                );
+              }}
               className="inline-block text-center px-4 py-3 rounded-lg bg-blue-dark-sky text-white font-semibold hover:opacity-90"
             >
               {i18next.t("hosting.customize-your-blog")}

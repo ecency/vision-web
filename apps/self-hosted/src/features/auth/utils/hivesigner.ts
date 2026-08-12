@@ -51,6 +51,34 @@ export function consumeHivesignerState(state: string | null): boolean {
  * else's valid token logs the visitor in as that account, and everything they
  * then write is attributed to it.
  */
+/**
+ * Whose token is this, straight from Hivesigner /me, or null when the token
+ * is invalid. The handoff path has no claimed identity to check against: the
+ * account IS the answer, which is what keeps identity out of URLs entirely.
+ */
+export async function resolveHivesignerAccount(
+  accessToken: string,
+): Promise<string | null> {
+  try {
+    const response = await fetch(HIVESIGNER_ME_URL, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as {
+      account?: { name?: string };
+      user?: string;
+      _id?: string;
+    };
+    const resolved = body.account?.name || body.user || body._id;
+    return typeof resolved === 'string' && resolved.length > 0
+      ? resolved.toLowerCase()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function verifyHivesignerToken(
   accessToken: string,
   username: string,
