@@ -158,6 +158,17 @@ describe("ProBlogClaim customize step", () => {
     await waitFor(() => expect(button.disabled).toBe(false));
   });
 
+  it("treats an empty template roster as a load failure, not a blank picker", async () => {
+    mocks.templates.mockResolvedValue({ templates: [] });
+    renderWithQueryClient(<ProBlogClaim username="alice" />);
+
+    await screen.findByText("hosting.template-load-failed");
+    const button = (await screen.findByRole("button", {
+      name: "pro-blog.claim"
+    })) as HTMLButtonElement;
+    await waitFor(() => expect(button.disabled).toBe(false));
+  });
+
   it("fails a stalled existence probe open to claimable", async () => {
     // The probe gates the claim the same way the catalog does, so it gets
     // the same bound. Letting a real-but-slow existing blog through is safe:

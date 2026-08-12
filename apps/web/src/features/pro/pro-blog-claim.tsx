@@ -93,7 +93,10 @@ export function ProBlogClaim({ username, settleTimeoutMs = 10_000 }: Props) {
       .then((r) => {
         if (!cancelled && !settled) {
           settled = true;
-          setTemplates(r.templates);
+          // An empty roster would render a blank picker; the failure message
+          // (with the claim still allowed) is the honest state for it.
+          if (r.templates.length > 0) setTemplates(r.templates);
+          else setTemplatesFailed(true);
         }
       })
       .catch(() => {
