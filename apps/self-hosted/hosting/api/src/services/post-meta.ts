@@ -41,17 +41,38 @@ export function resetPostMetaCache(): void {
   postCache.clear();
 }
 
+// The SSI subrequest blocks the page's HTML on this endpoint, so the chain
+// call gets a hard bound far below the SDK's own retry budget: a slow RPC
+// answers as a missing post (tenant snippet) instead of stalling every
+// uncached post view. The nginx location carries its own proxy timeouts as
+// the second layer.
+const RPC_TIMEOUT_MS = 2500;
+
 async function getPostCached(author: string, permlink: string): Promise<any | null> {
   const key = `${author}/${permlink}`;
   const hit = postCache.get(key);
   if (hit && Date.now() - hit.at < POST_TTL_MS) return hit.post;
 
   let post: any | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    post = (await callRPC('bridge.get_post', { author, permlink, observer: '' })) ?? null;
+    post =
+      ((await Promise.race([
+        callRPC('bridge.get_post', { author, permlink, observer: '' }),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('post meta rpc timeout')),
+            RPC_TIMEOUT_MS,
+          );
+        }),
+      ])) as any) ?? null;
   } catch {
-    // A chain hiccup answers like a missing post: the tenant-level snippet.
+    // A chain hiccup or timeout answers like a missing post: the
+    // tenant-level snippet. The null is cached like any answer, so a slow
+    // chain costs one bounded wait per post per TTL, not one per view.
     post = null;
+  } finally {
+    clearTimeout(timer);
   }
 
   if (postCache.size >= POST_CACHE_MAX) {
