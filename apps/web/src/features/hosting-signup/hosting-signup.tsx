@@ -408,6 +408,9 @@ export function HostingSignup() {
   // open (codes outlive nobody's coffee break); a failed mint leaves the
   // click on the credential-free fallback href.
   const [handoffCode, setHandoffCode] = useState<string | null>(null);
+  // Bumped by a click: the opened code is consumed by the instance, so the
+  // click clears it and this forces a fresh mint for any further click.
+  const [mintNonce, setMintNonce] = useState(0);
   useEffect(() => {
     if (step !== "success" || !activeUser) return;
     let cancelled = false;
@@ -427,7 +430,7 @@ export function HostingSignup() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [step, activeUser]);
+  }, [step, activeUser, mintNonce]);
 
   // The reservation is made and paid for; the in-progress draft has served its purpose.
   useEffect(() => {
@@ -1068,14 +1071,25 @@ export function HostingSignup() {
                 // Synchronous within the gesture, so popup blockers allow the
                 // open. Only the minted one-time code travels in the URL,
                 // never the bearer; without a code the default navigation
-                // takes the fallback href.
+                // takes the fallback href. The opened URL keeps the OAuth
+                // fallback param, so a code the instance cannot exchange
+                // still lands a Hivesigner owner in a login flow. The click
+                // consumes the code (the instance's exchange deletes it), so
+                // it is cleared here and a fresh one is minted for any
+                // further click.
                 if (!handoffCode) return;
                 e.preventDefault();
+                const loginParam =
+                  activeUser && getLoginType(activeUser.username) === "hivesigner"
+                    ? "&login=hivesigner"
+                    : "";
                 window.open(
-                  `${safeBlogUrl}?setup=1#hc=${encodeURIComponent(handoffCode)}`,
+                  `${safeBlogUrl}?setup=1${loginParam}#hc=${encodeURIComponent(handoffCode)}`,
                   "_blank",
                   "noopener,noreferrer"
                 );
+                setHandoffCode(null);
+                setMintNonce((n) => n + 1);
               }}
               className="inline-block text-center px-4 py-3 rounded-lg bg-blue-dark-sky text-white font-semibold hover:opacity-90"
             >

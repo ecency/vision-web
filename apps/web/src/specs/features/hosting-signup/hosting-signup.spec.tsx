@@ -185,9 +185,13 @@ describe("HostingSignup one-click HBD pay", () => {
     const customize = screen.getByText("hosting.customize-your-blog") as HTMLAnchorElement;
     expect(customize.getAttribute("href")).toBe("https://alice.blogs.ecency.com/?setup=1");
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
-    // The minted code resolves asynchronously on success-screen mount, so
-    // retry the click until the state lands. Only the one-time code travels
-    // in the URL; the bearer stays out of it entirely.
+    // Let the mount mint land, then make any FURTHER mint hang: the re-mint
+    // a click triggers must not hand the second click a code again.
+    await waitFor(() => expect(hostingApi.mintHandoff).toHaveBeenCalledWith("tok-alice"));
+    hostingApi.mintHandoff.mockReturnValue(new Promise(() => {}));
+    // The minted code resolves asynchronously into state, so retry the click
+    // until it lands. Only the one-time code travels in the URL; the bearer
+    // stays out of it entirely.
     await waitFor(() => {
       fireEvent.click(customize);
       expect(open).toHaveBeenCalledWith(
@@ -196,7 +200,12 @@ describe("HostingSignup one-click HBD pay", () => {
         "noopener,noreferrer"
       );
     });
-    expect(hostingApi.mintHandoff).toHaveBeenCalledWith("tok-alice");
+
+    // The click consumed the code (the instance's exchange deletes it): an
+    // immediate second click must not replay it, only re-mint for later.
+    open.mockClear();
+    fireEvent.click(customize);
+    expect(open).not.toHaveBeenCalled();
     // The tokened URL replaced the default navigation; the clean href never
     // gained the fragment.
     expect(customize.getAttribute("href")).toBe("https://alice.blogs.ecency.com/?setup=1");
