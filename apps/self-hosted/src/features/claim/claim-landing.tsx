@@ -1,6 +1,12 @@
 import { useEffect } from "react";
 import { t } from "@/core";
 import { parseClaimTarget } from "./parse-claim-target";
+import {
+  enterClaimPreview,
+  isClaimPreviewActive,
+  isClaimPreviewRequested,
+} from "./claim-preview";
+import { InstanceConfigManager } from "@/core";
 
 /**
  * Shown on an UNCLAIMED *.blogs.ecency.com subdomain, which nginx serves the shared default
@@ -23,7 +29,21 @@ export function ClaimLanding() {
   const title = isCommunity ? t("claim_title_community") : t("claim_title_blog");
   const claimHref = `${HOSTING_URL}?claim=${encodeURIComponent(name)}`;
 
+  // Deep-linked preview (the signup funnel or a shared link): boot straight into the live
+  // preview instead of the CTA. Behind an explicit param so crawlers and casual hits keep
+  // getting the lightweight landing.
   useEffect(() => {
+    if (name && isClaimPreviewRequested(window.location.search)) {
+      enterClaimPreview(name, isCommunity);
+    }
+  }, [name, isCommunity]);
+
+  useEffect(() => {
+    // A ?preview=1 deep link enters the preview in the effect above, which
+    // already painted the preview's own title; setting the claim title after
+    // it would stick "isn't set up yet" on the whole preview session. The
+    // banner owns noindex from here on, so this effect has nothing to do.
+    if (isClaimPreviewActive(InstanceConfigManager.getConfig())) return;
     const prevTitle = document.title;
     document.title = title;
     // Keep unclaimed placeholders out of the search index (only ever runs on a `template` host).
@@ -32,8 +52,13 @@ export function ClaimLanding() {
     meta.content = "noindex, nofollow";
     document.head.appendChild(meta);
     return () => {
-      document.title = prevTitle;
       meta.remove();
+      // Entering the live preview unmounts this landing AFTER applyConfigDom
+      // already set the preview's own title; restoring the pre-landing title
+      // here would stomp it. The preview banner owns noindex from here on.
+      if (!isClaimPreviewActive(InstanceConfigManager.getConfig())) {
+        document.title = prevTitle;
+      }
     };
   }, [title]);
 
@@ -51,6 +76,17 @@ export function ClaimLanding() {
         >
           {t("claim_cta")}
         </a>
+        {name && (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => enterClaimPreview(name, isCommunity)}
+            className="text-theme-muted underline hover:no-underline"
+          >
+            {t("claim_preview_cta")}
+          </button>
+        </div>
+        )}
       </div>
     </div>
   );
