@@ -28,11 +28,15 @@ export function useDownloadSelfHostBundle() {
       // pins a build that demonstrably exists rather than a name we guessed.
       // Both images are built from one commit in one CI run, so this tag
       // resolves for the blog image and the hosting-api image alike.
+      //
+      // It must look like a commit sha: an API built without GIT_SHA answers
+      // the literal "unknown", and `sha-unknown` is a tag that cannot be
+      // pulled. Refusing beats handing over a bundle that will not start.
       const sha = await hostingApi
         .health()
-        .then((h) => (typeof h.sha === "string" ? h.sha.slice(0, 7) : ""))
+        .then((h) => (typeof h.sha === "string" ? h.sha.trim().toLowerCase() : ""))
         .catch(() => "");
-      if (!sha) {
+      if (!/^[0-9a-f]{7,40}$/.test(sha)) {
         setError(i18next.t("hosting.self-host-tag-failed"));
         return false;
       }
@@ -40,7 +44,7 @@ export function useDownloadSelfHostBundle() {
       const zip = buildSelfHostZip({
         config: composed,
         username,
-        tag: `sha-${sha}`,
+        tag: `sha-${sha.slice(0, 7)}`,
         domain
       });
 

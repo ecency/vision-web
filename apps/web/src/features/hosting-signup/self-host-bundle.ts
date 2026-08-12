@@ -29,7 +29,35 @@ export interface SelfHostBundleInput {
 }
 
 /** Shown wherever the owner has not named their own domain yet. */
-const EXAMPLE_DOMAIN = "blog.example.com";
+export const EXAMPLE_DOMAIN = "blog.example.com";
+
+/** A DNS name: labels of letters, digits and inner hyphens, at least two. */
+const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
+/**
+ * The bare hostname behind whatever the owner typed, or null if it is not
+ * one. People paste `https://blog.example.com/`, and the raw value used to
+ * land in the Caddyfile and README verbatim, producing addresses like
+ * `https://https://blog.example.com/rss.xml`. Worse, a value carrying a
+ * newline would have written extra lines into the generated Caddyfile,
+ * which is a config language where a stray line is a new directive.
+ */
+export function normalizeDomain(input: string | undefined): string | null {
+  const trimmed = (input ?? "").trim();
+  if (!trimmed || /\s/.test(trimmed)) return null;
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let host: string;
+  try {
+    const url = new URL(withScheme);
+    // Anything but plain http(s) is a paste accident, not a site address.
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    if (url.username || url.password) return null;
+    host = url.hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  return HOSTNAME.test(host) ? host : null;
+}
 
 function composeYml(): string {
   return `# Ecency self-hosted blog.
@@ -45,7 +73,7 @@ services:
     container_name: ecency-blog
     restart: unless-stopped
     ports:
-      - "\${PORT:-3000}:80"
+      - "\${BIND:-127.0.0.1}:\${PORT:-3000}:80"
     volumes:
       # Your settings. Edit the file and restart; no rebuild, no new image.
       - ./config.json:/usr/share/nginx/html/config.json:ro
@@ -65,16 +93,17 @@ services:
 `;
 }
 
-function envFile(tag: string, domain: string): string {
-  return `# The image build this deployment runs. Immutable: sha-<7> tags and
-# vX.Y.Z release tags never move, while develop and latest do.
+function envFile(tag: string): string {
+  return `# Compose reads this file on every command. The image build this
+# deployment runs: sha-<7> and vX.Y.Z tags never move, develop and latest do.
 TAG=${tag}
 
 # Host port the blog is published on. The container always listens on 80.
 PORT=3000
 
-# Used by the Caddyfile.
-DOMAIN=${domain}
+# Published on loopback by default, for a reverse proxy to serve. Set
+# 0.0.0.0 only to expose the site directly, with no proxy and no HTTPS.
+BIND=127.0.0.1
 `;
 }
 
@@ -113,8 +142,10 @@ Requires Docker and Docker Compose on a machine with a public address.
 docker compose up -d
 \`\`\`
 
-The site is now on port 3000. Check it with \`curl -I localhost:3000\`, and
-read the logs with \`docker compose logs -f\`.
+The site is now on port 3000, published on loopback so a reverse proxy can
+serve it over HTTPS. Check it with \`curl -I localhost:3000\` and read the
+logs with \`docker compose logs -f\`. To expose it directly instead, with no
+proxy and therefore no HTTPS, set \`BIND=0.0.0.0\` in \`.env\`.
 
 ## Put it on your domain
 
@@ -170,7 +201,7 @@ uncomment the three SEO mounts in \`docker-compose.yml\`:
 docker run --rm -v "$PWD:/work" ecency/hosting-api:${tag} \\
   npm run generate-seo -- \\
   --config /work/config.json \\
-  --url https://${hasDomain ? domain : EXAMPLE_DOMAIN} \\
+  --url https://${domain} \\
   --out /work/seo
 \`\`\`
 
@@ -179,9 +210,7 @@ origin with no path or query. Afterwards, point the site's own feed link at
 your feed by adding to \`config.json\`:
 
 \`\`\`json
-{ "configuration": { "general": { "rssFeedUrl": "https://${
-    hasDomain ? domain : EXAMPLE_DOMAIN
-  }/rss.xml" } } }
+{ "configuration": { "general": { "rssFeedUrl": "https://${domain}/rss.xml" } } }
 \`\`\`
 
 ## Signing in
@@ -203,13 +232,17 @@ fee.
 
 /** The files that make up the bundle, in the order they are archived. */
 export function buildSelfHostBundle(input: SelfHostBundleInput): BundleFile[] {
-  const hasDomain = !!input.domain?.trim();
-  const domain = hasDomain ? input.domain!.trim() : EXAMPLE_DOMAIN;
+  // A value that is not a hostname is treated as absent: the bundle then
+  // carries the placeholder and tells the reader to replace it, which is
+  // honest, rather than writing their paste into a config file.
+  const normalized = normalizeDomain(input.domain);
+  const hasDomain = normalized !== null;
+  const domain = normalized ?? EXAMPLE_DOMAIN;
   return [
     { name: "README.md", content: readme(input.username, input.tag, domain, hasDomain) },
     { name: "config.json", content: `${JSON.stringify(input.config, null, 2)}\n` },
     { name: "docker-compose.yml", content: composeYml() },
-    { name: ".env", content: envFile(input.tag, domain) },
+    { name: ".env", content: envFile(input.tag) },
     { name: "Caddyfile", content: caddyfile(domain) },
   ];
 }

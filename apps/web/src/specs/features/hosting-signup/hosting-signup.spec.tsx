@@ -706,6 +706,17 @@ describe("HostingSignup reservation grace notice: renewals stay silent", () => {
   });
 
   describe("self-host branch", () => {
+    // Own setup rather than inherited: the enclosing beforeEach only clears
+    // calls, so a focused or reordered run would otherwise reach these tests
+    // with composeConfig returning undefined.
+    beforeEach(() => {
+      hostingApi.composeConfig.mockResolvedValue({
+        config: { version: 1, configuration: { general: {}, instanceConfiguration: {} } }
+      });
+      hostingApi.health.mockResolvedValue({ version: "untagged", sha: "abc1234def" });
+      hostingApi.templates.mockResolvedValue({ templates: [] });
+    });
+
     // The whole point of this branch is that it is free and reserves nothing.
     // Every test here therefore asserts what was NOT called as much as what was.
     async function reachCustomizeStep() {
@@ -810,6 +821,25 @@ describe("HostingSignup reservation grace notice: renewals stay silent", () => {
 
       expect(await screen.findByText("hosting.self-host-tag-failed")).toBeTruthy();
       expect(hostingApi.createTenant).not.toHaveBeenCalled();
+    });
+
+    it("refuses a build id that is not a commit sha", async () => {
+      // An API built without GIT_SHA answers the literal "unknown", and
+      // sha-unknown is a tag that cannot be pulled: the bundle would look
+      // fine and fail on the user's first `docker compose up`.
+      const objectUrl = vi.spyOn(URL, "createObjectURL");
+      hostingApi.health.mockResolvedValue({ version: "untagged", sha: "unknown" });
+
+      try {
+        await reachCustomizeStep();
+        fireEvent.click(screen.getByText("hosting.destination-self"));
+        fireEvent.click(await screen.findByText("hosting.download-bundle"));
+
+        expect(await screen.findByText("hosting.self-host-tag-failed")).toBeTruthy();
+        expect(objectUrl).not.toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+      }
     });
   });
 });

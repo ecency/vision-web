@@ -40,6 +40,8 @@
     "destination-self-hint": "Download everything you need and run it yourself with Docker. No fee to us; you supply the server and domain.",
     "self-host-domain-label": "Your domain (optional)",
     "self-host-domain-hint": "Used to fill in the HTTPS config and the setup guide. Leave blank to fill it in yourself later.",
+    "self-host-domain-placeholder": "blog.example.com",
+    "self-host-domain-invalid": "That does not look like a domain name. The files will use an example you can replace.",
     "download-bundle": "Download deployment files",
     "self-host-tag-failed": "Could not confirm the current release to pin. Please try again in a moment.",
     "customize-your-blog": "Customize your blog",

@@ -1,7 +1,9 @@
 "use client";
 
+import { type ChangeEvent } from "react";
 import i18next from "i18next";
 import { FormControl } from "@ui/input";
+import { normalizeDomain } from "./self-host-bundle";
 
 export type HostingDestination = "managed" | "self-host";
 
@@ -45,6 +47,11 @@ export function DestinationPicker({
   onDomainChange,
   disabled
 }: Props) {
+  // Typed but unusable input gets said out loud rather than silently
+  // dropped: the bundle falls back to the placeholder domain, and someone
+  // who typed something deserves to know their value was not used.
+  const invalidDomain = domain.trim().length > 0 && normalizeDomain(domain) === null;
+
   return (
     <div className="flex flex-col gap-2">
       <div role="radiogroup" aria-label={i18next.t("hosting.destination-label")} className="grid sm:grid-cols-2 gap-2">
@@ -81,10 +88,14 @@ export function DestinationPicker({
             type="text"
             value={domain}
             disabled={disabled}
-            onChange={(e: any) => onDomainChange(e.target.value)}
-            placeholder="blog.example.com"
+            onChange={(e: ChangeEvent<HTMLInputElement>) => onDomainChange(e.target.value)}
+            placeholder={i18next.t("hosting.self-host-domain-placeholder")}
           />
-          <p className="text-xs opacity-60">{i18next.t("hosting.self-host-domain-hint")}</p>
+          {invalidDomain ? (
+            <p className="text-xs text-red">{i18next.t("hosting.self-host-domain-invalid")}</p>
+          ) : (
+            <p className="text-xs opacity-60">{i18next.t("hosting.self-host-domain-hint")}</p>
+          )}
         </div>
       )}
     </div>

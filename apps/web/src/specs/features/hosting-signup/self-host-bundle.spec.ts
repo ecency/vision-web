@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildSelfHostBundle,
   buildSelfHostZip,
+  normalizeDomain,
   zipStore
 } from "@/features/hosting-signup/self-host-bundle";
 
@@ -121,6 +122,45 @@ describe("buildSelfHostBundle", () => {
     expect(caddy).toContain("reverse_proxy 127.0.0.1:3000");
     expect(readme).toContain("https://blog.alice.example/rss.xml");
     expect(readme).not.toContain("blog.example.com");
+  });
+
+  it("normalizes a pasted URL down to its hostname", () => {
+    // People paste the address bar. Used raw, this produced README links
+    // like https://https://blog.alice.example/rss.xml.
+    for (const typed of [
+      "https://blog.alice.example",
+      "https://blog.alice.example/",
+      "http://blog.alice.example/path?x=1",
+      "  BLOG.Alice.Example  "
+    ]) {
+      expect(normalizeDomain(typed), typed).toBe("blog.alice.example");
+    }
+  });
+
+  it("refuses anything that is not a hostname, including injection attempts", () => {
+    for (const typed of [
+      "",
+      "   ",
+      "not a domain",
+      "localhost",
+      "javascript:alert(1)",
+      // A newline would have written extra directives into the Caddyfile,
+      // where every line is a directive.
+      "blog.alice.example\nrespond /admin 200",
+      "blog.alice.example {\n  respond 200\n}"
+    ]) {
+      expect(normalizeDomain(typed), JSON.stringify(typed)).toBeNull();
+    }
+  });
+
+  it("never lets an unusable domain reach the generated files", () => {
+    const files = buildSelfHostBundle({
+      ...INPUT,
+      domain: "blog.alice.example\nrespond /admin 200"
+    });
+    const caddy = files.find((f) => f.name === "Caddyfile")!.content;
+    expect(caddy).not.toContain("respond");
+    expect(caddy).toContain("blog.example.com {");
   });
 
   it("falls back to a placeholder domain and says so when they did not", () => {
