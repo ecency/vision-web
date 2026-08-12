@@ -39,8 +39,10 @@ export type ThemeOptionKey = 'sidebar' | 'listType';
 export interface ThemeManifest {
   id: StyleTemplate;
   /**
-   * Availability by hosting plan. Enforcement happens server-side at save and
-   * activation; this field is what the server and the pickers read.
+   * RESERVED. Premium template tiers were considered and rejected (2026-08:
+   * the blog product itself is paid, templates are part of it), so every
+   * manifest declares 'free' and nothing enforces anything. The field stays
+   * so a future tier would be a value change rather than a schema change.
    */
   tier: 'free' | 'premium';
   /**

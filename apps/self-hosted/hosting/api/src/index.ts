@@ -5,6 +5,7 @@
  */
 
 import { Hono } from 'hono';
+import { version as apiVersion } from '../package.json';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
@@ -54,7 +55,17 @@ app.use('*', cors({
 }));
 
 // Health check (before rate limiting so container probes are never throttled)
-app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
+// Version and sha identify the running build, so skew between the paired
+// blog and API images (built from one commit, tagged independently) is
+// observable instead of a guess.
+app.get('/health', (c) =>
+  c.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    version: apiVersion,
+    sha: process.env.GIT_SHA || 'unknown',
+  }),
+);
 
 // Per-IP rate limiting. A general budget on all public routes caps the unauthenticated
 // tenant-creation + RPC-amplification abuse; a tighter budget on /v1/auth throttles the

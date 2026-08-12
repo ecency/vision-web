@@ -9,9 +9,11 @@ WORKDIR /app
 # the already-compiled node_modules.
 RUN apk add --no-cache python3 make g++
 
-# Install dependencies
-COPY package.json ./
-RUN npm install
+# Install dependencies from the committed lockfile: the image tag must pin
+# its contents, and a floating install made the same sha tag able to produce
+# different artifacts whenever a dependency released.
+COPY package.json package-lock.json ./
+RUN npm ci
 
 # Copy source
 COPY . .
@@ -21,6 +23,11 @@ RUN npm run build
 
 # Production image
 FROM node:24-alpine
+
+# Baked by CI so /health can answer which build is running; defaults keep
+# local builds working.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
 
 WORKDIR /app
 

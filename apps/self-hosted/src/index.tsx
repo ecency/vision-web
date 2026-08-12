@@ -114,6 +114,9 @@ function applyConfig() {
 }
 
 async function main() {
+  // Which build is running, inspectable without tooling: pairs with the
+  // hosting API's /health { sha } so image skew is observable.
+  document.documentElement.setAttribute('data-build', __BUILD_SHA__);
   // Handoff params are captured before anything renders, so no component's
   // effect order can decide whether the setup intent is seen.
   captureSetupParams();

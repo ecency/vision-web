@@ -5,6 +5,12 @@ on:
     branches:
       - develop
       - main
+    # A release: tagging self-hosted-vX.Y.Z builds the same images with an
+    # immutable version tag, so independent deployments can pin something
+    # meaningful instead of a commit sha. Tag pushes build and publish only;
+    # the deploy job stays develop-gated below.
+    tags:
+      - 'self-hosted-v*'
     paths:
       - 'apps/self-hosted/**'
       - 'packages/sdk/**'
@@ -149,13 +155,21 @@ jobs:
         id: tag
         run: |
           SHA_TAG="sha-${GITHUB_SHA::7}"
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [[ "${{ github.ref }}" == refs/tags/self-hosted-v* ]]; then
+            # Release tag: an immutable version tag plus latest, since a
+            # release IS what latest means to an independent deployment.
             CHANNEL_TAG="latest"
+            VERSION_TAG="${GITHUB_REF_NAME#self-hosted-}"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            CHANNEL_TAG="latest"
+            VERSION_TAG=""
           else
             CHANNEL_TAG="develop"
+            VERSION_TAG=""
           fi
           echo "sha=$SHA_TAG" >> $GITHUB_OUTPUT
           echo "channel=$CHANNEL_TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION_TAG" >> $GITHUB_OUTPUT
 
       - name: Build and push blog image
         uses: docker/build-push-action@v6
@@ -163,9 +177,12 @@ jobs:
           context: .
           file: ./apps/self-hosted/Dockerfile
           push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           tags: |
             ecency/self-hosted:${{ steps.tag.outputs.sha }}
             ecency/self-hosted:${{ steps.tag.outputs.channel }}
+            ${{ steps.tag.outputs.version != '' && format('ecency/self-hosted:{0}', steps.tag.outputs.version) || '' }}
 
   build-api:
     concurrency:
@@ -188,13 +205,21 @@ jobs:
         id: tag
         run: |
           SHA_TAG="sha-${GITHUB_SHA::7}"
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [[ "${{ github.ref }}" == refs/tags/self-hosted-v* ]]; then
+            # Release tag: an immutable version tag plus latest, since a
+            # release IS what latest means to an independent deployment.
             CHANNEL_TAG="latest"
+            VERSION_TAG="${GITHUB_REF_NAME#self-hosted-}"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            CHANNEL_TAG="latest"
+            VERSION_TAG=""
           else
             CHANNEL_TAG="develop"
+            VERSION_TAG=""
           fi
           echo "sha=$SHA_TAG" >> $GITHUB_OUTPUT
           echo "channel=$CHANNEL_TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION_TAG" >> $GITHUB_OUTPUT
 
       - name: Build and push API image
         uses: docker/build-push-action@v6
@@ -202,9 +227,12 @@ jobs:
           context: ./apps/self-hosted/hosting/api
           file: ./apps/self-hosted/hosting/api/Dockerfile
           push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           tags: |
             ecency/hosting-api:${{ steps.tag.outputs.sha }}
             ecency/hosting-api:${{ steps.tag.outputs.channel }}
+            ${{ steps.tag.outputs.version != '' && format('ecency/hosting-api:{0}', steps.tag.outputs.version) || '' }}
 
   deploy-staging:
     # The only deploy job. There used to be a second one gated on main, but the two were
