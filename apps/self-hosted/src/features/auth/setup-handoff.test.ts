@@ -115,6 +115,9 @@ describe('carried-session token handoff', () => {
   beforeEach(async () => {
     const { resetCarriedToken } = await import('./setup-handoff');
     resetCarriedToken();
+    sessionStorage.clear();
+    localStorage.clear();
+    window.history.replaceState(null, '', '/');
   });
 
   it('captures the #hs fragment at boot, scrubs it and keeps other params', async () => {

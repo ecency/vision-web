@@ -2,7 +2,7 @@
 
 import { createContext, type ReactNode, useEffect, useMemo } from 'react';
 import { InstanceConfigManager } from '@/core';
-import { useAuthStore } from '@/store';
+import { authenticationStore, useAuthStore } from '@/store';
 import { clearHiveAuthSession, clearUser, saveUser } from './storage';
 import type { AuthContextValue, AuthUser } from './types';
 import { availableAuthMethods } from './utils/auth-methods';
@@ -76,6 +76,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
       ownerUsername: blogOwner,
     }).then((carried) => {
       if (cancelled || !carried) return;
+      // A manual login (Keychain, HiveAuth) can complete while /me is in
+      // flight, and the shared attempt closed over the boot-time context, so
+      // its own isAuthenticated check cannot see it. Recheck the live store
+      // at install time: an established session always wins over the carried
+      // one.
+      if (authenticationStore.getState().user) return;
       setUser(carried);
       saveUser(carried);
     });

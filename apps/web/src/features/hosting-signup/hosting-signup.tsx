@@ -2,7 +2,7 @@
 
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useTransferMutation } from "@/api/sdk-mutations";
-import { ensureValidToken, getAccessToken, getLoginType } from "@/utils/user-token";
+import { ensureValidToken, getLoginType } from "@/utils/user-token";
 import { useGlobalStore } from "@/core/global-store";
 import { getUsernameError } from "@/utils/username-validation";
 import { Alert } from "@ui/alert";
@@ -399,13 +399,25 @@ export function HostingSignup() {
     }
   }, [tenantUsername, isCommunity, title, description, styleTemplate, accent, fontPreset, activeUser]);
 
-  // Warm the session token as soon as the success screen shows: the Customize
-  // link carries it over to the new instance at CLICK time (see the anchor's
-  // onClick), and a long-lived login's stored token may be stale. Refreshing
-  // here means the synchronous read at click time finds a fresh one.
+  // Resolve the session token as soon as the success screen shows: the
+  // Customize link carries it over to the new instance at CLICK time (see the
+  // anchor's onClick), and a long-lived login's stored token may be stale.
+  // Only a token that survived ensureValidToken is ever carried; while the
+  // refresh is in flight, or if it fails, the click takes the credential-free
+  // fallback href instead of shipping a stale bearer the instance would
+  // reject.
+  const [handoffToken, setHandoffToken] = useState<string | null>(null);
   useEffect(() => {
     if (step !== "success" || !activeUser) return;
-    ensureValidToken(activeUser.username).catch(() => {});
+    let cancelled = false;
+    ensureValidToken(activeUser.username)
+      .then((token) => {
+        if (!cancelled && token) setHandoffToken(token);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [step, activeUser]);
 
   // The reservation is made and paid for; the in-progress draft has served its purpose.
@@ -1044,14 +1056,13 @@ export function HostingSignup() {
               target="_blank"
               rel="noreferrer"
               onClick={(e) => {
-                // Synchronous within the gesture: popup blockers allow it, and
-                // the freshest token is read here (a stale one was refreshed
-                // when this screen mounted; getAccessToken re-reads storage).
-                const token = activeUser && getAccessToken(activeUser.username);
-                if (!token) return;
+                // Synchronous within the gesture, so popup blockers allow the
+                // open. Only the mount-resolved token is carried; without it
+                // the default navigation takes the fallback href.
+                if (!handoffToken) return;
                 e.preventDefault();
                 window.open(
-                  `${safeBlogUrl}?setup=1#hs=${encodeURIComponent(token)}`,
+                  `${safeBlogUrl}?setup=1#hs=${encodeURIComponent(handoffToken)}`,
                   "_blank",
                   "noopener,noreferrer"
                 );

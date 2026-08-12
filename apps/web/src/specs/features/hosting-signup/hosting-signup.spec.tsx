@@ -179,12 +179,16 @@ describe("HostingSignup one-click HBD pay", () => {
     const customize = screen.getByText("hosting.customize-your-blog") as HTMLAnchorElement;
     expect(customize.getAttribute("href")).toBe("https://alice.blogs.ecency.com/?setup=1");
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
-    fireEvent.click(customize);
-    expect(open).toHaveBeenCalledWith(
-      "https://alice.blogs.ecency.com/?setup=1#hs=tok-alice",
-      "_blank",
-      "noopener,noreferrer"
-    );
+    // The carried token resolves asynchronously on success-screen mount
+    // (ensureValidToken), so retry the click until the state lands.
+    await waitFor(() => {
+      fireEvent.click(customize);
+      expect(open).toHaveBeenCalledWith(
+        "https://alice.blogs.ecency.com/?setup=1#hs=tok-alice",
+        "_blank",
+        "noopener,noreferrer"
+      );
+    });
     // The tokened URL replaced the default navigation; the clean href never
     // gained the fragment.
     expect(customize.getAttribute("href")).toBe("https://alice.blogs.ecency.com/?setup=1");
