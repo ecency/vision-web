@@ -65,7 +65,7 @@ export function TemplatePicker({ templates, failed, value, onChange }: Props) {
                   Aa
                 </span>
                 <span
-                  className="inline-block w-3 h-3 rounded-full"
+                  className="inline-block size-3 rounded-full"
                   style={{ backgroundColor: t.colors.accent }}
                   aria-hidden="true"
                 />

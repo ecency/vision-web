@@ -36,7 +36,7 @@ export function AccentPicker({ value, input, onInput, onPick }: Props) {
             onClick={() => {
               onPick(value === hex ? null : hex);
             }}
-            className={`w-7 h-7 rounded-full border-2 focus:outline-none focus:ring-2 focus:ring-blue-dark-sky ${
+            className={`size-7 rounded-full border-2 focus:outline-none focus:ring-2 focus:ring-blue-dark-sky ${
               value === hex ? "border-blue-dark-sky" : "border-transparent"
             }`}
             style={{ backgroundColor: hex }}
