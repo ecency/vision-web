@@ -17,6 +17,20 @@ import {
   STYLE_TEMPLATES,
   type StyleTemplate,
 } from '../../../hosting/api/src/style-templates';
+import { isThemeOptionSupported } from '@/themes/registry';
+
+/**
+ * The configured style template out of the EDITED document, for visibleWhen
+ * predicates: visibility must follow the unsaved draft, so switching the
+ * template in the panel immediately shows or hides the options that theme
+ * consumes.
+ */
+function editedStyleTemplate(document: Record<string, ConfigValue>): unknown {
+  const configuration = document?.configuration as
+    | { general?: { styleTemplate?: unknown } }
+    | undefined;
+  return configuration?.general?.styleTemplate;
+}
 
 /**
  * One label key per roster entry, `satisfies` so adding a template to the
@@ -31,6 +45,7 @@ const STYLE_TEMPLATE_LABEL_KEYS = {
   developer: 'panel_configuration_general_style_template_developer_option',
   'modern-gradient':
     'panel_configuration_general_style_template_modern_gradient_option',
+  journal: 'panel_configuration_general_style_template_journal_option',
 } satisfies Record<StyleTemplate, TranslationKey>;
 
 export type ConfigFieldType =
@@ -240,6 +255,11 @@ export function buildConfigFields(
               listType: {
                 label: t('panel_configuration_instance_configuration_layout_list_type_label'),
                 type: 'select',
+                // Declared unsupported by themes whose entry component is not
+                // list/grid switchable (Journal renders one column of plain
+                // entries). Hidden, not inert: the stored value is untouched.
+                visibleWhen: (document) =>
+                  isThemeOptionSupported(editedStyleTemplate(document), 'listType'),
                 description: t('panel_configuration_instance_configuration_layout_list_type_description'),
                 options: [
                   { value: 'list', label: t('panel_configuration_instance_configuration_layout_list_type_list_option') },
@@ -260,6 +280,10 @@ export function buildConfigFields(
               sidebar: {
                 label: t('panel_configuration_instance_configuration_layout_sidebar_label'),
                 type: 'section',
+                // Themes whose shell renders no sidebar declare it unsupported;
+                // the whole section hides rather than sitting there doing nothing.
+                visibleWhen: (document) =>
+                  isThemeOptionSupported(editedStyleTemplate(document), 'sidebar'),
                 fields: {
                   placement: {
                     label: t('panel_configuration_instance_configuration_layout_sidebar_placement_label'),

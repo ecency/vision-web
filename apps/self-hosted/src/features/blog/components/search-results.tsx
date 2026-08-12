@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { t } from '@/core';
 import { useInstanceConfig } from '../hooks/use-instance-config';
-import { BlogPostItem } from './blog-post-item';
+import { useThemeComponents } from '@/themes/use-theme-components';
 
 interface Props {
   query: string;
@@ -35,6 +35,9 @@ function searchResultToEntry(result: SearchResult): Entry {
 }
 
 export function SearchResults({ query }: Props) {
+  // The entry card resolves through the theme registry, so search results
+  // wear the active theme's entry look instead of the default card.
+  const { PostCard } = useThemeComponents();
   const { username, communityId, isCommunityMode } = useInstanceConfig();
 
   // Build search query scoped to the blog/community
@@ -92,7 +95,7 @@ export function SearchResults({ query }: Props) {
       </div>
       <div className="blog-posts-list">
         {results.map((result, index) => (
-          <BlogPostItem
+          <PostCard
             key={`${result.author}/${result.permlink}`}
             entry={searchResultToEntry(result)}
             index={index}

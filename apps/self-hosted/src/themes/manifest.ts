@@ -33,6 +33,9 @@ export interface ThemeComponents {
   PostCard: ComponentType<{ entry: Entry; index?: number }>;
 }
 
+/** Config options a theme can declare it does not consume. */
+export type ThemeOptionKey = 'sidebar' | 'listType';
+
 export interface ThemeManifest {
   id: StyleTemplate;
   /**
@@ -40,6 +43,14 @@ export interface ThemeManifest {
    * activation; this field is what the server and the pickers read.
    */
   tier: 'free' | 'premium';
+  /**
+   * Config options this theme's components do not consume. The editor hides
+   * them while the theme is active (visibleWhen), which is the explicit
+   * declaration the manifest contract demands: a toggle must never be
+   * silently inert. Stored values are untouched and apply again the moment
+   * the owner switches back to a theme that consumes them.
+   */
+  unsupportedOptions?: readonly ThemeOptionKey[];
   /**
    * Component overrides for the named seams. Absent entirely for a CSS-only
    * template, which is what all five existing templates are: their manifests

@@ -81,6 +81,17 @@ export const STYLE_TEMPLATE_DISPLAY = {
     },
     headingStyle: 'sans',
   },
+  journal: {
+    name: 'Journal',
+    tagline: 'Ink on paper: one quiet column for long-form writing',
+    colors: {
+      background: '#faf8f4',
+      surface: '#f2efe8',
+      accent: '#9c4a1e',
+      text: '#221d17',
+    },
+    headingStyle: 'serif',
+  },
 } satisfies Record<StyleTemplate, StyleTemplateDisplay>;
 
 export function templateCatalog() {
