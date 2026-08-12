@@ -18,9 +18,9 @@ import type { ThemeManifest, ThemeOptionKey } from './manifest';
  * migration.
  */
 const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
-  medium: { id: 'medium', tier: 'free' },
+  medium: { id: 'medium', tier: 'free', showsReadTime: true },
   minimal: { id: 'minimal', tier: 'free' },
-  magazine: { id: 'magazine', tier: 'free' },
+  magazine: { id: 'magazine', tier: 'free', showsReadTime: true },
   developer: { id: 'developer', tier: 'free' },
   'modern-gradient': { id: 'modern-gradient', tier: 'free' },
   // The first layout-level design: its own shell (single column, author
@@ -30,6 +30,7 @@ const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
   journal: {
     id: 'journal',
     tier: 'free',
+    showsReadTime: true,
     components: { Shell: JournalShell, PostCard: JournalPostCard },
     unsupportedOptions: ['sidebar', 'listType'],
   },
@@ -40,6 +41,7 @@ const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
   reader: {
     id: 'reader',
     tier: 'free',
+    showsReadTime: true,
     components: { Shell: ReaderShell, ArchiveList: ReaderHome },
     unsupportedOptions: ['sidebar', 'listType'],
   },

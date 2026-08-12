@@ -8,24 +8,12 @@ import { formatRelativeTime, InstanceConfigManager, t } from '@/core';
 import { UserAvatar } from '@/features/shared/user-avatar';
 import { useAuth } from '@/features/auth/hooks';
 import { canEditEntry } from '@/features/publish/utils/can-edit-entry';
-import { stripHtmlAndMarkdown } from '../utils/strip-markdown';
+import { estimateReadMinutes } from '../utils/read-time';
+import { useThemeShowsReadTime } from '@/themes/use-theme-components';
 import { TextToSpeechButton } from './text-to-speech-button';
 
 interface Props {
   entry: Entry;
-}
-
-function countWords(text: string): number {
-  const cleanText = stripHtmlAndMarkdown(text);
-  return cleanText
-    .split(/\s+/)
-    .filter((word) => word.length > 0).length;
-}
-
-function calculateReadTime(body: string): number {
-  const wordsPerMinute = 225;
-  const wordCount = countWords(body);
-  return Math.ceil(wordCount / wordsPerMinute);
 }
 
 export function BlogPostHeader({ entry }: Props) {
@@ -53,8 +41,11 @@ export function BlogPostHeader({ entry }: Props) {
     return rawTags.filter((tag) => tag !== entryData.community);
   }, [entryData]);
 
+  // Shared estimator plus the theme's opt-in: read time is an editorial
+  // choice a minimal design gets to skip, declared in the theme manifest.
+  const showsReadTime = useThemeShowsReadTime();
   const readTime = useMemo(
-    () => calculateReadTime(entryData.body),
+    () => estimateReadMinutes(entryData.body),
     [entryData.body],
   );
 
@@ -100,10 +91,14 @@ export function BlogPostHeader({ entry }: Props) {
           <UilRedo className="size-4" />
           <span>{reblogsCount}</span>
         </div>
-        <span>•</span>
-        <span>
-          {readTime} {t('minRead')}
-        </span>
+        {showsReadTime && readTime !== null && (
+          <>
+            <span>•</span>
+            <span>
+              {readTime} {t('minRead')}
+            </span>
+          </>
+        )}
         <span className="ml-auto flex items-center gap-2">
           <TextToSpeechButton
             text={entryData.body}

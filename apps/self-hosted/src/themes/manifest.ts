@@ -52,6 +52,12 @@ export interface ThemeManifest {
    */
   unsupportedOptions?: readonly ThemeOptionKey[];
   /**
+   * The theme shows an estimated read time on cards and article headers.
+   * Opt-in: minimal designs stay quiet by simply not declaring it, and no
+   * config field exists for it (it is the theme's own editorial choice).
+   */
+  showsReadTime?: boolean;
+  /**
    * Component overrides for the named seams. Absent entirely for a CSS-only
    * template, which is what all five existing templates are: their manifests
    * carry no components key, proving the migration to this architecture

@@ -12,9 +12,11 @@ import {
 } from '@tooni/iconscout-unicons-react';
 import clsx from 'clsx';
 import { useMemo } from 'react';
-import { formatDate, InstanceConfigManager } from '@/core';
+import { formatDate, InstanceConfigManager, t } from '@/core';
 import { UserAvatar } from '@/features/shared/user-avatar';
 import { useHiveLayer } from '../hooks/use-hive-layer';
+import { estimateReadMinutes } from '../utils/read-time';
+import { useThemeShowsReadTime } from '@/themes/use-theme-components';
 import { PostPayout } from './post-payout';
 
 interface Props {
@@ -42,6 +44,13 @@ export function BlogPostItem({ entry }: Props) {
     ({ configuration }) => configuration.general.profileBaseUrl || 'https://ecency.com/@',
   );
   const entryData = entry.original_entry || entry;
+
+  // Theme opt-in (manifest showsReadTime): an editorial choice, not config.
+  const showsReadTime = useThemeShowsReadTime();
+  const readTime = useMemo(
+    () => (showsReadTime ? estimateReadMinutes(entryData.body) : null),
+    [showsReadTime, entryData.body],
+  );
   const isCommunity = instanceType === 'community';
 
   const summary = useMemo(
@@ -193,6 +202,14 @@ export function BlogPostItem({ entry }: Props) {
         </a>
         <span>•</span>
         <span>{formatDate(entryData.created)}</span>
+        {showsReadTime && readTime !== null && (
+          <>
+            <span>•</span>
+            <span>
+              {readTime} {t('minRead')}
+            </span>
+          </>
+        )}
         {showLikes && (
           <>
             <span>•</span>

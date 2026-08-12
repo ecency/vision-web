@@ -2,7 +2,9 @@ import { Link } from '@tanstack/react-router';
 import type { Entry } from '@ecency/sdk';
 import { catchPostImage, postBodySummary } from '@ecency/render-helper';
 import { useMemo } from 'react';
-import { formatDate } from '@/core';
+import { estimateReadMinutes } from '@/features/blog/utils/read-time';
+import { useThemeShowsReadTime } from '@/themes/use-theme-components';
+import { formatDate, t } from '@/core';
 
 interface Props {
   entry: Entry;
@@ -33,6 +35,14 @@ export function JournalPostCard({ entry }: Props) {
     [entryData],
   );
 
+  // Journal declares showsReadTime in its manifest; the hook keeps the
+  // Configuration Editor's template preview honest about it.
+  const showsReadTime = useThemeShowsReadTime();
+  const readTime = useMemo(
+    () => (showsReadTime ? estimateReadMinutes(entryData.body) : null),
+    [showsReadTime, entryData.body],
+  );
+
   // Same canonical link shape the default card uses: the '@' is part of the
   // post URL and the router leaves it unencoded.
   const postParams = useMemo(
@@ -51,6 +61,12 @@ export function JournalPostCard({ entry }: Props) {
             </time>
             {entryData.community && entryData.community_title && (
               <span> · {entryData.community_title}</span>
+            )}
+            {readTime !== null && (
+              <span>
+                {' '}
+                · {readTime} {t('minRead')}
+              </span>
             )}
           </p>
           <h2 className="heading-theme text-2xl sm:text-3xl leading-[1.2] mb-3">
