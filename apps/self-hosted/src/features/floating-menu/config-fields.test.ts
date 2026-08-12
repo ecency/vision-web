@@ -863,3 +863,44 @@ describe('isFieldVisible (the visibleWhen capability)', () => {
     expect(isFieldVisible(broken, doc)).toBe(true);
   });
 });
+
+describe('theme-gated layout options', () => {
+  const fields = buildConfigFields((key) => key);
+  // Typed walk down the section tree; a missing level fails the suite loudly
+  // instead of hiding behind a cast.
+  function sectionFields(field: ConfigField | undefined, name: string) {
+    if (!field?.fields) throw new Error(`section ${name} has no fields`);
+    return field.fields;
+  }
+  const layout = sectionFields(
+    sectionFields(
+      sectionFields(fields.configuration, 'configuration').instanceConfiguration,
+      'instanceConfiguration',
+    ).layout,
+    'layout',
+  );
+
+  function docWithTemplate(styleTemplate?: string) {
+    return {
+      configuration: { general: styleTemplate ? { styleTemplate } : {} },
+    } as unknown as Record<string, import('./types').ConfigValue>;
+  }
+
+  it('hides the sidebar section and list type under a theme that declares them unsupported', () => {
+    expect(isFieldVisible(layout.sidebar, docWithTemplate('journal'))).toBe(false);
+    expect(isFieldVisible(layout.listType, docWithTemplate('journal'))).toBe(false);
+  });
+
+  it('shows them for every CSS-only template and for an unset template', () => {
+    for (const template of ['medium', 'minimal', 'magazine', 'developer', 'modern-gradient']) {
+      expect(isFieldVisible(layout.sidebar, docWithTemplate(template))).toBe(true);
+    }
+    expect(isFieldVisible(layout.listType, docWithTemplate())).toBe(true);
+  });
+
+  it('follows the UNSAVED draft, so switching templates in the panel reacts immediately', () => {
+    // The predicate reads the edited document, not the applied config.
+    expect(isFieldVisible(layout.sidebar, docWithTemplate('journal'))).toBe(false);
+    expect(isFieldVisible(layout.sidebar, docWithTemplate('medium'))).toBe(true);
+  });
+});

@@ -3,7 +3,9 @@ import {
   STYLE_TEMPLATES,
   type StyleTemplate,
 } from '../../hosting/api/src/style-templates';
-import type { ThemeManifest } from './manifest';
+import { JournalPostCard } from './journal/journal-post-card';
+import { JournalShell } from './journal/journal-shell';
+import type { ThemeManifest, ThemeOptionKey } from './manifest';
 
 /**
  * Every template id from the roster gets a manifest here; the roster guard
@@ -19,6 +21,16 @@ const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
   magazine: { id: 'magazine', tier: 'free' },
   developer: { id: 'developer', tier: 'free' },
   'modern-gradient': { id: 'modern-gradient', tier: 'free' },
+  // The first layout-level design: its own shell (single column, author
+  // block, no sidebar) and entry (no card chrome). Everything else falls back
+  // to the shared defaults, and the options its components do not consume are
+  // declared so the editor hides them under this theme.
+  journal: {
+    id: 'journal',
+    tier: 'free',
+    components: { Shell: JournalShell, PostCard: JournalPostCard },
+    unsupportedOptions: ['sidebar', 'listType'],
+  },
 };
 
 function isStyleTemplate(value: unknown): value is StyleTemplate {
@@ -39,4 +51,16 @@ export function getThemeManifest(configured: unknown): ThemeManifest {
 
 export function allThemeManifests(): readonly ThemeManifest[] {
   return STYLE_TEMPLATES.map((id) => MANIFESTS[id]);
+}
+
+/**
+ * Whether the configured template's components consume a config option. The
+ * editor's visibleWhen predicates read this, so hiding an option is always a
+ * manifest declaration rather than a hardcoded template name.
+ */
+export function isThemeOptionSupported(
+  configured: unknown,
+  option: ThemeOptionKey,
+): boolean {
+  return !getThemeManifest(configured).unsupportedOptions?.includes(option);
 }

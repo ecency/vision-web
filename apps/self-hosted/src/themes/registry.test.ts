@@ -15,11 +15,26 @@ describe('theme manifest registry', () => {
     expect(manifests.map((m) => m.id).sort()).toEqual([...STYLE_TEMPLATES].sort());
   });
 
-  it('all five existing templates are CSS-only no-op manifests', () => {
+  it('the five original templates stay CSS-only no-op manifests', () => {
+    // The no-op migration proof for the pre-manifest templates: their rendered
+    // tree is exactly the shared defaults. Journal is the first structural
+    // theme and is asserted separately below.
+    const cssOnly = ['medium', 'minimal', 'magazine', 'developer', 'modern-gradient'];
     for (const manifest of allThemeManifests()) {
-      expect(manifest.components, `${manifest.id} must not override components yet`).toBeUndefined();
+      if (cssOnly.includes(manifest.id)) {
+        expect(manifest.components, `${manifest.id} must not override components`).toBeUndefined();
+      }
       expect(manifest.tier).toBe('free');
     }
+  });
+
+  it('journal owns its shell and entry, declares what it does not consume', () => {
+    const journal = getThemeManifest('journal');
+    expect(journal.components?.Shell).toBeTypeOf('function');
+    expect(journal.components?.PostCard).toBeTypeOf('function');
+    // Navigation/Sidebar/ArchiveList fall back to the defaults.
+    expect(journal.components?.ArchiveList).toBeUndefined();
+    expect(journal.unsupportedOptions).toEqual(['sidebar', 'listType']);
   });
 
   it('unknown and absent ids resolve to the default template', () => {
@@ -39,8 +54,8 @@ const { DEFAULT_THEME_COMPONENTS, resolveThemeComponents } = await import(
 );
 
 describe('component resolution', () => {
-  it('every roster template resolves to exactly the shared defaults today', () => {
-    for (const id of STYLE_TEMPLATES) {
+  it('every CSS-only template resolves to exactly the shared defaults', () => {
+    for (const id of STYLE_TEMPLATES.filter((t) => t !== 'journal')) {
       const resolved = resolveThemeComponents(id);
       // Identity per seam, not just deep equality: the no-op migration means
       // the very same component functions render, so nothing remounts.
@@ -53,5 +68,24 @@ describe('component resolution', () => {
     expect(resolveThemeComponents(undefined)).toEqual(
       resolveThemeComponents('medium'),
     );
+  });
+
+  it('journal resolves its own shell and entry, defaults for the rest', () => {
+    const journal = getThemeManifest('journal');
+    const resolved = resolveThemeComponents('journal');
+    expect(resolved.Shell).toBe(journal.components?.Shell);
+    expect(resolved.PostCard).toBe(journal.components?.PostCard);
+    expect(resolved.Navigation).toBe(DEFAULT_THEME_COMPONENTS.Navigation);
+    expect(resolved.Sidebar).toBe(DEFAULT_THEME_COMPONENTS.Sidebar);
+    expect(resolved.ArchiveList).toBe(DEFAULT_THEME_COMPONENTS.ArchiveList);
+  });
+
+  it('option support reads the manifest declaration', async () => {
+    const { isThemeOptionSupported } = await import('./registry');
+    expect(isThemeOptionSupported('journal', 'sidebar')).toBe(false);
+    expect(isThemeOptionSupported('journal', 'listType')).toBe(false);
+    expect(isThemeOptionSupported('medium', 'sidebar')).toBe(true);
+    expect(isThemeOptionSupported(undefined, 'sidebar')).toBe(true);
+    expect(isThemeOptionSupported('no-such-theme', 'listType')).toBe(true);
   });
 });

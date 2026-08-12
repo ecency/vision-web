@@ -258,6 +258,7 @@ export type TranslationKey =
   | 'panel_configuration_general_style_template_magazine_option'
   | 'panel_configuration_general_style_template_developer_option'
   | 'panel_configuration_general_style_template_modern_gradient_option'
+  | 'panel_configuration_general_style_template_journal_option'
   | 'panel_configuration_general_language_label'
   | 'panel_configuration_general_language_description'
   | 'panel_configuration_general_language_en_option'
@@ -590,6 +591,8 @@ export const translations: { en: Translations } & Record<
     panel_configuration_general_style_template_magazine_option: 'Magazine (Editorial)',
     panel_configuration_general_style_template_developer_option: 'Developer (Tech)',
     panel_configuration_general_style_template_modern_gradient_option: 'Modern Gradient',
+    panel_configuration_general_style_template_journal_option:
+      'Journal (single column, serif, no sidebar)',
     panel_configuration_general_language_label: 'Language',
     panel_configuration_general_language_description: 'Default language',
     panel_configuration_general_language_en_option: 'English',
