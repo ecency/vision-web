@@ -5,6 +5,8 @@ import {
 } from '../../hosting/api/src/style-templates';
 import { JournalPostCard } from './journal/journal-post-card';
 import { JournalShell } from './journal/journal-shell';
+import { ReaderHome } from './reader/reader-home';
+import { ReaderShell } from './reader/reader-shell';
 import type { ThemeManifest, ThemeOptionKey } from './manifest';
 
 /**
@@ -29,6 +31,16 @@ const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
     id: 'journal',
     tier: 'free',
     components: { Shell: JournalShell, PostCard: JournalPostCard },
+    unsupportedOptions: ['sidebar', 'listType'],
+  },
+  // The second layout-level design: a split frame with the archive as a
+  // persistent rail beside the open post. The home pane replaces the
+  // ArchiveList seam (the rail owns the archive), while cards stay the shared
+  // default so search results keep their look inside the reading pane.
+  reader: {
+    id: 'reader',
+    tier: 'free',
+    components: { Shell: ReaderShell, ArchiveList: ReaderHome },
     unsupportedOptions: ['sidebar', 'listType'],
   },
 };

@@ -1,0 +1,119 @@
+/* Reader Theme - Your archive beside the open post
+ *
+ * The second layout-level design: a split frame with the post archive as a
+ * persistent rail beside whatever is open, the way a feed reader lays out.
+ * Sans UI around a serif reading surface, cool porcelain neutrals, a deep
+ * teal accent. The structural half lives in src/themes/reader/ (Shell and
+ * ArchiveList manifest overrides); these tokens carry the full --theme-*
+ * contract so the accent correction sweep and every token utility keep
+ * working.
+ */
+
+[data-style-template="reader"] {
+  /* Typography: sans chrome, serif articles */
+  --theme-font-body: "Source Serif 4", "Georgia", "Times New Roman", serif;
+  --theme-font-heading:
+    -apple-system, "BlinkMacSystemFont", "Segoe UI", "Helvetica Neue", "Arial",
+    sans-serif;
+  --theme-font-ui:
+    -apple-system, "BlinkMacSystemFont", "Segoe UI", "Helvetica Neue", "Arial",
+    sans-serif;
+
+  /* Typography Sizes */
+  --theme-text-base: 18px;
+  --theme-leading-normal: 1.6;
+  --theme-tracking-normal: 0;
+  --theme-tracking-tight: -0.01em;
+
+  /* Colors - Light: porcelain surfaces, near-black ink, deep teal accent */
+  --theme-bg-primary: #ffffff;
+  --theme-bg-secondary: #f6f6f4;
+  --theme-bg-tertiary: rgba(28, 30, 33, 0.05);
+  --theme-bg-card: #ffffff;
+
+  --theme-text-primary: #1c1e21;
+  --theme-text-secondary: rgba(28, 30, 33, 0.75);
+  /* 0.62 composites to ~4.8:1 over white: rail dates and marginalia stay
+   * quiet but AA-readable at small sizes. */
+  --theme-text-muted: rgba(28, 30, 33, 0.62);
+
+  --theme-accent: #17677a;
+  --theme-accent-hover: #125363;
+  /* Ink on the accent fill: white on #17677a is 6.4:1. */
+  --theme-accent-contrast: #ffffff;
+
+  --theme-border: rgba(28, 30, 33, 0.12);
+  --theme-border-strong: rgba(28, 30, 33, 0.2);
+
+  /* Effects: an app frame, so gentle rounding and soft elevation */
+  --theme-radius-sm: 4px;
+  --theme-radius: 6px;
+  --theme-radius-lg: 10px;
+  --theme-radius-full: 9999px;
+
+  --theme-shadow-sm: 0 1px 2px rgba(28, 30, 33, 0.06);
+  --theme-shadow: 0 2px 8px rgba(28, 30, 33, 0.08);
+  --theme-shadow-lg: 0 8px 24px rgba(28, 30, 33, 0.12);
+
+  /* Link underline style, derived from the accent; see variables.css */
+  --theme-link-decoration: underline;
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
+
+  /* Tag style: quiet chips in the UI face */
+  --theme-tag-text: var(--theme-accent-text-light, rgba(28, 30, 33, 0.65));
+  --theme-tag-radius: 4px;
+
+  /* Card treatment: flat surfaces separated by hairlines, no glass */
+  --theme-card-bg: var(--theme-bg-card);
+  --theme-card-border: 1px solid var(--theme-border);
+  --theme-card-backdrop: none;
+
+  /* Layout: the sidebar width IS the rail width in the Reader shell; the
+   * content width bounds the open article inside the reading pane. */
+  --theme-content-width: 720px;
+  --theme-sidebar-width: 340px;
+  --theme-layout-gap: 2rem;
+  --theme-layout-container-padding: 1.25rem;
+  --theme-layout-section-gap: 2rem;
+  --theme-card-padding: 1rem;
+  --theme-grid-gap: 1.5rem;
+  --theme-grid-columns-tablet: 1;
+  --theme-grid-columns-desktop: 1;
+  --theme-post-card-image-height: 200px;
+  --theme-post-card-image-radius: 6px;
+}
+
+/* Reader Dark Mode: graphite, never blue-black */
+[data-style-template="reader"][data-theme="dark"] {
+  --theme-bg-primary: #15171a;
+  --theme-bg-secondary: #1b1e22;
+  --theme-bg-tertiary: rgba(236, 239, 244, 0.07);
+  --theme-bg-card: #15171a;
+
+  --theme-text-primary: rgba(236, 239, 244, 0.92);
+  --theme-text-secondary: rgba(236, 239, 244, 0.75);
+  --theme-text-muted: rgba(236, 239, 244, 0.62);
+
+  --theme-accent: #58a6c4;
+  --theme-accent-hover: #74b9d3;
+  /* Ink on the accent fill: the same choice the correction module makes for
+   * this fill, so static CSS and runtime preview agree. 5.7:1. */
+  --theme-accent-contrast: #111827;
+
+  --theme-border: rgba(236, 239, 244, 0.12);
+  --theme-border-strong: rgba(236, 239, 244, 0.2);
+
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
+
+  --theme-tag-text: var(--theme-accent-text-dark, rgba(236, 239, 244, 0.65));
+}

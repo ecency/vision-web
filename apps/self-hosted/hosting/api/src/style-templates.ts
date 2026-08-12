@@ -24,6 +24,7 @@ export const STYLE_TEMPLATES = Object.freeze([
   'developer',
   'modern-gradient',
   'journal',
+  'reader',
 ] as const);
 
 export type StyleTemplate = (typeof STYLE_TEMPLATES)[number];
