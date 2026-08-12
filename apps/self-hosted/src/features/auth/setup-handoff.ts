@@ -90,8 +90,16 @@ export interface LoginRequestContext {
  */
 export function actOnLoginRequest(context: LoginRequestContext): void {
   if (peekLoginRequest() !== 'hivesigner') return;
+  // Already signed in: the request is moot, drop it.
+  if (context.isAuthenticated) {
+    clearLoginRequest();
+    return;
+  }
+  // Not offered YET: keep the intent instead of dropping it, so a config that
+  // gains the Hivesigner client a moment later (or the next full load) can
+  // still honor the headline auto-login instead of silently never firing.
+  if (!context.canLoginWithHivesigner) return;
   clearLoginRequest();
-  if (context.isAuthenticated || !context.canLoginWithHivesigner) return;
   (context.beginHivesignerLogin ?? loginWithHivesigner)();
 }
 

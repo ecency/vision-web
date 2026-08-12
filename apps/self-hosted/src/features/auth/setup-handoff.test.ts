@@ -64,7 +64,7 @@ describe('setup handoff', () => {
     expect(begin).toHaveBeenCalledTimes(1);
   });
 
-  it('drops the request when already signed in or the method is unavailable', () => {
+  it('drops the request when signed in, but RETAINS it while the method is unavailable', () => {
     const begin = vi.fn();
     window.history.replaceState(null, '', '/?login=hivesigner');
     captureSetupParams();
@@ -84,7 +84,15 @@ describe('setup handoff', () => {
       beginHivesignerLogin: begin,
     });
     expect(begin).not.toHaveBeenCalled();
-    expect(peekLoginRequest()).toBeNull();
+    // Retained: a client id that registers a moment later (or the next load)
+    // can still honor the auto-login instead of silently never firing.
+    expect(peekLoginRequest()).toBe('hivesigner');
+    actOnLoginRequest({
+      canLoginWithHivesigner: true,
+      isAuthenticated: false,
+      beginHivesignerLogin: begin,
+    });
+    expect(begin).toHaveBeenCalledTimes(1);
   });
 
   it('does nothing at all without handoff params', () => {
