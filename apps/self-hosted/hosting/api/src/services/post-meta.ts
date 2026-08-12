@@ -168,7 +168,12 @@ export async function buildMetaForUri(tenant: Tenant, uri: unknown): Promise<str
     `<meta property="og:type" content="article" />`,
     `<meta property="og:site_name" content="${siteName}" />`,
     `<meta property="og:url" content="${canonical}" />`,
-    ...(ogImage ? [`<meta property="og:image" content="${ogImage}" />`] : []),
+    ...(ogImage
+      ? [
+          `<meta property="og:image" content="${ogImage}" />`,
+          `<meta name="twitter:image" content="${ogImage}" />`,
+        ]
+      : []),
     `<meta name="twitter:card" content="${ogImage ? 'summary_large_image' : 'summary'}" />`,
     '',
   ].join('\n');

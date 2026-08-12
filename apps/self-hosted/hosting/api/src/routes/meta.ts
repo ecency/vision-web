@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { TenantService } from '../services/tenant-service';
+import { isPublishableTenant } from '../services/config-service';
 import { buildMetaForUri } from '../services/post-meta';
 
 /**
@@ -17,8 +18,10 @@ export const metaRoutes = new Hono();
 metaRoutes.get('/:username', async (c) => {
   const username = c.req.param('username').toLowerCase();
   const tenant = await TenantService.getByUsername(username);
-  if (!tenant) {
-    // 404 sends nginx to its static fallback chain.
+  // The same gate the served config has: a tenant that is not publishable
+  // (expired, suspended, never activated) gets no generated metadata either.
+  // 404 sends nginx to its static fallback chain.
+  if (!tenant || !isPublishableTenant(tenant)) {
     return c.text('Not found', 404);
   }
 

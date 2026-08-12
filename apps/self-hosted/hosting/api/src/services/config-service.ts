@@ -171,7 +171,12 @@ export const ConfigService = {
       `<meta property="og:description" content="${description}" />`,
       `<meta property="og:type" content="website" />`,
       `<meta property="og:site_name" content="${title}" />`,
-      ...(ogImage ? [`<meta property="og:image" content="${ogImage}" />`] : []),
+      ...(ogImage
+        ? [
+            `<meta property="og:image" content="${ogImage}" />`,
+            `<meta name="twitter:image" content="${ogImage}" />`,
+          ]
+        : []),
       `<meta name="twitter:card" content="${ogImage ? 'summary_large_image' : 'summary'}" />`,
       `<link rel="icon" href="${favicon}" />`,
       '',
