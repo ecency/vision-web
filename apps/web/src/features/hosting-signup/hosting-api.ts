@@ -168,6 +168,14 @@ export const hostingApi = {
   authHivesigner: (accessToken: string) =>
     post<HostingAuthResult>("/v1/auth/hivesigner", { accessToken }),
 
+  /** Mint a one-time short-TTL handoff code for the signup session carry-over: the code goes in
+   *  the Customize link's fragment instead of the bearer, so a captured URL is worthless after
+   *  one exchange or a few minutes. */
+  mintHandoff: (accessToken: string) =>
+    post<{ code: string; username: string; expiresAt: string }>("/v1/auth/handoff", {
+      accessToken
+    }),
+
   /** Keychain rail: fetch a challenge to sign with the posting key... */
   authChallenge: (username: string) =>
     post<{ username: string; challenge: string; expiresAt: string }>("/v1/auth/challenge", {

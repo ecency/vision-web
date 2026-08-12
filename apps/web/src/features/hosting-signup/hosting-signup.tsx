@@ -399,26 +399,51 @@ export function HostingSignup() {
     }
   }, [tenantUsername, isCommunity, title, description, styleTemplate, accent, fontPreset, activeUser]);
 
-  // Resolve the session token as soon as the success screen shows: the
-  // Customize link carries it over to the new instance at CLICK time (see the
-  // anchor's onClick), and a long-lived login's stored token may be stale.
-  // Only a token that survived ensureValidToken is ever carried; while the
-  // refresh is in flight, or if it fails, the click takes the credential-free
-  // fallback href instead of shipping a stale bearer the instance would
-  // reject.
-  const [handoffToken, setHandoffToken] = useState<string | null>(null);
+  // Mint a one-time handoff CODE as soon as the success screen shows: the
+  // Customize link used to carry the session bearer itself in its fragment,
+  // which left a captured link a live credential until upstream expiry. The
+  // hosting API now stores the ensureValidToken-resolved token behind a code
+  // that dies on first exchange or in five minutes, so the URL artifact is
+  // worthless afterwards. Re-minted on an interval while the screen stays
+  // open (codes outlive nobody's coffee break); a failed mint leaves the
+  // click on the credential-free fallback href.
+  const [handoff, setHandoff] = useState<{ code: string; expiresAt: number } | null>(
+    null
+  );
+  // Bumped by a click: the opened code is consumed by the instance, so the
+  // click clears it and this forces a fresh mint for any further click.
+  const [mintNonce, setMintNonce] = useState(0);
   useEffect(() => {
+    // Whatever code exists belongs to the PREVIOUS context (another account,
+    // a logout, an earlier screen) and must never ride the button into this
+    // one: cleared before anything else, minted fresh below if eligible.
+    setHandoff(null);
     if (step !== "success" || !activeUser) return;
     let cancelled = false;
-    ensureValidToken(activeUser.username)
-      .then((token) => {
-        if (!cancelled && token) setHandoffToken(token);
-      })
-      .catch(() => {});
+    const mint = async () => {
+      try {
+        const token = await ensureValidToken(activeUser.username);
+        if (!token || cancelled) return;
+        const minted = await hostingApi.mintHandoff(token);
+        if (!cancelled) {
+          setHandoff({
+            code: minted.code,
+            // The server's word on the TTL; an unparseable answer counts as
+            // already stale rather than forever fresh.
+            expiresAt: Date.parse(minted.expiresAt) || 0
+          });
+        }
+      } catch {
+        if (!cancelled) setHandoff(null);
+      }
+    };
+    mint();
+    const timer = setInterval(mint, 4 * 60 * 1000);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
-  }, [step, activeUser]);
+  }, [step, activeUser, mintNonce]);
 
   // The reservation is made and paid for; the in-progress draft has served its purpose.
   useEffect(() => {
@@ -1057,15 +1082,35 @@ export function HostingSignup() {
               rel="noreferrer"
               onClick={(e) => {
                 // Synchronous within the gesture, so popup blockers allow the
-                // open. Only the mount-resolved token is carried; without it
-                // the default navigation takes the fallback href.
-                if (!handoffToken) return;
+                // open. Only the minted one-time code travels in the URL,
+                // never the bearer; without a code the default navigation
+                // takes the fallback href. The opened URL keeps the OAuth
+                // fallback param, so a code the instance cannot exchange
+                // still lands a Hivesigner owner in a login flow. The click
+                // consumes the code (the instance's exchange deletes it), so
+                // it is cleared here and a fresh one is minted for any
+                // further click.
+                if (!handoff) return;
+                // A code past (or within thirty seconds of) its server TTL
+                // would exchange as dead: take the fallback navigation and
+                // mint a replacement instead of opening it.
+                if (handoff.expiresAt - 30_000 < Date.now()) {
+                  setHandoff(null);
+                  setMintNonce((n) => n + 1);
+                  return;
+                }
                 e.preventDefault();
+                const loginParam =
+                  activeUser && getLoginType(activeUser.username) === "hivesigner"
+                    ? "&login=hivesigner"
+                    : "";
                 window.open(
-                  `${safeBlogUrl}?setup=1#hs=${encodeURIComponent(handoffToken)}`,
+                  `${safeBlogUrl}?setup=1${loginParam}#hc=${encodeURIComponent(handoff.code)}`,
                   "_blank",
                   "noopener,noreferrer"
                 );
+                setHandoff(null);
+                setMintNonce((n) => n + 1);
               }}
               className="inline-block text-center px-4 py-3 rounded-lg bg-blue-dark-sky text-white font-semibold hover:opacity-90"
             >

@@ -110,4 +110,58 @@ export const challengeStore = {
   },
 };
 
-export default { getRedisClient, challengeStore };
+/**
+ * One-time handoff codes for the signup session carry-over: the code in the
+ * URL is worthless after a single exchange or a few minutes, which is the
+ * whole point of minting it instead of putting the bearer in the link.
+ */
+export const handoffStore = {
+  async set(
+    code: string,
+    payload: { accessToken: string; username: string },
+    ttlSeconds: number = 300
+  ): Promise<void> {
+    const client = await getRedisClient();
+    await client.set(`auth:handoff:${code}`, JSON.stringify(payload), {
+      EX: ttlSeconds,
+    });
+  },
+
+  /**
+   * Count a mint against the account inside a rolling minute, for the
+   * per-account cap that sits beside the per-IP limits: a stolen token must
+   * not become an unbounded code mill.
+   */
+  async countMint(username: string, windowSeconds: number = 60): Promise<number> {
+    const client = await getRedisClient();
+    const key = `auth:handoff:mint:${username.toLowerCase()}`;
+    const count = await client.incr(key);
+    if (count === 1) {
+      await client.expire(key, windowSeconds);
+    }
+    return count;
+  },
+
+  /** Read AND delete atomically: a code can only ever be exchanged once. */
+  async consume(
+    code: string
+  ): Promise<{ accessToken: string; username: string } | null> {
+    const client = await getRedisClient();
+    const data = await client.getDel(`auth:handoff:${code}`);
+    if (!data) return null;
+    try {
+      const parsed = JSON.parse(data);
+      if (
+        typeof parsed?.accessToken !== 'string' ||
+        typeof parsed?.username !== 'string'
+      ) {
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  },
+};
+
+export default { getRedisClient, challengeStore, handoffStore };

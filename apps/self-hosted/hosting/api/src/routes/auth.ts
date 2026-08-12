@@ -16,7 +16,7 @@ import {
   verifyToken,
   getTokenExpiry,
 } from '../utils/auth';
-import { challengeStore } from '../utils/redis';
+import { challengeStore, handoffStore } from '../utils/redis';
 import { AuditService, parseClientIp } from '../services/audit-service';
 
 export const authRoutes = new Hono();
@@ -130,40 +130,60 @@ const hivesignerLoginSchema = z.object({
   accessToken: z.string().min(16).max(4096),
 });
 
+/**
+ * Who a HiveSigner access token belongs to, asked from HiveSigner itself.
+ * Shared by the login exchange and the handoff mint: identity is never taken
+ * from the caller, only from the token.
+ */
+async function resolveHivesignerUsername(
+  accessToken: string,
+): Promise<
+  | { ok: true; username: string }
+  | { ok: false; status: 401 | 503; error: string }
+> {
+  let res: Response;
+  try {
+    res = await fetch('https://hivesigner.com/api/me', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch {
+    return { ok: false, status: 503, error: 'Auth service unavailable' };
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, status: 401, error: 'Invalid or expired HiveSigner token' };
+  }
+  if (!res.ok) {
+    return { ok: false, status: 503, error: 'Auth service unavailable' };
+  }
+
+  let username: unknown;
+  try {
+    const data = (await res.json()) as any;
+    username = data?.account?.name ?? data?.user;
+  } catch {
+    return { ok: false, status: 503, error: 'Auth service unavailable' };
+  }
+
+  if (typeof username !== 'string' || !/^[a-z][a-z0-9.-]{2,15}$/.test(username)) {
+    return { ok: false, status: 401, error: 'Invalid or expired HiveSigner token' };
+  }
+
+  return { ok: true, username };
+}
+
 authRoutes.post(
   '/hivesigner',
   zValidator('json', hivesignerLoginSchema),
   async (c) => {
     const { accessToken } = c.req.valid('json');
 
-    let res: Response;
-    try {
-      res = await fetch('https://hivesigner.com/api/me', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        signal: AbortSignal.timeout(8000),
-      });
-    } catch {
-      return c.json({ error: 'Auth service unavailable' }, 503);
+    const resolved = await resolveHivesignerUsername(accessToken);
+    if (!resolved.ok) {
+      return c.json({ error: resolved.error }, resolved.status);
     }
-
-    if (res.status === 401 || res.status === 403) {
-      return c.json({ error: 'Invalid or expired HiveSigner token' }, 401);
-    }
-    if (!res.ok) {
-      return c.json({ error: 'Auth service unavailable' }, 503);
-    }
-
-    let username: unknown;
-    try {
-      const data = (await res.json()) as any;
-      username = data?.account?.name ?? data?.user;
-    } catch {
-      return c.json({ error: 'Auth service unavailable' }, 503);
-    }
-
-    if (typeof username !== 'string' || !/^[a-z][a-z0-9.-]{2,15}$/.test(username)) {
-      return c.json({ error: 'Invalid or expired HiveSigner token' }, 401);
-    }
+    const { username } = resolved;
 
     const expiresInMs = 24 * 60 * 60 * 1000; // 24 hours
     const token = createToken(username, expiresInMs);
@@ -182,6 +202,86 @@ authRoutes.post(
       expiresAt: expiresAt?.toISOString(),
     });
   }
+);
+
+// POST /v1/auth/handoff - Mint a one-time short-TTL handoff code for the
+// signup session carry-over. The success screen used to put the bearer itself
+// in the Customize link's fragment; a captured link then stayed a live
+// credential until upstream expiry. A code is worthless after one exchange or
+// five minutes, whichever comes first. Identity comes from the token, never
+// the caller, exactly like the login exchange above.
+const HANDOFF_TTL_SECONDS = 5 * 60;
+
+authRoutes.post(
+  '/handoff',
+  zValidator('json', hivesignerLoginSchema),
+  async (c) => {
+    const { accessToken } = c.req.valid('json');
+
+    const resolved = await resolveHivesignerUsername(accessToken);
+    if (!resolved.ok) {
+      return c.json({ error: resolved.error }, resolved.status);
+    }
+    const { username } = resolved;
+
+    // Per-account cap beside the per-IP limits: a leaked token must not
+    // become an unbounded code mill, and legitimate use is one code per
+    // success screen plus a slow refresh.
+    const mintCount = await handoffStore.countMint(username);
+    if (mintCount > 10) {
+      return c.json({ error: 'Too many handoff requests' }, 429);
+    }
+
+    const code = nanoid(32);
+    await handoffStore.set(code, { accessToken, username }, HANDOFF_TTL_SECONDS);
+
+    // The code (a capability) and the token never reach the audit trail.
+    void AuditService.log({
+      eventType: 'auth.handoff_minted',
+      eventData: { username },
+      ipAddress: parseClientIp(c.req.header('x-forwarded-for')),
+      userAgent: c.req.header('user-agent'),
+    });
+
+    return c.json({
+      code,
+      username,
+      expiresAt: new Date(Date.now() + HANDOFF_TTL_SECONDS * 1000).toISOString(),
+    });
+  },
+);
+
+// POST /v1/auth/handoff/exchange - Trade the code for the carried session,
+// exactly once: the read deletes. The instance still applies its own owner
+// gate to whatever comes back; this endpoint only shortens how long anything
+// secret exists inside a URL.
+const handoffExchangeSchema = z.object({
+  code: z.string().min(16).max(128),
+});
+
+authRoutes.post(
+  '/handoff/exchange',
+  zValidator('json', handoffExchangeSchema),
+  async (c) => {
+    const { code } = c.req.valid('json');
+
+    const payload = await handoffStore.consume(code);
+    if (!payload) {
+      return c.json({ error: 'Invalid or expired handoff code' }, 404);
+    }
+
+    void AuditService.log({
+      eventType: 'auth.handoff_exchanged',
+      eventData: { username: payload.username },
+      ipAddress: parseClientIp(c.req.header('x-forwarded-for')),
+      userAgent: c.req.header('user-agent'),
+    });
+
+    return c.json({
+      accessToken: payload.accessToken,
+      username: payload.username,
+    });
+  },
 );
 
 // GET /v1/auth/me - Get current user info

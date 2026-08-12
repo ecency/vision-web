@@ -279,6 +279,96 @@ describe('carried-session token handoff', () => {
     expect(resolve).not.toHaveBeenCalled();
   });
 
+  it('captures a #hc code, exchanges it once and owner-gates the result', async () => {
+    const { actOnTokenHandoff } = await import('./setup-handoff');
+    window.history.replaceState(null, '', '/?setup=1#hc=code-abc');
+    captureSetupParams();
+    // The code is gone from the URL before anything renders...
+    expect(window.location.hash).toBe('');
+    expect(isSetupPending()).toBe(true);
+
+    const exchange = vi.fn(async () => ({
+      accessToken: 'tok-from-exchange',
+      username: 'alice',
+    }));
+    const resolve = vi.fn(async () => 'alice');
+    const context = {
+      isAuthEnabled: true,
+      isAuthenticated: false,
+      ownerUsername: 'alice',
+      exchangeCode: exchange,
+      resolveAccount: resolve,
+    };
+    const user = await actOnTokenHandoff(context);
+    expect(exchange).toHaveBeenCalledWith('code-abc');
+    // The exchanged session is re-resolved against /me by the instance
+    // itself: identity is never taken on the API's word alone.
+    expect(resolve).toHaveBeenCalledWith('tok-from-exchange');
+    expect(user).toMatchObject({
+      username: 'alice',
+      accessToken: 'tok-from-exchange',
+      loginType: 'hivesigner',
+    });
+    // One attempt per page load: a replay observes the same outcome without
+    // a second exchange (the code is single-use server-side anyway).
+    expect(await actOnTokenHandoff(context)).toBe(user);
+    expect(exchange).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an exchanged session for anyone but the owner', async () => {
+    const { actOnTokenHandoff } = await import('./setup-handoff');
+    window.history.replaceState(null, '', '/#hc=code-mallory');
+    captureSetupParams();
+    expect(
+      await actOnTokenHandoff({
+        isAuthEnabled: true,
+        isAuthenticated: false,
+        ownerUsername: 'alice',
+        exchangeCode: vi.fn(async () => ({
+          accessToken: 'tok-m',
+          username: 'mallory',
+        })),
+        resolveAccount: vi.fn(async () => 'mallory'),
+      }),
+    ).toBeNull();
+  });
+
+  it('refuses an exchange whose token does not verify as the claimed account', async () => {
+    const { actOnTokenHandoff } = await import('./setup-handoff');
+    window.history.replaceState(null, '', '/#hc=code-forged');
+    captureSetupParams();
+    expect(
+      await actOnTokenHandoff({
+        isAuthEnabled: true,
+        isAuthenticated: false,
+        ownerUsername: 'alice',
+        exchangeCode: vi.fn(async () => ({
+          accessToken: 'tok-x',
+          username: 'alice',
+        })),
+        // /me says the token is somebody else's (or dead): refuse.
+        resolveAccount: vi.fn(async () => 'mallory'),
+      }),
+    ).toBeNull();
+  });
+
+  it('survives a malformed #hc fragment: no code, but the URL is scrubbed', async () => {
+    const { actOnTokenHandoff } = await import('./setup-handoff');
+    window.history.replaceState(null, '', '/#hc=%');
+    expect(() => captureSetupParams()).not.toThrow();
+    expect(window.location.hash).toBe('');
+    const exchange = vi.fn();
+    expect(
+      await actOnTokenHandoff({
+        isAuthEnabled: true,
+        isAuthenticated: false,
+        ownerUsername: 'alice',
+        exchangeCode: exchange,
+      }),
+    ).toBeNull();
+    expect(exchange).not.toHaveBeenCalled();
+  });
+
   it('leaves a foreign fragment untouched', () => {
     window.history.replaceState(null, '', '/page#section-2');
     captureSetupParams();
