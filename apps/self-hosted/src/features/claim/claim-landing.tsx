@@ -39,6 +39,11 @@ export function ClaimLanding() {
   }, [name, isCommunity]);
 
   useEffect(() => {
+    // A ?preview=1 deep link enters the preview in the effect above, which
+    // already painted the preview's own title; setting the claim title after
+    // it would stick "isn't set up yet" on the whole preview session. The
+    // banner owns noindex from here on, so this effect has nothing to do.
+    if (isClaimPreviewActive(InstanceConfigManager.getConfig())) return;
     const prevTitle = document.title;
     document.title = title;
     // Keep unclaimed placeholders out of the search index (only ever runs on a `template` host).
