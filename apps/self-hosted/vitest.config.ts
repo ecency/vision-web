@@ -20,6 +20,16 @@ export default defineConfig({
           new URL('./config.template.json', import.meta.url),
         ),
       },
+      // Mirrors the rsbuild alias: the workspace package resolves through its
+      // committed dist, exactly what the shipped bundle uses. Without this,
+      // any test that imports a component chain touching @ecency/ui fails at
+      // resolution.
+      {
+        find: /^@ecency\/ui$/,
+        replacement: fileURLToPath(
+          new URL('../../packages/ui/dist/index.js', import.meta.url),
+        ),
+      },
     ],
   },
   test: {

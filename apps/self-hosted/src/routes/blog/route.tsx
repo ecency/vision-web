@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { BlogLayout } from '@/features/blog';
-import { BlogPostsList } from '@/features/blog/components/blog-posts-list';
+import { useThemeComponents } from '@/themes/use-theme-components';
 import { resolvePostsFilter } from '@/features/blog/utils/post-filters';
 
 export const Route = createFileRoute('/blog')({
@@ -44,11 +44,12 @@ function HostingBanner() {
 
 function RouteComponent() {
   const { filter } = Route.useSearch();
+  const { ArchiveList } = useThemeComponents();
   return (
     <>
       <HostingBanner />
       <BlogLayout>
-        <BlogPostsList filter={filter} />
+        <ArchiveList filter={filter} />
       </BlogLayout>
     </>
   );
