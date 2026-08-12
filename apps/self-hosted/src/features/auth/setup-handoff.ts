@@ -170,12 +170,20 @@ export function actOnTokenHandoff(
     if (code) {
       // The code path: one exchange at the hosting API returns the session
       // and the identity the API resolved from Hivesigner AT MINT TIME. The
-      // owner gate below still decides whether it may sign in here.
+      // instance still re-resolves the session against /me itself, so the
+      // identity it signs in was never taken on anyone else's word, and the
+      // owner gate below decides whether it may sign in here.
       const exchanged = await (context.exchangeCode ?? exchangeHandoffCode)(
         code,
       );
       if (!exchanged) return null;
-      account = exchanged.username.toLowerCase();
+      const verified = await (context.resolveAccount ?? resolveHivesignerAccount)(
+        exchanged.accessToken,
+      );
+      if (!verified || verified.toLowerCase() !== exchanged.username.toLowerCase()) {
+        return null;
+      }
+      account = verified.toLowerCase();
       sessionToken = exchanged.accessToken;
     } else if (token) {
       account = await (context.resolveAccount ?? resolveHivesignerAccount)(

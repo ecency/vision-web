@@ -127,6 +127,21 @@ export const handoffStore = {
     });
   },
 
+  /**
+   * Count a mint against the account inside a rolling minute, for the
+   * per-account cap that sits beside the per-IP limits: a stolen token must
+   * not become an unbounded code mill.
+   */
+  async countMint(username: string, windowSeconds: number = 60): Promise<number> {
+    const client = await getRedisClient();
+    const key = `auth:handoff:mint:${username.toLowerCase()}`;
+    const count = await client.incr(key);
+    if (count === 1) {
+      await client.expire(key, windowSeconds);
+    }
+    return count;
+  },
+
   /** Read AND delete atomically: a code can only ever be exchanged once. */
   async consume(
     code: string

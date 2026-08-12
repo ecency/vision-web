@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   handoffSet: vi.fn(),
   handoffConsume: vi.fn(),
+  handoffCountMint: vi.fn(),
   challengeStore: { set: vi.fn(), get: vi.fn(), delete: vi.fn() },
   auditLog: vi.fn(),
   fetch: vi.fn(),
@@ -10,7 +11,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../utils/redis', () => ({
   challengeStore: mocks.challengeStore,
-  handoffStore: { set: mocks.handoffSet, consume: mocks.handoffConsume },
+  handoffStore: {
+    set: mocks.handoffSet,
+    consume: mocks.handoffConsume,
+    countMint: mocks.handoffCountMint,
+  },
 }));
 vi.mock('@ecency/sdk/hive', () => ({
   callRPC: vi.fn(),
@@ -49,6 +54,7 @@ describe('handoff mint and exchange', () => {
     vi.stubGlobal('fetch', mocks.fetch);
     mocks.fetch.mockResolvedValue(ME_OK);
     mocks.handoffSet.mockResolvedValue(undefined);
+    mocks.handoffCountMint.mockResolvedValue(1);
   });
 
   it('mints a one-time code for the account the token belongs to', async () => {
@@ -72,6 +78,13 @@ describe('handoff mint and exchange', () => {
     // Neither the code nor the token reaches the audit trail.
     expect(JSON.stringify(mocks.auditLog.mock.calls)).not.toContain(body.code);
     expect(JSON.stringify(mocks.auditLog.mock.calls)).not.toContain('a'.repeat(32));
+  });
+
+  it('caps minting per account inside the window', async () => {
+    mocks.handoffCountMint.mockResolvedValue(11);
+    const response = await post('/handoff', { accessToken: 'a'.repeat(32) });
+    expect(response.status).toBe(429);
+    expect(mocks.handoffSet).not.toHaveBeenCalled();
   });
 
   it('refuses to mint for a token HiveSigner rejects', async () => {

@@ -224,6 +224,14 @@ authRoutes.post(
     }
     const { username } = resolved;
 
+    // Per-account cap beside the per-IP limits: a leaked token must not
+    // become an unbounded code mill, and legitimate use is one code per
+    // success screen plus a slow refresh.
+    const mintCount = await handoffStore.countMint(username);
+    if (mintCount > 10) {
+      return c.json({ error: 'Too many handoff requests' }, 429);
+    }
+
     const code = nanoid(32);
     await handoffStore.set(code, { accessToken, username }, HANDOFF_TTL_SECONDS);
 

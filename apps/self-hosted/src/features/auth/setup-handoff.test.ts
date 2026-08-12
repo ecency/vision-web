@@ -291,14 +291,19 @@ describe('carried-session token handoff', () => {
       accessToken: 'tok-from-exchange',
       username: 'alice',
     }));
+    const resolve = vi.fn(async () => 'alice');
     const context = {
       isAuthEnabled: true,
       isAuthenticated: false,
       ownerUsername: 'alice',
       exchangeCode: exchange,
+      resolveAccount: resolve,
     };
     const user = await actOnTokenHandoff(context);
     expect(exchange).toHaveBeenCalledWith('code-abc');
+    // The exchanged session is re-resolved against /me by the instance
+    // itself: identity is never taken on the API's word alone.
+    expect(resolve).toHaveBeenCalledWith('tok-from-exchange');
     expect(user).toMatchObject({
       username: 'alice',
       accessToken: 'tok-from-exchange',
@@ -323,6 +328,26 @@ describe('carried-session token handoff', () => {
           accessToken: 'tok-m',
           username: 'mallory',
         })),
+        resolveAccount: vi.fn(async () => 'mallory'),
+      }),
+    ).toBeNull();
+  });
+
+  it('refuses an exchange whose token does not verify as the claimed account', async () => {
+    const { actOnTokenHandoff } = await import('./setup-handoff');
+    window.history.replaceState(null, '', '/#hc=code-forged');
+    captureSetupParams();
+    expect(
+      await actOnTokenHandoff({
+        isAuthEnabled: true,
+        isAuthenticated: false,
+        ownerUsername: 'alice',
+        exchangeCode: vi.fn(async () => ({
+          accessToken: 'tok-x',
+          username: 'alice',
+        })),
+        // /me says the token is somebody else's (or dead): refuse.
+        resolveAccount: vi.fn(async () => 'mallory'),
       }),
     ).toBeNull();
   });
