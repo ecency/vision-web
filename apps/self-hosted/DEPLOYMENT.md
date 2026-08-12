@@ -8,6 +8,7 @@ Deploy your own blog powered by the Hive blockchain. This guide covers Docker de
 - [Configuration](#configuration)
 - [Deployment Options](#deployment-options)
 - [Production Deployment](#production-deployment)
+- [SEO files (robots, sitemap, RSS)](#seo-files-robots-sitemap-rss)
 - [Custom Domain & SSL](#custom-domain--ssl)
 - [Updating](#updating)
 - [Troubleshooting](#troubleshooting)
@@ -333,6 +334,47 @@ docker run -d \
   -v $(pwd)/config.json:/usr/share/nginx/html/config.json:ro \
   ecency/self-hosted:sha-abc1234
 ```
+
+## SEO files (robots, sitemap, RSS)
+
+Managed instances get per-tenant `robots.txt`, `sitemap.xml` and `rss.xml`
+generated automatically. An independent deployment produces the same files
+with the generator shipped in the `ecency/hosting-api` image, run on a cron
+(hourly is plenty; the feeds carry the latest 100 posts):
+
+```bash
+docker run --rm -v "$PWD:/work" ecency/hosting-api \
+  npm run generate-seo -- \
+  --config /work/config.json \
+  --url https://blog.example.com \
+  --out /work/seo
+```
+
+Serve the output beside the app by mounting the files over the defaults in
+your compose file:
+
+```yaml
+    volumes:
+      - ./config.json:/usr/share/nginx/html/config.json:ro
+      - ./seo/robots.txt:/usr/share/nginx/html/robots.txt:ro
+      - ./seo/sitemap.xml:/usr/share/nginx/html/sitemap.xml:ro
+      - ./seo/rss.xml:/usr/share/nginx/html/rss.xml:ro
+```
+
+Then point the app's RSS link at your own feed in `config.json`:
+
+```json
+{
+  "configuration": {
+    "general": {
+      "rssFeedUrl": "https://blog.example.com/rss.xml"
+    }
+  }
+}
+```
+
+Without the generator the app links the ecency.com feed for your account, so
+the RSS link never points at a file that does not exist.
 
 ## Custom Domain & SSL
 

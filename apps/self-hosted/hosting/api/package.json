@@ -8,20 +8,22 @@
     "start": "tsx src/index.ts",
     "start:listener": "tsx src/payment-listener.ts",
     "db:migrate": "tsx src/db/migrate.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "generate-seo": "tsx scripts/generate-seo.ts"
   },
   "dependencies": {
+    "@ecency/render-helper": "^2.5.26",
     "@ecency/sdk": "^2.2.0",
     "@hiveio/x402": "^0.1.2",
     "@hono/node-server": "^2.0.11",
     "@hono/zod-validator": "^0.4.0",
+    "date-fns": "^3.6.0",
     "hono": "^4.4.0",
     "jsonwebtoken": "^9.0.0",
+    "nanoid": "^5.0.0",
     "pg": "^8.12.0",
     "redis": "^4.6.0",
-    "zod": "^3.23.0",
-    "date-fns": "^3.6.0",
-    "nanoid": "^5.0.0"
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.0",

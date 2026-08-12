@@ -74,14 +74,66 @@ describe('buildMetaForUri', () => {
     });
     expect(html).not.toContain('<script>');
     expect(html).toContain('og:type" content="article"');
-    expect(html).toContain(
-      'og:image" content="https://i.ecency.com/1200x630/https://img.example/meta.png"',
+    // render-helper's modern proxy path: a hashed /p/ URL with explicit
+    // dimensions, not the legacy redirecting /WxH/ route.
+    expect(html).toMatch(
+      /og:image" content="https:\/\/i\.ecency\.com\/p\/[A-Za-z0-9]+\?format=match&amp;mode=fit&amp;width=1200&amp;height=630"/,
     );
     expect(html).toContain('Some words to read here');
     expect(html).toContain(
       'og:url" content="https://alice.blogs.ecency.com/@alice/my-post"',
     );
     expect(html).toContain('twitter:card" content="summary_large_image"');
+  });
+
+  it("emits the cover on the tenant's configured image proxy", async () => {
+    mocks.callRPC.mockResolvedValue({
+      title: 'Proxied',
+      body: 'Some words to read here.',
+      json_metadata: { image: ['https://img.example/meta.png'] },
+    });
+    const tenant = {
+      ...TENANT,
+      config: {
+        configuration: {
+          general: { imageProxy: 'https://images.example.com/' },
+          instanceConfiguration: { meta: { title: 'Alice writes' } },
+        },
+      },
+    } as any;
+
+    const html = await buildMetaForUri(tenant, '/@alice/custom-proxy');
+    // Same hash and params render-helper emitted, rebased onto the
+    // tenant's proxy (trailing slash stripped), never the default host.
+    expect(html).toMatch(
+      /og:image" content="https:\/\/images\.example\.com\/p\/[A-Za-z0-9]+\?format=match/,
+    );
+    expect(html).not.toContain('i.ecency.com/p/');
+  });
+
+  it('junk imageProxy values stay on the default proxy', async () => {
+    mocks.callRPC.mockResolvedValue({
+      title: 'Junk proxy',
+      body: 'Some words to read here.',
+      json_metadata: { image: ['https://img.example/meta.png'] },
+    });
+    // A protocol prefix alone must not pass: "https://" and "https://?x"
+    // would rebase onto a hostless base and emit malformed URLs.
+    const junkValues = ['javascript:alert(1)', 'https://', 'https://?invalid', 'not a url'];
+    for (const [i, imageProxy] of junkValues.entries()) {
+      const tenant = {
+        ...TENANT,
+        config: {
+          configuration: {
+            general: { imageProxy },
+            instanceConfiguration: { meta: { title: 'Alice writes' } },
+          },
+        },
+      } as any;
+
+      const html = await buildMetaForUri(tenant, `/@alice/junk-proxy-${i}`);
+      expect(html).toMatch(/og:image" content="https:\/\/i\.ecency\.com\/p\//);
+    }
   });
 
   it('caches the chain lookup: one RPC serves repeat unfurls', async () => {

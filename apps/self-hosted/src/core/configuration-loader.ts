@@ -59,6 +59,13 @@ export interface InstanceConfig {
       timeFormat: string;
       dateTimeFormat: string;
       imageProxy: string;
+      /**
+       * An explicit feed URL for the RSS link. Independent deployments that
+       * run the SEO generator point this at their own /rss.xml; absent,
+       * managed instances use their served feed and everything else the
+       * ecency.com one.
+       */
+      rssFeedUrl?: string;
       profileBaseUrl: string;
       createPostUrl: string;
     /**

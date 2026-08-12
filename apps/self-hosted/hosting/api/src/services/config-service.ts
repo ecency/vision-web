@@ -7,19 +7,23 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { withAdvisoryLock } from '../db/client';
+import { escapeHtml } from '../utils/escape-html';
 import { TenantService, type Tenant } from './tenant-service';
+import {
+  buildRobotsTxt,
+  buildRssXml,
+  buildSitemapXml,
+  canonicalHomeUrl,
+  fetchTenantPosts,
+  SEO_FRESH_MS,
+} from './seo-files';
 
 const CONFIG_DIR = process.env.CONFIG_DIR || '/app/configs';
 
-/** Escape a string for safe interpolation into HTML text and attribute values. */
-export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+// Re-exported for existing consumers; the implementation lives in its own
+// util so seo-files can use it without importing this module back
+// (config-service consumes seo-files below).
+export { escapeHtml } from '../utils/escape-html';
 
 // Per-tenant write chains: every config-file write for a tenant runs strictly after the
 // previous one, so the periodic sync and a concurrent tenant update can never interleave.
@@ -137,7 +141,21 @@ export const ConfigService = {
     } catch {
       // Missing or unreadable: write it.
     }
-    await fs.writeFile(path, content, 'utf-8');
+    // nginx serves these files while the sync rewrites them, and writeFile
+    // truncates before it fills: a concurrent reader could answer half a
+    // sitemap. Write beside the target and rename over it, which is atomic
+    // on the same filesystem, so a reader always sees whole old bytes or
+    // whole new bytes. The suffix matches no extension listConfigFiles
+    // knows, so a tmp file orphaned by a crash cannot masquerade as a
+    // tenant's config.
+    const tmpPath = `${path}.tmp-${process.pid}`;
+    try {
+      await fs.writeFile(tmpPath, content, 'utf-8');
+      await fs.rename(tmpPath, path);
+    } catch (err) {
+      await fs.unlink(tmpPath).catch(() => {});
+      throw err;
+    }
     return true;
   },
 
@@ -178,6 +196,11 @@ export const ConfigService = {
           ]
         : []),
       `<meta name="twitter:card" content="${ogImage ? 'summary_large_image' : 'summary'}" />`,
+      // Custom-domain tenants canonicalize to themselves, subdomain tenants
+      // to the ecency.com SSR page (see canonicalHomeUrl); the feed link is
+      // in the SSI snippet so crawlers see it, not only JS runtimes.
+      `<link rel="canonical" href="${escapeHtml(canonicalHomeUrl(tenant))}" />`,
+      `<link rel="alternate" type="application/rss+xml" title="${title}" href="${escapeHtml(TenantService.getBlogUrl(tenant) + '/rss.xml')}" />`,
       `<link rel="icon" href="${favicon}" />`,
       '',
     ].join('\n');
@@ -186,6 +209,68 @@ export const ConfigService = {
   /** Path of a tenant's SSI head-metadata snippet. */
   getMetaPath(username: string): string {
     return path.join(CONFIG_DIR, username.toLowerCase() + '.meta.html');
+  },
+
+  /** Paths of a tenant's static SEO files (robots, sitemap, rss). */
+  getSeoPaths(username: string): { robots: string; sitemap: string; rss: string } {
+    const base = path.join(CONFIG_DIR, username.toLowerCase());
+    return {
+      robots: `${base}.robots.txt`,
+      sitemap: `${base}.sitemap.xml`,
+      rss: `${base}.rss.xml`,
+    };
+  },
+
+  /**
+   * Regenerate a tenant's static SEO files when they are stale. Called from
+   * the sync pass inside the per-tenant lock. Freshness is mtime-based, so
+   * after an unchanged regeneration the files are touched: writeIfChanged
+   * deliberately skips identical writes, and without the touch every later
+   * pass would refetch the feed for a blog that has not posted.
+   */
+  async writeSeoFilesIfStale(tenant: Tenant): Promise<void> {
+    const paths = this.getSeoPaths(tenant.username);
+    const all = [paths.robots, paths.sitemap, paths.rss];
+
+    let fresh = true;
+    for (const p of all) {
+      try {
+        const stat = await fs.stat(p);
+        if (Date.now() - stat.mtimeMs > SEO_FRESH_MS) {
+          fresh = false;
+          break;
+        }
+      } catch {
+        fresh = false;
+        break;
+      }
+    }
+    // mtime alone misses a DOMAIN change: verifying or removing a custom
+    // domain rewrites every embedded URL, and files can advertise the old
+    // address for the whole window. robots costs no RPC to rebuild, so its
+    // content doubles as the domain fingerprint.
+    if (fresh) {
+      try {
+        const currentRobots = await fs.readFile(paths.robots, 'utf-8');
+        if (currentRobots === buildRobotsTxt(tenant)) return;
+      } catch {
+        // Unreadable robots: regenerate.
+      }
+      fresh = false;
+    }
+
+    // One bounded chain page; a failure here is caught by the sync pass's
+    // per-tenant isolation and yesterday's files keep serving.
+    const posts = await fetchTenantPosts(tenant);
+    await fs.mkdir(CONFIG_DIR, { recursive: true });
+    await this.writeIfChanged(paths.robots, buildRobotsTxt(tenant));
+    await this.writeIfChanged(paths.sitemap, buildSitemapXml(tenant, posts));
+    await this.writeIfChanged(paths.rss, buildRssXml(tenant, posts));
+
+    const now = new Date();
+    for (const p of all) {
+      await fs.utimes(p, now, now).catch(() => {});
+    }
   },
 
   /**
@@ -198,7 +283,14 @@ export const ConfigService = {
 
   /** The actual unlink; only ever invoked under the per-tenant lock. */
   async removeConfigFileUnlocked(username: string): Promise<void> {
-    for (const filePath of [this.getConfigPath(username), this.getMetaPath(username)]) {
+    const seo = this.getSeoPaths(username);
+    for (const filePath of [
+      this.getConfigPath(username),
+      this.getMetaPath(username),
+      seo.robots,
+      seo.sitemap,
+      seo.rss,
+    ]) {
       try {
         await fs.unlink(filePath);
         console.log('[ConfigService] Deleted config:', filePath);
@@ -242,6 +334,44 @@ export const ConfigService = {
   },
 
   /**
+   * Refresh every active tenant's static SEO files, decoupled from the
+   * config sync: each stale tenant costs one bounded chain call, and running
+   * them inside the serial config pass let an RPC outage delay config
+   * publication and cleanup by tenant-count times the timeout while the
+   * single-flight guard skipped the next passes. A small worker pool keeps
+   * the wall clock flat; the freshness window keeps quiet passes free.
+   */
+  async syncAllSeoFiles(activeTenants: Tenant[], concurrency = 4): Promise<void> {
+    const queue = [...activeTenants];
+    let failed = 0;
+    const worker = async () => {
+      for (;;) {
+        const tenant = queue.shift();
+        if (!tenant) return;
+        try {
+          await withTenantWriteLock(tenant.username, async () => {
+            const fresh = await TenantService.getByUsername(tenant.username);
+            if (!fresh || !isPublishableTenant(fresh)) return;
+            await this.writeSeoFilesIfStale(fresh);
+          });
+        } catch (err) {
+          failed++;
+          console.error(
+            `[ConfigService] SEO sync failed for ${tenant.username}:`,
+            (err as Error).message
+          );
+        }
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.max(1, concurrency) }, () => worker())
+    );
+    if (failed > 0) {
+      console.error(`[ConfigService] SEO sync finished with ${failed} failure(s)`);
+    }
+  },
+
+  /**
    * List every tenant username that has ANY served file on disk (config .json OR .meta.html).
    * The reconcile sweep keys off this, so a tenant whose .json was removed but whose
    * .meta.html lingered (partial delete failure) is still revisited and cleaned up.
@@ -253,6 +383,9 @@ export const ConfigService = {
       for (const f of files) {
         if (f === 'default.json') continue;
         if (f.endsWith('.meta.html')) names.add(f.slice(0, -'.meta.html'.length));
+        else if (f.endsWith('.robots.txt')) names.add(f.slice(0, -'.robots.txt'.length));
+        else if (f.endsWith('.sitemap.xml')) names.add(f.slice(0, -'.sitemap.xml'.length));
+        else if (f.endsWith('.rss.xml')) names.add(f.slice(0, -'.rss.xml'.length));
         else if (f.endsWith('.json')) names.add(f.slice(0, -'.json'.length));
       }
       return [...names];

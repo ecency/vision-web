@@ -35,8 +35,10 @@ ENV RELEASE_VERSION=$RELEASE_VERSION
 
 WORKDIR /app
 
-# Copy source and dependencies (tsx runs TypeScript directly)
+# Copy source and dependencies (tsx runs TypeScript directly). scripts/ ships
+# too: independent deployments run `npm run generate-seo` through this image.
 COPY --from=builder /app/src ./src
+COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/tsconfig.json ./
 COPY --from=builder /app/node_modules ./node_modules

@@ -125,7 +125,14 @@ export function BlogNavigation() {
 
 function RssFeedLink() {
   const { username, communityId, type } = useInstanceConfig();
-  const rssUrl = getRssFeedUrl(type, username, communityId);
+  const managed = InstanceConfigManager.useConfig(
+    ({ configuration }) =>
+      configuration.instanceConfiguration.managed === true,
+  );
+  const rssOverride = InstanceConfigManager.useConfig(
+    ({ configuration }) => configuration.general.rssFeedUrl,
+  );
+  const rssUrl = getRssFeedUrl(type, username, communityId, managed, rssOverride);
 
   if (!rssUrl) return null;
 

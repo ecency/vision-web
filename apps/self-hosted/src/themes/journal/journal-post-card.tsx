@@ -3,6 +3,7 @@ import type { Entry } from '@ecency/sdk';
 import { catchPostImage, postBodySummary } from '@ecency/render-helper';
 import { useMemo } from 'react';
 import { estimateReadMinutes } from '@/features/blog/utils/read-time';
+import { buildSrcSet } from '@ecency/render-helper';
 import { useThemeShowsReadTime } from '@/themes/use-theme-components';
 import { formatDate, t } from '@/core';
 
@@ -100,6 +101,8 @@ export function JournalPostCard({ entry }: Props) {
           >
             <img
               src={imageUrl}
+              srcSet={imageUrl ? buildSrcSet(imageUrl) || undefined : undefined}
+              sizes="112px"
               alt=""
               loading="lazy"
               className="size-28 object-cover rounded-[var(--theme-post-card-image-radius)]"
