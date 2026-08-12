@@ -17,6 +17,7 @@ import {
   hostingProSkuForMonths,
   isValidCommunityId,
   ACCENT_HEX_PATTERN,
+  FONT_PRESETS,
   HOSTING_CUSTOM_DOMAIN_MONTHLY_USD,
   type HostingPaymentMethods,
   type HostingTemplate
@@ -49,7 +50,6 @@ type InstanceType = "blog" | "community";
 const TERMS = [1, 3, 6, 12];
 
 /** Font pairing keys the hosting API accepts; labels live in i18n. */
-const FONT_PRESETS = ["classic", "editorial", "modern", "technical", "system"] as const;
 
 /** localStorage key for an in-progress customization, so an abandoned tab resumes. */
 const customizeDraftKey = (name: string) => `ecency:hosting:customize:${name}`;

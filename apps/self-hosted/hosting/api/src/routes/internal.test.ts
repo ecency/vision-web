@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   getByUsername: vi.fn(),
   generateConfigFile: vi.fn(),
+  publishConfigFile: vi.fn(),
   auditLog: vi.fn(),
   buildConfig: vi.fn(),
   getBlogUrl: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('../services/tenant-service', () => ({
 vi.mock('../services/config-service', () => ({
   ConfigService: {
     generateConfigFile: mocks.generateConfigFile,
+    publishConfigFile: mocks.publishConfigFile,
   },
 }));
 
@@ -78,6 +80,7 @@ describe('POST /activate config publication', () => {
       subscriptionStatus: 'active',
     });
     mocks.generateConfigFile.mockReset().mockResolvedValue('/configs/alice.json');
+    mocks.publishConfigFile.mockReset().mockResolvedValue(undefined);
     mocks.auditLog.mockReset();
   });
 
@@ -180,6 +183,7 @@ describe('internal endpoint audit trail', () => {
       subscriptionStatus: 'active',
     });
     mocks.generateConfigFile.mockReset().mockResolvedValue('/configs/alice.json');
+    mocks.publishConfigFile.mockReset().mockResolvedValue(undefined);
     mocks.buildConfig.mockReset().mockResolvedValue({ version: 1 });
     mocks.getBlogUrl.mockReset().mockReturnValue('https://alice.blogs.ecency.com');
     mocks.isDomainClaimed.mockReset().mockResolvedValue(false);
@@ -524,11 +528,20 @@ describe('internal endpoint audit trail', () => {
     const created = await post('/claim-blog', { username: 'alice' });
 
     expect(created.status).toBe(200);
+    // The flag the claiming UI distinguishes on: an existing tenant comes
+    // back unchanged with none of the customization applied, and the UI must
+    // not present that as a fresh provision.
+    expect(await created.json()).toMatchObject({ created: true });
     expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({
       tenantId: 'tenant-9',
       eventType: 'tenant.pro_blog_claimed',
       eventData: { username: 'alice', created: true, subscriptionStatus: 'active' },
     });
+    // Published BY USERNAME (a locked re-read), never from the
+    // transaction-returned row: that snapshot can overwrite a newer config
+    // another writer committed between the claim's commit and this publish.
+    expect(mocks.publishConfigFile).toHaveBeenCalledWith('alice');
+    expect(mocks.generateConfigFile).not.toHaveBeenCalled();
 
     mocks.auditLog.mockReset();
     mocks.transaction.mockResolvedValueOnce({ created: false, row });
@@ -536,9 +549,64 @@ describe('internal endpoint audit trail', () => {
     const existing = await post('/claim-blog', { username: 'alice' });
 
     expect(existing.status).toBe(200);
+    expect(await existing.json()).toMatchObject({ created: false });
     expect(mocks.auditLog.mock.calls[0][0]).toMatchObject({
       eventType: 'tenant.pro_blog_claimed',
       eventData: { created: false },
     });
+  });
+
+  it('passes the customize step through to the claimed config', async () => {
+    // The claim carries the same customization the paid signup does; a Pro
+    // claimant must not be locked to a default-looking instance.
+    const row = {
+      id: 'tenant-9',
+      username: 'alice',
+      owner: 'alice',
+      subscription_status: 'active',
+      subscription_plan: 'standard',
+      subscription_started_at: null,
+      subscription_expires_at: null,
+      custom_domain: null,
+      custom_domain_verified: false,
+      custom_domain_verified_at: null,
+      config: {},
+      created_at: '2026-07-27T10:25:13.000Z',
+      updated_at: '2026-07-27T10:25:13.000Z',
+    };
+    mocks.transaction.mockResolvedValueOnce({ created: true, row });
+
+    const response = await post('/claim-blog', {
+      username: 'alice',
+      title: 'Alice writes',
+      styleTemplate: 'journal',
+      accent: '#9c4a1e',
+      fontPreset: 'editorial',
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.buildConfig).toHaveBeenCalledWith('alice', {
+      title: 'Alice writes',
+      description: undefined,
+      styleTemplate: 'journal',
+      accent: '#9c4a1e',
+      fontPreset: 'editorial',
+    });
+  });
+
+  it('rejects customization that fails the public rosters instead of dropping it', async () => {
+    // Silently ignoring a chosen template would report a successful claim that
+    // looks nothing like what the claimant picked. Same validation surface as
+    // the public create path.
+    for (const body of [
+      { username: 'alice', styleTemplate: 'no-such-template' },
+      { username: 'alice', accent: 'red' },
+      { username: 'alice', fontPreset: 'comic-sans' },
+    ]) {
+      const response = await post('/claim-blog', body);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'invalid_request' });
+    }
+    expect(mocks.buildConfig).not.toHaveBeenCalled();
   });
 });

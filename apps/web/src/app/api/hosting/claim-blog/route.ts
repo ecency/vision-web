@@ -42,13 +42,21 @@ export async function POST(request: NextRequest) {
 
   const title = typeof body.title === "string" ? body.title : undefined;
   const description = typeof body.description === "string" ? body.description : undefined;
+  // The customize step from the paid signup applies to the claim too. Passed
+  // through as-is; the hosting service validates them against its rosters.
+  const styleTemplate = typeof body.styleTemplate === "string" ? body.styleTemplate : undefined;
+  const accent = typeof body.accent === "string" ? body.accent : undefined;
+  const fontPreset = typeof body.fontPreset === "string" ? body.fontPreset : undefined;
 
   let upstream: Response;
   try {
     upstream = await callHostingInternal("/v1/internal/claim-blog", secret, {
       username,
       title,
-      description
+      description,
+      styleTemplate,
+      accent,
+      fontPreset
     });
   } catch {
     return Response.json({ error: "Hosting service unavailable" }, { status: 502 });

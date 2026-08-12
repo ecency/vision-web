@@ -49,6 +49,13 @@ export interface HostingTemplate {
  */
 export const ACCENT_HEX_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
+/**
+ * Client-side mirror of the hosting API's font preset roster
+ * (hosting/api/src/appearance.ts FONT_PRESET_KEYS), shared by every surface
+ * that offers the appearance step so the option lists cannot drift apart.
+ */
+export const FONT_PRESETS = ["classic", "editorial", "modern", "technical", "system"] as const;
+
 export interface CreateTenantResult {
   tenant: { username: string; subscriptionStatus: string; blogUrl: string };
   paymentInstructions: { to: string; amount: string; memo: string; note?: string };
