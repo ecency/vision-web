@@ -866,7 +866,19 @@ describe('isFieldVisible (the visibleWhen capability)', () => {
 
 describe('theme-gated layout options', () => {
   const fields = buildConfigFields((key) => key);
-  const layout = (fields.configuration as any).fields.instanceConfiguration.fields.layout.fields;
+  // Typed walk down the section tree; a missing level fails the suite loudly
+  // instead of hiding behind a cast.
+  function sectionFields(field: ConfigField | undefined, name: string) {
+    if (!field?.fields) throw new Error(`section ${name} has no fields`);
+    return field.fields;
+  }
+  const layout = sectionFields(
+    sectionFields(
+      sectionFields(fields.configuration, 'configuration').instanceConfiguration,
+      'instanceConfiguration',
+    ).layout,
+    'layout',
+  );
 
   function docWithTemplate(styleTemplate?: string) {
     return {

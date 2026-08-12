@@ -1,15 +1,14 @@
 import type { PropsWithChildren } from 'react';
-import { Link, useLocation } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import clsx from 'clsx';
-import { useMemo } from 'react';
-import { InstanceConfigManager, t } from '@/core';
-import { UserMenu } from '@/features/auth';
+import { InstanceConfigManager } from '@/core';
+import { CreatePostButton, UserMenu } from '@/features/auth';
 import { SearchInput } from '@/features/blog/components/search-input';
 import {
   useCommunityData,
   useInstanceConfig,
 } from '@/features/blog/hooks/use-instance-config';
-import { getConfiguredPostsFilters } from '@/features/blog/utils/post-filters';
+import { usePostsFilterState } from '@/features/blog/hooks/use-posts-filter-state';
 
 /**
  * The Journal page frame: one measure-width column, no sidebar at all, an
@@ -18,7 +17,6 @@ import { getConfiguredPostsFilters } from '@/features/blog/utils/post-filters';
  * editor hides them under this theme instead of leaving them silently inert).
  */
 export function JournalShell(props: PropsWithChildren) {
-  const location = useLocation();
   const { username, isCommunityMode } = useInstanceConfig();
   const { data: community } = useCommunityData();
 
@@ -40,31 +38,8 @@ export function JournalShell(props: PropsWithChildren) {
     ? `${proxyBase}/u/${avatarAccount}/avatar/medium`
     : null;
 
-  const availableFilters = getConfiguredPostsFilters();
-  const currentFilter = useMemo(() => {
-    const defaultFilter = availableFilters[0] || 'posts';
-    if (typeof location.search === 'string') {
-      return new URLSearchParams(location.search).get('filter') || defaultFilter;
-    }
-    if (
-      location.search &&
-      typeof location.search === 'object' &&
-      'filter' in location.search
-    ) {
-      return (location.search.filter as string) || defaultFilter;
-    }
-    return defaultFilter;
-  }, [location.search, availableFilters]);
-
-  // Mirrors blog-navigation's label resolution: an i18n key when one exists,
-  // a capitalized filter name otherwise.
-  const filterLabel = (filter: string): string => {
-    const key = `blog.navigation.${filter}`;
-    const translated = t(key as Parameters<typeof t>[0]);
-    return translated === key
-      ? filter.charAt(0).toUpperCase() + filter.slice(1)
-      : translated;
-  };
+  // Shared with BlogNavigation, so the shell cannot drift from it.
+  const { availableFilters, currentFilter, filterLabel } = usePostsFilterState();
 
   return (
     <div className="min-h-screen bg-theme-primary">
@@ -93,8 +68,10 @@ export function JournalShell(props: PropsWithChildren) {
             </p>
           )}
 
-          <div className="mt-8 flex items-center justify-center gap-4 border-y border-theme py-2">
-            <nav className="flex items-center gap-5 overflow-x-auto">
+          {/* flex-wrap: at narrow viewports the search and menu drop to their
+              own line instead of overflowing the measure-width column. */}
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-y border-theme py-2">
+            <nav className="flex items-center gap-5 overflow-x-auto min-w-0">
               {availableFilters.map((filter) => (
                 <Link
                   key={filter}
@@ -122,6 +99,9 @@ export function JournalShell(props: PropsWithChildren) {
           {props.children}
         </main>
       </div>
+      {/* The floating composer entry point the default navigation mounts; a
+          theme shell must never cost owners and community members the way in. */}
+      <CreatePostButton />
     </div>
   );
 }

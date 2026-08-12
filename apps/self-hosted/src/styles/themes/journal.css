@@ -30,7 +30,9 @@
 
   --theme-text-primary: #221d17;
   --theme-text-secondary: rgba(34, 29, 23, 0.75);
-  --theme-text-muted: rgba(34, 29, 23, 0.55);
+  /* 0.62 composites to ~4.7:1 over the paper background: dates and
+   * marginalia stay quiet but AA-readable at 14px. */
+  --theme-text-muted: rgba(34, 29, 23, 0.62);
 
   --theme-accent: #9c4a1e;
   --theme-accent-hover: #7f3a15;

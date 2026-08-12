@@ -1,6 +1,6 @@
 'use client';
 
-import { Link, useLocation } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import clsx from 'clsx';
 import { useMemo } from 'react';
 import { UilRss } from '@tooni/iconscout-unicons-react';
@@ -8,36 +8,18 @@ import { InstanceConfigManager, t } from '@/core';
 import { getRssFeedUrl } from '@/utils/rss-feed-url';
 import { UserMenu, CreatePostButton } from '@/features/auth';
 import { useInstanceConfig, useCommunityData } from '../hooks/use-instance-config';
-import { getConfiguredPostsFilters } from '../utils/post-filters';
+import { usePostsFilterState } from '../hooks/use-posts-filter-state';
 import { SearchInput } from '../components/search-input';
 
 export function BlogNavigation() {
-  const location = useLocation();
   const { isCommunityMode } = useInstanceConfig();
   const { data: community } = useCommunityData();
 
-  // getConfiguredPostsFilters validates the shape. Reading the raw value here
-  // would re-open the crash it exists to prevent: a scalar is truthy, so
-  // availableFilters.map below would throw and take the whole layout with it.
-  const availableFilters = getConfiguredPostsFilters();
-
-  const currentFilter = useMemo(() => {
-    // Default to the first configured filter
-    const defaultFilter = availableFilters[0] || 'posts';
-
-    if (typeof location.search === 'string') {
-      const searchParams = new URLSearchParams(location.search);
-      return searchParams.get('filter') || defaultFilter;
-    }
-    if (
-      location.search &&
-      typeof location.search === 'object' &&
-      'filter' in location.search
-    ) {
-      return (location.search.filter as string) || defaultFilter;
-    }
-    return defaultFilter;
-  }, [location.search, availableFilters]);
+  // Shared with theme shells (use-posts-filter-state) so no shell can drift
+  // from this navigation's filter behavior. The hook validates the configured
+  // shape, which keeps the scalar-postsFilters crash guard.
+  const { availableFilters, currentFilter, filterLabel: getFilterLabel } =
+    usePostsFilterState();
 
   const blogTitle = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.instanceConfiguration.meta.title,
@@ -62,18 +44,6 @@ export function BlogNavigation() {
     }
     return null;
   }, [blogLogo, isCommunityMode, community?.name, proxyBase]);
-
-  // Get localized filter label
-  const getFilterLabel = (filter: string): string => {
-    // Try i18n key first (e.g., blog.navigation.blog, blog.navigation.trending)
-    const i18nKey = `blog.navigation.${filter}`;
-    const translated = t(i18nKey as Parameters<typeof t>[0]);
-    // If translation returns the key itself, use capitalized filter name
-    if (translated === i18nKey) {
-      return filter.charAt(0).toUpperCase() + filter.slice(1);
-    }
-    return translated;
-  };
 
   return (
     <div className="max-w-3xl mx-auto mb-6 sm:mb-8">
