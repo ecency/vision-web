@@ -2,7 +2,7 @@
 
 import { getProMembersQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
-import { checkSvg } from "@ui/svg";
+import { checkDecagramSvg } from "@ui/svg";
 import clsx from "clsx";
 import i18next from "i18next";
 import { isProMember } from "./pro-config";
@@ -13,9 +13,10 @@ interface Props {
 }
 
 /**
- * Small X-style verified checkmark shown next to a username when it belongs to an
- * active Ecency Pro member. The roster is a single cached, public query, so this is
- * cheap to drop wherever a username renders.
+ * Small verified checkmark shown next to a username when it belongs to an active
+ * Ecency Pro member. The roster is a single cached, public query, so this is cheap
+ * to drop wherever a username renders. The seal shape and blue match the mobile
+ * app's ProBadge so the same member reads the same on both clients.
  */
 export function ProBadge({ username, className }: Props) {
   const { data } = useQuery(getProMembersQueryOptions());
@@ -31,11 +32,11 @@ export function ProBadge({ username, className }: Props) {
       title={label}
       aria-label={label}
       className={clsx(
-        "inline-flex items-center justify-center align-middle rounded-full bg-blue-dark-sky text-white size-4 shrink-0 [&>svg]:size-3",
+        "inline-flex items-center justify-center align-middle text-blue-dark-sky size-4 shrink-0 [&>svg]:size-full",
         className
       )}
     >
-      {checkSvg}
+      {checkDecagramSvg}
     </span>
   );
 }
