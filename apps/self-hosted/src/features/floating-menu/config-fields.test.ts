@@ -13,7 +13,9 @@ import { AUTH_METHODS } from '@/features/auth/utils/auth-methods';
 import { resolveCreatePostTarget } from '@/features/auth/utils/create-post-target';
 import type { ConfigField } from './config-fields';
 import { translations } from '@/core/i18n-strings';
-import { buildConfigFields } from './config-fields';
+import { buildConfigFields,
+  isFieldVisible,
+} from './config-fields';
 
 /*
  * English, read from the strings module directly.
@@ -815,4 +817,49 @@ describe('panel translations, per locale', () => {
       expect(panelKeys(locale)).toEqual([]);
     },
   );
+});
+
+describe('isFieldVisible (the visibleWhen capability)', () => {
+  type Document = Record<string, import('./types').ConfigValue>;
+
+  function documentWithTemplate(styleTemplate: string): Document {
+    return {
+      configuration: { general: { styleTemplate } },
+    } as unknown as Document;
+  }
+
+  function templateOf(document: Document): unknown {
+    const configuration = document.configuration as
+      | { general?: { styleTemplate?: unknown } }
+      | undefined;
+    return configuration?.general?.styleTemplate;
+  }
+
+  const doc = documentWithTemplate('magazine');
+
+  it('a field with no predicate is always visible', () => {
+    const field: ConfigField = { label: 'X', type: 'string' };
+    expect(isFieldVisible(field, doc)).toBe(true);
+  });
+
+  it('the predicate decides against the WHOLE document', () => {
+    const onlyMagazine: ConfigField = {
+      label: 'X',
+      type: 'select',
+      visibleWhen: (document) => templateOf(document) === 'magazine',
+    };
+    expect(isFieldVisible(onlyMagazine, doc)).toBe(true);
+    expect(isFieldVisible(onlyMagazine, documentWithTemplate('medium'))).toBe(false);
+  });
+
+  it('a throwing predicate hides nothing (no panel lockout)', () => {
+    const broken: ConfigField = {
+      label: 'X',
+      type: 'string',
+      visibleWhen: () => {
+        throw new Error('boom');
+      },
+    };
+    expect(isFieldVisible(broken, doc)).toBe(true);
+  });
 });

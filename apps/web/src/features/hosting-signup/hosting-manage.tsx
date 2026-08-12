@@ -127,7 +127,7 @@ export function HostingManage() {
               </a>
               {!!graceDays && (
                 <span className="opacity-60">
-                  {i18next.t("hosting.reservation-grace-manage", { n: graceDays })}
+                  {i18next.t("hosting.reservation-grace-manage", { count: graceDays })}
                 </span>
               )}
             </div>

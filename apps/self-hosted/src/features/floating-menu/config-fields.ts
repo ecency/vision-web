@@ -121,6 +121,33 @@ export interface ConfigField {
     value: string,
     config?: Record<string, ConfigValue>,
   ) => string | null;
+  /**
+   * Render this field or section only while the predicate holds against the
+   * WHOLE document, for choices that only exist under certain conditions
+   * (a theme manifest's own options are the intended consumer: "choices
+   * depend on the theme"). Visibility is presentation, never data: a hidden
+   * field's stored value is untouched, exactly as if the panel had not been
+   * opened. Absent means always visible.
+   */
+  visibleWhen?: (document: Record<string, ConfigValue>) => boolean;
+}
+
+/**
+ * The renderer's visibility gate, separated so it can be tested without
+ * rendering: a field with no predicate is always visible, and a predicate
+ * that throws hides nothing (a broken predicate must not make a control
+ * unreachable, which is the panel's own lockout class of bug).
+ */
+export function isFieldVisible(
+  field: ConfigField,
+  document: Record<string, ConfigValue>,
+): boolean {
+  if (!field.visibleWhen) return true;
+  try {
+    return field.visibleWhen(document);
+  } catch {
+    return true;
+  }
 }
 
 /**
