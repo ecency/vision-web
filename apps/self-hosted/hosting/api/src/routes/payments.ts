@@ -2,6 +2,7 @@
  * Payment Routes
  */
 
+import { reservationGraceDays } from '../services/subscription';
 import { Hono } from 'hono';
 import { internalSecret } from './internal';
 import { db } from '../db/client';
@@ -46,6 +47,12 @@ paymentRoutes.get('/methods', async (c) => {
     card: {
       enabled: cardEnabled,
       monthlyUsdCents: parseInt(process.env.HOSTING_CARD_USD_CENTS || '200', 10),
+    },
+    // How long an unpaid reservation (and its customized look) is held. Surfaced so the
+    // signup and manage panel can state the window instead of hardcoding a number that
+    // would drift from the sweep's env-configured value.
+    reservation: {
+      graceDays: reservationGraceDays(),
     },
   });
 });

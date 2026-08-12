@@ -36,6 +36,16 @@ export const DEFAULT_PRO_GRACE_DAYS = 14;
  */
 export const PRO_GRACE_DAYS = parseGraceDays(process.env.PRO_GRACE_DAYS, DEFAULT_PRO_GRACE_DAYS);
 
+/**
+ * Days an unpaid (inactive) reservation holds its name before the sweep
+ * reclaims it. One resolver, so the sweep and every user-facing surface
+ * (payment step, manage panel) quote the same number. Fail-safe 7: a
+ * zero/negative/NaN value would sweep every inactive reservation at once.
+ */
+export function reservationGraceDays(): number {
+  return parseGraceDays(process.env.ABANDONED_TENANT_GRACE_DAYS, 7);
+}
+
 export type CapabilityState =
   /** Paid and current. */
   | 'active'

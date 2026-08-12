@@ -476,3 +476,87 @@ describe("HostingSignup customize step: coverage the mutation review demanded", 
     expect(hostingApi.createTenant.mock.calls[1][2].styleTemplate).toBe("magazine");
   });
 });
+
+describe("HostingSignup reservation grace notice", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    localStorage.clear();
+    window.history.replaceState(null, "", "/");
+    mocks.authLoginType = "keychain";
+    mocks.profiles = {};
+    hostingApi.templates.mockResolvedValue({ templates: [] });
+    hostingApi.createTenant.mockResolvedValue({
+      tenant: {
+        username: "alice",
+        subscriptionStatus: "inactive",
+        blogUrl: "https://alice.blogs.ecency.com"
+      }
+    });
+    hostingApi.paymentInstructions.mockResolvedValue(INSTRUCTIONS);
+  });
+
+  it("states the window on the payment step for a fresh reservation", async () => {
+    hostingApi.paymentMethods.mockResolvedValue({
+      hbd: { enabled: true, monthly: "2.000", account: "ecency.hosting" },
+      x402: { enabled: false, monthly: "2.000" },
+      card: { enabled: false, monthlyUsdCents: 200 },
+      reservation: { graceDays: 7 }
+    });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    await screen.findByText("hosting.reservation-grace");
+  });
+
+  it("stays silent when the API does not report a window", async () => {
+    hostingApi.paymentMethods.mockResolvedValue({
+      hbd: { enabled: true, monthly: "2.000", account: "ecency.hosting" },
+      x402: { enabled: false, monthly: "2.000" },
+      card: { enabled: false, monthlyUsdCents: 200 }
+    });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    await screen.findAllByText("hosting.term-months");
+    expect(screen.queryByText("hosting.reservation-grace")).toBeNull();
+  });
+});
+
+describe("HostingSignup reservation grace notice: renewals stay silent", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    localStorage.clear();
+    window.history.replaceState(null, "", "/");
+    mocks.authLoginType = "keychain";
+    mocks.profiles = {};
+    hostingApi.templates.mockResolvedValue({ templates: [] });
+    hostingApi.paymentMethods.mockResolvedValue({
+      hbd: { enabled: true, monthly: "2.000", account: "ecency.hosting" },
+      x402: { enabled: false, monthly: "2.000" },
+      card: { enabled: false, monthlyUsdCents: 200 },
+      reservation: { graceDays: 7 }
+    });
+    hostingApi.paymentInstructions.mockResolvedValue(INSTRUCTIONS);
+  });
+
+  it("an expired tenant renewing is NOT told the name will be released", async () => {
+    // The sweep only reclaims inactive rows with no payments; an expired tenant's
+    // name is safe, so the reservation notice would be false and alarming.
+    hostingApi.createTenant.mockRejectedValue(new Error("Username already registered"));
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "expired",
+      subscriptionExpiresAt: "2026-08-01T00:00:00.000Z"
+    });
+
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+
+    await screen.findAllByText("hosting.term-months");
+    expect(screen.queryByText("hosting.reservation-grace")).toBeNull();
+  });
+});
