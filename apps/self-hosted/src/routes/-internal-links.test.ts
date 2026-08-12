@@ -74,6 +74,11 @@ const DYNAMIC_LINKS: Record<string, { occurrences: number; reason: string }> = {
     occurrences: 1,
     reason: 'account metadata, arbitrary external site',
   },
+  'src/features/blog/components/about-page.tsx:websiteUrl': {
+    occurrences: 1,
+    reason:
+      'account metadata, arbitrary external site (safeWebsiteUrl-sanitized like the sidebar)',
+  },
   'src/features/auth/components/extension-login.tsx:link.url': {
     occurrences: 1,
     reason: 'wallet/extension install links, external',

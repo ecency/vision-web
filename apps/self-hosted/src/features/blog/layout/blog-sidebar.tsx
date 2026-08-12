@@ -20,6 +20,7 @@ import {
 } from "../hooks/use-instance-config";
 import { isModeratorRole } from "../utils/community-role";
 import { resolveReputation } from "../utils/reputation-band";
+import { safeWebsiteUrl } from "../utils/safe-website";
 
 const REPUTATION_BAND_LABELS = {
   new: "reputation_band_new",
@@ -60,20 +61,12 @@ function BlogSidebarContent({ username }: { username: string }) {
     [data?.reputation],
   );
 
-  const websiteUrl = useMemo(() => {
-    const raw = data?.profile?.website;
-    if (!raw) return null;
-    const url =
-      raw.startsWith("http://") || raw.startsWith("https://")
-        ? raw
-        : `https://${raw}`;
-    try {
-      new URL(url);
-      return url;
-    } catch {
-      return null;
-    }
-  }, [data?.profile?.website]);
+  // Shared with the About page, so the two surfaces cannot drift on what
+  // counts as a linkable website.
+  const websiteUrl = useMemo(
+    () => safeWebsiteUrl(data?.profile?.website),
+    [data?.profile?.website],
+  );
 
   return (
     <div className="lg:sticky lg:top-0 border-b lg:border-b-0 lg:border-l border-theme p-4 sm:p-6 lg:h-screen lg:overflow-y-auto">

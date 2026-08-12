@@ -39,5 +39,12 @@ export function usePostsFilterState() {
       : translated;
   };
 
-  return { availableFilters, currentFilter, filterLabel };
+  // The About page shares every shell's nav row with the filters; defined
+  // here so no shell invents its own idea of when it is the active page.
+  const isAboutActive = useMemo(() => {
+    const pathname = location.pathname.replace(/\/+$/, '') || '/';
+    return pathname === '/about';
+  }, [location.pathname]);
+
+  return { availableFilters, currentFilter, filterLabel, isAboutActive };
 }
