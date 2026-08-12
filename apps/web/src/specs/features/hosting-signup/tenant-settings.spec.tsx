@@ -102,6 +102,45 @@ describe("TenantSettings remote editor", () => {
         theme: "dark"
       })
     );
+    // Persisting is not publishing: before activation the message must not
+    // promise a live site.
+    await screen.findByText("hosting.settings-saved-pending");
+  });
+
+  it("never lets a slow prefill eat keystrokes", async () => {
+    let resolveConfig!: (v: unknown) => void;
+    mocks.tenantConfig.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConfig = resolve;
+      })
+    );
+    renderWithQueryClient(<TenantSettings tenant={ACTIVE_TENANT} owner="alice" />);
+
+    // The owner starts typing while the config request is still in flight...
+    const inputs = screen.getAllByPlaceholderText("hosting.settings-keep");
+    fireEvent.change(inputs[0], { target: { value: "Typed first" } });
+
+    // ...and the prefill that lands afterwards must not replace it.
+    resolveConfig({
+      configuration: {
+        general: { theme: "light", styles: { accent: "#0066cc" } },
+        instanceConfiguration: {
+          meta: { title: "Alice writes", description: "Notes" }
+        }
+      }
+    });
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("Notes")).toBeTruthy()
+    );
+    expect(screen.getByDisplayValue("Typed first")).toBeTruthy();
+
+    // The diff still runs against the fetched snapshot, so the edit travels.
+    fireEvent.click(screen.getByRole("button", { name: "hosting.settings-save" }));
+    await waitFor(() =>
+      expect(mocks.updateTenant).toHaveBeenCalledWith("alice", "hosting-jwt", {
+        title: "Typed first"
+      })
+    );
   });
 
   it("surfaces a failed save instead of pretending", async () => {

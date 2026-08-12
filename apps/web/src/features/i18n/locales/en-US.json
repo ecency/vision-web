@@ -100,6 +100,7 @@
     "theme-dark": "Dark",
     "settings-save": "Save settings",
     "settings-saved": "Saved. Changes reach your site within a minute.",
+    "settings-saved-pending": "Saved. Your changes publish when the site activates.",
     "settings-failed": "Could not save. Please try again.",
     "manage-domain-active": "Custom domain: {{domain}}",
     "perk-card-title": "Your own blog",

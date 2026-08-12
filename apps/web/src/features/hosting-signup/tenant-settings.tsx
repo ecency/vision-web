@@ -4,7 +4,7 @@ import { Alert } from "@ui/alert";
 import { Button } from "@ui/button";
 import { FormControl } from "@ui/input";
 import i18next from "i18next";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AccentPicker } from "./accent-picker";
 import {
   ACCENT_HEX_PATTERN,
@@ -52,6 +52,9 @@ export function TenantSettings({ tenant, owner }: Props) {
     theme: "" as ThemeChoice,
     accent: ""
   });
+  // A save makes the fetched snapshot stale: a prefill landing after it must
+  // not overwrite the post-save baseline or re-flag saved fields as edits.
+  const saveStartedRef = useRef(false);
 
   useEffect(() => {
     if (tenant.subscriptionStatus !== "active") return;
@@ -59,7 +62,7 @@ export function TenantSettings({ tenant, owner }: Props) {
     hostingApi
       .tenantConfig(tenant.username)
       .then((config) => {
-        if (cancelled) return;
+        if (cancelled || saveStartedRef.current) return;
         const meta = config.configuration?.instanceConfiguration?.meta;
         const general = config.configuration?.general;
         const storedTheme = general?.theme ?? "";
@@ -72,11 +75,15 @@ export function TenantSettings({ tenant, owner }: Props) {
           accent: general?.styles?.accent ?? ""
         };
         initialRef.current = next;
-        setTitle(next.title);
-        setDescription(next.description);
-        setTheme(next.theme);
-        setAccent(next.accent || null);
-        setAccentInput(next.accent);
+        // The form is editable while this request runs, so each fetched value
+        // lands only in a field the owner has not already started editing:
+        // prefill is a convenience and must never eat keystrokes. The change
+        // diff still compares against the fetched snapshot either way.
+        setTitle((prev) => prev || next.title);
+        setDescription((prev) => prev || next.description);
+        setTheme((prev) => prev || next.theme);
+        setAccent((prev) => prev ?? (next.accent || null));
+        setAccentInput((prev) => prev || next.accent);
       })
       // Prefill is a convenience; without it the editor still works with
       // blank-keeps-current semantics.
@@ -104,6 +111,7 @@ export function TenantSettings({ tenant, owner }: Props) {
   const hasChanges = Object.keys(changes).length > 0;
 
   const save = async () => {
+    saveStartedRef.current = true;
     setBusy(true);
     setError("");
     setSaved(false);
@@ -133,7 +141,7 @@ export function TenantSettings({ tenant, owner }: Props) {
         type="text"
         value={title}
         maxLength={100}
-        onChange={(e: any) => setTitle(e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
         placeholder={i18next.t("hosting.settings-keep")}
       />
 
@@ -142,7 +150,7 @@ export function TenantSettings({ tenant, owner }: Props) {
         type="text"
         value={description}
         maxLength={500}
-        onChange={(e: any) => setDescription(e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDescription(e.target.value)}
         placeholder={i18next.t("hosting.settings-keep")}
       />
 
@@ -178,8 +186,16 @@ export function TenantSettings({ tenant, owner }: Props) {
       />
 
       {error && <Alert appearance="danger">{error}</Alert>}
+      {/* Persisting is not publishing: before activation the PATCH only
+          stores the config, so the message must not promise a live site. */}
       {saved && !hasChanges && (
-        <Alert appearance="success">{i18next.t("hosting.settings-saved")}</Alert>
+        <Alert appearance="success">
+          {i18next.t(
+            tenant.subscriptionStatus === "active"
+              ? "hosting.settings-saved"
+              : "hosting.settings-saved-pending"
+          )}
+        </Alert>
       )}
       <Button
         onClick={save}
