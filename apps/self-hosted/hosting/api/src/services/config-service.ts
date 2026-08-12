@@ -12,7 +12,7 @@ import { TenantService, type Tenant } from './tenant-service';
 const CONFIG_DIR = process.env.CONFIG_DIR || '/app/configs';
 
 /** Escape a string for safe interpolation into HTML text and attribute values. */
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -158,6 +158,12 @@ export const ConfigService = {
     const faviconRaw = typeof meta.favicon === 'string' ? meta.favicon.trim() : '';
     const favicon = /^https?:\/\//i.test(faviconRaw) ? escapeHtml(faviconRaw) : '/favicon.ico';
 
+    // The configured logo doubles as the site's unfurl image, with the same
+    // http(s)-only validation the favicon gets: anything else emits no tag
+    // at all rather than a broken (or worse) URL in every visitor's HTML.
+    const logoRaw = typeof meta.logo === 'string' ? meta.logo.trim() : '';
+    const ogImage = /^https?:\/\//i.test(logoRaw) ? escapeHtml(logoRaw) : null;
+
     return [
       `<title>${title}</title>`,
       `<meta name="description" content="${description}" />`,
@@ -165,7 +171,8 @@ export const ConfigService = {
       `<meta property="og:description" content="${description}" />`,
       `<meta property="og:type" content="website" />`,
       `<meta property="og:site_name" content="${title}" />`,
-      `<meta name="twitter:card" content="summary" />`,
+      ...(ogImage ? [`<meta property="og:image" content="${ogImage}" />`] : []),
+      `<meta name="twitter:card" content="${ogImage ? 'summary_large_image' : 'summary'}" />`,
       `<link rel="icon" href="${favicon}" />`,
       '',
     ].join('\n');
