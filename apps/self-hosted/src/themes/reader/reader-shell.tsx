@@ -102,7 +102,7 @@ export function ReaderShell(props: PropsWithChildren) {
             !isFeedRoute && 'hidden lg:block',
           )}
         >
-          <ReaderRail filter={currentFilter} />
+          <ReaderRail />
         </aside>
         <main
           id="main-content"

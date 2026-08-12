@@ -7,6 +7,7 @@ import { useEffect, useRef } from 'react';
 import { formatDate, t } from '@/core';
 import { DetectBottom } from '@/features/blog/components/detect-bottom';
 import { useArchiveFeed } from '@/features/blog/hooks/use-archive-feed';
+import { usePostsFilterState } from '@/features/blog/hooks/use-posts-filter-state';
 import { chooseFeedRetry } from '@/features/blog/utils/feed-retry';
 import { ErrorMessage } from '@/features/shared/error-message';
 import { InlineError } from '@/features/shared/inline-error';
@@ -14,10 +15,6 @@ import {
   nothingToShow,
   resolveQueryOutcome,
 } from '@/features/shared/query-outcome';
-
-interface Props {
-  filter?: string;
-}
 
 /** Keystrokes typed into a field are never navigation. */
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -31,13 +28,30 @@ function isTypingTarget(target: EventTarget | null): boolean {
  * one highlighted, paged by the same shared hook the seam default uses. j and
  * k move to the next and previous entry without leaving the page (the arrow
  * keys are left alone: they scroll the article). Deep links need nothing
- * special, since the rail only marks whatever permlink the route already
- * carries.
+ * special, since the rail only marks whatever author and permlink the route
+ * already carries.
+ *
+ * The filter comes from the shared filter state, and every post link carries
+ * a non-default filter along (the post routes retain it): the rail must keep
+ * showing the feed the reader was browsing after a post opens, or "the
+ * archive never leaves the page" quietly turns into "opening a post resets
+ * the archive to the default feed".
  */
-export function ReaderRail({ filter = 'posts' }: Props) {
-  const params = useParams({ strict: false }) as { permlink?: string };
+export function ReaderRail() {
+  const params = useParams({ strict: false }) as {
+    author?: string;
+    permlink?: string;
+  };
+  // The route's author param keeps its '@'; entries do not.
+  const activeAuthor = (params.author ?? '').replace(/^@/, '');
   const activePermlink = params.permlink;
   const navigate = useNavigate();
+
+  const { availableFilters, currentFilter } = usePostsFilterState();
+  const defaultFilter = availableFilters[0] || 'posts';
+  // Canonical post URLs stay clean: only a non-default feed travels along.
+  const carriedFilter =
+    currentFilter === defaultFilter ? undefined : currentFilter;
 
   const {
     data = [],
@@ -50,7 +64,7 @@ export function ReaderRail({ filter = 'posts' }: Props) {
     isRefetchError,
     isSuccess,
     refetch,
-  } = useArchiveFeed(filter);
+  } = useArchiveFeed(currentFilter);
 
   const entries = data as Entry[];
   const outcome = resolveQueryOutcome({
@@ -60,12 +74,27 @@ export function ReaderRail({ filter = 'posts' }: Props) {
     hasContent: entries.length > 0,
   });
 
-  // Refs, not deps: the key handler reads the CURRENT list and selection
-  // without re-subscribing on every feed page or route change.
+  // The row a link opens is the EFFECTIVE entry (a reblog navigates to its
+  // original), so active detection and the keyboard lookup must compare that
+  // same identity, author included: a community feed can hold the same
+  // permlink from two authors, and a cross-post's wrapper permlink never
+  // matches the route.
+  const isOpen = (entry: Entry) => {
+    const effective = entry.original_entry || entry;
+    return (
+      effective.permlink === activePermlink &&
+      effective.author === activeAuthor
+    );
+  };
+
+  // Refs, not deps: the key handler reads the CURRENT list, selection and
+  // filter without re-subscribing on every feed page or route change.
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
-  const activeRef = useRef(activePermlink);
-  activeRef.current = activePermlink;
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+  const carriedFilterRef = useRef(carriedFilter);
+  carriedFilterRef.current = carriedFilter;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -78,9 +107,7 @@ export function ReaderRail({ filter = 'posts' }: Props) {
 
       const list = entriesRef.current;
       if (!list.length) return;
-      const current = list.findIndex(
-        (entry) => entry.permlink === activeRef.current,
-      );
+      const current = list.findIndex((entry) => isOpenRef.current(entry));
       // Nothing open yet: either key starts at the top.
       const next =
         current === -1
@@ -93,7 +120,7 @@ export function ReaderRail({ filter = 'posts' }: Props) {
       navigate({
         to: '/$author/$permlink',
         params: { author: `@${target.author}`, permlink: target.permlink },
-        search: { raw: undefined },
+        search: { raw: undefined, filter: carriedFilterRef.current },
       });
     };
 
@@ -106,7 +133,7 @@ export function ReaderRail({ filter = 'posts' }: Props) {
   const activeItemRef = useRef<HTMLAnchorElement | null>(null);
   useEffect(() => {
     activeItemRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [activePermlink]);
+  }, [activeAuthor, activePermlink]);
 
   if (outcome === 'failed') {
     return (
@@ -126,7 +153,7 @@ export function ReaderRail({ filter = 'posts' }: Props) {
 
       {entries.map((entry) => {
         const entryData = entry.original_entry || entry;
-        const active = entry.permlink === activePermlink;
+        const active = isOpen(entry);
         return (
           <Link
             key={`${entry.author}/${entry.permlink}`}
@@ -136,7 +163,7 @@ export function ReaderRail({ filter = 'posts' }: Props) {
               author: `@${entryData.author}`,
               permlink: entryData.permlink,
             }}
-            search={{ raw: undefined }}
+            search={{ raw: undefined, filter: carriedFilter }}
             aria-current={active ? 'page' : undefined}
             className={clsx(
               'block px-4 py-3 no-underline border-b border-theme transition-theme',
