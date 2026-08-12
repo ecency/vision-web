@@ -16,6 +16,9 @@ vi.mock('../middleware/auth', () => ({
   authMiddleware: async (_c: unknown, next: () => Promise<void>) => next(),
   adminMiddleware: async (_c: unknown, next: () => Promise<void>) => next(),
 }));
+vi.mock('../middleware/rate-limit', () => ({
+  rateLimit: () => async (_c: unknown, next: () => Promise<void>) => next(),
+}));
 vi.mock('../middleware/payment-target-lock', () => ({
   withPaymentTargetLock: async (
     _c: unknown,

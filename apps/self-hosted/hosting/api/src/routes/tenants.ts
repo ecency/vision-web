@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { STYLE_TEMPLATES } from '../style-templates';
 import { ACCENT_HEX_PATTERN, FONT_PRESET_KEYS } from '../appearance';
+import { rateLimit } from '../middleware/rate-limit';
 import { db } from '../db/client';
 import {
   TenantService,
@@ -215,8 +216,15 @@ export async function resolveAndValidateTenant(
   return { ok: true, owner };
 }
 
+// Creation is unauthenticated by design (a personal blog's owner IS the requested
+// account), so the same-owner refresh below is only as strong as this throttle:
+// a tight per-IP budget keeps "loop the POST to rewrite someone's unpaid
+// reservation" to a crawl while never blocking a human signing up.
+const createLimit = rateLimit({ name: 'tenant-create', limit: 10, windowMs: 60_000 });
+
 tenantRoutes.post(
   '/',
+  createLimit,
   zValidator('json', createTenantSchema),
   // Use the same target reservation as paid /subscribe. Otherwise this unpaid create can insert
   // after the paid request's availability check but before its post-settlement tenant insert.

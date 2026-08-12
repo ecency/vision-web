@@ -81,7 +81,10 @@ describe('TenantService.create (revives abandoned reservations)', () => {
     // Resume branch: an existing same-owner inactive reservation refreshes its grace clock so an
     // active checkout is not swept mid-payment.
     expect(sql).toMatch(/tenants\.subscription_status = 'inactive' AND tenants\.owner = EXCLUDED\.owner/);
-    expect(sql).toMatch(/created_at = NOW\(\)/);
+    // The grace clock refreshes only for a composed submission or a reclaim: an
+    // overrides-less POST must not be able to pin a name inactive forever, out
+    // of the abandoned sweep's reach.
+    expect(sql).toMatch(/created_at = CASE WHEN tenants\.subscription_status = 'abandoned' OR \$5/);
     // The owner is only overwritten for the abandoned (reclaim) branch. The CONFIG takes the
     // new submission when the caller actually composed one ($5, the customize step) and also
     // on reclaim; an overrides-less create keeps a saved reservation intact instead of wiping

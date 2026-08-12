@@ -254,7 +254,8 @@ export const TenantService = {
                            THEN EXCLUDED.config ELSE tenants.config END,
              subscription_plan = 'standard',
              subscription_status = 'inactive',
-             created_at = NOW(),
+             created_at = CASE WHEN tenants.subscription_status = 'abandoned' OR $5
+                               THEN NOW() ELSE tenants.created_at END,
              updated_at = NOW()
          WHERE (tenants.subscription_status = 'abandoned'
                   AND tenants.updated_at < NOW() - ($4 * INTERVAL '1 hour')
