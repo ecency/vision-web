@@ -130,6 +130,12 @@ export function HostingSignup() {
   const [busy, setBusy] = useState(false);
   // Card confirmed -> the term/method are locked so a remount can't cancel the activation poll.
   const [paying, setPaying] = useState(false);
+  // Whether this payment-step entry is for an UNPAID reservation (fresh create, refresh or
+  // resume), which is what the grace-window notice is about. Deliberately not derived from
+  // renewBaselineExpiryRef: that is also null for expired and suspended tenants, whose names
+  // the sweep never reclaims (it only targets inactive rows with no payments), so telling a
+  // renewing owner their name will be released would be false.
+  const [isFreshReservation, setIsFreshReservation] = useState(false);
   // What we last reserved: the name AND the exact config sent. Going back and changing
   // anything (name, look, identity) must re-send createTenant before payment: the server
   // refreshes a same-owner unpaid reservation with the latest submission, so the look on
@@ -344,6 +350,7 @@ export function HostingSignup() {
         setBlogUrl(res.tenant.blogUrl);
         renewBaselineExpiryRef.current = null; // freshly created, inactive
       }
+      setIsFreshReservation(true);
       setStep("payment");
     } catch (e) {
       const msg = (e as Error).message;
@@ -385,6 +392,7 @@ export function HostingSignup() {
       // checkActivation confirms on active status alone.
       renewBaselineExpiryRef.current =
         existing.subscriptionStatus === "active" ? (existing.subscriptionExpiresAt ?? null) : null;
+      setIsFreshReservation(false);
       setStep("payment");
     } finally {
       setBusy(false);
@@ -451,6 +459,7 @@ export function HostingSignup() {
   useEffect(() => {
     if (resumeName && step === "username" && tenantUsername === resumeName && activeUser) {
       setResumeName(null);
+      setIsFreshReservation(true);
       setStep("payment");
     }
   }, [resumeName, step, tenantUsername, activeUser]);
@@ -850,9 +859,9 @@ export function HostingSignup() {
               plainly (pay to keep it). Renewals (an expiry baseline exists) are not reservations
               and skip the line. The window comes from the API so this number cannot drift from
               the sweep's configuration. */}
-          {renewBaselineExpiryRef.current === null && !!methods?.reservation?.graceDays && (
+          {isFreshReservation && !!methods?.reservation?.graceDays && (
             <p className="text-sm opacity-75">
-              {i18next.t("hosting.reservation-grace", { n: methods.reservation.graceDays })}
+              {i18next.t("hosting.reservation-grace", { count: methods.reservation.graceDays })}
             </p>
           )}
           {/* Term */}
