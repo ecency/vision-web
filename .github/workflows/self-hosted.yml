@@ -92,7 +92,9 @@ jobs:
       # Hosting API is a standalone npm project (not part of pnpm workspace)
       # with its own Dockerfile and independent dependency tree
       - name: Run hosting API tests
-        run: cd apps/self-hosted/hosting/api && npm install && npm test
+        # npm ci, matching the image build: lockfile drift fails HERE, loudly,
+        # instead of the image quietly resolving something newer.
+        run: cd apps/self-hosted/hosting/api && npm ci && npm test
 
       # Operator scripts are not part of any package: they run from a timer on the
       # host that holds the key, so nothing else would ever execute them. stdlib
@@ -158,10 +160,19 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/self-hosted-v* ]]; then
             # Release tag: an immutable version tag plus latest, since a
             # release IS what latest means to an independent deployment.
+            # Strict semver only: a typo'd tag must fail loudly here, not
+            # publish a junk tag and advance latest.
+            if [[ ! "$GITHUB_REF_NAME" =~ ^self-hosted-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Release tag '$GITHUB_REF_NAME' is not self-hosted-vX.Y.Z"
+              exit 1
+            fi
             CHANNEL_TAG="latest"
             VERSION_TAG="${GITHUB_REF_NAME#self-hosted-}"
           elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            CHANNEL_TAG="latest"
+            # main gets its own channel; latest moves ONLY on releases, or
+            # the next untagged main commit would silently overwrite what a
+            # release just pinned.
+            CHANNEL_TAG="main"
             VERSION_TAG=""
           else
             CHANNEL_TAG="develop"
@@ -208,10 +219,19 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/self-hosted-v* ]]; then
             # Release tag: an immutable version tag plus latest, since a
             # release IS what latest means to an independent deployment.
+            # Strict semver only: a typo'd tag must fail loudly here, not
+            # publish a junk tag and advance latest.
+            if [[ ! "$GITHUB_REF_NAME" =~ ^self-hosted-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Release tag '$GITHUB_REF_NAME' is not self-hosted-vX.Y.Z"
+              exit 1
+            fi
             CHANNEL_TAG="latest"
             VERSION_TAG="${GITHUB_REF_NAME#self-hosted-}"
           elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            CHANNEL_TAG="latest"
+            # main gets its own channel; latest moves ONLY on releases, or
+            # the next untagged main commit would silently overwrite what a
+            # release just pinned.
+            CHANNEL_TAG="main"
             VERSION_TAG=""
           else
             CHANNEL_TAG="develop"

@@ -5,7 +5,7 @@
  */
 
 import { Hono } from 'hono';
-import { readFileSync } from 'node:fs';
+import { buildHealthPayload, readApiVersion } from './utils/build-info';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
@@ -54,31 +54,10 @@ app.use('*', cors({
   exposeHeaders: ['x-payment', 'x-payment-response'],
 }));
 
-// Health check (before rate limiting so container probes are never throttled)
-// Version and sha identify the running build, so skew between the paired
-// blog and API images (built from one commit, tagged independently) is
-// observable instead of a guess. package.json is read with fs, not a JSON
-// import: this package is ESM and Node's JSON modules need import
-// attributes and have no named exports, so the import form that typechecks
-// under bundler resolution crashes tsx at boot.
-const apiVersion = (() => {
-  try {
-    return JSON.parse(
-      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
-    ).version as string;
-  } catch {
-    return 'unknown';
-  }
-})();
-
-app.get('/health', (c) =>
-  c.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    version: apiVersion,
-    sha: process.env.GIT_SHA || 'unknown',
-  }),
-);
+// Health check (before rate limiting so container probes are never throttled).
+// Version and sha identify the running build; see utils/build-info.ts.
+const apiVersion = readApiVersion();
+app.get('/health', (c) => c.json(buildHealthPayload(apiVersion)));
 
 // Per-IP rate limiting. A general budget on all public routes caps the unauthenticated
 // tenant-creation + RPC-amplification abuse; a tighter budget on /v1/auth throttles the
