@@ -72,6 +72,33 @@ interface TenantPost {
   body?: string;
 }
 
+/**
+ * One feed record, narrowed from an unknown chain answer. Every field the
+ * builders touch is checked here: a malformed record (a numeric date, a
+ * missing permlink) is dropped or normalized instead of failing the
+ * tenant's whole SEO pass on an .endsWith of a number.
+ */
+function toTenantPost(entry: unknown): TenantPost | null {
+  if (typeof entry !== 'object' || entry === null) return null;
+  const record = entry as Record<string, unknown>;
+  const { author, permlink, created, title, updated, body } = record;
+  if (
+    typeof author !== 'string' ||
+    typeof permlink !== 'string' ||
+    typeof created !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    author,
+    permlink,
+    created,
+    title: typeof title === 'string' ? title : '',
+    updated: typeof updated === 'string' ? updated : undefined,
+    body: typeof body === 'string' ? body : undefined,
+  };
+}
+
 function isCommunityTenant(tenant: Tenant): {
   community: boolean;
   communityId: string;
@@ -145,36 +172,21 @@ export async function fetchTenantPosts(tenant: Tenant): Promise<TenantPost[]> {
     if (!Array.isArray(raw)) {
       throw new Error('malformed bridge feed response');
     }
-    const page = raw as any[];
-    // Every field the builders touch is type-checked here: a malformed record
-    // (a numeric date, a missing permlink) is dropped or normalized instead of
-    // failing the tenant's whole SEO pass on an .endsWith of a number.
+    const page: unknown[] = raw;
     let added = 0;
     let last: { author: string; permlink: string } | null = null;
-    for (const p of page) {
-      if (
-        typeof p?.author !== 'string' ||
-        typeof p?.permlink !== 'string' ||
-        typeof p?.created !== 'string'
-      ) {
-        continue;
-      }
-      last = { author: p.author, permlink: p.permlink };
+    for (const entry of page) {
+      const post = toTenantPost(entry);
+      if (!post) continue;
+      last = { author: post.author, permlink: post.permlink };
       // The cursor is exclusive on today's bridge, but a node that echoes the
       // start post back would otherwise repeat a page forever; the identity
       // set makes the walk terminate either way.
-      const key = `${p.author}/${p.permlink}`;
+      const key = `${post.author}/${post.permlink}`;
       if (seen.has(key)) continue;
       seen.add(key);
       added++;
-      posts.push({
-        author: p.author,
-        permlink: p.permlink,
-        title: typeof p.title === 'string' ? p.title : '',
-        created: p.created,
-        updated: typeof p.updated === 'string' ? p.updated : undefined,
-        body: typeof p.body === 'string' ? p.body : undefined,
-      });
+      posts.push(post);
     }
     // A page shorter than what it was ASKED for is the end of the feed; no
     // new posts or no usable record means paging further cannot help.

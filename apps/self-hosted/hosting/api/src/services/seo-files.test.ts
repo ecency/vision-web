@@ -40,6 +40,20 @@ const CUSTOM_TENANT = {
   customDomainVerified: true,
 } as any;
 
+/** The feed params the walk sends, as the mocks below read them. */
+interface FeedParams {
+  limit: number;
+  start_author?: string;
+  start_permlink?: string;
+}
+
+/** One record as the bridge answers it, shaped for these mocks. */
+interface FeedRecord {
+  author: string;
+  permlink: string;
+  created: string;
+}
+
 const POSTS = [
   {
     author: 'alice',
@@ -154,7 +168,7 @@ describe('fetchTenantPosts', () => {
         permlink: `p${n}-${i}`,
         created: '2026-08-01T00:00:00',
       }));
-    mocks.callRPC.mockImplementation(async (_m: string, params: any) =>
+    mocks.callRPC.mockImplementation(async (_m: string, params: FeedParams) =>
       page(Number(params.start_permlink?.split('-')[0]?.replace('p', '') ?? -1) + 1),
     );
 
@@ -175,8 +189,8 @@ describe('fetchTenantPosts', () => {
     // reserved slot the final short ask spends one on the duplicate and the
     // walk ends one post shy of the wanted depth.
     let n = 0;
-    mocks.callRPC.mockImplementation(async (_m: string, params: any) => {
-      const page: any[] = [];
+    mocks.callRPC.mockImplementation(async (_m: string, params: FeedParams) => {
+      const page: FeedRecord[] = [];
       if (params.start_permlink) {
         page.push({
           author: 'alice',
@@ -205,7 +219,7 @@ describe('fetchTenantPosts', () => {
     let elapsed = 0;
     const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => elapsed);
     try {
-      mocks.callRPC.mockImplementation(async (_m: string, params: any) => {
+      mocks.callRPC.mockImplementation(async (_m: string, params: FeedParams) => {
         elapsed += 9_000;
         return Array.from({ length: params.limit }, (_, i) => ({
           author: 'alice',
