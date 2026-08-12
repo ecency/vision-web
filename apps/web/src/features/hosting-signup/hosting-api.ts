@@ -100,6 +100,20 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+async function patch<T>(path: string, token: string, body: unknown): Promise<T> {
+  const r = await fetch(`${HOSTING_API}${path}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error(await parseError(r));
+  return r.json() as Promise<T>;
+}
+
 export const hostingApi = {
   /** The signup page only renders when the service URL is configured. */
   isConfigured: () => HOSTING_API.length > 0,
@@ -135,8 +149,48 @@ export const hostingApi = {
   /** Prorated cost to add a custom domain (upgrade an existing active standard tenant to Pro) for
    *  the months remaining on its current term. `eligible: false` when not active / already Pro. */
   upgradeQuote: (username: string) =>
-    get<UpgradeQuote>(`/v1/payments/upgrade-quote/${encodeURIComponent(username)}`)
+    get<UpgradeQuote>(`/v1/payments/upgrade-quote/${encodeURIComponent(username)}`),
+
+  /** The tenant's stored config document (public for ACTIVE tenants; 402 otherwise). The manage
+   *  panel's settings editor prefills from it. */
+  tenantConfig: (username: string) =>
+    get<StoredTenantConfig>(`/v1/tenants/${encodeURIComponent(username)}/config`),
+
+  /** Exchange an ecency.com session's Hivesigner-compatible access token for a hosting token.
+   *  Every login method on ecency.com holds one, so this is the universal rail. */
+  authHivesigner: (accessToken: string) =>
+    post<HostingAuthResult>("/v1/auth/hivesigner", { accessToken }),
+
+  /** Keychain rail: fetch a challenge to sign with the posting key... */
+  authChallenge: (username: string) =>
+    post<{ username: string; challenge: string; expiresAt: string }>("/v1/auth/challenge", {
+      username
+    }),
+
+  /** ...and trade the signature for the hosting token. */
+  authVerify: (username: string, signature: string, challenge: string) =>
+    post<HostingAuthResult>("/v1/auth/verify", { username, signature, challenge }),
+
+  /** Update a tenant's config remotely with flat keys (title, description, theme, accent...).
+   *  Requires a hosting token for the tenant's OWNER; persists for inactive tenants too and
+   *  publishes on activation. */
+  updateTenant: (username: string, token: string, config: HostingConfigInput) =>
+    patch<{ message?: string }>(`/v1/tenants/${encodeURIComponent(username)}`, token, { config })
 };
+
+export interface HostingAuthResult {
+  token: string;
+  username: string;
+  expiresAt?: string;
+}
+
+/** The slice of the stored config document the settings editor reads. */
+export interface StoredTenantConfig {
+  configuration?: {
+    general?: { theme?: string; styles?: { accent?: string } };
+    instanceConfiguration?: { meta?: { title?: string; description?: string } };
+  };
+}
 
 export type UpgradeQuote =
   | { eligible: false; reason: string }
