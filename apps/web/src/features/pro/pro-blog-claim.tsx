@@ -24,12 +24,12 @@ interface Props {
   /** The authenticated Ecency Pro member. Its HiveSigner token authorizes the claim. */
   username: string;
   /**
-   * How long the template catalog may keep the claim waiting before it
-   * degrades to an ordinary load failure. The claim gates on the catalog
-   * settling, and a connection that neither resolves nor rejects must not
-   * disable claiming forever.
+   * How long the requests the claim gates on (the template catalog and the
+   * existence probe) may keep it waiting before they degrade: the catalog to
+   * an ordinary load failure, the probe to claimable. A connection that
+   * neither resolves nor rejects must not disable claiming forever.
    */
-  catalogTimeoutMs?: number;
+  settleTimeoutMs?: number;
 }
 
 /** What the mount probe and a raced claim know about an existing blog. */
@@ -47,7 +47,7 @@ interface ExistingBlog {
  * and an identity prefilled from the member's profile, so a claimed blog starts out looking like
  * its owner rather than like the default template.
  */
-export function ProBlogClaim({ username, catalogTimeoutMs = 10_000 }: Props) {
+export function ProBlogClaim({ username, settleTimeoutMs = 10_000 }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [blogUrl, setBlogUrl] = useState("");
@@ -87,7 +87,7 @@ export function ProBlogClaim({ username, catalogTimeoutMs = 10_000 }: Props) {
         settled = true;
         setTemplatesFailed(true);
       }
-    }, catalogTimeoutMs);
+    }, settleTimeoutMs);
     hostingApi
       .templates()
       .then((r) => {
@@ -107,7 +107,7 @@ export function ProBlogClaim({ username, catalogTimeoutMs = 10_000 }: Props) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [catalogTimeoutMs]);
+  }, [settleTimeoutMs]);
 
   // Whether this member's blog already exists: the claim endpoint returns an
   // existing live tenant UNCHANGED, so presenting editable customization for
@@ -117,21 +117,39 @@ export function ProBlogClaim({ username, catalogTimeoutMs = 10_000 }: Props) {
   // errors: the form still works and the claim itself answers honestly.
   useEffect(() => {
     let cancelled = false;
+    let settled = false;
+    // Bounded like the catalog: this probe also gates the claim button, so a
+    // stalled request fails open to claimable instead of disabling claiming
+    // forever. The race that lets through (a blog that does exist) is safe:
+    // the endpoint returns it unchanged with created: false and the claim
+    // shows the already-exists state.
+    const timer = setTimeout(() => {
+      if (!cancelled && !settled) {
+        settled = true;
+        setExisting(null);
+      }
+    }, settleTimeoutMs);
     hostingApi
       .tenant(username)
       .then((t) => {
-        if (cancelled) return;
+        if (cancelled || settled) return;
+        settled = true;
         setExisting(
           t.subscriptionStatus === "abandoned" ? null : { blogUrl: t.blogUrl }
         );
       })
       .catch(() => {
-        if (!cancelled) setExisting(null);
-      });
+        if (!cancelled && !settled) {
+          settled = true;
+          setExisting(null);
+        }
+      })
+      .finally(() => clearTimeout(timer));
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [username]);
+  }, [username, settleTimeoutMs]);
 
   // Identity prefill from the member's profile, once. The claimant is fixed
   // (their own account), so the signup's name-change bookkeeping is not

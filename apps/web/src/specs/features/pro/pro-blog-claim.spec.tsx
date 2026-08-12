@@ -149,12 +149,25 @@ describe("ProBlogClaim customize step", () => {
 
   it("degrades a stalled catalog to a failure instead of disabling the claim forever", async () => {
     mocks.templates.mockReturnValue(new Promise(() => {}));
-    renderWithQueryClient(<ProBlogClaim username="alice" catalogTimeoutMs={20} />);
+    renderWithQueryClient(<ProBlogClaim username="alice" settleTimeoutMs={20} />);
 
     await screen.findByText("hosting.template-load-failed");
     const button = screen.getByRole("button", {
       name: "pro-blog.claim"
     }) as HTMLButtonElement;
+    await waitFor(() => expect(button.disabled).toBe(false));
+  });
+
+  it("fails a stalled existence probe open to claimable", async () => {
+    // The probe gates the claim the same way the catalog does, so it gets
+    // the same bound. Letting a real-but-slow existing blog through is safe:
+    // the endpoint answers created: false and the already-exists state shows.
+    mocks.tenant.mockReturnValue(new Promise(() => {}));
+    renderWithQueryClient(<ProBlogClaim username="alice" settleTimeoutMs={20} />);
+
+    const button = (await screen.findByRole("button", {
+      name: "pro-blog.claim"
+    })) as HTMLButtonElement;
     await waitFor(() => expect(button.disabled).toBe(false));
   });
 
