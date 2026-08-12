@@ -3,6 +3,7 @@
 import {
   getAccountPostsInfiniteQueryOptions,
   getPostsRankedInfiniteQueryOptions,
+  type Entry,
 } from '@ecency/sdk';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useCallback } from 'react';
@@ -36,9 +37,8 @@ export function useArchiveFeed(filter = 'posts', limit = 20) {
   const communitySort = communityFilterMap[filter] || 'created';
 
   // Memoize select function to avoid creating new reference on each render
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const selectPosts = useCallback(
-    (data: { pages: any[][] }) => data.pages.flat(),
+    (data: { pages: Entry[][] }) => data.pages.flat(),
     []
   );
 

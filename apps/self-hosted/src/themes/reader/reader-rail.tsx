@@ -1,7 +1,7 @@
 'use client';
 
 import type { Entry } from '@ecency/sdk';
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { Link, useLocation, useNavigate, useParams } from '@tanstack/react-router';
 import clsx from 'clsx';
 import { useEffect, useRef } from 'react';
 import { formatDate, t } from '@/core';
@@ -87,17 +87,33 @@ export function ReaderRail() {
     );
   };
 
-  // Refs, not deps: the key handler reads the CURRENT list, selection and
-  // filter without re-subscribing on every feed page or route change.
+  // j/k are only navigation where the archive is part of the page: the feed
+  // and open posts. The rail stays mounted (CSS-hidden) on search, publish
+  // and edit, and a stray keypress there must never navigate away from a
+  // composer or a search. Post routes stay active even where the rail is
+  // hidden on small screens: next and previous post is exactly what those
+  // keys mean while reading.
+  const location = useLocation();
+  const pathname = location.pathname.replace(/\/+$/, '') || '/';
+  const keyboardActive =
+    pathname === '/' ||
+    pathname === '/blog' ||
+    (!!activePermlink && !pathname.startsWith('/edit'));
+
+  // Refs, not deps: the key handler reads the CURRENT list, selection, route
+  // and filter without re-subscribing on every feed page or route change.
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
   const isOpenRef = useRef(isOpen);
   isOpenRef.current = isOpen;
   const carriedFilterRef = useRef(carriedFilter);
   carriedFilterRef.current = carriedFilter;
+  const keyboardActiveRef = useRef(keyboardActive);
+  keyboardActiveRef.current = keyboardActive;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (!keyboardActiveRef.current) return;
       if (event.defaultPrevented) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (isTypingTarget(event.target)) return;
