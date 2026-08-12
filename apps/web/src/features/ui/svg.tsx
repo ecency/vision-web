@@ -290,6 +290,18 @@ export const deleteForeverSvg = (
 
 export const checkSvg = <UilCheck className="size-6" />;
 
+// Decagram seal with a knocked-out check, matching the mobile app's Pro badge
+// (MaterialCommunityIcons `check-decagram`). The check is a reverse-wound subpath,
+// so it stays a cutout under the default nonzero fill rule. Do not split the path.
+export const checkDecagramSvg = (
+  <svg viewBox="0 0 24 24">
+    <path
+      fill="currentColor"
+      d="M23,12L20.56,9.22L20.9,5.54L17.29,4.72L15.4,1.54L12,3L8.6,1.54L6.71,4.72L3.1,5.54L3.44,9.22L1,12L3.44,14.78L3.1,18.46L6.71,19.28L8.6,22.46L12,21L15.4,22.46L17.29,19.28L20.9,18.46L20.56,14.78L23,12M10,17L6,13L7.41,11.59L10,14.17L16.59,7.58L18,9L10,17Z"
+    />
+  </svg>
+);
+
 export const alertCircleSvg = (
   <svg viewBox="0 0 24 24">
     <path
