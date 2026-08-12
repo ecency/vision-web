@@ -430,7 +430,11 @@ describe("HostingSignup customize step: coverage the mutation review demanded", 
     await waitFor(() => expect(payBtn.disabled).toBe(false));
     fireEvent.click(payBtn);
     await screen.findByText("hosting.success-title");
-    expect(localStorage.getItem("ecency:hosting:customize:alice")).toBeNull();
+    // The cleanup runs in an effect after the success commit; on a slow CI
+    // runner the paint can beat the effect, so poll rather than read once.
+    await waitFor(() =>
+      expect(localStorage.getItem("ecency:hosting:customize:alice")).toBeNull()
+    );
   });
 
   it("prefills empty identity from the profile and takes it back out on a name change", async () => {
