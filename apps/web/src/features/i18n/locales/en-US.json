@@ -33,6 +33,7 @@
     "font-technical": "Technical (sans with mono headings)",
     "font-system": "System (fastest, no downloaded fonts)",
     "changeable-later": "Everything here can be changed later from your site's settings panel.",
+    "customize-your-blog": "Customize your blog",
     "reservation-grace": "This name and your saved look are held for {{count}} days. Complete payment to keep them; unpaid reservations are then released.",
     "reservation-grace_one": "This name and your saved look are held for one day. Complete payment to keep them; unpaid reservations are then released.",
     "reservation-grace-manage": "Held with your saved look for {{count}} days from your last checkout visit, then released if unpaid.",

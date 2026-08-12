@@ -167,6 +167,11 @@ describe("HostingSignup one-click HBD pay", () => {
     );
     // Poll saw an active tenant -> success screen (findByText throws if absent).
     await screen.findByText("hosting.success-title");
+
+    // The primary action lands the owner on their site with setup pending. A keychain
+    // session cannot carry over, so no login param is attached for it.
+    const customize = screen.getByText("hosting.customize-your-blog") as HTMLAnchorElement;
+    expect(customize.getAttribute("href")).toBe("https://alice.blogs.ecency.com/?setup=1");
   });
 
   it("does not broadcast until the user clicks pay (no accidental transfer)", async () => {

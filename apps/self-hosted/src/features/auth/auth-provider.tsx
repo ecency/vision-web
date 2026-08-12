@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store';
 import { clearHiveAuthSession, clearUser } from './storage';
 import type { AuthContextValue, AuthUser } from './types';
 import { availableAuthMethods } from './utils/auth-methods';
+import { actOnLoginRequest } from './setup-handoff';
 import { resolveHivesignerClientId } from './utils/hivesigner';
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -51,6 +52,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
       configuration.instanceConfiguration.owner ||
       configuration.instanceConfiguration.username,
   );
+
+  // Act on a boot-captured login intent (see setup-handoff.ts): start this
+  // instance's own Hivesigner flow when it is offered and nobody is signed
+  // in. Honest deps; the intent clears itself on the first decisive run.
+  const canHandoffLogin = isAuthEnabled && availableMethods.includes('hivesigner');
+  const isAuthenticated = !!user;
+  useEffect(() => {
+    actOnLoginRequest({ canLoginWithHivesigner: canHandoffLogin, isAuthenticated });
+  }, [canHandoffLogin, isAuthenticated]);
 
   // Check if current user is the instance owner
   const isBlogOwner = useMemo(() => {
