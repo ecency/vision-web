@@ -30,11 +30,16 @@ describe('theme manifest registry', () => {
   });
 });
 
+// Imported at module scope: the resolver drags the whole component graph in,
+// and paying that import inside the test body spends the 5s test budget on
+// cold-transform time in CI (it timed out on the merged develop). Collection
+// time is not budgeted.
+const { DEFAULT_THEME_COMPONENTS, resolveThemeComponents } = await import(
+  './use-theme-components'
+);
+
 describe('component resolution', () => {
-  it('every roster template resolves to exactly the shared defaults today', async () => {
-    const { DEFAULT_THEME_COMPONENTS, resolveThemeComponents } = await import(
-      './use-theme-components'
-    );
+  it('every roster template resolves to exactly the shared defaults today', () => {
     for (const id of STYLE_TEMPLATES) {
       const resolved = resolveThemeComponents(id);
       // Identity per seam, not just deep equality: the no-op migration means
