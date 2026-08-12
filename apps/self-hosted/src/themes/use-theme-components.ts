@@ -42,3 +42,15 @@ export function useThemeComponents(): ThemeComponents {
   );
   return useMemo(() => resolveThemeComponents(styleTemplate), [styleTemplate]);
 }
+
+/**
+ * Whether the active theme shows read-time estimates. A subscriber like the
+ * component resolution above, so the Configuration Editor's template preview
+ * flips it live.
+ */
+export function useThemeShowsReadTime(): boolean {
+  const styleTemplate = InstanceConfigManager.useConfig(
+    ({ configuration }) => configuration.general.styleTemplate,
+  );
+  return !!getThemeManifest(styleTemplate).showsReadTime;
+}

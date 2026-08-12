@@ -18,7 +18,7 @@ export function BlogNavigation() {
   // Shared with theme shells (use-posts-filter-state) so no shell can drift
   // from this navigation's filter behavior. The hook validates the configured
   // shape, which keeps the scalar-postsFilters crash guard.
-  const { availableFilters, currentFilter, filterLabel: getFilterLabel } =
+  const { availableFilters, currentFilter, filterLabel: getFilterLabel, isAboutActive } =
     usePostsFilterState();
 
   const blogTitle = InstanceConfigManager.useConfig(
@@ -86,7 +86,9 @@ export function BlogNavigation() {
           second, non-colour cue. */}
       <nav className="flex gap-4 sm:gap-6 pt-3 sm:pt-4 overflow-x-auto border-b border-theme">
         {availableFilters.map((filter) => {
-          const isActive = currentFilter === filter;
+          // A filter tab only reads active ON the feed: /about shares this
+          // row and the default filter must not stay lit next to it.
+          const isActive = !isAboutActive && currentFilter === filter;
           return (
             <Link
               key={filter}
@@ -103,6 +105,19 @@ export function BlogNavigation() {
             </Link>
           );
         })}
+        {/* The About surface generated from profile metadata; a tab like the
+            filters, so discovering who writes the blog costs one click. */}
+        <Link
+          to="/about"
+          className={clsx(
+            'text-sm font-normal transition-theme pb-2 border-b-2 -mb-px no-underline font-theme-ui whitespace-nowrap',
+            isAboutActive
+              ? 'border-theme-accent text-theme-primary font-medium'
+              : 'border-transparent text-theme-muted hover:text-theme-primary hover:border-theme',
+          )}
+        >
+          {t('about_nav')}
+        </Link>
       </nav>
     </div>
   );

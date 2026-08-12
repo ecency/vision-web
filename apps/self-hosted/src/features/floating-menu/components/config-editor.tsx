@@ -255,6 +255,29 @@ const ConfigFieldEditor = memo<ConfigFieldEditorProps>(
                 {field.description}
               </p>
             )}
+            {/* One-click curated swatches above the free input: visual
+                choices get visual controls, and the hex field stays for
+                everything the row does not offer. */}
+            {field.quickPicks && field.quickPicks.length > 0 && (
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                {field.quickPicks.map((hex) => (
+                  <button
+                    key={hex}
+                    type="button"
+                    onClick={() => handleChange(hex)}
+                    aria-label={hex}
+                    className="size-7 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{
+                      backgroundColor: hex,
+                      border:
+                        colorText === hex
+                          ? '2px solid #ffffff'
+                          : `1px solid ${FLOATING_MENU_THEME.borderColorStrong}`,
+                    }}
+                  />
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-2">
               {/*
                 A swatch beside the text, not instead of it. The native control

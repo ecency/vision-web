@@ -1,7 +1,7 @@
 import type { PropsWithChildren } from 'react';
 import { Link } from '@tanstack/react-router';
 import clsx from 'clsx';
-import { InstanceConfigManager } from '@/core';
+import { InstanceConfigManager, t } from '@/core';
 import { CreatePostButton, UserMenu } from '@/features/auth';
 import { SearchInput } from '@/features/blog/components/search-input';
 import {
@@ -39,7 +39,8 @@ export function JournalShell(props: PropsWithChildren) {
     : null;
 
   // Shared with BlogNavigation, so the shell cannot drift from it.
-  const { availableFilters, currentFilter, filterLabel } = usePostsFilterState();
+  const { availableFilters, currentFilter, filterLabel, isAboutActive } =
+    usePostsFilterState();
 
   return (
     <div className="min-h-screen bg-theme-primary">
@@ -79,7 +80,7 @@ export function JournalShell(props: PropsWithChildren) {
                   search={{ filter }}
                   className={clsx(
                     'text-sm no-underline font-theme-ui whitespace-nowrap transition-theme',
-                    currentFilter === filter
+                    !isAboutActive && currentFilter === filter
                       ? 'text-theme-primary font-medium'
                       : 'text-theme-muted hover:text-theme-primary',
                   )}
@@ -87,6 +88,18 @@ export function JournalShell(props: PropsWithChildren) {
                   {filterLabel(filter)}
                 </Link>
               ))}
+              {/* Journal places About with the filters, quiet like them. */}
+              <Link
+                to="/about"
+                className={clsx(
+                  'text-sm no-underline font-theme-ui whitespace-nowrap transition-theme',
+                  isAboutActive
+                    ? 'text-theme-primary font-medium'
+                    : 'text-theme-muted hover:text-theme-primary',
+                )}
+              >
+                {t('about_nav')}
+              </Link>
             </nav>
             <span className="ml-auto flex items-center gap-3">
               <SearchInput />

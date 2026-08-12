@@ -26,6 +26,8 @@ export type TranslationKey =
   | 'reputation'
   | 'joined'
   | 'posts'
+  | 'about_title'
+  | 'about_nav'
   | 'location'
   | 'website'
   | 'likes'
@@ -338,6 +340,8 @@ export const translations: { en: Translations } & Record<
     reputation: "Reputation",
     joined: "Joined",
     posts: "Posts",
+    about_title: "About",
+    about_nav: "About",
     location: "Location",
     website: "Website",
     likes: "likes",

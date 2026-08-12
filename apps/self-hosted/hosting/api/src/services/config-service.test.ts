@@ -194,6 +194,39 @@ describe('ConfigService.buildMetaHtml', () => {
     expect(html).toContain('&quot;&gt;&lt;img');
   });
 
+  it('emits og:image from the configured logo, http(s)-validated like the favicon', () => {
+    const withLogo = {
+      username: 'dan',
+      config: {
+        configuration: {
+          instanceConfiguration: {
+            meta: { title: 'Dan', logo: 'https://cdn.example/logo.png' },
+          },
+        },
+      },
+    } as any;
+    const html = ConfigService.buildMetaHtml(withLogo);
+    expect(html).toContain(
+      '<meta property="og:image" content="https://cdn.example/logo.png" />',
+    );
+    expect(html).toContain('twitter:card" content="summary_large_image"');
+
+    // Anything that is not an http(s) URL emits no image tag at all.
+    const junkLogo = {
+      username: 'dan',
+      config: {
+        configuration: {
+          instanceConfiguration: {
+            meta: { title: 'Dan', logo: 'javascript:alert(1)' },
+          },
+        },
+      },
+    } as any;
+    const junkHtml = ConfigService.buildMetaHtml(junkLogo);
+    expect(junkHtml).not.toContain('og:image');
+    expect(junkHtml).toContain('twitter:card" content="summary"');
+  });
+
   it('only allows an http(s) favicon, else falls back to the bundled icon', () => {
     const withJs = {
       username: 'x',

@@ -7,6 +7,8 @@ import { useEffect, useRef } from 'react';
 import { formatDate, t } from '@/core';
 import { DetectBottom } from '@/features/blog/components/detect-bottom';
 import { useArchiveFeed } from '@/features/blog/hooks/use-archive-feed';
+import { estimateReadMinutes } from '@/features/blog/utils/read-time';
+import { useThemeShowsReadTime } from '@/themes/use-theme-components';
 import { usePostsFilterState } from '@/features/blog/hooks/use-posts-filter-state';
 import { chooseFeedRetry } from '@/features/blog/utils/feed-retry';
 import { ErrorMessage } from '@/features/shared/error-message';
@@ -15,6 +17,16 @@ import {
   nothingToShow,
   resolveQueryOutcome,
 } from '@/features/shared/query-outcome';
+
+// Rail rows re-render on every j/k move; stripping every body again each
+// time would be pure waste, so estimates memoize per entry object.
+const railReadMinutes = new WeakMap<object, number | null>();
+function readMinutesOf(entryData: object & { body?: unknown }): number | null {
+  if (!railReadMinutes.has(entryData)) {
+    railReadMinutes.set(entryData, estimateReadMinutes(entryData.body));
+  }
+  return railReadMinutes.get(entryData) ?? null;
+}
 
 /** Keystrokes typed into a field are never navigation. */
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -48,6 +60,9 @@ export function ReaderRail() {
   const navigate = useNavigate();
 
   const { availableFilters, currentFilter } = usePostsFilterState();
+  // Reader opts into read time in its manifest; the rail is its actual
+  // archive, so the estimate belongs on these rows too.
+  const showsReadTime = useThemeShowsReadTime();
   const defaultFilter = availableFilters[0] || 'posts';
   // Canonical post URLs stay clean: only a non-default feed travels along.
   const carriedFilter =
@@ -195,6 +210,12 @@ export function ReaderRail() {
               </time>
               {entryData.community && entryData.community_title && (
                 <span> · {entryData.community_title}</span>
+              )}
+              {showsReadTime && readMinutesOf(entryData) !== null && (
+                <span>
+                  {' '}
+                  · {readMinutesOf(entryData)} {t('minRead')}
+                </span>
               )}
             </p>
             <h3
