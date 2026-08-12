@@ -21,6 +21,8 @@ import { reconcileHivesignerClientIds } from '../services/hivesigner-registry';
 import { AuditService, parseClientIp } from '../services/audit-service';
 import { mapTenantFromDb, type Tenant } from '../types';
 import { addVerifiedDomainOrigin } from '../utils/cors-domains';
+import { ACCENT_HEX_PATTERN, FONT_PRESET_KEYS } from '../appearance';
+import { STYLE_TEMPLATES } from '../style-templates';
 
 export const internalRoutes = new Hono();
 
@@ -484,9 +486,41 @@ internalRoutes.post('/claim-blog', async (c) => {
   const title = typeof body?.title === 'string' ? body.title.slice(0, 100) : undefined;
   const description = typeof body?.description === 'string' ? body.description.slice(0, 500) : undefined;
 
+  // The claim carries the same customize step as the paid signup, validated
+  // against the same rosters the public create path enforces (routes/tenants.ts).
+  // Fail closed on junk rather than dropping it: silently ignoring a chosen
+  // template would report a successful claim that looks nothing like the
+  // preview the claimant picked.
+  const styleTemplate =
+    typeof body?.styleTemplate === 'string' ? body.styleTemplate : undefined;
+  if (
+    styleTemplate !== undefined &&
+    !(STYLE_TEMPLATES as readonly string[]).includes(styleTemplate)
+  ) {
+    return c.json({ error: 'invalid_request' }, 400);
+  }
+  const accent = typeof body?.accent === 'string' ? body.accent : undefined;
+  if (accent !== undefined && !ACCENT_HEX_PATTERN.test(accent)) {
+    return c.json({ error: 'invalid_request' }, 400);
+  }
+  const fontPreset =
+    typeof body?.fontPreset === 'string' ? body.fontPreset : undefined;
+  if (
+    fontPreset !== undefined &&
+    !(FONT_PRESET_KEYS as readonly string[]).includes(fontPreset)
+  ) {
+    return c.json({ error: 'invalid_request' }, 400);
+  }
+
   try {
     // Build config outside the transaction (pure, no I/O).
-    const config = await TenantService.buildConfig(username, { title, description });
+    const config = await TenantService.buildConfig(username, {
+      title,
+      description,
+      styleTemplate,
+      accent,
+      fontPreset,
+    });
 
     const result = await db.transaction<{ created: boolean; row: any }>(async (client) => {
       // Try to create; ON CONFLICT means the tenant already exists. DO UPDATE revives a row the

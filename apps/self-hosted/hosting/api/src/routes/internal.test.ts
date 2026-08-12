@@ -541,4 +541,58 @@ describe('internal endpoint audit trail', () => {
       eventData: { created: false },
     });
   });
+
+  it('passes the customize step through to the claimed config', async () => {
+    // The claim carries the same customization the paid signup does; a Pro
+    // claimant must not be locked to a default-looking instance.
+    const row = {
+      id: 'tenant-9',
+      username: 'alice',
+      owner: 'alice',
+      subscription_status: 'active',
+      subscription_plan: 'standard',
+      subscription_started_at: null,
+      subscription_expires_at: null,
+      custom_domain: null,
+      custom_domain_verified: false,
+      custom_domain_verified_at: null,
+      config: {},
+      created_at: '2026-07-27T10:25:13.000Z',
+      updated_at: '2026-07-27T10:25:13.000Z',
+    };
+    mocks.transaction.mockResolvedValueOnce({ created: true, row });
+
+    const response = await post('/claim-blog', {
+      username: 'alice',
+      title: 'Alice writes',
+      styleTemplate: 'journal',
+      accent: '#9c4a1e',
+      fontPreset: 'editorial',
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.buildConfig).toHaveBeenCalledWith('alice', {
+      title: 'Alice writes',
+      description: undefined,
+      styleTemplate: 'journal',
+      accent: '#9c4a1e',
+      fontPreset: 'editorial',
+    });
+  });
+
+  it('rejects customization that fails the public rosters instead of dropping it', async () => {
+    // Silently ignoring a chosen template would report a successful claim that
+    // looks nothing like what the claimant picked. Same validation surface as
+    // the public create path.
+    for (const body of [
+      { username: 'alice', styleTemplate: 'no-such-template' },
+      { username: 'alice', accent: 'red' },
+      { username: 'alice', fontPreset: 'comic-sans' },
+    ]) {
+      const response = await post('/claim-blog', body);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'invalid_request' });
+    }
+    expect(mocks.buildConfig).not.toHaveBeenCalled();
+  });
 });
