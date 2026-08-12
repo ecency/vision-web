@@ -51,6 +51,11 @@ export function ProBlogClaim({ username }: Props) {
 
   const subdomain = `${username}.${BASE_DOMAIN}`;
 
+  // The field is mid-edit and unusable: neither empty (template default) nor
+  // a committed valid hex.
+  const accentPending =
+    accentInput.trim().length > 0 && !ACCENT_HEX_PATTERN.test(accentInput.trim());
+
   // The template catalog, like the paid signup: a load failure must not block
   // the claim, the blog just starts on the default look.
   useEffect(() => {
@@ -200,7 +205,15 @@ export function ProBlogClaim({ username }: Props) {
       />
 
       {error && <Alert appearance="danger">{error}</Alert>}
-      <Button onClick={claim} disabled={busy} isLoading={busy} full={true}>
+      {/* A mid-edit invalid accent must block the claim, same as the paid
+          signup: the committed value silently differing from the visible
+          input is exactly the surprise this guards against. */}
+      <Button
+        onClick={claim}
+        disabled={busy || accentPending}
+        isLoading={busy}
+        full={true}
+      >
         {i18next.t("pro-blog.claim")}
       </Button>
     </div>

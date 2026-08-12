@@ -23,7 +23,7 @@ vi.mock("@/features/hosting-signup/hosting-api", async () => {
 });
 
 import { ProBlogClaim } from "@/features/pro/pro-blog-claim";
-import { getAccountFullQueryOptions } from "@ecency/sdk";
+import { getAccountFullQueryOptions, QueryKeys } from "@ecency/sdk";
 
 const TEMPLATES = [
   {
@@ -52,7 +52,7 @@ describe("ProBlogClaim customize step", () => {
     mocks.accessToken = "tok-alice";
     mocks.templates.mockResolvedValue({ templates: TEMPLATES });
     vi.mocked(getAccountFullQueryOptions as any).mockImplementation(() => ({
-      queryKey: ["account", "alice"],
+      queryKey: QueryKeys.accounts.full("alice"),
       queryFn: async () => ({
         profile: { name: "Alice in Chains", about: "Notes from the chain" }
       })
@@ -101,7 +101,7 @@ describe("ProBlogClaim customize step", () => {
   it("still claims with no customization when the catalog fails to load", async () => {
     mocks.templates.mockRejectedValue(new Error("down"));
     vi.mocked(getAccountFullQueryOptions as any).mockImplementation(() => ({
-      queryKey: ["account", "alice"],
+      queryKey: QueryKeys.accounts.full("alice"),
       queryFn: async () => ({ profile: {} })
     }));
     renderWithQueryClient(<ProBlogClaim username="alice" />);

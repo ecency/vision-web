@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   getByUsername: vi.fn(),
   generateConfigFile: vi.fn(),
+  publishConfigFile: vi.fn(),
   auditLog: vi.fn(),
   buildConfig: vi.fn(),
   getBlogUrl: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('../services/tenant-service', () => ({
 vi.mock('../services/config-service', () => ({
   ConfigService: {
     generateConfigFile: mocks.generateConfigFile,
+    publishConfigFile: mocks.publishConfigFile,
   },
 }));
 
@@ -78,6 +80,7 @@ describe('POST /activate config publication', () => {
       subscriptionStatus: 'active',
     });
     mocks.generateConfigFile.mockReset().mockResolvedValue('/configs/alice.json');
+    mocks.publishConfigFile.mockReset().mockResolvedValue(undefined);
     mocks.auditLog.mockReset();
   });
 
@@ -180,6 +183,7 @@ describe('internal endpoint audit trail', () => {
       subscriptionStatus: 'active',
     });
     mocks.generateConfigFile.mockReset().mockResolvedValue('/configs/alice.json');
+    mocks.publishConfigFile.mockReset().mockResolvedValue(undefined);
     mocks.buildConfig.mockReset().mockResolvedValue({ version: 1 });
     mocks.getBlogUrl.mockReset().mockReturnValue('https://alice.blogs.ecency.com');
     mocks.isDomainClaimed.mockReset().mockResolvedValue(false);
@@ -529,6 +533,11 @@ describe('internal endpoint audit trail', () => {
       eventType: 'tenant.pro_blog_claimed',
       eventData: { username: 'alice', created: true, subscriptionStatus: 'active' },
     });
+    // Published BY USERNAME (a locked re-read), never from the
+    // transaction-returned row: that snapshot can overwrite a newer config
+    // another writer committed between the claim's commit and this publish.
+    expect(mocks.publishConfigFile).toHaveBeenCalledWith('alice');
+    expect(mocks.generateConfigFile).not.toHaveBeenCalled();
 
     mocks.auditLog.mockReset();
     mocks.transaction.mockResolvedValueOnce({ created: false, row });

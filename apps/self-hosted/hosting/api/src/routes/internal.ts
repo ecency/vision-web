@@ -591,10 +591,13 @@ internalRoutes.post('/claim-blog', async (c) => {
 
     const tenant = mapTenantFromDb(result.row);
 
-    // Generate the config file for a freshly-created tenant (non-critical, outside the tx).
+    // Publish the config for a freshly-created tenant (non-critical, outside
+    // the tx). By username, not the transaction-returned row: publishing a
+    // pre-commit snapshot can overwrite a newer config another writer
+    // committed in between; publishConfigFile re-reads under the tenant lock.
     if (result.created) {
       try {
-        await ConfigService.generateConfigFile(tenant);
+        await ConfigService.publishConfigFile(username);
       } catch (err) {
         console.error(`[internal/claim-blog] config generation failed for ${username}:`, err);
       }

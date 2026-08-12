@@ -110,7 +110,8 @@ vi.mock("@ecency/sdk", async () => ({
   // Only the key builders the web app reaches for directly. Pure string arrays, so a
   // partial stand-in is safe; add more branches as consumers need them.
   QueryKeys: {
-    quests: { status: (username?: string) => ["quests", "status", username] }
+    quests: { status: (username?: string) => ["quests", "status", username] },
+    accounts: { full: (username?: string) => ["get-account-full", username] }
   },
   getSpotlightsQueryOptions: vi.fn(() => ({
     queryKey: ["notifications", "spotlights"],
