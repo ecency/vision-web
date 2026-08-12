@@ -77,3 +77,21 @@ describe('style template roster', () => {
     }
   });
 });
+
+/**
+ * The API validates signup font presets against FONT_PRESET_KEYS
+ * (hosting/api/src/appearance.ts); the SPA's FONT_PRESETS carries the actual
+ * stacks. The two must name the same set or a preset accepted at signup
+ * renders as the template default, silently.
+ */
+describe('font preset keys stay in lockstep with the API', () => {
+  it('matches theme-appearance FONT_PRESETS exactly', async () => {
+    const { FONT_PRESET_KEYS } = await import(
+      '../../hosting/api/src/appearance'
+    );
+    const { FONT_PRESETS } = await import('../core/theme-appearance');
+    expect(Object.keys(FONT_PRESETS).sort()).toEqual(
+      [...FONT_PRESET_KEYS].sort(),
+    );
+  });
+});

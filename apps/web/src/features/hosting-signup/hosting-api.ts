@@ -18,6 +18,10 @@ export interface HostingPaymentMethods {
 export interface HostingConfigInput {
   theme?: "light" | "dark" | "system";
   styleTemplate?: string;
+  /** One hex color (#rgb or #rrggbb); the instance derives hover/contrast from it. */
+  accent?: string;
+  /** A font pairing key from the hosting API's closed set. */
+  fontPreset?: string;
   title?: string;
   description?: string;
   /** Instance kind. Omit (or "blog") for a personal blog; "community" hosts a Hive community. */
@@ -25,6 +29,23 @@ export interface HostingConfigInput {
   /** The Hive community id (hive-NNNNN) when type is "community". */
   communityId?: string;
 }
+
+/** One card in the template catalog served by the hosting API (GET /v1/templates). */
+export interface HostingTemplate {
+  id: string;
+  name: string;
+  tagline: string;
+  isDefault: boolean;
+  colors: { background: string; surface: string; accent: string; text: string };
+  headingStyle: "serif" | "sans" | "mono";
+}
+
+/**
+ * Client-side mirror of the hosting API's accent validation
+ * (hosting/api/src/appearance.ts). The server is authoritative; this only
+ * exists so the form can refuse an unusable value before submission.
+ */
+export const ACCENT_HEX_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 export interface CreateTenantResult {
   tenant: { username: string; subscriptionStatus: string; blogUrl: string };
@@ -82,6 +103,10 @@ export const hostingApi = {
   isConfigured: () => HOSTING_API.length > 0,
 
   paymentMethods: () => get<HostingPaymentMethods>("/v1/payments/methods"),
+
+  /** The template catalog for the signup picker. Served by the API so the
+   *  list can never drift from what tenant creation accepts. */
+  templates: () => get<{ templates: HostingTemplate[] }>("/v1/templates"),
 
   /**
    * Create the (inactive) tenant. Payment then activates it. `username` is the tenant subdomain

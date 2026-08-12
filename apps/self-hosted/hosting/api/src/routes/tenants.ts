@@ -6,6 +6,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { STYLE_TEMPLATES } from '../style-templates';
+import { ACCENT_HEX_PATTERN, FONT_PRESET_KEYS } from '../appearance';
+import { rateLimit } from '../middleware/rate-limit';
 import { db } from '../db/client';
 import {
   TenantService,
@@ -33,6 +35,8 @@ const createTenantSchema = z.object({
   config: z.object({
     theme: z.enum(['light', 'dark', 'system']).optional(),
     styleTemplate: z.enum(STYLE_TEMPLATES).optional(),
+    accent: z.string().regex(ACCENT_HEX_PATTERN, 'accent must be #rgb or #rrggbb').optional(),
+    fontPreset: z.enum(FONT_PRESET_KEYS).optional(),
     type: z.enum(['blog', 'community']).optional(),
     communityId: z.string().optional(),
     title: z.string().max(100).optional(),
@@ -59,6 +63,8 @@ const fullConfigDocSchema = z.object({
 const flatConfigUpdateSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']).optional(),
   styleTemplate: z.enum(STYLE_TEMPLATES).optional(),
+  accent: z.string().regex(ACCENT_HEX_PATTERN, 'accent must be #rgb or #rrggbb').optional(),
+  fontPreset: z.enum(FONT_PRESET_KEYS).optional(),
   title: z.string().max(100).optional(),
   description: z.string().max(500).optional(),
   listType: z.enum(['list', 'grid']).optional(),
@@ -210,8 +216,15 @@ export async function resolveAndValidateTenant(
   return { ok: true, owner };
 }
 
+// Creation is unauthenticated by design (a personal blog's owner IS the requested
+// account), so the same-owner refresh below is only as strong as this throttle:
+// a tight per-IP budget keeps "loop the POST to rewrite someone's unpaid
+// reservation" to a crawl while never blocking a human signing up.
+const createLimit = rateLimit({ name: 'tenant-create', limit: 10, windowMs: 60_000 });
+
 tenantRoutes.post(
   '/',
+  createLimit,
   zValidator('json', createTenantSchema),
   // Use the same target reservation as paid /subscribe. Otherwise this unpaid create can insert
   // after the paid request's availability check but before its post-settlement tenant insert.
@@ -224,8 +237,19 @@ tenantRoutes.post(
     // revives it below. Within the quarantine — or while the payment listener isn't confirmed
     // caught up to head (so a pending on-chain payment for it may be unprocessed) — it is still
     // treated as taken so an in-flight payment for it isn't overwritten.
+    //
+    // A same-owner 'inactive' reservation is NOT taken: that is the customize step re-submitting
+    // before any payment, and the latest submitted look must win (create() refreshes the stored
+    // config). The owner comparison happens after validation below, which is what enforces the
+    // ownership rules (a community's declared owner is checked on-chain; a personal blog's owner
+    // is the account itself, which is the same trust model first creation has always had).
     const existing = await TenantService.getByUsername(body.username);
-    if (existing && !(isReregisterableAbandoned(existing) && (await TenantService.isListenerCaughtUp()))) {
+    const sameNameInactive = !!existing && existing.subscriptionStatus === 'inactive';
+    if (
+      existing &&
+      !sameNameInactive &&
+      !(isReregisterableAbandoned(existing) && (await TenantService.isListenerCaughtUp()))
+    ) {
       return c.json({ error: 'Username already registered' }, 409);
     }
 
@@ -235,6 +259,11 @@ tenantRoutes.post(
       return c.json({ error: validation.error }, validation.status);
     }
     const { owner } = validation;
+
+    // An inactive reservation may only be refreshed by the owner it was reserved for.
+    if (sameNameInactive && existing!.owner !== owner) {
+      return c.json({ error: 'Username already registered' }, 409);
+    }
 
     // Create tenant (inactive until payment). The served config file is NOT written here:
     // nginx serves any file that exists with no subscription check, so writing it now would

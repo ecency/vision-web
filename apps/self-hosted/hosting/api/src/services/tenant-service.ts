@@ -220,33 +220,49 @@ export const TenantService = {
     //  - 'abandoned' (past the re-registration quarantine): a fresh reservation RECLAIMS the name —
     //    overwrite owner + config. The quarantine (updated_at older than the window) protects a row
     //    whose earlier payment may still be in flight.
-    //  - 'inactive' owned by the SAME owner: this is a re-entry into checkout for an existing
-    //    reservation. REFRESH its grace clock (created_at = NOW) so the abandoned sweep can't
-    //    reclaim it while it is actively being paid for — closing the window where an old reservation
-    //    is swept mid-checkout and then overwritten before a slow payment (e.g. a card order ePoints
-    //    retries with backoff for far longer than the quarantine) is finally recorded. Keep owner +
-    //    config unchanged here (via CASE) so re-entry never overwrites an unpaid reservation's config.
+    //  - 'inactive' owned by the SAME owner: this is the customize step re-submitting (or a
+    //    re-entry into checkout) for an existing unpaid reservation. REFRESH its grace clock
+    //    (created_at = NOW) so the abandoned sweep can't reclaim it while it is actively being
+    //    paid for. The CONFIG is taken only when the caller actually composed one ($5): the
+    //    signup UI promises the look on screen is the look that activates, so a re-submission
+    //    with overrides wins, while an overrides-less create (an API probe, or any legacy
+    //    caller that only reserves) keeps the stored reservation intact instead of wiping a
+    //    saved customization back to defaults.
     //
     // Any other row (live tenant, or a different owner's inactive reservation) leaves the WHERE
     // unsatisfied, returns no row, and is surfaced as a conflict. A brand-new username inserts.
+    // Only fields the customize step actually expresses count as a composed
+    // config. Structural keys ride along on every create (the client always
+    // sends theme, a community always carries type and id), and counting them
+    // would make a skip-everything re-reserve wipe a saved customization.
+    const {
+      theme: _theme,
+      type: _type,
+      communityId: _communityId,
+      ...composed
+    } = configOverrides ?? {};
+    const hasOverrides = Object.values(composed).some(
+      (value) => value !== undefined,
+    );
     const row = await db.queryOne<TenantRow>(
       `INSERT INTO tenants (username, owner, config, subscription_status, subscription_plan)
        VALUES ($1, $2, $3, 'inactive', 'standard')
        ON CONFLICT (username) DO UPDATE
          SET owner = CASE WHEN tenants.subscription_status = 'abandoned'
                           THEN EXCLUDED.owner ELSE tenants.owner END,
-             config = CASE WHEN tenants.subscription_status = 'abandoned'
+             config = CASE WHEN tenants.subscription_status = 'abandoned' OR $5
                            THEN EXCLUDED.config ELSE tenants.config END,
              subscription_plan = 'standard',
              subscription_status = 'inactive',
-             created_at = NOW(),
+             created_at = CASE WHEN tenants.subscription_status = 'abandoned' OR $5
+                               THEN NOW() ELSE tenants.created_at END,
              updated_at = NOW()
          WHERE (tenants.subscription_status = 'abandoned'
                   AND tenants.updated_at < NOW() - ($4 * INTERVAL '1 hour')
                   AND ${CAUGHT_UP_SQL})
             OR (tenants.subscription_status = 'inactive' AND tenants.owner = EXCLUDED.owner)
        RETURNING *`,
-      [username.toLowerCase(), ownerName, JSON.stringify(config), ABANDONED_REREGISTER_QUARANTINE_HOURS]
+      [username.toLowerCase(), ownerName, JSON.stringify(config), ABANDONED_REREGISTER_QUARANTINE_HOURS, hasOverrides]
     );
 
     if (!row) {
@@ -1212,6 +1228,12 @@ export const TenantService = {
     };
     if (configOverrides.theme) normalized.configuration.general.theme = configOverrides.theme;
     if (configOverrides.styleTemplate) normalized.configuration.general.styleTemplate = configOverrides.styleTemplate;
+    // Appearance knobs land under general.styles, the same paths the editor writes.
+    if (configOverrides.accent || configOverrides.fontPreset) {
+      normalized.configuration.general.styles = {};
+      if (configOverrides.accent) normalized.configuration.general.styles.accent = configOverrides.accent;
+      if (configOverrides.fontPreset) normalized.configuration.general.styles.fontPreset = configOverrides.fontPreset;
+    }
     if (configOverrides.type) normalized.configuration.instanceConfiguration.type = configOverrides.type;
     if (configOverrides.communityId) normalized.configuration.instanceConfiguration.communityId = configOverrides.communityId;
     // undefined means "not provided"; an explicit empty string clears the field.
