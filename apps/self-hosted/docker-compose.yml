@@ -4,28 +4,37 @@
 # Quick start:
 #   1. Copy config.template.json to config.json
 #   2. Edit config.json with your settings
-#   3. Run: docker-compose up -d
+#   3. Pick an image tag and run: TAG=sha-abc1234 docker compose up -d
 #
-# For production with SSL, use docker-compose.production.yml
+# TAG is REQUIRED and has no default on purpose: a moving tag silently
+# changes what a deployment runs. Immutable tags are `sha-<7>` (every
+# build) and `vX.Y.Z` (releases); `develop` and `latest` move. See
+# DEPLOYMENT.md for how to choose and how to upgrade.
+#
+# For HTTPS, put a reverse proxy in front of this (Caddy gets certificates
+# on its own); DEPLOYMENT.md carries a working example.
 # =============================================================================
 
 services:
   blog:
-    build:
-      context: ../..
-      dockerfile: apps/self-hosted/Dockerfile
-      args:
-        # Inject config at build time (optional)
-        # CONFIG_JSON: ${CONFIG_JSON:-}
-    image: ecency/self-hosted:latest
+    image: ecency/self-hosted:${TAG:?TAG environment variable is required}
     container_name: ecency-blog
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:80"
     volumes:
       # Mount config.json for runtime configuration updates
-      # Changes to config.json will be reflected without rebuilding
+      # Changes to config.json will be reflected without rebuilding.
+      # The file must EXIST before the first `up`: Docker silently creates a
+      # directory in its place otherwise, and the site then falls back to the
+      # built-in demo config. `cp config.template.json config.json` first.
       - ./config.json:/usr/share/nginx/html/config.json:ro
+      # SEO files, if you run the generator (see DEPLOYMENT.md). Uncomment
+      # only once the files exist, for the same reason as above: an empty
+      # directory mounted over robots.txt replaces a working one.
+      # - ./seo/robots.txt:/usr/share/nginx/html/robots.txt:ro
+      # - ./seo/sitemap.xml:/usr/share/nginx/html/sitemap.xml:ro
+      # - ./seo/rss.xml:/usr/share/nginx/html/rss.xml:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
       interval: 30s
@@ -36,40 +45,8 @@ services:
       - "com.ecency.service=self-hosted-blog"
 
 # =============================================================================
-# Production configuration with Traefik (optional)
-# Uncomment the following to enable automatic HTTPS with Let's Encrypt
+# HTTPS
 # =============================================================================
-#
-#   blog:
-#     # ... same as above, but remove ports mapping
-#     labels:
-#       - "traefik.enable=true"
-#       - "traefik.http.routers.blog.rule=Host(`yourdomain.com`)"
-#       - "traefik.http.routers.blog.entrypoints=websecure"
-#       - "traefik.http.routers.blog.tls.certresolver=letsencrypt"
-#       - "traefik.http.services.blog.loadbalancer.server.port=80"
-#
-#   traefik:
-#     image: traefik:v3.0
-#     container_name: traefik
-#     restart: unless-stopped
-#     command:
-#       - "--api.insecure=false"
-#       - "--providers.docker=true"
-#       - "--providers.docker.exposedbydefault=false"
-#       - "--entrypoints.web.address=:80"
-#       - "--entrypoints.websecure.address=:443"
-#       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
-#       - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
-#       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
-#       - "--certificatesresolvers.letsencrypt.acme.email=your-email@example.com"
-#       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
-#     ports:
-#       - "80:80"
-#       - "443:443"
-#     volumes:
-#       - "/var/run/docker.sock:/var/run/docker.sock:ro"
-#       - "letsencrypt:/letsencrypt"
-#
-# volumes:
-#   letsencrypt:
+# Add a reverse proxy that obtains certificates for you. DEPLOYMENT.md has a
+# ready-to-copy Caddy service (two lines of Caddyfile, no ACME wiring) and an
+# nginx + certbot alternative.

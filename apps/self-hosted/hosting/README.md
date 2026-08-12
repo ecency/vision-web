@@ -97,10 +97,22 @@ Each tenant gets their own container. Higher resource usage but better isolation
 ## Files
 
 - `docker-compose.yml` - Full hosting stack
-- `traefik/` - Traefik configuration
-- `nginx/` - Multi-tenant nginx config
+- `nginx-multi-tenant.conf` - Multi-tenant nginx config (a file, not a `nginx/` directory)
+- `default-config.json` - Config served for a subdomain with no tenant
 - `api/` - Hosting management API
+- `db/` - Schema and migrations
 - `scripts/` - Utility scripts
+- `origin/` - Host-level config (edge vhost, certificates). Applied by hand,
+  never by CI; see its README.
+- `traefik/` - **Unused.** Traefik is not in the stack and nothing loads
+  this. Note before wiring it in: `dynamic/middlewares.yml` sets
+  `X-Robots-Tag: noindex, nofollow` on every response, which would deindex
+  every tenant blog.
+
+CI copies only `docker-compose.yml`, `nginx-multi-tenant.conf`,
+`default-config.json` and `db/*` to the host, so adding a file beside them
+does not deploy it, and editing one of them on the host is reverted by the
+next deploy.
 
 ## Quick Start
 
