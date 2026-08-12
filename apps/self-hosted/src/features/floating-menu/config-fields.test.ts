@@ -15,6 +15,7 @@ import type { ConfigField } from './config-fields';
 import { translations } from '@/core/i18n-strings';
 import { buildConfigFields,
   isFieldVisible,
+  pickFields,
 } from './config-fields';
 
 /*
@@ -902,5 +903,50 @@ describe('theme-gated layout options', () => {
     // The predicate reads the edited document, not the applied config.
     expect(isFieldVisible(layout.sidebar, docWithTemplate('journal'))).toBe(false);
     expect(isFieldVisible(layout.sidebar, docWithTemplate('medium'))).toBe(true);
+  });
+});
+
+describe('pickFields', () => {
+  it('prunes to the named subtrees and keeps every ancestor section chrome', () => {
+    const picked = pickFields(configFieldsMap, [
+      'configuration.general.styles',
+      'configuration.instanceConfiguration.meta',
+    ]);
+
+    const configuration = picked.configuration;
+    expect(configuration?.type).toBe('section');
+    expect(configuration?.label).toBe(configFieldsMap.configuration.label);
+
+    const general = configuration?.fields?.general;
+    expect(general?.fields?.styles).toBe(
+      configFieldsMap.configuration.fields?.general?.fields?.styles,
+    );
+    // Siblings the pick did not name are gone from the curated view...
+    expect(general?.fields?.language).toBeUndefined();
+    expect(general?.fields?.styleTemplate).toBeUndefined();
+
+    const instance = configuration?.fields?.instanceConfiguration;
+    expect(instance?.fields?.meta).toBeDefined();
+    expect(instance?.fields?.features).toBeUndefined();
+
+    // ...and the source tree is untouched, so Advanced still has everything.
+    expect(
+      configFieldsMap.configuration.fields?.general?.fields?.language,
+    ).toBeDefined();
+  });
+
+  it('a curation typo contributes nothing rather than throwing', () => {
+    expect(pickFields(configFieldsMap, ['configuration.no.such.path'])).toEqual({
+      configuration: expect.objectContaining({ type: 'section' }),
+    });
+    expect(pickFields(configFieldsMap, ['nowhere'])).toEqual({});
+  });
+
+  it('the accent field carries its curated swatch row', () => {
+    const accent =
+      configFieldsMap.configuration.fields?.general?.fields?.styles?.fields
+        ?.accent;
+    expect(accent?.type).toBe('color');
+    expect(accent?.quickPicks?.length).toBeGreaterThan(3);
   });
 });

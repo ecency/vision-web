@@ -15,7 +15,7 @@ import {
   getHostingToken,
   HOSTING_FETCH_TIMEOUT_MS,
 } from '@/features/auth/utils/hosting-token';
-import { buildConfigFields } from '../config-fields';
+import { buildConfigFields, editedStyleTemplate, pickFields } from '../config-fields';
 import { getCurrentLanguage, t } from '@/core/i18n';
 import { FLOATING_MENU_THEME } from '../constants';
 import { getHivesignerSetupNotice } from '../hivesigner-setup';
@@ -27,6 +27,7 @@ import {
 import type { ConfigValue } from '../types';
 import { downloadJson, updateNestedPath } from '../utils';
 import { ConfigEditor } from './config-editor';
+import { TemplateCards } from './template-cards';
 
 const HOSTING_API_URL = 'https://api.blogs.ecency.com/hosting';
 
@@ -79,6 +80,35 @@ function getPinnedInstanceType(): InstanceType | null {
   );
 }
 
+/**
+ * The panel restructured around how owners actually customize: the choices
+ * that change how a site looks come first, identity and features follow, and
+ * the FULL schema stays reachable under Advanced, so nothing becomes
+ * config-file-only. Each tab is a pickFields curation over the one schema.
+ */
+type EditorTab = 'appearance' | 'identity' | 'features' | 'advanced';
+
+const EDITOR_TABS: Array<{ id: EditorTab; label: string }> = [
+  { id: 'appearance', label: 'Appearance' },
+  { id: 'identity', label: 'Identity' },
+  { id: 'features', label: 'Features' },
+  { id: 'advanced', label: 'Advanced' },
+];
+
+const TAB_FIELD_PATHS: Record<Exclude<EditorTab, 'advanced'>, readonly string[]> = {
+  // The template itself renders as cards above this subset.
+  appearance: [
+    'configuration.general.theme',
+    'configuration.general.styles',
+    'configuration.instanceConfiguration.layout',
+  ],
+  identity: [
+    'configuration.instanceConfiguration.meta',
+    'configuration.general.language',
+  ],
+  features: ['configuration.instanceConfiguration.features'],
+};
+
 interface FloatingMenuWindowProps {
   isOpen: boolean;
   onClose: () => void;
@@ -95,6 +125,13 @@ export function FloatingMenuWindow({
     >;
   });
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [activeTab, setActiveTab] = useState<EditorTab>('appearance');
+  // What the site currently stores: the dirty indicator and Revert compare
+  // and restore against this, and a successful save moves it forward.
+  const [savedBaseline, setSavedBaseline] = useState<Record<string, ConfigValue>>(
+    () =>
+      InstanceConfigManager.getConfig() as unknown as Record<string, ConfigValue>,
+  );
   const [isSaving, setIsSaving] = useState(false);
   // HiveAuth sends the signing request to a phone, so the owner has to be told
   // to go and look at it. Every other method prompts on this screen.
@@ -116,6 +153,21 @@ export function FloatingMenuWindow({
    */
   const language = getCurrentLanguage();
   const configFields = useMemo(() => buildConfigFields(t), [language]);
+  const tabFields = useMemo(
+    () => ({
+      appearance: pickFields(configFields, TAB_FIELD_PATHS.appearance),
+      identity: pickFields(configFields, TAB_FIELD_PATHS.identity),
+      features: pickFields(configFields, TAB_FIELD_PATHS.features),
+    }),
+    [configFields],
+  );
+
+  // Experimenting must feel safe: the header says when the document differs
+  // from what the site stores, and Revert takes it back in one step.
+  const isDirty = useMemo(
+    () => JSON.stringify(config) !== JSON.stringify(savedBaseline),
+    [config, savedBaseline],
+  );
 
   // Everything the owner is being told, in one place. This window is the whole
   // audience: it is rendered for the instance owner only, so a setting that
@@ -176,6 +228,12 @@ export function FloatingMenuWindow({
   const handleDownload = useCallback(() => {
     downloadJson(config, 'config.json');
   }, [config]);
+
+  const handleRevert = useCallback(() => {
+    setConfig(savedBaseline);
+    setNotice(null);
+    // The preview effect re-previews the reverted document by itself.
+  }, [savedBaseline]);
 
   const handleSave = useCallback(async () => {
     const username = getTenantUsername();
@@ -243,6 +301,7 @@ export function FloatingMenuWindow({
       );
       const baseline = saved ? withServedOnlyMarkers(saved, managed) : outgoing;
       setConfig(baseline);
+      setSavedBaseline(baseline);
       InstanceConfigManager.updateConfig(baseline as unknown as InstanceConfig);
       applyConfigDom(baseline, { syncSystemTheme: true });
 
@@ -408,6 +467,31 @@ export function FloatingMenuWindow({
               Configuration Editor
             </h2>
             <div className="flex items-center gap-2">
+              {isDirty && (
+                <>
+                  <span
+                    className="text-xs font-sans text-amber-400 flex items-center gap-1.5"
+                    role="status"
+                  >
+                    <span
+                      className="size-1.5 rounded-full bg-amber-400"
+                      aria-hidden="true"
+                    />
+                    Unsaved changes
+                  </span>
+                  <button
+                    onClick={handleRevert}
+                    className="text-sm font-sans px-3 py-1.5 text-gray-300 hover:text-gray-100 transition-colors rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{
+                      backgroundColor: FLOATING_MENU_THEME.buttonBackground,
+                    }}
+                    type="button"
+                    aria-label="Revert unsaved changes"
+                  >
+                    Revert
+                  </button>
+                </>
+              )}
               <button
                 onClick={handleTogglePreview}
                 className={`text-sm font-sans px-3 py-1.5 transition-colors rounded focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center gap-1.5 ${
@@ -535,12 +619,51 @@ export function FloatingMenuWindow({
             </output>
           )}
 
+          {/* Task-oriented tabs: Appearance first, the full schema under
+              Advanced. Progressive disclosure over one flat scroll. */}
+          <nav
+            className="flex gap-1 px-4 pt-2 shrink-0 border-b"
+            style={{ borderColor: FLOATING_MENU_THEME.borderColor }}
+            aria-label="Configuration sections"
+          >
+            {EDITOR_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                aria-current={activeTab === tab.id ? 'page' : undefined}
+                className={`text-sm font-sans px-3 py-2 rounded-t border-b-2 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  activeTab === tab.id
+                    ? 'text-white border-blue-500'
+                    : 'text-gray-400 border-transparent hover:text-gray-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
           {/* Content */}
           <main className="flex-1 overflow-y-auto p-6 min-h-0">
             <div className="container mx-auto max-w-7xl">
+              {activeTab === 'appearance' && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold mb-3 text-white font-sans">
+                    Style template
+                  </h3>
+                  <TemplateCards
+                    value={editedStyleTemplate(config)}
+                    onPick={(id) =>
+                      handleUpdate('configuration.general.styleTemplate', id)
+                    }
+                  />
+                </div>
+              )}
               <ConfigEditor
                 config={config}
-                fields={configFields}
+                fields={
+                  activeTab === 'advanced' ? configFields : tabFields[activeTab]
+                }
                 onUpdate={handleUpdate}
               />
             </div>

@@ -25,7 +25,7 @@ import { isThemeOptionSupported } from '@/themes/registry';
  * template in the panel immediately shows or hides the options that theme
  * consumes.
  */
-function editedStyleTemplate(document: Record<string, ConfigValue>): unknown {
+export function editedStyleTemplate(document: Record<string, ConfigValue>): unknown {
   const configuration = document?.configuration as
     | { general?: { styleTemplate?: unknown } }
     | undefined;
@@ -137,6 +137,12 @@ export interface ConfigField {
     value: string,
     config?: Record<string, ConfigValue>,
   ) => string | null;
+  /**
+   * For `color` fields: a short curated row of one-click swatches rendered
+   * above the free hex input, so picking a look does not read like filling a
+   * form. Presentation only; the stored value is whatever the row writes.
+   */
+  quickPicks?: readonly string[];
   /**
    * Render this field or section only while the predicate holds against the
    * WHOLE document, for choices that only exist under certain conditions
@@ -653,6 +659,9 @@ export function buildConfigFields(
                 type: 'color',
                 description: t('panel_configuration_general_styles_accent_description'),
                 maxLength: 32,
+                // The same curated row the signup offers; any readable hue
+                // works, the instance derives hover and contrast from it.
+                quickPicks: ['#e74c3c', '#e67e22', '#1a8917', '#0066cc', '#7c3aed', '#e91e8c'],
               },
               fontPreset: {
                 label: t('panel_configuration_general_styles_font_preset_label'),
@@ -681,4 +690,39 @@ export function buildConfigFields(
     },
   },
 };
+}
+
+/**
+ * A pruned, root-shaped copy of a field tree holding only the named subtrees,
+ * with every ancestor section's chrome (label, description, visibility)
+ * preserved. The tabbed editor is the consumer: each task-oriented tab is a
+ * curated pick over the ONE schema, so a field can never exist in a tab
+ * without existing in Advanced, and unknown paths contribute nothing rather
+ * than throwing (a curation typo must not take the panel down).
+ */
+export function pickFields(
+  fields: Record<string, ConfigField>,
+  paths: readonly string[],
+): Record<string, ConfigField> {
+  const result: Record<string, ConfigField> = {};
+  for (const path of paths) {
+    const segments = path.split('.');
+    let sourceLevel: Record<string, ConfigField> | undefined = fields;
+    let resultLevel = result;
+    for (let i = 0; i < segments.length; i += 1) {
+      const key = segments[i];
+      const source: ConfigField | undefined = sourceLevel?.[key];
+      if (!source) break;
+      if (i === segments.length - 1) {
+        resultLevel[key] = source;
+        break;
+      }
+      const existing = resultLevel[key];
+      const wrapper = existing ?? { ...source, fields: {} };
+      if (!existing) resultLevel[key] = wrapper;
+      resultLevel = wrapper.fields as Record<string, ConfigField>;
+      sourceLevel = source.fields;
+    }
+  }
+  return result;
 }
