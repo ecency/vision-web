@@ -86,6 +86,51 @@ describe('buildMetaForUri', () => {
     expect(html).toContain('twitter:card" content="summary_large_image"');
   });
 
+  it("emits the cover on the tenant's configured image proxy", async () => {
+    mocks.callRPC.mockResolvedValue({
+      title: 'Proxied',
+      body: 'Some words to read here.',
+      json_metadata: { image: ['https://img.example/meta.png'] },
+    });
+    const tenant = {
+      ...TENANT,
+      config: {
+        configuration: {
+          general: { imageProxy: 'https://images.example.com/' },
+          instanceConfiguration: { meta: { title: 'Alice writes' } },
+        },
+      },
+    } as any;
+
+    const html = await buildMetaForUri(tenant, '/@alice/custom-proxy');
+    // Same hash and params render-helper emitted, rebased onto the
+    // tenant's proxy (trailing slash stripped), never the default host.
+    expect(html).toMatch(
+      /og:image" content="https:\/\/images\.example\.com\/p\/[A-Za-z0-9]+\?format=match/,
+    );
+    expect(html).not.toContain('i.ecency.com/p/');
+  });
+
+  it('a junk imageProxy value stays on the default proxy', async () => {
+    mocks.callRPC.mockResolvedValue({
+      title: 'Junk proxy',
+      body: 'Some words to read here.',
+      json_metadata: { image: ['https://img.example/meta.png'] },
+    });
+    const tenant = {
+      ...TENANT,
+      config: {
+        configuration: {
+          general: { imageProxy: 'javascript:alert(1)' },
+          instanceConfiguration: { meta: { title: 'Alice writes' } },
+        },
+      },
+    } as any;
+
+    const html = await buildMetaForUri(tenant, '/@alice/junk-proxy');
+    expect(html).toMatch(/og:image" content="https:\/\/i\.ecency\.com\/p\//);
+  });
+
   it('caches the chain lookup: one RPC serves repeat unfurls', async () => {
     mocks.callRPC.mockResolvedValue({ title: 'T', body: 'words here' });
     await buildMetaForUri(TENANT, '/@alice/my-post');

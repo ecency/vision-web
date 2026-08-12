@@ -59,6 +59,14 @@ describe('ConfigService.generateConfigFile', () => {
     expect(repaired.configuration.instanceConfiguration.meta.title).toBe('One');
   });
 
+  it('publishes by rename and leaves no staging residue behind', async () => {
+    const configPath = await ConfigService.generateConfigFile(tenant('trent', 'Atomic'));
+    const siblings = await fs.readdir(path.dirname(configPath));
+    expect(siblings.filter((f) => f.includes('.tmp-'))).toEqual([]);
+    const written = JSON.parse(await fs.readFile(configPath, 'utf-8'));
+    expect(written.configuration.instanceConfiguration.meta.title).toBe('Atomic');
+  });
+
   it('a newer write is not clobbered by an older concurrent write', async () => {
     // Simulates the sync-vs-update race: an older (slow) generation submitted first and a
     // newer one submitted second must finish with the newer content on disk.

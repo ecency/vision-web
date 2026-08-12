@@ -47,18 +47,30 @@ vi.mock('./tenant-service', () => ({
 // thing under test here, and a stand-in for the publisher would be a copy of the
 // rule it is supposed to be checked against. The filesystem is mocked instead,
 // so the assertions are about the bytes that reach disk.
-vi.mock('fs', () => ({
-  promises: {
-    mkdir: async () => undefined,
-    readFile: async () => {
-      const missing = new Error('ENOENT') as NodeJS.ErrnoException;
-      missing.code = 'ENOENT';
-      throw missing;
+// The publisher writes beside the target and renames over it (atomic
+// publish), so `written` observes the rename: what becomes visible at the
+// final path is what these assertions are about, not the staging write.
+vi.mock('fs', () => {
+  const staged = new Map<string, string>();
+  return {
+    promises: {
+      mkdir: async () => undefined,
+      readFile: async () => {
+        const missing = new Error('ENOENT') as NodeJS.ErrnoException;
+        missing.code = 'ENOENT';
+        throw missing;
+      },
+      writeFile: async (file: string, contents: string) => {
+        staged.set(file, contents);
+      },
+      rename: async (from: string, to: string) => {
+        mocks.written(to, staged.get(from));
+        staged.delete(from);
+      },
+      unlink: async () => undefined,
     },
-    writeFile: async (file: string, contents: string) => mocks.written(file, contents),
-    unlink: async () => undefined,
-  },
-}));
+  };
+});
 
 const {
   decideClientId,

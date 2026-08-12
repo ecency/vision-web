@@ -141,7 +141,21 @@ export const ConfigService = {
     } catch {
       // Missing or unreadable: write it.
     }
-    await fs.writeFile(path, content, 'utf-8');
+    // nginx serves these files while the sync rewrites them, and writeFile
+    // truncates before it fills: a concurrent reader could answer half a
+    // sitemap. Write beside the target and rename over it, which is atomic
+    // on the same filesystem, so a reader always sees whole old bytes or
+    // whole new bytes. The suffix matches no extension listConfigFiles
+    // knows, so a tmp file orphaned by a crash cannot masquerade as a
+    // tenant's config.
+    const tmpPath = `${path}.tmp-${process.pid}`;
+    try {
+      await fs.writeFile(tmpPath, content, 'utf-8');
+      await fs.rename(tmpPath, path);
+    } catch (err) {
+      await fs.unlink(tmpPath).catch(() => {});
+      throw err;
+    }
     return true;
   },
 

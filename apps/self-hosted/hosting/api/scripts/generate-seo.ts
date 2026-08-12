@@ -30,6 +30,17 @@ function arg(name: string): string | undefined {
   return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
+/**
+ * The output dir is typically served by a web server while the cron rewrites
+ * it, so each file is written beside its target and renamed into place:
+ * readers see the old file or the new one, never a truncated one.
+ */
+async function writeAtomic(filePath: string, content: string): Promise<void> {
+  const tmp = `${filePath}.tmp-${process.pid}`;
+  await fs.writeFile(tmp, content);
+  await fs.rename(tmp, filePath);
+}
+
 async function main(): Promise<void> {
   const configPath = arg('config');
   const url = arg('url');
@@ -63,12 +74,12 @@ async function main(): Promise<void> {
 
   const posts = await fetchTenantPosts(tenant);
   await fs.mkdir(outDir, { recursive: true });
-  await fs.writeFile(path.join(outDir, 'robots.txt'), buildRobotsTxt(tenant));
-  await fs.writeFile(
+  await writeAtomic(path.join(outDir, 'robots.txt'), buildRobotsTxt(tenant));
+  await writeAtomic(
     path.join(outDir, 'sitemap.xml'),
     buildSitemapXml(tenant, posts),
   );
-  await fs.writeFile(path.join(outDir, 'rss.xml'), buildRssXml(tenant, posts));
+  await writeAtomic(path.join(outDir, 'rss.xml'), buildRssXml(tenant, posts));
   console.log(
     `Wrote robots.txt, sitemap.xml, rss.xml (${posts.length} posts) to ${outDir}`,
   );

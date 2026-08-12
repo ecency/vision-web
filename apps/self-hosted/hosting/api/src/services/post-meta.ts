@@ -65,6 +65,32 @@ export function resetPostMetaCache(): void {
 // the second layer.
 const RPC_TIMEOUT_MS = 2500;
 
+/** A tenant's own image proxy, when the config carries a valid one. */
+function proxyBaseOf(tenant: Tenant): string | null {
+  const configured = (tenant.config as any)?.configuration?.general?.imageProxy;
+  return typeof configured === 'string' && /^https?:\/\//i.test(configured)
+    ? configured.replace(/\/+$/, '')
+    : null;
+}
+
+/**
+ * render-helper emits proxy URLs on its module-global base, and a
+ * multi-tenant server must not flip that global per request. A tenant's
+ * configured proxy is honored by rebasing the emitted URL instead: the /p/
+ * route is content-addressed by the hash, so the same path answers on any
+ * imagehoster deployment.
+ */
+function rebaseProxyUrl(url: string, customBase: string | null): string {
+  if (!customBase) return url;
+  try {
+    const parsed = new URL(url);
+    if (!parsed.pathname.startsWith('/p/')) return url;
+    return `${customBase}${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
+}
+
 async function getPostCached(author: string, permlink: string): Promise<any | null> {
   const key = `${author}/${permlink}`;
   const hit = postCache.get(key);
@@ -134,7 +160,10 @@ export async function buildMetaForUri(tenant: Tenant, uri: unknown): Promise<str
   // fences, and emits the modern proxy path instead of the legacy sized
   // route that answers with a redirect. Chain-authored, so escaped.
   const coverProxied = catchPostImage(post, 1200, 630, 'match');
-  const ogImage = coverProxied ? escapeHtml(coverProxied) : null;
+  const cover = coverProxied
+    ? rebaseProxyUrl(coverProxied, proxyBaseOf(tenant))
+    : null;
+  const ogImage = cover ? escapeHtml(cover) : null;
 
   const canonical = escapeHtml(
     `${TenantService.getBlogUrl(tenant)}/@${parsed.author}/${parsed.permlink}`,
