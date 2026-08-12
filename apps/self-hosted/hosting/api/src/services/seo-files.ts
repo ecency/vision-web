@@ -43,8 +43,19 @@ export function canonicalPostUrl(
   return `https://ecency.com/@${author}/${permlink}`;
 }
 
-/** How many posts feeds and sitemaps carry; one bridge page. */
+/**
+ * How many posts feeds and sitemaps carry, and how they are collected.
+ *
+ * The bridge asserts `limit` into [1:20] and answers an ERROR, not a shorter
+ * list, when asked for more: a single limit=100 call failed every tenant's
+ * pass in production, so the wanted depth is PAGED at the bridge's own page
+ * size. The whole walk carries one deadline as well as the per-call one, so
+ * a chain that answers slowly costs a bounded pass rather than page count
+ * times the per-call timeout.
+ */
 const POST_LIMIT = 100;
+const BRIDGE_PAGE_LIMIT = 20;
+const FETCH_BUDGET_MS = 30_000;
 /** A pass regenerates a tenant's files only when they are older than this. */
 export const SEO_FRESH_MS = 30 * 60 * 1000;
 /** The background pass is patient but never unbounded. */
@@ -92,45 +103,66 @@ async function boundedCall<T>(method: string, params: object): Promise<T> {
 /** The tenant's latest posts, the same feeds the archive itself pages. */
 export async function fetchTenantPosts(tenant: Tenant): Promise<TenantPost[]> {
   const { community, communityId } = isCommunityTenant(tenant);
-  const raw = community
-    ? await boundedCall<unknown>('bridge.get_ranked_posts', {
-        sort: 'created',
-        tag: communityId,
-        limit: POST_LIMIT,
-        observer: '',
-      })
-    : await boundedCall<unknown>('bridge.get_account_posts', {
-        sort: 'posts',
-        account: tenant.username,
-        limit: POST_LIMIT,
-        observer: '',
-      });
-  // A malformed answer is an ERROR, never an empty blog: returning [] here
-  // would overwrite a good sitemap and feed with empty ones and mark them
-  // fresh, while throwing lets the sync pass keep yesterday's files.
-  if (!Array.isArray(raw)) {
-    throw new Error('malformed bridge feed response');
-  }
-  // Every field the builders touch is type-checked here: a malformed record
-  // (a numeric date, a missing permlink) is dropped or normalized instead of
-  // failing the tenant's whole SEO pass on an .endsWith of a number.
+  const method = community
+    ? 'bridge.get_ranked_posts'
+    : 'bridge.get_account_posts';
+  const feedParams = community
+    ? { sort: 'created', tag: communityId, observer: '' }
+    : { sort: 'posts', account: tenant.username, observer: '' };
+
   const posts: TenantPost[] = [];
-  for (const p of raw as any[]) {
-    if (
-      typeof p?.author !== 'string' ||
-      typeof p?.permlink !== 'string' ||
-      typeof p?.created !== 'string'
-    ) {
-      continue;
-    }
-    posts.push({
-      author: p.author,
-      permlink: p.permlink,
-      title: typeof p.title === 'string' ? p.title : '',
-      created: p.created,
-      updated: typeof p.updated === 'string' ? p.updated : undefined,
-      body: typeof p.body === 'string' ? p.body : undefined,
+  const seen = new Set<string>();
+  const deadline = Date.now() + FETCH_BUDGET_MS;
+  let cursor: { start_author: string; start_permlink: string } | null = null;
+
+  while (posts.length < POST_LIMIT) {
+    const raw = await boundedCall<unknown>(method, {
+      ...feedParams,
+      limit: Math.min(BRIDGE_PAGE_LIMIT, POST_LIMIT - posts.length),
+      ...(cursor ?? {}),
     });
+    // A malformed answer is an ERROR, never an empty blog: returning [] here
+    // would overwrite a good sitemap and feed with empty ones and mark them
+    // fresh, while throwing lets the sync pass keep yesterday's files.
+    if (!Array.isArray(raw)) {
+      throw new Error('malformed bridge feed response');
+    }
+    const page = raw as any[];
+    // Every field the builders touch is type-checked here: a malformed record
+    // (a numeric date, a missing permlink) is dropped or normalized instead of
+    // failing the tenant's whole SEO pass on an .endsWith of a number.
+    let added = 0;
+    let last: { author: string; permlink: string } | null = null;
+    for (const p of page) {
+      if (
+        typeof p?.author !== 'string' ||
+        typeof p?.permlink !== 'string' ||
+        typeof p?.created !== 'string'
+      ) {
+        continue;
+      }
+      last = { author: p.author, permlink: p.permlink };
+      // The cursor is exclusive on today's bridge, but a node that echoes the
+      // start post back would otherwise repeat a page forever; the identity
+      // set makes the walk terminate either way.
+      const key = `${p.author}/${p.permlink}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      added++;
+      posts.push({
+        author: p.author,
+        permlink: p.permlink,
+        title: typeof p.title === 'string' ? p.title : '',
+        created: p.created,
+        updated: typeof p.updated === 'string' ? p.updated : undefined,
+        body: typeof p.body === 'string' ? p.body : undefined,
+      });
+    }
+    // A short page is the end of the feed; no new posts or no usable record
+    // means paging further cannot help. Either way, stop.
+    if (page.length < BRIDGE_PAGE_LIMIT || added === 0 || !last) break;
+    if (Date.now() >= deadline) break;
+    cursor = { start_author: last.author, start_permlink: last.permlink };
   }
   return posts;
 }

@@ -122,6 +122,11 @@ describe('fetchTenantPosts', () => {
       undefined,
       expect.any(AbortSignal),
     );
+    // The bridge asserts limit into [1:20] and ERRORS above it, so a page may
+    // never ask for more; asking for 100 failed every tenant in production.
+    for (const call of mocks.callRPC.mock.calls) {
+      expect(call[1].limit).toBeLessThanOrEqual(20);
+    }
 
     const community = {
       ...TENANT,
@@ -139,6 +144,57 @@ describe('fetchTenantPosts', () => {
       undefined,
       expect.any(AbortSignal),
     );
+  });
+
+  it('walks pages with an exclusive cursor up to the wanted depth', async () => {
+    // Six full pages exist; the walk wants 100 posts, so it stops after five.
+    const page = (n: number) =>
+      Array.from({ length: 20 }, (_, i) => ({
+        author: 'alice',
+        permlink: `p${n}-${i}`,
+        created: '2026-08-01T00:00:00',
+      }));
+    mocks.callRPC.mockImplementation(async (_m: string, params: any) =>
+      page(Number(params.start_permlink?.split('-')[0]?.replace('p', '') ?? -1) + 1),
+    );
+
+    const posts = await fetchTenantPosts(TENANT);
+    expect(posts).toHaveLength(100);
+    expect(mocks.callRPC).toHaveBeenCalledTimes(5);
+    // Each page after the first carries the previous page's last post as the
+    // cursor, and every returned post is distinct.
+    expect(mocks.callRPC.mock.calls[1][1]).toMatchObject({
+      start_author: 'alice',
+      start_permlink: 'p0-19',
+    });
+    expect(new Set(posts.map((p) => p.permlink)).size).toBe(100);
+  });
+
+  it('stops on a short page instead of asking for one more', async () => {
+    mocks.callRPC.mockResolvedValue(
+      Array.from({ length: 3 }, (_, i) => ({
+        author: 'alice',
+        permlink: `only-${i}`,
+        created: '2026-08-01T00:00:00',
+      })),
+    );
+    const posts = await fetchTenantPosts(TENANT);
+    expect(posts).toHaveLength(3);
+    expect(mocks.callRPC).toHaveBeenCalledTimes(1);
+  });
+
+  it('terminates when a node echoes the cursor post back forever', async () => {
+    // An inclusive-cursor node would otherwise repeat its last page for ever:
+    // a full page whose posts are all already seen ends the walk.
+    const repeated = Array.from({ length: 20 }, (_, i) => ({
+      author: 'alice',
+      permlink: `same-${i}`,
+      created: '2026-08-01T00:00:00',
+    }));
+    mocks.callRPC.mockResolvedValue(repeated);
+    const posts = await fetchTenantPosts(TENANT);
+    expect(posts).toHaveLength(20);
+    expect(mocks.callRPC).toHaveBeenCalledTimes(2);
   });
 
   it('throws on a malformed response so stale files are kept, never blanked', async () => {
