@@ -170,6 +170,62 @@ describe('fetchTenantPosts', () => {
     expect(new Set(posts.map((p) => p.permlink)).size).toBe(100);
   });
 
+  it('reaches full depth on a node whose cursor is inclusive', async () => {
+    // Such a node echoes the cursor post back as the first entry. Without a
+    // reserved slot the final short ask spends one on the duplicate and the
+    // walk ends one post shy of the wanted depth.
+    let n = 0;
+    mocks.callRPC.mockImplementation(async (_m: string, params: any) => {
+      const page: any[] = [];
+      if (params.start_permlink) {
+        page.push({
+          author: 'alice',
+          permlink: params.start_permlink,
+          created: '2026-08-01T00:00:00',
+        });
+      }
+      while (page.length < params.limit) {
+        page.push({ author: 'alice', permlink: `q${n++}`, created: '2026-08-01T00:00:00' });
+      }
+      return page;
+    });
+
+    const posts = await fetchTenantPosts(TENANT);
+    expect(posts).toHaveLength(100);
+    expect(new Set(posts.map((p) => p.permlink)).size).toBe(100);
+    // Follow-up pages ask for one more than they need, never above the cap.
+    for (const call of mocks.callRPC.mock.calls) {
+      expect(call[1].limit).toBeLessThanOrEqual(20);
+    }
+  });
+
+  it('never starts a page that cannot finish inside the walk budget', async () => {
+    // Each page eats most of the budget; the walk must stop rather than let
+    // a further per-call timeout run past the deadline.
+    let elapsed = 0;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => elapsed);
+    try {
+      mocks.callRPC.mockImplementation(async (_m: string, params: any) => {
+        elapsed += 9_000;
+        return Array.from({ length: params.limit }, (_, i) => ({
+          author: 'alice',
+          permlink: `r${elapsed}-${i}`,
+          created: '2026-08-01T00:00:00',
+        }));
+      });
+
+      await fetchTenantPosts(TENANT);
+      // 30s budget, 9s per page: four pages fit, the fifth is not started.
+      expect(mocks.callRPC).toHaveBeenCalledTimes(4);
+      // The last call is bounded by what is LEFT of the budget, not the
+      // full per-call timeout.
+      const lastTimeout = mocks.callRPC.mock.calls.at(-1)![2];
+      expect(lastTimeout).toBeLessThanOrEqual(30_000 - 27_000);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it('stops on a short page instead of asking for one more', async () => {
     mocks.callRPC.mockResolvedValue(
       Array.from({ length: 3 }, (_, i) => ({

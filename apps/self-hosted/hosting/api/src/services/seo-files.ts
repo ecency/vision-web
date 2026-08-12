@@ -56,6 +56,8 @@ export function canonicalPostUrl(
 const POST_LIMIT = 100;
 const BRIDGE_PAGE_LIMIT = 20;
 const FETCH_BUDGET_MS = 30_000;
+/** Below this much budget left, a further page is not worth starting. */
+const MIN_CALL_MS = 1_000;
 /** A pass regenerates a tenant's files only when they are older than this. */
 export const SEO_FRESH_MS = 30 * 60 * 1000;
 /** The background pass is patient but never unbounded. */
@@ -90,11 +92,15 @@ function isCommunityTenant(tenant: Tenant): {
  * and the controller cancels the request outright at the same deadline, so a
  * timed-out fetch stops consuming a socket instead of racing on unobserved.
  */
-async function boundedCall<T>(method: string, params: object): Promise<T> {
+async function boundedCall<T>(
+  method: string,
+  params: object,
+  timeoutMs: number = RPC_TIMEOUT_MS,
+): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await callRPC<T>(method, params, RPC_TIMEOUT_MS, undefined, controller.signal);
+    return await callRPC<T>(method, params, timeoutMs, undefined, controller.signal);
   } finally {
     clearTimeout(timer);
   }
@@ -116,11 +122,23 @@ export async function fetchTenantPosts(tenant: Tenant): Promise<TenantPost[]> {
   let cursor: { start_author: string; start_permlink: string } | null = null;
 
   while (posts.length < POST_LIMIT) {
-    const raw = await boundedCall<unknown>(method, {
-      ...feedParams,
-      limit: Math.min(BRIDGE_PAGE_LIMIT, POST_LIMIT - posts.length),
-      ...(cursor ?? {}),
-    });
+    // The whole-walk budget bounds the NEXT call rather than being noticed
+    // after it: checking only afterwards let a page that starts just inside
+    // the budget run a further full per-call timeout past it.
+    const remaining = deadline - Date.now();
+    if (remaining <= MIN_CALL_MS) break;
+    // One extra slot on follow-up pages. Cursor inclusivity varies by node
+    // (today's answer both feeds exclusively, this repo's own paginator
+    // documents the opposite), and on an inclusive node the echoed cursor
+    // would eat a slot from the last short ask and end the walk one post
+    // early. The identity set below still does the actual de-duplication.
+    const need = POST_LIMIT - posts.length;
+    const ask = Math.min(BRIDGE_PAGE_LIMIT, cursor ? need + 1 : need);
+    const raw = await boundedCall<unknown>(
+      method,
+      { ...feedParams, limit: ask, ...(cursor ?? {}) },
+      Math.min(RPC_TIMEOUT_MS, remaining),
+    );
     // A malformed answer is an ERROR, never an empty blog: returning [] here
     // would overwrite a good sitemap and feed with empty ones and mark them
     // fresh, while throwing lets the sync pass keep yesterday's files.
@@ -158,13 +176,13 @@ export async function fetchTenantPosts(tenant: Tenant): Promise<TenantPost[]> {
         body: typeof p.body === 'string' ? p.body : undefined,
       });
     }
-    // A short page is the end of the feed; no new posts or no usable record
-    // means paging further cannot help. Either way, stop.
-    if (page.length < BRIDGE_PAGE_LIMIT || added === 0 || !last) break;
-    if (Date.now() >= deadline) break;
+    // A page shorter than what it was ASKED for is the end of the feed; no
+    // new posts or no usable record means paging further cannot help.
+    if (page.length < ask || added === 0 || !last) break;
     cursor = { start_author: last.author, start_permlink: last.permlink };
   }
-  return posts;
+  // The reserved slot can overshoot by one on an exclusive node.
+  return posts.slice(0, POST_LIMIT);
 }
 
 export function buildRobotsTxt(tenant: Tenant): string {
