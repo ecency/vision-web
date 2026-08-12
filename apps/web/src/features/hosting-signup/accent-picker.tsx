@@ -55,7 +55,7 @@ export function AccentPicker({ value, input, onInput, onPick }: Props) {
       <FormControl
         type="text"
         value={input}
-        onChange={(e: any) => onInput(e.target.value)}
+        onChange={(e: { target: { value: string } }) => onInput(e.target.value)}
         placeholder="#0066cc"
         aria-invalid={invalid}
         aria-label={i18next.t("hosting.accent-label")}

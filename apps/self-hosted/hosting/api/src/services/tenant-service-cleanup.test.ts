@@ -82,13 +82,15 @@ describe('TenantService.create (revives abandoned reservations)', () => {
     // active checkout is not swept mid-payment.
     expect(sql).toMatch(/tenants\.subscription_status = 'inactive' AND tenants\.owner = EXCLUDED\.owner/);
     expect(sql).toMatch(/created_at = NOW\(\)/);
-    // The owner is only overwritten for the abandoned (reclaim) branch, but the CONFIG takes
-    // the new submission on BOTH branches: a same-owner unpaid reservation is the customize
-    // step re-submitting, and the latest look must win (silently keeping the old config is
-    // the bug this line used to pin as intended behavior).
+    // The owner is only overwritten for the abandoned (reclaim) branch. The CONFIG takes the
+    // new submission when the caller actually composed one ($5, the customize step) and also
+    // on reclaim; an overrides-less create keeps a saved reservation intact instead of wiping
+    // it back to defaults.
     expect(sql).toMatch(/owner = CASE WHEN tenants\.subscription_status = 'abandoned'/);
-    expect(sql).toMatch(/config = EXCLUDED\.config/);
+    expect(sql).toMatch(/config = CASE WHEN tenants\.subscription_status = 'abandoned' OR \$5/);
     expect(params[3]).toBe(ABANDONED_REREGISTER_QUARANTINE_HOURS);
+    // This call passed no overrides, so the refresh flag must be false.
+    expect(params[4]).toBe(false);
   });
 
   it('throws a conflict when the upsert returns no row (a live or other-owner tenant holds the name)', async () => {
@@ -148,5 +150,32 @@ describe('TenantService.getByOwner', () => {
     await TenantService.getByOwner('alice');
     const [sql] = mocks.queryAll.mock.calls[0];
     expect(sql).toMatch(/subscription_status != 'abandoned'/);
+  });
+});
+
+describe('TenantService.create config-refresh flag', () => {
+  beforeEach(() => mocks.queryOne.mockReset());
+
+  const row = {
+    id: '1',
+    username: 'demo',
+    owner: 'demo',
+    subscription_status: 'inactive',
+    subscription_plan: 'standard',
+    config: {},
+  };
+
+  it('structural keys alone do not refresh a saved reservation', async () => {
+    mocks.queryOne.mockResolvedValueOnce(row);
+    await TenantService.create('demo', 'demo', { theme: 'system' });
+    const [, params] = mocks.queryOne.mock.calls[mocks.queryOne.mock.calls.length - 1];
+    expect(params[4]).toBe(false);
+  });
+
+  it('a composed field refreshes it', async () => {
+    mocks.queryOne.mockResolvedValueOnce(row);
+    await TenantService.create('demo', 'demo', { theme: 'system', styleTemplate: 'magazine' });
+    const [, params] = mocks.queryOne.mock.calls[mocks.queryOne.mock.calls.length - 1];
+    expect(params[4]).toBe(true);
   });
 });

@@ -101,18 +101,18 @@ describe("HostingSignup one-click HBD pay", () => {
     mutateAsync.mockResolvedValue({ id: "tx1" });
   });
 
-  it("resumes to payment from a ?resume= deep-link only for an owned, pending reservation", async () => {
+  it("resumes to payment from a ?resume= deep-link WITHOUT re-sending creation", async () => {
     hostingApi.tenantsByOwner.mockResolvedValue({
       tenants: [{ username: "alice", type: "blog", subscriptionStatus: "inactive", owner: "alice" }]
     });
     window.history.replaceState(null, "", "/hosting?resume=alice");
     renderWithQueryClient(<HostingSignup />);
-    // Verified against the owned list, then resumes the reservation at payment (createTenant
-    // refreshes it), and the resume param is consumed from the URL.
-    await waitFor(() =>
-      expect(hostingApi.createTenant).toHaveBeenCalledWith("alice", "alice", expect.anything())
-    );
+    // Straight to the payment step: the reservation exists and its saved
+    // customization must survive a resume click, so no createTenant is sent
+    // (a re-create from this flow's empty customize state would refresh the
+    // reservation with defaults). The resume param is consumed from the URL.
     await screen.findByRole("button", { name: "hosting.pay-hbd-oneclick" });
+    expect(hostingApi.createTenant).not.toHaveBeenCalled();
     expect(window.location.search).toBe("");
   });
 

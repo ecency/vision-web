@@ -62,12 +62,21 @@ interface CustomizeDraft {
   description?: string;
 }
 
+/** Older than any reservation grace window; a stale draft must not resurrect. */
+const DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
 function readCustomizeDraft(name: string): CustomizeDraft | null {
   try {
     const raw = localStorage.getItem(customizeDraftKey(name));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? (parsed as CustomizeDraft) : null;
+    if (!parsed || typeof parsed !== "object") return null;
+    const savedAt = (parsed as { savedAt?: number }).savedAt;
+    if (typeof savedAt === "number" && Date.now() - savedAt > DRAFT_MAX_AGE_MS) {
+      localStorage.removeItem(customizeDraftKey(name));
+      return null;
+    }
+    return parsed as CustomizeDraft;
   } catch {
     return null;
   }
@@ -197,6 +206,15 @@ export function HostingSignup() {
         return;
       }
     }
+    // Appearance choices belong to the name they were made for: a different name
+    // starts from the defaults (its own draft, if any, repopulates below).
+    if (customizeForRef.current && customizeForRef.current !== tenantUsername) {
+      setStyleTemplate(null);
+      setAccent(null);
+      setAccentInput("");
+      setFontPreset(null);
+    }
+    customizeForRef.current = tenantUsername;
     // The previous name's auto-prefilled identity must not ride into a different name's
     // tenant: take back exactly what the prefill planted, if the user has not edited it.
     // Computed locally so the draft restore below sees the cleared values, not the stale
@@ -232,13 +250,22 @@ export function HostingSignup() {
   // a failed fetch.
   useEffect(() => {
     if (step !== "customize" || templates || templatesFailed) return;
+    let cancelled = false;
     Promise.resolve()
       .then(() => hostingApi.templates?.())
       .then((r) => {
-        if (r && Array.isArray(r.templates)) setTemplates(r.templates);
+        if (cancelled) return;
+        // An empty catalog is a failure for the picker's purposes: an empty grid
+        // with no explanation is worse than the plain-form fallback.
+        if (r && Array.isArray(r.templates) && r.templates.length > 0) setTemplates(r.templates);
         else setTemplatesFailed(true);
       })
-      .catch(() => setTemplatesFailed(true));
+      .catch(() => {
+        if (!cancelled) setTemplatesFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [step, templates, templatesFailed]);
 
   // Prefill identity from the account's profile so the step starts with the owner's
@@ -250,6 +277,8 @@ export function HostingSignup() {
     enabled: step === "customize" && !isCommunity && tenantUsername.length >= 3
   });
   const prefilledForRef = useRef("");
+  // Which name the current appearance state was composed for.
+  const customizeForRef = useRef("");
   // What the prefill planted and for whom, so a NAME CHANGE can take it back out again:
   // without this, bob's signup would silently carry alice's profile title and bio because
   // the empty-field guard sees them as already filled.
@@ -258,7 +287,9 @@ export function HostingSignup() {
     if (step !== "customize" || isCommunity || !prefillAccount) return;
     if (prefilledForRef.current === tenantUsername) return;
     prefilledForRef.current = tenantUsername;
-    const profile = (prefillAccount as any)?.profile;
+    const profile = (
+      prefillAccount as { profile?: { name?: unknown; about?: unknown } } | undefined
+    )?.profile;
     const plantedTitle = profile?.name && !title ? String(profile.name).slice(0, 100) : "";
     const plantedDescription =
       profile?.about && !description ? String(profile.about).slice(0, 500) : "";
@@ -279,7 +310,7 @@ export function HostingSignup() {
     try {
       localStorage.setItem(
         customizeDraftKey(tenantUsername),
-        JSON.stringify({ styleTemplate, accent, fontPreset, title, description })
+        JSON.stringify({ styleTemplate, accent, fontPreset, title, description, savedAt: Date.now() })
       );
     } catch {}
   }, [step, tenantUsername, styleTemplate, accent, fontPreset, title, description]);
@@ -306,7 +337,7 @@ export function HostingSignup() {
         fontPreset: fontPreset ?? undefined,
         ...(isCommunity ? { type: "community" as const, communityId: uname } : {})
       };
-      const payload = JSON.stringify(config);
+      const payload = JSON.stringify({ owner, config });
       if (createdForRef.current?.name !== uname || createdForRef.current?.payload !== payload) {
         const res = await hostingApi.createTenant(uname, owner, config);
         createdForRef.current = { name: uname, payload };
@@ -363,6 +394,9 @@ export function HostingSignup() {
   // The reservation is made and paid for; the in-progress draft has served its purpose.
   useEffect(() => {
     if (step !== "success" || !tenantUsername) return;
+    // Guarded on the reservation this flow actually made or resumed: a pending
+    // payment recovered for a DIFFERENT tenant must not delete this name's draft.
+    if (createdForRef.current?.name !== tenantUsername) return;
     try {
       localStorage.removeItem(customizeDraftKey(tenantUsername));
     } catch {}
@@ -401,6 +435,13 @@ export function HostingSignup() {
       setInstanceType(isComm ? "community" : "blog");
       if (isComm) setCommunityId(t.username);
       else setUsername(t.username);
+      // Straight to payment WITHOUT createTenant: the reservation exists and its
+      // saved customization must survive a resume click. The sentinel payload can
+      // never equal a composed one, so going Back and actively re-customizing
+      // still re-sends creation, which is the one flow that should refresh it.
+      createdForRef.current = { name: t.username.toLowerCase(), payload: "\u0000resume" };
+      setBlogUrl(t.blogUrl || `https://${t.username.toLowerCase()}.${baseDomain}`);
+      renewBaselineExpiryRef.current = null; // inactive: first payment, not a renewal
       setResumeName(t.username.toLowerCase());
     })();
     return () => {
@@ -410,9 +451,9 @@ export function HostingSignup() {
   useEffect(() => {
     if (resumeName && step === "username" && tenantUsername === resumeName && activeUser) {
       setResumeName(null);
-      void goPayment();
+      setStep("payment");
     }
-  }, [resumeName, step, tenantUsername, activeUser, goPayment]);
+  }, [resumeName, step, tenantUsername, activeUser]);
 
   // Deep-link from an unclaimed *.blogs.ecency.com subdomain's claim landing: ?claim=<name>
   // prefills the form so the visitor arrives ready to reserve that exact name. A hive-<digits>

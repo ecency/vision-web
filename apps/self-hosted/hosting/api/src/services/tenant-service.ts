@@ -223,20 +223,35 @@ export const TenantService = {
     //  - 'inactive' owned by the SAME owner: this is the customize step re-submitting (or a
     //    re-entry into checkout) for an existing unpaid reservation. REFRESH its grace clock
     //    (created_at = NOW) so the abandoned sweep can't reclaim it while it is actively being
-    //    paid for, and TAKE the newly submitted config: the reservation is unpaid and the signup
-    //    UI promises that the look on screen is the look that activates, so the latest
-    //    submission wins. (This used to keep the stored config, which silently discarded every
-    //    re-customization.)
+    //    paid for. The CONFIG is taken only when the caller actually composed one ($5): the
+    //    signup UI promises the look on screen is the look that activates, so a re-submission
+    //    with overrides wins, while an overrides-less create (an API probe, or any legacy
+    //    caller that only reserves) keeps the stored reservation intact instead of wiping a
+    //    saved customization back to defaults.
     //
     // Any other row (live tenant, or a different owner's inactive reservation) leaves the WHERE
     // unsatisfied, returns no row, and is surfaced as a conflict. A brand-new username inserts.
+    // Only fields the customize step actually expresses count as a composed
+    // config. Structural keys ride along on every create (the client always
+    // sends theme, a community always carries type and id), and counting them
+    // would make a skip-everything re-reserve wipe a saved customization.
+    const {
+      theme: _theme,
+      type: _type,
+      communityId: _communityId,
+      ...composed
+    } = configOverrides ?? {};
+    const hasOverrides = Object.values(composed).some(
+      (value) => value !== undefined,
+    );
     const row = await db.queryOne<TenantRow>(
       `INSERT INTO tenants (username, owner, config, subscription_status, subscription_plan)
        VALUES ($1, $2, $3, 'inactive', 'standard')
        ON CONFLICT (username) DO UPDATE
          SET owner = CASE WHEN tenants.subscription_status = 'abandoned'
                           THEN EXCLUDED.owner ELSE tenants.owner END,
-             config = EXCLUDED.config,
+             config = CASE WHEN tenants.subscription_status = 'abandoned' OR $5
+                           THEN EXCLUDED.config ELSE tenants.config END,
              subscription_plan = 'standard',
              subscription_status = 'inactive',
              created_at = NOW(),
@@ -246,7 +261,7 @@ export const TenantService = {
                   AND ${CAUGHT_UP_SQL})
             OR (tenants.subscription_status = 'inactive' AND tenants.owner = EXCLUDED.owner)
        RETURNING *`,
-      [username.toLowerCase(), ownerName, JSON.stringify(config), ABANDONED_REREGISTER_QUARANTINE_HOURS]
+      [username.toLowerCase(), ownerName, JSON.stringify(config), ABANDONED_REREGISTER_QUARANTINE_HOURS, hasOverrides]
     );
 
     if (!row) {
