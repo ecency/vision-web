@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  create: vi.fn(),
-  generateConfigFile: vi.fn(),
-  publishConfigFile: vi.fn(),
-  getCommunityTitle: vi.fn(async () => 'A Community'),
-}));
+interface ComposeResponse {
+  config?: {
+    version: number;
+    configuration: {
+      general: Record<string, unknown>;
+      instanceConfiguration: Record<string, unknown> & { meta?: Record<string, unknown> };
+    };
+  };
+  error?: string;
+}
 
 // The DB client is imported transitively; nothing in this route may reach it,
 // and a mock that throws proves it rather than assuming it.
@@ -39,13 +43,6 @@ vi.mock('@ecency/sdk/hive', () => ({
 }));
 
 const { toolsRoutes, withoutServedOnlyMarkers } = await import('./tools');
-const { TenantService } = await import('../services/tenant-service');
-
-// Guard the two persistence entry points on the real service too: a future
-// edit that starts creating rows from here fails loudly.
-TenantService.create = mocks.create.mockRejectedValue(
-  new Error('compose-config must not create a tenant'),
-) as typeof TenantService.create;
 
 async function compose(body: unknown) {
   const res = await toolsRoutes.request('http://localhost/compose-config', {
@@ -53,7 +50,12 @@ async function compose(body: unknown) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  return { res, body: (await res.json()) as any };
+  return { res, body: (await res.json()) as ComposeResponse };
+}
+
+/** The composed instance block, which every assertion below reads. */
+function instanceOf(body: ComposeResponse): Record<string, unknown> {
+  return body.config!.configuration.instanceConfiguration;
 }
 
 describe('POST /v1/tools/compose-config', () => {
@@ -64,27 +66,27 @@ describe('POST /v1/tools/compose-config', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(body.config.version).toBe(1);
-    const instance = body.config.configuration.instanceConfiguration;
+    expect(body.config!.version).toBe(1);
+    const instance = instanceOf(body);
     expect(instance.username).toBe('alice');
     // The instance reads this to decide who may open its editor.
     expect(instance.owner).toBe('alice');
-    expect(instance.meta.title).toBe('Alice writes');
-    expect(body.config.configuration.general.styleTemplate).toBe('journal');
-    expect(body.config.configuration.general.styles.accent).toBe('#112233');
-    expect(mocks.create).not.toHaveBeenCalled();
+    expect((instance.meta as Record<string, unknown>).title).toBe('Alice writes');
+    const general = body.config!.configuration.general;
+    expect(general.styleTemplate).toBe('journal');
+    expect((general.styles as Record<string, unknown>).accent).toBe('#112233');
   });
 
   it('strips every marker that only makes sense on a managed instance', async () => {
     const { body } = await compose({ username: 'alice' });
-    const instance = body.config.configuration.instanceConfiguration;
+    const instance = instanceOf(body);
     // managed would point the editor's Save at a hosting API that is not
     // theirs; template would replace the site with the claim landing page.
     expect(instance).not.toHaveProperty('managed');
     expect(instance).not.toHaveProperty('template');
     expect(instance).not.toHaveProperty('claimPreview');
     // An Ecency-owned Hivesigner app only answers to Ecency's redirect URIs.
-    expect(body.config.configuration.general).not.toHaveProperty('hivesigner');
+    expect(body.config!.configuration.general).not.toHaveProperty('hivesigner');
   });
 
   it('requires a separate owner for a community, which cannot administer itself', async () => {
@@ -102,13 +104,22 @@ describe('POST /v1/tools/compose-config', () => {
     });
     expect(self.res.status).toBe(400);
 
+    // Another community as owner is the same lockout: that account holds no
+    // keys either, so nobody could ever open the editor.
+    const otherCommunity = await compose({
+      username: 'hive-125125',
+      owner: 'hive-99999',
+      config: { type: 'community', communityId: 'hive-125125' },
+    });
+    expect(otherCommunity.res.status).toBe(400);
+
     const ok = await compose({
       username: 'hive-125125',
       owner: 'alice',
       config: { type: 'community', communityId: 'hive-125125' },
     });
     expect(ok.res.status).toBe(200);
-    const instance = ok.body.config.configuration.instanceConfiguration;
+    const instance = instanceOf(ok.body);
     expect(instance.type).toBe('community');
     // The named owner, not the community itself, is what the editor gates on.
     expect(instance.owner).toBe('alice');
@@ -133,7 +144,7 @@ describe('POST /v1/tools/compose-config', () => {
     for (const config of [undefined, { type: 'blog' as const }]) {
       const { res, body } = await compose({ username: 'hive-125125', owner: 'alice', config });
       expect(res.status, JSON.stringify(config)).toBe(200);
-      const instance = body.config.configuration.instanceConfiguration;
+      const instance = instanceOf(body);
       expect(instance.owner).toBe('alice');
       expect(instance.type).toBe('community');
       expect(instance.communityId).toBe('hive-125125');

@@ -123,12 +123,14 @@ toolsRoutes.post('/compose-config', composeLimit, zValidator('json', composeConf
       return c.json({ error: 'Community id must look like hive-NNNN' }, 400);
     }
     // A community account holds nobody's keys, so it can never administer
-    // its own instance: without a separate owner the deployment would be
-    // permanently locked out of its own Configuration Editor.
-    if (!body.owner || body.owner.toLowerCase() === communityId) {
+    // an instance: without a separate owner, or with ANOTHER community named
+    // as owner, the deployment would be permanently locked out of its own
+    // Configuration Editor. The name shape decides this with no lookup.
+    const requested = body.owner?.toLowerCase();
+    if (!requested || requested === communityId || COMMUNITY_NAME.test(requested)) {
       return c.json({ error: 'A community instance requires a separate owner account' }, 400);
     }
-    owner = body.owner.toLowerCase();
+    owner = requested;
     // Say so in the document too, or a community name sent without a type
     // composes a BLOG whose feed reads a keyless account and is always
     // empty. The ownership rule and the composed mode have to agree.

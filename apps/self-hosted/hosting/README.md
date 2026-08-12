@@ -12,9 +12,9 @@ Multi-tenant hosting infrastructure for Ecency self-hosted blogs.
                                    └──────────────────┬──────────────────┘
                                                       │
                                    ┌──────────────────▼──────────────────┐
-                                   │        Load Balancer (Traefik)       │
+                                   │          Edge nginx (host)           │
                                    │  - SSL termination (Let's Encrypt)   │
-                                   │  - Dynamic routing by hostname       │
+                                   │  - Routing by hostname               │
                                    │  - Rate limiting                     │
                                    └──────────────────┬──────────────────┘
                                                       │
@@ -42,11 +42,11 @@ Multi-tenant hosting infrastructure for Ecency self-hosted blogs.
 
 ## Components
 
-### 1. Traefik (Edge Router)
+### 1. Edge nginx (host)
 - Handles all incoming traffic
-- Dynamic routing based on hostname
-- Automatic SSL via Let's Encrypt
-- Wildcard cert for `*.blogs.ecency.com`
+- Routes by hostname to the blog container or the hosting API
+- Let's Encrypt wildcard cert for `*.blogs.ecency.com`
+- Lives in `origin/`, applied by hand rather than by CI
 
 ### 2. Blog Instances
 - Shared static SPA assets

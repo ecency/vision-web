@@ -21,7 +21,11 @@ services:
     container_name: ecency-blog
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:80"
+      # Loopback by default: with a reverse proxy terminating TLS in front,
+      # a port published on every interface lets clients reach the site over
+      # plain HTTP and skip the proxy entirely. Set BIND=0.0.0.0 only to
+      # serve directly, with no proxy and no HTTPS.
+      - "${BIND:-127.0.0.1}:${PORT:-3000}:80"
     volumes:
       # Mount config.json for runtime configuration updates
       # Changes to config.json will be reflected without rebuilding.

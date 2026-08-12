@@ -71,7 +71,8 @@ single command: compose reads that file for EVERY invocation, so `logs`,
 `restart` and `down` keep working afterwards.
 
 ```bash
-# Pin the image build
+# Pin the image build. sha-abc1234 is a PLACEHOLDER: replace it with a tag
+# that exists, from https://hub.docker.com/r/ecency/self-hosted/tags
 echo "TAG=sha-abc1234" > .env
 
 # Pull and start
@@ -81,8 +82,14 @@ docker compose up -d
 docker compose logs -f
 ```
 
+The site is published on loopback by default, so reach it locally first and
+put a reverse proxy in front of it for the public address. To serve directly
+with no proxy (and therefore no HTTPS), set `BIND=0.0.0.0` in `.env`.
+
 Your blog is now running at `http://localhost:3000` (the container listens on
-port 80 and compose publishes it as `PORT`, which defaults to 3000).
+port 80 and compose publishes it as `PORT`, which defaults to 3000). If you
+changed `PORT`, `docker compose port blog 80` prints where it actually
+landed, and every proxy example below has to point at that same port.
 
 ## Configuration
 
@@ -206,10 +213,17 @@ Published tags for `ecency/self-hosted` (and its paired `ecency/hosting-api`):
 | `develop` | every merge | tracking development, never a deployment you care about |
 | `latest` | releases only | convenience; it does not move until a release is tagged |
 
-No `vX.Y.Z` tag exists yet, so pin a `sha-<7>` tag. Pick one from the
-[image tags on Docker Hub](https://hub.docker.com/r/ecency/self-hosted/tags),
-or read what the managed platform runs from
+Prefer a `vX.Y.Z` release tag when one is listed; no release has been cut
+yet, so today that means pinning a `sha-<7>` tag. Take a tag that exists
+from [Docker Hub](https://hub.docker.com/r/ecency/self-hosted/tags), which
+is the source of truth, or read what the managed platform runs from
 `https://api.blogs.ecency.com/health`, which answers `{version, sha}`.
+
+**`sha-abc1234` throughout this guide is a placeholder.** Substitute a real
+tag before running any command that mentions it. The blog and the hosting
+API are built from the same commit in the same CI run, so the same `sha-<7>`
+tag exists for `ecency/self-hosted` and `ecency/hosting-api`; if you pick one
+that is only in one repository, choose another.
 
 ### Option 1: Docker Compose (Recommended)
 
@@ -283,14 +297,15 @@ forwards to the port compose publishes (`PORT`, 3000 by default).
 
 ### With Caddy (recommended: certificates without ACME wiring)
 
-```
+```caddyfile
 blog.yourdomain.com {
     reverse_proxy 127.0.0.1:3000
 }
 ```
 
 That is the whole configuration. Caddy obtains and renews a Let's Encrypt
-certificate on its own, so there is no certbot timer to forget.
+certificate on its own, so there is no certbot timer to forget. The port must
+match your `PORT`; `docker compose port blog 80` prints it.
 
 ### With Nginx
 
@@ -312,7 +327,8 @@ server {
 }
 ```
 
-Certificates come from certbot: `certbot --nginx -d blog.yourdomain.com`.
+Certificates come from certbot: `certbot --nginx -d blog.yourdomain.com`. As
+with Caddy, `proxy_pass` must point at your `PORT`.
 
 ### Managed platform reference (not a self-hosting recipe)
 
@@ -392,7 +408,9 @@ with the generator shipped in the `ecency/hosting-api` image, run on a cron
 (hourly is plenty; the feeds carry the latest 100 posts):
 
 ```bash
-docker run --rm -v "$PWD:/work" ecency/hosting-api \
+# Pin the same tag the blog runs. Without one this pulls :latest, which
+# moves independently of what you deployed.
+docker run --rm -v "$PWD:/work" ecency/hosting-api:sha-abc1234 \
   npm run generate-seo -- \
   --config /work/config.json \
   --url https://blog.example.com \
@@ -500,8 +518,8 @@ docker compose restart
 # Check logs
 docker compose logs blog
 
-# Check if the published port is in use
-lsof -i :3000
+# Where the site is actually published (honours PORT and BIND)
+docker compose port blog 80
 ```
 
 `required variable TAG is missing a value` means exactly that: pick a tag
