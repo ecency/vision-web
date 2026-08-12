@@ -18,7 +18,8 @@ const mocks = vi.hoisted(() => ({
     createTenant: vi.fn(),
     paymentInstructions: vi.fn(),
     tenant: vi.fn(),
-    tenantsByOwner: vi.fn()
+    tenantsByOwner: vi.fn(),
+    mintHandoff: vi.fn()
   }
 }));
 const { mutateAsync, hostingApi } = mocks;
@@ -61,6 +62,11 @@ describe("HostingSignup one-click HBD pay", () => {
     window.history.replaceState(null, "", "/"); // clear any ?resume= from a prior test
     mocks.authLoginType = "keychain";
     mocks.accessToken = "tok-alice";
+    hostingApi.mintHandoff.mockResolvedValue({
+      code: "hand-off-code-1234567890abcdef",
+      username: "alice",
+      expiresAt: new Date(Date.now() + 300000).toISOString()
+    });
     // Card disabled so the payment step defaults to the HBD rail (where the one-click lives).
     hostingApi.paymentMethods.mockResolvedValue({
       hbd: { enabled: true, monthly: "2.000", account: "ecency.hosting" },
@@ -179,19 +185,44 @@ describe("HostingSignup one-click HBD pay", () => {
     const customize = screen.getByText("hosting.customize-your-blog") as HTMLAnchorElement;
     expect(customize.getAttribute("href")).toBe("https://alice.blogs.ecency.com/?setup=1");
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
-    // The carried token resolves asynchronously on success-screen mount
-    // (ensureValidToken), so retry the click until the state lands.
+    // The minted code resolves asynchronously on success-screen mount, so
+    // retry the click until the state lands. Only the one-time code travels
+    // in the URL; the bearer stays out of it entirely.
     await waitFor(() => {
       fireEvent.click(customize);
       expect(open).toHaveBeenCalledWith(
-        "https://alice.blogs.ecency.com/?setup=1#hs=tok-alice",
+        "https://alice.blogs.ecency.com/?setup=1#hc=hand-off-code-1234567890abcdef",
         "_blank",
         "noopener,noreferrer"
       );
     });
+    expect(hostingApi.mintHandoff).toHaveBeenCalledWith("tok-alice");
     // The tokened URL replaced the default navigation; the clean href never
     // gained the fragment.
     expect(customize.getAttribute("href")).toBe("https://alice.blogs.ecency.com/?setup=1");
+  });
+
+  it("falls back to the credential-free href when minting fails", async () => {
+    // The hosting API is down: no code means the default navigation, never a
+    // bearer smuggled back into the URL as a substitute.
+    hostingApi.mintHandoff.mockRejectedValue(new Error("api down"));
+    hostingApi.tenantsByOwner.mockResolvedValue({ tenants: [] });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    const payBtn = (await screen.findByRole("button", {
+      name: "hosting.pay-hbd-oneclick"
+    })) as HTMLButtonElement;
+    await waitFor(() => expect(payBtn.disabled).toBe(false));
+    fireEvent.click(payBtn);
+    await screen.findByText("hosting.success-title");
+    await waitFor(() => expect(hostingApi.mintHandoff).toHaveBeenCalled());
+
+    const customize = screen.getByText("hosting.customize-your-blog") as HTMLAnchorElement;
+    expect(customize.getAttribute("href")).toBe("https://alice.blogs.ecency.com/?setup=1");
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    fireEvent.click(customize);
+    expect(open).not.toHaveBeenCalled();
   });
 
   it("falls back to a plain setup intent when no access token is stored", async () => {

@@ -1,4 +1,5 @@
 import { loginWithHivesigner } from './auth-actions';
+import { exchangeHandoffCode } from './utils/handoff-exchange';
 import { resolveHivesignerAccount } from './utils/hivesigner';
 import type { AuthUser } from './types';
 
@@ -36,6 +37,14 @@ export const LOGIN_PARAM = 'login';
  */
 let carriedToken: string | null = null;
 
+/**
+ * The one-time handoff CODE, the successor to the bearer fragment: minted by
+ * the hosting API at click time on ecency.com and worthless after a single
+ * exchange or a few minutes. The bearer path above stays until every
+ * deployed ecency.com sends codes.
+ */
+let carriedCode: string | null = null;
+
 /** The one attempt this page load makes at the carried session, shared so
  * every effect replay observes the same outcome (see actOnTokenHandoff). */
 let handoffAttempt: Promise<AuthUser | null> | null = null;
@@ -43,6 +52,7 @@ let handoffAttempt: Promise<AuthUser | null> | null = null;
 /** Test seam: module memory otherwise leaks between cases. */
 export function resetCarriedToken(): void {
   carriedToken = null;
+  carriedCode = null;
   handoffAttempt = null;
 }
 
@@ -74,6 +84,13 @@ export function captureSetupParams(): void {
       carriedToken = decodeURIComponent(hash.slice(4)) || null;
     } catch {
       carriedToken = null;
+    }
+    hash = '';
+  } else if (hash.startsWith('#hc=')) {
+    try {
+      carriedCode = decodeURIComponent(hash.slice(4)) || null;
+    } catch {
+      carriedCode = null;
     }
     hash = '';
   }
@@ -108,6 +125,10 @@ export interface TokenHandoffContext {
   ownerUsername: string | null | undefined;
   /** Injectable for tests; defaults to the real Hivesigner /me lookup. */
   resolveAccount?: (token: string) => Promise<string | null>;
+  /** Injectable for tests; defaults to the real hosting-API exchange. */
+  exchangeCode?: (
+    code: string,
+  ) => Promise<{ accessToken: string; username: string } | null>;
 }
 
 /**
@@ -135,23 +156,41 @@ export function actOnTokenHandoff(
   if (handoffAttempt) return handoffAttempt;
 
   const token = carriedToken;
-  if (!token) return Promise.resolve(null);
+  const code = carriedCode;
+  if (!token && !code) return Promise.resolve(null);
   carriedToken = null;
+  carriedCode = null;
 
   handoffAttempt = (async (): Promise<AuthUser | null> => {
     if (!context.isAuthEnabled || context.isAuthenticated) return null;
 
-    const account = await (context.resolveAccount ?? resolveHivesignerAccount)(
-      token,
-    );
-    if (!account) return null;
+    let account: string | null = null;
+    let sessionToken: string | null = null;
+
+    if (code) {
+      // The code path: one exchange at the hosting API returns the session
+      // and the identity the API resolved from Hivesigner AT MINT TIME. The
+      // owner gate below still decides whether it may sign in here.
+      const exchanged = await (context.exchangeCode ?? exchangeHandoffCode)(
+        code,
+      );
+      if (!exchanged) return null;
+      account = exchanged.username.toLowerCase();
+      sessionToken = exchanged.accessToken;
+    } else if (token) {
+      account = await (context.resolveAccount ?? resolveHivesignerAccount)(
+        token,
+      );
+      sessionToken = token;
+    }
+    if (!account || !sessionToken) return null;
 
     const owner = context.ownerUsername?.trim().toLowerCase();
     if (!owner || account.toLowerCase() !== owner) return null;
 
     return {
       username: account,
-      accessToken: token,
+      accessToken: sessionToken,
       loginType: 'hivesigner',
       // The carried token's real TTL is not knowable here; a conservative day
       // keeps the session honest and the periodic expiry check in the provider
