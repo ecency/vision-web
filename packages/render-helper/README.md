@@ -15,7 +15,7 @@ Built and maintained by [Ecency](https://ecency.com), an open-source social plat
 
 ### From Monorepo Root
 - `pnpm render-helper` - Build render-helper package
-- `pnpm build:packages` - Build all packages (sdk, wallets, renderer, render-helper)
+- `pnpm build:packages` - Build all packages (sdk, wallets, render-helper, ui)
 - `pnpm publish:render-helper` - Manually publish to npm
 
 ### CI/CD

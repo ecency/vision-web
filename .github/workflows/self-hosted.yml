@@ -260,7 +260,7 @@ jobs:
     # The only deploy job. There used to be a second one gated on main, but the two were
     # identical apart from the step label — same host, same ~/hosting compose project,
     # same script — so develop and main were deploying the same stack to the same place
-    # and whichever ran last won. main still builds and publishes the :latest images
+    # and whichever ran last won. main still builds and publishes its own channel tag
     # below; it just no longer redeploys this host.
     # Queues rather than cancels: an interrupted SSH/compose run can leave the host
     # partially updated, and nothing is guaranteed to re-apply it.

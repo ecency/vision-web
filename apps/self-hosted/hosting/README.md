@@ -22,23 +22,28 @@ Multi-tenant hosting infrastructure for Ecency self-hosted blogs.
               │                                       │                                       │
     ┌─────────▼─────────┐                ┌───────────▼───────────┐              ┌────────────▼────────────┐
     │   Blog Instance   │                │    Blog Instance      │              │    Hosting API          │
-    │   (nginx + SPA)   │                │    (nginx + SPA)      │              │    (Node.js/Deno)       │
+    │   (nginx + SPA)   │                │    (nginx + SPA)      │              │    (Node.js / Hono)     │
     │                   │                │                       │              │                         │
-    │ alice.blogs.ec... │                │ bob.blogs.ecency...   │              │ api.ecency.com/hosting  │
+    │ alice.blogs.ec... │                │ bob.blogs.ecency...   │              │ api.blogs.ecency.com    │
     │ config: alice.json│                │ config: bob.json      │              │                         │
     └───────────────────┘                └───────────────────────┘              └────────────┬────────────┘
                                                                                               │
                                                                            ┌──────────────────┼──────────────────┐
                                                                            │                  │                  │
                                                                   ┌────────▼────────┐ ┌───────▼───────┐ ┌────────▼────────┐
-                                                                  │   Config DB     │ │ HBD Payment   │ │ Domain Verify   │
-                                                                  │  (PostgreSQL)   │ │   Listener    │ │    Service      │
+                                                                  │   Config DB     │ │     Redis     │ │ HBD Payment     │
+                                                                  │  (PostgreSQL)   │ │               │ │   Listener      │
                                                                   │                 │ │               │ │                 │
-                                                                  │ - Tenant configs│ │ - Watch txs   │ │ - CNAME check   │
-                                                                  │ - Subscriptions │ │ - Auto-renew  │ │ - SSL provision │
-                                                                  │ - Custom domains│ │ - Receipts    │ │                 │
+                                                                  │ - Tenant configs│ │ - Cache       │ │ - Watch txs     │
+                                                                  │ - Subscriptions │ │ - Rate limits │ │ - Auto-renew    │
+                                                                  │ - Custom domains│ │ - Pub/sub     │ │ - Receipts      │
                                                                   └─────────────────┘ └───────────────┘ └─────────────────┘
 ```
+
+Custom-domain verification is an API route (`api/src/routes/domains.ts`, backed
+by `api/src/services/domain-service.ts`), not a service of its own. Certificates
+and per-domain vhosts are issued by `origin/sync-custom-domains.py` on the
+origin host every five minutes, outside the compose stack.
 
 ## Components
 
@@ -64,6 +69,63 @@ Multi-tenant hosting infrastructure for Ecency self-hosted blogs.
 - Activates/renews subscriptions
 - Sends notifications
 
+### 5. Static SEO writer
+
+A five-minute loop inside the hosting API (`api/src/index.ts`) writes
+`<tenant>.robots.txt`, `<tenant>.sitemap.xml` and `<tenant>.rss.xml` into the
+shared `tenant-configs` volume; nginx serves them per tenant by `try_files`
+(`nginx-multi-tenant.conf`). It first runs 30 seconds after boot, so it never
+blocks startup. A `seoSyncRunning` flag keeps two passes from overlapping. It
+runs on its own timer rather than inside the config sync deliberately: a slow
+feed walk must not hold up a config publish.
+
+Feeds are assembled by PAGING the bridge at limit 20
+(`api/src/services/seo-files.ts`). The bridge asserts `limit` into [1:20] and
+ERRORS above it, so a single `limit=100` call once failed every tenant's pass;
+the walk now carries one 30s budget on top of the per-call timeout, so a slow
+chain costs a bounded pass rather than page count times the timeout.
+
+### 6. Per-post metadata (SSI)
+
+The blog nginx serves `index.html` with `ssi on` and resolves an include
+against `location = /__tenant-meta`, which proxies to
+`http://hosting_api/v1/meta/$tenant_id?uri=$request_path` with
+`proxy_cache_key "meta:$tenant_id:$request_path"`, a 1s connect timeout and a
+4s read timeout, plus
+`error_page 404 429 500 502 503 504 = /__tenant-meta-static` falling back to
+`/configs/$tenant_id.meta.html` then the bundled `/meta.html`. So a post URL
+unfurls with the post's own title, excerpt and cover image while every other
+route keeps the tenant-level snippet. Serving pages never depends on the API
+being up. The server side is `api/src/routes/meta.ts` plus
+`api/src/services/post-meta.ts`.
+
+## Composing a config without a tenant
+
+`POST /v1/tools/compose-config` composes a config document for an INDEPENDENT
+deployment, using the same builder the managed signup uses. It creates nothing:
+no tenant row, no reservation, no published config, no payment lock. It is
+anonymous. It is rate-limited to 20 calls a minute (`composeLimit` in
+`api/src/routes/tools.ts`) and it strips the served-only markers via
+`withoutServedOnlyMarkers`:
+
+- `configuration.instanceConfiguration.managed` is the only signal an instance
+  has that it is hosted here. On someone else's domain it would flip the
+  Configuration Editor from Download to Save, with that Save calling a hosting
+  API that is not theirs.
+- `.template` replaces the whole site with the claim landing page.
+- `.claimPreview` marks the read-only preview of an unclaimed subdomain.
+- `configuration.general.hivesigner.clientId` may be Ecency's own app, which
+  only answers to redirect URIs registered for Ecency's domains.
+
+A block emptied by the strip is pruned one level, so `general.hivesigner` with
+no client id does not survive as an empty object reading like a deliberately
+blank app id. The prune stops there on purpose; cascading all the way up would
+delete `general` and then `configuration` itself.
+
+The endpoint also enforces the rule the managed create path enforces: a
+`hive-NNNN` name IS a community whatever the body claims, with the subdomain
+required to equal the community id.
+
 ## Deployment Models
 
 ### Model A: Shared Container (Recommended for Scale)
@@ -84,7 +146,10 @@ All tenants share a single nginx container with dynamic config routing.
 └─────────────────────────────────────┘
 ```
 
-### Model B: Container Per Tenant (Isolation)
+### Model B: Container Per Tenant (NOT IMPLEMENTED)
+Recorded as the alternative that was rejected. The stack runs Model A; nothing
+provisions a per-tenant container.
+
 Each tenant gets their own container. Higher resource usage but better isolation.
 
 ```
@@ -124,7 +189,8 @@ docker-compose up -d
 ./scripts/add-tenant.sh alice
 
 # Check tenant status
-./scripts/tenant-status.sh alice
+curl -s https://api.blogs.ecency.com/v1/tenants/alice/status
+docker logs ecency-hosting-api
 ```
 
 ## Hivesigner redirect URIs
