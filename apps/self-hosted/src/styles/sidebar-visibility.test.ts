@@ -31,11 +31,12 @@ const SIDEBAR = readFileSync(
 );
 
 /**
- * Known-dead, tracked in #1477: the editor offers a Following toggle and the
- * whole chain exists except the component. Resolving that issue empties this
- * list, at which point the last case below starts enforcing on it too.
+ * This list is empty and should stay that way. It briefly held
+ * `data-show-following`, whose toggle had a field, a seed, an attribute and a
+ * rule but no component rendering the class it hid, so it had never done
+ * anything (#1477). An entry here means a toggle that lies to the owner.
  */
-const RENDERS_NOTHING_YET = new Set(['data-show-following']);
+const RENDERS_NOTHING_YET = new Set<string>();
 
 /** Every data-show-* attribute apply-config-dom actually emits. */
 function emittedAttributes(): string[] {
@@ -80,6 +81,18 @@ describe('sidebar section visibility', () => {
         `components.css hides on ${attribute}, but apply-config-dom never writes it`,
       ).toBe(true);
     }
+  });
+
+  it('collapses the counts row when both of its sections are hidden', () => {
+    // Needs both attributes, so it is not in hidingRules(). Without it the
+    // row's bottom margin survives its contents as a gap.
+    const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const collapse = withoutComments.match(
+      /\[data-show-followers="false"\]\[data-show-following="false"\]\s*\.([a-z-]+)\s*\{([^{}]*)\}/,
+    );
+    expect(collapse, 'no rule collapses the follow-stats row').not.toBeNull();
+    expect(collapse![2]).toMatch(/display:\s*none/);
+    expect(SIDEBAR).toContain(collapse![1]);
   });
 
   it('hides a class the sidebar actually renders', () => {

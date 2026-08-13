@@ -81,12 +81,24 @@ function BlogSidebarContent({ username }: { username: string }) {
           {data.profile.about}
         </div>
       )}
+      {/*
+       * Both counts come off the same follow_stats payload this component
+       * already fetches, so the second one costs no request. The row collapses
+       * in CSS when an owner turns both off, or its bottom margin would leave
+       * a gap where the counts used to be.
+       */}
       {data?.follow_stats && (
-        <div className="flex gap-6 mb-4">
+        <div className="flex gap-6 mb-4 sidebar-follow-stats">
           <div className="flex flex-col sidebar-followers-section">
             <div className="text-xs text-theme-muted">{t("subscribers")}</div>
             <div className="text-sm font-medium text-theme-primary">
               {data.follow_stats.follower_count}
+            </div>
+          </div>
+          <div className="flex flex-col sidebar-following-section">
+            <div className="text-xs text-theme-muted">{t("following")}</div>
+            <div className="text-sm font-medium text-theme-primary">
+              {data.follow_stats.following_count}
             </div>
           </div>
         </div>

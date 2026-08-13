@@ -291,6 +291,16 @@
   display: none;
 }
 
+/*
+ * The row that holds both counts carries a bottom margin, so with both
+ * sections hidden it would leave a gap where the counts used to be. Collapsing
+ * it is the one rule here that needs BOTH attributes, which is also why the
+ * pairing guard skips it: it matches on a single attribute per rule.
+ */
+[data-show-followers="false"][data-show-following="false"] .sidebar-follow-stats {
+  display: none;
+}
+
 [data-show-hive-info="false"] .sidebar-hive-info-section {
   display: none;
 }
