@@ -151,6 +151,23 @@ describe('sidebar section visibility', () => {
     }
   });
 
+  it('governs EVERY chain-info block a community renders, not just the first', () => {
+    // The community tree presents chain information as two sibling blocks,
+    // Community Info and Team, so one class on the first left the moderator
+    // list visible with the toggle off. A toggle that half works is the same
+    // defect as one that does nothing.
+    const source = componentSource('CommunitySidebar');
+    const occurrences = source.split('sidebar-hive-info-section').length - 1;
+    expect(
+      occurrences,
+      'each sibling chain-info block in CommunitySidebar needs the class in its own right',
+    ).toBeGreaterThanOrEqual(2);
+    // Named so the count above cannot be satisfied by two classes on one block.
+    expect(source, 'the team block is what the second occurrence is for').toMatch(
+      /sidebar-hive-info-section[\s\S]*?t\(["']team["']\)/,
+    );
+  });
+
   it('hides from the editor any toggle a mode cannot serve', () => {
     const served = new Set(MODE_SECTIONS.CommunitySidebar);
     const unserved = MODE_SECTIONS.BlogSidebarContent.filter(
