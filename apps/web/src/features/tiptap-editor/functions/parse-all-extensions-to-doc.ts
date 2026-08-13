@@ -174,5 +174,17 @@ export function parseAllExtensionsToDoc(value?: string) {
     }
   });
 
+  // Same problem, same fix, for table cells. A markdown table may legitimately
+  // leave a cell blank, which renders as <td></td>, but the ProseMirror
+  // tableCell schema requires at least one block child and rejects the whole
+  // insert with "Invalid content for node tableCell: <>". Because insertContent
+  // throws, NOTHING is pasted: the table does not appear at all, rather than
+  // appearing with a gap. One blank cell anywhere is enough to lose the table.
+  (Array.from(tree.querySelectorAll("td, th")) as HTMLElement[]).forEach((cell) => {
+    if (!cell.firstElementChild && !cell.textContent?.trim()) {
+      cell.appendChild(document.createElement("p"));
+    }
+  });
+
   return tree.innerHTML;
 }
