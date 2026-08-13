@@ -19,7 +19,7 @@ describe('theme manifest registry', () => {
     // The no-op migration proof for the pre-manifest templates: their rendered
     // tree is exactly the shared defaults. Journal is the first structural
     // theme and is asserted separately below.
-    const cssOnly = ['medium', 'minimal', 'magazine', 'developer', 'modern-gradient'];
+    const cssOnly = ['medium', 'minimal', 'developer', 'modern-gradient'];
     for (const manifest of allThemeManifests()) {
       if (cssOnly.includes(manifest.id)) {
         expect(manifest.components, `${manifest.id} must not override components`).toBeUndefined();
@@ -67,7 +67,7 @@ const { DEFAULT_THEME_COMPONENTS, resolveThemeComponents } = await import(
 
 describe('component resolution', () => {
   it('every CSS-only template resolves to exactly the shared defaults', () => {
-    const layoutThemes = new Set(['journal', 'reader', 'gallery']);
+    const layoutThemes = new Set(['journal', 'reader', 'gallery', 'magazine']);
     for (const id of STYLE_TEMPLATES.filter((t) => !layoutThemes.has(t))) {
       const resolved = resolveThemeComponents(id);
       // Identity per seam, not just deep equality: the no-op migration means
@@ -91,6 +91,17 @@ describe('component resolution', () => {
     expect(resolved.Navigation).toBe(DEFAULT_THEME_COMPONENTS.Navigation);
     expect(resolved.Sidebar).toBe(DEFAULT_THEME_COMPONENTS.Sidebar);
     expect(resolved.ArchiveList).toBe(DEFAULT_THEME_COMPONENTS.ArchiveList);
+  });
+
+  it('magazine owns its archive and nothing else', () => {
+    const magazine = getThemeManifest('magazine');
+    const resolved = resolveThemeComponents('magazine');
+    expect(resolved.ArchiveList).toBe(magazine.components?.ArchiveList);
+    // The card stays shared on purpose: search results render through the
+    // PostCard seam, and a hero has no meaning in a list of search hits.
+    expect(resolved.PostCard).toBe(DEFAULT_THEME_COMPONENTS.PostCard);
+    expect(resolved.Shell).toBe(DEFAULT_THEME_COMPONENTS.Shell);
+    expect(resolved.Sidebar).toBe(DEFAULT_THEME_COMPONENTS.Sidebar);
   });
 
   it('gallery resolves its own tile and drops the sidebar, defaults for the rest', () => {

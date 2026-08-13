@@ -44,7 +44,7 @@ const EMPTINESS_CLAIMS = new Set([
  * looked at rather than inheriting the first one's cover.
  */
 const GUARDED_CLAIMS: Record<string, number> = {
-  'src/features/blog/components/blog-posts-list.tsx:noPosts': 1,
+  'src/features/blog/components/archive-frame.tsx:noPosts': 1,
   'src/themes/reader/reader-rail.tsx:noPosts': 1,
   'src/features/blog/components/blog-post-page.tsx:postNotFound': 1,
   'src/features/blog/components/blog-post-discussion.tsx:comments_empty': 1,
@@ -73,7 +73,7 @@ const UNGUARDED_CLAIMS: Record<
  * the exact shape that threw away content already on screen.
  */
 const READING_SURFACES = [
-  'src/features/blog/components/blog-posts-list.tsx',
+  'src/features/blog/components/archive-frame.tsx',
   'src/features/blog/components/blog-post-page.tsx',
   'src/features/blog/components/blog-post-discussion.tsx',
   'src/features/blog/layout/blog-sidebar.tsx',
@@ -471,7 +471,7 @@ describe('keeping content is paired with a cache that was filtered', () => {
 });
 
 describe('a failed page does not turn into a retry storm', () => {
-  const file = 'src/features/blog/components/blog-posts-list.tsx';
+  const file = 'src/features/blog/components/archive-frame.tsx';
   const sf = parse(join(APP, file));
 
   it('takes the bottom sentinel down while the feed is failing', () => {

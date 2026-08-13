@@ -6,6 +6,7 @@ import {
 import { JournalPostCard } from './journal/journal-post-card';
 import { JournalShell } from './journal/journal-shell';
 import { ReaderHome } from './reader/reader-home';
+import { MagazineArchive } from './magazine/magazine-archive';
 import { GalleryPostCard } from './gallery/gallery-post-card';
 import { GallerySidebar } from './gallery/gallery-sidebar';
 import { ReaderShell } from './reader/reader-shell';
@@ -22,7 +23,16 @@ import type { ThemeManifest, ThemeOptionKey } from './manifest';
 const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
   medium: { id: 'medium', tier: 'free', showsReadTime: true },
   minimal: { id: 'minimal', tier: 'free' },
-  magazine: { id: 'magazine', tier: 'free', showsReadTime: true },
+  // Magazine was tokens on the shared list, so its name promised a structure
+  // it did not have. It now owns the archive: newest entry as a hero, the
+  // rest as rows. Cards stay the shared default, so search results keep
+  // their look; the same split Reader uses.
+  magazine: {
+    id: 'magazine',
+    tier: 'free',
+    showsReadTime: true,
+    components: { ArchiveList: MagazineArchive },
+  },
   developer: { id: 'developer', tier: 'free' },
   'modern-gradient': { id: 'modern-gradient', tier: 'free' },
   // The first layout-level design: its own shell (single column, author
