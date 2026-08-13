@@ -240,12 +240,19 @@
   }
 
   table {
+    // `overflow-x` is inert on a `display: table` box, so a table wider than the
+    // post column was never scrollable, and the `overflow-hidden` utility below
+    // then clipped it, putting the right-hand columns permanently out of reach.
+    // `display: block` turns the table itself into the scroll container while its
+    // rows still lay out as a table internally; `width: 100%` keeps tables that
+    // already fit rendering full-width exactly as before.
+    display: block;
     word-break: normal !important;
     overflow-x: auto;
     width: 100%;
     max-width: 100%;
 
-    @apply border dark:border-gray-700 overflow-hidden table-auto border-collapse text-xs sm:text-sm md:text-base;
+    @apply border dark:border-gray-700 table-auto border-collapse text-xs sm:text-sm md:text-base;
 
     tr {
       @apply [&:last-child>td]:border-b-0 [&:nth-child(even)]:bg-light-200 dark:[&:nth-child(even)]:bg-dark-300;

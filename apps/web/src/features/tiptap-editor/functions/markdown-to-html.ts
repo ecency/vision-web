@@ -1,5 +1,5 @@
 // @ts-ignore
-import { strikethrough } from "@joplin/turndown-plugin-gfm";
+import { strikethrough, tables } from "@joplin/turndown-plugin-gfm";
 import Turndown from "turndown";
 
 import { TEXT_COLOR_CLASS_PREFIX } from "@/app/publish/_constants/text-colors";
@@ -45,6 +45,15 @@ export function markdownToHtml(html: string | undefined) {
   // would preserve the raw <span data-type="mention"> markup in the output.
   html = html.replace(/<span[^>]*data-type="mention"[^>]*>([^<]*)<\/span>/gi, "$1");
   html = html.replace(/<span[^>]*data-type="tag"[^>]*>([^<]*)<\/span>/gi, "$1");
+
+  // TipTap renders tables as <table><colgroup>…</colgroup><tbody>…, with the
+  // header cells as <th> in the first <tbody> row rather than in a <thead>.
+  // The GFM table rule only accepts a <tbody> whose previous sibling is absent
+  // or an empty <thead>, so the <colgroup> makes it miss the heading row and
+  // emit an empty one above the real headers. Dropping <colgroup> (it carries
+  // only editor column widths, which markdown cannot express anyway) restores
+  // the check without touching the plugin.
+  html = html.replace(/<colgroup[\s\S]*?<\/colgroup>/gi, "");
 
   return new Turndown({
     codeBlockStyle: "fenced"
@@ -170,5 +179,10 @@ export function markdownToHtml(html: string | undefined) {
       }
     })
     .use(strikethrough)
+    // Turndown has no built-in table rule. Without this the editor's
+    // HTML -> markdown pass drops every <table> and leaves the cell text
+    // stacked as loose paragraphs, so a pasted or inserted table is
+    // destroyed on the next serialization.
+    .use(tables)
     .turndown(html);
 }
