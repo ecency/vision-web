@@ -3,6 +3,7 @@ import React from "react";
 import { fireEvent, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import {
+  cleanupModalContainers,
   createTestQueryClient,
   mockFullAccount,
   renderWithQueryClient,
@@ -59,7 +60,10 @@ describe("BuyWithHiveForm", () => {
     setBalance(5000);
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    cleanupModalContainers();
+    vi.clearAllMocks();
+  });
 
   // The reported case: 230 HIVE available, every amount whose leading digit sorts
   // above "2" was rejected because the check compared "230.00 HIVE" < amount as strings.
