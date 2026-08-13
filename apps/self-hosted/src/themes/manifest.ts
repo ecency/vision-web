@@ -15,9 +15,9 @@ import type { Entry } from '@ecency/sdk';
  *   its guarantees from the theme CSS files).
  * - Route topology is global (routeTree.gen.ts is codegen): layout variants
  *   render INSIDE existing routes, so deep links never fork per theme.
- * - The config toggles that exist today (sidebar placement and visibility,
- *   list type) keep working, or the theme's own options declare them
- *   unsupported explicitly. Never silently inert.
+ * - The config toggles that exist today (sidebar visibility and its per-section
+ *   flags) keep working, or the theme's own options declare them unsupported
+ *   explicitly. Never silently inert.
  */
 
 export interface ThemeComponents {
@@ -34,7 +34,7 @@ export interface ThemeComponents {
 }
 
 /** Config options a theme can declare it does not consume. */
-export type ThemeOptionKey = 'sidebar' | 'listType';
+export type ThemeOptionKey = 'sidebar';
 
 export interface ThemeManifest {
   id: StyleTemplate;

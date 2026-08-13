@@ -261,20 +261,6 @@ export function buildConfigFields(
             label: t('panel_configuration_instance_configuration_layout_label'),
             type: 'section',
             fields: {
-              listType: {
-                label: t('panel_configuration_instance_configuration_layout_list_type_label'),
-                type: 'select',
-                // Declared unsupported by themes whose entry component is not
-                // list/grid switchable (Journal renders one column of plain
-                // entries). Hidden, not inert: the stored value is untouched.
-                visibleWhen: (document) =>
-                  isThemeOptionSupported(editedStyleTemplate(document), 'listType'),
-                description: t('panel_configuration_instance_configuration_layout_list_type_description'),
-                options: [
-                  { value: 'list', label: t('panel_configuration_instance_configuration_layout_list_type_list_option') },
-                  { value: 'grid', label: t('panel_configuration_instance_configuration_layout_list_type_grid_option') },
-                ],
-              },
               search: {
                 label: t('panel_configuration_instance_configuration_layout_search_label'),
                 type: 'section',
@@ -294,15 +280,6 @@ export function buildConfigFields(
                 visibleWhen: (document) =>
                   isThemeOptionSupported(editedStyleTemplate(document), 'sidebar'),
                 fields: {
-                  placement: {
-                    label: t('panel_configuration_instance_configuration_layout_sidebar_placement_label'),
-                    type: 'select',
-                    description: t('panel_configuration_instance_configuration_layout_sidebar_placement_description'),
-                    options: [
-                      { value: 'left', label: t('panel_configuration_instance_configuration_layout_sidebar_placement_left_option') },
-                      { value: 'right', label: t('panel_configuration_instance_configuration_layout_sidebar_placement_right_option') },
-                    ],
-                  },
                   followers: {
                     label: t('panel_configuration_instance_configuration_layout_sidebar_followers_label'),
                     type: 'section',

@@ -38,17 +38,35 @@ export function BuyWithHiveForm({ onSubmit, isPending }: Props) {
 
     return 0;
   }, [asset, w, dynamicProps]);
+  const balanceAmount = useMemo(() => {
+    if (asset === HiveMarketAsset.HIVE) {
+      return w.balance ?? 0;
+    } else if (asset === HiveMarketAsset.HBD) {
+      return w.hbdBalance ?? 0;
+    }
+
+    return 0;
+  }, [w, asset]);
   const balance = useMemo(() => {
     if (asset === HiveMarketAsset.HIVE) {
-      return w.balance.toFixed(2) + " HIVE";
+      return balanceAmount.toFixed(2) + " HIVE";
     } else if (asset === HiveMarketAsset.HBD) {
-      return w.hbdBalance.toFixed(2) + " HBD";
+      return balanceAmount.toFixed(2) + " HBD";
     }
 
     return "0";
-  }, [w, asset]);
-  const isAmountMoreThanBalance = useMemo(() => balance < amount, [amount, balance]);
-  const pointsAmount = useMemo(() => ((+amount * usdRate) / 0.002).toFixed(2), [amount, usdRate]);
+  }, [balanceAmount, asset]);
+  // The amount control formats its value as x,xxx.xxx, so the separators have to go
+  // before the value is used for arithmetic or handed over to be broadcasted.
+  const numericAmount = useMemo(() => +amount.replace(/,/g, ""), [amount]);
+  const isAmountMoreThanBalance = useMemo(
+    () => numericAmount > balanceAmount,
+    [numericAmount, balanceAmount]
+  );
+  const pointsAmount = useMemo(
+    () => ((numericAmount * usdRate) / 0.002).toFixed(2),
+    [numericAmount, usdRate]
+  );
 
   return (
     <>
@@ -92,8 +110,8 @@ export function BuyWithHiveForm({ onSubmit, isPending }: Props) {
       <div className="flex justify-end mt-4 md:mt-6 lg:mt-8">
         <Button
           icon={<UilArrowRight />}
-          disabled={!amount || amount === "0" || isAmountMoreThanBalance || isPending}
-          onClick={() => onSubmit(amount, asset, pointsAmount)}
+          disabled={!numericAmount || isAmountMoreThanBalance || isPending}
+          onClick={() => onSubmit(amount.replace(/,/g, ""), asset, pointsAmount)}
         >
           {i18next.t("g.continue")}
         </Button>

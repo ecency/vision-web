@@ -109,12 +109,10 @@ export interface InstanceConfig {
         keywords: string;
       };
       layout: {
-        listType: 'list' | 'grid';
         search: {
           enabled: boolean;
         };
         sidebar: {
-          placement: 'left' | 'right';
           followers: { enabled: boolean };
           following: { enabled: boolean };
           hiveInformation: { enabled: boolean };

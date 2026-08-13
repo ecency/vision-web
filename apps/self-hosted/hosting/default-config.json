@@ -29,12 +29,10 @@
         "keywords": "hive, blog, blockchain"
       },
       "layout": {
-        "listType": "list",
         "search": {
           "enabled": true
         },
         "sidebar": {
-          "placement": "right",
           "followers": {
             "enabled": true
           },

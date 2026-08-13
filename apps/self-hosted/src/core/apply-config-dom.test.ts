@@ -59,7 +59,6 @@ const FULL_CONFIG = {
       type: 'community',
       meta: { title: 'A community' },
       layout: {
-        listType: 'list',
         sidebar: {
           placement: 'left',
           followers: { enabled: false },
@@ -94,8 +93,6 @@ describe('applyConfigDom', () => {
     expect(root.getAttribute('data-style-template')).toBe('magazine');
     expect(root.getAttribute('lang')).toBe('fr');
     expect(root.getAttribute('data-language')).toBe('fr');
-    expect(root.getAttribute('data-sidebar-placement')).toBe('left');
-    expect(root.getAttribute('data-list-type')).toBe('list');
     expect(root.getAttribute('data-instance-type')).toBe('community');
     expect(root.getAttribute('data-show-followers')).toBe('false');
     expect(root.getAttribute('data-show-following')).toBe('true');
@@ -115,7 +112,7 @@ describe('applyConfigDom', () => {
     applyConfigDom({
       configuration: {
         general: { styleTemplate: '', language: '   ' },
-        instanceConfiguration: { type: '', layout: { listType: '' } },
+        instanceConfiguration: { type: '', layout: {} },
       },
     });
 
@@ -124,8 +121,6 @@ describe('applyConfigDom', () => {
     expect(root.getAttribute('data-style-template')).toBe('medium');
     expect(root.getAttribute('lang')).toBe('en');
     expect(root.getAttribute('data-language')).toBe('en');
-    expect(root.getAttribute('data-sidebar-placement')).toBe('right');
-    expect(root.getAttribute('data-list-type')).toBe('grid');
     expect(root.getAttribute('data-instance-type')).toBe('blog');
     expect(root.getAttribute('data-show-followers')).toBe('true');
   });
@@ -198,7 +193,7 @@ describe('snapshotConfigDom / restoreConfigDom', () => {
     applyConfigDom({
       configuration: {
         general: { theme: 'light', styleTemplate: 'minimal' },
-        instanceConfiguration: { layout: { listType: 'grid' } },
+        instanceConfiguration: { layout: {} },
       },
     });
 
@@ -209,7 +204,6 @@ describe('snapshotConfigDom / restoreConfigDom', () => {
     const root = document.documentElement;
     expect(root.getAttribute('data-theme')).toBe('light');
     expect(root.getAttribute('data-style-template')).toBe('minimal');
-    expect(root.getAttribute('data-list-type')).toBe('grid');
   });
 
   it('replaces a background class that carries no declared prefix', () => {

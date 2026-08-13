@@ -148,8 +148,8 @@
   max-width: var(--theme-content-width);
 }
 
-/* A listing is rows, whatever the config's feed setting says: the layout is
- * the point of the theme, and a stored 'grid' predates it. */
+/* A listing is rows with no gap between them, tighter than the shared
+ * archive's spacing: density is the point of the idiom. */
 :root[data-style-template="terminal"] .blog-posts-list {
   display: flex;
   flex-direction: column;

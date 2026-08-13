@@ -44,10 +44,6 @@ cat > "$CONFIG_FILE" << EOJSON
         "title": "${USERNAME}'s Blog",
         "description": "A Hive blockchain blog"
       },
-      "layout": {
-        "listType": "list",
-        "sidebar": { "placement": "right" }
-      },
       "features": {
         "auth": {
           "enabled": true,
