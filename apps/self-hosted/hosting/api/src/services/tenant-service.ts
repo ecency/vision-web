@@ -1239,8 +1239,6 @@ export const TenantService = {
     // undefined means "not provided"; an explicit empty string clears the field.
     if (configOverrides.title !== undefined) normalized.configuration.instanceConfiguration.meta.title = configOverrides.title;
     if (configOverrides.description !== undefined) normalized.configuration.instanceConfiguration.meta.description = configOverrides.description;
-    if (configOverrides.listType) normalized.configuration.instanceConfiguration.layout.listType = configOverrides.listType;
-    if (configOverrides.sidebarPlacement) normalized.configuration.instanceConfiguration.layout.sidebar.placement = configOverrides.sidebarPlacement;
     return normalized;
   },
 
@@ -1302,10 +1300,8 @@ export const TenantService = {
             keywords: 'hive, blog, blockchain',
           },
           layout: {
-            listType: 'list',
             search: { enabled: true },
             sidebar: {
-              placement: 'right',
               followers: { enabled: true },
               following: { enabled: true },
               hiveInformation: { enabled: true },

@@ -55,7 +55,6 @@ export function buildClaimPreviewConfig(
           keywords: '',
         },
         layout: {
-          listType: 'list',
           search: { enabled: true },
           sidebar: {
             placement: 'right',

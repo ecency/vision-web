@@ -34,7 +34,7 @@ export interface ThemeComponents {
 }
 
 /** Config options a theme can declare it does not consume. */
-export type ThemeOptionKey = 'sidebar' | 'listType';
+export type ThemeOptionKey = 'sidebar';
 
 export interface ThemeManifest {
   id: StyleTemplate;

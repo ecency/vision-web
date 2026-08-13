@@ -63,9 +63,7 @@ export interface BlogConfig {
         keywords?: string;
       };
       layout: {
-        listType: 'list' | 'grid';
         sidebar: {
-          placement: 'left' | 'right';
           followers?: { enabled: boolean };
           following?: { enabled: boolean };
           hiveInformation?: { enabled: boolean };
