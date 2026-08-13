@@ -162,10 +162,20 @@ describe('sidebar section visibility', () => {
       occurrences,
       'each sibling chain-info block in CommunitySidebar needs the class in its own right',
     ).toBeGreaterThanOrEqual(2);
-    // Named so the count above cannot be satisfied by two classes on one block.
-    expect(source, 'the team block is what the second occurrence is for').toMatch(
-      /sidebar-hive-info-section[\s\S]*?t\(["']team["']\)/,
-    );
+
+    // Anchored to the team block itself, not merely to the class appearing
+    // somewhere before the word "team": this region runs from the block's
+    // guard to its heading, so it holds that block's opening element and
+    // nothing else. A looser `class ... [\s\S]*? t("team")` was satisfied by
+    // the Community Info block above and proved nothing.
+    const guard = source.indexOf('community.team');
+    const heading = source.search(/t\(["']team["']\)/);
+    expect(guard, 'team block not found').toBeGreaterThan(-1);
+    expect(heading).toBeGreaterThan(guard);
+    expect(
+      source.slice(guard, heading),
+      'the team block must carry the class on its own element',
+    ).toContain('sidebar-hive-info-section');
   });
 
   it('hides from the editor any toggle a mode cannot serve', () => {
