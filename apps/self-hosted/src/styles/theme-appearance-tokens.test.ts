@@ -174,10 +174,10 @@ const accentBlocks = ALL_BLOCKS.filter((block) =>
 
 describe('accent blocks', () => {
   it('are every light and dark palette the templates declare', () => {
-    // Seven templates in two modes, plus the two base blocks in variables.css.
+    // Eight templates in two modes, plus the two base blocks in variables.css.
     // A parser that stopped seeing them would make every check below vacuous.
-    expect(accentBlocks.length).toBe(16);
-    expect(new Set(accentBlocks.map((block) => block.file)).size).toBe(8);
+    expect(accentBlocks.length).toBe(18);
+    expect(new Set(accentBlocks.map((block) => block.file)).size).toBe(9);
   });
 
   it('declare the chip text next to the accent that fills the chip', () => {
@@ -326,7 +326,7 @@ describe('card treatment', () => {
   );
 
   it('is stated by every template rather than inherited by accident', () => {
-    expect(templates.length).toBe(7);
+    expect(templates.length).toBe(8);
     const missing: string[] = [];
     for (const block of templates) {
       for (const token of CARD_TOKENS) {
