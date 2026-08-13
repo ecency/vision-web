@@ -19,7 +19,9 @@ const mocks = vi.hoisted(() => ({
     paymentInstructions: vi.fn(),
     tenant: vi.fn(),
     tenantsByOwner: vi.fn(),
-    mintHandoff: vi.fn()
+    mintHandoff: vi.fn(),
+    composeConfig: vi.fn(),
+    health: vi.fn()
   }
 }));
 const { mutateAsync, hostingApi } = mocks;
@@ -67,6 +69,10 @@ describe("HostingSignup one-click HBD pay", () => {
       username: "alice",
       expiresAt: new Date(Date.now() + 300000).toISOString()
     });
+    hostingApi.composeConfig.mockResolvedValue({
+      config: { version: 1, configuration: { general: {}, instanceConfiguration: {} } }
+    });
+    hostingApi.health.mockResolvedValue({ version: "untagged", sha: "abc1234def" });
     // Card disabled so the payment step defaults to the HBD rail (where the one-click lives).
     hostingApi.paymentMethods.mockResolvedValue({
       hbd: { enabled: true, monthly: "2.000", account: "ecency.hosting" },
@@ -697,5 +703,143 @@ describe("HostingSignup reservation grace notice: renewals stay silent", () => {
 
     await screen.findAllByText("hosting.term-months");
     expect(screen.queryByText("hosting.reservation-grace")).toBeNull();
+  });
+
+  describe("self-host branch", () => {
+    // Own setup rather than inherited: the enclosing beforeEach only clears
+    // calls, so a focused or reordered run would otherwise reach these tests
+    // with composeConfig returning undefined.
+    beforeEach(() => {
+      hostingApi.composeConfig.mockResolvedValue({
+        config: { version: 1, configuration: { general: {}, instanceConfiguration: {} } }
+      });
+      hostingApi.health.mockResolvedValue({ version: "untagged", sha: "abc1234def" });
+      hostingApi.templates.mockResolvedValue({ templates: [] });
+    });
+
+    // The whole point of this branch is that it is free and reserves nothing.
+    // Every test here therefore asserts what was NOT called as much as what was.
+    async function reachCustomizeStep() {
+      renderWithQueryClient(<HostingSignup />);
+      fireEvent.click(screen.getByText("g.continue"));
+      await screen.findByText("hosting.destination-label");
+    }
+
+    it("defaults to managed, so the paid flow is unchanged", async () => {
+      await reachCustomizeStep();
+      // Continue (not the download button) is what a reader sees by default.
+      expect(screen.getByText("g.continue")).toBeTruthy();
+      expect(screen.queryByText("hosting.download-bundle")).toBeNull();
+    });
+
+    it("composes a config and downloads a bundle WITHOUT creating a tenant", async () => {
+      const click = vi.fn();
+      const created: HTMLAnchorElement[] = [];
+      const realCreate = document.createElement.bind(document);
+      vi.spyOn(document, "createElement").mockImplementation(((tag: string) => {
+        const element = realCreate(tag);
+        if (tag === "a") {
+          (element as HTMLAnchorElement).click = click;
+          created.push(element as HTMLAnchorElement);
+        }
+        return element;
+      }) as typeof document.createElement);
+      const objectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:bundle");
+      vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+      try {
+        await reachCustomizeStep();
+        fireEvent.click(screen.getByText("hosting.destination-self"));
+        fireEvent.click(await screen.findByText("hosting.download-bundle"));
+
+        await waitFor(() => expect(click).toHaveBeenCalled());
+
+        // The composed document is asked for by name, with no owner for a blog.
+        expect(hostingApi.composeConfig).toHaveBeenCalledWith(
+          "alice",
+          expect.objectContaining({ theme: "system" }),
+          undefined
+        );
+        // A reservation would take the name and start a payment clock.
+        expect(hostingApi.createTenant).not.toHaveBeenCalled();
+        expect(hostingApi.paymentInstructions).not.toHaveBeenCalled();
+
+        // An actual archive was handed to the browser under a useful name.
+        expect(objectUrl).toHaveBeenCalledWith(expect.any(Blob));
+        const anchor = created.at(-1)!;
+        expect(anchor.getAttribute("download")).toBe("ecency-blog-alice.zip");
+        // Still on customize: nothing advanced to payment.
+        expect(screen.queryByText("hosting.term-months")).toBeNull();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it("pins the tag from the platform's own build, not a guess", async () => {
+      hostingApi.health.mockResolvedValue({ version: "untagged", sha: "9f8e7d6c5b4a" });
+      const realCreate = document.createElement.bind(document);
+      // The anchor is neutered: a real click on a blob: href makes jsdom
+      // attempt a navigation it does not implement.
+      vi.spyOn(document, "createElement").mockImplementation(((tag: string) => {
+        const element = realCreate(tag);
+        if (tag === "a") (element as HTMLAnchorElement).click = vi.fn();
+        return element;
+      }) as typeof document.createElement);
+      const objectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:bundle");
+      vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+      try {
+        await reachCustomizeStep();
+        fireEvent.click(screen.getByText("hosting.destination-self"));
+        fireEvent.click(await screen.findByText("hosting.download-bundle"));
+        await waitFor(() => expect(objectUrl).toHaveBeenCalled());
+
+        // jsdom's Blob has no arrayBuffer(), so read it the way a browser
+        // without that method would.
+        const blob = objectUrl.mock.calls[0][0] as Blob;
+        const archive = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(new TextDecoder().decode(reader.result as ArrayBuffer));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsArrayBuffer(blob);
+        });
+
+        // The 7-character prefix of the running build, not a moving tag.
+        expect(archive).toContain("TAG=sha-9f8e7d6");
+        expect(archive).not.toContain("TAG=latest");
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it("surfaces a failure instead of downloading a bundle pinned to nothing", async () => {
+      hostingApi.health.mockRejectedValue(new Error("offline"));
+
+      await reachCustomizeStep();
+      fireEvent.click(screen.getByText("hosting.destination-self"));
+      fireEvent.click(await screen.findByText("hosting.download-bundle"));
+
+      expect(await screen.findByText("hosting.self-host-tag-failed")).toBeTruthy();
+      expect(hostingApi.createTenant).not.toHaveBeenCalled();
+    });
+
+    it("refuses a build id that is not a commit sha", async () => {
+      // An API built without GIT_SHA answers the literal "unknown", and
+      // sha-unknown is a tag that cannot be pulled: the bundle would look
+      // fine and fail on the user's first `docker compose up`.
+      const objectUrl = vi.spyOn(URL, "createObjectURL");
+      hostingApi.health.mockResolvedValue({ version: "untagged", sha: "unknown" });
+
+      try {
+        await reachCustomizeStep();
+        fireEvent.click(screen.getByText("hosting.destination-self"));
+        fireEvent.click(await screen.findByText("hosting.download-bundle"));
+
+        expect(await screen.findByText("hosting.self-host-tag-failed")).toBeTruthy();
+        expect(objectUrl).not.toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
   });
 });

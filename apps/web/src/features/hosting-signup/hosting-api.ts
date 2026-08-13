@@ -140,6 +140,23 @@ export const hostingApi = {
   createTenant: (username: string, owner?: string, config?: HostingConfigInput) =>
     post<CreateTenantResult>("/v1/tenants", { username, owner: owner ?? username, config }),
 
+  /**
+   * Build identity of the running platform: `{ version, sha }`. The
+   * self-host bundle pins the image tag from this, so it pins a build that
+   * demonstrably exists rather than a name composed in the client.
+   */
+  health: () => get<{ version?: string; sha?: string }>("/health"),
+
+  /**
+   * Compose the config document for an INDEPENDENT deployment: the same
+   * builder tenant creation uses, but nothing is created, reserved or
+   * published, and the markers that only mean something on a managed
+   * instance are stripped server-side. Used by the self-host branch, which
+   * never calls createTenant.
+   */
+  composeConfig: (username: string, config?: HostingConfigInput, owner?: string) =>
+    post<{ config: unknown }>("/v1/tools/compose-config", { username, owner, config }),
+
   tenant: (username: string) => get<TenantInfo>(`/v1/tenants/${encodeURIComponent(username)}`),
 
   /** All tenants an account controls (its personal blog and any communities). */

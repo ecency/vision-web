@@ -25,6 +25,8 @@ import {
 import { CustomDomainManager } from "./custom-domain-manager";
 import { TemplatePicker } from "./template-picker";
 import { AccentPicker } from "./accent-picker";
+import { DestinationPicker, type HostingDestination } from "./destination-picker";
+import { useDownloadSelfHostBundle } from "./use-download-self-host-bundle";
 import { getAccountFullQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
@@ -118,6 +120,11 @@ export function HostingSignup() {
   const [fontPreset, setFontPreset] = useState<string | null>(null);
   const [templates, setTemplates] = useState<HostingTemplate[] | null>(null);
   const [templatesFailed, setTemplatesFailed] = useState(false);
+  // Where this blog will live. Managed is the default: the self-host branch
+  // is free and creates nothing, so it must be chosen deliberately, and
+  // nothing about it may touch the reservation the managed path makes.
+  const [destination, setDestination] = useState<HostingDestination>("managed");
+  const [selfHostDomain, setSelfHostDomain] = useState("");
   const [months, setMonths] = useState(1);
   // Custom domain add-on: switches to the $3/mo "prohosting" plan so the tenant activates on the
   // internal pro plan and can attach a custom domain after checkout.
@@ -323,6 +330,48 @@ export function HostingSignup() {
 
   const accentPending =
     accentInput.trim().length > 0 && !ACCENT_HEX_PATTERN.test(accentInput.trim());
+
+  const {
+    download: downloadSelfHostBundle,
+    busy: bundleBusy,
+    error: bundleError
+  } = useDownloadSelfHostBundle();
+
+  /**
+   * The self-host branch. It composes the same document the managed path
+   * would create a tenant from, wraps it with the deployment files and hands
+   * the archive over. It calls NOTHING that reserves a name: no createTenant,
+   * and createdForRef is deliberately left alone, so switching back to
+   * managed afterwards still makes the reservation properly.
+   */
+  const downloadBundle = useCallback(async () => {
+    await downloadSelfHostBundle({
+      username: tenantUsername,
+      // A community is shown by the site but owned by the signed-in account.
+      owner: isCommunity ? (activeUser?.username ?? undefined) : undefined,
+      domain: selfHostDomain.trim() || undefined,
+      config: {
+        theme: "system",
+        title: title.trim() || undefined,
+        description: description.trim() || undefined,
+        styleTemplate: styleTemplate ?? undefined,
+        accent: accent ?? undefined,
+        fontPreset: fontPreset ?? undefined,
+        ...(isCommunity ? { type: "community" as const, communityId: tenantUsername } : {})
+      }
+    });
+  }, [
+    downloadSelfHostBundle,
+    tenantUsername,
+    isCommunity,
+    activeUser,
+    selfHostDomain,
+    title,
+    description,
+    styleTemplate,
+    accent,
+    fontPreset
+  ]);
 
   // Create the (inactive) tenant for the CURRENT username, then move to payment. Payment
   // activates it. Re-creates when the username changed since the last creation.
@@ -888,13 +937,41 @@ export function HostingSignup() {
 
           <p className="text-sm opacity-60">{i18next.t("hosting.changeable-later")}</p>
 
+          <label className="text-sm font-semibold">
+            {i18next.t("hosting.destination-label")}
+          </label>
+          <DestinationPicker
+            value={destination}
+            onChange={setDestination}
+            domain={selfHostDomain}
+            onDomainChange={setSelfHostDomain}
+            disabled={busy || bundleBusy}
+          />
+          {bundleError && <div className="text-sm text-red">{bundleError}</div>}
+
           <div className="flex gap-2">
             <Button appearance="secondary" onClick={() => setStep("username")}>
               {i18next.t("g.back")}
             </Button>
-            <Button onClick={goPayment} disabled={busy || accentPending} isLoading={busy} full={true}>
-              {i18next.t("g.continue")}
-            </Button>
+            {destination === "self-host" ? (
+              <Button
+                onClick={downloadBundle}
+                disabled={bundleBusy || accentPending}
+                isLoading={bundleBusy}
+                full={true}
+              >
+                {i18next.t("hosting.download-bundle")}
+              </Button>
+            ) : (
+              <Button
+                onClick={goPayment}
+                disabled={busy || accentPending}
+                isLoading={busy}
+                full={true}
+              >
+                {i18next.t("g.continue")}
+              </Button>
+            )}
           </div>
         </div>
       )}
