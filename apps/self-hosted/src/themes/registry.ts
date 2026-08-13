@@ -27,9 +27,13 @@ import type { ThemeManifest, ThemeOptionKey } from './manifest';
  *
  * The other five own structure: magazine (ArchiveList), journal (Shell,
  * PostCard), reader (Shell, ArchiveList), gallery (PostCard, Sidebar) and
- * terminal (Shell, ArchiveList). Each declares what it cannot honour in
- * `unsupportedOptions` so the editor hides the control instead of leaving a
- * toggle that does nothing.
+ * terminal (Shell, ArchiveList).
+ *
+ * Owning a seam and dropping an option are separate things. Four of those five
+ * render no sidebar, so they declare it in `unsupportedOptions` and the editor
+ * hides the control rather than leaving a toggle that does nothing. Magazine
+ * keeps the shared shell and only rearranges the archive inside it, so its
+ * sidebar still works and it declares nothing.
  */
 const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
   medium: { id: 'medium', tier: 'free', showsReadTime: true },
