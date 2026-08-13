@@ -31,7 +31,18 @@ function pasteMarkdown(markdown: string): string {
   }
 }
 
-const rowCount = (html: string) => (html.match(/<tr/g) || []).length;
+/** Pastes raw HTML through the same parse step, for cases markdown cannot express. */
+function pasteHtml(html: string): string {
+  const editor = new Editor({ extensions: TABLE_EXTENSIONS, content: "<p></p>" });
+  try {
+    editor.chain().insertContent(parseAllExtensionsToDoc(html)).run();
+    return editor.getHTML();
+  } finally {
+    editor.destroy();
+  }
+}
+
+const rowCount = (html: string): number => (html.match(/<tr/g) || []).length;
 
 describe("pasting a markdown table with blank cells", () => {
   // Regression: a blank cell renders as <td></td>, which the ProseMirror
@@ -53,7 +64,7 @@ describe("pasting a markdown table with blank cells", () => {
     ["whole row blank", "| A | B |\n| --- | --- |\n|  |  |"],
     ["blank header cell", "| A |  |\n| --- | --- |\n| 1 | 2 |"],
     ["several blank rows", "| A | B |\n| --- | --- |\n| 1 |  |\n|  | 4 |\n|  |  |"]
-  ])("survives a %s", (_label, markdown) => {
+  ])("survives a %s", (_label: string, markdown: string) => {
     const html = pasteMarkdown(markdown);
     expect(html).toContain("<table");
     expect(rowCount(html)).toBe(markdown.split("\n").length - 1);
@@ -79,5 +90,37 @@ describe("pasting a markdown table with blank cells", () => {
     const doc = parseAllExtensionsToDoc("<table><tbody><tr><td>1</td><td></td></tr></tbody></table>");
 
     expect(doc).toContain("<td><p></p></td>");
+  });
+
+  // Regression: the blank guard also matches cells holding only whitespace or
+  // &nbsp;, which the browser already renders as one paragraph. Appending to
+  // those left the invisible text plus an empty paragraph, doubling the cell
+  // height. They must be replaced, not appended to.
+  it.each([
+    ["a non-breaking space", "&nbsp;"],
+    ["plain spaces", "   "],
+    ["a tab", "\t"],
+    ["mixed invisible content", " &nbsp; "]
+  ])("normalises a cell holding only %s to a single empty paragraph", (_label: string, filler: string) => {
+    const doc = parseAllExtensionsToDoc(
+      `<table><tbody><tr><td>1</td><td>${filler}</td></tr></tbody></table>`
+    );
+
+    expect(doc).toContain("<td><p></p></td>");
+    expect(doc).not.toContain("&nbsp;<p>");
+  });
+
+  it("renders a visually blank cell as exactly one paragraph in the editor", () => {
+    const html = pasteHtml("<table><tbody><tr><td>1</td><td>&nbsp;</td></tr></tbody></table>");
+    const lastCell = html.match(/<td[^>]*>(?:(?!<\/td>).)*<\/td>\s*<\/tr>/s)?.[0] ?? "";
+
+    expect((lastCell.match(/<p>/g) || []).length).toBe(1);
+  });
+
+  it("leaves a cell with real content alone", () => {
+    const doc = parseAllExtensionsToDoc("<table><tbody><tr><td>1</td><td>kept</td></tr></tbody></table>");
+
+    expect(doc).toContain("kept");
+    expect(doc).not.toContain("<td><p></p></td>");
   });
 });
