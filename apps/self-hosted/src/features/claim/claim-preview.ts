@@ -57,7 +57,6 @@ export function buildClaimPreviewConfig(
         layout: {
           search: { enabled: true },
           sidebar: {
-            placement: 'right',
             followers: { enabled: true },
             following: { enabled: true },
             hiveInformation: { enabled: true },

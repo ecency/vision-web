@@ -275,6 +275,18 @@
   }
 }
 
+/*
+ * Sidebar section visibility. One rule per data-show-* attribute
+ * apply-config-dom emits, and the pairing is the whole mechanism: the toggle
+ * writes the attribute and nothing else, so a section whose rule is missing
+ * keeps rendering and the toggle is silently inert. Retiring the placement
+ * block above took the followers rule with it and no test noticed, which is
+ * what sidebar-visibility.test.ts now pins.
+ */
+[data-show-followers="false"] .sidebar-followers-section {
+  display: none;
+}
+
 [data-show-following="false"] .sidebar-following-section {
   display: none;
 }

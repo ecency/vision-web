@@ -4,10 +4,10 @@ import { BlogPage } from './blog-page';
 
 /**
  * The shared page frame every CSS-only template renders: sidebar and content
- * column in the attribute-driven grid (sidebar placement and visibility stay
- * pure CSS via [data-sidebar-placement] and [data-show-*]). Navigation and
- * Sidebar resolve through the theme registry, so a theme can replace either
- * without owning the whole frame.
+ * column in a grid, with the sidebar on the right from `lg` up and stacked
+ * above the content below it. Which sidebar SECTIONS show stays pure CSS via
+ * [data-show-*]. Navigation and Sidebar resolve through the theme registry,
+ * so a theme can replace either without owning the whole frame.
  */
 export function DefaultShell(props: PropsWithChildren) {
   const { Navigation, Sidebar } = useThemeComponents();
