@@ -89,15 +89,27 @@ describe('TenantService.normalizeFlatOverrides', () => {
       styleTemplate: 'minimal',
       title: 'T',
       description: 'D',
-      listType: 'grid',
-      sidebarPlacement: 'left',
     });
     expect(normalized.configuration.general.theme).toBe('dark');
     expect(normalized.configuration.general.styleTemplate).toBe('minimal');
     expect(normalized.configuration.instanceConfiguration.meta.title).toBe('T');
     expect(normalized.configuration.instanceConfiguration.meta.description).toBe('D');
-    expect(normalized.configuration.instanceConfiguration.layout.listType).toBe('grid');
-    expect(normalized.configuration.instanceConfiguration.layout.sidebar.placement).toBe('left');
+  });
+
+  it('ignores the retired layout keys rather than writing them back', () => {
+    // listType and sidebarPlacement were removed (#1471). A client that
+    // still sends them must not be able to reintroduce a key nothing reads,
+    // and must not fail either: they are dropped, not rejected.
+    const normalized = TenantService.normalizeFlatOverrides({
+      title: 'T',
+      listType: 'grid',
+      sidebarPlacement: 'left',
+    });
+    expect(normalized.configuration.instanceConfiguration.meta.title).toBe('T');
+    expect('listType' in normalized.configuration.instanceConfiguration.layout).toBe(false);
+    expect(
+      'placement' in normalized.configuration.instanceConfiguration.layout.sidebar,
+    ).toBe(false);
   });
 });
 
@@ -251,7 +263,11 @@ describe('TenantService.sanitizeConfigDocument', () => {
       'blog',
     ]);
     expect(merged.configuration.instanceConfiguration.features.likes).toEqual({ enabled: true });
-    expect(merged.configuration.instanceConfiguration.layout.listType).toBe('list');
+    // The point is that a scalar cannot replace a stored object. Asserted
+    // through a key the layout still has, since listType was retired (#1471).
+    expect(merged.configuration.instanceConfiguration.layout.search).toEqual({
+      enabled: true,
+    });
   });
 
   it('scalar replacements must match the stored primitive type', async () => {

@@ -28,12 +28,10 @@
         "keywords": "My Blog, My Blog Description"
       },
       "layout": {
-        "listType": "list",
         "search": {
           "enabled": true
         },
         "sidebar": {
-          "placement": "right",
           "followers": {
             "enabled": true
           },

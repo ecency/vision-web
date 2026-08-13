@@ -144,9 +144,6 @@ const PATHS = {
   fontPreset: 'configuration.general.styles.fontPreset',
   instanceType: 'configuration.instanceConfiguration.type',
   title: 'configuration.instanceConfiguration.meta.title',
-  listType: 'configuration.instanceConfiguration.layout.listType',
-  sidebarPlacement:
-    'configuration.instanceConfiguration.layout.sidebar.placement',
   followers:
     'configuration.instanceConfiguration.layout.sidebar.followers.enabled',
   following:
@@ -219,14 +216,6 @@ export const CONFIG_DOM_DECLARATION: ConfigDomDeclaration = {
     {
       attribute: 'data-language',
       resolve: (read) => text(read(PATHS.language), 'en'),
-    },
-    {
-      attribute: 'data-sidebar-placement',
-      resolve: (read) => text(read(PATHS.sidebarPlacement), 'right'),
-    },
-    {
-      attribute: 'data-list-type',
-      resolve: (read) => text(read(PATHS.listType), 'grid'),
     },
     {
       attribute: 'data-instance-type',

@@ -887,16 +887,17 @@ describe('theme-gated layout options', () => {
     } as unknown as Record<string, import('./types').ConfigValue>;
   }
 
-  it('hides the sidebar section and list type under a theme that declares them unsupported', () => {
-    expect(isFieldVisible(layout.sidebar, docWithTemplate('journal'))).toBe(false);
-    expect(isFieldVisible(layout.listType, docWithTemplate('journal'))).toBe(false);
+  it('hides the sidebar section under every theme that renders no sidebar', () => {
+    for (const template of ['journal', 'reader', 'gallery', 'terminal']) {
+      expect(isFieldVisible(layout.sidebar, docWithTemplate(template)), template).toBe(false);
+    }
   });
 
-  it('shows them for every CSS-only template and for an unset template', () => {
+  it('shows it for the templates that do render one, and for an unset template', () => {
     for (const template of ['medium', 'minimal', 'magazine', 'developer', 'modern-gradient']) {
-      expect(isFieldVisible(layout.sidebar, docWithTemplate(template))).toBe(true);
+      expect(isFieldVisible(layout.sidebar, docWithTemplate(template)), template).toBe(true);
     }
-    expect(isFieldVisible(layout.listType, docWithTemplate())).toBe(true);
+    expect(isFieldVisible(layout.sidebar, docWithTemplate())).toBe(true);
   });
 
   it('follows the UNSAVED draft, so switching templates in the panel reacts immediately', () => {

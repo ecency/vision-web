@@ -180,18 +180,10 @@ export type TranslationKey =
   | 'panel_configuration_instance_configuration_meta_keywords_label'
   | 'panel_configuration_instance_configuration_meta_keywords_description'
   | 'panel_configuration_instance_configuration_layout_label'
-  | 'panel_configuration_instance_configuration_layout_list_type_label'
-  | 'panel_configuration_instance_configuration_layout_list_type_description'
-  | 'panel_configuration_instance_configuration_layout_list_type_list_option'
-  | 'panel_configuration_instance_configuration_layout_list_type_grid_option'
   | 'panel_configuration_instance_configuration_layout_search_label'
   | 'panel_configuration_instance_configuration_layout_search_enabled_label'
   | 'panel_configuration_instance_configuration_layout_search_enabled_description'
   | 'panel_configuration_instance_configuration_layout_sidebar_label'
-  | 'panel_configuration_instance_configuration_layout_sidebar_placement_label'
-  | 'panel_configuration_instance_configuration_layout_sidebar_placement_description'
-  | 'panel_configuration_instance_configuration_layout_sidebar_placement_left_option'
-  | 'panel_configuration_instance_configuration_layout_sidebar_placement_right_option'
   | 'panel_configuration_instance_configuration_layout_sidebar_followers_label'
   | 'panel_configuration_instance_configuration_layout_sidebar_followers_enabled_label'
   | 'panel_configuration_instance_configuration_layout_sidebar_followers_enabled_description'
@@ -520,18 +512,10 @@ export const translations: { en: Translations } & Record<
     panel_configuration_instance_configuration_meta_keywords_label: 'Keywords',
     panel_configuration_instance_configuration_meta_keywords_description: 'SEO keywords',
     panel_configuration_instance_configuration_layout_label: 'Layout Settings',
-    panel_configuration_instance_configuration_layout_list_type_label: 'List Type',
-    panel_configuration_instance_configuration_layout_list_type_description: 'Type of list display',
-    panel_configuration_instance_configuration_layout_list_type_list_option: 'List View',
-    panel_configuration_instance_configuration_layout_list_type_grid_option: 'Grid View',
     panel_configuration_instance_configuration_layout_search_label: 'Search',
     panel_configuration_instance_configuration_layout_search_enabled_label: 'Enabled',
     panel_configuration_instance_configuration_layout_search_enabled_description: 'Enable search functionality',
     panel_configuration_instance_configuration_layout_sidebar_label: 'Sidebar',
-    panel_configuration_instance_configuration_layout_sidebar_placement_label: 'Placement',
-    panel_configuration_instance_configuration_layout_sidebar_placement_description: 'Sidebar placement',
-    panel_configuration_instance_configuration_layout_sidebar_placement_left_option: 'Left',
-    panel_configuration_instance_configuration_layout_sidebar_placement_right_option: 'Right',
     panel_configuration_instance_configuration_layout_sidebar_followers_label: 'Followers',
     panel_configuration_instance_configuration_layout_sidebar_followers_enabled_label: 'Enabled',
     panel_configuration_instance_configuration_layout_sidebar_followers_enabled_description: 'Show followers section',

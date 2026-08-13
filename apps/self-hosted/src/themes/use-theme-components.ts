@@ -7,7 +7,6 @@ import { BlogNavigation } from '@/features/blog/layout/blog-navigation';
 import { BlogSidebar } from '@/features/blog/layout/blog-sidebar';
 import type { ThemeComponents } from './manifest';
 import { getThemeManifest } from './registry';
-import { computeThemeGridSizes } from './grid-sizes';
 
 /**
  * The shared defaults behind every seam: exactly the components every
@@ -42,18 +41,6 @@ export function useThemeComponents(): ThemeComponents {
     ({ configuration }) => configuration.general.styleTemplate,
   );
   return useMemo(() => resolveThemeComponents(styleTemplate), [styleTemplate]);
-}
-
-/**
- * The image `sizes` hint for the active theme's post grid (see
- * computeThemeGridSizes). Keyed on the template like the resolvers above,
- * so the Configuration Editor's template preview re-derives it live.
- */
-export function useThemeGridSizes(): string {
-  const styleTemplate = InstanceConfigManager.useConfig(
-    ({ configuration }) => configuration.general.styleTemplate,
-  );
-  return useMemo(() => computeThemeGridSizes(styleTemplate), [styleTemplate]);
 }
 
 /**

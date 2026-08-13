@@ -67,8 +67,6 @@ const flatConfigUpdateSchema = z.object({
   fontPreset: z.enum(FONT_PRESET_KEYS).optional(),
   title: z.string().max(100).optional(),
   description: z.string().max(500).optional(),
-  listType: z.enum(['list', 'grid']).optional(),
-  sidebarPlacement: z.enum(['left', 'right']).optional(),
 });
 // Only the container is validated here (an object, not an array or a scalar); the branch schema
 // above does the real work once the handler knows which document this is.

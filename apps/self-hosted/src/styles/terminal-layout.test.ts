@@ -8,10 +8,9 @@ import { describe, expect, it } from 'vitest';
  * of it is components rather than CSS. Two rules still carry weight and both
  * are silent when broken, which is what this pins.
  *
- * The listing rule also has to survive a config that says `grid`: the feed
- * setting predates the theme, and `apply-config-dom` falls back to `grid`
- * when the key is absent, so a stored document can put a console listing
- * into a grid unless this rule wins.
+ * The listing rule outranks the shared archive rule in components.css on
+ * specificity alone, and stays here rather than leaning on that: a console
+ * listing is Terminal's own claim about its feed, not an inherited default.
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -28,7 +27,7 @@ function rules() {
 const layoutRules = () => rules().filter((r) => r.selector.includes('.blog-'));
 
 describe('terminal layout rules', () => {
-  it('keeps the archive a listing whatever the feed setting says', () => {
+  it('keeps the archive a listing', () => {
     const listing = layoutRules().find((r) => /\.blog-posts-list$/.test(r.selector));
     expect(listing).toBeDefined();
     expect(listing!.body).toMatch(/display:\s*flex/);

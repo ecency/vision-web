@@ -46,7 +46,7 @@ const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
     tier: 'free',
     showsReadTime: true,
     components: { Shell: JournalShell, PostCard: JournalPostCard },
-    unsupportedOptions: ['sidebar', 'listType'],
+    unsupportedOptions: ['sidebar'],
   },
   // The second layout-level design: a split frame with the archive as a
   // persistent rail beside the open post. The home pane replaces the
@@ -57,18 +57,18 @@ const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
     tier: 'free',
     showsReadTime: true,
     components: { Shell: ReaderShell, ArchiveList: ReaderHome },
-    unsupportedOptions: ['sidebar', 'listType'],
+    unsupportedOptions: ['sidebar'],
   },
   // The third layout-level design, and the first that keeps the shared
   // shell: the archive becomes a grid of covers through CSS the theme owns,
-  // so only the tile and the (absent) sidebar are components. listType is
-  // hidden because the grid is not optional here, and sidebar because the
-  // seam renders nothing whatever the config says.
+  // so only the tile and the (absent) sidebar are components. sidebar is
+  // declared unsupported because the seam renders nothing whatever the
+  // config says.
   gallery: {
     id: 'gallery',
     tier: 'free',
     components: { PostCard: GalleryPostCard, Sidebar: GallerySidebar },
-    unsupportedOptions: ['sidebar', 'listType'],
+    unsupportedOptions: ['sidebar'],
   },
   // The fourth layout-level design: the Developer aesthetic as an actual
   // console. Its own shell (prompt line, filters as flags, no sidebar) and
@@ -81,7 +81,7 @@ const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
     tier: 'free',
     showsReadTime: true,
     components: { Shell: TerminalShell, ArchiveList: TerminalArchive },
-    unsupportedOptions: ['sidebar', 'listType'],
+    unsupportedOptions: ['sidebar'],
   },
 };
 

@@ -129,8 +129,8 @@
 /*
  * The layout. Two rules, both needing to beat components.css, which is
  * imported AFTER this file: `:root[data-style-template="gallery"]` is one
- * specificity step above the `[data-list-type="grid"] .blog-posts-list`
- * rules there, so the grid holds whichever list type the config carries.
+ * specificity step above the `.blog-posts-list` rule there, so the grid
+ * holds rather than the shared single column.
  *
  * auto-fill with a minimum rather than a fixed column count: a gallery
  * should reflow to the window, and it keeps the single-column phone case
@@ -164,8 +164,7 @@
 /*
  * auto-fill with a minimum rather than a fixed column count: a gallery
  * should reflow to the window, and it keeps the single-column phone case
- * working without another breakpoint. Applies whatever list type the config
- * carries, since a stored 'list' predates this theme.
+ * working without another breakpoint.
  */
 :root[data-style-template="gallery"] .blog-posts-list {
   display: grid;

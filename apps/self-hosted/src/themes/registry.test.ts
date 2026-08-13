@@ -34,7 +34,7 @@ describe('theme manifest registry', () => {
     expect(journal.components?.PostCard).toBeTypeOf('function');
     // Navigation/Sidebar/ArchiveList fall back to the defaults.
     expect(journal.components?.ArchiveList).toBeUndefined();
-    expect(journal.unsupportedOptions).toEqual(['sidebar', 'listType']);
+    expect(journal.unsupportedOptions).toEqual(['sidebar']);
   });
 
   it('reader owns its shell and archive pane, declares what it does not consume', () => {
@@ -46,7 +46,7 @@ describe('theme manifest registry', () => {
     // Cards stay the shared default: search results render them in the pane.
     expect(reader.components?.PostCard).toBeUndefined();
     expect(reader.components?.Navigation).toBeUndefined();
-    expect(reader.unsupportedOptions).toEqual(['sidebar', 'listType']);
+    expect(reader.unsupportedOptions).toEqual(['sidebar']);
   });
 
   it('unknown and absent ids resolve to the default template', () => {
@@ -143,9 +143,14 @@ describe('component resolution', () => {
   it('option support reads the manifest declaration', async () => {
     const { isThemeOptionSupported } = await import('./registry');
     expect(isThemeOptionSupported('journal', 'sidebar')).toBe(false);
-    expect(isThemeOptionSupported('journal', 'listType')).toBe(false);
+    expect(isThemeOptionSupported('reader', 'sidebar')).toBe(false);
+    expect(isThemeOptionSupported('gallery', 'sidebar')).toBe(false);
+    expect(isThemeOptionSupported('terminal', 'sidebar')).toBe(false);
     expect(isThemeOptionSupported('medium', 'sidebar')).toBe(true);
     expect(isThemeOptionSupported(undefined, 'sidebar')).toBe(true);
-    expect(isThemeOptionSupported('no-such-theme', 'listType')).toBe(true);
+    // An id this build does not know supports everything: the editor must
+    // not hide a control because a newer config named a template it has
+    // never heard of.
+    expect(isThemeOptionSupported('no-such-theme', 'sidebar')).toBe(true);
   });
 });

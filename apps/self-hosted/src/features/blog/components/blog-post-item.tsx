@@ -17,10 +17,7 @@ import { formatDate, InstanceConfigManager, t } from '@/core';
 import { UserAvatar } from '@/features/shared/user-avatar';
 import { useHiveLayer } from '../hooks/use-hive-layer';
 import { estimateReadMinutes } from '../utils/read-time';
-import {
-  useThemeGridSizes,
-  useThemeShowsReadTime,
-} from '@/themes/use-theme-components';
+import { useThemeShowsReadTime } from '@/themes/use-theme-components';
 import { PostPayout } from './post-payout';
 
 interface Props {
@@ -30,9 +27,6 @@ interface Props {
 
 export function BlogPostItem({ entry }: Props) {
   const hiveLayer = useHiveLayer();
-  const listType = InstanceConfigManager.useConfig(
-    ({ configuration }) => configuration.instanceConfiguration.layout.listType,
-  );
   const showLikes = InstanceConfigManager.useConfig(
     ({ configuration }) =>
       configuration.instanceConfiguration.features.likes?.enabled ?? true,
@@ -109,7 +103,6 @@ export function BlogPostItem({ entry }: Props) {
     () => (imageUrl ? buildSrcSet(imageUrl) || undefined : undefined),
     [imageUrl],
   );
-  const gridSizes = useThemeGridSizes();
 
   // Router navigation, not a document load: an <a href> here tore down the SPA
   // on every feed-to-post click, refetching the instance config and throwing
@@ -149,20 +142,6 @@ export function BlogPostItem({ entry }: Props) {
         </Link>
       </h2>
 
-      {listType === 'grid' && imageUrl && (
-        <div className="mb-4 overflow-hidden">
-          <Link to="/$author/$permlink" params={postParams} search={postSearch}>
-            <img
-              src={imageUrl}
-              srcSet={imageSrcSet}
-              sizes={gridSizes}
-              alt={entryData.title}
-              className="w-full object-cover post-card-image-theme"
-              loading="lazy"
-            />
-          </Link>
-        </div>
-      )}
 
       {location && (
         <div className="mb-3 flex items-center text-xs text-theme-muted">
@@ -274,7 +253,7 @@ export function BlogPostItem({ entry }: Props) {
 
   return (
     <article className={clsx('py-6 sm:py-8 border-b border-theme')}>
-      {listType === 'list' && imageUrl ? (
+      {imageUrl ? (
         <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
           <div className="flex-1">{contentSection}</div>
           <div className="shrink-0 w-full sm:w-48">

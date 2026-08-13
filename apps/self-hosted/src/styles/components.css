@@ -243,75 +243,46 @@
   border-radius: var(--theme-post-card-image-radius);
 }
 
-/* List Type - controlled via data-list-type attribute */
+/*
+ * The archive is a single column. The feed used to be switchable between a
+ * list and a grid; the grid was chosen by nobody, its tracks and the shared
+ * card's metadata row both overflowed in it, and the two layouts that want a
+ * grid or a listing (Gallery, Terminal) now declare their own. See #1471.
+ */
 .blog-posts-list {
-  width: 100%;
-}
-
-[data-list-type="list"] .blog-posts-list {
   display: flex;
   flex-direction: column;
   gap: var(--theme-grid-gap);
 }
 
-[data-list-type="grid"] .blog-posts-list {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--theme-grid-gap);
-}
-
 /*
- * minmax(0, 1fr) rather than 1fr: a bare `1fr` is `minmax(auto, 1fr)`, so a
- * track refuses to shrink below its content's min-content width. The post
- * cards are wider than a third of the reading measure, so three tracks blew
- * out to 1179px inside a 768px column and the grid overflowed to the right.
- * Every template's grid feed had this; it only became obvious when an entry
- * spanned the whole row.
+ * The sidebar sits on the right. It was placeable on either side; every
+ * instance used the default and nobody ever chose left, so the option and
+ * its mirrored rules are gone. See #1471.
  */
-@media (min-width: 768px) {
-  [data-list-type="grid"] .blog-posts-list {
-    grid-template-columns: repeat(var(--theme-grid-columns-tablet), minmax(0, 1fr));
-  }
-}
-
 @media (min-width: 1024px) {
-  [data-list-type="grid"] .blog-posts-list {
-    grid-template-columns: repeat(var(--theme-grid-columns-desktop), minmax(0, 1fr));
-  }
-}
-
-/* Sidebar Placement - controlled via data-sidebar-placement attribute */
-@media (min-width: 1024px) {
-  /* Right sidebar (default) */
-  [data-sidebar-placement="right"] .blog-layout-grid {
+  .blog-layout-grid {
     grid-template-columns: 1fr var(--theme-sidebar-width);
     gap: var(--theme-layout-gap);
   }
 
-  [data-sidebar-placement="right"] .blog-sidebar-container {
+  .blog-sidebar-container {
     order: 2;
   }
 
-  [data-sidebar-placement="right"] .blog-main-container {
+  .blog-main-container {
     order: 1;
-  }
-
-  /* Left sidebar */
-  [data-sidebar-placement="left"] .blog-layout-grid {
-    grid-template-columns: var(--theme-sidebar-width) 1fr;
-    gap: var(--theme-layout-gap);
-  }
-
-  [data-sidebar-placement="left"] .blog-sidebar-container {
-    order: 1;
-  }
-
-  [data-sidebar-placement="left"] .blog-main-container {
-    order: 2;
   }
 }
 
-/* Sidebar Section Visibility - controlled via data attributes */
+/*
+ * Sidebar section visibility. One rule per data-show-* attribute
+ * apply-config-dom emits, and the pairing is the whole mechanism: the toggle
+ * writes the attribute and nothing else, so a section whose rule is missing
+ * keeps rendering and the toggle is silently inert. Retiring the placement
+ * block above took the followers rule with it and no test noticed, which is
+ * what sidebar-visibility.test.ts now pins.
+ */
 [data-show-followers="false"] .sidebar-followers-section {
   display: none;
 }
