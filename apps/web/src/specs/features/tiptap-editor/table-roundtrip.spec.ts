@@ -26,18 +26,28 @@ const TABLE_MARKDOWN = [
   "| 2020-04-03 | ecency | 941.94 |"
 ].join("\n");
 
+const TABLE_EXTENSIONS = [StarterKit, Table, TableRow, TableCell, TableHeader];
+
 /**
  * Mirrors what the publish editor actually does: paste plain text (converted by
  * the clipboard strategy), then serialize the document back to markdown the way
  * `use-publish-editor` does on every update.
  */
-function pasteThenSerialize(markdown: string) {
-  const editor = new Editor({
-    extensions: [StarterKit, Table, TableRow, TableCell, TableHeader],
-    content: "<p></p>"
-  });
+function pasteThenSerialize(markdown: string): string {
+  const editor = new Editor({ extensions: TABLE_EXTENSIONS, content: "<p></p>" });
   try {
     editor.chain().insertContent(parseAllExtensionsToDoc(simpleMarkdownToHTML(markdown))).run();
+    return markdownToHtml(editor.getHTML());
+  } finally {
+    editor.destroy();
+  }
+}
+
+/** Runs `build` against a live editor, then serializes exactly as publish does. */
+function buildThenSerialize(build: (editor: Editor) => void): string {
+  const editor = new Editor({ extensions: TABLE_EXTENSIONS, content: "<p></p>" });
+  try {
+    build(editor);
     return markdownToHtml(editor.getHTML());
   } finally {
     editor.destroy();
@@ -64,7 +74,7 @@ describe("markdown table round-trip through the publish editor", () => {
 
     // header + delimiter + 2 body rows
     expect(lines).toHaveLength(4);
-    expect(lines[1]).toMatch(/^\|[\s-|:]+\|$/);
+    expect(lines[1]).toMatch(/^\|[-\s|:]+\|$/);
     lines.forEach((line) => expect(line.split("|")).toHaveLength(5));
   });
 
@@ -91,15 +101,49 @@ describe("markdown table round-trip through the publish editor", () => {
   });
 
   it("serializes a table built with the editor's own insertTable command", () => {
-    const editor = new Editor({
-      extensions: [StarterKit, Table, TableRow, TableCell, TableHeader],
-      content: "<p></p>"
-    });
-    try {
+    const result = buildThenSerialize((editor) => {
       editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run();
-      expect(markdownToHtml(editor.getHTML())).toMatch(/\|.*\|/);
-    } finally {
-      editor.destroy();
-    }
+    });
+
+    expect(result).toMatch(/\|.*\|/);
+  });
+});
+
+describe("single-cell tables the GFM rule cannot express", () => {
+  // Regression: the GFM table rule deliberately skips single-cell tables, so a
+  // 1x1 built from the toolbar serialized to bare text, or to nothing at all
+  // when empty, and vanished on the next draft load or publish.
+  const shrinkToSingleCell = (editor: Editor) => {
+    editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run();
+    editor.chain().focus().deleteColumn().run();
+    editor.chain().focus().deleteRow().run();
+  };
+
+  it("keeps an empty 1x1 table instead of serializing it away", () => {
+    const result = buildThenSerialize(shrinkToSingleCell);
+
+    expect(result.trim()).not.toBe("");
+    expect(result).toContain("<table");
+  });
+
+  it("keeps a populated 1x1 table instead of flattening it to text", () => {
+    const result = buildThenSerialize((editor) => {
+      shrinkToSingleCell(editor);
+      editor.commands.insertContent("solo");
+    });
+
+    expect(result).toContain("<table");
+    expect(result).toContain("solo");
+    // pre-fix this was the bare string "solo" with no table markup at all
+    expect(result.trim()).not.toBe("solo");
+  });
+
+  it("still uses markdown syntax once the table has more than one cell", () => {
+    const result = buildThenSerialize((editor) => {
+      editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run();
+    });
+
+    expect(result).not.toContain("<table");
+    expect(result).toContain("|");
   });
 });

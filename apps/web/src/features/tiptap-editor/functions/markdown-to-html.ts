@@ -4,6 +4,12 @@ import Turndown from "turndown";
 
 import { TEXT_COLOR_CLASS_PREFIX } from "@/app/publish/_constants/text-colors";
 
+/** Total <td>/<th> in a table, used to spot the single-cell case GFM cannot express. */
+function countTableCells(node: Node): number {
+  const el = node as HTMLElement;
+  return typeof el.querySelectorAll === "function" ? el.querySelectorAll("th, td").length : 0;
+}
+
 const CENTERED_TEXT_RULE_NODES = ["P", "H1", "H2", "H3", "H4", "H5", "H6"];
 const CENTERED_TEXT_ALIGNMENTS = new Set(["center", "right", "left", "justify"]);
 
@@ -184,5 +190,17 @@ export function markdownToHtml(html: string | undefined) {
     // stacked as loose paragraphs, so a pasted or inserted table is
     // destroyed on the next serialization.
     .use(tables)
+    // Added AFTER the plugin so it takes precedence (Turndown checks the most
+    // recently added rule first). The GFM rule deliberately skips single-cell
+    // tables, treating them as layout markup, but the editor can produce one
+    // from the toolbar: insert a table, then deleteColumn and deleteRow. Such a
+    // table serialized to bare cell text, or to nothing at all when the cell was
+    // empty, so it disappeared on the next draft load or publish. GFM cannot
+    // express a headerless single-cell table, so keep it as HTML, which the
+    // renderer accepts and the sanitizer allows.
+    .addRule("singleCellTable", {
+      filter: (node) => node.nodeName === "TABLE" && countTableCells(node) <= 1,
+      replacement: (_content, node) => `\n\n${(node as HTMLElement).outerHTML}\n\n`
+    })
     .turndown(html);
 }
