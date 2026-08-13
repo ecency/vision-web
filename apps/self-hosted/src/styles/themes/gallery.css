@@ -1,0 +1,166 @@
+/* Gallery Theme - A wall of pictures
+ *
+ * The third layout-level design, for blogs whose posts ARE the images: the
+ * archive is a grid of covers rather than a list of headlines, and the
+ * chrome recedes so nothing competes with the pictures. The structural half
+ * lives in src/themes/gallery/ (PostCard and a Sidebar that renders nothing);
+ * these tokens carry the full --theme-* contract so the accent correction
+ * sweep and every token utility keep working.
+ *
+ * The palette is a gallery wall on purpose: near-neutral grounds and a
+ * desaturated slate accent, because a saturated accent beside a photograph
+ * fights it. The two rules at the bottom are the layout itself.
+ */
+
+[data-style-template="gallery"] {
+  /* Typography: the UI face throughout. Captions, not headlines. */
+  --theme-font-body:
+    -apple-system, "BlinkMacSystemFont", "Segoe UI", "Helvetica Neue", "Arial",
+    sans-serif;
+  --theme-font-heading:
+    -apple-system, "BlinkMacSystemFont", "Segoe UI", "Helvetica Neue", "Arial",
+    sans-serif;
+  --theme-font-ui:
+    -apple-system, "BlinkMacSystemFont", "Segoe UI", "Helvetica Neue", "Arial",
+    sans-serif;
+
+  --theme-text-base: 16px;
+  --theme-leading-normal: 1.55;
+  --theme-tracking-normal: 0;
+  --theme-tracking-tight: -0.011em;
+
+  /* Colors - Light: gallery wall, near-black label text, slate accent */
+  --theme-bg-primary: #f6f6f4;
+  --theme-bg-secondary: #ffffff;
+  --theme-bg-tertiary: rgba(27, 27, 26, 0.05);
+  --theme-bg-card: #ffffff;
+
+  --theme-text-primary: #1b1b1a;
+  --theme-text-secondary: rgba(27, 27, 26, 0.72);
+  /* 0.6 composites to ~4.6:1 over the wall: captions stay quiet but AA. */
+  --theme-text-muted: rgba(27, 27, 26, 0.6);
+
+  --theme-accent: #37596b;
+  --theme-accent-hover: #2b4655;
+  /* Ink on the accent fill: white on #37596b is 7.5:1, and it is what the
+   * correction module picks for this fill, so CSS and runtime preview agree. */
+  --theme-accent-contrast: #ffffff;
+
+  --theme-border: rgba(27, 27, 26, 0.1);
+  --theme-border-strong: rgba(27, 27, 26, 0.18);
+
+  /* Effects: a picture needs no frame, so the radius is small and the
+   * elevation is a hairline rather than a drop shadow. */
+  --theme-radius-sm: 3px;
+  --theme-radius: 4px;
+  --theme-radius-lg: 6px;
+  --theme-radius-full: 9999px;
+
+  --theme-shadow-sm: none;
+  --theme-shadow: none;
+  --theme-shadow-lg: 0 8px 30px rgba(27, 27, 26, 0.1);
+
+  /* Link underline style, derived from the accent; see variables.css */
+  --theme-link-decoration: underline;
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
+
+  /* Tag style: small and quiet, the way a wall label is set */
+  --theme-tag-text: var(--theme-accent-text-light, rgba(27, 27, 26, 0.72));
+  --theme-tag-radius: 3px;
+
+  /* Card treatment: the image is the card. No fill, no border, no backdrop,
+   * so a cover sits directly on the wall. */
+  --theme-card-bg: transparent;
+  --theme-card-border: none;
+  --theme-card-backdrop: none;
+
+  /* Layout: wide, because a grid of pictures wants the room. The sidebar
+   * tokens keep the contract satisfied; Gallery renders no sidebar. */
+  --theme-content-width: 1200px;
+  --theme-sidebar-width: 280px;
+  --theme-layout-gap: 2rem;
+  --theme-layout-container-padding: 1.25rem;
+  --theme-layout-section-gap: 2rem;
+  --theme-card-padding: 0px;
+  --theme-grid-gap: 1.25rem;
+  --theme-grid-columns-tablet: 2;
+  --theme-grid-columns-desktop: 3;
+  --theme-post-card-image-height: 240px;
+  --theme-post-card-image-radius: 4px;
+}
+
+/* Gallery Dark Mode: the room with the lights down, the way a photo viewer
+ * goes dark so the picture carries the brightness. */
+[data-style-template="gallery"][data-theme="dark"] {
+  --theme-bg-primary: #121212;
+  --theme-bg-secondary: #1a1a1a;
+  --theme-bg-tertiary: rgba(246, 246, 244, 0.07);
+  --theme-bg-card: #1a1a1a;
+
+  --theme-text-primary: rgba(246, 246, 244, 0.93);
+  --theme-text-secondary: rgba(246, 246, 244, 0.74);
+  --theme-text-muted: rgba(246, 246, 244, 0.58);
+
+  --theme-accent: #8fb8cc;
+  --theme-accent-hover: #a5c8d9;
+  /* The correction module's pick for this fill: 8.4:1. */
+  --theme-accent-contrast: #111827;
+
+  --theme-border: rgba(246, 246, 244, 0.12);
+  --theme-border-strong: rgba(246, 246, 244, 0.2);
+
+  --theme-shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.5);
+
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
+
+  --theme-tag-text: var(--theme-accent-text-dark, rgba(246, 246, 244, 0.62));
+}
+
+/*
+ * The layout. Two rules, both needing to beat components.css, which is
+ * imported AFTER this file: `:root[data-style-template="gallery"]` is one
+ * specificity step above the `[data-list-type="grid"] .blog-posts-list`
+ * rules there, so the grid holds whichever list type the config carries.
+ *
+ * auto-fill with a minimum rather than a fixed column count: a gallery
+ * should reflow to the window, and it keeps the single-column phone case
+ * working without another breakpoint.
+ */
+/*
+ * The shared shell holds the archive at a reading measure (max-w-3xl, the
+ * width every template has always used). A wall of pictures wants the room
+ * instead, so Gallery widens that one wrapper to its own content-width
+ * token. Unlayered, so it beats the Tailwind utility whatever the
+ * specificity; every other template keeps the measure untouched.
+ */
+:root[data-style-template="gallery"] .blog-page-measure {
+  max-width: var(--theme-content-width);
+}
+
+:root[data-style-template="gallery"] .blog-posts-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  gap: var(--theme-grid-gap);
+  align-items: start;
+}
+
+/* No sidebar: the grid is the page. The Sidebar seam already renders
+ * nothing, so this only collapses the column the shell's grid reserves for
+ * it at desktop widths. */
+:root[data-style-template="gallery"] .blog-layout-grid {
+  grid-template-columns: 1fr;
+}
+
+:root[data-style-template="gallery"] .blog-sidebar-container {
+  display: none;
+}

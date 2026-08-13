@@ -67,7 +67,7 @@ const { DEFAULT_THEME_COMPONENTS, resolveThemeComponents } = await import(
 
 describe('component resolution', () => {
   it('every CSS-only template resolves to exactly the shared defaults', () => {
-    const layoutThemes = new Set(['journal', 'reader']);
+    const layoutThemes = new Set(['journal', 'reader', 'gallery']);
     for (const id of STYLE_TEMPLATES.filter((t) => !layoutThemes.has(t))) {
       const resolved = resolveThemeComponents(id);
       // Identity per seam, not just deep equality: the no-op migration means
@@ -91,6 +91,22 @@ describe('component resolution', () => {
     expect(resolved.Navigation).toBe(DEFAULT_THEME_COMPONENTS.Navigation);
     expect(resolved.Sidebar).toBe(DEFAULT_THEME_COMPONENTS.Sidebar);
     expect(resolved.ArchiveList).toBe(DEFAULT_THEME_COMPONENTS.ArchiveList);
+  });
+
+  it('gallery resolves its own tile and drops the sidebar, defaults for the rest', () => {
+    const gallery = getThemeManifest('gallery');
+    const resolved = resolveThemeComponents('gallery');
+    expect(resolved.PostCard).toBe(gallery.components?.PostCard);
+    // The sidebar seam is overridden rather than hidden in CSS, so the
+    // default sidebar's follower and chain queries never run for a theme
+    // that shows no sidebar at all.
+    expect(resolved.Sidebar).toBe(gallery.components?.Sidebar);
+    expect(resolved.Sidebar).not.toBe(DEFAULT_THEME_COMPONENTS.Sidebar);
+    // Gallery keeps the shared frame: its archive becomes a grid through
+    // CSS the theme owns, not through a shell of its own.
+    expect(resolved.Shell).toBe(DEFAULT_THEME_COMPONENTS.Shell);
+    expect(resolved.ArchiveList).toBe(DEFAULT_THEME_COMPONENTS.ArchiveList);
+    expect(resolved.Navigation).toBe(DEFAULT_THEME_COMPONENTS.Navigation);
   });
 
   it('reader resolves its own shell and archive pane, defaults for the rest', () => {
