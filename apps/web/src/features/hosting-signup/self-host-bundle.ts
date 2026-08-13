@@ -22,6 +22,13 @@ export interface SelfHostBundleInput {
   config: unknown;
   /** The blog account or community id; used for filenames and examples only. */
   username: string;
+  /**
+   * The account that may edit this instance. For a personal blog that is the
+   * blog account itself; for a community it is a SEPARATE account, because a
+   * community account holds nobody's keys. Instructions that say "sign in
+   * as" must use this, never the username.
+   */
+  owner?: string;
   /** Image tag to pin, e.g. `sha-abc1234`. */
   tag: string;
   /** The domain the owner will serve from, if they told us. */
@@ -30,6 +37,13 @@ export interface SelfHostBundleInput {
 
 /** Shown wherever the owner has not named their own domain yet. */
 export const EXAMPLE_DOMAIN = "blog.example.com";
+
+/**
+ * The published port, written into every file that mentions it. One
+ * constant because the compose file and the Caddy upstream have to agree:
+ * generated separately, a changed port means Caddy proxying to nothing.
+ */
+const DEFAULT_PORT = 3000;
 
 /** A DNS name: labels of letters, digits and inner hyphens, at least two. */
 const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
@@ -73,7 +87,7 @@ services:
     container_name: ecency-blog
     restart: unless-stopped
     ports:
-      - "\${BIND:-127.0.0.1}:\${PORT:-3000}:80"
+      - "\${BIND:-127.0.0.1}:\${PORT:-${DEFAULT_PORT}}:80"
     volumes:
       # Your settings. Edit the file and restart; no rebuild, no new image.
       - ./config.json:/usr/share/nginx/html/config.json:ro
@@ -99,7 +113,9 @@ function envFile(tag: string): string {
 TAG=${tag}
 
 # Host port the blog is published on. The container always listens on 80.
-PORT=3000
+# Change this and you must change the Caddyfile's reverse_proxy port to
+# match, or the proxy answers 502 for a site that is running fine.
+PORT=${DEFAULT_PORT}
 
 # Published on loopback by default, for a reverse proxy to serve. Set
 # 0.0.0.0 only to expose the site directly, with no proxy and no HTTPS.
@@ -111,27 +127,45 @@ function caddyfile(domain: string): string {
   return `# Caddy gets and renews a Let's Encrypt certificate on its own, so this
 # is the whole HTTPS configuration. Run Caddy on the host, or add it as a
 # second service in docker-compose.yml.
+#
+# The port below must match PORT in .env. They are written together here,
+# so they only drift if one is edited alone.
 
 ${domain} {
-    reverse_proxy 127.0.0.1:3000
+    reverse_proxy 127.0.0.1:${DEFAULT_PORT}
 }
 `;
 }
 
-function readme(username: string, tag: string, domain: string, hasDomain: boolean): string {
+function readme(
+  username: string,
+  owner: string,
+  tag: string,
+  domain: string,
+  hasDomain: boolean
+): string {
   return `# ${username}'s Ecency blog
 
 Your blog, configured the way you left it on ecency.com, ready to run on
 your own server. Nothing here talks to Ecency's hosting: the app reads posts
-straight from the Hive blockchain, and \`config.json\` is yours to edit.
+straight from the Hive blockchain. \`config.json\` is yours to edit.
 
-## What is in here
+${
+  hasDomain
+    ? ""
+    : `**${EXAMPLE_DOMAIN} in these files is a placeholder.** You did not name a
+domain, so it appears in the Caddyfile and in the search-engine commands
+further down. Replace every one of them with your own address, or those
+commands will publish a sitemap and a feed pointing at an example site.
+
+`
+}## What is in here
 
 | File | What it is |
 |------|-----------|
 | \`config.json\` | Everything you customized: theme, colours, fonts, title |
 | \`docker-compose.yml\` | The one service that serves the site |
-| \`.env\` | The pinned image tag and the port |
+| \`.env\` | The pinned image tag, the port and the bind address |
 | \`Caddyfile\` | HTTPS in two lines, if you use Caddy |
 
 ## Run it
@@ -142,8 +176,8 @@ Requires Docker and Docker Compose on a machine with a public address.
 docker compose up -d
 \`\`\`
 
-The site is now on port 3000, published on loopback so a reverse proxy can
-serve it over HTTPS. Check it with \`curl -I localhost:3000\` and read the
+The site is now on port ${DEFAULT_PORT}, published on loopback so a reverse proxy
+can serve it over HTTPS. Check it with \`curl -I localhost:${DEFAULT_PORT}\` and read the
 logs with \`docker compose logs -f\`. To expose it directly instead, with no
 proxy and therefore no HTTPS, set \`BIND=0.0.0.0\` in \`.env\`.
 
@@ -162,7 +196,8 @@ caddy run --config Caddyfile
 \`\`\`
 
 Caddy obtains and renews the certificate itself. If you prefer nginx, proxy
-your server block to \`127.0.0.1:3000\` and use certbot for certificates.
+your server block to \`127.0.0.1:${DEFAULT_PORT}\` and use certbot for certificates.
+If you change \`PORT\` in \`.env\`, change the proxy's port with it.
 
 ## Change settings later
 
@@ -174,7 +209,7 @@ docker compose restart
 
 The file is mounted, not baked into the image, so an upgrade never discards
 your settings. The site also has a built-in Configuration Editor: sign in as
-@${username} and open it from the floating menu. On a self-hosted instance it
+@${owner} and open it from the floating menu. On a self-hosted instance it
 offers a Download rather than a Save, because only you can write this file;
 download the edited config over the one beside \`docker-compose.yml\` and
 restart.
@@ -189,13 +224,20 @@ docker compose up -d
 
 Rolling back is the same two commands with the previous tag, which is why
 the tag is pinned instead of floating. This bundle pins \`${tag}\`. Newer tags
-are listed at https://hub.docker.com/r/ecency/self-hosted/tags, and
-https://api.blogs.ecency.com/health reports what Ecency's own platform runs.
+are listed at https://hub.docker.com/r/ecency/self-hosted/tags. What Ecency's
+own platform runs is reported by https://api.blogs.ecency.com/health.
 
 ## Search engines and feeds (optional)
 
 Generate \`robots.txt\`, \`sitemap.xml\` and \`rss.xml\` for your site, then
-uncomment the three SEO mounts in \`docker-compose.yml\`:
+uncomment the three SEO mounts in \`docker-compose.yml\`.${
+  hasDomain
+    ? ""
+    : ` **Set your own
+domain in the two commands below first.** Run as written, they publish a
+sitemap and a feed advertising ${EXAMPLE_DOMAIN}, which helps nobody find
+your site.`
+}
 
 \`\`\`bash
 docker run --rm -v "$PWD:/work" ecency/hosting-api:${tag} \\
@@ -239,7 +281,12 @@ export function buildSelfHostBundle(input: SelfHostBundleInput): BundleFile[] {
   const hasDomain = normalized !== null;
   const domain = normalized ?? EXAMPLE_DOMAIN;
   return [
-    { name: "README.md", content: readme(input.username, input.tag, domain, hasDomain) },
+    {
+      name: "README.md",
+      // Owner, not username: on a community instance the username is the
+      // keyless community account and could never open the editor.
+      content: readme(input.username, input.owner || input.username, input.tag, domain, hasDomain)
+    },
     { name: "config.json", content: `${JSON.stringify(input.config, null, 2)}\n` },
     { name: "docker-compose.yml", content: composeYml() },
     { name: ".env", content: envFile(input.tag) },

@@ -44,6 +44,9 @@ export function useDownloadSelfHostBundle() {
       const zip = buildSelfHostZip({
         config: composed,
         username,
+        // Who may open the editor on the deployed instance. For a community
+        // that is not the username, which holds nobody's keys.
+        owner: owner || username,
         tag: `sha-${sha.slice(0, 7)}`,
         domain
       });

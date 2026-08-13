@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildSelfHostBundle,
   buildSelfHostZip,
+  EXAMPLE_DOMAIN,
   normalizeDomain,
   zipStore
 } from "@/features/hosting-signup/self-host-bundle";
@@ -122,6 +123,61 @@ describe("buildSelfHostBundle", () => {
     expect(caddy).toContain("reverse_proxy 127.0.0.1:3000");
     expect(readme).toContain("https://blog.alice.example/rss.xml");
     expect(readme).not.toContain("blog.example.com");
+  });
+
+  it("names the OWNER as the editor account, not the site's own name", () => {
+    // On a community instance the username is the keyless hive-NNNNN
+    // account: telling the reader to sign in as that account sends them to
+    // an account nobody holds keys for.
+    const readme = buildSelfHostBundle({
+      ...INPUT,
+      username: "hive-125125",
+      owner: "alice"
+    }).find((f) => f.name === "README.md")!.content;
+
+    expect(readme).toContain("sign in as\n@alice");
+    expect(readme).not.toContain("@hive-125125 and open it");
+  });
+
+  it("falls back to the username as owner for a personal blog", () => {
+    const readme = buildSelfHostBundle(INPUT).find((f) => f.name === "README.md")!.content;
+    expect(readme).toContain("@alice");
+  });
+
+  it("writes one port into the compose file, the env file and the Caddyfile", () => {
+    // Generated apart, a changed port means Caddy proxying to nothing, so
+    // the three have to come from the same value.
+    const files = buildSelfHostBundle(INPUT);
+    const env = files.find((f) => f.name === ".env")!.content;
+    const caddy = files.find((f) => f.name === "Caddyfile")!.content;
+    const compose = files.find((f) => f.name === "docker-compose.yml")!.content;
+
+    expect(env).toContain("PORT=3000");
+    expect(caddy).toContain("reverse_proxy 127.0.0.1:3000");
+    expect(compose).toContain("${PORT:-3000}");
+    // Each edit site points at the other, since only a later edit can split them.
+    expect(env).toMatch(/Caddyfile/);
+    expect(caddy).toMatch(/PORT in \.env/);
+  });
+
+  it("warns about the placeholder everywhere it appears, not just the Caddyfile", () => {
+    const readme = buildSelfHostBundle({ ...INPUT, domain: undefined }).find(
+      (f) => f.name === "README.md"
+    )!.content;
+
+    // The SEO commands carry the placeholder too, and run as written they
+    // publish a sitemap and feed advertising an example site.
+    const seoSection = readme.slice(readme.indexOf("## Search engines"));
+    expect(seoSection).toContain(EXAMPLE_DOMAIN);
+    expect(seoSection).toMatch(/Set your own\s+domain in the two commands below first/);
+    // And the top of the file says it once, plainly.
+    expect(readme).toContain(`**${EXAMPLE_DOMAIN} in these files is a placeholder.**`);
+  });
+
+  it("says nothing about placeholders when a domain was given", () => {
+    const readme = buildSelfHostBundle(INPUT).find((f) => f.name === "README.md")!.content;
+    expect(readme).not.toContain("placeholder");
+    expect(readme).not.toContain(EXAMPLE_DOMAIN);
   });
 
   it("normalizes a pasted URL down to its hostname", () => {
