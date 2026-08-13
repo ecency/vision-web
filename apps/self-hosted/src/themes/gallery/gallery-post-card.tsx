@@ -66,14 +66,19 @@ export function GalleryPostCard({ entry }: Props) {
               src={imageUrl}
               srcSet={buildSrcSet(imageUrl) || undefined}
               /*
-               * Measured from the layout rather than guessed as a viewport
-               * fraction. The grid is auto-fill at a 260px minimum inside a
-               * content width capped at 1200px, so a tile is about 285px on
-               * a wide screen however wide the window gets: a `33vw` hint
-               * told the browser 475px at 1440 and had it fetch a candidate
-               * nobody displays. Values are the measured widths rounded up.
+               * Measured from the rendered grid, not modelled from the
+               * viewport. The container does not grow smoothly: Tailwind's
+               * `container` snaps to breakpoint max-widths, so the tile
+               * width steps rather than sliding, and the steps are what a
+               * `vw` fraction cannot express. Measured at 1x:
+               *
+               *   <580  1 col, container 100vw-40   tile up to 535
+               *   <768  2 col, container 100vw-40   tile 260 to 354
+               *   <1024 2 col, container 728        tile 354
+               *   <1280 3 col, container 984        tile 315
+               *   else  4 col, container 1200 (cap) tile 285
                */
-              sizes="(max-width: 639px) 100vw, (max-width: 1023px) 360px, 300px"
+              sizes="(max-width: 579px) calc(100vw - 40px), (max-width: 767px) calc((100vw - 60px) / 2), (max-width: 1023px) 354px, (max-width: 1279px) 315px, 285px"
               alt={entryData.title}
               loading="lazy"
               className="w-full h-[var(--theme-post-card-image-height)] object-cover transition-theme group-hover:opacity-90"
