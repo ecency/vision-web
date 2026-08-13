@@ -26,6 +26,7 @@ export const STYLE_TEMPLATES = Object.freeze([
   'journal',
   'reader',
   'gallery',
+  'terminal',
 ] as const);
 
 export type StyleTemplate = (typeof STYLE_TEMPLATES)[number];
