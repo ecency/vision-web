@@ -65,9 +65,15 @@ export function GalleryPostCard({ entry }: Props) {
             <img
               src={imageUrl}
               srcSet={buildSrcSet(imageUrl) || undefined}
-              /* One tile wide: the grid packs at a 260px minimum and grows,
-                 so a third of a wide window is the realistic upper bound. */
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              /*
+               * Measured from the layout rather than guessed as a viewport
+               * fraction. The grid is auto-fill at a 260px minimum inside a
+               * content width capped at 1200px, so a tile is about 285px on
+               * a wide screen however wide the window gets: a `33vw` hint
+               * told the browser 475px at 1440 and had it fetch a candidate
+               * nobody displays. Values are the measured widths rounded up.
+               */
+              sizes="(max-width: 639px) 100vw, (max-width: 1023px) 360px, 300px"
               alt={entryData.title}
               loading="lazy"
               className="w-full h-[var(--theme-post-card-image-height)] object-cover transition-theme group-hover:opacity-90"

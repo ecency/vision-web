@@ -137,16 +137,36 @@
  * working without another breakpoint.
  */
 /*
- * The shared shell holds the archive at a reading measure (max-w-3xl, the
- * width every template has always used). A wall of pictures wants the room
- * instead, so Gallery widens that one wrapper to its own content-width
- * token. Unlayered, so it beats the Tailwind utility whatever the
- * specificity; every other template keeps the measure untouched.
+ * The layout, all of it scoped to the blog shell.
+ *
+ * `.blog-layout-grid` and `.blog-sidebar-container` are ALSO rendered by
+ * /publish and /edit, which mount the sidebar directly rather than through
+ * the theme seam. An unscoped rule here reached those routes and took the
+ * editor's sidebar away on a Gallery instance, so every rule below is
+ * qualified by `:has(.blog-page-measure)`, the wrapper only the blog shell
+ * renders.
+ *
+ * The `:root` prefix is the other half: components.css is imported AFTER the
+ * themes, so an equal-specificity selector there would win.
  */
-:root[data-style-template="gallery"] .blog-page-measure {
+
+/*
+ * The shell holds pages at a reading measure (max-w-3xl). A wall of pictures
+ * wants the room instead, but ONLY where there is a wall: an article and the
+ * About page keep the measure that makes prose readable. `:has` scopes this
+ * to pages that actually contain a grid, which is the archive and the search
+ * results, both of which render `.blog-posts-list`.
+ */
+:root[data-style-template="gallery"] .blog-page-measure:has(.blog-posts-list) {
   max-width: var(--theme-content-width);
 }
 
+/*
+ * auto-fill with a minimum rather than a fixed column count: a gallery
+ * should reflow to the window, and it keeps the single-column phone case
+ * working without another breakpoint. Applies whatever list type the config
+ * carries, since a stored 'list' predates this theme.
+ */
 :root[data-style-template="gallery"] .blog-posts-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
@@ -154,13 +174,15 @@
   align-items: start;
 }
 
-/* No sidebar: the grid is the page. The Sidebar seam already renders
- * nothing, so this only collapses the column the shell's grid reserves for
- * it at desktop widths. */
-:root[data-style-template="gallery"] .blog-layout-grid {
+/* No sidebar on the blog shell: the seam already renders nothing, so this
+ * only collapses the column the grid reserves for it. */
+:root[data-style-template="gallery"]
+  .blog-layout-grid:has(.blog-page-measure) {
   grid-template-columns: 1fr;
 }
 
-:root[data-style-template="gallery"] .blog-sidebar-container {
+:root[data-style-template="gallery"]
+  .blog-layout-grid:has(.blog-page-measure)
+  > .blog-sidebar-container {
   display: none;
 }
