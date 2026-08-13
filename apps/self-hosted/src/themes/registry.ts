@@ -17,10 +17,23 @@ import type { ThemeManifest, ThemeOptionKey } from './manifest';
 /**
  * Every template id from the roster gets a manifest here; the roster guard
  * suite keeps ids in lockstep with the CSS registry, and the registry test in
- * this directory keeps this map total over the roster. All five existing
- * templates are CSS-only, so none carries a components key: rendering is
- * byte-identical to the pre-manifest architecture, which is the point of the
- * migration.
+ * this directory keeps this map total over the roster.
+ *
+ * Four templates (medium, minimal, developer, modern-gradient) carry no
+ * components key at all, so they resolve to the very same component functions
+ * the pre-manifest architecture rendered. That identity is asserted per seam
+ * rather than by deep equality, because it is what guarantees nothing remounts
+ * when a manifest is added beside them.
+ *
+ * The other five own structure: magazine (ArchiveList), journal (Shell,
+ * PostCard), reader (Shell, ArchiveList), gallery (PostCard, Sidebar) and
+ * terminal (Shell, ArchiveList).
+ *
+ * Owning a seam and dropping an option are separate things. Four of those five
+ * render no sidebar, so they declare it in `unsupportedOptions` and the editor
+ * hides the control rather than leaving a toggle that does nothing. Magazine
+ * keeps the shared shell and only rearranges the archive inside it, so its
+ * sidebar still works and it declares nothing.
  */
 const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
   medium: { id: 'medium', tier: 'free', showsReadTime: true },

@@ -17,6 +17,8 @@ Built and maintained by [Ecency](https://ecency.com), an open-source social plat
 - `encryptMemoWithAccounts` / `decryptMemoWithAccounts` – encrypt or decrypt memos by looking up account memo keys
 - `useGetExternalWalletBalanceQuery` – retrieve balances for external wallets such as BTC, ETH, BNB, SOL, TRON, TON, or APT through Ecency's private API
 
+Blockchain mutations live in `@ecency/sdk`. `useWalletOperation` is re-exported from this package for compatibility but is the SDK's implementation.
+
 ## Installation
 
 ```sh

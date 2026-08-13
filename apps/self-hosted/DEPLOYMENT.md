@@ -22,6 +22,14 @@ Deploy your own blog powered by the Hive blockchain. This guide covers Docker de
 - A Hive blockchain account (for blog mode)
 - (Optional) A domain name for production deployment
 
+A shortcut past steps 1 and 2:
+[blogs.ecency.com/hosting](https://blogs.ecency.com/hosting) lets you customize
+the look in the browser and then hands you the whole deployment as a download
+instead of a hosted blog. The archive holds `config.json`,
+`docker-compose.yml`, `.env` with an image tag already pinned, a `Caddyfile`
+and a README. Nothing is reserved and nothing is charged on that path: it is
+the same files as below, filled in for you. Unzip it and go straight to step 3.
+
 ### 1. Clone and Configure
 
 ```bash
@@ -132,11 +140,60 @@ Display posts from a Hive community:
 | `modern-gradient` | Bright surfaces with a vivid accent |
 | `journal` | Ink on paper: one quiet column for long-form writing |
 | `reader` | Your archive beside the open post, the way a feed reader works |
+| `gallery` | A wall of pictures: the image leads, the words step back |
+| `terminal` | A console listing: monospace, dense, no card in sight |
 
-`journal` and `reader` change the page STRUCTURE, not only its colours, so
-they ignore the options a single-column layout has no place for: neither
-renders a sidebar, and both fix the archive to one column regardless of
-`layout.listType`.
+Four of the nine are CSS-token-only. `medium`, `minimal`, `developer` and
+`modern-gradient` render the identical component tree and differ only in
+colour, type and spacing.
+
+The other five change the page STRUCTURE as well:
+
+- `magazine` owns the archive: the newest entry becomes a hero, with the rest
+  as rows. Everything else, sidebar included, stays as configured.
+- `journal` brings its own shell and entry: one quiet column, no card chrome.
+- `reader` brings its own shell and home pane: a split frame with the archive
+  as a persistent rail beside the open post.
+- `gallery` brings its own tile and an empty sidebar: the archive becomes a
+  grid of covers.
+- `terminal` brings its own shell and archive: a console prompt with filters
+  as flags, above a dense dated listing.
+
+`journal`, `reader`, `gallery` and `terminal` render no sidebar whatever the
+config says, so each declares the sidebar unsupported and the Configuration
+Editor hides that option while the template is active. Your stored value is
+left alone: it applies again the moment you switch back to a template that
+uses it. An option is never silently inert.
+
+#### How a template is defined
+
+A style template is a MANIFEST. `src/themes/manifest.ts` defines the
+`ThemeComponents` seam (`Shell`, `Navigation`, `Sidebar`, `ArchiveList`,
+`PostCard`) plus the options a template can declare it does not consume.
+`src/themes/registry.ts` maps every roster id to its manifest.
+`src/themes/use-theme-components.ts` resolves the active template's components
+over the shared defaults, so a seam a template does not override renders
+exactly what it always did. The implementations sit beside the registry in
+`src/themes/magazine/`, `journal/`, `reader/`, `gallery/` and `terminal/`.
+
+Adding a template, following the roster's own header comment in
+`hosting/api/src/style-templates.ts`:
+
+1. Add the id to `STYLE_TEMPLATES` there. That file is the single source of
+   truth for which ids exist, kept dependency-free because the SPA imports it
+   into browser bundles.
+2. Create its CSS under `src/styles/themes/` and import it from that
+   directory's `index.css`.
+3. Add the editor's label string to i18n (`src/core/i18n-strings.ts`).
+4. Add its card to `hosting/api/src/style-template-display.ts` (name, tagline,
+   swatch colours, heading style), which is what the signup picker renders.
+
+The guard test `src/styles/style-template-roster.test.ts` fails until the CSS
+side agrees; the label map in `src/features/floating-menu/config-fields.ts` and
+the display catalog both fail typecheck until their entries exist. A template
+that only restyles needs nothing else. One that changes structure adds a
+manifest entry in `src/themes/registry.ts` carrying its `components`, plus
+`unsupportedOptions` for anything its components do not consume.
 
 ### Feature Flags
 
@@ -189,16 +246,55 @@ Editor, under General Settings > Hivesigner.
 ```json
 {
   "layout": {
-    "listType": "list",
     "sidebar": {
-      "placement": "right",
       "followers": { "enabled": true },
-      "following": { "enabled": true },
       "hiveInformation": { "enabled": true }
     }
   }
 }
 ```
+
+The feed is a single column and the sidebar sits on the right. Both were once
+configurable, no instance ever changed either one, plus the unused settings
+carried rendering bugs of their own, so they were retired. A stored config that
+still carries `listType` or `sidebar.placement` is ignored rather than rejected,
+so nothing needs migrating.
+
+Themes that render no sidebar at all (Journal, Reader, Gallery, Terminal)
+declare it unsupported. The Configuration Editor hides the section instead
+of leaving switches that do nothing.
+
+### The Configuration Editor
+
+Every instance ships an in-browser editor for these settings, behind the
+floating menu button. It edits the same document as `config.json`, so nothing
+it offers is editor-only. Nothing `config.json` accepts is out of its reach
+either.
+
+It has four tabs
+(`src/features/floating-menu/components/floating-menu-window.tsx`):
+
+| Tab | Holds |
+|-----|-------|
+| Appearance | Template cards, then theme, styles (accent with quick picks, fonts) and layout |
+| Identity | Site metadata (title, description, favicon) and language |
+| Features | Likes, comments, publishing, auth methods |
+| Advanced | The full field set |
+
+Appearance, Identity and Features are curated views over the one schema in
+`config-fields.ts`, picked by path (`TAB_FIELD_PATHS`). Advanced exposes that
+whole schema, so a setting a curated tab leaves out is still reachable in the
+editor rather than becoming config-file-only.
+
+The editor compares what you are editing against the document the site
+currently stores. That gives it an unsaved-changes indicator, plus a Revert
+that puts everything back to the stored document in one step. Picking a
+template previews it live, structure included, before you commit to it.
+
+On a managed instance the editor saves through the hosting API. On an
+independent deployment there is no API to save to, so the button downloads the
+document instead, for you to put beside `docker-compose.yml` as `config.json`
+and restart.
 
 ## Deployment Options
 
@@ -208,13 +304,15 @@ Published tags for `ecency/self-hosted` (and its paired `ecency/hosting-api`):
 
 | Tag | Moves? | Use it for |
 |-----|--------|-----------|
-| `sha-<7>` | never | **what to pin today**: one immutable build, e.g. `sha-abc1234` |
-| `vX.Y.Z` | never | a tagged release, once releases are cut |
+| `vX.Y.Z` | never | **what to pin**: a tagged release, e.g. `v1.0.0` |
+| `sha-<7>` | never | one immutable build between releases, e.g. `sha-abc1234` |
 | `develop` | every merge | tracking development, never a deployment you care about |
 | `latest` | releases only | convenience; it does not move until a release is tagged |
 
-Prefer a `vX.Y.Z` release tag when one is listed; no release has been cut
-yet, so today that means pinning a `sha-<7>` tag. Take a tag that exists
+Prefer a `vX.Y.Z` release tag: `v1.0.0` was published on 2026-08-12 from the
+`self-hosted-v1.0.0` git tag, which is the only thing that publishes an
+immutable version and advances `:latest`. A `sha-<7>` tag pins one specific
+build when you need something newer than the last release. Take a tag that exists
 from [Docker Hub](https://hub.docker.com/r/ecency/self-hosted/tags), which
 is the source of truth, or read what the managed platform runs from
 `https://api.blogs.ecency.com/health`, which answers `{version, sha}`.
@@ -405,7 +503,9 @@ server {
 Managed instances get per-tenant `robots.txt`, `sitemap.xml` and `rss.xml`
 generated automatically. An independent deployment produces the same files
 with the generator shipped in the `ecency/hosting-api` image, run on a cron
-(hourly is plenty; the feeds carry the latest 100 posts):
+(hourly is plenty; the feeds carry the latest 100 posts, assembled as five or
+more paged bridge calls of 20 under one 30s budget, because the bridge errors
+on a `limit` above 20):
 
 ```bash
 # Pin the same tag the blog runs. Without one this pulls :latest, which
@@ -616,7 +716,7 @@ once already.
 1. **Visit** [https://blogs.ecency.com/hosting](https://blogs.ecency.com/hosting)
 2. **Enter** your Hive username
 3. **Configure** your blog (title, theme, style)
-4. **Pay** via Hive Keychain or manual HBD transfer
+4. **Pay** by card (the default), or in HBD via Hive Keychain or a manual transfer
 5. **Go live** at `username.blogs.ecency.com`
 
 ### Custom Domain Setup
