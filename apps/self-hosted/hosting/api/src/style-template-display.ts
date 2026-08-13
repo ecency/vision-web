@@ -103,6 +103,17 @@ export const STYLE_TEMPLATE_DISPLAY = {
     },
     headingStyle: 'sans',
   },
+  gallery: {
+    name: 'Gallery',
+    tagline: 'A wall of pictures: the image leads, the words step back',
+    colors: {
+      background: '#f6f6f4',
+      surface: '#ffffff',
+      accent: '#37596b',
+      text: '#1b1b1a',
+    },
+    headingStyle: 'sans',
+  },
 } satisfies Record<StyleTemplate, StyleTemplateDisplay>;
 
 export function templateCatalog() {

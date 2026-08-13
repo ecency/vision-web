@@ -6,6 +6,8 @@ import {
 import { JournalPostCard } from './journal/journal-post-card';
 import { JournalShell } from './journal/journal-shell';
 import { ReaderHome } from './reader/reader-home';
+import { GalleryPostCard } from './gallery/gallery-post-card';
+import { GallerySidebar } from './gallery/gallery-sidebar';
 import { ReaderShell } from './reader/reader-shell';
 import type { ThemeManifest, ThemeOptionKey } from './manifest';
 
@@ -43,6 +45,17 @@ const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
     tier: 'free',
     showsReadTime: true,
     components: { Shell: ReaderShell, ArchiveList: ReaderHome },
+    unsupportedOptions: ['sidebar', 'listType'],
+  },
+  // The third layout-level design, and the first that keeps the shared
+  // shell: the archive becomes a grid of covers through CSS the theme owns,
+  // so only the tile and the (absent) sidebar are components. listType is
+  // hidden because the grid is not optional here, and sidebar because the
+  // seam renders nothing whatever the config says.
+  gallery: {
+    id: 'gallery',
+    tier: 'free',
+    components: { PostCard: GalleryPostCard, Sidebar: GallerySidebar },
     unsupportedOptions: ['sidebar', 'listType'],
   },
 };
