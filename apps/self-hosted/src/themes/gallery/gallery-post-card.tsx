@@ -73,12 +73,18 @@ export function GalleryPostCard({ entry }: Props) {
                * `vw` fraction cannot express. Measured at 1x:
                *
                *   <580  1 col, container 100vw-40   tile up to 535
-               *   <768  2 col, container 100vw-40   tile 260 to 354
-               *   <1024 2 col, container 728        tile 354
-               *   <1280 3 col, container 984        tile 315
+               *   <640  2 col, container 100vw-40   tile 260 to 290
+               *   <768  2 col, container 600 (sm)   tile 290
+               *   <1024 2 col, container 728 (md)   tile 354
+               *   <1280 3 col, container 984 (lg)   tile 315
                *   else  4 col, container 1200 (cap) tile 285
+               *
+               * The 640 step is the one that is easy to miss: the container
+               * caps at 640 there, so the tile stops growing while the
+               * viewport keeps going, and a formula that tracks the viewport
+               * overstates by a fifth by the time it reaches 767.
                */
-              sizes="(max-width: 579px) calc(100vw - 40px), (max-width: 767px) calc((100vw - 60px) / 2), (max-width: 1023px) 354px, (max-width: 1279px) 315px, 285px"
+              sizes="(max-width: 579px) calc(100vw - 40px), (max-width: 639px) calc((100vw - 60px) / 2), (max-width: 767px) 290px, (max-width: 1023px) 354px, (max-width: 1279px) 315px, 285px"
               alt={entryData.title}
               loading="lazy"
               className="w-full h-[var(--theme-post-card-image-height)] object-cover transition-theme group-hover:opacity-90"
