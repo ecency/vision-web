@@ -288,8 +288,18 @@ function CommunitySidebar() {
         </div>
       )}
 
+      {/*
+       * The same two visibility classes the blog sidebar carries, on this
+       * tree's counterparts: the Followers toggle governs the subscriber
+       * count here exactly as it governs the follower count there, which the
+       * blog side also labels "Subscribers". Without them the toggles were
+       * inert on every community instance (#1480).
+       *
+       * The row needs no collapse rule: the author count has no toggle, so it
+       * can never empty the way the blog side's two-toggle row can.
+       */}
       <div className="flex gap-6 mb-4">
-        <div className="flex flex-col">
+        <div className="flex flex-col sidebar-followers-section">
           <div className="text-xs text-theme-muted">{t("subscribers")}</div>
           <div className="text-sm font-medium text-theme-primary">
             {community.subscribers?.toLocaleString() || 0}
@@ -307,7 +317,7 @@ function CommunitySidebar() {
         <CommunityJoinButton communityId={communityId} />
       </div>
 
-      <div className="border-t border-theme pt-4 mt-4">
+      <div className="border-t border-theme pt-4 mt-4 sidebar-hive-info-section">
         <div className="text-xs font-medium mb-2 text-theme-muted">
           {t("community_info")}
         </div>
@@ -331,8 +341,15 @@ function CommunitySidebar() {
         )}
       </div>
 
+      {/*
+       * The team is chain information too, and it is a sibling block rather
+       * than part of the one above, so it needs the class in its own right.
+       * Without it, an owner who turned Hive Information off kept the
+       * moderator list: a toggle that half works, which is the same defect as
+       * one that does nothing.
+       */}
       {community.team && community.team.length > 0 && (
-        <div className="border-t border-theme pt-4 mt-4">
+        <div className="border-t border-theme pt-4 mt-4 sidebar-hive-info-section">
           <div className="text-xs font-medium mb-2 text-theme-muted">
             {t("team")}
           </div>

@@ -843,6 +843,60 @@ describe('isFieldVisible (the visibleWhen capability)', () => {
     expect(isFieldVisible(field, doc)).toBe(true);
   });
 
+  /**
+   * The real field, not a stand-in. A community sidebar shows subscribers and
+   * authors and never a following count, so the toggle has nothing to govern
+   * there and must hide rather than sit inert (#1480). The other two sidebar
+   * toggles DO have counterparts in that tree and stay visible, which is the
+   * half that proves the gate is scoped rather than blanket.
+   */
+  describe('the sidebar Following toggle, per instance type', () => {
+    const SIDEBAR = [
+      'configuration',
+      'instanceConfiguration',
+      'layout',
+      'sidebar',
+    ] as const;
+
+    function documentFor(
+      type: string,
+      communityId: string,
+    ): Record<string, import('./types').ConfigValue> {
+      return {
+        configuration: {
+          general: { styleTemplate: 'medium' },
+          instanceConfiguration: { type, communityId },
+        },
+      } as unknown as Record<string, import('./types').ConfigValue>;
+    }
+
+    const blog = documentFor('blog', '');
+    const community = documentFor('community', 'hive-125125');
+
+    it('hides on a community instance and shows on a blog', () => {
+      const following = fieldAt([...SIDEBAR, 'following']);
+      expect(following).toBeDefined();
+      expect(isFieldVisible(following!, community)).toBe(false);
+      expect(isFieldVisible(following!, blog)).toBe(true);
+    });
+
+    it('leaves the toggles a community CAN serve visible', () => {
+      for (const key of ['followers', 'hiveInformation']) {
+        const field = fieldAt([...SIDEBAR, key]);
+        expect(field, key).toBeDefined();
+        expect(isFieldVisible(field!, community), key).toBe(true);
+      }
+    });
+
+    it('treats a community type with no id as a blog, like every other caller', () => {
+      // isCommunityInstance requires BOTH, so a half-configured document keeps
+      // the toggle rather than hiding a control the instance still honours.
+      const halfConfigured = documentFor('community', '');
+      const following = fieldAt([...SIDEBAR, 'following']);
+      expect(isFieldVisible(following!, halfConfigured)).toBe(true);
+    });
+  });
+
   it('the predicate decides against the WHOLE document', () => {
     const onlyMagazine: ConfigField = {
       label: 'X',

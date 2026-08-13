@@ -294,6 +294,13 @@ export function buildConfigFields(
                   following: {
                     label: t('panel_configuration_instance_configuration_layout_sidebar_following_label'),
                     type: 'section',
+                    // A community sidebar shows subscribers and authors, never
+                    // a following count: what accounts the community account
+                    // follows is not something its page advertises. The other
+                    // two toggles have counterparts there and work; this one
+                    // has nothing to govern, so it hides rather than sitting
+                    // inert. Same rule the theme gate above applies.
+                    visibleWhen: (document) => !isCommunityConfig(document),
                     fields: {
                       enabled: {
                         label: t('panel_configuration_instance_configuration_layout_sidebar_following_enabled_label'),
