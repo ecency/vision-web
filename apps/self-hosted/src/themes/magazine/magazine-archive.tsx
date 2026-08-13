@@ -79,7 +79,14 @@ function MagazineHero({ entry }: { entry: Entry }) {
   const postSearch = { raw: undefined };
 
   return (
-    <article className="magazine-hero pb-8 mb-2 border-b border-theme">
+    /*
+     * col-span-full: Magazine still offers the grid feed, and in that mode
+     * the archive is a real CSS grid, so without this the hero is just
+     * another cell. It rendered one column wide with the second post beside
+     * it, which is the opposite of a hero. Inert in list mode, where the
+     * archive is a flex column and grid-column means nothing.
+     */
+    <article className="magazine-hero col-span-full pb-8 mb-2 border-b border-theme">
       {imageUrl && (
         <Link
           to="/$author/$permlink"

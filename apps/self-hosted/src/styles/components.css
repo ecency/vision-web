@@ -260,15 +260,23 @@
   gap: var(--theme-grid-gap);
 }
 
+/*
+ * minmax(0, 1fr) rather than 1fr: a bare `1fr` is `minmax(auto, 1fr)`, so a
+ * track refuses to shrink below its content's min-content width. The post
+ * cards are wider than a third of the reading measure, so three tracks blew
+ * out to 1179px inside a 768px column and the grid overflowed to the right.
+ * Every template's grid feed had this; it only became obvious when an entry
+ * spanned the whole row.
+ */
 @media (min-width: 768px) {
   [data-list-type="grid"] .blog-posts-list {
-    grid-template-columns: repeat(var(--theme-grid-columns-tablet), 1fr);
+    grid-template-columns: repeat(var(--theme-grid-columns-tablet), minmax(0, 1fr));
   }
 }
 
 @media (min-width: 1024px) {
   [data-list-type="grid"] .blog-posts-list {
-    grid-template-columns: repeat(var(--theme-grid-columns-desktop), 1fr);
+    grid-template-columns: repeat(var(--theme-grid-columns-desktop), minmax(0, 1fr));
   }
 }
 
