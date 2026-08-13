@@ -204,15 +204,25 @@ export function BlogPostItem({ entry }: Props) {
         </div>
       )}
 
-      <div className="flex items-center gap-4 text-xs text-theme-muted font-theme-ui">
+      {/*
+        Wraps rather than one rigid row. This row carries author, date, read
+        time, likes, comments and sometimes a payout, which needs ~386px; in
+        the grid feed a card can be 235px, and without wrapping the row spilled
+        out of the card and over its neighbour. `gap-y` keeps the wrapped lines
+        from touching. In the list feed there is room, so it never wraps and
+        nothing changes.
+      */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-theme-muted font-theme-ui">
         <a
           href={`${profileBaseUrl}${entryData.author}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 hover:opacity-70 transition-opacity"
+          className="flex min-w-0 items-center gap-2 hover:opacity-70 transition-opacity"
         >
           <UserAvatar username={entryData.author} size="small" />
-          <span className={isCommunity ? 'font-medium text-theme-secondary' : ''}>
+          <span
+            className={`truncate ${isCommunity ? 'font-medium text-theme-secondary' : ''}`}
+          >
             {entryData.author}
           </span>
         </a>
