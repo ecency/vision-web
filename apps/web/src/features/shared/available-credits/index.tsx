@@ -3,6 +3,7 @@
 import { calculateRCMana, powerRechargeTime, rcPower } from "@ecency/sdk";
 import { RcOperation } from "@/entities";
 import { rcFormatter } from "@/utils";
+import { rcAffordableOperations } from "@/utils/rc-affordable-operations";
 import { useMounted } from "@/utils/use-mounted";
 import { getAccountRcQueryOptions, getRcStatsQueryOptions } from "@ecency/sdk";
 import { flip, shift, useFloating } from "@floating-ui/react-dom";
@@ -73,9 +74,10 @@ export const AvailableCredits = ({ username, className }: Props) => {
     const voteCost = operationCosts.vote_operation.avg_cost;
 
     const availableResourceCredit: any = rcValues.map((a: any) => a.rc_manabar.current_mana);
-    setCommentAmount(Math.ceil(Number(availableResourceCredit[0]) / commentCost));
-    setVoteAmount(Math.ceil(Number(availableResourceCredit[0]) / voteCost));
-    setTransferAmount(Math.ceil(Number(availableResourceCredit[0]) / transferCost));
+    const mana = Number(availableResourceCredit[0]);
+    setCommentAmount(rcAffordableOperations(mana, commentCost));
+    setVoteAmount(rcAffordableOperations(mana, voteCost));
+    setTransferAmount(rcAffordableOperations(mana, transferCost));
   }, [rcStats, rcValues]);
 
   const show = () => setIsShow(true);

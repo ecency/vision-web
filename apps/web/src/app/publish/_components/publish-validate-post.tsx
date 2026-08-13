@@ -19,6 +19,8 @@ import { isCommunity } from "@/utils";
 import { wordOverlapSimilarity } from "@/utils/text-similarity";
 import { hasPublishContent } from "../_utils/content";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { AvailableCredits } from "@/features/shared";
+import { RcPrecheckBanner } from "@/features/shared/rc-precheck";
 import {
   canFitBeneficiary,
   isSupportEcencyRow,
@@ -254,6 +256,13 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
             >
               {i18next.t("support-ecency.add-chip")}
             </Button>
+          )}
+
+          {activeUser?.username && (
+            <div className="w-full flex flex-col gap-2">
+              <RcPrecheckBanner operation="comment_operation" />
+              <AvailableCredits username={activeUser.username} operation="comment_operation" />
+            </div>
           )}
 
           <div className="flex items-center gap-2">
