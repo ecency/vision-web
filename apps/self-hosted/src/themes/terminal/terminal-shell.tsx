@@ -4,7 +4,10 @@ import clsx from 'clsx';
 import { InstanceConfigManager, t } from '@/core';
 import { CreatePostButton, UserMenu } from '@/features/auth';
 import { SearchInput } from '@/features/blog/components/search-input';
-import { useInstanceConfig } from '@/features/blog/hooks/use-instance-config';
+import {
+  useCommunityData,
+  useInstanceConfig,
+} from '@/features/blog/hooks/use-instance-config';
 import { usePostsFilterState } from '@/features/blog/hooks/use-posts-filter-state';
 import { BlogPage } from '@/features/blog/layout/blog-page';
 
@@ -19,7 +22,8 @@ import { BlogPage } from '@/features/blog/layout/blog-page';
  * removes the only way an owner writes a post.
  */
 export function TerminalShell(props: PropsWithChildren) {
-  const { username, isCommunityMode } = useInstanceConfig();
+  const { username, communityId, isCommunityMode } = useInstanceConfig();
+  const { data: community } = useCommunityData();
 
   const blogTitle = InstanceConfigManager.useConfig(
     ({ configuration }) => configuration.instanceConfiguration.meta.title,
@@ -32,9 +36,18 @@ export function TerminalShell(props: PropsWithChildren) {
   const { availableFilters, currentFilter, filterLabel, isAboutActive } =
     usePostsFilterState();
 
-  // The prompt reads as a path: a community is a directory of many authors,
-  // a blog is one person's home.
-  const prompt = isCommunityMode ? `~/${username}` : `~/${username}`;
+  // The prompt reads as a path. A community instance is keyed by its
+  // community id, not by `username`: a hand-written self-hosted config can
+  // leave username empty or set it to something unrelated, and the prompt
+  // would then name an account that has nothing to do with the site.
+  const identity = isCommunityMode ? communityId || username : username;
+  const prompt = `~/${identity}`;
+
+  // Same preference the other shells use: the community's current on-chain
+  // title beats a title stored in the config, which goes stale the moment
+  // the community is renamed.
+  const displayTitle =
+    (isCommunityMode && community?.title) || blogTitle || identity;
 
   return (
     <div className="min-h-screen bg-theme-primary">
@@ -50,7 +63,7 @@ export function TerminalShell(props: PropsWithChildren) {
                 <span aria-hidden="true" className="text-theme-muted">
                   {prompt}
                 </span>{' '}
-                {blogTitle || username}
+                {displayTitle}
               </Link>
             </h1>
             <span className="ml-auto flex items-center gap-3">
