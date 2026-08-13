@@ -155,6 +155,19 @@ describe('POST /v1/tools/compose-config', () => {
     expect(noOwner.res.status).toBe(400);
   });
 
+  it('refuses a subdomain and community id that disagree', async () => {
+    // The document pins BOTH names. Letting them differ would compose a
+    // site called hive-125125 that serves hive-99999's feed, which the
+    // managed create path rejects for the same reason.
+    const { res, body } = await compose({
+      username: 'hive-125125',
+      owner: 'alice',
+      config: { type: 'community', communityId: 'hive-99999' },
+    });
+    expect(res.status).toBe(400);
+    expect(body.error).toMatch(/must equal/);
+  });
+
   it('rejects a community id that is not shaped like one', async () => {
     const { res } = await compose({
       username: 'notacommunity',

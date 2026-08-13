@@ -122,6 +122,12 @@ toolsRoutes.post('/compose-config', composeLimit, zValidator('json', composeConf
     if (!COMMUNITY_NAME.test(communityId)) {
       return c.json({ error: 'Community id must look like hive-NNNN' }, 400);
     }
+    // Same rule as the managed create path. The document pins BOTH names,
+    // and letting them disagree would compose a site called hive-125125
+    // that serves hive-99999's feed. There is one identity or none.
+    if (username !== communityId) {
+      return c.json({ error: 'Subdomain must equal the community id' }, 400);
+    }
     // A community account holds nobody's keys, so it can never administer
     // an instance: without a separate owner, or with ANOTHER community named
     // as owner, the deployment would be permanently locked out of its own
