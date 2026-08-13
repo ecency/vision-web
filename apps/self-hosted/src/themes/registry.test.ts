@@ -67,7 +67,7 @@ const { DEFAULT_THEME_COMPONENTS, resolveThemeComponents } = await import(
 
 describe('component resolution', () => {
   it('every CSS-only template resolves to exactly the shared defaults', () => {
-    const layoutThemes = new Set(['journal', 'reader', 'gallery', 'magazine']);
+    const layoutThemes = new Set(['journal', 'reader', 'gallery', 'magazine', 'terminal']);
     for (const id of STYLE_TEMPLATES.filter((t) => !layoutThemes.has(t))) {
       const resolved = resolveThemeComponents(id);
       // Identity per seam, not just deep equality: the no-op migration means
@@ -118,6 +118,16 @@ describe('component resolution', () => {
     expect(resolved.Shell).toBe(DEFAULT_THEME_COMPONENTS.Shell);
     expect(resolved.ArchiveList).toBe(DEFAULT_THEME_COMPONENTS.ArchiveList);
     expect(resolved.Navigation).toBe(DEFAULT_THEME_COMPONENTS.Navigation);
+  });
+
+  it('terminal owns its shell and listing, and mounts the composer entry', () => {
+    const terminal = getThemeManifest('terminal');
+    const resolved = resolveThemeComponents('terminal');
+    expect(resolved.Shell).toBe(terminal.components?.Shell);
+    expect(resolved.ArchiveList).toBe(terminal.components?.ArchiveList);
+    // The card stays shared: search results render through that seam, and a
+    // listing row has no meaning outside the archive.
+    expect(resolved.PostCard).toBe(DEFAULT_THEME_COMPONENTS.PostCard);
   });
 
   it('reader resolves its own shell and archive pane, defaults for the rest', () => {

@@ -9,6 +9,8 @@ import { ReaderHome } from './reader/reader-home';
 import { MagazineArchive } from './magazine/magazine-archive';
 import { GalleryPostCard } from './gallery/gallery-post-card';
 import { GallerySidebar } from './gallery/gallery-sidebar';
+import { TerminalShell } from './terminal/terminal-shell';
+import { TerminalArchive } from './terminal/terminal-archive';
 import { ReaderShell } from './reader/reader-shell';
 import type { ThemeManifest, ThemeOptionKey } from './manifest';
 
@@ -66,6 +68,19 @@ const MANIFESTS: Record<StyleTemplate, ThemeManifest> = {
     id: 'gallery',
     tier: 'free',
     components: { PostCard: GalleryPostCard, Sidebar: GallerySidebar },
+    unsupportedOptions: ['sidebar', 'listType'],
+  },
+  // The fourth layout-level design: the Developer aesthetic as an actual
+  // console. Its own shell (prompt line, filters as flags, no sidebar) and
+  // its own archive (a dense listing, no cards). Ships beside Developer
+  // rather than replacing it: an unknown template id clamps to the roster
+  // default, so removing that id would silently reset an independent
+  // deployment's blog to Medium, and those cannot be surveyed.
+  terminal: {
+    id: 'terminal',
+    tier: 'free',
+    showsReadTime: true,
+    components: { Shell: TerminalShell, ArchiveList: TerminalArchive },
     unsupportedOptions: ['sidebar', 'listType'],
   },
 };

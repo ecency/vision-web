@@ -263,6 +263,7 @@ export type TranslationKey =
   | 'panel_configuration_general_style_template_journal_option'
   | 'panel_configuration_general_style_template_reader_option'
   | 'panel_configuration_general_style_template_gallery_option'
+  | 'panel_configuration_general_style_template_terminal_option'
   | 'reader_home_hint'
   | 'reader_home_keys'
   | 'panel_configuration_general_language_label'
@@ -605,6 +606,8 @@ export const translations: { en: Translations } & Record<
       'Reader (split view, archive rail beside the post)',
     panel_configuration_general_style_template_gallery_option:
       'Gallery (image grid, for picture-led blogs)',
+    panel_configuration_general_style_template_terminal_option:
+      'Terminal (console listing, monospace)',
     reader_home_hint: 'Pick a post from the list to start reading.',
     reader_home_keys: 'Tip: j and k move between posts.',
     panel_configuration_general_language_label: 'Language',

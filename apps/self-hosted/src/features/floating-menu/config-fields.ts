@@ -48,6 +48,7 @@ const STYLE_TEMPLATE_LABEL_KEYS = {
   journal: 'panel_configuration_general_style_template_journal_option',
   reader: 'panel_configuration_general_style_template_reader_option',
   gallery: 'panel_configuration_general_style_template_gallery_option',
+  terminal: 'panel_configuration_general_style_template_terminal_option',
 } satisfies Record<StyleTemplate, TranslationKey>;
 
 export type ConfigFieldType =

@@ -1,0 +1,157 @@
+/* Terminal Theme - A console listing
+ *
+ * The fourth layout-level design. Developer was the template whose look
+ * implied a structure it did not have: dark and code-friendly, rendering the
+ * same cards as everything else. Terminal is that aesthetic as an actual
+ * layout, and it ships BESIDE Developer rather than replacing it, because
+ * independent deployments cannot be surveyed and an unknown template id
+ * clamps to the roster default: removing 'developer' would silently reset
+ * someone's blog to Medium.
+ *
+ * The structural half lives in src/themes/terminal/ (Shell and ArchiveList
+ * manifest overrides); these tokens carry the full --theme-* contract so the
+ * accent correction sweep and every token utility keep working.
+ *
+ * Monospace throughout on purpose, including headings: the idiom is a
+ * console, where everything is one face at one width.
+ */
+
+[data-style-template="terminal"] {
+  /* Typography: one face, everywhere. */
+  --theme-font-body:
+    ui-monospace, "SFMono-Regular", "SF Mono", "Menlo", "Consolas",
+    "Liberation Mono", monospace;
+  --theme-font-heading:
+    ui-monospace, "SFMono-Regular", "SF Mono", "Menlo", "Consolas",
+    "Liberation Mono", monospace;
+  --theme-font-ui:
+    ui-monospace, "SFMono-Regular", "SF Mono", "Menlo", "Consolas",
+    "Liberation Mono", monospace;
+
+  --theme-text-base: 15px;
+  --theme-leading-normal: 1.6;
+  --theme-tracking-normal: 0;
+  --theme-tracking-tight: 0;
+
+  /* Colors - Light: a pale terminal, for the owner who wants one. The
+   * accent is a deep green so it stays legible on paper as well as glass. */
+  --theme-bg-primary: #f6f8fa;
+  --theme-bg-secondary: #eaeef2;
+  --theme-bg-tertiary: rgba(31, 35, 40, 0.06);
+  --theme-bg-card: #ffffff;
+
+  --theme-text-primary: #1f2328;
+  --theme-text-secondary: rgba(31, 35, 40, 0.75);
+  /* 0.62 composites to ~4.6:1 over the ground. */
+  --theme-text-muted: rgba(31, 35, 40, 0.62);
+
+  --theme-accent: #116329;
+  --theme-accent-hover: #0d4f20;
+  /* Ink on the accent fill: white on #116329 is 7.4:1, and it is what the
+   * correction module picks, so static CSS and runtime preview agree. */
+  --theme-accent-contrast: #ffffff;
+
+  --theme-border: rgba(31, 35, 40, 0.15);
+  --theme-border-strong: rgba(31, 35, 40, 0.25);
+
+  /* Effects: a terminal has corners, not curves, and no elevation. */
+  --theme-radius-sm: 0px;
+  --theme-radius: 0px;
+  --theme-radius-lg: 2px;
+  --theme-radius-full: 0px;
+
+  --theme-shadow-sm: none;
+  --theme-shadow: none;
+  --theme-shadow-lg: none;
+
+  /* Link underline style, derived from the accent; see variables.css */
+  --theme-link-decoration: underline;
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
+
+  /* Tags read as shell tokens: square, quiet, the UI face like everything. */
+  --theme-tag-text: var(--theme-accent-text-light, rgba(31, 35, 40, 0.72));
+  --theme-tag-radius: 0px;
+
+  /* Card treatment: a listing row is not a card. */
+  --theme-card-bg: transparent;
+  --theme-card-border: none;
+  --theme-card-backdrop: none;
+
+  /* Layout: a wide column, because a listing is columns of text. The sidebar
+   * tokens keep the contract satisfied; the Terminal shell renders none. */
+  --theme-content-width: 900px;
+  --theme-sidebar-width: 280px;
+  --theme-layout-gap: 1.5rem;
+  --theme-layout-container-padding: 1rem;
+  --theme-layout-section-gap: 1.5rem;
+  --theme-card-padding: 0px;
+  --theme-grid-gap: 1rem;
+  --theme-grid-columns-tablet: 1;
+  --theme-grid-columns-desktop: 1;
+  --theme-post-card-image-height: 180px;
+  --theme-post-card-image-radius: 0px;
+}
+
+/* Terminal Dark Mode: the home state. Deep slate ground, phosphor green. */
+[data-style-template="terminal"][data-theme="dark"] {
+  --theme-bg-primary: #0d1117;
+  --theme-bg-secondary: #161b22;
+  --theme-bg-tertiary: rgba(201, 209, 217, 0.08);
+  --theme-bg-card: #161b22;
+
+  --theme-text-primary: #c9d1d9;
+  --theme-text-secondary: rgba(201, 209, 217, 0.78);
+  --theme-text-muted: rgba(201, 209, 217, 0.6);
+
+  --theme-accent: #7ee787;
+  --theme-accent-hover: #a2f2a9;
+  /* The correction module's pick for this fill: 11.6:1. */
+  --theme-accent-contrast: #111827;
+
+  --theme-border: rgba(201, 209, 217, 0.15);
+  --theme-border-strong: rgba(201, 209, 217, 0.25);
+
+  --theme-link-decoration-color: color-mix(
+    in srgb,
+    var(--theme-accent-text, var(--theme-accent)) 40%,
+    transparent
+  );
+  --theme-link-decoration-hover: var(--theme-accent-text, var(--theme-accent));
+
+  --theme-tag-text: var(--theme-accent-text-dark, rgba(201, 209, 217, 0.7));
+}
+
+/*
+ * The listing rules. Rooted like every theme's layout CSS: this file is
+ * imported BEFORE components.css, so an equal-specificity selector there
+ * would win.
+ *
+ * There are no sidebar rules here, unlike Gallery's. Gallery keeps the
+ * shared shell, so it has to collapse the column that shell reserves.
+ * TerminalShell renders its own frame with no sidebar in it at all, so a
+ * rule hiding one would never match anything.
+ */
+
+/*
+ * The shell holds pages at a reading measure (max-w-3xl), which left the
+ * listing inset from the prompt line above it: a console whose header and
+ * body do not share a left edge does not read as one. Widened only where
+ * there IS a listing, so an article and the About page keep the measure
+ * that makes prose readable.
+ */
+:root[data-style-template="terminal"] .blog-page-measure:has(.blog-posts-list) {
+  max-width: var(--theme-content-width);
+}
+
+/* A listing is rows, whatever the config's feed setting says: the layout is
+ * the point of the theme, and a stored 'grid' predates it. */
+:root[data-style-template="terminal"] .blog-posts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}

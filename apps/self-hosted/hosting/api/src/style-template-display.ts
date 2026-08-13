@@ -114,6 +114,17 @@ export const STYLE_TEMPLATE_DISPLAY = {
     },
     headingStyle: 'sans',
   },
+  terminal: {
+    name: 'Terminal',
+    tagline: 'A console listing: monospace, dense, no card in sight',
+    colors: {
+      background: '#0d1117',
+      surface: '#161b22',
+      accent: '#7ee787',
+      text: '#c9d1d9',
+    },
+    headingStyle: 'mono',
+  },
 } satisfies Record<StyleTemplate, StyleTemplateDisplay>;
 
 export function templateCatalog() {
