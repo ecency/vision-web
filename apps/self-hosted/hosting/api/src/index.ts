@@ -15,6 +15,7 @@ import { domainRoutes } from './routes/domains';
 import { paymentRoutes } from './routes/payments';
 import { authRoutes } from './routes/auth';
 import { metaRoutes } from './routes/meta';
+import { toolsRoutes } from './routes/tools';
 import { internalRoutes, internalSecret, MIN_INTERNAL_SECRET_LENGTH } from './routes/internal';
 import { rateLimit } from './middleware/rate-limit';
 import { sourceAllowlist } from './middleware/source-allowlist';
@@ -76,6 +77,9 @@ app.use('/v1/templates', generalLimit);
 app.use('/v1/meta/*', generalLimit);
 app.use('/v1/auth/*', generalLimit);
 app.use('/v1/auth/*', authLimit);
+// The compose-config tool is anonymous and each call can spend a chain
+// lookup, so it sits behind the general budget as well as its own.
+app.use('/v1/tools/*', generalLimit);
 
 // Source-address allowlist for the service-to-service routes, ahead of the rate limit so a
 // refused source never spends a Redis round trip. Defence in depth behind the edge nginx,
@@ -95,6 +99,9 @@ app.route('/v1/templates', templateRoutes);
 app.route('/v1/domains', domainRoutes);
 app.route('/v1/payments', paymentRoutes);
 app.route('/v1/auth', authRoutes);
+// Composes a config document for an INDEPENDENT deployment. Creates no
+// tenant row and publishes no file: see routes/tools.ts.
+app.route('/v1/tools', toolsRoutes);
 // Head snippets for the blog nginx's SSI include (per-post unfurls). Reached
 // through the docker network by the blog container, cached by its proxy
 // cache; rate limiting matches the other public GET surfaces.

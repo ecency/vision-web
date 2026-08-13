@@ -6,6 +6,7 @@ Deploy your own blog powered by the Hive blockchain. This guide covers Docker de
 
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
+- [Choosing an image tag](#choosing-an-image-tag)
 - [Deployment Options](#deployment-options)
 - [Production Deployment](#production-deployment)
 - [SEO files (robots, sitemap, RSS)](#seo-files-robots-sitemap-rss)
@@ -61,15 +62,34 @@ Edit `config.json` with your settings:
 
 ### 3. Start the Application
 
+Pick an image tag first. `TAG` is required and has no default, so a
+deployment always states what it runs; see [Choosing an image
+tag](#choosing-an-image-tag).
+
+Put it in a `.env` file beside `docker-compose.yml` rather than in front of a
+single command: compose reads that file for EVERY invocation, so `logs`,
+`restart` and `down` keep working afterwards.
+
 ```bash
-# Build and start
+# Pin the image build. sha-abc1234 is a PLACEHOLDER: replace it with a tag
+# that exists, from https://hub.docker.com/r/ecency/self-hosted/tags
+echo "TAG=sha-abc1234" > .env
+
+# Pull and start
 docker compose up -d
 
 # View logs
 docker compose logs -f
 ```
 
-Your blog is now running at `http://localhost:80`
+The site is published on loopback by default, so reach it locally first and
+put a reverse proxy in front of it for the public address. To serve directly
+with no proxy (and therefore no HTTPS), set `BIND=0.0.0.0` in `.env`.
+
+Your blog is now running at `http://localhost:3000` (the container listens on
+port 80 and compose publishes it as `PORT`, which defaults to 3000). If you
+changed `PORT`, `docker compose port blog 80` prints where it actually
+landed, and every proxy example below has to point at that same port.
 
 ## Configuration
 
@@ -105,11 +125,18 @@ Display posts from a Hive community:
 
 | Style Template | Description |
 |----------------|-------------|
-| `medium` | Editorial style (default) |
-| `minimal` | Clean, minimalist |
-| `magazine` | Magazine layout |
-| `developer` | Tech-focused |
-| `modern-gradient` | Modern with gradients |
+| `medium` | Clean long-form reading with a classic serif voice (default) |
+| `minimal` | Quiet, spacious and out of the way of your words |
+| `magazine` | Warm editorial look with display headlines |
+| `developer` | Dark, code-friendly and easy on late-night eyes |
+| `modern-gradient` | Bright surfaces with a vivid accent |
+| `journal` | Ink on paper: one quiet column for long-form writing |
+| `reader` | Your archive beside the open post, the way a feed reader works |
+
+`journal` and `reader` change the page STRUCTURE, not only its colours, so
+they ignore the options a single-column layout has no place for: neither
+renders a sidebar, and both fix the archive to one column regardless of
+`layout.listType`.
 
 ### Feature Flags
 
@@ -175,83 +202,139 @@ Editor, under General Settings > Hivesigner.
 
 ## Deployment Options
 
+### Choosing an image tag
+
+Published tags for `ecency/self-hosted` (and its paired `ecency/hosting-api`):
+
+| Tag | Moves? | Use it for |
+|-----|--------|-----------|
+| `sha-<7>` | never | **what to pin today**: one immutable build, e.g. `sha-abc1234` |
+| `vX.Y.Z` | never | a tagged release, once releases are cut |
+| `develop` | every merge | tracking development, never a deployment you care about |
+| `latest` | releases only | convenience; it does not move until a release is tagged |
+
+Prefer a `vX.Y.Z` release tag when one is listed; no release has been cut
+yet, so today that means pinning a `sha-<7>` tag. Take a tag that exists
+from [Docker Hub](https://hub.docker.com/r/ecency/self-hosted/tags), which
+is the source of truth, or read what the managed platform runs from
+`https://api.blogs.ecency.com/health`, which answers `{version, sha}`.
+
+**`sha-abc1234` throughout this guide is a placeholder.** Substitute a real
+tag before running any command that mentions it. The blog and the hosting
+API are built from the same commit in the same CI run, so the same `sha-<7>`
+tag exists for `ecency/self-hosted` and `ecency/hosting-api`; if you pick one
+that is only in one repository, choose another.
+
 ### Option 1: Docker Compose (Recommended)
 
-```bash
-# Start in detached mode
-docker compose up -d
+Settings live in `.env` beside `docker-compose.yml`, which compose reads on
+every invocation:
 
-# Custom port
-PORT=8080 docker compose up -d
+```bash
+cat > .env <<'ENV'
+TAG=sha-abc1234
+PORT=3000
+ENV
+
+docker compose up -d
 ```
+
+`PORT` is what the site is published on; the container always listens on 80
+inside. A one-off command can still override either (`PORT=8080 docker
+compose up -d`), but a value only on the command line is gone by the next
+compose command, and `${TAG:?...}` will stop that one.
 
 ### Option 2: Docker Run
 
 ```bash
-# Build the image
-docker build -t myblog -f Dockerfile ../..
-
-# Run with config volume mount
 docker run -d \
-  -p 80:80 \
+  -p 3000:80 \
   -v $(pwd)/config.json:/usr/share/nginx/html/config.json:ro \
   --name myblog \
-  myblog
+  ecency/self-hosted:sha-abc1234
 ```
 
-### Option 3: Pre-built Image
+### Option 3: Build from Source
+
+Only needed to run modified code; the published images are built from this
+same Dockerfile.
 
 ```bash
-# Pull a specific version from Docker Hub
-docker pull ecency/self-hosted:sha-abc1234
+# From apps/self-hosted, with the monorepo as build context
+docker build -t myblog -f Dockerfile ../..
 
-# Run with your config
 docker run -d \
-  -p 80:80 \
+  -p 3000:80 \
   -v $(pwd)/config.json:/usr/share/nginx/html/config.json:ro \
-  ecency/self-hosted:sha-abc1234
+  myblog
 ```
 
 ### Option 4: Build with Config Baked In
 
-For immutable deployments (e.g., Kubernetes), use base64 encoding to safely pass the config:
+For immutable deployments (e.g. Kubernetes) where mounting a file is
+awkward. The Dockerfile already accepts the config as a build argument, so
+nothing needs editing: base64 keeps the JSON clear of shell interpolation.
 
 ```bash
 # Encode config as base64 to avoid shell interpolation issues
 CONFIG_B64=$(base64 -w0 config.json)  # Linux
 # or: CONFIG_B64=$(base64 -i config.json)  # macOS
 
-# Build with base64-encoded config
 docker build \
   --build-arg CONFIG_JSON_B64="$CONFIG_B64" \
   -t myblog:configured \
   -f Dockerfile ../..
 ```
 
-The Dockerfile should decode this during build:
-
-```dockerfile
-ARG CONFIG_JSON_B64
-RUN echo "$CONFIG_JSON_B64" | base64 -d > /usr/share/nginx/html/config.json
-```
-
-**Alternative: COPY method** (simpler, requires config.json in build context):
-
-```dockerfile
-# In Dockerfile, add:
-COPY apps/self-hosted/config.json /usr/share/nginx/html/config.json
-```
-
-Then build without build-args:
-```bash
-docker build -t myblog:configured -f Dockerfile ../..
-```
+A baked config trades the main advantage of this app away: with a mounted
+file, changing settings is an edit plus a container restart, while a baked
+one needs a rebuild for every change.
 
 ## Production Deployment
 
-The managed hosting platform runs behind nginx with SSL terminated at the reverse proxy layer. The Docker containers bind to localhost-only ports and nginx routes traffic to them.
+Put a reverse proxy in front of the container: it terminates TLS and
+forwards to the port compose publishes (`PORT`, 3000 by default).
 
-### With Nginx Reverse Proxy (Current Production Setup)
+### With Caddy (recommended: certificates without ACME wiring)
+
+```caddyfile
+blog.yourdomain.com {
+    reverse_proxy 127.0.0.1:3000
+}
+```
+
+That is the whole configuration. Caddy obtains and renews a Let's Encrypt
+certificate on its own, so there is no certbot timer to forget. The port must
+match your `PORT`; `docker compose port blog 80` prints it.
+
+### With Nginx
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name blog.yourdomain.com;
+
+    ssl_certificate     /etc/letsencrypt/live/blog.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/blog.yourdomain.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Certificates come from certbot: `certbot --nginx -d blog.yourdomain.com`. As
+with Caddy, `proxy_pass` must point at your `PORT`.
+
+### Managed platform reference (not a self-hosting recipe)
+
+The rest of this section documents how Ecency's own multi-tenant platform is
+wired, for anyone reading the `hosting/` directory. **A single self-hosted
+blog needs none of it** — the ports below are that platform's, not yours.
 
 The blog server container exposes port 80 internally, mapped to `127.0.0.1:3100` on the host. The hosting API exposes port 3001, mapped to `127.0.0.1:3101`.
 
@@ -316,24 +399,6 @@ server {
 }
 ```
 
-### With Caddy (Simple SSL)
-
-```
-blog.yourdomain.com {
-    reverse_proxy 127.0.0.1:3100
-}
-```
-
-### Standalone (Single Blog)
-
-For a single self-hosted blog without the managed hosting platform:
-
-```bash
-docker run -d \
-  -p 80:80 \
-  -v $(pwd)/config.json:/usr/share/nginx/html/config.json:ro \
-  ecency/self-hosted:sha-abc1234
-```
 
 ## SEO files (robots, sitemap, RSS)
 
@@ -343,15 +408,19 @@ with the generator shipped in the `ecency/hosting-api` image, run on a cron
 (hourly is plenty; the feeds carry the latest 100 posts):
 
 ```bash
-docker run --rm -v "$PWD:/work" ecency/hosting-api \
+# Pin the same tag the blog runs. Without one this pulls :latest, which
+# moves independently of what you deployed.
+docker run --rm -v "$PWD:/work" ecency/hosting-api:sha-abc1234 \
   npm run generate-seo -- \
   --config /work/config.json \
   --url https://blog.example.com \
   --out /work/seo
 ```
 
-Serve the output beside the app by mounting the files over the defaults in
-your compose file:
+`--url` must be a plain https origin: no path, no query, no credentials.
+
+Serve the output beside the app by uncommenting the SEO mounts in
+`docker-compose.yml`:
 
 ```yaml
     volumes:
@@ -360,6 +429,11 @@ your compose file:
       - ./seo/sitemap.xml:/usr/share/nginx/html/sitemap.xml:ro
       - ./seo/rss.xml:/usr/share/nginx/html/rss.xml:ro
 ```
+
+Run the generator BEFORE the first `up` with those mounts uncommented.
+Docker creates a directory for any mount source that does not exist, and an
+empty directory mounted over `robots.txt` replaces the working one the image
+ships.
 
 Then point the app's RSS link at your own feed in `config.json`:
 
@@ -410,14 +484,19 @@ sudo certbot certonly --standalone -d blog.yourdomain.com
 
 ### Update with Docker Compose
 
-```bash
-# Pull new images and restart
-TAG=sha-abc1234 docker compose up -d
+Upgrading is a one-line change: point `TAG` at the newer build.
 
-# Or pull latest for your channel
-TAG=develop docker compose pull
-TAG=develop docker compose up -d
+```bash
+# Edit TAG in .env to the newer tag, then:
+docker compose pull
+docker compose up -d
 ```
+
+Rolling back is the same two commands with the previous tag, which is
+exactly why the tag is pinned rather than floating. Keep the last known-good
+value somewhere; the line you just replaced in `.env` is enough.
+
+Your `config.json` is untouched by an upgrade: it is mounted, not baked.
 
 ### Update Configuration Only
 
@@ -437,11 +516,14 @@ docker compose restart
 
 ```bash
 # Check logs
-docker compose logs blog-server
+docker compose logs blog
 
-# Check if port is in use
-lsof -i :3100
+# Where the site is actually published (honours PORT and BIND)
+docker compose port blog 80
 ```
+
+`required variable TAG is missing a value` means exactly that: pick a tag
+(see [Choosing an image tag](#choosing-an-image-tag)) or put one in `.env`.
 
 ### Config Changes Not Reflected
 
@@ -450,17 +532,22 @@ lsof -i :3100
 3. Check nginx is serving the right file:
 
 ```bash
-docker compose exec blog-server cat /usr/share/nginx/html/config.json
+docker compose exec blog cat /usr/share/nginx/html/config.json
 ```
 
-### Build Failures
+If that prints a directory listing error, `config.json` did not exist when
+the container first started and Docker created a directory in its place.
+Stop the stack, remove the directory, `cp config.template.json config.json`,
+and start again.
+
+### The Site Shows Someone Else's Demo Blog
+
+The app falls back to its built-in demo config when the mounted
+`config.json` is missing, is not valid JSON, or lacks a truthy `version` and
+`configuration`. Check it parses:
 
 ```bash
-# Clean Docker cache
-docker system prune -a
-
-# Rebuild from scratch
-docker compose build --no-cache
+python3 -m json.tool config.json > /dev/null && echo "config.json is valid JSON"
 ```
 
 ### Performance Issues
@@ -469,7 +556,10 @@ docker compose build --no-cache
 2. Use a CDN like Cloudflare
 3. Ensure image proxy is fast (default: i.ecency.com)
 
-## Architecture
+## Architecture (managed platform)
+
+A single self-hosted blog is just the one container from Quick Start. The
+diagram below is Ecency's multi-tenant platform, for readers of `hosting/`.
 
 ```
                         Internet
@@ -511,10 +601,15 @@ Don't want to manage your own infrastructure? Let Ecency host your blog.
 
 ### Pricing
 
-| Plan | Price | Features |
-|------|-------|----------|
-| **Standard** | 0.1 HBD/month | Custom subdomain, SSL, CDN, 99.9% uptime |
-| **Pro** | 0.5 HBD/month | Custom domain, priority support, analytics |
+Current prices are shown on the [hosting
+page](https://blogs.ecency.com/hosting) and quoted again at checkout. They
+are deliberately not repeated here: this file drifted from the real numbers
+once already.
+
+| Plan | Includes |
+|------|----------|
+| **Standard** | Subdomain on `blogs.ecency.com`, SSL, CDN, automatic upgrades |
+| **Pro** | Everything above plus a custom domain |
 
 ### How It Works
 
