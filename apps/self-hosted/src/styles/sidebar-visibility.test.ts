@@ -29,6 +29,10 @@ const SIDEBAR = readFileSync(
   join(HERE, '..', 'features', 'blog', 'layout', 'blog-sidebar.tsx'),
   'utf8',
 );
+const CONFIG_FIELDS = readFileSync(
+  join(HERE, '..', 'features', 'floating-menu', 'config-fields.ts'),
+  'utf8',
+);
 
 /**
  * This list is empty and should stay that way. It briefly held
@@ -37,6 +41,33 @@ const SIDEBAR = readFileSync(
  * anything (#1477). An entry here means a toggle that lies to the owner.
  */
 const RENDERS_NOTHING_YET = new Set<string>();
+
+/**
+ * The sidebar is TWO components in one module, and an instance renders exactly
+ * one of them. Checking the module as a whole is what let #1480 through: the
+ * blog half rendered all three classes, which satisfied the assertion on
+ * behalf of a community half that rendered none of them, so every toggle was
+ * inert on a community instance while this file stayed green.
+ *
+ * An attribute a mode does NOT serve must be hidden from that mode's editor,
+ * asserted below, so the two halves of the rule cannot drift apart either.
+ */
+const MODE_SECTIONS = {
+  BlogSidebarContent: [
+    'data-show-followers',
+    'data-show-following',
+    'data-show-hive-info',
+  ],
+  CommunitySidebar: ['data-show-followers', 'data-show-hive-info'],
+} as const;
+
+/** The body of one top-level `function Name(` declaration in the sidebar. */
+function componentSource(name: string): string {
+  const start = SIDEBAR.indexOf(`function ${name}(`);
+  if (start < 0) throw new Error(`${name} not found in blog-sidebar.tsx`);
+  const next = SIDEBAR.slice(start + 1).search(/\n(?:export )?function \w+\(/);
+  return next < 0 ? SIDEBAR.slice(start) : SIDEBAR.slice(start, start + 1 + next);
+}
 
 /** Every data-show-* attribute apply-config-dom actually emits. */
 function emittedAttributes(): string[] {
@@ -103,5 +134,37 @@ describe('sidebar section visibility', () => {
         `${attribute} hides .${rule.className}, which blog-sidebar.tsx never renders`,
       ).toBe(true);
     }
+  });
+
+  it('renders the class in EACH mode that serves the toggle', () => {
+    const rules = hidingRules();
+    for (const [component, attributes] of Object.entries(MODE_SECTIONS)) {
+      const source = componentSource(component);
+      for (const attribute of attributes) {
+        const rule = rules.get(attribute);
+        expect(rule, `no rule for ${attribute}`).toBeDefined();
+        expect(
+          source.includes(rule!.className),
+          `${component} never renders .${rule!.className}, so ${attribute} does nothing on that instance mode`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('hides from the editor any toggle a mode cannot serve', () => {
+    const served = new Set(MODE_SECTIONS.CommunitySidebar);
+    const unserved = MODE_SECTIONS.BlogSidebarContent.filter(
+      (a) => !served.has(a as (typeof MODE_SECTIONS.CommunitySidebar)[number]),
+    );
+    // Today that is exactly `following`: a community page does not advertise
+    // what its own account follows. Showing the control anyway is the #1480
+    // bug, so the field must carry an instance-type gate.
+    expect(unserved).toEqual(['data-show-following']);
+    const field = CONFIG_FIELDS.slice(
+      CONFIG_FIELDS.indexOf('following: {'),
+      CONFIG_FIELDS.indexOf('hiveInformation: {'),
+    );
+    expect(field).toContain('visibleWhen');
+    expect(field).toContain('isCommunityConfig');
   });
 });
