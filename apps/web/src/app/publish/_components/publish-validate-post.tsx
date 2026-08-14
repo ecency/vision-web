@@ -24,6 +24,7 @@ import { hasPublishContent } from "../_utils/content";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { AvailableCredits } from "@/features/shared";
 import { RcPrecheckBanner } from "@/features/shared/rc-precheck";
+import type { RcPrecheckPayload } from "@ecency/sdk";
 import {
   canFitBeneficiary,
   isSupportEcencyRow,
@@ -109,6 +110,30 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
       isShortfallStillRelevant(current, activeUser?.username) ? current : null
     );
   }, [activeUser?.username]);
+
+  // The draft itself, so the warning prices this post rather than an average
+  // one. Body length is the dominant term, which is also the lever the author
+  // can actually pull.
+  const rcPayload = useMemo<RcPrecheckPayload | undefined>(() => {
+    if (!activeUser?.username) {
+      return undefined;
+    }
+    return {
+      kind: "comment",
+      op: {
+        author: activeUser.username,
+        // The real permlink is generated at broadcast time from the title;
+        // only its length feeds the estimate, so derive a same-shape one.
+        permlink: (title ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 64),
+        parent_author: "",
+        parent_permlink: tags?.[0] ?? "",
+        title: title ?? "",
+        body: content ?? "",
+        json_metadata: JSON.stringify({ tags: tags ?? [] })
+      },
+      options: beneficiaries?.length ? { beneficiaries } : undefined
+    };
+  }, [activeUser?.username, tags, title, content, beneficiaries]);
 
   const submit = useCallback(async () => {
     if (!title?.trim()) {
@@ -313,7 +338,7 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
 
           {activeUser?.username && (
             <div className="w-full flex flex-col gap-2">
-              <RcPrecheckBanner operation="comment_operation" />
+              <RcPrecheckBanner operation="comment_operation" payload={rcPayload} />
               <AvailableCredits username={activeUser.username} operation="comment_operation" />
             </div>
           )}

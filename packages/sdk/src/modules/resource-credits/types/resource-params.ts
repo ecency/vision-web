@@ -26,12 +26,14 @@ export interface RcSizeInfo {
     comment_base_size: number;
     comment_permlink_char_size: number;
     comment_beneficiaries_member_size: number;
+    vote_size: number;
     transaction_base_size: number;
     [key: string]: number;
   };
   resource_execution_time: {
     comment_time: number;
     comment_options_time: number;
+    vote_time: number;
     transaction_time: number;
     verify_authority_time: number;
     [key: string]: number;

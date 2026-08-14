@@ -1,12 +1,30 @@
 import { calculateRCMana } from "@/modules/core/hive-tx";
 import type { RCAccount } from "@/modules/core/hive-tx";
 import type { RcStats } from "../types/stats";
+import type { RcResourceParams } from "../types/resource-params";
+import { priceRcUsage } from "./price-rc-usage";
+import {
+  countVoteResourceUsage,
+  estimateVoteTransactionBytes,
+  type VoteLike
+} from "./count-operation-usage";
+import {
+  countCommentResourceUsage,
+  estimateCommentTransactionBytes,
+  type CommentLike,
+  type CommentOptionsLike
+} from "./estimate-comment-rc-cost";
 
 /**
  * Operations the RC pre-check can estimate. Mirrors the keys exposed by
  * `rc_api.get_rc_stats` (see {@link RcStats}["ops"]).
  */
 export type RcPrecheckOperation = keyof RcStats["ops"];
+
+/** The operation about to be broadcast, when the caller has it. */
+export type RcPrecheckPayload =
+  | { kind: "comment"; op: CommentLike; options?: CommentOptionsLike }
+  | { kind: "vote"; op: VoteLike };
 
 export interface RcPrecheckInput {
   /** From `getAccountRcQueryOptions(username)` -> rcAccounts[0]. */
@@ -16,7 +34,19 @@ export interface RcPrecheckInput {
   /** The operation the user is about to broadcast. */
   operation: RcPrecheckOperation;
   /**
-   * Safety multiplier applied to the average operation cost when deciding
+   * From `getRcResourceParamsQueryOptions()`. Required for an exact estimate;
+   * without it the result is not ready rather than silently approximate.
+   */
+  rcParams?: RcResourceParams | null;
+  /**
+   * The actual operation about to be broadcast. Supplying it is what makes the
+   * estimate exact, because cost is dominated by the serialized transaction
+   * size. Without it a minimal operation of that type is priced instead, which
+   * is a lower bound: it can miss a marginal case but never invents one.
+   */
+  payload?: RcPrecheckPayload;
+  /**
+   * Safety multiplier applied to the operation cost when deciding
    * whether the broadcast will "likely fail". Actual on-chain cost varies with
    * network load, so we keep headroom. Defaults to 1.2.
    */
@@ -30,8 +60,17 @@ export interface RcPrecheckResult {
   currentMana: number;
   /** Maximum RC mana of the account. */
   maxMana: number;
-  /** Average RC cost of the operation. */
+  /**
+   * RC cost of the operation itself.
+   *
+   * Named `avgCost` for backwards compatibility; it is no longer an average.
+   * @deprecated prefer `cost`.
+   */
   avgCost: number;
+  /** RC cost of the operation, computed the way the chain computes it. */
+  cost: number;
+  /** Serialized transaction size, the dominant term for a comment. */
+  transactionBytes: number;
   /** Average cost padded by `buffer`. */
   estimatedCost: number;
   /** `currentMana` is below the padded estimate -> broadcast likely fails. */
@@ -47,6 +86,8 @@ const EMPTY: RcPrecheckResult = {
   currentMana: 0,
   maxMana: 0,
   avgCost: 0,
+  cost: 0,
+  transactionBytes: 0,
   estimatedCost: 0,
   willLikelyFail: false,
   deficit: 0,
@@ -58,14 +99,22 @@ const EMPTY: RcPrecheckResult = {
  * to broadcast an operation, used to warn the user BEFORE they submit instead
  * of failing afterwards with the chain's "Please wait to transact" error.
  *
- * It is intentionally approximate: it uses the network-wide average cost from
- * `rc_api.get_rc_stats`, padded by a buffer. Treat `willLikelyFail` as a hint,
- * never a hard gate - the publish/comment/vote action must stay non-blocking.
+ * Costs are computed the way the chain computes them, from the actual
+ * operation, not from the network-wide average. The average is dominated by
+ * short replies and badly misleads on posts: it once told an account holding
+ * 21.3B RC that it could afford 17 posts, and the next post it tried needed
+ * 23.3B.
+ *
+ * Still a hint, never a hard gate: the buffer covers pool drift between the
+ * estimate and the broadcast, and the publish/comment/vote action must stay
+ * non-blocking.
  */
 export function estimateRcPrecheck({
   rcAccount,
   rcStats,
+  rcParams,
   operation,
+  payload,
   buffer = 1.2,
 }: RcPrecheckInput): RcPrecheckResult {
   if (!rcAccount || !rcStats?.ops) {
@@ -73,24 +122,91 @@ export function estimateRcPrecheck({
   }
 
   const { current_mana: currentMana, max_mana: maxMana } = calculateRCMana(rcAccount);
-  const avgCost = Number(rcStats.ops[operation]?.avg_cost ?? 0);
 
-  if (!(avgCost > 0)) {
+  // Pricing needs the curve parameters. Without them the honest answer is "not
+  // ready", not a guess dressed up as an estimate.
+  if (!rcParams?.resource_params || !rcParams.size_info || !rcStats.pool || !rcStats.share) {
+    return { ...EMPTY, currentMana, maxMana };
+  }
+
+  const priced = priceOperation(operation, payload, rcParams, rcStats);
+  if (!priced) {
     return { ...EMPTY, ready: true, currentMana, maxMana };
   }
 
+  const { cost, transactionBytes } = priced;
   const safeBuffer = Number.isFinite(buffer) && buffer > 0 ? buffer : 1.2;
-  const estimatedCost = avgCost * safeBuffer;
+  const estimatedCost = cost * safeBuffer;
   const willLikelyFail = currentMana < estimatedCost;
 
   return {
     ready: true,
     currentMana,
     maxMana,
-    avgCost,
+    avgCost: cost,
+    cost,
+    transactionBytes,
     estimatedCost,
     willLikelyFail,
     deficit: willLikelyFail ? Math.ceil(estimatedCost - currentMana) : 0,
-    remaining: Math.floor(currentMana / avgCost),
+    remaining: Math.floor(currentMana / cost),
   };
 }
+
+/**
+ * Prices whichever operation the caller is about to broadcast.
+ *
+ * When no payload is supplied a minimal operation of that type is priced. That
+ * is deliberately a lower bound: it can miss a marginal case, but it never
+ * warns about one that would have succeeded.
+ */
+function priceOperation(
+  operation: RcPrecheckOperation,
+  payload: RcPrecheckPayload | undefined,
+  rcParams: RcResourceParams,
+  rcStats: RcStats
+): { cost: number; transactionBytes: number } | null {
+  const stats = { pool: rcStats.pool, regen: rcStats.regen, share: rcStats.share };
+
+  if (operation === "vote_operation") {
+    const op: VoteLike = payload?.kind === "vote" ? payload.op : MINIMAL_VOTE;
+    const transactionBytes = estimateVoteTransactionBytes(op);
+    const usage = countVoteResourceUsage({ transactionBytes }, rcParams.size_info);
+    return { cost: priceRcUsage(usage, rcParams, stats).cost, transactionBytes };
+  }
+
+  if (operation === "comment_operation") {
+    const op: CommentLike = payload?.kind === "comment" ? payload.op : MINIMAL_COMMENT;
+    const options = payload?.kind === "comment" ? payload.options : undefined;
+    const transactionBytes = estimateCommentTransactionBytes({ op, options });
+    const usage = countCommentResourceUsage(
+      {
+        transactionBytes,
+        permlinkLength: op.permlink.length,
+        beneficiaries: options?.beneficiaries?.length ?? 0,
+        hasCommentOptions: !!options
+      },
+      rcParams.size_info
+    );
+    return { cost: priceRcUsage(usage, rcParams, stats).cost, transactionBytes };
+  }
+
+  return null;
+}
+
+/** Smallest realistic operations, used only when the caller has no payload yet. */
+const MINIMAL_COMMENT: CommentLike = {
+  author: "aaaaaaaaaa",
+  permlink: "aaaaaaaaaaaaaaaaaaaa",
+  parent_author: "",
+  parent_permlink: "hive-100000",
+  title: "",
+  body: "",
+  json_metadata: "{}"
+};
+
+const MINIMAL_VOTE: VoteLike = {
+  voter: "aaaaaaaaaa",
+  author: "aaaaaaaaaa",
+  permlink: "aaaaaaaaaaaaaaaaaaaa"
+};

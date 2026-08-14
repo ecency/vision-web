@@ -6,11 +6,16 @@ import { Button } from "@ui/button";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useRcPrecheck } from "./use-rc-precheck";
 import { useRcTopupAction } from "@/features/shared/rc-topup/use-rc-topup-action";
-import type { RcPrecheckOperation } from "@ecency/sdk";
+import type { RcPrecheckOperation, RcPrecheckPayload } from "@ecency/sdk";
 import { alertCircleSvg } from "@ui/svg";
 
 interface Props {
   operation?: RcPrecheckOperation;
+  /**
+   * What the user is about to broadcast. Supplying it is what makes the
+   * warning accurate, since cost tracks transaction size.
+   */
+  payload?: RcPrecheckPayload;
   /** Renders a single-line, tighter version for small surfaces (e.g. the vote popover). */
   compact?: boolean;
   className?: string;
@@ -27,12 +32,13 @@ interface Props {
  */
 export function RcPrecheckBanner({
   operation = "comment_operation",
+  payload,
   compact = false,
   className
 }: Props) {
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username;
-  const { ready, willLikelyFail } = useRcPrecheck(username, operation);
+  const { ready, willLikelyFail } = useRcPrecheck(username, operation, payload);
   const { openTopup: onTopUp, dialog } = useRcTopupAction(username);
 
   if (!username || !ready || !willLikelyFail) {

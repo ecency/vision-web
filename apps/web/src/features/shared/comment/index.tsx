@@ -335,7 +335,26 @@ export function Comment({
             </div>
           </div>
         </div>
-        <RcPrecheckBanner operation="comment_operation" className="mt-2" />
+        <RcPrecheckBanner
+          operation="comment_operation"
+          payload={
+            activeUser?.username
+              ? {
+                  kind: "comment",
+                  op: {
+                    author: activeUser.username,
+                    permlink: `re-${entry.permlink}`.slice(0, 64),
+                    parent_author: entry.author,
+                    parent_permlink: entry.permlink,
+                    title: "",
+                    body: text ?? "",
+                    json_metadata: "{}"
+                  }
+                }
+              : undefined
+          }
+          className="mt-2"
+        />
         {showShortReplyHint && (
           <div className="comment-short-reply-hint mt-2 text-xs opacity-60" role="status">
             {i18next.t("comment.short-reply-hint", { n: QUEST_MIN_CONTENT_LENGTH })}
