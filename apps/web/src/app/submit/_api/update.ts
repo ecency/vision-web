@@ -75,7 +75,8 @@ export function useUpdateApi(onClear: () => void) {
           parentPermlink: category,
           title,
           body: newBody,
-          jsonMetadata: jsonMeta
+          jsonMetadata: jsonMeta,
+          isUpdate: true
         });
 
         try {

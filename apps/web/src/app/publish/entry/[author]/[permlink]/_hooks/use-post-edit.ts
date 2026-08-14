@@ -74,7 +74,8 @@ export function usePostEdit(entry: Entry | undefined) {
         parentPermlink: category,
         title,
         body: newBody,
-        jsonMetadata: jsonMeta
+        jsonMetadata: jsonMeta,
+        isUpdate: true
       });
 
       try {

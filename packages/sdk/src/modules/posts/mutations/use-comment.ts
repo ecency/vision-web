@@ -32,6 +32,15 @@ export interface CommentPayload {
   body: string;
   /** JSON metadata object */
   jsonMetadata: Record<string, any>;
+  /**
+   * Optional: set when this operation edits existing content rather than creating it.
+   *
+   * A `comment` operation is byte-identical for a create and an update, so only the
+   * caller knows which it is. When set, no content activity is recorded. Activity
+   * rewards content creation. Without this, an edit of content published elsewhere
+   * is credited as content created here. Never broadcast.
+   */
+  isUpdate?: boolean;
   /** Optional: Root post author (for nested replies, used for discussions cache invalidation) */
   rootAuthor?: string;
   /** Optional: Root post permlink (for nested replies, used for discussions cache invalidation) */
@@ -64,7 +73,8 @@ export interface CommentPayload {
  *
  * @remarks
  * **Post-Broadcast Actions:**
- * - Records activity (type 100 for posts, 110 for comments) if adapter.recordActivity is available
+ * - Records activity (type 100 for posts, 110 for comments) if adapter.recordActivity is
+ *   available, unless the payload sets `isUpdate`
  * - Invalidates feed caches to show the new content
  * - Invalidates parent post cache if this is a reply
  *
@@ -115,6 +125,24 @@ export interface CommentPayload {
  * });
  * ```
  */
+/**
+ * Resolve which content activity a broadcast earns, or `null` for none.
+ *
+ * Content activity rewards publishing, so an update earns nothing: the `comment`
+ * operation an edit broadcasts is indistinguishable from a create on chain, which
+ * leaves the caller as the only party that can tell them apart. Without this, editing
+ * a post first published on another frontend is credited here as a post.
+ */
+export function resolveContentActivityType(
+  payload: Pick<CommentPayload, "parentAuthor" | "isUpdate">
+): 100 | 110 | null {
+  if (payload.isUpdate) {
+    return null;
+  }
+
+  return payload.parentAuthor ? 110 : 100;
+}
+
 export function useComment(
   username: string | undefined,
   auth?: AuthContextV2,
@@ -187,13 +215,13 @@ export function useComment(
     async (result: any, variables) => {
       // Determine if this is a post or comment
       const isPost = !variables.parentAuthor;
-      const activityType = isPost ? 100 : 110;
+      const activityType = resolveContentActivityType(variables);
 
       // Activity tracking (fire-and-forget — non-critical, shouldn't block mutation completion)
       // Async broadcasts return BroadcastResult ({ tx_id, status }) instead of TransactionConfirmation,
       // so fall back to tx_id when id is absent.
       const txId = result?.id ?? result?.tx_id;
-      if (auth?.adapter?.recordActivity && txId) {
+      if (activityType !== null && auth?.adapter?.recordActivity && txId) {
         auth.adapter.recordActivity(activityType, txId, result?.block_num).catch(() => {});
       }
 
