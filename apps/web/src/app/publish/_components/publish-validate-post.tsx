@@ -18,7 +18,9 @@ import { PublishActionBarCommunity } from "./publish-action-bar-community";
 import { PublishScheduleDialog } from "./publish-schedule-dialog";
 import { PublishValidatePostMeta } from "./publish-validate-post-meta";
 import { PublishValidatePostThumbnailPicker } from "./publish-validate-post-thumbnail-picker";
-import { isCommunity } from "@/utils";
+import { createPermlink, isCommunity } from "@/utils";
+import { useQuery } from "@tanstack/react-query";
+import { buildPublishOperation } from "../_utils/build-publish-operation";
 import { wordOverlapSimilarity } from "@/utils/text-similarity";
 import { hasPublishContent } from "../_utils/content";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -54,7 +56,14 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
     beneficiaries,
     setBeneficiaries,
     title,
-    appliedTemplateBody
+    appliedTemplateBody,
+    reward,
+    selectedThumbnail,
+    poll,
+    postLinks,
+    location,
+    decentMemes,
+    aiTools
   } = usePublishState();
 
   const { activeUser } = useActiveAccount();
@@ -111,29 +120,67 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
     );
   }, [activeUser?.username]);
 
-  // The draft itself, so the warning prices this post rather than an average
-  // one. Body length is the dominant term, which is also the lever the author
-  // can actually pull.
-  const rcPayload = useMemo<RcPrecheckPayload | undefined>(() => {
-    if (!activeUser?.username) {
-      return undefined;
-    }
-    return {
-      kind: "comment",
-      op: {
-        author: activeUser.username,
-        // The real permlink is generated at broadcast time from the title;
-        // only its length feeds the estimate, so derive a same-shape one.
-        permlink: (title ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 64),
-        parent_author: "",
-        parent_permlink: tags?.[0] ?? "",
+  // The operation this publish will actually broadcast, assembled by the same
+  // builder usePublishApi uses. Pricing the raw editor draft instead would
+  // understate a post carrying a summary, images, links, a poll or
+  // beneficiaries, since cost tracks serialized size, and understating is the
+  // one direction that lets the chain reject a post we called affordable.
+  const { data: publishOperation } = useQuery({
+    queryKey: [
+      "publish-rc-operation",
+      activeUser?.username,
+      title,
+      content,
+      tags,
+      metaDescription,
+      selectedThumbnail,
+      reward,
+      beneficiaries,
+      poll,
+      postLinks,
+      location,
+      decentMemes,
+      aiTools
+    ],
+    enabled: !!activeUser?.username && !!content,
+    // Pure function of the draft above, so a given key never needs recomputing.
+    staleTime: Infinity,
+    queryFn: () =>
+      buildPublishOperation({
+        author: activeUser!.username,
+        // The real permlink is settled at broadcast time after the collision
+        // check; only its length feeds the estimate, so use a same-shape one.
+        permlink: createPermlink(title ?? ""),
         title: title ?? "",
-        body: content ?? "",
-        json_metadata: JSON.stringify({ tags: tags ?? [] })
-      },
-      options: beneficiaries?.length ? { beneficiaries } : undefined
-    };
-  }, [activeUser?.username, tags, title, content, beneficiaries]);
+        content: content ?? "",
+        tags: tags ?? [],
+        metaDescription,
+        selectedThumbnail,
+        reward,
+        beneficiaries,
+        poll,
+        postLinks,
+        location,
+        decentMemes,
+        aiTools
+      })
+  });
+
+  const rcPayload = useMemo<RcPrecheckPayload | undefined>(
+    () =>
+      publishOperation
+        ? {
+            kind: "comment",
+            op: publishOperation.op,
+            options: publishOperation.options
+              ? {
+                  beneficiaries: publishOperation.options.extensions?.[0]?.[1]?.beneficiaries
+                }
+              : undefined
+          }
+        : undefined,
+    [publishOperation]
+  );
 
   const submit = useCallback(async () => {
     if (!title?.trim()) {
@@ -339,7 +386,11 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
           {activeUser?.username && (
             <div className="w-full flex flex-col gap-2">
               <RcPrecheckBanner operation="comment_operation" payload={rcPayload} />
-              <AvailableCredits username={activeUser.username} operation="comment_operation" />
+              <AvailableCredits
+                username={activeUser.username}
+                operation="comment_operation"
+                payload={rcPayload}
+              />
             </div>
           )}
 

@@ -1,36 +1,22 @@
 import { validatePostCreating } from "@ecency/sdk";
-import { enforceThreeSpeakBeneficiary } from "@/api/threespeak-embed";
 import { linkThreeSpeakEmbed } from "@/api/threespeak-embed/link-after-broadcast";
-import {
-  collectPresentMemeAttribution,
-  DECENTMEMES_FRONTEND,
-  enforceDecentMemesBeneficiary,
-  ensureDecentMemesTag
-} from "@/api/decentmemes";
 import { useCommentMutation, useReblogMutation } from "@/api/sdk-mutations";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { getQueryClient } from "@/core/react-query";
 import { getAccountFullQueryOptions, getPostHeaderQueryOptions } from "@ecency/sdk";
-import { FullAccount, RewardType } from "@/entities";
-import { EntryBodyManagement, EntryMetadataManagement } from "@/features/entry-management";
+import { FullAccount } from "@/entities";
 import { PollSnapshot } from "@/features/polls";
 import { QueryKeys, type Poll } from "@ecency/sdk";
 import { info, success } from "@/features/shared";
-import {
-  createPermlink,
-  isCommunity,
-  makeCommentOptions,
-  tempEntry
-} from "@/utils";
+import { createPermlink, isCommunity, tempEntry } from "@/utils";
 import { scheduleQuestsRefresh } from "@/utils/refresh-quests";
-import { postBodySummary } from "@ecency/render-helper";
 import { EcencyAnalytics } from "@ecency/sdk";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import i18next from "i18next";
 import { usePublishState } from "../_hooks";
 import { sentry } from "@/core/sentry/lazy-sentry";
-import { SUBMIT_DESCRIPTION_MAX_LENGTH } from "@/app/submit/_consts";
 import { useActiveAccount } from "@/core/hooks";
+import { buildPublishOperation } from "../_utils/build-publish-operation";
 
 export function usePublishApi() {
   const queryClient = useQueryClient();
@@ -63,14 +49,6 @@ export function usePublishApi() {
   return useMutation({
     mutationKey: ["publish-2.0"],
     mutationFn: async () => {
-      let cleanBody = EntryBodyManagement.EntryBodyManager.shared
-        .builder()
-        .buildClearBody(content!);
-
-      cleanBody = EntryBodyManagement.EntryBodyManager.shared
-        .builder()
-        .withLocation(cleanBody, location);
-
       // Ensure user is logged in and account data is available
       if (!username) {
         throw new Error("[Publish] No active user");
@@ -123,53 +101,30 @@ export function usePublishApi() {
         throw new Error("[Publish] Failed to generate unique permlink after multiple attempts");
       }
 
-      const [parentPermlink] = tags!;
+      // Same assembly the RC pre-check prices, so the estimate the author saw
+      // describes the transaction actually broadcast here.
+      const { op, jsonMetadata, summary, options, beneficiariesDropped } = await buildPublishOperation({
+        author,
+        permlink,
+        title: title!,
+        content: content!,
+        tags: tags!,
+        metaDescription,
+        selectedThumbnail,
+        reward,
+        beneficiaries,
+        poll,
+        postLinks,
+        location,
+        decentMemes,
+        aiTools
+      });
+      const parentPermlink = op.parent_permlink;
+      const cleanBody = op.body;
 
-      // DecentMemes: reconcile tracked memes against the final body so a meme
-      // whose image was deleted no longer contributes a tag / metadata / beneficiary.
-      const memeAttribution = collectPresentMemeAttribution(decentMemes, cleanBody);
-      const hasMeme = memeAttribution.templateIds.length > 0;
-      const finalTags = hasMeme ? ensureDecentMemesTag(tags ?? []) : tags;
-
-      const metaBuilder = await EntryMetadataManagement.EntryMetadataManager.shared
-        .builder()
-        .default()
-        .extractFromBody(content!)
-        // It should select filled description or if its empty or null/undefined then get auto summary
-        .withSummary(
-          metaDescription || postBodySummary(cleanBody, SUBMIT_DESCRIPTION_MAX_LENGTH)
-        )
-        .withTags(finalTags)
-        .withPostLinks(postLinks)
-        .withLocation(location)
-        .withSelectedThumbnail(selectedThumbnail);
-      const jsonMeta = metaBuilder
-        .withPoll(poll)
-        .withDecentMemes(
-          hasMeme
-            ? { templateIds: memeAttribution.templateIds, frontend: DECENTMEMES_FRONTEND }
-            : undefined
-        )
-        .withAiTools(aiTools)
-        .build();
-
-      let finalBeneficiaries = enforceThreeSpeakBeneficiary(beneficiaries, cleanBody);
-      if (hasMeme) {
-        // Merge the widget-supplied meme beneficiaries on our own terms: never
-        // trust its numbers - cap to Hive's 8-slot / 100% limits and keep the
-        // user's own beneficiaries intact.
-        const enforced = enforceDecentMemesBeneficiary(
-          finalBeneficiaries,
-          memeAttribution.beneficiaries,
-          author
-        );
-        finalBeneficiaries = enforced.beneficiaries;
-        if (enforced.dropped) {
-          info(i18next.t("decentmemes.beneficiaries-trimmed"));
-        }
+      if (beneficiariesDropped) {
+        info(i18next.t("decentmemes.beneficiaries-trimmed"));
       }
-
-      const options = makeCommentOptions(author, permlink, reward as RewardType, finalBeneficiaries);
 
       await commentMutation({
         author,
@@ -178,7 +133,7 @@ export function usePublishApi() {
         parentPermlink,
         title: title!,
         body: cleanBody,
-        jsonMetadata: jsonMeta,
+        jsonMetadata,
         ...(options
           ? {
               options: {
@@ -204,9 +159,8 @@ export function usePublishApi() {
           body: content!,
 
           tags: tags!,
-          description:
-            metaDescription || postBodySummary(cleanBody, SUBMIT_DESCRIPTION_MAX_LENGTH),
-          jsonMeta
+          description: summary,
+          jsonMeta: jsonMetadata
         }),
         max_accepted_payout: options?.max_accepted_payout ?? "1000000.000 HBD",
         percent_hbd: options?.percent_hbd ?? 10000

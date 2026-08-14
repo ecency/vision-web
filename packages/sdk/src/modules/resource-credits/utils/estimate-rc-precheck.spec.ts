@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { estimateRcPrecheck } from "./estimate-rc-precheck";
 import type { RcResourceParams } from "../types/resource-params";
+import type { RcStats } from "../types/stats";
+import type { RCAccount } from "@/modules/core/hive-tx";
 
 // calculateRCMana folds in time-based regen; stub it so the pure pre-check
 // math is tested deterministically.
@@ -54,16 +56,75 @@ const PARAMS: RcResourceParams = {
   }
 };
 
-const stats = () =>
+/**
+ * Every operation the node reports, zeroed. Spelled out rather than cast so a
+ * change to the stats shape fails here instead of silently skipping a branch.
+ */
+const ZERO = { avg_cost: 0, count: 0 };
+const ALL_OPS: RcStats["ops"] = {
+  account_create_operation: ZERO,
+  account_update2_operation: ZERO,
+  account_update_operation: ZERO,
+  account_witness_proxy_operation: ZERO,
+  account_witness_vote_operation: ZERO,
+  cancel_transfer_from_savings_operation: ZERO,
+  change_recovery_account_operation: ZERO,
+  claim_account_operation: ZERO,
+  claim_reward_balance_operation: ZERO,
+  collateralized_convert_operation: ZERO,
+  comment_operation: ZERO,
+  comment_options_operation: ZERO,
+  convert_operation: ZERO,
+  create_claimed_account_operation: ZERO,
+  custom_json_operation: ZERO,
+  delegate_vesting_shares_operation: ZERO,
+  delete_comment_operation: ZERO,
+  feed_publish_operation: ZERO,
+  limit_order_cancel_operation: ZERO,
+  limit_order_create_operation: ZERO,
+  multiop: ZERO,
+  recover_account_operation: ZERO,
+  recurrent_transfer_operation: ZERO,
+  request_account_recovery_operation: ZERO,
+  set_withdraw_vesting_route_operation: ZERO,
+  transfer_from_savings_operation: ZERO,
+  transfer_operation: ZERO,
+  transfer_to_savings_operation: ZERO,
+  transfer_to_vesting_operation: ZERO,
+  update_proposal_votes_operation: ZERO,
+  vote_operation: ZERO,
+  withdraw_vesting_operation: ZERO,
+  witness_set_properties_operation: ZERO,
+  witness_update_operation: ZERO
+};
+
+const stats = (ops: Partial<RcStats["ops"]> = {}): RcStats =>
   ({
-    ops: { comment_operation: { avg_cost: 1224266459, count: 1 }, vote_operation: { avg_cost: 99566347, count: 1 } },
+    block: 0,
+    budget: [],
+    comment: 0,
+    ops: {
+      ...ALL_OPS,
+      comment_operation: { avg_cost: 1224266459, count: 1 },
+      vote_operation: { avg_cost: 99566347, count: 1 },
+      ...ops
+    },
+    payers: [],
     pool: [24091156132, 16787104, 1980851228, 26129897630853, 66076533904],
     regen: 2403497928903,
-    share: [5264, 10000, 533, 1843, 2357]
-  }) as any;
+    share: [5264, 10000, 533, 1843, 2357],
+    stamp: "",
+    transfer: 0,
+    vote: 0
+  });
 
-const account = (mana: number) =>
-  ({ rc_manabar: { current_mana: mana, last_update_time: 0 }, max_rc: mana * 2 }) as any;
+const account = (mana: number): RCAccount =>
+  ({
+    account: "spacecop",
+    rc_manabar: { current_mana: mana, last_update_time: 0 },
+    max_rc_creation_adjustment: { amount: "0", precision: 6, nai: "@@000000021" },
+    max_rc: mana * 2
+  }) as RCAccount;
 
 /** The post that was actually rejected on chain, needing 23.3B RC. */
 const bigPost = {
@@ -224,5 +285,80 @@ describe("estimateRcPrecheck", () => {
     });
 
     expect(r.avgCost).toBe(r.cost);
+  });
+
+  // Regression: the payload-priced rewrite only knows how to price comments and
+  // votes, but the exported operation type advertises every key the node
+  // reports. Returning a zero-cost "ready" for the rest turned every other
+  // caller's pre-check into a silent all-clear.
+  describe("operations it cannot price from a payload", () => {
+    it("prices a transfer from the network average the node publishes", () => {
+      const r = estimateRcPrecheck({
+        rcAccount: account(1e12),
+        rcStats: stats({ transfer_operation: { avg_cost: 500_000_000, count: 1 } }),
+        rcParams: PARAMS,
+        operation: "transfer_operation"
+      });
+
+      expect(r.ready).toBe(true);
+      expect(r.cost).toBe(500_000_000);
+      expect(r.remaining).toBe(2000);
+    });
+
+    it("still warns when that average exceeds the account's mana", () => {
+      const r = estimateRcPrecheck({
+        rcAccount: account(1e8),
+        rcStats: stats({ transfer_operation: { avg_cost: 500_000_000, count: 1 } }),
+        rcParams: PARAMS,
+        operation: "transfer_operation"
+      });
+
+      expect(r.willLikelyFail).toBe(true);
+      expect(r.deficit).toBeGreaterThan(0);
+    });
+
+    it("reports not ready, never a free all-clear, when there is no average", () => {
+      const r = estimateRcPrecheck({
+        rcAccount: account(1e12),
+        rcStats: stats(),
+        rcParams: PARAMS,
+        operation: "custom_json_operation"
+      });
+
+      expect(r.ready).toBe(false);
+      expect(r.willLikelyFail).toBe(false);
+    });
+  });
+
+  describe("fallback when the caller has no payload", () => {
+    const base = {
+      rcAccount: account(21319011516),
+      rcStats: stats(),
+      rcParams: PARAMS,
+      operation: "comment_operation" as const
+    };
+
+    it("defaults to the minimal operation, a lower bound that cannot invent a warning", () => {
+      const r = estimateRcPrecheck(base);
+
+      expect(r.cost).toBeLessThan(stats().ops.comment_operation.avg_cost);
+      expect(r.willLikelyFail).toBe(false);
+    });
+
+    // The counts in the RC tooltip: an empty comment is not what "how many
+    // posts can I afford" means, and pricing one flatters the number.
+    it("prices the network average when asked for it", () => {
+      const r = estimateRcPrecheck({ ...base, fallback: "average" });
+
+      expect(r.cost).toBe(stats().ops.comment_operation.avg_cost);
+      expect(r.remaining).toBe(17);
+    });
+
+    it("ignores the fallback once a real payload is supplied", () => {
+      const r = estimateRcPrecheck({ ...base, fallback: "average", payload: bigPost });
+
+      expect(r.cost).toBeGreaterThan(stats().ops.comment_operation.avg_cost * 10);
+      expect(r.willLikelyFail).toBe(true);
+    });
   });
 });

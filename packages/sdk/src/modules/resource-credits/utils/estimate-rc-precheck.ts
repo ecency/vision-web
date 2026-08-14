@@ -46,6 +46,18 @@ export interface RcPrecheckInput {
    */
   payload?: RcPrecheckPayload;
   /**
+   * What to price when no payload is supplied.
+   *
+   * - `"minimal"` (default) prices the smallest operation of that type. It is
+   *   a lower bound, so a pre-submit warning is never invented for an
+   *   operation that would have succeeded.
+   * - `"average"` prices the network average the chain publishes. Right for
+   *   "how many of these can I afford" displays, where there is no specific
+   *   operation in hand and the smallest conceivable one would flatter the
+   *   count.
+   */
+  fallback?: "minimal" | "average";
+  /**
    * Safety multiplier applied to the operation cost when deciding
    * whether the broadcast will "likely fail". Actual on-chain cost varies with
    * network load, so we keep headroom. Defaults to 1.2.
@@ -115,6 +127,7 @@ export function estimateRcPrecheck({
   rcParams,
   operation,
   payload,
+  fallback = "minimal",
   buffer = 1.2,
 }: RcPrecheckInput): RcPrecheckResult {
   if (!rcAccount || !rcStats?.ops) {
@@ -129,9 +142,11 @@ export function estimateRcPrecheck({
     return { ...EMPTY, currentMana, maxMana };
   }
 
-  const priced = priceOperation(operation, payload, rcParams, rcStats);
+  const priced = priceOperation(operation, payload, fallback, rcParams, rcStats);
   if (!priced) {
-    return { ...EMPTY, ready: true, currentMana, maxMana };
+    // Nothing to price against: reporting "ready" here would be a silent
+    // all-clear, which is the one answer a pre-check must never invent.
+    return { ...EMPTY, currentMana, maxMana };
   }
 
   const { cost, transactionBytes } = priced;
@@ -159,14 +174,27 @@ export function estimateRcPrecheck({
  * When no payload is supplied a minimal operation of that type is priced. That
  * is deliberately a lower bound: it can miss a marginal case, but it never
  * warns about one that would have succeeded.
+ *
+ * Comments and votes are the two operations whose cost swings with what the
+ * user wrote, so they are priced from the payload. Every other operation the
+ * type advertises (transfer, custom_json, ...) is fixed-shape, and falls back
+ * to the network average the chain publishes for it. Returns null only when
+ * even that is missing, so the caller reports "not ready" rather than a
+ * zero-cost all-clear.
  */
 function priceOperation(
   operation: RcPrecheckOperation,
   payload: RcPrecheckPayload | undefined,
+  fallback: "minimal" | "average",
   rcParams: RcResourceParams,
   rcStats: RcStats
 ): { cost: number; transactionBytes: number } | null {
   const stats = { pool: rcStats.pool, regen: rcStats.regen, share: rcStats.share };
+  const average = averageCost(rcStats, operation);
+
+  if (!payload && fallback === "average" && average) {
+    return average;
+  }
 
   if (operation === "vote_operation") {
     const op: VoteLike = payload?.kind === "vote" ? payload.op : MINIMAL_VOTE;
@@ -191,7 +219,16 @@ function priceOperation(
     return { cost: priceRcUsage(usage, rcParams, stats).cost, transactionBytes };
   }
 
-  return null;
+  return average;
+}
+
+/** The network average the chain publishes for an operation, when it has one. */
+function averageCost(
+  rcStats: RcStats,
+  operation: RcPrecheckOperation
+): { cost: number; transactionBytes: number } | null {
+  const cost = rcStats.ops[operation]?.avg_cost;
+  return typeof cost === "number" && cost > 0 ? { cost, transactionBytes: 0 } : null;
 }
 
 /** Smallest realistic operations, used only when the caller has no payload yet. */
