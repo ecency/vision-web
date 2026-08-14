@@ -1,15 +1,35 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import i18next from "i18next";
 import { useCallback, useEffect, useState } from "react";
+import { Modal, ModalBody, ModalHeader } from "@ui/modal";
 
 import { EcencyConfigManager } from "@/config";
 
 // Lazy-loaded so its mutation/SDK import chain is not pulled into every
-// comment, editor and vote render until someone actually opens it.
+// comment, editor and vote render until someone actually opens it. The
+// fallback is the dialog's own shell rather than nothing: without it a click
+// on a cold cache looks ignored, and these buttons sit on surfaces someone
+// reaches only after an action already failed.
 const RcTopupDialog = dynamic(
   () => import("@/features/shared/rc-topup").then((m) => m.RcTopupDialog),
-  { ssr: false }
+  {
+    ssr: false,
+    // No close button on the fallback: it cannot reach the hook's state, so a
+    // close control here would be dead. The real dialog, which does close,
+    // replaces it as soon as the chunk lands.
+    loading: () => (
+      <Modal show={true} centered={true} onHide={() => {}}>
+        <ModalHeader closeButton={false}>{i18next.t("rc-topup.title")}</ModalHeader>
+        <ModalBody>
+          <div className="flex items-center justify-center min-h-32 opacity-60">
+            {i18next.t("g.loading")}
+          </div>
+        </ModalBody>
+      </Modal>
+    )
+  }
 );
 
 /**
