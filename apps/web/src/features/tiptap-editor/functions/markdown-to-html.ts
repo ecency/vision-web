@@ -35,8 +35,16 @@ function extractTextAlignValue(styles: string | null): string | undefined {
     .find((value): value is string => !!value);
 }
 
-/** Block-level tags that must keep their paragraph wrapper inside a cell. */
-const CELL_BLOCK_CHILDREN = "p, ul, ol, li, blockquote, table, pre, h1, h2, h3, h4, h5, h6, div";
+/**
+ * Content that must keep its paragraph wrapper inside a cell.
+ *
+ * Block tags are obvious. `img` is here because `.markdown-view p img` sets
+ * `display: inline-block` to keep images aligned with surrounding text; an
+ * image promoted to a bare cell child loses that and can break a line like
+ * "before <img> after" across rows.
+ */
+const CELL_WRAPPER_REQUIRED =
+  "p, ul, ol, li, blockquote, table, pre, h1, h2, h3, h4, h5, h6, div, img";
 
 /**
  * Strips markup from a table that carries no information.
@@ -63,15 +71,15 @@ function slimTableMarkup(table: HTMLElement) {
 
     // Unwrap <td><p>text</p></td> only when that paragraph IS the cell: no
     // sibling nodes, no attributes worth keeping (alignment lives on the
-    // paragraph), and no nested block content. Multi-block cells keep their
-    // structure, since collapsing those is what loses information.
+    // paragraph), and nothing inside that depends on the paragraph to render
+    // correctly. Cells that keep their paragraph are untouched.
     const [child] = Array.from(cell.children) as HTMLElement[];
     if (
       cell.childNodes.length === 1 &&
       child &&
       child.tagName === "P" &&
       child.attributes.length === 0 &&
-      !child.querySelector(CELL_BLOCK_CHILDREN)
+      !child.querySelector(CELL_WRAPPER_REQUIRED)
     ) {
       cell.innerHTML = child.innerHTML;
     }

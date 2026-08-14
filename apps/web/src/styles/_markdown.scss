@@ -262,6 +262,16 @@
     p {
       margin-bottom: 0;
     }
+
+    // Cells whose single paragraph was unwrapped during serialization still
+    // have to read identically to cells that kept one, so they carry the same
+    // typography the `p` rule above supplies. Cells that DO contain a
+    // paragraph inherit these harmlessly: the values match.
+    td,
+    th {
+      line-height: 1.55;
+      text-rendering: optimizeLegibility;
+    }
   }
 
   :not(pre) code {

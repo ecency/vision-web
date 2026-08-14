@@ -95,6 +95,35 @@ describe("table markup size", () => {
     expect(result).toContain("<li>a</li>");
   });
 
+  it("keeps the paragraph when the cell holds an inline image", () => {
+    // `.markdown-view p img` sets display:inline-block to keep an image aligned
+    // with the text around it. Promoting the image to a bare cell child loses
+    // that and can break "before <img> after" across lines.
+    const result = serializeRaw(
+      '<table><tbody><tr><td><p>before <img src="https://x/a.png" alt="" /> after</p></td></tr></tbody></table>'
+    );
+
+    expect(result).toContain("<p>");
+    expect(result).toContain("<img");
+    expect(result).not.toContain("<td><img");
+  });
+
+  it("keeps the paragraph for an image-only cell too", () => {
+    const result = serializeRaw(
+      '<table><tbody><tr><td><p><img src="https://x/a.png" alt="" /></p></td></tr></tbody></table>'
+    );
+
+    expect(result).toContain("<p><img");
+  });
+
+  it("still unwraps a text cell that merely mentions an image in words", () => {
+    const result = serializeRaw(
+      "<table><tbody><tr><td><p>see the image below</p></td></tr></tbody></table>"
+    );
+
+    expect(result).toContain("<td>see the image below</td>");
+  });
+
   it("keeps a nested table intact", () => {
     const result = serializeRaw(
       "<table><tbody><tr><td><table><tbody><tr><td><p>inner</p></td></tr></tbody></table></td></tr></tbody></table>"
