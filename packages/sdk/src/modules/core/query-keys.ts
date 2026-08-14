@@ -542,6 +542,7 @@ export const QueryKeys = {
     account: (username: string) =>
       ["resource-credits", "account", username],
     stats: () => ["resource-credits", "stats"],
+    resourceParams: () => ["resource-credits", "resource-params"],
   },
 
   // ===========================================================================

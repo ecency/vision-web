@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.84
+
+### Patch Changes
+
+- feat(sdk): price a comment's RC cost the way the chain does (#1486)
+
 ## 2.3.83
 
 ### Patch Changes
