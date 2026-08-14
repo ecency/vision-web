@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { EcencyConfigManager } from "@/config";
 
@@ -24,6 +24,14 @@ const RcTopupDialog = dynamic(
 export function useRcTopupAction(username: string | undefined) {
   const [showTopup, setShowTopup] = useState(false);
 
+  // RcTopupDialog resolves its account from useActiveAccount and its mutation
+  // spends that account's Points. Left mounted across an account switch it
+  // would quietly retarget, spending B's Points for a shortfall that belongs
+  // to A, so switching accounts closes it.
+  useEffect(() => {
+    setShowTopup(false);
+  }, [username]);
+
   const rcTopupEnabled = EcencyConfigManager.getConfigValue(
     ({ visionFeatures }) => visionFeatures.rcTopup.enabled
   );
@@ -32,7 +40,13 @@ export function useRcTopupAction(username: string | undefined) {
     if (rcTopupEnabled) {
       setShowTopup(true);
     } else if (username) {
-      window.open(`/purchase?username=${encodeURIComponent(username)}&type=boost`, "_blank", "noopener");
+      // noreferrer as well as noopener: without it the purchase page receives
+      // the editor URL, which can carry draft identifiers in the path.
+      window.open(
+        `/purchase?username=${encodeURIComponent(username)}&type=boost`,
+        "_blank",
+        "noopener,noreferrer"
+      );
     }
   }, [rcTopupEnabled, username]);
 
