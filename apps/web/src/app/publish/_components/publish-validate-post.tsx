@@ -4,12 +4,16 @@ import { SUBMIT_TAG_MAX_LENGTH } from "@/app/submit/_consts";
 import { TagSelector, sanitizeTagInput } from "@/app/submit/_components";
 import { Alert, Button, FormControl } from "@/features/ui";
 import { formatError } from "@/api/format-error";
-import { ErrorTypes } from "@/enums";
+import {
+  buildRcTopUpUrl,
+  isShortfallStillRelevant,
+  resolveRcShortfall,
+  type RcShortfall
+} from "../_utils/rc-shortfall";
 import { handleAndReportError, error as feedbackError } from "@/features/shared";
 import { UilMultiply } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMount } from "react-use";
 import { usePublishApi, useScheduleApi } from "../_api";
 import { usePublishState } from "../_hooks";
@@ -56,7 +60,8 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
   } = usePublishState();
 
   const { activeUser } = useActiveAccount();
-  const [rcShortfall, setRcShortfall] = useState<string | null>(null);
+  const [rcShortfall, setRcShortfall] = useState<RcShortfall | null>(null);
+  const isMounted = useRef(true);
   const { data: supportSettings } = useSupportEcencySettingsQuery();
 
   const supportWeight = SUPPORT_ECENCY_DEFAULT_PERCENT * 100;
@@ -92,6 +97,20 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
 
   const { mutateAsync: publishNow, isPending: isPublishPending } = usePublishApi();
   const { mutateAsync: scheduleNow, isPending: isSchedulePending } = useScheduleApi();
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  // An alert raised for one account must not linger while another is active.
+  useEffect(() => {
+    setRcShortfall((current) =>
+      isShortfallStillRelevant(current, activeUser?.username) ? current : null
+    );
+  }, [activeUser?.username]);
 
   const submit = useCallback(async () => {
     if (!title?.trim()) {
@@ -132,9 +151,11 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
       const [message, errorType] = formatError(err);
       // A toast disappears; running out of RC is a blocking condition the user
       // has to act on, so it also stays on the page next to the button that
-      // failed, with a route to top up.
-      if (errorType === ErrorTypes.INSUFFICIENT_RESOURCE_CREDITS) {
-        setRcShortfall(message || i18next.t("feedback-modal.insufficient-resource-message"));
+      // failed, with a route to top up. Bound to the account that failed, and
+      // guarded because this runs after awaited work.
+      const shortfall = resolveRcShortfall(err, activeUser?.username);
+      if (shortfall && isMounted.current) {
+        setRcShortfall(shortfall);
       }
       const handled = handleAndReportError(err, "publish-post");
       if (handled) {
@@ -276,15 +297,16 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
 
           {rcShortfall && (
             <Alert className="w-full flex flex-col gap-2 items-start" appearance="danger">
-              <span>{rcShortfall}</span>
-              <Link
-                href={`/purchase?username=${activeUser?.username}&type=boost&product_id=999points`}
-                target="_external"
+              <span>{rcShortfall.message}</span>
+              <Button
+                size="sm"
+                appearance="primary"
+                href={buildRcTopUpUrl(rcShortfall.username)}
+                target="_blank"
+                rel="noopener noreferrer"
               >
-                <Button size="sm" appearance="primary">
-                  {i18next.t("feedback-modal.insufficient-resource-buy")}
-                </Button>
-              </Link>
+                {i18next.t("feedback-modal.insufficient-resource-buy")}
+              </Button>
             </Alert>
           )}
 
