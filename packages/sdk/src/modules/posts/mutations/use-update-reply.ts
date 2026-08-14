@@ -164,20 +164,8 @@ export function useUpdateReply(
       return operations;
     },
     async (_result: any, variables) => {
-      // Activity tracking (fire-and-forget — non-critical, shouldn't block mutation completion)
-      // Async broadcasts return BroadcastResult ({ tx_id, status }) instead of TransactionConfirmation,
-      // so fall back to tx_id when id is absent.
-      const txId = _result?.id ?? _result?.tx_id;
-      if (auth?.adapter?.recordActivity && txId) {
-        auth.adapter.recordActivity(110, txId, _result?.block_num).catch((error) => {
-          console.debug("[SDK][Posts][useUpdateReply] recordActivity failed", {
-            activityType: 110,
-            blockNum: _result?.block_num,
-            transactionId: txId,
-            error
-          });
-        });
-      }
+      // No activity is recorded here. Activity rewards creating content. Every
+      // broadcast from this mutation edits content that already exists.
 
       // Cache invalidation
       if (auth?.adapter?.invalidateQueries) {
