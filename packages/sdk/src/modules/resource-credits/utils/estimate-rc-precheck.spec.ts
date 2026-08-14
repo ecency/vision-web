@@ -168,10 +168,37 @@ describe("estimateRcPrecheck", () => {
     const r = estimateRcPrecheck({
       rcAccount: account(1e12),
       rcStats: stats(),
-      operation: "comment_operation"
+      operation: "comment_operation",
+      payload: bigPost
     });
     expect(r.ready).toBe(false);
     expect(r.willLikelyFail).toBe(false);
+  });
+
+  // Regression: the curve parameters are needed to price a payload, and only
+  // for that. Gating everything behind them broke callers that had always
+  // priced a transfer from rcAccount and rcStats alone.
+  it("prices from the average without curve parameters at all", () => {
+    const r = estimateRcPrecheck({
+      rcAccount: account(1e12),
+      rcStats: stats({ transfer_operation: { avg_cost: 500_000_000, count: 1 } }),
+      operation: "transfer_operation"
+    });
+
+    expect(r.ready).toBe(true);
+    expect(r.cost).toBe(500_000_000);
+  });
+
+  it("serves the tooltip's average counts without curve parameters too", () => {
+    const r = estimateRcPrecheck({
+      rcAccount: account(21319011516),
+      rcStats: stats(),
+      operation: "comment_operation",
+      fallback: "average"
+    });
+
+    expect(r.ready).toBe(true);
+    expect(r.remaining).toBe(17);
   });
 
   // The whole point of the rewrite: cost follows the actual payload rather

@@ -136,12 +136,6 @@ export function estimateRcPrecheck({
 
   const { current_mana: currentMana, max_mana: maxMana } = calculateRCMana(rcAccount);
 
-  // Pricing needs the curve parameters. Without them the honest answer is "not
-  // ready", not a guess dressed up as an estimate.
-  if (!rcParams?.resource_params || !rcParams.size_info || !rcStats.pool || !rcStats.share) {
-    return { ...EMPTY, currentMana, maxMana };
-  }
-
   const priced = priceOperation(operation, payload, fallback, rcParams, rcStats);
   if (!priced) {
     // Nothing to price against: reporting "ready" here would be a silent
@@ -171,30 +165,45 @@ export function estimateRcPrecheck({
 /**
  * Prices whichever operation the caller is about to broadcast.
  *
- * When no payload is supplied a minimal operation of that type is priced. That
- * is deliberately a lower bound: it can miss a marginal case, but it never
- * warns about one that would have succeeded.
- *
  * Comments and votes are the two operations whose cost swings with what the
- * user wrote, so they are priced from the payload. Every other operation the
- * type advertises (transfer, custom_json, ...) is fixed-shape, and falls back
- * to the network average the chain publishes for it. Returns null only when
- * even that is missing, so the caller reports "not ready" rather than a
- * zero-cost all-clear.
+ * user wrote, so they are priced from the payload, and pricing them needs the
+ * curve parameters. Every other operation the type advertises (transfer,
+ * custom_json, ...) is fixed-shape and takes the network average the chain
+ * publishes, which needs nothing else.
+ *
+ * When no payload is supplied a minimal operation is priced. That is
+ * deliberately a lower bound: it can miss a marginal case, but it never warns
+ * about one that would have succeeded.
+ *
+ * Returns null when the answer would have to be invented, so the caller
+ * reports "not ready" rather than a zero-cost all-clear.
  */
 function priceOperation(
   operation: RcPrecheckOperation,
   payload: RcPrecheckPayload | undefined,
   fallback: "minimal" | "average",
-  rcParams: RcResourceParams,
+  rcParams: RcResourceParams | null | undefined,
   rcStats: RcStats
 ): { cost: number; transactionBytes: number } | null {
-  const stats = { pool: rcStats.pool, regen: rcStats.regen, share: rcStats.share };
   const average = averageCost(rcStats, operation);
+  const pricedFromPayload =
+    operation === "comment_operation" || operation === "vote_operation";
 
-  if (!payload && fallback === "average" && average) {
+  // The average is a number the node already returned. It needs no curve
+  // parameters, so a caller pricing a transfer must not be blocked waiting on
+  // them, which is how every operation outside these two is priced.
+  if (!pricedFromPayload || (!payload && fallback === "average")) {
     return average;
   }
+
+  // Asked to price a real comment or vote without the inputs to do it. The
+  // honest answer is "not ready": falling back to the average here is exactly
+  // what told an account holding 21.3B RC it could afford 17 more posts.
+  if (!rcParams?.resource_params || !rcParams.size_info || !rcStats.pool || !rcStats.share) {
+    return null;
+  }
+
+  const stats = { pool: rcStats.pool, regen: rcStats.regen, share: rcStats.share };
 
   if (operation === "vote_operation") {
     const op: VoteLike = payload?.kind === "vote" ? payload.op : MINIMAL_VOTE;
@@ -203,23 +212,19 @@ function priceOperation(
     return { cost: priceRcUsage(usage, rcParams, stats).cost, transactionBytes };
   }
 
-  if (operation === "comment_operation") {
-    const op: CommentLike = payload?.kind === "comment" ? payload.op : MINIMAL_COMMENT;
-    const options = payload?.kind === "comment" ? payload.options : undefined;
-    const transactionBytes = estimateCommentTransactionBytes({ op, options });
-    const usage = countCommentResourceUsage(
-      {
-        transactionBytes,
-        permlinkLength: op.permlink.length,
-        beneficiaries: options?.beneficiaries?.length ?? 0,
-        hasCommentOptions: !!options
-      },
-      rcParams.size_info
-    );
-    return { cost: priceRcUsage(usage, rcParams, stats).cost, transactionBytes };
-  }
-
-  return average;
+  const op: CommentLike = payload?.kind === "comment" ? payload.op : MINIMAL_COMMENT;
+  const options = payload?.kind === "comment" ? payload.options : undefined;
+  const transactionBytes = estimateCommentTransactionBytes({ op, options });
+  const usage = countCommentResourceUsage(
+    {
+      transactionBytes,
+      permlinkLength: op.permlink.length,
+      beneficiaries: options?.beneficiaries?.length ?? 0,
+      hasCommentOptions: !!options
+    },
+    rcParams.size_info
+  );
+  return { cost: priceRcUsage(usage, rcParams, stats).cost, transactionBytes };
 }
 
 /** The network average the chain publishes for an operation, when it has one. */
