@@ -4,12 +4,9 @@ import { SUBMIT_TAG_MAX_LENGTH } from "@/app/submit/_consts";
 import { TagSelector, sanitizeTagInput } from "@/app/submit/_components";
 import { Alert, Button, FormControl } from "@/features/ui";
 import { formatError } from "@/api/format-error";
-import {
-  buildRcTopUpUrl,
-  isShortfallStillRelevant,
-  resolveRcShortfall,
-  type RcShortfall
-} from "../_utils/rc-shortfall";
+import { isShortfallStillRelevant, resolveRcShortfall, type RcShortfall } from "../_utils/rc-shortfall";
+import { useRcTopupAction } from "@/features/shared/rc-topup/use-rc-topup-action";
+import { PointsTopupCta } from "@/features/shared/points-topup-cta";
 import { handleAndReportError, error as feedbackError } from "@/features/shared";
 import { UilMultiply } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
@@ -61,6 +58,7 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
 
   const { activeUser } = useActiveAccount();
   const [rcShortfall, setRcShortfall] = useState<RcShortfall | null>(null);
+  const { openTopup, dialog: rcTopupDialog } = useRcTopupAction(rcShortfall?.username);
   const isMounted = useRef(true);
   const { data: supportSettings } = useSupportEcencySettingsQuery();
 
@@ -296,19 +294,22 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
           )}
 
           {rcShortfall && (
-            <Alert className="w-full flex flex-col gap-2 items-start" appearance="danger">
+            <Alert className="w-full flex flex-col gap-3 items-start" appearance="danger">
               <span>{rcShortfall.message}</span>
-              <Button
-                size="sm"
-                appearance="primary"
-                href={buildRcTopUpUrl(rcShortfall.username)}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {i18next.t("feedback-modal.insufficient-resource-buy")}
-              </Button>
+              {/*
+                Both routes out of this state, rather than only the Boost page:
+                spend Points on an RC-only delegation to your own account, or
+                buy Points with a card when the balance is short.
+              */}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" appearance="primary" onClick={openTopup}>
+                  {i18next.t("rc-precheck.top-up")}
+                </Button>
+                <PointsTopupCta />
+              </div>
             </Alert>
           )}
+          {rcTopupDialog}
 
           {activeUser?.username && (
             <div className="w-full flex flex-col gap-2">

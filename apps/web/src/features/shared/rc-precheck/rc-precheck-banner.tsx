@@ -1,22 +1,13 @@
 "use client";
 
-import { useState } from "react";
 import i18next from "i18next";
 import { Button } from "@ui/button";
 
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import dynamic from "next/dynamic";
-import { EcencyConfigManager } from "@/config";
 import { useRcPrecheck } from "./use-rc-precheck";
+import { useRcTopupAction } from "@/features/shared/rc-topup/use-rc-topup-action";
 import type { RcPrecheckOperation } from "@ecency/sdk";
 import { alertCircleSvg } from "@ui/svg";
-
-// Lazy-load the purchase dialog so its mutation/SDK import chain is not pulled
-// into every comment/editor/vote render until a user actually opens it.
-const RcTopupDialog = dynamic(
-  () => import("@/features/shared/rc-topup").then((m) => m.RcTopupDialog),
-  { ssr: false }
-);
 
 interface Props {
   operation?: RcPrecheckOperation;
@@ -42,24 +33,11 @@ export function RcPrecheckBanner({
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username;
   const { ready, willLikelyFail } = useRcPrecheck(username, operation);
-  const [showTopup, setShowTopup] = useState(false);
+  const { openTopup: onTopUp, dialog } = useRcTopupAction(username);
 
   if (!username || !ready || !willLikelyFail) {
     return null;
   }
-
-  const rcTopupEnabled = EcencyConfigManager.getConfigValue(
-    ({ visionFeatures }) => visionFeatures.rcTopup.enabled
-  );
-  const onTopUp = () => {
-    if (rcTopupEnabled) {
-      setShowTopup(true);
-    } else {
-      window.open(`/purchase?username=${username}&type=boost`, "_blank", "noopener");
-    }
-  };
-
-  const dialog = showTopup ? <RcTopupDialog onHide={() => setShowTopup(false)} /> : null;
 
   if (compact) {
     return (

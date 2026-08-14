@@ -1,8 +1,4 @@
-import {
-  buildRcTopUpUrl,
-  isShortfallStillRelevant,
-  resolveRcShortfall
-} from "@/app/publish/_utils/rc-shortfall";
+import { isShortfallStillRelevant, resolveRcShortfall } from "@/app/publish/_utils/rc-shortfall";
 
 /**
  * The verbatim rejection a 10 HP account received when publishing an oversized
@@ -46,27 +42,6 @@ describe("resolveRcShortfall", () => {
   it("returns null when there is no signed-in account to bind to", () => {
     expect(resolveRcShortfall(RC_REJECTION, undefined)).toBeNull();
     expect(resolveRcShortfall(RC_REJECTION, "")).toBeNull();
-  });
-});
-
-describe("buildRcTopUpUrl", () => {
-  // Regression: the URL was built from the active user at render time, so
-  // switching accounts while the alert was up offered to boost the wrong one.
-  it("targets the account passed to it", () => {
-    expect(buildRcTopUpUrl("spacecop")).toContain("username=spacecop");
-  });
-
-  it("points at the boost product", () => {
-    const url = buildRcTopUpUrl("spacecop");
-
-    expect(url).toContain("type=boost");
-    expect(url).toContain("product_id=999points");
-  });
-
-  it("encodes names that need it rather than breaking the query string", () => {
-    expect(buildRcTopUpUrl("a b&c=d")).toBe(
-      "/purchase?username=a%20b%26c%3Dd&type=boost&product_id=999points"
-    );
   });
 });
 
