@@ -4,10 +4,12 @@ import { SUBMIT_TAG_MAX_LENGTH } from "@/app/submit/_consts";
 import { TagSelector, sanitizeTagInput } from "@/app/submit/_components";
 import { Alert, Button, FormControl } from "@/features/ui";
 import { formatError } from "@/api/format-error";
+import { ErrorTypes } from "@/enums";
 import { handleAndReportError, error as feedbackError } from "@/features/shared";
 import { UilMultiply } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useMount } from "react-use";
 import { usePublishApi, useScheduleApi } from "../_api";
 import { usePublishState } from "../_hooks";
@@ -54,6 +56,7 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
   } = usePublishState();
 
   const { activeUser } = useActiveAccount();
+  const [rcShortfall, setRcShortfall] = useState<string | null>(null);
   const { data: supportSettings } = useSupportEcencySettingsQuery();
 
   const supportWeight = SUPPORT_ECENCY_DEFAULT_PERCENT * 100;
@@ -101,6 +104,8 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
       return;
     }
 
+    setRcShortfall(null);
+
     try {
       if (schedule) {
         await scheduleNow(schedule!);
@@ -119,10 +124,21 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
 
       clearAll();
     } catch (err) {
-      const [message] = formatError(err);
+      // Keep the classified type: handleAndReportError returns true for known
+      // types WITHOUT showing anything, leaving the toast to us. Dropping the
+      // type here meant an out-of-RC publish rendered a bare "Insufficient
+      // Resource Credits." with no way to act on it, when the feedback toast
+      // already knows how to offer an account boost for exactly that type.
+      const [message, errorType] = formatError(err);
+      // A toast disappears; running out of RC is a blocking condition the user
+      // has to act on, so it also stays on the page next to the button that
+      // failed, with a route to top up.
+      if (errorType === ErrorTypes.INSUFFICIENT_RESOURCE_CREDITS) {
+        setRcShortfall(message || i18next.t("feedback-modal.insufficient-resource-message"));
+      }
       const handled = handleAndReportError(err, "publish-post");
       if (handled) {
-        feedbackError(message || i18next.t("g.server-error"));
+        feedbackError(message || i18next.t("g.server-error"), errorType);
       } else {
         throw err;
       }
@@ -256,6 +272,20 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
             >
               {i18next.t("support-ecency.add-chip")}
             </Button>
+          )}
+
+          {rcShortfall && (
+            <Alert className="w-full flex flex-col gap-2 items-start" appearance="danger">
+              <span>{rcShortfall}</span>
+              <Link
+                href={`/purchase?username=${activeUser?.username}&type=boost&product_id=999points`}
+                target="_external"
+              >
+                <Button size="sm" appearance="primary">
+                  {i18next.t("feedback-modal.insufficient-resource-buy")}
+                </Button>
+              </Link>
+            </Alert>
           )}
 
           {activeUser?.username && (
