@@ -218,7 +218,19 @@ export function EntryVoteDialog({
       {/* The [&_svg] sink replaces the deleted btn-vote mixin svg rule that
           sized the banner's alert icon to 14px inside this dialog. */}
       {!isPaidOut && (
-        <RcPrecheckBanner operation="vote_operation" compact className="mb-2 [&_svg]:size-3.5" />
+        <RcPrecheckBanner
+          operation="vote_operation"
+          payload={
+            username
+              ? {
+                  kind: "vote",
+                  op: { voter: username, author: entry.author, permlink: entry.permlink }
+                }
+              : undefined
+          }
+          compact
+          className="mb-2 [&_svg]:size-3.5"
+        />
       )}
       {!isPaidOut && mode === "up" && (
         <>

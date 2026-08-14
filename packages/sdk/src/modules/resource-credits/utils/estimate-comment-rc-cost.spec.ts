@@ -81,11 +81,13 @@ const PARAMS: RcResourceParams = {
       comment_base_size: 4237056,
       comment_permlink_char_size: 168,
       comment_beneficiaries_member_size: 1344,
+      vote_size: 24192,
       transaction_base_size: 128
     },
     resource_execution_time: {
       comment_time: 66178,
       comment_options_time: 6202,
+      vote_time: 18312,
       transaction_time: 6622,
       verify_authority_time: 94165
     }

@@ -75,6 +75,14 @@ vi.mock("@ecency/sdk", () => ({
 // chain. Comment only uses `isCommunity` from this module.
 vi.mock("@/utils", () => ({
   isCommunity: (category?: string) => !!category && category.startsWith("hive-"),
+  // Same shapes the real helpers produce: the RC estimate reads their length,
+  // so a stub of the wrong shape would make the composer's payload meaningless.
+  createReplyPermlink: (toAuthor?: string) => `re-${toAuthor}-20260814t120000000z`,
+  makeJsonMetaDataReply: (tags: string[], appVer: string) => ({
+    tags,
+    app: `ecency/${appVer}-vision`,
+    format: "markdown+html"
+  }),
   random: vi.fn(),
   getAccessToken: vi.fn(() => "mock-token")
 }));

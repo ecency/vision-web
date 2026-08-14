@@ -7,6 +7,8 @@ import { CommentPreview } from "@/features/shared/comment/comment-preview";
 import { detectEvent, EditorToolbar, toolbarEventListener } from "@/features/shared/editor-toolbar";
 import { TextareaAutocomplete } from "@/features/shared/textarea-autocomplete";
 import { PREFIX } from "@/utils/local-storage";
+import { createReplyPermlink, makeJsonMetaDataReply } from "@/utils";
+import appPackage from "../../../../package.json";
 import { setProxyBase } from "@ecency/render-helper";
 import { Button } from "@ui/button";
 import i18next from "i18next";
@@ -35,6 +37,7 @@ import {
 import { isCommunity } from "@/utils";
 import { shouldShowShortContentHint } from "@/utils/short-content-hint";
 import { EntryPageContext } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/context";
+import type { RcPrecheckPayload } from "@ecency/sdk";
 import { RcPrecheckBanner } from "@/features/shared/rc-precheck";
 
 setProxyBase(defaults.imageServer);
@@ -93,6 +96,32 @@ export function Comment({
   });
 
   const rows = useMemo(() => text!.split(/\r\n|\r|\n|<br>/).length, [text]);
+
+  // The reply as it will be broadcast. The permlink and metadata are built the
+  // same way submitReply builds them, because both feed the RC cost: the
+  // permlink through comment_permlink_char_size and the metadata through
+  // transaction size. A `re-${parent permlink}` stand-in is a different length
+  // entirely, so it would skew the estimate for no reason.
+  const rcPayload = useMemo<RcPrecheckPayload | undefined>(
+    () =>
+      activeUser?.username
+        ? {
+            kind: "comment",
+            op: {
+              author: activeUser.username,
+              permlink: createReplyPermlink(entry.author),
+              parent_author: entry.author,
+              parent_permlink: entry.permlink,
+              title: "",
+              body: text ?? "",
+              json_metadata: JSON.stringify(
+                makeJsonMetaDataReply(entry.json_metadata?.tags || ["ecency"], appPackage.version)
+              )
+            }
+          }
+        : undefined,
+    [activeUser?.username, entry.author, entry.permlink, entry.json_metadata?.tags, text]
+  );
 
   useEffect(() => {
     if (selection) {
@@ -328,6 +357,7 @@ export function Comment({
                   className="p-2 w-full"
                   operation="comment_operation"
                   username={activeUser.username}
+                  payload={rcPayload}
                 />
               ) : (
                 <></>
@@ -335,7 +365,7 @@ export function Comment({
             </div>
           </div>
         </div>
-        <RcPrecheckBanner operation="comment_operation" className="mt-2" />
+        <RcPrecheckBanner operation="comment_operation" payload={rcPayload} className="mt-2" />
         {showShortReplyHint && (
           <div className="comment-short-reply-hint mt-2 text-xs opacity-60" role="status">
             {i18next.t("comment.short-reply-hint", { n: QUEST_MIN_CONTENT_LENGTH })}
