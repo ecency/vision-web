@@ -35,6 +35,57 @@ function extractTextAlignValue(styles: string | null): string | undefined {
     .find((value): value is string => !!value);
 }
 
+/**
+ * Content that must keep its paragraph wrapper inside a cell.
+ *
+ * Block tags are obvious. `img` is here because `.markdown-view p img` sets
+ * `display: inline-block` to keep images aligned with surrounding text; an
+ * image promoted to a bare cell child loses that and can break a line like
+ * "before <img> after" across rows.
+ */
+const CELL_WRAPPER_REQUIRED =
+  "p, ul, ol, li, blockquote, table, pre, h1, h2, h3, h4, h5, h6, div, img";
+
+/**
+ * Strips markup from a table that carries no information.
+ *
+ * Post size is charged directly: the chain prices a comment mostly on
+ * `history_bytes`, which is the serialized transaction size, so wrapper bytes
+ * are a real cost to the author. TipTap writes `colspan="1" rowspan="1"` on
+ * every cell whether or not the cell spans anything, and wraps every cell's
+ * content in a paragraph. On a 75-row table that was ~29KB of the ~44KB the
+ * two tables occupied, and it contributed to a post being rejected for
+ * insufficient RC.
+ *
+ * Nothing here changes what renders. Spans of 1 are the default, and a lone
+ * unstyled paragraph in a cell displays identically to its own contents.
+ */
+function slimTableMarkup(table: HTMLElement) {
+  (Array.from(table.querySelectorAll("th, td")) as HTMLElement[]).forEach((cell) => {
+    if (cell.getAttribute("colspan") === "1") {
+      cell.removeAttribute("colspan");
+    }
+    if (cell.getAttribute("rowspan") === "1") {
+      cell.removeAttribute("rowspan");
+    }
+
+    // Unwrap <td><p>text</p></td> only when that paragraph IS the cell: no
+    // sibling nodes, no attributes worth keeping (alignment lives on the
+    // paragraph), and nothing inside that depends on the paragraph to render
+    // correctly. Cells that keep their paragraph are untouched.
+    const [child] = Array.from(cell.children) as HTMLElement[];
+    if (
+      cell.childNodes.length === 1 &&
+      child &&
+      child.tagName === "P" &&
+      child.attributes.length === 0 &&
+      !child.querySelector(CELL_WRAPPER_REQUIRED)
+    ) {
+      cell.innerHTML = child.innerHTML;
+    }
+  });
+}
+
 export function markdownToHtml(html: string | undefined) {
   if (!html) {
     return "";
@@ -142,10 +193,11 @@ export function markdownToHtml(html: string | undefined) {
         return node.nodeName === "TABLE";
       },
       replacement: function (_, node) {
-        const colgroup = (node as HTMLElement).querySelector("colgroup");
-        colgroup?.remove();
+        const table = node as HTMLElement;
+        table.querySelector("colgroup")?.remove();
+        slimTableMarkup(table);
 
-        return (node as HTMLElement).outerHTML;
+        return table.outerHTML;
       }
     })
     .addRule("image", {
