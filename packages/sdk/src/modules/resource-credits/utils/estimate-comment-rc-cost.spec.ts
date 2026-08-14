@@ -5,6 +5,7 @@ import {
   estimateCommentRcCost,
   estimateCommentTransactionBytes
 } from "./estimate-comment-rc-cost";
+import { RC_RESOURCE_NAMES } from "../types/resource-params";
 import type { RcResourceParams } from "../types/resource-params";
 
 /**
@@ -79,10 +80,12 @@ const PARAMS: RcResourceParams = {
     resource_state_bytes: {
       comment_base_size: 4237056,
       comment_permlink_char_size: 168,
+      comment_beneficiaries_member_size: 1344,
       transaction_base_size: 128
     },
     resource_execution_time: {
       comment_time: 66178,
+      comment_options_time: 6202,
       transaction_time: 6622,
       verify_authority_time: 94165
     }
@@ -201,41 +204,56 @@ describe("computeResourceCost", () => {
   });
 });
 
+describe("total cost against the rejection", () => {
+  // Composed from the two exported primitives with the transaction size the
+  // chain reported, so nothing here is circular: the size is an input, not
+  // something this module derived.
+  const totalFor = (transactionBytes: number) => {
+    const usage = countCommentResourceUsage(
+      { transactionBytes, permlinkLength: REJECTION.permlink.length, signatures: 1 },
+      PARAMS.size_info
+    );
+    return RC_RESOURCE_NAMES.reduce((sum, name, index) => {
+      const entry = PARAMS.resource_params[name];
+      const regenShare = Math.floor((REJECTION.regen * REJECTION.share[index]) / 10000);
+      return (
+        sum +
+        computeResourceCost(
+          entry.price_curve_params,
+          REJECTION.poolAtTx[index],
+          usage[name] * Number(entry.resource_dynamics_params.resource_unit),
+          regenShare
+        )
+      );
+    }, 0);
+  };
+
+  it("lands within 1% of what the chain charged", () => {
+    expect(within(totalFor(REJECTION.transactionBytes), REJECTION.cost.total, 1)).toBe(true);
+  });
+
+  it("would have caught the rejection before broadcast", () => {
+    const SPACECOP_MAX_RC = 21399560550;
+    // Needed more than the account's entire maximum, so waiting to regenerate
+    // could never have helped.
+    expect(totalFor(REJECTION.transactionBytes)).toBeGreaterThan(SPACECOP_MAX_RC);
+  });
+
+  it("scales with transaction size, which is the actionable lever", () => {
+    expect(totalFor(46620)).toBeGreaterThan(totalFor(4662) * 5);
+  });
+});
+
 describe("estimateCommentRcCost", () => {
   const op = {
     author: "spacecop",
     permlink: REJECTION.permlink,
     parent_author: "",
     parent_permlink: "dhf",
-    title: "Who the DHF has actually paid, 2019-2026",
-    // padded so the transaction matches the size the chain actually saw
-    body: "x".repeat(
-      REJECTION.transactionBytes -
-        86 -
-        "spacecop".length -
-        REJECTION.permlink.length -
-        "dhf".length -
-        "Who the DHF has actually paid, 2019-2026".length -
-        2
-    ),
+    title: "Who the DHF has actually paid",
+    body: "x".repeat(40000),
     json_metadata: "{}"
   };
-
-  it("lands within 1% of the total the chain charged", () => {
-    const result = estimateCommentRcCost({ op, rcParams: PARAMS, rcStats: STATS });
-
-    expect(result.ready).toBe(true);
-    expect(within(result.cost, REJECTION.cost.total, 1)).toBe(true);
-  });
-
-  it("would have caught this rejection before broadcast", () => {
-    const SPACECOP_MAX_RC = 21399560550;
-    const result = estimateCommentRcCost({ op, rcParams: PARAMS, rcStats: STATS });
-
-    // The post needed more than the account's entire maximum, so no amount of
-    // waiting for regeneration would have helped.
-    expect(result.cost).toBeGreaterThan(SPACECOP_MAX_RC);
-  });
 
   it("attributes most of the cost to history_bytes on a large post", () => {
     const result = estimateCommentRcCost({ op, rcParams: PARAMS, rcStats: STATS });
@@ -244,15 +262,42 @@ describe("estimateCommentRcCost", () => {
     expect(history!.cost / result.cost).toBeGreaterThan(0.9);
   });
 
-  it("scales with body size, which is the actionable lever", () => {
-    const small = estimateCommentRcCost({
-      op: { ...op, body: "hello" },
+  it("charges more once a companion comment_options is attached", () => {
+    const plain = estimateCommentRcCost({ op, rcParams: PARAMS, rcStats: STATS });
+    const withOptions = estimateCommentRcCost({
+      op,
+      options: { beneficiaries: [{ account: "ecency", weight: 500 }] },
       rcParams: PARAMS,
       rcStats: STATS
     });
-    const large = estimateCommentRcCost({ op, rcParams: PARAMS, rcStats: STATS });
 
-    expect(large.cost).toBeGreaterThan(small.cost * 10);
+    expect(withOptions.cost).toBeGreaterThan(plain.cost);
+    expect(withOptions.transactionBytes).toBeGreaterThan(plain.transactionBytes);
+  });
+
+  it("charges state bytes per beneficiary", () => {
+    const one = estimateCommentRcCost({
+      op,
+      options: { beneficiaries: [{ account: "a", weight: 1 }] },
+      rcParams: PARAMS,
+      rcStats: STATS
+    });
+    const three = estimateCommentRcCost({
+      op,
+      options: {
+        beneficiaries: [
+          { account: "a", weight: 1 },
+          { account: "b", weight: 1 },
+          { account: "c", weight: 1 }
+        ]
+      },
+      rcParams: PARAMS,
+      rcStats: STATS
+    });
+    const stateOf = (r: typeof one) =>
+      r.breakdown.find((b) => b.resource === "resource_state_bytes")!.usage;
+
+    expect(stateOf(three) - stateOf(one)).toBe(1344 * 2);
   });
 
   it("is not ready until both queries resolve, so callers cannot warn early", () => {
@@ -261,8 +306,32 @@ describe("estimateCommentRcCost", () => {
   });
 });
 
+const REAL_TX = {
+  trueBytes: 1823,
+  signatures: 1,
+  op: {
+    parent_author: "",
+    parent_permlink: "hive-193084",
+    author: "gazzarin",
+    permlink: "uhccwy21z33fuo4jmeu790",
+    title: "\u00a1Claro! Aqu\u00ed tienes algunas ideas de t\u00edtulos de publicaciones breves para Twitter relacionadas con viajes:\n\n1",
+    body: "\n\n\n<center>![image](https://pixabay.com/get/g4b2ffaa2da0850605268cb320bf636dffdca605202cd50fb4083d4e664ae5d0c71e43d25dbc484eb77d892ed189dd8817891b4ca971e2d82d9156df3cbc2c7c2_640.jpg)</center>\n\n***\n\n1. \ud83c\udf0d\u2708\ufe0f \"La vida es un viaje, no un destino. \u00a1Explora cada rinc\u00f3n del mundo! #Viajes #Aventura\"\n   \n2. \ud83c\udfd6\ufe0f \"\u00bfPlaya o monta\u00f1a? \u00bfCu\u00e1l es tu escapada so\u00f1ada? \ud83c\udfd4\ufe0f #ViajarEsVivir\"\n\n3. \ud83c\udf5c \"Descubrir nuevos sabores es una de las mejores partes de viajar. \u00bfCu\u00e1l ha sido tu platillo favorito? #Gastronom\u00eda #Viajes\"\n\n4. \ud83d\udcf8 \"Captura momentos, no cosas. \u00a1Haz que cada viaje cuente! #Fotograf\u00edaDeViajes #Recuerdos\"\n\n5. \ud83d\ude82 \"Viajar en tren: la forma m\u00e1s rom\u00e1ntica de ver el mundo. \u00bfCu\u00e1l es tu ruta favorita? #Tren #Aventuras\"\n\n6. \ud83d\uddfa\ufe0f \"Siempre lleva un mapa, pero no tengas miedo de perderte. \u00a1Las mejores aventuras est\u00e1n en lo inesperado! #Exploraci\u00f3n\"\n\n7. \ud83c\udf04 \"El amanecer en la monta\u00f1a es un espect\u00e1culo que no te puedes perder. \u00bfD\u00f3nde has visto el mejor? #Naturaleza #Viajes\"\n\n8. \ud83c\udfd9\ufe0f \"Las ciudades tienen historias que contar. \u00bfCu\u00e1l es la m\u00e1s fascinante que has escuchado? #Cultura #TravelTales\"\n\n9. \ud83c\udf0c \"Bajo el cielo estrellado, todos los problemas parecen lejanos. \u00bfD\u00f3nde has visto m\u00e1s estrellas? #Astroturismo\"\n\n10. \ud83e\uddf3 \"Empaca ligero, viaja lejos. \u00a1Menos es m\u00e1s! #ConsejosDeViaje #Minimalismo\" \n\n\u00a1Espero que estas ideas te inspiren!\n\n***\n\n",
+    json_metadata: "{\"app\": \"dBuzz/v3.0.0\", \"tags\": [\"trip\", \"life\", \"nature\", \"kr\", \"waivio\", \"neoxian\", \"leo\", \"inleo\", \"cent\", \"oneup\", \"pob\", \"proofofbrain\", \"hustler\", \"pal\", \"pimp\"], \"shortForm\": \"true\"}",
+  }
+};
+
 describe("estimateCommentTransactionBytes", () => {
-  it("counts UTF-8 bytes rather than code units", () => {
+  // Read back from the chain with `get_transaction_hex`, so this validates the
+  // serialization model against real bytes rather than against itself. The
+  // model was checked byte-exact on eight such transactions, including one
+  // carrying comment_options.
+  it("matches a real transaction byte for byte", () => {
+    expect(
+      estimateCommentTransactionBytes({ op: REAL_TX.op, signatures: REAL_TX.signatures })
+    ).toBe(REAL_TX.trueBytes);
+  });
+
+  it("counts UTF-8 bytes, not UTF-16 code units", () => {
     const base = {
       author: "a",
       permlink: "b",
@@ -271,9 +340,45 @@ describe("estimateCommentTransactionBytes", () => {
       title: "t",
       json_metadata: "{}"
     };
-    const ascii = estimateCommentTransactionBytes({ ...base, body: "aaaa" });
-    const emoji = estimateCommentTransactionBytes({ ...base, body: "🐝🐝🐝🐝" });
+    const ascii = estimateCommentTransactionBytes({ op: { ...base, body: "aaaa" } });
+    const accented = estimateCommentTransactionBytes({ op: { ...base, body: "áááá" } });
+    const emoji = estimateCommentTransactionBytes({ op: { ...base, body: "🐝🐝🐝🐝" } });
 
-    expect(emoji).toBeGreaterThan(ascii);
+    // 1, 2 and 4 bytes per character respectively
+    expect(accented - ascii).toBe(4);
+    expect(emoji - ascii).toBe(12);
+  });
+
+  it("charges 65 bytes for each additional signature", () => {
+    const one = estimateCommentTransactionBytes({ op: REAL_TX.op, signatures: 1 });
+    const two = estimateCommentTransactionBytes({ op: REAL_TX.op, signatures: 2 });
+
+    expect(two - one).toBe(65);
+  });
+
+  it("grows the length prefix as a field crosses a varint boundary", () => {
+    const base = {
+      author: "a",
+      permlink: "b",
+      parent_author: "",
+      parent_permlink: "c",
+      title: "t",
+      json_metadata: "{}"
+    };
+    const under = estimateCommentTransactionBytes({ op: { ...base, body: "x".repeat(127) } });
+    const over = estimateCommentTransactionBytes({ op: { ...base, body: "x".repeat(128) } });
+
+    // one more content byte plus one more varint byte
+    expect(over - under).toBe(2);
+  });
+
+  it("includes the companion comment_options in the size", () => {
+    const plain = estimateCommentTransactionBytes({ op: REAL_TX.op });
+    const withOptions = estimateCommentTransactionBytes({
+      op: REAL_TX.op,
+      options: { beneficiaries: [{ account: "ecency", weight: 500 }] }
+    });
+
+    expect(withOptions).toBeGreaterThan(plain);
   });
 });
