@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.86
+
+### Patch Changes
+
+- fix(sdk): stop recording content activity for edits (#1491)
+
 ## 2.3.85
 
 ### Patch Changes
