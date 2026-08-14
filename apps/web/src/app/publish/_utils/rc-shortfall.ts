@@ -34,11 +34,6 @@ export function resolveRcShortfall(err: unknown, username: string | undefined): 
   return { message, username };
 }
 
-/** Top-up destination for a specific account. */
-export function buildRcTopUpUrl(username: string): string {
-  return `/purchase?username=${encodeURIComponent(username)}&type=boost&product_id=999points`;
-}
-
 /**
  * Whether a shortfall raised for one account should still be shown while
  * another is active. It should not: the failure belongs to the account that

@@ -51,6 +51,10 @@ const ForwardedButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, Button
       "border-[1.25px] border-solid": props.outline ?? false,
       // With icon
       "flex items-center justify-center gap-2": !!props.icon || props.isLoading,
+      // A <button> centres its content natively; an <a> does not. Without this
+      // an href Button with no icon renders as an inline anchor, so the label
+      // sits on the text baseline and overflows the padded box.
+      "inline-flex items-center justify-center": "href" in props && !props.icon && !props.isLoading,
       "flex-row-reverse": props.iconPlacement === "left",
 
       // Styles
