@@ -1263,6 +1263,7 @@
     "reveal-muted": "Muted author - Reveal comment",
     "reveal-muted-long-description": "Show additional replies, including those that may contain offensive content",
     "reveal": "Reveal comment",
+    "hide": "Hide comment",
     "reveal-comments": "Show {{n}} comments",
     "no-conversation": "No conversation yet, be first to reply",
     "start-conversation": "Start conversation",

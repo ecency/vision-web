@@ -84,6 +84,14 @@ vi.mock("@/features/shared/discussion/discussion-list", () => ({ DiscussionList:
 vi.mock("@/features/shared/comment", () => ({ Comment: () => null }));
 
 import { DiscussionItem } from "@/features/shared/discussion/discussion-item";
+import enUS from "@/features/i18n/locales/en-US.json";
+
+// Resolve a dotted i18n key against the shipped English locale.
+function getLocaleValue(key: string) {
+  return key
+    .split(".")
+    .reduce<any>((acc, part) => (acc == null ? acc : acc[part]), enUS as Record<string, unknown>);
+}
 
 function renderItem(entry: Entry, root: Entry) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -146,6 +154,33 @@ describe("DiscussionItem", () => {
     );
 
     expect(screen.queryByTestId("entry-tip-btn")).not.toBeInTheDocument();
+  });
+
+  it("labels the collapse toggle with keys that exist in en-US.json", () => {
+    // i18next is globally mocked to echo the key, so the rendered text IS the
+    // key the component asked for. The hide side used to ask for
+    // `chat.hide-message`, which no locale defines, and shipped the raw key.
+    const lowRepComment = mockEntry({
+      author: "spammer",
+      permlink: "re-the-post-spam",
+      parent_author: "bob",
+      parent_permlink: "the-post",
+      depth: 1,
+      author_reputation: -8,
+      net_rshares: 0,
+      stats: { flag_weight: 0, gray: true, hide: false, total_votes: 0 }
+    });
+
+    renderItem(lowRepComment, root);
+
+    const revealKey = screen.getByRole("button", { name: /^discussion\./ }).textContent!;
+    expect(getLocaleValue(revealKey)).toBeTypeOf("string");
+
+    fireEvent.click(screen.getByText(revealKey));
+
+    const hideKey = screen.getByRole("button", { name: /^discussion\./ }).textContent!;
+    expect(hideKey).not.toBe(revealKey);
+    expect(getLocaleValue(hideKey)).toBeTypeOf("string");
   });
 
   it("animates the reply composer entrance only after clicking Reply, never on initial render", () => {
