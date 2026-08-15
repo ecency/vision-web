@@ -34,9 +34,6 @@ import { EntryListItemPollIcon } from "@/features/shared/entry-list-item/entry-l
 import { HydrateOnVisible } from "@/features/shared/hydrate-on-visible";
 import { TranslateChip } from "@/features/shared/entry-translate/translate-chip";
 import { UilComment } from "@tooni/iconscout-unicons-react";
-import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { getMutedUsersQueryOptions, isAuthorMuted } from "@ecency/sdk";
-import { useQuery } from "@tanstack/react-query";
 
 setProxyBase(defaults.imageServer);
 
@@ -60,8 +57,6 @@ export function EntryListItemComponent({
   filter
 }: Props) {
   const pageAccount = account as FullAccount;
-  const { activeUser } = useActiveAccount();
-  const { data: mutedUsers } = useQuery(getMutedUsersQueryOptions(activeUser?.username));
 
   // Keyboard backstop for the deferred action bar: once focus enters this card
   // (its server-rendered title/author/tag links), mount the action controls so a
@@ -78,15 +73,6 @@ export function EntryListItemComponent({
       : asAuthor && asAuthor !== entry.author && !entry.parent_author
         ? asAuthor
         : undefined;
-
-  // Muting an author takes their posts out of the viewer's lists entirely, the
-  // same as the mobile app, rather than leaving a dimmed placeholder behind. The
-  // bridge still returns them (an observer only marks content), so the drop
-  // happens here, the first place with the viewer's mute list. It lands after
-  // hydration, since that list is a client query.
-  if (isAuthorMuted(entryProp.author, mutedUsers)) {
-    return null;
-  }
 
   return (
     <div

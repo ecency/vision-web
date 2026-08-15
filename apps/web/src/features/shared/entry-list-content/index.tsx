@@ -1,7 +1,11 @@
-import React from "react";
+"use client";
+
+import React, { useMemo } from "react";
 import "./_index.scss";
 import { Account, Community, Entry } from "@/entities";
 import { EntryListItem } from "@/features/shared";
+import { useMutedAuthors } from "@/features/shared/entry-list-item/use-muted-authors";
+import { isAuthorMuted } from "@ecency/sdk";
 import { EntryListContentNoData } from "./entry-list-content-no-data";
 
 interface Props {
@@ -27,7 +31,19 @@ export function EntryListContent({
   account,
   community
 }: Props) {
-  let dataToRender = [...entries];
+  const mutedAuthors = useMutedAuthors();
+
+  // Filter here rather than inside the card: the list is what knows whether it
+  // has anything left to show, and dropping a card from within itself would
+  // leave this component on its populated branch with nothing under it.
+  const dataToRender = useMemo(
+    () => entries.filter((e) => !isAuthorMuted(e.author, mutedAuthors)),
+    [entries, mutedAuthors]
+  );
+  const promotedToRender = useMemo(
+    () => promotedEntries.filter((e) => !isAuthorMuted(e.author, mutedAuthors)),
+    [promotedEntries, mutedAuthors]
+  );
 
   return (
     <>
@@ -38,8 +54,8 @@ export function EntryListContent({
             if (isPromoted && i % 4 === 0 && i > 0) {
               const ix = i / 4 - 1;
 
-              if (promotedEntries?.[ix]) {
-                const p = promotedEntries[ix];
+              if (promotedToRender?.[ix]) {
+                const p = promotedToRender[ix];
                 if (!dataToRender.find((x) => x.author === p.author && x.permlink === p.permlink)) {
                   l.push(
                     <EntryListItem

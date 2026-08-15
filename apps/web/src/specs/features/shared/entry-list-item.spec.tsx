@@ -26,16 +26,10 @@ vi.mock("@ecency/render-helper", () => ({
   proxifyImageSrc: vi.fn(() => "")
 }));
 
-// The muted-content child reads the muted-users list from the SDK. The global
-// SDK mock doesn't expose this builder, so add it here (returns a disabled,
-// empty query so the post renders normally, not as muted).
+// Use the real SDK here (the global mock is a partial stand-in): the card calls
+// the moderation rules during render, and this spec asserts on which reason fired.
 vi.mock("@ecency/sdk", async () => ({
-  ...(await vi.importActual<Record<string, unknown>>("@ecency/sdk")),
-  getMutedUsersQueryOptions: vi.fn(() => ({
-    queryKey: ["muted-users"],
-    queryFn: async () => [] as string[],
-    enabled: false
-  }))
+  ...(await vi.importActual<Record<string, unknown>>("@ecency/sdk"))
 }));
 
 // Mock the heavy / network-bound sibling and child components from the shared
@@ -103,19 +97,10 @@ vi.mock("@/features/shared/entry-list-item/entry-list-item-thumbnail", () => ({
 
 import { EntryListItem } from "@/features/shared/entry-list-item";
 
-function renderItem(
-  entry: Entry,
-  props: Partial<React.ComponentProps<typeof EntryListItem>> = {},
-  mutedUsers?: string[]
-) {
+function renderItem(entry: Entry, props: Partial<React.ComponentProps<typeof EntryListItem>> = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } }
   });
-  if (mutedUsers) {
-    // The builder is mocked to a disabled query, so seeding the cache is how a
-    // spec hands the card a mute list.
-    queryClient.setQueryData(["muted-users"], mutedUsers);
-  }
   return render(
     <QueryClientProvider client={queryClient}>
       <EntryListItem entry={entry} order={0} {...props} />
@@ -300,22 +285,6 @@ describe("EntryListItem", () => {
   });
 
   describe("moderation treatment", () => {
-    it("drops the whole card when the viewer has muted the author", () => {
-      const entry = mockEntry({ author: "spammer", permlink: "post", title: "Muted Author Post" });
-
-      const { container } = renderItem(entry, {}, ["spammer"]);
-
-      expect(container).toBeEmptyDOMElement();
-    });
-
-    it("keeps cards from authors the viewer has not muted", () => {
-      const entry = mockEntry({ author: "alice", permlink: "post", title: "Fine Post" });
-
-      renderItem(entry, {}, ["spammer"]);
-
-      expect(screen.getByText("Fine Post")).toBeInTheDocument();
-    });
-
     it("dims a moderator-muted post behind a hint, keeping title and summary", () => {
       const entry = mockEntry({
         author: "alice",

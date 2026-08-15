@@ -1,7 +1,7 @@
 import i18next from "i18next";
 import { Tsx } from "@/features/i18n/helper";
 import { Entry } from "@/entities";
-import { isHiddenPost, isLowTrustSeoPost } from "@ecency/sdk";
+import { ContentModerationReason, getContentModerationReason } from "@ecency/sdk";
 import { EntryPageMightContainsMutedCommentsWarning } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-might-contains-muted-comments-warning";
 
 interface Props {
@@ -9,17 +9,22 @@ interface Props {
 }
 
 export function EntryPageWarnings({ entry }: Props) {
-  const isMuted = !!entry.stats?.gray && entry.net_rshares >= 0 && entry.author_reputation >= 0;
-  const isHidden = isHiddenPost(
-    entry?.net_rshares,
-    entry?.stats?.total_votes ?? entry?.active_votes?.length ?? 0
-  );
-  const isLowReputation =
-    !!entry.stats?.gray && entry.net_rshares >= 0 && entry.author_reputation < 0;
+  // One reason wins, on the SDK's precedence (moderator action, then downvotes,
+  // then low trust), so a post matching several rules cannot stack warnings and
+  // claim contradictory things about itself.
+  const reason = getContentModerationReason(entry);
+
+  // hivemind grays a post either because a moderator muted it or because the
+  // author's own reputation went negative. Both arrive as the same flag, so the
+  // reputation sign is what picks the wording.
+  const isModerated = reason === ContentModerationReason.MOD_MUTED;
+  const isMuted = isModerated && entry.author_reputation >= 0;
+  const isLowReputation = isModerated && entry.author_reputation < 0;
+  const isHidden = reason === ContentModerationReason.DOWNVOTED;
   // Low-reputation account publishing an outbound promo link (SEO/backlink-farm
   // signature; reputation only, not account age). We warn rather than hide; the
   // outbound link carries no SEO value (noindex) and the reader is cautioned.
-  const isLowTrust = isLowTrustSeoPost(entry);
+  const isLowTrust = reason === ContentModerationReason.LOW_TRUST;
 
   return (
     <>

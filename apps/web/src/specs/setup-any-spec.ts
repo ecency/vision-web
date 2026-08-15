@@ -117,7 +117,10 @@ vi.mock("@ecency/sdk", async () => ({
   // partial stand-in is safe; add more branches as consumers need them.
   QueryKeys: {
     quests: { status: (username?: string) => ["quests", "status", username] },
-    accounts: { full: (username?: string) => ["get-account-full", username] }
+    accounts: {
+      full: (username?: string) => ["get-account-full", username],
+      mutedUsers: (username?: string) => ["accounts", "muted-users", username]
+    }
   },
   getSpotlightsQueryOptions: vi.fn(() => ({
     queryKey: ["notifications", "spotlights"],

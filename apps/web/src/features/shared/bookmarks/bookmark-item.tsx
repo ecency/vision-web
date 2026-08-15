@@ -1,5 +1,6 @@
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { EntryListItem } from "../entry-list-item";
+import { useIsAuthorMuted } from "../entry-list-item/use-muted-authors";
 import { useQuery } from "@tanstack/react-query";
 
 interface Props {
@@ -13,7 +14,11 @@ export function BookmarkItem({ author, permlink, i }: Props) {
     author,
     permlink
   ));
-  if (!entry) {
+  // Checked on the bookmark's own author so the styled wrapper below goes too,
+  // rather than rendering as an empty bordered card.
+  const isMuted = useIsAuthorMuted(author);
+
+  if (!entry || isMuted) {
     return <></>;
   }
   return (
