@@ -87,10 +87,13 @@ import { DiscussionItem } from "@/features/shared/discussion/discussion-item";
 import enUS from "@/features/i18n/locales/en-US.json";
 
 // Resolve a dotted i18n key against the shipped English locale.
-function getLocaleValue(key: string) {
-  return key
-    .split(".")
-    .reduce<any>((acc, part) => (acc == null ? acc : acc[part]), enUS as Record<string, unknown>);
+function getLocaleValue(key: string): unknown {
+  return key.split(".").reduce<unknown>((acc, part) => {
+    if (typeof acc !== "object" || acc === null) {
+      return undefined;
+    }
+    return (acc as Record<string, unknown>)[part];
+  }, enUS as Record<string, unknown>);
 }
 
 function renderItem(entry: Entry, root: Entry) {
