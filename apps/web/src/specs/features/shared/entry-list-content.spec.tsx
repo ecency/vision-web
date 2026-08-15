@@ -95,16 +95,23 @@ describe("EntryListContent", () => {
     expect(screen.queryByText("Spammer Post")).not.toBeInTheDocument();
   });
 
-  it("shows the no-data state when every entry is muted, rather than an empty list", () => {
-    renderList([mockEntry({ author: "spammer", permlink: "b", title: "Spammer Post" })], [
-      "spammer"
-    ]);
+  it("renders nothing, not a no-data state, when its own slice is fully muted", () => {
+    // This component is often one slice of a paginated list, so an all-muted
+    // slice must not announce that the whole feed is empty. Whoever owns the
+    // total count owns that call.
+    const { container } = renderList(
+      [mockEntry({ author: "spammer", permlink: "b", title: "Spammer Post" })],
+      ["spammer"]
+    );
 
     expect(screen.queryByTestId("entry")).not.toBeInTheDocument();
-    // The placeholder renders its own copy; asserting on the absence of cards
-    // plus the presence of something else is enough to prove the branch flipped.
-    expect(screen.queryByText("Spammer Post")).not.toBeInTheDocument();
-    expect(document.body.textContent).not.toBe("");
+    expect(container.textContent).toBe("");
+  });
+
+  it("still shows the no-data state when there was nothing to begin with", () => {
+    const { container } = renderList([], ["spammer"]);
+
+    expect(container.textContent).not.toBe("");
   });
 
   it("drops muted authors from interleaved promoted entries too", () => {

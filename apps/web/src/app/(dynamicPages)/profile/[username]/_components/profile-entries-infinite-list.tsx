@@ -8,12 +8,18 @@ import {
 } from "@/features/shared";
 import React, { useMemo } from "react";
 import { usePostsFeedQuery } from "@/api/queries";
+import { useVisibleEntries } from "@/features/shared/entry-list-item/use-muted-authors";
 import { Entry, FullAccount } from "@/entities";
 
 interface Props {
   account: FullAccount;
   section: string;
-  initialEntriesCount: number;
+  /**
+   * Authors of the server-rendered first page, not a count: whether those
+   * entries are visible depends on the viewer's mute list, which only exists on
+   * the client.
+   */
+  initialEntryAuthors: string[];
   initialPageEntriesCount: number;
   initialDataLoaded: boolean;
 }
@@ -21,7 +27,7 @@ interface Props {
 export function ProfileEntriesInfiniteList({
   section,
   account,
-  initialEntriesCount,
+  initialEntryAuthors,
   initialPageEntriesCount,
   initialDataLoaded
 }: Props) {
@@ -48,7 +54,15 @@ export function ProfileEntriesInfiniteList({
     );
   }, [account.profile?.pinned, data?.pages, dropFirstPage]);
 
-  const totalEntriesCount = initialEntriesCount + entryList.length;
+  // Count what the viewer can see, across the server-rendered page and ours: a
+  // profile whose every post the viewer muted must show its empty state rather
+  // than nothing at all.
+  const initialVisible = useVisibleEntries(
+    useMemo(() => initialEntryAuthors.map((author) => ({ author })), [initialEntryAuthors])
+  );
+  const visibleEntryList = useVisibleEntries(entryList);
+
+  const totalEntriesCount = initialVisible.length + visibleEntryList.length;
   const hasClientData = (data?.pages?.length ?? 0) > 0;
   const isDataReady = initialDataLoaded || hasClientData;
   const isFetchingData = isFetching || isFetchingNextPage;

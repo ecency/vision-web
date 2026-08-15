@@ -4,6 +4,7 @@ import { getBookmarksInfiniteQueryOptions } from "@ecency/sdk";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import i18next from "i18next";
 import { BookmarkItem } from "./bookmark-item";
+import { useVisibleEntries } from "../entry-list-item/use-muted-authors";
 import { getAccessToken } from "@/utils";
 import { Button } from "@ui/button";
 import { useMemo } from "react";
@@ -34,10 +35,15 @@ export function BookmarksList({ onHide }: Props) {
     [data]
   );
 
-  const items = useMemo(
+  const sorted = useMemo(
     () => allBookmarks.sort((a, b) => (b.timestamp > a.timestamp ? 1 : -1)),
     [allBookmarks]
   );
+
+  // Bookmarks of muted authors are dropped like any other list, so the count
+  // behind the empty state has to be the visible one: otherwise a page of
+  // nothing but muted authors renders as an empty grid instead of saying so.
+  const items = useVisibleEntries(sorted);
 
   return (
     <div className="dialog-content ">

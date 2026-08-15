@@ -64,6 +64,9 @@ export async function ProfileEntriesList({ section, account, initialFeed, curren
 
   const initialPageEntriesCount = initialPageEntries.length;
   const initialEntriesCount = entryList.length;
+  // The infinite list needs to know which of these the viewer can see before it
+  // decides the profile is empty, and only the client holds the mute list.
+  const initialEntryAuthors = entryList.map((entry) => entry.author);
   const initialDataLoaded = Boolean(initialFeed) || feedPages.length > 0;
 
   return (
@@ -81,7 +84,7 @@ export async function ProfileEntriesList({ section, account, initialFeed, curren
         <ProfileEntriesInfiniteList
           section={section}
           account={account}
-          initialEntriesCount={initialEntriesCount}
+          initialEntryAuthors={initialEntryAuthors}
           initialPageEntriesCount={initialPageEntriesCount}
           initialDataLoaded={initialDataLoaded}
         />

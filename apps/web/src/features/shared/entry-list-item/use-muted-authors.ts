@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getMutedUsersQueryOptions, isAuthorMuted } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -24,7 +25,19 @@ export function useMutedAuthors(): string[] | undefined {
   return activeUser ? data : undefined;
 }
 
-/** Convenience for a list of one, such as a bookmark. */
-export function useIsAuthorMuted(author: string | undefined): boolean {
-  return isAuthorMuted(author, useMutedAuthors());
+/**
+ * The entries a viewer can actually see.
+ *
+ * Anything that decides whether a list is empty has to count these rather than
+ * the raw rows, otherwise a fully muted list renders as blank space with no
+ * empty state. Works on anything carrying an author, so bookmark rows go
+ * through it as well as entries.
+ */
+export function useVisibleEntries<T extends { author?: string }>(items: T[]): T[] {
+  const mutedAuthors = useMutedAuthors();
+
+  return useMemo(
+    () => (mutedAuthors?.length ? items.filter((i) => !isAuthorMuted(i.author, mutedAuthors)) : items),
+    [items, mutedAuthors]
+  );
 }

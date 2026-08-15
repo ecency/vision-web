@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React from "react";
 import "./_index.scss";
 import { Account, Community, Entry } from "@/entities";
 import { EntryListItem } from "@/features/shared";
-import { useMutedAuthors } from "@/features/shared/entry-list-item/use-muted-authors";
-import { isAuthorMuted } from "@ecency/sdk";
+import { useVisibleEntries } from "@/features/shared/entry-list-item/use-muted-authors";
 import { EntryListContentNoData } from "./entry-list-content-no-data";
 
 interface Props {
@@ -31,23 +30,21 @@ export function EntryListContent({
   account,
   community
 }: Props) {
-  const mutedAuthors = useMutedAuthors();
-
-  // Filter here rather than inside the card: the list is what knows whether it
-  // has anything left to show, and dropping a card from within itself would
-  // leave this component on its populated branch with nothing under it.
-  const dataToRender = useMemo(
-    () => entries.filter((e) => !isAuthorMuted(e.author, mutedAuthors)),
-    [entries, mutedAuthors]
-  );
-  const promotedToRender = useMemo(
-    () => promotedEntries.filter((e) => !isAuthorMuted(e.author, mutedAuthors)),
-    [promotedEntries, mutedAuthors]
-  );
+  // Filter here rather than inside the card, so a card never drops itself and
+  // leaves this component's wrapper and branch behind.
+  const dataToRender = useVisibleEntries(entries);
+  const promotedToRender = useVisibleEntries(promotedEntries);
 
   return (
     <>
-      {dataToRender.length > 0
+      {/* The placeholder answers "did this list have anything at all", so it is
+          keyed on the raw entries. This component is often ONE slice of a
+          paginated list (a server-rendered page 1 with an infinite list under
+          it), and a slice whose every author is muted must not announce that
+          the whole feed is empty. Whoever owns the total count owns that call:
+          see useVisibleEntries in feed-list, the profile infinite list and the
+          bookmarks list. */}
+      {entries.length > 0
         ? dataToRender.map((e, i) => {
             const l = [];
 

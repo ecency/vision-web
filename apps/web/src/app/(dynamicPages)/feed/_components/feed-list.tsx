@@ -8,6 +8,7 @@ import { useSearchParams } from "next/navigation";
 import { DetectBottom } from "@/features/shared/detect-bottom";
 import { EntryListContent, EntryListContentLoading, EntryListContentNoData } from "@/features/shared/entry-list-content";
 import { EcencyConfigManager } from "@/config";
+import { useVisibleEntries } from "@/features/shared/entry-list-item/use-muted-authors";
 import { getPromotedPostsQuery } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 
@@ -51,9 +52,13 @@ export function FeedList({ filter, tag, observer }: Props) {
     return extracted;
   }, [data, filter, tag, observer, noReblog]); // Include filter/tag/observer to ensure recalc on param changes
 
+  // Everything the viewer can actually see: a feed whose every author they muted
+  // has to reach the empty state below, not render as blank space.
+  const visibleEntries = useVisibleEntries(entries);
+
   // Simple, clear loading and empty state logic
-  const isLoadingData = isLoading || (isFetching && entries.length === 0);
-  const isEmpty = !isLoading && !isFetching && entries.length === 0;
+  const isLoadingData = isLoading || (isFetching && visibleEntries.length === 0);
+  const isEmpty = !isLoading && !isFetching && visibleEntries.length === 0;
   const showLoading = isLoadingData || isFetchingNextPage;
 
   // Check if this is a global feed (should never show empty state)
