@@ -62,12 +62,21 @@ export function DiscussionList({
         [activeUser, filtered, mutedUsers, parent.author]
     );
 
+    // Identify a comment by author/permlink. `bridge.get_discussion` returns no
+    // `post_id`, so the previous `fd.post_id === md.post_id` check compared
+    // `undefined` with `undefined` and matched every comment: a single hidden
+    // reply emptied the whole list.
+    const hiddenKeys = useMemo(
+        () => new Set(hiddenContent.map((item) => `${item.author}/${item.permlink}`)),
+        [hiddenContent]
+    );
+
     const data = useMemo(() => {
         const visibleContent = filtered.filter(
-            (md) => !hiddenContent.some((fd) => fd.post_id === md.post_id)
+            (md) => !hiddenKeys.has(`${md.author}/${md.permlink}`)
         );
         return isHiddenPermitted ? [...visibleContent, ...hiddenContent] : visibleContent;
-    }, [filtered, hiddenContent, isHiddenPermitted]);
+    }, [filtered, hiddenContent, hiddenKeys, isHiddenPermitted]);
 
     const botsFreeData = useMemo(
         () =>
