@@ -1,20 +1,12 @@
 name: PR build
+# Mirrors lint.yml and typecheck.yml: pull_request rather than a branch-filtered push,
+# so this check reports on EVERY pull request. It used to opt in by branch prefix, which
+# left two holes. A branch named anything outside the list was never built at all, and
+# once this becomes a required check, such a PR could never satisfy it: Dependabot,
+# Renovate, forks and hotfix/* would be blocked forever with no way to produce the check.
+# Both holes close by keying on the pull request itself instead of the branch name.
 on:
-  push:
-    branches:
-      # Every prefix in real use, not just the two most common. This list is an
-      # opt-IN, so a branch named anything else silently gets no build at all --
-      # which is how a change to next.config.js (a build-time file that neither
-      # tsc nor eslint evaluates) reached review with nothing having compiled it.
-      # Add new prefixes here, or they inherit that same silent gap.
-      - 'bugfix/*'
-      - 'feature/*'
-      - 'fix/*'
-      - 'chore/*'
-      - 'refactor/*'
-      - 'docs/*'
-      # Bot-authored PRs were previously merged without ever being built.
-      - 'seer/*'
+  pull_request:
 # Build/test only — no writes back to GitHub.
 # Superseded runs are cancelled: only the newest commit on the branch is worth building.
 concurrency:
@@ -48,6 +40,15 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Validate DMCA patterns
         run: pnpm validate:dmca
+      # Ahead of the tests, not after them. apps/web resolves `@ecency/sdk` to the
+      # COMMITTED packages/sdk/dist, so a PR changing SDK source was tested against a
+      # stale build until some later commit happened to rebuild the dist. #1493 spent
+      # six runs red on 36 tests whose source and mocks were both correct, purely
+      # because `isAuthorMuted` existed in src but not yet in the committed dist. A
+      # required check that goes red for reasons the author cannot act on is what
+      # teaches everyone to merge past it, so the consumers test what this PR builds.
+      - name: Build packages
+        run: pnpm build:packages
       - name: Run Tests
         run: pnpm -r test
       - name: Build

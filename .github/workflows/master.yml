@@ -43,10 +43,12 @@ jobs:
       run: pnpm install --frozen-lockfile
       env:
         CI: true
-    - name: Run Tests
-      run: pnpm -r test
+    # Packages first: apps/web resolves `@ecency/sdk` to the COMMITTED
+    # packages/sdk/dist, so testing before this builds against a stale dist.
     - name: Build packages
       run: pnpm build:packages
+    - name: Run Tests
+      run: pnpm -r test
     - name: Build web app
       run: pnpm --filter @ecency/web build
       env:
