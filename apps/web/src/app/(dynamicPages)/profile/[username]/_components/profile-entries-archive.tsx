@@ -1,5 +1,5 @@
 import { Entry, FullAccount } from "@/entities";
-import { EntryListContent } from "@/features/shared";
+import { EntryListContent } from "@/features/shared/entry-list-content";
 import { EntryArchivePager } from "@/features/shared/entry-archive-pager";
 import { ProfileEntriesLayout } from "@/app/(dynamicPages)/profile/[username]/_components/profile-entries-layout";
 import { stripActiveVotesFromValue } from "@/core/react-query/strip-active-votes";

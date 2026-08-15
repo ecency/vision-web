@@ -1,7 +1,8 @@
 import { CommunitySubscribers } from "@/app/(dynamicPages)/community/[community]/_components/community-subscribers";
 import { CommunityActivities } from "@/app/(dynamicPages)/community/[community]/_components/community-activities";
 import { CommunityRoles } from "@/app/(dynamicPages)/community/[community]/_components/community-roles";
-import { EntryListContent, LinearProgress } from "@/features/shared";
+import { EntryListContent } from "@/features/shared/entry-list-content";
+import { LinearProgress } from "@/features/shared";
 import { Fragment } from "react";
 import { Community, Entry } from "@/entities";
 import { getPostsFeedQueryData } from "@/api/queries/get-account-posts-feed-query";
