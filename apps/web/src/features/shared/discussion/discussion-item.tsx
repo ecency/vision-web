@@ -309,7 +309,7 @@ export const DiscussionItem = memo(function DiscussionItem({
                   aria-expanded={!isContentCollapsed}
                   onClick={() => setIsContentCollapsed((value) => !value)}
                 >
-                  {i18next.t(isContentCollapsed ? toggleLabelKey : "chat.hide-message")}
+                  {i18next.t(isContentCollapsed ? toggleLabelKey : "discussion.hide")}
                 </Button>
               )}
             </div>
