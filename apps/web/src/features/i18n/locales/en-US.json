@@ -203,7 +203,6 @@
     "update": "Update",
     "learnMore": "Learn more",
     "or": "OR",
-    "muted-message": "Muted author, Reveal content",
     "modmuted-message": "Community Moderators muted, Reveal content",
     "hidden-message": "Downvoted by users, Reveal content",
     "lowtrust-message": "Low reputation account with an unverified outbound link, Reveal content",

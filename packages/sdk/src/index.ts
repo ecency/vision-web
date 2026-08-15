@@ -24,3 +24,4 @@ export * from "./modules/auth";
 export * from "./modules/hive-engine";
 export * from "./modules/bad-actors";
 export * from "./modules/polls";
+export * from "./modules/moderation";

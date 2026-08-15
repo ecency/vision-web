@@ -1,8 +1,7 @@
 import i18next from "i18next";
 import { Tsx } from "@/features/i18n/helper";
 import { Entry } from "@/entities";
-import { isHiddenPost } from "@/utils";
-import { isLowTrustSeoPost } from "@/utils/is-low-trust-author";
+import { isHiddenPost, isLowTrustSeoPost } from "@ecency/sdk";
 import { EntryPageMightContainsMutedCommentsWarning } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-might-contains-muted-comments-warning";
 
 interface Props {

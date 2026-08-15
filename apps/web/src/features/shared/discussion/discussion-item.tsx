@@ -21,13 +21,13 @@ import {
   createReplyPermlink,
   dateToFormatted,
   dateToFullRelative,
-  isHiddenPost,
   makeJsonMetaDataReply
 } from "@/utils";
 import {
   getCommunityContextQueryOptions,
   getCommunityPermissions,
-  getCommunityType
+  getCommunityType,
+  isHiddenPost
 } from "@ecency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@ui/button";

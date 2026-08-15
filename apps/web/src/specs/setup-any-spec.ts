@@ -52,6 +52,12 @@ vi.mock("i18next", () => ({
 }));
 
 vi.mock("@ecency/sdk", async () => ({
+  // The moderation rules are pure functions with no dependencies, and components
+  // call them during render, so hand out the real implementations from source
+  // (not dist, which is only rebuilt on a labelled release).
+  ...(await vi.importActual<Record<string, unknown>>(
+    "../../../../packages/sdk/src/modules/moderation"
+  )),
   PrivateKey: { fromString: vi.fn(), fromLogin: vi.fn(), from: vi.fn() },
   PublicKey: { fromString: vi.fn(), from: vi.fn() },
   Signature: { from: vi.fn() },

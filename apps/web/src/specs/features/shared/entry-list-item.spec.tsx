@@ -103,10 +103,19 @@ vi.mock("@/features/shared/entry-list-item/entry-list-item-thumbnail", () => ({
 
 import { EntryListItem } from "@/features/shared/entry-list-item";
 
-function renderItem(entry: Entry, props: Partial<React.ComponentProps<typeof EntryListItem>> = {}) {
+function renderItem(
+  entry: Entry,
+  props: Partial<React.ComponentProps<typeof EntryListItem>> = {},
+  mutedUsers?: string[]
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } }
   });
+  if (mutedUsers) {
+    // The builder is mocked to a disabled query, so seeding the cache is how a
+    // spec hands the card a mute list.
+    queryClient.setQueryData(["muted-users"], mutedUsers);
+  }
   return render(
     <QueryClientProvider client={queryClient}>
       <EntryListItem entry={entry} order={0} {...props} />
@@ -288,5 +297,95 @@ describe("EntryListItem", () => {
     // card's deferred action bar so keyboard users reach the controls.
     fireEvent.focusIn(screen.getByTestId("profile-link"));
     await waitFor(() => expect(screen.getByTestId("entry-vote-btn")).toBeInTheDocument());
+  });
+
+  describe("moderation treatment", () => {
+    it("drops the whole card when the viewer has muted the author", () => {
+      const entry = mockEntry({ author: "spammer", permlink: "post", title: "Muted Author Post" });
+
+      const { container } = renderItem(entry, {}, ["spammer"]);
+
+      expect(container).toBeEmptyDOMElement();
+    });
+
+    it("keeps cards from authors the viewer has not muted", () => {
+      const entry = mockEntry({ author: "alice", permlink: "post", title: "Fine Post" });
+
+      renderItem(entry, {}, ["spammer"]);
+
+      expect(screen.getByText("Fine Post")).toBeInTheDocument();
+    });
+
+    it("dims a moderator-muted post behind a hint, keeping title and summary", () => {
+      const entry = mockEntry({
+        author: "alice",
+        permlink: "gray-post",
+        title: "Grayed Post",
+        stats: { flag_weight: 0, gray: true, hide: false, total_votes: 2 }
+      });
+
+      renderItem(entry);
+
+      expect(screen.getByText("g.modmuted-message")).toBeInTheDocument();
+      // Nothing is hidden, only de-emphasized.
+      expect(screen.getByText("Grayed Post")).toBeInTheDocument();
+    });
+
+    it("reports downvotes rather than low trust for a downvoted small account", () => {
+      const entry = mockEntry({
+        author: "alice",
+        permlink: "downvoted-post",
+        title: "Downvoted Post",
+        author_reputation: 12,
+        body: "buy at https://shop.example",
+        net_rshares: -50000000000,
+        stats: { flag_weight: 0, gray: false, hide: false, total_votes: 9 }
+      });
+
+      renderItem(entry);
+
+      expect(screen.getByText("g.hidden-message")).toBeInTheDocument();
+    });
+
+    it("flags a low-reputation author only when the post carries an outbound link", () => {
+      const promo = mockEntry({
+        author: "alice",
+        permlink: "promo-post",
+        title: "Promo Post",
+        author_reputation: 12,
+        body: "buy at https://shop.example"
+      });
+
+      const { unmount } = renderItem(promo);
+      expect(screen.getByText("g.lowtrust-message")).toBeInTheDocument();
+      unmount();
+
+      const diary = mockEntry({
+        author: "alice",
+        permlink: "diary-post",
+        title: "Diary Post",
+        author_reputation: 12,
+        body: "just my diary, no links"
+      });
+
+      renderItem(diary);
+      expect(screen.queryByText("g.lowtrust-message")).not.toBeInTheDocument();
+    });
+
+    it("clears the dim when the hint is clicked", () => {
+      const entry = mockEntry({
+        author: "alice",
+        permlink: "gray-post",
+        title: "Grayed Post",
+        stats: { flag_weight: 0, gray: true, hide: false, total_votes: 2 }
+      });
+
+      renderItem(entry);
+
+      fireEvent.click(screen.getByText("g.modmuted-message"));
+
+      expect(screen.queryByText("g.modmuted-message")).not.toBeInTheDocument();
+      expect(screen.getByText("Grayed Post")).toBeInTheDocument();
+    });
   });
 });
