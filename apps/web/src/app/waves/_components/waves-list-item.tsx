@@ -18,7 +18,7 @@ import { useCollectPageViewEvent } from "@/api/mutations";
 import { useMutedUsers, useWaveImageGrid } from "@/app/waves/_hooks";
 import { PostContentRenderer } from "@/features/shared";
 import { useQuery } from "@tanstack/react-query";
-import { getPromotedPostsQuery } from "@ecency/sdk";
+import { getPromotedPostsQuery, isHiddenPost } from "@ecency/sdk";
 import clsx from "clsx";
 import {
   WAVES_FEED_SCROLL_STORAGE_KEY,
@@ -26,7 +26,6 @@ import {
   WavesFeedType
 } from "@/app/waves/_constants";
 import { useOptionalWavesTagFilter } from "@/app/waves/_context";
-import { isHiddenPost } from "@/utils";
 
 const INTERACTIVE_SELECTOR =
   "a,button,input,textarea,select,img,[role='button'],[role='link'],[role='menuitem'],[contenteditable='true']";

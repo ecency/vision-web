@@ -55,6 +55,9 @@ export default async function CommunityPostsPage({ params }: Props) {
     return <></>;
   }
   const data = stripAnonEntryCacheInPlace(getQueryClient(), fetched, loggedInUser);
+  // The infinite list below owns the empty state for both slices, so it needs to
+  // know who wrote this one.
+  const serverEntries = data.pages.reduce<Entry[]>((acc, page) => [...acc, ...(page as Entry[])], []);
 
   return (
     <HydrationBoundary state={dehydrate(getQueryClient())}>
@@ -70,11 +73,16 @@ export default async function CommunityPostsPage({ params }: Props) {
         <EntryListContent
           username={community}
           isPromoted={false}
-          entries={data.pages.reduce<Entry[]>((acc, page) => [...acc, ...(page as Entry[])], [])}
+          entries={serverEntries}
           loading={false}
           sectionParam="created"
+          showEmptyPlaceholder={false}
         />
-        <CommunityContentInfiniteList community={communityData} section="created" />
+        <CommunityContentInfiniteList
+          community={communityData}
+          section="created"
+          initialEntryAuthors={serverEntries.map((entry) => entry.author)}
+        />
       </ProfileEntriesLayout>
     </HydrationBoundary>
   );

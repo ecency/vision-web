@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.87
+
+### Patch Changes
+
+- Move the content moderation rules into the SDK (#1493)
+
 ## 2.3.86
 
 ### Patch Changes
