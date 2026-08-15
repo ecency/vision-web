@@ -44,6 +44,29 @@ function installSpeechSynthesis(
   };
 }
 
+/**
+ * Safari <= 15: `SpeechSynthesis` is not an `EventTarget` there, so the object
+ * carries no `addEventListener` at all.
+ */
+function installSpeechSynthesisWithoutEventTarget(
+  initial: Array<SpeechSynthesisVoice | undefined> = []
+) {
+  let current = initial;
+  const getVoices = vi.fn(() => current as SpeechSynthesisVoice[]);
+
+  Object.defineProperty(window, "speechSynthesis", {
+    configurable: true,
+    value: { getVoices }
+  });
+
+  return {
+    getVoices,
+    setVoices: (next: Array<SpeechSynthesisVoice | undefined>) => {
+      current = next;
+    }
+  };
+}
+
 afterEach(() => {
   if (originalSpeechSynthesisDescriptor) {
     Object.defineProperty(
@@ -86,5 +109,49 @@ describe("getVoicesAsync", () => {
       "voiceschanged",
       handler
     );
+  });
+
+  describe("when SpeechSynthesis is not an EventTarget (Safari <= 15)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("polls for voices instead of throwing on the missing addEventListener", async () => {
+      const speechSynthesis = installSpeechSynthesisWithoutEventTarget();
+
+      const voicesPromise = getVoicesAsync();
+      speechSynthesis.setVoices([undefined, voice]);
+      await vi.advanceTimersByTimeAsync(250);
+
+      await expect(voicesPromise).resolves.toEqual([voice]);
+    });
+
+    it("resolves empty once the budget runs out rather than hanging forever", async () => {
+      installSpeechSynthesisWithoutEventTarget();
+
+      const voicesPromise = getVoicesAsync();
+      await vi.advanceTimersByTimeAsync(5000);
+
+      await expect(voicesPromise).resolves.toEqual([]);
+    });
+
+    // Regression guard: `onvoiceschanged` holds a single handler, so registering
+    // through it would let a second caller overwrite the first and strand it.
+    // Both callers here must be served.
+    it("settles every concurrent caller, not just the most recent one", async () => {
+      const speechSynthesis = installSpeechSynthesisWithoutEventTarget();
+
+      const firstPromise = getVoicesAsync();
+      const secondPromise = getVoicesAsync();
+      speechSynthesis.setVoices([voice]);
+      await vi.advanceTimersByTimeAsync(250);
+
+      await expect(firstPromise).resolves.toEqual([voice]);
+      await expect(secondPromise).resolves.toEqual([voice]);
+    });
   });
 });
