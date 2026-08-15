@@ -1,29 +1,39 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, expect, it, vi } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Entry } from "@/entities";
-import { mockEntry } from "@/specs/test-utils";
+import { mockEntry, renderWithQueryClient } from "@/specs/test-utils";
 
 // DiscussionList only touches these two SDK queries; keep them local so the
-// spec doesn't depend on the global SDK mock exporting them.
-vi.mock("@ecency/sdk", () => ({
-  getMutedUsersQueryOptions: (username?: string) => ({
-    queryKey: ["muted-users", username],
-    queryFn: async () => []
-  }),
-  getBotsQueryOptions: () => ({ queryKey: ["bots"], queryFn: async () => [] })
-}));
+// spec doesn't depend on the global SDK mock exporting them. Keys come from the
+// SDK's own builders (the module is dependency-free) so the mocked queries land
+// on the same cache keys production uses.
+vi.mock("@ecency/sdk", async () => {
+  const { QueryKeys } = await vi.importActual<typeof import("@ecency/sdk")>(
+    "../../../../../../packages/sdk/src/modules/core/query-keys"
+  );
+  return {
+    QueryKeys,
+    getMutedUsersQueryOptions: vi.fn((username: string) => ({
+      queryKey: QueryKeys.accounts.mutedUsers(username),
+      queryFn: async () => []
+    })),
+    getBotsQueryOptions: vi.fn(() => ({
+      queryKey: QueryKeys.accounts.bots(),
+      queryFn: async () => []
+    }))
+  };
+});
 
 // The item itself renders the whole comment chrome (votes, payout, composer).
-// Stub it down to its author so the assertions are about which comments the
-// list decides to render.
+// Stub it down to a labelled landmark carrying its author, so the assertions
+// read the rendered comments by role instead of the stub's markup.
 vi.mock("@/features/shared/discussion/discussion-item", async () => {
   const Real = await import("react");
   return {
     DiscussionItem: ({ entry }: { entry: Entry }) =>
-      Real.createElement("div", { "data-testid": "discussion-item" }, entry.author)
+      Real.createElement("article", { "aria-label": entry.author }, entry.author)
   };
 });
 
@@ -48,28 +58,29 @@ function comment(author: string, reputation: number): Entry {
 }
 
 function renderList(discussionList: Entry[]) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <DiscussionList
-        root={root}
-        parent={root}
-        discussionList={discussionList}
-        community={null}
-        hideControls={false}
-        isRawContent={false}
-      />
-    </QueryClientProvider>
+  return renderWithQueryClient(
+    <DiscussionList
+      root={root}
+      parent={root}
+      discussionList={discussionList}
+      community={null}
+      hideControls={false}
+      isRawContent={false}
+    />
   );
+}
+
+// The rendered comments, in the order the list decided to show them.
+function renderedAuthors() {
+  return screen.getAllByRole("article").map((el) => el.getAttribute("aria-label"));
 }
 
 describe("DiscussionList", () => {
   it("keeps the normal comments visible when one commenter has negative reputation", () => {
     renderList([comment("alice", 60), comment("carol", 55), comment("spammer", -8)]);
 
-    const authors = screen.getAllByTestId("discussion-item").map((el) => el.textContent);
-    expect(authors).toEqual(["alice", "carol"]);
-    expect(authors).not.toContain("spammer");
+    expect(renderedAuthors()).toEqual(["alice", "carol"]);
+    expect(screen.queryByText("spammer")).not.toBeInTheDocument();
 
     // The low-reputation reply is offered behind the reveal prompt.
     expect(screen.getByText("discussion.reveal-muted-long-description")).toBeInTheDocument();
@@ -80,17 +91,13 @@ describe("DiscussionList", () => {
 
     fireEvent.click(screen.getByText("g.show"));
 
-    expect(screen.getAllByTestId("discussion-item").map((el) => el.textContent)).toEqual([
-      "alice",
-      "carol",
-      "spammer"
-    ]);
+    expect(renderedAuthors()).toEqual(["alice", "carol", "spammer"]);
   });
 
   it("renders every comment when none of them are hidden", () => {
     renderList([comment("alice", 60), comment("carol", 55)]);
 
-    expect(screen.getAllByTestId("discussion-item")).toHaveLength(2);
+    expect(renderedAuthors()).toEqual(["alice", "carol"]);
     expect(screen.queryByText("discussion.reveal-muted-long-description")).not.toBeInTheDocument();
   });
 });
