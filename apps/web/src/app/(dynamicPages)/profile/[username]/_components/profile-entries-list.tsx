@@ -1,5 +1,12 @@
 import { Entry, FullAccount } from "@/entities";
-import { EntryListContent } from "@/features/shared";
+// Imported from its own module, NOT the `@/features/shared` barrel. This is a
+// server component, and the barrel reaches `entry-list-content` through an
+// `export *`. Once that module became "use client", the star re-export started
+// handing server components `undefined` in place of the component: it rendered
+// as "Element type is invalid ... but got: undefined" and took the entries
+// section off every profile page. Any server component pulling a "use client"
+// module needs to reach it directly, the way the feed list already does.
+import { EntryListContent } from "@/features/shared/entry-list-content";
 import React from "react";
 import { getPostsFeedQueryData } from "@/api/queries";
 import { getQueryData } from "@/core/react-query";
