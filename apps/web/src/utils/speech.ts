@@ -15,7 +15,9 @@ const FALLBACK_TIMEOUT_MS = 5000;
 export function getVoicesAsync(): Promise<SpeechSynthesisVoice[]> {
     return new Promise((resolve) => {
         const readVoices = () =>
-            window.speechSynthesis.getVoices().filter(Boolean) as SpeechSynthesisVoice[];
+            Array.from(window.speechSynthesis.getVoices() ?? []).filter(
+                (v): v is SpeechSynthesisVoice => v != null && typeof v === "object"
+            );
 
         const voices = readVoices();
         if (voices.length) {
