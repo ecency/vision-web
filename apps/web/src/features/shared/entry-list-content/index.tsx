@@ -37,14 +37,14 @@ export function EntryListContent({
 
   return (
     <>
-      {/* The placeholder answers "did this list have anything at all", so it is
-          keyed on the raw entries. This component is often ONE slice of a
-          paginated list (a server-rendered page 1 with an infinite list under
-          it), and a slice whose every author is muted must not announce that
-          the whole feed is empty. Whoever owns the total count owns that call:
-          see useVisibleEntries in feed-list, the profile infinite list and the
-          bookmarks list. */}
-      {entries.length > 0
+      {/* `showEmptyPlaceholder` means "this component owns the list's empty
+          state", so the decision is made on what the viewer can actually see: a
+          list of nothing but muted authors is empty to them. Anything rendering
+          ONE SLICE of a longer list (a server-rendered page 1 with an infinite
+          list under it) must pass false and let the sibling that knows the
+          total decide, or an all-muted first page will announce that the whole
+          feed is empty above pages that are not. */}
+      {dataToRender.length > 0
         ? dataToRender.map((e, i) => {
             const l = [];
 

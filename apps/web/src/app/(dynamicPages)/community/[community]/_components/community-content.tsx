@@ -37,6 +37,10 @@ export async function CommunityContent({ filter, community, tag, query, section 
     return <></>;
   }
 
+  // The infinite list below owns the empty state for both slices, so it needs to
+  // know who wrote this one.
+  const serverEntries = data.pages.reduce<Entry[]>((acc, page) => [...acc, ...(page as Entry[])], []);
+
   return (
     <>
       {data.pages.length === 0 ? <LinearProgress /> : ""}
@@ -53,11 +57,16 @@ export async function CommunityContent({ filter, community, tag, query, section 
           <EntryListContent
             username={community.name}
             isPromoted={false}
-            entries={data.pages.reduce<Entry[]>((acc, page) => [...acc, ...(page as Entry[])], [])}
+            entries={serverEntries}
             loading={false}
             sectionParam={filter}
+            showEmptyPlaceholder={false}
           />
-          <CommunityContentInfiniteList community={community} section={section} />
+          <CommunityContentInfiniteList
+            community={community}
+            section={section}
+            initialEntryAuthors={serverEntries.map((entry) => entry.author)}
+          />
         </ProfileEntriesLayout>
       )}
     </>

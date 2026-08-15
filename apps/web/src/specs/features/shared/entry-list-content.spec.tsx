@@ -39,7 +39,12 @@ vi.mock("@/features/shared", async () => ({
 
 import { EntryListContent } from "@/features/shared/entry-list-content";
 
-function renderList(entries: Entry[], mutedAuthors?: string[], promotedEntries: Entry[] = []) {
+function renderList(
+  entries: Entry[],
+  mutedAuthors?: string[],
+  promotedEntries: Entry[] = [],
+  props: { showEmptyPlaceholder?: boolean } = {}
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (mutedAuthors) {
     queryClient.setQueryData(QueryKeys.accounts.mutedUsers(VIEWER), mutedAuthors);
@@ -53,6 +58,7 @@ function renderList(entries: Entry[], mutedAuthors?: string[], promotedEntries: 
         sectionParam="hot"
         username={VIEWER}
         loading={false}
+        {...props}
       />
     </QueryClientProvider>
   );
@@ -95,23 +101,27 @@ describe("EntryListContent", () => {
     expect(screen.queryByText("Spammer Post")).not.toBeInTheDocument();
   });
 
-  it("renders nothing, not a no-data state, when its own slice is fully muted", () => {
-    // This component is often one slice of a paginated list, so an all-muted
-    // slice must not announce that the whole feed is empty. Whoever owns the
-    // total count owns that call.
+  it("shows the no-data state when it owns the list and every entry is muted", () => {
     const { container } = renderList(
       [mockEntry({ author: "spammer", permlink: "b", title: "Spammer Post" })],
       ["spammer"]
     );
 
     expect(screen.queryByTestId("entry")).not.toBeInTheDocument();
-    expect(container.textContent).toBe("");
+    expect(container.textContent).not.toBe("");
   });
 
-  it("still shows the no-data state when there was nothing to begin with", () => {
-    const { container } = renderList([], ["spammer"]);
+  it("stays quiet when it is only a slice, so it cannot answer for later pages", () => {
+    // showEmptyPlaceholder={false} is how a caller says a sibling owns the total.
+    const { container } = renderList(
+      [mockEntry({ author: "spammer", permlink: "b", title: "Spammer Post" })],
+      ["spammer"],
+      [],
+      { showEmptyPlaceholder: false }
+    );
 
-    expect(container.textContent).not.toBe("");
+    expect(screen.queryByTestId("entry")).not.toBeInTheDocument();
+    expect(container.textContent).toBe("");
   });
 
   it("drops muted authors from interleaved promoted entries too", () => {

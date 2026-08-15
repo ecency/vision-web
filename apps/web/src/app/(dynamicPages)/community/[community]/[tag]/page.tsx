@@ -147,8 +147,13 @@ export default async function CommunityPostsPage({ params, searchParams }: Props
           entries={flatEntries}
           loading={false}
           sectionParam={tag}
+          showEmptyPlaceholder={false}
         />
-        <CommunityContentInfiniteList community={communityData} section={tag} />
+        <CommunityContentInfiniteList
+          community={communityData}
+          section={tag}
+          initialEntryAuthors={flatEntries.map((entry) => entry.author)}
+        />
         {olderCursor && (
           <EntryArchivePager basePath={basePath} olderCursor={olderCursor} showLatest={false} />
         )}
