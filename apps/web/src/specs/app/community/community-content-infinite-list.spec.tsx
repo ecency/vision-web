@@ -50,13 +50,18 @@ import { CommunityContentInfiniteList } from "@/app/(dynamicPages)/community/[co
 
 const community = { name: "hive-101690", title: "Sports Talk Social" } as Community;
 
-function renderList(initialEntryAuthors: string[], pageTwo: Entry[], mutedAuthors: string[]) {
+function renderList(
+  initialEntryAuthors: string[],
+  pageTwo: Entry[],
+  mutedAuthors: string[],
+  hasNextPage = false
+) {
   usePostsFeedQuery.mockReturnValue({
     // Page 1 is the server-rendered slice this component drops.
     data: { pages: [[], pageTwo] },
     fetchNextPage: vi.fn(),
     isFetching: false,
-    hasNextPage: false,
+    hasNextPage,
     dataUpdatedAt: 1
   });
 
@@ -103,6 +108,12 @@ describe("CommunityContentInfiniteList", () => {
 
   it("keeps quiet while its own later pages still have something to show", () => {
     renderList(["spammer"], [mockEntry({ author: "alice", permlink: "p2" })], ["spammer"]);
+
+    expect(screen.queryByTestId("no-data")).not.toBeInTheDocument();
+  });
+
+  it("keeps quiet while everything loaded is muted but more pages are still to come", () => {
+    renderList(["spammer"], [mockEntry({ author: "spammer", permlink: "p2" })], ["spammer"], true);
 
     expect(screen.queryByTestId("no-data")).not.toBeInTheDocument();
   });

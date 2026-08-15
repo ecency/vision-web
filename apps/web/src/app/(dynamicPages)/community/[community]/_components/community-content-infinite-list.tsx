@@ -74,8 +74,14 @@ export function CommunityContentInfiniteList({ section, community, initialEntryA
     );
     const visibleEntryList = useVisibleEntries(entryList);
     const hasClientData = (data?.pages?.length ?? 0) > 0;
+    // `!hasNextPage` keeps the message off while pages the viewer might see are
+    // still to come: everything loaded so far being muted is not an empty
+    // community, and the sentinel below is already fetching the next page.
     const shouldShowEmptyState =
-        hasClientData && !isFetching && initialVisible.length + visibleEntryList.length === 0;
+        hasClientData &&
+        !isFetching &&
+        !hasNextPage &&
+        initialVisible.length + visibleEntryList.length === 0;
 
     return (
         <>

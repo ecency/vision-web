@@ -51,27 +51,33 @@ export function BookmarksList({ onHide }: Props) {
         {i18next.t("bookmarks.hint")}
       </p>
       {isLoading && <LinearProgress />}
-      {items && items.length > 0 && (
+      {/* "Load more" sits OUTSIDE the items branch on purpose. This list
+          paginates by button, not by scroll sentinel, so a first page of
+          nothing but muted authors would otherwise filter to empty and take the
+          only route to later pages down with it. */}
+      {items.length > 0 && (
         <div className="dialog-list">
           <div className="grid grid-cols-1 gap-4">
             {items.map((item, i) => (
               <BookmarkItem i={i} key={item._id} author={item.author} permlink={item.permlink} />
             ))}
           </div>
-          {hasNextPage && (
-            <div className="flex justify-center my-4">
-              <Button
-                onClick={() => fetchNextPage()}
-                disabled={isFetchingNextPage}
-                isLoading={isFetchingNextPage}
-              >
-                {isFetchingNextPage ? i18next.t("g.loading") : i18next.t("g.load-more")}
-              </Button>
-            </div>
-          )}
         </div>
       )}
-      {!isLoading && items.length === 0 && (
+      {hasNextPage && (
+        <div className="flex justify-center my-4">
+          <Button
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+            isLoading={isFetchingNextPage}
+          >
+            {isFetchingNextPage ? i18next.t("g.loading") : i18next.t("g.load-more")}
+          </Button>
+        </div>
+      )}
+      {/* Empty only once there is nothing left to fetch: pages still to come
+          may hold bookmarks the viewer can see. */}
+      {!isLoading && !hasNextPage && items.length === 0 && (
         <div className="dialog-list">{i18next.t("g.empty-list")}</div>
       )}
     </div>

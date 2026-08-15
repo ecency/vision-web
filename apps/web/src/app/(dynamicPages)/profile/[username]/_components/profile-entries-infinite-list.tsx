@@ -66,8 +66,11 @@ export function ProfileEntriesInfiniteList({
   const hasClientData = (data?.pages?.length ?? 0) > 0;
   const isDataReady = initialDataLoaded || hasClientData;
   const isFetchingData = isFetching || isFetchingNextPage;
+  // `!hasNextPage` keeps the message off while pages the viewer might see are
+  // still to come: everything loaded so far being muted is not an empty profile,
+  // and the sentinel below is already fetching the next page.
   const shouldShowEmptyState =
-    isDataReady && !isFetchingData && totalEntriesCount === 0;
+    isDataReady && !isFetchingData && !hasNextPage && totalEntriesCount === 0;
 
   const handleBottom = () => {
     if (!hasNextPage || isFetchingData) return;
