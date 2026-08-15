@@ -46,9 +46,39 @@ function read(file: string): string {
 }
 
 function isClientBoundary(file: string): boolean {
-  // The directive has to be the first statement, so a match in the opening
-  // lines is the directive rather than a mention in prose.
-  return /^\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/\s*)*["']use client["']/.test(read(file));
+  // The directive has to be the first statement, so walk past leading blanks
+  // and comments and look at what comes first. Deliberately a scan rather than
+  // a regex: matching optional repeated comments before the directive needs
+  // nested quantifiers, which backtrack exponentially on input like `/*` then
+  // many `*//*` (CodeQL js/redos), and this runs over every file under src.
+  let inBlockComment = false;
+
+  for (const rawLine of read(file).split("\n")) {
+    let line = rawLine.trim();
+
+    if (inBlockComment) {
+      const end = line.indexOf("*/");
+      if (end === -1) continue;
+      line = line.slice(end + 2).trim();
+      inBlockComment = false;
+    }
+
+    while (line.startsWith("/*")) {
+      const end = line.indexOf("*/", 2);
+      if (end === -1) {
+        inBlockComment = true;
+        line = "";
+        break;
+      }
+      line = line.slice(end + 2).trim();
+    }
+
+    if (!line || line.startsWith("//")) continue;
+
+    return line.startsWith('"use client"') || line.startsWith("'use client'");
+  }
+
+  return false;
 }
 
 /** Resolve an import specifier to a file inside src, or null if it leaves src. */
@@ -73,15 +103,19 @@ function resolveSpecifier(fromFile: string, specifier: string): string | null {
   return null;
 }
 
-// Static `from "x"`, bare `import "x"`, and lazy `import("x")` / `require("x")`
-// alike. The lazy forms matter most: `dynamic(() => import("..."))` is how much
-// of this codebase reaches its client components, and missing those edges would
-// report client modules as server ones.
-const IMPORT_SOURCE =
+// Every edge, lazy ones included. `dynamic(() => import("..."))` is how much of
+// this codebase reaches its client components, and missing those would report
+// client modules as server ones.
+const ANY_IMPORT =
   /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\brequire\s*\(\s*)["']([^"']+)["']/g;
 
-function importedSpecifiers(file: string): string[] {
-  return [...read(file).matchAll(IMPORT_SOURCE)].map((m) => m[1]);
+// Only the edges that run while the module is being evaluated. A lazy
+// `import()` resolves long after, so it cannot take part in an initialisation
+// cycle, and counting it as one would condemn imports that are perfectly safe.
+const STATIC_IMPORT = /(?:\bfrom\s*|\bimport\s+)["']([^"']+)["']/g;
+
+function importedSpecifiers(file: string, pattern: RegExp = ANY_IMPORT): string[] {
+  return [...read(file).matchAll(pattern)].map((m) => m[1]);
 }
 
 /** Every name a module exports, following its own `export *` re-exports. */
@@ -132,18 +166,36 @@ describe("server components and the shared barrel", () => {
     }
   }
 
-  /** Does this module, or anything it re-exports, import the barrel back? */
+  /**
+   * Does this module import the barrel back, closing a cycle with it?
+   *
+   * Counts a direct static import by the module itself, plus one in anything it
+   * re-exports with `export *`, since those form a single export surface with
+   * it. Lazy `import()` does not count: it resolves long after evaluation, so it
+   * cannot take part in an initialisation cycle.
+   *
+   * NOT transitive through ordinary imports, and that is a measured choice
+   * rather than an oversight. Following every static edge marks `time-label`,
+   * `tag`, `entry-stats` and `bookmark-btn` as cyclic, because somewhere down
+   * their helpers something reaches the barrel. The entry page imports all four
+   * from the barrel and server-renders them correctly today: 12 `<time>`
+   * elements, its stats, its tag links, its bookmark button, no error. A guard
+   * that fails CI on pages that demonstrably work gets bypassed, so this keeps
+   * to the shape that actually broke and stays quiet otherwise. A deeper cycle
+   * would slip through; the reproduction in the PR body is how that one gets
+   * caught.
+   */
   function closesCycleWithBarrel(file: string, seen = new Set<string>()): boolean {
     if (seen.has(file)) return false;
     seen.add(file);
 
-    const source = read(file);
-    if (new RegExp(`from\\s*["']${BARREL_SPECIFIER}["']`).test(source)) return true;
+    if (importedSpecifiers(file, STATIC_IMPORT).includes(BARREL_SPECIFIER)) return true;
 
-    for (const m of source.matchAll(/export\s*\*\s*from\s*["']([^"']+)["']/g)) {
+    for (const m of read(file).matchAll(/export\s*\*\s*from\s*["']([^"']+)["']/g)) {
       const target = resolveSpecifier(file, m[1]);
       if (target && closesCycleWithBarrel(target, seen)) return true;
     }
+
     return false;
   }
 
