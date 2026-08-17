@@ -28,12 +28,20 @@ export async function buyStreakFreezeRequest(
     }
   );
 
+  const contentType = (response.headers.get("content-type") ?? "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  const body = await response.text();
+
   if (!response.ok) {
     let data: unknown = undefined;
-    try {
-      data = await response.json();
-    } catch {
-      // non-JSON error body; fall through with status only
+    if (contentType.includes("json")) {
+      try {
+        data = JSON.parse(body);
+      } catch {
+        // non-JSON error body; fall through with status only
+      }
     }
     const message =
       (data as { message?: string })?.message ??
@@ -44,7 +52,19 @@ export async function buyStreakFreezeRequest(
     throw err;
   }
 
-  return (await response.json()) as StreakFreezeBuyResult;
+  if (!contentType.includes("json")) {
+    throw new Error(
+      `[SDK][StreakFreeze] – expected JSON but received "${contentType || "empty"}" response (status ${response.status})`
+    );
+  }
+
+  try {
+    return JSON.parse(body) as StreakFreezeBuyResult;
+  } catch {
+    throw new Error(
+      `[SDK][StreakFreeze] – malformed JSON response (status ${response.status})`
+    );
+  }
 }
 
 /**
