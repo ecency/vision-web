@@ -13,12 +13,25 @@ describe("extensionErrorMessage", () => {
 
   it("surfaces the human-readable message", () => {
     expect(
-      extensionErrorMessage({ message: "Request was canceled by the user." }, "fallback")
-    ).toBe("Request was canceled by the user.");
+      extensionErrorMessage({ message: "There was an error broadcasting." }, "fallback")
+    ).toBe("There was an error broadcasting.");
   });
 
   it("surfaces a string error code", () => {
-    expect(extensionErrorMessage({ error: "user_cancel" }, "fallback")).toBe("user_cancel");
+    expect(extensionErrorMessage({ error: "invalid_params" }, "fallback")).toBe("invalid_params");
+  });
+
+  // Regression: a cancel used to render as "Request was canceled by the user. -- user_cancel",
+  // leaking Keychain's internal code into the UI. It now resolves to one translated line.
+  it.each([
+    [{ error: "user_cancel", message: "Request was canceled by the user." }],
+    [{ error: "user_cancel" }],
+    [{ message: "Request was canceled by the user." }],
+    [{ error: { code: 4001, message: "User rejected request" } }],
+  ])("returns the translated cancellation for %o", (resp) => {
+    const result = extensionErrorMessage(resp, "Operation cancelled");
+    expect(result).toBe("trx-common.cancelled");
+    expect(result).not.toContain("user_cancel");
   });
 
   it("combines message and underlying error detail", () => {

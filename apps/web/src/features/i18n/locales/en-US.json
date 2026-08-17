@@ -1807,7 +1807,8 @@
     "sign-title": "Sign transaction",
     "sign-sub-title": "Sign your transaction",
     "success-title": "Success",
-    "success-sub-title": "Transaction successful"
+    "success-sub-title": "Transaction successful",
+    "cancelled": "You cancelled the request."
   },
   "transactions": {
     "title": "History",

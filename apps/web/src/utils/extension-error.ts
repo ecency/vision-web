@@ -1,4 +1,5 @@
 import type { TxResponse } from "@/types";
+import i18next from "i18next";
 
 function safeStringify(value: unknown): string {
   try {
@@ -36,11 +37,24 @@ function normalizeErrorText(error: unknown): string {
  * classifier (`parseChainError` / `shouldTriggerAuthFallback`) can detect cases
  * like a missing active authority and trigger the auth-upgrade flow instead of
  * hard-failing on a generic, unmatchable string.
+ *
+ * A user cancellation is the exception: there is no underlying cause worth
+ * surfacing, so joining the parts only leaked an internal code to the user
+ * ("Request was canceled by the user. -- user_cancel"). Those resolve to a single
+ * translated sentence instead. Nothing classifies on the cancellation text:
+ * `parseChainError` has no cancellation branch, `shouldTriggerAuthFallback` fires
+ * only on missing-authority/token-expired, so this cannot re-trigger an auth
+ * upgrade. The retry gates read `isUserCancellation(resp)` off the response
+ * itself, never off the message.
  */
 export function extensionErrorMessage(
   resp: Pick<TxResponse, "message" | "error">,
   fallback: string
 ): string {
+  if (isUserCancellation(resp)) {
+    return i18next.t("trx-common.cancelled");
+  }
+
   const parts: string[] = [];
   if (resp.message) {
     parts.push(String(resp.message));

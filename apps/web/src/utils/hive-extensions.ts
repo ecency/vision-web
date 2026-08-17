@@ -556,7 +556,7 @@ async function signBufferViaPeakVault(
   }
   const resp = await peakvault.requestSignBuffer(account, keyRole as "posting" | "active" | "memo", message);
   if (!resp.success) {
-    throw new Error(resp.error || "Operation cancelled");
+    throw new Error(extensionErrorMessage(resp, "Operation cancelled"));
   }
   return { success: true, result: resp.result } as TxResponse;
 }
@@ -569,7 +569,7 @@ async function broadcastViaPeakVault(
 ): Promise<any> {
   const resp = await peakvault.requestBroadcast(account, operations, keyRole);
   if (!resp.success) {
-    throw new Error(resp.error || "Extension broadcast failed");
+    throw new Error(extensionErrorMessage(resp, "Extension broadcast failed"));
   }
   return resp.result;
 }

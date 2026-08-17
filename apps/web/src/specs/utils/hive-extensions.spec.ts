@@ -75,7 +75,11 @@ describe("signBufferWithExtension (Keychain liveness ping)", () => {
         cb({ success: false, error: "user_cancel" })
     };
 
-    await expect(signBufferWithExtension("alice", "message", "Posting")).rejects.toThrow();
+    // i18next is mocked to echo the key, so this asserts the translated string is
+    // used and that Keychain's internal code never reaches the message.
+    await expect(signBufferWithExtension("alice", "message", "Posting")).rejects.toThrow(
+      "trx-common.cancelled"
+    );
   });
 });
 
@@ -130,6 +134,24 @@ describe("broadcastWithExtension (Keychain liveness ping)", () => {
     await assertion;
 
     expect(requestBroadcast).not.toHaveBeenCalled();
+  });
+
+  // The reported case: cancelling a power up in the extension surfaced
+  // "Request was canceled by the user. -- user_cancel" in the operation error box.
+  it("surfaces a cancelled broadcast as the translated message, without the raw code", async () => {
+    (window as any).hive_keychain = {
+      requestHandshake: (cb: () => void) => cb(),
+      requestBroadcast: (_a: string, _o: any[], _t: string, cb: (r: any) => void) =>
+        cb({
+          success: false,
+          error: "user_cancel",
+          message: "Request was canceled by the user."
+        })
+    };
+
+    await expect(
+      broadcastWithExtension("alice", [["transfer_to_vesting", {}]], "active")
+    ).rejects.toThrow("trx-common.cancelled");
   });
 });
 
