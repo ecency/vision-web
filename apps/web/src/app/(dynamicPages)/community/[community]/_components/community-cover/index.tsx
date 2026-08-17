@@ -16,6 +16,7 @@ import { Button } from "@ui/button";
 import Link from "next/link";
 import { CommunityStatItem } from "@/app/(dynamicPages)/community/[community]/_components/community-cover/community-stat-item";
 import { messageSendSvg } from "@/assets/img/svg";
+import { DigestSubscribeButton } from "@/features/newsletter";
 
 setProxyBase(defaults.imageServer);
 
@@ -106,6 +107,12 @@ export function CommunityCover({ community, account }: Props) {
 
       <div className="controls-holder absolute z-10 right-0 top-4 flex gap-2 px-2 md:px-4">
         <SubscriptionBtn community={community} />
+        <DigestSubscribeButton
+          type="community"
+          target={community.name}
+          targetLabel={community.title || community.name}
+          source="community-page"
+        />
         {hasCommunityChannel && (
           <Link href={`/chats/${community.name}/channel`}>
             <Button iconPlacement="left" icon={messageSendSvg}>
