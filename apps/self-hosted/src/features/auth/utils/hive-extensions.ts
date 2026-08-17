@@ -19,6 +19,7 @@
 
 import type { Operation } from '@ecency/sdk';
 import type { HiveExtensionId, KeychainResponse } from '../types';
+import { extensionErrorMessage } from './extension-error';
 import {
   broadcast as broadcastViaKeychain,
   signBuffer as signBufferViaKeychain,
@@ -453,7 +454,7 @@ async function signBufferViaPeakVault(
     message,
   );
   if (!resp.success) {
-    throw new Error(resp.error || 'Operation cancelled');
+    throw new Error(extensionErrorMessage(resp, 'Operation cancelled'));
   }
   return { success: true, result: resp.result };
 }
@@ -474,7 +475,7 @@ async function broadcastViaPeakVault(
     keyRole as 'posting' | 'active' | 'memo',
   );
   if (!resp.success) {
-    throw new Error(resp.error || 'Extension broadcast failed');
+    throw new Error(extensionErrorMessage(resp, 'Extension broadcast failed'));
   }
   return { success: true, result: resp.result };
 }

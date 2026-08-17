@@ -1,5 +1,6 @@
 import type { Operation } from '@ecency/sdk';
 import type { KeychainResponse, KeychainSignTxResponse } from '../types';
+import { extensionErrorMessage } from './extension-error';
 
 export type AuthorityType = 'Owner' | 'Active' | 'Posting' | 'Memo';
 
@@ -102,7 +103,7 @@ export function signBuffer(
       finished = true;
       clearTimeout(timeout);
       if (!resp.success) {
-        reject(new Error(resp.error || 'Operation cancelled'));
+        reject(new Error(extensionErrorMessage(resp, 'Operation cancelled')));
         return;
       }
       resolve(resp);
@@ -138,7 +139,7 @@ export function broadcast(
       finished = true;
       clearTimeout(timeout);
       if (!resp.success) {
-        reject(new Error(resp.error || 'Operation cancelled'));
+        reject(new Error(extensionErrorMessage(resp, 'Operation cancelled')));
         return;
       }
       resolve(resp);
@@ -184,7 +185,11 @@ export function signTx(
       finished = true;
       clearTimeout(timeout);
       if (!resp.success) {
-        reject(new Error(resp.error || 'Transaction signing cancelled'));
+        reject(
+          new Error(
+            extensionErrorMessage(resp, 'Transaction signing cancelled'),
+          ),
+        );
         return;
       }
       resolve(resp);

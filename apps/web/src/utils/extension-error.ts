@@ -1,4 +1,5 @@
 import type { TxResponse } from "@/types";
+import i18next from "i18next";
 
 function safeStringify(value: unknown): string {
   try {
@@ -36,11 +37,27 @@ function normalizeErrorText(error: unknown): string {
  * classifier (`parseChainError` / `shouldTriggerAuthFallback`) can detect cases
  * like a missing active authority and trigger the auth-upgrade flow instead of
  * hard-failing on a generic, unmatchable string.
+ *
+ * A user cancellation is the exception: there is no underlying cause worth
+ * surfacing, so joining the parts only leaked an internal code to the user
+ * ("Request was canceled by the user. -- user_cancel"). Those resolve to a single
+ * translated sentence instead. Replacing the text discards the real cause, so the
+ * test is `isExplicitUserCancellation` (wallet cancellation codes and user-driven
+ * phrases only), NOT the deliberately loose `isUserCancellation` used by the retry
+ * gate: "transaction rejected: missing required active authority" has to keep its
+ * authority detail or the SDK's auth-upgrade classifier never sees it.
+ *
+ * The retry gates read the response object, never this message, so a translated
+ * cancellation cannot change retry or auth-fallback behaviour.
  */
 export function extensionErrorMessage(
   resp: Pick<TxResponse, "message" | "error">,
   fallback: string
 ): string {
+  if (isExplicitUserCancellation(resp)) {
+    return i18next.t("external-transfer.cancelled");
+  }
+
   const parts: string[] = [];
   if (resp.message) {
     parts.push(String(resp.message));
@@ -56,11 +73,87 @@ export function extensionErrorMessage(
 }
 
 /**
- * True when a Keychain-style failure represents the user declining/cancelling
+ * A failure signal that rules a cancellation out however cancel-ish the rest of
+ * the text reads. A node that answers "transaction rejected: missing required
+ * active authority" is reporting a cause the user (and the SDK's auth-upgrade
+ * classifier) must keep seeing.
+ */
+const CHAIN_FAILURE_SIGNAL =
+  /missing (required )?(active|owner|posting) authority|resource credit|insufficient|unauthorized|token expired/;
+
+/** An `error` field that is nothing but a user-named cancellation code, e.g. "user_cancel". */
+const EXPLICIT_CANCELLATION_CODE = /^user[_-]?(cancel(l?ed)?|reject(ed)?|denied|declined)$/;
+
+/**
+ * A status that names no actor: "rejected" alone reads as a user cancellation,
+ * but the same word is what a node says when it refuses a transaction, so it
+ * only counts while the response carries no other detail.
+ */
+const BARE_CANCELLATION_STATUS = /^(cancel(l?ed)?|reject(ed)?|denied|declined)$/;
+
+/** Phrases only a user-driven cancellation produces, anchored on the actor. */
+const CANCELLATION_PHRASES = [
+  /\buser[_ ]?cancel(l?ed)?\b/, // "user_cancel", "the user cancelled the request"
+  /\buser (rejected|denied|declined)\b/, // "User rejected request" (code 4001)
+  /\b(cancell?ed|rejected|denied|declined) by (the )?user\b/ // Keychain's own wording
+];
+
+/** EIP-1193 / wallet standard code for "user rejected the request". */
+const USER_REJECTED_CODE = 4001;
+
+/**
+ * True when a failure is explicitly a user cancellation.
+ *
+ * Deliberately narrower than `isUserCancellation`: this one decides whether to
+ * REPLACE the error text, where a false positive hides a real cause. It matches
+ * only a user-named cancellation code, the wallet `4001` code, or a phrase that
+ * names the user as the actor. A bare "reject"/"cancel" substring is not enough,
+ * so `limit_order_cancel` in an assert message or a node's "transaction rejected"
+ * keeps its detail.
+ *
+ * A bare status code ("rejected", "cancelled") names no actor, so it only counts
+ * while the response carries nothing else: `{ error: "rejected", message: "Invalid
+ * transaction: duplicate transaction" }` is a node refusal whose message is the
+ * only thing telling the user what went wrong.
+ */
+export function isExplicitUserCancellation(
+  resp: Pick<TxResponse, "message" | "error">
+): boolean {
+  const haystack = `${normalizeErrorText(resp.error)} ${(resp.message ?? "").toLowerCase()}`;
+  if (CHAIN_FAILURE_SIGNAL.test(haystack)) {
+    return false;
+  }
+
+  if (
+    typeof resp.error === "object" &&
+    resp.error !== null &&
+    (resp.error as { code?: unknown }).code === USER_REJECTED_CODE
+  ) {
+    return true;
+  }
+
+  const code = typeof resp.error === "string" ? resp.error.trim().toLowerCase() : "";
+  if (EXPLICIT_CANCELLATION_CODE.test(code)) {
+    return true;
+  }
+
+  if (CANCELLATION_PHRASES.some((phrase) => phrase.test(haystack))) {
+    return true;
+  }
+
+  return BARE_CANCELLATION_STATUS.test(code) && (resp.message ?? "").trim().length === 0;
+}
+
+/**
+ * True when a Keychain-style failure looks like the user declining/cancelling
  * the request (rather than a node, network, or validation error). Used to avoid
  * pointless broadcast retries that would re-open the extension popup. Handles
  * both string and object-shaped `error` fields (e.g. `{ code: 4001, message:
  * "User rejected request" }`).
+ *
+ * Loose on purpose, and only safe because of what it gates: over-matching here
+ * costs one skipped retry, never a hidden error. Use `isExplicitUserCancellation`
+ * for anything that replaces or suppresses the underlying failure.
  */
 export function isUserCancellation(
   resp: Pick<TxResponse, "message" | "error">
