@@ -78,7 +78,7 @@ describe("signBufferWithExtension (Keychain liveness ping)", () => {
     // i18next is mocked to echo the key, so this asserts the translated string is
     // used and that Keychain's internal code never reaches the message.
     await expect(signBufferWithExtension("alice", "message", "Posting")).rejects.toThrow(
-      "trx-common.cancelled"
+      "external-transfer.cancelled"
     );
   });
 });
@@ -151,7 +151,7 @@ describe("broadcastWithExtension (Keychain liveness ping)", () => {
 
     await expect(
       broadcastWithExtension("alice", [["transfer_to_vesting", {}]], "active")
-    ).rejects.toThrow("trx-common.cancelled");
+    ).rejects.toThrow("external-transfer.cancelled");
   });
 });
 
