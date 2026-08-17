@@ -45,9 +45,21 @@ describe("extensionErrorMessage", () => {
     [{ error: { message: "Assert Exception:limit_order_cancel: order not found" } }],
     [{ message: "Broadcast rejected by the node" }],
     [{ error: "unauthorized", message: "Request rejected" }],
+    // A bare status code alongside a detailed message: the message is the only
+    // thing saying what actually happened, so it has to survive.
+    [{ error: "rejected", message: "Invalid transaction: duplicate transaction" }],
   ])("keeps the real failure detail for %o", (resp) => {
     const result = extensionErrorMessage(resp, "Extension broadcast failed");
     expect(result).not.toBe("external-transfer.cancelled");
+  });
+
+  it("keeps both halves when a bare status carries a detailed message", () => {
+    const result = extensionErrorMessage(
+      { error: "rejected", message: "Invalid transaction: duplicate transaction" },
+      "Extension broadcast failed"
+    );
+    expect(result).toContain("Invalid transaction: duplicate transaction");
+    expect(result).toContain("rejected");
   });
 
   it("combines message and underlying error detail", () => {
@@ -118,6 +130,9 @@ describe("isExplicitUserCancellation", () => {
     [{ error: "unauthorized" }],
     // A cancellation code is only a code when it is the whole field
     [{ error: "cancel_transfer_from_savings failed" }],
+    // A bare status names no actor, so a message alongside it is real detail
+    [{ error: "rejected", message: "Invalid transaction: duplicate transaction" }],
+    [{ error: "cancelled", message: "The node closed the connection mid-broadcast" }],
   ])("treats %o as NOT an explicit cancellation", (resp) => {
     expect(isExplicitUserCancellation(resp)).toBe(false);
   });

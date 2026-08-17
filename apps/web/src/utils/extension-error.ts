@@ -81,8 +81,15 @@ export function extensionErrorMessage(
 const CHAIN_FAILURE_SIGNAL =
   /missing (required )?(active|owner|posting) authority|resource credit|insufficient|unauthorized|token expired/;
 
-/** An `error` field that is nothing but a cancellation code, e.g. "user_cancel". */
-const CANCELLATION_CODE = /^(user[_-]?)?(cancel(l?ed)?|reject(ed)?|denied|declined)$/;
+/** An `error` field that is nothing but a user-named cancellation code, e.g. "user_cancel". */
+const EXPLICIT_CANCELLATION_CODE = /^user[_-]?(cancel(l?ed)?|reject(ed)?|denied|declined)$/;
+
+/**
+ * A status that names no actor: "rejected" alone reads as a user cancellation,
+ * but the same word is what a node says when it refuses a transaction, so it
+ * only counts while the response carries no other detail.
+ */
+const BARE_CANCELLATION_STATUS = /^(cancel(l?ed)?|reject(ed)?|denied|declined)$/;
 
 /** Phrases only a user-driven cancellation produces, anchored on the actor. */
 const CANCELLATION_PHRASES = [
@@ -99,10 +106,15 @@ const USER_REJECTED_CODE = 4001;
  *
  * Deliberately narrower than `isUserCancellation`: this one decides whether to
  * REPLACE the error text, where a false positive hides a real cause. It matches
- * only a whole-string cancellation code, the wallet `4001` code, or a phrase that
+ * only a user-named cancellation code, the wallet `4001` code, or a phrase that
  * names the user as the actor. A bare "reject"/"cancel" substring is not enough,
  * so `limit_order_cancel` in an assert message or a node's "transaction rejected"
  * keeps its detail.
+ *
+ * A bare status code ("rejected", "cancelled") names no actor, so it only counts
+ * while the response carries nothing else: `{ error: "rejected", message: "Invalid
+ * transaction: duplicate transaction" }` is a node refusal whose message is the
+ * only thing telling the user what went wrong.
  */
 export function isExplicitUserCancellation(
   resp: Pick<TxResponse, "message" | "error">
@@ -120,11 +132,16 @@ export function isExplicitUserCancellation(
     return true;
   }
 
-  if (typeof resp.error === "string" && CANCELLATION_CODE.test(resp.error.trim().toLowerCase())) {
+  const code = typeof resp.error === "string" ? resp.error.trim().toLowerCase() : "";
+  if (EXPLICIT_CANCELLATION_CODE.test(code)) {
     return true;
   }
 
-  return CANCELLATION_PHRASES.some((phrase) => phrase.test(haystack));
+  if (CANCELLATION_PHRASES.some((phrase) => phrase.test(haystack))) {
+    return true;
+  }
+
+  return BARE_CANCELLATION_STATUS.test(code) && (resp.message ?? "").trim().length === 0;
 }
 
 /**

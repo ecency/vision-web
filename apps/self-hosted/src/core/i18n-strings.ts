@@ -114,6 +114,7 @@ export type TranslationKey =
   | 'tip_login_to_send'
   | 'tip_asset_not_supported'
   | 'tip_transaction_failed'
+  | 'transaction_cancelled_by_user'
   | 'tip_qr_no_address'
   | 'tip_qr_failed'
   | 'cancel'
@@ -425,6 +426,7 @@ export const translations: { en: Translations } & Record<
     tip_login_to_send: 'Login to send a tip',
     tip_asset_not_supported: 'This asset is not supported for tipping yet',
     tip_transaction_failed: 'Transaction failed',
+    transaction_cancelled_by_user: 'Transaction cancelled by user.',
     tip_qr_no_address: 'No address',
     tip_qr_failed: 'Failed to generate QR',
     cancel: 'Cancel',
@@ -725,6 +727,7 @@ export const translations: { en: Translations } & Record<
     tip_login_to_send: 'Inicia sesión para enviar una propina',
     tip_asset_not_supported: 'Este activo aún no es compatible con las propinas',
     tip_transaction_failed: 'Transacción fallida',
+    transaction_cancelled_by_user: 'Transacción cancelada por el usuario.',
     tip_qr_no_address: 'Sin dirección',
     tip_qr_failed: 'Error al generar el QR',
     cancel: 'Cancelar',
@@ -869,6 +872,7 @@ export const translations: { en: Translations } & Record<
     tip_login_to_send: 'Melde dich an, um ein Trinkgeld zu senden',
     tip_asset_not_supported: 'Dieses Asset wird für Trinkgelder noch nicht unterstützt',
     tip_transaction_failed: 'Transaktion fehlgeschlagen',
+    transaction_cancelled_by_user: 'Transaktion vom Benutzer abgebrochen.',
     tip_qr_no_address: 'Keine Adresse',
     tip_qr_failed: 'QR-Generierung fehlgeschlagen',
     cancel: 'Abbrechen',
@@ -1014,6 +1018,7 @@ export const translations: { en: Translations } & Record<
     tip_login_to_send: 'Connectez-vous pour envoyer un pourboire',
     tip_asset_not_supported: "Cet actif n'est pas encore pris en charge pour les pourboires",
     tip_transaction_failed: 'Échec de la transaction',
+    transaction_cancelled_by_user: "Transaction annulée par l'utilisateur.",
     tip_qr_no_address: 'Aucune adresse',
     tip_qr_failed: 'Échec de la génération du QR',
     cancel: 'Annuler',
@@ -1159,6 +1164,7 @@ export const translations: { en: Translations } & Record<
     tip_login_to_send: '팁을 보내려면 로그인하세요',
     tip_asset_not_supported: '이 자산은 아직 팁으로 지원되지 않습니다',
     tip_transaction_failed: '거래 실패',
+    transaction_cancelled_by_user: '사용자가 거래를 취소했습니다.',
     tip_qr_no_address: '주소 없음',
     tip_qr_failed: 'QR 생성 실패',
     cancel: '취소',
@@ -1299,6 +1305,7 @@ export const translations: { en: Translations } & Record<
     tip_login_to_send: 'Войдите, чтобы отправить чаевые',
     tip_asset_not_supported: 'Этот актив пока не поддерживается для чаевых',
     tip_transaction_failed: 'Транзакция не удалась',
+    transaction_cancelled_by_user: 'Транзакция отменена пользователем.',
     tip_qr_no_address: 'Нет адреса',
     tip_qr_failed: 'Не удалось создать QR-код',
     cancel: 'Отмена',
