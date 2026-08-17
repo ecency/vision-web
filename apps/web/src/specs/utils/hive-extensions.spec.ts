@@ -76,10 +76,12 @@ describe("signBufferWithExtension (Keychain liveness ping)", () => {
     };
 
     // i18next is mocked to echo the key, so this asserts the translated string is
-    // used and that Keychain's internal code never reaches the message.
-    await expect(signBufferWithExtension("alice", "message", "Posting")).rejects.toThrow(
-      "external-transfer.cancelled"
+    // used. Exact equality, not a substring: "<key> — user_cancel" would satisfy
+    // toThrow() while leaking exactly the code this fix removes.
+    const error = await signBufferWithExtension("alice", "message", "Posting").catch(
+      (e: Error) => e
     );
+    expect(error.message).toBe("external-transfer.cancelled");
   });
 });
 
@@ -149,9 +151,12 @@ describe("broadcastWithExtension (Keychain liveness ping)", () => {
         })
     };
 
-    await expect(
-      broadcastWithExtension("alice", [["transfer_to_vesting", {}]], "active")
-    ).rejects.toThrow("external-transfer.cancelled");
+    const error = await broadcastWithExtension(
+      "alice",
+      [["transfer_to_vesting", {}]],
+      "active"
+    ).catch((e: Error) => e);
+    expect(error.message).toBe("external-transfer.cancelled");
   });
 });
 
