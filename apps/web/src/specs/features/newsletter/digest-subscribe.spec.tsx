@@ -74,7 +74,8 @@ describe("DigestSubscribeDialog", () => {
   it("anonymous: asks for an address, subscribes without a token, and shows the confirmation prompt", async () => {
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       if (url === "/api/newsletter/subscribe" && init?.method === "POST") {
-        return jsonResponse(200, { status: "pending_confirmation", confirmationSent: true, created: true });
+        // What the service returns to an unproven caller: this and nothing more.
+        return jsonResponse(200, { status: "pending_confirmation" });
       }
       return jsonResponse(404, {});
     });

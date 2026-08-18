@@ -37,7 +37,11 @@ interface Props {
  *
  * Anonymous visitors get the address-collecting flow; the service double opts them in.
  * Logged-in visitors are asked for an address only until the service holds one for the
- * account (learned from any live subscription), after which subscribing is one action.
+ * account (learned from any live subscription), after which subscribing is one action
+ * IF the address owner has confirmed a request from this account before (the service
+ * calls that "proven"). Until then the service replies with a bare
+ * `{ status: "pending_confirmation" }`, and the dialog shows the check-your-inbox state
+ * without assuming any of the richer fields a proven caller receives.
  */
 export function DigestSubscribeDialog({ type, target, targetLabel, source, show, onHide }: Props) {
   const { activeUser } = useActiveAccount();
