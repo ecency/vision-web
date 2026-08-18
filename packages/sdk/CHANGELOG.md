@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.88
+
+### Patch Changes
+
+- fix(sentry): stop the spin claim and the voice list from throwing uncaught (#1526)
+
 ## 2.3.87
 
 ### Patch Changes
