@@ -30,6 +30,7 @@ const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: asy
 const A1 = { id: "a1", email: "alice@example.com", account: "alice", type: "community", target: "hive-1", cadence: "weekly", status: "active", created_at: "" };
 const A2 = { id: "a2", email: "alice@example.com", account: "alice", type: "creator", target: "good-karma", cadence: "weekly", status: "active", created_at: "" };
 const B1 = { id: "b1", email: "alice-work@example.com", account: "alice", type: "community", target: "hive-2", cadence: "monthly", status: "active", created_at: "" };
+const S1 = { id: "s1", email: "alice@example.com", account: "alice", type: "site", target: "ecency", cadence: "weekly", status: "active", created_at: "" };
 
 describe("EmailDigestsSettings", () => {
   beforeEach(() => {
@@ -51,6 +52,14 @@ describe("EmailDigestsSettings", () => {
   afterEach(() => {
     cleanupModalContainers();
     vi.unstubAllGlobals();
+  });
+
+  it("labels a site-digest subscription as the Ecency digest, not the notification digest", () => {
+    const client = createTestQueryClient();
+    client.setQueryData(digestSubscriptionsKey("alice"), [S1]);
+    renderWithQueryClient(<EmailDigestsSettings />, { queryClient: client });
+    expect(screen.getByText("newsletter.row-site")).toBeInTheDocument();
+    expect(screen.queryByText("newsletter.row-own")).not.toBeInTheDocument();
   });
 
   it("stopping all mail to ONE address keeps the account's subscriptions on other addresses visible", async () => {

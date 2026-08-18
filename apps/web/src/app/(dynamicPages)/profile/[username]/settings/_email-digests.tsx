@@ -4,6 +4,7 @@ import {
   CADENCES,
   DigestCadence,
   DigestSubscription,
+  describeDigest,
   useDigestSubscriptions,
   useLeaveDigest,
   useNewsletterEnabled,
@@ -37,12 +38,7 @@ export function EmailDigestsSettings() {
   const subscriptions = data ?? [];
   const addresses = Array.from(new Set(subscriptions.map((s) => s.email)));
 
-  const describe = (s: DigestSubscription) =>
-    s.type === "community"
-      ? i18next.t("newsletter.row-community", { name: s.target })
-      : s.type === "creator"
-        ? i18next.t("newsletter.row-creator", { name: s.target })
-        : i18next.t("newsletter.row-own");
+  const describe = (s: DigestSubscription) => describeDigest(s.type, s.target);
 
   const changeCadence = async (s: DigestSubscription, cadence: DigestCadence) => {
     if (s.type === "own") return;

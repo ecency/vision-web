@@ -1,6 +1,6 @@
 "use client";
 
-import { newsletterApi, NewsletterApiError, newsletterKeys } from "@/features/newsletter";
+import { describeDigest, newsletterApi, NewsletterApiError, newsletterKeys } from "@/features/newsletter";
 import { Alert } from "@ui/alert";
 import { Button } from "@ui/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -22,13 +22,7 @@ export function ConfirmPage({ token }: { token: string }) {
   const confirm = useMutation({ mutationFn: () => newsletterApi.confirm(token) });
 
   const describe = (s: { type: string; target: string; cadence: string }) =>
-    `${i18next.t(`newsletter.cadence.${s.cadence}`)} · ${
-      s.type === "community"
-        ? i18next.t("newsletter.row-community", { name: s.target })
-        : s.type === "creator"
-          ? i18next.t("newsletter.row-creator", { name: s.target })
-          : i18next.t("newsletter.row-own")
-    }`;
+    `${i18next.t(`newsletter.cadence.${s.cadence}`)} · ${describeDigest(s.type, s.target)}`;
 
   return (
     <div className="max-w-xl mx-auto py-10">
