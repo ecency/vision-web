@@ -51,9 +51,14 @@ describe("author send routes", () => {
     expect(await taken.json()).toMatchObject({ code: "already_sent" });
   });
 
-  it("a creator who is not Pro, or someone else's list, is refused before the service is asked; an unknown roster is a 503", async () => {
+  it("a creator who is not Pro, or someone else's list, or someone else's post, is refused before the service is asked; an unknown roster is a 503", async () => {
     mocks.verify.mockResolvedValue({ ok: true, username: "alice" });
     const { POST } = await import("@/app/api/newsletter/send/route");
+    const { POST: PREVIEW } = await import("@/app/api/newsletter/send/preview/route");
+    mocks.pro.mockResolvedValue(true);
+    // A creator's list carries only their own posts: bob's post to alice's list is refused here, preview included.
+    expect((await POST(req({ ...SEND, author: "bob" }, { "x-hs-token": "tok" }))).status).toBe(403);
+    expect((await PREVIEW(req({ ...SEND, author: "bob" }, { "x-hs-token": "tok" }))).status).toBe(403);
     mocks.pro.mockResolvedValue(false);
     expect((await POST(req(SEND, { "x-hs-token": "tok" }))).status).toBe(403);
     mocks.pro.mockResolvedValue(true);

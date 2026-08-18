@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { resolveUser, unauthorizedResponse } from "@/app/api/threespeak/resolve-user";
 import { callNewsletter, newsletterConfigured, notConfigured, relay } from "@/server/newsletter-internal";
-import { parseSendBody, readJsonBody, senderGate } from "@/server/newsletter-sender-gate";
+import { parseSendBody, postBelongsToSender, readJsonBody, senderGate } from "@/server/newsletter-sender-gate";
 
 /**
  * Author send (vision-web#1532): the sender's own post as the list's issue for
@@ -19,6 +19,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const username = auth.username.toLowerCase();
   const parsed = parseSendBody(body);
   if (parsed instanceof Response) return parsed;
+  if (!postBelongsToSender(parsed, username)) return Response.json({ error: "a creator digest carries only the creator's own posts" }, { status: 403 });
   const gate = await senderGate(username, parsed.type, parsed.target, "send");
   if (!gate.ok) return Response.json({ error: gate.error }, { status: gate.status });
   const upstream = await callNewsletter("/api/issues", { method: "POST", body: { ...parsed, requestedBy: username } });

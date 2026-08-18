@@ -38,4 +38,9 @@ describe("authorSendApi", () => {
     expect(err).toBeInstanceOf(SendRefusedError);
     expect(err).toMatchObject({ status: 409, code: "already_sent", taken: [{ cadence: "weekly" }] });
   });
+
+  it("a 2xx without a JSON body is an error, not an empty result", async () => {
+    fetchMock.mockReturnValueOnce(Promise.resolve({ ok: true, status: 200, json: async () => { throw new Error("no body"); } } as unknown as Response));
+    await expect(authorSendApi.preview({ type: "creator", target: "alice", author: "alice", permlink: "hello" }, "alice")).rejects.toThrow(/Unexpected response/);
+  });
 });

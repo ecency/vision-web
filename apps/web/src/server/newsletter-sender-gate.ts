@@ -68,6 +68,16 @@ export async function readJsonBody(request: NextRequest): Promise<Record<string,
   return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
 }
 
+/**
+ * A creator's list carries the creator's own posts, and only they may send to
+ * it: so for a creator list the post's author IS the sender. The service checks
+ * the same (422 for a foreign post), this keeps the relay from forwarding a
+ * request it can already see is wrong.
+ */
+export function postBelongsToSender(body: SendBody, username: string): boolean {
+  return body.type !== "creator" || body.author === username;
+}
+
 export function parseSendBody(body: Record<string, unknown>): SendBody | Response {
   const type = body?.type;
   const target = String(body?.target ?? "").toLowerCase();

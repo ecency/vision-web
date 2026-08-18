@@ -55,7 +55,9 @@ export function SentIssues({
       <ul className="m-0 p-0 list-none flex flex-col gap-1" aria-labelledby="newsletter-sent-issues-heading">
         {items.map((i: SentIssue) => (
           <li key={i.id} className="flex flex-wrap items-baseline gap-x-2 opacity-90">
-            <span className="text-xs opacity-70 tabular-nums">{i.period_start}</span>
+            <time dateTime={i.period_start} className="text-xs opacity-70 tabular-nums">
+              {new Date(`${i.period_start}T00:00:00Z`).toLocaleDateString(i18next.language, { timeZone: "UTC" })}
+            </time>
             {i.post_author && i.post_permlink ? (
               <Link href={`/@${i.post_author}/${i.post_permlink}`} className="truncate max-w-[16rem]">
                 {i.subject}

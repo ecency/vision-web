@@ -60,9 +60,11 @@ async function post<T>(path: string, body: unknown, username: string): Promise<T
     headers: { "Content-Type": "application/json", ...(token ? { "X-HS-Token": token } : {}) },
     body: JSON.stringify(body)
   });
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string; code?: string; taken?: SendRefusedError["taken"] };
-  if (!res.ok) throw new SendRefusedError(data?.error || `Request failed (${res.status})`, res.status, data?.code, data?.taken);
-  return data;
+  const parsed = (await res.json().catch(() => null)) as (T & { error?: string; code?: string; taken?: SendRefusedError["taken"] }) | null;
+  if (!res.ok) throw new SendRefusedError(parsed?.error || `Request failed (${res.status})`, res.status, parsed?.code, parsed?.taken);
+  // A 2xx without a JSON body is not a result; saying so beats rendering blanks.
+  if (!parsed || typeof parsed !== "object") throw new SendRefusedError(`Unexpected response (${res.status})`, res.status);
+  return parsed;
 }
 
 export const authorSendApi = {
