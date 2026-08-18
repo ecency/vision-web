@@ -215,7 +215,7 @@ box, prefix stripped). The service is EU-only; the US web tier reaches it throug
 over TLS, so every region can render the digest controls. Same shape and same reasoning as
 above: one `allow` per line, wildcard include so a missing file degrades to `deny all` on this
 path only. What belongs in it: the co-located web origin's swarm gateway range, the US web
-origin, and loopback for on-box diagnostics. The service also checks its own bearer token on
+origin, the staging (alpha) web origin, and loopback for on-box diagnostics. The service also checks its own bearer token on
 every `/api` route, so this list is the outer gate, not the only one.
 
 ```sh

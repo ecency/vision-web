@@ -135,12 +135,18 @@ jobs:
         SEO_CRON_SECRET: ${{secrets.SEO_CRON_SECRET}}
         SEO_BLACKLIST_URL: ${{secrets.SEO_BLACKLIST_URL}}
         TURNSTILE_SECRET: ${{secrets.TURNSTILE_SECRET}}
+        # Newsletter service (ecency/news) lives on the EU production box; staging reaches
+        # it through the IP-allowlisted TLS relay on the EU origin, same as US, with its own
+        # URL secret. There is one service and one database, so subscriptions made on alpha
+        # are real: test with your own addresses. Optional here (see the script below).
+        NEWSLETTER_API_URL: ${{secrets.NEWSLETTER_API_URL_STAGING}}
+        NEWSLETTER_SERVICE_TOKEN: ${{secrets.NEWSLETTER_SERVICE_TOKEN}}
       with:
         host: ${{ secrets.SSH_STAGING_HOST }}
         username: ${{ secrets.SSH_USERNAME }}
         key: ${{ secrets.SSH_KEY }}
         port: ${{ secrets.SSH_PORT }}
-        envs: USE_PRIVATE,PRIVATE_API_ADDR,PRIVATE_API_AUTH,HIVESIGNER_SECRET,SEARCH_API_ADDR,SEARCH_API_SECRET,STRIPE_INTERNAL_SECRET,HOSTING_INTERNAL_SECRET,HIVESEARCHER_ORIGIN_IP,PLAUSIBLE_API_KEY,BLOCKSTREAM_CLIENT_ID,BLOCKSTREAM_CLIENT_SECRET,MATTERMOST_TEAM_ID,MATTERMOST_ADMIN_TOKEN,MATTERMOST_BASE_URL,MATTERMOST_WS_ALLOWED_ORIGINS,THREESPEAK_EMBED_API_KEY,SEO_CRON_SECRET,SEO_BLACKLIST_URL,TURNSTILE_SECRET
+        envs: USE_PRIVATE,PRIVATE_API_ADDR,PRIVATE_API_AUTH,HIVESIGNER_SECRET,SEARCH_API_ADDR,SEARCH_API_SECRET,STRIPE_INTERNAL_SECRET,HOSTING_INTERNAL_SECRET,HIVESEARCHER_ORIGIN_IP,PLAUSIBLE_API_KEY,BLOCKSTREAM_CLIENT_ID,BLOCKSTREAM_CLIENT_SECRET,MATTERMOST_TEAM_ID,MATTERMOST_ADMIN_TOKEN,MATTERMOST_BASE_URL,MATTERMOST_WS_ALLOWED_ORIGINS,THREESPEAK_EMBED_API_KEY,SEO_CRON_SECRET,SEO_BLACKLIST_URL,TURNSTILE_SECRET,NEWSLETTER_API_URL,NEWSLETTER_SERVICE_TOKEN
         script: |
           export USE_PRIVATE=$USE_PRIVATE
           export PRIVATE_API_ADDR=$PRIVATE_API_ADDR
@@ -158,6 +164,13 @@ jobs:
           export SEO_CRON_SECRET=$SEO_CRON_SECRET
           export SEO_BLACKLIST_URL=$SEO_BLACKLIST_URL
           export TURNSTILE_SECRET=$TURNSTILE_SECRET
+          # Unlike production this does not fail without the newsletter settings: staging may run
+          # without the feature. It says so, because the web hides the controls silently otherwise.
+          if [ -z "$NEWSLETTER_API_URL" ] || [ -z "$NEWSLETTER_SERVICE_TOKEN" ]; then
+            echo "::warning::NEWSLETTER_API_URL/NEWSLETTER_SERVICE_TOKEN unset: newsletter controls hidden on staging"
+          fi
+          export NEWSLETTER_API_URL=$NEWSLETTER_API_URL
+          export NEWSLETTER_SERVICE_TOKEN=$NEWSLETTER_SERVICE_TOKEN
           cd ~/vision-web
           git pull origin develop
           cd apps/web
