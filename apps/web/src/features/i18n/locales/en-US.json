@@ -4230,6 +4230,17 @@
     "compose-subject": "Subject (optional)",
     "compose-intro": "A short intro for your readers (optional)",
     "compose-picked": "{{n}} picked ({{min}} to {{max}})",
-    "compose-continue": "Preview"
+    "compose-continue": "Preview",
+    "subscriber-count": "{{count}} email subscribers",
+    "subscriber-count_one": "{{count}} email subscriber",
+    "subscriber-count-split": "{{weekly}} weekly, {{monthly}} monthly",
+    "subscriber-count-none": "Share your subscribe link to grow the list.",
+    "copy-subscribe-link": "Copy subscribe link",
+    "subscribe-link-copied": "Subscribe link copied",
+    "post-prompt-title": "Get {{list}} by email",
+    "post-prompt-body-creator": "New posts by this author, as a weekly or monthly digest. Unsubscribe any time.",
+    "post-prompt-body-community": "The best of this community, as a weekly or monthly digest. Unsubscribe any time.",
+    "post-prompt-dismiss": "Not now",
+    "post-prompt-subscribe": "Subscribe"
   }
 }

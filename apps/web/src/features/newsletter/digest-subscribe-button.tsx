@@ -6,7 +6,10 @@ import { useQuery } from "@tanstack/react-query";
 import { UilEnvelope, UilEnvelopeCheck } from "@tooni/iconscout-unicons-react";
 import { Button, ButtonProps } from "@ui/button";
 import i18next from "i18next";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { SUBSCRIBE_PARAM, SUBSCRIBE_PARAM_VALUE } from "./list-building";
+
+const noop = () => {};
 import { DigestSubscribeDialog } from "./digest-subscribe-dialog";
 import { useDigestSubscription } from "./hooks";
 import { useNewsletterEnabled } from "./runtime";
@@ -30,14 +33,37 @@ interface Props {
  * Pro capability, and the server enforces the same rule, this only avoids offering
  * something the request would refuse.
  */
+/**
+ * A shared subscribe link (?subscribe=digest, vision-web#1537) opens the dialog
+ * once, on the page that carries the list's button, then leaves the URL clean.
+ * Reads the location and cleans it with history.replaceState (which Next keeps
+ * in sync with the router), so it needs neither the app router nor a Suspense
+ * boundary; a button rendered outside a Next page still works.
+ */
+function useSubscribeLinkOpener(onOpen: () => void): void {
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(SUBSCRIBE_PARAM) !== SUBSCRIBE_PARAM_VALUE) return;
+    opened.current = true;
+    onOpen();
+    params.delete(SUBSCRIBE_PARAM);
+    const rest = params.toString();
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`);
+  }, [onOpen]);
+}
+
 export function DigestSubscribeButton({ type, target, targetLabel, source, size, className }: Props) {
   const enabled = useNewsletterEnabled();
   const [open, setOpen] = useState(false);
   const { subscription } = useDigestSubscription(type, target);
   const { data: pro } = useQuery({ ...getProMembersQueryOptions(), enabled: enabled && type === "creator" });
+  const offered = enabled && (type !== "creator" || isProMember(pro?.members, target));
+  const openFromLink = useCallback(() => setOpen(true), []);
+  useSubscribeLinkOpener(offered ? openFromLink : noop);
 
-  if (!enabled) return null;
-  if (type === "creator" && !isProMember(pro?.members, target)) return null;
+  if (!offered) return null;
 
   const active = subscription?.status === "active";
   const label = subscription

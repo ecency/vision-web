@@ -12,7 +12,7 @@ import {
 
 const TYPES = new Set(["own", "community", "creator", "site"]);
 const CADENCES = new Set(["weekly", "monthly"]);
-const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-page", "publish-prompt"]);
+const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-page", "publish-prompt", "post-page"]);
 
 /**
  * Subscribe to a community or creator digest.
