@@ -197,8 +197,13 @@ const config = {
   // chunk (the post-deploy "undefined (reading 'call')" / "element type is
   // invalid" 500s). Reuses the SHA already injected as SENTRY_RELEASE in CI;
   // unset in local dev, where skew protection is inactive (and unnecessary).
+  // Truncated to 8 hex: skew protection only needs the value to CHANGE between
+  // deploys, not to be globally unique. Next appends `?dpl=<id>` to all 1,235
+  // chunk references on a post page, so the full 40-char SHA cost 55,575 B
+  // (16-19% of the page); 8 chars costs 16,055 B. See #1533. SENTRY_RELEASE
+  // itself stays full above — Sentry matches sourcemaps on the whole release.
   deploymentId: process.env.SENTRY_RELEASE
-    ? process.env.SENTRY_RELEASE.replace(/^ecency-next@/, "")
+    ? process.env.SENTRY_RELEASE.replace(/^ecency-next@/, "").slice(0, 8)
     : undefined,
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
