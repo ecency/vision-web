@@ -5,6 +5,7 @@
 
   em-emoji-picker {
     width: 300px;
+
     // Set by the `size` middleware from the room actually left in the viewport,
     // so a short window (or a phone held sideways) gets a shorter panel instead
     // of one running off the edge of the screen. emoji-mart defaults to a fixed
@@ -27,9 +28,13 @@
 
     em-emoji-picker {
       width: 100%;
+
       // Full height as a bottom sheet: the anchored measurement above is for
-      // the popover layout, which this breakpoint replaces.
+      // the popover layout, which this breakpoint replaces. Capped to the
+      // dynamic viewport so a phone held sideways still shows the whole sheet;
+      // the plain value stays first for browsers without dvh.
       height: 435px;
+      height: min(435px, calc(100dvh - 16px));
     }
 
     > div {

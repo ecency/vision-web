@@ -1,5 +1,5 @@
 import { KeyboardEvent } from "react";
-import { detectEvent } from "./index";
+import { detectEvent } from "./events";
 
 /**
  * Ctrl/Cmd formatting shortcuts. These are the ones every editor on the web
@@ -27,22 +27,28 @@ const ALT_SHORTCUTS: Record<string, string> = {
 /**
  * The letter a shortcut is aimed at.
  *
- * `e.key` is the right source for Ctrl/Cmd combos (it follows the keyboard
- * layout), but Alt combos on macOS report a typographic character there:
- * Alt+B arrives as "∫", which is why the Alt shortcuts never worked on a Mac.
- * `e.code` names the physical key and covers that case, so either match counts.
+ * `e.key` follows the keyboard layout and is the only safe source for Ctrl/Cmd
+ * combos: on Dvorak, Cmd+C arrives as `key: "c", code: "KeyI"`, so reading the
+ * physical key there would fire italic and swallow the copy.
+ *
+ * Alt combos on macOS report a typographic character in `e.key` instead
+ * (Alt+B arrives as "∫"), which is why every Alt shortcut was dead on a Mac.
+ * The physical key is the only thing left to go on, so it is used as a fallback
+ * for those and only when `e.key` carries no letter at all.
  */
-function shortcutLetters(e: Pick<KeyboardEvent, "key" | "code">): string[] {
-  const letters: string[] = [];
-
+function shortcutLetter(
+  e: Pick<KeyboardEvent, "key" | "code">,
+  allowPhysicalKey: boolean
+): string | null {
   if (typeof e.key === "string" && /^[a-z]$/i.test(e.key)) {
-    letters.push(e.key.toLowerCase());
-  }
-  if (typeof e.code === "string" && /^Key[A-Z]$/.test(e.code)) {
-    letters.push(e.code.charAt(3).toLowerCase());
+    return e.key.toLowerCase();
   }
 
-  return letters;
+  if (allowPhysicalKey && typeof e.code === "string" && /^Key[A-Z]$/.test(e.code)) {
+    return e.code.charAt(3).toLowerCase();
+  }
+
+  return null;
 }
 
 /**
@@ -61,10 +67,8 @@ export function handleEditorShortcut(e: KeyboardEvent<HTMLElement>): boolean {
     return false;
   }
 
-  const table = hasCtrl ? CTRL_SHORTCUTS : ALT_SHORTCUTS;
-  const action = shortcutLetters(e)
-    .map((letter) => table[letter])
-    .find(Boolean);
+  const letter = shortcutLetter(e, !hasCtrl);
+  const action = letter ? (hasCtrl ? CTRL_SHORTCUTS : ALT_SHORTCUTS)[letter] : undefined;
 
   if (!action) {
     return false;

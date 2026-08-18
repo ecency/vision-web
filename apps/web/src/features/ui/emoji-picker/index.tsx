@@ -27,12 +27,10 @@ interface Props {
   position?: "top" | "bottom";
 }
 
-// emoji-mart sizes the picker from its own `:host` rule. Outside CSS beats
-// `:host`, so these are the numbers the panel is actually laid out with and the
-// range we may squeeze it into when the viewport is short - the floor is ours,
-// low enough that a phone held sideways still gets a panel that fits.
+// emoji-mart sizes the picker from its own `:host` rule (435px tall). Outside
+// CSS beats `:host`, so this is the height the panel is actually laid out with
+// and the most it may take; when the viewport leaves less room it gets less.
 const PICKER_HEIGHT = 435;
-const PICKER_MIN_HEIGHT = 180;
 const VIEWPORT_PADDING = 8;
 
 export function EmojiPicker({
@@ -71,9 +69,12 @@ export function EmojiPicker({
       size({
         padding: VIEWPORT_PADDING,
         apply({ availableHeight, elements }) {
+          // Never taller than the room left on the chosen side: a floor here
+          // would push the panel back off-screen on a very short viewport, and
+          // the panel scrolls internally, so a shorter one is still usable.
           elements.floating.style.setProperty(
             "--emoji-picker-height",
-            `${Math.max(PICKER_MIN_HEIGHT, Math.min(PICKER_HEIGHT, Math.floor(availableHeight)))}px`
+            `${Math.min(PICKER_HEIGHT, Math.max(0, Math.floor(availableHeight)))}px`
           );
         }
       })

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMountedState } from "react-use";
 import { v4 } from "uuid";
 import { codeTagsSvg, emoticonHappyOutlineSvg, formatBoldSvg, formatItalicSvg, formatListBulletedSvg, formatListNumberedSvg, formatQuoteCloseSvg, formatTitleSvg, gifIcon, gridSvg, imageSvg, textShortSvg, videoSvg } from "@/assets/img/svg";
@@ -24,7 +24,6 @@ import { VideoUpload } from "@/features/shared/video-upload-threespeak";
 import { AddImage } from "@/features/shared/editor-toolbar/add-image";
 import { AddLink } from "@/features/shared/editor-toolbar/add-link";
 import { AddImageMobile } from "@/features/shared/editor-toolbar/add-image-mobile";
-import useMount from "react-use/lib/useMount";
 import { EcencyConfigManager } from "@/config";
 // Import directly from the file, NOT the "@/app/publish/_hooks" barrel:
 // the barrel re-exports use-publish-editor (the full TipTap/ProseMirror graph,
@@ -44,15 +43,7 @@ interface Props {
   readonlyPoll?: boolean;
 }
 
-export const detectEvent = (eventType: string) => {
-  const ev = new Event(eventType);
-  window.dispatchEvent(ev);
-};
-
-export const toolbarEventListener = (event: Event, eventType: string) => {
-  const ev = new CustomEvent("customToolbarEvent", { detail: { event, eventType } });
-  window.dispatchEvent(ev);
-};
+export { detectEvent, toolbarEventListener } from "./events";
 
 export function EditorToolbar({
   sm,
@@ -93,6 +84,32 @@ export function EditorToolbar({
     activeUserRef.current = activeUser;
   }, [activeUser]);
 
+  const getTargetEl = useCallback(() => {
+    const root = rootRef.current;
+    if (!root || !root.parentElement) {
+      return null;
+    }
+
+    return root.parentElement.querySelector(".the-editor") as HTMLInputElement | null;
+  }, []);
+
+  // The action handlers below are plain closures re-created on every render.
+  // The listener effects read them through this ref, so they are subscribed
+  // once yet always run the current render's version.
+  const handlersRef = useRef<Record<string, (e: Event) => void>>({});
+  handlersRef.current = {
+    bold: () => bold(),
+    italic: () => italic(),
+    table: (e) => table(e),
+    link: () => setLink(true),
+    codeBlock: () => code(),
+    blockquote: () => quote(),
+    image: () => setImage(true),
+    dragover: (e) => onDragOver(e as DragEvent),
+    drop: (e) => drop(e as DragEvent),
+    paste: (e) => onPaste(e as ClipboardEvent)
+  };
+
   // Keyboard shortcuts are broadcast on `window`, so every mounted toolbar
   // hears every one of them. An entry page runs several at once (the reply box
   // plus an inline reply form under each comment). Acting on a shortcut
@@ -105,49 +122,45 @@ export function EditorToolbar({
   // click moves focus to the button, so they must not go through this gate.
   useEffect(() => {
     const forFocusedEditor =
-      (handler: (e: Event) => void): EventListener =>
+      (action: string): EventListener =>
       (e) => {
         const el = getTargetEl();
         if (el && document.activeElement === el) {
-          handler(e);
+          handlersRef.current[action]?.(e);
         }
       };
 
     const listeners: [string, EventListener][] = [
-      ["bold", forFocusedEditor(bold)],
-      ["italic", forFocusedEditor(italic)],
-      ["table", forFocusedEditor(table)],
-      ["link", forFocusedEditor(() => setLink(true))],
-      ["codeBlock", forFocusedEditor(code)],
-      ["blockquote", forFocusedEditor(quote)],
-      ["image", forFocusedEditor(() => setImage(true))]
-    ];
+      "bold",
+      "italic",
+      "table",
+      "link",
+      "codeBlock",
+      "blockquote",
+      "image"
+    ].map((action) => [action, forFocusedEditor(action)]);
 
     listeners.forEach(([type, listener]) => window.addEventListener(type, listener));
 
     return () => listeners.forEach(([type, listener]) => window.removeEventListener(type, listener));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [getTargetEl]);
 
-  useMount(() => {
-    // 🆕 Native drag-drop listeners on the editor
-    const editor = rootRef.current?.parentElement?.querySelector(".the-editor");
-
-    if (editor) {
-      editor.addEventListener("dragover", (e) => onDragOver(e as DragEvent));
-      editor.addEventListener("drop", (e) => drop(e as DragEvent));
-      editor.addEventListener("paste", (e) => onPaste(e as ClipboardEvent));
-    }
-  });
-
-  const getTargetEl = () => {
-    const root = rootRef.current;
-    if (!root || !root.parentElement) {
-      return null;
+  // Native drag-drop and paste listeners on the editor.
+  useEffect(() => {
+    const editor = getTargetEl();
+    if (!editor) {
+      return;
     }
 
-    return root.parentElement.querySelector(".the-editor") as HTMLInputElement;
-  };
+    const listeners: [string, EventListener][] = ["dragover", "drop", "paste"].map((type) => [
+      type,
+      (e) => handlersRef.current[type]?.(e)
+    ]);
+
+    listeners.forEach(([type, listener]) => editor.addEventListener(type, listener));
+
+    return () => listeners.forEach(([type, listener]) => editor.removeEventListener(type, listener));
+  }, [getTargetEl]);
 
   const insertText = (before: string, after: string = "") => {
     const el = getTargetEl();

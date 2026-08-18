@@ -1,12 +1,16 @@
 import { vi } from "vitest";
 import type { KeyboardEvent } from "react";
-
-vi.mock("@/features/shared/editor-toolbar", () => ({
-  detectEvent: vi.fn()
-}));
-
-import { detectEvent } from "@/features/shared/editor-toolbar";
 import { handleEditorShortcut } from "@/features/shared/editor-toolbar/shortcuts";
+
+// A matched shortcut is broadcast as a DOM event on `window`, which the toolbar
+// owning the focused editor picks up. Every action name is watched, so a test
+// can assert both what fired and that nothing else did.
+const ACTIONS = ["bold", "italic", "table", "link", "codeBlock", "blockquote", "image"];
+const fired: string[] = [];
+const record = (e: Event) => fired.push(e.type);
+
+beforeAll(() => ACTIONS.forEach((a) => window.addEventListener(a, record)));
+afterAll(() => ACTIONS.forEach((a) => window.removeEventListener(a, record)));
 
 interface KeyInit {
   key?: string;
@@ -17,7 +21,7 @@ interface KeyInit {
   shiftKey?: boolean;
 }
 
-function press(init: KeyInit) {
+function press(init: KeyInit): { handled: boolean; preventDefault: ReturnType<typeof vi.fn> } {
   const preventDefault = vi.fn();
   const event = {
     key: "",
@@ -34,7 +38,9 @@ function press(init: KeyInit) {
 }
 
 describe("editor keyboard shortcuts", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    fired.length = 0;
+  });
 
   test("Ctrl+B asks for bold and keeps the keystroke from the browser", () => {
     // Firefox binds Ctrl+B to the bookmarks sidebar, so not preventing the
@@ -43,26 +49,26 @@ describe("editor keyboard shortcuts", () => {
 
     expect(handled).toBe(true);
     expect(preventDefault).toHaveBeenCalled();
-    expect(detectEvent).toHaveBeenCalledWith("bold");
+    expect(fired).toEqual(["bold"]);
   });
 
   test("Cmd+B asks for bold", () => {
     press({ key: "b", code: "KeyB", metaKey: true });
 
-    expect(detectEvent).toHaveBeenCalledWith("bold");
+    expect(fired).toEqual(["bold"]);
   });
 
   test("Ctrl+I asks for italic", () => {
     press({ key: "i", code: "KeyI", ctrlKey: true });
 
-    expect(detectEvent).toHaveBeenCalledWith("italic");
+    expect(fired).toEqual(["italic"]);
   });
 
   test("Alt+B still asks for bold", () => {
     const { handled } = press({ key: "b", code: "KeyB", altKey: true });
 
     expect(handled).toBe(true);
-    expect(detectEvent).toHaveBeenCalledWith("bold");
+    expect(fired).toEqual(["bold"]);
   });
 
   test("Alt+B on macOS asks for bold", () => {
@@ -71,7 +77,7 @@ describe("editor keyboard shortcuts", () => {
     const { handled } = press({ key: "∫", code: "KeyB", altKey: true });
 
     expect(handled).toBe(true);
-    expect(detectEvent).toHaveBeenCalledWith("bold");
+    expect(fired).toEqual(["bold"]);
   });
 
   test.each([
@@ -83,7 +89,21 @@ describe("editor keyboard shortcuts", () => {
   ])("Alt+%s asks for %s", (letter, action) => {
     press({ key: letter, code: `Key${letter.toUpperCase()}`, altKey: true });
 
-    expect(detectEvent).toHaveBeenCalledWith(action);
+    expect(fired).toEqual([action]);
+  });
+
+  test.each([
+    ["Cmd+C", { key: "c", code: "KeyI", metaKey: true }],
+    ["Cmd+X", { key: "x", code: "KeyB", metaKey: true }]
+  ])("%s on a Dvorak layout is left to the browser", (_label, init) => {
+    // Dvorak sends the letter in `key` and a different physical key in `code`,
+    // so reading `code` for Ctrl/Cmd combos would fire italic/bold here and
+    // swallow the copy and the cut.
+    const { handled, preventDefault } = press(init);
+
+    expect(handled).toBe(false);
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(fired).toEqual([]);
   });
 
   test("Ctrl is only bound to bold and italic", () => {
@@ -93,7 +113,7 @@ describe("editor keyboard shortcuts", () => {
 
     expect(handled).toBe(false);
     expect(preventDefault).not.toHaveBeenCalled();
-    expect(detectEvent).not.toHaveBeenCalled();
+    expect(fired).toEqual([]);
   });
 
   test.each([
@@ -106,6 +126,6 @@ describe("editor keyboard shortcuts", () => {
 
     expect(handled).toBe(false);
     expect(preventDefault).not.toHaveBeenCalled();
-    expect(detectEvent).not.toHaveBeenCalled();
+    expect(fired).toEqual([]);
   });
 });
