@@ -15,11 +15,18 @@ vi.mock("@/core/global-store", () => ({
   })
 }));
 
-// Mock subscribeEmail - extend the global @ecency/sdk mock
-const mockSubscribeEmail = vi.fn();
+// The rest of this file relies on the real SDK (the global setup mock is narrower),
+// so keep the passthrough that the old subscribeEmail override provided as a side effect.
 vi.mock("@ecency/sdk", async (importOriginal) => {
   const actual = await importOriginal<any>();
-  return { ...actual, subscribeEmail: (...args: any[]) => mockSubscribeEmail(...args) };
+  return { ...actual };
+});
+
+// The form subscribes through the newsletter service; mock its browser client.
+const mockSubscribe = vi.fn();
+vi.mock("@/features/newsletter", async (importOriginal) => {
+  const actual = await importOriginal<any>();
+  return { ...actual, newsletterApi: { ...actual.newsletterApi, subscribe: (...args: any[]) => mockSubscribe(...args) } };
 });
 
 vi.mock("@/features/shared/feedback", () => ({
@@ -39,9 +46,10 @@ vi.mock("@ui/svg", async (importOriginal) => {
 // LandingTrending is an async server component that fetches ranked posts via
 // prefetchQuery; stub it so the test drives the rendered output deterministically.
 const mockPrefetchQuery = vi.fn();
-vi.mock("@/core/react-query", () => ({
-  prefetchQuery: (...args: any[]) => mockPrefetchQuery(...args)
-}));
+vi.mock("@/core/react-query", async (importOriginal) => {
+  const actual = await importOriginal<any>();
+  return { ...actual, prefetchQuery: (...args: any[]) => mockPrefetchQuery(...args) };
+});
 
 // Extend the global @/utils mock with landing-page-specific exports
 vi.mock("@/utils", async (importOriginal) => {
@@ -150,57 +158,55 @@ describe("LandingSubscribeForm", () => {
     vi.clearAllMocks();
   });
 
-  it("renders email input and submit button", () => {
+  it("renders email input, cadence choice and submit button", () => {
     render(<LandingSubscribeForm />);
     expect(screen.getByPlaceholderText("landing-page.enter-your-email-adress")).toBeInTheDocument();
+    expect(screen.getByRole("combobox")).toHaveValue("weekly");
     expect(screen.getByText("landing-page.send")).toBeInTheDocument();
   });
 
-  it("calls subscribeEmail on submit and shows success for 2xx", async () => {
-    mockSubscribeEmail.mockResolvedValue({ status: 200 });
+  it("subscribes the address to the site digest through the service and shows check-your-inbox on pending", async () => {
+    // What the service returns to an unproven caller: this and nothing more.
+    mockSubscribe.mockResolvedValue({ status: "pending_confirmation" });
+
+    render(<LandingSubscribeForm />);
+    const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress");
+    fireEvent.change(input, { target: { value: "  test@example.com " } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "monthly" } });
+    fireEvent.submit(input.closest("form")!);
+
+    await waitFor(() => {
+      expect(mockSubscribe).toHaveBeenCalledWith(
+        { email: "test@example.com", type: "site", target: "ecency", cadence: "monthly", source: "landing-page" },
+        undefined // anonymous: no account attributed
+      );
+      expect(success).toHaveBeenCalledWith("landing-page.check-inbox");
+    });
+    // The form is replaced by the instruction; nothing else to do here.
+    expect(screen.getByText("landing-page.check-inbox")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("landing-page.enter-your-email-adress")).not.toBeInTheDocument();
+  });
+
+  it("shows the subscribed message when a proven caller is active at once", async () => {
+    mockSubscribe.mockResolvedValue({ status: "active", created: true });
+    render(<LandingSubscribeForm />);
+    const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress");
+    fireEvent.change(input, { target: { value: "test@example.com" } });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(success).toHaveBeenCalledWith("landing-page.success-message-subscribe"));
+  });
+
+  it("shows an error on API failure and keeps the form", async () => {
+    mockSubscribe.mockRejectedValue(new Error("Network error"));
 
     render(<LandingSubscribeForm />);
     const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress");
     fireEvent.change(input, { target: { value: "test@example.com" } });
-    const form = input.closest("form");
-    expect(form).not.toBeNull();
-    fireEvent.submit(form!);
+    fireEvent.submit(input.closest("form")!);
 
-    await waitFor(() => {
-      expect(mockSubscribeEmail).toHaveBeenCalledWith("test@example.com");
-      expect(success).toHaveBeenCalledWith("landing-page.success-message-subscribe");
-    });
-  });
-
-  it("shows error on API failure", async () => {
-    mockSubscribeEmail.mockRejectedValue(new Error("Network error"));
-
-    render(<LandingSubscribeForm />);
-    const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress");
-    fireEvent.change(input, { target: { value: "test@example.com" } });
-    const form = input.closest("form");
-    expect(form).not.toBeNull();
-    fireEvent.submit(form!);
-
-    await waitFor(() => {
-      expect(errorFn).toHaveBeenCalledWith("landing-page.error-occured");
-    });
-  });
-
-  it("resets email and loading state in finally block", async () => {
-    mockSubscribeEmail.mockResolvedValue({ status: 200 });
-
-    render(<LandingSubscribeForm />);
-    const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "test@example.com" } });
-    const form = input.closest("form");
-    expect(form).not.toBeNull();
-    fireEvent.submit(form!);
-
-    await waitFor(() => {
-      expect(input.value).toBe("");
-      expect(screen.getByText("landing-page.send")).toBeInTheDocument();
-    });
+    await waitFor(() => expect(errorFn).toHaveBeenCalledWith("landing-page.error-occured"));
+    expect(screen.getByPlaceholderText("landing-page.enter-your-email-adress")).toBeInTheDocument();
+    expect(screen.getByText("landing-page.send")).toBeInTheDocument();
   });
 });
 

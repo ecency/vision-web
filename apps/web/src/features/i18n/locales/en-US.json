@@ -3060,7 +3060,9 @@
     "copy-rights": "©{{year}} Ecency. All rights reserved.",
     "success-message-subscribe": "You are subscribed to our newsletters!",
     "validation-email": "A valid email is required",
-    "error-occured": "A server error has been occurred."
+    "error-occured": "A server error has been occurred.",
+    "check-inbox": "Almost there. We sent you an email; open it and press the button to start receiving the digest.",
+    "subscribe-disclosure": "By subscribing you agree to receive the Ecency digest by email. Every email has a link to leave it, or to stop all Ecency email at once."
   },
   "layouts": {
     "grid": "Grid",
