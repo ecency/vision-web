@@ -4241,6 +4241,7 @@
     "post-prompt-body-creator": "New posts by this author, as a weekly or monthly digest. Unsubscribe any time.",
     "post-prompt-body-community": "The best of this community, as a weekly or monthly digest. Unsubscribe any time.",
     "post-prompt-dismiss": "Not now",
-    "post-prompt-subscribe": "Subscribe"
+    "post-prompt-subscribe": "Subscribe",
+    "subscribe-link": "Subscribe link"
   }
 }

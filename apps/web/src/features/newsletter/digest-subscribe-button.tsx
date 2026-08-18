@@ -8,8 +8,6 @@ import { Button, ButtonProps } from "@ui/button";
 import i18next from "i18next";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SUBSCRIBE_PARAM, SUBSCRIBE_PARAM_VALUE } from "./list-building";
-
-const noop = () => {};
 import { DigestSubscribeDialog } from "./digest-subscribe-dialog";
 import { useDigestSubscription } from "./hooks";
 import { useNewsletterEnabled } from "./runtime";
@@ -40,10 +38,14 @@ interface Props {
  * in sync with the router), so it needs neither the app router nor a Suspense
  * boundary; a button rendered outside a Next page still works.
  */
-function useSubscribeLinkOpener(onOpen: () => void): void {
+function useSubscribeLinkOpener(onOpen: (() => void) | null | undefined): void {
   const opened = useRef(false);
   useEffect(() => {
-    if (opened.current || typeof window === "undefined") return;
+    // undefined: not known yet whether this list is offered here (the Pro
+    // roster is still loading) — do nothing, touch nothing, try again on the
+    // next render. null: known not offered — leave the link alone. A function:
+    // open once and clean the URL.
+    if (!onOpen || opened.current || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get(SUBSCRIBE_PARAM) !== SUBSCRIBE_PARAM_VALUE) return;
     opened.current = true;
@@ -58,10 +60,13 @@ export function DigestSubscribeButton({ type, target, targetLabel, source, size,
   const enabled = useNewsletterEnabled();
   const [open, setOpen] = useState(false);
   const { subscription } = useDigestSubscription(type, target);
-  const { data: pro } = useQuery({ ...getProMembersQueryOptions(), enabled: enabled && type === "creator" });
+  const proQuery = useQuery({ ...getProMembersQueryOptions(), enabled: enabled && type === "creator" });
+  const pro = proQuery.data;
   const offered = enabled && (type !== "creator" || isProMember(pro?.members, target));
+  // For a creator list, "offered" is unknown until the roster has answered.
+  const eligibilityKnown = type !== "creator" || !enabled || proQuery.isSuccess || proQuery.isError;
   const openFromLink = useCallback(() => setOpen(true), []);
-  useSubscribeLinkOpener(offered ? openFromLink : noop);
+  useSubscribeLinkOpener(!eligibilityKnown ? undefined : offered ? openFromLink : null);
 
   if (!offered) return null;
 

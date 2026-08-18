@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { getProMembersQueryOptions } from "@ecency/sdk";
+import { getCommunityQueryOptions, getProMembersQueryOptions } from "@ecency/sdk";
 import type { Entry } from "@/entities";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { isProMember } from "@/features/pro/pro-config";
@@ -29,18 +29,28 @@ export function PostSubscribePrompt({ entry, communityTitle, className }: { entr
   const me = activeUser?.username?.toLowerCase();
   const isTopLevel = !entry.parent_author && (entry.depth ?? 0) === 0;
   const inCommunity = /^hive-\d+$/.test(entry.category);
-  const { data: pro } = useQuery({ ...getProMembersQueryOptions(), enabled: enabled && !!me && isTopLevel });
+  const proQuery = useQuery({ ...getProMembersQueryOptions(), enabled: enabled && !!me && isTopLevel });
+  // Until the roster has answered, no list is offered: deciding "not Pro" from
+  // a still-loading roster would offer the community's list to a reader who
+  // should get the author's. A failed roster falls back to the community's.
+  const rosterKnown = proQuery.isSuccess || proQuery.isError;
+  const authorIsPro = isProMember(proQuery.data?.members, entry.author);
 
   // Which list to offer: the author's own when they are Pro, else the community's.
-  const authorIsPro = isProMember(pro?.members, entry.author);
-  const list: { type: "creator" | "community"; target: string; label: string } | null =
-    !enabled || !me || !isTopLevel
+  const list: { type: "creator" | "community"; target: string } | null =
+    !enabled || !me || !isTopLevel || !rosterKnown
       ? null
       : authorIsPro && me !== entry.author
-        ? { type: "creator", target: entry.author, label: `@${entry.author}` }
+        ? { type: "creator", target: entry.author }
         : inCommunity
-          ? { type: "community", target: entry.category, label: communityTitle || entry.category }
+          ? { type: "community", target: entry.category }
           : null;
+  // The community's title, unless the page passed it; same cache entry the community pages use.
+  const { data: community } = useQuery({
+    ...getCommunityQueryOptions(entry.category),
+    enabled: !!list && list.type === "community" && !communityTitle
+  });
+  const label = !list ? "" : list.type === "creator" ? `@${list.target}` : communityTitle || community?.title || list.target;
 
   const { subscription, isSuccess } = useDigestSubscription(list?.type ?? "creator", list?.target ?? "");
   const [dismissed, setDismissed] = useState(true);
@@ -54,7 +64,12 @@ export function PostSubscribePrompt({ entry, communityTitle, className }: { entr
     }
   }, [list?.type, list?.target, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!list || !me || dismissed || !isSuccess || subscription) return null;
+  if (!list || !me) return null;
+  // The card goes once dismissed or once a subscription exists; the dialog,
+  // if open, stays: a pending-confirmation outcome ("check your inbox") is
+  // shown by the dialog after the refetch, and unmounting it would lose it.
+  const showCard = !dismissed && isSuccess && !subscription;
+  if (!showCard && !open) return null;
 
   const dismiss = () => {
     setDismissed(true);
@@ -66,23 +81,27 @@ export function PostSubscribePrompt({ entry, communityTitle, className }: { entr
   };
 
   return (
-    <div className={`rounded-xl border border-[--border-color] bg-light-200 dark:bg-dark-200 p-3 md:p-4 flex flex-wrap items-center gap-3 ${className ?? ""}`} role="region" aria-label={i18next.t("newsletter.post-prompt-title", { list: list.label })}>
-      <UilEnvelope className="size-5 opacity-70" aria-hidden="true" />
-      <div className="flex-1 min-w-[12rem]">
-        <div className="font-semibold text-sm">{i18next.t("newsletter.post-prompt-title", { list: list.label })}</div>
-        <div className="text-xs opacity-70">
-          {i18next.t(list.type === "creator" ? "newsletter.post-prompt-body-creator" : "newsletter.post-prompt-body-community")}
+    <>
+      {showCard && (
+        <div className={`rounded-xl border border-[--border-color] bg-light-200 dark:bg-dark-200 p-3 md:p-4 flex flex-wrap items-center gap-3 ${className ?? ""}`} role="region" aria-label={i18next.t("newsletter.post-prompt-title", { list: label })}>
+          <UilEnvelope className="size-5 opacity-70" aria-hidden="true" />
+          <div className="flex-1 min-w-[12rem]">
+            <div className="font-semibold text-sm">{i18next.t("newsletter.post-prompt-title", { list: label })}</div>
+            <div className="text-xs opacity-70">
+              {i18next.t(list.type === "creator" ? "newsletter.post-prompt-body-creator" : "newsletter.post-prompt-body-community")}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" appearance="gray-link" onClick={dismiss}>
+              {i18next.t("newsletter.post-prompt-dismiss")}
+            </Button>
+            <Button size="sm" onClick={() => setOpen(true)}>
+              {i18next.t("newsletter.post-prompt-subscribe")}
+            </Button>
+          </div>
         </div>
-      </div>
-      <div className="flex gap-2">
-        <Button size="sm" appearance="gray-link" onClick={dismiss}>
-          {i18next.t("newsletter.post-prompt-dismiss")}
-        </Button>
-        <Button size="sm" onClick={() => setOpen(true)}>
-          {i18next.t("newsletter.post-prompt-subscribe")}
-        </Button>
-      </div>
-      {open && <DigestSubscribeDialog type={list.type} target={list.target} targetLabel={list.label} source="post-page" show={open} onHide={() => setOpen(false)} />}
-    </div>
+      )}
+      {open && <DigestSubscribeDialog type={list.type} target={list.target} targetLabel={label} source="post-page" show={open} onHide={() => setOpen(false)} />}
+    </>
   );
 }

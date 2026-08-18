@@ -13,6 +13,15 @@ vi.mock("@/config", () => ({
     getConfigValue: (fn: (c: unknown) => unknown) => fn({ visionFeatures: { newsletter: { enabled: flags.newsletter } } })
   }
 }));
+// The roster is answered by `roster.fn` so a test can hold it pending; the
+// community query answers with a title. Seeded roster data stays (staleTime is
+// Infinity in the test client), so seeding tests are unaffected.
+const roster = vi.hoisted(() => ({ fn: vi.fn(() => new Promise<{ members: string[] }>(() => {})) }));
+vi.mock("@ecency/sdk", async () => ({
+  ...(await vi.importActual<object>("@ecency/sdk")),
+  getProMembersQueryOptions: () => ({ queryKey: ["accounts", "pro-members"], queryFn: () => roster.fn() }),
+  getCommunityQueryOptions: (name: string) => ({ queryKey: ["community", name], queryFn: async () => ({ name, title: "Town Square", team: [] }) })
+}));
 vi.mock("@/utils", async () => ({
   ...(await vi.importActual<object>("@/utils")),
   random: vi.fn(),
@@ -59,6 +68,8 @@ describe("list building (vision-web#1537)", () => {
   afterEach(() => {
     cleanupModalContainers();
     vi.unstubAllGlobals();
+    window.history.replaceState(null, "", "/");
+    window.localStorage.clear();
   });
 
   it("subscribeLinkFor points at the list's own page with the opener parameter", () => {
@@ -82,6 +93,17 @@ describe("list building (vision-web#1537)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("when the clipboard is unavailable, the link is shown as selectable text instead", async () => {
+    fetchMock.mockReturnValue(json(200, standing({ weekly: 1, monthly: 0 })));
+    vi.stubGlobal("navigator", { ...navigator, clipboard: undefined });
+    render(<SubscriberCount type="creator" target="alice" isSender />);
+    await waitFor(() => expect(screen.getByText("newsletter.copy-subscribe-link")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("newsletter.copy-subscribe-link"));
+    const field = (await screen.findByLabelText("newsletter.subscribe-link")) as HTMLInputElement;
+    expect(field.value).toMatch(/\/@alice\?subscribe=digest$/);
+    expect(field.readOnly).toBe(true);
+  });
+
   it("a shared link (?subscribe=digest) opens the subscribe dialog once and cleans the URL", async () => {
     window.history.replaceState(null, "", "/@alice?subscribe=digest&x=1");
     fetchMock.mockReturnValue(json(200, { subscriptions: [] }));
@@ -92,6 +114,30 @@ describe("list building (vision-web#1537)", () => {
     await waitFor(() => expect(window.location.search).toBe("?x=1"));
     const dialog = document.querySelector("#modal-dialog-container") as HTMLElement;
     await waitFor(() => expect(within(dialog).getByText("newsletter.intro-creator")).toBeInTheDocument());
+  });
+
+  it("a shared creator link survives a roster that answers after mount: nothing is consumed until eligibility is known", async () => {
+    window.history.replaceState(null, "", "/@alice?subscribe=digest");
+    fetchMock.mockReturnValue(json(200, { subscriptions: [] }));
+    const client = createTestQueryClient();
+    let resolveRoster!: (v: { members: string[] }) => void;
+    roster.fn.mockImplementationOnce(() => new Promise<{ members: string[] }>((r) => (resolveRoster = r)));
+    render(<DigestSubscribeButton type="creator" target="alice" targetLabel="@alice" source="creator-page" />, client);
+    await new Promise((r) => setTimeout(r, 50));
+    // Roster still pending: the parameter is untouched and no dialog is open.
+    expect(window.location.search).toBe("?subscribe=digest");
+    expect(document.querySelector("#modal-dialog-container")?.textContent ?? "").toBe("");
+    resolveRoster({ members: ["alice"] });
+    await waitFor(() => expect(window.location.search).toBe(""));
+    const dialog = document.querySelector("#modal-dialog-container") as HTMLElement;
+    await waitFor(() => expect(within(dialog).getByText("newsletter.intro-creator")).toBeInTheDocument());
+    // A creator who turns out not to be Pro: the link is left alone, nothing opens.
+    window.history.replaceState(null, "", "/@bob?subscribe=digest");
+    const client2 = createTestQueryClient();
+    client2.setQueryData(["accounts", "pro-members"], { members: ["someone-else"] });
+    render(<DigestSubscribeButton type="creator" target="bob" targetLabel="@bob" source="creator-page" />, client2);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(window.location.search).toBe("?subscribe=digest");
   });
 
   it("at the end of a post, offers the author's digest to a signed-in reader who is not subscribed; remembers 'Not now'; nothing for the author, a subscriber, or when signed out", async () => {
@@ -134,15 +180,43 @@ describe("list building (vision-web#1537)", () => {
     expect(c4.textContent).toBe("");
   });
 
+  it("offers nothing while the Pro roster is still loading, so a Pro author's reader is not steered to the community list", async () => {
+    const client = createTestQueryClient();
+    client.setQueryData(digestSubscriptionsKey("alice"), []);
+    let resolveRoster!: (v: { members: string[] }) => void;
+    roster.fn.mockImplementationOnce(() => new Promise<{ members: string[] }>((r) => (resolveRoster = r)));
+    const entry = mockEntry({ author: "bob", permlink: "p", category: "hive-125125", parent_author: "", depth: 0 });
+    render(<PostSubscribePrompt entry={entry} communityTitle="Town Square" />, client);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole("region")).toBeNull();
+    resolveRoster({ members: ["bob"] });
+    await screen.findByRole("region", { name: "newsletter.post-prompt-title" });
+    expect(screen.getByText("newsletter.post-prompt-body-creator")).toBeInTheDocument();
+  });
+
   it("falls back to the community's digest for a post made in a community when the author is not Pro", async () => {
     const client = createTestQueryClient();
     client.setQueryData(["accounts", "pro-members"], { members: [] });
     client.setQueryData(digestSubscriptionsKey("alice"), []);
     window.localStorage.clear();
     const entry = mockEntry({ author: "bob", permlink: "p", category: "hive-125125", parent_author: "", depth: 0 });
-    render(<PostSubscribePrompt entry={entry} communityTitle="Town Square" />, client);
+    const { unmount: u0 } = render(<PostSubscribePrompt entry={entry} />, client);
     await screen.findByRole("region", { name: "newsletter.post-prompt-title" });
     expect(screen.getByText("newsletter.post-prompt-body-community")).toBeInTheDocument();
+    // The community's title comes from the community query when the page did not pass it.
+    await waitFor(() => expect(screen.getByText("newsletter.post-prompt-subscribe")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("newsletter.post-prompt-subscribe"));
+    const dialog = document.querySelector("#modal-dialog-container") as HTMLElement;
+    await waitFor(() => expect(within(dialog).getByText("newsletter.intro-community")).toBeInTheDocument());
+    // While the dialog is open, a subscription appearing (the refetch after subscribing) hides
+    // the card but keeps the dialog, so its "check your inbox" outcome is not lost.
+    client.setQueryData(digestSubscriptionsKey("alice"), [{ id: "1", type: "community", target: "hive-125125", cadence: "weekly", status: "pending_confirmation", email: "a@e.com" }]);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.queryByRole("region")).toBeNull();
+    // Still mounted, now showing the pending state the dialog reads from the fresh subscription.
+    expect(within(dialog).getByText("newsletter.status-pending")).toBeInTheDocument();
+    u0();
+    client.setQueryData(digestSubscriptionsKey("alice"), []);
     // A comment gets no prompt.
     const comment = mockEntry({ author: "bob", permlink: "re", category: "hive-125125", parent_author: "x", depth: 1 });
     const { container } = render(<PostSubscribePrompt entry={comment} />, client);
