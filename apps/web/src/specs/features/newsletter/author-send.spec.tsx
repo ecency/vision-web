@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement, ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
-import { AuthorSendDialog, SentIssues, useAuthorSendTarget } from "@/features/newsletter";
+import { AuthorSendDialog, ComposeDigestButton, ComposeDigestDialog, SentIssues, useAuthorSendTarget } from "@/features/newsletter";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import {
   cleanupModalContainers,
@@ -220,5 +220,101 @@ describe("SentIssues", () => {
     fetchMock.mockReturnValue(json(503, { error: "down" }));
     render(<SentIssues type="creator" target="alice" isSender />);
     await waitFor(() => expect(screen.getByText("newsletter.sent-issues-unavailable")).toBeInTheDocument());
+  });
+});
+
+describe("ComposeDigestDialog", () => {
+  const candidates = [
+    { author: "alice", permlink: "one", title: "One", created: "2026-08-17T09:00:00Z", featured: false },
+    { author: "alice", permlink: "two", title: "Two", created: "2026-08-16T09:00:00Z", featured: true },
+    { author: "alice", permlink: "three", title: "Three", created: "2026-08-15T09:00:00Z", featured: false }
+  ];
+  beforeEach(() => {
+    setupModalContainers();
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockReset();
+    flags.newsletter = true;
+    loggedIn("alice");
+  });
+  afterEach(() => {
+    cleanupModalContainers();
+    vi.unstubAllGlobals();
+  });
+
+  it("picks 2..10 posts in the sender's order, takes subject and intro, then hands the composition to the send flow", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.startsWith("/api/newsletter/posts")) return json(200, { posts: candidates });
+      if (url.endsWith("/preview")) return json(200, preview({ subject: "Two things", posts: [{ author: "alice", permlink: "two", title: "Two" }, { author: "alice", permlink: "one", title: "One" }] }));
+      return json(201, { issues: [{ issueId: "i1", cadence: "weekly", period: "2026-08-17", send: { recipients: 12, sent: 12, pending: 0 } }] });
+    });
+    render(<ComposeDigestDialog target={target} show onHide={() => {}} />);
+    await screen.findByRole("list", { name: "newsletter.compose-pick" });
+    expect(screen.getByText(/newsletter.compose-featured/)).toBeInTheDocument();
+    const cont = () => screen.getByText("newsletter.compose-continue").closest("button")!;
+    expect(cont()).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("Two"));
+    expect(cont()).toBeDisabled(); // one is not enough
+    fireEvent.click(screen.getByLabelText("One"));
+    expect(cont()).not.toBeDisabled();
+    fireEvent.change(screen.getByLabelText("newsletter.compose-subject"), { target: { value: "Two things" } });
+    fireEvent.change(screen.getByLabelText("newsletter.compose-intro"), { target: { value: "Hi all" } });
+    fireEvent.click(cont());
+    // The send flow previews the composition: picked order (Two, then One), subject and intro travel with it.
+    await waitFor(() => expect(screen.getByText("Two things")).toBeInTheDocument());
+    const previewCall = fetchMock.mock.calls.find((c) => String(c[0]).endsWith("/preview"))!;
+    expect(JSON.parse(previewCall[1].body)).toEqual({
+      type: "creator",
+      target: "alice",
+      posts: [{ author: "alice", permlink: "two" }, { author: "alice", permlink: "one" }],
+      subject: "Two things",
+      intro: "Hi all"
+    });
+    // Back returns to the picker with the choices kept.
+    fireEvent.click(screen.getByText("g.back"));
+    await screen.findByRole("list", { name: "newsletter.compose-pick" });
+    expect((screen.getByLabelText("Two") as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(cont());
+    await waitFor(() => expect(screen.getByText("newsletter.send-now")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("newsletter.send-now"));
+    await waitFor(() => expect(screen.getByText("newsletter.send-done")).toBeInTheDocument());
+  });
+
+  it("says when there are no candidates or they could not be loaded", async () => {
+    fetchMock.mockImplementation(() => json(200, { posts: [] }));
+    const { unmount } = render(<ComposeDigestDialog target={target} show onHide={() => {}} />);
+    await waitFor(() => expect(screen.getByText("newsletter.compose-no-candidates")).toBeInTheDocument());
+    unmount();
+    fetchMock.mockImplementation(() => json(503, { error: "down" }));
+    render(<ComposeDigestDialog target={target} show onHide={() => {}} />);
+    await waitFor(() => expect(screen.getByText("newsletter.compose-candidates-unavailable")).toBeInTheDocument());
+  });
+});
+
+describe("ComposeDigestButton", () => {
+  beforeEach(() => {
+    flags.newsletter = true;
+    loggedIn("alice");
+  });
+
+  it("shows for a Pro creator on their own surface and for a community sender; not for a non-Pro creator, a non-sender, or with the feature off", () => {
+    const client = createTestQueryClient();
+    client.setQueryData(["accounts", "pro-members"], { members: ["alice"] });
+    const { unmount: u1 } = render(<ComposeDigestButton target={target} isSender />, client);
+    expect(screen.getByText("newsletter.compose-button")).toBeInTheDocument();
+    u1();
+    const { unmount: u2 } = render(<ComposeDigestButton target={{ type: "community", target: "hive-125125", label: "Town Square" }} isSender />, client);
+    expect(screen.getByText("newsletter.compose-button")).toBeInTheDocument();
+    u2();
+    client.setQueryData(["accounts", "pro-members"], { members: ["someone-else"] });
+    const { container: c1, unmount: u3 } = render(<ComposeDigestButton target={target} isSender />, client);
+    expect(c1.textContent).toBe("");
+    u3();
+    client.setQueryData(["accounts", "pro-members"], { members: ["alice"] });
+    const { container: c2, unmount: u4 } = render(<ComposeDigestButton target={target} isSender={false} />, client);
+    expect(c2.textContent).toBe("");
+    u4();
+    flags.newsletter = false;
+    const { container: c3 } = render(<ComposeDigestButton target={target} isSender />, client);
+    expect(c3.textContent).toBe("");
   });
 });

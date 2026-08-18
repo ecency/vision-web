@@ -11,3 +11,4 @@ export * from "./author-send-api";
 export * from "./author-send-eligibility";
 export * from "./author-send-dialog";
 export * from "./sent-issues";
+export * from "./compose-digest-dialog";

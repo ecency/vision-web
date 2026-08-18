@@ -125,6 +125,43 @@ describe("author send routes", () => {
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
+  it("accepts a composition (posts, subject, intro), binds every post to a creator sender, bounds and cleans the text; candidates route uses the send gate", async () => {
+    mocks.verify.mockResolvedValue({ ok: true, username: "alice" });
+    mocks.pro.mockResolvedValue(true);
+    mocks.fetch.mockResolvedValue(upstream(201, { issues: [] }));
+    const { POST } = await import("@/app/api/newsletter/send/route");
+    const compose = { type: "creator", target: "alice", posts: [{ author: "alice", permlink: "one" }, { author: "Alice", permlink: "two" }], subject: "  Two   things ", intro: "Hi\n\nall" };
+    const res = await POST(req(compose, { "x-hs-token": "tok" }));
+    expect(res.status).toBe(201);
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toEqual({
+      type: "creator",
+      target: "alice",
+      posts: [{ author: "alice", permlink: "one" }, { author: "alice", permlink: "two" }],
+      subject: "Two things",
+      intro: "Hi all",
+      requestedBy: "alice"
+    });
+    // A foreign post inside the composition is refused for a creator list.
+    expect((await POST(req({ ...compose, posts: [{ author: "alice", permlink: "one" }, { author: "bob", permlink: "x" }] }, { "x-hs-token": "tok" }))).status).toBe(403);
+    // Bounds and shape.
+    expect((await POST(req({ ...compose, posts: [] }, { "x-hs-token": "tok" }))).status).toBe(400);
+    expect((await POST(req({ ...compose, posts: Array.from({ length: 11 }, (_, i) => ({ author: "alice", permlink: `p${i}` })) }, { "x-hs-token": "tok" }))).status).toBe(400);
+    expect((await POST(req({ ...compose, posts: [{ author: "alice", permlink: "Bad!" }] }, { "x-hs-token": "tok" }))).status).toBe(400);
+    const long = await POST(req({ ...compose, subject: "s".repeat(500), intro: "i".repeat(2000) }, { "x-hs-token": "tok" }));
+    expect(long.status).toBe(201);
+    const sent = JSON.parse(mocks.fetch.mock.calls[mocks.fetch.mock.calls.length - 1][1].body);
+    expect(sent.subject).toHaveLength(120);
+    expect(sent.intro).toHaveLength(500);
+    // Candidates: same gate as sending (a mod is refused), relayed with the limit.
+    const { GET: POSTS } = await import("@/app/api/newsletter/posts/route");
+    mocks.fetch.mockResolvedValue(upstream(200, { posts: [] }));
+    expect((await POSTS(req(undefined, { "x-hs-token": "tok" }, "type=creator&target=alice&limit=5"))).status).toBe(200);
+    expect(mocks.fetch.mock.calls[mocks.fetch.mock.calls.length - 1][0]).toBe("http://news.internal:3300/api/posts?type=creator&target=alice&limit=5");
+    expect((await POSTS(req(undefined, { "x-hs-token": "tok" }, "type=creator&target=alice&limit=99"))).status).toBe(400);
+    mocks.getCommunity.mockResolvedValue({ name: "hive-125125", team: [["alice", "mod", ""]] });
+    expect((await POSTS(req(undefined, { "x-hs-token": "tok" }, "type=community&target=hive-125125"))).status).toBe(403);
+  });
+
   it("validates the body, requires identity, and answers 503 unconfigured", async () => {
     mocks.verify.mockResolvedValue({ ok: true, username: "alice" });
     mocks.pro.mockResolvedValue(true);
