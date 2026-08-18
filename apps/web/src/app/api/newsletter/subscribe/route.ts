@@ -10,9 +10,9 @@ import {
   relay
 } from "@/server/newsletter-internal";
 
-const TYPES = new Set(["community", "creator"]);
+const TYPES = new Set(["community", "creator", "site"]);
 const CADENCES = new Set(["weekly", "monthly"]);
-const SOURCES = new Set(["community-page", "creator-page", "settings"]);
+const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-page"]);
 
 /**
  * Subscribe to a community or creator digest.
@@ -25,6 +25,8 @@ const SOURCES = new Set(["community-page", "creator-page", "settings"]);
  *
  * Creator digests are offered only for Ecency Pro creators, checked here against the
  * roster on the server: the button on the profile is a convenience, this is the gate.
+ * The site digest (`type: "site"`, the homepage form) has one target, `ecency`, which the
+ * service enforces.
  */
 export async function POST(request: NextRequest) {
   if (!newsletterConfigured()) return notConfigured();

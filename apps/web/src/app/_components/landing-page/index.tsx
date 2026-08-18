@@ -4,6 +4,7 @@ import { initI18next } from "@/features/i18n";
 import defaults from "@/defaults.json";
 import { LandingHeroActions } from "./landing-hero-actions";
 import { LandingSubscribeForm } from "./landing-subscribe-form";
+import { EcencyConfigManager } from "@/config";
 import { LandingSignInLink } from "./landing-sign-in-link";
 import { LandingDownloadLinks } from "./landing-download-links";
 import { Suspense } from "react";
@@ -277,11 +278,16 @@ export async function LandingPage() {
             </nav>
 
             <div className="col-span-2">
-              <h2 className="text-lg font-semibold">{t("landing-page.subscribe-us")}</h2>
-              <div className="mt-3 [&_form]:flex [&_form]:gap-2 [&_input]:flex-1 [&_input]:h-11 [&_input]:px-3 [&_input]:rounded-lg [&_input]:border [&_input]:border-[--border-color] [&_input]:bg-white [&_input]:dark:bg-dark-200 [&_button]:h-11 [&_button]:px-5 [&_button]:rounded-lg [&_button]:bg-blue-dark-sky [&_button]:text-white [&_button]:font-medium">
-                <LandingSubscribeForm />
-              </div>
-              <p className="mt-2 text-sm opacity-60">{t("landing-page.subscribe-paragraph")}</p>
+              <EcencyConfigManager.Conditional
+                condition={({ visionFeatures }) => visionFeatures.newsletter.enabled}
+              >
+                <h2 className="text-lg font-semibold">{t("landing-page.subscribe-us")}</h2>
+                <div className="mt-3 [&_form]:flex [&_form]:flex-wrap [&_form]:gap-2 [&_input]:flex-1 [&_input]:min-w-[12rem] [&_input]:h-11 [&_input]:px-3 [&_input]:rounded-lg [&_input]:border [&_input]:border-[--border-color] [&_input]:bg-white [&_input]:dark:bg-dark-200 [&_select]:h-11 [&_select]:px-3 [&_select]:rounded-lg [&_select]:border [&_select]:border-[--border-color] [&_select]:bg-white [&_select]:dark:bg-dark-200 [&_button]:h-11 [&_button]:px-5 [&_button]:rounded-lg [&_button]:bg-blue-dark-sky [&_button]:text-white [&_button]:font-medium">
+                  <LandingSubscribeForm />
+                </div>
+                <p className="mt-2 text-sm opacity-60">{t("landing-page.subscribe-paragraph")}</p>
+                <p className="mt-1 text-xs opacity-60">{t("landing-page.subscribe-disclosure")}</p>
+              </EcencyConfigManager.Conditional>
               <ul className="mt-4 flex gap-4 p-0 m-0 list-none">
                 {SOCIALS.map((s) => (
                   <li key={s.key}>

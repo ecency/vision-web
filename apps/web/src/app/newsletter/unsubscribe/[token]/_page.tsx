@@ -1,6 +1,6 @@
 "use client";
 
-import { newsletterApi, NewsletterApiError, newsletterKeys } from "@/features/newsletter";
+import { describeDigest, newsletterApi, NewsletterApiError, newsletterKeys } from "@/features/newsletter";
 import { Alert } from "@ui/alert";
 import { Button } from "@ui/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -23,13 +23,7 @@ export function UnsubscribePage({ token }: { token: string }) {
   const stopAll = useMutation({ mutationFn: () => newsletterApi.unsubscribeEverything(token) });
 
   const s = inspect.data?.subscription;
-  const name = s
-    ? s.type === "community"
-      ? i18next.t("newsletter.row-community", { name: s.target })
-      : s.type === "creator"
-        ? i18next.t("newsletter.row-creator", { name: s.target })
-        : i18next.t("newsletter.row-own")
-    : "";
+  const name = s ? describeDigest(s.type, s.target) : "";
 
   return (
     <div className="max-w-xl mx-auto py-10">

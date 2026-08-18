@@ -122,6 +122,14 @@ describe("POST /api/newsletter/subscribe", () => {
     expect(mocks.isPro).toHaveBeenLastCalledWith("good-karma");
   });
 
+  it("accepts the site digest from the landing page and relays it without a Pro check", async () => {
+    mocks.fetch.mockResolvedValue(upstream(200, { status: "pending_confirmation" }));
+    const r = await post({ email: "alice@example.com", type: "site", target: "ecency", cadence: "weekly", source: "landing-page" });
+    expect(r.status).toBe(200);
+    expect(mocks.isPro).not.toHaveBeenCalled();
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toMatchObject({ type: "site", target: "ecency", source: "landing-page" });
+  });
+
   it("400s malformed input before it reaches the service", async () => {
     for (const bad of [
       { ...VALID, type: "own" },
