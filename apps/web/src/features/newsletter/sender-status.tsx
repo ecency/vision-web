@@ -32,14 +32,20 @@ export interface SenderStanding {
   };
 }
 
-export const senderStandingKey = (type: DigestType, target: string) =>
-  [QueryIdentifiers.NEWSLETTER_SENDER_STANDING, type, target] as const;
+/**
+ * Scoped to the VIEWER as well as the list: the standing is the sender's private
+ * view, and one browser can hold several accounts in turn. A key without the
+ * viewer would let a plain member render what a team member fetched minutes
+ * before under the same key.
+ */
+export const senderStandingKey = (type: DigestType, target: string, viewer: string | null | undefined) =>
+  [QueryIdentifiers.NEWSLETTER_SENDER_STANDING, type, target, viewer ?? "anon"] as const;
 
 export function useSenderStanding(type: "creator" | "community", target: string, isSender: boolean) {
   const enabled = useNewsletterEnabled();
   const { activeUser } = useActiveAccount();
   return useQuery({
-    queryKey: senderStandingKey(type, target),
+    queryKey: senderStandingKey(type, target, activeUser?.username),
     enabled: enabled && isSender && !!activeUser?.username && !!target,
     staleTime: 5 * 60_000,
     queryFn: async (): Promise<SenderStanding> => {
@@ -71,7 +77,8 @@ export function SenderStatusNotice({
   className?: string;
 }) {
   const { data } = useSenderStanding(type, target, isSender);
-  if (!data || data.status !== "suspended") return null;
+  // Belt to the key's brace: whatever the cache holds, a non-sender sees nothing.
+  if (!isSender || !data || data.status !== "suspended") return null;
   const since = data.since ? new Date(data.since).toLocaleDateString() : "";
   const reason = i18next.t(REASONS[data.reason ?? ""] ?? "newsletter.suspended-reason-manual");
   return (
