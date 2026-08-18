@@ -18,15 +18,20 @@ vi.mock("@/core/global-store", () => ({
 // The rest of this file relies on the real SDK (the global setup mock is narrower),
 // so keep the passthrough that the old subscribeEmail override provided as a side effect.
 vi.mock("@ecency/sdk", async (importOriginal) => {
-  const actual = await importOriginal<any>();
+  const actual = await importOriginal<typeof import("@ecency/sdk")>();
   return { ...actual };
 });
 
 // The form subscribes through the newsletter service; mock its browser client.
-const mockSubscribe = vi.fn();
+type NewsletterModule = typeof import("@/features/newsletter");
+type SubscribeFn = NewsletterModule["newsletterApi"]["subscribe"];
+const mockSubscribe = vi.fn<SubscribeFn>();
 vi.mock("@/features/newsletter", async (importOriginal) => {
-  const actual = await importOriginal<any>();
-  return { ...actual, newsletterApi: { ...actual.newsletterApi, subscribe: (...args: any[]) => mockSubscribe(...args) } };
+  const actual = await importOriginal<NewsletterModule>();
+  return {
+    ...actual,
+    newsletterApi: { ...actual.newsletterApi, subscribe: (...args: Parameters<SubscribeFn>) => mockSubscribe(...args) }
+  };
 });
 
 vi.mock("@/features/shared/feedback", () => ({
@@ -187,13 +192,16 @@ describe("LandingSubscribeForm", () => {
     expect(screen.queryByPlaceholderText("landing-page.enter-your-email-adress")).not.toBeInTheDocument();
   });
 
-  it("shows the subscribed message when a proven caller is active at once", async () => {
+  it("shows the subscribed state in the page when a proven caller is active at once", async () => {
     mockSubscribe.mockResolvedValue({ status: "active", created: true });
     render(<LandingSubscribeForm />);
     const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress");
     fireEvent.change(input, { target: { value: "test@example.com" } });
     fireEvent.submit(input.closest("form")!);
-    await waitFor(() => expect(success).toHaveBeenCalledWith("landing-page.success-message-subscribe"));
+    // The visible outcome, not only the toast: the message replaces the form.
+    expect(await screen.findByText("landing-page.success-message-subscribe")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("landing-page.enter-your-email-adress")).not.toBeInTheDocument();
+    expect(success).toHaveBeenCalledWith("landing-page.success-message-subscribe");
   });
 
   it("shows an error on API failure and keeps the form", async () => {
@@ -207,6 +215,20 @@ describe("LandingSubscribeForm", () => {
     await waitFor(() => expect(errorFn).toHaveBeenCalledWith("landing-page.error-occured"));
     expect(screen.getByPlaceholderText("landing-page.enter-your-email-adress")).toBeInTheDocument();
     expect(screen.getByText("landing-page.send")).toBeInTheDocument();
+  });
+
+  it("says the service is unavailable, not 'server error', on 502/503/504", async () => {
+    const { NewsletterApiError } = await import("@/features/newsletter");
+    for (const status of [502, 503, 504]) {
+      vi.mocked(errorFn).mockClear();
+      mockSubscribe.mockRejectedValueOnce(new NewsletterApiError("down", status));
+      const { unmount } = render(<LandingSubscribeForm />);
+      const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress");
+      fireEvent.change(input, { target: { value: "test@example.com" } });
+      fireEvent.submit(input.closest("form")!);
+      await waitFor(() => expect(errorFn).toHaveBeenCalledWith("newsletter.error-unavailable"));
+      unmount();
+    }
   });
 });
 
