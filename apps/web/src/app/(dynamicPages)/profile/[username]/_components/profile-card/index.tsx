@@ -133,8 +133,10 @@ export function ProfileCard({ account }: Props) {
       </div>
       <HivePosh username={account.name} className="mb-4" />
 
-      {/* Policing (vision-web#1513): the creator sees when their own digest is suspended, and why. */}
-      {isMyProfile && (
+      {/* Policing (vision-web#1513): the creator sees when their own digest is suspended, and why.
+          Gated on the account itself, not on isMyProfile, which also wants profile metadata that
+          not every account has; names compared lowercase, the stored username keeps its casing. */}
+      {activeUsername?.toLowerCase() === account.name && (
         <NewsletterGate>
           <SenderStatusNotice type="creator" target={account.name} isSender className="mb-4" />
         </NewsletterGate>

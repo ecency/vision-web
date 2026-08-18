@@ -51,10 +51,13 @@ export function CommunityCard({ community, account }: Props) {
     [roleInTeam]
   );
   const canEditTeam = useMemo(() => !!(roleInTeam && roleMap[roleInTeam]), [roleInTeam]);
-  const isDigestSender = useMemo(
-    () => !!(roleInTeam && [ROLES.OWNER.toString(), ROLES.ADMIN.toString(), ROLES.MOD.toString()].includes(roleInTeam)),
-    [roleInTeam]
-  );
+  // Names compared lowercase: the stored username keeps whatever casing was typed,
+  // team entries are canonical. Owner, admin and mod are the digest's senders.
+  const isDigestSender = useMemo(() => {
+    const me = activeUser?.username?.toLowerCase();
+    const mine = me ? community.team.find((x: (string | undefined)[]) => x[0]?.toLowerCase() === me) : undefined;
+    return !!(mine?.[1] && [ROLES.OWNER.toString(), ROLES.ADMIN.toString(), ROLES.MOD.toString()].includes(mine[1]));
+  }, [activeUser?.username, community.team]);
 
   return (
     <div className="community-card">

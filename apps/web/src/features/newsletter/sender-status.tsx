@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { QueryIdentifiers } from "@/core/react-query";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { ensureValidToken } from "@/utils";
@@ -41,7 +41,11 @@ export interface SenderStanding {
 export const senderStandingKey = (type: DigestType, target: string, viewer: string | null | undefined) =>
   [QueryIdentifiers.NEWSLETTER_SENDER_STANDING, type, target, viewer ?? "anon"] as const;
 
-export function useSenderStanding(type: "creator" | "community", target: string, isSender: boolean) {
+export function useSenderStanding(
+  type: "creator" | "community",
+  target: string,
+  isSender: boolean
+): UseQueryResult<SenderStanding, Error> {
   const enabled = useNewsletterEnabled();
   const { activeUser } = useActiveAccount();
   return useQuery({
@@ -85,7 +89,6 @@ export function SenderStatusNotice({
     <div
       role="status"
       className={`rounded-xl border border-red bg-red/10 px-4 py-3 text-sm text-red ${className ?? ""}`}
-      data-testid="newsletter-sender-suspended"
     >
       <div className="font-semibold">
         {i18next.t(type === "creator" ? "newsletter.suspended-title-creator" : "newsletter.suspended-title-community", { since })}
