@@ -199,7 +199,7 @@ export function useMenuItemsGenerator(
         () => ({
           label: i18next.t("newsletter.send-to-subscribers"),
           onClick: () => setSendNewsletter(true),
-          icon: <UilEnvelopeSend />
+          icon: <UilEnvelopeSend className="size-4" />
         })
       ),
       ...(extraMenuItems ?? []),
