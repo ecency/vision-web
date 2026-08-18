@@ -3,6 +3,7 @@
 import { useGlobalStore } from "@/core/global-store";
 import { Entry } from "@/entities";
 import { EntryPageNsfwWarning } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-nsfw-warning";
+import { needsNsfwGate } from "./entry-page-nsfw-gate";
 import React from "react";
 
 interface Props {
@@ -14,11 +15,7 @@ interface Props {
 export function EntryPageNsfwRevealing({ entry, showIfNsfw, children }: Props) {
   const globalNsfw = useGlobalStore((s) => s.nsfw);
 
-  const showNsfwWarning =
-      Array.isArray(entry.json_metadata?.tags) &&
-      entry.json_metadata?.tags.includes("nsfw") &&
-      !showIfNsfw &&
-      !globalNsfw;
+  const showNsfwWarning = needsNsfwGate(entry) && !showIfNsfw && !globalNsfw;
 
   return showNsfwWarning ? <EntryPageNsfwWarning /> : children;
 }
