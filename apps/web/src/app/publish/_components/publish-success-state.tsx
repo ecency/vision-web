@@ -27,6 +27,8 @@ interface Props {
   step: "published" | "scheduled";
   setEditStep: () => void;
   entryInfo?: EntryInfo;
+  /** The account had no posts before this publish (decided at publish time). */
+  firstPublish?: boolean;
 }
 
 const SHARE_BUTTONS = [
@@ -98,7 +100,7 @@ function QuestCompleteLine() {
   );
 }
 
-export function PublishSuccessState({ step, setEditStep, entryInfo }: Props) {
+export function PublishSuccessState({ step, setEditStep, entryInfo, firstPublish = false }: Props) {
   const { activeUser } = useActiveAccount();
   const profileHref = activeUser ? `/@${activeUser.username}/posts` : "/";
 
@@ -122,7 +124,7 @@ export function PublishSuccessState({ step, setEditStep, entryInfo }: Props) {
 
         {step === "published" && entryInfo && <ShareBar entryInfo={entryInfo} />}
 
-        {step === "published" && <FirstPublishDigestPrompt />}
+        {step === "published" && firstPublish && <FirstPublishDigestPrompt />}
 
         <div className="flex items-center gap-4">
           <Link href="/publish">

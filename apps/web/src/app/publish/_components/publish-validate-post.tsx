@@ -39,7 +39,12 @@ const TEMPLATE_SIMILARITY_THRESHOLD = 0.9;
 
 interface Props {
   onClose: () => void;
-  onSuccess: (step: "published" | "scheduled", entryInfo?: { title: string; author: string; permlink: string; category: string }) => void;
+  onSuccess: (
+    step: "published" | "scheduled",
+    entryInfo?: { title: string; author: string; permlink: string; category: string },
+    /** True when the account had no posts BEFORE this publish, captured at publish time. */
+    firstPublish?: boolean
+  ) => void;
 }
 
 export function PublishValidatePost({ onClose, onSuccess }: Props) {
@@ -66,7 +71,7 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
     aiTools
   } = usePublishState();
 
-  const { activeUser } = useActiveAccount();
+  const { activeUser, account } = useActiveAccount();
   const [rcShortfall, setRcShortfall] = useState<RcShortfall | null>(null);
   const { openTopup, dialog: rcTopupDialog } = useRcTopupAction(rcShortfall?.username);
   const isMounted = useRef(true);
@@ -201,14 +206,26 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
 
         onSuccess("scheduled");
       } else {
+        // Decided BEFORE the publish, from the account as loaded: a strict zero,
+        // and unknown counts as not-first. The success screen uses this to offer
+        // the digest opt-in once; the count in the cache is not refreshed by the
+        // publish, so a heuristic read afterwards could not tell a first post
+        // from a second one.
+        const firstPublish = account?.post_count === 0;
         const [entry] = await publishNow();
 
-        onSuccess("published", entry ? {
-          title: entry.title,
-          author: entry.author,
-          permlink: entry.permlink,
-          category: entry.category
-        } : undefined);
+        onSuccess(
+          "published",
+          entry
+            ? {
+                title: entry.title,
+                author: entry.author,
+                permlink: entry.permlink,
+                category: entry.category
+              }
+            : undefined,
+          firstPublish
+        );
       }
 
       clearAll();
@@ -235,6 +252,7 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
       }
     }
   }, [
+    account,
     clearAll,
     content,
     onSuccess,

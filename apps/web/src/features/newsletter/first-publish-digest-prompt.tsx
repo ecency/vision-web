@@ -4,7 +4,7 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { UilEnvelope } from "@tooni/iconscout-unicons-react";
 import { Button } from "@ui/button";
 import i18next from "i18next";
-import { useEffect, useState } from "react";
+import { type ReactElement, useEffect, useState } from "react";
 import { DigestSubscribeDialog } from "./digest-subscribe-dialog";
 import { useDigestSubscriptions, useNewsletterEnabled } from "./hooks";
 
@@ -15,11 +15,14 @@ import { useDigestSubscriptions, useNewsletterEnabled } from "./hooks";
  * and intent, and because consent must be an explicit affirmative action; there
  * is no pre-selection anywhere in this flow.
  *
- * Shown only when all of these hold: the feature is on, the account has at most
- * one post (the one just published; the count is read from the account before
- * the query refreshes, so 0 or 1), the account holds no digest subscription
- * yet, and the person has not already answered on this device. Accepting or
- * dismissing records the answer, so it never re-prompts.
+ * The caller decides that this WAS the first publish (the publish flow captures
+ * `post_count === 0` at publish time and renders this only then); a heuristic
+ * read here after the fact could not tell a first post from a second one on a
+ * device without the local answer. Shown only when, in addition, the feature is
+ * on, the subscriptions query has LOADED and shows no digest for the account
+ * (a failed load shows nothing, since "no digest" cannot be established), and
+ * the person has not already answered on this device. Accepting or dismissing
+ * records the answer, so it never re-prompts.
  */
 const STORAGE_PREFIX = "ecency:digest-prompt:";
 
@@ -39,11 +42,11 @@ export function recordDigestPromptAnswer(username: string, answer: "accepted" | 
   }
 }
 
-export function FirstPublishDigestPrompt() {
+export function FirstPublishDigestPrompt(): ReactElement | null {
   const enabled = useNewsletterEnabled();
-  const { activeUser, account } = useActiveAccount();
+  const { activeUser } = useActiveAccount();
   const username = activeUser?.username;
-  const { data: subscriptions, isLoading } = useDigestSubscriptions();
+  const { data: subscriptions, isSuccess } = useDigestSubscriptions();
   const [answered, setAnswered] = useState(true);
   const [open, setOpen] = useState(false);
 
@@ -51,10 +54,10 @@ export function FirstPublishDigestPrompt() {
     if (username) setAnswered(digestPromptAnswered(username));
   }, [username]);
 
-  if (!enabled || !username || answered || isLoading) return null;
-  const postCount = account?.post_count ?? Number.POSITIVE_INFINITY;
-  if (postCount > 1) return null;
-  if ((subscriptions ?? []).length > 0) return null;
+  if (!enabled || !username || answered) return null;
+  // Only a LOADED, empty list allows the offer. Loading, or a failed load, shows
+  // nothing: "no digest yet" cannot be established from an error.
+  if (!isSuccess || !subscriptions || subscriptions.length > 0) return null;
 
   const dismiss = () => {
     recordDigestPromptAnswer(username, "dismissed");

@@ -28,11 +28,11 @@ vi.mock("@/utils", async () => ({
 const fetchMock = vi.fn();
 const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: async () => body } as Response);
 
-function signedIn(postCount: number) {
+function signedIn() {
   vi.mocked(useActiveAccount).mockReturnValue({
     activeUser: mockActiveUser({ username: "newbie" }),
     username: "newbie",
-    account: mockFullAccount({ name: "newbie", post_count: postCount }),
+    account: mockFullAccount({ name: "newbie", post_count: 0 }),
     isLoading: false,
     isPending: false,
     isError: false,
@@ -52,7 +52,7 @@ describe("FirstPublishDigestPrompt", () => {
     );
     window.localStorage.clear();
     flags.newsletter = true;
-    signedIn(1);
+    signedIn();
   });
   afterEach(() => {
     cleanupModalContainers();
@@ -68,14 +68,19 @@ describe("FirstPublishDigestPrompt", () => {
     expect(fetchMock.mock.calls.filter((c) => c[0] === "/api/newsletter/subscribe")).toHaveLength(0);
   });
 
-  it("is not offered when the account has published before, already has a digest, has answered, or the feature is off", async () => {
-    signedIn(7);
-    const { container: veteran, unmount: u1 } = renderWithQueryClient(<FirstPublishDigestPrompt />);
-    await new Promise((r) => setTimeout(r, 30));
-    expect(veteran).toBeEmptyDOMElement();
+  it("is not offered when the subscriptions failed to load, the account already has a digest, has answered, or the feature is off", async () => {
+    // A failed load: "no digest yet" cannot be established, so nothing is offered.
+    fetchMock.mockImplementation((url: string) =>
+      url === "/api/newsletter/subscriptions" ? Promise.resolve({ ok: false, status: 503, json: async () => ({ error: "down" }) } as Response) : ok({})
+    );
+    const { container: failed, unmount: u1 } = renderWithQueryClient(<FirstPublishDigestPrompt />);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(failed).toBeEmptyDOMElement();
     u1();
+    fetchMock.mockImplementation((url: string) =>
+      url === "/api/newsletter/subscriptions" ? ok({ subscriptions: [] }) : ok({ status: "pending_confirmation" })
+    );
 
-    signedIn(1);
     const client = createTestQueryClient();
     client.setQueryData(digestSubscriptionsKey("newbie"), [{ id: "x", email: "n@example.com", account: "newbie", type: "own", target: "newbie", cadence: "weekly", status: "active", created_at: "" }]);
     const { container: subscribed, unmount: u2 } = renderWithQueryClient(<FirstPublishDigestPrompt />, { queryClient: client });
