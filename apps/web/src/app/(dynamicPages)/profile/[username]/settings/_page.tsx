@@ -6,7 +6,7 @@ import { ReferralInfo } from "./_referral-info";
 import { DmPrivacySettings } from "./_dm-privacy";
 import { SupportEcencySettings } from "./_support-ecency";
 import { EmailDigestsSettings } from "./_email-digests";
-import { EcencyConfigManager } from "@/config";
+import { NewsletterGate } from "@/features/newsletter";
 
 export function ProfileSettings() {
   return (
@@ -18,9 +18,9 @@ export function ProfileSettings() {
 
       <DmPrivacySettings />
 
-      <EcencyConfigManager.Conditional condition={({ visionFeatures }) => visionFeatures.newsletter.enabled}>
+      <NewsletterGate>
         <EmailDigestsSettings />
-      </EcencyConfigManager.Conditional>
+      </NewsletterGate>
 
       <PermissionsCard />
       <ReferralInfo />

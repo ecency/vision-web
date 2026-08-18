@@ -35,7 +35,7 @@ import { profileWebsiteHref } from "./website-href";
 import { FinalizeCommunityBanner } from "../finalize-community-banner";
 import { useActiveAccount } from "@/core/hooks";
 import { ProBadge } from "@/features/pro";
-import { DigestSubscribeButton } from "@/features/newsletter";
+import { DigestSubscribeButton, NewsletterGate } from "@/features/newsletter";
 
 interface Props {
   account: Account;
@@ -151,9 +151,7 @@ export function ProfileCard({ account }: Props) {
               <UilCommentDots className="size-4" />
             </Link>
           )}
-          <EcencyConfigManager.Conditional
-            condition={({ visionFeatures }) => visionFeatures.newsletter.enabled}
-          >
+          <NewsletterGate>
             <DigestSubscribeButton
               type="creator"
               target={account.name}
@@ -161,7 +159,7 @@ export function ProfileCard({ account }: Props) {
               source="creator-page"
               size="sm"
             />
-          </EcencyConfigManager.Conditional>
+          </NewsletterGate>
         </div>
       )}
 

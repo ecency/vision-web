@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
+import type { ReactElement } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { DigestSubscribeButton, DigestSubscribeDialog, digestSubscriptionsKey } from "@/features/newsletter";
 import {
@@ -67,6 +69,12 @@ function loggedIn(username: string | null) {
   } as never);
 }
 
+
+/** Renders inside a "service configured" runtime, as app/providers.tsx does on a configured deploy. */
+function renderConfigured(ui: ReactElement, options?: Parameters<typeof renderWithQueryClient>[1]) {
+  return renderWithQueryClient(<NewsletterRuntimeProvider configured>{ui}</NewsletterRuntimeProvider>, options);
+}
+
 describe("DigestSubscribeDialog", () => {
   beforeEach(() => {
     setupModalContainers();
@@ -88,7 +96,7 @@ describe("DigestSubscribeDialog", () => {
       }
       return jsonResponse(404, {});
     });
-    renderWithQueryClient(<DigestSubscribeDialog {...dialogProps} />);
+    renderConfigured(<DigestSubscribeDialog {...dialogProps} />);
 
     const email = screen.getByPlaceholderText("you@example.com");
     const subscribeBtn = screen.getByRole("button", { name: "newsletter.subscribe" });
@@ -126,7 +134,7 @@ describe("DigestSubscribeDialog", () => {
       if (url === "/api/newsletter/subscriptions") return jsonResponse(200, { subscriptions: [SUB] });
       return jsonResponse(404, {});
     });
-    renderWithQueryClient(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
+    renderConfigured(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
 
     expect(screen.getByText("newsletter.status-active")).toBeInTheDocument();
     // The address is already known: no email field, and Update is inert until something changes.
@@ -156,7 +164,7 @@ describe("DigestSubscribeDialog", () => {
 
   it("a refusal is not a dead end: the copy is shown and the form can be tried again", async () => {
     fetchMock.mockImplementation(() => jsonResponse(200, { status: "refused", reason: "suppressed" }));
-    renderWithQueryClient(<DigestSubscribeDialog {...dialogProps} />);
+    renderConfigured(<DigestSubscribeDialog {...dialogProps} />);
     fireEvent.change(screen.getByPlaceholderText("you@example.com"), { target: { value: "gone@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "newsletter.subscribe" }));
     await waitFor(() => expect(screen.getByText("newsletter.refused")).toBeInTheDocument());
@@ -172,7 +180,7 @@ describe("DigestSubscribeDialog", () => {
     fetchMock.mockImplementation((url: string) =>
       url === "/api/newsletter/subscribe" ? jsonResponse(200, { status: "pending_confirmation" }) : jsonResponse(404, {})
     );
-    renderWithQueryClient(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
+    renderConfigured(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
     // Same cadence, pending: the primary action is "resend", and it is enabled.
     const resend = screen.getByRole("button", { name: "newsletter.resend" });
     expect(resend).not.toBeDisabled();
@@ -198,7 +206,7 @@ describe("DigestSubscribeDialog", () => {
       }
       return jsonResponse(404, {});
     });
-    renderWithQueryClient(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
+    renderConfigured(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
     fireEvent.change(await screen.findByPlaceholderText("you@example.com"), { target: { value: "alice@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "newsletter.subscribe" }));
     await waitFor(() => expect(screen.getByText("newsletter.check-inbox")).toBeInTheDocument());
@@ -226,7 +234,7 @@ describe("DigestSubscribeButton", () => {
   it("renders nothing when the feature is off, and asks the service for nothing", async () => {
     flags.newsletter = false;
     loggedIn("alice"); // a signed-in user would otherwise trigger the subscriptions query
-    const { container } = renderWithQueryClient(
+    const { container } = renderConfigured(
       <DigestSubscribeButton type="community" target="hive-1" targetLabel="X" source="community-page" />
     );
     expect(container).toBeEmptyDOMElement();
@@ -237,12 +245,12 @@ describe("DigestSubscribeButton", () => {
   it("offers a creator digest only for an Ecency Pro creator", () => {
     const client = createTestQueryClient();
     client.setQueryData(["accounts", "pro-members"], { members: ["good-karma"] });
-    const { container: notPro } = renderWithQueryClient(
+    const { container: notPro } = renderConfigured(
       <DigestSubscribeButton type="creator" target="someone" targetLabel="Someone" source="creator-page" />,
       { queryClient: client }
     );
     expect(notPro).toBeEmptyDOMElement();
-    renderWithQueryClient(
+    renderConfigured(
       <DigestSubscribeButton type="creator" target="good-karma" targetLabel="Good Karma" source="creator-page" />,
       { queryClient: client }
     );
@@ -253,7 +261,7 @@ describe("DigestSubscribeButton", () => {
     loggedIn("alice");
     const client = createTestQueryClient();
     client.setQueryData(digestSubscriptionsKey("alice"), [SUB]);
-    renderWithQueryClient(
+    renderConfigured(
       <DigestSubscribeButton type="community" target="hive-140217" targetLabel="Hive Gaming" source="community-page" />,
       { queryClient: client }
     );
