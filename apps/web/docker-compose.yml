@@ -17,10 +17,6 @@ services:
       - SEARCH_API_ADDR
       - SEARCH_API_SECRET
       - TURNSTILE_SECRET
-      # Newsletter service (ecency/news); staging reaches the EU instance through the TLS
-      # relay. Unset = the handlers answer 503 and no newsletter control renders.
-      - NEWSLETTER_API_URL
-      - NEWSLETTER_SERVICE_TOKEN
       - BLOCKSTREAM_CLIENT_ID
       - BLOCKSTREAM_CLIENT_SECRET
       # Pinned to Warning at deploy time (the CI deploy env does not forward
@@ -69,6 +65,11 @@ services:
       - REDIS_URL=redis://redis:6379
       - HIVESIGNER_SECRET
       - HOSTING_INTERNAL_SECRET
+      # Newsletter service (ecency/news), read by the Next.js server (web), not vapi;
+      # staging reaches the EU instance through the TLS relay. Unset = the handlers
+      # answer 503 and no newsletter control renders.
+      - NEWSLETTER_API_URL
+      - NEWSLETTER_SERVICE_TOKEN
       - PLAUSIBLE_API_KEY
       - NEXT_PUBLIC_GMAPS_MAP_ID
       - NEXT_PUBLIC_GMAPS_API_KEY
