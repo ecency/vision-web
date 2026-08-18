@@ -3,7 +3,7 @@
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 import { PointsSpin, SPIN_VALUES } from "@/features/points";
-import { success } from "@/features/shared";
+import { error, success } from "@/features/shared";
 import { Button, Modal, ModalBody, ModalFooter, ModalHeader, StyledTooltip } from "@/features/ui";
 import { delay, getAccessToken } from "@/utils";
 import { getGameStatusCheckQueryOptions, useGameClaim } from "@ecency/sdk";
@@ -39,7 +39,15 @@ export function PerksPointsSpinBanner() {
   );
 
   const claimGame = useCallback(async () => {
-    await claim();
+    // The claim rejects on any edge/proxy failure, and an uncaught rejection out of
+    // this click handler is what surfaced as ECENCY-NEXT-1FCJ. Surface it to the
+    // user instead, and do not run the success toast or the refetch on a failure.
+    try {
+      await claim();
+    } catch {
+      error(i18next.t("perks.spin-error"));
+      return;
+    }
     await delay(1000);
     refetch();
     success(i18next.t("perks.spin-success"));
