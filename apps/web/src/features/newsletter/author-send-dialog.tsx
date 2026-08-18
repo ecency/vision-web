@@ -27,10 +27,15 @@ interface Props {
   onHide: () => void;
 }
 
-/** A stable identity for what is being sent: the post, or the composition's posts, subject and intro. */
+/**
+ * A stable identity for what is being sent: the post, or the composition's
+ * posts, subject and intro. JSON, not a delimiter join: subject and intro are
+ * the sender's text, and two different compositions must never share a key
+ * (the preview is cached by it while the send carries the current request).
+ */
 function requestKey(req: SendRequest): string {
-  if ("posts" in req) return `compose:${req.posts.map((p) => `${p.author}/${p.permlink}`).join(",")}|${req.subject ?? ""}|${req.intro ?? ""}`;
-  return `post:${req.author}/${req.permlink}`;
+  if ("posts" in req) return JSON.stringify(["compose", req.posts.map((p) => `${p.author}/${p.permlink}`), req.subject ?? "", req.intro ?? ""]);
+  return JSON.stringify(["post", `${req.author}/${req.permlink}`]);
 }
 
 export const sendPreviewKey = (req: SendRequest, viewer: string): readonly [QueryIdentifiers, string, string, string, string] =>
@@ -125,6 +130,8 @@ export function SendFlow({
       setResult(r);
       queryClient.invalidateQueries({ queryKey: [QueryIdentifiers.NEWSLETTER_SEND_PREVIEW] });
       queryClient.invalidateQueries({ queryKey: [QueryIdentifiers.NEWSLETTER_SENT_ISSUES, target.type, target.target] });
+      // The composer's candidates carry a "featured recently" mark; the posts just sent now have it.
+      queryClient.invalidateQueries({ queryKey: [QueryIdentifiers.NEWSLETTER_CANDIDATE_POSTS, target.type, target.target] });
     }
   });
 
@@ -137,7 +144,22 @@ export function SendFlow({
     <>
         {preview.isPending && <div className="text-sm opacity-70">{i18next.t("newsletter.send-loading")}</div>}
 
-        {preview.isError && <RefusalAlert refusal={describeRefusal(preview.error)} target={target} />}
+        {preview.isError && (
+          <>
+            <RefusalAlert refusal={describeRefusal(preview.error)} target={target} />
+            {onBack ? (
+              // The composer: a refused post is fixed in the picker, not by starting over.
+              <div className="mt-4 flex justify-end gap-2">
+                <Button appearance="gray-link" onClick={onBack}>
+                  {i18next.t("g.back")}
+                </Button>
+                <Button appearance="gray-link" onClick={onHide}>
+                  {i18next.t("g.cancel")}
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
 
         {p && !result && (
           <>

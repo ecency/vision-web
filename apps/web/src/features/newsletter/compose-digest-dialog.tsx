@@ -26,7 +26,7 @@ import { useNewsletterEnabled } from "./runtime";
 export const candidatesKey = (type: "creator" | "community", target: string, viewer: string | null | undefined): readonly [QueryIdentifiers, string, string, string] =>
   [QueryIdentifiers.NEWSLETTER_CANDIDATE_POSTS, type, target, viewer ?? "anon"] as const;
 
-const refKey = (p: { author: string; permlink: string }) => `${p.author}/${p.permlink}`;
+const refKey = (p: { author: string; permlink: string }): string => `${p.author}/${p.permlink}`;
 
 export function ComposeDigestDialog({ target, show, onHide }: { target: SendTarget; show: boolean; onHide: () => void }): ReactElement {
   const { activeUser } = useActiveAccount();
@@ -44,18 +44,21 @@ export function ComposeDigestDialog({ target, show, onHide }: { target: SendTarg
     queryFn: () => authorSendApi.candidates(target.type, target.target, username)
   });
 
-  const toggle = (key: string) =>
+  const toggle = (key: string): void =>
     setPicked((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : cur.length < COMPOSE_MAX ? [...cur, key] : cur));
 
   const request = useMemo<ComposeRequest | null>(() => {
-    if (picked.length < COMPOSE_MIN || !candidates.data) return null;
-    // Keep the sender's picking order: it is the order in the issue.
+    if (!candidates.data) return null;
+    // Keep the sender's picking order: it is the order in the issue. Picks are
+    // resolved against the current candidates: a pick whose post is gone (the
+    // list refreshed, the account changed) does not count towards the minimum.
     const byKey = new Map(candidates.data.map((c) => [refKey(c), c]));
     const posts = picked.map((k) => byKey.get(k)).filter((c): c is CandidatePost => !!c).map((c) => ({ author: c.author, permlink: c.permlink }));
+    if (posts.length < COMPOSE_MIN) return null;
     return { type: target.type, target: target.target, posts, subject: subject.trim() || undefined, intro: intro.trim() || undefined };
   }, [picked, candidates.data, target, subject, intro]);
 
-  const close = () => {
+  const close = (): void => {
     onHide();
     setPhase("pick");
   };

@@ -52,18 +52,14 @@ export function CommunityCard({ community, account }: Props) {
   );
   const canEditTeam = useMemo(() => !!(roleInTeam && roleMap[roleInTeam]), [roleInTeam]);
   // Names compared lowercase: the stored username keeps whatever casing was typed,
-  // team entries are canonical. Owner, admin and mod are the digest's senders.
-  // Sending mail is heavier than moderating: owner and admin only, lowercase names.
-  const canSendDigest = useMemo(() => {
+  // team entries are canonical. Owner, admin and mod see the digest's standing and
+  // history; sending mail is heavier than moderating: owner and admin only.
+  const myDigestRole = useMemo(() => {
     const me = activeUser?.username?.toLowerCase();
-    const mine = me ? community.team.find((x: (string | undefined)[]) => x[0]?.toLowerCase() === me) : undefined;
-    return !!(mine?.[1] && [ROLES.OWNER.toString(), ROLES.ADMIN.toString()].includes(mine[1]));
+    return me ? community.team.find((x: (string | undefined)[]) => x[0]?.toLowerCase() === me)?.[1] : undefined;
   }, [activeUser?.username, community.team]);
-  const isDigestSender = useMemo(() => {
-    const me = activeUser?.username?.toLowerCase();
-    const mine = me ? community.team.find((x: (string | undefined)[]) => x[0]?.toLowerCase() === me) : undefined;
-    return !!(mine?.[1] && [ROLES.OWNER.toString(), ROLES.ADMIN.toString(), ROLES.MOD.toString()].includes(mine[1]));
-  }, [activeUser?.username, community.team]);
+  const canSendDigest = !!(myDigestRole && [ROLES.OWNER.toString(), ROLES.ADMIN.toString()].includes(myDigestRole));
+  const isDigestSender = canSendDigest || myDigestRole === ROLES.MOD.toString();
 
   return (
     <div className="community-card">

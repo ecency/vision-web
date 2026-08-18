@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement, ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
-import { AuthorSendDialog, ComposeDigestButton, ComposeDigestDialog, SentIssues, useAuthorSendTarget } from "@/features/newsletter";
+import { AuthorSendDialog, candidatesKey, ComposeDigestButton, ComposeDigestDialog, sendPreviewKey, SentIssues, useAuthorSendTarget } from "@/features/newsletter";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import {
   cleanupModalContainers,
@@ -277,6 +277,77 @@ describe("ComposeDigestDialog", () => {
     await waitFor(() => expect(screen.getByText("newsletter.send-now")).toBeInTheDocument());
     fireEvent.click(screen.getByText("newsletter.send-now"));
     await waitFor(() => expect(screen.getByText("newsletter.send-done")).toBeInTheDocument());
+  });
+
+  it("a refused preview offers the way back to the picker; the picks and text survive", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.startsWith("/api/newsletter/posts")) return json(200, { posts: candidates });
+      return json(422, { error: "@alice/two: the post is tagged nsfw", code: "post_refused" });
+    });
+    render(<ComposeDigestDialog target={target} show onHide={() => {}} />);
+    await screen.findByRole("list", { name: "newsletter.compose-pick" });
+    fireEvent.click(screen.getByLabelText("Two"));
+    fireEvent.click(screen.getByLabelText("One"));
+    fireEvent.change(screen.getByLabelText("newsletter.compose-subject"), { target: { value: "Two things" } });
+    fireEvent.click(screen.getByText("newsletter.compose-continue"));
+    await waitFor(() => expect(screen.getByText("newsletter.send-post-refused")).toBeInTheDocument());
+    expect(screen.getByText("@alice/two: the post is tagged nsfw")).toBeInTheDocument();
+    expect(screen.queryByText("newsletter.send-now")).toBeNull();
+    fireEvent.click(screen.getByText("g.back"));
+    await screen.findByRole("list", { name: "newsletter.compose-pick" });
+    expect((screen.getByLabelText("Two") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("newsletter.compose-subject") as HTMLInputElement).value).toBe("Two things");
+    // The offending post can be swapped out.
+    fireEvent.click(screen.getByLabelText("Two"));
+    fireEvent.click(screen.getByLabelText("Three"));
+    expect(screen.getByText("newsletter.compose-continue").closest("button")).not.toBeDisabled();
+  });
+
+  it("picks that no longer resolve to a candidate do not count towards the minimum", async () => {
+    fetchMock.mockImplementation(() => json(200, { posts: candidates }));
+    const client = createTestQueryClient();
+    render(<ComposeDigestDialog target={target} show onHide={() => {}} />, client);
+    await screen.findByRole("list", { name: "newsletter.compose-pick" });
+    fireEvent.click(screen.getByLabelText("Two"));
+    fireEvent.click(screen.getByLabelText("One"));
+    const cont = () => screen.getByText("newsletter.compose-continue").closest("button")!;
+    expect(cont()).not.toBeDisabled();
+    // The list refreshes without "Two": one live pick is not enough to continue.
+    client.setQueryData(candidatesKey("creator", "alice", "alice"), candidates.filter((c) => c.permlink !== "two"));
+    await waitFor(() => expect(cont()).toBeDisabled());
+  });
+
+  it("a sent composition invalidates the candidates, so the featured marks refresh on the next open", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.startsWith("/api/newsletter/posts")) return json(200, { posts: candidates });
+      if (url.endsWith("/preview")) return json(200, preview({ subject: "Two things" }));
+      return json(201, { issues: [{ issueId: "i1", cadence: "weekly", period: "2026-08-17", send: { recipients: 12, sent: 12, pending: 0 } }] });
+    });
+    const client = createTestQueryClient();
+    render(<ComposeDigestDialog target={target} show onHide={() => {}} />, client);
+    await screen.findByRole("list", { name: "newsletter.compose-pick" });
+    fireEvent.click(screen.getByLabelText("Two"));
+    fireEvent.click(screen.getByLabelText("One"));
+    fireEvent.click(screen.getByText("newsletter.compose-continue"));
+    await waitFor(() => expect(screen.getByText("newsletter.send-now")).toBeInTheDocument());
+    const candidateFetches = () => fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("/api/newsletter/posts")).length;
+    expect(candidateFetches()).toBe(1);
+    fireEvent.click(screen.getByText("newsletter.send-now"));
+    await waitFor(() => expect(screen.getByText("newsletter.send-done")).toBeInTheDocument());
+    // The candidates query is still mounted behind the send flow, so the invalidation refetches it at once.
+    await waitFor(() => expect(candidateFetches()).toBe(2));
+    expect(client.getQueryState(candidatesKey("creator", "alice", "alice"))?.status).toBe("success");
+  });
+
+  it("the preview's cache key tells compositions apart even when subject and intro share text", () => {
+    const base = { type: "creator" as const, target: "alice", posts: [{ author: "alice", permlink: "one" }, { author: "alice", permlink: "two" }] };
+    const a = sendPreviewKey({ ...base, subject: "A|B", intro: "C" }, "alice");
+    const b = sendPreviewKey({ ...base, subject: "A", intro: "B|C" }, "alice");
+    const c = sendPreviewKey({ ...base, subject: "A|B", intro: "C" }, "alice");
+    expect(a).not.toEqual(b);
+    expect(a).toEqual(c);
+    expect(sendPreviewKey({ ...base, posts: [base.posts[1], base.posts[0]] }, "alice")).not.toEqual(a);
+    expect(sendPreviewKey({ type: "creator", target: "alice", author: "alice", permlink: "one" }, "alice")).not.toEqual(sendPreviewKey({ ...base, posts: [base.posts[0]] }, "alice"));
   });
 
   it("says when there are no candidates or they could not be loaded", async () => {
