@@ -4212,6 +4212,12 @@
     "cadence-weekly": "weekly",
     "cadence-monthly": "monthly",
     "sent-issues": "Sent issues",
-    "sent-issue-stats": "{{delivered}} delivered, {{bounced}} bounced"
+    "sent-issue-stats": "{{delivered}} delivered, {{bounced}} bounced",
+    "send-taken-line": "{{cadence}} readers: the issue for the period starting {{period}} {{what}}",
+    "send-taken-by-digest": "was the automatic digest",
+    "send-taken-by-send": "was sent by you or your team",
+    "send-see-history": "See sent issues",
+    "sent-issues-unavailable": "Sent issues could not be loaded right now.",
+    "sent-issue-rejected": "{{rejected}} rejected by receivers"
   }
 }

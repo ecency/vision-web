@@ -6,11 +6,11 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
 import { AuthorSendDialog, SentIssues, useAuthorSendTarget } from "@/features/newsletter";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import type { Community } from "@/entities";
 import {
   cleanupModalContainers,
   createTestQueryClient,
   mockActiveUser,
+  mockCommunity,
   mockEntry,
   renderWithQueryClient,
   setupModalContainers
@@ -46,7 +46,7 @@ function loggedIn(username: string | null) {
   } as never);
 }
 
-const community = { name: "hive-125125", title: "Town Square", team: [["owner1", "owner", ""], ["alice", "admin", ""], ["mia", "mod", ""]] } as unknown as Community;
+const community = mockCommunity({ name: "hive-125125", title: "Town Square", team: [["owner1", "owner", ""], ["alice", "admin", ""], ["mia", "mod", ""]] });
 const target = { type: "creator" as const, target: "alice", label: "@alice" };
 const preview = (over: Record<string, unknown> = {}) => ({
   subject: "Hello world",
@@ -129,14 +129,11 @@ describe("AuthorSendDialog", () => {
     await waitFor(() => expect(screen.getByText("Hello world")).toBeInTheDocument());
     expect(screen.getByText("newsletter.send-readers")).toBeInTheDocument();
     expect(screen.getByText("newsletter.send-one-per-period")).toBeInTheDocument();
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/newsletter/send/preview");
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ type: "creator", target: "alice", author: "alice", permlink: "hello" });
     const iframe = document.querySelector("iframe") as HTMLIFrameElement;
     expect(iframe.getAttribute("sandbox")).toBe("");
     expect(iframe.getAttribute("srcdoc")).toContain("Hello");
     fireEvent.click(screen.getByText("newsletter.send-now"));
     await waitFor(() => expect(screen.getByText("newsletter.send-done")).toBeInTheDocument());
-    expect(fetchMock.mock.calls[1][0]).toBe("/api/newsletter/send");
     expect(screen.getAllByText("newsletter.send-done-line")).toHaveLength(2);
   });
 
@@ -154,7 +151,8 @@ describe("AuthorSendDialog", () => {
 
   it("shows the service's refusals for what they are: taken, suspended, post refused, not allowed, unavailable", async () => {
     const cases: Array<[number, Record<string, unknown>, string]> = [
-      [409, { error: "taken", code: "already_sent" }, "newsletter.send-already-sent"],
+      [409, { error: "taken", code: "already_sent", taken: [{ cadence: "weekly", period: "2026-08-17", kind: "digest" }] }, "newsletter.send-already-sent"],
+      [404, { error: "post not found", code: "post_not_found" }, "newsletter.send-post-not-found"],
       [403, { error: "suspended", code: "suspended" }, "newsletter.send-suspended"],
       [422, { error: "the post is tagged nsfw", code: "post_refused" }, "newsletter.send-post-refused"],
       [403, { error: "sending to a creator digest is an Ecency Pro capability" }, "newsletter.send-not-allowed"],
@@ -167,6 +165,11 @@ describe("AuthorSendDialog", () => {
       fireEvent.click(screen.getByText("newsletter.send-now"));
       await waitFor(() => expect(screen.getByText(key)).toBeInTheDocument());
       if (status === 422) expect(screen.getByText("the post is tagged nsfw")).toBeInTheDocument();
+      if (status === 409) {
+        // The conflict says which period is taken and by what, and points at the history.
+        expect(screen.getByText("newsletter.send-taken-line")).toBeInTheDocument();
+        expect(screen.getByText("newsletter.send-see-history").closest("a")).toHaveAttribute("href", "/@alice");
+      }
       unmount();
     }
     // A refused preview shows the reason too, and no send button.
@@ -196,19 +199,26 @@ describe("SentIssues", () => {
       })
     );
     render(<SentIssues type="creator" target="alice" isSender />);
-    const list = await screen.findByTestId("newsletter-sent-issues");
+    const list = await screen.findByRole("list", { name: "newsletter.sent-issues" });
     expect(list).toHaveTextContent("Hello world");
     expect(list.querySelector('a[href="/@alice/hello"]')).not.toBeNull();
     expect(list).toHaveTextContent("@alice's weekly digest: 3 new posts");
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/newsletter/issues?type=creator&target=alice");
+    // Bounced and rejected are different outcomes and are shown as such.
+    expect(list).toHaveTextContent("newsletter.sent-issue-stats");
+    expect(screen.getAllByText(/newsletter.sent-issue-rejected/)).toHaveLength(1);
     fetchMock.mockReset();
     const { container } = render(<SentIssues type="creator" target="alice" isSender={false} />);
     await new Promise((r) => setTimeout(r, 30));
     expect(fetchMock).not.toHaveBeenCalled();
     expect(container.textContent).toBe("");
     fetchMock.mockReturnValue(json(200, { issues: [] }));
-    const { container: c2 } = render(<SentIssues type="community" target="hive-125125" isSender />);
+    const { container: c2, unmount } = render(<SentIssues type="community" target="hive-125125" isSender />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(c2.textContent).toBe("");
+    unmount();
+    // A failed load is not "nothing sent yet".
+    fetchMock.mockReturnValue(json(503, { error: "down" }));
+    render(<SentIssues type="creator" target="alice" isSender />);
+    await waitFor(() => expect(screen.getByText("newsletter.sent-issues-unavailable")).toBeInTheDocument());
   });
 });

@@ -66,8 +66,8 @@ async function post<T>(path: string, body: unknown, username: string): Promise<T
 }
 
 export const authorSendApi = {
-  preview: (ref: SendRef, username: string) => post<SendPreview>("/api/newsletter/send/preview", ref, username),
-  send: (ref: SendRef, username: string) => post<SendResult>("/api/newsletter/send", ref, username),
+  preview: (ref: SendRef, username: string): Promise<SendPreview> => post<SendPreview>("/api/newsletter/send/preview", ref, username),
+  send: (ref: SendRef, username: string): Promise<SendResult> => post<SendResult>("/api/newsletter/send", ref, username),
   async issues(type: "creator" | "community", target: string, username: string): Promise<SentIssue[]> {
     const token = await ensureValidToken(username);
     const res = await fetch(`/api/newsletter/issues?type=${type}&target=${encodeURIComponent(target)}`, {

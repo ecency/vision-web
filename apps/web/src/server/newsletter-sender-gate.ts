@@ -35,7 +35,14 @@ export async function senderGate(
     }
     return { ok: true };
   }
-  const community = await getCommunity(target, username);
+  let community: Awaited<ReturnType<typeof getCommunity>>;
+  try {
+    community = await getCommunity(target, username);
+  } catch {
+    // The bridge is the authority on the team; without it there is no verdict.
+    // A retryable answer, not a framework 500.
+    return { ok: false, status: 503, error: "community lookup unavailable" };
+  }
   const role = community?.team?.find(([account]) => account === username)?.[1];
   const roles = mode === "send" ? SEND_ROLES : VIEW_ROLES;
   if (!role || !roles.has(role)) {
@@ -55,8 +62,13 @@ export interface SendBody {
 }
 
 /** The body of a send or preview request, validated; a Response when it is not. */
-export async function parseSendBody(request: NextRequest): Promise<SendBody | Response> {
-  const body = (await request.json().catch(() => null)) as Partial<SendBody> | null;
+/** Reads the JSON body once; the same object feeds resolveUser (body.code) and the field validation. */
+export async function readJsonBody(request: NextRequest): Promise<Record<string, unknown>> {
+  const body = (await request.json().catch(() => null)) as unknown;
+  return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+}
+
+export function parseSendBody(body: Record<string, unknown>): SendBody | Response {
   const type = body?.type;
   const target = String(body?.target ?? "").toLowerCase();
   const author = String(body?.author ?? "").toLowerCase();

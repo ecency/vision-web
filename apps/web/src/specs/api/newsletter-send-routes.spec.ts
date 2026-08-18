@@ -90,6 +90,36 @@ describe("author send routes", () => {
     expect(mocks.fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("accepts the HiveSigner code in the body as well as the header, and reads the body once", async () => {
+    mocks.verify.mockResolvedValue({ ok: true, username: "alice" });
+    mocks.pro.mockResolvedValue(true);
+    mocks.fetch.mockResolvedValue(upstream(201, { issues: [] }));
+    const { POST } = await import("@/app/api/newsletter/send/route");
+    const res = await POST(req({ ...SEND, code: "body-token" }));
+    expect(res.status).toBe(201);
+    expect(mocks.verify).toHaveBeenCalledWith("body-token");
+    // The code is not forwarded to the service.
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toEqual({ ...SEND, requestedBy: "alice" });
+    const { POST: PREVIEW } = await import("@/app/api/newsletter/send/preview/route");
+    mocks.fetch.mockResolvedValue(upstream(200, { subject: "x" }));
+    expect((await PREVIEW(req({ ...SEND, code: "body-token" }))).status).toBe(200);
+  });
+
+  it("a failing community lookup is a retryable 503 on every community route, never a 500", async () => {
+    mocks.verify.mockResolvedValue({ ok: true, username: "alice" });
+    mocks.getCommunity.mockRejectedValue(new Error("rpc timeout"));
+    const body = { type: "community", target: "hive-125125", author: "bob", permlink: "post" };
+    const { POST } = await import("@/app/api/newsletter/send/route");
+    const { POST: PREVIEW } = await import("@/app/api/newsletter/send/preview/route");
+    const { GET: ISSUES } = await import("@/app/api/newsletter/issues/route");
+    const { GET: SENDER } = await import("@/app/api/newsletter/sender/route");
+    expect((await POST(req(body, { "x-hs-token": "tok" }))).status).toBe(503);
+    expect((await PREVIEW(req(body, { "x-hs-token": "tok" }))).status).toBe(503);
+    expect((await ISSUES(req(undefined, { "x-hs-token": "tok" }, "type=community&target=hive-125125"))).status).toBe(503);
+    expect((await SENDER(req(undefined, { "x-hs-token": "tok" }, "type=community&target=hive-125125"))).status).toBe(503);
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
   it("validates the body, requires identity, and answers 503 unconfigured", async () => {
     mocks.verify.mockResolvedValue({ ok: true, username: "alice" });
     mocks.pro.mockResolvedValue(true);

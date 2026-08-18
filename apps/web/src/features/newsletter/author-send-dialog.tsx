@@ -7,7 +7,8 @@ import { Alert } from "@ui/alert";
 import { Button } from "@ui/button";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import i18next from "i18next";
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { type ReactElement, useMemo, useState } from "react";
 import { authorSendApi, type SendPreview, type SendRef, type SendResult, SendRefusedError } from "./author-send-api";
 import type { SendTarget } from "./author-send-eligibility";
 
@@ -26,12 +27,27 @@ interface Props {
   onHide: () => void;
 }
 
-export const sendPreviewKey = (ref: SendRef, viewer: string) =>
+export const sendPreviewKey = (
+  ref: SendRef,
+  viewer: string
+): readonly [QueryIdentifiers, string, string, string, string, string] =>
   [QueryIdentifiers.NEWSLETTER_SEND_PREVIEW, ref.type, ref.target, ref.author, ref.permlink, viewer] as const;
 
-function describeRefusal(err: unknown): { key: string; detail?: string } {
+/** Where the sender's history lives: their own profile card, or the community card. */
+export function senderHistoryHref(target: SendTarget): string {
+  return target.type === "creator" ? `/@${target.target}` : `/created/${target.target}`;
+}
+
+interface Refusal {
+  key: string;
+  detail?: string;
+  /** For 409: which cadence's period is taken, and by what. */
+  taken?: Array<{ cadence: string; period: string; kind: string }>;
+}
+
+function describeRefusal(err: unknown): Refusal {
   if (err instanceof SendRefusedError) {
-    if (err.code === "already_sent") return { key: "newsletter.send-already-sent" };
+    if (err.code === "already_sent") return { key: "newsletter.send-already-sent", taken: err.taken };
     if (err.code === "suspended") return { key: "newsletter.send-suspended" };
     if (err.code === "post_refused") return { key: "newsletter.send-post-refused", detail: err.message };
     if (err.code === "post_not_found") return { key: "newsletter.send-post-not-found" };
@@ -41,7 +57,36 @@ function describeRefusal(err: unknown): { key: string; detail?: string } {
   return { key: "newsletter.error-generic" };
 }
 
-export function AuthorSendDialog({ target, author, permlink, show, onHide }: Props) {
+function RefusalAlert({ refusal, target }: { refusal: Refusal; target: SendTarget }): ReactElement {
+  return (
+    <Alert appearance="warning" className="mt-3">
+      {i18next.t(refusal.key)}
+      {refusal.detail ? <div className="mt-1 text-xs opacity-80">{refusal.detail}</div> : null}
+      {refusal.taken && refusal.taken.length > 0 ? (
+        <ul className="mt-1 text-xs opacity-90 list-disc pl-4">
+          {refusal.taken.map((t) => (
+            <li key={`${t.cadence}-${t.period}`}>
+              {i18next.t("newsletter.send-taken-line", {
+                cadence: i18next.t(`newsletter.cadence-${t.cadence}`),
+                period: t.period,
+                what: i18next.t(t.kind === "digest" ? "newsletter.send-taken-by-digest" : "newsletter.send-taken-by-send")
+              })}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {refusal.key === "newsletter.send-already-sent" ? (
+        <div className="mt-1 text-xs">
+          <Link href={senderHistoryHref(target)} className="underline">
+            {i18next.t("newsletter.send-see-history")}
+          </Link>
+        </div>
+      ) : null}
+    </Alert>
+  );
+}
+
+export function AuthorSendDialog({ target, author, permlink, show, onHide }: Props): ReactElement {
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username ?? "";
   const queryClient = useQueryClient();
@@ -78,12 +123,7 @@ export function AuthorSendDialog({ target, author, permlink, show, onHide }: Pro
       <ModalBody>
         {preview.isPending && <div className="text-sm opacity-70">{i18next.t("newsletter.send-loading")}</div>}
 
-        {preview.isError && (
-          <Alert appearance="warning">
-            {i18next.t(describeRefusal(preview.error).key)}
-            {describeRefusal(preview.error).detail ? <div className="mt-1 text-xs opacity-80">{describeRefusal(preview.error).detail}</div> : null}
-          </Alert>
-        )}
+        {preview.isError && <RefusalAlert refusal={describeRefusal(preview.error)} target={target} />}
 
         {p && !result && (
           <>
@@ -112,12 +152,7 @@ export function AuthorSendDialog({ target, author, permlink, show, onHide }: Pro
                 referrerPolicy="no-referrer"
               />
             </div>
-            {send.isError && (
-              <Alert appearance="warning" className="mt-3">
-                {i18next.t(describeRefusal(send.error).key)}
-                {describeRefusal(send.error).detail ? <div className="mt-1 text-xs opacity-80">{describeRefusal(send.error).detail}</div> : null}
-              </Alert>
-            )}
+            {send.isError && <RefusalAlert refusal={describeRefusal(send.error)} target={target} />}
             <div className="mt-4 flex justify-end gap-2">
               <Button appearance="gray-link" onClick={onHide}>
                 {i18next.t("g.cancel")}

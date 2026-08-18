@@ -8,7 +8,7 @@ import { SENDER_TARGET_RE, senderGate } from "@/server/newsletter-sender-gate";
  * reason, since when, the rolling numbers, and the subscriber counts. Shown to
  * the SENDER only (see senderGate, mode view).
  */
-export async function GET(request: NextRequest) {
+export async function GET(request: NextRequest): Promise<Response> {
   if (!newsletterConfigured()) return notConfigured();
   const auth = await resolveUser(request, {});
   if (!auth.ok) return unauthorizedResponse(auth.reason);

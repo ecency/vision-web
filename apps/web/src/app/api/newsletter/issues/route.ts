@@ -4,7 +4,7 @@ import { callNewsletter, newsletterConfigured, notConfigured, relay } from "@/se
 import { SENDER_TARGET_RE, senderGate } from "@/server/newsletter-sender-gate";
 
 /** The list's issues, newest first, with what became of them. Sender's view (owner, admin, mod; the creator). */
-export async function GET(request: NextRequest) {
+export async function GET(request: NextRequest): Promise<Response> {
   if (!newsletterConfigured()) return notConfigured();
   const auth = await resolveUser(request, {});
   if (!auth.ok) return unauthorizedResponse(auth.reason);
