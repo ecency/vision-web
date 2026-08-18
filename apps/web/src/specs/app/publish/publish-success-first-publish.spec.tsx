@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom";
 import { screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
+import type { ReactElement } from "react";
 import { PublishSuccessState } from "@/app/publish/_components/publish-success-state";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { mockActiveUser, mockFullAccount, renderWithQueryClient } from "@/specs/test-utils";
@@ -26,6 +28,12 @@ const entry = { title: "First!", author: "newbie", permlink: "first", category: 
  * as loaded; the screen must not infer it, since the cached post count is not
  * refreshed by the publish and a second post looks the same afterwards.
  */
+
+/** Renders inside a "service configured" runtime, as app/providers.tsx does on a configured deploy. */
+function renderConfigured(ui: ReactElement, options?: Parameters<typeof renderWithQueryClient>[1]) {
+  return renderWithQueryClient(<NewsletterRuntimeProvider configured>{ui}</NewsletterRuntimeProvider>, options);
+}
+
 describe("PublishSuccessState and the first-publish digest offer", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock);
@@ -51,16 +59,16 @@ describe("PublishSuccessState and the first-publish digest offer", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("offers the digest when told this was the first publish", async () => {
-    renderWithQueryClient(<PublishSuccessState step="published" setEditStep={() => {}} entryInfo={entry} firstPublish={true} />);
+    renderConfigured(<PublishSuccessState step="published" setEditStep={() => {}} entryInfo={entry} firstPublish={true} />);
     expect(await screen.findByText("newsletter.prompt-title")).toBeInTheDocument();
   });
 
   it("offers nothing on a later publish, even with the same cached account, and nothing when scheduled", async () => {
-    const { unmount } = renderWithQueryClient(<PublishSuccessState step="published" setEditStep={() => {}} entryInfo={entry} firstPublish={false} />);
+    const { unmount } = renderConfigured(<PublishSuccessState step="published" setEditStep={() => {}} entryInfo={entry} firstPublish={false} />);
     await new Promise((r) => setTimeout(r, 40));
     expect(screen.queryByText("newsletter.prompt-title")).not.toBeInTheDocument();
     unmount();
-    renderWithQueryClient(<PublishSuccessState step="scheduled" setEditStep={() => {}} entryInfo={entry} firstPublish={true} />);
+    renderConfigured(<PublishSuccessState step="scheduled" setEditStep={() => {}} entryInfo={entry} firstPublish={true} />);
     await new Promise((r) => setTimeout(r, 40));
     expect(screen.queryByText("newsletter.prompt-title")).not.toBeInTheDocument();
   });

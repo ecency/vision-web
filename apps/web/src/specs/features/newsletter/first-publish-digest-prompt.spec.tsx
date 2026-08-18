@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
+import type { ReactElement } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { digestSubscriptionsKey, FirstPublishDigestPrompt } from "@/features/newsletter";
 import {
@@ -42,6 +44,12 @@ function signedIn() {
   } as never);
 }
 
+
+/** Renders inside a "service configured" runtime, as app/providers.tsx does on a configured deploy. */
+function renderConfigured(ui: ReactElement, options?: Parameters<typeof renderWithQueryClient>[1]) {
+  return renderWithQueryClient(<NewsletterRuntimeProvider configured>{ui}</NewsletterRuntimeProvider>, options);
+}
+
 describe("FirstPublishDigestPrompt", () => {
   beforeEach(() => {
     setupModalContainers();
@@ -60,7 +68,7 @@ describe("FirstPublishDigestPrompt", () => {
   });
 
   it("offers the digest once after the first publish, with no pre-selection", async () => {
-    renderWithQueryClient(<FirstPublishDigestPrompt />);
+    renderConfigured(<FirstPublishDigestPrompt />);
     expect(await screen.findByText("newsletter.prompt-title")).toBeInTheDocument();
     // Two explicit actions, neither pre-selected; nothing has been sent.
     expect(screen.getByRole("button", { name: "newsletter.prompt-accept" })).toBeInTheDocument();
@@ -73,7 +81,7 @@ describe("FirstPublishDigestPrompt", () => {
     fetchMock.mockImplementation((url: string) =>
       url === "/api/newsletter/subscriptions" ? Promise.resolve({ ok: false, status: 503, json: async () => ({ error: "down" }) } as Response) : ok({})
     );
-    const { container: failed, unmount: u1 } = renderWithQueryClient(<FirstPublishDigestPrompt />);
+    const { container: failed, unmount: u1 } = renderConfigured(<FirstPublishDigestPrompt />);
     await new Promise((r) => setTimeout(r, 60));
     expect(failed).toBeEmptyDOMElement();
     u1();
@@ -83,37 +91,37 @@ describe("FirstPublishDigestPrompt", () => {
 
     const client = createTestQueryClient();
     client.setQueryData(digestSubscriptionsKey("newbie"), [{ id: "x", email: "n@example.com", account: "newbie", type: "own", target: "newbie", cadence: "weekly", status: "active", created_at: "" }]);
-    const { container: subscribed, unmount: u2 } = renderWithQueryClient(<FirstPublishDigestPrompt />, { queryClient: client });
+    const { container: subscribed, unmount: u2 } = renderConfigured(<FirstPublishDigestPrompt />, { queryClient: client });
     await new Promise((r) => setTimeout(r, 30));
     expect(subscribed).toBeEmptyDOMElement();
     u2();
 
     window.localStorage.setItem("ecency:digest-prompt:newbie", "dismissed:2026-08-18T00:00:00Z");
-    const { container: answered, unmount: u3 } = renderWithQueryClient(<FirstPublishDigestPrompt />);
+    const { container: answered, unmount: u3 } = renderConfigured(<FirstPublishDigestPrompt />);
     await new Promise((r) => setTimeout(r, 30));
     expect(answered).toBeEmptyDOMElement();
     u3();
     window.localStorage.clear();
 
     flags.newsletter = false;
-    const { container: off } = renderWithQueryClient(<FirstPublishDigestPrompt />);
+    const { container: off } = renderConfigured(<FirstPublishDigestPrompt />);
     await new Promise((r) => setTimeout(r, 30));
     expect(off).toBeEmptyDOMElement();
   });
 
   it("dismissing records the answer so it never re-prompts", async () => {
-    renderWithQueryClient(<FirstPublishDigestPrompt />);
+    renderConfigured(<FirstPublishDigestPrompt />);
     fireEvent.click(await screen.findByRole("button", { name: "newsletter.prompt-dismiss" }));
     await waitFor(() => expect(screen.queryByText("newsletter.prompt-title")).not.toBeInTheDocument());
     expect(window.localStorage.getItem("ecency:digest-prompt:newbie")).toMatch(/^dismissed:/);
     // A second render on the same device is silent.
-    const { container } = renderWithQueryClient(<FirstPublishDigestPrompt />);
+    const { container } = renderConfigured(<FirstPublishDigestPrompt />);
     await new Promise((r) => setTimeout(r, 30));
     expect(container).toBeEmptyDOMElement();
   });
 
   it("accepting opens the own-digest dialog, which asks for the address and subscribes with type own", async () => {
-    renderWithQueryClient(<FirstPublishDigestPrompt />);
+    renderConfigured(<FirstPublishDigestPrompt />);
     fireEvent.click(await screen.findByRole("button", { name: "newsletter.prompt-accept" }));
     expect(await screen.findByText("newsletter.own-digest")).toBeInTheDocument();
     // No address held for the account yet: the dialog asks for one.

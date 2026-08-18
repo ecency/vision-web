@@ -1,10 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { EcencyConfigManager } from "@/config";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { QueryIdentifiers } from "@/core/react-query";
 import { newsletterApi } from "./newsletter-api";
+import { useNewsletterEnabled } from "./runtime";
 import type { DigestCadence, DigestSubscription, DigestType, SubscribeInput } from "./types";
 
 export function digestSubscriptionsKey(username: string | null | undefined) {
@@ -16,10 +16,6 @@ export const newsletterKeys = {
   mutation: (name: "subscribe" | "leave" | "unsubscribe-all") =>
     [QueryIdentifiers.NEWSLETTER_SUBSCRIPTIONS, name] as const
 };
-
-export function useNewsletterEnabled(): boolean {
-  return EcencyConfigManager.getConfigValue(({ visionFeatures }) => visionFeatures.newsletter.enabled);
-}
 
 /** The signed-in username, or a thrown error: mutations here are never anonymous. */
 function requireUsername(username: string | null | undefined): string {

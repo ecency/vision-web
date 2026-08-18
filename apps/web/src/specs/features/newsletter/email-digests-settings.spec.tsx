@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
+import type { ReactElement } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { EmailDigestsSettings } from "@/app/(dynamicPages)/profile/[username]/settings/_email-digests";
 import { digestSubscriptionsKey } from "@/features/newsletter";
@@ -32,6 +34,12 @@ const A2 = { id: "a2", email: "alice@example.com", account: "alice", type: "crea
 const B1 = { id: "b1", email: "alice-work@example.com", account: "alice", type: "community", target: "hive-2", cadence: "monthly", status: "active", created_at: "" };
 const S1 = { id: "s1", email: "alice@example.com", account: "alice", type: "site", target: "ecency", cadence: "weekly", status: "active", created_at: "" };
 
+
+/** Renders inside a "service configured" runtime, as app/providers.tsx does on a configured deploy. */
+function renderConfigured(ui: ReactElement, options?: Parameters<typeof renderWithQueryClient>[1]) {
+  return renderWithQueryClient(<NewsletterRuntimeProvider configured>{ui}</NewsletterRuntimeProvider>, options);
+}
+
 describe("EmailDigestsSettings", () => {
   beforeEach(() => {
     setupModalContainers();
@@ -61,7 +69,7 @@ describe("EmailDigestsSettings", () => {
     fetchMock.mockImplementation((url: string) =>
       url === "/api/newsletter/subscribe" ? ok({ status: "active", created: false, subscription: { ...OWN, cadence: "monthly" } }) : ok({ subscriptions: [OWN] })
     );
-    renderWithQueryClient(<EmailDigestsSettings />, { queryClient: client });
+    renderConfigured(<EmailDigestsSettings />, { queryClient: client });
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "monthly" } });
     await waitFor(() => {
       const call = fetchMock.mock.calls.find((c) => c[0] === "/api/newsletter/subscribe");
@@ -72,7 +80,7 @@ describe("EmailDigestsSettings", () => {
   it("labels a site-digest subscription as the Ecency digest, not the notification digest", () => {
     const client = createTestQueryClient();
     client.setQueryData(digestSubscriptionsKey("alice"), [S1]);
-    renderWithQueryClient(<EmailDigestsSettings />, { queryClient: client });
+    renderConfigured(<EmailDigestsSettings />, { queryClient: client });
     expect(screen.getByText("newsletter.row-site")).toBeInTheDocument();
     expect(screen.queryByText("newsletter.row-own")).not.toBeInTheDocument();
   });
@@ -83,7 +91,7 @@ describe("EmailDigestsSettings", () => {
     fetchMock.mockImplementation((url: string) =>
       url === "/api/newsletter/unsubscribe-all" ? ok({ suppressed: true }) : ok({ subscriptions: [A1, A2, B1] })
     );
-    renderWithQueryClient(<EmailDigestsSettings />, { queryClient: client });
+    renderConfigured(<EmailDigestsSettings />, { queryClient: client });
 
     // One "stop all" per address; press the one for the first address and confirm.
     const stopButtons = screen.getAllByRole("button", { name: "newsletter.stop-all" });

@@ -67,10 +67,13 @@ const CONFIG = {
         enabled: true
       },
       newsletter: {
-        // Digest subscribe controls on community pages and Pro creator profiles. Off unless
-        // the newsletter service is configured for this deployment; the route handlers 503
-        // without NEWSLETTER_API_URL + NEWSLETTER_SERVICE_TOKEN regardless of this flag.
-        enabled: process.env.NEXT_PUBLIC_NEWSLETTER_ENABLED === "1"
+        // Kill switch for the digest subscribe controls (community pages, Pro creator profiles,
+        // settings, homepage form, first-publish prompt). Whether the feature actually shows is
+        // decided at request time from NEWSLETTER_API_URL + NEWSLETTER_SERVICE_TOKEN (see
+        // server/newsletter-internal `newsletterFeatureEnabled`): one image serves every
+        // region, so a build-time flag cannot express "only where the service is configured".
+        // Set NEXT_PUBLIC_NEWSLETTER_ENABLED=0 to force the controls off on a configured deploy.
+        enabled: process.env.NEXT_PUBLIC_NEWSLETTER_ENABLED !== "0"
       },
       gallery: {
         enabled: true

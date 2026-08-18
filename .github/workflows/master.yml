@@ -85,7 +85,6 @@ jobs:
             NEXT_PUBLIC_GMAPS_API_KEY=${{ secrets.GMAPS_API_KEY }}
             NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUB_KEY }}
             NEXT_PUBLIC_GMAPS_MAP_ID=${{ secrets.GMAPS_MAP_ID }}
-            NEXT_PUBLIC_NEWSLETTER_ENABLED=1
             PNPM_VERSION=10.18.1
 
       # Sentry's source-map upload runs inside the Docker build via the
@@ -153,6 +152,10 @@ jobs:
           export SEARCH_API_SECRET=$SEARCH_API_SECRET
           export STRIPE_INTERNAL_SECRET=$STRIPE_INTERNAL_SECRET
           export HOSTING_INTERNAL_SECRET=$HOSTING_INTERNAL_SECRET
+          # The web tier decides per request whether the newsletter service is configured, so a
+          # missing secret would ship a silent no-show. Fail loudly instead.
+          : "${NEWSLETTER_API_URL:?NEWSLETTER_API_URL is required for the EU deploy}"
+          : "${NEWSLETTER_SERVICE_TOKEN:?NEWSLETTER_SERVICE_TOKEN is required for the EU deploy}"
           export NEWSLETTER_API_URL=$NEWSLETTER_API_URL
           export NEWSLETTER_SERVICE_TOKEN=$NEWSLETTER_SERVICE_TOKEN
           export HIVESEARCHER_ORIGIN_IP=$HIVESEARCHER_ORIGIN_IP
@@ -232,6 +235,11 @@ jobs:
         SEO_CRON_SECRET: ${{secrets.SEO_CRON_SECRET}}
         SEO_BLACKLIST_URL: ${{secrets.SEO_BLACKLIST_URL}}
         TURNSTILE_SECRET: ${{secrets.TURNSTILE_SECRET}}
+        # Newsletter service lives on the EU box; the US tier reaches it through the TLS relay
+        # on the EU origin (api.blogs.ecency.com/newsletter-relay, IP-allowlisted), so this
+        # region's URL is its own secret. Same token.
+        NEWSLETTER_API_URL: ${{secrets.NEWSLETTER_API_URL_US}}
+        NEWSLETTER_SERVICE_TOKEN: ${{secrets.NEWSLETTER_SERVICE_TOKEN}}
         # The US box is smaller than EU (15GiB/8c vs 30GiB/16c). At 4 SSR
         # replicas (the compose default) each plateaus ~3.7GiB RSS and the box
         # ran out of RAM -> host global OOM cycling. 3 replicas fit with headroom.
@@ -241,7 +249,7 @@ jobs:
         username: ${{ secrets.SSH_USERNAME }}
         key: ${{ secrets.SSH_KEY }}
         port: ${{ secrets.SSH_PORT }}
-        envs: USE_PRIVATE,PRIVATE_API_ADDR,PRIVATE_API_AUTH,HIVESIGNER_SECRET,SEARCH_API_ADDR,SEARCH_API_SECRET,STRIPE_INTERNAL_SECRET,HOSTING_INTERNAL_SECRET,HIVESEARCHER_ORIGIN_IP,PLAUSIBLE_API_KEY,BLOCKSTREAM_CLIENT_ID,BLOCKSTREAM_CLIENT_SECRET,MATTERMOST_TEAM_ID,MATTERMOST_ADMIN_TOKEN,MATTERMOST_BASE_URL,MATTERMOST_WS_ALLOWED_ORIGINS,THREESPEAK_EMBED_API_KEY,SEO_CRON_SECRET,SEO_BLACKLIST_URL,TURNSTILE_SECRET,WEB_REPLICAS
+        envs: USE_PRIVATE,PRIVATE_API_ADDR,PRIVATE_API_AUTH,HIVESIGNER_SECRET,SEARCH_API_ADDR,SEARCH_API_SECRET,STRIPE_INTERNAL_SECRET,HOSTING_INTERNAL_SECRET,HIVESEARCHER_ORIGIN_IP,PLAUSIBLE_API_KEY,BLOCKSTREAM_CLIENT_ID,BLOCKSTREAM_CLIENT_SECRET,MATTERMOST_TEAM_ID,MATTERMOST_ADMIN_TOKEN,MATTERMOST_BASE_URL,MATTERMOST_WS_ALLOWED_ORIGINS,THREESPEAK_EMBED_API_KEY,SEO_CRON_SECRET,SEO_BLACKLIST_URL,TURNSTILE_SECRET,NEWSLETTER_API_URL,NEWSLETTER_SERVICE_TOKEN,WEB_REPLICAS
         script: |
           set -eo pipefail
           export USE_PRIVATE=$USE_PRIVATE
@@ -260,6 +268,12 @@ jobs:
           export SEO_CRON_SECRET=$SEO_CRON_SECRET
           export SEO_BLACKLIST_URL=$SEO_BLACKLIST_URL
           export TURNSTILE_SECRET=$TURNSTILE_SECRET
+          # The web tier decides per request whether the newsletter service is configured, so a
+          # missing secret would ship a silent no-show. Fail loudly instead.
+          : "${NEWSLETTER_API_URL:?NEWSLETTER_API_URL is required for the US deploy}"
+          : "${NEWSLETTER_SERVICE_TOKEN:?NEWSLETTER_SERVICE_TOKEN is required for the US deploy}"
+          export NEWSLETTER_API_URL=$NEWSLETTER_API_URL
+          export NEWSLETTER_SERVICE_TOKEN=$NEWSLETTER_SERVICE_TOKEN
           export WEB_REPLICAS=$WEB_REPLICAS
           cd ~/vision-web
           git pull origin main

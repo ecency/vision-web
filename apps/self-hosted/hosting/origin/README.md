@@ -17,6 +17,7 @@ in practice — **re-copy any change made there back into this directory.**
 | `sync-custom-domains.py` | cron, every 5 min | issues certificates and writes vhosts for custom domains and dotted tenant names |
 | `install.sh` | once, idempotent | nginx include dir, certbot deploy hook, cron entry |
 | `hosting-internal-allow.conf` | `/etc/nginx/` **only** (not in git) | who may reach `/v1/internal` |
+| `newsletter-relay-allow.conf` | `/etc/nginx/` **only** (not in git) | who may reach `/newsletter-relay/` (the newsletter service, ecency/news) |
 
 ## What the sync does
 
@@ -205,6 +206,25 @@ Two differences from this file, both worth knowing before copying values across:
 
 Because the API believes `X-Real-IP` for proxied requests, it stays correct only as long as
 these locations keep setting that header.
+
+
+## newsletter-relay-allow.conf (not in git)
+
+`/newsletter-relay/` proxies to the newsletter service (ecency/news, `127.0.0.1:3300` on this
+box, prefix stripped). The service is EU-only; the US web tier reaches it through this path
+over TLS, so every region can render the digest controls. Same shape and same reasoning as
+above: one `allow` per line, wildcard include so a missing file degrades to `deny all` on this
+path only. What belongs in it: the co-located web origin's swarm gateway range, the US web
+origin, and loopback for on-box diagnostics. The service also checks its own bearer token on
+every `/api` route, so this list is the outer gate, not the only one.
+
+```sh
+[ -e /etc/nginx/newsletter-relay-allow.conf ] \
+  || sudo install -m 0644 /dev/null /etc/nginx/newsletter-relay-allow.conf
+sudo nano /etc/nginx/newsletter-relay-allow.conf      # allow ...;  one per line
+sudo nginx -t && sudo systemctl reload nginx
+curl -s -o /dev/null -w '%{http_code}\n' https://api.blogs.ecency.com/newsletter-relay/health   # 403 from elsewhere
+```
 
 ## Two things in the vhost that are load-bearing
 

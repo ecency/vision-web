@@ -6,7 +6,8 @@ import { Button } from "@ui/button";
 import i18next from "i18next";
 import { type ReactElement, useEffect, useState } from "react";
 import { DigestSubscribeDialog } from "./digest-subscribe-dialog";
-import { useDigestSubscriptions, useNewsletterEnabled } from "./hooks";
+import { useDigestSubscriptions } from "./hooks";
+import { useNewsletterEnabled } from "./runtime";
 
 /**
  * The opt-in surface for the own-notification digest, offered ONCE, right after

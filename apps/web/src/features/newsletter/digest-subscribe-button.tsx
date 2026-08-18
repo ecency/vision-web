@@ -8,7 +8,8 @@ import { Button, ButtonProps } from "@ui/button";
 import i18next from "i18next";
 import { useState } from "react";
 import { DigestSubscribeDialog } from "./digest-subscribe-dialog";
-import { useDigestSubscription, useNewsletterEnabled } from "./hooks";
+import { useDigestSubscription } from "./hooks";
+import { useNewsletterEnabled } from "./runtime";
 import type { DigestType, SubscribeInput } from "./types";
 
 interface Props {
@@ -23,8 +24,8 @@ interface Props {
 /**
  * The entry point on a community page or a creator profile. Shows the current state when
  * the logged-in account holds a subscription, opens the dialog for everything else.
- * Renders nothing when the feature is off (call sites also wrap it in
- * EcencyConfigManager.Conditional, the house pattern; this is the belt to that brace),
+ * Renders nothing when the feature is off (call sites also wrap it in NewsletterGate,
+ * the runtime counterpart of EcencyConfigManager.Conditional; this is the belt to that brace),
  * and, for creators, when the creator is not an Ecency Pro member: creator lists are a
  * Pro capability, and the server enforces the same rule, this only avoids offering
  * something the request would refuse.

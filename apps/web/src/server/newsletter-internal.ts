@@ -10,6 +10,7 @@
  *
  * Mirrors server/hosting-internal.ts.
  */
+import { EcencyConfigManager } from "@/config";
 import { isIP } from "node:net";
 import type { NextRequest } from "next/server";
 
@@ -23,6 +24,20 @@ export function newsletterServiceToken(): string | null {
 
 export function newsletterConfigured(): boolean {
   return newsletterServiceToken() !== null;
+}
+
+/**
+ * The feature as the UI should see it: this deployment is configured for the service AND the
+ * config kill switch allows. Server components read this directly; the client tree receives
+ * it through NewsletterRuntimeProvider (app/providers.tsx). Route handlers keep using
+ * `newsletterConfigured()`: a switched-off UI must not turn a configured relay into a 503 for
+ * emails already in flight (confirmation and unsubscribe links keep working).
+ */
+export function newsletterFeatureEnabled(): boolean {
+  return (
+    newsletterConfigured() &&
+    EcencyConfigManager.getConfigValue(({ visionFeatures }) => visionFeatures.newsletter.enabled)
+  );
 }
 
 /**

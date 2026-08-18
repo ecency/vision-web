@@ -84,10 +84,12 @@ services:
       - THREESPEAK_EMBED_API_KEY
       - SEO_CRON_SECRET
       - SEO_BLACKLIST_URL
-      # Newsletter service (ecency/news), EU-only single instance reached on the
-      # swarm gateway address; set only in the EU deploy job. The edge worker pins
-      # /api/newsletter/* and /newsletter/* to the EU origin, so the US tier never
-      # needs it. Unset = the handlers answer 503 and the UI hides the controls.
+      # Newsletter service (ecency/news), single instance on the EU box. EU reaches it
+      # on the swarm gateway address, US through the IP-allowlisted TLS relay on the EU
+      # origin; each deploy job supplies its own URL and refuses to deploy without them.
+      # The web tier decides per request whether the service is configured: unset = the
+      # handlers answer 503 and no newsletter control renders (server/newsletter-internal
+      # `newsletterFeatureEnabled`), so a deployment without the service stays quiet.
       - NEWSLETTER_API_URL
       - NEWSLETTER_SERVICE_TOKEN
       # Cap glibc malloc arenas (default 8*cores) so freed memory is returned to
