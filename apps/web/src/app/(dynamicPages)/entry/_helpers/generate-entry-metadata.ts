@@ -1,7 +1,6 @@
 import { parseDate, safeDecodeURIComponent } from "@/utils";
 import { entryCanonical } from "@/utils/entry-canonical";
 import { isIndexable, ReputationSource } from "@/utils/entry-indexability";
-import { isAuthorBlacklisted } from "@/features/seo/blacklist-check";
 import { isValidPermlink } from "@ecency/render-helper";
 import { buildEntryCardFields } from "./entry-card-fields";
 import type { Entry } from "@/entities";
@@ -84,12 +83,7 @@ export async function generateEntryMetadata(
       console.warn("generateEntryMetadata: failed to load author account", e);
     }
 
-    // Shared-Redis read (not a per-replica memory map): pass a singleton set
-    // so isIndexable stays pure/sync with its injected-blacklist contract.
-    const blacklist = (await isAuthorBlacklisted(entry.author))
-      ? new Set([entry.author])
-      : undefined;
-    const robots = isIndexable(entry, authorAccount, accountFetchFailed, blacklist)
+    const robots = isIndexable(entry, authorAccount, accountFetchFailed)
       ? undefined
       : "noindex, nofollow";
 
@@ -133,7 +127,7 @@ export async function generateEntryMetadata(
         canonical: finalCanonical,
         // oEmbed discovery: lets consumers (WordPress/Ghost/Discourse/Notion…)
         // auto-unfurl a pasted ecency.com post URL into a rich card. Gated to
-        // indexable posts only — suppressed/NSFW/blacklisted posts (robots set)
+        // indexable posts only — suppressed/NSFW/thin posts (robots set)
         // never advertise an embed. Targets the post's own ecency.com URL
         // (fullUrl): the provider resolves by author/permlink and rejects
         // non-ecency hosts, so we must NOT use ogUrl/canonical here — those can

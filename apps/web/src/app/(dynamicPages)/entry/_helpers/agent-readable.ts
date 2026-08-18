@@ -2,7 +2,6 @@ import { prefetchQuery } from "@/core/react-query";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { getContentQueryOptions, getProfilesQueryOptions } from "@ecency/sdk";
 import { isIndexable, ReputationSource } from "@/utils/entry-indexability";
-import { isAuthorBlacklisted } from "@/features/seo/blacklist-check";
 import { safeDecodeURIComponent } from "@/utils";
 import type { Entry } from "@/entities";
 
@@ -117,7 +116,7 @@ export async function loadEntry(
 
 /**
  * Fetch a post and return it only if it passes the same indexability gate the
- * entry page uses (blacklist + NSFW + reputation + thin-content). Anything we'd
+ * entry page uses (NSFW + reputation + thin-content). Anything we'd
  * noindex for Googlebot returns null here too → the route handler emits 404.
  *
  * Mirrors generate-entry-metadata.ts so gating decisions can't drift.
@@ -141,10 +140,8 @@ export async function loadIndexableEntry(
   }
 
   // Shared-Redis read; pass a singleton set so isIndexable keeps its
-  // injected-blacklist contract (same call shape as generate-entry-metadata).
-  const blacklist = (await isAuthorBlacklisted(entry.author)) ? new Set([entry.author]) : undefined;
 
-  if (!isIndexable(entry, account, accountFetchFailed, blacklist)) return null;
+  if (!isIndexable(entry, account, accountFetchFailed)) return null;
 
   return loaded;
 }

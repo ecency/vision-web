@@ -307,7 +307,7 @@ describe("isIndexable - structure", () => {
       json_metadata: { canonical_url: "https://inleo.io/@a/b" }
     });
     expect(isIndexable(e, null, true)).toBe(true); // page path (flag off)
-    expect(isIndexable(e, null, true, undefined, true)).toBe(false); // sitemap mode
+    expect(isIndexable(e, null, true, true)).toBe(false); // sitemap mode
   });
 });
 
@@ -402,33 +402,38 @@ describe("isIndexable - NSFW and reputation gates", () => {
   });
 });
 
-describe("B1 - abuse-blacklist signal (injected set)", () => {
-  const bl = new Set(["badguy", "baddie"]);
+describe("B1 - indexability depends only on signals we own (#1524)", () => {
+  // The spaminator feed used to veto indexing here. It was removed: an
+  // external list we neither control nor review was noindexing established
+  // authors (reputation 70+, thousands of posts) and, via the sitemap cron
+  // gate, could stall sitemap publication whenever its host was unreachable.
+  // Abuse still lands, one step later — downvotes cut reputation, and the
+  // reputation gate below rejects the author on the next render.
 
-  it("blacklisted author -> noindex even for an otherwise-fine post", () => {
-    const e = makeEntry({ author: "badguy", depth: 0, body: longBody });
-    expect(isIndexable(e, null, true, bl)).toBe(false);
+  it("reputation alone decides for an otherwise-fine post", () => {
+    const e = makeEntry({ author: "flagged", depth: 0, body: longBody });
+    expect(isIndexable(e, { reputation: 72, post_count: 500 }, false)).toBe(true);
+    expect(isIndexable(e, { reputation: 30, post_count: 500 }, false)).toBe(false);
   });
 
-  it("non-blacklisted author unaffected", () => {
-    const e = makeEntry({ author: "alice", depth: 0, body: longBody });
-    expect(isIndexable(e, null, true, bl)).toBe(true);
+  it("a downvoted author drops out of the index without any external list", () => {
+    const e = makeEntry({ author: "wasfine", depth: 0, body: longBody });
+    expect(isIndexable(e, { reputation: 55, post_count: 900 }, false)).toBe(true);
+    // same author after downvotes push reputation under the threshold
+    expect(isIndexable(e, { reputation: 12, post_count: 900 }, false)).toBe(false);
   });
 
-  it("default (no set passed) = nobody blacklisted (injected-default purity)", () => {
-    expect(idx(makeEntry({ author: "badguy", depth: 0, body: longBody }))).toBe(true);
-  });
-
-  it("blacklist is checked first — beats the wave gate too", () => {
-    const wave = makeEntry({
-      author: "baddie",
+  it("the 4th argument is ignoreDeclaredCanonical, not a blacklist", () => {
+    const reply = makeEntry({
+      author: "alice",
       depth: 1,
-      parent_author: "ecency.waves",
-      root_author: "ecency.waves",
+      parent_author: "bob",
+      parent_permlink: "root",
       body: longBody,
-      children: 9
+      json_metadata: { canonical_url: "https://example.com/elsewhere" }
     });
-    expect(isIndexable(wave, null, true, bl)).toBe(false);
+    // sitemap mode (true) must ignore the declared off-host canonical
+    expect(isIndexable(reply, null, true, true)).toBe(true);
   });
 });
 
@@ -472,7 +477,7 @@ describe("B2 - effectively-empty guard (multimodal-safe)", () => {
 describe("single-source-of-truth (sitemap generator must call this same predicate)", () => {
   it("isIndexable is deterministic for identical inputs", () => {
     const e = makeEntry({ depth: 0, body: longBody });
-    const bl = new Set(["x"]);
-    expect(isIndexable(e, null, true, bl)).toBe(isIndexable(e, null, true, bl));
+    expect(isIndexable(e, null, true)).toBe(isIndexable(e, null, true));
+    expect(isIndexable(e, null, true, true)).toBe(isIndexable(e, null, true, true));
   });
 });
