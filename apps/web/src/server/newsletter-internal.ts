@@ -31,23 +31,35 @@ export function newsletterConfigured(): boolean {
  * service ignores it where it does not apply. Bounded so a stalled service cannot pile up
  * sockets on the web tier.
  */
-export function callNewsletter(
+export async function callNewsletter(
   path: string,
   init: { method?: string; body?: unknown } = {}
 ): Promise<Response> {
   const token = newsletterServiceToken();
   if (!token) throw new Error("newsletter service is not configured");
-  return fetch(`${NEWSLETTER_API}${path}`, {
-    method: init.method ?? "GET",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      Authorization: `Bearer ${token}`
-    },
-    body: init.body === undefined ? undefined : JSON.stringify(init.body),
-    signal: AbortSignal.timeout(10_000),
-    cache: "no-store"
-  });
+  try {
+    return await fetch(`${NEWSLETTER_API}${path}`, {
+      method: init.method ?? "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      signal: AbortSignal.timeout(10_000),
+      cache: "no-store"
+    });
+  } catch (err) {
+    // fetch() rejects on the abort and on connection or DNS failure. Left
+    // uncaught those became 500s from every route; a service outage should read
+    // as what it is, a bad or slow gateway, so the client can say "try again".
+    const name = (err as { name?: string })?.name;
+    const timedOut = name === "TimeoutError" || name === "AbortError";
+    return Response.json(
+      { error: timedOut ? "Newsletter service timed out" : "Newsletter service unreachable" },
+      { status: timedOut ? 504 : 502 }
+    );
+  }
 }
 
 /** Relay a service response as-is: same status, same JSON body. */

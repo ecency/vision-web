@@ -54,18 +54,35 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
   const [email, setEmail] = useState("");
   const [outcome, setOutcome] = useState<SubscribeResult | null>(null);
 
+  // Reset only when the dialog OPENS. Subscribing invalidates the subscriptions
+  // query, and a reset keyed on the refetched subscription would wipe the
+  // "check your inbox" outcome the person is reading.
   useEffect(() => {
     if (show) {
       setCadence(subscription?.cadence ?? "weekly");
       setEmail(subscription?.email ?? knownAddress ?? "");
       setOutcome(null);
     }
-    // Reset when the dialog opens or the subscription it shows changes.
-  }, [show, subscription?.id, subscription?.cadence, subscription?.email, knownAddress]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show]);
+  // But do follow the address once it becomes known while open (first load).
+  useEffect(() => {
+    if (show && !subscription && knownAddress) setEmail((e) => e || knownAddress);
+  }, [show, subscription, knownAddress]);
 
   const needsAddress = !subscription && !knownAddress;
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const busy = subscribe.isPending || leave.isPending;
+  const pending = subscription?.status === "pending_confirmation";
+  // Update is meaningful when the cadence changes; for a pending subscription the
+  // same call re-sends the confirmation, so it is offered under that name.
+  const cadenceUnchanged = Boolean(subscription) && cadence === subscription?.cadence;
+  const primaryLabel = !subscription
+    ? i18next.t("newsletter.subscribe")
+    : pending && cadenceUnchanged
+      ? i18next.t("newsletter.resend")
+      : i18next.t("newsletter.update");
+  const primaryDisabled = busy || isLoading || (needsAddress && !emailValid) || (cadenceUnchanged && !pending);
 
   const cadenceLabel = (c: DigestCadence) => i18next.t(`newsletter.cadence.${c}`);
   const digestName = useMemo(
@@ -93,6 +110,8 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
             ? i18next.t("newsletter.updated", { cadence: cadenceLabel(cadence) })
             : i18next.t("newsletter.subscribed")
         );
+      } else if (result.status === "pending_confirmation" && pending && cadenceUnchanged) {
+        success(i18next.t("newsletter.resent"));
       }
     } catch (e) {
       const message =
@@ -100,7 +119,9 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
           ? i18next.t("newsletter.error-not-pro")
           : e instanceof NewsletterApiError && e.status === 503
             ? i18next.t("newsletter.error-unavailable")
-            : i18next.t("newsletter.error-generic");
+            : e instanceof NewsletterApiError && (e.status === 502 || e.status === 504)
+              ? i18next.t("newsletter.error-gateway")
+              : i18next.t("newsletter.error-generic");
       toastError(message);
     }
   };
@@ -132,7 +153,12 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
             </Alert>
           ) : outcome?.status === "refused" ? (
             <Alert appearance="warning">
-              {activeUser ? i18next.t("newsletter.refused") : i18next.t("newsletter.refused-anon")}
+              {i18next.t("newsletter.refused")}
+              <div className="mt-2">
+                <Button size="sm" appearance="gray-link" onClick={() => setOutcome(null)}>
+                  {i18next.t("newsletter.try-again")}
+                </Button>
+              </div>
             </Alert>
           ) : subscription ? (
             <Alert appearance={subscription.status === "active" ? "success" : "primary"}>
@@ -156,8 +182,11 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
           {outcome?.status !== "pending_confirmation" && outcome?.status !== "refused" && (
             <>
               <div>
-                <label className="text-sm px-2 mb-2 block">{i18next.t("newsletter.cadence-label")}</label>
+                <label htmlFor="digest-cadence" className="text-sm px-2 mb-2 block">
+                  {i18next.t("newsletter.cadence-label")}
+                </label>
                 <FormControl
+                  id="digest-cadence"
                   type="select"
                   value={cadence}
                   disabled={busy || isLoading}
@@ -175,8 +204,11 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
 
               {needsAddress && (
                 <div>
-                  <label className="text-sm px-2 mb-2 block">{i18next.t("newsletter.email-label")}</label>
+                  <label htmlFor="digest-email" className="text-sm px-2 mb-2 block">
+                    {i18next.t("newsletter.email-label")}
+                  </label>
                   <FormControl
+                    id="digest-email"
                     type="email"
                     value={email}
                     disabled={busy}
@@ -196,12 +228,8 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
               </p>
 
               <div className="flex flex-wrap gap-2 items-center">
-                <Button
-                  onClick={submit}
-                  disabled={busy || isLoading || (needsAddress && !emailValid) || (Boolean(subscription) && cadence === subscription?.cadence)}
-                  isLoading={subscribe.isPending}
-                >
-                  {subscription ? i18next.t("newsletter.update") : i18next.t("newsletter.subscribe")}
+                <Button onClick={submit} disabled={primaryDisabled} isLoading={subscribe.isPending}>
+                  {primaryLabel}
                 </Button>
                 {subscription && (
                   <Button appearance="danger" outline={true} onClick={doLeave} disabled={busy} isLoading={leave.isPending}>

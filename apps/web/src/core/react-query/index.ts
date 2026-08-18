@@ -8,6 +8,8 @@ import { cache } from "react";
  */
 export enum QueryIdentifiers {
   NEWSLETTER_SUBSCRIPTIONS = "newsletter-subscriptions",
+  NEWSLETTER_CONFIRM_INSPECT = "newsletter-confirm-inspect",
+  NEWSLETTER_UNSUBSCRIBE_INSPECT = "newsletter-unsubscribe-inspect",
   COMMUNITY_THREADS = "community-threads",
   THREADS = "threads",
   ENTRY_PIN_TRACK = "entry-pin-track",

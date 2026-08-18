@@ -1,6 +1,5 @@
 "use client";
 
-import { EcencyConfigManager } from "@/config";
 import { isProMember } from "@/features/pro";
 import { getProMembersQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
@@ -9,7 +8,7 @@ import { Button, ButtonProps } from "@ui/button";
 import i18next from "i18next";
 import { useState } from "react";
 import { DigestSubscribeDialog } from "./digest-subscribe-dialog";
-import { useDigestSubscription } from "./hooks";
+import { useDigestSubscription, useNewsletterEnabled } from "./hooks";
 import type { DigestType, SubscribeInput } from "./types";
 
 interface Props {
@@ -24,12 +23,14 @@ interface Props {
 /**
  * The entry point on a community page or a creator profile. Shows the current state when
  * the logged-in account holds a subscription, opens the dialog for everything else.
- * Renders nothing when the feature is off, and, for creators, when the creator is not an
- * Ecency Pro member: creator lists are a Pro capability, and the server enforces the same
- * rule, this only avoids offering something the request would refuse.
+ * Renders nothing when the feature is off (call sites also wrap it in
+ * EcencyConfigManager.Conditional, the house pattern; this is the belt to that brace),
+ * and, for creators, when the creator is not an Ecency Pro member: creator lists are a
+ * Pro capability, and the server enforces the same rule, this only avoids offering
+ * something the request would refuse.
  */
 export function DigestSubscribeButton({ type, target, targetLabel, source, size, className }: Props) {
-  const enabled = EcencyConfigManager.getConfigValue(({ visionFeatures }) => visionFeatures.newsletter.enabled);
+  const enabled = useNewsletterEnabled();
   const [open, setOpen] = useState(false);
   const { subscription } = useDigestSubscription(type, target);
   const { data: pro } = useQuery({ ...getProMembersQueryOptions(), enabled: enabled && type === "creator" });
@@ -54,7 +55,7 @@ export function DigestSubscribeButton({ type, target, targetLabel, source, size,
         size={size}
         className={className}
         iconPlacement="left"
-        icon={active ? <UilEnvelopeCheck /> : <UilEnvelope />}
+        icon={active ? <UilEnvelopeCheck aria-hidden="true" /> : <UilEnvelope aria-hidden="true" />}
         onClick={() => setOpen(true)}
         title={i18next.t("newsletter.button-title")}
       >

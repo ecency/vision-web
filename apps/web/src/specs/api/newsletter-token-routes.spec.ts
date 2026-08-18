@@ -52,6 +52,18 @@ describe("link-driven newsletter routes", () => {
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
+  it("maps a service timeout to 504 and an unreachable service to 502, never 500", async () => {
+    const { POST } = await import("@/app/api/newsletter/confirm/[token]/route");
+    mocks.fetch.mockRejectedValueOnce(Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" }));
+    const slow = await POST({} as never, ctx(TOKEN));
+    expect(slow.status).toBe(504);
+    expect(((await slow.json()) as { error: string }).error).toMatch(/timed out/);
+    mocks.fetch.mockRejectedValueOnce(new TypeError("fetch failed"));
+    const down = await POST({} as never, ctx(TOKEN));
+    expect(down.status).toBe(502);
+    expect(((await down.json()) as { error: string }).error).toMatch(/unreachable/);
+  });
+
   it("503s when unconfigured", async () => {
     vi.stubEnv("NEWSLETTER_API_URL", "");
     const { POST } = await import("@/app/api/newsletter/confirm/[token]/route");

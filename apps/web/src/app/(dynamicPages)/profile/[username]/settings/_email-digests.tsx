@@ -1,12 +1,12 @@
 "use client";
 
-import { EcencyConfigManager } from "@/config";
 import {
   CADENCES,
   DigestCadence,
   DigestSubscription,
   useDigestSubscriptions,
   useLeaveDigest,
+  useNewsletterEnabled,
   useSubscribeDigest,
   useUnsubscribeAllDigests
 } from "@/features/newsletter";
@@ -25,7 +25,7 @@ import { useState } from "react";
  * #email-digests from the subscribe dialog.
  */
 export function EmailDigestsSettings() {
-  const enabled = EcencyConfigManager.getConfigValue(({ visionFeatures }) => visionFeatures.newsletter.enabled);
+  const enabled = useNewsletterEnabled();
   const { data, isLoading, isError } = useDigestSubscriptions();
   const subscribe = useSubscribeDigest();
   const leave = useLeaveDigest();
@@ -82,7 +82,7 @@ export function EmailDigestsSettings() {
   return (
     <div id="email-digests" className="bg-white dark:bg-gray-800 rounded-xl p-3 flex flex-col gap-4 scroll-mt-20">
       <div className="text-gray-600 dark:text-gray-400 text-sm flex items-center gap-2">
-        <UilEnvelope className="size-4" />
+        <UilEnvelope className="size-4" aria-hidden="true" />
         {i18next.t("newsletter.settings-title")}
       </div>
 

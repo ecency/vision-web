@@ -18,6 +18,15 @@ vi.mock("@/config", () => ({
   }
 }));
 
+// The api layer awaits ensureValidToken(); the global @/utils mock only stubs
+// getAccessToken, so provide the awaited variant here.
+vi.mock("@/utils", async () => ({
+  ...(await vi.importActual<object>("@/utils")),
+  random: vi.fn(),
+  getAccessToken: vi.fn(() => "mock-token"),
+  ensureValidToken: vi.fn(async () => "mock-token")
+}));
+
 const fetchMock = vi.fn();
 
 function jsonResponse(status: number, body: unknown) {
@@ -145,12 +154,58 @@ describe("DigestSubscribeDialog", () => {
     expect(client.getQueryData(digestSubscriptionsKey("alice"))).toEqual([]);
   });
 
-  it("shows the refusal copy when the service refuses a suppressed address", async () => {
+  it("a refusal is not a dead end: the copy is shown and the form can be tried again", async () => {
     fetchMock.mockImplementation(() => jsonResponse(200, { status: "refused", reason: "suppressed" }));
     renderWithQueryClient(<DigestSubscribeDialog {...dialogProps} />);
     fireEvent.change(screen.getByPlaceholderText("you@example.com"), { target: { value: "gone@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "newsletter.subscribe" }));
-    await waitFor(() => expect(screen.getByText("newsletter.refused-anon")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("newsletter.refused")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "newsletter.try-again" }));
+    expect(screen.getByPlaceholderText("you@example.com")).toBeInTheDocument();
+    expect(screen.queryByText("newsletter.refused")).not.toBeInTheDocument();
+  });
+
+  it("a pending subscription offers to resend the confirmation at the same cadence", async () => {
+    loggedIn("alice");
+    const client = createTestQueryClient();
+    client.setQueryData(digestSubscriptionsKey("alice"), [{ ...SUB, status: "pending_confirmation" }]);
+    fetchMock.mockImplementation((url: string) =>
+      url === "/api/newsletter/subscribe" ? jsonResponse(200, { status: "pending_confirmation" }) : jsonResponse(404, {})
+    );
+    renderWithQueryClient(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
+    // Same cadence, pending: the primary action is "resend", and it is enabled.
+    const resend = screen.getByRole("button", { name: "newsletter.resend" });
+    expect(resend).not.toBeDisabled();
+    fireEvent.click(resend);
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => c[0] === "/api/newsletter/subscribe");
+      expect(JSON.parse(call![1].body)).toMatchObject({ email: "alice@example.com", cadence: "weekly" });
+    });
+  });
+
+  it("the check-your-inbox outcome survives a background refetch of the subscriptions", async () => {
+    loggedIn("alice");
+    const client = createTestQueryClient();
+    let subscribed = false;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/newsletter/subscribe" && init?.method === "POST") {
+        subscribed = true;
+        return jsonResponse(200, { status: "pending_confirmation" });
+      }
+      if (url === "/api/newsletter/subscriptions") {
+        // Empty until the subscribe happened, then the refetch brings the pending row.
+        return jsonResponse(200, { subscriptions: subscribed ? [{ ...SUB, status: "pending_confirmation" }] : [] });
+      }
+      return jsonResponse(404, {});
+    });
+    renderWithQueryClient(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
+    fireEvent.change(await screen.findByPlaceholderText("you@example.com"), { target: { value: "alice@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "newsletter.subscribe" }));
+    await waitFor(() => expect(screen.getByText("newsletter.check-inbox")).toBeInTheDocument());
+    // The mutation invalidated the list; once the refetch has brought the pending
+    // row in, the outcome must still be shown rather than reset away.
+    await waitFor(() => expect(client.getQueryData(digestSubscriptionsKey("alice"))).toHaveLength(1));
+    expect(screen.getByText("newsletter.check-inbox")).toBeInTheDocument();
   });
 });
 
@@ -168,12 +223,15 @@ describe("DigestSubscribeButton", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders nothing when the feature is off", () => {
+  it("renders nothing when the feature is off, and asks the service for nothing", async () => {
     flags.newsletter = false;
+    loggedIn("alice"); // a signed-in user would otherwise trigger the subscriptions query
     const { container } = renderWithQueryClient(
       <DigestSubscribeButton type="community" target="hive-1" targetLabel="X" source="community-page" />
     );
     expect(container).toBeEmptyDOMElement();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("offers a creator digest only for an Ecency Pro creator", () => {

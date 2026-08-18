@@ -151,13 +151,17 @@ export function ProfileCard({ account }: Props) {
               <UilCommentDots className="size-4" />
             </Link>
           )}
-          <DigestSubscribeButton
-            type="creator"
-            target={account.name}
-            targetLabel={data?.profile?.name || `@${account.name}`}
-            source="creator-page"
-            size="sm"
-          />
+          <EcencyConfigManager.Conditional
+            condition={({ visionFeatures }) => visionFeatures.newsletter.enabled}
+          >
+            <DigestSubscribeButton
+              type="creator"
+              target={account.name}
+              targetLabel={data?.profile?.name || `@${account.name}`}
+              source="creator-page"
+              size="sm"
+            />
+          </EcencyConfigManager.Conditional>
         </div>
       )}
 

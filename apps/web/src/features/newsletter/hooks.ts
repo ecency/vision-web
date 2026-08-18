@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { EcencyConfigManager } from "@/config";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { QueryIdentifiers } from "@/core/react-query";
 import { newsletterApi } from "./newsletter-api";
@@ -9,15 +10,36 @@ import type { DigestCadence, DigestSubscription, DigestType, SubscribeInput } fr
 export function digestSubscriptionsKey(username: string | null | undefined) {
   return [QueryIdentifiers.NEWSLETTER_SUBSCRIPTIONS, username ?? "anon"] as const;
 }
+export const newsletterKeys = {
+  confirmInspect: (token: string) => [QueryIdentifiers.NEWSLETTER_CONFIRM_INSPECT, token] as const,
+  unsubscribeInspect: (token: string) => [QueryIdentifiers.NEWSLETTER_UNSUBSCRIBE_INSPECT, token] as const,
+  mutation: (name: "subscribe" | "leave" | "unsubscribe-all") =>
+    [QueryIdentifiers.NEWSLETTER_SUBSCRIPTIONS, name] as const
+};
 
-/** The logged-in account's live digest subscriptions. Disabled for anonymous visitors. */
+export function useNewsletterEnabled(): boolean {
+  return EcencyConfigManager.getConfigValue(({ visionFeatures }) => visionFeatures.newsletter.enabled);
+}
+
+/** The signed-in username, or a thrown error: mutations here are never anonymous. */
+function requireUsername(username: string | null | undefined): string {
+  if (!username) throw new Error("newsletter: not signed in");
+  return username;
+}
+
+/**
+ * The logged-in account's live digest subscriptions. Disabled for anonymous
+ * visitors, and disabled when the feature is off: callers render nothing then,
+ * and a request that predictably 503s on an unconfigured deployment is noise.
+ */
 export function useDigestSubscriptions() {
   const { activeUser } = useActiveAccount();
+  const enabled = useNewsletterEnabled();
   const username = activeUser?.username;
   return useQuery({
     queryKey: digestSubscriptionsKey(username),
-    enabled: Boolean(username),
-    queryFn: () => newsletterApi.list(username as string),
+    enabled: enabled && Boolean(username),
+    queryFn: () => newsletterApi.list(requireUsername(username)),
     staleTime: 60_000,
     retry: false
   });
@@ -46,7 +68,7 @@ export function useSubscribeDigest() {
   const { activeUser } = useActiveAccount();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: ["newsletter", "subscribe"],
+    mutationKey: newsletterKeys.mutation("subscribe"),
     mutationFn: (input: SubscribeInput) => newsletterApi.subscribe(input, activeUser?.username),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: digestSubscriptionsKey(activeUser?.username) });
@@ -58,8 +80,8 @@ export function useLeaveDigest() {
   const { activeUser } = useActiveAccount();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: ["newsletter", "leave"],
-    mutationFn: (id: string) => newsletterApi.leave(id, activeUser?.username as string),
+    mutationKey: newsletterKeys.mutation("leave"),
+    mutationFn: (id: string) => newsletterApi.leave(id, requireUsername(activeUser?.username)),
     onSuccess: (_result, id) => {
       queryClient.setQueryData<DigestSubscription[]>(digestSubscriptionsKey(activeUser?.username), (prev) =>
         (prev ?? []).filter((s) => s.id !== id)
@@ -72,10 +94,14 @@ export function useUnsubscribeAllDigests() {
   const { activeUser } = useActiveAccount();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: ["newsletter", "unsubscribe-all"],
-    mutationFn: (email: string) => newsletterApi.unsubscribeAll(email, activeUser?.username as string),
-    onSuccess: () => {
-      queryClient.setQueryData<DigestSubscription[]>(digestSubscriptionsKey(activeUser?.username), []);
+    mutationKey: newsletterKeys.mutation("unsubscribe-all"),
+    mutationFn: (email: string) => newsletterApi.unsubscribeAll(email, requireUsername(activeUser?.username)),
+    // Only THAT address stops. An account can hold subscriptions under more than
+    // one address; those stay, and must stay visible.
+    onSuccess: (_result, email) => {
+      queryClient.setQueryData<DigestSubscription[]>(digestSubscriptionsKey(activeUser?.username), (prev) =>
+        (prev ?? []).filter((s) => s.email.toLowerCase() !== email.toLowerCase())
+      );
     }
   });
 }

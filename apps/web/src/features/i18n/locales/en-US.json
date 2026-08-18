@@ -4134,8 +4134,7 @@
     "left": "You have left this digest.",
     "check-inbox": "Almost there. We sent a confirmation to {{email}}. Open it and press the button to start receiving this digest.",
     "recently-sent": "A confirmation was sent a few minutes ago. Check your spam folder before requesting another.",
-    "refused": "This address cannot be subscribed right now. If you previously stopped all Ecency email, sign in and subscribe again to reconfirm.",
-    "refused-anon": "This address cannot be subscribed right now. If you previously stopped all Ecency email, sign in and subscribe again to reconfirm.",
+    "refused": "This address is not accepting Ecency email at the moment: a delivery failure or a spam complaint was recorded for it. If you think that is wrong, contact support.",
     "status-active": "You receive this digest {{cadence}} at {{email}}.",
     "status-pending": "Waiting for you to confirm {{email}}. Check your inbox for the confirmation email.",
     "status-suppressed": "This address is not receiving Ecency email at the moment.",
@@ -4169,6 +4168,10 @@
     "unsubscribe-already": "You had already left the {{name}} digest.",
     "unsubscribe-others": "You still receive {{count}} other digest(s) at this address.",
     "unsubscribe-hint": "Leaving one digest keeps the others. Stopping all email adds this address to our do-not-mail list.",
-    "unsubscribe-invalid": "This unsubscribe link is not valid. Sign in and manage your digests from your settings instead."
+    "unsubscribe-invalid": "This unsubscribe link is not valid. Sign in and manage your digests from your settings instead.",
+    "try-again": "Try a different address",
+    "resend": "Resend confirmation email",
+    "resent": "If a confirmation is due, it is on its way. Check your inbox and spam folder.",
+    "error-gateway": "The digest service did not answer. Please try again in a moment."
   }
 }

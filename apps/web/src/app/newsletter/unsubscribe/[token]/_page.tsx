@@ -1,6 +1,6 @@
 "use client";
 
-import { newsletterApi, NewsletterApiError } from "@/features/newsletter";
+import { newsletterApi, NewsletterApiError, newsletterKeys } from "@/features/newsletter";
 import { Alert } from "@ui/alert";
 import { Button } from "@ui/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -14,7 +14,7 @@ import Link from "next/link";
  */
 export function UnsubscribePage({ token }: { token: string }) {
   const inspect = useQuery({
-    queryKey: ["newsletter", "unsubscribe-inspect", token],
+    queryKey: newsletterKeys.unsubscribeInspect(token),
     queryFn: () => newsletterApi.inspectUnsubscribe(token),
     retry: false,
     staleTime: Infinity

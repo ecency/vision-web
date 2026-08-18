@@ -1,4 +1,4 @@
-import { getAccessToken } from "@/utils";
+import { ensureValidToken } from "@/utils";
 import type { DigestSubscription, SubscribeInput, SubscribeResult } from "./types";
 
 /**
@@ -7,7 +7,11 @@ import type { DigestSubscription, SubscribeInput, SubscribeResult } from "./type
  *
  * Identity for logged-in calls is the HiveSigner access token, sent as `code` in a POST
  * body or as X-HS-Token on GET/DELETE, exactly as the hosting and 3Speak proxies do; the
- * route handler verifies it upstream and derives the account from it.
+ * route handler verifies it upstream and derives the account from it. The token is
+ * obtained with ensureValidToken(), which AWAITS a refresh when the stored one has
+ * expired; getAccessToken() only kicks off a background refresh and hands back the
+ * expired token, and the first request after a long absence then 401s and leaves the
+ * subscriptions query in an error state.
  */
 export class NewsletterApiError extends Error {
   constructor(
@@ -24,14 +28,14 @@ async function parse<T>(res: Response): Promise<T> {
   return data;
 }
 
-function authHeaders(username?: string | null): Record<string, string> {
-  const token = username ? getAccessToken(username) : null;
+async function authHeaders(username?: string | null): Promise<Record<string, string>> {
+  const token = username ? await ensureValidToken(username) : null;
   return token ? { "X-HS-Token": token } : {};
 }
 
 export const newsletterApi = {
   async subscribe(input: SubscribeInput, username?: string | null): Promise<SubscribeResult> {
-    const code = username ? getAccessToken(username) : null;
+    const code = username ? await ensureValidToken(username) : null;
     const res = await fetch("/api/newsletter/subscribe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -41,7 +45,7 @@ export const newsletterApi = {
   },
 
   async list(username: string): Promise<DigestSubscription[]> {
-    const res = await fetch("/api/newsletter/subscriptions", { headers: authHeaders(username) });
+    const res = await fetch("/api/newsletter/subscriptions", { headers: await authHeaders(username) });
     const data = await parse<{ subscriptions: DigestSubscription[] }>(res);
     return data.subscriptions ?? [];
   },
@@ -49,13 +53,13 @@ export const newsletterApi = {
   async leave(id: string, username: string): Promise<void> {
     const res = await fetch(`/api/newsletter/subscriptions/${encodeURIComponent(id)}`, {
       method: "DELETE",
-      headers: authHeaders(username)
+      headers: await authHeaders(username)
     });
     await parse<{ left: boolean }>(res);
   },
 
   async unsubscribeAll(email: string, username: string): Promise<void> {
-    const code = getAccessToken(username);
+    const code = await ensureValidToken(username);
     const res = await fetch("/api/newsletter/unsubscribe-all", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
