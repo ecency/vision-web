@@ -1,6 +1,7 @@
 import { getCommunity } from "@ecency/sdk";
 import type { NextRequest } from "next/server";
 import { isProRosterMember } from "@/server/pro-members";
+import { COMPOSE_MAX, INTRO_MAX, SUBJECT_MAX } from "@/features/newsletter/compose-limits";
 
 /**
  * Who counts as a list's SENDER, decided in the web tier because it knows Pro
@@ -67,9 +68,7 @@ export type SendBody =
   | { type: "creator" | "community"; target: string; author: string; permlink: string }
   | { type: "creator" | "community"; target: string; posts: PostRef[]; subject?: string; intro?: string };
 
-export const COMPOSE_MAX = 10;
-export const SUBJECT_MAX = 120;
-export const INTRO_MAX = 500;
+export { COMPOSE_MAX, INTRO_MAX, SUBJECT_MAX };
 
 /** Reads the JSON body once; the same object feeds resolveUser (body.code) and the field validation. */
 export async function readJsonBody(request: NextRequest): Promise<Record<string, unknown>> {

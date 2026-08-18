@@ -27,10 +27,7 @@ export interface ComposeRequest {
 }
 
 export type SendRequest = SendRef | ComposeRequest;
-export const COMPOSE_MIN = 2;
-export const COMPOSE_MAX = 10;
-export const SUBJECT_MAX = 120;
-export const INTRO_MAX = 500;
+export { COMPOSE_MAX, COMPOSE_MIN, INTRO_MAX, SUBJECT_MAX } from "./compose-limits";
 
 export interface CandidatePost extends PostRef {
   title: string;
