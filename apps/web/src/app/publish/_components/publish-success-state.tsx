@@ -14,6 +14,7 @@ import {
   makeShareUrlDiscord
 } from "@/utils/url-share";
 import { facebookSvg, discordSvg, linkedinSvg, redditSvg, twitterSvg } from "@ui/svg";
+import { FirstPublishDigestPrompt } from "@/features/newsletter";
 
 interface EntryInfo {
   title: string;
@@ -120,6 +121,8 @@ export function PublishSuccessState({ step, setEditStep, entryInfo }: Props) {
         {step === "published" && <QuestCompleteLine />}
 
         {step === "published" && entryInfo && <ShareBar entryInfo={entryInfo} />}
+
+        {step === "published" && <FirstPublishDigestPrompt />}
 
         <div className="flex items-center gap-4">
           <Link href="/publish">

@@ -87,9 +87,13 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
   const cadenceLabel = (c: DigestCadence) => i18next.t(`newsletter.cadence.${c}`);
   const digestName = useMemo(
     () =>
-      type === "community"
-        ? i18next.t("newsletter.community-digest", { name: targetLabel })
-        : i18next.t("newsletter.creator-digest", { name: targetLabel }),
+      type === "own"
+        ? i18next.t("newsletter.own-digest")
+        : type === "site"
+          ? i18next.t("newsletter.site-digest")
+          : type === "community"
+            ? i18next.t("newsletter.community-digest", { name: targetLabel })
+            : i18next.t("newsletter.creator-digest", { name: targetLabel }),
     [type, targetLabel]
   );
 
@@ -173,9 +177,13 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
             </Alert>
           ) : (
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              {type === "community"
-                ? i18next.t("newsletter.intro-community", { name: targetLabel })
-                : i18next.t("newsletter.intro-creator", { name: targetLabel })}
+              {type === "own"
+                ? i18next.t("newsletter.intro-own")
+                : type === "site"
+                  ? i18next.t("newsletter.intro-site")
+                  : type === "community"
+                    ? i18next.t("newsletter.intro-community", { name: targetLabel })
+                    : i18next.t("newsletter.intro-creator", { name: targetLabel })}
             </p>
           )}
 

@@ -41,7 +41,6 @@ export function EmailDigestsSettings() {
   const describe = (s: DigestSubscription) => describeDigest(s.type, s.target);
 
   const changeCadence = async (s: DigestSubscription, cadence: DigestCadence) => {
-    if (s.type === "own") return;
     try {
       await subscribe.mutateAsync({
         email: s.email,
@@ -109,24 +108,22 @@ export function EmailDigestsSettings() {
                   )}
                 </div>
               </div>
-              {s.type !== "own" && (
-                <FormControl
-                  type="select"
-                  value={s.cadence}
-                  disabled={subscribe.isPending}
-                  className="!w-auto"
-                  aria-label={i18next.t("newsletter.cadence-label")}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                    changeCadence(s, e.target.value as DigestCadence)
-                  }
-                >
-                  {CADENCES.map((c) => (
-                    <option key={c} value={c}>
-                      {i18next.t(`newsletter.cadence.${c}`)}
-                    </option>
-                  ))}
-                </FormControl>
-              )}
+              <FormControl
+                type="select"
+                value={s.cadence}
+                disabled={subscribe.isPending}
+                className="!w-auto"
+                aria-label={i18next.t("newsletter.cadence-label")}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                  changeCadence(s, e.target.value as DigestCadence)
+                }
+              >
+                {CADENCES.map((c) => (
+                  <option key={c} value={c}>
+                    {i18next.t(`newsletter.cadence.${c}`)}
+                  </option>
+                ))}
+              </FormControl>
               <Button size="sm" appearance="danger" outline={true} disabled={leave.isPending} onClick={() => leaveOne(s)}>
                 {i18next.t("newsletter.leave")}
               </Button>

@@ -1,4 +1,4 @@
-export type DigestType = "community" | "creator" | "site";
+export type DigestType = "own" | "community" | "creator" | "site";
 export type DigestCadence = "weekly" | "monthly";
 export type DigestStatus = "active" | "pending_confirmation" | "suppressed" | "ended";
 
@@ -27,5 +27,5 @@ export interface SubscribeInput {
   target: string;
   targetLabel?: string;
   cadence: DigestCadence;
-  source: "community-page" | "creator-page" | "settings" | "landing-page";
+  source: "community-page" | "creator-page" | "settings" | "landing-page" | "publish-prompt";
 }
