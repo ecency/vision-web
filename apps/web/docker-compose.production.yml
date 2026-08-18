@@ -84,6 +84,12 @@ services:
       - THREESPEAK_EMBED_API_KEY
       - SEO_CRON_SECRET
       - SEO_BLACKLIST_URL
+      # Newsletter service (ecency/news), EU-only single instance reached on the
+      # swarm gateway address; set only in the EU deploy job. The edge worker pins
+      # /api/newsletter/* and /newsletter/* to the EU origin, so the US tier never
+      # needs it. Unset = the handlers answer 503 and the UI hides the controls.
+      - NEWSLETTER_API_URL
+      - NEWSLETTER_SERVICE_TOKEN
       # Cap glibc malloc arenas (default 8*cores) so freed memory is returned to
       # the OS instead of being retained per-arena. Cuts Next.js SSR RSS (which
       # ran ~2x the V8 heap due to arena fragmentation) with no latency cost:
