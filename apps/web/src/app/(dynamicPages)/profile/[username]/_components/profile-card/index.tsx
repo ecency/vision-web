@@ -35,7 +35,7 @@ import { profileWebsiteHref } from "./website-href";
 import { FinalizeCommunityBanner } from "../finalize-community-banner";
 import { useActiveAccount } from "@/core/hooks";
 import { ProBadge } from "@/features/pro";
-import { DigestSubscribeButton, NewsletterGate, SenderStatusNotice } from "@/features/newsletter";
+import { DigestSubscribeButton, NewsletterGate, SenderStatusNotice, SentIssues } from "@/features/newsletter";
 
 interface Props {
   account: Account;
@@ -139,6 +139,7 @@ export function ProfileCard({ account }: Props) {
       {activeUsername?.toLowerCase() === account.name && (
         <NewsletterGate>
           <SenderStatusNotice type="creator" target={account.name} isSender className="mb-4" />
+          <SentIssues type="creator" target={account.name} isSender className="mb-4" />
         </NewsletterGate>
       )}
 

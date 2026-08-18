@@ -1,4 +1,6 @@
 import { useCallback, useContext, useEffect, useState } from "react";
+import { useAuthorSendTarget } from "@/features/newsletter/author-send-eligibility";
+import { UilEnvelopeSend } from "@tooni/iconscout-unicons-react";
 import { success } from "../feedback";
 import { Community, Entry, FullAccount, ROLES } from "@/entities";
 import { useCommunityPinCache } from "@/core/caches";
@@ -48,6 +50,9 @@ export function useMenuItemsGenerator(
   const [mute, setMute] = useState(false);
   const [promote, setPromote] = useState(false);
   const [translate, setTranslate] = useState(false);
+  const [sendNewsletter, setSendNewsletter] = useState(false);
+  // vision-web#1532: the list this post may be sent to by this viewer, or null.
+  const newsletterTarget = useAuthorSendTarget(entry, community);
   const [canMute, setCanMute] = useState(false);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
 
@@ -189,6 +194,14 @@ export function useMenuItemsGenerator(
           icon: <UilLanguage className="size-4" />
         })
       ),
+      ...safeSpread(
+        () => !!newsletterTarget,
+        () => ({
+          label: i18next.t("newsletter.send-to-subscribers"),
+          onClick: () => setSendNewsletter(true),
+          icon: <UilEnvelopeSend className="size-4" />
+        })
+      ),
       ...(extraMenuItems ?? []),
       ...EcencyConfigManager.composeConditionals(
         EcencyConfigManager.withConditional(
@@ -284,6 +297,7 @@ export function useMenuItemsGenerator(
     isPinned,
     isTeamManager,
     mute,
+    newsletterTarget,
     promote,
     router,
     separatedSharing,
@@ -296,7 +310,7 @@ export function useMenuItemsGenerator(
 
   useEffect(() => {
     generate();
-  }, [isPinned, activeUser, community, canMute, separatedSharing, extraMenuItems, generate]);
+  }, [isPinned, activeUser, community, canMute, separatedSharing, extraMenuItems, generate, newsletterTarget]);
 
   return {
     menuItems,
@@ -320,6 +334,9 @@ export function useMenuItemsGenerator(
     promote,
     setPromote,
     translate,
-    setTranslate
+    setTranslate,
+    sendNewsletter,
+    setSendNewsletter,
+    newsletterTarget
   };
 }

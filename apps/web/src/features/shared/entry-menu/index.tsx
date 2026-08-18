@@ -47,6 +47,13 @@ const EntryTranslate = dynamic(
   () => import("@/features/shared/entry-translate").then((m) => ({ default: m.EntryTranslate })),
   { ssr: false }
 );
+// Loaded on demand and by file, not through the newsletter barrel: that barrel
+// imports @/features/shared for its toasts, and a static import here would
+// close a cycle through this very module.
+const AuthorSendDialog = dynamic(
+  () => import("@/features/newsletter/author-send-dialog").then((m) => ({ default: m.AuthorSendDialog })),
+  { ssr: false }
+);
 
 interface Props {
   entry: Entry;
@@ -125,7 +132,10 @@ export const EntryMenu = ({
     promote,
     setPromote,
     translate,
-    setTranslate
+    setTranslate,
+    sendNewsletter,
+    setSendNewsletter,
+    newsletterTarget
   } = useMenuItemsGenerator(entry, community, separatedSharing, extraMenuItems);
 
   return (
@@ -176,6 +186,15 @@ export const EntryMenu = ({
         />
       )}
       {share && <EntryShare entry={entry} onHide={() => setShare(false)} />}
+      {sendNewsletter && newsletterTarget && (
+        <AuthorSendDialog
+          target={newsletterTarget}
+          author={entry.author}
+          permlink={entry.permlink}
+          show={sendNewsletter}
+          onHide={() => setSendNewsletter(false)}
+        />
+      )}
       {editHistory && showEditHistoryInMenu && (
         <EditHistory entry={entry} onHide={toggleEditHistory} />
       )}

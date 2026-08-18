@@ -4191,6 +4191,27 @@
     "suspended-reason-complaints": "Too many recipients marked recent issues as spam. Sending is paused to protect every Ecency sender's deliverability.",
     "suspended-reason-bounces": "Too many recent recipients could not be delivered to. Sending is paused to protect every Ecency sender's deliverability.",
     "suspended-reason-manual": "Sending is paused by Ecency. No new issues go out until it is lifted.",
-    "suspended-help": "Existing subscribers are kept. Contact Ecency support to have the suspension reviewed."
+    "suspended-help": "Existing subscribers are kept. Contact Ecency support to have the suspension reviewed.",
+    "send-to-subscribers": "Send to email subscribers",
+    "send-title": "Send to {{list}} email subscribers",
+    "send-loading": "Preparing the preview…",
+    "send-readers": "{{weekly}} weekly and {{monthly}} monthly readers will get this as their current issue.",
+    "send-no-readers": "Nobody is subscribed to this list yet.",
+    "send-period-taken-some": "The {{cadences}} readers already received this period's issue; they will not get this one.",
+    "send-period-taken-all": "This period's issue has already gone out to every reader. The next one can be sent in the next period.",
+    "send-one-per-period": "Readers get at most one issue per period they chose (weekly or monthly). Sending this replaces the automatic digest for the period.",
+    "send-preview": "Email preview",
+    "send-now": "Send now",
+    "send-done": "Sent to {{count}} readers. Delivery is spread over the next hours.",
+    "send-done-line": "{{cadence}} readers: {{recipients}}",
+    "send-already-sent": "This period's issue has already gone out. Try again in the next period.",
+    "send-suspended": "Sending is suspended for this list. See the notice on your profile or community page.",
+    "send-post-refused": "This post cannot be sent to the list.",
+    "send-post-not-found": "The post could not be found.",
+    "send-not-allowed": "You cannot send to this list.",
+    "cadence-weekly": "weekly",
+    "cadence-monthly": "monthly",
+    "sent-issues": "Sent issues",
+    "sent-issue-stats": "{{delivered}} delivered, {{bounced}} bounced"
   }
 }
