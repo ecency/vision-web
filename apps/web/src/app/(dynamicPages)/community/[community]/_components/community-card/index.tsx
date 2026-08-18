@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { NewsletterGate, SenderStatusNotice } from "@/features/newsletter";
 import "./_index.scss";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import { Button } from "@ui/button";
@@ -50,9 +51,20 @@ export function CommunityCard({ community, account }: Props) {
     [roleInTeam]
   );
   const canEditTeam = useMemo(() => !!(roleInTeam && roleMap[roleInTeam]), [roleInTeam]);
+  // Names compared lowercase: the stored username keeps whatever casing was typed,
+  // team entries are canonical. Owner, admin and mod are the digest's senders.
+  const isDigestSender = useMemo(() => {
+    const me = activeUser?.username?.toLowerCase();
+    const mine = me ? community.team.find((x: (string | undefined)[]) => x[0]?.toLowerCase() === me) : undefined;
+    return !!(mine?.[1] && [ROLES.OWNER.toString(), ROLES.ADMIN.toString(), ROLES.MOD.toString()].includes(mine[1]));
+  }, [activeUser?.username, community.team]);
 
   return (
     <div className="community-card">
+      {/* Policing (vision-web#1513): the team sees when this community's digest is suspended, and why. */}
+      <NewsletterGate>
+        <SenderStatusNotice type="community" target={community.name} isSender={isDigestSender} className="mb-4" />
+      </NewsletterGate>
       <div className="community-avatar inline-flex items-center justify-center md:justify-start">
         {canUpdatePic && (
           <CommunityCardEditPic

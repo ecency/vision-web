@@ -35,7 +35,7 @@ import { profileWebsiteHref } from "./website-href";
 import { FinalizeCommunityBanner } from "../finalize-community-banner";
 import { useActiveAccount } from "@/core/hooks";
 import { ProBadge } from "@/features/pro";
-import { DigestSubscribeButton, NewsletterGate } from "@/features/newsletter";
+import { DigestSubscribeButton, NewsletterGate, SenderStatusNotice } from "@/features/newsletter";
 
 interface Props {
   account: Account;
@@ -132,6 +132,15 @@ export function ProfileCard({ account }: Props) {
         </div>
       </div>
       <HivePosh username={account.name} className="mb-4" />
+
+      {/* Policing (vision-web#1513): the creator sees when their own digest is suspended, and why.
+          Gated on the account itself, not on isMyProfile, which also wants profile metadata that
+          not every account has; names compared lowercase, the stored username keeps its casing. */}
+      {activeUsername?.toLowerCase() === account.name && (
+        <NewsletterGate>
+          <SenderStatusNotice type="creator" target={account.name} isSender className="mb-4" />
+        </NewsletterGate>
+      )}
 
       {!isMyProfile && (
         <div className="mb-4 flex flex-wrap gap-2">
