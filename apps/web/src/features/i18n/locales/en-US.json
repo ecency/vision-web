@@ -4176,6 +4176,14 @@
     "resent": "If a confirmation is due, it is on its way. Check your inbox and spam folder.",
     "error-gateway": "The digest service did not answer. Please try again in a moment.",
     "row-site": "Ecency digest",
-    "row-unknown": "Digest ({{type}})"
+    "row-unknown": "Digest ({{type}})",
+    "own-digest": "Your notification digest by email",
+    "site-digest": "Ecency digest by email",
+    "intro-own": "Get a summary of what happened on your posts, mentions and followers delivered to your inbox. You choose how often, and you can leave from any email.",
+    "intro-site": "Get a summary of the best new posts across Ecency delivered to your inbox. You choose how often, and you can leave from any email.",
+    "prompt-title": "Want a digest of your Ecency activity by email?",
+    "prompt-body": "Replies, mentions and new followers, once a week or once a month. Nothing is sent until you confirm your address, and you can leave from any email.",
+    "prompt-accept": "Yes, set it up",
+    "prompt-dismiss": "No thanks"
   }
 }

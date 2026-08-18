@@ -54,6 +54,21 @@ describe("EmailDigestsSettings", () => {
     vi.unstubAllGlobals();
   });
 
+  it("changes the cadence of the OWN digest through the service like any other", async () => {
+    const OWN = { id: "o1", email: "alice@example.com", account: "alice", type: "own", target: "alice", cadence: "weekly", status: "active", created_at: "" };
+    const client = createTestQueryClient();
+    client.setQueryData(digestSubscriptionsKey("alice"), [OWN]);
+    fetchMock.mockImplementation((url: string) =>
+      url === "/api/newsletter/subscribe" ? ok({ status: "active", created: false, subscription: { ...OWN, cadence: "monthly" } }) : ok({ subscriptions: [OWN] })
+    );
+    renderWithQueryClient(<EmailDigestsSettings />, { queryClient: client });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "monthly" } });
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => c[0] === "/api/newsletter/subscribe");
+      expect(JSON.parse(call![1].body)).toMatchObject({ type: "own", target: "alice", cadence: "monthly", source: "settings", code: "mock-token" });
+    });
+  });
+
   it("labels a site-digest subscription as the Ecency digest, not the notification digest", () => {
     const client = createTestQueryClient();
     client.setQueryData(digestSubscriptionsKey("alice"), [S1]);

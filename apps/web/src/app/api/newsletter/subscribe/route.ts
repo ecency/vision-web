@@ -10,9 +10,9 @@ import {
   relay
 } from "@/server/newsletter-internal";
 
-const TYPES = new Set(["community", "creator", "site"]);
+const TYPES = new Set(["own", "community", "creator", "site"]);
 const CADENCES = new Set(["weekly", "monthly"]);
-const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-page"]);
+const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-page", "publish-prompt"]);
 
 /**
  * Subscribe to a community or creator digest.
@@ -48,6 +48,14 @@ export async function POST(request: NextRequest) {
     const auth = await resolveUser(request, body);
     if (!auth.ok) return unauthorizedResponse(auth.reason);
     account = auth.username.toLowerCase();
+  }
+
+  // The own-notification digest is by definition the signed-in account's own:
+  // it needs a verified account, and its target IS that account. The service
+  // enforces the same; refusing here keeps a forged target from ever leaving.
+  if (type === "own") {
+    if (!account) return Response.json({ error: "Authentication required" }, { status: 401 });
+    if (target !== account) return Response.json({ error: "Invalid request" }, { status: 400 });
   }
 
   if (type === "creator") {

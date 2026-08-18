@@ -130,9 +130,22 @@ describe("POST /api/newsletter/subscribe", () => {
     expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toMatchObject({ type: "site", target: "ecency", source: "landing-page" });
   });
 
+  it("the own digest needs a verified account and its target must be that account", async () => {
+    // Anonymous: no account to be the target of.
+    expect((await post({ ...VALID, type: "own", target: "alice" })).status).toBe(401);
+    // Signed in as alice, asking for bob's: refused before it leaves.
+    mocks.verify.mockResolvedValue({ ok: true, username: "alice" });
+    expect((await post({ ...VALID, type: "own", target: "bob", code: "tok" })).status).toBe(400);
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    // Signed in as alice, asking for her own: relayed with the account attributed.
+    mocks.fetch.mockResolvedValue(upstream(200, { status: "pending_confirmation" }));
+    expect((await post({ ...VALID, type: "own", target: "Alice", code: "tok", source: "publish-prompt" })).status).toBe(200);
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toMatchObject({ type: "own", target: "alice", account: "alice", source: "publish-prompt" });
+  });
+
   it("400s malformed input before it reaches the service", async () => {
     for (const bad of [
-      { ...VALID, type: "own" },
+      { ...VALID, type: "nope" },
       { ...VALID, cadence: "daily" },
       { ...VALID, email: "" },
       { ...VALID, source: "elsewhere" },
