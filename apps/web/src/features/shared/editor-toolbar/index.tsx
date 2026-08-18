@@ -93,14 +93,43 @@ export function EditorToolbar({
     activeUserRef.current = activeUser;
   }, [activeUser]);
 
+  // Keyboard shortcuts are broadcast on `window`, so every mounted toolbar
+  // hears every one of them. An entry page runs several at once (the reply box
+  // plus an inline reply form under each comment). Acting on a shortcut
+  // that was typed in someone else's editor inserted the markdown into all of
+  // them and, because insertOrReplace focuses its target, moved the caret out
+  // of the box being typed in. Only the toolbar whose own editor holds focus
+  // may act.
+  //
+  // Toolbar buttons call these same handlers directly and are unaffected: a
+  // click moves focus to the button, so they must not go through this gate.
+  useEffect(() => {
+    const forFocusedEditor =
+      (handler: (e: Event) => void): EventListener =>
+      (e) => {
+        const el = getTargetEl();
+        if (el && document.activeElement === el) {
+          handler(e);
+        }
+      };
+
+    const listeners: [string, EventListener][] = [
+      ["bold", forFocusedEditor(bold)],
+      ["italic", forFocusedEditor(italic)],
+      ["table", forFocusedEditor(table)],
+      ["link", forFocusedEditor(() => setLink(true))],
+      ["codeBlock", forFocusedEditor(code)],
+      ["blockquote", forFocusedEditor(quote)],
+      ["image", forFocusedEditor(() => setImage(true))]
+    ];
+
+    listeners.forEach(([type, listener]) => window.addEventListener(type, listener));
+
+    return () => listeners.forEach(([type, listener]) => window.removeEventListener(type, listener));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useMount(() => {
-    window.addEventListener("bold", bold);
-    window.addEventListener("italic", italic);
-    window.addEventListener("table", table);
-    window.addEventListener("link", () => setLink(true));
-    window.addEventListener("codeBlock", code);
-    window.addEventListener("blockquote", quote);
-    window.addEventListener("image", () => setImage(true));
     // 🆕 Native drag-drop listeners on the editor
     const editor = rootRef.current?.parentElement?.querySelector(".the-editor");
 
@@ -109,22 +138,6 @@ export function EditorToolbar({
       editor.addEventListener("drop", (e) => drop(e as DragEvent));
       editor.addEventListener("paste", (e) => onPaste(e as ClipboardEvent));
     }
-
-    return () => {
-      window.removeEventListener("bold", bold);
-      window.removeEventListener("italic", italic);
-      window.removeEventListener("table", table);
-      window.removeEventListener("link", () => setLink(true));
-      window.removeEventListener("codeBlock", code);
-      window.removeEventListener("blockquote", quote);
-      window.removeEventListener("image", () => setImage(true));
-
-      if (editor) {
-        editor.removeEventListener("dragover", (e) => onDragOver(e as DragEvent));
-        editor.removeEventListener("drop", (e) => drop(e as DragEvent));
-        editor.removeEventListener("paste", (e) => onPaste(e as ClipboardEvent));
-      }
-    };
   });
 
   const getTargetEl = () => {

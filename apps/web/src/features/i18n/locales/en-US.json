@@ -1948,8 +1948,8 @@
     "deleted": "Removed from favorites"
   },
   "editor-toolbar": {
-    "bold": "Bold (Alt + B)",
-    "italic": "Italic (Alt + I)",
+    "bold": "Bold (Ctrl + B)",
+    "italic": "Italic (Ctrl + I)",
     "header": "Heading",
     "code": "Code (Alt + C)",
     "quote": "Quote (Alt + M)",

@@ -1,11 +1,17 @@
 @import "src/styles/vars_mixins";
 
 .emoji-picker-dialog {
-  position: absolute;
   z-index: 201;
 
   em-emoji-picker {
     width: 300px;
+    // Set by the `size` middleware from the room actually left in the viewport,
+    // so a short window (or a phone held sideways) gets a shorter panel instead
+    // of one running off the edge of the screen. emoji-mart defaults to a fixed
+    // 435px with a 230px floor on its own :host. Outside CSS is what beats
+    // :host, so without clearing the floor the panel cannot shrink to fit.
+    min-height: 0;
+    height: var(--emoji-picker-height, 435px);
   }
 
   @include media-breakpoint-down(sm) {
@@ -21,6 +27,9 @@
 
     em-emoji-picker {
       width: 100%;
+      // Full height as a bottom sheet: the anchored measurement above is for
+      // the popover layout, which this breakpoint replaces.
+      height: 435px;
     }
 
     > div {

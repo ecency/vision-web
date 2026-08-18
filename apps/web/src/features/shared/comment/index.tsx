@@ -4,7 +4,8 @@ import defaults from "@/defaults";
 import { Entry } from "@/entities";
 import { AvailableCredits, handleAndReportError, LoginRequired } from "@/features/shared";
 import { CommentPreview } from "@/features/shared/comment/comment-preview";
-import { detectEvent, EditorToolbar, toolbarEventListener } from "@/features/shared/editor-toolbar";
+import { EditorToolbar, toolbarEventListener } from "@/features/shared/editor-toolbar";
+import { handleEditorShortcut } from "@/features/shared/editor-toolbar/shortcuts";
 import { TextareaAutocomplete } from "@/features/shared/textarea-autocomplete";
 import { PREFIX } from "@/utils/local-storage";
 import { createReplyPermlink, makeJsonMetaDataReply } from "@/utils";
@@ -254,27 +255,7 @@ export function Comment({
       }
       return;
     }
-    if (e.altKey && e.key === "b") {
-      detectEvent("bold");
-    }
-    if (e.altKey && e.key === "i") {
-      detectEvent("italic");
-    }
-    if (e.altKey && e.key === "t") {
-      detectEvent("table");
-    }
-    if (e.altKey && e.key === "k") {
-      detectEvent("link");
-    }
-    if (e.altKey && e.key === "c") {
-      detectEvent("codeBlock");
-    }
-    if (e.altKey && e.key === "d") {
-      detectEvent("image");
-    }
-    if (e.altKey && e.key === "m") {
-      detectEvent("blockquote");
-    }
+    handleEditorShortcut(e);
   };
   const isCommunityPost = isCommunity(entry.category);
   const canComment = isCommunityPost

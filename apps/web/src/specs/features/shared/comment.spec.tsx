@@ -88,6 +88,7 @@ vi.mock("@/utils", () => ({
 }));
 
 import { Comment } from "@/features/shared/comment";
+import { detectEvent } from "@/features/shared/editor-toolbar";
 
 const entry = {
   author: "alice",
@@ -184,6 +185,45 @@ describe("Comment composer", () => {
     const { queryByRole } = renderComment();
 
     expect(queryByRole("status")).toBeNull();
+  });
+
+  test("Ctrl+B emphasises from the composer", () => {
+    const { getByTestId, container } = renderComment();
+
+    type(getByTestId, "hello world");
+    fireEvent.keyDown(container.querySelector(".comment-body")!, {
+      key: "b",
+      code: "KeyB",
+      ctrlKey: true
+    });
+
+    expect(detectEvent).toHaveBeenCalledWith("bold");
+  });
+
+  test("Cmd+I emphasises from the composer", () => {
+    const { getByTestId, container } = renderComment();
+
+    type(getByTestId, "hello world");
+    fireEvent.keyDown(container.querySelector(".comment-body")!, {
+      key: "i",
+      code: "KeyI",
+      metaKey: true
+    });
+
+    expect(detectEvent).toHaveBeenCalledWith("italic");
+  });
+
+  test("Ctrl+B does not submit the reply", () => {
+    const { onSubmit, getByTestId, container } = renderComment();
+
+    type(getByTestId, "hello world");
+    fireEvent.keyDown(container.querySelector(".comment-body")!, {
+      key: "b",
+      code: "KeyB",
+      ctrlKey: true
+    });
+
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   test("Cmd/Ctrl+Enter is suppressed while the mention dropdown is open", () => {
