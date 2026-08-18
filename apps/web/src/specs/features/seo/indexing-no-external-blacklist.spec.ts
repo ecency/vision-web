@@ -24,6 +24,17 @@ import path from "path";
  */
 
 const SRC = path.resolve(__dirname, "../../..");
+const REPO = path.resolve(__dirname, "../../../../../..");
+
+// Deploy config is part of the dependency surface: the first cleanup left
+// SEO_BLACKLIST_URL wired through both deploy workflows after the code was
+// gone, because this guard only scanned application source.
+const CONFIG_FILES = [
+  ".github/workflows/staging.yml",
+  ".github/workflows/master.yml",
+  "apps/web/docker-compose.yml",
+  "apps/web/docker-compose.production.yml"
+];
 
 // The deleted boundary module, its Redis key, and the env var that fed it.
 const FORBIDDEN: { pattern: RegExp; what: string }[] = [
@@ -53,6 +64,16 @@ describe("indexing does not depend on an external blacklist (#1524)", () => {
   it.each(FORBIDDEN)("no module references $what", ({ pattern }) => {
     const offenders = files.filter((f) => pattern.test(fs.readFileSync(f, "utf8")));
     expect(offenders.map((f) => path.relative(SRC, f))).toEqual([]);
+  });
+
+  it.each(CONFIG_FILES)("%s carries no blacklist wiring", (rel) => {
+    const full = path.join(REPO, rel);
+    // Fail loudly rather than skipping: a silent pass on a missing path is how
+    // a guard rots into a no-op (it did exactly that while REPO was wrong).
+    expect(fs.existsSync(full), `${rel} not found at ${full}`).toBe(true);
+    const text = fs.readFileSync(full, "utf8");
+    const hits = FORBIDDEN.filter(({ pattern }) => pattern.test(text)).map((f) => f.what);
+    expect(hits).toEqual([]);
   });
 
   it("isIndexable takes no blacklist parameter", () => {
