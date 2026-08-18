@@ -35,6 +35,7 @@ import { profileWebsiteHref } from "./website-href";
 import { FinalizeCommunityBanner } from "../finalize-community-banner";
 import { useActiveAccount } from "@/core/hooks";
 import { ProBadge } from "@/features/pro";
+import { DigestSubscribeButton } from "@/features/newsletter";
 
 interface Props {
   account: Account;
@@ -133,7 +134,7 @@ export function ProfileCard({ account }: Props) {
       <HivePosh username={account.name} className="mb-4" />
 
       {!isMyProfile && (
-        <div className="mb-4 flex gap-2">
+        <div className="mb-4 flex flex-wrap gap-2">
           <FollowControls targetUsername={account?.name} />
           <EcencyConfigManager.Conditional
             condition={({ visionFeatures }) => visionFeatures.favourites.enabled}
@@ -150,6 +151,17 @@ export function ProfileCard({ account }: Props) {
               <UilCommentDots className="size-4" />
             </Link>
           )}
+          <EcencyConfigManager.Conditional
+            condition={({ visionFeatures }) => visionFeatures.newsletter.enabled}
+          >
+            <DigestSubscribeButton
+              type="creator"
+              target={account.name}
+              targetLabel={data?.profile?.name || `@${account.name}`}
+              source="creator-page"
+              size="sm"
+            />
+          </EcencyConfigManager.Conditional>
         </div>
       )}
 

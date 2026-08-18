@@ -7,6 +7,9 @@ import { cache } from "react";
  * SDK-backed queries should use QueryKeys from @ecency/sdk instead.
  */
 export enum QueryIdentifiers {
+  NEWSLETTER_SUBSCRIPTIONS = "newsletter-subscriptions",
+  NEWSLETTER_CONFIRM_INSPECT = "newsletter-confirm-inspect",
+  NEWSLETTER_UNSUBSCRIBE_INSPECT = "newsletter-unsubscribe-inspect",
   COMMUNITY_THREADS = "community-threads",
   THREADS = "threads",
   ENTRY_PIN_TRACK = "entry-pin-track",

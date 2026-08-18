@@ -65,6 +65,12 @@ const CONFIG = {
       referrals: {
         enabled: true
       },
+      newsletter: {
+        // Digest subscribe controls on community pages and Pro creator profiles. Off unless
+        // the newsletter service is configured for this deployment; the route handlers 503
+        // without NEWSLETTER_API_URL + NEWSLETTER_SERVICE_TOKEN regardless of this flag.
+        enabled: process.env.NEXT_PUBLIC_NEWSLETTER_ENABLED === "1"
+      },
       gallery: {
         enabled: true
       },
