@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { ComposeDigestButton, NewsletterGate, SenderStatusNotice, SentIssues } from "@/features/newsletter";
+import { communityDigestRoles, ComposeDigestButton, NewsletterGate, SenderStatusNotice, SentIssues } from "@/features/newsletter";
 import "./_index.scss";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import { Button } from "@ui/button";
@@ -51,15 +51,11 @@ export function CommunityCard({ community, account }: Props) {
     [roleInTeam]
   );
   const canEditTeam = useMemo(() => !!(roleInTeam && roleMap[roleInTeam]), [roleInTeam]);
-  // Names compared lowercase: the stored username keeps whatever casing was typed,
-  // team entries are canonical. Owner, admin and mod see the digest's standing and
-  // history; sending mail is heavier than moderating: owner and admin only.
-  const myDigestRole = useMemo(() => {
-    const me = activeUser?.username?.toLowerCase();
-    return me ? community.team.find((x: (string | undefined)[]) => x[0]?.toLowerCase() === me)?.[1] : undefined;
-  }, [activeUser?.username, community.team]);
-  const canSendDigest = !!(myDigestRole && [ROLES.OWNER.toString(), ROLES.ADMIN.toString()].includes(myDigestRole));
-  const isDigestSender = canSendDigest || myDigestRole === ROLES.MOD.toString();
+  // Owner, admin and mod see the digest's standing and history; owner and admin may send.
+  const { canView: isDigestSender, canSend: canSendDigest } = useMemo(
+    () => communityDigestRoles(community.team, activeUser?.username),
+    [activeUser?.username, community.team]
+  );
 
   return (
     <div className="community-card">

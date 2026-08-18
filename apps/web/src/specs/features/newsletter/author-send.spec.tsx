@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement, ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
-import { AuthorSendDialog, candidatesKey, ComposeDigestButton, ComposeDigestDialog, sendPreviewKey, SentIssues, useAuthorSendTarget } from "@/features/newsletter";
+import { AuthorSendDialog, candidatesKey, communityDigestRoles, ComposeDigestButton, ComposeDigestDialog, sendPreviewKey, SentIssues, useAuthorSendTarget } from "@/features/newsletter";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import {
   cleanupModalContainers,
@@ -358,6 +358,22 @@ describe("ComposeDigestDialog", () => {
     fetchMock.mockImplementation(() => json(503, { error: "down" }));
     render(<ComposeDigestDialog target={target} show onHide={() => {}} />);
     await waitFor(() => expect(screen.getByText("newsletter.compose-candidates-unavailable")).toBeInTheDocument());
+  });
+});
+
+describe("communityDigestRoles", () => {
+  it("owner and admin may view and send, a mod may only view, anyone else neither; names match regardless of case", () => {
+    const team = [["owner1", "owner", ""], ["Alice", "admin", ""], ["mia", "mod", ""], ["bob", "member", ""]];
+    expect(communityDigestRoles(team, "owner1")).toEqual({ canView: true, canSend: true });
+    expect(communityDigestRoles(team, "alice")).toEqual({ canView: true, canSend: true });
+    expect(communityDigestRoles(team, "ALICE")).toEqual({ canView: true, canSend: true });
+    expect(communityDigestRoles(team, "MIA")).toEqual({ canView: true, canSend: false });
+    expect(communityDigestRoles(team, "bob")).toEqual({ canView: false, canSend: false });
+    expect(communityDigestRoles(team, "stranger")).toEqual({ canView: false, canSend: false });
+    expect(communityDigestRoles(team, null)).toEqual({ canView: false, canSend: false });
+    expect(communityDigestRoles(team, "")).toEqual({ canView: false, canSend: false });
+    expect(communityDigestRoles(undefined, "owner1")).toEqual({ canView: false, canSend: false });
+    expect(communityDigestRoles([["", "owner", ""]], "")).toEqual({ canView: false, canSend: false });
   });
 });
 
