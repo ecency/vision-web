@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type MutableRefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MutableRefObject
+} from "react";
+import { createPortal } from "react-dom";
+import { flip, offset, shift, size, useFloating } from "@floating-ui/react-dom";
 import "./_index.scss";
 import Picker from "@emoji-mart/react";
 import emojiData from "@emoji-mart/data";
 import { useGlobalStore } from "@/core/global-store";
-import { classNameObject } from "@ui/util";
+import { classNameObject, safeAutoUpdate } from "@ui/util";
 
 interface Props {
   show: boolean;
@@ -18,8 +27,11 @@ interface Props {
   position?: "top" | "bottom";
 }
 
-const PICKER_ESTIMATED_HEIGHT = 380;
-const PICKER_ESTIMATED_WIDTH = 340;
+// emoji-mart sizes the picker from its own `:host` rule (435px tall). Outside
+// CSS beats `:host`, so this is the height the panel is actually laid out with
+// and the most it may take; when the viewport leaves less room it gets less.
+const PICKER_HEIGHT = 435;
+const VIEWPORT_PADDING = 8;
 
 export function EmojiPicker({
   show,
@@ -34,39 +46,58 @@ export function EmojiPicker({
   const internalRootRef = useRef<HTMLDivElement | null>(null);
   const ref = rootRef ?? internalRootRef;
   const theme = useGlobalStore((state) => state.theme);
-  const [pickerPosition, setPickerPosition] = useState<{ top: number; left: number } | null>(null);
+  const [portalContainer, setPortalContainer] = useState<Element | null>(null);
 
-  // Calculate position when picker is shown
+  // Anchored to the trigger and measured from the panel's real size. The
+  // previous version guessed the size and wrote the coordinates from an effect
+  // that ran after the first paint, without ever recalculating. It flashed at
+  // its static position (a whole viewport away on a scrolled page), jumped to
+  // the estimate, hung 47px off the bottom of the screen because the estimate
+  // was 55px short of the real height then stayed put while the page scrolled.
+  const { refs, floatingStyles, isPositioned } = useFloating({
+    strategy: "fixed",
+    // `-end` keeps the panel's trailing edge on the trigger's trailing edge.
+    placement: position === "top" ? "top-end" : "bottom-end",
+    // Write top/left rather than a transform, so the small-screen stylesheet
+    // can still pin the panel as a bottom sheet.
+    transform: false,
+    whileElementsMounted: safeAutoUpdate,
+    middleware: [
+      offset(8),
+      flip({ padding: VIEWPORT_PADDING }),
+      shift({ padding: VIEWPORT_PADDING }),
+      size({
+        padding: VIEWPORT_PADDING,
+        apply({ availableHeight, elements }) {
+          // Never taller than the room left on the chosen side: a floor here
+          // would push the panel back off-screen on a very short viewport, and
+          // the panel scrolls internally, so a shorter one is still usable.
+          elements.floating.style.setProperty(
+            "--emoji-picker-height",
+            `${Math.min(PICKER_HEIGHT, Math.max(0, Math.floor(availableHeight)))}px`
+          );
+        }
+      })
+    ]
+  });
+
+  const { setReference, setFloating } = refs;
+
   useEffect(() => {
-    if (!show || !buttonRef?.current) {
-      return;
-    }
+    setReference(buttonRef?.current ?? null);
+  }, [buttonRef, setReference]);
 
-    const rect = buttonRef.current.getBoundingClientRect();
-    let top: number;
-    let left: number;
+  useEffect(() => {
+    setPortalContainer(document.getElementById("popper-container") ?? document.body);
+  }, []);
 
-    // Align the picker to the right edge of the trigger button
-    const desiredLeft = rect.right - PICKER_ESTIMATED_WIDTH;
-
-    if (position === "top") {
-      top = rect.top - PICKER_ESTIMATED_HEIGHT - 8;
-    } else {
-      top = rect.bottom + 8;
-    }
-
-    // Clamp top so it stays on screen
-    const minTop = 8;
-    const maxTop = window.innerHeight - PICKER_ESTIMATED_HEIGHT - 8;
-    top = Math.max(minTop, Math.min(top, maxTop));
-
-    // Clamp left so it stays on screen
-    const minLeft = 8;
-    const maxLeft = window.innerWidth - PICKER_ESTIMATED_WIDTH - 8;
-    left = Math.max(minLeft, Math.min(desiredLeft, maxLeft));
-
-    setPickerPosition({ top, left });
-  }, [show, buttonRef, position]);
+  const setDialogRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      ref.current = node;
+      setFloating(node);
+    },
+    [ref, setFloating]
+  );
 
   // Handle click outside to close picker (same pattern as GIF picker)
   useEffect(() => {
@@ -100,19 +131,24 @@ export function EmojiPicker({
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [show, changeState, buttonRef]);
+  }, [show, changeState, buttonRef, ref]);
+
+  if (!show || !portalContainer) {
+    return null;
+  }
 
   const mergedStyle: CSSProperties = {
-    position: "fixed",
-    top: pickerPosition?.top,
-    left: pickerPosition?.left,
+    ...floatingStyles,
     zIndex: 9999,
+    // Nothing is drawn until the panel has been measured against the viewport,
+    // otherwise the first paint lands at the top-left corner.
+    visibility: isPositioned ? "visible" : "hidden",
     ...style
   };
 
-  return (
+  return createPortal(
     <div
-      ref={ref}
+      ref={setDialogRef}
       className={classNameObject({
         "emoji-picker-dialog": true
       })}
@@ -133,6 +169,7 @@ export function EmojiPicker({
         set="native"
         theme={theme === "day" ? "light" : "dark"}
       />
-    </div>
+    </div>,
+    portalContainer
   );
 }

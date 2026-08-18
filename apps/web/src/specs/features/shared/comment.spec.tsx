@@ -8,7 +8,6 @@ import type { Entry } from "@/entities";
 // --- Mock the heavy children so we can exercise the composer logic in isolation ---
 vi.mock("@/features/shared/editor-toolbar", () => ({
   EditorToolbar: () => null,
-  detectEvent: vi.fn(),
   toolbarEventListener: vi.fn()
 }));
 
@@ -107,8 +106,16 @@ function renderComment(onSubmit = vi.fn().mockResolvedValue(undefined)) {
   return { onSubmit, ...utils };
 }
 
-function type(getByTestId: (testId: string) => HTMLElement, value: string) {
-  fireEvent.change(getByTestId("comment-textarea"), { target: { value } });
+function type(getByRole: (role: string) => HTMLElement, value: string) {
+  fireEvent.change(getByRole("textbox"), { target: { value } });
+}
+
+// The composer hands formatting to the toolbar as a DOM event on `window`
+// (the toolbar itself is mocked out above); this is that boundary.
+function listenFor(action: string) {
+  const heard = vi.fn();
+  window.addEventListener(action, heard, { once: true });
+  return heard;
 }
 
 describe("Comment composer", () => {
@@ -118,9 +125,9 @@ describe("Comment composer", () => {
   });
 
   test("Cmd/Ctrl+Enter submits the typed comment", async () => {
-    const { onSubmit, getByTestId, container } = renderComment();
+    const { onSubmit, getByRole, container } = renderComment();
 
-    type(getByTestId, "hello world");
+    type(getByRole, "hello world");
     const body = container.querySelector(".comment-body")!;
     fireEvent.keyDown(body, { key: "Enter", ctrlKey: true });
 
@@ -128,9 +135,9 @@ describe("Comment composer", () => {
   });
 
   test("plain Enter does NOT submit (newline behavior preserved)", () => {
-    const { onSubmit, getByTestId, container } = renderComment();
+    const { onSubmit, getByRole, container } = renderComment();
 
-    type(getByTestId, "hello");
+    type(getByRole, "hello");
     fireEvent.keyDown(container.querySelector(".comment-body")!, { key: "Enter" });
 
     expect(onSubmit).not.toHaveBeenCalled();
@@ -145,38 +152,38 @@ describe("Comment composer", () => {
   });
 
   test("warns that a reply too short to earn points will not count", () => {
-    const { getByTestId, getByRole } = renderComment();
+    const { getByRole } = renderComment();
 
-    type(getByTestId, "Thank you");
+    type(getByRole, "Thank you");
 
     expect(getByRole("status")).toBeTruthy();
   });
 
   test("counts a link-only reply as too short, matching the backend rule", () => {
-    const { getByTestId, getByRole } = renderComment();
+    const { getByRole } = renderComment();
 
-    type(getByTestId, "https://i.example.com/a-very-long-image-url-here.gif");
+    type(getByRole, "https://i.example.com/a-very-long-image-url-here.gif");
 
     expect(getByRole("status")).toBeTruthy();
   });
 
   test("counts emoji as the backend does, not as UTF-16 code units", () => {
-    const { getByTestId, getByRole } = renderComment();
+    const { getByRole } = renderComment();
 
     // 13 astral emoji measure as 13 code points, under the minimum. Counting UTF-16
     // units would score them as 26 and wrongly promise points.
-    type(getByTestId, "😂".repeat(13));
+    type(getByRole, "😂".repeat(13));
 
     expect(getByRole("status")).toBeTruthy();
   });
 
   test("drops the warning once the reply is long enough to earn", () => {
-    const { getByTestId, getByRole, queryByRole } = renderComment();
+    const { getByRole, queryByRole } = renderComment();
 
-    type(getByTestId, "Thank you");
+    type(getByRole, "Thank you");
     expect(getByRole("status")).toBeTruthy();
 
-    type(getByTestId, "Thank you, this is a genuinely useful reply with something to say");
+    type(getByRole, "Thank you, this is a genuinely useful reply with something to say");
     expect(queryByRole("status")).toBeNull();
   });
 
@@ -186,10 +193,51 @@ describe("Comment composer", () => {
     expect(queryByRole("status")).toBeNull();
   });
 
-  test("Cmd/Ctrl+Enter is suppressed while the mention dropdown is open", () => {
-    const { onSubmit, getByTestId, container } = renderComment();
+  test("Ctrl+B asks the toolbar for bold", () => {
+    const { getByRole, container } = renderComment();
+    const bold = listenFor("bold");
 
-    type(getByTestId, "hey @al");
+    type(getByRole, "hello world");
+    fireEvent.keyDown(container.querySelector(".comment-body")!, {
+      key: "b",
+      code: "KeyB",
+      ctrlKey: true
+    });
+
+    expect(bold).toHaveBeenCalledTimes(1);
+  });
+
+  test("Cmd+I asks the toolbar for italic", () => {
+    const { getByRole, container } = renderComment();
+    const italic = listenFor("italic");
+
+    type(getByRole, "hello world");
+    fireEvent.keyDown(container.querySelector(".comment-body")!, {
+      key: "i",
+      code: "KeyI",
+      metaKey: true
+    });
+
+    expect(italic).toHaveBeenCalledTimes(1);
+  });
+
+  test("Ctrl+B does not submit the reply", () => {
+    const { onSubmit, getByRole, container } = renderComment();
+
+    type(getByRole, "hello world");
+    fireEvent.keyDown(container.querySelector(".comment-body")!, {
+      key: "b",
+      code: "KeyB",
+      ctrlKey: true
+    });
+
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  test("Cmd/Ctrl+Enter is suppressed while the mention dropdown is open", () => {
+    const { onSubmit, getByRole, container } = renderComment();
+
+    type(getByRole, "hey @al");
     // Simulate the react-textarea-autocomplete dropdown being open.
     const body = container.querySelector(".comment-body")!;
     body.insertAdjacentHTML("beforeend", '<div class="rta__autocomplete"></div>');
