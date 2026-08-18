@@ -28,8 +28,11 @@ export function newsletterConfigured(): boolean {
 
 /**
  * The feature as the UI should see it: this deployment is configured for the service AND the
- * config kill switch allows. Server components read this directly; the client tree receives
- * it through NewsletterRuntimeProvider (app/providers.tsx). Route handlers keep using
+ * config kill switch allows. Read ONLY from server-only places (app/providers.tsx feeds it to
+ * the client tree through NewsletterRuntimeProvider; components use useNewsletterEnabled or
+ * NewsletterGate). This module imports node:net, so importing it from anything a client
+ * bundle can reach, including through the app/_components barrel, breaks the build.
+ * Route handlers keep using
  * `newsletterConfigured()`: a switched-off UI must not turn a configured relay into a 503 for
  * emails already in flight (confirmation and unsubscribe links keep working).
  */
