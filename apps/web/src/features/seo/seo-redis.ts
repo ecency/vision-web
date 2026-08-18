@@ -1,5 +1,5 @@
 /**
- * Shared, resilient ioredis singleton for SEO features (blacklist set +
+ * Shared, resilient ioredis singleton for SEO features (
  * precomputed sitemap blobs). Mirrors the post-age-cache client pattern:
  * bounded reconnect, singleton reset on `end`, silent graceful degradation,
  * and disabled under Vitest so unit tests never open real TCP connections.

@@ -38,7 +38,6 @@ import publicNodes from "../../../../../../public/public-nodes.json";
 export const dynamic = "force-dynamic";
 
 const BASE = defaults.base;
-const LIVE_BL = `${SEO_REDIS_PREFIX}blacklist:authors`;
 const K = (s: string) => `${SEO_REDIS_PREFIX}sitemap:${s}`;
 // Wall-clock backstop on the post walk, checked each page. 90s (was 50s): on
 // slower upstream RPC nodes the 50s budget could truncate the walk before the
@@ -155,13 +154,6 @@ export async function POST(req: Request): Promise<Response> {
 
   const started = Date.now();
   const cutoff = started - WINDOW_MS;
-  let blacklist: ReadonlySet<string>;
-  try {
-    blacklist = new Set(await redis.smembers(LIVE_BL));
-  } catch {
-    blacklist = new Set();
-  }
-
   // Community name list — changes slowly, so refresh it from list_communities
   // at most weekly and cache the names in Redis. Every run still rebuilds the
   // communities shard (below) from these names + the post-derived lastmod, so
@@ -223,7 +215,7 @@ export async function POST(req: Request): Promise<Response> {
         }
         if (cbatch.length < COMM_LIMIT) break;
       }
-      // Stale-preserving sanity (mirrors the blacklist delta-sanity): only
+      // Stale-preserving sanity (delta-guard): only
       // adopt/recache a fetch that completed without an RPC abort and isn't
       // implausibly smaller than the baseline. A truncated/partial fetch
       // (page-2+ RPC error) or a >50% shrink is rejected — keep the cached
@@ -303,12 +295,12 @@ export async function POST(req: Request): Promise<Response> {
         const prev = communityLatest.get(comm);
         if (day && (!prev || day > prev)) communityLatest.set(comm, day);
       }
-      // 5th arg = true: keep isIndexable in lockstep with the sitemap-mode
+      // 4th arg = true: keep isIndexable in lockstep with the sitemap-mode
       // canonicalTarget call below, so the indexable count can't drift from
       // the emitted posts.xml (a reply with only an off-host declared
       // canonical and no resolvable on-domain root is rejected here, not
       // silently dropped by the same-host guard a few lines down).
-      if (!isIndexable(e, null, true, blacklist, true)) continue;
+      if (!isIndexable(e, null, true, true)) continue;
       // Sitemap mode (3rd arg = true): canonicalTarget NEVER consults the
       // declared json_metadata.canonical_url here — resolution is purely
       // structural and can only yield `${BASE}/…` or null. inLeo/PeakD/
@@ -325,7 +317,7 @@ export async function POST(req: Request): Promise<Response> {
       if (!loc || !loc.startsWith(`${BASE}/`)) continue;
       postUrls.push({ loc, lastmod: (e.updated || e.created || "").slice(0, 10) });
       if (e.author) authors.add(e.author);
-      // Tag popularity from the same indexable posts (NSFW/blacklist/thin
+      // Tag popularity from the same indexable posts (NSFW/reputation/thin
       // already filtered by isIndexable above). Free — no extra RPC.
       harvestPostTags(tagCounts, e.category, e.json_metadata?.tags);
     }
@@ -384,7 +376,7 @@ export async function POST(req: Request): Promise<Response> {
     lastmod: nowDay
   }));
 
-  // Stale-preserving guard (mirrors the blacklist/communities delta-sanity):
+  // Stale-preserving guard (mirrors the communities delta-sanity):
   // a budget- or error-truncated walk must NOT overwrite a good posts/authors
   // sitemap. Accept iff the walk completed (reachedCutoff — authoritative even
   // in a quiet period), there's no baseline yet, or it's within 50% of the

@@ -51,10 +51,6 @@ export const CONTAINER_ANCHOR_MAX_BODY = 400;
 // never legitimate short text or any media post.
 export const EFFECTIVELY_EMPTY_MAX_BODY = 20;
 
-// Default injected blacklist: empty + frozen. Keeps isIndexable pure and
-// backward-compatible; callers pass the loaded set, tests inject fixtures.
-const EMPTY_BLACKLIST: ReadonlySet<string> = new Set<string>();
-
 export type ReputationSource =
   | Pick<FullAccount, "reputation" | "post_count">
   | Profile
@@ -249,13 +245,19 @@ export function isIndexable(
   entry: Entry,
   account: ReputationSource,
   accountFetchFailed: boolean,
-  blacklist: ReadonlySet<string> = EMPTY_BLACKLIST,
   // Forwarded to the internal canonicalTarget so this filter and the sitemap
   // writer's canonicalTarget(e, BASE, true) never disagree (see below).
   ignoreDeclaredCanonical = false
 ): boolean {
-  // Community anti-abuse consensus (plagiarism/spam). Clear negative, first.
-  if (blacklist.has(entry.author)) return false;
+  // No third-party abuse list is consulted here — see #1524. Indexability is
+  // decided entirely by signals we own: reputation, posting history, NSFW,
+  // thin/empty content and canonical resolvability.
+  //
+  // Abuse is still handled, just through a signal we read directly: downvotes
+  // lower reputation, so an author caught plagiarising falls below
+  // NOINDEX_REPUTATION_THRESHOLD and leaves the index on the next render. The
+  // same community that curates the external list drives that number, without
+  // us handing an outside feed unreviewable veto over what Google sees.
   if (isNsfwEntry(entry)) return false;
 
   const reputationNoIndex =
