@@ -11,6 +11,7 @@ export enum QueryIdentifiers {
   NEWSLETTER_SENDER_STANDING = "newsletter-sender-standing",
   NEWSLETTER_SEND_PREVIEW = "newsletter-send-preview",
   NEWSLETTER_SENT_ISSUES = "newsletter-sent-issues",
+  NEWSLETTER_CANDIDATE_POSTS = "newsletter-candidate-posts",
   NEWSLETTER_CONFIRM_INSPECT = "newsletter-confirm-inspect",
   NEWSLETTER_UNSUBSCRIBE_INSPECT = "newsletter-unsubscribe-inspect",
   COMMUNITY_THREADS = "community-threads",

@@ -4218,6 +4218,18 @@
     "send-taken-by-send": "was sent by you or your team",
     "send-see-history": "See sent issues",
     "sent-issues-unavailable": "Sent issues could not be loaded right now.",
-    "sent-issue-rejected": "{{rejected}} rejected by receivers"
+    "sent-issue-rejected": "{{rejected}} rejected by receivers",
+    "compose-button": "Compose email digest",
+    "compose-title": "Compose an email digest for {{list}}",
+    "compose-help": "Pick {{min}} to {{max}} recent posts, in the order they should appear, then add a subject and an intro. Readers get it as their current issue.",
+    "compose-loading": "Loading your recent posts…",
+    "compose-candidates-unavailable": "Recent posts could not be loaded right now.",
+    "compose-no-candidates": "No recent posts can be sent yet.",
+    "compose-pick": "Recent posts",
+    "compose-featured": "featured recently",
+    "compose-subject": "Subject (optional)",
+    "compose-intro": "A short intro for your readers (optional)",
+    "compose-picked": "{{n}} picked ({{min}} to {{max}})",
+    "compose-continue": "Preview"
   }
 }

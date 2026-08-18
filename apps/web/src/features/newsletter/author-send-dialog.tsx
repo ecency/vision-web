@@ -9,7 +9,7 @@ import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import i18next from "i18next";
 import Link from "next/link";
 import { type ReactElement, useMemo, useState } from "react";
-import { authorSendApi, type SendPreview, type SendRef, type SendResult, SendRefusedError } from "./author-send-api";
+import { authorSendApi, type SendPreview, type SendRequest, type SendResult, SendRefusedError } from "./author-send-api";
 import type { SendTarget } from "./author-send-eligibility";
 
 /**
@@ -27,11 +27,19 @@ interface Props {
   onHide: () => void;
 }
 
-export const sendPreviewKey = (
-  ref: SendRef,
-  viewer: string
-): readonly [QueryIdentifiers, string, string, string, string, string] =>
-  [QueryIdentifiers.NEWSLETTER_SEND_PREVIEW, ref.type, ref.target, ref.author, ref.permlink, viewer] as const;
+/**
+ * A stable identity for what is being sent: the post, or the composition's
+ * posts, subject and intro. JSON, not a delimiter join: subject and intro are
+ * the sender's text, and two different compositions must never share a key
+ * (the preview is cached by it while the send carries the current request).
+ */
+function requestKey(req: SendRequest): string {
+  if ("posts" in req) return JSON.stringify(["compose", req.posts.map((p) => `${p.author}/${p.permlink}`), req.subject ?? "", req.intro ?? ""]);
+  return JSON.stringify(["post", `${req.author}/${req.permlink}`]);
+}
+
+export const sendPreviewKey = (req: SendRequest, viewer: string): readonly [QueryIdentifiers, string, string, string, string] =>
+  [QueryIdentifiers.NEWSLETTER_SEND_PREVIEW, req.type, req.target, requestKey(req), viewer] as const;
 
 /** Where the sender's history lives: their own profile card, or the community card. */
 export function senderHistoryHref(target: SendTarget): string {
@@ -86,27 +94,44 @@ function RefusalAlert({ refusal, target }: { refusal: Refusal; target: SendTarge
   );
 }
 
-export function AuthorSendDialog({ target, author, permlink, show, onHide }: Props): ReactElement {
+/**
+ * The send flow proper, reused by the single-post dialog and the composer:
+ * preview, readers per cadence, the one-per-period rule, taken periods, send,
+ * outcome. `request` is what is being sent, already decided by the caller.
+ */
+export function SendFlow({
+  request,
+  target,
+  onHide,
+  onBack
+}: {
+  request: SendRequest;
+  target: SendTarget;
+  onHide: () => void;
+  /** The composer offers a way back to the picker. */
+  onBack?: () => void;
+}): ReactElement {
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username ?? "";
   const queryClient = useQueryClient();
-  const ref = useMemo<SendRef>(() => ({ type: target.type, target: target.target, author, permlink }), [target, author, permlink]);
   const [result, setResult] = useState<SendResult | null>(null);
 
   const preview = useQuery<SendPreview, Error>({
-    queryKey: sendPreviewKey(ref, username),
-    enabled: show && !!username,
+    queryKey: sendPreviewKey(request, username),
+    enabled: !!username,
     staleTime: 60_000,
     retry: false,
-    queryFn: () => authorSendApi.preview(ref, username)
+    queryFn: () => authorSendApi.preview(request, username)
   });
 
   const send = useMutation({
-    mutationFn: () => authorSendApi.send(ref, username),
+    mutationFn: () => authorSendApi.send(request, username),
     onSuccess: (r) => {
       setResult(r);
       queryClient.invalidateQueries({ queryKey: [QueryIdentifiers.NEWSLETTER_SEND_PREVIEW] });
       queryClient.invalidateQueries({ queryKey: [QueryIdentifiers.NEWSLETTER_SENT_ISSUES, target.type, target.target] });
+      // The composer's candidates carry a "featured recently" mark; the posts just sent now have it.
+      queryClient.invalidateQueries({ queryKey: [QueryIdentifiers.NEWSLETTER_CANDIDATE_POSTS, target.type, target.target] });
     }
   });
 
@@ -116,14 +141,25 @@ export function AuthorSendDialog({ target, author, permlink, show, onHide }: Pro
   const canSend = !!p && freeCadences.length > 0 && !send.isPending && !result;
 
   return (
-    <Modal show={show} onHide={onHide} centered={true} size="lg">
-      <ModalHeader closeButton={true}>
-        <ModalTitle>{i18next.t("newsletter.send-title", { list: target.label })}</ModalTitle>
-      </ModalHeader>
-      <ModalBody>
+    <>
         {preview.isPending && <div className="text-sm opacity-70">{i18next.t("newsletter.send-loading")}</div>}
 
-        {preview.isError && <RefusalAlert refusal={describeRefusal(preview.error)} target={target} />}
+        {preview.isError && (
+          <>
+            <RefusalAlert refusal={describeRefusal(preview.error)} target={target} />
+            {onBack ? (
+              // The composer: a refused post is fixed in the picker, not by starting over.
+              <div className="mt-4 flex justify-end gap-2">
+                <Button appearance="gray-link" onClick={onBack}>
+                  {i18next.t("g.back")}
+                </Button>
+                <Button appearance="gray-link" onClick={onHide}>
+                  {i18next.t("g.cancel")}
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
 
         {p && !result && (
           <>
@@ -154,6 +190,11 @@ export function AuthorSendDialog({ target, author, permlink, show, onHide }: Pro
             </div>
             {send.isError && <RefusalAlert refusal={describeRefusal(send.error)} target={target} />}
             <div className="mt-4 flex justify-end gap-2">
+              {onBack ? (
+                <Button appearance="gray-link" onClick={onBack}>
+                  {i18next.t("g.back")}
+                </Button>
+              ) : null}
               <Button appearance="gray-link" onClick={onHide}>
                 {i18next.t("g.cancel")}
               </Button>
@@ -183,7 +224,19 @@ export function AuthorSendDialog({ target, author, permlink, show, onHide }: Pro
             </div>
           </>
         )}
-      </ModalBody>
+    </>
+  );
+}
+
+/** One post as the issue, from the post's menu. */
+export function AuthorSendDialog({ target, author, permlink, show, onHide }: Props): ReactElement {
+  const request = useMemo<SendRequest>(() => ({ type: target.type, target: target.target, author, permlink }), [target, author, permlink]);
+  return (
+    <Modal show={show} onHide={onHide} centered={true} size="lg">
+      <ModalHeader closeButton={true}>
+        <ModalTitle>{i18next.t("newsletter.send-title", { list: target.label })}</ModalTitle>
+      </ModalHeader>
+      <ModalBody>{show ? <SendFlow request={request} target={target} onHide={onHide} /> : null}</ModalBody>
     </Modal>
   );
 }
