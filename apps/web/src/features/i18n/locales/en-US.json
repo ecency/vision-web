@@ -3198,6 +3198,7 @@
     "spin-now": "Spin now",
     "want-more-spins": "Want more spins?",
     "spin-success": "Points has transferred to your account. Enjoy with Ecency!",
+    "spin-error": "Could not complete the spin. Please try again.",
     "spins-left": "spins left",
     "next-spin": "Next free spin",
     "quests": {

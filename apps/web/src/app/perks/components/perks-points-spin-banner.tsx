@@ -3,10 +3,11 @@
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 import { PointsSpin, SPIN_VALUES } from "@/features/points";
-import { success } from "@/features/shared";
+import { error, success } from "@/features/shared";
 import { Button, Modal, ModalBody, ModalFooter, ModalHeader, StyledTooltip } from "@/features/ui";
 import { delay, getAccessToken } from "@/utils";
 import { getGameStatusCheckQueryOptions, useGameClaim } from "@ecency/sdk";
+import * as Sentry from "@sentry/nextjs";
 import { useQuery } from "@tanstack/react-query";
 import { UilMoneyStack, UilSpin } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
@@ -39,7 +40,19 @@ export function PerksPointsSpinBanner() {
   );
 
   const claimGame = useCallback(async () => {
-    await claim();
+    // The claim rejects on any edge/proxy failure, and an uncaught rejection out of
+    // this click handler is what surfaced as ECENCY-NEXT-1FCJ. Surface it to the
+    // user instead, and do not run the success toast or the refetch on a failure.
+    // Report it explicitly: catching it removes the unhandled-rejection signal, and
+    // the SDK now throws a stable message so the group stays a single Sentry issue
+    // instead of one per gateway page.
+    try {
+      await claim();
+    } catch (e) {
+      Sentry.captureException(e, { extra: { route: "/private-api/post-game" } });
+      error(i18next.t("perks.spin-error"));
+      return;
+    }
     await delay(1000);
     refetch();
     success(i18next.t("perks.spin-success"));

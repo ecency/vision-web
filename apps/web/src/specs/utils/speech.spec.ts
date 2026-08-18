@@ -67,6 +67,45 @@ function installSpeechSynthesisWithoutEventTarget(
   };
 }
 
+/**
+ * iOS Brave wraps `getVoices()` and builds its fake voice from
+ * `Object.getPrototypeOf(voices[0])`, so an empty real list makes the SHIM itself
+ * throw (ECENCY-NEXT-1GMR) rather than returning a list with holes.
+ */
+function installSpeechSynthesisThatThrows(
+  ready?: Array<SpeechSynthesisVoice | undefined>
+) {
+  let voicesChangedHandler: (() => void) | undefined;
+  let current = ready;
+  const getVoices = vi.fn(() => {
+    if (!current) {
+      throw new TypeError(
+        "undefined is not an object (evaluating 'Object.getPrototypeOf(voice)')"
+      );
+    }
+    return current as SpeechSynthesisVoice[];
+  });
+
+  Object.defineProperty(window, "speechSynthesis", {
+    configurable: true,
+    value: {
+      getVoices,
+      addEventListener: vi.fn((_event: "voiceschanged", handler: () => void) => {
+        voicesChangedHandler = handler;
+      }),
+      removeEventListener: vi.fn()
+    }
+  });
+
+  return {
+    getVoices,
+    setVoices: (next: Array<SpeechSynthesisVoice | undefined>) => {
+      current = next;
+    },
+    emitVoicesChanged: () => voicesChangedHandler?.()
+  };
+}
+
 afterEach(() => {
   if (originalSpeechSynthesisDescriptor) {
     Object.defineProperty(
@@ -111,6 +150,18 @@ describe("getVoicesAsync", () => {
     );
   });
 
+  // Regression guard for ECENCY-NEXT-1GMR: the throw comes OUT of `getVoices()`
+  // itself, so no amount of filtering downstream can catch it.
+  it("waits for voiceschanged when getVoices() throws (iOS Brave)", async () => {
+    const speechSynthesis = installSpeechSynthesisThatThrows();
+
+    const voicesPromise = getVoicesAsync();
+    speechSynthesis.setVoices([undefined, voice]);
+    speechSynthesis.emitVoicesChanged();
+
+    await expect(voicesPromise).resolves.toEqual([voice]);
+  });
+
   describe("when SpeechSynthesis is not an EventTarget (Safari <= 15)", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -132,6 +183,23 @@ describe("getVoicesAsync", () => {
 
     it("resolves empty once the budget runs out rather than hanging forever", async () => {
       installSpeechSynthesisWithoutEventTarget();
+
+      const voicesPromise = getVoicesAsync();
+      await vi.advanceTimersByTimeAsync(5000);
+
+      await expect(voicesPromise).resolves.toEqual([]);
+    });
+
+    it("resolves empty rather than rejecting when getVoices() keeps throwing", async () => {
+      const getVoices = vi.fn(() => {
+        throw new TypeError(
+          "undefined is not an object (evaluating 'Object.getPrototypeOf(voice)')"
+        );
+      });
+      Object.defineProperty(window, "speechSynthesis", {
+        configurable: true,
+        value: { getVoices }
+      });
 
       const voicesPromise = getVoicesAsync();
       await vi.advanceTimersByTimeAsync(5000);

@@ -14,8 +14,22 @@ const FALLBACK_TIMEOUT_MS = 5000;
 
 export function getVoicesAsync(): Promise<SpeechSynthesisVoice[]> {
     return new Promise((resolve) => {
-        const readVoices = () =>
-            window.speechSynthesis.getVoices().filter(Boolean) as SpeechSynthesisVoice[];
+        // iOS Brave's fingerprint-farbling shim wraps `getVoices()` and builds its
+        // fake voice from `Object.getPrototypeOf(voices[0])`. On iOS the first call
+        // routinely returns an EMPTY list, so the shim dereferences `undefined` and
+        // throws out of `getVoices()` itself (ECENCY-NEXT-1GMR) before any filtering
+        // of ours runs. Treat a throwing voice list as an empty one: "no voices yet"
+        // is the state the listener and the poll below already wait through, so the
+        // caller gets an empty list instead of a rejected promise.
+        const readVoices = (): SpeechSynthesisVoice[] => {
+            try {
+                return window.speechSynthesis
+                    .getVoices()
+                    .filter(Boolean) as SpeechSynthesisVoice[];
+            } catch {
+                return [];
+            }
+        };
 
         const voices = readVoices();
         if (voices.length) {
