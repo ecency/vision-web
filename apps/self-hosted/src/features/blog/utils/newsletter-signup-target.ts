@@ -33,14 +33,23 @@ export function newsletterSignupTarget(cfg: {
   };
 }
 
+export interface NewsletterSubscribeBody {
+  email: string;
+  type: 'creator' | 'community';
+  target: string;
+  targetLabel: string;
+  cadence: 'weekly' | 'monthly';
+  source: 'self-hosted-blog';
+}
+
 /** The body the form posts, exactly as the relay expects it. */
-export function newsletterSubscribeBody(t: NewsletterSignupTarget, email: string, cadence: 'weekly' | 'monthly') {
+export function newsletterSubscribeBody(t: NewsletterSignupTarget, email: string, cadence: 'weekly' | 'monthly'): NewsletterSubscribeBody {
   return {
     email: email.trim(),
     type: t.type,
     target: t.target,
     targetLabel: t.targetLabel,
     cadence,
-    source: 'self-hosted-blog' as const,
+    source: 'self-hosted-blog',
   };
 }

@@ -1,6 +1,7 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 import { InstanceConfigManager } from '../../../core/configuration-loader';
 import { t } from '../../../core/i18n';
+import { LiveRegion } from '../../shared/live-region';
 import { newsletterSignupTarget, newsletterSubscribeBody } from '../utils/newsletter-signup-target';
 
 /**
@@ -13,7 +14,7 @@ import { newsletterSignupTarget, newsletterSubscribeBody } from '../utils/newsle
  * the form always says "check your inbox" on success and can learn nothing
  * about an address it does not own.
  */
-export function NewsletterSignup() {
+export function NewsletterSignup(): ReactElement | null {
   const target = InstanceConfigManager.useConfig(({ configuration }) =>
     newsletterSignupTarget({
       username: configuration.instanceConfiguration.username,
@@ -27,6 +28,15 @@ export function NewsletterSignup() {
   const [email, setEmail] = useState('');
   const [cadence, setCadence] = useState<'weekly' | 'monthly'>('weekly');
   const [state, setState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
+  // The submit awaits a network call; a navigation mid-flight must not update
+  // an unmounted component.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   if (!target) return null;
   const isCommunity = target.type === 'community';
@@ -41,9 +51,9 @@ export function NewsletterSignup() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newsletterSubscribeBody(target, email, cadence)),
       });
-      setState(res.ok ? 'done' : 'error');
+      if (mounted.current) setState(res.ok ? 'done' : 'error');
     } catch {
-      setState('error');
+      if (mounted.current) setState('error');
     }
   };
 
@@ -51,11 +61,10 @@ export function NewsletterSignup() {
     <div className="border-t border-theme pt-4 mt-4 sidebar-newsletter-section" data-testid="newsletter-signup">
       <h3 className="text-sm font-semibold mb-1">{t('newsletterTitle')}</h3>
       <p className="text-xs text-theme-muted mb-2">{t(isCommunity ? 'newsletterCommunityBlurb' : 'newsletterBlurb')}</p>
-      {state === 'done' ? (
-        <p className="text-xs" role="status">
-          {t('newsletterCheckInbox')}
-        </p>
-      ) : (
+      {/* Mounted from the first render, per the live-region contract: a region
+          that appears at the same moment as its message is often not announced. */}
+      <LiveRegion message={state === 'done' ? t('newsletterCheckInbox') : state === 'error' ? t('newsletterError') : null} className="text-xs block mb-1" />
+      {state !== 'done' && (
         <form onSubmit={submit} className="flex flex-col gap-2">
           <input
             type="email"
@@ -84,11 +93,6 @@ export function NewsletterSignup() {
               {t('newsletterSubscribe')}
             </button>
           </div>
-          {state === 'error' && (
-            <p className="text-xs text-red-500" role="alert">
-              {t('newsletterError')}
-            </p>
-          )}
         </form>
       )}
     </div>

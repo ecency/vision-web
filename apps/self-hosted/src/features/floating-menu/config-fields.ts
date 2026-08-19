@@ -417,6 +417,8 @@ export function buildConfigFields(
                   enabled: {
                     label: t('panel_configuration_instance_configuration_features_newsletter_enabled_label'),
                     type: 'boolean',
+                    // The runtime treats an absent value as ON; the editor must show the same.
+                    default: true,
                     description: t('panel_configuration_instance_configuration_features_newsletter_enabled_description'),
                   },
                 },
