@@ -27,5 +27,5 @@ export interface SubscribeInput {
   target: string;
   targetLabel?: string;
   cadence: DigestCadence;
-  source: "community-page" | "creator-page" | "settings" | "landing-page" | "publish-prompt";
+  source: "community-page" | "creator-page" | "settings" | "landing-page" | "publish-prompt" | "post-page";
 }

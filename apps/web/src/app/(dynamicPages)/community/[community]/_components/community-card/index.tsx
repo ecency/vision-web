@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { communityDigestRoles, ComposeDigestButton, NewsletterGate, SenderStatusNotice, SentIssues } from "@/features/newsletter";
+import { communityDigestRoles, ComposeDigestButton, NewsletterGate, SenderStatusNotice, SentIssues, SubscriberCount } from "@/features/newsletter";
 import "./_index.scss";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import { Button } from "@ui/button";
@@ -62,6 +62,7 @@ export function CommunityCard({ community, account }: Props) {
       {/* Policing (vision-web#1513): the team sees when this community's digest is suspended, and why. */}
       <NewsletterGate>
         <SenderStatusNotice type="community" target={community.name} isSender={isDigestSender} className="mb-4" />
+        <SubscriberCount type="community" target={community.name} isSender={isDigestSender} className="mb-2" />
         <ComposeDigestButton target={{ type: "community", target: community.name, label: community.title || community.name }} isSender={canSendDigest} className="mb-2" />
         <SentIssues type="community" target={community.name} isSender={isDigestSender} className="mb-4" />
       </NewsletterGate>

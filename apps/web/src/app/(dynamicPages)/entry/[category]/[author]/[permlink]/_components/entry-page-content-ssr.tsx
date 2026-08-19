@@ -3,6 +3,8 @@ import { PollWidget, useEntryPollExtractor } from "@/features/polls";
 import { useEntryLocation } from "@/utils";
 import { UilMapPinAlt } from "@tooni/iconscout-unicons-react";
 import Link from "next/link";
+import { NewsletterGate } from "@/features/newsletter/runtime";
+import { PostSubscribePrompt } from "@/features/newsletter/post-subscribe-prompt";
 import { EntryFooterControls } from "./entry-footer-controls";
 import { EntryFooterInfo } from "./entry-footer-info";
 import { EntryPageIsCommentHeader } from "./entry-page-is-comment-header";
@@ -63,6 +65,9 @@ export function EntryPageContentSSR({ entry, isRawContent }: Props) {
           <EntryFooterInfo entry={entry} />
         </div>
         <EntryFooterControls entry={entry} />
+        <NewsletterGate>
+          <PostSubscribePrompt entry={entry} className="m-2 md:m-3" />
+        </NewsletterGate>
       </div>
     </>
   );

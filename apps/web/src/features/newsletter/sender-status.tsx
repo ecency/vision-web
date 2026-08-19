@@ -30,6 +30,8 @@ export interface SenderStanding {
     complaintRate: number;
     bounceRate: number;
   };
+  /** Live, mailable subscribers per cadence. */
+  subscribers?: { weekly: number; monthly: number };
 }
 
 /**
