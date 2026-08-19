@@ -140,6 +140,8 @@ export interface InstanceConfig {
         post: {
           text2Speech: { enabled: boolean };
         };
+        /** The email-digest signup form (managed instances; the form posts to the host's own /api/newsletter/subscribe). */
+        newsletter?: { enabled?: boolean };
         tipping?: {
           enabled?: boolean;
           general?: { enabled: boolean; buttonLabel?: string };

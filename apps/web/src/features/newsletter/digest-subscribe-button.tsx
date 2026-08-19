@@ -1,8 +1,5 @@
 "use client";
 
-import { isProMember } from "@/features/pro";
-import { getProMembersQueryOptions } from "@ecency/sdk";
-import { useQuery } from "@tanstack/react-query";
 import { UilEnvelope, UilEnvelopeCheck } from "@tooni/iconscout-unicons-react";
 import { Button, ButtonProps } from "@ui/button";
 import i18next from "i18next";
@@ -60,13 +57,11 @@ export function DigestSubscribeButton({ type, target, targetLabel, source, size,
   const enabled = useNewsletterEnabled();
   const [open, setOpen] = useState(false);
   const { subscription } = useDigestSubscription(type, target);
-  const proQuery = useQuery({ ...getProMembersQueryOptions(), enabled: enabled && type === "creator" });
-  const pro = proQuery.data;
-  const offered = enabled && (type !== "creator" || isProMember(pro?.members, target));
-  // For a creator list, "offered" is unknown until the roster has answered.
-  const eligibilityKnown = type !== "creator" || !enabled || proQuery.isSuccess || proQuery.isError;
+  // Creator digests are open to every creator (2026-08-19): no Pro gate here,
+  // eligibility is synchronous and the shared-link opener can act at once.
+  const offered = enabled;
   const openFromLink = useCallback(() => setOpen(true), []);
-  useSubscribeLinkOpener(!eligibilityKnown ? undefined : offered ? openFromLink : null);
+  useSubscribeLinkOpener(offered ? openFromLink : null);
 
   if (!offered) return null;
 

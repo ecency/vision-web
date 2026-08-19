@@ -8,3 +8,4 @@ export * from './blog-post-item';
 export * from './blog-post-page';
 export * from './blog-posts-list';
 export * from './detect-bottom';
+export * from './newsletter-signup';

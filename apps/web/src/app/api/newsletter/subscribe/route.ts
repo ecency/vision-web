@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
 import { resolveUser, unauthorizedResponse } from "@/app/api/threespeak/resolve-user";
-import { isProRosterMember } from "@/server/pro-members";
 import {
   callNewsletter,
   clientIp,
@@ -12,7 +11,7 @@ import {
 
 const TYPES = new Set(["own", "community", "creator", "site"]);
 const CADENCES = new Set(["weekly", "monthly"]);
-const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-page", "publish-prompt", "post-page"]);
+const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-page", "publish-prompt", "post-page", "self-hosted-blog"]);
 
 /**
  * Subscribe to a community or creator digest.
@@ -58,15 +57,10 @@ export async function POST(request: NextRequest) {
     if (target !== account) return Response.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  if (type === "creator") {
-    const isPro = await isProRosterMember(target);
-    if (isPro === null) {
-      return Response.json({ error: "Authorization service unavailable" }, { status: 503 });
-    }
-    if (!isPro) {
-      return Response.json({ error: "Creator digests are available for Ecency Pro creators" }, { status: 403 });
-    }
-  }
+  // Creator digests are open to EVERY creator (decided 2026-08-19): anyone may
+  // subscribe to any account's digest, and the automatic weekly/monthly digest
+  // sends for any list with readers. Pro keeps the active capabilities: sending
+  // a chosen post and composing issues (see newsletter-sender-gate).
 
   const upstream = await callNewsletter("/api/subscriptions", {
     method: "POST",

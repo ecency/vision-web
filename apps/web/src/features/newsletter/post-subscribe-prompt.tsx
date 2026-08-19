@@ -1,10 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { getCommunityQueryOptions, getProMembersQueryOptions } from "@ecency/sdk";
+import { getCommunityQueryOptions } from "@ecency/sdk";
 import type { Entry } from "@/entities";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { isProMember } from "@/features/pro/pro-config";
 import { Button } from "@ui/button";
 import { UilEnvelope } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
@@ -29,18 +28,14 @@ export function PostSubscribePrompt({ entry, communityTitle, className }: { entr
   const me = activeUser?.username?.toLowerCase();
   const isTopLevel = !entry.parent_author && (entry.depth ?? 0) === 0;
   const inCommunity = /^hive-\d+$/.test(entry.category);
-  const proQuery = useQuery({ ...getProMembersQueryOptions(), enabled: enabled && !!me && isTopLevel });
-  // Until the roster has answered, no list is offered: deciding "not Pro" from
-  // a still-loading roster would offer the community's list to a reader who
-  // should get the author's. A failed roster falls back to the community's.
-  const rosterKnown = proQuery.isSuccess || proQuery.isError;
-  const authorIsPro = isProMember(proQuery.data?.members, entry.author);
-
-  // Which list to offer: the author's own when they are Pro, else the community's.
+  // Which list to offer: the author's digest is open to every creator
+  // (2026-08-19), so it is offered first; the community's digest when the
+  // reader IS the author (their own list is not offered to them) and the post
+  // was made in a community.
   const list: { type: "creator" | "community"; target: string } | null =
-    !enabled || !me || !isTopLevel || !rosterKnown
+    !enabled || !me || !isTopLevel
       ? null
-      : authorIsPro && me !== entry.author
+      : me !== entry.author
         ? { type: "creator", target: entry.author }
         : inCommunity
           ? { type: "community", target: entry.category }

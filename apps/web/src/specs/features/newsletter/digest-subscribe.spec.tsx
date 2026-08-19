@@ -242,19 +242,14 @@ describe("DigestSubscribeButton", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("offers a creator digest only for an Ecency Pro creator", () => {
+  it("offers a creator digest for every creator: no Pro roster involved (2026-08-19)", () => {
     const client = createTestQueryClient();
-    client.setQueryData(["accounts", "pro-members"], { members: ["good-karma"] });
-    const { container: notPro } = renderConfigured(
+    renderConfigured(
       <DigestSubscribeButton type="creator" target="someone" targetLabel="Someone" source="creator-page" />,
       { queryClient: client }
     );
-    expect(notPro).toBeEmptyDOMElement();
-    renderConfigured(
-      <DigestSubscribeButton type="creator" target="good-karma" targetLabel="Good Karma" source="creator-page" />,
-      { queryClient: client }
-    );
     expect(screen.getByRole("button", { name: /newsletter\.button/ })).toBeInTheDocument();
+    expect(client.getQueryData(["accounts", "pro-members"])).toBeUndefined();
   });
 
   it("reflects the logged-in account's subscription and opens the dialog", async () => {
