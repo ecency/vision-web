@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@ecency/sdk/hive", () => ({
   callRPC: vi.fn(),
@@ -60,7 +60,14 @@ const PAGE = [
 
 const shard = (name: string) => store.get(`seo:sitemap:${name}`) ?? "";
 
+const run = () => POST(new Request("http://web/api/internal/seo/sitemap-generate", { method: "POST" }));
+const indexEntry = (name: string) =>
+  shard("index").match(new RegExp(`<loc>https://ecency.com/sitemap/${name}</loc><lastmod>([^<]+)</lastmod>`))?.[1];
+
 describe("sitemap-generate route", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   beforeEach(() => {
     store.clear();
     vi.mocked(callRPC).mockImplementation(async (method: string) => {
@@ -104,15 +111,12 @@ describe("sitemap-generate route", () => {
     expect(tags).not.toContain("/created/travel");
   });
 
-  it("stamps the hourly shards in the index with the run's full W3C datetime and static.xml with the day", async () => {
-    await POST(new Request("http://web/api/internal/seo/sitemap-generate", { method: "POST" }));
-    const index = shard("index");
-    const entry = (name: string) =>
-      index.match(new RegExp(`<loc>https://ecency.com/sitemap/${name}</loc><lastmod>([^<]+)</lastmod>`))?.[1];
-    expect(entry("posts.xml")).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-    expect(entry("authors.xml")).toBe(entry("posts.xml"));
-    expect(entry("communities.xml")).toMatch(/T/);
-    expect(entry("static.xml")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  it("stamps every index entry with the full W3C datetime of the run that last changed that shard", async () => {
+    await run();
+    for (const name of ["posts.xml", "authors.xml", "tags.xml", "communities.xml", "static.xml"]) {
+      expect(indexEntry(name), name).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    }
+    expect(indexEntry("authors.xml")).toBe(indexEntry("posts.xml"));
   });
 
   it("does not gate when the row carries no author_reputation (the page decides)", async () => {
@@ -125,5 +129,71 @@ describe("sitemap-generate route", () => {
     const body = await res.json();
     expect(body.repGated).toBe(0);
     expect(shard("posts.xml")).toContain("/@unknownrep/p");
+  });
+
+  it("gates on a raw condenser-style string reputation too, and never on an empty one", async () => {
+    vi.mocked(callRPC).mockImplementation(async (method: string) => {
+      if (method !== "bridge.get_ranked_posts") return [];
+      return [
+        { ...post("rawlow", "p1", HOUR, 0, ["photography"]), author_reputation: "5000000000" }, // ~31
+        { ...post("rawhigh", "p2", HOUR, 0, ["photography"]), author_reputation: "300000000000000" }, // ~74
+        { ...post("blankrep", "p3", HOUR, 0, ["photography"]), author_reputation: "" },
+        PAGE[3]
+      ];
+    });
+    const body = await (await run()).json();
+    expect(body.repGated).toBe(1);
+    const posts = shard("posts.xml");
+    expect(posts).not.toContain("/@rawlow/");
+    expect(posts).toContain("/@rawhigh/p2");
+    expect(posts).toContain("/@blankrep/p3");
+  });
+
+  it("advances a shard's index lastmod only when its bytes change", async () => {
+    const t0 = Date.now();
+    vi.useFakeTimers({ toFake: ["Date"], now: t0 });
+    await run();
+    const first = Object.fromEntries(
+      ["posts.xml", "authors.xml", "tags.xml", "communities.xml", "static.xml"].map((n) => [n, indexEntry(n)])
+    );
+    // Same data an hour later: nothing changed, nothing may move.
+    vi.setSystemTime(new Date(t0 + HOUR));
+    await run();
+    for (const [name, lastmod] of Object.entries(first)) expect(indexEntry(name), name).toBe(lastmod);
+    // A new post by a new author changes posts.xml and authors.xml. tags.xml
+    // keeps its bytes (same tag, same newest day) and so keeps its lastmod:
+    // that is the whole point of keying the index on content, not on runs.
+    vi.setSystemTime(new Date(t0 + 2 * HOUR));
+    vi.mocked(callRPC).mockImplementation(async (method: string) => {
+      if (method !== "bridge.get_ranked_posts") return [];
+      return [post("newcomer", "hello", HOUR, 70, ["photography"]), ...PAGE];
+    });
+    const third = await (await run()).json();
+    expect(third.posts).toBe(3);
+    const later = new Date(t0 + 2 * HOUR).toISOString();
+    expect(indexEntry("posts.xml")).toBe(later);
+    expect(indexEntry("authors.xml")).toBe(later);
+    expect(indexEntry("tags.xml")).toBe(first["tags.xml"]);
+    expect(indexEntry("communities.xml")).toBe(first["communities.xml"]);
+    expect(indexEntry("static.xml")).toBe(first["static.xml"]);
+  });
+
+  it("keeps the accepted walk's full timestamp when a later walk is rejected", async () => {
+    const t0 = Date.now();
+    vi.useFakeTimers({ toFake: ["Date"], now: t0 });
+    await run();
+    const accepted = indexEntry("posts.xml");
+    expect(accepted).toBe(new Date(t0).toISOString());
+    const acceptedPosts = shard("posts.xml");
+    // An empty walk that never reaches the cutoff is rejected (0 < 50% of the
+    // last accepted count): the shards and their lastmod must not move.
+    vi.setSystemTime(new Date(t0 + HOUR));
+    vi.mocked(callRPC).mockImplementation(async () => []);
+    const body = await (await run()).json();
+    expect(body.acceptedWalk).toBe(false);
+    expect(shard("posts.xml")).toBe(acceptedPosts);
+    expect(indexEntry("posts.xml")).toBe(accepted);
+    expect(indexEntry("authors.xml")).toBe(accepted);
+    expect(body.lastGoodAt).toBe(accepted);
   });
 });

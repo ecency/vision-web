@@ -308,7 +308,8 @@ export async function POST(req: Request): Promise<Response> {
       // noindex is a wasted hint and coverage-report noise. Only when the
       // field is present: an absent value must not gate (the page decides).
       const rep = raw.author_reputation;
-      if (typeof rep === "number" && isBelowReputationGate(rep)) {
+      const hasRep = typeof rep === "number" || (typeof rep === "string" && rep.trim() !== "");
+      if (hasRep && isBelowReputationGate(rep as number | string)) {
         repGated += 1;
         continue;
       }
@@ -407,13 +408,15 @@ export async function POST(req: Request): Promise<Response> {
   // last accepted count. On reject, posts.xml + authors.xml keep their
   // last-good blobs; the independent communities/static/index still refresh.
   let lastGood = 0;
-  let lastGoodDay = "";
+  // When the walk-derived shards were last accepted: a full datetime, or a
+  // bare day written by older deploys (both valid W3C lastmod values).
+  let lastGoodAt = "";
   try {
     lastGood = parseInt((await redis.get(POSTS_LASTGOOD_KEY)) ?? "", 10) || 0;
-    lastGoodDay = (await redis.get(POSTS_LASTGOOD_DAY_KEY)) ?? "";
+    lastGoodAt = (await redis.get(POSTS_LASTGOOD_DAY_KEY)) ?? "";
   } catch {
     lastGood = 0;
-    lastGoodDay = "";
+    lastGoodAt = "";
   }
   // 50% guard. Math.ceil (not floor) so a stored baseline of 1 doesn't
   // collapse the threshold to 0 and silently accept an empty walk; the
@@ -435,38 +438,43 @@ export async function POST(req: Request): Promise<Response> {
   };
 
   try {
-    for (const name of SITEMAP_SHARDS) {
-      if (!acceptWalk && WALK_DERIVED.has(name)) continue; // keep last-good
-      await redis.set(K(name), shardXml[name]);
-    }
-    // When the walk is rejected, posts.xml/authors.xml keep their last-good
-    // blob — so the index must advertise their *real* freshness (the day they
-    // were last accepted), not today's, or crawlers re-pull unchanged shards
-    // and GSC sees a false freshness signal. communities/static are rebuilt
-    // every run, so nowDay is honest for them. Fallback to nowDay only if no
-    // accepted-day was ever recorded (pre-existing baseline from an older
-    // deploy); it self-heals on the next accepted walk.
-    // Hourly-rebuilt shards get the full W3C datetime of this run (the
-    // protocol allows it and it is exact); static.xml only changes with the
-    // day, so the day is its honest lastmod.
+    // Per-shard lastmod, kept in Redis. A shard's lastmod advances only when
+    // its bytes change, so an hourly run that rebuilds an identical
+    // authors.xml or communities.xml does not advertise a change it did not
+    // make (a lastmod that moves without content teaches crawlers to discount
+    // the field). A walk-derived shard kept from last-good keeps its recorded
+    // lastmod; the first run after this deploy falls back to the last
+    // accepted timestamp, then today.
     const nowIso = new Date().toISOString();
-    const walkLastmod = acceptWalk ? nowIso : lastGoodDay || nowDay;
+    let recorded: Record<string, string> = {};
+    try {
+      const raw = await redis.get(K("lastmod"));
+      const parsed: unknown = raw ? JSON.parse(raw) : {};
+      if (parsed && typeof parsed === "object") recorded = parsed as Record<string, string>;
+    } catch {
+      recorded = {};
+    }
+    const lastmods: Record<string, string> = {};
+    for (const name of SITEMAP_SHARDS) {
+      if (!acceptWalk && WALK_DERIVED.has(name)) {
+        lastmods[name] = recorded[name] || lastGoodAt || nowDay; // keep last-good
+        continue;
+      }
+      const previous = await redis.get(K(name));
+      const changed = previous !== shardXml[name];
+      await redis.set(K(name), shardXml[name]);
+      lastmods[name] = changed || !recorded[name] ? nowIso : recorded[name];
+    }
+    await redis.set(K("lastmod"), JSON.stringify(lastmods));
     await redis.set(
       K("index"),
-      indexXml(
-        SITEMAP_SHARDS.map((name) => ({
-          name,
-          lastmod: WALK_DERIVED.has(name)
-            ? walkLastmod
-            : name === "communities.xml"
-              ? nowIso
-              : nowDay
-        }))
-      )
+      indexXml(SITEMAP_SHARDS.map((name) => ({ name, lastmod: lastmods[name] })))
     );
     if (acceptWalk) {
       await redis.set(POSTS_LASTGOOD_KEY, String(postUrls.length));
-      await redis.set(POSTS_LASTGOOD_DAY_KEY, nowDay);
+      // Full datetime, so a later rejected walk advertises exactly the
+      // freshness the last accepted walk had, not a coarser day.
+      await redis.set(POSTS_LASTGOOD_DAY_KEY, nowIso);
     }
     await redis.set(
       `${SEO_REDIS_PREFIX}sitemap:meta`,
@@ -482,7 +490,7 @@ export async function POST(req: Request): Promise<Response> {
         reachedCutoff,
         acceptedWalk: acceptWalk,
         lastGood,
-        lastGoodDay
+        lastGoodAt
       })
     );
   } catch (e) {
@@ -507,7 +515,8 @@ export async function POST(req: Request): Promise<Response> {
       ms: Date.now() - started,
       reachedCutoff,
       acceptedWalk: acceptWalk,
-      lastGood
+      lastGood,
+      lastGoodAt
     }),
     { status: 200, headers: { "Content-Type": "application/json" } }
   );
