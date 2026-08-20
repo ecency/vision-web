@@ -11,11 +11,16 @@ vi.mock("@/features/seo/cron-auth", () => ({
   notFound: () => new Response("", { status: 404 })
 }));
 const store = new Map<string, string>();
+let failNextSetMatching = "";
 vi.mock("@/features/seo/seo-redis", () => ({
   SEO_REDIS_PREFIX: "seo:",
   getSeoRedis: () => ({
     get: async (k: string) => store.get(k) ?? null,
     set: async (k: string, v: string) => {
+      if (failNextSetMatching && k.includes(failNextSetMatching)) {
+        failNextSetMatching = "";
+        throw new Error(`injected redis failure on ${k}`);
+      }
       store.set(k, v);
       return "OK";
     }
@@ -196,5 +201,29 @@ describe("sitemap-generate route", () => {
     expect(indexEntry("posts.xml")).toBe(accepted);
     expect(indexEntry("authors.xml")).toBe(accepted);
     expect(body.lastGoodAt).toBe(accepted);
+  });
+
+  it("re-stamps a changed shard after a write that failed between the record and the shard", async () => {
+    const t0 = Date.now();
+    vi.useFakeTimers({ toFake: ["Date"], now: t0 });
+    await run();
+    const before = indexEntry("posts.xml");
+    // A new post, but Redis dies on the posts.xml write itself.
+    vi.setSystemTime(new Date(t0 + HOUR));
+    vi.mocked(callRPC).mockImplementation(async (method: string) => {
+      if (method !== "bridge.get_ranked_posts") return [];
+      return [post("newcomer", "hello", HOUR, 70, ["photography"]), ...PAGE];
+    });
+    failNextSetMatching = "sitemap:posts.xml";
+    const failed = await run();
+    expect(failed.status).toBe(500);
+    expect(shard("posts.xml")).not.toContain("newcomer");
+    expect(indexEntry("posts.xml")).toBe(before); // index untouched by the failed run
+    // The retry sees the shard still differs from what is stored and stamps it.
+    vi.setSystemTime(new Date(t0 + 2 * HOUR));
+    const retry = await (await run()).json();
+    expect(retry.ok).toBe(true);
+    expect(shard("posts.xml")).toContain("newcomer");
+    expect(indexEntry("posts.xml")).toBe(new Date(t0 + 2 * HOUR).toISOString());
   });
 });

@@ -454,7 +454,14 @@ export async function POST(req: Request): Promise<Response> {
     } catch {
       recorded = {};
     }
+    // Decide every lastmod first, then persist in the order record -> shards
+    // -> index. If a write fails midway, the retry still does the right
+    // thing: a shard not yet written still differs from its stored blob (so
+    // it is stamped again), and a shard already written reads back the
+    // timestamp this run recorded for it. Writing the record last instead
+    // would let a changed shard keep its previous timestamp forever.
     const lastmods: Record<string, string> = {};
+    const toWrite: (typeof SITEMAP_SHARDS)[number][] = [];
     for (const name of SITEMAP_SHARDS) {
       if (!acceptWalk && WALK_DERIVED.has(name)) {
         lastmods[name] = recorded[name] || lastGoodAt || nowDay; // keep last-good
@@ -462,10 +469,11 @@ export async function POST(req: Request): Promise<Response> {
       }
       const previous = await redis.get(K(name));
       const changed = previous !== shardXml[name];
-      await redis.set(K(name), shardXml[name]);
       lastmods[name] = changed || !recorded[name] ? nowIso : recorded[name];
+      toWrite.push(name);
     }
     await redis.set(K("lastmod"), JSON.stringify(lastmods));
+    for (const name of toWrite) await redis.set(K(name), shardXml[name]);
     await redis.set(
       K("index"),
       indexXml(SITEMAP_SHARDS.map((name) => ({ name, lastmod: lastmods[name] })))
