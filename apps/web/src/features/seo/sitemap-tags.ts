@@ -42,7 +42,11 @@ export function isEmittableTag(tag: string): boolean {
 export function harvestPostTags(
   counts: Map<string, number>,
   category: string | null | undefined,
-  tags: readonly unknown[] | null | undefined
+  tags: readonly unknown[] | null | undefined,
+  // Optional: newest post day (YYYY-MM-DD) per tag, so the tag hub shard can
+  // carry a real lastmod instead of stamping today on every entry.
+  latest?: Map<string, string>,
+  day?: string
 ): void {
   const inPost = new Set<string>();
   const add = (raw: unknown) => {
@@ -52,7 +56,13 @@ export function harvestPostTags(
   };
   add(category);
   if (Array.isArray(tags)) for (const t of tags) add(t);
-  inPost.forEach((t) => counts.set(t, (counts.get(t) ?? 0) + 1));
+  inPost.forEach((t) => {
+    counts.set(t, (counts.get(t) ?? 0) + 1);
+    if (latest && day) {
+      const prev = latest.get(t);
+      if (!prev || day > prev) latest.set(t, day);
+    }
+  });
 }
 
 /**

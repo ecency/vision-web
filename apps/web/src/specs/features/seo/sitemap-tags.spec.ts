@@ -87,4 +87,21 @@ describe("sitemap-tags", () => {
       expect(selectTopTags(new Map([["x", 1]]), 10, 2)).toEqual([]);
     });
   });
+
+  describe("harvestPostTags latest-day tracking", () => {
+    it("records the newest post day per tag when asked, and stays inert otherwise", () => {
+      const counts = new Map<string, number>();
+      const latest = new Map<string, string>();
+      harvestPostTags(counts, "photography", ["Travel"], latest, "2026-08-18");
+      harvestPostTags(counts, "travel", ["photography"], latest, "2026-08-20");
+      harvestPostTags(counts, "photography", [], latest, "2026-08-19");
+      expect(counts.get("photography")).toBe(3);
+      expect(latest.get("photography")).toBe("2026-08-20");
+      expect(latest.get("travel")).toBe("2026-08-20");
+      // Without a day nothing is recorded, and existing dates are not erased.
+      harvestPostTags(counts, "photography", [], latest);
+      expect(latest.get("photography")).toBe("2026-08-20");
+      expect(counts.get("photography")).toBe(4);
+    });
+  });
 });
