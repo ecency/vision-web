@@ -66,6 +66,36 @@ describe("slimEntry", () => {
     expect(slimEntry(e).json_metadata?.image).toEqual(["https://images.hive.blog/in-body.png"]);
   });
 
+  it("survives thumbnails that are not an array", () => {
+    // json_metadata is author-written and `thumbnails` is only typed as string[].
+    // A bare string threw out of the queryFn, and a throw there is not one bad
+    // card: prefetchQuery returns undefined and the whole strip or feed is gone.
+    const e = entry({
+      json_metadata: { thumbnails: "https://images.hive.blog/single.png" } as never
+    });
+    expect(slimEntry(e).json_metadata?.image).toEqual(["https://images.hive.blog/single.png"]);
+  });
+
+  it("ignores thumbnails of a shape no url can be read from", () => {
+    const e = entry({
+      json_metadata: {
+        thumbnails: { 0: "https://images.hive.blog/object.png" },
+        image: ["https://images.hive.blog/cover.png"]
+      } as never
+    });
+    expect(slimEntry(e).json_metadata?.image).toEqual(["https://images.hive.blog/cover.png"]);
+  });
+
+  it("ignores non-string members of either metadata field", () => {
+    const e = entry({
+      json_metadata: {
+        thumbnails: [null, 42, ""],
+        image: [undefined, "https://images.hive.blog/real.png"]
+      } as never
+    });
+    expect(slimEntry(e).json_metadata?.image).toEqual(["https://images.hive.blog/real.png"]);
+  });
+
   it("keeps a video post's poster, which only the full render finds", () => {
     // A bare YouTube URL becomes an <img class="no-replace video-thumbnail"> in
     // the rendered post, so the raw-markdown fast path sees no image at all.
@@ -131,6 +161,25 @@ describe("slimEntry", () => {
   it("passes through an entry that has no body already", () => {
     const e = entry({ body: "" });
     expect(slimEntry(e)).toBe(e);
+  });
+});
+
+describe("slimEntryPage", () => {
+  it("hands back a row it cannot slim, and still slims the rest of the page", () => {
+    // The backstop, for the metadata shape nobody thought of. Losing a row's
+    // saving costs memory; letting the queryFn reject costs the whole page.
+    const broken = entry();
+    Object.defineProperty(broken, "json_metadata", {
+      get() {
+        throw new Error("unreadable metadata");
+      }
+    });
+    const fine = entry({ body: "a body that should still go" });
+
+    const page = slimEntryPage([broken, fine]);
+
+    expect(page[0]).toBe(broken);
+    expect(page[1].body).toBe("");
   });
 });
 

@@ -2,46 +2,27 @@ import "@testing-library/jest-dom";
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getQueryClient } from "@/core/react-query";
 import { SLIM_KEY_MARKER } from "@/core/entries/slim-entry";
 import { mockEntry } from "@/specs/test-utils";
 import type { Entry } from "@/entities";
 
-interface Seen {
-  queryKey: unknown[];
-  result: unknown;
-}
-
-const seen = vi.hoisted(() => [] as Seen[]);
 const answers = vi.hoisted(() => new Map<string, unknown>());
 
-// Both server components reach the network through these two helpers. Running
-// the options they are handed, rather than stubbing the result, is the point:
-// what is under test is the queryFn the wrapper installed.
-vi.mock("@/core/react-query", () => {
-  const run = async (options: {
-    queryKey: unknown[];
-    queryFn: (ctx: unknown) => Promise<unknown>;
-  }) => {
-    const result = await options.queryFn({
-      queryKey: options.queryKey,
-      signal: new AbortController().signal
-    });
-    seen.push({ queryKey: options.queryKey, result });
-    return result;
-  };
-  return { prefetchQuery: run, fetchQuery: run };
-});
-
+// Only the bridge is stubbed. The components reach it through the real
+// prefetchQuery/fetchQuery and the real request-scoped query client, which is
+// what makes the cache assertions below mean anything: they read what a server
+// render would actually be holding.
 vi.mock("@ecency/sdk", async () => {
   const actual = await vi.importActual<Record<string, unknown>>("@ecency/sdk");
-  const answer = (name: string) => ({
-    queryKey: [name],
+  const answer = (name: string, ...key: unknown[]) => ({
+    queryKey: [name, ...key],
     queryFn: async () => answers.get(name) ?? []
   });
   return {
     ...actual,
-    getPostsRankedQueryOptions: () => answer("ranked"),
-    getAccountPostsQueryOptions: () => answer("account"),
+    getPostsRankedQueryOptions: (sort: string, tag: string) => answer("ranked", sort, tag),
+    getAccountPostsQueryOptions: (username: string) => answer("account", username),
     getSimilarEntriesQueryOptions: () => answer("similar")
   };
 });
@@ -49,14 +30,12 @@ vi.mock("@ecency/sdk", async () => {
 vi.mock("@/features/i18n", () => ({ initI18next: async () => undefined }));
 
 vi.mock("next/link", () => ({
-  default: ({ href, children, ...rest }: any) => (
-    <a href={href} {...rest}>
-      {children}
-    </a>
+  default: ({ href, children }: React.PropsWithChildren<{ href: string }>) => (
+    <a href={href}>{children}</a>
   )
 }));
 vi.mock("next/image", () => ({
-  default: ({ src, alt }: any) => <img src={src} alt={alt} />
+  default: ({ src, alt }: { src: string; alt: string }) => <img src={src} alt={alt} />
 }));
 
 import { LandingTrending } from "@/app/_components/landing-page/landing-trending";
@@ -80,13 +59,25 @@ function fullRow(overrides: Partial<Entry> = {}): Entry {
   });
 }
 
-function slimmed(): Entry[] {
-  return seen.flatMap((s) => (Array.isArray(s.result) ? (s.result as Entry[]) : []));
+/** Every entry the render left behind in the request-scoped cache. */
+function cachedEntries(): Entry[] {
+  return getQueryClient()
+    .getQueryCache()
+    .getAll()
+    .flatMap((query) => (Array.isArray(query.state.data) ? (query.state.data as Entry[]) : []));
+}
+
+function cachedEntryKeys(): unknown[][] {
+  return getQueryClient()
+    .getQueryCache()
+    .getAll()
+    .filter((query) => Array.isArray(query.state.data) && query.state.data.length > 0)
+    .map((query) => [...query.queryKey]);
 }
 
 describe("server renders that never read a body fetch slim pages", () => {
   beforeEach(() => {
-    seen.length = 0;
+    getQueryClient().clear();
     answers.clear();
   });
 
@@ -111,7 +102,7 @@ describe("server renders that never read a body fetch slim pages", () => {
         /^https:\/\/i\.ecency\.com\/p\/.+width=320&height=180$/
       );
     }
-    expect(slimmed().map((e) => e.body)).toEqual(["", ""]);
+    expect(cachedEntries().map((e) => e.body)).toEqual(["", ""]);
   });
 
   it("keeps the related footer's rows without their bodies", async () => {
@@ -126,8 +117,8 @@ describe("server renders that never read a body fetch slim pages", () => {
     for (const row of [...authorRows, ...communityRows]) {
       expect(screen.getByText(row.title)).toBeInTheDocument();
     }
-    expect(slimmed()).toHaveLength(4);
-    expect(slimmed().every((e) => e.body === "")).toBe(true);
+    expect(cachedEntries()).toHaveLength(4);
+    expect(cachedEntries().every((e) => e.body === "")).toBe(true);
   });
 
   it("answers under a key of its own, never the one deck columns read", async () => {
@@ -139,10 +130,26 @@ describe("server renders that never read a body fetch slim pages", () => {
     render(await LandingTrending());
     render((await EntryRelatedFooter({ entry: fullRow() })) as React.ReactElement);
 
-    const entryKeys = seen.filter((s) => s.queryKey[0] !== "similar");
-    expect(entryKeys.length).toBe(3);
-    for (const { queryKey } of entryKeys) {
-      expect(queryKey.at(-1)).toBe(SLIM_KEY_MARKER);
+    const keys = cachedEntryKeys();
+    expect(keys.length).toBe(3);
+    for (const key of keys) {
+      expect(key.at(-1)).toBe(SLIM_KEY_MARKER);
     }
+  });
+
+  it("still renders when a row's metadata cannot be read", async () => {
+    // json_metadata is author-written. Before the guards in slimEntry, one row
+    // with a non-array `thumbnails` threw inside the queryFn, prefetchQuery
+    // swallowed it and the entire strip disappeared.
+    const hostile = fullRow({
+      json_metadata: { thumbnails: "https://example.com/not-an-array.jpg" } as never
+    });
+    const ordinary = fullRow();
+    answers.set("ranked", [hostile, ordinary]);
+
+    render(await LandingTrending());
+
+    expect(screen.getByText(hostile.title)).toBeInTheDocument();
+    expect(screen.getByText(ordinary.title)).toBeInTheDocument();
   });
 });
