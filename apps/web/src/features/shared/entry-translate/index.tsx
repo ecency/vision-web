@@ -41,18 +41,24 @@ export function EntryTranslate({ entry, onHide, initialTarget, initialSource }: 
   const {
     data: fullEntry,
     isError: fullEntryFailed,
-    isSuccess: fullEntryLoaded
+    isSuccess: fullEntryLoaded,
+    isFetching: fullEntryFetching
   } = useQuery({
     ...EcencyEntriesCacheManagement.getEntryQueryByPath(entry.author, entry.permlink),
     enabled: !entry.body && !!entry.author && !!entry.permlink,
     refetchOnMount: "always"
   });
   const sourceBody = entry.body || fullEntry?.body || "";
-  // The fetch failed, or it came back without a post (deleted, or never indexed).
-  // Either way no body is coming, so the modal must show its error instead of
+  // No body is coming: the request failed, or it settled without a post (deleted,
+  // or never indexed). Only then does the modal show its error rather than
   // spinning forever.
+  //
+  // `isFetching` is load-bearing. Feed cards seed this very cache key with the
+  // slim row, so React Query reports success with an empty body from the first
+  // render while the forced refetch is still in flight — reading that as terminal
+  // flashed the error over a post that was about to arrive.
   const bodyUnavailable =
-    !entry.body && (fullEntryFailed || (fullEntryLoaded && !fullEntry?.body));
+    !entry.body && !fullEntryFetching && (fullEntryFailed || fullEntryLoaded);
 
   useEffect(() => {
     let canceled = false;

@@ -9,26 +9,14 @@ import {
 } from "@/core/entries/slim-entry";
 import { getEntryModerationReason } from "@/core/entries/entry-moderation";
 import type { Entry } from "@/entities";
+import { mockEntry } from "@/specs/test-utils";
 
 // render-helper memoizes summaries and images per author/permlink/update, so each
 // fixture needs its own permlink or one test reads another's cached summary.
 let seq = 0;
 
 function entry(overrides: Partial<Entry> = {}): Entry {
-  return {
-    author: "alice",
-    permlink: `a-post-${++seq}`,
-    title: "A title",
-    body: "Hello world, this is the body of the post.",
-    json_metadata: { tags: ["hive"] },
-    author_reputation: 70,
-    net_rshares: 0,
-    active_votes: [],
-    stats: { total_votes: 1, flag_weight: 0, gray: false, hide: false },
-    created: "2026-08-01T00:00:00",
-    updated: "2026-08-01T00:00:00",
-    ...overrides
-  } as Entry;
+  return mockEntry({ permlink: `slim-fixture-${++seq}`, ...overrides });
 }
 
 describe("slimEntry", () => {
