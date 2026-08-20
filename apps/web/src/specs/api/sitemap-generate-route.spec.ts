@@ -12,9 +12,7 @@ vi.mock("@/features/seo/cron-auth", () => ({
 }));
 const store = new Map<string, string>();
 let failNextSetMatching = "";
-vi.mock("@/features/seo/seo-redis", () => ({
-  SEO_REDIS_PREFIX: "seo:",
-  getSeoRedis: () => ({
+const fakeRedis = () => ({
     get: async (k: string) => store.get(k) ?? null,
     set: async (k: string, v: string) => {
       if (failNextSetMatching && k.includes(failNextSetMatching)) {
@@ -24,7 +22,13 @@ vi.mock("@/features/seo/seo-redis", () => ({
       store.set(k, v);
       return "OK";
     }
-  })
+});
+vi.mock("@/features/seo/seo-redis", () => ({
+  SEO_REDIS_PREFIX: "seo:",
+  getSeoRedis: () => fakeRedis(),
+  // Both accessors, so this spec holds whether the route takes the client
+  // synchronously or waits for it to be ready.
+  getSeoRedisReady: async () => fakeRedis()
 }));
 
 import { callRPC } from "@ecency/sdk/hive";
