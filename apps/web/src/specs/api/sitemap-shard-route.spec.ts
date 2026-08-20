@@ -2,7 +2,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const store = new Map<string, string>();
-const fakeRedis = () => ({ get: async (k: string) => store.get(k) ?? null });
+const fakeRedis = () => ({
+  get: async (k: string) => store.get(k) ?? null,
+  exists: async (k: string) => (store.has(k) ? 1 : 0)
+});
 vi.mock("@/features/seo/seo-redis", () => ({
   SEO_REDIS_PREFIX: "seo:",
   getSeoRedis: () => fakeRedis(),
