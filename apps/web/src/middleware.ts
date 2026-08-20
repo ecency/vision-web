@@ -89,17 +89,18 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
   const agentRewrite = handleAgentReadableRewrite(request);
   if (agentRewrite) return agentRewrite;
 
-  const userAgent = request.headers.get("user-agent") || "";
-  const isSocialBot =
-    /Discordbot|Twitterbot|facebookexternalhit|TelegramBot|LinkedInBot|Slackbot|WhatsApp|redditbot/i.test(
-      userAgent
-    );
-
-  if (isSocialBot && path.match(/^\/[^\/]+\/@[^\/]+\/[^\/]+$/)) {
-    const nextUrl = request.nextUrl.clone();
-    nextUrl.pathname += "/redditbot";
-    return NextResponse.rewrite(nextUrl);
-  }
+  // A social-bot rewrite to a purpose-built /redditbot page used to live here.
+  // It was unreachable and has been removed: it only matched the three-segment
+  // /category/@author/permlink form, and handleCategoryEntryRedirect above 308s
+  // that form onto the bare canonical before this line is ever reached (that
+  // ordering is deliberate, see its comment). Posts self-canonicalized to bare
+  // /@author/permlink in May 2026, and the bare form never matched the pattern.
+  //
+  // Nothing is lost: `htmlLimitedBots` in next.config.js already gives crawlers
+  // BLOCKING metadata in <head> on the canonical page, verified in production
+  // for redditbot, Twitterbot and facebookexternalhit, and that page carries the
+  // canonical link, JSON-LD, og:site_name/locale and og:image:alt that the
+  // removed route had drifted out of sync on.
 
   const requestHeaders = new Headers(request.headers);
   // x-pathname was dropped here: its only consumer was the root layout's
