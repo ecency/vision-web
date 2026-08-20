@@ -35,7 +35,11 @@ export default defineConfig([
         platform: "browser",
         target: "es2020",
         outDir: "dist/browser",
-        clean: true,
+        // The build script clears dist before running tsup. Cleaning from
+        // inside one of two configs only ever cleaned that config's own
+        // directory, left dist/node to accumulate stale files, and raced with
+        // the other build the moment both are pointed at a single directory.
+        clean: false,
         minify: false,
         outExtension: () => ({ js: ".js" }),
         define: {
