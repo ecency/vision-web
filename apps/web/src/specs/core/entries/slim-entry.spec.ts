@@ -66,6 +66,29 @@ describe("slimEntry", () => {
     expect(slimEntry(e).json_metadata?.image).toEqual(["https://images.hive.blog/in-body.png"]);
   });
 
+  it("prefers thumbnails over image, which is a deliberate divergence", () => {
+    // catchPostImage never looks at `thumbnails`: getImage() in render-helper
+    // reads json_metadata.image as a string, then as an array, then falls back
+    // to the body. So a post that sets the two fields to DIFFERENT urls shows
+    // its cover on an unslimmed card and its thumbnail on a slim one.
+    //
+    // That divergence is chosen, not accidental. `thumbnails` is published for
+    // exactly this purpose by 3Speak and Liketu, and a publisher who sets a
+    // dedicated poster means it. It is also unobservable in practice: across
+    // 461 live rows from trending, hot, created, promoted, tags and
+    // communities, 70 carried both fields and 0 of them disagreed.
+    //
+    // This test exists so the next reader sees a decision rather than a bug,
+    // and so flipping the order has to be done on purpose.
+    const e = entry({
+      json_metadata: {
+        thumbnails: ["https://images.hive.blog/poster.png"],
+        image: ["https://images.hive.blog/cover.png"]
+      }
+    });
+    expect(slimEntry(e).json_metadata?.image).toEqual(["https://images.hive.blog/poster.png"]);
+  });
+
   it("survives thumbnails that are not an array", () => {
     // json_metadata is author-written and `thumbnails` is only typed as string[].
     // A bare string threw out of the queryFn, and a throw there is not one bad
