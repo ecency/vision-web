@@ -189,4 +189,50 @@ describe("slim-entries audit", () => {
     expect(found).toHaveLength(1);
     expect(found[0]).toContain("cannot tell");
   });
+
+  it("does not let a nested alias shadow an import at an outer call site", () => {
+    // The alias map used to be file-wide, so this inner `const build` overwrote
+    // the import alias and the outer violation disappeared entirely.
+    const found = auditSource(
+      "f.ts",
+      `import { withSlimEntries } from "@/core/entries/slim-entry";
+       import { getPostsRankedQueryOptions as build } from "@ecency/sdk";
+       export function outer() {
+         return withSlimEntries(build("trending", "", "", 20, "", ""));
+       }
+       export function inner() {
+         const build = getPostsRankedInfiniteQueryOptions;
+         return withSlimEntries(build("trending", ""));
+       }`
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("use withSlimPageEntries");
+    expect(found[0]).toContain(":4");
+  });
+
+  it("lets a local alias shadow an import where it really does", () => {
+    expect(
+      auditSource(
+        "f.ts",
+        `import { getPostsRankedQueryOptions as build } from "@ecency/sdk";
+         export function inner() {
+           const build = getPostsRankedInfiniteQueryOptions;
+           return withSlimEntries(build("trending", ""));
+         }`
+      )
+    ).toEqual([]);
+  });
+
+  it("sees a const declared in an enclosing function from a nested arrow", () => {
+    const found = auditSource(
+      "f.ts",
+      src(`export function outer() {
+             const options = getPostsRankedQueryOptions("x");
+             const go = () => withSlimEntries(options);
+             return go();
+           }`)
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("use withSlimPageEntries");
+  });
 });

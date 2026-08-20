@@ -72,39 +72,64 @@ function isScopeBoundary(node) {
 }
 
 /**
- * Local name -> the name it was imported or aliased from.
- *
- * `import { getPostsRankedQueryOptions as getRankedPage }` and
- * `const getRankedPage = getPostsRankedQueryOptions` both hide a builder behind
- * another name, and this rule matches on names. Aliasing an SDK import is
- * ordinary house style here, so without this the guard is silent on exactly the
- * files most likely to have it.
+ * Local name -> the name it was imported from. Module scope, which is what an
+ * import is. Local `const a = b` aliases are NOT collected here: they belong to
+ * the scope that declares them, and folding them into one file-wide map let a
+ * nested `const build = ...` overwrite an outer `import { x as build }` and hide
+ * a violation at the outer call site.
  */
-function aliasMap(src) {
+function importAliases(src) {
   const aliases = new Map();
   (function visit(node) {
     if (ts.isImportSpecifier(node) && node.propertyName) {
       aliases.set(node.name.text, node.propertyName.text);
-    }
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer &&
-      ts.isIdentifier(node.initializer)
-    ) {
-      aliases.set(node.name.text, node.initializer.text);
     }
     ts.forEachChild(node, visit);
   })(src);
   return aliases;
 }
 
-function canonical(name, aliases) {
-  const seen = new Set();
+/**
+ * The name behind `name` as seen FROM `node`: a local `const name = other` in
+ * the nearest enclosing scope wins over an import alias, exactly as it does at
+ * runtime. Returns null when the name is declared more than once in a scope, or
+ * bound by something this cannot read.
+ */
+function canonicalAt(node, name, imports, seen = new Set()) {
+  if (!name || seen.has(name)) return name ?? null;
+  seen.add(name);
+
+  for (let scope = node; scope; scope = scope.parent) {
+    if (!isScopeBoundary(scope) && !ts.isBlock(scope) && !ts.isCaseClause(scope)) continue;
+    const bindings = [];
+    ts.forEachChild(scope, function walk(child) {
+      if (child !== scope && isScopeBoundary(child)) return;
+      if (
+        ts.isVariableDeclaration(child) &&
+        ts.isIdentifier(child.name) &&
+        child.name.text === name
+      ) {
+        const isConst =
+          ts.isVariableDeclarationList(child.parent) &&
+          (child.parent.flags & ts.NodeFlags.Const) !== 0;
+        bindings.push(
+          isConst && child.initializer && ts.isIdentifier(child.initializer)
+            ? child.initializer.text
+            : null
+        );
+      }
+      ts.forEachChild(child, walk);
+    });
+    if (bindings.length === 1 && bindings[0]) {
+      return canonicalAt(scope, bindings[0], imports, seen);
+    }
+    if (bindings.length > 0) return null;
+  }
+
   let current = name;
-  while (current && aliases.has(current) && !seen.has(current)) {
+  while (imports.has(current) && !seen.has(imports.get(current))) {
+    current = imports.get(current);
     seen.add(current);
-    current = aliases.get(current);
   }
   return current;
 }
@@ -140,17 +165,18 @@ function declarationsIn(scope, name) {
  * on correct code, and a rule that is sometimes wrong about correct code is one
  * people learn to ignore.
  */
-function resolveBuilder(arg, aliases) {
+function resolveBuilder(arg, imports) {
   const direct = calleeName(arg);
-  if (direct) return canonical(direct, aliases);
+  if (direct) return canonicalAt(arg, direct, imports);
   if (!arg || !ts.isIdentifier(arg)) return null;
 
   for (let scope = arg.parent; scope; scope = scope.parent) {
     if (!isScopeBoundary(scope) && !ts.isBlock(scope) && !ts.isCaseClause(scope)) continue;
     const declarations = declarationsIn(scope, arg.text);
-    if (declarations.length === 1 && declarations[0]) return canonical(declarations[0], aliases);
+    if (declarations.length === 1 && declarations[0]) {
+      return canonicalAt(scope, declarations[0], imports);
+    }
     if (declarations.length > 0) return null;
-    if (isScopeBoundary(scope)) break;
   }
   return null;
 }
@@ -165,14 +191,14 @@ export function auditSource(fileName, text) {
     /\.tsx$/.test(fileName) ? ts.ScriptKind.TSX : ts.ScriptKind.TS
   );
   const findings = [];
-  const aliases = aliasMap(src);
+  const imports = importAliases(src);
 
   (function visit(node) {
-    const called = canonical(calleeName(node), aliases);
+    const called = canonicalAt(node, calleeName(node), imports);
     if (called === "withSlimEntries" || called === "withSlimPageEntries") {
       const { line } = src.getLineAndCharacterOfPosition(node.getStart());
       const where = `${fileName}:${line + 1}`;
-      const wrapped = resolveBuilder(node.arguments[0], aliases);
+      const wrapped = resolveBuilder(node.arguments[0], imports);
 
       if (!wrapped) {
         findings.push(
