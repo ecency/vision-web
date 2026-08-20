@@ -136,6 +136,13 @@ if (process.argv.includes("--self-test")) {
     ["source-address", "        allow fe80::1;"],
     ["source-address", "        allow ::ffff:192.0.2.1;"],
     ["source-address", "        allow 2001:db8::/32;"],
+    // Trailing `::` forms, pinned after review asked whether they were covered.
+    // They were, since net.isIP replaced the hand-rolled pattern, but "covered
+    // and untested" is how the previous regex looked right up until it wasn't.
+    ["source-address", "        allow 2001:db8::;"],
+    ["source-address", "        allow fe80::;"],
+    ["source-address", "        allow 64:ff9b::1;"],
+    ["source-address", "        proxy_pass http://[2001:db8::]:8080;"],
     ["source-address", "        proxy_pass http://[2001:db8::5]:8080;"],
     ["inline-allowlist", "        allow 198.51.100.7;"],
     ["threshold", "        # SSR page rate limit: 15 req/s per client IP"],
