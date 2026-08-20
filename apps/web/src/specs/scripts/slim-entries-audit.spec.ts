@@ -84,21 +84,36 @@ describe("slim-entries audit", () => {
     ).toEqual([]);
   });
 
-  it("reports rather than guesses when one name has two declarations in scope", () => {
-    // Guessing here produced false failures on correct code, and a rule that is
-    // sometimes wrong about correct code is one people learn to ignore.
+  it("resolves each branch to its own const, because that is what runs", () => {
+    // This used to report "cannot tell" twice: the walk searched a whole
+    // function at once and saw two declarations of `options`. Each block is its
+    // own scope, both calls are correct, and correct code should be silent.
+    expect(
+      auditSource(
+        "f.ts",
+        src(`function build(kind) {
+          if (kind) {
+            const options = getAccountPostsQueryOptions("a", "posts");
+            return withSlimPageEntries(options);
+          }
+          const options = getAccountPostsInfiniteQueryOptions("a", "posts");
+          return withSlimEntries(options);
+        }`)
+      )
+    ).toEqual([]);
+  });
+
+  it("reports rather than guesses when one scope declares a name twice", () => {
     const found = auditSource(
       "f.ts",
-      src(`function build(kind) {
-        if (kind) {
-          const options = getAccountPostsQueryOptions("a", "posts");
-          return withSlimPageEntries(options);
-        }
+      src(`function build() {
+        const options = getAccountPostsQueryOptions("a", "posts");
         const options = getAccountPostsInfiniteQueryOptions("a", "posts");
         return withSlimEntries(options);
       }`)
     );
-    expect(found.every((f) => f.includes("cannot tell"))).toBe(true);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("cannot tell");
   });
 
   it("reports a let, which can hold a different builder by the time it runs", () => {
@@ -297,6 +312,69 @@ describe("slim-entries audit", () => {
     ]
   ])("gets the binding right across %s", (_label, body) => {
     const found = auditSource("f.ts", src(body));
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("use withSlimPageEntries");
+  });
+
+  // A name can be bound by something this cannot read, and such a binding still
+  // SHADOWS the outer one. Ignoring it meant resolving to an import the code
+  // never calls and reporting correct code as a mismatch.
+  it.each([
+    [
+      "a parameter shadowing the wrapper itself",
+      `import { withSlimEntries } from "@/core/entries/slim-entry";
+       import { getPostsRankedQueryOptions } from "@ecency/sdk";
+       export function harness(withSlimEntries) {
+         return withSlimEntries(getPostsRankedQueryOptions("trending"));
+       }`
+    ],
+    [
+      "a parameter shadowing the builder",
+      `import { getPostsRankedQueryOptions } from "@ecency/sdk";
+       export function f(getPostsRankedQueryOptions) {
+         return withSlimEntries(getPostsRankedQueryOptions("x"));
+       }`
+    ],
+    [
+      "a function declaration of the same name",
+      `import { getPostsRankedQueryOptions } from "@ecency/sdk";
+       export function g() {
+         function getPostsRankedQueryOptions() { return {}; }
+         return withSlimEntries(getPostsRankedQueryOptions());
+       }`
+    ],
+    [
+      "a destructured property",
+      `export function outer() {
+         const options = getPostsRankedQueryOptions("x");
+         return function inner(props) {
+           const { options } = props;
+           return withSlimEntries(options);
+         };
+       }`
+    ],
+    [
+      "a caught error",
+      `export function c() {
+         try {
+           return null;
+         } catch (options) {
+           return withSlimEntries(options);
+         }
+       }`
+    ]
+  ])("does not report correct code because of %s", (_label, body) => {
+    const found = auditSource("f.ts", body);
+    expect(found.every((f) => f.includes("cannot tell"))).toBe(true);
+  });
+
+  it("still reports the genuine violation next to such a binding", () => {
+    const found = auditSource(
+      "f.ts",
+      `import { withSlimEntries } from "@/core/entries/slim-entry";
+       import { getPostsRankedQueryOptions } from "@ecency/sdk";
+       export const o = withSlimEntries(getPostsRankedQueryOptions("trending"));`
+    );
     expect(found).toHaveLength(1);
     expect(found[0]).toContain("use withSlimPageEntries");
   });

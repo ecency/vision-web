@@ -25,11 +25,11 @@
 // the wrong name.
 //
 // WHAT THIS CANNOT SEE, deliberately, rather than pretending otherwise:
-// it matches on identifier text, so a wrapper or builder renamed through an
-// import alias, a re-export or a local const is invisible to it. That is fine
-// for what it is: a guard against an accident, not against someone working
-// around it. Anything it cannot classify it REPORTS, so silence means it
-// understood the code, not that it gave up.
+// it resolves import aliases and local `const` aliases within one file, but it
+// never reads another module, so a wrapper or builder renamed by a re-export is
+// invisible to it. That is fine for what it is: a guard against an accident, not
+// against someone working around it. Anything it cannot classify it REPORTS, so
+// silence means it understood the code, not that it gave up.
 //
 // CI runs with --fail: any finding exits 1.
 import { createRequire } from "node:module";
@@ -121,6 +121,14 @@ function canonicalAt(node, name, imports, seen = new Set()) {
 
   for (let scope = node; scope; scope = scope.parent) {
     if (!isScopeNode(scope)) continue;
+    if (
+      ts.isCatchClause(scope) &&
+      scope.variableDeclaration &&
+      ts.isIdentifier(scope.variableDeclaration.name) &&
+      scope.variableDeclaration.name.text === name
+    ) {
+      return null;
+    }
     const bindings = bindingsIn(scope, name);
     if (bindings.length === 1) {
       const init = bindings[0];
@@ -150,7 +158,19 @@ function canonicalAt(node, name, imports, seen = new Set()) {
 function bindingsIn(scope, name) {
   const found = [];
   ts.forEachChild(scope, function walk(child) {
+    // A function or class binds its NAME in the scope around it, even though its
+    // body is a scope of its own, so this has to run before the descent stops.
+    if (
+      (ts.isFunctionDeclaration(child) || ts.isClassDeclaration(child)) &&
+      child.name &&
+      ts.isIdentifier(child.name) &&
+      child.name.text === name
+    ) {
+      found.push(null);
+      return;
+    }
     if (child !== scope && isScopeNode(child)) return;
+
     if (
       ts.isVariableDeclaration(child) &&
       ts.isIdentifier(child.name) &&
@@ -162,7 +182,22 @@ function bindingsIn(scope, name) {
       // A `let` can hold something else by the time the call runs, and a
       // declaration with no initialiser says nothing at all.
       found.push(isConst && child.initializer ? child.initializer : null);
+      return;
     }
+
+    // A name can also be bound by something this cannot read: a parameter, a
+    // destructured property, a function or class of that name, a caught error.
+    // Such a binding still SHADOWS the outer one, so ignoring it meant resolving
+    // to an import that the code never calls and reporting correct code as a
+    // mismatch. Record it as unreadable and let the caller say so.
+    const shadows =
+      (ts.isParameter(child) && ts.isIdentifier(child.name) && child.name.text === name) ||
+      (ts.isBindingElement(child) && ts.isIdentifier(child.name) && child.name.text === name);
+    if (shadows) {
+      found.push(null);
+      return;
+    }
+
     ts.forEachChild(child, walk);
   });
   return found;

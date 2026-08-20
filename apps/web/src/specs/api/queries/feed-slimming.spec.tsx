@@ -78,6 +78,8 @@ describe("feed queries ship slim entries", () => {
     await waitFor(() => expect(result.current.data?.pages?.[0]).toBeTruthy());
 
     const entries = result.current.data!.pages[0] as Entry[];
+    // an empty page would satisfy the loop below without proving anything
+    expect(entries.length).toBeGreaterThan(0);
     for (const entry of entries) {
       expect(entry.body).toBe(BODY);
     }
