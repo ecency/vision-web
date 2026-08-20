@@ -1,9 +1,10 @@
-import { useCallback, useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useAuthorSendTarget } from "@/features/newsletter/author-send-eligibility";
 import { UilEnvelopeSend } from "@tooni/iconscout-unicons-react";
 import { success } from "../feedback";
 import { Community, Entry, FullAccount, ROLES } from "@/entities";
 import { useCommunityPinCache } from "@/core/caches";
+import { canManageCommunityPins as canManageCommunityPinsFor } from "./can-manage-community-pins";
 import useMount from "react-use/lib/useMount";
 import { bullHornSvg } from "@ui/svg";
 import i18next from "i18next";
@@ -37,7 +38,14 @@ export function useMenuItemsGenerator(
   const { activeUser, account } = useActiveAccount();
   const toggleUIProp = useGlobalStore((state) => state.toggleUiProp);
 
-  const { data: isPinnedCached } = useCommunityPinCache(entry);
+  // Only a community's own moderators are offered Pin or Unpin, and resolving
+  // the state costs a whole community page (see useCommunityPinCache), so nobody
+  // else pays for it.
+  const canManageCommunityPins = useMemo(
+    () => canManageCommunityPinsFor(community, activeUser?.username),
+    [activeUser, community]
+  );
+  const { data: isPinnedCached } = useCommunityPinCache(entry, canManageCommunityPins);
   const isPinned = entry.stats?.is_pinned ?? isPinnedCached;
 
   const [cross, setCross] = useState(false);
@@ -115,18 +123,9 @@ export function useMenuItemsGenerator(
     [unpin]
   );
 
-  const isTeamManager = useCallback(
-    () =>
-      activeUser && community
-        ? !!community.team?.find((m) => {
-            return (
-              m[0] === activeUser.username &&
-              [ROLES.OWNER.toString(), ROLES.ADMIN.toString(), ROLES.MOD.toString()].includes(m[1])
-            );
-          })
-        : false,
-    [activeUser, community]
-  );
+  // Same predicate as the pin-cache gate above, kept as a callback for the
+  // existing call sites rather than duplicating the role list a third time.
+  const isTeamManager = useCallback(() => canManageCommunityPins, [canManageCommunityPins]);
 
   const generate = useCallback(() => {
     const isComment = !!entry.parent_author;
