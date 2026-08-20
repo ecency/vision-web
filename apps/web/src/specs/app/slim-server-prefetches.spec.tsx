@@ -3,7 +3,7 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getQueryClient } from "@/core/react-query";
-import { SLIM_KEY_MARKER } from "@/core/entries/slim-entry";
+import { CARD_ONLY_KEY_MARKER } from "@/core/entries/slim-entry";
 import { mockEntry } from "@/specs/test-utils";
 import type { Entry } from "@/entities";
 
@@ -55,6 +55,8 @@ function fullRow(overrides: Partial<Entry> = {}): Entry {
     category: "photography",
     body: `Some words and a cover ![cover](https://example.com/${permlink}.jpg) then more words.`,
     json_metadata: { tags: ["photography"] },
+    active_votes: Array.from({ length: 300 }, (_, i) => ({ voter: `v${i}`, rshares: 1 })) as never,
+    stats: { total_votes: 300, flag_weight: 0, gray: false, hide: false },
     ...overrides
   });
 }
@@ -75,13 +77,13 @@ function cachedEntryKeys(): unknown[][] {
     .map((query) => [...query.queryKey]);
 }
 
-describe("server renders that never read a body fetch slim pages", () => {
+describe("server renders that read no body and no votes fetch card-only pages", () => {
   beforeEach(() => {
     getQueryClient().clear();
     answers.clear();
   });
 
-  it("keeps the landing strip's titles and thumbnails without its bodies", async () => {
+  it("keeps the landing strip's titles and thumbnails without its bodies or voters", async () => {
     // The strip reads a title, an author and a thumbnail. The bodies behind it
     // are hundreds of KB the render holds for the request's gc window (#1559).
     const rows = [fullRow(), fullRow()];
@@ -103,9 +105,13 @@ describe("server renders that never read a body fetch slim pages", () => {
       );
     }
     expect(cachedEntries().map((e) => e.body)).toEqual(["", ""]);
+    // The strip has no vote button, payout or count in it, and voter records are
+    // the larger half of what a cached row costs.
+    expect(cachedEntries().map((e) => e.active_votes)).toEqual([[], []]);
+    expect(cachedEntries().map((e) => e.stats?.total_votes)).toEqual([300, 300]);
   });
 
-  it("keeps the related footer's rows without their bodies", async () => {
+  it("keeps the related footer's rows without their bodies or voters", async () => {
     const authorRows = [fullRow(), fullRow()];
     const communityRows = [fullRow({ author: "bob" }), fullRow({ author: "carol" })];
     answers.set("account", authorRows);
@@ -119,6 +125,7 @@ describe("server renders that never read a body fetch slim pages", () => {
     }
     expect(cachedEntries()).toHaveLength(4);
     expect(cachedEntries().every((e) => e.body === "")).toBe(true);
+    expect(cachedEntries().every((e) => e.active_votes?.length === 0)).toBe(true);
   });
 
   it("answers under a key of its own, never the one deck columns read", async () => {
@@ -133,7 +140,7 @@ describe("server renders that never read a body fetch slim pages", () => {
     const keys = cachedEntryKeys();
     expect(keys.length).toBe(3);
     for (const key of keys) {
-      expect(key.at(-1)).toBe(SLIM_KEY_MARKER);
+      expect(key.at(-1)).toBe(CARD_ONLY_KEY_MARKER);
     }
   });
 

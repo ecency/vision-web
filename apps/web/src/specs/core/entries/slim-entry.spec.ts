@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { catchPostImage, postBodySummary, proxifyImageSrc } from "@ecency/render-helper";
 import { ContentModerationReason } from "@ecency/sdk";
 import {
+  CARD_ONLY_KEY_MARKER,
   SLIM_KEY_MARKER,
   slimEntry,
   slimEntryPage,
+  withCardOnlyPageEntries,
   withSlimEntries,
   withSlimPageEntries
 } from "@/core/entries/slim-entry";
@@ -216,6 +218,95 @@ describe("slimEntryPage", () => {
 
     expect(page[0]).toBe(broken);
     expect(page[1].body).toBe("");
+  });
+});
+
+describe("withCardOnlyPageEntries", () => {
+  const page = () => [
+    entry({ body: "a body", active_votes: [{ voter: "a", rshares: 1 }] as never }),
+    entry({ body: "another body", active_votes: [{ voter: "b", rshares: 2 }] as never })
+  ];
+
+  async function run(options: Parameters<typeof withCardOnlyPageEntries>[0]) {
+    const wrapped = withCardOnlyPageEntries(options);
+    return (wrapped.queryFn as () => Promise<Entry[]>)();
+  }
+
+  it("drops the bodies and the voter records the render never reads", async () => {
+    const rows = await run({ queryKey: ["posts", "ranked"], queryFn: async () => page() });
+
+    expect(rows.map((e) => e.body)).toEqual(["", ""]);
+    expect(rows.map((e) => e.active_votes)).toEqual([[], []]);
+  });
+
+  it("keeps a vote count readable, so nothing that shows a number shows zero", async () => {
+    const [row] = await run({
+      queryKey: ["posts", "ranked"],
+      queryFn: async () => [
+        entry({
+          active_votes: [{ voter: "a", rshares: 1 }] as never,
+          stats: { total_votes: 7, flag_weight: 0, gray: false, hide: false }
+        })
+      ]
+    });
+
+    expect(row.active_votes).toEqual([]);
+    expect(row.stats?.total_votes).toBe(7);
+  });
+
+  it("leaves the votes alone when no count survives them", async () => {
+    // The invariant strip-active-votes keeps: an entry whose only vote signal is
+    // the array itself would otherwise start reporting zero votes.
+    const votes = [{ voter: "a", rshares: 1 }];
+    const [row] = await run({
+      queryKey: ["posts", "ranked"],
+      queryFn: async () => [
+        entry({ active_votes: votes as never, stats: undefined as never, total_votes: undefined })
+      ]
+    });
+
+    expect(row.active_votes).toHaveLength(1);
+  });
+
+  it("reaches the nested original of a cross-post", async () => {
+    const original = entry({
+      author: "bob",
+      body: "the original body",
+      active_votes: [{ voter: "c", rshares: 3 }] as never
+    });
+    const [row] = await run({
+      queryKey: ["posts", "ranked"],
+      queryFn: async () => [entry({ original_entry: original })]
+    });
+
+    expect(row.original_entry?.body).toBe("");
+    expect(row.original_entry?.active_votes).toEqual([]);
+  });
+
+  it("answers under its own marker, not the slim one", () => {
+    const wrapped = withCardOnlyPageEntries({
+      queryKey: ["posts", "ranked", "alice"],
+      queryFn: async () => []
+    });
+
+    expect((wrapped.queryKey as unknown[]).at(-1)).toBe(CARD_ONLY_KEY_MARKER);
+    expect(wrapped.queryKey).not.toContain(SLIM_KEY_MARKER);
+  });
+
+  it("passes a row through untouched rather than failing the page", async () => {
+    const broken = entry();
+    Object.defineProperty(broken, "json_metadata", {
+      get() {
+        throw new Error("unreadable metadata");
+      }
+    });
+    const rows = await run({
+      queryKey: ["posts", "ranked"],
+      queryFn: async () => [broken, entry({ body: "fine" })]
+    });
+
+    expect(rows[0]).toBe(broken);
+    expect(rows[1].body).toBe("");
   });
 });
 
