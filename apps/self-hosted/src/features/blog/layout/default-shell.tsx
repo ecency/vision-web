@@ -22,7 +22,12 @@ export function DefaultShell(props: PropsWithChildren) {
           </div>
 
           {/* Main content - appears second on mobile/tablet */}
-          <main id="main-content" className="blog-main-container order-2 items-start mt-4 sm:mt-8 section-gap-theme">
+          {/* pb-16 because the last thing on a page should not sit flush
+              against the viewport: the About page ends in the newsletter
+              section, and the archive ends in a card. The other three shells
+              already reserve the same room (journal and terminal pb-16, reader
+              py-6 on its inner column); this one only ever had a top margin. */}
+          <main id="main-content" className="blog-main-container order-2 items-start mt-4 sm:mt-8 pb-16 section-gap-theme">
             <Navigation />
             <BlogPage>{props.children}</BlogPage>
           </main>
