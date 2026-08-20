@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { NextRequest } from "next/server";
 import { handleCategoryEntryRedirect } from "@/features/next-middleware";
 
@@ -58,5 +60,29 @@ describe("social crawler routing", () => {
         true
       );
     }
+  });
+
+  /**
+   * The origin nginx SSR cache puts this same UA class in its `proxy_cache_key`
+   * (`$html_limited_bot`), so the two lists have to agree. When they drift, a
+   * page primed by a browser is served to a crawler from the wrong cache
+   * namespace with streamed metadata, and the setting silently stops working.
+   * It is invisible in dev, where nothing is cached, which is exactly why this
+   * belongs in the suite rather than in a reviewer's memory. See
+   * docs/cache/nginx.md and issue #1257.
+   */
+  it("keeps the nginx cache-key bot map in step with htmlLimitedBots", async () => {
+    const { htmlLimitedBots } = await import("../../../../next.config.js").then(
+      (m) => (m.default ?? m) as { htmlLimitedBots: RegExp }
+    );
+    const doc = readFileSync(join(process.cwd(), "../../docs/cache/nginx.md"), "utf-8");
+    const map = doc.match(/\$html_limited_bot\s*\{[^}]*"~\*\(([^)]+)\)"/);
+    expect(map, "the $html_limited_bot map is missing from docs/cache/nginx.md").not.toBeNull();
+
+    const inNginx = new Set(map![1].split("|").map((s) => s.trim()));
+    const inNext = new Set(htmlLimitedBots.source.split("|").map((s) => s.trim()));
+
+    expect([...inNext].filter((a) => !inNginx.has(a)), "in next.config but not nginx").toEqual([]);
+    expect([...inNginx].filter((a) => !inNext.has(a)), "in nginx but not next.config").toEqual([]);
   });
 });
