@@ -4,7 +4,7 @@ import { handleCategoryEntryRedirect } from "@/features/next-middleware";
 
 const REDDITBOT = "Mozilla/5.0 (compatible; redditbot/1.0; +http://www.reddit.com/feedback)";
 
-function requestFor(rawPath: string, userAgent: string) {
+function requestFor(rawPath: string, userAgent: string): NextRequest {
   return new NextRequest(`https://ecency.com${rawPath}`, { headers: { "user-agent": userAgent } });
 }
 
@@ -40,7 +40,20 @@ describe("social crawler routing", () => {
     const { htmlLimitedBots } = await import("../../../../next.config.js").then(
       (m) => (m.default ?? m) as { htmlLimitedBots: RegExp }
     );
-    for (const agent of ["redditbot", "Twitterbot", "facebookexternalhit", "Discordbot"]) {
+    // Every agent the removed rewrite used to catch, so nothing silently loses
+    // its card. TelegramBot was missing from this list when the rewrite was
+    // removed, which meant it was already getting streamed metadata it cannot
+    // read; it is in the list now.
+    for (const agent of [
+      "redditbot",
+      "Twitterbot",
+      "facebookexternalhit",
+      "Discordbot",
+      "TelegramBot",
+      "LinkedInBot",
+      "Slackbot",
+      "WhatsApp"
+    ]) {
       expect(new RegExp(htmlLimitedBots, "i").test(agent), `${agent} must get blocking metadata`).toBe(
         true
       );
