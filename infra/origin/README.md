@@ -57,6 +57,11 @@ the vhosts will load:
   variables they define. Exact, not a wildcard: see the contract above
 - the `apicache` and SSR `proxy_cache_path` entries
 - `map $cookie_active_user $skip_cache` and the other cache-decision maps
+- `map $http_user_agent $html_limited_bot`, the crawler class that the SSR `proxy_cache_key`
+  appends to `$request_uri`. Its pattern must equal `htmlLimitedBots` in
+  `apps/web/next.config.js`; the documented copy and the parity spec live in
+  `docs/cache/nginx.md`. Deploying a change to that list means editing the map on every
+  origin in the same rollout, otherwise a browser-primed entry is served to the crawler
 
 ## Restoring an origin
 

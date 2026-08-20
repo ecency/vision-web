@@ -62,6 +62,42 @@ describe("social crawler routing", () => {
     }
   });
 
+  it("gives Google's indexing crawlers blocking metadata and keeps browsers streaming", async () => {
+    // Googlebot executes JS and reads a streamed title or robots tag, but it
+    // does not register a rel=canonical that arrives in the body: URL
+    // Inspection shows no user-declared canonical for streamed pages and a
+    // populated one for pages whose metadata lands in <head>. So the indexer
+    // and the console's live-test agent both get the blocking render. A real
+    // browser must not: blocking metadata would cost every visitor the
+    // streamed shell, which is why the list is an allowlist of crawlers and
+    // not a "render everything in head" switch.
+    const { htmlLimitedBots } = await import("../../../../next.config.js").then(
+      (m) => (m.default ?? m) as { htmlLimitedBots: RegExp }
+    );
+    const re = new RegExp(htmlLimitedBots, "i");
+    for (const agent of [
+      "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/126.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+      "Mozilla/5.0 (compatible; Google-InspectionTool/1.0;)",
+      // The two generic families from Next's default list. Setting
+      // htmlLimitedBots replaces that list, so these have to be carried over
+      // explicitly or they silently drop to the streaming path.
+      "Google-PageRenderer Google (+https://developers.google.com/+/web/snippet/)",
+      "Mediapartners-Google",
+      "AdsBot-Google (+http://www.google.com/adsbot.html)",
+      "Mozilla/5.0 (Linux; Android 8.0; Pixel 2 Build/OPD3.170816.012) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 (compatible; Storebot-Google/1.0)"
+    ]) {
+      expect(re.test(agent), `${agent} must get blocking metadata`).toBe(true);
+    }
+    for (const agent of [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+      "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
+    ]) {
+      expect(re.test(agent), `${agent} must keep streaming metadata`).toBe(false);
+    }
+  });
+
   /**
    * The origin nginx SSR cache puts this same UA class in its `proxy_cache_key`
    * (`$html_limited_bot`), so the two lists have to agree. When they drift, a

@@ -163,8 +163,23 @@ const config = {
     ...(process.env.SENTRY_ENVIRONMENT && { SENTRY_ENVIRONMENT: process.env.SENTRY_ENVIRONMENT })
   },
   // UAs that get metadata rendered into <head> (blocking) instead of streamed
-  // into the body. Googlebot is intentionally absent — it executes JS, and
-  // blocking would cost it the streaming TTFB win for no benefit.
+  // into the body.
+  //
+  // Googlebot is on the list on purpose. It does execute JS, and it does pick
+  // up a streamed <title> / description / robots tag, but it does not register
+  // a `<link rel="canonical">` that arrives in the body: Search Console's URL
+  // Inspection reports no user-declared canonical for any streamed page, while
+  // the pages whose metadata lands in <head> do show one. A post page with no
+  // canonical is left to Google's own duplicate clustering, which is the wrong
+  // trade for a page that is also published by other frontends of the same
+  // chain. Blocking metadata costs the crawler the streamed shell, which no
+  // crawler benefits from anyway. The two generic patterns are the ones from
+  // Next's own default list (configuring this option replaces that list
+  // wholesale, it does not extend it): they cover Google-InspectionTool, so
+  // the console's live test sees exactly what the indexer sees, plus
+  // Google-PageRenderer, AdsBot-Google, Storebot-Google, Mediapartners-Google
+  // and any future agent in either naming family. Real browsers keep
+  // streaming (see the spec that pins a Chrome UA to the streaming path).
   //
   // ⚠️ This list is MIRRORED in the origin nginx SSR cache (`$html_limited_bot`
   // in the `proxy_cache_key`). If the two drift, cached responses get served to
@@ -175,7 +190,7 @@ const config = {
   // Note: Next.js applies this as `new RegExp(htmlLimitedBots, 'i')`, so
   // matching is case-insensitive regardless of the flags written here.
   htmlLimitedBots:
-    /Mediapartners-Google|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|Yeti/,
+    /Googlebot|[\w-]+-Google|Google-[\w-]+|googleweblight|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|Yeti/,
   sassOptions: {
     implementation: require.resolve("sass-embedded"),
     includePaths: [path.join(__dirname), path.join(__dirname, "src/styles")],
