@@ -378,4 +378,42 @@ describe("slim-entries audit", () => {
     expect(found).toHaveLength(1);
     expect(found[0]).toContain("use withSlimPageEntries");
   });
+
+  it("does not mistake a named function expression's own name for the wrapper", () => {
+    // The name of a named function expression is bound inside its own body, so
+    // this recursive call is not our wrapper at all.
+    expect(
+      auditSource(
+        "f.ts",
+        `import { withSlimEntries } from "@/core/entries/slim-entry";
+         import { getPostsRankedQueryOptions } from "@ecency/sdk";
+         export const f = function withSlimEntries(o) {
+           return withSlimEntries(getPostsRankedQueryOptions("x"));
+         };`
+      )
+    ).toEqual([]);
+  });
+
+  it("treats a named class expression's own name the same way", () => {
+    const found = auditSource(
+      "f.ts",
+      `import { getPostsRankedQueryOptions } from "@ecency/sdk";
+       export const C = class getPostsRankedQueryOptions {
+         m() { return withSlimEntries(getPostsRankedQueryOptions()); }
+       };`
+    );
+    expect(found.every((f) => f.includes("cannot tell"))).toBe(true);
+    expect(found).toHaveLength(1);
+  });
+
+  it("still reports a genuine violation inside a class method", () => {
+    const found = auditSource(
+      "f.ts",
+      src(`export class Column {
+             load() { return withSlimEntries(getPostsRankedQueryOptions("t")); }
+           }`)
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("use withSlimPageEntries");
+  });
 });
