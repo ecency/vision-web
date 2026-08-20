@@ -24,14 +24,18 @@ vi.mock("@/features/seo/seo-redis", () => ({
 
 import { callRPC } from "@ecency/sdk/hive";
 import { POST } from "@/app/api/internal/seo/sitemap-generate/route";
+import { mockEntry } from "../test-utils";
 
 const HOUR = 3_600_000;
 // Bridge timestamps carry no zone suffix; the walk appends "Z" itself.
 const stamp = (agoMs: number) => new Date(Date.now() - agoMs).toISOString().slice(0, 19);
 const day = (agoMs: number) => stamp(agoMs).slice(0, 10);
 
+// Bridge rows as the walk sees them: the shared Entry factory plus the fields
+// the generator reads (created without a zone suffix, the way the bridge
+// emits it, and the row's own author_reputation).
 function post(author: string, permlink: string, agoMs: number, rep: number, tags: string[]) {
-  return {
+  return mockEntry({
     author,
     permlink,
     created: stamp(agoMs),
@@ -42,11 +46,8 @@ function post(author: string, permlink: string, agoMs: number, rep: number, tags
     category: tags[0],
     author_reputation: rep,
     body: "A full paragraph of real prose, long enough not to read as an empty post at all.",
-    json_metadata: { tags, app: "ecency/4.0" },
-    children: 0,
-    net_votes: 3,
-    active_votes: []
-  };
+    json_metadata: { tags, app: "ecency/4.0" }
+  });
 }
 
 // Two indexable posts by a rep-72 author (newest 2h ago), one by a rep-30
