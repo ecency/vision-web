@@ -33,7 +33,15 @@ const exec = promisify(execFile);
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /** Generous, because a cold CI worker builds the package from scratch here. */
 const BUILD_MS = 300_000;
-const RUN_MS = 60_000;
+/**
+ * The child's budget, and the case's, deliberately different. If they were
+ * equal, a loaded worker would reach vitest's deadline at the same moment
+ * execFile tried to kill the child, and the failure would be a bare outer
+ * timeout instead of the subprocess error that says what actually went wrong.
+ * The child has to lose first.
+ */
+const CHILD_MS = 30_000;
+const CASE_MS = CHILD_MS * 3;
 
 let out: string;
 
@@ -45,7 +53,7 @@ beforeAll(async () => {
     // on the first external.
     out = mkdtempSync(join(PKG, "node_modules", ".render-helper-build-"));
     await exec(join(PKG, "node_modules/.bin/tsup"), ["--out-dir", out, "--metafile"], { cwd: PKG, timeout: BUILD_MS });
-    await exec(process.execPath, [join(PKG, "scripts/third-party-notices.mjs"), out], { cwd: PKG, timeout: RUN_MS });
+    await exec(process.execPath, [join(PKG, "scripts/third-party-notices.mjs"), out], { cwd: PKG, timeout: CHILD_MS });
 }, BUILD_MS);
 
 afterAll(() => {
@@ -72,7 +80,7 @@ async function load(file: string, how: "esm" | "cjs"): Promise<Loaded> {
             : ["-e", `const m = require(process.env.RH_ENTRY);${read}`];
     const { stdout } = await exec(process.execPath, args, {
         cwd: PKG,
-        timeout: RUN_MS,
+        timeout: CHILD_MS,
         env: { ...process.env, RH_ENTRY: file, RH_BODY: "# Title\n\nhttps://ecency.com and **bold**" }
     });
     return JSON.parse(stdout.trim()) as Loaded;
@@ -88,7 +96,7 @@ describe("the build output loads in plain Node", () => {
             // an autolinked URL is what proves it is actually wired up.
             expect(result.linked).toBe(true);
         },
-        RUN_MS
+        CASE_MS
     );
 
     it(
@@ -98,7 +106,7 @@ describe("the build output loads in plain Node", () => {
             expect(result.exports).toBeGreaterThan(0);
             expect(result.linked).toBe(true);
         },
-        RUN_MS
+        CASE_MS
     );
 
     it("keeps remarkable inlined in the node builds", () => {
