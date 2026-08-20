@@ -26,14 +26,13 @@ export function getSeoRedis(): RedisClient | null {
   try {
     _redis = new Redis(REDIS_URL, {
       lazyConnect: false,
-      // A command issued while the client is still connecting waits for the
-      // socket instead of being rejected on the spot. A replica that starts
-      // under load (rolling deploy, busy origin) used to answer 503 to every
-      // sitemap request until its client had connected, for minutes on a
-      // saturated box. The wait is bounded: one reconnect attempt, then the
-      // queued commands fail, so a Redis that is really down still degrades
-      // within a few seconds instead of hanging requests.
-      enableOfflineQueue: true,
+      // No offline queue, deliberately: a command that times out while
+      // queued would still be sent once the socket comes up, i.e. after the
+      // caller has already failed its request (a lone shard write after a
+      // failed generator run). Callers that can tolerate a short wait use
+      // getSeoRedisReady() below instead, which waits for the connection
+      // without ever queueing a command.
+      enableOfflineQueue: false,
       maxRetriesPerRequest: 1,
       connectTimeout: 3000,
       commandTimeout: 2000,
@@ -58,4 +57,31 @@ export function getSeoRedis(): RedisClient | null {
     _redis = null;
     return null;
   }
+}
+
+/**
+ * The client once it is connected, waiting up to `waitMs` for one that is
+ * still connecting (a replica that has just started). A replica starting
+ * under load used to answer 503 to every sitemap request until its client
+ * had connected, for minutes on a saturated origin, because the first use
+ * found the client mid-connect and no command may wait in a queue. Null when
+ * Redis is off or still unreachable after the wait; the caller degrades as
+ * before, and nothing can execute after it has given up.
+ */
+const isReady = (client: RedisClient): boolean => client.status === "ready";
+
+export async function getSeoRedisReady(waitMs = 2000): Promise<RedisClient | null> {
+  const client = getSeoRedis();
+  if (!client) return null;
+  if (isReady(client)) return client;
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      client.off("ready", done);
+      resolve();
+    };
+    const timer = setTimeout(done, waitMs);
+    client.once("ready", done);
+  });
+  return isReady(client) ? client : null;
 }

@@ -17,7 +17,7 @@
  *    don't fetch a profile per post (no fan-out); SSR still applies it on
  *    crawl, so a listed-but-rep-gated post is at worst a wasted hint.
  */
-import { getSeoRedis, SEO_REDIS_PREFIX } from "@/features/seo/seo-redis";
+import { getSeoRedisReady, SEO_REDIS_PREFIX } from "@/features/seo/seo-redis";
 import { cronAuthorized, notFound } from "@/features/seo/cron-auth";
 import { SITEMAP_SHARDS } from "@/features/seo/sitemap-shards";
 import { harvestPostTags, selectTopTags } from "@/features/seo/sitemap-tags";
@@ -135,7 +135,7 @@ function normalize(p: Record<string, unknown>): Entry {
 
 export async function POST(req: Request): Promise<Response> {
   if (!cronAuthorized(req)) return notFound();
-  const redis = getSeoRedis();
+  const redis = await getSeoRedisReady(5000);
   if (!redis) {
     return new Response(JSON.stringify({ error: "redis-unavailable" }), {
       status: 503,
