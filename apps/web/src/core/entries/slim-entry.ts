@@ -165,7 +165,11 @@ export function slimEntryPage<T>(page: T): T {
 
 type WithQueryFn = { queryFn?: unknown; queryKey?: unknown };
 
-function slimQueryFn<T extends WithQueryFn>(options: T, queryKey: unknown): T {
+function wrapQueryFn<T extends WithQueryFn>(
+  options: T,
+  queryKey: unknown,
+  transform: <P>(page: P) => P
+): T {
   const queryFn = options.queryFn;
   if (typeof queryFn !== "function") {
     return options;
@@ -174,7 +178,7 @@ function slimQueryFn<T extends WithQueryFn>(options: T, queryKey: unknown): T {
     ...options,
     queryKey,
     queryFn: async (...args: unknown[]) =>
-      slimEntryPage(await (queryFn as (...a: unknown[]) => Promise<unknown>)(...args))
+      transform(await (queryFn as (...a: unknown[]) => Promise<unknown>)(...args))
   } as T;
 }
 
@@ -195,7 +199,7 @@ function slimQueryFn<T extends WithQueryFn>(options: T, queryKey: unknown): T {
  * Every other option is passed through untouched.
  */
 export function withSlimEntries<T extends WithQueryFn>(options: T): T {
-  return slimQueryFn(options, options.queryKey);
+  return wrapQueryFn(options, options.queryKey, slimEntryPage);
 }
 
 /**
@@ -215,8 +219,77 @@ export function withSlimPageEntries<T extends WithQueryFn>(options: T): T {
   const queryKey = Array.isArray(options.queryKey)
     ? [...options.queryKey, SLIM_KEY_MARKER]
     : options.queryKey;
-  return slimQueryFn(options, queryKey);
+  return wrapQueryFn(options, queryKey, slimEntryPage);
 }
 
 /** Appended to a query key that holds slim pages, so nothing else reads them. */
 export const SLIM_KEY_MARKER = "slim";
+
+/** The same, for pages that have had their votes dropped as well. */
+export const CARD_ONLY_KEY_MARKER = "card-only";
+
+/**
+ * One entry reduced to what a link and a thumbnail need: no body, no votes.
+ *
+ * Measured on entries sampled from live traffic, `active_votes` is 54-71% of
+ * what a cached page retains, several times what the body was, because every
+ * `{voter, rshares}` record becomes an object. A render that shows no vote
+ * state has no use for any of it.
+ *
+ * The count invariant is the one `strip-active-votes.ts` already keeps: the
+ * records go only when a COUNT survives elsewhere, so nothing that reads a
+ * number ever reads zero. An entry that carries no count keeps its votes.
+ */
+function cardOnlyEntry<T extends Entry>(entry: T): T {
+  const slim = slimEntry(entry);
+  const hasCount =
+    typeof slim.stats?.total_votes === "number" || typeof slim.total_votes === "number";
+  const votes = slim.active_votes;
+
+  let next = slim;
+  if (hasCount && Array.isArray(votes) && votes.length > 0) {
+    next = { ...slim, active_votes: [] } as T;
+  }
+  // A cross-post card reads the nested original, which carries its own voters.
+  if (next.original_entry) {
+    const original = cardOnlyEntry(next.original_entry);
+    if (original !== next.original_entry) {
+      next = { ...next, original_entry: original } as T;
+    }
+  }
+  return next;
+}
+
+/** Card-only a page of results, with the same backstop slimEntryPage has. */
+function cardOnlyEntryPage<T>(page: T): T {
+  if (!Array.isArray(page)) {
+    return page;
+  }
+  return page.map((item) => {
+    try {
+      return cardOnlyEntry(item as Entry);
+    } catch {
+      return item;
+    }
+  }) as unknown as T;
+}
+
+/**
+ * For a single-page builder feeding a render that displays NO vote state.
+ *
+ * Today that is the landing page's trending strip and the entry page's related
+ * footer: both render a title, an author and a thumbnail, and neither has a
+ * vote button, a payout or a vote count anywhere in it. Under
+ * `withSlimPageEntries` they still hold every voter record of every row they
+ * list, for the whole gc window, to draw a list of links.
+ *
+ * Its own key marker, not the slim one. A slim reader expects an entry that
+ * still knows who voted on it, and handing it one that does not is the same
+ * class of bug as #1556. Nothing may read this key but the render that wrote it.
+ */
+export function withCardOnlyPageEntries<T extends WithQueryFn>(options: T): T {
+  const queryKey = Array.isArray(options.queryKey)
+    ? [...options.queryKey, CARD_ONLY_KEY_MARKER]
+    : options.queryKey;
+  return wrapQueryFn(options, queryKey, cardOnlyEntryPage);
+}

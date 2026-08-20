@@ -3,7 +3,7 @@ import i18next from "i18next";
 import { getPostsRankedQueryOptions } from "@ecency/sdk";
 import { catchPostImage } from "@ecency/render-helper";
 import { prefetchQuery } from "@/core/react-query";
-import { withSlimPageEntries } from "@/core/entries/slim-entry";
+import { withCardOnlyPageEntries } from "@/core/entries/slim-entry";
 import { isNsfwEntry } from "@/utils/nsfw-detection";
 import { Entry } from "@/entities";
 
@@ -16,10 +16,10 @@ const LIMIT = 8;
  * HTML so crawlers follow the homepage's authority into fresh content, and
  * first-time visitors see the actual product instead of marketing copy.
  *
- * The strip reads a title, an author and a thumbnail, never a body, so the page
- * is fetched slim: the bodies of 8 trending posts are hundreds of KB that this
- * render would otherwise hold in the request-scoped cache for its gc window,
- * which is what bounds how many renderer replicas fit on a host (#1559).
+ * The strip reads a title, an author and a thumbnail. It renders no body and no
+ * vote state, so the page is fetched card-only: both go before anything is
+ * cached, and this render holds a list of links rather than 8 posts and every
+ * voter record attached to them (#1559).
  *
  * prefetchQuery has a built-in SSR timeout and swallows errors (returns
  * undefined), so a slow/failed RPC degrades to "no strip" rather than breaking
@@ -27,7 +27,7 @@ const LIMIT = 8;
  */
 export async function LandingTrending() {
   const data = (await prefetchQuery(
-    withSlimPageEntries(getPostsRankedQueryOptions("trending", "", "", LIMIT))
+    withCardOnlyPageEntries(getPostsRankedQueryOptions("trending", "", "", LIMIT))
   )) as Entry[] | undefined;
 
   const entries = (data ?? [])

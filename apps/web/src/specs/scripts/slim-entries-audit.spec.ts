@@ -10,7 +10,7 @@ import { auditSource } from "../../../../../scripts/slim-entries-audit.mjs";
  * whole class, and what remains is checked here.
  */
 const src = (body: string) =>
-  `import { withSlimEntries, withSlimPageEntries } from "@/core/entries/slim-entry";\n${body}\n`;
+  `import { withSlimEntries, withSlimPageEntries, withCardOnlyPageEntries } from "@/core/entries/slim-entry";\n${body}\n`;
 
 describe("slim-entries audit", () => {
   it("accepts a single-page builder wrapped with the page helper", () => {
@@ -23,6 +23,24 @@ describe("slim-entries audit", () => {
     expect(
       auditSource("f.ts", src(`const o = withSlimEntries(getPostsRankedInfiniteQueryOptions("trending", ""));`))
     ).toEqual([]);
+  });
+
+  it("accepts a single-page builder wrapped card-only, which also isolates its key", () => {
+    expect(
+      auditSource(
+        "f.ts",
+        src(`const o = withCardOnlyPageEntries(getAccountPostsQueryOptions("alice", "posts"));`)
+      )
+    ).toEqual([]);
+  });
+
+  it("flags an infinite builder wrapped card-only, since a feed does show vote state", () => {
+    const found = auditSource(
+      "f.ts",
+      src(`const o = withCardOnlyPageEntries(getPostsRankedInfiniteQueryOptions("trending", ""));`)
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("infinite builder");
   });
 
   it("flags a single-page builder that keeps the shared key", () => {

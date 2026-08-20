@@ -1,6 +1,6 @@
 import { Entry } from "@/entities";
 import { fetchQuery } from "@/core/react-query";
-import { withSlimPageEntries } from "@/core/entries/slim-entry";
+import { withCardOnlyPageEntries } from "@/core/entries/slim-entry";
 import {
   getAccountPostsQueryOptions,
   getPostsRankedQueryOptions,
@@ -54,16 +54,17 @@ export async function EntryRelatedFooter({ entry }: Props) {
         json_metadata: { tags: entry.json_metadata?.tags }
       })
     ),
-    // A row is an author, a permlink, a title and a thumbnail. Both feeds are
-    // fetched slim so this render does not hold 24 post bodies it never reads
-    // for the lifetime of the request-scoped cache (#1559). The similar-entries
+    // A row is an author, a permlink, a title and a thumbnail. There is no vote
+    // button, payout or count anywhere in this footer, so both feeds are fetched
+    // card-only: no bodies and no voter records, which together are the bulk of
+    // what these two pages would otherwise retain (#1559). The similar-entries
     // query above already answers with narrow rows.
     fetchQuery(
-      withSlimPageEntries(getAccountPostsQueryOptions(entry.author, "posts", "", "", FETCH_LIMIT))
+      withCardOnlyPageEntries(getAccountPostsQueryOptions(entry.author, "posts", "", "", FETCH_LIMIT))
     ),
     source
       ? fetchQuery(
-          withSlimPageEntries(
+          withCardOnlyPageEntries(
             getPostsRankedQueryOptions("created", "", "", FETCH_LIMIT, source.tag)
           )
         )

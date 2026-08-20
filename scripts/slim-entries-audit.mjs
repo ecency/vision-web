@@ -268,7 +268,11 @@ export function auditSource(fileName, text) {
 
   (function visit(node) {
     const called = canonicalAt(node, calleeName(node), imports);
-    if (called === "withSlimEntries" || called === "withSlimPageEntries") {
+    if (
+      called === "withSlimEntries" ||
+      called === "withSlimPageEntries" ||
+      called === "withCardOnlyPageEntries"
+    ) {
       const { line } = src.getLineAndCharacterOfPosition(node.getStart());
       const where = `${fileName}:${line + 1}`;
       const wrapped = resolveBuilder(node.arguments[0], imports);
@@ -278,15 +282,21 @@ export function auditSource(fileName, text) {
           `${where}  cannot tell which builder ${called} wraps — pass the builder ` +
             `call directly, or assign it to one clearly named const in the same function`
         );
-      } else if (SINGLE_PAGE_BUILDERS.has(wrapped) && called !== "withSlimPageEntries") {
+      } else if (
+        SINGLE_PAGE_BUILDERS.has(wrapped) &&
+        called !== "withSlimPageEntries" &&
+        called !== "withCardOnlyPageEntries"
+      ) {
         findings.push(
-          `${where}  ${wrapped} is a single-page builder: use withSlimPageEntries, ` +
+          `${where}  ${wrapped} is a single-page builder: use withSlimPageEntries ` +
+            `(or withCardOnlyPageEntries when the render shows no vote state), ` +
             `or a deck column reading that page key renders an empty post`
         );
       } else if (INFINITE_BUILDERS.has(wrapped) && called !== "withSlimEntries") {
         findings.push(
           `${where}  ${wrapped} is an infinite builder: use withSlimEntries, ` +
-            `its key is hand-built elsewhere for the feed poll's merge`
+            `its key is hand-built elsewhere for the feed poll's merge, and a ` +
+            `feed shows vote state so it cannot be card-only either`
         );
       }
     }
