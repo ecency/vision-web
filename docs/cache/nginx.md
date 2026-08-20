@@ -29,7 +29,7 @@ proxy_cache_path /var/cache/nginx/ssr levels=1:2
 # See "Why the bot UA class is in the cache key" below.
 map $http_user_agent $html_limited_bot {
   default "";
-  "~*(Mediapartners-Google|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|Yeti)" "|htmlbot";
+  "~*(Googlebot|Google-InspectionTool|Storebot-Google|AdsBot-Google|Mediapartners-Google|googleweblight|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|Yeti)" "|htmlbot";
 }
 
 server {
@@ -68,9 +68,11 @@ server {
 
 `htmlLimitedBots` in `apps/web/next.config.js` makes Next.js render metadata
 (title, description, og:*, canonical) into `<head>` for crawlers that do not
-execute JavaScript. Every other client gets **streaming metadata**, where those
-tags are emitted far down the body instead. Googlebot is deliberately *not* on
-the list, because it renders JS.
+execute JavaScript, and for Googlebot. Every other client gets **streaming
+metadata**, where those tags are emitted far down the body instead. Googlebot
+renders JS and reads a streamed title or robots tag, but it does not register a
+streamed `rel=canonical`, so it is on the list as well (see the comment on
+`htmlLimitedBots` in `next.config.js`).
 
 That means one URL has two legitimate response shapes. Keying the SSR cache on
 `$request_uri` alone let them share a single entry — and since real users vastly
