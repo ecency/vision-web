@@ -425,10 +425,11 @@ export async function POST(req: Request): Promise<Response> {
     reachedCutoff || lastGood === 0 || postUrls.length >= Math.ceil(lastGood * 0.5);
   const WALK_DERIVED = new Set<string>(["posts.xml", "authors.xml", "tags.xml"]);
 
-  // Writer/index/route stay in lockstep: every shard we emit — and every
-  // child the index points at — comes from the single shared SITEMAP_SHARDS
-  // allowlist the public route validates against. A name here that isn't in
-  // that list is a compile error (keyof typeof), not a silent prod 404.
+  // Writer/index/route stay in lockstep: every shard we emit comes from the
+  // shared SITEMAP_SHARDS allowlist, and the index may additionally list an
+  // OPERATOR_SHARDS entry while its blob exists (below). The public route
+  // validates against both. A generated name that isn't in SITEMAP_SHARDS is
+  // a compile error (keyof typeof), not a silent prod 404.
   const shardXml: Record<(typeof SITEMAP_SHARDS)[number], string> = {
     "posts.xml": urlset(postUrls),
     "authors.xml": urlset(authorUrls),
@@ -481,8 +482,8 @@ export async function POST(req: Request): Promise<Response> {
       lastmod: lastmods[name]
     }));
     for (const name of OPERATOR_SHARDS) {
-      const blob = await redis.get(K(name));
-      if (!blob) continue;
+      // Existence only: the blob may be large and is never read here.
+      if (!(await redis.exists(K(name)))) continue;
       const lastmod = (await redis.get(`${K(name)}:lastmod`)) || recorded[name] || nowDay;
       lastmods[name] = lastmod;
       children.push({ name, lastmod });
