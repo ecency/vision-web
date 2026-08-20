@@ -3,10 +3,10 @@
 import { FormattedCurrency } from "@/features/shared";
 import {
   getAccountFullQueryOptions,
-  getAccountPostsQueryOptions,
   getDynamicPropsQueryOptions,
   getPointsQueryOptions
 } from "@ecency/sdk";
+import { pendingPayoutsQueryOptions } from "@/api/queries/pending-payouts-query";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
@@ -29,13 +29,15 @@ export function ProfileWalletPendingEarnings() {
     enabled: Boolean(username),
   });
 
-  // Fetch recent posts and comments to calculate potential earnings from active content
+  // Recent posts and comments, for the earnings still inside their payout
+  // window. Only the payout fields are kept: see pendingPayoutsQueryOptions for
+  // what the whole entries were costing to produce one number.
   const { data: recentPosts } = useQuery({
-    ...getAccountPostsQueryOptions(username, "posts", "", "", 20, ""),
+    ...pendingPayoutsQueryOptions(username, "posts"),
     enabled: Boolean(username),
   });
   const { data: recentComments } = useQuery({
-    ...getAccountPostsQueryOptions(username, "comments", "", "", 20, ""),
+    ...pendingPayoutsQueryOptions(username, "comments"),
     enabled: Boolean(username),
   });
 
