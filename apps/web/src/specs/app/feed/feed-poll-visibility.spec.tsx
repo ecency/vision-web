@@ -14,13 +14,19 @@ vi.mock("@/utils", async () => ({
   random: vi.fn(),
   getAccessToken: vi.fn(() => "mock-token")
 }));
-vi.mock("@ecency/sdk", async () => ({
-  ...(await vi.importActual<Record<string, unknown>>("@ecency/sdk")),
-  getPostsRankedQueryOptions: vi.fn(() => ({
-    queryKey: ["posts", "ranked-page", "poll"],
-    queryFn: fetchSpy
-  }))
-}));
+vi.mock("@ecency/sdk", async () => {
+  const actual = await vi.importActual<Record<string, unknown>>("@ecency/sdk");
+  const { QueryKeys } = actual as { QueryKeys: typeof import("@ecency/sdk").QueryKeys };
+  return {
+    ...actual,
+    getPostsRankedQueryOptions: vi.fn(
+      (sort: string, a: string, p: string, limit: number, tag: string, observer: string) => ({
+        queryKey: QueryKeys.posts.postsRankedPage(sort, a, p, limit, tag, observer),
+        queryFn: fetchSpy
+      })
+    )
+  };
+});
 vi.mock("@/api/queries", async () => ({
   ...(await vi.importActual<Record<string, unknown>>("@/api/queries")),
   usePostsFeedQuery: () => ({ data: undefined, isFetching: false })
@@ -138,26 +144,69 @@ describe("feed poll", () => {
 
   it("does not touch state from a poll still in flight at unmount", async () => {
     // clearInterval stops the next tick but not one already awaiting fetchQuery.
+    // Watching for a React warning proves nothing here: React 18 removed the
+    // set-state-after-unmount warning, so the assertion has to be on the work
+    // itself. setQueryData is the poll's first write after the await.
     let release: (v: Entry[]) => void = () => {};
     fetchSpy.mockImplementationOnce(
       () => new Promise<Entry[]>((resolve) => { release = resolve; })
     );
-    const errors: unknown[] = [];
-    const onError = (e: ErrorEvent) => errors.push(e.error ?? e.message);
-    window.addEventListener("error", onError);
+    const writes = vi.spyOn(getQueryClient(), "setQueryData");
 
     const { unmount } = renderFeed();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(31_000);
     });
     unmount();
+    writes.mockClear();
 
     await act(async () => {
       release([{ author: "alice", permlink: "p", stats: {} } as unknown as Entry]);
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    window.removeEventListener("error", onError);
-    expect(errors).toEqual([]);
+    expect(writes).not.toHaveBeenCalled();
+    writes.mockRestore();
+  });
+
+  it("does not refetch on return when the last poll is still fresh", async () => {
+    // Deliberate: the catch-up asks for fresh data, it does not force a request.
+    // A reader alt-tabbing every few seconds would otherwise pull a 257 KB page
+    // per switch, which is more traffic than this change removes.
+    renderFeed();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(31_000);
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    setVisibility("hidden");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    await act(async () => {
+      setVisibility("visible");
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does refetch on return once the last poll has gone stale", async () => {
+    renderFeed();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(31_000);
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    setVisibility("hidden");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+    });
+    await act(async () => {
+      setVisibility("visible");
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(1);
   });
 });
