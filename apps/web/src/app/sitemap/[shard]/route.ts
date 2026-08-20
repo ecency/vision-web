@@ -15,9 +15,15 @@
  * so the engine retries instead of dropping a real, advertised resource. A
  * just-retired shard name (a stale cached index may still link it for one
  * cron cycle after a rename) is likewise 503, never 404.
+ *
+ * Operator-seeded shards (`OPERATOR_SHARDS`) invert that last rule: their
+ * blob is the only thing that makes them exist, so a missing blob means the
+ * operator retired the shard and the answer is 404, not "retry later". The
+ * generator drops it from the index on its next run; until then a crawler
+ * holding the old index gets a clean "gone" and stops asking.
  */
 import { getSeoRedis, SEO_REDIS_PREFIX } from "@/features/seo/seo-redis";
-import { isKnownShard, isRetiredShard } from "@/features/seo/sitemap-shards";
+import { isKnownShard, isOperatorShard, isRetiredShard } from "@/features/seo/sitemap-shards";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +49,10 @@ export async function GET(
   if (!redis) return unavailable();
   try {
     const xml = await redis.get(`${SEO_REDIS_PREFIX}sitemap:${shard}`);
-    if (!xml) return unavailable();
+    if (!xml) {
+      if (isOperatorShard(shard)) return new Response("Not Found", { status: 404 });
+      return unavailable();
+    }
     return new Response(xml, {
       status: 200,
       headers: {

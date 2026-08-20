@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   SITEMAP_SHARDS,
   OPERATOR_SHARDS,
+  isOperatorShard,
   isKnownShard,
   isRetiredShard
 } from "@/features/seo/sitemap-shards";
@@ -52,8 +53,10 @@ describe("sitemap-shards", () => {
     it("are known to the public route but never part of the generated set", () => {
       for (const shard of OPERATOR_SHARDS) {
         expect(isKnownShard(shard)).toBe(true);
+        expect(isOperatorShard(shard)).toBe(true);
         expect((SITEMAP_SHARDS as readonly string[]).includes(shard)).toBe(false);
       }
+      for (const shard of SITEMAP_SHARDS) expect(isOperatorShard(shard)).toBe(false);
     });
   });
 });

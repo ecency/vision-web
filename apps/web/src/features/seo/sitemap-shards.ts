@@ -29,6 +29,12 @@ export const OPERATOR_SHARDS = ["recovery.xml"] as const;
 export type SitemapShard = (typeof SITEMAP_SHARDS)[number] | (typeof OPERATOR_SHARDS)[number];
 
 const SHARD_SET: ReadonlySet<string> = new Set<string>([...SITEMAP_SHARDS, ...OPERATOR_SHARDS]);
+const OPERATOR_SET: ReadonlySet<string> = new Set<string>(OPERATOR_SHARDS);
+
+/** An operator shard with no blob is retired, not pending: the route 404s it. */
+export function isOperatorShard(name: string): boolean {
+  return OPERATOR_SET.has(name);
+}
 
 export function isKnownShard(name: string): name is SitemapShard {
   return SHARD_SET.has(name);
