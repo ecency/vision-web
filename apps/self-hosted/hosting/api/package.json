@@ -12,7 +12,7 @@
     "generate-seo": "tsx scripts/generate-seo.ts"
   },
   "dependencies": {
-    "@ecency/render-helper": "^2.5.26",
+    "@ecency/render-helper": "^2.5.27",
     "@ecency/sdk": "^2.2.0",
     "@hiveio/x402": "^0.1.2",
     "@hono/node-server": "^2.0.11",

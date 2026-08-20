@@ -1,19 +1,5 @@
-import { createRequire } from 'node:module';
+import { catchPostImage } from '@ecency/render-helper';
 import { callRPC } from '@ecency/sdk/hive';
-
-// render-helper through its CJS build: the package's node ESM entry carries
-// a directory import ('remarkable/linkify') that Node refuses, so the ESM
-// path crashes at module load. Tracked as a render-helper packaging fix;
-// until it ships, CJS resolution handles the directory import fine.
-const requireCjs = createRequire(import.meta.url);
-const { catchPostImage } = requireCjs('@ecency/render-helper') as {
-  catchPostImage: (
-    entry: unknown,
-    width?: number,
-    height?: number,
-    format?: string,
-  ) => string | null;
-};
 import type { Tenant } from '../types';
 import { ConfigService, escapeHtml } from './config-service';
 import { TenantService } from './tenant-service';
