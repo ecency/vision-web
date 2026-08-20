@@ -29,7 +29,7 @@ proxy_cache_path /var/cache/nginx/ssr levels=1:2
 # See "Why the bot UA class is in the cache key" below.
 map $http_user_agent $html_limited_bot {
   default "";
-  "~*(Googlebot|Google-InspectionTool|Storebot-Google|AdsBot-Google|Mediapartners-Google|googleweblight|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|Yeti)" "|htmlbot";
+  "~*(Googlebot|[\w-]+-Google|Google-[\w-]+|googleweblight|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|Yeti)" "|htmlbot";
 }
 
 server {

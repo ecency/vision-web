@@ -173,8 +173,12 @@ const config = {
   // canonical is left to Google's own duplicate clustering, which is the wrong
   // trade for a page that is also published by other frontends of the same
   // chain. Blocking metadata costs the crawler the streamed shell, which no
-  // crawler benefits from anyway. Google-InspectionTool is included so the
-  // console's live test sees exactly what the indexer sees. Real browsers keep
+  // crawler benefits from anyway. The two generic patterns are the ones from
+  // Next's own default list (configuring this option replaces that list
+  // wholesale, it does not extend it): they cover Google-InspectionTool, so
+  // the console's live test sees exactly what the indexer sees, plus
+  // Google-PageRenderer, AdsBot-Google, Storebot-Google, Mediapartners-Google
+  // and any future agent in either naming family. Real browsers keep
   // streaming (see the spec that pins a Chrome UA to the streaming path).
   //
   // ⚠️ This list is MIRRORED in the origin nginx SSR cache (`$html_limited_bot`
@@ -186,7 +190,7 @@ const config = {
   // Note: Next.js applies this as `new RegExp(htmlLimitedBots, 'i')`, so
   // matching is case-insensitive regardless of the flags written here.
   htmlLimitedBots:
-    /Googlebot|Google-InspectionTool|Storebot-Google|AdsBot-Google|Mediapartners-Google|googleweblight|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|Yeti/,
+    /Googlebot|[\w-]+-Google|Google-[\w-]+|googleweblight|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|Yeti/,
   sassOptions: {
     implementation: require.resolve("sass-embedded"),
     includePaths: [path.join(__dirname), path.join(__dirname, "src/styles")],
