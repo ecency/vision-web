@@ -26,16 +26,30 @@ export function getSeoRedis(): RedisClient | null {
   try {
     _redis = new Redis(REDIS_URL, {
       lazyConnect: false,
+      // A command issued while the client is still connecting waits for the
+      // socket instead of being rejected on the spot. A replica that starts
+      // under load (rolling deploy, busy origin) used to answer 503 to every
+      // sitemap request until its client had connected, for minutes on a
+      // saturated box. The wait is bounded: one reconnect attempt, then the
+      // queued commands fail, so a Redis that is really down still degrades
+      // within a few seconds instead of hanging requests.
+      enableOfflineQueue: true,
       maxRetriesPerRequest: 1,
-      enableOfflineQueue: false,
-      connectTimeout: 1000,
-      commandTimeout: 1000,
-      retryStrategy: (times: number) => {
-        if (times > 10) return null;
-        return Math.min(times * 500, 5000);
-      }
+      connectTimeout: 3000,
+      commandTimeout: 2000,
+      // Never give up. Giving up after ten tries ended the client and left
+      // the replica without Redis until some later request rebuilt it; the
+      // "end" handler below already covers a real Redis restart.
+      retryStrategy: (times: number) => Math.min(times * 500, 5000)
     });
-    _redis.on("error", () => {}); // silent — graceful degradation
+    let reported = false;
+    _redis.on("error", (err: Error) => {
+      // Graceful degradation, but not silent: one line per client so a
+      // replica that cannot reach Redis shows up in its log.
+      if (reported) return;
+      reported = true;
+      console.warn(`[seo-redis] ${err.message}`);
+    });
     _redis.on("end", () => {
       _redis = undefined; // rebuild on next access (covers redis restarts)
     });
