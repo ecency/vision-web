@@ -38,6 +38,15 @@ function configs(dir) {
 }
 
 /**
+ * The tracked origin configs among everything collected. Separate from configs()
+ * because the scan deliberately picks up documentation too, and the presence
+ * guard must count origins rather than files: see its comment below.
+ */
+function originConfigsIn(files) {
+  return files.filter((file) => file.endsWith(".conf"));
+}
+
+/**
  * Addresses in a line, found by tokenising and asking Node rather than by
  * pattern. A hand-rolled IPv6 regex missed every compressed form: `2001:db8::42`
  * and `fe80::1` both walked past the first version, and the self-test address
@@ -160,8 +169,27 @@ if (process.argv.includes("--self-test")) {
       if (rule.test(line)) failures.push(`rule ${rule.id} wrongly fired on: ${line.trim()}`);
     }
   }
+  // The presence guard is control flow rather than a rule, and it has now broken
+  // twice: once by exiting 0 when the directory was missing, and once by counting
+  // the README after markdown joined the scan, so removing every vhost left a
+  // non-zero total and CI passed over nothing tracked. Both failures were the same
+  // shape, a guard measuring the collection instead of the thing it guards, so it
+  // is pinned here and the next widening of the scan trips a test.
+  const PRESENCE = [
+    [["infra/origin/eu.ecency.com.conf", "infra/origin/README.md"], 1],
+    [["infra/origin/eu.ecency.com.conf", "infra/origin/us.ecency.com.conf", "infra/origin/README.md"], 2],
+    [["infra/origin/README.md"], 0],
+    [["infra/origin/README.md", "infra/origin/notes.md"], 0],
+    [[], 0]
+  ];
+  for (const [input, expected] of PRESENCE) {
+    const got = originConfigsIn(input).length;
+    if (got !== expected) {
+      failures.push(`originConfigsIn(${JSON.stringify(input)}) counted ${got}, expected ${expected}`);
+    }
+  }
   failures.forEach((f) => console.error(`origin-config-audit self-test: ${f}`));
-  console.log(`origin-config-audit self-test: ${failures.length} failure(s), ${MUST_FIRE.length + MUST_NOT_FIRE.length} case(s)`);
+  console.log(`origin-config-audit self-test: ${failures.length} failure(s), ${MUST_FIRE.length + MUST_NOT_FIRE.length + PRESENCE.length} case(s)`);
   process.exit(failures.length > 0 ? 1 : 0);
 }
 
@@ -177,8 +205,15 @@ try {
   process.exit(FAIL ? 1 : 0);
 }
 
-if (files.length === 0) {
+// Counted on the CONFIGS specifically, not on everything collected. Adding
+// markdown to the scan made this guard count the README, so deleting every
+// vhost left a non-zero total and the audit passed with nothing tracked: the
+// exact vacuous pass this guard exists to prevent, reintroduced by widening the
+// collection beside it.
+const trackedConfigs = originConfigsIn(files);
+if (trackedConfigs.length === 0) {
   console.error(`origin-config-audit: no .conf files under ${relative(ROOT, AUDITED)}; did they move?`);
+  console.error("  Documentation alone is not a tracked origin. If the vhosts moved, update AUDITED.");
   process.exit(FAIL ? 1 : 0);
 }
 
