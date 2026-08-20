@@ -265,7 +265,9 @@ function cardOnlyEntryPage<T>(page: T): T {
   if (!Array.isArray(page)) {
     return page;
   }
-  return page.map((item) => {
+  // Read as unknown[] rather than leaning on Array.isArray, whose guard narrows
+  // to any[] and would leave `item` implicitly any.
+  return (page as unknown[]).map((item) => {
     try {
       return cardOnlyEntry(item as Entry);
     } catch {
