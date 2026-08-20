@@ -4175,6 +4175,8 @@
     "resend": "Resend confirmation email",
     "resent": "If a confirmation is due, it is on its way. Check your inbox and spam folder.",
     "error-gateway": "The digest service did not answer. Please try again in a moment.",
+    "error-captcha": "That verification did not go through. Please try the check again.",
+    "error-too-many": "Too many signups from your network today. Please try again tomorrow.",
     "row-site": "Ecency digest",
     "row-unknown": "Digest ({{type}})",
     "own-digest": "Your notification digest by email",

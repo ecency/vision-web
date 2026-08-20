@@ -91,6 +91,12 @@ services:
       # `newsletterFeatureEnabled`), so a deployment without the service stays quiet.
       - NEWSLETTER_API_URL
       - NEWSLETTER_SERVICE_TOKEN
+      # Cloudflare Turnstile secret, for verifying the token an ANONYMOUS newsletter
+      # subscribe carries (server/turnstile-verify). Shared with vapi, which declares it
+      # above for the Stripe flow; the Next tier needs its own copy or every anonymous
+      # subscribe answers 503, because an unset secret refuses rather than relaying with
+      # the check off. specs/deploy/newsletter-wiring pins this line for that reason.
+      - TURNSTILE_SECRET
       # Cap glibc malloc arenas (default 8*cores) so freed memory is returned to
       # the OS instead of being retained per-arena. Cuts Next.js SSR RSS (which
       # ran ~2x the V8 heap due to arena fragmentation) with no latency cost:

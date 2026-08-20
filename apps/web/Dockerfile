@@ -29,6 +29,12 @@ ENV NEXT_PUBLIC_GMAPS_API_KEY=${NEXT_PUBLIC_GMAPS_API_KEY}
 ENV NEXT_PUBLIC_GMAPS_MAP_ID=${NEXT_PUBLIC_GMAPS_MAP_ID}
 ARG NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
+# Public Turnstile sitekey. NEXT_PUBLIC_* is inlined at BUILD time, so it has to arrive
+# here rather than through the runtime environment: without it every client falls back to
+# the literal in features/shared/turnstile.tsx, and a rotated or environment-specific
+# widget would fail on the deployed site while working in dev.
+ARG NEXT_PUBLIC_TURNSTILE_SITEKEY
+ENV NEXT_PUBLIC_TURNSTILE_SITEKEY=${NEXT_PUBLIC_TURNSTILE_SITEKEY}
 
 # ---- Sentry (make them visible to the build) ----
 ARG SENTRY_AUTH_TOKEN

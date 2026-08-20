@@ -8,7 +8,8 @@ import { FormControl } from "@ui/input";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import i18next from "i18next";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Turnstile, TURNSTILE_SITEKEY, type TurnstileHandle } from "@/features/shared/turnstile";
 import {
   CADENCES,
   useDigestSubscription,
@@ -27,6 +28,12 @@ interface Props {
   source: SubscribeInput["source"];
   show: boolean;
   onHide: () => void;
+  /**
+   * Called once the service has accepted a subscribe, whether it went live or is waiting
+   * on a confirmation. Callers that cannot read the subscription list back -- the post
+   * prompt for an anonymous reader -- use this to stop offering it again.
+   */
+  onSubscribed?: () => void;
 }
 
 /**
@@ -43,7 +50,7 @@ interface Props {
  * `{ status: "pending_confirmation" }`, and the dialog shows the check-your-inbox state
  * without assuming any of the richer fields a proven caller receives.
  */
-export function DigestSubscribeDialog({ type, target, targetLabel, source, show, onHide }: Props) {
+export function DigestSubscribeDialog({ type, target, targetLabel, source, show, onHide, onSubscribed }: Props) {
   const { activeUser } = useActiveAccount();
   const { subscription, isLoading } = useDigestSubscription(type, target);
   const knownAddress = useKnownDigestAddress();
@@ -53,6 +60,27 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
   const [cadence, setCadence] = useState<DigestCadence>("weekly");
   const [email, setEmail] = useState("");
   const [outcome, setOutcome] = useState<SubscribeResult | null>(null);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const turnstileRef = useRef<TurnstileHandle>(null);
+
+  // Only an unproven caller is challenged, because only an unproven caller is challenged
+  // by the route. Keyed on activeUser rather than on needsAddress, which is also true for
+  // a signed-in person whose address the service has not learned yet: gating on that
+  // would put a captcha in front of someone who already proved who they are.
+  //
+  // Being signed in locally is not quite the same as having a usable token, though.
+  // ensureValidToken returns undefined when the refresh fails or the stored record is
+  // gone, and newsletterApi.subscribe then omits `code`, so the request arrives anonymous
+  // and 403s while the dialog shows no challenge to complete. A 403 is the server saying
+  // it wanted one, so the widget appears on that answer regardless of activeUser.
+  const [captchaRequired, setCaptchaRequired] = useState(false);
+  const needsCaptcha = !activeUser || captchaRequired;
+
+  // Tokens are single use, so a spent one must never survive into the next attempt.
+  const resetCaptcha = () => {
+    setCaptchaToken("");
+    turnstileRef.current?.reset();
+  };
 
   // Reset only when the dialog OPENS. Subscribing invalidates the subscriptions
   // query, and a reset keyed on the refetched subscription would wipe the
@@ -62,6 +90,8 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
       setCadence(subscription?.cadence ?? "weekly");
       setEmail(subscription?.email ?? knownAddress ?? "");
       setOutcome(null);
+      setCaptchaToken("");
+      setCaptchaRequired(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show]);
@@ -82,7 +112,12 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
     : pending && cadenceUnchanged
       ? i18next.t("newsletter.resend")
       : i18next.t("newsletter.update");
-  const primaryDisabled = busy || isLoading || (needsAddress && !emailValid) || (cadenceUnchanged && !pending);
+  const primaryDisabled =
+    busy ||
+    isLoading ||
+    (needsAddress && !emailValid) ||
+    (cadenceUnchanged && !pending) ||
+    (needsCaptcha && !captchaToken);
 
   const cadenceLabel = (c: DigestCadence) => i18next.t(`newsletter.cadence.${c}`);
   const digestName = useMemo(
@@ -103,11 +138,12 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
         email: (subscription?.email ?? email).trim(),
         type,
         target,
-        targetLabel,
         cadence,
-        source
+        source,
+        ...(needsCaptcha ? { captchaToken } : {})
       });
       setOutcome(result);
+      if (result.status === "active" || result.status === "pending_confirmation") onSubscribed?.();
       if (result.status === "active") {
         success(
           subscription
@@ -118,13 +154,19 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
         success(i18next.t("newsletter.resent"));
       }
     } catch (e) {
+      if (e instanceof NewsletterApiError && e.status === 403) setCaptchaRequired(true);
       const message =
         e instanceof NewsletterApiError && e.status === 503
           ? i18next.t("newsletter.error-unavailable")
           : e instanceof NewsletterApiError && (e.status === 502 || e.status === 504)
             ? i18next.t("newsletter.error-gateway")
-            : i18next.t("newsletter.error-generic");
+            : e instanceof NewsletterApiError && e.status === 403
+              ? i18next.t("newsletter.error-captcha")
+              : e instanceof NewsletterApiError && e.status === 429
+                ? i18next.t("newsletter.error-too-many")
+                : i18next.t("newsletter.error-generic");
       toastError(message);
+      resetCaptcha();
     }
   };
 
@@ -157,7 +199,14 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
             <Alert appearance="warning">
               {i18next.t("newsletter.refused")}
               <div className="mt-2">
-                <Button size="sm" appearance="gray-link" onClick={() => setOutcome(null)}>
+                <Button
+                  size="sm"
+                  appearance="gray-link"
+                  onClick={() => {
+                    setOutcome(null);
+                    if (needsCaptcha) resetCaptcha();
+                  }}
+                >
                   {i18next.t("newsletter.try-again")}
                 </Button>
               </div>
@@ -226,6 +275,18 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
                     {i18next.t("newsletter.email-hint")}
                   </p>
                 </div>
+              )}
+
+              {needsCaptcha && (
+                <Turnstile
+                  ref={turnstileRef}
+                  sitekey={TURNSTILE_SITEKEY}
+                  action="newsletter-subscribe"
+                  onVerify={setCaptchaToken}
+                  onExpire={() => setCaptchaToken("")}
+                  onError={() => setCaptchaToken("")}
+                  className="px-2"
+                />
               )}
 
               <p className="text-xs text-gray-500 dark:text-gray-400 px-2">

@@ -37,20 +37,37 @@ export interface NewsletterSubscribeBody {
   email: string;
   type: 'creator' | 'community';
   target: string;
-  targetLabel: string;
   cadence: 'weekly' | 'monthly';
   source: 'self-hosted-blog';
+  /**
+   * Cloudflare Turnstile token. The relay requires one from every caller without an
+   * account, and a reader on a blog never has one, so it is required here in practice.
+   */
+  captchaToken: string;
 }
 
-/** The body the form posts, exactly as the relay expects it. */
-export function newsletterSubscribeBody(t: NewsletterSignupTarget, email: string, cadence: 'weekly' | 'monthly'): NewsletterSubscribeBody {
+/**
+ * The body the form posts, exactly as the relay expects it.
+ *
+ * `targetLabel` is deliberately NOT sent any more. It used to carry the site title into
+ * the confirmation email, which meant a caller chose part of a sentence in mail our domain
+ * sends to an address they picked; the service derives the label from the target itself
+ * now. `NewsletterSignupTarget.targetLabel` still exists and is still used, for the copy
+ * this app renders itself.
+ */
+export function newsletterSubscribeBody(
+  t: NewsletterSignupTarget,
+  email: string,
+  cadence: 'weekly' | 'monthly',
+  captchaToken: string
+): NewsletterSubscribeBody {
   return {
     email: email.trim(),
     type: t.type,
     target: t.target,
-    targetLabel: t.targetLabel,
     cadence,
     source: 'self-hosted-blog',
+    captchaToken,
   };
 }
 

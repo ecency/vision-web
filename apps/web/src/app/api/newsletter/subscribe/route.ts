@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { resolveUser, unauthorizedResponse } from "@/app/api/threespeak/resolve-user";
+import { verifyTurnstile } from "@/server/turnstile-verify";
 import {
   callNewsletter,
   clientIp,
@@ -11,13 +12,20 @@ import {
 
 const TYPES = new Set(["own", "community", "creator", "site"]);
 const CADENCES = new Set(["weekly", "monthly"]);
+/**
+ * Newsletter tokens are scoped to this action. The sitekey is shared with signup, so
+ * without it a challenge solved on the signup page would be spendable here.
+ */
+const TURNSTILE_ACTION = "newsletter-subscribe";
+
 const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-page", "publish-prompt", "post-page", "self-hosted-blog"]);
 
 /**
  * Subscribe to a community or creator digest.
  *
  * Anonymous callers are allowed: they supply an address and get double opt-in from the
- * service. A logged-in caller (HiveSigner token in body.code) is attributed to their
+ * service, and since 2026-08 they also clear a Turnstile check, because the request makes
+ * us send mail to an address nobody has proven they own. A logged-in caller (HiveSigner token in body.code) is attributed to their
  * account, which is what lets the service treat a later subscribe on a confirmed address
  * as one action, and what allows an opted-out address to be re-confirmed. The account is
  * taken from the verified token, never from the body.
@@ -40,7 +48,6 @@ export async function POST(request: NextRequest) {
   const cadence = typeof body.cadence === "string" ? body.cadence : "";
   const email = typeof body.email === "string" ? body.email.trim() : "";
   const source = typeof body.source === "string" ? body.source : "";
-  const targetLabel = typeof body.targetLabel === "string" ? body.targetLabel.slice(0, 120) : undefined;
   if (!TYPES.has(type) || !target || !CADENCES.has(cadence) || !email || !SOURCES.has(source)) {
     return Response.json({ error: "Invalid request" }, { status: 400 });
   }
@@ -60,8 +67,36 @@ export async function POST(request: NextRequest) {
     if (target !== account) return Response.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  // Where the creator eligibility check used to be. There is none now: every
-  // creator is offered a digest, see the note at the top of this file.
+  // An anonymous subscribe makes us send mail to an address nobody has proven they
+  // own, so it clears a bot check first. Deliberately keyed on "is there a verified
+  // account" and nothing else: `source` is caller-supplied, so exempting a source
+  // would mean one JSON field turns the whole check off.
+  //
+  // Placed after the `own` check on purpose. An anonymous own-digest request can never
+  // succeed, so it should 401 without spending a siteverify round trip.
+  if (!account) {
+    const captchaToken = typeof body.captchaToken === "string" ? body.captchaToken : "";
+    const verdict = await verifyTurnstile(captchaToken, clientIp(request), TURNSTILE_ACTION);
+    if (!verdict.ok && verdict.reason === "invalid") {
+      return Response.json({ error: "Security check failed" }, { status: 403 });
+    }
+    if (!verdict.ok) {
+      // "unconfigured" is refused too, not relayed.
+      //
+      // An earlier version let a missing TURNSTILE_SECRET through so that a deploy landing
+      // before the secret could not take signups down. That reasoning does not survive
+      // contact with the ordering: this route already answers 503 from newsletterConfigured()
+      // unless NEWSLETTER_API_URL and NEWSLETTER_SERVICE_TOKEN are both set, so a deployment
+      // without the newsletter configured never reaches here at all. The only state the
+      // exception protected was "newsletter configured, bot check not" -- which is precisely
+      // the misconfiguration worth catching, and relaying it means the control is off with
+      // nothing on fire to say so.
+      if (verdict.reason === "unconfigured") {
+        console.error("[Turnstile] TURNSTILE_SECRET is unset; refusing anonymous subscribes");
+      }
+      return Response.json({ error: "Security check unavailable" }, { status: 503 });
+    }
+  }
 
   const upstream = await callNewsletter("/api/subscriptions", {
     method: "POST",
@@ -70,7 +105,6 @@ export async function POST(request: NextRequest) {
       account,
       type,
       target,
-      targetLabel,
       cadence,
       source,
       sourceIp: clientIp(request),

@@ -11,6 +11,44 @@ import {
 import { NewsletterSignup } from './newsletter-signup';
 
 /**
+ * The Turnstile widget, mocked. The real one appends a Cloudflare <script> that jsdom
+ * never executes, so the token would never arrive and every submit here would sit behind
+ * a permanently disabled button. The mock renders nothing and hands the test the
+ * callbacks, which is the whole contract the form depends on.
+ *
+ * It renders NO element on purpose: `resetControl()` below selects the first
+ * `button[type="button"]`, and a mock button would quietly steal that selector from the
+ * use-another-address control it was written for.
+ */
+const captcha = vi.hoisted(() => ({
+  verify: null as null | ((token: string) => void),
+  resets: 0
+}));
+
+vi.mock('../../shared/turnstile', () => ({
+  Turnstile: ({
+    onVerify,
+    ref
+  }: {
+    onVerify: (token: string) => void;
+    ref?: { current: { reset: () => void } | null };
+  }) => {
+    captcha.verify = onVerify;
+    if (ref) ref.current = { reset: () => { captcha.resets += 1; } };
+    return null;
+  }
+}));
+
+const CAPTCHA_TOKEN = 'turnstile-test-token';
+
+/** Solve the challenge, the way a reader does before the button becomes usable. */
+async function solveCaptcha(): Promise<void> {
+  await act(async () => {
+    captcha.verify?.(CAPTCHA_TOKEN);
+  });
+}
+
+/**
  * The component half of the signup form (vision-web#1537). The pure rules live
  * in newsletter-signup-target.test.ts; this covers what only a rendered
  * component can show: the eligibility fence, the request the submit actually
@@ -142,6 +180,11 @@ async function typeInto(
  */
 async function submitForm(): Promise<void> {
   const form = container.querySelector('form');
+  // The relay refuses an anonymous subscribe without a token and the button stays
+  // disabled until one exists, so an unsolved challenge is not a state a reader can
+  // submit from. Tests that care about the gate itself solve explicitly and assert
+  // before calling this.
+  if (form && captcha.verify) await solveCaptcha();
   await act(async () => {
     form?.dispatchEvent(
       new Event('submit', { bubbles: true, cancelable: true }),
@@ -168,6 +211,8 @@ describe('NewsletterSignup', () => {
     InstanceConfigManager.updateConfig(
       structuredClone(MANAGED_BLOG) as InstanceConfig,
     );
+    captcha.verify = null;
+    captcha.resets = 0;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -278,7 +323,7 @@ describe('NewsletterSignup', () => {
       email: 'reader@example.com',
       type: 'creator',
       target: 'alice',
-      targetLabel: 'Alice Writes',
+      captchaToken: CAPTCHA_TOKEN,
       cadence: 'monthly',
       source: 'self-hosted-blog',
     });
@@ -306,11 +351,62 @@ describe('NewsletterSignup', () => {
       'Could not subscribe right now. Please try again.',
     );
     expect(politeRegion()?.textContent).toBe('');
-    // Still submittable: the reader can retry without losing what they typed.
+    // Still there, and the address is not lost: the reader retries without retyping.
     expect(form()).not.toBeNull();
-    expect(submitButton()?.disabled).toBe(false);
-    expect(submitButton()?.getAttribute('aria-busy')).toBe('false');
     expect(emailInput()?.value).toBe('reader@example.com');
+    expect(submitButton()?.getAttribute('aria-busy')).toBe('false');
+    // But the challenge was spent on the attempt that failed, so the button waits for a
+    // fresh one. Re-submitting with the used token would fail again at the relay, and the
+    // reader would read the same generic error with nothing to act on.
+    expect(captcha.resets).toBe(1);
+    expect(submitButton()?.disabled).toBe(true);
+    await solveCaptcha();
+    expect(submitButton()?.disabled).toBe(false);
+  });
+
+  it('will not submit until the challenge is solved, and never posts without a token', async () => {
+    // A blog reader has no Ecency session, so the relay treats every submit here as
+    // anonymous and refuses one carrying no token. The button is the visible half of
+    // that; the handler's own guard is the half that matters, because a form can still
+    // be submitted from the keyboard while its button is disabled.
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => ({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await render();
+    await typeInto(emailInput(), 'reader@example.com');
+    expect(submitButton()?.disabled).toBe(true);
+
+    // Submitting anyway, the way a keyboard reader can: nothing leaves.
+    const el = container.querySelector('form');
+    await act(async () => {
+      el?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(errorRegion()?.textContent).toBe('');
+
+    await solveCaptcha();
+    expect(submitButton()?.disabled).toBe(false);
+    await submitForm();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).captchaToken).toBe(
+      CAPTCHA_TOKEN,
+    );
+  });
+
+  it('asks for a fresh challenge for the next address', async () => {
+    // The token is single use, so the way back from the confirmation (#1546) has to
+    // re-challenge or the second address is submitted with a spent one.
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+    await render();
+    await typeInto(emailInput(), 'reader@example.com');
+    await submitForm();
+    expect(resetControl()).not.toBeNull();
+
+    await act(async () => {
+      resetControl()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(captcha.resets).toBe(1);
+    expect(submitButton()?.disabled).toBe(true);
   });
 
   it('shows the same error when the request never completes', async () => {
@@ -369,7 +465,7 @@ describe('NewsletterSignup', () => {
     expect(JSON.parse(init.body as string)).toMatchObject({
       type: 'community',
       target: 'hive-125125',
-      targetLabel: 'Alice Writes',
+      captchaToken: CAPTCHA_TOKEN,
       cadence: 'weekly',
     });
   });

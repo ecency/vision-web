@@ -25,7 +25,23 @@ export interface SubscribeInput {
   email: string;
   type: DigestType;
   target: string;
-  targetLabel?: string;
   cadence: DigestCadence;
-  source: "community-page" | "creator-page" | "settings" | "landing-page" | "publish-prompt" | "post-page";
+  /**
+   * Kept in lockstep with SOURCES in app/api/newsletter/subscribe/route.ts by hand: a
+   * value here that the route does not accept is a silent 400 with a generic message.
+   * "self-hosted-blog" is the managed-blog embed, which posts to the same route.
+   */
+  source:
+    | "community-page"
+    | "creator-page"
+    | "settings"
+    | "landing-page"
+    | "publish-prompt"
+    | "post-page"
+    | "self-hosted-blog";
+  /**
+   * Cloudflare Turnstile token. Required by the route whenever the caller has no
+   * account; ignored for signed-in callers, whose account is the proof.
+   */
+  captchaToken?: string;
 }

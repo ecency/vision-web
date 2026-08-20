@@ -31,6 +31,48 @@ in practice — **re-copy any change made there back into this directory.**
    reloads nginx if something changed. A vhost that fails `nginx -t` is quarantined as
    `.broken` rather than wedging every later reload.
 
+## A custom domain also needs a Turnstile hostname
+
+The sync does NOT do this, and nothing else will notice if it is skipped.
+
+The newsletter signup form on a tenant blog renders a Cloudflare Turnstile widget, and the
+relay refuses an anonymous subscribe without a valid token. A Turnstile sitekey is bound to
+a hostname list, and adding a hostname covers that hostname **and all of its subdomains**,
+so every `*.blogs.ecency.com` tenant is already covered by the `ecency.com` entry and needs
+nothing. A custom domain on its own apex is not.
+
+So when a custom domain is attached, add it to the sitekey's domain list as well:
+
+The update is a **PUT of the whole widget object**, so `domains` REPLACES the stored list
+rather than adding to it. Never hand-write the array: read the current one and append, or
+the tenants added before this one are silently dropped and their forms break instead.
+
+```bash
+NEW_DOMAIN="blog.example.com"
+WIDGET="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/challenges/widgets/$SITEKEY"
+
+# Build the new body from the CURRENT list, so nothing already registered is lost.
+BODY=$(curl -s -H "Authorization: Bearer $CF_TOKEN" "$WIDGET" | python3 -c '
+import json, sys
+w = json.load(sys.stdin)["result"]
+domains = sorted(set(w["domains"]) | {sys.argv[1]})
+print(json.dumps({"name": w["name"], "mode": w["mode"], "domains": domains}))
+' "$NEW_DOMAIN")
+
+curl -X PUT -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" \
+  "$WIDGET" --data "$BODY"
+
+# Confirm the list still holds every domain it held before, plus the new one.
+curl -s -H "Authorization: Bearer $CF_TOKEN" "$WIDGET" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["domains"])'
+```
+
+The token needs **Turnstile: Edit**; with read-only it answers `10405` or `10000` rather
+than saying the permission is missing.
+
+Skipping it leaves that tenant's signup form with a widget that will not solve and a submit
+button that never enables. It fails visibly on the blog and invisibly to us, which is why
+it belongs in this list rather than in someone's memory.
+
 ## origin-ips (not in git)
 
 The DNS check above needs this origin's own addresses. They are read from an `origin-ips`
