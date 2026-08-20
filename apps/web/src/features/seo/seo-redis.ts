@@ -22,6 +22,11 @@ export const SEO_REDIS_PREFIX = "seo:";
 
 let _redis: RedisClient | null | undefined;
 
+// One window for both the socket connect and the default getSeoRedisReady()
+// wait, so a request that lands during a slow first connect is served once
+// that connect succeeds instead of giving up a second before it would have.
+const CONNECT_TIMEOUT_MS = 3000;
+
 export function getSeoRedis(): RedisClient | null {
   if (_redis !== undefined) return _redis;
   if (REDIS_DISABLED) {
@@ -39,7 +44,7 @@ export function getSeoRedis(): RedisClient | null {
       // without ever queueing a command.
       enableOfflineQueue: false,
       maxRetriesPerRequest: 1,
-      connectTimeout: 3000,
+      connectTimeout: CONNECT_TIMEOUT_MS,
       commandTimeout: 2000,
       // Never give up. Giving up after ten tries ended the client and left
       // the replica without Redis until some later request rebuilt it; the
@@ -75,7 +80,7 @@ export function getSeoRedis(): RedisClient | null {
  */
 const isReady = (client: RedisClient): boolean => client.status === "ready";
 
-export async function getSeoRedisReady(waitMs = 2000): Promise<RedisClient | null> {
+export async function getSeoRedisReady(waitMs = CONNECT_TIMEOUT_MS): Promise<RedisClient | null> {
   const client = getSeoRedis();
   if (!client) return null;
   if (isReady(client)) return client;

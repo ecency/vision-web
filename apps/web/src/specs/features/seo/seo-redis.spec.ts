@@ -51,8 +51,8 @@ describe("seo-redis", () => {
     };
     expect(options.enableOfflineQueue).toBe(false);
     expect(options.maxRetriesPerRequest).toBe(1);
-    expect(options.connectTimeout).toBeGreaterThanOrEqual(3000);
-    expect(options.commandTimeout).toBeLessThanOrEqual(2000);
+    expect(options.connectTimeout).toBe(3000);
+    expect(options.commandTimeout).toBe(2000);
     for (const times of [1, 10, 11, 500]) {
       const delay = options.retryStrategy(times);
       expect(typeof delay, `retry ${times}`).toBe("number");
@@ -74,11 +74,18 @@ describe("seo-redis", () => {
     expect(await getSeoRedisReady(2000)).toBe(client); // already ready: no wait
   });
 
-  it("getSeoRedisReady gives up after the wait and hands back null, so the caller degrades", async () => {
+  it("getSeoRedisReady waits the whole connect window by default, then hands back null", async () => {
     vi.useFakeTimers();
     const { getSeoRedisReady } = await load();
-    const pending = getSeoRedisReady(2000);
-    await vi.advanceTimersByTimeAsync(2000);
+    let settled = false;
+    const pending = getSeoRedisReady().then((c) => {
+      settled = true;
+      return c;
+    });
+    // A connect that completes late inside its 3s window must still be served.
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
     expect(await pending).toBeNull();
     expect(instances[0].listenerCount("ready")).toBe(0); // listener removed
   });
