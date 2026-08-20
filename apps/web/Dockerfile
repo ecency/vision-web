@@ -107,6 +107,7 @@ COPY --from=base /var/app/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=base /var/app/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=base /var/app/apps/web/package.json ./apps/web/package.json
 COPY --from=base /var/app/apps/web/healthCheck.js ./apps/web/healthCheck.js
+COPY --from=base /var/app/apps/web/next-runtime-config.js ./apps/web/next-runtime-config.js
 COPY --from=base /var/app/apps/web/public ./apps/web/public
 COPY --from=base /var/app/apps/web/.next ./apps/web/.next
 COPY --from=base /var/app/node_modules ./node_modules
@@ -123,5 +124,11 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 CMD node
 # to the previous image, so deploys went green while prod kept serving the old
 # build. Invoking next directly skips that check (and a per-start corepack
 # download of pnpm).
+#
+# The image carries no next.config.js, and without one `next start` falls back
+# to Next's defaults for every option it reads at request time (htmlLimitedBots,
+# images, experimental flags, compress, ...). The preload hands the server the
+# config the build resolved, from .next/required-server-files.json, the way
+# Next's own standalone server.js does. See next-runtime-config.js.
 WORKDIR /var/app/apps/web
-CMD ["node", "./node_modules/next/dist/bin/next", "start"]
+CMD ["node", "--require", "./next-runtime-config.js", "./node_modules/next/dist/bin/next", "start"]
