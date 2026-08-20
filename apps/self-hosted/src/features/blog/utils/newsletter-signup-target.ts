@@ -53,3 +53,17 @@ export function newsletterSubscribeBody(t: NewsletterSignupTarget, email: string
     source: 'self-hosted-blog',
   };
 }
+
+/**
+ * Whether the sidebar should carry the signup form on this path. One form per
+ * page: the About page renders its own in the content column (vision-web#1551),
+ * which is the only surface every template has, so the rail stands down there.
+ *
+ * Decided by route rather than by theme on purpose. Whether the rail is
+ * rendered at all is each template's own choice (four of the nine never render
+ * it), so a theme-based rule would have to track every template's structure,
+ * while this one holds for all of them.
+ */
+export function sidebarShowsNewsletter(pathname: string): boolean {
+  return pathname.replace(/\/+$/, '') !== '/about';
+}

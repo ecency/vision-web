@@ -159,6 +159,8 @@ const submitButton = () =>
 // Two regions, because a failure has to interrupt: role=status is the polite
 // one (the confirmation), role=alert the assertive one (the failure).
 const politeRegion = () => container.querySelector('[role="status"]');
+const resetControl = () =>
+  container.querySelector<HTMLButtonElement>('button[type="button"]');
 const errorRegion = () => container.querySelector('[role="alert"]');
 
 describe('NewsletterSignup', () => {
@@ -393,6 +395,92 @@ describe('NewsletterSignup', () => {
     expect(politeRegion()?.textContent).toBe(
       'Almost there: confirm from the email we just sent.',
     );
+  });
+
+  it('offers a way back from the confirmation, and puts focus on it (#1546)', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: true,
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await render();
+    // A plausible fat-finger: .cm for .com. The relay answers 2xx either way,
+    // because double opt-in means it cannot tell a typo from a real address,
+    // so the reader is told to check an inbox that will never receive anything.
+    await typeInto(emailInput(), 'reader@typo.cm');
+    // Where focus sits when a reader submits with the keyboard, on the very
+    // element the success state is about to remove.
+    submitButton()?.focus();
+    await submitForm();
+
+    const back = resetControl();
+    expect(back?.textContent).toBe('Use a different address');
+    // Without moving it, focus falls to <body> when the button is unmounted
+    // and the reader's next Tab restarts at the top of the document.
+    expect(document.activeElement).toBe(back);
+
+    await act(async () => {
+      back?.click();
+    });
+
+    // Back to a usable form, empty, focused, and no longer claiming success.
+    expect(form()).not.toBeNull();
+    expect(emailInput()?.value).toBe('');
+    expect(document.activeElement).toBe(emailInput());
+    expect(politeRegion()?.textContent).toBe('');
+  });
+
+  it('does not steal focus from a reader who moved on mid-request', async () => {
+    const pending = deferred<{ ok: boolean }>();
+    const fetchMock = vi.fn(
+      (_url: string, _init: RequestInit) => pending.promise,
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await render();
+    await typeInto(emailInput(), 'reader@example.com');
+    submitButton()?.focus();
+    await submitForm();
+
+    // They click something else on the page while the request is open.
+    const elsewhere = document.createElement('button');
+    document.body.appendChild(elsewhere);
+    elsewhere.focus();
+
+    await act(async () => {
+      pending.resolve({ ok: true });
+    });
+
+    expect(resetControl()).not.toBeNull();
+    expect(document.activeElement).toBe(elsewhere);
+    elsewhere.remove();
+  });
+
+  it('renders the same form in a page frame for the About page (#1551)', async () => {
+    const section = () =>
+      container.querySelector('[data-testid="newsletter-signup"]');
+
+    await render(<NewsletterSignup placement="page" />);
+    expect(section()?.className).toContain('max-w-3xl');
+    expect(section()?.className).not.toContain('sidebar-newsletter-section');
+    // h2, not h3: the About page opens with an h1 for the account or the
+    // community, and the rail's h3 would skip a level under it.
+    expect(section()?.querySelector('h2')?.textContent).toBe(
+      'Get new posts by email',
+    );
+    expect(section()?.querySelector('h3')).toBeNull();
+    // Only the frame differs: same controls, same accessible names.
+    expect(emailInput()?.getAttribute('aria-label')).toBe('Your email');
+    expect(cadenceSelect()?.getAttribute('aria-label')).toBe('How often');
+    expect(submitButton()?.textContent).toBe('Subscribe');
+
+    // And the default is still the rail section it was born as, where nothing
+    // outranks the heading so h3 is right.
+    await render();
+    expect(section()?.className).toContain('sidebar-newsletter-section');
+    expect(section()?.className).not.toContain('max-w-3xl');
+    expect(section()?.querySelector('h3')).not.toBeNull();
+    expect(section()?.querySelector('h2')).toBeNull();
   });
 
   it('survives an unmount mid-flight, and does not abort the request', async () => {

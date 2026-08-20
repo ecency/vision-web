@@ -14,7 +14,53 @@ import { newsletterSignupTarget, newsletterSubscribeBody } from '../utils/newsle
  * the form always says "check your inbox" on success and can learn nothing
  * about an address it does not own.
  */
-export function NewsletterSignup(): ReactElement | null {
+
+/**
+ * Where the form is being rendered. Only the frame differs: `sidebar` is the
+ * rail section it was born as, `page` is the wider block the About page shows
+ * (vision-web#1551), which is the only surface every template has. The rules,
+ * the request and the states are identical in both.
+ */
+export type NewsletterPlacement = 'sidebar' | 'page';
+
+interface Frame {
+  root: string;
+  /**
+   * The heading ELEMENT, not just its size. In the rail nothing outranks it,
+   * so h3 is fine; the About page opens with an h1 for the account or
+   * community, and jumping straight to h3 would skip a level on the one page
+   * here that has a real heading outline.
+   */
+  heading: 'h2' | 'h3';
+  title: string;
+  blurb: string;
+  /**
+   * The rail is narrow enough to be its own measure. The About column is 3xl
+   * prose, where a full-width email field looks like a mistake.
+   */
+  form: string;
+}
+
+const FRAME: Record<NewsletterPlacement, Frame> = {
+  sidebar: {
+    root: 'border-t border-theme pt-4 mt-4 sidebar-newsletter-section',
+    heading: 'h3',
+    title: 'text-sm font-semibold mb-1',
+    blurb: 'text-xs text-theme-muted mb-2',
+    form: 'flex flex-col gap-2',
+  },
+  page: {
+    root: 'max-w-3xl mx-auto border-t border-theme pt-6 mt-10 page-newsletter-section',
+    heading: 'h2',
+    title: 'heading-theme text-xl mb-1',
+    blurb: 'text-theme-secondary leading-relaxed mb-4',
+    form: 'flex flex-col gap-2 max-w-md',
+  },
+};
+
+export function NewsletterSignup({
+  placement = 'sidebar',
+}: { placement?: NewsletterPlacement } = {}): ReactElement | null {
   const target = InstanceConfigManager.useConfig(({ configuration }) =>
     newsletterSignupTarget({
       username: configuration.instanceConfiguration.username,
@@ -38,8 +84,36 @@ export function NewsletterSignup(): ReactElement | null {
     };
   }, []);
 
+  const root = useRef<HTMLDivElement>(null);
+  const resetButton = useRef<HTMLButtonElement>(null);
+  const emailField = useRef<HTMLInputElement>(null);
+  /**
+   * Set only for the two transitions that REMOVE whatever holds focus: the
+   * form being replaced by the confirmation, and the confirmation being
+   * replaced by the form again. Never on first render, or the page would hand
+   * focus to a sidebar form the moment it loads.
+   */
+  const restoreFocus = useRef(false);
+  useEffect(() => {
+    if (!restoreFocus.current) return;
+    restoreFocus.current = false;
+    const next = state === 'done' ? resetButton.current : state === 'idle' ? emailField.current : null;
+    if (!next) return;
+    // The browser drops focus to <body> when the focused element is removed,
+    // so that (or focus still inside this form) means the reader was here and
+    // has nowhere to stand. Anything else means they moved on while the
+    // request was in flight, and their place is theirs to keep.
+    const active = document.activeElement;
+    if (active && active !== document.body && !root.current?.contains(active)) return;
+    // Without preventScroll, a reader who has scrolled away from the form is
+    // yanked back to it by a request they may have forgotten about.
+    next.focus({ preventScroll: true });
+  }, [state]);
+
   if (!target) return null;
   const isCommunity = target.type === 'community';
+  const frame = FRAME[placement];
+  const Heading = frame.heading;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -51,16 +125,31 @@ export function NewsletterSignup(): ReactElement | null {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newsletterSubscribeBody(target, email, cadence)),
       });
-      if (mounted.current) setState(res.ok ? 'done' : 'error');
+      if (!mounted.current) return;
+      // Only success swaps the form out, so only success has focus to rescue.
+      restoreFocus.current = res.ok;
+      setState(res.ok ? 'done' : 'error');
     } catch {
       if (mounted.current) setState('error');
     }
   };
 
+  /**
+   * The way back from the confirmation (vision-web#1546). A typo gets the same
+   * 2xx as a real address, because double opt-in means the service cannot tell
+   * one from the other, so without this the reader waits for mail that will
+   * never arrive and the only way out is reloading the page.
+   */
+  const useAnotherAddress = () => {
+    restoreFocus.current = true;
+    setEmail('');
+    setState('idle');
+  };
+
   return (
-    <div className="border-t border-theme pt-4 mt-4 sidebar-newsletter-section" data-testid="newsletter-signup">
-      <h3 className="text-sm font-semibold mb-1">{t('newsletterTitle')}</h3>
-      <p className="text-xs text-theme-muted mb-2">{t(isCommunity ? 'newsletterCommunityBlurb' : 'newsletterBlurb')}</p>
+    <div ref={root} className={frame.root} data-testid="newsletter-signup">
+      <Heading className={frame.title}>{t('newsletterTitle')}</Heading>
+      <p className={frame.blurb}>{t(isCommunity ? 'newsletterCommunityBlurb' : 'newsletterBlurb')}</p>
       {/* Both regions are mounted from the first render, per the live-region
           contract: a region that appears at the same moment as its message is
           often not announced. Two of them, as community-join-button.tsx does,
@@ -73,12 +162,22 @@ export function NewsletterSignup(): ReactElement | null {
         message={state === 'error' ? t('newsletterError') : null}
         className="text-xs block mb-1 text-red-500 dark:text-red-400"
       />
-      {state !== 'done' && (
-        <form onSubmit={submit} className="flex flex-col gap-2">
+      {state === 'done' ? (
+        <button
+          type="button"
+          ref={resetButton}
+          onClick={useAnotherAddress}
+          className="text-xs underline text-theme-muted"
+        >
+          {t('newsletterUseAnotherAddress')}
+        </button>
+      ) : (
+        <form onSubmit={submit} className={frame.form}>
           <input
             type="email"
             required
             autoComplete="email"
+            ref={emailField}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder={t('newsletterEmail')}

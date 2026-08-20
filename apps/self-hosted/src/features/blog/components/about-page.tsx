@@ -16,6 +16,7 @@ import {
   useInstanceConfig,
 } from '../hooks/use-instance-config';
 import { safeWebsiteUrl } from '../utils/safe-website';
+import { NewsletterSignup } from './newsletter-signup';
 
 /**
  * The About surface, generated from what already exists on chain: a blog
@@ -28,7 +29,17 @@ import { safeWebsiteUrl } from '../utils/safe-website';
 export function AboutPage() {
   useDocumentMeta({ title: t('about_title') });
   const { isCommunityMode } = useInstanceConfig();
-  return isCommunityMode ? <CommunityAbout /> : <BlogAbout />;
+  return (
+    <>
+      {isCommunityMode ? <CommunityAbout /> : <BlogAbout />}
+      {/* Outside the variant on purpose (vision-web#1551): both of them return
+          early while their account or community query is loading or has failed,
+          and the signup depends on neither. This is the one surface every
+          template has, so it is where the four sidebar-less templates offer the
+          digest at all. */}
+      <NewsletterSignup placement="page" />
+    </>
+  );
 }
 
 function BlogAbout() {

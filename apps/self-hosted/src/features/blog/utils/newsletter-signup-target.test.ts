@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { newsletterSignupTarget, newsletterSubscribeBody } from './newsletter-signup-target';
+import {
+  newsletterSignupTarget,
+  newsletterSubscribeBody,
+  sidebarShowsNewsletter,
+} from './newsletter-signup-target';
 
 describe('newsletterSignupTarget', () => {
   const managedBlog = { username: 'Alice', managed: true, siteTitle: 'Alice Writes' };
@@ -41,5 +45,25 @@ describe('newsletterSignupTarget', () => {
       cadence: 'monthly',
       source: 'self-hosted-blog',
     });
+  });
+});
+
+describe('sidebarShowsNewsletter', () => {
+  it('stands down on the About page, which carries its own', () => {
+    // One form per page: the About page renders it in the content column, and
+    // it is the only surface every template has.
+    expect(sidebarShowsNewsletter('/about')).toBe(false);
+    expect(sidebarShowsNewsletter('/about/')).toBe(false);
+    expect(sidebarShowsNewsletter('/about//')).toBe(false);
+  });
+
+  it('shows it everywhere else, including paths that merely start with it', () => {
+    expect(sidebarShowsNewsletter('/')).toBe(true);
+    expect(sidebarShowsNewsletter('/@alice/hello')).toBe(true);
+    expect(sidebarShowsNewsletter('/search')).toBe(true);
+    // Not a prefix match: a post that happens to live under /about-something
+    // is an ordinary page and still gets the rail's form.
+    expect(sidebarShowsNewsletter('/aboutus')).toBe(true);
+    expect(sidebarShowsNewsletter('/about/extra')).toBe(true);
   });
 });
