@@ -80,13 +80,22 @@ export async function POST(request: NextRequest) {
     if (!verdict.ok && verdict.reason === "invalid") {
       return Response.json({ error: "Security check failed" }, { status: 403 });
     }
-    if (!verdict.ok && verdict.reason === "unavailable") {
+    if (!verdict.ok) {
+      // "unconfigured" is refused too, not relayed.
+      //
+      // An earlier version let a missing TURNSTILE_SECRET through so that a deploy landing
+      // before the secret could not take signups down. That reasoning does not survive
+      // contact with the ordering: this route already answers 503 from newsletterConfigured()
+      // unless NEWSLETTER_API_URL and NEWSLETTER_SERVICE_TOKEN are both set, so a deployment
+      // without the newsletter configured never reaches here at all. The only state the
+      // exception protected was "newsletter configured, bot check not" -- which is precisely
+      // the misconfiguration worth catching, and relaying it means the control is off with
+      // nothing on fire to say so.
+      if (verdict.reason === "unconfigured") {
+        console.error("[Turnstile] TURNSTILE_SECRET is unset; refusing anonymous subscribes");
+      }
       return Response.json({ error: "Security check unavailable" }, { status: 503 });
     }
-    // "unconfigured" relays. A deploy that reaches this code before TURNSTILE_SECRET
-    // reaches its environment must not take every anonymous subscribe down with it;
-    // specs/deploy/newsletter-wiring pins the variable so the gap is a test failure
-    // rather than a silently disabled check.
   }
 
   const upstream = await callNewsletter("/api/subscriptions", {

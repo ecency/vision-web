@@ -197,11 +197,14 @@ describe("POST /api/newsletter/subscribe", () => {
       expect(mocks.fetch).not.toHaveBeenCalled();
     });
 
-    it("relays when the secret is unset, so a deploy that lands first cannot take signups down", async () => {
+    it("refuses when the secret is unset rather than relaying with the check off", async () => {
+      // The route already 503s from newsletterConfigured() unless the newsletter itself is
+      // configured, so "newsletter on, bot check off" is the only state this covers, and it
+      // is a misconfiguration rather than a rollout window worth tolerating.
       mocks.turnstile.mockResolvedValue({ ok: false, reason: "unconfigured" });
-      mocks.fetch.mockResolvedValue(upstream(200, { status: "pending_confirmation" }));
-      expect((await post(VALID)).status).toBe(200);
-      expect(mocks.fetch).toHaveBeenCalledTimes(1);
+      const r = await post(VALID);
+      expect(r.status).toBe(503);
+      expect(mocks.fetch).not.toHaveBeenCalled();
     });
 
     it("never challenges a signed-in caller: the account is the proof", async () => {

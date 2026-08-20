@@ -45,9 +45,9 @@ describe("newsletter deploy wiring", () => {
   /**
    * The bot check on anonymous subscribes reads TURNSTILE_SECRET in the Next tier
    * (server/turnstile-verify). It was already declared for `vapi`, which does the Stripe
-   * flow, and a missing copy on `web` fails in the quietest possible way: an unset secret
-   * relays instead of refusing, deliberately, so that nothing takes signups down during a
-   * deploy -- which also means the check would simply be off and nobody would notice.
+   * flow, and a missing copy on `web` takes every anonymous subscribe down: an unset secret
+   * refuses rather than relaying, so the failure is loud instead of a silently disabled
+   * control. That makes this line load-bearing rather than merely tidy.
    *
    * Unlike the two variables above, this one is SHARED: vapi legitimately needs it too,
    * so this asserts presence on web without asserting absence on vapi.
