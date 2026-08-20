@@ -19,6 +19,7 @@
 //
 // CI runs with --fail: any finding exits 1.
 import { readFileSync, readdirSync, statSync } from "node:fs";
+import { isIP } from "node:net";
 import { join, relative } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -36,16 +37,46 @@ function configs(dir) {
   return out;
 }
 
-const withoutLoopback = (text) => text.replace(/\b127\.0\.0\.1\b/g, "").replace(/\[::1\]|(?<![\w:])::1(?![\w:])/g, "");
+/**
+ * Addresses in a line, found by tokenising and asking Node rather than by
+ * pattern. A hand-rolled IPv6 regex missed every compressed form: `2001:db8::42`
+ * and `fe80::1` both walked past the first version, and the self-test address
+ * happened to match for an unrelated reason, which made the rule look alive
+ * while it was half dead.
+ */
+function addressesIn(line) {
+    const found = [];
+    // Grab bracketed forms, CIDR suffixes and ports along with the address, then
+    // peel them off, because each is what surrounds an address in nginx config.
+    for (const raw of line.match(/\[?[0-9A-Fa-f:.]{2,}\]?(?::\d+)?(?:\/\d+)?/g) ?? []) {
+        if (!raw.includes(":") && !raw.includes(".")) continue;
+        const bare = raw.replace(/^\[/, "").replace(/\](?::\d+)?$/, "").replace(/\/\d+$/, "");
+        // Try the most literal reading first. `2001:db8::` is itself a valid
+        // address, so trailing colons are only trimmed if the raw form fails.
+        const attempts = [bare, bare.replace(/[.,;]+$/, ""), bare.replace(/:\d+$/, "")];
+        for (const attempt of attempts) {
+            if (isIP(attempt)) {
+                found.push(attempt);
+                break;
+            }
+        }
+    }
+    return found;
+}
+
+/**
+ * Addresses that disclose nothing: loopback, which names nothing reachable from
+ * anywhere else, and the unspecified address, which is how `listen` says "every
+ * interface" rather than naming a host.
+ */
+const NOT_A_DISCLOSURE = new Set(["127.0.0.1", "::1", "::", "0.0.0.0"]);
 
 const RULES = [
   {
     id: "source-address",
     // IPv4 and IPv6. An IPv6 literal is just as much an origin address, and the
     // first version of this audit saw only dotted quads.
-    test: (line) =>
-      /\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(withoutLoopback(line)) ||
-      /(?:[0-9a-f]{1,4}:){2,}[0-9a-f]{1,4}\b/i.test(withoutLoopback(line)),
+    test: (line) => addressesIn(line).some((addr) => !NOT_A_DISCLOSURE.has(addr)),
     why: "names a source address; move it to an /etc/nginx include that is not in git"
   },
   {
@@ -80,6 +111,11 @@ if (process.argv.includes("--self-test")) {
   const MUST_FIRE = [
     ["source-address", "        proxy_pass http://203.0.113.9:8080;"],
     ["source-address", "        allow 2001:db8:aaaa::42;"],
+    ["source-address", "        allow 2001:db8::42;"],
+    ["source-address", "        allow fe80::1;"],
+    ["source-address", "        allow ::ffff:192.0.2.1;"],
+    ["source-address", "        allow 2001:db8::/32;"],
+    ["source-address", "        proxy_pass http://[2001:db8::5]:8080;"],
     ["inline-allowlist", "        allow 198.51.100.7;"],
     ["threshold", "        # SSR page rate limit: 15 req/s per client IP"],
     ["threshold", "        limit_req_zone $x zone=y:1m rate=7r/s;"],
@@ -89,6 +125,11 @@ if (process.argv.includes("--self-test")) {
   // Committed today and legitimate: a false positive here breaks the repo.
   const MUST_NOT_FIRE = [
     "        proxy_pass         http://127.0.0.1:3000;",
+    "        proxy_pass         http://[::1]:3000;",
+    "    listen [::]:443 ssl http2;",
+    "    listen 0.0.0.0:80;",
+    "        # see nginx 1.24.0 release notes",
+    "        ssl_certificate /etc/letsencrypt/live/eu.ecency.com/fullchain.pem;",
     "        limit_req zone=ssrlimit burst=50 nodelay;",
     "        include /etc/nginx/foo-allow*.conf;",
     "        deny all;",

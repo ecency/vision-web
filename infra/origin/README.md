@@ -12,8 +12,16 @@ blog-hosting origin. Read that README too: the contract is the same one.
 **Structure is committed. Numbers and addresses are not.**
 
 Anything that tells a reader where a limit sits, or which addresses are trusted, stays on
-the host and is pulled in with a wildcard `include`, so that a missing file fails closed
-rather than silently serving with no protection.
+the host and is pulled in with an `include`, so that a missing file fails closed rather
+than silently serving with no protection.
+
+**Wildcard or exact is not a style choice.** nginx accepts a wildcard include that matches
+no files, so `include foo*.conf;` reloads happily with whatever that file carried simply
+absent. That is only safe when the protection survives without it, which is true of the
+allowlists: `include <name>-allow*.conf;` followed by `deny all;` still denies. It is NOT
+true of a file that carries the protective directive itself, so `conn-limits.conf` and
+`rate-limits.conf` are included EXACTLY and a missing one is a hard startup error.
+Verified rather than assumed: removing either now fails `nginx -t` with the filename.
 
 | file | lives | why not here |
 |---|---|---|
