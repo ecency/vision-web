@@ -50,3 +50,6 @@ jobs:
       # poll hand-builds that key for its merge.
       - name: Slim-entry convention audit
         run: node scripts/slim-entries-audit.mjs --fail
+
+      - name: Audit committed origin nginx config
+        run: node scripts/origin-config-audit.mjs --fail
