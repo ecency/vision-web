@@ -5,6 +5,7 @@ import { Entry, SearchResponse } from "@/entities";
 import { appAxios } from "@/api/axios";
 import { apiBase } from "@/api/helper";
 import { DEFAULT_OBSERVER } from "@/consts/observer";
+import { slimEntryPage, withSlimEntries } from "@/core/entries/slim-entry";
 
 // Unify all branches on a single page type
 type Page = Entry[] | SearchResponse;
@@ -26,7 +27,7 @@ function getPromotedEntriesInfiniteQuery() {
       const response = await appAxios.get<Entry[]>(
         apiBase(`/private-api/promoted-entries`)
       );
-      return response.data;
+      return slimEntryPage(response.data);
     },
     getNextPageParam: (
       _lastPage: PromotedPage,
@@ -37,47 +38,57 @@ function getPromotedEntriesInfiniteQuery() {
   });
 }
 
+
+// Profile sections whose cards ARE the body: a comment or a reply has no title,
+// no description and no cover image, so slimming one leaves an empty row. Every
+// other section renders a summary card and can be slimmed.
+const BODY_BACKED_SECTIONS = ["comments", "replies"];
+
+/**
+ * The one place the feed's query options are built, so the server prefetch, the
+ * cache read and the client hook cannot drift apart — they share a query key, and
+ * a slim page reaching one of them but not the others would mean the SSR payload
+ * and the client's later pages disagreed about what an entry holds.
+ */
+function buildFeedQueryOptions(what: string, tag: string, limit: number, observer: string) {
+  const isUser = tag.startsWith("@") || tag.startsWith("%40");
+
+  if (what === "promoted") {
+    return getPromotedEntriesInfiniteQuery();
+  }
+
+  if (isUser) {
+    const options = getAccountPostsInfiniteQueryOptions(
+      tag.replace("@", "").replace(/%40/g, ""),
+      what,
+      limit,
+      observer,
+      true
+    );
+    return BODY_BACKED_SECTIONS.includes(what) ? options : withSlimEntries(options);
+  }
+
+  if (what === "feed") {
+    return withSlimEntries(
+      getPostsRankedInfiniteQueryOptions(what, tag, limit, observer, true, {
+        resolvePosts: false
+      })
+    );
+  }
+
+  return withSlimEntries(getPostsRankedInfiniteQueryOptions(what, tag, limit, observer));
+}
+
 export async function prefetchGetPostsFeedQuery(
     what: string,
     tag = "",
     limit = 20,
     observer?: string
 ): Promise<FeedInfinite | undefined> {
-  const isUser = tag.startsWith("@") || tag.startsWith("%40");
-  const isPromotedSection = what === "promoted";
-  const resolvedObserver = observer ?? DEFAULT_OBSERVER;
-
-  if (isPromotedSection) {
-    return prefetchInfiniteQuery(getPromotedEntriesInfiniteQuery()) as Promise<FeedInfinite | undefined>;
-  }
-
-  if (isUser) {
-    return prefetchInfiniteQuery(
-      getAccountPostsInfiniteQueryOptions(
-        tag.replace("@", "").replace(/%40/g, ""),
-        what,
-        limit,
-        resolvedObserver,
-        true
-      )
-    ) as Promise<FeedInfinite | undefined>;
-  }
-
-  if (what === "feed") {
-    return prefetchInfiniteQuery(
-      getPostsRankedInfiniteQueryOptions(
-        what,
-        tag,
-        limit,
-        resolvedObserver,
-        true,
-        { resolvePosts: false }
-      )
-    ) as Promise<FeedInfinite | undefined>;
-  }
-
+  // One page per call: prefetchInfiniteQuery fetches only the initial page param
+  // unless it is handed a `pages` count, and `limit` is the bridge's own cap of 20.
   return prefetchInfiniteQuery(
-    getPostsRankedInfiniteQueryOptions(what, tag, limit, resolvedObserver)
+    buildFeedQueryOptions(what, tag, limit, observer ?? DEFAULT_OBSERVER) as any
   ) as Promise<FeedInfinite | undefined>;
 }
 
@@ -87,41 +98,8 @@ export function getPostsFeedQueryData(
     limit = 20,
     observer?: string
 ): FeedInfinite | undefined {
-  const isUser = tag.startsWith("@") || tag.startsWith("%40");
-  const isPromotedSection = what === "promoted";
-  const resolvedObserver = observer ?? DEFAULT_OBSERVER;
-
-  if (isPromotedSection) {
-    return getInfiniteQueryData(getPromotedEntriesInfiniteQuery()) as FeedInfinite | undefined;
-  }
-
-  if (isUser) {
-    return getInfiniteQueryData(
-      getAccountPostsInfiniteQueryOptions(
-        tag.replace("@", "").replace(/%40/g, ""),
-        what,
-        limit,
-        resolvedObserver,
-        true
-      )
-    ) as FeedInfinite | undefined;
-  }
-
-  if (what === "feed") {
-    return getInfiniteQueryData(
-      getPostsRankedInfiniteQueryOptions(
-        what,
-        tag,
-        limit,
-        resolvedObserver,
-        true,
-        { resolvePosts: false }
-      )
-    ) as FeedInfinite | undefined;
-  }
-
   return getInfiniteQueryData(
-    getPostsRankedInfiniteQueryOptions(what, tag, limit, resolvedObserver)
+    buildFeedQueryOptions(what, tag, limit, observer ?? DEFAULT_OBSERVER) as any
   ) as FeedInfinite | undefined;
 }
 
@@ -131,29 +109,7 @@ export function usePostsFeedQuery(
     observer?: string,
     limit = 20
 ): UseInfiniteQueryResult<InfiniteData<Page, unknown>, Error> {
-  const isUser = tag.startsWith("@") || tag.startsWith("%40");
-  const isPromotedSection = what === "promoted";
-  const resolvedObserver = observer ?? DEFAULT_OBSERVER;
-
-  const queryOptions =
-      isPromotedSection
-          ? getPromotedEntriesInfiniteQuery()
-          : isUser
-              ? getAccountPostsInfiniteQueryOptions(
-                  tag.replace("@", "").replace(/%40/g, ""),
-                  what,
-                  limit,
-                  resolvedObserver,
-                  true
-              )
-              : getPostsRankedInfiniteQueryOptions(
-                    what,
-                    tag,
-                    limit,
-                    resolvedObserver,
-                    true,
-                    what === "feed" ? { resolvePosts: false } : undefined
-                );
+  const queryOptions = buildFeedQueryOptions(what, tag, limit, observer ?? DEFAULT_OBSERVER);
 
   // Each branch above is individually a valid infinite query, but they use
   // different page-param and page types, so their union matches no single

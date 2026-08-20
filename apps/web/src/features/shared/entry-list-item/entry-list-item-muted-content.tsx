@@ -9,7 +9,8 @@ import { postBodySummary } from "@ecency/render-helper";
 import { useGlobalStore } from "@/core/global-store";
 import { EcencyClientServerBridge } from "@/core/client-server-bridge";
 import { EntryListItemContext } from "@/features/shared/entry-list-item/entry-list-item-context";
-import { ContentModerationReason, getContentModerationReason } from "@ecency/sdk";
+import { ContentModerationReason } from "@ecency/sdk";
+import { getEntryModerationReason } from "@/core/entries/entry-moderation";
 import Link from "next/link";
 import { UilMapPinAlt } from "@tooni/iconscout-unicons-react";
 import { useEntryLocation } from "@/utils";
@@ -30,7 +31,7 @@ export function EntryListItemMutedContent({ entry: entryProp, isThumbLcp }: Prop
 
   // Which rule fired (moderator action, downvotes, low-trust promo) is decided in
   // the SDK, so the mobile app flags the very same posts for the very same reason.
-  const moderationReason = useMemo(() => getContentModerationReason(entry), [entry]);
+  const moderationReason = useMemo(() => getEntryModerationReason(entry), [entry]);
 
   const nsfw = useMemo(
     () =>

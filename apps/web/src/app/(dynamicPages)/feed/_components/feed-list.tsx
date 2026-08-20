@@ -10,6 +10,7 @@ import { EntryListContent, EntryListContentLoading, EntryListContentNoData } fro
 import { EcencyConfigManager } from "@/config";
 import { useVisibleEntries } from "@/features/shared/entry-list-item/use-muted-authors";
 import { getPromotedPostsQuery } from "@ecency/sdk";
+import { withSlimEntries } from "@/core/entries/slim-entry";
 import { useQuery } from "@tanstack/react-query";
 
 interface Props {
@@ -27,7 +28,8 @@ export function FeedList({ filter, tag, observer }: Props) {
 
   // Fetch promoted posts if feature is enabled and get the data
   const { data: promotedPosts } = useQuery({
-    ...getPromotedPostsQuery<Entry>(),
+    // Matches the server prefetch on this key — see the feed page.
+    ...withSlimEntries(getPromotedPostsQuery<Entry>()),
     enabled: visionFeatures.promotions.enabled
   });
 

@@ -77,7 +77,8 @@ function scheduleIdle(cb: () => void): void {
 interface GateEntry {
   author: string;
   permlink: string;
-  body: string;
+  body?: string;
+  json_metadata?: { description?: string | null } | null;
 }
 
 interface GateOptions {
@@ -117,22 +118,32 @@ export function useContentLanguageGate(
 
   const author = entry?.author;
   const permlink = entry?.permlink;
-  const body = entry?.body;
+  // Feed rows ship no body (see core/entries/slim-entry.ts), so the chip falls
+  // back to their card summary: franc needs MIN_DETECT_CHARS, far below the
+  // 200-character summary. The post page still passes a full body.
+  const body = entry?.body || "";
+  const summary = body ? "" : entry?.json_metadata?.description || "";
+  const sample = body || summary;
 
   useEffect(() => {
     setDecision(null);
 
-    if (disabled || !author || !permlink || !body) {
+    if (disabled || !author || !permlink || !sample) {
       return;
     }
 
     // Cheap raw pre-check — never render a summary for a trivially short body.
-    if (body.trim().length < MIN_DETECT_CHARS) {
+    if (sample.trim().length < MIN_DETECT_CHARS) {
       return;
     }
 
     let cancelled = false;
-    const key = `${author}/${permlink}`;
+    // A detection made from a card summary is NOT a detection of the post: an
+    // author-written description can be in another language than the body, or be
+    // the title fallback. Keeping it under its own key means the feed chip still
+    // memoizes per permlink while the post page always detects on the real body
+    // (and can still confirm it with the server).
+    const key = summary ? `${author}/${permlink}#summary` : `${author}/${permlink}`;
     const reader = resolveReaderLang();
 
     const cached = contentLangCache.get(key);
@@ -150,8 +161,11 @@ export function useContentLanguageGate(
       }
       try {
         // Bound markdown work regardless of article length.
-        const sample = postBodySummary(body.slice(0, RAW_SAMPLE_CHARS), 0).slice(0, SAMPLE_CHARS);
-        const textLength = sample.trim().length;
+        const detectText = postBodySummary(sample.slice(0, RAW_SAMPLE_CHARS), 0).slice(
+          0,
+          SAMPLE_CHARS
+        );
+        const textLength = detectText.trim().length;
 
         if (textLength < MIN_DETECT_CHARS) {
           cacheDetection(key, { lang: null, confirmed: true });
@@ -166,7 +180,7 @@ export function useContentLanguageGate(
           if (cancelled) {
             return;
           }
-          lang = francToIso1(franc(sample));
+          lang = francToIso1(franc(detectText));
         }
 
         if (lang && lang === reader) {
@@ -207,7 +221,7 @@ export function useContentLanguageGate(
     return () => {
       cancelled = true;
     };
-  }, [author, permlink, body, canServerConfirm, disabled]);
+  }, [author, permlink, sample, summary, canServerConfirm, disabled]);
 
   return decision;
 }

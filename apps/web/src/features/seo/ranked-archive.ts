@@ -1,4 +1,5 @@
 import { Entry } from "@/entities";
+import { withSlimEntries } from "@/core/entries/slim-entry";
 import { fetchQuery } from "@/core/react-query";
 import { getPostsRankedQueryOptions } from "@ecency/sdk";
 
@@ -97,13 +98,20 @@ export async function fetchRankedCursorPage(
 ): Promise<{ entries: Entry[]; nextCursor: ArchiveCursor | null }> {
   const entries =
     ((await fetchQuery(
-      getPostsRankedQueryOptions(
-        sort,
-        cursor.author,
-        cursor.permlink,
-        ARCHIVE_PAGE_SIZE,
-        tag,
-        observer
+      // Slim like the live feed: these pages render the same cards, and they are
+      // the crawler-facing copy, where payload weight matters most.
+      withSlimEntries(
+        getPostsRankedQueryOptions(
+          sort,
+          cursor.author,
+          cursor.permlink,
+          ARCHIVE_PAGE_SIZE,
+          tag,
+          observer
+        ),
+        // Own cache identity: this SDK page key is also read by deck columns,
+        // which render whole posts.
+        { isolateKey: true }
       )
     )) as unknown as Entry[] | undefined) ?? [];
   const last = entries[entries.length - 1];

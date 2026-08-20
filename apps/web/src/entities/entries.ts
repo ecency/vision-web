@@ -27,6 +27,9 @@ export interface JsonMetadata {
   original_author?: string;
   original_permlink?: string;
   image?: string[];
+  // Publisher-supplied thumbnail (3Speak, Liketu). Preferred over `image` when a
+  // card picks its thumbnail, since it is published for exactly that purpose.
+  thumbnails?: string[];
   pinned_reply?: string; // author/permlink
   location?: { coordinates: { lat: number; lng: number }; address?: string };
   ai_tools?: AiToolsMeta;
@@ -100,6 +103,13 @@ export interface Entry {
   url: string;
   original_entry?: Entry;
   is_optimistic?: boolean;
+  /**
+   * Present only on feed rows that went through the slim step
+   * (`core/entries/slim-entry.ts`): the body is `""` and everything a card needs
+   * has been derived into `json_metadata`. `ext_link` carries the one body fact
+   * the SDK's moderation rules still need. Absent on full entries.
+   */
+  slim?: { ext_link: boolean };
 }
 
 export interface EntryHeader {
