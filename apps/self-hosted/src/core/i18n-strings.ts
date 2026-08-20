@@ -310,6 +310,7 @@ export type TranslationKey =
   | 'newsletterCadence'
   | 'newsletterSubscribe'
   | 'newsletterCheckInbox'
+  | 'newsletterUseAnotherAddress'
   | 'newsletterError'
   | 'panel_configuration_instance_configuration_features_newsletter_label'
   | 'panel_configuration_instance_configuration_features_newsletter_enabled_label'
@@ -348,6 +349,7 @@ export const translations: { en: Translations } & Record<
     newsletterCadence: 'How often',
     newsletterSubscribe: 'Subscribe',
     newsletterCheckInbox: 'Almost there: confirm from the email we just sent.',
+    newsletterUseAnotherAddress: 'Use a different address',
     newsletterError: 'Could not subscribe right now. Please try again.',
     loading: "Loading...",
     hivesigner_login_failed: 'Sign in could not be completed. Please try again.',

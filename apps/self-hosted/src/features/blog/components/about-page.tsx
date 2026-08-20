@@ -2,7 +2,7 @@
 
 import { getAccountFullQueryOptions } from '@ecency/sdk';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import { formatMonthYear, InstanceConfigManager, t } from '@/core';
 import { UserAvatar } from '@/features/shared';
 import { ErrorMessage } from '@/features/shared/error-message';
@@ -16,6 +16,7 @@ import {
   useInstanceConfig,
 } from '../hooks/use-instance-config';
 import { safeWebsiteUrl } from '../utils/safe-website';
+import { NewsletterSignup } from './newsletter-signup';
 
 /**
  * The About surface, generated from what already exists on chain: a blog
@@ -28,7 +29,59 @@ import { safeWebsiteUrl } from '../utils/safe-website';
 export function AboutPage() {
   useDocumentMeta({ title: t('about_title') });
   const { isCommunityMode } = useInstanceConfig();
-  return isCommunityMode ? <CommunityAbout /> : <BlogAbout />;
+  return (
+    <>
+      {isCommunityMode ? <CommunityAbout /> : <BlogAbout />}
+      {/* Outside the variant on purpose (vision-web#1551): both of them return
+          early while their account or community query is loading or has failed,
+          and the signup depends on neither. This is the one surface every
+          template has, so it is where the four sidebar-less templates offer the
+          digest at all. */}
+      <NewsletterSignup placement="page" />
+    </>
+  );
+}
+
+/**
+ * The page frame, and the heading it always has. The identity is known from
+ * config before any query resolves, so a loading or failed About page is still
+ * a titled page rather than a bare line of text.
+ *
+ * That matters beyond tidiness: without it the first heading on the page is
+ * whatever renders next, which for the newsletter section below is an h2. Three
+ * of the four shells carry a masthead h1 of their own (DefaultShell through
+ * BlogNavigation, journal and terminal directly), but the reader shell renders
+ * its title in a span, so on that template the document would have started at
+ * h2 for as long as the query was loading or failed.
+ */
+function AboutFrame({
+  title,
+  handle,
+  avatar,
+  cover,
+  children,
+}: {
+  title: string;
+  handle?: string;
+  avatar?: ReactNode;
+  cover?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <article className="max-w-3xl mx-auto">
+      {cover}
+      <div className="flex items-center gap-4 mb-6">
+        {avatar}
+        <div>
+          <h1 className="heading-theme text-2xl sm:text-3xl">{title}</h1>
+          {handle && (
+            <p className="text-sm text-theme-muted font-theme-ui">{handle}</p>
+          )}
+        </div>
+      </div>
+      {children}
+    </article>
+  );
 }
 
 function BlogAbout() {
@@ -76,34 +129,43 @@ function BlogAbout() {
     hasContent: !!data,
   });
 
+  // The handle and the avatar come from config, not from the request, so the
+  // page is recognisable in every outcome.
+  const identity = {
+    handle: `@${username}`,
+    avatar: <UserAvatar username={username} size="sLarge" />,
+  };
+
   if (outcome === 'failed') {
-    return <ErrorMessage onRetry={() => refetch()} />;
+    return (
+      <AboutFrame title={username} {...identity}>
+        <ErrorMessage onRetry={() => refetch()} />
+      </AboutFrame>
+    );
   }
   if (nothingToShow(outcome) || !data) {
     return (
-      <div className="text-center py-12 text-theme-muted">{t('loading')}</div>
+      <AboutFrame title={username} {...identity}>
+        <div className="text-center py-12 text-theme-muted">{t('loading')}</div>
+      </AboutFrame>
     );
   }
 
   return (
-    <article className="max-w-3xl mx-auto">
-      {coverUrl && (
-        <img
-          src={coverUrl}
-          alt=""
-          aria-hidden="true"
-          className="w-full h-40 sm:h-56 object-cover rounded-lg mb-6"
-        />
-      )}
-      <div className="flex items-center gap-4 mb-6">
-        <UserAvatar username={username} size="sLarge" />
-        <div>
-          <h1 className="heading-theme text-2xl sm:text-3xl">
-            {data.name || username}
-          </h1>
-          <p className="text-sm text-theme-muted font-theme-ui">@{username}</p>
-        </div>
-      </div>
+    <AboutFrame
+      title={data.name || username}
+      {...identity}
+      cover={
+        coverUrl && (
+          <img
+            src={coverUrl}
+            alt=""
+            aria-hidden="true"
+            className="w-full h-40 sm:h-56 object-cover rounded-lg mb-6"
+          />
+        )
+      }
+    >
 
       {profile?.about && (
         <p className="text-theme-secondary leading-relaxed mb-6">
@@ -140,7 +202,7 @@ function BlogAbout() {
           </div>
         )}
       </dl>
-    </article>
+    </AboutFrame>
   );
 }
 
@@ -161,11 +223,17 @@ function CommunityAbout() {
   });
 
   if (outcome === 'failed') {
-    return <ErrorMessage onRetry={() => refetch()} />;
+    return (
+      <AboutFrame title={communityId}>
+        <ErrorMessage onRetry={() => refetch()} />
+      </AboutFrame>
+    );
   }
   if (nothingToShow(outcome) || !community) {
     return (
-      <div className="text-center py-12 text-theme-muted">{t('loading')}</div>
+      <AboutFrame title={communityId}>
+        <div className="text-center py-12 text-theme-muted">{t('loading')}</div>
+      </AboutFrame>
     );
   }
 
@@ -174,25 +242,20 @@ function CommunityAbout() {
     : null;
 
   return (
-    <article className="max-w-3xl mx-auto">
-      <div className="flex items-center gap-4 mb-6">
-        {avatarUrl && (
+    <AboutFrame
+      title={community.title || communityId}
+      handle={community.name}
+      avatar={
+        avatarUrl && (
           <img
             src={avatarUrl}
             alt=""
             aria-hidden="true"
             className="size-14 rounded-full object-cover"
           />
-        )}
-        <div>
-          <h1 className="heading-theme text-2xl sm:text-3xl">
-            {community.title || communityId}
-          </h1>
-          <p className="text-sm text-theme-muted font-theme-ui">
-            {community.name}
-          </p>
-        </div>
-      </div>
+        )
+      }
+    >
 
       {community.about && (
         <p className="text-theme-secondary leading-relaxed mb-6">
@@ -204,6 +267,6 @@ function CommunityAbout() {
           {community.description}
         </div>
       )}
-    </article>
+    </AboutFrame>
   );
 }

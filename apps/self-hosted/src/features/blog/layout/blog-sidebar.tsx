@@ -1,5 +1,7 @@
 import { formatMonthYear, InstanceConfigManager, t } from "@/core";
+import { useRouterState } from "@tanstack/react-router";
 import { NewsletterSignup } from "../components/newsletter-signup";
+import { sidebarShowsNewsletter } from "../utils/newsletter-signup-target";
 import { useAuth } from "@/features/auth";
 import { InlineError } from "@/features/shared/inline-error";
 import {
@@ -39,7 +41,20 @@ export function BlogSidebar() {
   return <BlogSidebarContent username={username} />;
 }
 
+/**
+ * One signup form per page. The About page carries it in its content column
+ * (vision-web#1551), which is the only surface every template has, so the rail
+ * stands down there rather than showing a second copy. Decided by route rather
+ * than by theme because whether this rail is rendered at all is each
+ * template's own choice, and four of the nine do not render it.
+ */
+function useShowSidebarNewsletter(): boolean {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  return sidebarShowsNewsletter(pathname);
+}
+
 function BlogSidebarContent({ username }: { username: string }) {
+  const showNewsletter = useShowSidebarNewsletter();
   const { data } = useQuery({
     ...getAccountFullQueryOptions(username),
     enabled: !!username,
@@ -104,7 +119,7 @@ function BlogSidebarContent({ username }: { username: string }) {
           </div>
         </div>
       )}
-      <NewsletterSignup />
+      {showNewsletter && <NewsletterSignup />}
       {data && (
         <div className="border-t border-theme pt-4 mt-4 sidebar-hive-info-section">
           <div className="text-xs font-medium mb-2 text-theme-muted">
@@ -171,6 +186,7 @@ function CommunitySidebarShell({ children }: { children: ReactNode }) {
 }
 
 function CommunitySidebar() {
+  const showNewsletter = useShowSidebarNewsletter();
   const {
     data: community,
     isEnabled,
@@ -319,7 +335,7 @@ function CommunitySidebar() {
         <CommunityJoinButton communityId={communityId} />
       </div>
 
-      <NewsletterSignup />
+      {showNewsletter && <NewsletterSignup />}
         <div className="border-t border-theme pt-4 mt-4 sidebar-hive-info-section">
         <div className="text-xs font-medium mb-2 text-theme-muted">
           {t("community_info")}
