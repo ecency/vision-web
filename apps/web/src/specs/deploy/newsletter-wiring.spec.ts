@@ -60,6 +60,25 @@ describe("newsletter deploy wiring", () => {
     }
   );
 
+  /**
+   * NEXT_PUBLIC_* is inlined by Next at BUILD time, so the sitekey has to reach the image
+   * build, not the runtime environment. Without the ARG every deployed client silently
+   * falls back to the literal in features/shared/turnstile.tsx, which is correct today and
+   * would be wrong the moment the widget is rotated or a staging-specific one is used.
+   */
+  it("the Dockerfile accepts the public sitekey as a build argument", () => {
+    const dockerfile = read("apps/web/Dockerfile");
+    expect(dockerfile).toMatch(/^ARG NEXT_PUBLIC_TURNSTILE_SITEKEY$/m);
+    expect(dockerfile).toMatch(/^ENV NEXT_PUBLIC_TURNSTILE_SITEKEY=\$\{NEXT_PUBLIC_TURNSTILE_SITEKEY\}$/m);
+  });
+
+  it.each([".github/workflows/master.yml", ".github/workflows/staging.yml"])(
+    "%s passes the public sitekey into the image build",
+    (file) => {
+      expect(read(file)).toContain("NEXT_PUBLIC_TURNSTILE_SITEKEY=${{ secrets.TURNSTILE_SITEKEY }}");
+    }
+  );
+
   it.each([".github/workflows/master.yml", ".github/workflows/staging.yml"])(
     "%s forwards the Turnstile secret in every deploy job",
     (file) => {

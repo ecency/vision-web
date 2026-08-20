@@ -27,6 +27,7 @@ jobs:
       NEXT_PUBLIC_GMAPS_API_KEY: ${{ secrets.GMAPS_API_KEY }}
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUB_KEY }}
       NEXT_PUBLIC_GMAPS_MAP_ID: ${{ secrets.GMAPS_MAP_ID }}
+      NEXT_PUBLIC_TURNSTILE_SITEKEY: ${{ secrets.TURNSTILE_SITEKEY }}
     strategy:
       matrix:
         node-version: [24.x]
@@ -88,6 +89,7 @@ jobs:
             NEXT_PUBLIC_GMAPS_API_KEY=${{ secrets.GMAPS_API_KEY }}
             NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUB_KEY }}
             NEXT_PUBLIC_GMAPS_MAP_ID=${{ secrets.GMAPS_MAP_ID }}
+            NEXT_PUBLIC_TURNSTILE_SITEKEY=${{ secrets.TURNSTILE_SITEKEY }}
             PNPM_VERSION=10.18.1
 
       # See master.yml for rationale — verifies the Sentry release was

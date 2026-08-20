@@ -220,6 +220,33 @@ describe("DigestSubscribeDialog", () => {
     expect(screen.getByRole("button", { name: "newsletter.subscribe" })).toBeDisabled();
   });
 
+  it("reveals the challenge to a signed-in caller whose token could not be refreshed", async () => {
+    // Being signed in locally is not the same as holding a usable token: ensureValidToken
+    // returns undefined when the refresh fails, subscribe() then omits `code`, and the
+    // route sees an anonymous request and 403s. Without this the dialog would show no
+    // challenge and the person could never satisfy the one the server is asking for.
+    loggedIn("alice");
+    const client = createTestQueryClient();
+    client.setQueryData(digestSubscriptionsKey("alice"), []);
+    fetchMock.mockImplementation((url: string) =>
+      url === "/api/newsletter/subscribe"
+        ? jsonResponse(403, { error: "Security check failed" })
+        : jsonResponse(404, {})
+    );
+    renderConfigured(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
+
+    // Signed in, so no widget yet.
+    expect(captcha.verify).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("you@example.com"), { target: { value: "a@e.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "newsletter.subscribe" }));
+
+    // The 403 is the server saying it wanted a token, so the challenge appears.
+    await waitFor(() => expect(captcha.verify).not.toBeNull());
+    expect(screen.getByRole("button", { name: "newsletter.subscribe" })).toBeDisabled();
+    await solveCaptcha();
+    expect(screen.getByRole("button", { name: "newsletter.subscribe" })).not.toBeDisabled();
+  });
+
   it("a pending subscription offers to resend the confirmation at the same cadence", async () => {
     loggedIn("alice");
     const client = createTestQueryClient();

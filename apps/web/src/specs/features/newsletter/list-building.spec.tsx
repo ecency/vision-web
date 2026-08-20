@@ -202,6 +202,21 @@ describe("list building (vision-web#1537)", () => {
     ).toHaveLength(0);
   });
 
+  it("treats a stored username whose account record is gone as anonymous, not as pending hydration", async () => {
+    // authentication-module only produces an active user when active_user AND its
+    // user_<name> record are both present, and it writes the name back regardless. A
+    // marker without its record therefore never becomes an active user, so waiting on it
+    // would hide the prompt from that visitor permanently with nothing to explain it.
+    loggedIn(null);
+    window.localStorage.clear();
+    window.localStorage.setItem("ecency_active_user", "alice"); // marker, no ecency_user_alice
+    const client = createTestQueryClient();
+    const entry = mockEntry({ author: "bob", permlink: "hello", category: "photography", parent_author: "", depth: 0 });
+    render(<PostSubscribePrompt entry={entry} />, client);
+    await screen.findByRole("region", { name: "newsletter.post-prompt-title" });
+    window.localStorage.clear();
+  });
+
   it("renders nothing while a signed-in reader's store is still hydrating", async () => {
     // activeUser is null on the first client render for a signed-in reader too, because
     // the store is populated in a post-mount effect. Rendering the anonymous card then
@@ -209,8 +224,10 @@ describe("list building (vision-web#1537)", () => {
     // actually signed in, so a stored user with no activeUser yet renders nothing.
     loggedIn(null);
     window.localStorage.clear();
-    // The prefixed key the store itself writes (utils/local-storage prefixes "ecency_").
+    // Both keys, because only the pair is a hydration in flight: the store requires
+    // active_user AND the user_<name> record before it yields an active user.
     window.localStorage.setItem("ecency_active_user", "alice");
+    window.localStorage.setItem("ecency_user_alice", JSON.stringify({ username: "alice" }));
     const client = createTestQueryClient();
     const entry = mockEntry({ author: "bob", permlink: "hello", category: "photography", parent_author: "", depth: 0 });
     const { container } = render(<PostSubscribePrompt entry={entry} />, client);

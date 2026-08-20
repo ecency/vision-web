@@ -37,6 +37,24 @@ const dismissKey = (viewer: string, type: DigestType, target: string) => `ecency
  */
 const ANON_VIEWER = "anon";
 
+/**
+ * Is the store still on its way to producing an active user?
+ *
+ * True only when localStorage holds BOTH the active-user marker and the account record
+ * that marker names, which is exactly the pair authentication-module requires. A marker
+ * without its record can never become an active user, so it reads as anonymous rather
+ * than as a hydration that will never complete.
+ */
+function storedAccountPending(): boolean {
+  try {
+    const name = ls.get("active_user");
+    return typeof name === "string" && name.length > 0 && Boolean(ls.get(`user_${name}`));
+  } catch {
+    // Private mode or a blocked store: nothing is pending, treat the reader as anonymous.
+    return false;
+  }
+}
+
 export function PostSubscribePrompt({ entry, communityTitle, className }: { entry: Entry; communityTitle?: string | null; className?: string }): ReactElement | null {
   const enabled = useNewsletterEnabled();
   const { activeUser } = useActiveAccount();
@@ -79,15 +97,14 @@ export function PostSubscribePrompt({ entry, communityTitle, className }: { entr
     // reader, because the store is populated in a post-mount effect. Rendering the
     // anonymous card on that first paint would flash it at subscribers and, worse, write
     // an "anon" dismissal for someone who is actually signed in. Reading the same
-    // localStorage key the store reads tells the two apart: a stored user with no `me`
-    // yet means "not hydrated", not "anonymous".
-    let stored: string | null = null;
-    try {
-      stored = ls.get("active_user") ?? null;
-    } catch {
-      stored = null;
-    }
-    if (stored && !me) return;
+    // localStorage the store reads tells the two apart.
+    //
+    // Both halves are required. authentication-module only produces an active user when
+    // `active_user` AND its `user_<name>` record are present, and it writes the name back
+    // regardless, so a marker whose record is missing or corrupt leaves activeUser null
+    // forever. Waiting on the marker alone would then never finish, and the prompt would
+    // be permanently invisible to that visitor with nothing on screen to explain it.
+    if (!me && storedAccountPending()) return;
 
     const viewer = me ?? ANON_VIEWER;
     try {
@@ -138,7 +155,20 @@ export function PostSubscribePrompt({ entry, communityTitle, className }: { entr
           </div>
         </div>
       )}
-      {open && <DigestSubscribeDialog type={list.type} target={list.target} targetLabel={label} source="post-page" show={open} onHide={() => setOpen(false)} />}
+      {open && (
+        <DigestSubscribeDialog
+          type={list.type}
+          target={list.target}
+          targetLabel={label}
+          source="post-page"
+          show={open}
+          // An anonymous reader has no subscription list to consult, so `known` is always
+          // true for them and the card would return on the next post they open. Their
+          // subscribing IS the signal, and it is the only one we get.
+          onSubscribed={dismiss}
+          onHide={() => setOpen(false)}
+        />
+      )}
     </>
   );
 }

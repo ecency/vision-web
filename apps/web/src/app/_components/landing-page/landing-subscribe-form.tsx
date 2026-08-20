@@ -28,9 +28,16 @@ export function LandingSubscribeForm() {
   const [captchaToken, setCaptchaToken] = useState("");
   const turnstileRef = useRef<TurnstileHandle>(null);
 
-  // The route challenges a caller with no account, so the widget appears for exactly
-  // those. A signed-in visitor on the homepage is attributed and passes straight through.
-  const needsCaptcha = !activeUser;
+  // The route challenges a caller with no verified ACCOUNT, and being signed in locally
+  // is not the same thing: ensureValidToken returns undefined when the token cannot be
+  // refreshed or its stored record is gone, and newsletterApi.subscribe then omits `code`
+  // entirely, so the request arrives anonymous. Hiding the widget on activeUser alone
+  // would leave that person 403ing forever with no challenge on screen to complete.
+  //
+  // Rather than predict token health at render time, take the server's word for it: a 403
+  // means it wanted a token, so reveal the widget and let them retry.
+  const [captchaRequired, setCaptchaRequired] = useState(false);
+  const needsCaptcha = !activeUser || captchaRequired;
 
   // Single-use tokens: a retry that reuses one fails as though the service were down.
   const resetCaptcha = () => {
@@ -72,6 +79,10 @@ export function LandingSubscribeForm() {
       setEmail("");
     } catch (err) {
       const status = err instanceof NewsletterApiError ? err.status : 0;
+      // 403 means the route wanted a token and got none. For a signed-out visitor that is
+      // a spent or refused challenge; for a signed-in one it means the token could not be
+      // refreshed, so the widget has to appear now or they can never satisfy it.
+      if (status === 403) setCaptchaRequired(true);
       const key =
         status === 502 || status === 503 || status === 504
           ? "newsletter.error-unavailable"
@@ -81,7 +92,7 @@ export function LandingSubscribeForm() {
               ? "newsletter.error-too-many"
               : "landing-page.error-occured";
       error(i18next.t(key));
-      if (needsCaptcha) resetCaptcha();
+      resetCaptcha();
     } finally {
       setLoading(false);
     }

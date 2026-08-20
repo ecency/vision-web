@@ -28,6 +28,12 @@ interface Props {
   source: SubscribeInput["source"];
   show: boolean;
   onHide: () => void;
+  /**
+   * Called once the service has accepted a subscribe, whether it went live or is waiting
+   * on a confirmation. Callers that cannot read the subscription list back -- the post
+   * prompt for an anonymous reader -- use this to stop offering it again.
+   */
+  onSubscribed?: () => void;
 }
 
 /**
@@ -44,7 +50,7 @@ interface Props {
  * `{ status: "pending_confirmation" }`, and the dialog shows the check-your-inbox state
  * without assuming any of the richer fields a proven caller receives.
  */
-export function DigestSubscribeDialog({ type, target, targetLabel, source, show, onHide }: Props) {
+export function DigestSubscribeDialog({ type, target, targetLabel, source, show, onHide, onSubscribed }: Props) {
   const { activeUser } = useActiveAccount();
   const { subscription, isLoading } = useDigestSubscription(type, target);
   const knownAddress = useKnownDigestAddress();
@@ -57,12 +63,18 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
   const [captchaToken, setCaptchaToken] = useState("");
   const turnstileRef = useRef<TurnstileHandle>(null);
 
-  // Only an anonymous caller is challenged, because only an anonymous caller is
-  // challenged by the route: an account IS the proof. Keyed on activeUser rather than
-  // on needsAddress, which is also true for a signed-in person whose address the service
-  // has not learned yet -- gating on that would put a captcha in front of someone who
-  // already proved who they are.
-  const needsCaptcha = !activeUser;
+  // Only an unproven caller is challenged, because only an unproven caller is challenged
+  // by the route. Keyed on activeUser rather than on needsAddress, which is also true for
+  // a signed-in person whose address the service has not learned yet: gating on that
+  // would put a captcha in front of someone who already proved who they are.
+  //
+  // Being signed in locally is not quite the same as having a usable token, though.
+  // ensureValidToken returns undefined when the refresh fails or the stored record is
+  // gone, and newsletterApi.subscribe then omits `code`, so the request arrives anonymous
+  // and 403s while the dialog shows no challenge to complete. A 403 is the server saying
+  // it wanted one, so the widget appears on that answer regardless of activeUser.
+  const [captchaRequired, setCaptchaRequired] = useState(false);
+  const needsCaptcha = !activeUser || captchaRequired;
 
   // Tokens are single use, so a spent one must never survive into the next attempt.
   const resetCaptcha = () => {
@@ -79,6 +91,7 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
       setEmail(subscription?.email ?? knownAddress ?? "");
       setOutcome(null);
       setCaptchaToken("");
+      setCaptchaRequired(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show]);
@@ -130,6 +143,7 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
         ...(needsCaptcha ? { captchaToken } : {})
       });
       setOutcome(result);
+      if (result.status === "active" || result.status === "pending_confirmation") onSubscribed?.();
       if (result.status === "active") {
         success(
           subscription
@@ -140,6 +154,7 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
         success(i18next.t("newsletter.resent"));
       }
     } catch (e) {
+      if (e instanceof NewsletterApiError && e.status === 403) setCaptchaRequired(true);
       const message =
         e instanceof NewsletterApiError && e.status === 503
           ? i18next.t("newsletter.error-unavailable")
@@ -151,7 +166,7 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
                 ? i18next.t("newsletter.error-too-many")
                 : i18next.t("newsletter.error-generic");
       toastError(message);
-      if (needsCaptcha) resetCaptcha();
+      resetCaptcha();
     }
   };
 
