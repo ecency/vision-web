@@ -1,8 +1,13 @@
 /**
- * Shared, resilient ioredis singleton for SEO features (
- * precomputed sitemap blobs). Mirrors the post-age-cache client pattern:
- * bounded reconnect, singleton reset on `end`, silent graceful degradation,
- * and disabled under Vitest so unit tests never open real TCP connections.
+ * Shared ioredis singleton for SEO features (precomputed sitemap blobs).
+ *
+ * Contract: the client keeps reconnecting for as long as the process lives
+ * (no retry cap), is rebuilt on `end`, never queues a command (a queued
+ * command that timed out would still run later, after its caller failed),
+ * logs the first error per client, and is disabled under Vitest so unit
+ * tests never open real TCP connections. Callers that can afford a short
+ * wait take the client through getSeoRedisReady(), which waits, bounded,
+ * for the connection of a client that is still connecting.
  *
  * SEO callers must treat a null client / failed command as "no data" and
  * fail open (never block rendering, never mass-noindex).
