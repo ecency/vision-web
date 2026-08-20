@@ -13,15 +13,16 @@
  *    complete archive).
  *  - Per-RPC try/catch: a failed page ends the walk and serves what we have.
  *  - Blacklist read fresh from Redis so just-flagged authors are excluded.
- *  - rep-gate is intentionally skipped here (accountFetchFailed=true): we
- *    don't fetch a profile per post (no fan-out); SSR still applies it on
- *    crawl, so a listed-but-rep-gated post is at worst a wasted hint.
+ *  - The reputation gate is applied from the author_reputation every ranked
+ *    row already carries (no profile fetch, no fan-out). The post_count half
+ *    of the page gate needs a profile and is not available here; reputation
+ *    alone covers nearly every case, and SSR still applies both on crawl.
  */
 import { getSeoRedis, SEO_REDIS_PREFIX } from "@/features/seo/seo-redis";
 import { cronAuthorized, notFound } from "@/features/seo/cron-auth";
 import { SITEMAP_SHARDS } from "@/features/seo/sitemap-shards";
 import { harvestPostTags, selectTopTags } from "@/features/seo/sitemap-tags";
-import { isIndexable, canonicalTarget } from "@/utils/entry-indexability";
+import { isIndexable, canonicalTarget, isBelowReputationGate } from "@/utils/entry-indexability";
 import { isNsfwCommunity } from "@/utils/nsfw-detection";
 import { Entry } from "@/entities";
 import defaults from "@/defaults";
@@ -248,6 +249,14 @@ export async function POST(req: Request): Promise<Response> {
   // tag -> #posts using it in the freshness window. Also free from the walk;
   // feeds the top-N /created/<tag> hub shard (tags.xml).
   const tagCounts = new Map<string, number>();
+  // author -> newest indexable post day, tag -> newest indexable post day.
+  // Both free from the walk; they give authors.xml and tags.xml a real
+  // per-entry lastmod instead of today's date on every line (a lastmod that
+  // moves without the page changing teaches crawlers to discount the field,
+  // which also devalues the honest dates in posts.xml).
+  const authorLatest = new Map<string, string>();
+  const tagLatest = new Map<string, string>();
+  let repGated = 0;
   let startAuthor: string | undefined;
   let startPermlink: string | undefined;
   let pages = 0;
@@ -295,6 +304,14 @@ export async function POST(req: Request): Promise<Response> {
         const prev = communityLatest.get(comm);
         if (day && (!prev || day > prev)) communityLatest.set(comm, day);
       }
+      // Reputation gate from the row itself. A listed URL that then renders
+      // noindex is a wasted hint and coverage-report noise. Only when the
+      // field is present: an absent value must not gate (the page decides).
+      const rep = raw.author_reputation;
+      if (typeof rep === "number" && isBelowReputationGate(rep)) {
+        repGated += 1;
+        continue;
+      }
       // 4th arg = true: keep isIndexable in lockstep with the sitemap-mode
       // canonicalTarget call below, so the indexable count can't drift from
       // the emitted posts.xml (a reply with only an off-host declared
@@ -315,11 +332,16 @@ export async function POST(req: Request): Promise<Response> {
       // Defensive protocol-boundary guard: even if a future canonicalTarget
       // edit regressed, no cross-host URL may enter any shard.
       if (!loc || !loc.startsWith(`${BASE}/`)) continue;
-      postUrls.push({ loc, lastmod: (e.updated || e.created || "").slice(0, 10) });
-      if (e.author) authors.add(e.author);
-      // Tag popularity from the same indexable posts (NSFW/reputation/thin
-      // already filtered by isIndexable above). Free — no extra RPC.
-      harvestPostTags(tagCounts, e.category, e.json_metadata?.tags);
+      const postDay = (e.updated || e.created || "").slice(0, 10);
+      postUrls.push({ loc, lastmod: postDay });
+      if (e.author) {
+        authors.add(e.author);
+        const prev = authorLatest.get(e.author);
+        if (postDay && (!prev || postDay > prev)) authorLatest.set(e.author, postDay);
+      }
+      // Tag popularity and freshness from the same indexable posts
+      // (NSFW/reputation/thin already filtered above). Free — no extra RPC.
+      harvestPostTags(tagCounts, e.category, e.json_metadata?.tags, tagLatest, postDay);
     }
   }
 
@@ -355,10 +377,12 @@ export async function POST(req: Request): Promise<Response> {
   // the sitemap'd URL itself doesn't, and a crawl is spent resolving the
   // canonical. A sitemap must list canonical URLs — the same rule posts.xml
   // already follows via canonicalTarget.
-  const authorUrls = Array.from(authors).map((a) => ({
-    loc: `${BASE}/@${a}/posts`,
-    lastmod: nowDay
-  }));
+  // lastmod = the author's newest indexable post day in the window (the
+  // only event that changes /@a/posts), never today's date for everyone.
+  const authorUrls: SitemapUrl[] = Array.from(authors).map((a) => {
+    const lastmod = authorLatest.get(a);
+    return lastmod ? { loc: `${BASE}/@${a}/posts`, lastmod } : { loc: `${BASE}/@${a}/posts` };
+  });
   // Cached/weekly name list + free hourly post-derived lastmod. A community
   // with no post in the freshness window simply omits lastmod (honest: it
   // signals staleness by absence rather than a fabricated date).
@@ -369,12 +393,12 @@ export async function POST(req: Request): Promise<Response> {
       : { loc: `${BASE}/created/${name}` };
   });
   // Top-N tag hub pages (/created/<tag>) — community ids/NSFW/long-tail dropped
-  // by selectTopTags. lastmod=nowDay: a /created feed changes whenever the tag
-  // gets a new post, and a tag only reaches the top-N because it's active.
-  const tagUrls: SitemapUrl[] = selectTopTags(tagCounts, TAGS_LIMIT, TAG_MIN_COUNT).map((tag) => ({
-    loc: `${BASE}/created/${tag}`,
-    lastmod: nowDay
-  }));
+  // by selectTopTags. lastmod = the tag's newest indexable post day: that is
+  // when /created/<tag> last changed.
+  const tagUrls: SitemapUrl[] = selectTopTags(tagCounts, TAGS_LIMIT, TAG_MIN_COUNT).map((tag) => {
+    const lastmod = tagLatest.get(tag);
+    return lastmod ? { loc: `${BASE}/created/${tag}`, lastmod } : { loc: `${BASE}/created/${tag}` };
+  });
 
   // Stale-preserving guard (mirrors the communities delta-sanity):
   // a budget- or error-truncated walk must NOT overwrite a good posts/authors
@@ -422,13 +446,21 @@ export async function POST(req: Request): Promise<Response> {
     // every run, so nowDay is honest for them. Fallback to nowDay only if no
     // accepted-day was ever recorded (pre-existing baseline from an older
     // deploy); it self-heals on the next accepted walk.
-    const walkLastmod = acceptWalk ? nowDay : lastGoodDay || nowDay;
+    // Hourly-rebuilt shards get the full W3C datetime of this run (the
+    // protocol allows it and it is exact); static.xml only changes with the
+    // day, so the day is its honest lastmod.
+    const nowIso = new Date().toISOString();
+    const walkLastmod = acceptWalk ? nowIso : lastGoodDay || nowDay;
     await redis.set(
       K("index"),
       indexXml(
         SITEMAP_SHARDS.map((name) => ({
           name,
-          lastmod: WALK_DERIVED.has(name) ? walkLastmod : nowDay
+          lastmod: WALK_DERIVED.has(name)
+            ? walkLastmod
+            : name === "communities.xml"
+              ? nowIso
+              : nowDay
         }))
       )
     );
@@ -445,6 +477,7 @@ export async function POST(req: Request): Promise<Response> {
         communities: communityUrls.length,
         tags: tagUrls.length,
         pages,
+        repGated,
         ms: Date.now() - started,
         reachedCutoff,
         acceptedWalk: acceptWalk,
@@ -470,6 +503,7 @@ export async function POST(req: Request): Promise<Response> {
       communities: communityUrls.length,
       tags: tagUrls.length,
       pages,
+      repGated,
       ms: Date.now() - started,
       reachedCutoff,
       acceptedWalk: acceptWalk,

@@ -31,6 +31,16 @@ export const CONTAINER_ACCOUNTS = new Set<string>([
 
 const NOINDEX_REPUTATION_THRESHOLD = 40;
 
+/**
+ * The reputation half of shouldApplyNoIndex, for a caller that has no profile
+ * and only the reputation a ranked-posts row already carries (bridge
+ * `author_reputation`, human readable): the sitemap writer. The raw condenser
+ * form is accepted too; accountReputation normalises both. Keeping it here
+ * means the sitemap and the page can never disagree on the threshold.
+ */
+export const isBelowReputationGate = (reputation: number | string): boolean =>
+  accountReputation(reputation) < NOINDEX_REPUTATION_THRESHOLD;
+
 // Wave/snap quality gate (depth-1 in a container tree). Deliberately
 // conservative — index few, widen later from Search Console data.
 export const WAVE_MIN_BODY_CHARS = 100; // stripped prose length
@@ -60,10 +70,11 @@ export const shouldApplyNoIndex = (
   account: ReputationSource,
   fallbackReputation: number
 ): boolean => {
-  const reputationScore = accountReputation(account?.reputation ?? fallbackReputation ?? 0);
   const postCount = typeof account?.post_count === "number" ? account.post_count : 0;
 
-  const belowReputationThreshold = reputationScore < NOINDEX_REPUTATION_THRESHOLD;
+  const belowReputationThreshold = isBelowReputationGate(
+    account?.reputation ?? fallbackReputation ?? 0
+  );
   const lacksPostingHistory = postCount <= 3;
 
   // No-indexed when the author lacks reputation or meaningful posting history.

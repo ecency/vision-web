@@ -13,7 +13,8 @@ import {
   isContainerTree,
   CONTAINER_ACCOUNTS,
   WAVE_MIN_BODY_CHARS,
-  EFFECTIVELY_EMPTY_MAX_BODY
+  EFFECTIVELY_EMPTY_MAX_BODY,
+  isBelowReputationGate
 } from "../../utils/entry-indexability";
 
 const BASE = "https://ecency.com";
@@ -479,5 +480,20 @@ describe("single-source-of-truth (sitemap generator must call this same predicat
     const e = makeEntry({ depth: 0, body: longBody });
     expect(isIndexable(e, null, true)).toBe(isIndexable(e, null, true));
     expect(isIndexable(e, null, true, true)).toBe(isIndexable(e, null, true, true));
+  });
+});
+
+describe("isBelowReputationGate", () => {
+  it("reads the human-readable bridge author_reputation", () => {
+    expect(isBelowReputationGate(72.1)).toBe(false);
+    expect(isBelowReputationGate(40)).toBe(false);
+    expect(isBelowReputationGate(39.9)).toBe(true); // floors like the page gate
+    expect(isBelowReputationGate(25)).toBe(true);
+  });
+
+  it("reads the raw condenser reputation too", () => {
+    expect(isBelowReputationGate("300000000000000")).toBe(false); // ~74
+    expect(isBelowReputationGate("5000000000")).toBe(true); // ~31
+    expect(isBelowReputationGate(0)).toBe(true); // brand-new account = 25
   });
 });
