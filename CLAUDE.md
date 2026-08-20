@@ -65,6 +65,24 @@ pnpm lint
 pnpm typecheck
 ```
 
+**Four script audits also gate `.github/workflows/typecheck.yml`**, and `pnpm test` runs none
+of them. ⛔ Copy the flags exactly: without `--fail` these REPORT and exit 0, so a violation
+passes locally and fails in CI.
+
+```bash
+node scripts/icon-scss-audit.mjs                 # also fails if a retired SCSS rule reappears
+node scripts/icon-tsx-audit.mjs --fail           # icon sizing, see docs/icons.md
+node scripts/slim-entries-audit.mjs --fail       # feed payload invariants
+node scripts/origin-config-audit.mjs --self-test  # prove the rules still fire, THEN enforce
+node scripts/origin-config-audit.mjs --fail
+```
+
+`origin-config-audit` keeps thresholds, source addresses, inline allowlists, secret markers and
+fail-open wildcard includes out of `infra/`. It reads **comments** too — an earlier version
+stripped them and reported a clean run while every rate sat in prose two lines above. Run
+`--self-test` first: it proves each rule still fires, so a regex edited into uselessness is
+caught in the same step that relies on it.
+
 ### Running Single Tests
 
 ```bash
@@ -99,6 +117,12 @@ pnpm publish:ui
 - **packages/wallets** - Multi-chain wallet management (`@ecency/wallets`)
 - **packages/render-helper** - Markdown rendering utilities (`@ecency/render-helper`)
 - **packages/ui** - Shared UI component library (`@ecency/ui`)
+- **infra/origin** - The web origin nginx vhosts (`eu`/`us.ecency.com.conf`), tracked since
+  2026-08-20. ⛔ **This repo is public**: structure is committed, thresholds and addresses are
+  not — they live in host-only includes. Enforced by `scripts/origin-config-audit.mjs` in CI.
+  ⛔ CI does **not** deploy these; they are applied by hand to both boxes, and the rule is
+  apply-and-reload BEFORE committing so the tracked copy matches what is running. See
+  `infra/origin/README.md`.
 
 All packages use `workspace:*` protocol for local dependencies. The main app transpiles workspace packages during build (configured in `next.config.js`).
 

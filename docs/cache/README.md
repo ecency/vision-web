@@ -150,9 +150,14 @@ Implemented in this repo:
 - Entry-page TTL refined by post age via L1 Map + per-host Redis L2
 - `scripts/purge-cache.sh` supports manual DMCA / moderation invalidation
 
+Tracked here, applied by hand (CI does NOT deploy them):
+
+- Nginx (`ssrcache` zone) on each origin host — the vhosts are in `infra/origin/`
+  since 2026-08-20; see [nginx.md](./nginx.md) and `infra/origin/README.md` for the
+  public-repo contract that keeps thresholds and addresses off the record
+
 Operated outside this repo:
 
-- Nginx (`ssrcache` zone) on each origin host — see [nginx.md](./nginx.md)
 - Cloudflare worker `ecency-geo-router` — see [cloudflare-worker.md](./cloudflare-worker.md)
 
 Before production rollout of changes here, verify `x-cache-tier` values

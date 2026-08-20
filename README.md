@@ -126,9 +126,19 @@ expires.
 # Anonymous — should HIT after the first request
 curl -sI https://ecency.com/discover | grep -iE 'cache|tier'
 
-# Logged-in — should always BYPASS
+# Logged-in on the SAME path — still cached. /discover is the `list` tier, and most
+# tiers are auth-class-equivalent, so logged-in users share one edge entry.
 curl -sI --cookie "active_user=alice" https://ecency.com/discover | grep -iE 'cache|tier'
+
+# Logged-in on a MUTE-FILTERED tier — this is what actually bypasses:
+# `feed`, `feed-created` and `profile-feed` emit `private, no-store` when the
+# active_user cookie is present, because each user's mutes filter it differently.
+curl -sI --cookie "active_user=alice" https://ecency.com/@ecency/feed | grep -iE 'cache|tier'
 ```
+
+`curl -sI` sends HEAD, which reaches the app and returns the real status only since
+#1578 — before that `location /` short-circuited every HEAD with a fabricated 200, so
+these recipes reported nothing useful.
 
 Expected headers on an anonymous hit:
 
@@ -141,8 +151,9 @@ CF-Cache-Status: HIT
 
 ### Infra configuration
 
-Nginx and CF worker configs live in the infra repo; their behaviour is
-documented here in `docs/cache/`. The rules are simple: **respect origin
+The web origin nginx vhosts live in this repo at `infra/origin/` (tracked since
+2026-08-20), guarded by `scripts/origin-config-audit.mjs` in CI; the CF worker config
+lives in the infra repo. Behaviour is documented here in `docs/cache/`. The rules are simple: **respect origin
 `Cache-Control`**, **bypass on `active_user` cookie** and **preserve
 `x-cache-tier`** in the response headers.
 
