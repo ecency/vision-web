@@ -59,13 +59,6 @@ export function CommunityCard({ community, account }: Props) {
 
   return (
     <div className="community-card">
-      {/* Policing (vision-web#1513): the team sees when this community's digest is suspended, and why. */}
-      <NewsletterGate>
-        <SenderStatusNotice type="community" target={community.name} isSender={isDigestSender} className="mb-4" />
-        <SubscriberCount type="community" target={community.name} isSender={isDigestSender} className="mb-2" />
-        <ComposeDigestButton target={{ type: "community", target: community.name, label: community.title || community.name }} isSender={canSendDigest} className="mb-2" />
-        <SentIssues type="community" target={community.name} isSender={isDigestSender} className="mb-4" />
-      </NewsletterGate>
       <div className="community-avatar inline-flex items-center justify-center md:justify-start">
         {canUpdatePic && (
           <CommunityCardEditPic
@@ -87,6 +80,18 @@ export function CommunityCard({ community, account }: Props) {
         <div className="about">{community.about}</div>
         {community.is_nsfw && <span className="nsfw">nsfw</span>}
       </div>
+      {/* Sender tools sit BELOW the community's identity, the same order the
+          profile card uses. Rendered first, they pushed the avatar and title
+          down the sidebar and the card opened on an admin utility ("0 email
+          subscribers") instead of the community itself.
+          Policing (vision-web#1513): the team sees when this community's digest
+          is suspended, and why. */}
+      <NewsletterGate>
+        <SenderStatusNotice type="community" target={community.name} isSender={isDigestSender} className="mb-4" />
+        <SubscriberCount type="community" target={community.name} isSender={isDigestSender} className="mb-2" />
+        <ComposeDigestButton target={{ type: "community", target: community.name, label: community.title || community.name }} isSender={canSendDigest} className="mb-2" />
+        <SentIssues type="community" target={community.name} isSender={isDigestSender} className="mb-4" />
+      </NewsletterGate>
       <div className="community-sections">
         <CommunityCardDescription community={community} toggleInfo={(e) => setInfo(e)} />
         <CommunityCardRules community={community} toggleInfo={(e) => setInfo(e)} />
