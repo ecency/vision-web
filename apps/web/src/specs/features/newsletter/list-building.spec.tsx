@@ -13,13 +13,10 @@ vi.mock("@/config", () => ({
     getConfigValue: (fn: (c: unknown) => unknown) => fn({ visionFeatures: { newsletter: { enabled: flags.newsletter } } })
   }
 }));
-// The roster is answered by `roster.fn` so a test can hold it pending; the
-// community query answers with a title. Seeded roster data stays (staleTime is
-// Infinity in the test client), so seeding tests are unaffected.
-const roster = vi.hoisted(() => ({ fn: vi.fn(() => new Promise<{ members: string[] }>(() => {})) }));
+// None of these components looks up an entitlement: the community query is the
+// only SDK call they make, and it answers with a title.
 vi.mock("@ecency/sdk", async () => ({
   ...(await vi.importActual<object>("@ecency/sdk")),
-  getProMembersQueryOptions: () => ({ queryKey: ["accounts", "pro-members"], queryFn: () => roster.fn() }),
   getCommunityQueryOptions: (name: string) => ({ queryKey: ["community", name], queryFn: async () => ({ name, title: "Town Square", team: [] }) })
 }));
 vi.mock("@/utils", async () => ({
@@ -108,7 +105,6 @@ describe("list building (vision-web#1537)", () => {
     window.history.replaceState(null, "", "/@alice?subscribe=digest&x=1");
     fetchMock.mockReturnValue(json(200, { subscriptions: [] }));
     const client = createTestQueryClient();
-    client.setQueryData(["accounts", "pro-members"], { members: ["alice"] });
     render(<DigestSubscribeButton type="creator" target="alice" targetLabel="@alice" source="creator-page" />, client);
     // The dialog is open, and the parameter is gone while the rest of the query is kept.
     await waitFor(() => expect(window.location.search).toBe("?x=1"));
@@ -134,7 +130,6 @@ describe("list building (vision-web#1537)", () => {
 
   it("at the end of a post, offers the author's digest to a signed-in reader who is not subscribed; remembers 'Not now'; nothing for the author, a subscriber, or when signed out", async () => {
     const client = createTestQueryClient();
-    client.setQueryData(["accounts", "pro-members"], { members: ["bob"] });
     client.setQueryData(digestSubscriptionsKey("alice"), []);
     const entry = mockEntry({ author: "bob", permlink: "hello", category: "photography", parent_author: "", depth: 0 });
     window.localStorage.clear();

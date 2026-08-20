@@ -22,8 +22,11 @@ const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-
  * as one action, and what allows an opted-out address to be re-confirmed. The account is
  * taken from the verified token, never from the body.
  *
- * Creator digests are offered only for Ecency Pro creators, checked here against the
- * roster on the server: the button on the profile is a convenience, this is the gate.
+ * Every creator is offered a digest (decided 2026-08-19), so this route checks no
+ * entitlement at all: a reader may subscribe to any account, and the automatic issues go
+ * out for any list that has readers. Ecency Pro gates the active capabilities instead,
+ * sending a chosen post and composing an issue, which server/newsletter-sender-gate checks
+ * on the send routes.
  * The site digest (`type: "site"`, the homepage form) has one target, `ecency`, which the
  * service enforces.
  */
@@ -57,10 +60,8 @@ export async function POST(request: NextRequest) {
     if (target !== account) return Response.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  // Creator digests are open to EVERY creator (decided 2026-08-19): anyone may
-  // subscribe to any account's digest, and the automatic weekly/monthly digest
-  // sends for any list with readers. Pro keeps the active capabilities: sending
-  // a chosen post and composing issues (see newsletter-sender-gate).
+  // Where the creator eligibility check used to be. There is none now: every
+  // creator is offered a digest, see the note at the top of this file.
 
   const upstream = await callNewsletter("/api/subscriptions", {
     method: "POST",

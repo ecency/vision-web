@@ -61,14 +61,24 @@ export function NewsletterSignup(): ReactElement | null {
     <div className="border-t border-theme pt-4 mt-4 sidebar-newsletter-section" data-testid="newsletter-signup">
       <h3 className="text-sm font-semibold mb-1">{t('newsletterTitle')}</h3>
       <p className="text-xs text-theme-muted mb-2">{t(isCommunity ? 'newsletterCommunityBlurb' : 'newsletterBlurb')}</p>
-      {/* Mounted from the first render, per the live-region contract: a region
-          that appears at the same moment as its message is often not announced. */}
-      <LiveRegion message={state === 'done' ? t('newsletterCheckInbox') : state === 'error' ? t('newsletterError') : null} className="text-xs block mb-1" />
+      {/* Both regions are mounted from the first render, per the live-region
+          contract: a region that appears at the same moment as its message is
+          often not announced. Two of them, as community-join-button.tsx does,
+          because a failure has to interrupt: announced politely, it waits for a
+          pause and a reader who has moved on never learns the address was not
+          captured. */}
+      <LiveRegion message={state === 'done' ? t('newsletterCheckInbox') : null} className="text-xs block mb-1" />
+      <LiveRegion
+        urgency="assertive"
+        message={state === 'error' ? t('newsletterError') : null}
+        className="text-xs block mb-1 text-red-500 dark:text-red-400"
+      />
       {state !== 'done' && (
         <form onSubmit={submit} className="flex flex-col gap-2">
           <input
             type="email"
             required
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder={t('newsletterEmail')}
@@ -79,7 +89,7 @@ export function NewsletterSignup(): ReactElement | null {
             <select
               value={cadence}
               onChange={(e) => setCadence(e.target.value as 'weekly' | 'monthly')}
-              aria-label={t('newsletterSubscribe')}
+              aria-label={t('newsletterCadence')}
               className="input-theme flex-1 text-sm px-2 py-1.5 rounded"
             >
               <option value="weekly">{t('newsletterWeekly')}</option>
@@ -88,6 +98,7 @@ export function NewsletterSignup(): ReactElement | null {
             <button
               type="submit"
               disabled={state === 'busy'}
+              aria-busy={state === 'busy'}
               className="btn-theme-primary text-sm px-3 py-1.5 rounded disabled:opacity-60"
             >
               {t('newsletterSubscribe')}

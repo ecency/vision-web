@@ -23,10 +23,10 @@ interface Props {
  * The entry point on a community page or a creator profile. Shows the current state when
  * the logged-in account holds a subscription, opens the dialog for everything else.
  * Renders nothing when the feature is off (call sites also wrap it in NewsletterGate,
- * the runtime counterpart of EcencyConfigManager.Conditional; this is the belt to that brace),
- * and, for creators, when the creator is not an Ecency Pro member: creator lists are a
- * Pro capability, and the server enforces the same rule, this only avoids offering
- * something the request would refuse.
+ * the runtime counterpart of EcencyConfigManager.Conditional; this is the belt to that brace).
+ * Every creator is offered a list (decided 2026-08-19), so no per-account eligibility is
+ * looked up here and whether the button appears is known on the first render. Ecency Pro
+ * gates sending a post to a list and composing an issue, never subscribing to one.
  */
 /**
  * A shared subscribe link (?subscribe=digest, vision-web#1537) opens the dialog
@@ -35,13 +35,12 @@ interface Props {
  * in sync with the router), so it needs neither the app router nor a Suspense
  * boundary; a button rendered outside a Next page still works.
  */
-function useSubscribeLinkOpener(onOpen: (() => void) | null | undefined): void {
+function useSubscribeLinkOpener(onOpen: (() => void) | null): void {
   const opened = useRef(false);
   useEffect(() => {
-    // undefined: not known yet whether this list is offered here (the Pro
-    // roster is still loading) — do nothing, touch nothing, try again on the
-    // next render. null: known not offered — leave the link alone. A function:
-    // open once and clean the URL.
+    // null when the button is not shown here: leave the link alone and touch
+    // nothing, the reader may be on a page that carries no list. A function:
+    // open once, then clean the URL.
     if (!onOpen || opened.current || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get(SUBSCRIBE_PARAM) !== SUBSCRIBE_PARAM_VALUE) return;
@@ -57,8 +56,8 @@ export function DigestSubscribeButton({ type, target, targetLabel, source, size,
   const enabled = useNewsletterEnabled();
   const [open, setOpen] = useState(false);
   const { subscription } = useDigestSubscription(type, target);
-  // Creator digests are open to every creator (2026-08-19): no Pro gate here,
-  // eligibility is synchronous and the shared-link opener can act at once.
+  // Every creator has a list, so being offered one is just the feature flag,
+  // which is why the shared-link opener can act on the first render.
   const offered = enabled;
   const openFromLink = useCallback(() => setOpen(true), []);
   useSubscribeLinkOpener(offered ? openFromLink : null);

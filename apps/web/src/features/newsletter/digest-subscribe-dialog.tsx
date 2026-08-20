@@ -119,13 +119,11 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
       }
     } catch (e) {
       const message =
-        e instanceof NewsletterApiError && e.status === 403
-          ? i18next.t("newsletter.error-not-pro")
-          : e instanceof NewsletterApiError && e.status === 503
-            ? i18next.t("newsletter.error-unavailable")
-            : e instanceof NewsletterApiError && (e.status === 502 || e.status === 504)
-              ? i18next.t("newsletter.error-gateway")
-              : i18next.t("newsletter.error-generic");
+        e instanceof NewsletterApiError && e.status === 503
+          ? i18next.t("newsletter.error-unavailable")
+          : e instanceof NewsletterApiError && (e.status === 502 || e.status === 504)
+            ? i18next.t("newsletter.error-gateway")
+            : i18next.t("newsletter.error-generic");
       toastError(message);
     }
   };

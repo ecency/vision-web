@@ -15,7 +15,7 @@ import type { DigestType } from "./types";
 
 /**
  * At the end of a post (vision-web#1537): a reader who is signed in and not yet
- * subscribed is offered the author's digest (when the author is Pro), or the
+ * subscribed is offered the author's digest (every creator has one since 2026-08-19), or the
  * community's digest when the post was made in one. Dismissible per list; the
  * dismissal is remembered on this device. Never shown to the author for their
  * own list, never twice for the same list, never while a subscription exists.

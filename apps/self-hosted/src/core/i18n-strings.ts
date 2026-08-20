@@ -307,6 +307,7 @@ export type TranslationKey =
   | 'newsletterEmail'
   | 'newsletterWeekly'
   | 'newsletterMonthly'
+  | 'newsletterCadence'
   | 'newsletterSubscribe'
   | 'newsletterCheckInbox'
   | 'newsletterError'
@@ -344,6 +345,7 @@ export const translations: { en: Translations } & Record<
     newsletterEmail: 'Your email',
     newsletterWeekly: 'Weekly',
     newsletterMonthly: 'Monthly',
+    newsletterCadence: 'How often',
     newsletterSubscribe: 'Subscribe',
     newsletterCheckInbox: 'Almost there: confirm from the email we just sent.',
     newsletterError: 'Could not subscribe right now. Please try again.',

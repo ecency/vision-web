@@ -4143,7 +4143,6 @@
     "status-suppressed": "This address is not receiving Ecency email at the moment.",
     "status-pending-short": "confirm your email",
     "status-suppressed-short": "paused",
-    "error-not-pro": "Creator digests are available for Ecency Pro creators.",
     "error-unavailable": "The digest service is not available right now. Please try again in a moment.",
     "error-generic": "Something went wrong. Please try again.",
     "settings-title": "Email digests",
