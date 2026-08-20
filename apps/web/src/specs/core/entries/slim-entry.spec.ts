@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { catchPostImage, postBodySummary } from "@ecency/render-helper";
+import { catchPostImage, postBodySummary, proxifyImageSrc } from "@ecency/render-helper";
 import { ContentModerationReason } from "@ecency/sdk";
 import {
   SLIM_KEY_MARKER,
@@ -64,6 +64,42 @@ describe("slimEntry", () => {
       body: "intro\n\n![pic](https://images.hive.blog/in-body.png)\n\nrest"
     });
     expect(slimEntry(e).json_metadata?.image).toEqual(["https://images.hive.blog/in-body.png"]);
+  });
+
+  it("shows the cover unslimmed and the poster slimmed, which is deliberate", () => {
+    // catchPostImage never looks at `thumbnails`: getImage() in render-helper
+    // reads json_metadata.image as a string, then as an array, then falls back
+    // to the body. Slimming puts the thumbnail first, so a post that sets the
+    // two fields to DIFFERENT urls renders its cover on an unslimmed card and
+    // its poster on a slim one.
+    //
+    // That divergence is chosen. `thumbnails` is published for exactly this
+    // purpose by 3Speak and Liketu, and a publisher who sets a dedicated poster
+    // means it. It is also unobservable in practice: across 461 live rows from
+    // trending, hot, created, promoted, tags and communities, 70 carried both
+    // fields and 0 of them disagreed.
+    //
+    // BOTH halves are asserted on purpose. Pinning only the slim side would let
+    // the divergence disappear unnoticed if render-helper ever started honouring
+    // `thumbnails`, and this test exists to make that a decision rather than a
+    // surprise.
+    const meta = {
+      thumbnails: ["https://images.hive.blog/poster.png"],
+      image: ["https://images.hive.blog/cover.png"]
+    };
+    // Separate fixtures: render-helper memoizes per post AND size, so reusing
+    // one would serve the second call the first one's answer.
+    const unslimmed = entry({ json_metadata: meta });
+    const slimmed = slimEntry(entry({ json_metadata: meta }));
+    const card = (e: Entry) => catchPostImage(e, 320, 180, "match");
+
+    expect(card(unslimmed)).toBe(
+      proxifyImageSrc("https://images.hive.blog/cover.png", 320, 180, "match")
+    );
+    expect(card(slimmed)).toBe(
+      proxifyImageSrc("https://images.hive.blog/poster.png", 320, 180, "match")
+    );
+    expect(card(unslimmed)).not.toBe(card(slimmed));
   });
 
   it("survives thumbnails that are not an array", () => {
