@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.27
+
+### Patch Changes
+
+- render-helper: make the node build loadable by plain Node (#1566)
+
 ## 2.5.26
 
 ### Patch Changes
