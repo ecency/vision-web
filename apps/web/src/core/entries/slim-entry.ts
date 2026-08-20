@@ -23,12 +23,27 @@ import { parseEntryLocationFromBody } from "./entry-location";
 /** Same length the card passes to postBodySummary, so the text is unchanged. */
 export const SLIM_SUMMARY_LENGTH = 200;
 
+/**
+ * The first usable URL in an author-written metadata field.
+ *
+ * Neither `image` nor `thumbnails` can be trusted to hold the type it is declared
+ * with: json_metadata is whatever the publishing client wrote. `image` really does
+ * arrive as a bare string, which is why catchPostImage handles both, and a
+ * `thumbnails` that is not an array used to throw straight out of the queryFn,
+ * failing the whole page rather than one card.
+ */
+function firstUrl(value: unknown): string | undefined {
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.find((url): url is string => typeof url === "string" && url.length > 0);
+  }
+  return undefined;
+}
+
 function pickThumbnail(entry: Entry): string | undefined {
   const meta = entry.json_metadata;
-  // json_metadata is author-written: `image` is typed as an array but really does
-  // arrive as a bare string too, which is why catchPostImage handles both. Read it
-  // as unknown so the same runtime tolerance survives the narrower type.
-  const image: unknown = meta?.image;
 
   // Order requested for cards: an explicit thumbnail wins over the cover image,
   // since `thumbnails` is published for exactly this purpose (3Speak, Liketu).
@@ -37,26 +52,14 @@ function pickThumbnail(entry: Entry): string | undefined {
   // catchPostImage per author/permlink/update AND size, process-wide, so a card
   // (600x500) and the entry page's LCP preload (same size) share one cache slot.
   // They agree today because every sampled post that carries both fields sets
-  // them to the same URL (44 of 44 across trending/hot/created, tags and
-  // communities), so the value cached from a feed row is the value the post page
-  // would have computed. A publisher that set them to DIFFERENT urls would hand
+  // them to the same URL (70 of 70, out of 461 live rows across trending, hot,
+  // created, promoted, tags and communities), so the value cached from a feed row
+  // is the value the post page would have computed. A publisher that set them to DIFFERENT urls would hand
   // the post page a preload that its body does not render, and the LCP image
   // would download twice.
-  const thumbnail = meta?.thumbnails?.find((url) => typeof url === "string" && url.length > 0);
+  const thumbnail = firstUrl(meta?.thumbnails) ?? firstUrl(meta?.image);
   if (thumbnail) {
     return thumbnail;
-  }
-
-  if (typeof image === "string" && image.length > 0) {
-    return image;
-  }
-  if (Array.isArray(image)) {
-    const first = image.find(
-      (url): url is string => typeof url === "string" && url.length > 0
-    );
-    if (first) {
-      return first;
-    }
   }
 
   // Nothing in metadata: recover what catchPostImage would have found on the full
@@ -133,10 +136,29 @@ export function slimEntry<T extends Entry>(entry: T): T {
   return slimmed;
 }
 
+/**
+ * Slim one entry, or hand back exactly what arrived if that is not possible.
+ *
+ * This step only ever saves memory, so it must not be able to cost a page. It
+ * runs inside the queryFn, where a throw rejects the whole query: on the server
+ * prefetchQuery then returns undefined and the strip or the related row vanishes,
+ * and on the client the feed shows its error state. All of that from one field in
+ * one author-written json_metadata. The guards in pickThumbnail are the fix for
+ * the shape that did it; this is the backstop for the shape nobody thought of.
+ * An entry that comes back untouched still renders, it just keeps its body.
+ */
+function slimEntrySafely(entry: Entry): Entry {
+  try {
+    return slimEntry(entry);
+  } catch {
+    return entry;
+  }
+}
+
 /** Slim a page of feed results, leaving a non-array response shape untouched. */
 export function slimEntryPage<T>(page: T): T {
   if (Array.isArray(page)) {
-    return page.map((item) => slimEntry(item as Entry)) as unknown as T;
+    return page.map((item) => slimEntrySafely(item as Entry)) as unknown as T;
   }
   return page;
 }
