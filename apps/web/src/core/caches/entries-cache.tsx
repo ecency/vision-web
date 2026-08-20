@@ -68,8 +68,15 @@ export namespace EcencyEntriesCacheManagement {
       // wins, which makes the subtype the result actually has. react-query
       // applies structural sharing to select output, so an unchanged entry
       // keeps its previous reference rather than re-rendering consumers.
+      // `data` spreads last so a refetched entry wins, but a feed card seeds this
+      // shared key with a SLIM row (body ""), and that would then blank the body
+      // for a caller that passed a full entry — the decks post viewer renders an
+      // empty article that way, and nothing refetches it because refetchOnMount
+      // is false app-wide. An empty body never overwrites a present one.
       select: (data: Entry | null | undefined) =>
-        data ? ({ ...initialEntry, ...data } as T) : undefined
+        data
+          ? ({ ...initialEntry, ...data, body: data.body || initialEntry?.body || "" } as T)
+          : undefined
     };
   }
 
