@@ -14,7 +14,7 @@ const store = new Map<string, string>();
 let failNextSetMatching = "";
 const fakeRedis = () => ({
     get: async (k: string) => store.get(k) ?? null,
-    exists: async (k: string) => (store.has(k) ? 1 : 0),
+    strlen: async (k: string) => (store.get(k) ?? "").length,
     set: async (k: string, v: string) => {
       if (failNextSetMatching && k.includes(failNextSetMatching)) {
         failNextSetMatching = "";
@@ -240,10 +240,11 @@ describe("sitemap-generate route", () => {
     await run();
     expect(indexEntry("recovery.xml")).toBe("2026-08-18");
     expect(shard("recovery.xml")).toBe("<urlset/>"); // untouched by the generator
-    // Presence is by key, not by content: an empty value still lists it.
+    // Same presence rule as the public route: an empty value is "gone", so
+    // the index never advertises a URL the route would 404.
     store.set("seo:sitemap:recovery.xml", "");
     await run();
-    expect(indexEntry("recovery.xml")).toBe("2026-08-18");
+    expect(shard("index")).not.toContain("recovery.xml");
     store.delete("seo:sitemap:recovery.xml");
     await run();
     expect(shard("index")).not.toContain("recovery.xml");

@@ -18,7 +18,7 @@
  *    of the page gate needs a profile and is not available here; reputation
  *    alone covers nearly every case, and SSR still applies both on crawl.
  */
-import { getSeoRedis, SEO_REDIS_PREFIX } from "@/features/seo/seo-redis";
+import { getSeoRedisReady, SEO_REDIS_PREFIX } from "@/features/seo/seo-redis";
 import { cronAuthorized, notFound } from "@/features/seo/cron-auth";
 import { SITEMAP_SHARDS, OPERATOR_SHARDS } from "@/features/seo/sitemap-shards";
 import { harvestPostTags, selectTopTags } from "@/features/seo/sitemap-tags";
@@ -136,7 +136,7 @@ function normalize(p: Record<string, unknown>): Entry {
 
 export async function POST(req: Request): Promise<Response> {
   if (!cronAuthorized(req)) return notFound();
-  const redis = getSeoRedis();
+  const redis = await getSeoRedisReady(5000);
   if (!redis) {
     return new Response(JSON.stringify({ error: "redis-unavailable" }), {
       status: 503,
@@ -482,8 +482,11 @@ export async function POST(req: Request): Promise<Response> {
       lastmod: lastmods[name]
     }));
     for (const name of OPERATOR_SHARDS) {
-      // Existence only: the blob may be large and is never read here.
-      if (!(await redis.exists(K(name)))) continue;
+      // Present means a non-empty blob, the same rule the public route
+      // applies (it 404s an operator shard whose value is missing or empty),
+      // so the index never advertises a URL that answers 404. STRLEN is 0 for
+      // both cases and never loads the payload, which may be large.
+      if (!(await redis.strlen(K(name)))) continue;
       const lastmod = (await redis.get(`${K(name)}:lastmod`)) || recorded[name] || nowDay;
       lastmods[name] = lastmod;
       children.push({ name, lastmod });

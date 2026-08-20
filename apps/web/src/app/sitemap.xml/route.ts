@@ -9,7 +9,7 @@
  * transient 503 + Retry-After (retry later), never a 404 (don't tell the
  * crawler the sitemap doesn't exist during a pre-prime window or Redis blip).
  */
-import { getSeoRedis, SEO_REDIS_PREFIX } from "@/features/seo/seo-redis";
+import { getSeoRedisReady, SEO_REDIS_PREFIX } from "@/features/seo/seo-redis";
 
 export const dynamic = "force-dynamic"; // handler runs; CDN caches via headers
 
@@ -23,7 +23,7 @@ const unavailable = () =>
   });
 
 export async function GET(): Promise<Response> {
-  const redis = getSeoRedis();
+  const redis = await getSeoRedisReady();
   if (!redis) return unavailable();
   try {
     const xml = await redis.get(INDEX_KEY);

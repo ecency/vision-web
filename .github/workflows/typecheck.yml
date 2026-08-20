@@ -51,6 +51,11 @@ jobs:
       - name: Slim-entry convention audit
         run: node scripts/slim-entries-audit.mjs --fail
 
+      # This repo is PUBLIC and infra/origin holds production vhosts, so the audit keeps
+      # thresholds, source addresses, inline allowlists and secret markers out of them, and
+      # rejects a wildcard include on a file carrying a protective directive (nginx accepts
+      # one matching no files and reloads clean, i.e. it fails OPEN). --self-test runs first
+      # so a rule edited into uselessness fails here rather than passing silently.
       - name: Audit committed origin nginx config
         run: |
           node scripts/origin-config-audit.mjs --self-test

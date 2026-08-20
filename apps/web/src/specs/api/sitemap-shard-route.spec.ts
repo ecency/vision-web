@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const store = new Map<string, string>();
 const fakeRedis = () => ({
   get: async (k: string) => store.get(k) ?? null,
-  exists: async (k: string) => (store.has(k) ? 1 : 0)
+  strlen: async (k: string) => (store.get(k) ?? "").length
 });
 vi.mock("@/features/seo/seo-redis", () => ({
   SEO_REDIS_PREFIX: "seo:",
@@ -42,6 +42,8 @@ describe("sitemap shard route", () => {
     expect((await get("recovery.xml")).status).toBe(404);
     store.set("seo:sitemap:recovery.xml", "<urlset/>");
     expect((await get("recovery.xml")).status).toBe(200);
+    store.set("seo:sitemap:recovery.xml", "");
+    expect((await get("recovery.xml")).status).toBe(404); // empty = gone, same as the index rule
     store.delete("seo:sitemap:recovery.xml");
     const gone = await get("recovery.xml");
     expect(gone.status).toBe(404);

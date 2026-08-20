@@ -22,7 +22,7 @@
  * generator drops it from the index on its next run; until then a crawler
  * holding the old index gets a clean "gone" and stops asking.
  */
-import { getSeoRedis, SEO_REDIS_PREFIX } from "@/features/seo/seo-redis";
+import { getSeoRedisReady, SEO_REDIS_PREFIX } from "@/features/seo/seo-redis";
 import { isKnownShard, isOperatorShard, isRetiredShard } from "@/features/seo/sitemap-shards";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ export async function GET(
   if (!isKnownShard(shard)) {
     return new Response("Not Found", { status: 404 });
   }
-  const redis = getSeoRedis();
+  const redis = await getSeoRedisReady();
   if (!redis) return unavailable();
   try {
     const xml = await redis.get(`${SEO_REDIS_PREFIX}sitemap:${shard}`);
