@@ -14,6 +14,12 @@ import { withSlimEntries } from "@/core/entries/slim-entry";
 import type { InfiniteData } from "@tanstack/react-query";
 
 const MAX_PENDING = 20;
+const POLL_INTERVAL_MS = 30000;
+// Explicit rather than inherited: fetchQuery honours staleTime, so this is what
+// actually decides how often the poll reaches the network. It matches the
+// app-wide default that has governed this poll all along, stated here so that
+// changing the global default cannot silently change this feed's request rate.
+const POLL_STALE_TIME_MS = 60000;
 const MAX_AVATARS = 5;
 
 interface Props {
@@ -64,26 +70,30 @@ export function FeedLayout(props: PropsWithChildren<Props>) {
       props.observer ?? ""
     );
 
-    const interval = setInterval(async () => {
-      const resp = await queryClient.fetchQuery(
-        // Slim, like the feed this merges into: the merge below spreads these
-        // rows over the cached ones, so a full row here would put every body
-        // back into the feed cache 30 seconds after the page loaded.
-        withSlimEntries(
-          getPostsRankedQueryOptions(
-            props.filter,
-            "",
-            "",
-            MAX_PENDING,
-            props.tag,
-            props.observer
-          ),
-          // Own cache identity: this SDK page key is also read by deck columns,
-          // which render whole posts. The merge below reads the returned value,
-          // not the cache, so the marker costs nothing here.
-          { isolateKey: true }
-        )
+    // A hidden tab has nobody to show a "new posts" chip to, and this is not a
+    // cheap tick: each fetch is a full 20-post ranked page, 257 KB gzipped on
+    // /trending, and it runs for anonymous readers too. Left running, a tab
+    // parked in the background all afternoon pulls about 10 MB an hour to
+    // maintain a count nobody is looking at.
+    const poll = async () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      // Slim, like the feed this merges into: the merge below spreads these rows
+      // over the cached ones, so a full row here would put every body back into
+      // the feed cache 30 seconds after the page loaded.
+      //
+      // Own cache identity: this SDK page key is also read by deck columns,
+      // which render whole posts. The merge below reads the returned value, not
+      // the cache, so the marker costs nothing here.
+      const pollOptions = withSlimEntries(
+        getPostsRankedQueryOptions(props.filter, "", "", MAX_PENDING, props.tag, props.observer),
+        { isolateKey: true }
       );
+      const resp = await queryClient.fetchQuery({
+        ...pollOptions,
+        staleTime: POLL_STALE_TIME_MS
+      });
       if (!resp || resp.length === 0) return;
 
       // Update existing entries with latest stats
@@ -125,9 +135,22 @@ export function FeedLayout(props: PropsWithChildren<Props>) {
       if (fresh.length > 0) {
         setPending(fresh.slice(0, MAX_PENDING));
       }
-    }, 30000);
+    };
 
-    return () => clearInterval(interval);
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
+    // Catch up as soon as the reader comes back, rather than making them wait
+    // out the rest of an interval for a chip that is already out of date.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        poll();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [props.filter, props.tag, props.observer]);
 
   const revealNew = () => {
