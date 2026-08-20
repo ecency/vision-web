@@ -20,7 +20,7 @@
  */
 import { getSeoRedis, SEO_REDIS_PREFIX } from "@/features/seo/seo-redis";
 import { cronAuthorized, notFound } from "@/features/seo/cron-auth";
-import { SITEMAP_SHARDS } from "@/features/seo/sitemap-shards";
+import { SITEMAP_SHARDS, OPERATOR_SHARDS } from "@/features/seo/sitemap-shards";
 import { harvestPostTags, selectTopTags } from "@/features/seo/sitemap-tags";
 import { isIndexable, canonicalTarget, isBelowReputationGate } from "@/utils/entry-indexability";
 import { isNsfwCommunity } from "@/utils/nsfw-detection";
@@ -472,12 +472,24 @@ export async function POST(req: Request): Promise<Response> {
       lastmods[name] = changed || !recorded[name] ? nowIso : recorded[name];
       toWrite.push(name);
     }
+    // Operator-seeded shards ride along in the index while their blob
+    // exists; their lastmod is whatever the operator set beside the blob (or
+    // the previously recorded one), never this run's time: nothing here
+    // changed them.
+    const children: { name: string; lastmod: string }[] = SITEMAP_SHARDS.map((name) => ({
+      name,
+      lastmod: lastmods[name]
+    }));
+    for (const name of OPERATOR_SHARDS) {
+      const blob = await redis.get(K(name));
+      if (!blob) continue;
+      const lastmod = (await redis.get(`${K(name)}:lastmod`)) || recorded[name] || nowDay;
+      lastmods[name] = lastmod;
+      children.push({ name, lastmod });
+    }
     await redis.set(K("lastmod"), JSON.stringify(lastmods));
     for (const name of toWrite) await redis.set(K(name), shardXml[name]);
-    await redis.set(
-      K("index"),
-      indexXml(SITEMAP_SHARDS.map((name) => ({ name, lastmod: lastmods[name] })))
-    );
+    await redis.set(K("index"), indexXml(children));
     if (acceptWalk) {
       await redis.set(POSTS_LASTGOOD_KEY, String(postUrls.length));
       // Full datetime, so a later rejected walk advertises exactly the

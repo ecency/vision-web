@@ -230,4 +230,17 @@ describe("sitemap-generate route", () => {
     expect(shard("posts.xml")).toContain("newcomer");
     expect(indexEntry("posts.xml")).toBe(new Date(t0 + 2 * HOUR).toISOString());
   });
+
+  it("lists an operator-seeded shard in the index only while its blob exists, with the operator's lastmod", async () => {
+    await run();
+    expect(shard("index")).not.toContain("recovery.xml");
+    store.set("seo:sitemap:recovery.xml", "<urlset/>");
+    store.set("seo:sitemap:recovery.xml:lastmod", "2026-08-18");
+    await run();
+    expect(indexEntry("recovery.xml")).toBe("2026-08-18");
+    expect(shard("recovery.xml")).toBe("<urlset/>"); // untouched by the generator
+    store.delete("seo:sitemap:recovery.xml");
+    await run();
+    expect(shard("index")).not.toContain("recovery.xml");
+  });
 });
