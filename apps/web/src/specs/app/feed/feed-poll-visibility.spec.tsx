@@ -1,8 +1,10 @@
 import React from "react";
-import { render, act } from "@testing-library/react";
+import { act, type RenderResult } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { getQueryClient } from "@/core/react-query";
+import { renderWithQueryClient } from "@/specs/test-utils";
 import type { Entry } from "@/entities";
 
 const fetchSpy = vi.hoisted(() => vi.fn(async () => [] as Entry[]));
@@ -29,21 +31,35 @@ vi.mock("@/features/shared/user-avatar", () => ({ UserAvatar: () => null }));
 
 import { FeedLayout } from "@/app/(dynamicPages)/feed/_components/feed-layout";
 
-function setVisibility(state: "visible" | "hidden") {
+const ORIGINAL_VISIBILITY = Object.getOwnPropertyDescriptor(
+  Document.prototype,
+  "visibilityState"
+);
+
+function setVisibility(state: "visible" | "hidden"): void {
   Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
   document.dispatchEvent(new Event("visibilitychange"));
 }
 
-function renderFeed() {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } }
-  });
-  return render(
-    <QueryClientProvider client={client}>
-      <FeedLayout tag="" filter="trending" observer="ecency">
-        <div />
-      </FeedLayout>
-    </QueryClientProvider>
+function restoreVisibility(): void {
+  // The property is defined on Document.prototype, not on the instance, so the
+  // test-defined own property has to be deleted or it leaks into later suites.
+  delete (document as unknown as Record<string, unknown>).visibilityState;
+  if (ORIGINAL_VISIBILITY) {
+    Object.defineProperty(Document.prototype, "visibilityState", ORIGINAL_VISIBILITY);
+  }
+}
+
+function renderFeed(): RenderResult {
+  return renderWithQueryClient(
+    <FeedLayout tag="" filter="trending" observer="ecency">
+      <div />
+    </FeedLayout>,
+    {
+      queryClient: new QueryClient({
+        defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } }
+      })
+    }
   );
 }
 
@@ -56,11 +72,18 @@ describe("feed poll", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSpy.mockClear();
+    // FeedLayout polls through getQueryClient(), the module-level client, not
+    // the one the provider holds. Its cache outlives a test, and with the poll's
+    // staleTime a leftover entry would satisfy the next test's fetch and make
+    // these assertions depend on execution order.
+    getQueryClient().clear();
     setVisibility("visible");
   });
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    getQueryClient().clear();
+    restoreVisibility();
   });
 
   it("polls while the tab is visible", async () => {
@@ -111,5 +134,30 @@ describe("feed poll", () => {
     });
 
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not touch state from a poll still in flight at unmount", async () => {
+    // clearInterval stops the next tick but not one already awaiting fetchQuery.
+    let release: (v: Entry[]) => void = () => {};
+    fetchSpy.mockImplementationOnce(
+      () => new Promise<Entry[]>((resolve) => { release = resolve; })
+    );
+    const errors: unknown[] = [];
+    const onError = (e: ErrorEvent) => errors.push(e.error ?? e.message);
+    window.addEventListener("error", onError);
+
+    const { unmount } = renderFeed();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(31_000);
+    });
+    unmount();
+
+    await act(async () => {
+      release([{ author: "alice", permlink: "p", stats: {} } as unknown as Entry]);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    window.removeEventListener("error", onError);
+    expect(errors).toEqual([]);
   });
 });

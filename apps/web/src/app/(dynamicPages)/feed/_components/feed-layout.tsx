@@ -75,7 +75,11 @@ export function FeedLayout(props: PropsWithChildren<Props>) {
     // /trending, and it runs for anonymous readers too. Left running, a tab
     // parked in the background all afternoon pulls about 10 MB an hour to
     // maintain a count nobody is looking at.
-    const poll = async () => {
+    // A poll already awaiting fetchQuery outlives clearInterval, and would then
+    // write pending/extra state into an unmounted feed.
+    let cancelled = false;
+
+    const poll = async (): Promise<void> => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") {
         return;
       }
@@ -94,7 +98,7 @@ export function FeedLayout(props: PropsWithChildren<Props>) {
         ...pollOptions,
         staleTime: POLL_STALE_TIME_MS
       });
-      if (!resp || resp.length === 0) return;
+      if (cancelled || !resp || resp.length === 0) return;
 
       // Update existing entries with latest stats
       queryClient.setQueryData<InfiniteData<Entry[] | SearchResponse, unknown>>(queryKey, (old) => {
@@ -140,7 +144,7 @@ export function FeedLayout(props: PropsWithChildren<Props>) {
     const interval = setInterval(poll, POLL_INTERVAL_MS);
     // Catch up as soon as the reader comes back, rather than making them wait
     // out the rest of an interval for a chip that is already out of date.
-    const onVisible = () => {
+    const onVisible = (): void => {
       if (document.visibilityState === "visible") {
         poll();
       }
@@ -148,6 +152,7 @@ export function FeedLayout(props: PropsWithChildren<Props>) {
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
+      cancelled = true;
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
