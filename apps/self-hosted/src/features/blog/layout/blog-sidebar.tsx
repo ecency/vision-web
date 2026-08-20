@@ -1,4 +1,5 @@
 import { formatMonthYear, InstanceConfigManager, t } from "@/core";
+import { NewsletterSignup } from "../components/newsletter-signup";
 import { useAuth } from "@/features/auth";
 import { InlineError } from "@/features/shared/inline-error";
 import {
@@ -103,6 +104,7 @@ function BlogSidebarContent({ username }: { username: string }) {
           </div>
         </div>
       )}
+      <NewsletterSignup />
       {data && (
         <div className="border-t border-theme pt-4 mt-4 sidebar-hive-info-section">
           <div className="text-xs font-medium mb-2 text-theme-muted">
@@ -317,7 +319,8 @@ function CommunitySidebar() {
         <CommunityJoinButton communityId={communityId} />
       </div>
 
-      <div className="border-t border-theme pt-4 mt-4 sidebar-hive-info-section">
+      <NewsletterSignup />
+        <div className="border-t border-theme pt-4 mt-4 sidebar-hive-info-section">
         <div className="text-xs font-medium mb-2 text-theme-muted">
           {t("community_info")}
         </div>

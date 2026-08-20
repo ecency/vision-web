@@ -10,6 +10,10 @@ services:
     image: ecency/self-hosted:${TAG:?TAG environment variable is required}
     container_name: ecency-hosting-blog
     restart: unless-stopped
+    # The newsletter subscribe location proxies to the origin vhost on this box;
+    # host-gateway is what makes host.docker.internal resolve on Linux Docker.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:3100:80"
     volumes:

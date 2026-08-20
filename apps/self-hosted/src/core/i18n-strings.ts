@@ -300,7 +300,20 @@ export type TranslationKey =
   | 'panel_configuration_instance_configuration_features_hive_payout_label_description'
   | 'panel_validation_learn_more_url'
   | 'panel_validation_create_post_url_community'
-  | 'panel_validation_create_post_url_refused';
+  | 'panel_validation_create_post_url_refused'
+  | 'newsletterTitle'
+  | 'newsletterBlurb'
+  | 'newsletterCommunityBlurb'
+  | 'newsletterEmail'
+  | 'newsletterWeekly'
+  | 'newsletterMonthly'
+  | 'newsletterCadence'
+  | 'newsletterSubscribe'
+  | 'newsletterCheckInbox'
+  | 'newsletterError'
+  | 'panel_configuration_instance_configuration_features_newsletter_label'
+  | 'panel_configuration_instance_configuration_features_newsletter_enabled_label'
+  | 'panel_configuration_instance_configuration_features_newsletter_enabled_description';
 
 export type Translations = Record<TranslationKey, string>;
 
@@ -323,6 +336,19 @@ export const translations: { en: Translations } & Record<
   Partial<Translations>
 > = {
   en: {
+    panel_configuration_instance_configuration_features_newsletter_label: 'Newsletter signup',
+    panel_configuration_instance_configuration_features_newsletter_enabled_label: 'Show the email signup form',
+    panel_configuration_instance_configuration_features_newsletter_enabled_description: 'Readers can subscribe to a weekly or monthly email digest of this site (managed hosting only; double opt-in).',
+    newsletterTitle: 'Get new posts by email',
+    newsletterBlurb: 'A weekly or monthly digest of new posts. Double opt-in, unsubscribe any time.',
+    newsletterCommunityBlurb: 'The best of this community as a weekly or monthly digest. Double opt-in, unsubscribe any time.',
+    newsletterEmail: 'Your email',
+    newsletterWeekly: 'Weekly',
+    newsletterMonthly: 'Monthly',
+    newsletterCadence: 'How often',
+    newsletterSubscribe: 'Subscribe',
+    newsletterCheckInbox: 'Almost there: confirm from the email we just sent.',
+    newsletterError: 'Could not subscribe right now. Please try again.',
     loading: "Loading...",
     hivesigner_login_failed: 'Sign in could not be completed. Please try again.',
     loadingPost: "Loading post...",

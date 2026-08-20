@@ -5,8 +5,10 @@
  * route handler here, which holds the service token, establishes identity where identity
  * matters (HiveSigner token verified upstream), and relays. That keeps the service private,
  * keeps its token off the client, and lets this side add what only it knows: the caller's
- * IP and user agent, and server-side entitlement checks (a creator digest is only offered
- * for Ecency Pro creators).
+ * IP and user agent, plus the entitlement checks that are ours to make (Ecency Pro to send
+ * a chosen post, community roles to send a community's issues, see
+ * server/newsletter-sender-gate). Subscribing itself is entitlement-free: every creator is
+ * offered a digest.
  *
  * Mirrors server/hosting-internal.ts.
  */

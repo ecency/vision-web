@@ -35,7 +35,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    include: ['src/**/*.test.ts'],
+    // .tsx too: component tests render through react-dom/client, and while
+    // this matched only .ts they were collected as zero files, so the suite
+    // reported green with the component's whole spec never executed.
+    include: ['src/**/*.test.{ts,tsx}'],
     alias: {
       // Absolute, because Vite resolves an alias target relative to the
       // importing file rather than the project root. As './src' this alias

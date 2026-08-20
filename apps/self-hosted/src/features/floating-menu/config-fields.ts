@@ -410,6 +410,19 @@ export function buildConfigFields(
                 type: 'array',
                 description: t('panel_configuration_instance_configuration_features_posts_filters_description'),
               },
+              newsletter: {
+                label: t('panel_configuration_instance_configuration_features_newsletter_label'),
+                type: 'section',
+                fields: {
+                  enabled: {
+                    label: t('panel_configuration_instance_configuration_features_newsletter_enabled_label'),
+                    type: 'boolean',
+                    // The runtime treats an absent value as ON; the editor must show the same.
+                    default: true,
+                    description: t('panel_configuration_instance_configuration_features_newsletter_enabled_description'),
+                  },
+                },
+              },
               likes: {
                 label: t('panel_configuration_instance_configuration_features_likes_label'),
                 type: 'section',

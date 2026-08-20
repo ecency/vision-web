@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The subscribe relay: the browser never talks to the newsletter service. This handler
- * verifies identity when a token is present, enforces the Pro gate for creator digests on
+ * verifies identity when a token is present, keeps creator digests open to every creator on
  * the server, adds what only the server knows (IP, user agent), and relays.
  */
 const mocks = vi.hoisted(() => ({
@@ -107,19 +107,11 @@ describe("POST /api/newsletter/subscribe", () => {
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
-  it("offers creator digests only for Ecency Pro creators, checked on the server", async () => {
-    mocks.isPro.mockResolvedValueOnce(false);
-    const denied = await post({ ...VALID, type: "creator", target: "someone" });
-    expect(denied.status).toBe(403);
-    expect(mocks.fetch).not.toHaveBeenCalled();
-
-    mocks.isPro.mockResolvedValueOnce(null);
-    expect((await post({ ...VALID, type: "creator", target: "someone" })).status).toBe(503);
-
-    mocks.isPro.mockResolvedValueOnce(true);
+  it("offers creator digests for EVERY creator: no Pro roster is consulted (2026-08-19)", async () => {
     mocks.fetch.mockResolvedValue(upstream(200, { status: "pending_confirmation" }));
-    expect((await post({ ...VALID, type: "creator", target: "Good-Karma" })).status).toBe(200);
-    expect(mocks.isPro).toHaveBeenLastCalledWith("good-karma");
+    expect((await post({ ...VALID, type: "creator", target: "Someone" })).status).toBe(200);
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body).target).toBe("someone");
+    expect(mocks.isPro).not.toHaveBeenCalled();
   });
 
   it("accepts the site digest from the landing page and relays it without a Pro check", async () => {
