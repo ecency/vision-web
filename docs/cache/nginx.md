@@ -25,8 +25,29 @@ proxy_cache_path /var/cache/nginx/ssr levels=1:2
 
 ## Per-host config
 
-⛔ **The vhosts are tracked: read `infra/origin/eu.ecency.com.conf` and
-`us.ecency.com.conf` rather than a snippet here.** This section used to carry a
+### The bot map is CANONICAL here — do not remove it
+
+⛔ This block is **not** documentation of the config, it IS a copy the test suite reads.
+`apps/web/src/specs/features/next-middleware/social-bot-metadata.spec.ts` parses it out of
+this file and asserts term-for-term parity with `htmlLimitedBots` in `next.config.js`. The
+two drifting is invisible in dev, where nothing is cached, and in production means a page
+primed by a browser is served to a crawler from the wrong cache namespace with streamed
+metadata (#1257). Keep the fenced `nginx` block and the `"~*( … )"` shape — the test matches
+on them.
+
+The live definition sits at `http` level in `/etc/nginx/nginx.conf`, which is not tracked.
+
+```nginx
+map $http_user_agent $html_limited_bot {
+  default "";
+  "~*(Googlebot|[\w-]+-Google|Google-[\w-]+|googleweblight|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|Yeti)" "|htmlbot";
+}
+```
+
+### The rest of the vhost is tracked, so read it there
+
+⛔ **Read `infra/origin/eu.ecency.com.conf` and `us.ecency.com.conf` rather than a snippet
+here.** This section used to carry a
 hand-copied `server { … }` block, which drifted and began contradicting the real config
 — it showed `add_header X-Cache-Tier $upstream_http_x_cache_tier always;`, which the
 tracked file explicitly forbids because the upstream already sets that header and nginx
@@ -46,11 +67,6 @@ proxy_cache_background_update on;
 proxy_cache_lock on;
 ```
 
-The `$html_limited_bot` map lives at `http` level in `/etc/nginx/nginx.conf`, which is
-**not** tracked (see `infra/origin/README.md`, "What these files depend on"). Its pattern
-list must stay in step with `htmlLimitedBots` in `next.config.js`: if the app serves a
-blocking render to an agent the map does not classify, that response and a browser's
-share one cache entry.
 
 ## Why the bot UA class is in the cache key
 

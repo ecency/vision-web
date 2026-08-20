@@ -65,14 +65,16 @@ pnpm lint
 pnpm typecheck
 ```
 
-**Three script audits also gate `.github/workflows/typecheck.yml`**, and `pnpm test` runs none
-of them:
+**Four script audits also gate `.github/workflows/typecheck.yml`**, and `pnpm test` runs none
+of them. ⛔ Copy the flags exactly: without `--fail` these REPORT and exit 0, so a violation
+passes locally and fails in CI.
 
 ```bash
-node scripts/icon-tsx-audit.mjs --fail     # icon sizing, see docs/icons.md
-node scripts/icon-scss-audit.mjs           # also fails if a retired SCSS rule reappears
-node scripts/slim-entries-audit.mjs        # feed payload invariants
-node scripts/origin-config-audit.mjs --self-test && node scripts/origin-config-audit.mjs --fail
+node scripts/icon-scss-audit.mjs                 # also fails if a retired SCSS rule reappears
+node scripts/icon-tsx-audit.mjs --fail           # icon sizing, see docs/icons.md
+node scripts/slim-entries-audit.mjs --fail       # feed payload invariants
+node scripts/origin-config-audit.mjs --self-test  # prove the rules still fire, THEN enforce
+node scripts/origin-config-audit.mjs --fail
 ```
 
 `origin-config-audit` keeps thresholds, source addresses, inline allowlists, secret markers and
