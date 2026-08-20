@@ -17,7 +17,8 @@ rather than silently serving with no protection.
 
 | file | lives | why not here |
 |---|---|---|
-| `rate-limits.conf` | `/etc/nginx/` **only** | the thresholds. Committing them would say exactly where the line is and how to sit under it |
+| `rate-limits.conf` | `/etc/nginx/` **only** | the request-rate thresholds. Committing them would say exactly where the line is and how to sit under it |
+| `conn-limits.conf` | `/etc/nginx/` **only** | the concurrency ceiling, for the same reason |
 | `verified-crawlers.conf` | `/etc/nginx/` **only** | crawler source addresses |
 | `newsletter-relay-allow.conf` | `/etc/nginx/` **only** | who may reach the newsletter service, see the hosting origin README |
 
@@ -30,6 +31,11 @@ What IS committed and deliberately so:
   willing to send a dozen requests and count the 429s, so hiding the shape buys nothing
   while costing reviewability.
 - bot-detection patterns, which are public crawler names.
+
+**Comments count as published.** A threshold quoted in a comment is as disclosed as one in
+a directive, so the vhost comments name the include rather than the number. The audit
+reads comments for exactly this reason: an earlier version stripped them and reported a
+clean run while every rate sat in prose two lines above.
 
 ## What these files depend on
 
