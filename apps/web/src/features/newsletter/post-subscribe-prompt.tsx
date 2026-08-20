@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getCommunityQueryOptions } from "@ecency/sdk";
 import type { Entry } from "@/entities";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import * as ls from "@/utils/local-storage";
 import { Button } from "@ui/button";
 import { UilEnvelope } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
@@ -14,13 +15,27 @@ import { useNewsletterEnabled } from "./runtime";
 import type { DigestType } from "./types";
 
 /**
- * At the end of a post (vision-web#1537): a reader who is signed in and not yet
- * subscribed is offered the author's digest (every creator has one since 2026-08-19), or the
- * community's digest when the post was made in one. Dismissible per list; the
- * dismissal is remembered on this device. Never shown to the author for their
- * own list, never twice for the same list, never while a subscription exists.
+ * At the end of a post (vision-web#1537): a reader not yet subscribed is offered the
+ * author's digest (every creator has one since 2026-08-19), or the community's digest
+ * when the post was made in one. Dismissible per list; the dismissal is remembered on
+ * this device. Never shown to the author for their own list, never twice for the same
+ * list, never while a subscription exists.
+ *
+ * Anonymous readers see it too (vision-web#1568). They are the larger half of a post's
+ * audience and the one with no other way to hear about the next post, and the subscribe
+ * path already serves them: double opt-in, plus a Turnstile check on the relay. What
+ * changes for them is only what we can KNOW -- there is no subscription list to consult,
+ * so the card is offered on the assumption they are not subscribed, and a dismissal is
+ * the only memory we have.
  */
 const dismissKey = (viewer: string, type: DigestType, target: string) => `ecency:digest-post-prompt:${viewer}:${type}:${target}`;
+
+/**
+ * The dismissal namespace for a signed-out reader. Deliberately its own segment rather
+ * than an empty one, which would produce `...prompt::creator:bob` and collide with a
+ * malformed signed-in key.
+ */
+const ANON_VIEWER = "anon";
 
 export function PostSubscribePrompt({ entry, communityTitle, className }: { entry: Entry; communityTitle?: string | null; className?: string }): ReactElement | null {
   const enabled = useNewsletterEnabled();
@@ -32,10 +47,13 @@ export function PostSubscribePrompt({ entry, communityTitle, className }: { entr
   // (2026-08-19), so it is offered first; the community's digest when the
   // reader IS the author (their own list is not offered to them) and the post
   // was made in a community.
+  // An anonymous reader is never the author, so they always land on the creator branch;
+  // the community branch stays reachable only for a signed-in author reading their own
+  // post, which is what it was for.
   const list: { type: "creator" | "community"; target: string } | null =
-    !enabled || !me || !isTopLevel
+    !enabled || !isTopLevel
       ? null
-      : me !== entry.author
+      : !me || me !== entry.author
         ? { type: "creator", target: entry.author }
         : inCommunity
           ? { type: "community", target: entry.category }
@@ -47,29 +65,53 @@ export function PostSubscribePrompt({ entry, communityTitle, className }: { entr
   });
   const label = !list ? "" : list.type === "creator" ? `@${list.target}` : communityTitle || community?.title || list.target;
 
+  // Stays disabled for anonymous readers, on purpose: newsletterApi.list needs a
+  // username and requireUsername throws, the endpoint needs the account's token, and one
+  // shared cache key would collapse every anonymous visitor onto one entry. The anon path
+  // SKIPS the query rather than enabling it, and `known` below is what stands in for it.
   const { subscription, isSuccess } = useDigestSubscription(list?.type ?? "creator", list?.target ?? "");
   const [dismissed, setDismissed] = useState(true);
+  const [ready, setReady] = useState(false);
   const [open, setOpen] = useState(false);
   useEffect(() => {
-    if (!list || !me) return;
+    if (!list) return;
+    // activeUser is null during SSR AND on the first client render for a signed-in
+    // reader, because the store is populated in a post-mount effect. Rendering the
+    // anonymous card on that first paint would flash it at subscribers and, worse, write
+    // an "anon" dismissal for someone who is actually signed in. Reading the same
+    // localStorage key the store reads tells the two apart: a stored user with no `me`
+    // yet means "not hydrated", not "anonymous".
+    let stored: string | null = null;
     try {
-      setDismissed(window.localStorage.getItem(dismissKey(me, list.type, list.target)) === "1");
+      stored = ls.get("active_user") ?? null;
+    } catch {
+      stored = null;
+    }
+    if (stored && !me) return;
+
+    const viewer = me ?? ANON_VIEWER;
+    try {
+      setDismissed(window.localStorage.getItem(dismissKey(viewer, list.type, list.target)) === "1");
     } catch {
       setDismissed(false);
     }
+    setReady(true);
   }, [list?.type, list?.target, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!list || !me) return null;
+  if (!list || !ready) return null;
+  // For a signed-in reader we can prove they hold no subscription, so we wait for the
+  // query. For an anonymous one there is nothing to consult and nothing to wait for.
+  const known = me ? isSuccess && !subscription : true;
   // The card goes once dismissed or once a subscription exists; the dialog,
   // if open, stays: a pending-confirmation outcome ("check your inbox") is
   // shown by the dialog after the refetch, and unmounting it would lose it.
-  const showCard = !dismissed && isSuccess && !subscription;
+  const showCard = !dismissed && known;
   if (!showCard && !open) return null;
 
   const dismiss = () => {
     setDismissed(true);
     try {
-      window.localStorage.setItem(dismissKey(me, list.type, list.target), "1");
+      window.localStorage.setItem(dismissKey(me ?? ANON_VIEWER, list.type, list.target), "1");
     } catch {
       /* private mode: dismissed for this page only */
     }

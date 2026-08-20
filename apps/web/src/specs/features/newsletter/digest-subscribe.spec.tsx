@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
 import type { ReactElement } from "react";
@@ -12,6 +12,38 @@ import {
   renderWithQueryClient,
   setupModalContainers
 } from "@/specs/test-utils";
+
+/**
+ * The Turnstile widget, mocked: the real one appends a Cloudflare <script> jsdom never
+ * runs, so an anonymous subscribe would sit behind a token that can never arrive. It
+ * renders nothing and hands the test the callbacks.
+ */
+const captcha = vi.hoisted(() => ({
+  verify: null as null | ((token: string) => void),
+  resets: 0
+}));
+vi.mock("@/features/shared/turnstile", () => ({
+  TURNSTILE_SITEKEY: "test-sitekey",
+  Turnstile: ({
+    onVerify,
+    ref
+  }: {
+    onVerify: (token: string) => void;
+    ref?: { current: { reset: () => void } | null };
+  }) => {
+    captcha.verify = onVerify;
+    if (ref) ref.current = { reset: () => { captcha.resets += 1; } };
+    return null;
+  }
+}));
+
+const CAPTCHA_TOKEN = "turnstile-test-token";
+
+async function solveCaptcha() {
+  await act(async () => {
+    captcha.verify?.(CAPTCHA_TOKEN);
+  });
+}
 
 const flags = vi.hoisted(() => ({ newsletter: true }));
 vi.mock("@/config", () => ({
@@ -86,9 +118,11 @@ describe("DigestSubscribeDialog", () => {
   afterEach(() => {
     cleanupModalContainers();
     vi.unstubAllGlobals();
+    captcha.verify = null;
+    captcha.resets = 0;
   });
 
-  it("anonymous: asks for an address, subscribes without a token, and shows the confirmation prompt", async () => {
+  it("anonymous: asks for an address, clears a bot check, subscribes without an account token, and shows the confirmation prompt", async () => {
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       if (url === "/api/newsletter/subscribe" && init?.method === "POST") {
         // What the service returns to an unproven caller: this and nothing more.
@@ -102,6 +136,10 @@ describe("DigestSubscribeDialog", () => {
     const subscribeBtn = screen.getByRole("button", { name: "newsletter.subscribe" });
     expect(subscribeBtn).toBeDisabled(); // no address yet
     fireEvent.change(email, { target: { value: "reader@example.com" } });
+    // An address is no longer enough: an anonymous caller also clears the bot check,
+    // because this request makes us mail an address nobody has proven they own.
+    expect(subscribeBtn).toBeDisabled();
+    await solveCaptcha();
     expect(subscribeBtn).not.toBeDisabled();
     fireEvent.click(subscribeBtn);
 
@@ -113,9 +151,13 @@ describe("DigestSubscribeDialog", () => {
       type: "community",
       target: "hive-140217",
       cadence: "weekly",
-      source: "community-page"
+      source: "community-page",
+      captchaToken: CAPTCHA_TOKEN
     });
     expect(body.code).toBeUndefined();
+    // The display label is the dialog's own copy; it is not sent, so a caller cannot
+    // write part of a sentence into mail our domain sends.
+    expect(body.targetLabel).toBeUndefined();
     // Nothing that a logged-in flow would offer.
     expect(screen.queryByText("newsletter.manage-all")).not.toBeInTheDocument();
   });
@@ -166,11 +208,16 @@ describe("DigestSubscribeDialog", () => {
     fetchMock.mockImplementation(() => jsonResponse(200, { status: "refused", reason: "suppressed" }));
     renderConfigured(<DigestSubscribeDialog {...dialogProps} />);
     fireEvent.change(screen.getByPlaceholderText("you@example.com"), { target: { value: "gone@example.com" } });
+    await solveCaptcha();
     fireEvent.click(screen.getByRole("button", { name: "newsletter.subscribe" }));
     await waitFor(() => expect(screen.getByText("newsletter.refused")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "newsletter.try-again" }));
     expect(screen.getByPlaceholderText("you@example.com")).toBeInTheDocument();
     expect(screen.queryByText("newsletter.refused")).not.toBeInTheDocument();
+    // The first attempt spent the token, so the way back re-challenges rather than
+    // letting the retry post a used one and fail with a generic error.
+    expect(captcha.resets).toBe(1);
+    expect(screen.getByRole("button", { name: "newsletter.subscribe" })).toBeDisabled();
   });
 
   it("a pending subscription offers to resend the confirmation at the same cadence", async () => {

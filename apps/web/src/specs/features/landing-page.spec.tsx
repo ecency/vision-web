@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock global store
@@ -21,6 +21,39 @@ vi.mock("@ecency/sdk", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@ecency/sdk")>();
   return { ...actual };
 });
+
+/**
+ * The Turnstile widget, mocked. The real one appends a Cloudflare <script> that jsdom
+ * never runs, so the token would never arrive and the form would stay unsubmittable.
+ * The mock renders nothing and hands the test the callbacks.
+ */
+const captcha = vi.hoisted(() => ({
+  verify: null as null | ((token: string) => void),
+  resets: 0
+}));
+vi.mock("@/features/shared/turnstile", () => ({
+  TURNSTILE_SITEKEY: "test-sitekey",
+  Turnstile: ({
+    onVerify,
+    ref
+  }: {
+    onVerify: (token: string) => void;
+    ref?: { current: { reset: () => void } | null };
+  }) => {
+    captcha.verify = onVerify;
+    if (ref) ref.current = { reset: () => { captcha.resets += 1; } };
+    return null;
+  }
+}));
+
+const CAPTCHA_TOKEN = "turnstile-test-token";
+
+/** Solve the challenge the way a reader does before the button becomes usable. */
+async function solveCaptcha() {
+  await act(async () => {
+    captcha.verify?.(CAPTCHA_TOKEN);
+  });
+}
 
 // The form subscribes through the newsletter service; mock its browser client.
 type NewsletterModule = typeof import("@/features/newsletter");
@@ -161,6 +194,8 @@ describe("LandingTrending", () => {
 describe("LandingSubscribeForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    captcha.verify = null;
+    captcha.resets = 0;
   });
 
   it("renders email input, cadence choice and submit button", () => {
@@ -178,11 +213,19 @@ describe("LandingSubscribeForm", () => {
     const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress");
     fireEvent.change(input, { target: { value: "  test@example.com " } });
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "monthly" } });
+    await solveCaptcha();
     fireEvent.submit(input.closest("form")!);
 
     await waitFor(() => {
       expect(mockSubscribe).toHaveBeenCalledWith(
-        { email: "test@example.com", type: "site", target: "ecency", cadence: "monthly", source: "landing-page" },
+        {
+          email: "test@example.com",
+          type: "site",
+          target: "ecency",
+          cadence: "monthly",
+          source: "landing-page",
+          captchaToken: CAPTCHA_TOKEN
+        },
         undefined // anonymous: no account attributed
       );
       expect(success).toHaveBeenCalledWith("landing-page.check-inbox");
@@ -197,6 +240,7 @@ describe("LandingSubscribeForm", () => {
     render(<LandingSubscribeForm />);
     const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress");
     fireEvent.change(input, { target: { value: "test@example.com" } });
+    await solveCaptcha();
     fireEvent.submit(input.closest("form")!);
     // The visible outcome, not only the toast: the message replaces the form.
     expect(await screen.findByText("landing-page.success-message-subscribe")).toBeInTheDocument();
@@ -210,6 +254,7 @@ describe("LandingSubscribeForm", () => {
     render(<LandingSubscribeForm />);
     const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress");
     fireEvent.change(input, { target: { value: "test@example.com" } });
+    await solveCaptcha();
     fireEvent.submit(input.closest("form")!);
 
     await waitFor(() => expect(errorFn).toHaveBeenCalledWith("landing-page.error-occured"));
@@ -225,7 +270,8 @@ describe("LandingSubscribeForm", () => {
       const { unmount } = render(<LandingSubscribeForm />);
       const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress");
       fireEvent.change(input, { target: { value: "test@example.com" } });
-      fireEvent.submit(input.closest("form")!);
+      await solveCaptcha();
+    fireEvent.submit(input.closest("form")!);
       await waitFor(() => expect(errorFn).toHaveBeenCalledWith("newsletter.error-unavailable"));
       unmount();
     }

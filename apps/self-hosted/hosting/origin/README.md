@@ -31,6 +31,32 @@ in practice — **re-copy any change made there back into this directory.**
    reloads nginx if something changed. A vhost that fails `nginx -t` is quarantined as
    `.broken` rather than wedging every later reload.
 
+## A custom domain also needs a Turnstile hostname
+
+The sync does NOT do this, and nothing else will notice if it is skipped.
+
+The newsletter signup form on a tenant blog renders a Cloudflare Turnstile widget, and the
+relay refuses an anonymous subscribe without a valid token. A Turnstile sitekey is bound to
+a hostname list, and adding a hostname covers that hostname **and all of its subdomains**,
+so every `*.blogs.ecency.com` tenant is already covered by the `ecency.com` entry and needs
+nothing. A custom domain on its own apex is not.
+
+So when a custom domain is attached, add it to the sitekey's domain list as well:
+
+```bash
+# read the current list first; the widget update is a PUT of the whole object
+curl -s -H "Authorization: Bearer $CF_TOKEN" \
+  "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/challenges/widgets/$SITEKEY"
+
+curl -X PUT -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" \
+  "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/challenges/widgets/$SITEKEY" \
+  --data '{"name":"ecency.com","mode":"managed","domains":["ecency.com","<the new domain>"]}'
+```
+
+Skipping it leaves that tenant's signup form with a widget that will not solve and a submit
+button that never enables. It fails visibly on the blog and invisibly to us, which is why
+it belongs in this list rather than in someone's memory.
+
 ## origin-ips (not in git)
 
 The DNS check above needs this origin's own addresses. They are read from an `origin-ips`

@@ -2,6 +2,7 @@ import { type FormEvent, type ReactElement, useEffect, useRef, useState } from '
 import { InstanceConfigManager } from '../../../core/configuration-loader';
 import { t } from '../../../core/i18n';
 import { LiveRegion } from '../../shared/live-region';
+import { Turnstile, type TurnstileHandle } from '../../shared/turnstile';
 import { newsletterSignupTarget, newsletterSubscribeBody } from '../utils/newsletter-signup-target';
 
 /**
@@ -93,6 +94,9 @@ export function NewsletterSignup({
    * replaced by the form again. Never on first render, or the page would hand
    * focus to a sidebar form the moment it loads.
    */
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileRef = useRef<TurnstileHandle>(null);
+
   const restoreFocus = useRef(false);
   useEffect(() => {
     if (!restoreFocus.current) return;
@@ -117,20 +121,30 @@ export function NewsletterSignup({
 
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
-    if (state === 'busy' || !email.trim()) return;
+    if (state === 'busy' || !email.trim() || !captchaToken) return;
     setState('busy');
     try {
       const res = await fetch('/api/newsletter/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newsletterSubscribeBody(target, email, cadence)),
+        body: JSON.stringify(newsletterSubscribeBody(target, email, cadence, captchaToken)),
       });
       if (!mounted.current) return;
       // Only success swaps the form out, so only success has focus to rescue.
       restoreFocus.current = res.ok;
       setState(res.ok ? 'done' : 'error');
+      // The token is single use whatever the outcome, and a reader who retries with a
+      // spent one gets the same generic error twice with nothing to act on.
+      if (!res.ok) {
+        setCaptchaToken('');
+        turnstileRef.current?.reset();
+      }
     } catch {
-      if (mounted.current) setState('error');
+      if (mounted.current) {
+        setState('error');
+        setCaptchaToken('');
+        turnstileRef.current?.reset();
+      }
     }
   };
 
@@ -144,6 +158,8 @@ export function NewsletterSignup({
     restoreFocus.current = true;
     setEmail('');
     setState('idle');
+    setCaptchaToken('');
+    turnstileRef.current?.reset();
   };
 
   return (
@@ -184,6 +200,17 @@ export function NewsletterSignup({
             aria-label={t('newsletterEmail')}
             className="input-theme w-full text-sm px-2 py-1.5 rounded"
           />
+          {/* Anonymous by definition here: a blog reader has no Ecency session, so the
+              relay always wants a token. The submit stays disabled until one exists,
+              which is also what happens when the script is blocked -- the widget then
+              says so rather than failing at submit with a generic error. */}
+          <Turnstile
+            ref={turnstileRef}
+            action="newsletter-subscribe"
+            onVerify={setCaptchaToken}
+            onExpire={() => setCaptchaToken('')}
+            onError={() => setCaptchaToken('')}
+          />
           <div className="flex gap-2">
             <select
               value={cadence}
@@ -196,7 +223,7 @@ export function NewsletterSignup({
             </select>
             <button
               type="submit"
-              disabled={state === 'busy'}
+              disabled={state === 'busy' || !captchaToken}
               aria-busy={state === 'busy'}
               className="btn-theme-primary text-sm px-3 py-1.5 rounded disabled:opacity-60"
             >

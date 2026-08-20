@@ -8,11 +8,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   verify: vi.fn(),
   isPro: vi.fn(),
+  turnstile: vi.fn(),
   fetch: vi.fn()
 }));
 
 vi.mock("@/server/hivesigner-verify", () => ({ verifyHsAccessToken: mocks.verify }));
 vi.mock("@/server/pro-members", () => ({ isProRosterMember: mocks.isPro }));
+// Mocked as a MODULE rather than left to hit the stubbed global fetch. An inline
+// siteverify call would occupy mocks.fetch.mock.calls[0], quietly turning every
+// assertion about the newsletter request body below into a claim about the Cloudflare
+// request instead, and some of them would still pass.
+vi.mock("@/server/turnstile-verify", () => ({ verifyTurnstile: mocks.turnstile }));
 
 function req(body: unknown, headers: Record<string, string> = {}) {
   const h = new Headers(headers);
@@ -29,9 +35,10 @@ const VALID = {
   email: "alice@example.com",
   type: "community",
   target: "hive-140217",
-  targetLabel: "Hive Gaming",
   cadence: "weekly",
-  source: "community-page"
+  source: "community-page",
+  // Anonymous by default in this file, and an anonymous caller carries a token.
+  captchaToken: "turnstile-ok"
 };
 
 function upstream(status: number, body: unknown) {
@@ -44,9 +51,12 @@ describe("POST /api/newsletter/subscribe", () => {
     vi.stubGlobal("fetch", mocks.fetch);
     vi.stubEnv("NEWSLETTER_API_URL", "http://news.internal:3300");
     vi.stubEnv("NEWSLETTER_SERVICE_TOKEN", "service-token-0123456789abcdefghijklmnop");
+    vi.stubEnv("TURNSTILE_SECRET", "test-secret");
     mocks.fetch.mockReset();
     mocks.verify.mockReset();
     mocks.isPro.mockReset();
+    mocks.turnstile.mockReset();
+    mocks.turnstile.mockResolvedValue({ ok: true });
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -154,5 +164,80 @@ describe("POST /api/newsletter/subscribe", () => {
     const r = await post(VALID);
     expect(r.status).toBe(400);
     expect(r.json.error).toMatch(/control characters/);
+  });
+
+  describe("the anonymous bot check", () => {
+    it("verifies the token with the caller's IP, scoped to the newsletter action", async () => {
+      mocks.fetch.mockResolvedValue(upstream(200, { status: "pending_confirmation" }));
+      await post(VALID, { "cf-connecting-ip": "203.0.113.9" });
+      expect(mocks.turnstile).toHaveBeenCalledWith("turnstile-ok", "203.0.113.9", "newsletter-subscribe");
+    });
+
+    it("403s a rejected token and never reaches the service", async () => {
+      mocks.turnstile.mockResolvedValue({ ok: false, reason: "invalid" });
+      const r = await post(VALID);
+      expect(r.status).toBe(403);
+      expect(mocks.fetch).not.toHaveBeenCalled();
+    });
+
+    it("403s when no token is presented at all", async () => {
+      mocks.turnstile.mockResolvedValue({ ok: false, reason: "invalid" });
+      const { captchaToken, ...noToken } = VALID;
+      const r = await post(noToken);
+      expect(r.status).toBe(403);
+      expect(mocks.turnstile).toHaveBeenCalledWith("", undefined, "newsletter-subscribe");
+      expect(mocks.fetch).not.toHaveBeenCalled();
+    });
+
+    it("503s rather than 403s when Cloudflare is the thing that is broken", async () => {
+      // A 403 would tell readers they look like bots because our secret is wrong.
+      mocks.turnstile.mockResolvedValue({ ok: false, reason: "unavailable" });
+      const r = await post(VALID);
+      expect(r.status).toBe(503);
+      expect(mocks.fetch).not.toHaveBeenCalled();
+    });
+
+    it("relays when the secret is unset, so a deploy that lands first cannot take signups down", async () => {
+      mocks.turnstile.mockResolvedValue({ ok: false, reason: "unconfigured" });
+      mocks.fetch.mockResolvedValue(upstream(200, { status: "pending_confirmation" }));
+      expect((await post(VALID)).status).toBe(200);
+      expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("never challenges a signed-in caller: the account is the proof", async () => {
+      mocks.verify.mockResolvedValue({ ok: true, username: "alice" });
+      mocks.fetch.mockResolvedValue(upstream(200, { status: "active" }));
+      const { captchaToken, ...noToken } = VALID;
+      expect((await post({ ...noToken, code: "tok" })).status).toBe(200);
+      expect(mocks.turnstile).not.toHaveBeenCalled();
+    });
+
+    it("does not exempt the managed-blog embed, because `source` is caller-supplied", async () => {
+      // If a source could turn the check off, one JSON field would turn it off for
+      // everyone. The embed carries a real token instead.
+      mocks.turnstile.mockResolvedValue({ ok: false, reason: "invalid" });
+      const r = await post({ ...VALID, type: "creator", target: "bob", source: "self-hosted-blog" });
+      expect(r.status).toBe(403);
+      expect(mocks.turnstile).toHaveBeenCalled();
+      expect(mocks.fetch).not.toHaveBeenCalled();
+    });
+
+    it("401s an anonymous own-digest before spending a siteverify round trip", async () => {
+      // That request can never succeed, so it should not cost a call to Cloudflare.
+      const r = await post({ ...VALID, type: "own", target: "alice" });
+      expect(r.status).toBe(401);
+      expect(mocks.turnstile).not.toHaveBeenCalled();
+      expect(mocks.fetch).not.toHaveBeenCalled();
+    });
+
+    it("never forwards the token, or a caller-supplied label, to the service", async () => {
+      mocks.fetch.mockResolvedValue(upstream(200, { status: "pending_confirmation" }));
+      await post({ ...VALID, targetLabel: "URGENT: verify your wallet at example.com" });
+      const sent = JSON.parse(mocks.fetch.mock.calls[0][1].body);
+      expect(sent.captchaToken).toBeUndefined();
+      // The service derives the label from the target now; a caller no longer writes
+      // part of a sentence into mail our domain sends to an address they chose.
+      expect(sent.targetLabel).toBeUndefined();
+    });
   });
 });

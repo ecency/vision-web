@@ -37,13 +37,17 @@ describe('newsletterSignupTarget', () => {
 
   it('builds the exact relay body, source self-hosted-blog', () => {
     const t = newsletterSignupTarget(managedBlog)!;
-    expect(newsletterSubscribeBody(t, '  reader@example.com ', 'monthly')).toEqual({
+    expect(newsletterSubscribeBody(t, '  reader@example.com ', 'monthly', 'tok')).toEqual({
       email: 'reader@example.com',
       type: 'creator',
       target: 'alice',
-      targetLabel: 'Alice Writes',
       cadence: 'monthly',
       source: 'self-hosted-blog',
+      // The site title is NOT sent any more: it used to let a caller write part of a
+      // sentence in mail our domain sends to an address they chose. The service derives
+      // the label from the target now. targetLabel still exists on the TARGET above,
+      // for the copy this app renders itself.
+      captchaToken: 'tok',
     });
   });
 });

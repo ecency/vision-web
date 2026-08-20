@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { newsletterApi, NewsletterApiError } from "@/features/newsletter";
 import type { DigestCadence } from "@/features/newsletter";
 import { error, success } from "@/features/shared/feedback";
 import { LinearProgress } from "@/features/shared/linear-progress";
+import { Turnstile, TURNSTILE_SITEKEY, type TurnstileHandle } from "@/features/shared/turnstile";
 import i18next from "i18next";
 import { handleInvalid, handleOnInput } from "@/utils";
 
@@ -24,13 +25,36 @@ export function LandingSubscribeForm() {
   const [cadence, setCadence] = useState<DigestCadence>("weekly");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState<"pending" | "active" | null>(null);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const turnstileRef = useRef<TurnstileHandle>(null);
+
+  // The route challenges a caller with no account, so the widget appears for exactly
+  // those. A signed-in visitor on the homepage is attributed and passes straight through.
+  const needsCaptcha = !activeUser;
+
+  // Single-use tokens: a retry that reuses one fails as though the service were down.
+  const resetCaptcha = () => {
+    setCaptchaToken("");
+    turnstileRef.current?.reset();
+  };
 
   const handleSubscribe = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    // The disabled button is only the visible half: a form can still be submitted from
+    // the keyboard while its button is disabled, and posting an empty token would spend
+    // a round trip to be told 403.
+    if (needsCaptcha && !captchaToken) return;
     setLoading(true);
     try {
       const result = await newsletterApi.subscribe(
-        { email: email.trim(), type: "site", target: "ecency", cadence, source: "landing-page" },
+        {
+          email: email.trim(),
+          type: "site",
+          target: "ecency",
+          cadence,
+          source: "landing-page",
+          ...(needsCaptcha ? { captchaToken } : {})
+        },
         activeUser?.username
       );
       if (result.status === "active") {
@@ -43,12 +67,21 @@ export function LandingSubscribeForm() {
         // Only a proven, signed-in caller ever sees "refused"; it means a bounce or
         // complaint is on record for that address.
         error(i18next.t("newsletter.refused"));
+        if (needsCaptcha) resetCaptcha();
       }
       setEmail("");
     } catch (err) {
-      const unavailable =
-        err instanceof NewsletterApiError && (err.status === 502 || err.status === 503 || err.status === 504);
-      error(i18next.t(unavailable ? "newsletter.error-unavailable" : "landing-page.error-occured"));
+      const status = err instanceof NewsletterApiError ? err.status : 0;
+      const key =
+        status === 502 || status === 503 || status === 504
+          ? "newsletter.error-unavailable"
+          : status === 403
+            ? "newsletter.error-captcha"
+            : status === 429
+              ? "newsletter.error-too-many"
+              : "landing-page.error-occured";
+      error(i18next.t(key));
+      if (needsCaptcha) resetCaptcha();
     } finally {
       setLoading(false);
     }
@@ -85,7 +118,17 @@ export function LandingSubscribeForm() {
         <option value="weekly">{i18next.t("newsletter.cadence.weekly")}</option>
         <option value="monthly">{i18next.t("newsletter.cadence.monthly")}</option>
       </select>
-      <button disabled={loading}>
+      {needsCaptcha && (
+        <Turnstile
+          ref={turnstileRef}
+          sitekey={TURNSTILE_SITEKEY}
+          action="newsletter-subscribe"
+          onVerify={setCaptchaToken}
+          onExpire={() => setCaptchaToken("")}
+          onError={() => setCaptchaToken("")}
+        />
+      )}
+      <button disabled={loading || (needsCaptcha && !captchaToken)}>
         {loading ? (
           <span>
             <LinearProgress />

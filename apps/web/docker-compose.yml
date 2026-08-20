@@ -70,6 +70,12 @@ services:
       # answer 503 and no newsletter control renders.
       - NEWSLETTER_API_URL
       - NEWSLETTER_SERVICE_TOKEN
+      # Cloudflare Turnstile secret, for verifying the token an ANONYMOUS newsletter
+      # subscribe carries (server/turnstile-verify). Shared with vapi, which declares it
+      # above for the Stripe flow; the Next tier needs its own copy or the check is
+      # skipped, because an unset secret deliberately relays rather than refusing every
+      # anonymous signup. specs/deploy/newsletter-wiring pins this line for that reason.
+      - TURNSTILE_SECRET
       - PLAUSIBLE_API_KEY
       - NEXT_PUBLIC_GMAPS_MAP_ID
       - NEXT_PUBLIC_GMAPS_API_KEY

@@ -128,7 +128,7 @@ describe("list building (vision-web#1537)", () => {
     expect(window.location.search).toBe("?subscribe=digest");
   });
 
-  it("at the end of a post, offers the author's digest to a signed-in reader who is not subscribed; remembers 'Not now'; nothing for the author, a subscriber, or when signed out", async () => {
+  it("at the end of a post, offers the author's digest to a signed-in reader who is not subscribed; remembers 'Not now'; nothing for the author or a subscriber", async () => {
     const client = createTestQueryClient();
     client.setQueryData(digestSubscriptionsKey("alice"), []);
     const entry = mockEntry({ author: "bob", permlink: "hello", category: "photography", parent_author: "", depth: 0 });
@@ -160,11 +160,63 @@ describe("list building (vision-web#1537)", () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(c3.textContent).toBe("");
     u3();
-    // Signed out: nothing.
+  });
+
+  it("offers the author's digest to an ANONYMOUS reader, and remembers a dismissal under its own key", async () => {
+    // Anonymous readers are the larger half of a post's audience and the half with no
+    // other way to hear about the next post. There is no subscription list to consult
+    // for them, so the card is offered rather than withheld; the subscribe path already
+    // serves them with double opt-in plus a bot check on the relay.
     loggedIn(null);
-    const { container: c4 } = render(<PostSubscribePrompt entry={entry} />, client);
+    const client = createTestQueryClient();
+    const entry = mockEntry({ author: "bob", permlink: "hello", category: "photography", parent_author: "", depth: 0 });
+    window.localStorage.clear();
+
+    const { unmount } = render(<PostSubscribePrompt entry={entry} />, client);
+    await screen.findByRole("region", { name: "newsletter.post-prompt-title" });
+    expect(screen.getByText("newsletter.post-prompt-body-creator")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("newsletter.post-prompt-dismiss"));
+    expect(screen.queryByRole("region")).toBeNull();
+    // Its own namespace: an empty viewer segment would read `...prompt::creator:bob`.
+    expect(window.localStorage.getItem("ecency:digest-post-prompt:anon:creator:bob")).toBe("1");
+    unmount();
+
+    const { container } = render(<PostSubscribePrompt entry={entry} />, client);
     await new Promise((r) => setTimeout(r, 30));
-    expect(c4.textContent).toBe("");
+    expect(container.textContent).toBe("");
+  });
+
+  it("never asks the service for an anonymous reader's subscriptions", async () => {
+    // The subscriptions endpoint needs the account's token, newsletterApi.list throws
+    // without a username, and one shared cache key would collapse every anonymous
+    // visitor onto a single entry. The anon path skips the query rather than enabling it.
+    loggedIn(null);
+    const client = createTestQueryClient();
+    const entry = mockEntry({ author: "bob", permlink: "hello", category: "photography", parent_author: "", depth: 0 });
+    window.localStorage.clear();
+    render(<PostSubscribePrompt entry={entry} />, client);
+    await screen.findByRole("region", { name: "newsletter.post-prompt-title" });
+    expect(
+      fetchMock.mock.calls.filter((c) => String(c[0]).includes("/api/newsletter/subscriptions"))
+    ).toHaveLength(0);
+  });
+
+  it("renders nothing while a signed-in reader's store is still hydrating", async () => {
+    // activeUser is null on the first client render for a signed-in reader too, because
+    // the store is populated in a post-mount effect. Rendering the anonymous card then
+    // would flash it at subscribers and write an "anon" dismissal for someone who is
+    // actually signed in, so a stored user with no activeUser yet renders nothing.
+    loggedIn(null);
+    window.localStorage.clear();
+    // The prefixed key the store itself writes (utils/local-storage prefixes "ecency_").
+    window.localStorage.setItem("ecency_active_user", "alice");
+    const client = createTestQueryClient();
+    const entry = mockEntry({ author: "bob", permlink: "hello", category: "photography", parent_author: "", depth: 0 });
+    const { container } = render(<PostSubscribePrompt entry={entry} />, client);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(container.textContent).toBe("");
+    window.localStorage.clear();
   });
 
   it("offers the community's digest when the author reads their own post in a community; the title comes from the community query", async () => {

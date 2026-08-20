@@ -42,6 +42,36 @@ describe("newsletter deploy wiring", () => {
     }
   );
 
+  /**
+   * The bot check on anonymous subscribes reads TURNSTILE_SECRET in the Next tier
+   * (server/turnstile-verify). It was already declared for `vapi`, which does the Stripe
+   * flow, and a missing copy on `web` fails in the quietest possible way: an unset secret
+   * relays instead of refusing, deliberately, so that nothing takes signups down during a
+   * deploy -- which also means the check would simply be off and nobody would notice.
+   *
+   * Unlike the two variables above, this one is SHARED: vapi legitimately needs it too,
+   * so this asserts presence on web without asserting absence on vapi.
+   */
+  it.each(["apps/web/docker-compose.yml", "apps/web/docker-compose.production.yml"])(
+    "%s hands the Turnstile secret to the web service, not only to vapi",
+    (file) => {
+      const web = envEntries(serviceBlock(read(file), "web"));
+      expect(web, `${file}: web.environment lacks TURNSTILE_SECRET`).toContain("TURNSTILE_SECRET");
+    }
+  );
+
+  it.each([".github/workflows/master.yml", ".github/workflows/staging.yml"])(
+    "%s forwards the Turnstile secret in every deploy job",
+    (file) => {
+      const wf = read(file);
+      const envsLines = wf.split("\n").filter((l) => /^\s+envs:\s/.test(l));
+      expect(envsLines.length).toBeGreaterThan(0);
+      for (const line of envsLines) {
+        expect(line, `${file}: envs lacks TURNSTILE_SECRET`).toContain("TURNSTILE_SECRET");
+      }
+    }
+  );
+
   it.each([".github/workflows/master.yml", ".github/workflows/staging.yml"])("%s forwards both variables in every deploy job", (file) => {
     const wf = read(file);
     // Every ssh-action step that deploys the stack carries an `envs:` list; each must forward both.
