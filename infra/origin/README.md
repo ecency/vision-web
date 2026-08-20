@@ -51,7 +51,8 @@ stripped them and reported a clean run while every rate sat in prose two lines a
 It used to: `if ($request_method = HEAD) { add_header Cache-Control no-store; return 200; }`.
 That made every HEAD report a live page whatever the truth was — `GET /@good-karma/points`
 answered 307 while `HEAD` answered 200 — so link checkers, uptime probes and crawlers were all
-told the wrong thing. Removed 2026-08-20 (#1575).
+told the wrong thing. Removed 2026-08-20 by **#1578**, which closed #1575 — the PR carries
+the change and the before/after measurements, the issue carries the reproduction.
 
 The `always` on the CORS and security `add_header`s is the **other half of the same fix**, not
 a tidy-up. While every HEAD was a fabricated 200 those headers applied, because 200 is in
