@@ -32,7 +32,7 @@ function configs(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) out.push(...configs(full));
-    else if (entry.name.endsWith(".conf")) out.push(full);
+    else if (entry.name.endsWith(".conf") || entry.name.endsWith(".md")) out.push(full);
   }
   return out;
 }
@@ -97,6 +97,18 @@ const RULES = [
     why: "states a threshold; these live in /etc/nginx/{rate-limits,conn-limits}.conf, which are not in git"
   },
   {
+    id: "wildcard-protective-include",
+    // nginx accepts a wildcard include that matches nothing, so wildcarding a
+    // file that CARRIES a protective directive means a missing file reloads
+    // clean with the protection simply gone. Allowlists may be wildcarded
+    // because `deny all` outlives the file; these may not.
+    // Not anchored to line start: the same instruction is just as wrong in a
+    // config comment or a markdown bullet as in a directive, and a bullet is
+    // exactly where it survived two rounds of review.
+    test: (line) => /include\s+[^;`]*(?:rate-limits|conn-limits)[^;`]*\*/.test(line),
+    why: "wildcards an include that carries a protective directive; use the exact path so a missing file is a startup error"
+  },
+  {
     id: "secret-marker",
     test: (line) => /EcencyInfraMonitor|api[_-]?key|password|Bearer\s|secret[_-]?key/i.test(line),
     why: "looks like a credential or a secret marker"
@@ -120,7 +132,9 @@ if (process.argv.includes("--self-test")) {
     ["threshold", "        # SSR page rate limit: 15 req/s per client IP"],
     ["threshold", "        limit_req_zone $x zone=y:1m rate=7r/s;"],
     ["threshold", "        limit_conn total_ssr 150;"],
-    ["secret-marker", "        # TODO remove api_key=hunter2 before shipping"]
+    ["secret-marker", "        # TODO remove api_key=hunter2 before shipping"],
+    ["wildcard-protective-include", "        include /etc/nginx/rate-limits*.conf;"],
+    ["wildcard-protective-include", "        include /etc/nginx/conn-limits*.conf;"]
   ];
   // Committed today and legitimate: a false positive here breaks the repo.
   const MUST_NOT_FIRE = [
@@ -133,7 +147,8 @@ if (process.argv.includes("--self-test")) {
     "        limit_req zone=ssrlimit burst=50 nodelay;",
     "        include /etc/nginx/foo-allow*.conf;",
     "        deny all;",
-    "        include /etc/nginx/rate-limits*.conf;"
+    "        include /etc/nginx/rate-limits.conf;",
+    "        include /etc/nginx/conn-limits.conf;"
   ];
   const failures = [];
   for (const [id, line] of MUST_FIRE) {
@@ -174,7 +189,11 @@ for (const file of files) {
     .split("\n")
     .forEach((text, i) => {
       if (text.trim().length === 0) return;
-      for (const rule of RULES) {
+      // Documentation is checked for the one rule it can contradict: a runbook
+      // telling an operator to wildcard a protective include is as harmful as
+      // the config doing it, and that is exactly how this drifted twice.
+      const applicable = file.endsWith(".md") ? RULES.filter((r) => r.id === "wildcard-protective-include") : RULES;
+      for (const rule of applicable) {
         if (rule.test(text)) {
           findings.push({ file: relative(ROOT, file), line: i + 1, rule: rule.id, why: rule.why, text: text.trim() });
         }

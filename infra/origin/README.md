@@ -53,8 +53,8 @@ the vhosts will load:
 
 - `map $http_user_agent $is_slow_bot` and `map $is_slow_bot$http_cf_connecting_ip $bot_limit_key`
 - `geo $http_cf_connecting_ip $is_verified_crawler` and `map $is_verified_crawler $rl_ssr_key`
-- `include /etc/nginx/rate-limits*.conf;` placed AFTER those maps, since the zones use the
-  variables they define
+- `include /etc/nginx/rate-limits.conf;` placed AFTER those maps, since the zones use the
+  variables they define. Exact, not a wildcard: see the contract above
 - the `apicache` and SSR `proxy_cache_path` entries
 - `map $cookie_active_user $skip_cache` and the other cache-decision maps
 
