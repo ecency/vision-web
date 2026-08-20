@@ -73,6 +73,8 @@ function isScopeNode(node) {
     ts.isForInStatement(node) ||
     ts.isForOfStatement(node) ||
     ts.isCatchClause(node) ||
+    ts.isClassExpression(node) ||
+    ts.isClassDeclaration(node) ||
     ts.isModuleBlock(node)
   );
 }
@@ -121,12 +123,7 @@ function canonicalAt(node, name, imports, seen = new Set()) {
 
   for (let scope = node; scope; scope = scope.parent) {
     if (!isScopeNode(scope)) continue;
-    if (
-      ts.isCatchClause(scope) &&
-      scope.variableDeclaration &&
-      ts.isIdentifier(scope.variableDeclaration.name) &&
-      scope.variableDeclaration.name.text === name
-    ) {
+    if (bindsOwnName(scope, name)) {
       return null;
     }
     const bindings = bindingsIn(scope, name);
@@ -144,6 +141,33 @@ function canonicalAt(node, name, imports, seen = new Set()) {
     seen.add(current);
   }
   return current;
+}
+
+/**
+ * Whether the scope itself binds `name`, rather than one of its children doing
+ * so: a caught error, and the self-reference of a NAMED function or class
+ * expression, which is visible only inside its own body. Both shadow an outer
+ * binding of the same name, and reading past them reported correct code as a
+ * mismatch.
+ */
+function bindsOwnName(scope, name) {
+  if (
+    ts.isCatchClause(scope) &&
+    scope.variableDeclaration &&
+    ts.isIdentifier(scope.variableDeclaration.name) &&
+    scope.variableDeclaration.name.text === name
+  ) {
+    return true;
+  }
+  // Only the EXPRESSION forms need this. A class or function DECLARATION binds
+  // its name in the scope around it, where bindingsIn already sees it as a
+  // child, so a branch for those here would never be reached.
+  return (
+    (ts.isFunctionExpression(scope) || ts.isClassExpression(scope)) &&
+    !!scope.name &&
+    ts.isIdentifier(scope.name) &&
+    scope.name.text === name
+  );
 }
 
 /**
@@ -219,6 +243,7 @@ function resolveBuilder(arg, imports) {
 
   for (let scope = arg.parent; scope; scope = scope.parent) {
     if (!isScopeNode(scope)) continue;
+    if (bindsOwnName(scope, arg.text)) return null;
     const bindings = bindingsIn(scope, arg.text);
     if (bindings.length === 1) {
       const called = calleeName(bindings[0]);
