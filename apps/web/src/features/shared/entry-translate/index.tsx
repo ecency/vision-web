@@ -7,6 +7,8 @@ import { Modal, ModalBody, ModalHeader } from "@ui/modal";
 import { Spinner } from "@ui/spinner";
 import { Select } from "@ui/input/form-controls/select";
 import { isRtlLang, languageDisplayName, normLang } from "./iso639";
+import { useQuery } from "@tanstack/react-query";
+import { EcencyEntriesCacheManagement } from "@/core/caches";
 
 interface Props {
   entry: Entry;
@@ -32,13 +34,31 @@ export function EntryTranslate({ entry, onHide, initialTarget, initialSource }: 
     getLanguages().then(setLanguages);
   }, []);
 
+  // Opened from a feed card, `entry` is a slim row with no body (see
+  // core/entries/slim-entry.ts), so the full post is fetched here. The seeded
+  // cache copy is stale from the start and refetchOnMount is off app-wide, hence
+  // the explicit "always" — without it this would translate an empty string.
+  const { data: fullEntry } = useQuery({
+    ...EcencyEntriesCacheManagement.getEntryQueryByPath(entry.author, entry.permlink),
+    enabled: !entry.body && !!entry.author && !!entry.permlink,
+    refetchOnMount: "always"
+  });
+  const sourceBody = entry.body || fullEntry?.body || "";
+
   useEffect(() => {
     let canceled = false;
     setLoading(true);
     setTranslated("");
     setDetectedFrom("");
     setError(false);
-    const body = postBodySummary(entry.body);
+    if (!sourceBody) {
+      // Still fetching the body; stay in the loading state rather than asking
+      // the translator for an empty document.
+      return () => {
+        canceled = true;
+      };
+    }
+    const body = postBodySummary(sourceBody);
     getTranslation(body, initialSource ?? "auto", target)
       .then((r) => {
         if (!canceled) {
@@ -63,7 +83,7 @@ export function EntryTranslate({ entry, onHide, initialTarget, initialSource }: 
     return () => {
       canceled = true;
     };
-  }, [entry, target, initialSource]);
+  }, [sourceBody, target, initialSource]);
 
   return (
     <Modal

@@ -14,6 +14,7 @@ import {
   stripActiveVotesFromValue
 } from "@/core/react-query/strip-active-votes";
 import { getPromotedPostsQuery } from "@ecency/sdk";
+import { withSlimEntries } from "@/core/entries/slim-entry";
 import { EcencyConfigManager } from "@/config";
 import { EntryListContent } from "@/features/shared/entry-list-content";
 import { EntryArchivePager } from "@/features/shared/entry-archive-pager";
@@ -105,7 +106,9 @@ export default async function FeedPage({ params, searchParams }: Props) {
 
   // Only prefetch promoted posts if promotions feature is enabled
   if (EcencyConfigManager.CONFIG.visionFeatures.promotions.enabled) {
-    await prefetchQuery(getPromotedPostsQuery());
+    // Promoted rows render the same cards as the feed and are dehydrated into the
+    // same payload, so they are slimmed on both sides of this query key.
+    await prefetchQuery(withSlimEntries(getPromotedPostsQuery<Entry>()));
   }
 
   const firstPage = ((feed?.pages?.[0] as Entry[] | undefined) ?? []).filter(Boolean);

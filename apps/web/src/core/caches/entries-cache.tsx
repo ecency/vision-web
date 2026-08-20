@@ -45,6 +45,16 @@ export namespace EcencyEntriesCacheManagement {
       ),
       queryKey: entryKey(initialEntry?.author ?? "", initialEntry?.permlink ?? ""),
       initialData: initialEntry,
+      // Feed cards seed this shared post cache so their vote/payout/reblog
+      // controls read one entry, and a slim row (body "") would otherwise sit
+      // here looking like a freshly fetched post for the full staleTime: opening
+      // that post could then render an empty article. Stamping the seed as
+      // never-updated keeps the cards working while marking it stale from the
+      // start, so the entry page's own fetch always wins on hydration and an
+      // explicit refetch (edit prefill, translate) reaches the network.
+      // `refetchOnMount` is false app-wide, so this does NOT make the 20 cards
+      // on a feed page fetch anything.
+      initialDataUpdatedAt: initialEntry && initialEntry.body === "" ? 0 : undefined,
       enabled: !!initialEntry,
       // Spreading getPostQueryOptions pulls in its `Entry | null` result, which
       // otherwise overrides this helper's own generic: callers lost the entry

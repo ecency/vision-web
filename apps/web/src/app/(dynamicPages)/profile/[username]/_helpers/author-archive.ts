@@ -1,6 +1,7 @@
 import { Entry } from "@/entities";
 import { fetchQuery } from "@/core/react-query";
 import { getAccountPostsQueryOptions } from "@ecency/sdk";
+import { withSlimEntries } from "@/core/entries/slim-entry";
 
 // Hive's bridge.get_account_posts caps `limit` at 20, and it's cursor-based
 // (start_author/start_permlink, exclusive). So archive pages use O(1)
@@ -10,6 +11,9 @@ export const ARCHIVE_PAGE_SIZE = 20;
 
 // Content sections that expose a crawlable archive.
 export const ARCHIVE_SECTIONS = ["posts", "blog", "comments", "replies"];
+
+// Sections whose card content IS the post body, so they cannot be slimmed.
+const BODY_BACKED_SECTIONS = ["comments", "replies"];
 
 export interface ArchiveCursor {
   author: string;
@@ -51,15 +55,18 @@ export async function fetchAuthorCursorPage(
   section: string,
   cursor: ArchiveCursor
 ): Promise<{ entries: Entry[]; hasNext: boolean; nextCursor: ArchiveCursor | null }> {
+  const options = getAccountPostsQueryOptions(
+    username,
+    section,
+    cursor.author,
+    cursor.permlink,
+    ARCHIVE_PAGE_SIZE
+  );
+  // Comment and reply archives keep their bodies: those cards have no title or
+  // metadata to render instead. Post/blog archives render summary cards.
   const entries =
     ((await fetchQuery(
-      getAccountPostsQueryOptions(
-        username,
-        section,
-        cursor.author,
-        cursor.permlink,
-        ARCHIVE_PAGE_SIZE
-      )
+      BODY_BACKED_SECTIONS.includes(section) ? options : withSlimEntries(options)
     )) as unknown as Entry[] | undefined) ?? [];
 
   const hasNext = entries.length === ARCHIVE_PAGE_SIZE;

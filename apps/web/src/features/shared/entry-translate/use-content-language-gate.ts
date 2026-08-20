@@ -77,7 +77,8 @@ function scheduleIdle(cb: () => void): void {
 interface GateEntry {
   author: string;
   permlink: string;
-  body: string;
+  body?: string;
+  json_metadata?: { description?: string | null } | null;
 }
 
 interface GateOptions {
@@ -117,7 +118,11 @@ export function useContentLanguageGate(
 
   const author = entry?.author;
   const permlink = entry?.permlink;
-  const body = entry?.body;
+  // Feed rows ship no body (see core/entries/slim-entry.ts). Their derived
+  // summary is always populated and is plenty for a language guess — franc needs
+  // MIN_DETECT_CHARS, far below the 200-character summary. The post page still
+  // passes a full body and detects on that.
+  const body = entry?.body || entry?.json_metadata?.description || "";
 
   useEffect(() => {
     setDecision(null);

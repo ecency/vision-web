@@ -10,6 +10,7 @@ import { LinearProgress } from "@/features/shared/linear-progress";
 import { UserAvatar } from "@/features/shared/user-avatar";
 import { getPostsRankedQueryOptions, QueryKeys } from "@ecency/sdk";
 import { getQueryClient } from "@/core/react-query";
+import { withSlimEntries } from "@/core/entries/slim-entry";
 import type { InfiniteData } from "@tanstack/react-query";
 
 const MAX_PENDING = 20;
@@ -65,13 +66,18 @@ export function FeedLayout(props: PropsWithChildren<Props>) {
 
     const interval = setInterval(async () => {
       const resp = await queryClient.fetchQuery(
-        getPostsRankedQueryOptions(
-          props.filter,
-          "",
-          "",
-          MAX_PENDING,
-          props.tag,
-          props.observer
+        // Slim, like the feed this merges into: the merge below spreads these
+        // rows over the cached ones, so a full row here would put every body
+        // back into the feed cache 30 seconds after the page loaded.
+        withSlimEntries(
+          getPostsRankedQueryOptions(
+            props.filter,
+            "",
+            "",
+            MAX_PENDING,
+            props.tag,
+            props.observer
+          )
         )
       );
       if (!resp || resp.length === 0) return;

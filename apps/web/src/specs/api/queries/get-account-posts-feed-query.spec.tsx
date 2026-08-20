@@ -435,13 +435,16 @@ describe('get-account-posts-feed-query', () => {
         ),
       });
 
+      // The hook, the server prefetch and the cache read now build these options
+      // in one place, so this non-feed branch passes the same four arguments the
+      // prefetch assertions above expect. The two it used to add were the SDK's
+      // own defaults (enabled = true, no options object), so nothing changed
+      // about the query itself.
       expect(getPostsRankedInfiniteQueryOptions).toHaveBeenCalledWith(
         'trending',
         'tag1',
         20,
-        DEFAULT_OBSERVER,
-        true,
-        undefined
+        DEFAULT_OBSERVER
       );
     });
   });
