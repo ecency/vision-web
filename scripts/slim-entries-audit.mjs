@@ -159,11 +159,11 @@ function bindsOwnName(scope, name) {
   ) {
     return true;
   }
-  // A class binds its own name inside its body as well as outside it.
+  // Only the EXPRESSION forms need this. A class or function DECLARATION binds
+  // its name in the scope around it, where bindingsIn already sees it as a
+  // child, so a branch for those here would never be reached.
   return (
-    (ts.isFunctionExpression(scope) ||
-      ts.isClassExpression(scope) ||
-      ts.isClassDeclaration(scope)) &&
+    (ts.isFunctionExpression(scope) || ts.isClassExpression(scope)) &&
     !!scope.name &&
     ts.isIdentifier(scope.name) &&
     scope.name.text === name

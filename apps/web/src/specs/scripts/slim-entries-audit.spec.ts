@@ -416,4 +416,33 @@ describe("slim-entries audit", () => {
     expect(found).toHaveLength(1);
     expect(found[0]).toContain("use withSlimPageEntries");
   });
+
+  it("stops at a self-binding reached through an identifier argument", () => {
+    // The identifier path resolves through resolveBuilder rather than the
+    // callee's own canonicalisation, so it needs its own case: without the
+    // self-binding check it climbed past the function and blamed the outer const.
+    const found = auditSource(
+      "f.ts",
+      `import { withSlimEntries } from "@/core/entries/slim-entry";
+       const options = getPostsRankedQueryOptions("x");
+       export const f = function options() { return withSlimEntries(options); };`
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("cannot tell");
+  });
+
+  it.each([
+    ["at module scope", `export class getPostsRankedQueryOptions { m() { return withSlimEntries(getPostsRankedQueryOptions()); } }`],
+    ["inside a function", `export function o() { class getPostsRankedQueryOptions { m() { return withSlimEntries(getPostsRankedQueryOptions()); } } }`],
+    ["inside a block", `export function o() { { class getPostsRankedQueryOptions { m() { return withSlimEntries(getPostsRankedQueryOptions()); } } } }`]
+  ])("does not attribute a class declaration's own name to an import, %s", (_label, body) => {
+    // Declarations bind in the scope AROUND them, which the child-level check
+    // already covers, so these are pinned here rather than in bindsOwnName.
+    const found = auditSource(
+      "f.ts",
+      `import { getPostsRankedQueryOptions } from "@ecency/sdk";\n${body}`
+    );
+    expect(found.every((f) => f.includes("cannot tell"))).toBe(true);
+    expect(found.length).toBeGreaterThan(0);
+  });
 });
