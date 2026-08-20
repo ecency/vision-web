@@ -42,8 +42,28 @@ What IS committed and deliberately so:
 
 **Comments count as published.** A threshold quoted in a comment is as disclosed as one in
 a directive, so the vhost comments name the include rather than the number. The audit
-reads comments for exactly this reason: an earlier version stripped them and reported a
-clean run while every rate sat in prose two lines above.
+(`scripts/origin-config-audit.mjs`, run from `.github/workflows/typecheck.yml` as
+`--self-test` then `--fail`) reads comments for exactly this reason: an earlier version
+stripped them and reported a clean run while every rate sat in prose two lines above.
+
+## Why `location /` does not answer HEAD itself
+
+It used to: `if ($request_method = HEAD) { add_header Cache-Control no-store; return 200; }`.
+That made every HEAD report a live page whatever the truth was — `GET /@good-karma/points`
+answered 307 while `HEAD` answered 200 — so link checkers, uptime probes and crawlers were all
+told the wrong thing. Removed 2026-08-20 (#1575).
+
+The `always` on the CORS and security `add_header`s is the **other half of the same fix**, not
+a tidy-up. While every HEAD was a fabricated 200 those headers applied, because 200 is in
+`add_header`'s default status list; deleting the block alone would have made HEAD reach real
+404/429/5xx responses with the headers gone. `always` alone fixes nothing either, since an
+`add_header` nested inside the `if` suppresses inheritance regardless. `X-Cache-Status`
+deliberately keeps its default list: it is a cache diagnostic, not something we owe an error
+response.
+
+⛔ Verify this against the origin, never the public hostname. Cloudflare normalises the request
+and already answered 307 with headers, so `curl -I https://ecency.com/...` reports the bug as
+already fixed.
 
 ## What these files depend on
 

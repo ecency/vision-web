@@ -141,8 +141,9 @@ CF-Cache-Status: HIT
 
 ### Infra configuration
 
-Nginx and CF worker configs live in the infra repo; their behaviour is
-documented here in `docs/cache/`. The rules are simple: **respect origin
+The web origin nginx vhosts live in this repo at `infra/origin/` (tracked since
+2026-08-20), guarded by `scripts/origin-config-audit.mjs` in CI; the CF worker config
+lives in the infra repo. Behaviour is documented here in `docs/cache/`. The rules are simple: **respect origin
 `Cache-Control`**, **bypass on `active_user` cookie** and **preserve
 `x-cache-tier`** in the response headers.
 

@@ -1,7 +1,7 @@
 # Nginx Cache Alignment
 
-Nginx (`ssrcache` zone) sits between the CF worker and vision_web. It runs
-on each origin server (eu/us/asia.ecency.com). Because the worker has
+Nginx (`ssrcache` zone) sits between the CF worker and vision_web. It runs on each
+origin server (EU and US; the asia origin was decommissioned). Because the worker has
 already keyed on auth-class and only forwards cacheable requests, **nginx
 does NOT need to gate on `active_user` cookie itself** — origin's
 `Cache-Control` is the source of truth.
@@ -25,44 +25,32 @@ proxy_cache_path /var/cache/nginx/ssr levels=1:2
 
 ## Per-host config
 
+⛔ **The vhosts are tracked: read `infra/origin/eu.ecency.com.conf` and
+`us.ecency.com.conf` rather than a snippet here.** This section used to carry a
+hand-copied `server { … }` block, which drifted and began contradicting the real config
+— it showed `add_header X-Cache-Tier $upstream_http_x_cache_tier always;`, which the
+tracked file explicitly forbids because the upstream already sets that header and nginx
+proxies it through, so adding it emitted the header **twice on every response**. It also
+showed `always` on `X-Cache-Status`, which the real config deliberately omits: that value
+is a cache diagnostic, not something we owe an error response.
+
+What matters conceptually, and is stable:
+
 ```nginx
-# See "Why the bot UA class is in the cache key" below.
-map $http_user_agent $html_limited_bot {
-  default "";
-  "~*(Googlebot|[\w-]+-Google|Google-[\w-]+|googleweblight|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|Yeti)" "|htmlbot";
-}
-
-server {
-  listen 80;
-  server_name eu.ecency.com;  # or us per host
-
-  location / {
-    proxy_cache                  ssrcache;
-    proxy_cache_key              "$request_uri$html_limited_bot";
-    # Defer to origin Cache-Control. Fallback for responses without it.
-    proxy_cache_valid            200 0;
-    proxy_cache_valid            any 30s;
-    # Stale-while-revalidate semantics
-    proxy_cache_use_stale        updating error timeout http_500 http_502 http_503 http_504;
-    proxy_cache_background_update on;
-    proxy_cache_lock             on;
-    proxy_cache_lock_timeout     5s;
-
-    # Observability
-    add_header X-Cache-Status $upstream_cache_status always;
-    add_header X-Cache-Tier   $upstream_http_x_cache_tier always;
-
-    proxy_pass http://127.0.0.1:3000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_connect_timeout 5s;
-    proxy_send_timeout    20s;
-    proxy_read_timeout    20s;
-  }
-}
+proxy_cache      ssrcache;
+proxy_cache_key  "$request_uri$html_limited_bot";   # see the next section
+proxy_cache_valid 200 0;                            # defer to origin Cache-Control
+proxy_cache_valid any 30s;
+proxy_cache_use_stale updating error timeout http_500 http_502 http_503 http_504;
+proxy_cache_background_update on;
+proxy_cache_lock on;
 ```
+
+The `$html_limited_bot` map lives at `http` level in `/etc/nginx/nginx.conf`, which is
+**not** tracked (see `infra/origin/README.md`, "What these files depend on"). Its pattern
+list must stay in step with `htmlLimitedBots` in `next.config.js`: if the app serves a
+blocking render to an agent the map does not classify, that response and a browser's
+share one cache entry.
 
 ## Why the bot UA class is in the cache key
 
