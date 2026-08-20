@@ -6,7 +6,7 @@ import {
   getDynamicPropsQueryOptions,
   getPointsQueryOptions
 } from "@ecency/sdk";
-import { pendingPayoutsQueryOptions } from "./pending-payouts-query";
+import { pendingPayoutsQueryOptions } from "@/api/queries/pending-payouts-query";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
