@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { QueryIdentifiers } from "../react-query";
 import { getPostsRankedQueryOptions, QueryKeys } from "@ecency/sdk";
 import { useDataLimit } from "@/utils/data-limit";
@@ -39,15 +40,35 @@ export function useCommunityPinCache(entry: Entry, canPin = true) {
     )
   });
 
-  return useQuery({
-    queryKey: [QueryIdentifiers.ENTRY_PIN_TRACK, entry.post_id],
-    queryFn: async () =>
-      rankedPosts?.find(
+  // What the community page says, which is the only network source of pin state.
+  const pinnedInCommunity = useMemo(
+    () =>
+      rankedPosts?.some(
         (x) =>
           x.author === entry.author && x.permlink === entry.permlink && x.stats?.is_pinned === true
-      ) !== undefined,
-    initialData: entry.stats?.is_pinned ?? false
+      ),
+    [rankedPosts, entry.author, entry.permlink]
+  );
+
+  // A pin or unpin writes this key directly (see useCommunityPin below), so it
+  // is an override rather than a fetch: `enabled: false` means it never runs a
+  // request, and reading it through useQuery keeps that write reactive.
+  //
+  // This used to be a normal query whose queryFn read `rankedPosts`, and it
+  // never worked: with initialData, the app-wide 60s staleTime and
+  // refetchOnMount off, the function never ran, so the community page was
+  // fetched and then ignored and pin state was only ever `entry.stats.is_pinned`
+  // — which the bridge does not set on feed rows. Moderators were shown "Pin"
+  // for posts that were already pinned.
+  const { data: pinnedByMutation } = useQuery<boolean | undefined>({
+    queryKey: [QueryIdentifiers.ENTRY_PIN_TRACK, entry.post_id],
+    queryFn: async () => undefined,
+    enabled: false
   });
+
+  return {
+    data: pinnedByMutation ?? pinnedInCommunity ?? entry.stats?.is_pinned ?? false
+  };
 }
 
 export function useCommunityPin(entry: Entry, community: Community | null | undefined) {

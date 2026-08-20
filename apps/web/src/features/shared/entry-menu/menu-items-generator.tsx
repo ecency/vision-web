@@ -4,6 +4,7 @@ import { UilEnvelopeSend } from "@tooni/iconscout-unicons-react";
 import { success } from "../feedback";
 import { Community, Entry, FullAccount, ROLES } from "@/entities";
 import { useCommunityPinCache } from "@/core/caches";
+import { canManageCommunityPins as canManageCommunityPinsFor } from "./can-manage-community-pins";
 import useMount from "react-use/lib/useMount";
 import { bullHornSvg } from "@ui/svg";
 import i18next from "i18next";
@@ -41,13 +42,7 @@ export function useMenuItemsGenerator(
   // the state costs a whole community page (see useCommunityPinCache), so nobody
   // else pays for it.
   const canManageCommunityPins = useMemo(
-    () =>
-      !!activeUser &&
-      !!community?.team?.find(
-        (m) =>
-          m[0] === activeUser.username &&
-          [ROLES.OWNER.toString(), ROLES.ADMIN.toString(), ROLES.MOD.toString()].includes(m[1])
-      ),
+    () => canManageCommunityPinsFor(community, activeUser?.username),
     [activeUser, community]
   );
   const { data: isPinnedCached } = useCommunityPinCache(entry, canManageCommunityPins);
