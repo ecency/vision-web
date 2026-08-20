@@ -1,7 +1,7 @@
 {
   "name": "@ecency/render-helper",
   "private": false,
-  "version": "2.5.26",
+  "version": "2.5.27",
   "description": "Markdown+Html Render helper",
   "repository": {
     "type": "git",
@@ -36,7 +36,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "tsup",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsup --metafile && node scripts/third-party-notices.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
