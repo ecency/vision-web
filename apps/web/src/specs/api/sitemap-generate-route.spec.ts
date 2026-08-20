@@ -14,6 +14,7 @@ const store = new Map<string, string>();
 let failNextSetMatching = "";
 const fakeRedis = () => ({
     get: async (k: string) => store.get(k) ?? null,
+    strlen: async (k: string) => (store.get(k) ?? "").length,
     set: async (k: string, v: string) => {
       if (failNextSetMatching && k.includes(failNextSetMatching)) {
         failNextSetMatching = "";
@@ -229,5 +230,23 @@ describe("sitemap-generate route", () => {
     expect(retry.ok).toBe(true);
     expect(shard("posts.xml")).toContain("newcomer");
     expect(indexEntry("posts.xml")).toBe(new Date(t0 + 2 * HOUR).toISOString());
+  });
+
+  it("lists an operator-seeded shard in the index only while its blob exists, with the operator's lastmod", async () => {
+    await run();
+    expect(shard("index")).not.toContain("recovery.xml");
+    store.set("seo:sitemap:recovery.xml", "<urlset/>");
+    store.set("seo:sitemap:recovery.xml:lastmod", "2026-08-18");
+    await run();
+    expect(indexEntry("recovery.xml")).toBe("2026-08-18");
+    expect(shard("recovery.xml")).toBe("<urlset/>"); // untouched by the generator
+    // Same presence rule as the public route: an empty value is "gone", so
+    // the index never advertises a URL the route would 404.
+    store.set("seo:sitemap:recovery.xml", "");
+    await run();
+    expect(shard("index")).not.toContain("recovery.xml");
+    store.delete("seo:sitemap:recovery.xml");
+    await run();
+    expect(shard("index")).not.toContain("recovery.xml");
   });
 });

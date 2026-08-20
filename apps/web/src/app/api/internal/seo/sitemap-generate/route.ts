@@ -20,7 +20,7 @@
  */
 import { getSeoRedisReady, SEO_REDIS_PREFIX } from "@/features/seo/seo-redis";
 import { cronAuthorized, notFound } from "@/features/seo/cron-auth";
-import { SITEMAP_SHARDS } from "@/features/seo/sitemap-shards";
+import { SITEMAP_SHARDS, OPERATOR_SHARDS } from "@/features/seo/sitemap-shards";
 import { harvestPostTags, selectTopTags } from "@/features/seo/sitemap-tags";
 import { isIndexable, canonicalTarget, isBelowReputationGate } from "@/utils/entry-indexability";
 import { isNsfwCommunity } from "@/utils/nsfw-detection";
@@ -425,10 +425,11 @@ export async function POST(req: Request): Promise<Response> {
     reachedCutoff || lastGood === 0 || postUrls.length >= Math.ceil(lastGood * 0.5);
   const WALK_DERIVED = new Set<string>(["posts.xml", "authors.xml", "tags.xml"]);
 
-  // Writer/index/route stay in lockstep: every shard we emit — and every
-  // child the index points at — comes from the single shared SITEMAP_SHARDS
-  // allowlist the public route validates against. A name here that isn't in
-  // that list is a compile error (keyof typeof), not a silent prod 404.
+  // Writer/index/route stay in lockstep: every shard we emit comes from the
+  // shared SITEMAP_SHARDS allowlist, and the index may additionally list an
+  // OPERATOR_SHARDS entry while its blob exists (below). The public route
+  // validates against both. A generated name that isn't in SITEMAP_SHARDS is
+  // a compile error (keyof typeof), not a silent prod 404.
   const shardXml: Record<(typeof SITEMAP_SHARDS)[number], string> = {
     "posts.xml": urlset(postUrls),
     "authors.xml": urlset(authorUrls),
@@ -472,12 +473,27 @@ export async function POST(req: Request): Promise<Response> {
       lastmods[name] = changed || !recorded[name] ? nowIso : recorded[name];
       toWrite.push(name);
     }
+    // Operator-seeded shards ride along in the index while their blob
+    // exists; their lastmod is whatever the operator set beside the blob (or
+    // the previously recorded one), never this run's time: nothing here
+    // changed them.
+    const children: { name: string; lastmod: string }[] = SITEMAP_SHARDS.map((name) => ({
+      name,
+      lastmod: lastmods[name]
+    }));
+    for (const name of OPERATOR_SHARDS) {
+      // Present means a non-empty blob, the same rule the public route
+      // applies (it 404s an operator shard whose value is missing or empty),
+      // so the index never advertises a URL that answers 404. STRLEN is 0 for
+      // both cases and never loads the payload, which may be large.
+      if (!(await redis.strlen(K(name)))) continue;
+      const lastmod = (await redis.get(`${K(name)}:lastmod`)) || recorded[name] || nowDay;
+      lastmods[name] = lastmod;
+      children.push({ name, lastmod });
+    }
     await redis.set(K("lastmod"), JSON.stringify(lastmods));
     for (const name of toWrite) await redis.set(K(name), shardXml[name]);
-    await redis.set(
-      K("index"),
-      indexXml(SITEMAP_SHARDS.map((name) => ({ name, lastmod: lastmods[name] })))
-    );
+    await redis.set(K("index"), indexXml(children));
     if (acceptWalk) {
       await redis.set(POSTS_LASTGOOD_KEY, String(postUrls.length));
       // Full datetime, so a later rejected walk advertises exactly the

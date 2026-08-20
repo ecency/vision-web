@@ -17,9 +17,24 @@ export const SITEMAP_SHARDS = [
   "static.xml"
 ] as const;
 
-export type SitemapShard = (typeof SITEMAP_SHARDS)[number];
+/**
+ * Shards an operator seeds straight into Redis (blob under the shard key, an
+ * optional `<key>:lastmod` beside it). The generator never writes them; it
+ * lists one in the sitemap index only while its blob exists, so removing the
+ * key retires the shard on the next run. Used for bounded, temporary lists,
+ * e.g. pages that need a recrawl after an indexability rule changed.
+ */
+export const OPERATOR_SHARDS = ["recovery.xml"] as const;
 
-const SHARD_SET: ReadonlySet<string> = new Set(SITEMAP_SHARDS);
+export type SitemapShard = (typeof SITEMAP_SHARDS)[number] | (typeof OPERATOR_SHARDS)[number];
+
+const SHARD_SET: ReadonlySet<string> = new Set<string>([...SITEMAP_SHARDS, ...OPERATOR_SHARDS]);
+const OPERATOR_SET: ReadonlySet<string> = new Set<string>(OPERATOR_SHARDS);
+
+/** An operator shard with no blob is retired, not pending: the route 404s it. */
+export function isOperatorShard(name: string): boolean {
+  return OPERATOR_SET.has(name);
+}
 
 export function isKnownShard(name: string): name is SitemapShard {
   return SHARD_SET.has(name);
