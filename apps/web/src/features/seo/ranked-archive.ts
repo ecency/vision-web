@@ -108,7 +108,10 @@ export async function fetchRankedCursorPage(
           ARCHIVE_PAGE_SIZE,
           tag,
           observer
-        )
+        ),
+        // Own cache identity: this SDK page key is also read by deck columns,
+        // which render whole posts.
+        { isolateKey: true }
       )
     )) as unknown as Entry[] | undefined) ?? [];
   const last = entries[entries.length - 1];

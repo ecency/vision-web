@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { postBodySummary } from "@ecency/render-helper";
 import { ContentModerationReason } from "@ecency/sdk";
-import { slimEntry, slimEntryPage, withSlimEntries } from "@/core/entries/slim-entry";
+import {
+  SLIM_KEY_MARKER,
+  slimEntry,
+  slimEntryPage,
+  withSlimEntries
+} from "@/core/entries/slim-entry";
 import { getEntryModerationReason } from "@/core/entries/entry-moderation";
 import type { Entry } from "@/entities";
 
@@ -77,14 +82,21 @@ describe("slimEntry", () => {
     expect(slimEntry(e).json_metadata?.image).toBeUndefined();
   });
 
-  it("lifts a worldmappin body marker into json_metadata.location", () => {
+  it("lifts a worldmappin body marker into json_metadata.location as numbers", () => {
     const e = entry({
       body: "trip notes\n\n[//]:# (!worldmappin -12.5 lat 33.25 long Somewhere d3scr)"
     });
     expect(slimEntry(e).json_metadata?.location).toEqual({
-      coordinates: { lat: "-12.5", lng: "33.25" },
+      coordinates: { lat: -12.5, lng: 33.25 },
       address: "Somewhere"
     });
+  });
+
+  it("drops a malformed worldmappin marker rather than storing a broken pin", () => {
+    const e = entry({
+      body: "trip notes\n\n[//]:# (!worldmappin 12.5.6 lat 33.25 long Somewhere d3scr)"
+    });
+    expect(slimEntry(e).json_metadata?.location).toBeUndefined();
   });
 
   it("slims the nested original_entry a cross-post card reads from", () => {
@@ -140,6 +152,29 @@ describe("withSlimEntries", () => {
     const page = await wrapped.queryFn();
     expect(page.map((e: Entry) => e.body)).toEqual(["", ""]);
     expect(page[0].json_metadata?.description).toBeTruthy();
+  });
+
+  it("keeps the query key by default, so the feed's prefetch and hook still match", () => {
+    const key = ["posts", "ranked", "trending"];
+    expect(withSlimEntries({ queryKey: key, queryFn: async () => [] }).queryKey).toBe(key);
+  });
+
+  it("gives slim pages their own key when asked, so full-body readers cannot pick them up", () => {
+    // Deck columns fetch the same SDK page key and render entry.body, so slim
+    // pages must not be sitting under it when they do.
+    const wrapped = withSlimEntries(
+      { queryKey: ["posts", "ranked-page", "trending", "", "", 20], queryFn: async () => [] },
+      { isolateKey: true }
+    );
+    expect(wrapped.queryKey).toEqual([
+      "posts",
+      "ranked-page",
+      "trending",
+      "",
+      "",
+      20,
+      SLIM_KEY_MARKER
+    ]);
   });
 
   it("returns options untouched when there is no queryFn", () => {

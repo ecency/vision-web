@@ -1,11 +1,11 @@
 /**
- * A location parsed out of a body marker. Its coordinates are the raw captured
- * strings: that is what this marker has always produced, and every consumer
- * either interpolates them into a map URL or runs them through `Number(...)`.
- * The publish flow writes numeric coordinates instead, hence the separate shape.
+ * A location parsed out of a body marker, in the SAME shape the publish flow
+ * writes to `json_metadata.location`: numeric coordinates. This used to hand back
+ * the raw captured strings, which every caller had to coerce and which would have
+ * thrown in the metadata builder's `lat.toFixed(3)`.
  */
 export interface ParsedEntryLocation {
-  coordinates: { lat: string; lng: string };
+  coordinates: { lat: number; lng: number };
   address?: string;
 }
 
@@ -32,6 +32,14 @@ export function parseEntryLocationFromBody(body?: string): ParsedEntryLocation |
   }
 
   const [, lat, lng, address] = match;
+  // `[-\d.]+` can capture something that is not a number ("12.5.6"), which used
+  // to reach the UI as a broken map pin. No pin is the better answer.
+  const latitude = Number(lat);
+  const longitude = Number(lng);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return undefined;
+  }
+
   const cleanedAddress = address?.trim();
   const fallbackAddress =
     !cleanedAddress || cleanedAddress === "<DESCRIPTION GOES HERE>" || cleanedAddress === "d3scr"
@@ -39,7 +47,7 @@ export function parseEntryLocationFromBody(body?: string): ParsedEntryLocation |
       : cleanedAddress;
 
   return {
-    coordinates: { lat, lng },
+    coordinates: { lat: latitude, lng: longitude },
     address: fallbackAddress
   };
 }

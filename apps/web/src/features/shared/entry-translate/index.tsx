@@ -38,12 +38,21 @@ export function EntryTranslate({ entry, onHide, initialTarget, initialSource }: 
   // core/entries/slim-entry.ts), so the full post is fetched here. The seeded
   // cache copy is stale from the start and refetchOnMount is off app-wide, hence
   // the explicit "always" — without it this would translate an empty string.
-  const { data: fullEntry } = useQuery({
+  const {
+    data: fullEntry,
+    isError: fullEntryFailed,
+    isSuccess: fullEntryLoaded
+  } = useQuery({
     ...EcencyEntriesCacheManagement.getEntryQueryByPath(entry.author, entry.permlink),
     enabled: !entry.body && !!entry.author && !!entry.permlink,
     refetchOnMount: "always"
   });
   const sourceBody = entry.body || fullEntry?.body || "";
+  // The fetch failed, or it came back without a post (deleted, or never indexed).
+  // Either way no body is coming, so the modal must show its error instead of
+  // spinning forever.
+  const bodyUnavailable =
+    !entry.body && (fullEntryFailed || (fullEntryLoaded && !fullEntry?.body));
 
   useEffect(() => {
     let canceled = false;
@@ -52,8 +61,12 @@ export function EntryTranslate({ entry, onHide, initialTarget, initialSource }: 
     setDetectedFrom("");
     setError(false);
     if (!sourceBody) {
-      // Still fetching the body; stay in the loading state rather than asking
-      // the translator for an empty document.
+      if (bodyUnavailable) {
+        setError(true);
+        setLoading(false);
+      }
+      // Otherwise the body is still on its way: stay in the loading state rather
+      // than asking the translator for an empty document.
       return () => {
         canceled = true;
       };
@@ -83,7 +96,7 @@ export function EntryTranslate({ entry, onHide, initialTarget, initialSource }: 
     return () => {
       canceled = true;
     };
-  }, [sourceBody, target, initialSource]);
+  }, [sourceBody, bodyUnavailable, target, initialSource]);
 
   return (
     <Modal

@@ -77,7 +77,11 @@ export function FeedLayout(props: PropsWithChildren<Props>) {
             MAX_PENDING,
             props.tag,
             props.observer
-          )
+          ),
+          // Own cache identity: this SDK page key is also read by deck columns,
+          // which render whole posts. The merge below reads the returned value,
+          // not the cache, so the marker costs nothing here.
+          { isolateKey: true }
         )
       );
       if (!resp || resp.length === 0) return;

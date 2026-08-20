@@ -66,7 +66,11 @@ export async function fetchAuthorCursorPage(
   // metadata to render instead. Post/blog archives render summary cards.
   const entries =
     ((await fetchQuery(
-      BODY_BACKED_SECTIONS.includes(section) ? options : withSlimEntries(options)
+      BODY_BACKED_SECTIONS.includes(section)
+        ? options
+        : // Own cache identity: this SDK page key is also read by deck columns,
+          // which render whole posts.
+          withSlimEntries(options, { isolateKey: true })
     )) as unknown as Entry[] | undefined) ?? [];
 
   const hasNext = entries.length === ARCHIVE_PAGE_SIZE;
