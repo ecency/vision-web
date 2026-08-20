@@ -4,7 +4,8 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 /**
- * A source guard for one rule: the About page has a heading in every outcome.
+ * Source guards for the shape of the About page: it carries the signup, and it
+ * has a heading in every outcome.
  *
  * The page sits under a newsletter section whose own heading is an h2
  * (vision-web#1551). Three of the four shells carry a masthead h1 of their own,
@@ -82,6 +83,40 @@ function returnedTag(statement: ts.ReturnStatement): string | null {
   if (ts.isJsxSelfClosingElement(jsx)) return jsx.tagName.getText();
   return null;
 }
+
+describe('the About page carries the signup', () => {
+  const source = parse();
+
+  /**
+   * Checked here rather than by rendering: AboutPage sits behind the router,
+   * the config store and a react-query provider, and what can regress is the
+   * mount itself. Rendering NewsletterSignup directly, which the component
+   * suite does, cannot see whether the page still mounts it.
+   */
+  it('mounts it once, in the page frame, outside both variants', () => {
+    const body = functionNamed(source, 'AboutPage').getText();
+    expect(body).toContain('<NewsletterSignup placement="page" />');
+
+    // Outside the variant switch on purpose: both variants return early while
+    // their query is loading or failed, and the signup depends on neither.
+    for (const variant of VARIANTS) {
+      expect(functionNamed(source, variant).getText()).not.toContain(
+        'NewsletterSignup',
+      );
+    }
+
+    let mounts = 0;
+    each(source, (n) => {
+      if (
+        ts.isJsxSelfClosingElement(n) &&
+        n.tagName.getText() === 'NewsletterSignup'
+      ) {
+        mounts += 1;
+      }
+    });
+    expect(mounts).toBe(1);
+  });
+});
 
 describe('the About page always has a heading', () => {
   const source = parse();

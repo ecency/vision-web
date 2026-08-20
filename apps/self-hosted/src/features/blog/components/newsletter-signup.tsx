@@ -115,7 +115,7 @@ export function NewsletterSignup({
   const frame = FRAME[placement];
   const Heading = frame.heading;
 
-  const submit = async (e: FormEvent) => {
+  const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
     if (state === 'busy' || !email.trim()) return;
     setState('busy');
@@ -140,7 +140,7 @@ export function NewsletterSignup({
    * one from the other, so without this the reader waits for mail that will
    * never arrive and the only way out is reloading the page.
    */
-  const useAnotherAddress = () => {
+  const useAnotherAddress = (): void => {
     restoreFocus.current = true;
     setEmail('');
     setState('idle');
