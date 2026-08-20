@@ -28,6 +28,17 @@ if (!config || typeof config !== "object") {
   process.exit(1);
 }
 
-if (!process.env.__NEXT_PRIVATE_STANDALONE_CONFIG) {
-  process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(config);
+// Unconditional on purpose: the shipped build is the only config this image
+// can legitimately run, so a value inherited from the environment must not win.
+process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(config);
+
+let nextVersion = "unknown";
+try {
+  nextVersion = require("next/package.json").version;
+} catch {
+  // Only used for the log line below.
 }
+// One line per process start, so a rollout log shows the hook was applied and
+// against which Next version (the hook is Next-internal; see the spec that
+// pins it).
+process.stderr.write(`[next-runtime-config] build config applied (next ${nextVersion})\n`);
