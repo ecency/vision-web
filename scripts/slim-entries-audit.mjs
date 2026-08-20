@@ -57,7 +57,27 @@ function calleeName(node) {
   return null;
 }
 
-/** Function-like nodes are scope boundaries for a local declaration. */
+/**
+ * Nodes that introduce a scope a `const` can live in. A declaration inside any
+ * of these is invisible from outside it, so resolution must neither descend into
+ * one nor stop short of the enclosing ones.
+ */
+function isScopeNode(node) {
+  return (
+    isScopeBoundary(node) ||
+    ts.isBlock(node) ||
+    ts.isCaseBlock(node) ||
+    ts.isCaseClause(node) ||
+    ts.isDefaultClause(node) ||
+    ts.isForStatement(node) ||
+    ts.isForInStatement(node) ||
+    ts.isForOfStatement(node) ||
+    ts.isCatchClause(node) ||
+    ts.isModuleBlock(node)
+  );
+}
+
+/** Function-like nodes, where an outer name can still be seen but a local one wins. */
 function isScopeBoundary(node) {
   return (
     ts.isFunctionDeclaration(node) ||
@@ -100,30 +120,14 @@ function canonicalAt(node, name, imports, seen = new Set()) {
   seen.add(name);
 
   for (let scope = node; scope; scope = scope.parent) {
-    if (!isScopeBoundary(scope) && !ts.isBlock(scope) && !ts.isCaseClause(scope)) continue;
-    const bindings = [];
-    ts.forEachChild(scope, function walk(child) {
-      if (child !== scope && isScopeBoundary(child)) return;
-      if (
-        ts.isVariableDeclaration(child) &&
-        ts.isIdentifier(child.name) &&
-        child.name.text === name
-      ) {
-        const isConst =
-          ts.isVariableDeclarationList(child.parent) &&
-          (child.parent.flags & ts.NodeFlags.Const) !== 0;
-        bindings.push(
-          isConst && child.initializer && ts.isIdentifier(child.initializer)
-            ? child.initializer.text
-            : null
-        );
-      }
-      ts.forEachChild(child, walk);
-    });
-    if (bindings.length === 1 && bindings[0]) {
-      return canonicalAt(scope, bindings[0], imports, seen);
+    if (!isScopeNode(scope)) continue;
+    const bindings = bindingsIn(scope, name);
+    if (bindings.length === 1) {
+      const init = bindings[0];
+      if (init && ts.isIdentifier(init)) return canonicalAt(scope, init.text, imports, seen);
+      return null;
     }
-    if (bindings.length > 0) return null;
+    if (bindings.length > 1) return null;
   }
 
   let current = name;
@@ -134,24 +138,32 @@ function canonicalAt(node, name, imports, seen = new Set()) {
   return current;
 }
 
-/** Declarations of `name` in this scope, not counting nested function bodies. */
-function declarationsIn(scope, name) {
+/**
+ * Declarations of `name` belonging to THIS scope: not those in nested scopes,
+ * which are invisible from here, and not those in enclosing ones, which the
+ * caller reaches by walking outwards.
+ *
+ * Both resolvers share this. They used to collect separately and drifted apart,
+ * each descending into child blocks and binding a name to a `const` declared in
+ * an `if` branch that had already closed.
+ */
+function bindingsIn(scope, name) {
   const found = [];
-  ts.forEachChild(scope, function walk(node) {
-    if (node !== scope && isScopeBoundary(node)) return; // another scope's business
+  ts.forEachChild(scope, function walk(child) {
+    if (child !== scope && isScopeNode(child)) return;
     if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.name.text === name
+      ts.isVariableDeclaration(child) &&
+      ts.isIdentifier(child.name) &&
+      child.name.text === name
     ) {
-      // A `let` can hold a different builder by the time the call runs, and a
-      // declaration with no initializer says nothing at all.
       const isConst =
-        ts.isVariableDeclarationList(node.parent) &&
-        (node.parent.flags & ts.NodeFlags.Const) !== 0;
-      found.push(isConst && node.initializer ? calleeName(node.initializer) : null);
+        ts.isVariableDeclarationList(child.parent) &&
+        (child.parent.flags & ts.NodeFlags.Const) !== 0;
+      // A `let` can hold something else by the time the call runs, and a
+      // declaration with no initialiser says nothing at all.
+      found.push(isConst && child.initializer ? child.initializer : null);
     }
-    ts.forEachChild(node, walk);
+    ts.forEachChild(child, walk);
   });
   return found;
 }
@@ -171,12 +183,13 @@ function resolveBuilder(arg, imports) {
   if (!arg || !ts.isIdentifier(arg)) return null;
 
   for (let scope = arg.parent; scope; scope = scope.parent) {
-    if (!isScopeBoundary(scope) && !ts.isBlock(scope) && !ts.isCaseClause(scope)) continue;
-    const declarations = declarationsIn(scope, arg.text);
-    if (declarations.length === 1 && declarations[0]) {
-      return canonicalAt(scope, declarations[0], imports);
+    if (!isScopeNode(scope)) continue;
+    const bindings = bindingsIn(scope, arg.text);
+    if (bindings.length === 1) {
+      const called = calleeName(bindings[0]);
+      return called ? canonicalAt(scope, called, imports) : null;
     }
-    if (declarations.length > 0) return null;
+    if (bindings.length > 1) return null;
   }
   return null;
 }

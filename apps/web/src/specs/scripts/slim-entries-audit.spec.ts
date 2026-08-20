@@ -235,4 +235,69 @@ describe("slim-entries audit", () => {
     expect(found).toHaveLength(1);
     expect(found[0]).toContain("use withSlimPageEntries");
   });
+
+  // Scope resolution, the whole model rather than the one shape reported. Both
+  // resolvers now share one collector, because they had drifted apart and each
+  // descended into child blocks.
+  it("does not let a closed if-block shadow a name used after it", () => {
+    const found = auditSource(
+      "f.ts",
+      `import { withSlimEntries } from "@/core/entries/slim-entry";
+       import { getPostsRankedQueryOptions as build } from "@ecency/sdk";
+       export function f(flag) {
+         if (flag) {
+           const build = getPostsRankedInfiniteQueryOptions;
+           void build;
+         }
+         return withSlimEntries(build("t", "", "", 20, "", ""));
+       }`
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("use withSlimPageEntries");
+  });
+
+  it("resolves to the inner const for a call inside that block", () => {
+    expect(
+      auditSource(
+        "f.ts",
+        src(`export function h(flag) {
+               if (flag) {
+                 const options = getPostsRankedInfiniteQueryOptions("t", "");
+                 return withSlimEntries(options);
+               }
+             }`)
+      )
+    ).toEqual([]);
+  });
+
+  it.each([
+    [
+      "a switch case",
+      `export function s(k) {
+         switch (k) {
+           case 1: {
+             const options = getPostsRankedQueryOptions("t");
+             return withSlimEntries(options);
+           }
+           default:
+             return null;
+         }
+       }`
+    ],
+    [
+      "a for loop that has already closed",
+      `export function l() {
+         for (let i = 0; i < 2; i++) {
+           const options = getPostsRankedInfiniteQueryOptions("t", "");
+           void options;
+         }
+         const options = getPostsRankedQueryOptions("t");
+         return withSlimEntries(options);
+       }`
+    ]
+  ])("gets the binding right across %s", (_label, body) => {
+    const found = auditSource("f.ts", src(body));
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("use withSlimPageEntries");
+  });
 });
