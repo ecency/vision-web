@@ -43,3 +43,10 @@ jobs:
         run: node scripts/icon-scss-audit.mjs
       - name: Icon convention audit (TSX)
         run: node scripts/icon-tsx-audit.mjs --fail
+      # Slim-entry convention (apps/web/src/core/entries/slim-entry.ts). Enforces
+      # how a feed query is slimmed: a single-page builder needs its own cache
+      # identity, because deck columns read those page keys and render the body
+      # from them, and an infinite builder must not take one, because the feed
+      # poll hand-builds that key for its merge.
+      - name: Slim-entry convention audit
+        run: node scripts/slim-entries-audit.mjs --fail
