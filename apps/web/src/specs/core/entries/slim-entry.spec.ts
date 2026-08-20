@@ -5,7 +5,8 @@ import {
   SLIM_KEY_MARKER,
   slimEntry,
   slimEntryPage,
-  withSlimEntries
+  withSlimEntries,
+  withSlimPageEntries
 } from "@/core/entries/slim-entry";
 import { getEntryModerationReason } from "@/core/entries/entry-moderation";
 import type { Entry } from "@/entities";
@@ -180,13 +181,15 @@ describe("withSlimEntries", () => {
     expect(withSlimEntries({ queryKey: key, queryFn: async () => [] }).queryKey).toBe(key);
   });
 
-  it("gives slim pages their own key when asked, so full-body readers cannot pick them up", () => {
+  it("gives a single page its own key, so full-body readers cannot pick it up", () => {
     // Deck columns fetch the same SDK page key and render entry.body, so slim
-    // pages must not be sitting under it when they do.
-    const wrapped = withSlimEntries(
-      { queryKey: ["posts", "ranked-page", "trending", "", "", 20], queryFn: async () => [] },
-      { isolateKey: true }
-    );
+    // pages must not be sitting under it when they do. This is a separate
+    // function rather than a flag precisely because a flag can be left off, and
+    // leaving it off was issue #1556.
+    const wrapped = withSlimPageEntries({
+      queryKey: ["posts", "ranked-page", "trending", "", "", 20],
+      queryFn: async () => []
+    });
     expect(wrapped.queryKey).toEqual([
       "posts",
       "ranked-page",
@@ -196,6 +199,15 @@ describe("withSlimEntries", () => {
       20,
       SLIM_KEY_MARKER
     ]);
+  });
+
+  it("slims the pages of a single-page query too", async () => {
+    const wrapped = withSlimPageEntries({
+      queryKey: ["posts", "ranked-page"],
+      queryFn: async () => [entry()]
+    });
+    const page = await wrapped.queryFn();
+    expect(page[0].body).toBe("");
   });
 
   it("returns options untouched when there is no queryFn", () => {

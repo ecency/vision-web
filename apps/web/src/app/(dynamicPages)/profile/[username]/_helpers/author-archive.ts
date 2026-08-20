@@ -1,7 +1,7 @@
 import { Entry } from "@/entities";
 import { fetchQuery } from "@/core/react-query";
 import { getAccountPostsQueryOptions } from "@ecency/sdk";
-import { withSlimEntries } from "@/core/entries/slim-entry";
+import { withSlimPageEntries } from "@/core/entries/slim-entry";
 
 // Hive's bridge.get_account_posts caps `limit` at 20, and it's cursor-based
 // (start_author/start_permlink, exclusive). So archive pages use O(1)
@@ -70,7 +70,7 @@ export async function fetchAuthorCursorPage(
         ? options
         : // Own cache identity: this SDK page key is also read by deck columns,
           // which render whole posts.
-          withSlimEntries(options, { isolateKey: true })
+          withSlimPageEntries(options)
     )) as unknown as Entry[] | undefined) ?? [];
 
   const hasNext = entries.length === ARCHIVE_PAGE_SIZE;

@@ -143,47 +143,11 @@ export function slimEntryPage<T>(page: T): T {
 
 type WithQueryFn = { queryFn?: unknown; queryKey?: unknown };
 
-interface SlimOptions {
-  /**
-   * Cache the slim pages under their own key instead of the SDK's.
-   *
-   * Needed wherever the SDK key is ALSO read by something that needs whole posts.
-   * The single-page keys (`postsRankedPage` / `accountPostsPage`) are shared with
-   * the deck columns, which fetch the same sort/cursor/limit and then render
-   * `entry.body` in their post viewer: a slim page cached under that key would be
-   * handed straight to a deck within the 60s staleTime, and the viewer would show
-   * an empty post. The feed's own infinite keys need no marker, since the server
-   * prefetch, the cache read and the client hook are the only readers and all
-   * three build their options through one slimmed builder.
-   */
-  isolateKey?: boolean;
-}
-
-/**
- * Wrap feed query options so their pages arrive slim.
- *
- * Applied to the queryFn rather than `select` on purpose: `select` runs after the
- * data is cached, so the bodies would still be dehydrated into the SSR payload and
- * still sit in the client cache. Wrapping the fetch means one slim copy exists,
- * server and client alike, and React Flight can dedupe it by reference.
- *
- * Every other option is passed through untouched, so this cannot split a cache
- * entry away from the one a page already renders.
- */
-export function withSlimEntries<T extends WithQueryFn>(
-  options: T,
-  { isolateKey = false }: SlimOptions = {}
-): T {
+function slimQueryFn<T extends WithQueryFn>(options: T, queryKey: unknown): T {
   const queryFn = options.queryFn;
   if (typeof queryFn !== "function") {
     return options;
   }
-
-  const queryKey =
-    isolateKey && Array.isArray(options.queryKey)
-      ? [...options.queryKey, SLIM_KEY_MARKER]
-      : options.queryKey;
-
   return {
     ...options,
     queryKey,
@@ -192,5 +156,45 @@ export function withSlimEntries<T extends WithQueryFn>(
   } as T;
 }
 
-/** Appended to a query key that holds slim pages. See SlimOptions.isolateKey. */
+/**
+ * Wrap feed query options so their pages arrive slim, keeping the SDK's key.
+ *
+ * For queries whose key is only ever read by slimmed readers: the feed's infinite
+ * keys, where the server prefetch, the cache read and the client hook all build
+ * their options through one builder, and the promoted feed. The feed poll also
+ * hand-builds the infinite key for its setQueryData merge, so that key must stay
+ * exactly what the SDK produced.
+ *
+ * Applied to the queryFn rather than `select` on purpose: `select` runs after the
+ * data is cached, so the bodies would still be dehydrated into the SSR payload and
+ * still sit in the client cache. Wrapping the fetch means one slim copy exists,
+ * server and client alike, and React Flight can dedupe it by reference.
+ *
+ * Every other option is passed through untouched.
+ */
+export function withSlimEntries<T extends WithQueryFn>(options: T): T {
+  return slimQueryFn(options, options.queryKey);
+}
+
+/**
+ * The same, for a SINGLE-PAGE builder, whose key gets its own identity.
+ *
+ * `postsRankedPage` and `accountPostsPage` are read by the deck columns too, and
+ * decks render `entry.body` from what they find there. A slim page cached under
+ * the SDK's own key is handed straight to a deck inside the staleTime and its
+ * post viewer renders an empty article, which is what issue #1556 was.
+ *
+ * This exists as a separate function rather than a flag on the one above because
+ * a flag can be forgotten, and forgetting it is exactly that bug. There is no
+ * argument here to get wrong: choosing the function names the intent, and an
+ * audit checks that the choice matches the builder.
+ */
+export function withSlimPageEntries<T extends WithQueryFn>(options: T): T {
+  const queryKey = Array.isArray(options.queryKey)
+    ? [...options.queryKey, SLIM_KEY_MARKER]
+    : options.queryKey;
+  return slimQueryFn(options, queryKey);
+}
+
+/** Appended to a query key that holds slim pages, so nothing else reads them. */
 export const SLIM_KEY_MARKER = "slim";

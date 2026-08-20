@@ -10,7 +10,7 @@ import { LinearProgress } from "@/features/shared/linear-progress";
 import { UserAvatar } from "@/features/shared/user-avatar";
 import { getPostsRankedQueryOptions, QueryKeys } from "@ecency/sdk";
 import { getQueryClient } from "@/core/react-query";
-import { withSlimEntries } from "@/core/entries/slim-entry";
+import { withSlimPageEntries } from "@/core/entries/slim-entry";
 import type { InfiniteData } from "@tanstack/react-query";
 
 const MAX_PENDING = 20;
@@ -90,9 +90,8 @@ export function FeedLayout(props: PropsWithChildren<Props>) {
       // Own cache identity: this SDK page key is also read by deck columns,
       // which render whole posts. The merge below reads the returned value, not
       // the cache, so the marker costs nothing here.
-      const pollOptions = withSlimEntries(
-        getPostsRankedQueryOptions(props.filter, "", "", MAX_PENDING, props.tag, props.observer),
-        { isolateKey: true }
+      const pollOptions = withSlimPageEntries(
+        getPostsRankedQueryOptions(props.filter, "", "", MAX_PENDING, props.tag, props.observer)
       );
       const resp = await queryClient.fetchQuery({
         ...pollOptions,
