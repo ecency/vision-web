@@ -1,4 +1,4 @@
-import { getEntryImageRawUrl, postBodySummary } from "@ecency/render-helper";
+import { catchPostImage, getEntryImageRawUrl, postBodySummary } from "@ecency/render-helper";
 import { hasExternalLink } from "@ecency/sdk";
 import { Entry } from "@/entities";
 import { parseEntryLocationFromBody } from "./entry-location";
@@ -59,11 +59,23 @@ function pickThumbnail(entry: Entry): string | undefined {
     }
   }
 
-  // Nothing in metadata: fall back to the post's first body image, which is what
-  // catchPostImage would have found on the full entry. Free here (the body is
-  // right there) and it keeps the thumbnail — and the LCP preload that reads it —
-  // for the ~20% of posts that carry no metadata image at all.
-  return getEntryImageRawUrl(entry) ?? undefined;
+  // Nothing in metadata: recover what catchPostImage would have found on the full
+  // entry, while the body is still here to look at.
+  //
+  // Two steps, because they find different things. getEntryImageRawUrl is the
+  // regex fast path over raw markdown. catchPostImage falls back to a full
+  // markdown2Html plus DOM parse, and THAT is where a video post's poster
+  // (3Speak/YouTube render as <img class="no-replace video-thumbnail">) and
+  // <center>-wrapped bare image URLs are discovered. Stopping at the fast path
+  // dropped those cards to /assets/noimage.png: measured on live posts, 4 of 29
+  // rows that carry no metadata image, concentrated in the video communities.
+  //
+  // The second call only runs when the fast path found nothing, and it is work
+  // the card itself already did before this step existed. catchPostImage(0, 0)
+  // returns the proxied /p/ URL, and re-proxying it at card size reuses the same
+  // hash rather than nesting, so the card src stays byte-identical to what it was
+  // before slimming.
+  return getEntryImageRawUrl(entry) ?? catchPostImage(entry, 0, 0, "match") ?? undefined;
 }
 
 function pickDescription(entry: Entry): string {

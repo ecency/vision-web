@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { postBodySummary } from "@ecency/render-helper";
+import { catchPostImage, postBodySummary } from "@ecency/render-helper";
 import { ContentModerationReason } from "@ecency/sdk";
 import {
   SLIM_KEY_MARKER,
@@ -63,6 +63,39 @@ describe("slimEntry", () => {
       body: "intro\n\n![pic](https://images.hive.blog/in-body.png)\n\nrest"
     });
     expect(slimEntry(e).json_metadata?.image).toEqual(["https://images.hive.blog/in-body.png"]);
+  });
+
+  it("keeps a video post's poster, which only the full render finds", () => {
+    // A bare YouTube URL becomes an <img class="no-replace video-thumbnail"> in
+    // the rendered post, so the raw-markdown fast path sees no image at all.
+    // Stopping there dropped these cards to the noimage placeholder.
+    const e = entry({
+      json_metadata: {},
+      body: "Check this out\n\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ\n\nthanks"
+    });
+    expect(slimEntry(e).json_metadata?.image?.[0]).toBeTruthy();
+  });
+
+  it("keeps a <center>-wrapped bare image URL, also full-render only", () => {
+    const e = entry({
+      json_metadata: {},
+      body: "<center>https://images.hive.blog/DQmb59qYM1czWSDDw2dRmUHJ7s97L6S6Rk3uZLyA5vCxAEr/pic.jpg</center>"
+    });
+    expect(slimEntry(e).json_metadata?.image?.[0]).toBeTruthy();
+  });
+
+  it("produces the same card src the full entry would have produced", () => {
+    // The whole point: slimming must not change what the card renders. The
+    // recovered URL is already proxied, and re-proxying at card size reuses the
+    // hash rather than nesting it.
+    const e = entry({
+      json_metadata: {},
+      body: "watch\n\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ\n\nend"
+    });
+    const before = catchPostImage(e, 600, 500, "match");
+    const after = catchPostImage(slimEntry(e), 600, 500, "match");
+    expect(after).toBe(before);
+    expect((after?.match(/\/p\//g) ?? []).length).toBe(1);
   });
 
   it("leaves image unset when nothing supplies one, so the card renders without a thumbnail", () => {
