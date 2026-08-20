@@ -1,23 +1,14 @@
 import React from "react";
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, type RenderHookResult } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Entry } from "@/entities";
+import { mockEntry } from "@/specs/test-utils";
 
 const BODY = "the whole post body, which a card never renders";
 
 function fullEntry(permlink: string): Entry {
-  return {
-    author: "alice",
-    permlink,
-    title: "A title",
-    body: BODY,
-    json_metadata: {},
-    active_votes: [],
-    created: "2026-08-01T00:00:00",
-    updated: "2026-08-01T00:00:00",
-    stats: { total_votes: 0, flag_weight: 0, gray: false, hide: false }
-  } as unknown as Entry;
+  return mockEntry({ author: "alice", permlink, body: BODY, json_metadata: {} });
 }
 
 vi.mock("@/utils", async () => ({
@@ -43,7 +34,10 @@ vi.mock("@ecency/sdk", async () => {
 
 import { usePostsFeedQuery } from "@/api/queries";
 
-function firstPage(what: string, tag: string) {
+function firstPage(what: string, tag: string): RenderHookResult<
+  ReturnType<typeof usePostsFeedQuery>,
+  unknown
+> {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return renderHook(() => usePostsFeedQuery(what, tag, "ecency"), {
     wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -59,6 +53,7 @@ function firstPage(what: string, tag: string) {
 describe("feed queries ship slim entries", () => {
   it.each([
     ["a ranked feed", "trending", ""],
+    ["the personal feed, which takes its own branch", "feed", ""],
     ["a tag feed", "created", "photography"],
     ["a profile's posts", "posts", "@alice"],
     ["a profile's blog", "blog", "@alice"]
