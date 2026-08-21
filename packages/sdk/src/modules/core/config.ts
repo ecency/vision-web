@@ -7,6 +7,7 @@ import {
   setUserAgent as setHiveTxUserAgent,
   setResilience as setHiveTxResilience,
   setServerRpcProxy as setHiveTxServerRpcProxy,
+  rpcProxyStats,
   type ResilienceOptions,
   type ServerRpcProxyOptions,
 } from "../../hive-tx";
@@ -327,6 +328,19 @@ export namespace ConfigManager {
    */
   export function setServerRpcProxy(opts: ServerRpcProxyOptions | null) {
     setHiveTxServerRpcProxy(opts);
+  }
+
+  /**
+   * The live counters of that proxy path: `served` (answered by the proxy),
+   * `fallback` with a per-reason breakdown (the read went to the node pool
+   * after a proxy failure) and `skipped` (breaker open). The same object the
+   * call path increments, exposed here because the root build carries its own
+   * copy of the hive-tx internals; a consumer importing `rpcProxyStats` from
+   * the `/hive` entry would read a different, never-incremented instance.
+   * Read-only by contract: the web tier prints it, nothing resets it.
+   */
+  export function getServerRpcProxyStats(): Readonly<typeof rpcProxyStats> {
+    return rpcProxyStats;
   }
 
   /**

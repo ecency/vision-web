@@ -24,6 +24,8 @@ const isMainProductionClient =
   (window.location.hostname === "ecency.com" || window.location.hostname.endsWith(".ecency.com"));
 
 const isServer = typeof window === "undefined";
+// Declared ahead of the server block below, which calls the reporter at import time.
+const RPC_PROXY_REPORT_MS = 5 * 60 * 1000;
 const privateApiHost = isMainProductionClient
   ? ""
   : isServer
@@ -72,7 +74,34 @@ if (isServer) {
       headers: { "X-Ecency-Internal": proxySecret },
       timeoutMs: 1600
     });
+    startRpcProxyReport();
   }
+}
+
+/**
+ * One `[rpc-proxy]` summary line per interval, and only when the counters
+ * moved since the last line, so a quiet process writes nothing after its
+ * first report. The SDK's fallbacks are otherwise invisible: a read that went
+ * to the node pool because the proxy was down, timed out or answered an
+ * unusable body renders the page all the same, and the cache's own counters
+ * cannot see a request that never reached it. The first line (five minutes
+ * after boot, even at zero) shows the reporter is alive. Cumulative, never
+ * reset; per process.
+ */
+function startRpcProxyReport(): void {
+  let last = "";
+  const tick = () => {
+    const s = ConfigManager.getServerRpcProxyStats();
+    const r = s.fallbackByReason;
+    const line =
+      `served=${s.served} fallback=${s.fallback} ` +
+      `(status=${r.status} timeout=${r.timeout} transport=${r.transport} ` +
+      `validate=${r.validate} parse=${r.parse}) skipped=${s.skipped}`;
+    if (line === last) return;
+    last = line;
+    console.log(`[rpc-proxy] ${line}`);
+  };
+  setInterval(tick, RPC_PROXY_REPORT_MS).unref();
 }
 
 // Initialize DMCA filtering immediately at module load time
