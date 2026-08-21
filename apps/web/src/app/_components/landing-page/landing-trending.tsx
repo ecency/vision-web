@@ -23,7 +23,12 @@ const LIMIT = 8;
  *
  * prefetchQuery has a built-in SSR timeout and swallows errors (returns
  * undefined), so a slow/failed RPC degrades to "no strip" rather than breaking
- * "/". Thumbnails are below the hero and lazy-loaded, keeping the page light.
+ * "/". Thumbnails are lazy-loaded except the first: on a phone the hero is short
+ * enough that the first card's thumbnail is the largest thing in the viewport,
+ * i.e. the LCP element. Streamed in through Suspense and marked lazy it was
+ * invisible to the preload scanner and waited for layout, which PageSpeed
+ * reported as ~1.3 s of load delay (#1594). Eager + fetchpriority=high lets the
+ * browser request it the moment its markup arrives.
  */
 export async function LandingTrending() {
   const data = (await prefetchQuery(
@@ -37,6 +42,15 @@ export async function LandingTrending() {
   if (entries.length === 0) {
     return null;
   }
+
+  const cards = entries.map((entry) => ({
+    entry,
+    thumb: catchPostImage(entry, 320, 180, "match")
+  }));
+  // The LCP candidate is the first card that actually renders a thumbnail: a
+  // text-only post at the top would otherwise take the hint while the next
+  // card's image, the one the reader sees, stays lazy.
+  const lcpIndex = cards.findIndex((card) => card.thumb);
 
   return (
     <section className="landing-trending relative z-[2] w-full" aria-labelledby="trending-heading">
@@ -54,11 +68,10 @@ export async function LandingTrending() {
         </div>
 
         <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-0 m-0 list-none">
-          {entries.map((entry) => {
+          {cards.map(({ entry, thumb }, index) => {
             // Canonical entry URL is the bare /@author/permlink form; the
             // category-prefixed path 307-redirects to it, so link direct.
             const href = `/@${entry.author}/${entry.permlink}`;
-            const thumb = catchPostImage(entry, 320, 180, "match");
             const tag = entry.community_title || `#${entry.category}`;
             return (
               <li key={`${entry.author}/${entry.permlink}`}>
@@ -70,7 +83,8 @@ export async function LandingTrending() {
                     <img
                       src={thumb}
                       alt=""
-                      loading="lazy"
+                      loading={index === lcpIndex ? "eager" : "lazy"}
+                      fetchPriority={index === lcpIndex ? "high" : undefined}
                       decoding="async"
                       width={320}
                       height={180}

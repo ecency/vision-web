@@ -106,6 +106,8 @@ import { LandingDownloadLinks } from "@/app/_components/landing-page/landing-dow
 import { LandingExplore } from "@/app/_components/landing-page/landing-explore";
 import { LandingTrending } from "@/app/_components/landing-page/landing-trending";
 import { success, error as errorFn } from "@/features/shared/feedback";
+import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { NewsletterApiError } from "@/features/newsletter";
 
 describe("LandingHeroActions", () => {
   it("renders explore and get started links", () => {
@@ -189,6 +191,70 @@ describe("LandingTrending", () => {
     mockPrefetchQuery.mockResolvedValue([]);
     expect(await LandingTrending()).toBeNull();
   });
+
+  it("loads only the first thumbnail eagerly with high priority, the rest lazily (#1594)", async () => {
+    const entry = (i: number) => ({
+      author: `author${i}`,
+      permlink: `post-${i}`,
+      title: `Post ${i}`,
+      category: "life",
+      body: "",
+      json_metadata: { tags: ["life"], image: [`https://images.example/${i}.jpg`] },
+      created: "2024-01-01T00:00:00"
+    });
+    mockPrefetchQuery.mockResolvedValue([entry(1), entry(2), entry(3)]);
+
+    const { container } = render(await LandingTrending());
+    const imgs = Array.from(container.querySelectorAll("img"));
+    expect(imgs).toHaveLength(3);
+    // The first card's thumbnail is the mobile LCP element: it must be
+    // discoverable and prioritised, not deferred behind layout.
+    expect(imgs[0]).toHaveAttribute("loading", "eager");
+    expect(imgs[0]).toHaveAttribute("fetchpriority", "high");
+    for (const img of imgs.slice(1)) {
+      expect(img).toHaveAttribute("loading", "lazy");
+      expect(img).not.toHaveAttribute("fetchpriority");
+    }
+  });
+
+  it("gives the hint to the first card that has a thumbnail when the top post has none (#1594)", async () => {
+    mockPrefetchQuery.mockResolvedValue([
+      {
+        author: "textonly",
+        permlink: "no-image",
+        title: "Words only",
+        category: "life",
+        body: "just text",
+        json_metadata: { tags: ["life"] },
+        created: "2024-01-01T00:00:00"
+      },
+      {
+        author: "photog",
+        permlink: "with-image",
+        title: "A photo",
+        category: "life",
+        body: "",
+        json_metadata: { tags: ["life"], image: ["https://images.example/p.jpg"] },
+        created: "2024-01-01T00:00:00"
+      },
+      {
+        author: "other",
+        permlink: "another",
+        title: "Another photo",
+        category: "life",
+        body: "",
+        json_metadata: { tags: ["life"], image: ["https://images.example/q.jpg"] },
+        created: "2024-01-01T00:00:00"
+      }
+    ]);
+
+    const { container } = render(await LandingTrending());
+    const imgs = Array.from(container.querySelectorAll("img"));
+    expect(imgs).toHaveLength(2);
+    expect(imgs[0]).toHaveAttribute("loading", "eager");
+    expect(imgs[0]).toHaveAttribute("fetchpriority", "high");
+    expect(imgs[1]).toHaveAttribute("loading", "lazy");
+  });
 });
 
 describe("LandingSubscribeForm", () => {
@@ -203,6 +269,58 @@ describe("LandingSubscribeForm", () => {
     expect(screen.getByPlaceholderText("landing-page.enter-your-email-adress")).toBeInTheDocument();
     expect(screen.getByRole("combobox")).toHaveValue("weekly");
     expect(screen.getByText("landing-page.send")).toBeInTheDocument();
+  });
+
+  it("does not mount Turnstile until the reader touches the form (#1594)", () => {
+    render(<LandingSubscribeForm />);
+    // The mock records its onVerify when it renders; nothing rendered yet.
+    expect(captcha.verify).toBeNull();
+    // The button is still gated on the token, so nothing can be submitted.
+    expect(screen.getByRole("button", { name: "landing-page.send" })).toBeDisabled();
+
+    fireEvent.focus(screen.getByPlaceholderText("landing-page.enter-your-email-adress"));
+    expect(captcha.verify).not.toBeNull();
+  });
+
+  it("mounts Turnstile when the address is typed or pasted without a focus event (#1594)", () => {
+    render(<LandingSubscribeForm />);
+    expect(captcha.verify).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("landing-page.enter-your-email-adress"), {
+      target: { value: "a@b.c" }
+    });
+    expect(captcha.verify).not.toBeNull();
+  });
+
+  it("mounts Turnstile on a submit attempt, so a forced 403 retry can still be challenged (#1594)", () => {
+    render(<LandingSubscribeForm />);
+    const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress");
+    fireEvent.submit(input.closest("form")!);
+    expect(captcha.verify).not.toBeNull();
+    expect(mockSubscribe).not.toHaveBeenCalled();
+  });
+
+  it("shows the widget to a signed-in caller only after the service answers 403 (#1594)", async () => {
+    vi.mocked(useActiveAccount).mockReturnValue({
+      activeUser: { username: "alice" },
+      username: "alice"
+    } as never);
+    mockSubscribe.mockRejectedValueOnce(new NewsletterApiError("captcha", 403));
+    try {
+      render(<LandingSubscribeForm />);
+      const input = screen.getByPlaceholderText("landing-page.enter-your-email-adress");
+      fireEvent.change(input, { target: { value: "alice@example.com" } });
+      // Signed in: no challenge is rendered, and the button is not token-gated.
+      expect(captcha.verify).toBeNull();
+      expect(screen.getByRole("button", { name: "landing-page.send" })).not.toBeDisabled();
+
+      fireEvent.submit(input.closest("form")!);
+      await waitFor(() => expect(errorFn).toHaveBeenCalledWith("newsletter.error-captcha"));
+      // The 403 reveals the widget so the retry can carry a token.
+      expect(captcha.verify).not.toBeNull();
+    } finally {
+      vi.mocked(useActiveAccount).mockReset();
+      vi.mocked(useActiveAccount).mockReturnValue({ activeUser: null, username: null } as never);
+    }
   });
 
   it("subscribes the address to the site digest through the service and shows check-your-inbox on pending", async () => {
