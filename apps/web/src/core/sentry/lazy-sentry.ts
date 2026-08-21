@@ -14,7 +14,6 @@
 // routes, RSS) is unaffected and keeps importing @sentry/nextjs directly.
 import type * as SentryNS from "@sentry/nextjs";
 
-type SentryModule = typeof import("@sentry/nextjs");
 type Options = SentryNS.BrowserOptions;
 
 const isBrowser = typeof window !== "undefined";
@@ -25,7 +24,7 @@ let initialized = false;
 let options: Options | null = null;
 
 // Method calls made before the SDK is initialized, replayed on init.
-const queued: { method: string; args: unknown[] }[] = [];
+const queued: { method: SentryMethod; args: unknown[] }[] = [];
 // Raw errors/rejections captured by the early listeners before init. For
 // `error` events the ErrorEvent's source location is kept alongside the error
 // and attached as `extra` on replay: a script that fails to PARSE (truncated
@@ -71,10 +70,34 @@ function removeEarlyListeners() {
   window.removeEventListener("unhandledrejection", earlyRejectionHandler);
 }
 
+// Only these exports of @sentry/nextjs are ever called through the facade.
+// Listing them lets webpack tree-shake the namespace: with a bare import() and
+// the dynamic `mod[method]` replay below, every export stayed reachable and the
+// idle chunk shipped Session Replay, Feedback, the replay canvas recorder and
+// the Next router instrumentation, none of which are configured (~70 KB gz
+// that PageSpeed reported as unused, #1595). Keep this list in sync with
+// `sentry` below and with ensureInit (init, setTag, captureException).
+export const SENTRY_EXPORTS = [
+  "init",
+  "setTag",
+  "setUser",
+  "captureException",
+  "captureMessage",
+  "captureFeedback",
+  "withScope",
+  "flush"
+] as const;
+
+type SentryMethod = (typeof SENTRY_EXPORTS)[number];
+type SentryModule = Pick<typeof import("@sentry/nextjs"), SentryMethod>;
+
 function loadSentry(): Promise<SentryModule | null> {
   if (mod) return Promise.resolve(mod);
   if (!loadPromise) {
-    loadPromise = import("@sentry/nextjs")
+    loadPromise = import(
+      /* webpackExports: ["init", "setTag", "setUser", "captureException", "captureMessage", "captureFeedback", "withScope", "flush"] */
+      "@sentry/nextjs"
+    )
       .then((m) => {
         mod = m;
         return m;
@@ -142,7 +165,7 @@ function ensureInit(): Promise<void> {
       // Replay buffered method calls in order.
       for (const c of queued.splice(0)) {
         try {
-          (m as unknown as Record<string, (...a: unknown[]) => unknown>)[c.method](...c.args);
+          invoke(m, c.method, c.args);
         } catch {
           /* ignore replay errors */
         }
@@ -174,10 +197,23 @@ function ensureInit(): Promise<void> {
 // logged-in user whose ClientInit calls setUser on mount does not eagerly fetch
 // the SDK; the buffered context is replayed when the idle gate (or a real
 // capture) initializes it. This preserves the lazy-load win for logged-in users.
-function call(method: string, args: unknown[], forceInit: boolean) {
+// An export missing from the webpackExports list above would be undefined in
+// production only (tests mock the module), and the try/catch around every call
+// would swallow the TypeError. Warn instead so the drift is visible.
+function invoke(m: SentryModule, method: SentryMethod, args: unknown[]) {
+  const fn = (m as unknown as Record<SentryMethod, unknown>)[method];
+  if (typeof fn !== "function") {
+    console.warn(`Sentry export "${method}" is not bundled; add it to SENTRY_EXPORTS.`);
+    return;
+  }
+  // Called on the module object, as `m[method](...args)` did before.
+  Reflect.apply(fn as (...a: unknown[]) => unknown, m, args);
+}
+
+function call(method: SentryMethod, args: unknown[], forceInit: boolean) {
   if (initialized && mod) {
     try {
-      (mod as unknown as Record<string, (...a: unknown[]) => unknown>)[method](...args);
+      invoke(mod, method, args);
     } catch {
       /* ignore */
     }
