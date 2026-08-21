@@ -97,7 +97,8 @@ async function proxyRpcCall<T>(
     try {
       result = await res.json()
     } catch (e: any) {
-      throw new ProxyMiss('parse', String(e?.message ?? e))
+      if (externalSignal?.aborted) throw e
+      throw new ProxyMiss(tSignal.aborted ? 'timeout' : 'parse', String(e?.message ?? e))
     }
     if (validate && !validate(result)) {
       throw new ProxyMiss('validate', 'proxy result rejected by validator')
@@ -1407,10 +1408,10 @@ export const callRPC = async <T = any>(
   // before the deadline and the attempt then waits out the hedge leg too).
   // Note this budget also bounds callers who passed an explicit `retry`: the
   // wall clock, not the attempt count, is the stronger promise here.
-  const deadline = Date.now() + config.resilience.totalBudgetFactor * ceiling
-
   // Server-side read-through proxy, when configured and the method is on its
   // allowlist: one call, and on any miss the node loop below runs unchanged.
+  // It runs BEFORE the node deadline is taken, so a slow proxy costs its own
+  // timeout and nothing of the failover budget the nodes get today.
   if (serverRpcProxy && isNodeRuntime && serverRpcProxy.methodSet.has(method)) {
     try {
       const served = await proxyRpcCall<T>(method, params, signal, validate)
@@ -1423,6 +1424,8 @@ export const callRPC = async <T = any>(
       rpcProxyStats.fallbackByReason[reason] = (rpcProxyStats.fallbackByReason[reason] ?? 0) + 1
     }
   }
+
+  const deadline = Date.now() + config.resilience.totalBudgetFactor * ceiling
 
   // Track nodes tried in the current round. When all nodes have been tried,
   // clear the set to allow a second round (wrap-around) using the retry budget.

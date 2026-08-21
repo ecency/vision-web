@@ -115,6 +115,28 @@ describe("server-side RPC proxy", () => {
     expect(rpcProxyStats.fallbackByReason.timeout).toBe(1);
   });
 
+  it("does not spend the node loop's failover budget on the proxy wait", async () => {
+    // Proxy: 250ms then timeout. Caller timeout 100ms => node budget 200ms.
+    // Without the fix the proxy wait would exhaust that budget and the second
+    // node would never be tried after the first one fails.
+    setServerRpcProxy({ url: PROXY, headers: {}, timeoutMs: 250 });
+    const urls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      urls.push(String(input));
+      if (String(input) === PROXY) {
+        return new Promise<Response>((_, reject) => {
+          init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        });
+      }
+      if (String(input) === "https://node-a.test") return new Response("down", { status: 503 });
+      return rpcOk(idOf(init), { from: "node-b" });
+    });
+    const out = await callRPC("bridge.get_post", { author: "a", permlink: "b" }, 100);
+    expect(out).toEqual({ from: "node-b" });
+    expect(urls).toEqual([PROXY, "https://node-a.test", "https://node-b.test"]);
+    expect(rpcProxyStats.fallbackByReason.timeout).toBe(1);
+  });
+
   it("falls back when the caller's validator rejects the proxy result", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
       if (String(input) === PROXY) return jsonOk(null);
