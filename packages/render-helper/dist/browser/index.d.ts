@@ -65,15 +65,29 @@ declare function setSlowRenderThresholdMs(ms: number): void;
 declare function markdown2Html(obj: Entry | string, forApp?: boolean, _webp?: boolean, parentDomain?: string, seoContext?: SeoContext, renderOptions?: RenderOptions): string;
 
 /**
- * The RAW (pre-proxify) URL of an entry's primary image, using the same
- * discovery order as catchPostImage (json_metadata.image, then the first body
- * image). Unlike catchPostImage it does NOT proxify — callers need the original
- * URL (e.g. to test picture-eligibility for an LCP preload, since catchPostImage
- * returns an already-proxified /p/ URL). Returns null when the fast path finds
- * no unambiguous image (the caller can fall back to catchPostImage).
+ * The RAW (pre-proxify) URL of the image an entry's BODY renders first:
+ * json_metadata.image, then the first body image. Deliberately NOT the same
+ * order as catchPostImage, which reads json_metadata.thumbnails ahead of
+ * image: a thumbnail is a card concern and the post body never renders it, so
+ * a preload built from it would be wasted. Unlike catchPostImage it does NOT
+ * proxify — callers need the original URL (e.g. to test picture-eligibility
+ * for an LCP preload, since catchPostImage returns an already-proxified /p/
+ * URL). Returns null when the fast path finds no unambiguous image (the caller
+ * can fall back to catchPostImage).
  */
 declare function getEntryImageRawUrl(obj: Entry | string): string | null;
-declare function catchPostImage(obj: Entry | string, width?: number, height?: number, format?: string): string | null;
+interface CatchPostImageOptions {
+    /**
+     * Stop after the metadata and regex tiers. The last tier is a full
+     * markdown2Html + DOM parse, which on a long body with no image at all costs
+     * hundreds of milliseconds of synchronous CPU; a feed of such rows can hold a
+     * server's event loop for seconds. Callers that can live without the rare
+     * markdown-only finds (video embed posters, for instance) set this and get
+     * null back instead. Default false keeps every existing caller byte-identical.
+     */
+    fast?: boolean;
+}
+declare function catchPostImage(obj: Entry | string, width?: number, height?: number, format?: string, options?: CatchPostImageOptions): string | null;
 
 /**
  * Generate a text summary from an Entry object or raw string

@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.29
+
+### Patch Changes
+
+- render-helper: fast thumbnail lookup, thumbnails first, memoized nulls (#1611)
+
 ## 2.5.28
 
 ### Patch Changes

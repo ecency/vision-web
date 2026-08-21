@@ -66,19 +66,26 @@ function pickThumbnail(entry: Entry): string | undefined {
   // entry, while the body is still here to look at.
   //
   // Two steps, because they find different things. getEntryImageRawUrl is the
-  // regex fast path over raw markdown. catchPostImage falls back to a full
-  // markdown2Html plus DOM parse, and THAT is where a video post's poster
-  // (3Speak/YouTube render as <img class="no-replace video-thumbnail">) and
-  // <center>-wrapped bare image URLs are discovered. Stopping at the fast path
-  // dropped those cards to /assets/noimage.png: measured on live posts, 4 of 29
-  // rows that carry no metadata image, concentrated in the video communities.
+  // regex fast path over raw markdown. catchPostImage in fast mode adds the
+  // cases the regex alone missed, a YouTube poster and a <center>-wrapped bare
+  // URL, still without rendering markdown. Measured on live posts, those two
+  // were 4 of 29 rows that carry no metadata image, concentrated in the video
+  // communities, and stopping at the regex dropped them to /assets/noimage.png.
   //
-  // The second call only runs when the fast path found nothing, and it is work
-  // the card itself already did before this step existed. catchPostImage(0, 0)
-  // returns the proxied /p/ URL, and re-proxying it at card size reuses the same
-  // hash rather than nesting, so the card src stays byte-identical to what it was
-  // before slimming.
-  return getEntryImageRawUrl(entry) ?? catchPostImage(entry, 0, 0, "match") ?? undefined;
+  // Fast mode matters here because this runs on the server for every row of
+  // every feed. The full lookup ends in markdown2Html plus a DOM parse, and on
+  // a long body with no image at all that is hundreds of milliseconds of
+  // synchronous CPU per row: one feed of such rows held a server's event loop
+  // for five seconds, stalling every other request on that process. The one
+  // class fast mode gives up is an ambiguous markdown image URL (one containing
+  // a parenthesis), which the card then shows without a thumbnail.
+  //
+  // catchPostImage(0, 0) returns the proxied /p/ URL, and re-proxying it at card
+  // size reuses the same hash rather than nesting, so the card src stays
+  // byte-identical to what it was before slimming.
+  return (
+    getEntryImageRawUrl(entry) ?? catchPostImage(entry, 0, 0, "match", { fast: true }) ?? undefined
+  );
 }
 
 function pickDescription(entry: Entry): string {

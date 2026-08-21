@@ -68,23 +68,15 @@ describe("slimEntry", () => {
     expect(slimEntry(e).json_metadata?.image).toEqual(["https://images.hive.blog/in-body.png"]);
   });
 
-  it("shows the cover unslimmed and the poster slimmed, which is deliberate", () => {
-    // catchPostImage never looks at `thumbnails`: getImage() in render-helper
-    // reads json_metadata.image as a string, then as an array, then falls back
-    // to the body. Slimming puts the thumbnail first, so a post that sets the
-    // two fields to DIFFERENT urls renders its cover on an unslimmed card and
-    // its poster on a slim one.
+  it("shows the poster on both the unslimmed and the slimmed card", () => {
+    // `thumbnails` is published for exactly this purpose by 3Speak, Liketu and
+    // the editor's thumbnail picker, and a publisher who sets a dedicated poster
+    // means it. render-helper's catchPostImage reads it ahead of `image` now, the
+    // same order slimming uses, so a post that sets the two fields to DIFFERENT
+    // urls renders the poster whether or not the row was slimmed.
     //
-    // That divergence is chosen. `thumbnails` is published for exactly this
-    // purpose by 3Speak and Liketu, and a publisher who sets a dedicated poster
-    // means it. It is also unobservable in practice: across 461 live rows from
-    // trending, hot, created, promoted, tags and communities, 70 carried both
-    // fields and 0 of them disagreed.
-    //
-    // BOTH halves are asserted on purpose. Pinning only the slim side would let
-    // the divergence disappear unnoticed if render-helper ever started honouring
-    // `thumbnails`, and this test exists to make that a decision rather than a
-    // surprise.
+    // BOTH halves are asserted on purpose: if either side ever changed its order
+    // the two cards would silently disagree again.
     const meta = {
       thumbnails: ["https://images.hive.blog/poster.png"],
       image: ["https://images.hive.blog/cover.png"]
@@ -96,12 +88,9 @@ describe("slimEntry", () => {
     const card = (e: Entry) => catchPostImage(e, 320, 180, "match");
 
     expect(card(unslimmed)).toBe(
-      proxifyImageSrc("https://images.hive.blog/cover.png", 320, 180, "match")
-    );
-    expect(card(slimmed)).toBe(
       proxifyImageSrc("https://images.hive.blog/poster.png", 320, 180, "match")
     );
-    expect(card(unslimmed)).not.toBe(card(slimmed));
+    expect(card(slimmed)).toBe(card(unslimmed));
   });
 
   it("survives thumbnails that are not an array", () => {
@@ -134,10 +123,11 @@ describe("slimEntry", () => {
     expect(slimEntry(e).json_metadata?.image).toEqual(["https://images.hive.blog/real.png"]);
   });
 
-  it("keeps a video post's poster, which only the full render finds", () => {
+  it("keeps a video post's poster, which the raw-markdown regex alone misses", () => {
     // A bare YouTube URL becomes an <img class="no-replace video-thumbnail"> in
-    // the rendered post, so the raw-markdown fast path sees no image at all.
-    // Stopping there dropped these cards to the noimage placeholder.
+    // the rendered post, so getEntryImageRawUrl sees no image at all. Stopping
+    // there dropped these cards to the noimage placeholder; catchPostImage's
+    // fast mode derives the same poster without rendering.
     const e = entry({
       json_metadata: {},
       body: "Check this out\n\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ\n\nthanks"
@@ -145,7 +135,7 @@ describe("slimEntry", () => {
     expect(slimEntry(e).json_metadata?.image?.[0]).toBeTruthy();
   });
 
-  it("keeps a <center>-wrapped bare image URL, also full-render only", () => {
+  it("keeps a <center>-wrapped bare image URL, which the regex also missed before", () => {
     const e = entry({
       json_metadata: {},
       body: "<center>https://images.hive.blog/DQmb59qYM1czWSDDw2dRmUHJ7s97L6S6Rk3uZLyA5vCxAEr/pic.jpg</center>"

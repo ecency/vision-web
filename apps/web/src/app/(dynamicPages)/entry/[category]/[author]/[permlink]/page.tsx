@@ -4,10 +4,10 @@ import { getAccountFullQueryOptions, QueryKeys } from "@ecency/sdk";
 import {
   buildPictureSources,
   buildSrcSet,
-  catchPostImage,
   getEntryImageRawUrl,
   IMAGE_SIZES
 } from "@ecency/render-helper";
+import { entryLcpMatch } from "@/app/(dynamicPages)/entry/_helpers/entry-lcp-match";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { EntryPageContentClient } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-content-client";
 import { EntryPageContentSSR } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-content-ssr";
@@ -201,7 +201,7 @@ export default async function EntryPage({ params, searchParams }: Props) {
   //     fetchpriority="high" <img> still prioritizes the actual fetch.
   const rawCover = getEntryImageRawUrl(entry);
   const coverPicture = rawCover ? buildPictureSources(rawCover) : null;
-  const lcpMatch = catchPostImage(entry, 600, 500, "match");
+  const lcpMatch = entryLcpMatch(rawCover);
   const lcpMatchSrcSet = lcpMatch ? buildSrcSet(lcpMatch) : "";
 
   // Structured data: only top-level posts get Article + breadcrumb. Comments
