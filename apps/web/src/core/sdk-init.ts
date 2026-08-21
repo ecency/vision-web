@@ -60,13 +60,17 @@ if (isServer) {
   // a dependency: the SDK falls back to the node pool on any proxy failure.
   // Switched on per deployment (SSR_RPC_PROXY=1) and only when both sides
   // carry the shared secret; INTERNAL_API_HOST is the overlay route to vapi.
+  // The timeout sits just above vapi's own lookup budget (1.5s), so a proxy
+  // that cannot answer in time is its 504, and the SDK's per-node timeout
+  // bounds it further; the prefetch's own abort signal bounds the whole call
+  // either way, so the proxy can never extend a render past the SSR cap.
   const proxyHost = process.env.INTERNAL_API_HOST;
   const proxySecret = process.env.SSR_INTERNAL_SECRET;
   if (process.env.SSR_RPC_PROXY === "1" && proxyHost && proxySecret) {
     ConfigManager.setServerRpcProxy({
       url: `${proxyHost.replace(/\/+$/, "")}/private-api/ssr/rpc`,
       headers: { "X-Ecency-Internal": proxySecret },
-      timeoutMs: 2000
+      timeoutMs: 1600
     });
   }
 }

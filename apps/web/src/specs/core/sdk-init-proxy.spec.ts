@@ -37,7 +37,7 @@ describe("sdk-init server rpc proxy", () => {
     expect(manager.setServerRpcProxy).toHaveBeenCalledWith({
       url: "http://vapi:4000/private-api/ssr/rpc",
       headers: { "X-Ecency-Internal": "s3cret" },
-      timeoutMs: 2000
+      timeoutMs: 1600
     });
   });
 
