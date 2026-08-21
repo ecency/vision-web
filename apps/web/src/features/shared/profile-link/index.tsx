@@ -1,5 +1,5 @@
 import React, { ReactNode } from "react";
-import Link from "next/link";
+import { IntentLink } from "@/features/shared/intent-link";
 
 export const makePathProfile = (username: string) => `/@${username}`;
 
@@ -17,7 +17,7 @@ export function ProfileLink({ afterClick, target, className, children, username 
   };
 
   return (
-    <Link
+    <IntentLink
       href={makePathProfile(username)}
       target={target}
       className={className}
@@ -25,7 +25,7 @@ export function ProfileLink({ afterClick, target, className, children, username 
       aria-label={`@${username}`}
     >
       {children}
-    </Link>
+    </IntentLink>
   );
 }
 

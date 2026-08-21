@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import "./index.scss";
-import Link from "next/link";
+import { IntentLink } from "@/features/shared/intent-link";
 import { Community } from "@/entities";
 import { ProfileLink, UserAvatar } from "@/features/shared";
 import { SubscriptionBtn } from "../../communities/_components/subscription-btn";
@@ -34,7 +34,7 @@ export function CommunityListItem({ community, small, vertical }: Props) {
         <h2 className="item-title">
           <div className="item-details">
             <UserAvatar username={community.name} size={small ? "small" : "medium"} />
-            <Link href={makePath(AllFilter.hot, community.name)}>{community.title}</Link>
+            <IntentLink href={makePath(AllFilter.hot, community.name)}>{community.title}</IntentLink>
           </div>
           {small && (
             <div className="item-controls">
