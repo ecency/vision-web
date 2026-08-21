@@ -131,7 +131,7 @@ describe("ssr-admission preload", () => {
     await a.done;
   });
 
-  it("never sheds static assets, API routes or the well-known files", async () => {
+  it("never sheds the named static paths, and counts everything else including file-like entry routes", async () => {
     const { port } = await boot({ SSR_MAX_INFLIGHT: "1" });
     const a = start(port, "/slow/doc");
     await settle();
@@ -155,7 +155,8 @@ describe("ssr-admission preload", () => {
       "/llms.txt",
       "/sitemap.xml",
       "/sitemap/posts-1.xml",
-      "/fonts/inter.woff2"
+      "/assets/fonts/inter.woff2",
+      "/_next/static/media/inter.woff2"
     ]) {
       expect((await get(port, path)).status, path).toBe(200);
     }
@@ -171,8 +172,12 @@ describe("ssr-admission preload", () => {
       "/@someone/some-post.md",
       "/@someone/some-post.json",
       "/@someone/some-post.discussion.json",
+      "/@demo/post.png",
+      "/@demo/post.js",
+      "/@demo.com/avatar.jpg",
       "/feed.xml",
-      "/notes.txt"
+      "/notes.txt",
+      "/logo.png"
     ]) {
       expect((await get(port, path)).status, path).toBe(503);
     }

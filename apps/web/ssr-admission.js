@@ -39,15 +39,15 @@ const rawGrace = process.env.SSR_ABANDONED_GRACE_MS;
 const abandonedGraceMs = /^\d{1,6}$/.test(rawGrace || "") ? Number(rawGrace) : 30_000;
 
 // Paths that are not page renders, named precisely: the build output, API
-// routes, the public/ directories, the static root files the app serves, the
-// Redis-backed sitemap routes, and media or font files by extension. Anything
-// else that reaches this process is work on the render loop and counts: a
-// document, an RSC navigation, an RSS feed (`/@user/rss.xml` renders twenty
-// posts) or an agent route (`/@author/permlink.md|.json|.discussion.json`
-// renders the post), which is why data extensions such as .xml, .json, .md
-// and .txt are deliberately NOT in the extension list. Usernames can contain
-// a dot (`/@demo.com`), another reason the list is fixed rather than "has any
-// extension".
+// routes, the public/ directories, the static root files the app serves, and
+// the Redis-backed sitemap routes. Anything else that reaches this process is
+// work on the render loop and counts: a document, an RSC navigation, an RSS
+// feed (`/@user/rss.xml` renders twenty posts), an agent route
+// (`/@author/permlink.md|.json|.discussion.json` renders the post), and a
+// post whose permlink happens to end like a file (`/@author/post.png` is a
+// valid entry route). That last case is why there is no extension-based
+// bypass at all: every static file this app serves lives under a prefix or
+// at a root path listed here, so a name is the only safe test.
 const PASS_PREFIXES = ["/_next/", "/api/", "/assets/", "/scripts/", "/geo/", "/dmca/", "/.well-known/", "/sitemap/"];
 const PASS_EXACT = new Set([
   "/favicon.ico",
@@ -63,7 +63,6 @@ const PASS_EXACT = new Set([
   "/public-nodes.json",
   "/apple-app-site-association"
 ]);
-const PASS_EXTENSIONS = /\.(?:js|mjs|css|map|webmanifest|ico|png|jpe?g|gif|svg|webp|avif|woff2?|ttf|otf|eot|mp4|webm|mp3|m4a|pdf)$/i;
 
 function isRender(req) {
   if (req.method !== "GET" && req.method !== "HEAD") return false;
@@ -74,7 +73,7 @@ function isRender(req) {
   for (const prefix of PASS_PREFIXES) {
     if (path.startsWith(prefix)) return false;
   }
-  return !PASS_EXTENSIONS.test(path);
+  return true;
 }
 
 const state = { max, inflight: 0, shed: 0, abandoned: 0 };
