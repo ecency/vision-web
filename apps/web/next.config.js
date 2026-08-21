@@ -343,7 +343,20 @@ const config = {
         // provider returns JSON, not a framable document; HiveSigner uses popup
         // windows, not iframes. A future type:"rich" /embed route would add a
         // scoped frame-ancestors exception here.
-        source: "/:path*",
+        //
+        // Everything except hashed build assets. CSP, frame-ancestors,
+        // Permissions-Policy and Referrer-Policy have no effect on a script,
+        // stylesheet or font response, yet the two CSP headers alone are ~3.7 KB
+        // and rode on every one of the ~130 `/_next/static` responses a page
+        // makes. Lighthouse counts those header bytes (an 848-byte stylesheet
+        // reported as 5 KB of transfer), so a feed page carried ~600 KB of
+        // header weight in PageSpeed's model. Only `/_next/static/` is excluded:
+        // a miss there is a text/plain 404, whereas a miss under /assets or
+        // /scripts renders the HTML not-found page, which must keep its
+        // clickjacking protection. The `/_next/static` block below keeps
+        // nosniff, which does matter for scripts and styles. The service worker
+        // is served from /sw.js, so its CSP is unchanged.
+        source: "/((?!_next/static/).*)",
         headers: [
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "X-Content-Type-Options", value: "nosniff" },
@@ -502,6 +515,7 @@ const config = {
         // Hashed static assets (JS, CSS, media) - immutable, cache forever
         source: "/_next/static/:path*",
         headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Cache-Control", value: "public, max-age=31536000, immutable" }
         ]
       },
