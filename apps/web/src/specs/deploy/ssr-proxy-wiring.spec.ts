@@ -29,6 +29,7 @@ function serviceBlock(compose: string, name: string): string {
 
 const envEntries = (block: string): string[] =>
   block.split("\n").filter((l) => /^      - [A-Z_]+/.test(l)).map((l) => l.trim().slice(2));
+const envNames = (entries: string[]): string[] => entries.map((e) => e.split("=")[0]);
 
 describe("ssr rpc proxy deploy wiring", () => {
   it.each(["apps/web/docker-compose.yml", "apps/web/docker-compose.production.yml"])(
@@ -37,13 +38,15 @@ describe("ssr rpc proxy deploy wiring", () => {
       const compose = read(file);
       expect(envEntries(serviceBlock(compose, "vapi")), `${file}: vapi`).toContain("SSR_INTERNAL_SECRET");
       const web = envEntries(serviceBlock(compose, "web"));
-      expect(web, `${file}: web`).toContain("SSR_INTERNAL_SECRET");
+      expect(envNames(web), `${file}: web`).toContain("SSR_INTERNAL_SECRET");
       expect(web.some((e) => e === "SSR_RPC_PROXY=0" || e === "SSR_RPC_PROXY=1"), `${file}: web switch`).toBe(true);
     }
   );
 
-  it("alpha has the switch on; production carries an explicit value, never a bare passthrough", () => {
-    expect(envEntries(serviceBlock(read("apps/web/docker-compose.yml"), "web"))).toContain("SSR_RPC_PROXY=1");
+  it("alpha has the switch on and requires the secret; production carries an explicit value, never a bare passthrough", () => {
+    const alpha = envEntries(serviceBlock(read("apps/web/docker-compose.yml"), "web"));
+    expect(alpha).toContain("SSR_RPC_PROXY=1");
+    expect(alpha.some((e) => /^SSR_INTERNAL_SECRET=\$\{SSR_INTERNAL_SECRET:\?/.test(e))).toBe(true);
     const prod = envEntries(serviceBlock(read("apps/web/docker-compose.production.yml"), "web"));
     expect(prod).not.toContain("SSR_RPC_PROXY");
     expect(prod.some((e) => /^SSR_RPC_PROXY=[01]$/.test(e))).toBe(true);

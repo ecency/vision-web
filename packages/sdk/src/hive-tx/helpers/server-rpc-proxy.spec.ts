@@ -143,6 +143,51 @@ describe("server-side RPC proxy", () => {
     expect(rpcProxyStats.fallbackByReason.timeout).toBe(1);
   });
 
+  it("never waits longer for the proxy than the caller's own timeout", async () => {
+    setServerRpcProxy({ url: PROXY, headers: {}, timeoutMs: 5000 });
+    let proxyAbortedAt = 0;
+    const started = Date.now();
+    mockFetch(async (input, init) => {
+      if (String(input) === PROXY) {
+        return new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            proxyAbortedAt = Date.now();
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        });
+      }
+      return rpcOk(idOf(init), { from: "node" });
+    });
+    const out = await callRPC("bridge.get_post", { author: "a", permlink: "b" }, 120);
+    expect(out).toEqual({ from: "node" });
+    expect(proxyAbortedAt - started).toBeLessThan(1000);
+  });
+
+  it("survives the proxy being switched off while a call is in flight", async () => {
+    mockFetch(async (input, init) => {
+      if (String(input) === PROXY) {
+        setServerRpcProxy(null);
+        return jsonOk({ error: "gone" }, 503);
+      }
+      return rpcOk(idOf(init), { from: "node" });
+    });
+    const out = await callRPC("bridge.get_post", { author: "a", permlink: "b" });
+    expect(out).toEqual({ from: "node" });
+  });
+
+  it("releases a non-200 proxy body", async () => {
+    let cancelled = false;
+    mockFetch(async (input, init) => {
+      if (String(input) === PROXY) {
+        const body = new ReadableStream({ cancel: () => { cancelled = true; } });
+        return new Response(body, { status: 504 });
+      }
+      return rpcOk(idOf(init), { from: "node" });
+    });
+    await callRPC("bridge.get_post", { author: "a", permlink: "b" });
+    expect(cancelled).toBe(true);
+  });
+
   it("falls back when the caller's validator rejects the proxy result", async () => {
     mockFetch(async (input, init) => {
       if (String(input) === PROXY) return jsonOk(null);

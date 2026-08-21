@@ -1,4 +1,4 @@
-import { config, serverRpcProxy } from '../config'
+import { config, serverRpcProxy, type ServerRpcProxyState } from '../config'
 import { CallResponse } from '../types'
 import type { APIMethods } from '../api-types'
 import { sleep } from './sleep'
@@ -90,19 +90,23 @@ export function resetRpcProxyBreaker(): void {
  * except the caller's own abort.
  */
 async function proxyRpcCall<T>(
+  proxy: ServerRpcProxyState,
   method: string,
   params: unknown,
+  callerTimeoutMs: number,
   externalSignal: AbortSignal | undefined,
   validate?: (result: unknown) => boolean
 ): Promise<T> {
-  const proxy = serverRpcProxy!
   const dot = method.indexOf('.')
   if (dot <= 0 || dot === method.length - 1) {
     // Unreachable through setServerRpcProxy (it keeps only dotted names), kept
     // so a future allowlist change fails as a miss rather than a malformed call.
     throw new ProxyMiss('transport', `method without an api prefix: ${method}`)
   }
-  const { signal: tSignal, cleanup: cleanupTimeout } = createTimeoutSignal(proxy.timeoutMs)
+  // Never wait longer for the proxy than the caller would for one node.
+  const { signal: tSignal, cleanup: cleanupTimeout } = createTimeoutSignal(
+    Math.min(proxy.timeoutMs, callerTimeoutMs)
+  )
   const { signal, cleanup: cleanupMerge } = mergeSignals(tSignal, externalSignal)
   try {
     let res: Response
@@ -118,6 +122,12 @@ async function proxyRpcCall<T>(
       throw new ProxyMiss(tSignal.aborted ? 'timeout' : 'transport', errorMessage(e))
     }
     if (res.status !== 200) {
+      // Release the connection: an unconsumed body pins a pooled socket.
+      try {
+        await res.body?.cancel()
+      } catch {
+        // nothing to release
+      }
       throw new ProxyMiss('status', `proxy answered ${res.status}`)
     }
     let result: unknown
@@ -1439,12 +1449,14 @@ export const callRPC = async <T = any>(
   // allowlist: one call, and on any miss the node loop below runs unchanged.
   // It runs BEFORE the node deadline is taken, so a slow proxy costs its own
   // timeout and nothing of the failover budget the nodes get today.
-  if (serverRpcProxy && isNodeRuntime && serverRpcProxy.methodSet.has(method)) {
+  // Snapshot: the binding can be cleared by the host while this call awaits.
+  const proxy = serverRpcProxy
+  if (proxy && isNodeRuntime && proxy.methodSet.has(method)) {
     if (Date.now() < proxyOpenUntil) {
       rpcProxyStats.skipped++
     } else {
       try {
-        const served = await proxyRpcCall<T>(method, params, signal, validate)
+        const served = await proxyRpcCall<T>(proxy, method, params, ceiling, signal, validate)
         rpcProxyStats.served++
         proxyConsecutiveMisses = 0
         return served
@@ -1453,8 +1465,8 @@ export const callRPC = async <T = any>(
         rpcProxyStats.fallback++
         const reason: string = e instanceof ProxyMiss ? e.reason : 'transport'
         rpcProxyStats.fallbackByReason[reason] = (rpcProxyStats.fallbackByReason[reason] ?? 0) + 1
-        if (++proxyConsecutiveMisses >= serverRpcProxy.failureThreshold) {
-          proxyOpenUntil = Date.now() + serverRpcProxy.cooldownMs
+        if (++proxyConsecutiveMisses >= proxy.failureThreshold) {
+          proxyOpenUntil = Date.now() + proxy.cooldownMs
           proxyConsecutiveMisses = 0
         }
       }

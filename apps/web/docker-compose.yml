@@ -92,7 +92,9 @@ services:
       # vapi's /private-api/ssr/rpc over the overlay, with fallback to the node
       # pool on any failure. Needs the same secret vapi was given above; the
       # flag switches it on per deployment.
-      - SSR_INTERNAL_SECRET
+      # The switch is on here, so the secret is required: a deploy without it
+      # would silently run without the proxy instead of exercising it.
+      - SSR_INTERNAL_SECRET=${SSR_INTERNAL_SECRET:?SSR_INTERNAL_SECRET is required while SSR_RPC_PROXY=1}
       - SSR_RPC_PROXY=1
     restart: always
     ports:
