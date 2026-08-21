@@ -386,13 +386,14 @@ function markInsideTags(text: string): Uint8Array {
 //   - glued to another token (a longer URL, a word, `=`), or
 //   - the href of a markdown link `[label](href)`, or the label's start `[`
 //     (the `[url](url)` image-link form is found by the link scan instead), or
-//   - a markdown image `![alt](href)` (handled by the markdown scan).
+//   - a markdown image `![alt](href)` (its href follows `](`, handled above;
+//     a bare `!` before a URL is prose and the renderer linkifies the URL).
 function isStandalone(scan: ScanText, idx: number): boolean {
   if (scan.inTag[idx]) return false
   if (idx === 0) return true
   const text = scan.text
   const prev = text[idx - 1]
-  if (/[\w/.:%?&=#[!-]/.test(prev)) return false
+  if (/[\w/.:%?&=#[-]/.test(prev)) return false
   const prev2 = idx > 1 ? text[idx - 2] : ''
   if (prev === '(' && prev2 === ']') return false
   return true
@@ -409,12 +410,8 @@ function firstStandalone(scan: ScanText, re: RegExp): { url: string; pos: number
   for (const hit of standaloneMatches(scan, re)) return hit
   return null
 }
-// An HTML anchor. Its text sits right after a `>`, so the standalone-position
-// rule above would read an image or video URL used as link TEXT as a bare URL.
-// The renderer only promotes such an anchor when the text equals the href
-// (a.method), so anchors whose text differs are blanked before the bare scans.
-// Lazy body bounded by the closing tag: linear on untrusted input.
-const HTML_ANCHOR_RE = /<a\b[^>]*?\bhref\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi
+// The href of an anchor's opening tag, quoted either way or bare.
+const HREF_ATTR_RE = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i
 // Markdown link `[label](href)` (NOT an image — the `!` is excluded by the
 // caller). The renderer (a.method) promotes such a link to an image only when
 // the href is an image URL AND the label text equals the href. Used to find the
@@ -473,8 +470,33 @@ function stripCodeRegions(body: string): string {
 // link when the anchor's FIRST text child equals its href (`URL<span>x</span>`
 // is promoted, `URL caption` and `<span>x</span>URL` are not). Entities are
 // decoded on both sides, as the DOM exposes them. See HTML_ANCHOR_RE.
+// An HTML anchor's text sits right after a `>`, so the standalone-position rule
+// would read an image or video URL used as link TEXT as a bare URL. The
+// renderer only promotes such an anchor when the text equals the href
+// (a.method), so anchors whose text differs are blanked before the bare scans.
+// A scan rather than a regex: the opening tag's end is found quote-aware (a
+// `>` inside a title must not end it), and the href may be quoted or bare.
 function blankUnequalAnchors(cleaned: string, textContent: boolean): string {
-  return cleaned.replace(HTML_ANCHOR_RE, (whole: string, href: string, inner: string) => {
+  const lower = cleaned.toLowerCase()
+  let result = cleaned
+  let at = findTag(lower, '<a', 0, OPEN_TAG_NAME_END)
+  while (at !== -1) {
+    const gt = findOpenTagEnd(lower, at)
+    if (Number.isNaN(gt) || gt === -1) {
+      // Broken or self-closing: not an anchor around any text.
+      at = findTag(lower, '<a', at + 2, OPEN_TAG_NAME_END)
+      continue
+    }
+    const closeAt = findTag(lower, '</a', gt + 1, CLOSE_TAG_NAME_END)
+    const innerEnd = closeAt === -1 ? cleaned.length : closeAt
+    let spanEnd = cleaned.length
+    if (closeAt !== -1) {
+      const closeGt = lower.indexOf('>', closeAt + 3)
+      spanEnd = closeGt === -1 ? cleaned.length : closeGt + 1
+    }
+    const hrefMatch = HREF_ATTR_RE.exec(cleaned.slice(at, gt))
+    const href = hrefMatch ? (hrefMatch[1] ?? hrefMatch[2] ?? hrefMatch[3] ?? '') : ''
+    const inner = cleaned.slice(gt + 1, innerEnd)
     let text: string
     if (textContent) {
       text = stripHtmlTags(inner)
@@ -484,8 +506,12 @@ function blankUnequalAnchors(cleaned: string, textContent: boolean): string {
       const firstTag = inner.search(/<[A-Za-z/!]/)
       text = firstTag === -1 ? inner : inner.slice(0, firstTag)
     }
-    return decodeEntities(text.trim()) === decodeEntities(href.trim()) ? whole : ' '.repeat(whole.length)
-  })
+    if (!href || decodeEntities(text.trim()) !== decodeEntities(href.trim())) {
+      result = result.slice(0, at) + blankChars(result.slice(at, spanEnd)) + result.slice(spanEnd)
+    }
+    at = spanEnd >= cleaned.length ? -1 : findTag(lower, '<a', spanEnd, OPEN_TAG_NAME_END)
+  }
+  return result
 }
 
 /** One scan text plus its inside-a-tag marks. */

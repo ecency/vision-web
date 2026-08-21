@@ -2466,7 +2466,7 @@ function isStandalone(scan, idx) {
   if (idx === 0) return true;
   const text2 = scan.text;
   const prev = text2[idx - 1];
-  if (/[\w/.:%?&=#[!-]/.test(prev)) return false;
+  if (/[\w/.:%?&=#[-]/.test(prev)) return false;
   const prev2 = idx > 1 ? text2[idx - 2] : "";
   if (prev === "(" && prev2 === "]") return false;
   return true;
@@ -2481,7 +2481,7 @@ function firstStandalone(scan, re) {
   for (const hit of standaloneMatches(scan, re)) return hit;
   return null;
 }
-var HTML_ANCHOR_RE = /<a\b[^>]*?\bhref\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+var HREF_ATTR_RE = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
 var MD_LINK_RE = /\[([^[\]]*)\]\(\s*([^)\s[]+)(?:\s+["'][^"']*["'])?\s*\)/g;
 var SAFE_URL_RE = /^https?:\/\//i;
 var IMG_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i;
@@ -2496,7 +2496,25 @@ function stripCodeRegions(body) {
   return stripHiddenRegions(text2);
 }
 function blankUnequalAnchors(cleaned, textContent) {
-  return cleaned.replace(HTML_ANCHOR_RE, (whole, href, inner) => {
+  const lower = cleaned.toLowerCase();
+  let result = cleaned;
+  let at = findTag(lower, "<a", 0, OPEN_TAG_NAME_END);
+  while (at !== -1) {
+    const gt = findOpenTagEnd(lower, at);
+    if (Number.isNaN(gt) || gt === -1) {
+      at = findTag(lower, "<a", at + 2, OPEN_TAG_NAME_END);
+      continue;
+    }
+    const closeAt = findTag(lower, "</a", gt + 1, CLOSE_TAG_NAME_END);
+    const innerEnd = closeAt === -1 ? cleaned.length : closeAt;
+    let spanEnd = cleaned.length;
+    if (closeAt !== -1) {
+      const closeGt = lower.indexOf(">", closeAt + 3);
+      spanEnd = closeGt === -1 ? cleaned.length : closeGt + 1;
+    }
+    const hrefMatch = HREF_ATTR_RE.exec(cleaned.slice(at, gt));
+    const href = hrefMatch ? hrefMatch[1] ?? hrefMatch[2] ?? hrefMatch[3] ?? "" : "";
+    const inner = cleaned.slice(gt + 1, innerEnd);
     let text2;
     if (textContent) {
       text2 = stripHtmlTags(inner);
@@ -2504,8 +2522,12 @@ function blankUnequalAnchors(cleaned, textContent) {
       const firstTag = inner.search(/<[A-Za-z/!]/);
       text2 = firstTag === -1 ? inner : inner.slice(0, firstTag);
     }
-    return decodeEntities(text2.trim()) === decodeEntities(href.trim()) ? whole : " ".repeat(whole.length);
-  });
+    if (!href || decodeEntities(text2.trim()) !== decodeEntities(href.trim())) {
+      result = result.slice(0, at) + blankChars(result.slice(at, spanEnd)) + result.slice(spanEnd);
+    }
+    at = spanEnd >= cleaned.length ? -1 : findTag(lower, "<a", spanEnd, OPEN_TAG_NAME_END);
+  }
+  return result;
 }
 var EMPTY_SCAN = { text: "", inTag: new Uint8Array(0) };
 function prepareBody(body) {

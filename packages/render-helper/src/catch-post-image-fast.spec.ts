@@ -387,6 +387,38 @@ describe('catchPostImage fast mode', () => {
     }
   })
 
+  it('reads a URL right after an exclamation mark as prose, as the renderer does', () => {
+    for (const body of [
+      '!https://files.peakd.com/x/bang.png',
+      'wow!https://files.peakd.com/x/bang.png end',
+      '!https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeTruthy()
+      expect(r.fast, body).toBe(r.full)
+    }
+  })
+
+  it('matches anchors quote-aware and with bare hrefs, so link text is never read as a bare URL', () => {
+    const i = 'https://files.peakd.com/x/quoted-anchor.png'
+    for (const body of [
+      `<a title="a > b" href="https://example.com/page">${i}</a>`,
+      `<a title='a > b' href="https://example.com/page">${i}</a>`,
+      `<a href=https://example.com/page>${i}</a>`,
+      `<a title="a > b" href="https://example.com/page">https://www.youtube.com/watch?v=dQw4w9WgXcQ</a>`
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeNull()
+      expect(r.fast, body).toBeNull()
+      expect(getEntryImageRawUrl(entry(body)), body).toBeNull()
+    }
+    for (const body of [`<a title="a > b" href="${i}">${i}</a>`, `<a href=${i}>${i}</a>`]) {
+      const r = both(body)
+      expect(r.full, body).toBeTruthy()
+      expect(r.fast, body).toBe(r.full)
+    }
+  })
+
   it('does not read an anchor whose first text continues past the href with a literal < as promoted', () => {
     const i = 'https://files.peakd.com/x/lt.png'
     for (const body of [`<a href="${i}">${i} < caption</a>`, `<a href="${i}">${i} <3</a>`]) {
