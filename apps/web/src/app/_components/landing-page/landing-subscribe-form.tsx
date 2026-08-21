@@ -39,6 +39,16 @@ export function LandingSubscribeForm() {
   const [captchaRequired, setCaptchaRequired] = useState(false);
   const needsCaptcha = !activeUser || captchaRequired;
 
+  // The widget is only mounted once the reader touches the form. Turnstile costs
+  // ~560 KB of third-party script and challenge payload plus main-thread time,
+  // and it used to load for every signed-out visitor of the homepage, for a form
+  // at the bottom of the page that most of them never reach (#1594). Focus,
+  // pointer, touch and typing (autofill can skip focus) all count as intent; the
+  // challenge then resolves while the address is being typed. Submitting counts
+  // too, so the 403 retry path for a signed-in caller still reveals the widget.
+  const [engaged, setEngaged] = useState(false);
+  const engage = () => setEngaged(true);
+
   // Single-use tokens: a retry that reuses one fails as though the service were down.
   const resetCaptcha = () => {
     setCaptchaToken("");
@@ -47,6 +57,7 @@ export function LandingSubscribeForm() {
 
   const handleSubscribe = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    engage();
     // The disabled button is only the visible half: a form can still be submitted from
     // the keyboard while its button is disabled, and posting an empty token would spend
     // a round trip to be told 403.
@@ -109,12 +120,20 @@ export function LandingSubscribeForm() {
   }
 
   return (
-    <form onSubmit={handleSubscribe}>
+    <form
+      onSubmit={handleSubscribe}
+      onFocusCapture={engage}
+      onPointerDownCapture={engage}
+      onTouchStartCapture={engage}
+    >
       <input
         type="email"
         placeholder={i18next.t("landing-page.enter-your-email-adress")}
         value={email}
-        onChange={(e) => setEmail(e.target.value)}
+        onChange={(e) => {
+          engage();
+          setEmail(e.target.value);
+        }}
         required={true}
         autoComplete="email"
         aria-label={i18next.t("landing-page.enter-your-email-adress")}
@@ -130,14 +149,23 @@ export function LandingSubscribeForm() {
         <option value="monthly">{i18next.t("newsletter.cadence.monthly")}</option>
       </select>
       {needsCaptcha && (
-        <Turnstile
-          ref={turnstileRef}
-          sitekey={TURNSTILE_SITEKEY}
-          action="newsletter-subscribe"
-          onVerify={setCaptchaToken}
-          onExpire={() => setCaptchaToken("")}
-          onError={() => setCaptchaToken("")}
-        />
+        // For a signed-out reader the challenge is expected, so its slot (the
+        // managed widget is 300x65) is reserved from the first paint and the
+        // late mount does not push the button to a new line under the reader's
+        // finger. A signed-in caller only meets the widget after a 403, as an
+        // error retry, and that path inserts it late as it did before.
+        <div className="w-[300px] max-w-full min-h-[65px]">
+          {engaged && (
+            <Turnstile
+              ref={turnstileRef}
+              sitekey={TURNSTILE_SITEKEY}
+              action="newsletter-subscribe"
+              onVerify={setCaptchaToken}
+              onExpire={() => setCaptchaToken("")}
+              onError={() => setCaptchaToken("")}
+            />
+          )}
+        </div>
       )}
       <button disabled={loading || (needsCaptcha && !captchaToken)}>
         {loading ? (
