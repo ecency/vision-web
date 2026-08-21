@@ -6,7 +6,9 @@ import {
   setRestNodesByApi as setHiveTxRestNodesByApi,
   setUserAgent as setHiveTxUserAgent,
   setResilience as setHiveTxResilience,
+  setServerRpcProxy as setHiveTxServerRpcProxy,
   type ResilienceOptions,
+  type ServerRpcProxyOptions,
 } from "../../hive-tx";
 import type { APIMethods } from "../../hive-tx/api-types";
 
@@ -313,6 +315,18 @@ export namespace ConfigManager {
    */
   export function setResilience(opts: Partial<ResilienceOptions>) {
     setHiveTxResilience(opts);
+  }
+
+  /**
+   * Route allowlisted server-side RPC reads through a read-through cache in
+   * front of the node pool (one cache per host, shared by every renderer
+   * process). An optimization, never a dependency: any proxy failure falls
+   * straight through to the node loop. No effect outside Node; null switches
+   * it off. Delegates to the unified hive-tx `setServerRpcProxy`.
+   * @param opts - `{ url, headers, timeoutMs, methods }` or null
+   */
+  export function setServerRpcProxy(opts: ServerRpcProxyOptions | null) {
+    setHiveTxServerRpcProxy(opts);
   }
 
   /**

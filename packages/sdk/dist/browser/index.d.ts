@@ -1,7 +1,7 @@
 import * as _tanstack_react_query from '@tanstack/react-query';
 import { MutationKey, UseMutationOptions, QueryClient, QueryKey, InfiniteData, UseQueryOptions, UseInfiniteQueryOptions, useMutation } from '@tanstack/react-query';
-import { O as Operation, P as PrivateKey, B as BroadcastResult, A as APIMethods, R as ResilienceOptions, a as Authority, b as PublicKey, c as OperationName, o as operations } from './hive-DmLj3VWL.js';
-export { d as AccountCreateOperation, e as AssetSymbol, C as CustomJsonOperation, T as HiveTxTransaction, M as Memo, f as OperationBody, S as Signature, g as callREST, h as callRPC, i as callRPCBroadcast, j as callWithQuorum, k as hiveTxConfig, u as hiveTxUtils } from './hive-DmLj3VWL.js';
+import { O as Operation, P as PrivateKey, B as BroadcastResult, A as APIMethods, R as ResilienceOptions, S as ServerRpcProxyOptions, a as Authority, b as PublicKey, c as OperationName, o as operations } from './hive-B_MUq8sk.js';
+export { d as AccountCreateOperation, e as AssetSymbol, C as CustomJsonOperation, T as HiveTxTransaction, M as Memo, f as OperationBody, g as Signature, h as callREST, i as callRPC, j as callRPCBroadcast, k as callWithQuorum, l as hiveTxConfig, u as hiveTxUtils } from './hive-B_MUq8sk.js';
 
 interface AiGenerationPrice {
     aspect_ratio: string;
@@ -1219,6 +1219,15 @@ declare namespace ConfigManager {
      * @param opts - e.g. `{ hedge: true }` to opt into hedged reads
      */
     function setResilience(opts: Partial<ResilienceOptions>): void;
+    /**
+     * Route allowlisted server-side RPC reads through a read-through cache in
+     * front of the node pool (one cache per host, shared by every renderer
+     * process). An optimization, never a dependency: any proxy failure falls
+     * straight through to the node loop. No effect outside Node; null switches
+     * it off. Delegates to the unified hive-tx `setServerRpcProxy`.
+     * @param opts - `{ url, headers, timeoutMs, methods }` or null
+     */
+    function setServerRpcProxy(opts: ServerRpcProxyOptions | null): void;
     /**
      * Set DMCA filtering lists
      * @param lists - DMCA lists object containing accounts/tags/posts arrays

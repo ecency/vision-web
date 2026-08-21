@@ -158,6 +158,108 @@ export const config = {
 export type ResilienceOptions = typeof config.resilience
 
 /**
+ * Server-side read-through proxy for RPC reads (see `setServerRpcProxy`).
+ * `methods` is the allowlist the proxy serves; a read outside it goes straight
+ * to the node pool as before.
+ */
+export interface ServerRpcProxyOptions {
+  /** Absolute URL of the proxy endpoint (POST `{api, method, params}`). */
+  url: string
+  /** Headers sent with every proxy call (the shared internal secret). */
+  headers: Record<string, string>
+  /** Per-call timeout in ms; on expiry the read falls back to the node pool. */
+  timeoutMs: number
+  /** Fully qualified method names (`bridge.get_post`) the proxy may answer;
+   * omitted = DEFAULT_SERVER_RPC_PROXY_METHODS. An empty list is ignored. */
+  methods?: string[]
+  /**
+   * After this many consecutive proxy misses the proxy is skipped for
+   * `cooldownMs`, so a proxy that is down costs one failed call per cooldown
+   * window rather than one per read. Default 3 / 10s. A served call resets it.
+   */
+  failureThreshold?: number
+  cooldownMs?: number
+}
+
+/** Default allowlist: the reads a server render makes and the proxy caches. */
+export const DEFAULT_SERVER_RPC_PROXY_METHODS: readonly string[] = [
+  'bridge.get_ranked_posts',
+  'bridge.get_account_posts',
+  'bridge.get_post',
+  'bridge.get_discussion',
+  'bridge.get_profile',
+  'bridge.get_profiles',
+  'bridge.get_community',
+  'bridge.list_communities',
+  'condenser_api.get_accounts',
+  'condenser_api.get_content',
+  'condenser_api.get_dynamic_global_properties',
+  'condenser_api.get_trending_tags'
+]
+
+/**
+ * Active proxy configuration, or null (the default: every read goes to the node
+ * pool). Lives outside `config` so the browser bundle never carries it; it is
+ * only ever consulted under Node.
+ */
+export interface ServerRpcProxyState extends Required<ServerRpcProxyOptions> {
+  methodSet: Set<string>
+}
+
+export let serverRpcProxy: ServerRpcProxyState | null = null
+
+/**
+ * Route allowlisted server-side reads through a read-through cache in front
+ * of the node pool. One cache per host answers the reads every renderer
+ * process used to make on its own; a miss there is one upstream call shared by
+ * every concurrent reader. The proxy is an optimization, never a dependency:
+ * any failure (non-200, timeout, transport error, a response the caller's
+ * validator rejects) falls straight through to the existing node loop, so the
+ * worst case is the latency of a failed proxy call on top of what happens
+ * today. Has no effect outside Node. Pass null to switch it off.
+ */
+export const setServerRpcProxy = (opts: ServerRpcProxyOptions | null): void => {
+  if (opts === null) {
+    serverRpcProxy = null
+    return
+  }
+  if (!opts || typeof opts !== 'object') return
+  const url = typeof opts.url === 'string' ? opts.url.trim() : ''
+  if (!/^https?:\/\//i.test(url)) return
+  const headers: Record<string, string> = {}
+  if (opts.headers && typeof opts.headers === 'object') {
+    for (const [k, v] of Object.entries(opts.headers)) {
+      if (typeof v === 'string' && v && !/[\u0000-\u001f\u007f]/.test(v) && !/[\u0000-\u001f\u007f]/.test(k)) {
+        headers[k] = v
+      }
+    }
+  }
+  const timeoutMs =
+    typeof opts.timeoutMs === 'number' && Number.isFinite(opts.timeoutMs) && opts.timeoutMs > 0
+      ? opts.timeoutMs
+      : 2_000
+  const methods =
+    opts.methods === undefined
+      ? [...DEFAULT_SERVER_RPC_PROXY_METHODS]
+      : Array.isArray(opts.methods)
+        ? opts.methods.filter((m): m is string => typeof m === 'string' && m.includes('.'))
+        : []
+  // Nothing to route through the proxy: keep whatever was configured before.
+  if (methods.length === 0) return
+  const pos = (v: unknown, fallback: number): number =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback
+  serverRpcProxy = {
+    url,
+    headers,
+    timeoutMs,
+    methods,
+    failureThreshold: Math.floor(pos(opts.failureThreshold, 3)),
+    cooldownMs: pos(opts.cooldownMs, 10_000),
+    methodSet: new Set(methods)
+  }
+}
+
+/**
  * Validated setter for the Hive RPC node list — replaces `config.nodes`.
  * Trims, drops non-http(s) entries, and de-dupes (order-preserving). A no-op
  * if nothing valid remains, so a bad input can't empty the list.
