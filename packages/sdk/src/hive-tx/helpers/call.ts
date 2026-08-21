@@ -55,10 +55,17 @@ export const rpcProxyStats = {
   fallback: 0,
   /** Reads that went straight to the nodes because the breaker was open. */
   skipped: 0,
-  fallbackByReason: { status: 0, timeout: 0, transport: 0, validate: 0, parse: 0 } as Record<string, number>
+  fallbackByReason: { status: 0, rpcerror: 0, timeout: 0, transport: 0, validate: 0, parse: 0 } as Record<string, number>
 }
 
-type ProxyMissReason = 'status' | 'timeout' | 'transport' | 'validate' | 'parse'
+/**
+ * `rpcerror` is a 502 tagged `X-Ssr-Cache: RPCERROR`: the proxy reached a node
+ * and relayed the node's own error (a tag or post that does not exist, a bad
+ * argument). The read still falls back so the caller sees the node's answer
+ * unchanged, but the proxy was healthy, so it does not count toward the
+ * breaker; the other reasons do.
+ */
+type ProxyMissReason = 'status' | 'rpcerror' | 'timeout' | 'transport' | 'validate' | 'parse'
 
 class ProxyMiss extends Error {
   constructor(
@@ -128,7 +135,8 @@ async function proxyRpcCall<T>(
       } catch {
         // nothing to release
       }
-      throw new ProxyMiss('status', `proxy answered ${res.status}`)
+      const relayed = res.status === 502 && (res.headers.get('x-ssr-cache') ?? '').toUpperCase() === 'RPCERROR'
+      throw new ProxyMiss(relayed ? 'rpcerror' : 'status', relayed ? 'proxy relayed a node error' : `proxy answered ${res.status}`)
     }
     let result: unknown
     try {
@@ -1465,7 +1473,12 @@ export const callRPC = async <T = any>(
         rpcProxyStats.fallback++
         const reason: string = e instanceof ProxyMiss ? e.reason : 'transport'
         rpcProxyStats.fallbackByReason[reason] = (rpcProxyStats.fallbackByReason[reason] ?? 0) + 1
-        if (++proxyConsecutiveMisses >= proxy.failureThreshold) {
+        if (reason === 'rpcerror') {
+          // A relayed node error is a healthy proxy answer: it closes the
+          // count like a served call. Crawler-made feed URLs produce these in
+          // runs, and counting them opened the breaker on a working proxy.
+          proxyConsecutiveMisses = 0
+        } else if (++proxyConsecutiveMisses >= proxy.failureThreshold) {
           proxyOpenUntil = Date.now() + proxy.cooldownMs
           proxyConsecutiveMisses = 0
         }

@@ -98,7 +98,7 @@ function startRpcProxyReport(): void {
     const r = s.fallbackByReason;
     const line =
       `served=${s.served} fallback=${s.fallback} ` +
-      `(status=${r.status} timeout=${r.timeout} transport=${r.transport} ` +
+      `(status=${r.status} rpcerror=${r.rpcerror ?? 0} timeout=${r.timeout} transport=${r.transport} ` +
       `validate=${r.validate} parse=${r.parse}) skipped=${s.skipped}`;
     if (line === last) return;
     last = line;

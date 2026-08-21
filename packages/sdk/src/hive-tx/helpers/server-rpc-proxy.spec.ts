@@ -231,6 +231,50 @@ describe("server-side RPC proxy", () => {
     expect(urls.filter((u) => u === PROXY)).toHaveLength(3);
   });
 
+  it("a relayed node error falls back but neither opens nor advances the breaker", async () => {
+    setServerRpcProxy({ url: PROXY, headers: {}, timeoutMs: 500, failureThreshold: 2, cooldownMs: 300 });
+    const relayed = () =>
+      new Response(JSON.stringify({ error: "Assert Exception:Tag nosuchtag does not exist" }), {
+        status: 502,
+        headers: { "Content-Type": "application/json", "X-Ssr-Cache": "RPCERROR" }
+      });
+    let answer: () => Response = relayed;
+    const urls: string[] = [];
+    mockFetch(async (input, init) => {
+      urls.push(String(input));
+      if (String(input) === PROXY) return answer();
+      return rpcOk(idOf(init), { from: "node" });
+    });
+    for (let i = 1; i <= 4; i++) {
+      const out = await callRPC("bridge.get_ranked_posts", { sort: "created", tag: `nosuchtag${i}`, limit: 20 });
+      expect(out).toEqual({ from: "node" });
+    }
+    // Four relays in a row, all four reached the proxy: the breaker never opened.
+    expect(urls.filter((u) => u === PROXY)).toHaveLength(4);
+    expect(rpcProxyStats.skipped).toBe(0);
+    expect(rpcProxyStats.fallback).toBe(4);
+    expect(rpcProxyStats.fallbackByReason.rpcerror).toBe(4);
+    expect(rpcProxyStats.fallbackByReason.status).toBe(0);
+
+    // A relay also clears a count a real miss had started: miss, relay, miss
+    // does not reach the threshold of two.
+    answer = () => jsonOk({ error: "down" }, 502);
+    await callRPC("bridge.get_post", { author: "a", permlink: "1" }); // miss 1
+    answer = relayed;
+    await callRPC("bridge.get_post", { author: "a", permlink: "2" }); // relay, count reset
+    answer = () => jsonOk({ error: "down" }, 502);
+    await callRPC("bridge.get_post", { author: "a", permlink: "3" }); // miss 1 again (the relay reset it)
+    await callRPC("bridge.get_post", { author: "a", permlink: "4" }); // miss 2: tried, then opens
+    expect(rpcProxyStats.skipped).toBe(0);
+    expect(urls.filter((u) => u === PROXY)).toHaveLength(8);
+
+    // Bare 502s without the tag are still status misses and still count: the
+    // breaker is open now.
+    await callRPC("bridge.get_post", { author: "a", permlink: "5" }); // skipped
+    expect(rpcProxyStats.skipped).toBe(1);
+    expect(rpcProxyStats.fallbackByReason.status).toBe(3);
+  });
+
   it("a served call closes the breaker count", async () => {
     setServerRpcProxy({ url: PROXY, headers: {}, timeoutMs: 500, failureThreshold: 2, cooldownMs: 300 });
     let fail = true;
