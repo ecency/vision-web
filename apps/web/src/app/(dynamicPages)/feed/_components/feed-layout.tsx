@@ -11,6 +11,7 @@ import { UserAvatar } from "@/features/shared/user-avatar";
 import { getPostsRankedQueryOptions, QueryKeys } from "@ecency/sdk";
 import { getQueryClient } from "@/core/react-query";
 import { withSlimPageEntries } from "@/core/entries/slim-entry";
+import { mergePreservingHint } from "@/core/entries/language-hint";
 import type { InfiniteData } from "@tanstack/react-query";
 
 const MAX_PENDING = 20;
@@ -109,7 +110,7 @@ export function FeedLayout(props: PropsWithChildren<Props>) {
             if (Array.isArray(page)) {
               return (page as Entry[]).map((item) => {
                 const updated = map.get(`${item.author}-${item.permlink}`);
-                return updated ? { ...item, ...updated } : item;
+                return updated ? mergePreservingHint(item, updated) : item;
               });
             }
             return page; // SearchResponse: leave as-is
@@ -123,7 +124,7 @@ export function FeedLayout(props: PropsWithChildren<Props>) {
             const updated = resp.find(
                 (e) => e.author === item.author && e.permlink === item.permlink
             );
-            return updated ? { ...item, ...updated } : item;
+            return updated ? mergePreservingHint(item, updated) : item;
           })
       );
 

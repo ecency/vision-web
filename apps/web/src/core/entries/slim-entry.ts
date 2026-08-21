@@ -2,6 +2,7 @@ import { catchPostImage, getEntryImageRawUrl, postBodySummary } from "@ecency/re
 import { hasExternalLink } from "@ecency/sdk";
 import { Entry } from "@/entities";
 import { parseEntryLocationFromBody } from "./entry-location";
+import { annotateLanguageHints } from "./language-hint";
 
 /**
  * Feed cards render a ~200 character summary and a thumbnail, but the bridge
@@ -177,8 +178,12 @@ function wrapQueryFn<T extends WithQueryFn>(
   return {
     ...options,
     queryKey,
+    // The language hint rides on the slim rows the server produces; on the
+    // client it is a no-op (see core/entries/language-hint.ts).
     queryFn: async (...args: unknown[]) =>
-      transform(await (queryFn as (...a: unknown[]) => Promise<unknown>)(...args))
+      annotateLanguageHints(
+        transform(await (queryFn as (...a: unknown[]) => Promise<unknown>)(...args))
+      )
   } as T;
 }
 

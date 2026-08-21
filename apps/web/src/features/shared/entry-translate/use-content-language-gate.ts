@@ -79,6 +79,8 @@ interface GateEntry {
   permlink: string;
   body?: string;
   json_metadata?: { description?: string | null } | null;
+  // Server-detected language of a slim row's summary (core/entries/language-hint.ts).
+  slim?: { lang?: string | null } | null;
 }
 
 interface GateOptions {
@@ -124,6 +126,9 @@ export function useContentLanguageGate(
   const body = entry?.body || "";
   const summary = body ? "" : entry?.json_metadata?.description || "";
   const sample = body || summary;
+  // A slim row the server already detected: the same summary, decided once
+  // there, so the browser neither renders markdown nor loads the detector.
+  const hint = summary ? entry?.slim?.lang : undefined;
 
   useEffect(() => {
     setDecision(null);
@@ -152,6 +157,12 @@ export function useContentLanguageGate(
       setDecision(
         resolveTranslateCta({ detected: cached.lang, reader, textLength: MIN_DETECT_CHARS })
       );
+      return;
+    }
+
+    if (hint !== undefined) {
+      cacheDetection(key, { lang: hint, confirmed: false });
+      setDecision(resolveTranslateCta({ detected: hint, reader, textLength: MIN_DETECT_CHARS }));
       return;
     }
 
@@ -221,7 +232,7 @@ export function useContentLanguageGate(
     return () => {
       cancelled = true;
     };
-  }, [author, permlink, sample, summary, canServerConfirm, disabled]);
+  }, [author, permlink, sample, summary, hint, canServerConfirm, disabled]);
 
   return decision;
 }

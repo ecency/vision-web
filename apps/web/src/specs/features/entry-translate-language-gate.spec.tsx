@@ -91,6 +91,59 @@ describe("useContentLanguageGate server /detect gating", () => {
     expect(detectLanguage).not.toHaveBeenCalled();
   });
 
+  it("uses a server hint on a slim row without loading the detector (#1597)", async () => {
+    const { franc } = await import("franc-min");
+    vi.mocked(franc).mockClear();
+    const { result } = renderHook(() =>
+      useContentLanguageGate({
+        author: "author-hint",
+        permlink: "gate-hint-es",
+        body: "",
+        json_metadata: { description: SPANISH_BODY },
+        slim: { lang: "es" }
+      })
+    );
+    await waitFor(() => expect(result.current).not.toBeNull());
+    expect(result.current?.show).toBe(true);
+    expect(result.current?.source).toBe("es");
+    expect(franc).not.toHaveBeenCalled();
+    expect(detectLanguage).not.toHaveBeenCalled();
+  });
+
+  it("offers nothing for a slim row the server marked undetermined (#1597)", async () => {
+    const { franc } = await import("franc-min");
+    vi.mocked(franc).mockClear();
+    const { result } = renderHook(() =>
+      useContentLanguageGate({
+        author: "author-hint",
+        permlink: "gate-hint-null",
+        body: "",
+        json_metadata: { description: SPANISH_BODY },
+        slim: { lang: null }
+      })
+    );
+    await waitFor(() => expect(result.current).not.toBeNull());
+    expect(result.current?.show).toBe(false);
+    expect(franc).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale hint once the full body is present (post page detects itself)", async () => {
+    const { franc } = await import("franc-min");
+    vi.mocked(franc).mockClear();
+    const { result } = renderHook(() =>
+      useContentLanguageGate({
+        author: "author-hint",
+        permlink: "gate-hint-full",
+        body: SPANISH_BODY,
+        json_metadata: { description: SPANISH_BODY },
+        slim: { lang: "de" }
+      })
+    );
+    await waitFor(() => expect(result.current).not.toBeNull());
+    expect(franc).toHaveBeenCalled();
+    expect(result.current?.source).toBe("es");
+  });
+
   it("does not let a summary-derived detection stand in for the full post", async () => {
     // Feed card first: detection comes from the card summary only.
     const feed = renderHook(() =>
