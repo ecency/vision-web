@@ -412,7 +412,10 @@ describe('catchPostImage fast mode', () => {
       expect(r.fast, body).toBeNull()
       expect(getEntryImageRawUrl(entry(body)), body).toBeNull()
     }
-    for (const body of [`<a title="a > b" href="${i}">${i}</a>`, `<a href=${i}>${i}</a>`]) {
+    const dataHref = `<a data-href="${i}" href="https://example.com/page">${i}</a>`
+    expect(catchPostImage(entry(dataHref), 0, 0, 'match', FAST)).toBeNull()
+    expect(getEntryImageRawUrl(entry(dataHref))).toBeNull()
+    for (const body of [`<a title="a > b" href="${i}">${i}</a>`, `<a href=${i}>${i}</a>`, `<a href="${i}" data-href="x">${i}</a>`]) {
       const r = both(body)
       expect(r.full, body).toBeTruthy()
       expect(r.fast, body).toBe(r.full)

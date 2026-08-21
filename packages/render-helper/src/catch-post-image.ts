@@ -410,8 +410,9 @@ function firstStandalone(scan: ScanText, re: RegExp): { url: string; pos: number
   for (const hit of standaloneMatches(scan, re)) return hit
   return null
 }
-// The href of an anchor's opening tag, quoted either way or bare.
-const HREF_ATTR_RE = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i
+// The href of an anchor's opening tag, quoted either way or bare. Preceded by
+// whitespace, never by `-`: `data-href` is not the href.
+const HREF_ATTR_RE = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i
 // Markdown link `[label](href)` (NOT an image — the `!` is excluded by the
 // caller). The renderer (a.method) promotes such a link to an image only when
 // the href is an image URL AND the label text equals the href. Used to find the
