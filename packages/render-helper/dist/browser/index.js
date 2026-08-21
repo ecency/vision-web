@@ -2323,7 +2323,13 @@ function stripCodeRegions(body) {
 }
 function blankUnequalAnchors(cleaned, textContent) {
   return cleaned.replace(HTML_ANCHOR_RE, (whole, href, inner) => {
-    const text2 = textContent ? stripHtmlTags(inner) : inner;
+    let text2;
+    if (textContent) {
+      text2 = stripHtmlTags(inner);
+    } else {
+      const firstTag = inner.indexOf("<");
+      text2 = firstTag === -1 ? inner : inner.slice(0, firstTag);
+    }
     return decodeEntities(text2.trim()) === decodeEntities(href.trim()) ? whole : " ".repeat(whole.length);
   });
 }

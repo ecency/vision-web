@@ -10368,7 +10368,13 @@ function stripCodeRegions(body) {
 }
 function blankUnequalAnchors(cleaned, textContent) {
   return cleaned.replace(HTML_ANCHOR_RE, (whole, href, inner) => {
-    const text3 = textContent ? stripHtmlTags(inner) : inner;
+    let text3;
+    if (textContent) {
+      text3 = stripHtmlTags(inner);
+    } else {
+      const firstTag = inner.indexOf("<");
+      text3 = firstTag === -1 ? inner : inner.slice(0, firstTag);
+    }
     return decodeEntities(text3.trim()) === decodeEntities(href.trim()) ? whole : " ".repeat(whole.length);
   });
 }

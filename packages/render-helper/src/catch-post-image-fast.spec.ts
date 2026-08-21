@@ -1,17 +1,18 @@
 import { catchPostImage, getEntryImageRawUrl } from './catch-post-image'
 import { markdown2Html } from './markdown-2-html'
 import { buildPictureSources, proxifyImageSrc } from './proxify-image-src'
+import type { Entry } from './types'
 
 // Distinct author/permlink per fixture: catchPostImage memoizes per post and
 // size, process-wide, so two fixtures sharing a key would share an answer.
 let n = 0
-const entry = (body: string, json_metadata: unknown = {}) => ({
+const entry = (body: string, json_metadata: unknown = {}): Entry => ({
   author: 'fast',
   permlink: `p-${n++}`,
   last_update: '2019-05-10T09:15:21',
   body,
   json_metadata
-}) as any
+})
 
 const FAST = { fast: true }
 
@@ -332,16 +333,33 @@ describe('catchPostImage fast mode', () => {
     expect(r.fast).toBe(r.full)
   })
 
-  it('follows the renderer on anchors with nested markup: video promoted by textContent, image not', () => {
+  it('follows the renderer on anchors with nested markup: video by textContent, image by first text child', () => {
     const v = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
-    const r = both(`<a href="${v}"><span>${v}</span></a>`)
-    expect(r.full).toBeTruthy()
-    expect(r.fast).toBe(r.full)
     const i = 'https://files.peakd.com/x/wrapped.png'
-    const ri = both(`<a href="${i}"><strong>${i}</strong></a>`)
-    expect(ri.full).toBeNull()
-    expect(ri.fast).toBeNull()
-    expect(getEntryImageRawUrl(entry(`<a href="${i}"><strong>${i}</strong></a>`))).toBeNull()
+    const promoted = [
+      `<a href="${v}"><span>${v}</span></a>`,
+      `<a href="${i}">${i}<span>x</span></a>`,
+      `<a href="${i}">${i} <em>caption</em></a>`
+    ]
+    const notPromoted = [
+      `<a href="${i}"><strong>${i}</strong></a>`,
+      `<a href="${i}"><span>x</span>${i}</a>`,
+      `<a href="${i}">${i} caption</a>`,
+      `<a href="${v}">${v}<span>x</span></a>`,
+      `<a href="${v}">${v} caption</a>`
+    ]
+    for (const body of promoted) {
+      const r = both(body)
+      expect(r.full, body).toBeTruthy()
+      expect(r.fast, body).toBe(r.full)
+    }
+    for (const body of notPromoted) {
+      const r = both(body)
+      expect(r.full, body).toBeNull()
+      expect(r.fast, body).toBeNull()
+      expect(getEntryImageRawUrl(entry(body)), body).toBeNull()
+    }
+    expect(getEntryImageRawUrl(entry(`<a href="${i}">${i}<span>x</span></a>`))).toBe(i)
   })
 
   it('returns null, not a later poster, when an ambiguous markdown image comes first', () => {

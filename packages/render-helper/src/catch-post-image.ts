@@ -271,12 +271,18 @@ function stripCodeRegions(body: string): string {
 // renderer would not promote. Verified against the renderer, the two
 // promotions use different tests: a video link is promoted when the anchor's
 // textContent equals its href (nested <span> and the like allowed), an image
-// link only when the anchor's raw content is the bare URL (nested markup means
-// it stays a link). Entities are decoded on both sides, as the DOM exposes
-// them. See HTML_ANCHOR_RE.
+// link when the anchor's FIRST text child equals its href (`URL<span>x</span>`
+// is promoted, `URL caption` and `<span>x</span>URL` are not). Entities are
+// decoded on both sides, as the DOM exposes them. See HTML_ANCHOR_RE.
 function blankUnequalAnchors(cleaned: string, textContent: boolean): string {
   return cleaned.replace(HTML_ANCHOR_RE, (whole: string, href: string, inner: string) => {
-    const text = textContent ? stripHtmlTags(inner) : inner
+    let text: string
+    if (textContent) {
+      text = stripHtmlTags(inner)
+    } else {
+      const firstTag = inner.indexOf('<')
+      text = firstTag === -1 ? inner : inner.slice(0, firstTag)
+    }
     return decodeEntities(text.trim()) === decodeEntities(href.trim()) ? whole : ' '.repeat(whole.length)
   })
 }
@@ -576,12 +582,15 @@ function getImage(entry: Entry, width = 0, height = 0, format = 'match', fastMod
 }
 
 /**
- * The RAW (pre-proxify) URL of an entry's primary image, using the same
- * discovery order as catchPostImage (json_metadata.image, then the first body
- * image). Unlike catchPostImage it does NOT proxify — callers need the original
- * URL (e.g. to test picture-eligibility for an LCP preload, since catchPostImage
- * returns an already-proxified /p/ URL). Returns null when the fast path finds
- * no unambiguous image (the caller can fall back to catchPostImage).
+ * The RAW (pre-proxify) URL of the image an entry's BODY renders first:
+ * json_metadata.image, then the first body image. Deliberately NOT the same
+ * order as catchPostImage, which reads json_metadata.thumbnails ahead of
+ * image: a thumbnail is a card concern and the post body never renders it, so
+ * a preload built from it would be wasted. Unlike catchPostImage it does NOT
+ * proxify — callers need the original URL (e.g. to test picture-eligibility
+ * for an LCP preload, since catchPostImage returns an already-proxified /p/
+ * URL). Returns null when the fast path finds no unambiguous image (the caller
+ * can fall back to catchPostImage).
  */
 export function getEntryImageRawUrl(obj: Entry | string): string | null {
   // Decode with the SAME pipeline the renderer applies to the in-body <img>
