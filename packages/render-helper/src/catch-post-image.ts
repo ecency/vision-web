@@ -3,7 +3,6 @@ import { markdown2Html } from './markdown-2-html'
 import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeEntities, stripHtmlTags } from './helper'
 import { cacheGet, cacheSet } from './cache'
 import { Entry } from './types'
-import { YOUTUBE_REGEX } from './consts'
 
 const gifLinkRegex = /\.(gif)$/i;
 
@@ -331,15 +330,78 @@ const HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i
 // does NOT surface as a standalone image. Same extension set as the renderer's
 // IMG_REGEX. Linear-time: one bounded char class + a single greedy `+`, no
 // nested quantifier.
-// Every occurrence is a candidate; isStandalone() then rejects the ones that
-// sit inside another construct (see there). Global, so matchAll can walk them
-// in source order.
-const BARE_IMAGE_RE = /https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)(?:[?#][^\s<>"'()[\]]*)?/gi
-// A bare YouTube URL (text.method) or a `[url](url)` YouTube link (a.method)
-// renders as a poster <img> for https://img.youtube.com/vi/<id>/hqdefault.jpg.
-// Any subdomain (music., m., www.); the id itself is then read with the
-// renderer's own YOUTUBE_REGEX so the two can never disagree.
-const BARE_YOUTUBE_RE = /https?:\/\/(?:[\w-]+\.)*(?:youtube\.com|youtu\.be)\/[^\s<>"'()[\]]+/gi
+// Every http(s) URL token is a candidate; isStandalone() then rejects the
+// ones that sit inside another construct, and a classifier decides whether a
+// token is an image (by extension) or a YouTube link (by host), in code rather
+// than in the pattern: a class followed by a literal it also matches, or a
+// repeated group before a literal, is polynomial on crafted input. The token
+// pattern itself is one class run, linear on any input. Global, so matchAll
+// can walk the tokens in source order.
+const URL_TOKEN_RE = /https?:\/\/[^\s<>"'()[\]]+/gi
+// An image extension, the same set the renderer's IMG_REGEX uses. Global and
+// without a wildcard before it: every occurrence is found in one linear pass.
+const IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi
+// A YouTube video id as the renderer's YOUTUBE_REGEX captures it.
+const YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/
+
+/**
+ * The image URL a bare token denotes, or null: the token up to its last image
+ * extension, extended through the query or fragment when one follows, which
+ * is what the earlier greedy pattern matched (prose punctuation or emphasis
+ * after the extension is left out, a URL carried in another URL's query is
+ * taken whole).
+ */
+function imageToken(token: string): string | null {
+  let end = -1
+  for (const m of token.matchAll(IMAGE_EXT_G)) {
+    end = (m.index ?? 0) + m[0].length
+  }
+  if (end === -1) return null
+  if (end < token.length && (token[end] === '?' || token[end] === '#')) end = token.length
+  const url = token.slice(0, end)
+  return SAFE_URL_RE.test(url) ? url : null
+}
+
+/**
+ * The video id of a YouTube URL, read the way the renderer's YOUTUBE_REGEX
+ * reads it (`v=` query, `/v/`, `/e/`, `/embed/`, `/shorts/`, `youtu.be/`, or the
+ * last segment of a deeper path), with plain string operations so the check is
+ * linear on any input. Any subdomain (music., m., www.) counts. Null when the
+ * URL is not a YouTube video link.
+ */
+function youtubeIdOf(url: string): string | null {
+  const m = /^https?:\/\/([^/?#]+)/i.exec(url)
+  if (!m) return null
+  const host = m[1].toLowerCase()
+  const isShort = host === 'youtu.be'
+  const isFull = host === 'youtube.com' || host.endsWith('.youtube.com')
+  if (!isShort && !isFull) return null
+  const rest = url.slice(m[0].length)
+  const hashAt = rest.indexOf('#')
+  const beforeHash = hashAt === -1 ? rest : rest.slice(0, hashAt)
+  const qAt = beforeHash.indexOf('?')
+  const path = qAt === -1 ? beforeHash : beforeHash.slice(0, qAt)
+  const query = qAt === -1 ? '' : beforeHash.slice(qAt + 1)
+  const candidate = (value: string | undefined): string | null => {
+    const id = value === undefined ? '' : value.slice(0, 11)
+    return YOUTUBE_ID_RE.test(id) ? id : null
+  }
+  if (isFull && query) {
+    for (const part of query.split('&')) {
+      if (part.startsWith('v=')) {
+        const id = candidate(part.slice(2))
+        if (id) return id
+      }
+    }
+  }
+  const segments = path.split('/').filter((seg) => seg.length > 0)
+  if (isShort) return candidate(segments[0])
+  if (segments.length >= 2 && ['v', 'e', 'embed', 'shorts'].includes(segments[0].toLowerCase())) {
+    return candidate(segments[1])
+  }
+  if (segments.length >= 3) return candidate(segments[segments.length - 1])
+  return null
+}
 
 // One linear pass marking every offset that sits inside an HTML tag (between
 // a `<` that opens a tag and its closing `>`, quotes respected so a `>` inside
@@ -399,15 +461,22 @@ function isStandalone(scan: ScanText, idx: number): boolean {
   return true
 }
 
-function* standaloneMatches(scan: ScanText, re: RegExp): Generator<{ url: string; pos: number }> {
-  for (const m of scan.text.matchAll(re)) {
+// Standalone URL tokens in source order, each reduced by `classify` (image
+// URL, video id); tokens the classifier rejects are skipped.
+function* standaloneMatches(
+  scan: ScanText,
+  classify: (token: string) => string | null
+): Generator<{ url: string; pos: number }> {
+  for (const m of scan.text.matchAll(URL_TOKEN_RE)) {
     const idx = m.index ?? 0
-    if (isStandalone(scan, idx)) yield { url: m[0], pos: idx }
+    if (!isStandalone(scan, idx)) continue
+    const value = classify(m[0])
+    if (value !== null) yield { url: value, pos: idx }
   }
 }
 
-function firstStandalone(scan: ScanText, re: RegExp): { url: string; pos: number } | null {
-  for (const hit of standaloneMatches(scan, re)) return hit
+function firstStandalone(scan: ScanText, classify: (token: string) => string | null): { url: string; pos: number } | null {
+  for (const hit of standaloneMatches(scan, classify)) return hit
   return null
 }
 // The href of an anchor's opening tag, quoted either way or bare. Preceded by
@@ -568,14 +637,11 @@ function findFirstVideoPoster(prepared: PreparedBody): ImageCandidate | null {
   const { cleaned } = prepared
   if (!cleaned) return null
   let best: ImageCandidate | null = null
-  // The first YouTube-shaped URL that actually carries a video id: a channel
-  // or playlist link earlier in the body must not hide a later watch link.
-  for (const hit of standaloneMatches(prepared.video, BARE_YOUTUBE_RE)) {
-    const id = hit.url.match(YOUTUBE_REGEX)
-    if (id && id[1]) {
-      best = { url: id[1], pos: hit.pos }
-      break
-    }
+  // The first YouTube URL that actually carries a video id: a channel or
+  // playlist link earlier in the body must not hide a later watch link.
+  for (const hit of standaloneMatches(prepared.video, youtubeIdOf)) {
+    best = { url: hit.url, pos: hit.pos }
+    break
   }
   // `[url](url)` form: a.method turns a link whose text equals its href into
   // the same poster. Take it only when it comes before the bare form.
@@ -585,9 +651,9 @@ function findFirstVideoPoster(prepared: PreparedBody): ImageCandidate | null {
     if (best && idx >= best.pos) break
     const href = m[2]
     if (href && m[1].trim() === href) {
-      const id = href.match(YOUTUBE_REGEX)
-      if (id && id[1]) {
-        best = { url: id[1], pos: idx }
+      const id = youtubeIdOf(href)
+      if (id) {
+        best = { url: id, pos: idx }
         break
       }
     }
@@ -647,7 +713,7 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
     candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0 })
   }
   if (includeBareUrls) {
-    const bareMatch = firstStandalone(prepared.image, BARE_IMAGE_RE)
+    const bareMatch = firstStandalone(prepared.image, imageToken)
     if (bareMatch && SAFE_URL_RE.test(bareMatch.url)) {
       candidates.push(bareMatch)
     }

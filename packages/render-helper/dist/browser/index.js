@@ -2432,8 +2432,52 @@ function stripHiddenRegions(text2) {
 var MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*([^)\s]{1,2048})(?:\s+["'][^"']*["'])?\s*\)/;
 var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/;
 var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
-var BARE_IMAGE_RE = /https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)(?:[?#][^\s<>"'()[\]]*)?/gi;
-var BARE_YOUTUBE_RE = /https?:\/\/(?:[\w-]+\.)*(?:youtube\.com|youtu\.be)\/[^\s<>"'()[\]]+/gi;
+var URL_TOKEN_RE = /https?:\/\/[^\s<>"'()[\]]+/gi;
+var IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi;
+var YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/;
+function imageToken(token) {
+  let end = -1;
+  for (const m of token.matchAll(IMAGE_EXT_G)) {
+    end = (m.index ?? 0) + m[0].length;
+  }
+  if (end === -1) return null;
+  if (end < token.length && (token[end] === "?" || token[end] === "#")) end = token.length;
+  const url = token.slice(0, end);
+  return SAFE_URL_RE.test(url) ? url : null;
+}
+function youtubeIdOf(url) {
+  const m = /^https?:\/\/([^/?#]+)/i.exec(url);
+  if (!m) return null;
+  const host = m[1].toLowerCase();
+  const isShort = host === "youtu.be";
+  const isFull = host === "youtube.com" || host.endsWith(".youtube.com");
+  if (!isShort && !isFull) return null;
+  const rest = url.slice(m[0].length);
+  const hashAt = rest.indexOf("#");
+  const beforeHash = hashAt === -1 ? rest : rest.slice(0, hashAt);
+  const qAt = beforeHash.indexOf("?");
+  const path = qAt === -1 ? beforeHash : beforeHash.slice(0, qAt);
+  const query = qAt === -1 ? "" : beforeHash.slice(qAt + 1);
+  const candidate = (value) => {
+    const id = value === void 0 ? "" : value.slice(0, 11);
+    return YOUTUBE_ID_RE.test(id) ? id : null;
+  };
+  if (isFull && query) {
+    for (const part of query.split("&")) {
+      if (part.startsWith("v=")) {
+        const id = candidate(part.slice(2));
+        if (id) return id;
+      }
+    }
+  }
+  const segments = path.split("/").filter((seg) => seg.length > 0);
+  if (isShort) return candidate(segments[0]);
+  if (segments.length >= 2 && ["v", "e", "embed", "shorts"].includes(segments[0].toLowerCase())) {
+    return candidate(segments[1]);
+  }
+  if (segments.length >= 3) return candidate(segments[segments.length - 1]);
+  return null;
+}
 function isAutolinkAt(text2, idx) {
   return /^https?:\/\//i.test(text2.slice(idx, idx + 8));
 }
@@ -2471,14 +2515,16 @@ function isStandalone(scan, idx) {
   if (prev === "(" && prev2 === "]") return false;
   return true;
 }
-function* standaloneMatches(scan, re) {
-  for (const m of scan.text.matchAll(re)) {
+function* standaloneMatches(scan, classify) {
+  for (const m of scan.text.matchAll(URL_TOKEN_RE)) {
     const idx = m.index ?? 0;
-    if (isStandalone(scan, idx)) yield { url: m[0], pos: idx };
+    if (!isStandalone(scan, idx)) continue;
+    const value = classify(m[0]);
+    if (value !== null) yield { url: value, pos: idx };
   }
 }
-function firstStandalone(scan, re) {
-  for (const hit of standaloneMatches(scan, re)) return hit;
+function firstStandalone(scan, classify) {
+  for (const hit of standaloneMatches(scan, classify)) return hit;
   return null;
 }
 var HREF_ATTR_RE = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
@@ -2549,12 +2595,9 @@ function findFirstVideoPoster(prepared) {
   const { cleaned } = prepared;
   if (!cleaned) return null;
   let best = null;
-  for (const hit of standaloneMatches(prepared.video, BARE_YOUTUBE_RE)) {
-    const id = hit.url.match(YOUTUBE_REGEX);
-    if (id && id[1]) {
-      best = { url: id[1], pos: hit.pos };
-      break;
-    }
+  for (const hit of standaloneMatches(prepared.video, youtubeIdOf)) {
+    best = { url: hit.url, pos: hit.pos };
+    break;
   }
   for (const m of cleaned.matchAll(MD_LINK_RE)) {
     const idx = m.index ?? 0;
@@ -2562,9 +2605,9 @@ function findFirstVideoPoster(prepared) {
     if (best && idx >= best.pos) break;
     const href = m[2];
     if (href && m[1].trim() === href) {
-      const id = href.match(YOUTUBE_REGEX);
-      if (id && id[1]) {
-        best = { url: id[1], pos: idx };
+      const id = youtubeIdOf(href);
+      if (id) {
+        best = { url: id, pos: idx };
         break;
       }
     }
@@ -2595,7 +2638,7 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
     candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0 });
   }
   if (includeBareUrls) {
-    const bareMatch = firstStandalone(prepared.image, BARE_IMAGE_RE);
+    const bareMatch = firstStandalone(prepared.image, imageToken);
     if (bareMatch && SAFE_URL_RE.test(bareMatch.url)) {
       candidates.push(bareMatch);
     }
