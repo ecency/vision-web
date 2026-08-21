@@ -6,7 +6,7 @@ const shared = {
     sourcemap: true,
     treeshake: true,
     external: [
-        "he",
+        "entities",
         "htmlparser2",
         "dom-serializer",
         "@xmldom/xmldom",

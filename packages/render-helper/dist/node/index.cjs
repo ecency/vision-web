@@ -1,7 +1,7 @@
 'use strict';
 
 var xmldom = require('@xmldom/xmldom');
-var he2 = require('he');
+var entities$1 = require('entities');
 var xss = require('xss');
 var querystring = require('querystring');
 var lruCache = require('lru-cache');
@@ -28,7 +28,6 @@ function _interopNamespace(e) {
   return Object.freeze(n);
 }
 
-var he2__default = /*#__PURE__*/_interopDefault(he2);
 var xss__default = /*#__PURE__*/_interopDefault(xss);
 var querystring__default = /*#__PURE__*/_interopDefault(querystring);
 var htmlparser2__namespace = /*#__PURE__*/_interopNamespace(htmlparser2);
@@ -308,8 +307,19 @@ function createParser() {
   });
 }
 var DOMParser = createParser();
+var LEADING_ZEROS_DEC = /&#0+(?=[0-9])/g;
+var LEADING_ZEROS_HEX = /&#x0+(?=[0-9a-f])/gi;
+var OVERLONG_NUMERIC_REF = /&#(?:x[0-9a-f]{256,}|[0-9]{309,});?/gi;
+function decodeEntities(value) {
+  const safe = value.replace(LEADING_ZEROS_DEC, "&#").replace(LEADING_ZEROS_HEX, (m) => m.slice(0, 3)).replace(OVERLONG_NUMERIC_REF, "\uFFFD");
+  try {
+    return entities$1.decodeHTML(safe);
+  } catch {
+    return safe;
+  }
+}
 function decodeImageSrc(src) {
-  const entityDecoded = he2__default.default.decode(src);
+  const entityDecoded = decodeEntities(src);
   try {
     return decodeURIComponent(entityDecoded).trim();
   } catch {
@@ -764,7 +774,7 @@ var isSafeNavValue = (value) => {
   const isRelative = /^(\/\/|\/[^/]?|#|\?|[a-z0-9._\-]+(\/|$))/i.test(trimmed);
   return isSafeScheme || isRelative;
 };
-var decodeEntities = (input) => input.replace(/&#(\d+);?/g, (_, dec) => String.fromCodePoint(Number(dec))).replace(/&#x([0-9a-f]+);?/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
+var decodeEntities2 = (input) => input.replace(/&#(\d+);?/g, (_, dec) => String.fromCodePoint(Number(dec))).replace(/&#x([0-9a-f]+);?/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
 var isProxyPSrcset = (srcset) => {
   const base = trimTrailingSlash(getProxyBase());
   const candidates = srcset.split(",").map((c) => c.trim().split(/\s+/)[0]).filter(Boolean);
@@ -778,7 +788,7 @@ function sanitizeHtml(html) {
     css: false,
     // block style attrs entirely for safety
     onTagAttr: (tag, name, value) => {
-      const decoded = decodeEntities(value.trim());
+      const decoded = decodeEntities2(value.trim());
       const decodedLower = decoded.toLowerCase();
       if (name.startsWith("on")) return "";
       if (tag === "img" && name === "src" && !/^https?:\/\//.test(decodedLower)) return "";
@@ -10251,6 +10261,8 @@ function markdown2Html(obj, forApp = true, _webp = false, parentDomain = "ecency
   cacheSet(key, res);
   return res;
 }
+
+// src/catch-post-image.ts
 var gifLinkRegex = /\.(gif)$/i;
 function isGifLink(link) {
   return gifLinkRegex.test(link);
@@ -10307,7 +10319,7 @@ function findFirstImageUrl(body, includeBareUrls = false) {
   return candidates[0].url;
 }
 function proxifyFound(src, width, height, format) {
-  const decoded = he2__default.default.decode(src);
+  const decoded = decodeEntities(src);
   if (isGifLink(decoded)) {
     return proxifyImageSrc(decoded, 0, 0, format);
   }
@@ -10325,7 +10337,7 @@ function getImage(entry, width = 0, height = 0, format = "match") {
     }
   }
   if (meta && typeof meta.image === "string" && meta.image.length > 0) {
-    const decodedImage = he2__default.default.decode(meta.image);
+    const decodedImage = decodeEntities(meta.image);
     if (isGifLink(decodedImage)) {
       return proxifyImageSrc(decodedImage, 0, 0, format);
     }
@@ -10333,7 +10345,7 @@ function getImage(entry, width = 0, height = 0, format = "match") {
   }
   if (meta && meta.image && !!meta.image.length && meta.image[0]) {
     if (typeof meta.image[0] === "string") {
-      const decodedImage = he2__default.default.decode(meta.image[0]);
+      const decodedImage = decodeEntities(meta.image[0]);
       if (isGifLink(decodedImage)) {
         return proxifyImageSrc(decodedImage, 0, 0, format);
       }
@@ -10417,6 +10429,8 @@ function catchPostImage(obj, width = 0, height = 0, format = "match") {
   cacheSet(key, res);
   return res;
 }
+
+// src/post-body-summary.ts
 var summaryRenderer = new Remarkable({
   html: true,
   breaks: true,
@@ -10488,7 +10502,7 @@ function postBodySummary(entryBody, length = 200, platform = "web") {
     text3 = joint(text3.split(" "), length);
   }
   if (text3) {
-    text3 = he2__default.default.decode(text3);
+    text3 = decodeEntities(text3);
   }
   return text3;
 }

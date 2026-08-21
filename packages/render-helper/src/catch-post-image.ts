@@ -1,9 +1,8 @@
 import { proxifyImageSrc } from './proxify-image-src'
 import { markdown2Html } from './markdown-2-html'
-import { createDoc, makeEntryCacheKey, decodeImageSrc } from './helper'
+import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeEntities } from './helper'
 import { cacheGet, cacheSet } from './cache'
 import { Entry } from './types'
-import he from 'he'
 
 const gifLinkRegex = /\.(gif)$/i;
 
@@ -147,7 +146,7 @@ function findFirstImageUrl(body: string, includeBareUrls = false): string | null
 }
 
 function proxifyFound(src: string, width: number, height: number, format: string): string {
-  const decoded = he.decode(src)
+  const decoded = decodeEntities(src)
   if (isGifLink(decoded)) {
     return proxifyImageSrc(decoded, 0, 0, format)
   }
@@ -172,7 +171,7 @@ function getImage(entry: Entry, width = 0, height = 0, format = 'match'): string
 
   if (meta && typeof meta.image === 'string' && meta.image.length > 0) {
     // Decode HTML entities (e.g., &amp; -> &) before proxifying
-    const decodedImage = he.decode(meta.image)
+    const decodedImage = decodeEntities(meta.image)
     if (isGifLink(decodedImage)) {
       return proxifyImageSrc(decodedImage, 0, 0, format)
     }
@@ -183,7 +182,7 @@ function getImage(entry: Entry, width = 0, height = 0, format = 'match'): string
     // Only decode if it's a string, otherwise pass through to proxifyImageSrc which will return ''
     if (typeof meta.image[0] === 'string') {
       // Decode HTML entities (e.g., &amp; -> &) before proxifying
-      const decodedImage = he.decode(meta.image[0])
+      const decodedImage = decodeEntities(meta.image[0])
       if (isGifLink(decodedImage)) {
         return proxifyImageSrc(decodedImage, 0, 0, format)
       }

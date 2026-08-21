@@ -1,6 +1,35 @@
 import { DOMParser } from './consts'
 import type { Document } from '@xmldom/xmldom'
-import he from 'he'
+import { decodeHTML } from 'entities'
+
+/**
+ * Decode HTML character references in user-authored text.
+ *
+ * `entities.decodeHTML` throws a RangeError on a numeric reference whose digit
+ * string overflows a double (309+ decimal or 256+ hex digits, leading zeros
+ * included: 0 * Infinity = NaN -> String.fromCodePoint(NaN)). Post bodies and
+ * json_metadata come straight from the chain, so a crafted reference must
+ * never take a feed page down. Leading zeros are dropped first (they carry no
+ * value, and `&#0065;` must still be "A"); a reference that is still overlong
+ * after that cannot be a code point and becomes U+FFFD, which is what the HTML
+ * spec and the previous decoder (he) produce for an out-of-range value.
+ * Anything else the decoder rejects is returned as-is.
+ */
+const LEADING_ZEROS_DEC = /&#0+(?=[0-9])/g
+const LEADING_ZEROS_HEX = /&#x0+(?=[0-9a-f])/gi
+const OVERLONG_NUMERIC_REF = /&#(?:x[0-9a-f]{256,}|[0-9]{309,});?/gi
+
+export function decodeEntities(value: string): string {
+  const safe = value
+    .replace(LEADING_ZEROS_DEC, '&#')
+    .replace(LEADING_ZEROS_HEX, (m) => m.slice(0, 3))
+    .replace(OVERLONG_NUMERIC_REF, '\uFFFD')
+  try {
+    return decodeHTML(safe)
+  } catch {
+    return safe
+  }
+}
 
 /**
  * Decode an image URL the way the renderer does before proxifying, so a URL's
@@ -12,7 +41,7 @@ import he from 'he'
  * (callers run at SSR time).
  */
 export function decodeImageSrc(src: string): string {
-  const entityDecoded = he.decode(src)
+  const entityDecoded = decodeEntities(src)
   try {
     return decodeURIComponent(entityDecoded).trim()
   } catch {

@@ -1,5 +1,4 @@
-import he from 'he'
-import { makeEntryCacheKey, stripHtmlTags } from './helper'
+import { decodeEntities, makeEntryCacheKey, stripHtmlTags } from './helper'
 import { cacheGet, cacheSet } from './cache'
 import { Entry } from './types'
 import { cleanReply } from './methods'
@@ -121,7 +120,7 @@ function postBodySummary(entryBody: string, length: number = 200, platform:'ios'
   }
 
   if (text) {
-    text = he.decode(text) // decode html entities  
+    text = decodeEntities(text) // decode html entities  
   }
 
   return text
