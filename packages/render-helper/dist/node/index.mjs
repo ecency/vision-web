@@ -10338,15 +10338,31 @@ function markLines(lower) {
     if (lineEnd === -1) lineEnd = lower.length;
     let line = lower.slice(lineStart, lineEnd);
     let inContainer = false;
-    for (let m = BLOCKQUOTE_PREFIX_RE.exec(line); m; m = BLOCKQUOTE_PREFIX_RE.exec(line)) {
-      line = line.slice(m[0].length);
-      inContainer = true;
+    let stripped = 0;
+    let sawList = false;
+    let lastWasList = false;
+    for (; ; ) {
+      const bq = BLOCKQUOTE_PREFIX_RE.exec(line);
+      if (bq) {
+        line = line.slice(bq[0].length);
+        stripped += bq[0].length;
+        lastWasList = false;
+        inContainer = true;
+        continue;
+      }
+      const lm = lastWasList ? null : LIST_PREFIX_RE.exec(line);
+      if (lm) {
+        line = line.slice(lm[0].length);
+        stripped += lm[0].length;
+        sawList = true;
+        lastWasList = true;
+        inContainer = true;
+        continue;
+      }
+      break;
     }
-    const listMarker = LIST_PREFIX_RE.exec(line);
-    if (listMarker) {
-      listIndent = listMarker[0].length;
-      line = line.slice(listMarker[0].length);
-      inContainer = true;
+    if (sawList) {
+      listIndent = stripped;
     } else if (listIndent > 0 && line.trim() !== "") {
       let indent = 0;
       while (indent < listIndent && line[indent] === " ") indent++;
