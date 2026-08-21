@@ -1,7 +1,7 @@
 import * as _tanstack_react_query from '@tanstack/react-query';
 import { MutationKey, UseMutationOptions, QueryClient, QueryKey, InfiniteData, UseQueryOptions, UseInfiniteQueryOptions, useMutation } from '@tanstack/react-query';
-import { O as Operation, P as PrivateKey, B as BroadcastResult, A as APIMethods, R as ResilienceOptions, S as ServerRpcProxyOptions, a as Authority, b as PublicKey, c as OperationName, o as operations } from './hive-B_MUq8sk.js';
-export { d as AccountCreateOperation, e as AssetSymbol, C as CustomJsonOperation, T as HiveTxTransaction, M as Memo, f as OperationBody, g as Signature, h as callREST, i as callRPC, j as callRPCBroadcast, k as callWithQuorum, l as hiveTxConfig, u as hiveTxUtils } from './hive-B_MUq8sk.js';
+import { O as Operation, P as PrivateKey, B as BroadcastResult, A as APIMethods, R as ResilienceOptions, S as ServerRpcProxyOptions, r as rpcProxyStats, a as Authority, b as PublicKey, c as OperationName, o as operations } from './hive-BCPImNej.js';
+export { d as AccountCreateOperation, e as AssetSymbol, C as CustomJsonOperation, T as HiveTxTransaction, M as Memo, f as OperationBody, g as Signature, h as callREST, i as callRPC, j as callRPCBroadcast, k as callWithQuorum, l as hiveTxConfig, u as hiveTxUtils } from './hive-BCPImNej.js';
 
 interface AiGenerationPrice {
     aspect_ratio: string;
@@ -1228,6 +1228,16 @@ declare namespace ConfigManager {
      * @param opts - `{ url, headers, timeoutMs, methods }` or null
      */
     function setServerRpcProxy(opts: ServerRpcProxyOptions | null): void;
+    /**
+     * The live counters of that proxy path: `served` (answered by the proxy),
+     * `fallback` with a per-reason breakdown (the read went to the node pool
+     * after a proxy failure) and `skipped` (breaker open). The same object the
+     * call path increments, exposed here because the root build carries its own
+     * copy of the hive-tx internals; a consumer importing `rpcProxyStats` from
+     * the `/hive` entry would read a different, never-incremented instance.
+     * Read-only by contract: the web tier prints it, nothing resets it.
+     */
+    function getServerRpcProxyStats(): Readonly<typeof rpcProxyStats>;
     /**
      * Set DMCA filtering lists
      * @param lists - DMCA lists object containing accounts/tags/posts arrays

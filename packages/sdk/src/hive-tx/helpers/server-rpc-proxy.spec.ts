@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { callRPC, resetRpcProxyBreaker, rpcProxyStats } from "./call";
 import { config, serverRpcProxy, setServerRpcProxy, DEFAULT_SERVER_RPC_PROXY_METHODS } from "../config";
+import { ConfigManager } from "../../modules/core/config";
 
 const ORIGINAL_NODES = [...config.nodes];
 const PROXY = "http://proxy.internal:4000/private-api/ssr/rpc";
@@ -274,5 +275,16 @@ describe("server-side RPC proxy", () => {
     // Omitted = the default allowlist.
     setServerRpcProxy({ url: PROXY, headers: {}, timeoutMs: 100 });
     expect(serverRpcProxy?.methods).toEqual(DEFAULT_SERVER_RPC_PROXY_METHODS);
+  });
+});
+
+describe("ConfigManager.getServerRpcProxyStats", () => {
+  it("returns the live counters object the call path increments, not a copy", () => {
+    const stats = ConfigManager.getServerRpcProxyStats();
+    expect(stats).toBe(rpcProxyStats);
+    const before = stats.skipped;
+    rpcProxyStats.skipped += 1;
+    expect(stats.skipped).toBe(before + 1);
+    rpcProxyStats.skipped = before;
   });
 });
