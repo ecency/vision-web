@@ -95,12 +95,11 @@ services:
       - SSR_MAX_INFLIGHT=16
       # Server-side read-through RPC proxy (core/sdk-init.ts): reads go to
       # vapi's /private-api/ssr/rpc over the overlay, with fallback to the node
-      # pool on any failure. Needs the same secret vapi was given above; the
-      # flag switches it on per deployment.
-      # The switch is on here, so the secret is required: a deploy without it
-      # would silently run without the proxy instead of exercising it.
-      - SSR_INTERNAL_SECRET=${SSR_INTERNAL_SECRET:?SSR_INTERNAL_SECRET is required while SSR_RPC_PROXY=1}
-      - SSR_RPC_PROXY=1
+      # pool on any failure. The secret is the switch for both services, and
+      # on alpha it is required (`:?`): `docker-compose config` fails the deploy
+      # without it, instead of staging quietly running without the proxy it is
+      # meant to exercise before production.
+      - SSR_INTERNAL_SECRET=${SSR_INTERNAL_SECRET:?SSR_INTERNAL_SECRET is required on alpha so staging always exercises the proxy}
     restart: always
     ports:
       - "3000:3000"

@@ -2,10 +2,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
- * core/sdk-init.ts switches the server-side RPC proxy on at import time, and
- * only when the deployment asked for it AND both halves of the wiring are
- * present. A module with import-time side effects, so each case gets a fresh
- * module registry and its own environment.
+ * core/sdk-init.ts switches the server-side RPC proxy on at import time
+ * whenever both halves of the wiring (shared secret, overlay host) are
+ * present; the secret is the switch, SSR_RPC_PROXY=0 the explicit off. A
+ * module with import-time side effects, so each case gets a fresh module
+ * registry and its own environment.
  */
 const stats = {
   served: 0,
@@ -26,12 +27,22 @@ const manager = {
 vi.mock("@ecency/sdk", () => ({ ConfigManager: manager }));
 
 const REPORT_MS = 5 * 60 * 1000;
-const ON = { SSR_RPC_PROXY: "1", SSR_INTERNAL_SECRET: "s3cret", INTERNAL_API_HOST: "http://vapi:4000" };
+const ON = { SSR_RPC_PROXY: undefined, SSR_INTERNAL_SECRET: "s3cret", INTERNAL_API_HOST: "http://vapi:4000" };
 
+const PROXY_VARS = ["SSR_RPC_PROXY", "SSR_INTERNAL_SECRET", "INTERNAL_API_HOST"] as const;
+
+/**
+ * Hermetic: every proxy variable is set from the case, and a case that omits
+ * one UNSETS it (stubEnv with undefined), so nothing leaks in from the test
+ * process and "missing" and "blank" are different environments.
+ */
 async function load(env: Record<string, string | undefined>): Promise<void> {
   vi.resetModules();
+  for (const k of PROXY_VARS) {
+    vi.stubEnv(k, env[k]);
+  }
   for (const [k, v] of Object.entries(env)) {
-    vi.stubEnv(k, v ?? "");
+    if (!(PROXY_VARS as readonly string[]).includes(k)) vi.stubEnv(k, v);
   }
   await import("@/core/sdk-init");
 }
@@ -51,8 +62,18 @@ afterEach(() => {
 });
 
 describe("sdk-init server rpc proxy", () => {
-  it("enables the proxy against the overlay host with the shared secret when switched on", async () => {
-    await load({ SSR_RPC_PROXY: "1", SSR_INTERNAL_SECRET: "s3cret", INTERNAL_API_HOST: "http://vapi:4000/" });
+  it("enables the proxy against the overlay host as soon as the shared secret is present", async () => {
+    await load({ SSR_INTERNAL_SECRET: "s3cret", INTERNAL_API_HOST: "http://vapi:4000/" });
+    expect(manager.setServerRpcProxy).toHaveBeenCalledWith({
+      url: "http://vapi:4000/private-api/ssr/rpc",
+      headers: { "X-Ecency-Internal": "s3cret" },
+      timeoutMs: 1600
+    });
+  });
+
+  it("a legacy SSR_RPC_PROXY=1 changes nothing", async () => {
+    await load({ ...ON, SSR_RPC_PROXY: "1" });
+    expect(manager.setServerRpcProxy).toHaveBeenCalledTimes(1);
     expect(manager.setServerRpcProxy).toHaveBeenCalledWith({
       url: "http://vapi:4000/private-api/ssr/rpc",
       headers: { "X-Ecency-Internal": "s3cret" },
@@ -61,9 +82,10 @@ describe("sdk-init server rpc proxy", () => {
   });
 
   it.each([
-    ["the switch is off", { SSR_RPC_PROXY: undefined, SSR_INTERNAL_SECRET: "s3cret", INTERNAL_API_HOST: "http://vapi:4000" }],
-    ["the secret is missing", { SSR_RPC_PROXY: "1", SSR_INTERNAL_SECRET: undefined, INTERNAL_API_HOST: "http://vapi:4000" }],
-    ["the host is missing", { SSR_RPC_PROXY: "1", SSR_INTERNAL_SECRET: "s3cret", INTERNAL_API_HOST: undefined }]
+    ["explicitly switched off", { ...ON, SSR_RPC_PROXY: "0" }],
+    ["the secret is missing", { ...ON, SSR_INTERNAL_SECRET: undefined }],
+    ["the secret is blank", { ...ON, SSR_INTERNAL_SECRET: "" }],
+    ["the host is missing", { ...ON, INTERNAL_API_HOST: undefined }]
   ])("stays off when %s", async (_label, env) => {
     await load(env);
     expect(manager.setServerRpcProxy).not.toHaveBeenCalled();
@@ -100,7 +122,7 @@ describe("sdk-init server rpc proxy", () => {
     it("does not start when the proxy is off", async () => {
       vi.useFakeTimers();
       const log = vi.spyOn(console, "log").mockImplementation(() => {});
-      await load({ ...ON, SSR_RPC_PROXY: undefined });
+      await load({ ...ON, SSR_INTERNAL_SECRET: undefined });
       await vi.advanceTimersByTimeAsync(REPORT_MS * 2);
       expect(manager.getServerRpcProxyStats).not.toHaveBeenCalled();
       expect(log).not.toHaveBeenCalled();
