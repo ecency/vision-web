@@ -10270,7 +10270,6 @@ function isGifLink(link) {
 var BACKTICK_FENCE_RE = /```[\s\S]*?```/g;
 var TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
-var INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm;
 var OPEN_TAG_NAME_END = /[\t\f\r />]/;
 var CLOSE_TAG_NAME_END = /[\s>]/;
 function isWholeTagName(lower, idx, end) {
@@ -10359,52 +10358,58 @@ function markLines(lower) {
   const code2 = new Uint8Array(lower.length);
   let inBlock = false;
   let listIndent = 0;
+  let nestedItem = false;
   let lineStart = 0;
   while (lineStart <= lower.length) {
     let lineEnd = lower.indexOf("\n", lineStart);
     if (lineEnd === -1) lineEnd = lower.length;
     let line = lower.slice(lineStart, lineEnd);
-    let inContainer = false;
     let stripped = 0;
     let sawList = false;
     let lastWasList = false;
+    let inlineRemainder = false;
     for (; ; ) {
       const bq = BLOCKQUOTE_PREFIX_RE.exec(line);
       if (bq) {
         line = line.slice(bq[0].length);
         stripped += bq[0].length;
         lastWasList = false;
-        inContainer = true;
+        inlineRemainder = false;
         continue;
       }
-      const lm = lastWasList ? null : LIST_PREFIX_RE.exec(line);
+      const lm = LIST_PREFIX_RE.exec(line);
       if (lm) {
         line = line.slice(lm[0].length);
         stripped += lm[0].length;
+        if (lastWasList) inlineRemainder = true;
         sawList = true;
         lastWasList = true;
-        inContainer = true;
         continue;
       }
       break;
     }
     if (sawList) {
       listIndent = stripped;
+      nestedItem = inlineRemainder;
     } else if (listIndent > 0 && line.trim() !== "") {
       let indent = 0;
       while (indent < listIndent && line[indent] === " ") indent++;
       if (indent >= Math.min(listIndent, 2)) {
         line = line.slice(indent);
-        inContainer = true;
+        inlineRemainder = nestedItem;
       } else {
         listIndent = 0;
+        nestedItem = false;
       }
     }
     const blank = line.trim() === "";
     if (blank) {
       inBlock = false;
       listIndent = 0;
-    } else if (inContainer && !inBlock && /^(?: {4}|\t)/.test(line)) {
+      nestedItem = false;
+    } else if (inlineRemainder) {
+      inBlock = false;
+    } else if (!inBlock && /^(?: {4}|\t)/.test(line)) {
       code2.fill(1, lineStart, lineEnd);
     } else if (!inBlock) {
       const m = HTML_BLOCK_LINE_RE.exec(line);
@@ -10549,7 +10554,6 @@ function stripCodeRegions(body) {
   let text3 = blankMatches(body, BACKTICK_FENCE_RE);
   text3 = blankMatches(text3, TILDE_FENCE_RE);
   text3 = blankMatches(text3, INLINE_CODE_RE);
-  text3 = blankMatches(text3, INDENTED_CODE_RE);
   return stripHiddenRegions(text3);
 }
 function blankUnequalAnchors(cleaned, textContent) {

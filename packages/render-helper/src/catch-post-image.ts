@@ -23,7 +23,6 @@ function isGifLink(link: string) {
 const BACKTICK_FENCE_RE = /```[\s\S]*?```/g
 const TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g
 const INLINE_CODE_RE = /`[^`\n]*`/g
-const INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm
 // HTML regions whose text never reaches the page as an image: <style> (dropped
 // by the sanitizer) and <pre> in block context (the renderer leaves its text
 // alone), plus HTML comments. Verified against the renderer: a URL inside
@@ -125,8 +124,10 @@ function markLines(lower: string): LineMasks {
   const block = new Uint8Array(lower.length)
   const code = new Uint8Array(lower.length)
   let inBlock = false
-  // Width of the current list item's content indent, for its continuation lines.
+  // Width of the current list item's content indent, for its continuation
+  // lines, and whether that item is a nested one (inline continuation).
   let listIndent = 0
+  let nestedItem = false
   let lineStart = 0
   while (lineStart <= lower.length) {
     let lineEnd = lower.indexOf('\n', lineStart)
@@ -134,26 +135,31 @@ function markLines(lower: string): LineMasks {
     let line = lower.slice(lineStart, lineEnd)
     let inContainer = false
     // Container prefixes, in any alternation (`- > <pre>`, `> - <pre>`,
-    // `> > - > <pre>`): blockquote markers nest freely; a list marker may
-    // follow blockquote markers but not another list marker directly
-    // (`- - <pre>` renders its content inline, probed), so it is taken once
-    // per run of markers.
+    // `> > - > <pre>`, `- - > <pre>`), all probed: blockquote and list
+    // markers strip in any order and any depth, and the remainder is block
+    // context, EXCEPT that content directly after a nested list marker (a
+    // list marker following a list marker, `- - <pre>`, `> - - <pre>`) is
+    // inline, as are the continuation lines of that nested item; a blockquote
+    // marker after the nested marker restores block context (`- - > <pre>`).
     let stripped = 0
     let sawList = false
     let lastWasList = false
+    let inlineRemainder = false
     for (;;) {
       const bq = BLOCKQUOTE_PREFIX_RE.exec(line)
       if (bq) {
         line = line.slice(bq[0].length)
         stripped += bq[0].length
         lastWasList = false
+        inlineRemainder = false
         inContainer = true
         continue
       }
-      const lm = lastWasList ? null : LIST_PREFIX_RE.exec(line)
+      const lm = LIST_PREFIX_RE.exec(line)
       if (lm) {
         line = line.slice(lm[0].length)
         stripped += lm[0].length
+        if (lastWasList) inlineRemainder = true
         sawList = true
         lastWasList = true
         inContainer = true
@@ -163,21 +169,33 @@ function markLines(lower: string): LineMasks {
     }
     if (sawList) {
       listIndent = stripped
+      nestedItem = inlineRemainder
     } else if (listIndent > 0 && line.trim() !== '') {
       let indent = 0
       while (indent < listIndent && line[indent] === ' ') indent++
       if (indent >= Math.min(listIndent, 2)) {
         line = line.slice(indent)
         inContainer = true
+        // A nested item's continuation line is inline content too.
+        inlineRemainder = nestedItem
       } else {
         listIndent = 0
+        nestedItem = false
       }
     }
     const blank = line.trim() === ''
     if (blank) {
       inBlock = false
       listIndent = 0
-    } else if (inContainer && !inBlock && /^(?: {4}|\t)/.test(line)) {
+      nestedItem = false
+    } else if (inlineRemainder) {
+      // Inline content: neither opens nor continues a block.
+      inBlock = false
+    } else if (!inBlock && /^(?: {4}|\t)/.test(line)) {
+      // An indented code block, judged after the container prefixes and the
+      // list item's content indent are gone: four spaces at top level or
+      // inside a blockquote are code, while a list item's continuation line
+      // indented to its content is not.
       code.fill(1, lineStart, lineEnd)
     } else if (!inBlock) {
       const m = HTML_BLOCK_LINE_RE.exec(line)
@@ -430,7 +448,8 @@ function stripCodeRegions(body: string): string {
   let text = blankMatches(body, BACKTICK_FENCE_RE)
   text = blankMatches(text, TILDE_FENCE_RE)
   text = blankMatches(text, INLINE_CODE_RE)
-  text = blankMatches(text, INDENTED_CODE_RE)
+  // Indented code blocks are blanked by the line model (markLines), which
+  // knows the container context a four-space indent has to be read in.
   return stripHiddenRegions(text)
 }
 
