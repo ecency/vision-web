@@ -1,4 +1,12 @@
 # syntax=docker/dockerfile:1.7
+# The image this build replaces. Its hashed static assets are carried into the
+# new image (see retain-static.js and #1615) so HTML cached at the edge or the
+# origin before the rollout keeps resolving its chunks instead of loading 404s
+# and hard-reloading. Production builds replace :latest; staging passes its own
+# tag. The workflows pull this tag fresh on every build.
+ARG PREVIOUS_IMAGE=ecency/vision-web:latest
+FROM ${PREVIOUS_IMAGE} AS previous
+
 FROM node:24.16.0 AS base
 WORKDIR /var/app
 
@@ -57,6 +65,10 @@ ENV SENTRY_LOG_LEVEL=debug
 # Single build that emits the EXACT assets we ship
 # Build packages first, then the web app (exclude self-hosted)
 RUN pnpm build:packages && pnpm --filter @ecency/web build
+# The webpack build cache is only useful to a rebuild inside this same layer,
+# which never happens; it was ~2.8 GB of the ~3 GB .next that every origin
+# and every CI build pulled. Next recreates .next/cache at runtime as needed.
+RUN rm -rf apps/web/.next/cache/webpack
 
 # Prune runtime deps for the web workspace
 RUN pnpm deploy --filter @ecency/web --prod --legacy /var/app/.deploy-workdir \
@@ -111,6 +123,15 @@ COPY --from=base /var/app/apps/web/next-runtime-config.js ./apps/web/next-runtim
 COPY --from=base /var/app/apps/web/ssr-admission.js ./apps/web/ssr-admission.js
 COPY --from=base /var/app/apps/web/public ./apps/web/public
 COPY --from=base /var/app/apps/web/.next ./apps/web/.next
+# Previous builds' static assets, merged in and bounded by retain-static.js.
+# Read through a bind mount rather than COPY: a COPY would leave a dead layer in
+# the final image even after the merge deleted the directory. The whole
+# previous root is mounted and the script looks for the static dir inside it,
+# so a build against an image without one (a local `--build-arg
+# PREVIOUS_IMAGE=busybox`) is simply a no-op rather than a failed mount.
+COPY --from=base /var/app/apps/web/retain-static.js ./apps/web/retain-static.js
+RUN --mount=type=bind,from=previous,source=/,target=/previous \
+  node apps/web/retain-static.js /previous/var/app/apps/web/.next/static
 COPY --from=base /var/app/node_modules ./node_modules
 COPY --from=base /var/app/apps/web/node_modules ./apps/web/node_modules
 

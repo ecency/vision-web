@@ -77,7 +77,12 @@ jobs:
           file: ./apps/web/Dockerfile
           push: true
           tags: ecency/vision-web:latest
+          # Always fetch the image being replaced: the Dockerfile carries its static
+          # assets forward (retain-static.js, #1615), so a stale local copy would
+          # retain the wrong build.
+          pull: true
           build-args: |
+            PREVIOUS_IMAGE=ecency/vision-web:latest
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
             SENTRY_ORG=ecency
             SENTRY_PROJECT=ecency-next
