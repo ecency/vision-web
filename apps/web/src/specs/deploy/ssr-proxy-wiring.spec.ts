@@ -41,9 +41,9 @@ describe("ssr rpc proxy deploy wiring", () => {
       expect(envEntries(serviceBlock(compose, "vapi")), `${file}: vapi`).toContain("SSR_INTERNAL_SECRET");
       const web = envEntries(serviceBlock(compose, "web"));
       expect(envNames(web), `${file}: web`).toContain("SSR_INTERNAL_SECRET");
-      // The secret is the switch. A literal SSR_RPC_PROXY here would make the
-      // stack file lie about what the deploy job handed over.
-      expect(envNames(web), `${file}: no separate switch`).not.toContain("SSR_RPC_PROXY");
+      // The secret is the switch. A literal SSR_RPC_PROXY anywhere in the stack
+      // file would make it lie about what the deploy job handed over.
+      expect(envNames(envEntries(compose)), `${file}: no separate switch`).not.toContain("SSR_RPC_PROXY");
     }
   );
 

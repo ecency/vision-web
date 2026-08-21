@@ -29,10 +29,20 @@ vi.mock("@ecency/sdk", () => ({ ConfigManager: manager }));
 const REPORT_MS = 5 * 60 * 1000;
 const ON = { SSR_RPC_PROXY: undefined, SSR_INTERNAL_SECRET: "s3cret", INTERNAL_API_HOST: "http://vapi:4000" };
 
+const PROXY_VARS = ["SSR_RPC_PROXY", "SSR_INTERNAL_SECRET", "INTERNAL_API_HOST"] as const;
+
+/**
+ * Hermetic: every proxy variable is set from the case, and a case that omits
+ * one UNSETS it (stubEnv with undefined), so nothing leaks in from the test
+ * process and "missing" and "blank" are different environments.
+ */
 async function load(env: Record<string, string | undefined>): Promise<void> {
   vi.resetModules();
+  for (const k of PROXY_VARS) {
+    vi.stubEnv(k, env[k]);
+  }
   for (const [k, v] of Object.entries(env)) {
-    vi.stubEnv(k, v ?? "");
+    if (!(PROXY_VARS as readonly string[]).includes(k)) vi.stubEnv(k, v);
   }
   await import("@/core/sdk-init");
 }
@@ -64,6 +74,11 @@ describe("sdk-init server rpc proxy", () => {
   it("a legacy SSR_RPC_PROXY=1 changes nothing", async () => {
     await load({ ...ON, SSR_RPC_PROXY: "1" });
     expect(manager.setServerRpcProxy).toHaveBeenCalledTimes(1);
+    expect(manager.setServerRpcProxy).toHaveBeenCalledWith({
+      url: "http://vapi:4000/private-api/ssr/rpc",
+      headers: { "X-Ecency-Internal": "s3cret" },
+      timeoutMs: 1600
+    });
   });
 
   it.each([
