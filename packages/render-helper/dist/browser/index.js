@@ -2200,23 +2200,44 @@ var TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
 var INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm;
 var HIDDEN_ELEMENTS = ["style", "pre"];
-function stripSpans(text2, open, close, openEndsWithTagChar) {
+var OPEN_TAG_NAME_END = /[\t\f />]/;
+var CLOSE_TAG_NAME_END = /[\s>]/;
+function isWholeTagName(lower, idx, end) {
+  const next = lower[idx];
+  return next === void 0 || end.test(next);
+}
+function findTag(lower, tag, from, end) {
+  let at = lower.indexOf(tag, from);
+  while (at !== -1 && !isWholeTagName(lower, at + tag.length, end)) {
+    at = lower.indexOf(tag, at + tag.length);
+  }
+  return at;
+}
+function isSelfClosing(lower, openAt) {
+  const gt = lower.indexOf(">", openAt);
+  return gt !== -1 && lower[gt - 1] === "/";
+}
+function stripSpans(text2, open, close, tagNames) {
   const lower = text2.toLowerCase();
-  let start = lower.indexOf(open);
+  const findOpen = (from2) => {
+    if (!tagNames) return lower.indexOf(open, from2);
+    let at = findTag(lower, open, from2, OPEN_TAG_NAME_END);
+    while (at !== -1 && isSelfClosing(lower, at)) {
+      at = findTag(lower, open, at + open.length, OPEN_TAG_NAME_END);
+    }
+    return at;
+  };
+  const findClose = (from2) => tagNames ? findTag(lower, close, from2, CLOSE_TAG_NAME_END) : lower.indexOf(close, from2);
+  let start = findOpen(0);
   if (start === -1) return text2;
   let out = "";
   let from = 0;
   while (start !== -1) {
-    const next = lower[start + open.length];
-    if (openEndsWithTagChar && next !== void 0 && next !== ">" && next !== " " && next !== "	" && next !== "\n" && next !== "/") {
-      start = lower.indexOf(open, start + open.length);
-      continue;
-    }
     out += text2.slice(from, start);
-    const end = lower.indexOf(close, start + open.length);
+    const end = findClose(start + open.length);
     if (end === -1) return out;
     from = end + close.length;
-    start = lower.indexOf(open, from);
+    start = findOpen(from);
   }
   return out + text2.slice(from);
 }
@@ -2233,7 +2254,7 @@ var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
 var BARE_IMAGE_RE = /https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)(?:[?#][^\s<>"'()[\]]*)?/gi;
 var BARE_YOUTUBE_RE = /https?:\/\/(?:[\w-]+\.)*(?:youtube\.com|youtu\.be)\/[^\s<>"'()[\]]+/gi;
 function isAutolinkAt(text2, idx) {
-  return text2.startsWith("https://", idx) || text2.startsWith("http://", idx);
+  return /^https?:\/\//i.test(text2.slice(idx, idx + 8));
 }
 function markInsideTags(text2) {
   const marks = new Uint8Array(text2.length);

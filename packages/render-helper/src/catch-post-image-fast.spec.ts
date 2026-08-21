@@ -215,6 +215,10 @@ describe('catchPostImage fast mode', () => {
       '<PRE class="x">https://files.peakd.com/x/hidden.png</PRE>\n\nplain text',
       '<pre>never closed https://files.peakd.com/x/hidden.png',
       '<style>a{}</style><pre>https://files.peakd.com/x/hidden.png</pre>\n\nplain text',
+      '<pre\tclass="x">https://files.peakd.com/x/hidden.png</pre >\n\nplain text',
+      '<pre\fclass="x">https://files.peakd.com/x/hidden.png</pre\n>\n\nplain text',
+      '<pre>one https://files.peakd.com/x/a.png</prefix> two https://files.peakd.com/x/b.png</pre>\n\nplain',
+      '<pre>one</prelude> https://files.peakd.com/x/hidden.png</pre>\n\nplain',
       '<pre>https://www.youtube.com/watch?v=dQw4w9WgXcQ</pre>\n\nplain text'
     ]) {
       const r = both(body)
@@ -227,6 +231,7 @@ describe('catchPostImage fast mode', () => {
   it('reads a markdown autolink <https://...> as prose, not as a tag', () => {
     for (const body of [
       'cover: <https://files.peakd.com/x/autolink.png> end',
+      'cover: <HTTPS://files.peakd.com/x/autolink.png> end',
       'watch: <https://www.youtube.com/watch?v=dQw4w9WgXcQ> end'
     ]) {
       const r = both(body)
@@ -236,6 +241,19 @@ describe('catchPostImage fast mode', () => {
     expect(getEntryImageRawUrl(entry('cover: <https://files.peakd.com/x/autolink.png> end'))).toBe(
       'https://files.peakd.com/x/autolink.png'
     )
+  })
+
+  it('follows the renderer where a <pre tag is broken or empty: a line break inside the tag, or self-closing', () => {
+    // Probed: the renderer does not read these as a <pre> block, so the URL
+    // renders as an image, and the scanner must not hide it either.
+    for (const body of [
+      '<pre\r\nclass="x">https://files.peakd.com/x/shown.png</pre>\n\nplain text',
+      '<pre/>https://files.peakd.com/x/shown.png\n\nplain text'
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeTruthy()
+      expect(r.fast, body).toBe(r.full)
+    }
   })
 
   it('does not mistake a tag that merely starts with pre or style for a hidden region', () => {

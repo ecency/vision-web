@@ -35,24 +35,58 @@ const INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm
 // unterminated region runs to the end, as in HTML).
 const HIDDEN_ELEMENTS = ['style', 'pre']
 
-function stripSpans(text: string, open: string, close: string, openEndsWithTagChar: boolean): string {
+// What may follow a tag name, as the renderer reads it (probed, not the HTML
+// spec): on an opening tag, space, tab or form feed, `/` or `>`. A line break
+// inside the tag breaks the tag for the renderer and the content renders as
+// prose, so CR and LF are deliberately absent there. `<prefix>` is not `<pre`.
+const OPEN_TAG_NAME_END = /[\t\f />]/
+// A closing tag tolerates any whitespace before its `>`; `</prelude>` does not
+// close `<pre>`.
+const CLOSE_TAG_NAME_END = /[\s>]/
+
+function isWholeTagName(lower: string, idx: number, end: RegExp): boolean {
+  const next = lower[idx]
+  return next === undefined || end.test(next)
+}
+
+// Index of the next `<tag` / `</tag` occurrence at or after `from` whose tag
+// name is whole, or -1.
+function findTag(lower: string, tag: string, from: number, end: RegExp): number {
+  let at = lower.indexOf(tag, from)
+  while (at !== -1 && !isWholeTagName(lower, at + tag.length, end)) {
+    at = lower.indexOf(tag, at + tag.length)
+  }
+  return at
+}
+
+// A self-closing opening tag (`<pre/>`) opens nothing, so its span is empty.
+function isSelfClosing(lower: string, openAt: number): boolean {
+  const gt = lower.indexOf('>', openAt)
+  return gt !== -1 && lower[gt - 1] === '/'
+}
+
+function stripSpans(text: string, open: string, close: string, tagNames: boolean): string {
   const lower = text.toLowerCase()
-  let start = lower.indexOf(open)
+  const findOpen = (from: number): number => {
+    if (!tagNames) return lower.indexOf(open, from)
+    let at = findTag(lower, open, from, OPEN_TAG_NAME_END)
+    while (at !== -1 && isSelfClosing(lower, at)) {
+      at = findTag(lower, open, at + open.length, OPEN_TAG_NAME_END)
+    }
+    return at
+  }
+  const findClose = (from: number): number =>
+    tagNames ? findTag(lower, close, from, CLOSE_TAG_NAME_END) : lower.indexOf(close, from)
+  let start = findOpen(0)
   if (start === -1) return text
   let out = ''
   let from = 0
   while (start !== -1) {
-    // `<pre` must be the whole tag name (`<prefix>` is not it); `<!--` needs no such check.
-    const next = lower[start + open.length]
-    if (openEndsWithTagChar && next !== undefined && next !== '>' && next !== ' ' && next !== '\t' && next !== '\n' && next !== '/') {
-      start = lower.indexOf(open, start + open.length)
-      continue
-    }
     out += text.slice(from, start)
-    const end = lower.indexOf(close, start + open.length)
+    const end = findClose(start + open.length)
     if (end === -1) return out
     from = end + close.length
-    start = lower.indexOf(open, from)
+    start = findOpen(from)
   }
   return out + text.slice(from)
 }
@@ -103,7 +137,8 @@ const BARE_YOUTUBE_RE = /https?:\/\/(?:[\w-]+\.)*(?:youtube\.com|youtu\.be)\/[^\
 // attribute value of some shape (`src="..."`, `style="url(...)"`, JSON in a
 // `data-*` attribute, `poster=`) and never prose the renderer would linkify.
 function isAutolinkAt(text: string, idx: number): boolean {
-  return text.startsWith('https://', idx) || text.startsWith('http://', idx)
+  // Schemes are case-insensitive: <HTTPS://...> autolinks like <https://...>.
+  return /^https?:\/\//i.test(text.slice(idx, idx + 8))
 }
 
 function markInsideTags(text: string): Uint8Array {
