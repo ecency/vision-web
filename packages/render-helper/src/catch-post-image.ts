@@ -3,6 +3,7 @@ import { markdown2Html } from './markdown-2-html'
 import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeEntities } from './helper'
 import { cacheGet, cacheSet } from './cache'
 import { Entry } from './types'
+import { YOUTUBE_REGEX } from './consts'
 
 const gifLinkRegex = /\.(gif)$/i;
 
@@ -40,12 +41,24 @@ const MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/
 const HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i
 // A standalone (auto-linkified) image URL the renderer turns into an <img> via
 // text.method / linkify (IMG_REGEX). Required to sit at a line start or after
-// whitespace (group 1) so it is NOT a URL already inside ![](), <img src="">, or
-// a [label](href) link — avoiding false positives on image-extension URLs that
-// the renderer does NOT surface as a standalone image. Same extension set as the
-// renderer's IMG_REGEX. Linear-time: one bounded char class + a single greedy
-// `+`, no nested quantifier.
-const BARE_IMAGE_RE = /(^|\s)(https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)(?:[?#][^\s<>"'()[\]]*)?)/im
+// whitespace, or the `>` that closes a wrapping tag such as <center> (group 1),
+// so it is NOT a URL already inside ![](), <img src="">, or a [label](href)
+// link — avoiding false positives on image-extension URLs that the renderer
+// does NOT surface as a standalone image. Same extension set as the renderer's
+// IMG_REGEX. Linear-time: one bounded char class + a single greedy `+`, no
+// nested quantifier.
+const BARE_IMAGE_RE = /(^|\s|>)(https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)(?:[?#][^\s<>"'()[\]]*)?)/im
+// A bare YouTube URL (text.method) or a `[url](url)` YouTube link (a.method)
+// renders as a poster <img> for https://img.youtube.com/vi/<id>/hqdefault.jpg.
+// Same standalone-position rule as BARE_IMAGE_RE; the id itself is then read
+// with the renderer's own YOUTUBE_REGEX so the two can never disagree.
+const BARE_YOUTUBE_RE = /(^|\s|>)(https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\/[^\s<>"'()[\]]+)/im
+// An HTML anchor. Its text sits right after a `>`, so the standalone-position
+// rule above would read an image or video URL used as link TEXT as a bare URL.
+// The renderer only promotes such an anchor when the text equals the href
+// (a.method), so anchors whose text differs are blanked before the bare scans.
+// Lazy body bounded by the closing tag: linear on untrusted input.
+const HTML_ANCHOR_RE = /<a\b[^>]*?\bhref\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi
 // Markdown link `[label](href)` (NOT an image — the `!` is excluded by the
 // caller). The renderer (a.method) promotes such a link to an image only when
 // the href is an image URL AND the label text equals the href. Used to find the
@@ -81,12 +94,70 @@ const SAFE_URL_RE = /^https?:\/\//i
  *   byte-identical.
  */
 function findFirstImageUrl(body: string, includeBareUrls = false): string | null {
-  if (!body) return null
-  const cleaned = body
+  return findFirstImageCandidate(body, includeBareUrls)?.url ?? null
+}
+
+function stripCodeRegions(body: string): string {
+  return body
     .replace(BACKTICK_FENCE_RE, '')
     .replace(TILDE_FENCE_RE, '')
     .replace(INLINE_CODE_RE, '')
     .replace(INDENTED_CODE_RE, '')
+}
+
+// Blank (offset-preserving, so positions stay comparable) every anchor whose
+// text is not its href. See HTML_ANCHOR_RE.
+function blankUnequalAnchors(cleaned: string): string {
+  return cleaned.replace(HTML_ANCHOR_RE, (whole: string, href: string, text: string) =>
+    text.trim() === href ? whole : ' '.repeat(whole.length)
+  )
+}
+
+interface ImageCandidate {
+  url: string
+  /** Offset in the code-stripped body, for source-order comparisons. */
+  pos: number
+}
+
+/**
+ * The poster image the renderer would produce for the first standalone YouTube
+ * URL in the body, with its position, or null. Fast-mode only: the full render
+ * discovers these itself through text.method / a.method.
+ */
+function findFirstVideoPoster(body: string): ImageCandidate | null {
+  if (!body) return null
+  const cleaned = stripCodeRegions(body)
+  const bare = blankUnequalAnchors(cleaned).match(BARE_YOUTUBE_RE)
+  let best: ImageCandidate | null = null
+  if (bare && bare[2]) {
+    const id = bare[2].match(YOUTUBE_REGEX)
+    if (id && id[1]) {
+      best = { url: id[1], pos: (bare.index ?? 0) + bare[1].length }
+    }
+  }
+  // `[url](url)` form: a.method turns a link whose text equals its href into
+  // the same poster. Take it only when it comes before the bare form.
+  for (const m of cleaned.matchAll(MD_LINK_RE)) {
+    const idx = m.index ?? 0
+    if (idx > 0 && cleaned[idx - 1] === '!') continue
+    if (best && idx >= best.pos) break
+    const href = m[2]
+    if (href && m[1].trim() === href) {
+      const id = href.match(YOUTUBE_REGEX)
+      if (id && id[1]) {
+        best = { url: id[1], pos: idx }
+        break
+      }
+    }
+  }
+  if (!best) return null
+  // Byte-identical to text.method / a.method: id without a trailing query.
+  return { url: `https://img.youtube.com/vi/${best.url.split('?')[0]}/hqdefault.jpg`, pos: best.pos }
+}
+
+function findFirstImageCandidate(body: string, includeBareUrls = false): ImageCandidate | null {
+  if (!body) return null
+  const cleaned = stripCodeRegions(body)
 
   const mdMatch = cleaned.match(MD_IMAGE_RE)
   const htmlMatch = cleaned.match(HTML_IMAGE_RE)
@@ -120,7 +191,7 @@ function findFirstImageUrl(body: string, includeBareUrls = false): string | null
     candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0 })
   }
   if (includeBareUrls) {
-    const bareMatch = cleaned.match(BARE_IMAGE_RE)
+    const bareMatch = blankUnequalAnchors(cleaned).match(BARE_IMAGE_RE)
     if (bareMatch && bareMatch[2] && SAFE_URL_RE.test(bareMatch[2])) {
       // position of the URL itself, past the leading start/whitespace (group 1)
       candidates.push({ url: bareMatch[2], pos: (bareMatch.index ?? 0) + bareMatch[1].length })
@@ -142,7 +213,46 @@ function findFirstImageUrl(body: string, includeBareUrls = false): string | null
 
   if (candidates.length === 0) return null
   candidates.sort((a, b) => a.pos - b.pos)
-  return candidates[0].url
+  return candidates[0]
+}
+
+/**
+ * Everything fast mode can find without rendering markdown: the regex tiers
+ * including standalone bare image URLs, plus the YouTube poster the full render
+ * would have produced, whichever comes first in the source. Returns the same
+ * proxied URL the full render's first <img> would have carried, or null.
+ */
+function fastBodyImage(body: string, width: number, height: number, format: string): string | null {
+  // Same precedence as the full lookup: a markdown or HTML image found by the
+  // regex wins outright, because the full lookup returns it before it would
+  // ever render the markdown and notice an earlier poster or bare URL.
+  const strict = findFirstImageCandidate(body, false)
+  if (strict) {
+    return proxifyFound(strict.url, width, height, format)
+  }
+  // Otherwise the full lookup would render and take the first <img> in source
+  // order, which is a bare image URL or a video poster.
+  const bare = findFirstImageCandidate(body, true)
+  const poster = findFirstVideoPoster(body)
+  if (poster && (!bare || poster.pos < bare.pos)) {
+    // The rendered poster <img> carries the 0x0 proxied URL; re-proxying it at
+    // the requested size is exactly what the full render path does with it.
+    return proxifyFound(proxifyImageSrc(poster.url, 0, 0, 'match'), width, height, format)
+  }
+  return bare ? proxifyFound(bare.url, width, height, format) : null
+}
+
+// json_metadata is whatever the publishing client wrote: `thumbnails` has been
+// seen as a string, an array of strings, an array with junk in it, and a
+// non-array. Return the first usable URL or undefined, never throw.
+function firstMetaUrl(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.length > 0) {
+    return value
+  }
+  if (Array.isArray(value)) {
+    return value.find((url): url is string => typeof url === 'string' && url.length > 0)
+  }
+  return undefined
 }
 
 function proxifyFound(src: string, width: number, height: number, format: string): string {
@@ -153,7 +263,7 @@ function proxifyFound(src: string, width: number, height: number, format: string
   return proxifyImageSrc(decoded, width, height, format)
 }
 
-function getImage(entry: Entry, width = 0, height = 0, format = 'match'): string | null {
+function getImage(entry: Entry, width = 0, height = 0, format = 'match', fastMode = false): string | null {
   /*
   * Return from json metadata if exists
   * */
@@ -167,6 +277,18 @@ function getImage(entry: Entry, width = 0, height = 0, format = 'match'): string
     } catch (e) {
       meta = null
     }
+  }
+
+  // An explicit thumbnail wins over the cover image: `thumbnails` exists for
+  // exactly this purpose (3Speak, Liketu, the editor's thumbnail picker) and
+  // publishers do set it to something other than the first body image.
+  const thumbnail = firstMetaUrl(meta?.thumbnails)
+  if (thumbnail) {
+    const decodedThumbnail = decodeEntities(thumbnail)
+    if (isGifLink(decodedThumbnail)) {
+      return proxifyImageSrc(decodedThumbnail, 0, 0, format)
+    }
+    return proxifyImageSrc(decodedThumbnail, width, height, format)
   }
 
   if (meta && typeof meta.image === 'string' && meta.image.length > 0) {
@@ -193,6 +315,13 @@ function getImage(entry: Entry, width = 0, height = 0, format = 'match'): string
       return proxifyImageSrc(meta.image[0], 0, 0, format)
     }
     return proxifyImageSrc(meta.image[0], width, height, format)
+  }
+
+  // Fast mode never renders markdown: regex tiers (bare URLs included) and the
+  // YouTube poster, or null. The caller would rather show no thumbnail than pay
+  // for a full markdown render on a body none of that found an image in.
+  if (fastMode) {
+    return fastBodyImage(entry.body, width, height, format)
   }
 
   // Fast-path: try to find the first image with a regex over the raw body.
@@ -259,10 +388,33 @@ export function getEntryImageRawUrl(obj: Entry | string): string | null {
   return bodySrc ? decodeImageSrc(bodySrc) : null
 }
 
-export function catchPostImage(obj: Entry | string, width = 0, height = 0, format = 'match'): string | null {
+export interface CatchPostImageOptions {
+  /**
+   * Stop after the metadata and regex tiers. The last tier is a full
+   * markdown2Html + DOM parse, which on a long body with no image at all costs
+   * hundreds of milliseconds of synchronous CPU; a feed of such rows can hold a
+   * server's event loop for seconds. Callers that can live without the rare
+   * markdown-only finds (video embed posters, for instance) set this and get
+   * null back instead. Default false keeps every existing caller byte-identical.
+   */
+  fast?: boolean
+}
+
+export function catchPostImage(
+  obj: Entry | string,
+  width = 0,
+  height = 0,
+  format = 'match',
+  options: CatchPostImageOptions = {}
+): string | null {
+  const fastMode = options.fast === true
   if (typeof obj === 'string') {
     // Process string directly to avoid cache key collision
     // Don't create Entry wrapper as it would generate invalid cache keys
+
+    if (fastMode) {
+      return fastBodyImage(obj, width, height, format)
+    }
 
     // Fast-path: regex over raw markdown
     const fast = findFirstImageUrl(obj)
@@ -287,14 +439,19 @@ export function catchPostImage(obj: Entry | string, width = 0, height = 0, forma
 
     return null
   }
-  const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}`
+  // Fast and full lookups can legitimately disagree (null vs a markdown-only
+  // find), so they get separate slots rather than the first caller deciding for
+  // both.
+  const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}${fastMode ? '-fast' : ''}`
 
-  const item = cacheGet<string | null>(key)
-  if (item) {
+  // A null result is memoized too. Recomputing it is the expensive case: the
+  // markdown tier ran, found nothing, and would run again on the next request.
+  const item = cacheGet<string | null | undefined>(key)
+  if (item !== undefined) {
     return item
   }
 
-  const res = getImage(obj, width, height, format)
+  const res = getImage(obj, width, height, format, fastMode)
   cacheSet(key, res)
 
   return res
