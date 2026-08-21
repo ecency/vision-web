@@ -40,7 +40,11 @@ const CHILD_SERVER = `
 
 const children: ChildProcess[] = [];
 
-function boot(env: NodeJS.ProcessEnv): Promise<{ port: number; stderr: () => string }> {
+type Booted = { port: number; stderr: () => string };
+type Reply = { status: number; headers: http.IncomingHttpHeaders; body: string };
+type Started = { done: Promise<{ status: number; headers: http.IncomingHttpHeaders }>; abort: () => void };
+
+function boot(env: NodeJS.ProcessEnv): Promise<Booted> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ["--require", PRELOAD, "-e", CHILD_SERVER], {
       cwd: process.cwd(),
@@ -55,8 +59,8 @@ function boot(env: NodeJS.ProcessEnv): Promise<{ port: number; stderr: () => str
   });
 }
 
-function get(port: number, path: string, headers: Record<string, string> = {}) {
-  return new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }>((resolve, reject) => {
+function get(port: number, path: string, headers: Record<string, string> = {}): Promise<Reply> {
+  return new Promise<Reply>((resolve, reject) => {
     const req = http.get({ host: "127.0.0.1", port, path, headers }, (res) => {
       let body = "";
       res.on("data", (d) => (body += String(d)));
@@ -68,7 +72,7 @@ function get(port: number, path: string, headers: Record<string, string> = {}) {
 
 // Start a request and resolve once it is on the wire (the server has parked
 // it) without waiting for the response.
-function start(port: number, path: string) {
+function start(port: number, path: string): Started {
   let settle!: (r: { status: number; headers: http.IncomingHttpHeaders }) => void;
   const done = new Promise<{ status: number; headers: http.IncomingHttpHeaders }>((r) => (settle = r));
   const req = http.get({ host: "127.0.0.1", port, path }, (res) => {
@@ -79,7 +83,7 @@ function start(port: number, path: string) {
   return { done, abort: () => req.destroy() };
 }
 
-const settle = () => new Promise((r) => setTimeout(r, 150));
+const settle = (ms = 150): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 afterEach(() => {
   for (const c of children.splice(0)) c.kill("SIGKILL");
@@ -139,12 +143,19 @@ describe("ssr-admission preload", () => {
       "/scripts/x.js",
       "/favicon.ico",
       "/manifest.json",
-      "/robots.txt"
+      "/robots.txt",
+      "/sw.js",
+      "/firebase-messaging-sw.js",
+      "/og.jpg",
+      "/geo/cities.min.json",
+      "/sitemap.xml",
+      "/fonts/inter.woff2"
     ]) {
       expect((await get(port, path)).status, path).toBe(200);
     }
-    // And a page is still shed while the slot is held.
+    // And a page is still shed while the slot is held, a dotted username too.
     expect((await get(port, "/hot")).status).toBe(503);
+    expect((await get(port, "/@demo.com")).status).toBe(503);
     await get(port, "/api/release");
     await a.done;
   });
@@ -153,7 +164,7 @@ describe("ssr-admission preload", () => {
     const { port } = await boot({ SSR_MAX_INFLIGHT: "1" });
     const a = start(port, "/slow/doc");
     await settle();
-    const status = await new Promise<number>((resolve, reject) => {
+    const status: number = await new Promise<number>((resolve, reject) => {
       const req = http.request({ host: "127.0.0.1", port, path: "/some-form", method: "POST" }, (res) => {
         res.resume();
         res.on("end", () => resolve(res.statusCode ?? 0));
@@ -166,22 +177,60 @@ describe("ssr-admission preload", () => {
     await a.done;
   });
 
-  it("frees the slot when the client goes away before the render finishes", async () => {
-    const { port } = await boot({ SSR_MAX_INFLIGHT: "1" });
+  it("keeps the slot for the grace period after the client goes away, then frees it", async () => {
+    const { port } = await boot({ SSR_MAX_INFLIGHT: "1", SSR_ABANDONED_GRACE_MS: "400" });
     const a = start(port, "/slow/abandoned");
     await settle();
     expect((await get(port, "/page")).status).toBe(503);
     a.abort();
     await settle();
+    // The render is still running on the server; the slot is still held.
+    expect((await get(port, "/page")).status).toBe(503);
+    await settle(500);
     expect((await get(port, "/page")).status).toBe(200);
     await get(port, "/api/release");
+  });
+
+  it("frees the slot as soon as an abandoned render finishes, before the grace period ends", async () => {
+    const { port } = await boot({ SSR_MAX_INFLIGHT: "1", SSR_ABANDONED_GRACE_MS: "5000" });
+    const a = start(port, "/slow/abandoned");
+    await settle();
+    a.abort();
+    await settle();
+    expect((await get(port, "/page")).status).toBe(503);
+    await get(port, "/api/release");
+    await settle();
+    expect((await get(port, "/page")).status).toBe(200);
+  });
+
+  it("ignores an invalid cap or Retry-After rather than crashing or silently misreporting", async () => {
+    const bad = await boot({ SSR_MAX_INFLIGHT: "lots" });
+    const a = start(bad.port, "/slow/1");
+    await settle();
+    expect((await get(bad.port, "/page")).status).toBe(200);
+    expect(bad.stderr()).toContain("is not a positive number");
+    await get(bad.port, "/api/release");
+    await a.done;
+
+    const odd = await boot({ SSR_MAX_INFLIGHT: "1", SSR_SHED_RETRY_AFTER: "2\r\nX-Injected: 1" });
+    const b = start(odd.port, "/slow/1");
+    await settle();
+    const shed = await get(odd.port, "/page");
+    expect(shed.status).toBe(503);
+    expect(shed.headers["retry-after"]).toBe("1");
+    expect(shed.headers["x-injected"]).toBeUndefined();
+    await get(odd.port, "/api/release");
+    await b.done;
   });
 
   it("is wired into the production image and the stack", () => {
     const dockerfile = readFileSync(join(process.cwd(), "Dockerfile"), "utf8");
     expect(dockerfile).toContain("ssr-admission.js ./apps/web/ssr-admission.js");
     expect(dockerfile).toMatch(/CMD \[.*"--require", "\.\/ssr-admission\.js".*\]/);
-    const compose = readFileSync(join(process.cwd(), "docker-compose.production.yml"), "utf8");
-    expect(compose).toMatch(/^\s*- SSR_MAX_INFLIGHT=\d+$/m);
+    for (const file of ["docker-compose.production.yml", "docker-compose.yml"]) {
+      const compose = readFileSync(join(process.cwd(), file), "utf8");
+      expect(compose, file).toMatch(/^\s*- SSR_MAX_INFLIGHT=\d+$/m);
+      expect(compose, file).toMatch(/--max-semi-space-size=\d+/);
+    }
   });
 });

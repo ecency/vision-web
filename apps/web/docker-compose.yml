@@ -104,6 +104,11 @@ services:
     image: curlimages/curl:8.11.1
     environment:
       - SEO_CRON_SECRET
+      # Same runtime knobs as production, so alpha exercises them first:
+      # semi-space size (fewer scavenges on allocation-heavy renders) and the
+      # per-process render cap (ssr-admission.js, loaded by the image CMD).
+      - NODE_OPTIONS=--max-semi-space-size=64
+      - SSR_MAX_INFLIGHT=16
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
