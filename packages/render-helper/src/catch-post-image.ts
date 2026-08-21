@@ -24,12 +24,31 @@ const BACKTICK_FENCE_RE = /```[\s\S]*?```/g
 const TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g
 const INLINE_CODE_RE = /`[^`\n]*`/g
 const INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm
-// HTML regions whose text never reaches the page as an image: comments and
-// <style> (dropped by the sanitizer) and <pre> (the renderer leaves its text
-// alone). Verified against the renderer: a URL inside <code> or <script> text
-// IS linkified into an image, so those are not listed. Lazy bodies bounded by
-// the closing marker: linear on untrusted input.
-const HTML_HIDDEN_RE = /<!--[\s\S]*?-->|<(style|pre)\b[^>]*>[\s\S]*?<\/\1\s*>/gi
+// HTML regions whose text never reaches the page as an image: <style> (dropped
+// by the sanitizer) and <pre> (the renderer leaves its text alone), plus HTML
+// comments (stripComments below). Verified against the renderer: a URL inside
+// <code> or <script> text IS linkified into an image, so those are not listed.
+// Lazy bodies bounded by the closing marker: linear on untrusted input.
+const HTML_HIDDEN_RE = /<(style|pre)\b[^>]*>[\s\S]*?<\/\1\s*>/gi
+
+// Drop `<!-- ... -->` spans (an unterminated comment runs to the end, as in
+// HTML). A plain index scan rather than a regex replace: the text is only ever
+// searched for image URLs, never emitted, so this is candidate extraction and
+// not sanitization, but the scan is also linear and leaves nothing behind.
+function stripComments(text: string): string {
+  let start = text.indexOf('<!--')
+  if (start === -1) return text
+  let out = ''
+  let from = 0
+  while (start !== -1) {
+    out += text.slice(from, start)
+    const end = text.indexOf('-->', start + 4)
+    if (end === -1) return out
+    from = end + 3
+    start = text.indexOf('<!--', from)
+  }
+  return out + text.slice(from)
+}
 // Requires a closing `)` so broken syntax like `![](url` (no close) doesn't
 // match. Also tolerates the optional title form `![](url "title")`. The alt-text
 // class excludes `[` (so a `![a](`/`![[[…` run can't be re-scanned at every start),
@@ -134,7 +153,7 @@ function findFirstImageUrl(body: string, includeBareUrls = false): string | null
 }
 
 function stripCodeRegions(body: string): string {
-  return body
+  return stripComments(body)
     .replace(BACKTICK_FENCE_RE, '')
     .replace(TILDE_FENCE_RE, '')
     .replace(INLINE_CODE_RE, '')

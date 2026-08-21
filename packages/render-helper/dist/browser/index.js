@@ -2199,7 +2199,21 @@ var BACKTICK_FENCE_RE = /```[\s\S]*?```/g;
 var TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
 var INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm;
-var HTML_HIDDEN_RE = /<!--[\s\S]*?-->|<(style|pre)\b[^>]*>[\s\S]*?<\/\1\s*>/gi;
+var HTML_HIDDEN_RE = /<(style|pre)\b[^>]*>[\s\S]*?<\/\1\s*>/gi;
+function stripComments(text2) {
+  let start = text2.indexOf("<!--");
+  if (start === -1) return text2;
+  let out = "";
+  let from = 0;
+  while (start !== -1) {
+    out += text2.slice(from, start);
+    const end = text2.indexOf("-->", start + 4);
+    if (end === -1) return out;
+    from = end + 3;
+    start = text2.indexOf("<!--", from);
+  }
+  return out + text2.slice(from);
+}
 var MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*([^)\s]{1,2048})(?:\s+["'][^"']*["'])?\s*\)/;
 var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/;
 var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
@@ -2229,7 +2243,7 @@ function findFirstImageUrl(body, includeBareUrls = false) {
   return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null;
 }
 function stripCodeRegions(body) {
-  return body.replace(BACKTICK_FENCE_RE, "").replace(TILDE_FENCE_RE, "").replace(INLINE_CODE_RE, "").replace(INDENTED_CODE_RE, "").replace(HTML_HIDDEN_RE, "");
+  return stripComments(body).replace(BACKTICK_FENCE_RE, "").replace(TILDE_FENCE_RE, "").replace(INLINE_CODE_RE, "").replace(INDENTED_CODE_RE, "").replace(HTML_HIDDEN_RE, "");
 }
 function blankUnequalAnchors(cleaned) {
   return cleaned.replace(

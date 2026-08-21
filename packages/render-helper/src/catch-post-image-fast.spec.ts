@@ -208,6 +208,8 @@ describe('catchPostImage fast mode', () => {
   it('ignores URLs the page never shows as images: comments, style and pre', () => {
     for (const body of [
       '<!-- https://files.peakd.com/x/hidden.png -->\n\nplain text',
+      '<!-- open comment, never closed https://files.peakd.com/x/hidden.png',
+      '<!-- one --> text <!-- https://files.peakd.com/x/hidden.png --> more',
       '<style>.x{background:url(https://files.peakd.com/x/hidden.png)}</style>\n\nplain text',
       '<pre>https://files.peakd.com/x/hidden.png</pre>\n\nplain text',
       '<pre>https://www.youtube.com/watch?v=dQw4w9WgXcQ</pre>\n\nplain text'
@@ -273,7 +275,7 @@ describe('catchPostImage fast mode', () => {
     // the fast card follow what the page shows. The old raw comparison would
     // have blanked the anchor and lost both.
     const u = 'https://files.peakd.com/x/q.png?a=1&b=2'
-    const body = `<a href="${u.replace('&', '&amp;')}">${u}</a>`
+    const body = `<a href="${u.replaceAll('&', '&amp;')}">${u}</a>`
     expect(markdown2Html(entry(body), false)).toContain('<img')
     expect(getEntryImageRawUrl(entry(body))).toBe(u)
     expect(catchPostImage(entry(body), 0, 0, 'match', FAST)).toBe(proxifyImageSrc(u, 0, 0, 'match'))
