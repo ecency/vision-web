@@ -51,6 +51,16 @@ describe('catchPostImage thumbnails tier', () => {
     )
   })
 
+  it('falls through to image when the thumbnail cannot be proxied', () => {
+    const overlong = 'https://files.peakd.com/x/' + 'a'.repeat(5000) + '.png'
+    for (const thumbnails of [['   '], [overlong], 'not a url']) {
+      const e = entry('text', { thumbnails, image: ['https://images.hive.blog/cover.png'] })
+      expect(catchPostImage(e, 320, 180, 'match'), JSON.stringify(thumbnails).slice(0, 40)).toBe(
+        proxifyImageSrc('https://images.hive.blog/cover.png', 320, 180, 'match')
+      )
+    }
+  })
+
   it('still reads image when there is no thumbnails field at all', () => {
     const e = entry('text', { image: ['https://images.hive.blog/cover.png'] })
     expect(catchPostImage(e, 320, 180, 'match')).toBe(
@@ -158,6 +168,115 @@ describe('catchPostImage fast mode', () => {
     const r = both('![a](https://images.hive.blog/path_(a)_full.jpg)')
     expect(r.full).toBeTruthy()
     expect(r.fast).toBeNull()
+  })
+
+  it('finds a bare image or video URL wrapped in parentheses, as the renderer does', () => {
+    for (const body of [
+      'see (https://files.peakd.com/x/paren.png) here',
+      'see (https://youtu.be/dQw4w9WgXcQ) here',
+      '(https://www.youtube.com/watch?v=dQw4w9WgXcQ)'
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeTruthy()
+      expect(r.fast, body).toBe(r.full)
+    }
+  })
+
+  it('still leaves a [label](href) link alone, whose href also follows a parenthesis', () => {
+    for (const body of [
+      'see [my photo](https://files.peakd.com/x/linked.png) here',
+      'watch [clip](https://youtu.be/dQw4w9WgXcQ) here'
+    ]) {
+      const r = both(body)
+      expect(r.fast, body).toBe(r.full)
+      expect(r.fast, body).toBeNull()
+    }
+  })
+
+  it('recognizes every YouTube host the renderer does', () => {
+    for (const body of [
+      'https://music.youtube.com/watch?v=dQw4w9WgXcQ',
+      'https://m.youtube.com/watch?v=dQw4w9WgXcQ',
+      'https://youtube.com/watch?v=dQw4w9WgXcQ'
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeTruthy()
+      expect(r.fast, body).toBe(r.full)
+    }
+  })
+
+  it('ignores URLs the page never shows as images: comments, style and pre', () => {
+    for (const body of [
+      '<!-- https://files.peakd.com/x/hidden.png -->\n\nplain text',
+      '<style>.x{background:url(https://files.peakd.com/x/hidden.png)}</style>\n\nplain text',
+      '<pre>https://files.peakd.com/x/hidden.png</pre>\n\nplain text',
+      '<pre>https://www.youtube.com/watch?v=dQw4w9WgXcQ</pre>\n\nplain text'
+    ]) {
+      const r = both(body)
+      expect(r.fast, body).toBe(r.full)
+      expect(r.fast, body).toBeNull()
+      expect(getEntryImageRawUrl(entry(body)), body).toBeNull()
+    }
+  })
+
+  it('keeps a URL in <code> text, which the renderer does linkify', () => {
+    const r = both('<code>https://files.peakd.com/x/shown.png</code>\n\nplain text')
+    expect(r.full).toBeTruthy()
+    expect(r.fast).toBe(r.full)
+  })
+
+  it('gives up on a URL that reads as an attribute value even where the renderer would show it', () => {
+    // The sanitizer drops the <script> tag and the renderer linkifies what was
+    // its text, image included. The regex cannot tell `u="https://..."` in
+    // script source from a real attribute such as <video poster="...">, and
+    // treating attribute values as bare URLs would put posters on cards the
+    // page never renders. Script source in a post body is the rarer case, so
+    // fast mode knowingly hands back null here (never an image the page lacks).
+    const r = both('<script>var u="https://files.peakd.com/x/shown.png"</script>\n\nplain text')
+    expect(r.full).toBeTruthy()
+    expect(r.fast).toBeNull()
+  })
+
+  it('finds a bare image URL wrapped in emphasis or quotes, as the renderer does', () => {
+    for (const body of [
+      'see *https://files.peakd.com/x/em.png* here',
+      'he said "https://files.peakd.com/x/quoted.png" ok'
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeTruthy()
+      expect(r.fast, body).toBe(r.full)
+    }
+  })
+
+  it('does not read a URL glued to another token or used as an attribute value as bare', () => {
+    for (const body of [
+      'go to https://example.com/?u=https://files.peakd.com/x/inner.png now',
+      '<video poster="https://files.peakd.com/x/poster.png"></video>',
+      '[https://files.peakd.com/x/label.png](https://example.com/page)'
+    ]) {
+      const r = both(body)
+      expect(r.fast, body).toBe(r.full)
+    }
+  })
+
+  it('returns null, not a later poster, when an ambiguous markdown image comes first', () => {
+    const r = both('![a](https://images.hive.blog/path_(a)_full.jpg)\n\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ')
+    expect(r.full).toBeTruthy()
+    expect(r.full).not.toContain('img.youtube.com')
+    expect(r.fast).toBeNull()
+  })
+
+  it('keeps an anchor whose text equals its href once entities are decoded, as the page renders it', () => {
+    // The page render (forApp=false) promotes this anchor to an image; the
+    // forApp=true render the full lookup uses does not. The scans compare
+    // entity-decoded values, the way the DOM exposes them, so the preload and
+    // the fast card follow what the page shows. The old raw comparison would
+    // have blanked the anchor and lost both.
+    const u = 'https://files.peakd.com/x/q.png?a=1&b=2'
+    const body = `<a href="${u.replace('&', '&amp;')}">${u}</a>`
+    expect(markdown2Html(entry(body), false)).toContain('<img')
+    expect(getEntryImageRawUrl(entry(body))).toBe(u)
+    expect(catchPostImage(entry(body), 0, 0, 'match', FAST)).toBe(proxifyImageSrc(u, 0, 0, 'match'))
   })
 
   it('applies to a raw markdown string as well', () => {

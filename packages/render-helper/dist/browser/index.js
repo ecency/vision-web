@@ -2199,27 +2199,91 @@ var BACKTICK_FENCE_RE = /```[\s\S]*?```/g;
 var TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
 var INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm;
+var HTML_HIDDEN_RE = /<!--[\s\S]*?-->|<(style|pre)\b[^>]*>[\s\S]*?<\/\1\s*>/gi;
 var MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*([^)\s]{1,2048})(?:\s+["'][^"']*["'])?\s*\)/;
 var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/;
 var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
-var BARE_IMAGE_RE = /(^|\s)(https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)(?:[?#][^\s<>"'()[\]]*)?)/im;
+var BARE_IMAGE_RE = /https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)(?:[?#][^\s<>"'()[\]]*)?/gi;
+var BARE_YOUTUBE_RE = /https?:\/\/(?:[\w-]+\.)*(?:youtube\.com|youtu\.be)\/[^\s<>"'()[\]]+/gi;
+function isStandalone(text2, idx) {
+  if (idx === 0) return true;
+  const prev = text2[idx - 1];
+  if (/[\w/.:%?&=#[!-]/.test(prev)) return false;
+  const prev2 = idx > 1 ? text2[idx - 2] : "";
+  if (prev === "(" && prev2 === "]") return false;
+  if ((prev === '"' || prev === "'") && prev2 === "=") return false;
+  return true;
+}
+function firstStandalone(text2, re) {
+  for (const m of text2.matchAll(re)) {
+    const idx = m.index ?? 0;
+    if (isStandalone(text2, idx)) return { url: m[0], pos: idx };
+  }
+  return null;
+}
+var HTML_ANCHOR_RE = /<a\b[^>]*?\bhref\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
 var MD_LINK_RE = /\[([^[\]]*)\]\(\s*([^)\s[]+)(?:\s+["'][^"']*["'])?\s*\)/g;
 var IMG_HREF_RE = /https?:\/\/.*\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i;
 var SAFE_URL_RE = /^https?:\/\//i;
 function findFirstImageUrl(body, includeBareUrls = false) {
-  if (!body) return null;
-  const cleaned = body.replace(BACKTICK_FENCE_RE, "").replace(TILDE_FENCE_RE, "").replace(INLINE_CODE_RE, "").replace(INDENTED_CODE_RE, "");
+  return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null;
+}
+function stripCodeRegions(body) {
+  return body.replace(BACKTICK_FENCE_RE, "").replace(TILDE_FENCE_RE, "").replace(INLINE_CODE_RE, "").replace(INDENTED_CODE_RE, "").replace(HTML_HIDDEN_RE, "");
+}
+function blankUnequalAnchors(cleaned) {
+  return cleaned.replace(
+    HTML_ANCHOR_RE,
+    (whole, href, text2) => decodeEntities(text2.trim()) === decodeEntities(href.trim()) ? whole : " ".repeat(whole.length)
+  );
+}
+function prepareBody(body) {
+  const cleaned = body ? stripCodeRegions(body) : "";
+  return { cleaned, blanked: cleaned ? blankUnequalAnchors(cleaned) : "" };
+}
+function findFirstVideoPoster(prepared) {
+  const { cleaned, blanked } = prepared;
+  if (!cleaned) return null;
+  const bare = firstStandalone(blanked, BARE_YOUTUBE_RE);
+  let best = null;
+  if (bare) {
+    const id = bare.url.match(YOUTUBE_REGEX);
+    if (id && id[1]) {
+      best = { url: id[1], pos: bare.pos };
+    }
+  }
+  for (const m of cleaned.matchAll(MD_LINK_RE)) {
+    const idx = m.index ?? 0;
+    if (idx > 0 && cleaned[idx - 1] === "!") continue;
+    if (best && idx >= best.pos) break;
+    const href = m[2];
+    if (href && m[1].trim() === href) {
+      const id = href.match(YOUTUBE_REGEX);
+      if (id && id[1]) {
+        best = { url: id[1], pos: idx };
+        break;
+      }
+    }
+  }
+  if (!best) return null;
+  return { url: `https://img.youtube.com/vi/${best.url.split("?")[0]}/hqdefault.jpg`, pos: best.pos };
+}
+var NONE = { candidate: null, ambiguous: false };
+var AMBIGUOUS = { candidate: null, ambiguous: true };
+function findFirstImageCandidate(prepared, includeBareUrls = false) {
+  const { cleaned, blanked } = prepared;
+  if (!cleaned) return NONE;
   const mdMatch = cleaned.match(MD_IMAGE_RE);
   const htmlMatch = cleaned.match(HTML_IMAGE_RE);
   if (mdMatch) {
     const url = mdMatch[1];
     if (!url || !SAFE_URL_RE.test(url) || url.includes("(")) {
-      return null;
+      return AMBIGUOUS;
     }
   }
   const priorRegion = mdMatch ? cleaned.slice(0, mdMatch.index ?? 0) : cleaned;
   if (MD_IMAGE_PRESENT_RE.test(priorRegion)) {
-    return null;
+    return AMBIGUOUS;
   }
   const candidates = [];
   if (mdMatch) candidates.push({ url: mdMatch[1], pos: mdMatch.index ?? 0 });
@@ -2227,9 +2291,9 @@ function findFirstImageUrl(body, includeBareUrls = false) {
     candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0 });
   }
   if (includeBareUrls) {
-    const bareMatch = cleaned.match(BARE_IMAGE_RE);
-    if (bareMatch && bareMatch[2] && SAFE_URL_RE.test(bareMatch[2])) {
-      candidates.push({ url: bareMatch[2], pos: (bareMatch.index ?? 0) + bareMatch[1].length });
+    const bareMatch = firstStandalone(blanked, BARE_IMAGE_RE);
+    if (bareMatch && SAFE_URL_RE.test(bareMatch.url)) {
+      candidates.push(bareMatch);
     }
     const deAmp = (s) => s.trim().replace(/&amp;/g, "&");
     for (const m of cleaned.matchAll(MD_LINK_RE)) {
@@ -2242,9 +2306,34 @@ function findFirstImageUrl(body, includeBareUrls = false) {
       }
     }
   }
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) return NONE;
   candidates.sort((a2, b) => a2.pos - b.pos);
-  return candidates[0].url;
+  return { candidate: candidates[0], ambiguous: false };
+}
+function fastBodyImage(body, width, height, format) {
+  const prepared = prepareBody(body);
+  const strict = findFirstImageCandidate(prepared, false);
+  if (strict.candidate) {
+    return proxifyFound(strict.candidate.url, width, height, format);
+  }
+  if (strict.ambiguous) {
+    return null;
+  }
+  const bare = findFirstImageCandidate(prepared, true).candidate;
+  const poster = findFirstVideoPoster(prepared);
+  if (poster && (!bare || poster.pos < bare.pos)) {
+    return proxifyFound(proxifyImageSrc(poster.url, 0, 0, "match"), width, height, format);
+  }
+  return bare ? proxifyFound(bare.url, width, height, format) : null;
+}
+function firstMetaUrl(value) {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.find((url) => typeof url === "string" && url.trim().length > 0);
+  }
+  return void 0;
 }
 function proxifyFound(src, width, height, format) {
   const decoded = decodeEntities(src);
@@ -2253,7 +2342,7 @@ function proxifyFound(src, width, height, format) {
   }
   return proxifyImageSrc(decoded, width, height, format);
 }
-function getImage(entry, width = 0, height = 0, format = "match") {
+function getImage(entry, width = 0, height = 0, format = "match", fastMode = false) {
   let meta;
   if (typeof entry.json_metadata === "object") {
     meta = entry.json_metadata;
@@ -2262,6 +2351,14 @@ function getImage(entry, width = 0, height = 0, format = "match") {
       meta = JSON.parse(entry.json_metadata);
     } catch (e) {
       meta = null;
+    }
+  }
+  const thumbnail = firstMetaUrl(meta?.thumbnails);
+  if (thumbnail) {
+    const decodedThumbnail = decodeEntities(thumbnail);
+    const proxied = isGifLink(decodedThumbnail) ? proxifyImageSrc(decodedThumbnail, 0, 0, format) : proxifyImageSrc(decodedThumbnail, width, height, format);
+    if (proxied) {
+      return proxied;
     }
   }
   if (meta && typeof meta.image === "string" && meta.image.length > 0) {
@@ -2283,6 +2380,9 @@ function getImage(entry, width = 0, height = 0, format = "match") {
       return proxifyImageSrc(meta.image[0], 0, 0, format);
     }
     return proxifyImageSrc(meta.image[0], width, height, format);
+  }
+  if (fastMode) {
+    return fastBodyImage(entry.body, width, height, format);
   }
   const fast = findFirstImageUrl(entry.body);
   if (fast) {
@@ -2327,8 +2427,12 @@ function getEntryImageRawUrl(obj) {
   const bodySrc = findFirstImageUrl(obj.body, true);
   return bodySrc ? decodeImageSrc(bodySrc) : null;
 }
-function catchPostImage(obj, width = 0, height = 0, format = "match") {
+function catchPostImage(obj, width = 0, height = 0, format = "match", options = {}) {
+  const fastMode = options.fast === true;
   if (typeof obj === "string") {
+    if (fastMode) {
+      return fastBodyImage(obj, width, height, format);
+    }
     const fast = findFirstImageUrl(obj);
     if (fast) {
       return proxifyFound(fast, width, height, format);
@@ -2348,12 +2452,12 @@ function catchPostImage(obj, width = 0, height = 0, format = "match") {
     }
     return null;
   }
-  const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}`;
+  const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}${fastMode ? "-fast" : ""}`;
   const item = cacheGet(key);
-  if (item) {
+  if (item !== void 0) {
     return item;
   }
-  const res = getImage(obj, width, height, format);
+  const res = getImage(obj, width, height, format, fastMode);
   cacheSet(key, res);
   return res;
 }

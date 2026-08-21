@@ -24,6 +24,12 @@ const BACKTICK_FENCE_RE = /```[\s\S]*?```/g
 const TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g
 const INLINE_CODE_RE = /`[^`\n]*`/g
 const INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm
+// HTML regions whose text never reaches the page as an image: comments and
+// <style> (dropped by the sanitizer) and <pre> (the renderer leaves its text
+// alone). Verified against the renderer: a URL inside <code> or <script> text
+// IS linkified into an image, so those are not listed. Lazy bodies bounded by
+// the closing marker: linear on untrusted input.
+const HTML_HIDDEN_RE = /<!--[\s\S]*?-->|<(style|pre)\b[^>]*>[\s\S]*?<\/\1\s*>/gi
 // Requires a closing `)` so broken syntax like `![](url` (no close) doesn't
 // match. Also tolerates the optional title form `![](url "title")`. The alt-text
 // class excludes `[` (so a `![a](`/`![[[…` run can't be re-scanned at every start),
@@ -47,12 +53,42 @@ const HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i
 // does NOT surface as a standalone image. Same extension set as the renderer's
 // IMG_REGEX. Linear-time: one bounded char class + a single greedy `+`, no
 // nested quantifier.
-const BARE_IMAGE_RE = /(^|\s|>)(https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)(?:[?#][^\s<>"'()[\]]*)?)/im
+// Every occurrence is a candidate; isStandalone() then rejects the ones that
+// sit inside another construct (see there). Global, so matchAll can walk them
+// in source order.
+const BARE_IMAGE_RE = /https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)(?:[?#][^\s<>"'()[\]]*)?/gi
 // A bare YouTube URL (text.method) or a `[url](url)` YouTube link (a.method)
 // renders as a poster <img> for https://img.youtube.com/vi/<id>/hqdefault.jpg.
-// Same standalone-position rule as BARE_IMAGE_RE; the id itself is then read
-// with the renderer's own YOUTUBE_REGEX so the two can never disagree.
-const BARE_YOUTUBE_RE = /(^|\s|>)(https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\/[^\s<>"'()[\]]+)/im
+// Any subdomain (music., m., www.); the id itself is then read with the
+// renderer's own YOUTUBE_REGEX so the two can never disagree.
+const BARE_YOUTUBE_RE = /https?:\/\/(?:[\w-]+\.)*(?:youtube\.com|youtu\.be)\/[^\s<>"'()[\]]+/gi
+
+// Whether a URL found at `idx` stands on its own in prose, which is what the
+// renderer linkifies into an image or a video poster. Verified against the
+// renderer: it does so after whitespace, a closing `>`, and inside
+// parentheses, emphasis or quotes alike. It does NOT when the URL is:
+//   - glued to another token (a longer URL, a word, `=`), or
+//   - the href of a markdown link `[label](href)`, or the label's start `[`
+//     (the `[url](url)` image-link form is found by the link scan instead), or
+//   - an attribute value (`src="..."`, `href='...'`), or
+//   - a markdown image `![alt](href)` (handled by the markdown scan).
+function isStandalone(text: string, idx: number): boolean {
+  if (idx === 0) return true
+  const prev = text[idx - 1]
+  if (/[\w/.:%?&=#[!-]/.test(prev)) return false
+  const prev2 = idx > 1 ? text[idx - 2] : ''
+  if (prev === '(' && prev2 === ']') return false
+  if ((prev === '"' || prev === "'") && prev2 === '=') return false
+  return true
+}
+
+function firstStandalone(text: string, re: RegExp): { url: string; pos: number } | null {
+  for (const m of text.matchAll(re)) {
+    const idx = m.index ?? 0
+    if (isStandalone(text, idx)) return { url: m[0], pos: idx }
+  }
+  return null
+}
 // An HTML anchor. Its text sits right after a `>`, so the standalone-position
 // rule above would read an image or video URL used as link TEXT as a bare URL.
 // The renderer only promotes such an anchor when the text equals the href
@@ -94,7 +130,7 @@ const SAFE_URL_RE = /^https?:\/\//i
  *   byte-identical.
  */
 function findFirstImageUrl(body: string, includeBareUrls = false): string | null {
-  return findFirstImageCandidate(body, includeBareUrls)?.url ?? null
+  return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null
 }
 
 function stripCodeRegions(body: string): string {
@@ -103,14 +139,31 @@ function stripCodeRegions(body: string): string {
     .replace(TILDE_FENCE_RE, '')
     .replace(INLINE_CODE_RE, '')
     .replace(INDENTED_CODE_RE, '')
+    .replace(HTML_HIDDEN_RE, '')
 }
 
 // Blank (offset-preserving, so positions stay comparable) every anchor whose
-// text is not its href. See HTML_ANCHOR_RE.
+// text is not its href. Both sides are entity-decoded first, the way the
+// renderer sees them (textContent vs getAttribute). See HTML_ANCHOR_RE.
 function blankUnequalAnchors(cleaned: string): string {
   return cleaned.replace(HTML_ANCHOR_RE, (whole: string, href: string, text: string) =>
-    text.trim() === href ? whole : ' '.repeat(whole.length)
+    decodeEntities(text.trim()) === decodeEntities(href.trim()) ? whole : ' '.repeat(whole.length)
   )
+}
+
+/**
+ * The body with every region the page never shows removed, plus the same text
+ * with non-promoted anchors blanked for the bare-URL scans. Computed once per
+ * lookup; every scan below works on these.
+ */
+interface PreparedBody {
+  cleaned: string
+  blanked: string
+}
+
+function prepareBody(body: string): PreparedBody {
+  const cleaned = body ? stripCodeRegions(body) : ''
+  return { cleaned, blanked: cleaned ? blankUnequalAnchors(cleaned) : '' }
 }
 
 interface ImageCandidate {
@@ -124,15 +177,15 @@ interface ImageCandidate {
  * URL in the body, with its position, or null. Fast-mode only: the full render
  * discovers these itself through text.method / a.method.
  */
-function findFirstVideoPoster(body: string): ImageCandidate | null {
-  if (!body) return null
-  const cleaned = stripCodeRegions(body)
-  const bare = blankUnequalAnchors(cleaned).match(BARE_YOUTUBE_RE)
+function findFirstVideoPoster(prepared: PreparedBody): ImageCandidate | null {
+  const { cleaned, blanked } = prepared
+  if (!cleaned) return null
+  const bare = firstStandalone(blanked, BARE_YOUTUBE_RE)
   let best: ImageCandidate | null = null
-  if (bare && bare[2]) {
-    const id = bare[2].match(YOUTUBE_REGEX)
+  if (bare) {
+    const id = bare.url.match(YOUTUBE_REGEX)
     if (id && id[1]) {
-      best = { url: id[1], pos: (bare.index ?? 0) + bare[1].length }
+      best = { url: id[1], pos: bare.pos }
     }
   }
   // `[url](url)` form: a.method turns a link whose text equals its href into
@@ -155,9 +208,23 @@ function findFirstVideoPoster(body: string): ImageCandidate | null {
   return { url: `https://img.youtube.com/vi/${best.url.split('?')[0]}/hqdefault.jpg`, pos: best.pos }
 }
 
-function findFirstImageCandidate(body: string, includeBareUrls = false): ImageCandidate | null {
-  if (!body) return null
-  const cleaned = stripCodeRegions(body)
+interface CandidateResult {
+  candidate: ImageCandidate | null
+  /**
+   * A markdown image is present but the regex refused to decide (a URL with a
+   * parenthesis, one over the length bound, broken syntax before the capture).
+   * The full render resolves it; a regex-only caller must not pick anything
+   * else in its place.
+   */
+  ambiguous: boolean
+}
+
+const NONE: CandidateResult = { candidate: null, ambiguous: false }
+const AMBIGUOUS: CandidateResult = { candidate: null, ambiguous: true }
+
+function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false): CandidateResult {
+  const { cleaned, blanked } = prepared
+  if (!cleaned) return NONE
 
   const mdMatch = cleaned.match(MD_IMAGE_RE)
   const htmlMatch = cleaned.match(HTML_IMAGE_RE)
@@ -170,7 +237,7 @@ function findFirstImageCandidate(body: string, includeBareUrls = false): ImageCa
   if (mdMatch) {
     const url = mdMatch[1]
     if (!url || !SAFE_URL_RE.test(url) || url.includes('(')) {
-      return null
+      return AMBIGUOUS
     }
   }
   // MD_IMAGE_RE is unanchored, so a markdown image can go uncaptured (URL over the length
@@ -180,7 +247,7 @@ function findFirstImageCandidate(body: string, includeBareUrls = false): ImageCa
   // candidate.
   const priorRegion = mdMatch ? cleaned.slice(0, mdMatch.index ?? 0) : cleaned
   if (MD_IMAGE_PRESENT_RE.test(priorRegion)) {
-    return null
+    return AMBIGUOUS
   }
 
   // Collect valid candidates with their source position; the rendered document
@@ -191,10 +258,9 @@ function findFirstImageCandidate(body: string, includeBareUrls = false): ImageCa
     candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0 })
   }
   if (includeBareUrls) {
-    const bareMatch = blankUnequalAnchors(cleaned).match(BARE_IMAGE_RE)
-    if (bareMatch && bareMatch[2] && SAFE_URL_RE.test(bareMatch[2])) {
-      // position of the URL itself, past the leading start/whitespace (group 1)
-      candidates.push({ url: bareMatch[2], pos: (bareMatch.index ?? 0) + bareMatch[1].length })
+    const bareMatch = firstStandalone(blanked, BARE_IMAGE_RE)
+    if (bareMatch && SAFE_URL_RE.test(bareMatch.url)) {
+      candidates.push(bareMatch)
     }
     // `[url](url)` image-link form: a markdown link the renderer promotes to an
     // image (a.method) — href is an image URL and the label text equals it.
@@ -211,9 +277,9 @@ function findFirstImageCandidate(body: string, includeBareUrls = false): ImageCa
     }
   }
 
-  if (candidates.length === 0) return null
+  if (candidates.length === 0) return NONE
   candidates.sort((a, b) => a.pos - b.pos)
-  return candidates[0]
+  return { candidate: candidates[0], ambiguous: false }
 }
 
 /**
@@ -223,17 +289,23 @@ function findFirstImageCandidate(body: string, includeBareUrls = false): ImageCa
  * proxied URL the full render's first <img> would have carried, or null.
  */
 function fastBodyImage(body: string, width: number, height: number, format: string): string | null {
+  const prepared = prepareBody(body)
   // Same precedence as the full lookup: a markdown or HTML image found by the
   // regex wins outright, because the full lookup returns it before it would
   // ever render the markdown and notice an earlier poster or bare URL.
-  const strict = findFirstImageCandidate(body, false)
-  if (strict) {
-    return proxifyFound(strict.url, width, height, format)
+  const strict = findFirstImageCandidate(prepared, false)
+  if (strict.candidate) {
+    return proxifyFound(strict.candidate.url, width, height, format)
+  }
+  // A markdown image the regex could not decide on: the full render would
+  // resolve it, and it may well come first. Nothing else may stand in for it.
+  if (strict.ambiguous) {
+    return null
   }
   // Otherwise the full lookup would render and take the first <img> in source
   // order, which is a bare image URL or a video poster.
-  const bare = findFirstImageCandidate(body, true)
-  const poster = findFirstVideoPoster(body)
+  const bare = findFirstImageCandidate(prepared, true).candidate
+  const poster = findFirstVideoPoster(prepared)
   if (poster && (!bare || poster.pos < bare.pos)) {
     // The rendered poster <img> carries the 0x0 proxied URL; re-proxying it at
     // the requested size is exactly what the full render path does with it.
@@ -246,11 +318,11 @@ function fastBodyImage(body: string, width: number, height: number, format: stri
 // seen as a string, an array of strings, an array with junk in it, and a
 // non-array. Return the first usable URL or undefined, never throw.
 function firstMetaUrl(value: unknown): string | undefined {
-  if (typeof value === 'string' && value.length > 0) {
+  if (typeof value === 'string' && value.trim().length > 0) {
     return value
   }
   if (Array.isArray(value)) {
-    return value.find((url): url is string => typeof url === 'string' && url.length > 0)
+    return value.find((url): url is string => typeof url === 'string' && url.trim().length > 0)
   }
   return undefined
 }
@@ -282,13 +354,17 @@ function getImage(entry: Entry, width = 0, height = 0, format = 'match', fastMod
   // An explicit thumbnail wins over the cover image: `thumbnails` exists for
   // exactly this purpose (3Speak, Liketu, the editor's thumbnail picker) and
   // publishers do set it to something other than the first body image.
+  // A thumbnail that does not proxify (malformed, over the length bound) must
+  // not suppress a valid cover below, so only a non-empty result is returned.
   const thumbnail = firstMetaUrl(meta?.thumbnails)
   if (thumbnail) {
     const decodedThumbnail = decodeEntities(thumbnail)
-    if (isGifLink(decodedThumbnail)) {
-      return proxifyImageSrc(decodedThumbnail, 0, 0, format)
+    const proxied = isGifLink(decodedThumbnail)
+      ? proxifyImageSrc(decodedThumbnail, 0, 0, format)
+      : proxifyImageSrc(decodedThumbnail, width, height, format)
+    if (proxied) {
+      return proxied
     }
-    return proxifyImageSrc(decodedThumbnail, width, height, format)
   }
 
   if (meta && typeof meta.image === 'string' && meta.image.length > 0) {
