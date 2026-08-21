@@ -88,10 +88,11 @@ services:
       - SEO_CRON_SECRET
       # Server-side read-through RPC proxy (core/sdk-init.ts): reads go to
       # vapi's /private-api/ssr/rpc over the overlay, with fallback to the node
-      # pool on any failure. Needs the same secret vapi was given above; the
-      # flag switches it on per deployment.
+      # pool on any failure. Needs the same secret vapi was given above. The
+      # switch is an explicit value here, not a passthrough: production flips
+      # to 1 through a reviewed change to this line, after the alpha soak.
       - SSR_INTERNAL_SECRET
-      - SSR_RPC_PROXY
+      - SSR_RPC_PROXY=0
       # Newsletter service (ecency/news), single instance on the EU box. EU reaches it
       # on the swarm gateway address, US through the IP-allowlisted TLS relay on the EU
       # origin; each deploy job supplies its own URL and refuses to deploy without them.

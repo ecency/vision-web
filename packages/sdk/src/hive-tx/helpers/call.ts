@@ -53,30 +53,57 @@ function serverIdentityHeaders(): Record<string, string> {
 export const rpcProxyStats = {
   served: 0,
   fallback: 0,
+  /** Reads that went straight to the nodes because the breaker was open. */
+  skipped: 0,
   fallbackByReason: { status: 0, timeout: 0, transport: 0, validate: 0, parse: 0 } as Record<string, number>
 }
 
+type ProxyMissReason = 'status' | 'timeout' | 'transport' | 'validate' | 'parse'
+
 class ProxyMiss extends Error {
-  constructor(public reason: keyof typeof rpcProxyStats.fallbackByReason, message: string) {
+  constructor(
+    public reason: ProxyMissReason,
+    message: string
+  ) {
     super(message)
   }
+}
+
+const errorMessage = (e: unknown): string =>
+  e instanceof Error ? e.message : typeof e === 'string' ? e : String(e)
+
+// Breaker: consecutive misses open it for the configured cooldown, a served
+// call closes it. Module state, like the health tracker: one per process.
+let proxyConsecutiveMisses = 0
+let proxyOpenUntil = 0
+
+/** Test seam: forget breaker state. */
+export function resetRpcProxyBreaker(): void {
+  proxyConsecutiveMisses = 0
+  proxyOpenUntil = 0
 }
 
 /**
  * One proxy call for an eligible read. Resolves with the upstream `result` the
  * proxy served, or throws ProxyMiss; the caller then continues with the node
- * loop exactly as if the proxy did not exist. Never throws anything else.
+ * loop exactly as if the proxy did not exist. Never throws anything else,
+ * except the caller's own abort.
  */
 async function proxyRpcCall<T>(
   method: string,
-  params: any,
+  params: unknown,
   externalSignal: AbortSignal | undefined,
   validate?: (result: unknown) => boolean
 ): Promise<T> {
   const proxy = serverRpcProxy!
+  const dot = method.indexOf('.')
+  if (dot <= 0 || dot === method.length - 1) {
+    // Unreachable through setServerRpcProxy (it keeps only dotted names), kept
+    // so a future allowlist change fails as a miss rather than a malformed call.
+    throw new ProxyMiss('transport', `method without an api prefix: ${method}`)
+  }
   const { signal: tSignal, cleanup: cleanupTimeout } = createTimeoutSignal(proxy.timeoutMs)
   const { signal, cleanup: cleanupMerge } = mergeSignals(tSignal, externalSignal)
-  const dot = method.indexOf('.')
   try {
     let res: Response
     try {
@@ -86,9 +113,9 @@ async function proxyRpcCall<T>(
         headers: { 'Content-Type': 'application/json', ...serverIdentityHeaders(), ...proxy.headers },
         signal
       })
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (externalSignal?.aborted) throw e
-      throw new ProxyMiss(tSignal.aborted ? 'timeout' : 'transport', String(e?.message ?? e))
+      throw new ProxyMiss(tSignal.aborted ? 'timeout' : 'transport', errorMessage(e))
     }
     if (res.status !== 200) {
       throw new ProxyMiss('status', `proxy answered ${res.status}`)
@@ -96,9 +123,9 @@ async function proxyRpcCall<T>(
     let result: unknown
     try {
       result = await res.json()
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (externalSignal?.aborted) throw e
-      throw new ProxyMiss(tSignal.aborted ? 'timeout' : 'parse', String(e?.message ?? e))
+      throw new ProxyMiss(tSignal.aborted ? 'timeout' : 'parse', errorMessage(e))
     }
     if (validate && !validate(result)) {
       throw new ProxyMiss('validate', 'proxy result rejected by validator')
@@ -1413,15 +1440,24 @@ export const callRPC = async <T = any>(
   // It runs BEFORE the node deadline is taken, so a slow proxy costs its own
   // timeout and nothing of the failover budget the nodes get today.
   if (serverRpcProxy && isNodeRuntime && serverRpcProxy.methodSet.has(method)) {
-    try {
-      const served = await proxyRpcCall<T>(method, params, signal, validate)
-      rpcProxyStats.served++
-      return served
-    } catch (e: any) {
-      if (signal?.aborted) throw e
-      rpcProxyStats.fallback++
-      const reason: string = e instanceof ProxyMiss ? e.reason : 'transport'
-      rpcProxyStats.fallbackByReason[reason] = (rpcProxyStats.fallbackByReason[reason] ?? 0) + 1
+    if (Date.now() < proxyOpenUntil) {
+      rpcProxyStats.skipped++
+    } else {
+      try {
+        const served = await proxyRpcCall<T>(method, params, signal, validate)
+        rpcProxyStats.served++
+        proxyConsecutiveMisses = 0
+        return served
+      } catch (e: unknown) {
+        if (signal?.aborted) throw e
+        rpcProxyStats.fallback++
+        const reason: string = e instanceof ProxyMiss ? e.reason : 'transport'
+        rpcProxyStats.fallbackByReason[reason] = (rpcProxyStats.fallbackByReason[reason] ?? 0) + 1
+        if (++proxyConsecutiveMisses >= serverRpcProxy.failureThreshold) {
+          proxyOpenUntil = Date.now() + serverRpcProxy.cooldownMs
+          proxyConsecutiveMisses = 0
+        }
+      }
     }
   }
 

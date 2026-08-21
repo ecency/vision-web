@@ -217,7 +217,7 @@ declare class Asset {
      */
     static from(value: number | string | Asset, symbol?: string | null): Asset;
     /** Return asset precision. */
-    getPrecision(): 6 | 3;
+    getPrecision(): 3 | 6;
     /** Return a string representation of this asset, e.g. `42.000 HIVE`. */
     toString(): string;
     toJSON(): string;
@@ -687,8 +687,12 @@ type APIMethods = 'balance' | 'hafah' | 'hafbe' | 'hivemind' | 'hivesense' | 're
 declare const rpcProxyStats: {
     served: number;
     fallback: number;
+    /** Reads that went straight to the nodes because the breaker was open. */
+    skipped: number;
     fallbackByReason: Record<string, number>;
 };
+/** Test seam: forget breaker state. */
+declare function resetRpcProxyBreaker(): void;
 declare class RPCError extends Error {
     name: string;
     data?: any;
@@ -922,6 +926,13 @@ interface ServerRpcProxyOptions {
     /** Fully qualified method names (`bridge.get_post`) the proxy may answer;
      * omitted = DEFAULT_SERVER_RPC_PROXY_METHODS. An empty list is ignored. */
     methods?: string[];
+    /**
+     * After this many consecutive proxy misses the proxy is skipped for
+     * `cooldownMs`, so a proxy that is down costs one failed call per cooldown
+     * window rather than one per read. Default 3 / 10s. A served call resets it.
+     */
+    failureThreshold?: number;
+    cooldownMs?: number;
 }
 /** Default allowlist: the reads a server render makes and the proxy caches. */
 declare const DEFAULT_SERVER_RPC_PROXY_METHODS: readonly string[];
@@ -1142,4 +1153,4 @@ declare namespace utils {
   export { type utils_WitnessProps as WitnessProps, utils_buildWitnessSetProperties as buildWitnessSetProperties, utils_makeBitMaskFilter as makeBitMaskFilter, utils_operations as operations, utils_validateUsername as validateUsername };
 }
 
-export { type FeedPublishOperation as $, type APIMethods as A, type BroadcastResult as B, type CustomJsonOperation as C, type ClaimRewardBalanceOperation as D, type CollateralizedConvertOperation as E, type CommentOperation as F, type CommentOptionsOperation as G, type ConvertOperation as H, type CreateClaimedAccountOperation as I, type CreateProposalOperation as J, type CustomOperation as K, DEFAULT_SERVER_RPC_PROXY_METHODS as L, Memo as M, type DeclineVotingRightsOperation as N, type Operation as O, PrivateKey as P, type DelegateVestingSharesOperation as Q, type ResilienceOptions as R, type ServerRpcProxyOptions as S, Transaction as T, type DeleteCommentOperation as U, type DigestData as V, type EscrowApproveOperation as W, type EscrowDisputeOperation as X, type EscrowReleaseOperation as Y, type EscrowTransferOperation as Z, type Extension as _, type Authority as a, type LimitOrderCancelOperation as a0, type LimitOrderCreate2Operation as a1, type LimitOrderCreateOperation as a2, type Price as a3, RPCError as a4, type RecoverAccountOperation as a5, type RecurrentTransferOperation as a6, type RemoveProposalOperation as a7, type RequestAccountRecoveryOperation as a8, type ResetAccountOperation as a9, type SetResetAccountOperation as aa, type SetWithdrawVestingRouteOperation as ab, type TransactionStatus as ac, type TransactionType as ad, type TransferFromSavingsOperation as ae, type TransferOperation as af, type TransferToSavingsOperation as ag, type TransferToVestingOperation as ah, type UpdateProposalOperation as ai, type UpdateProposalVotesOperation as aj, type VoteOperation as ak, type WithdrawVestingOperation as al, type WitnessProps$1 as am, type WitnessSetPropertiesOperation as an, type WitnessSetPropertiesParams as ao, type WitnessUpdateOperation as ap, rpcProxyStats as aq, setNodes as ar, setResilience as as, setRestNodes as at, setRestNodesByApi as au, setServerRpcProxy as av, setUserAgent as aw, PublicKey as b, type OperationName as c, type AccountCreateOperation as d, type AssetSymbol as e, type OperationBody as f, Signature as g, callREST as h, callRPC as i, callRPCBroadcast as j, callWithQuorum as k, config as l, type AccountCreateWithDelegationOperation as m, type AccountUpdate2Operation as n, operations as o, type AccountUpdateOperation as p, type AccountWitnessProxyOperation as q, type AccountWitnessVoteOperation as r, type Beneficiary as s, type BroadcastError as t, utils as u, type CallResponse as v, type CancelTransferFromSavingsOperation as w, type ChainProperties as x, type ChangeRecoveryAccountOperation as y, type ClaimAccountOperation as z };
+export { type FeedPublishOperation as $, type APIMethods as A, type BroadcastResult as B, type CustomJsonOperation as C, type ClaimRewardBalanceOperation as D, type CollateralizedConvertOperation as E, type CommentOperation as F, type CommentOptionsOperation as G, type ConvertOperation as H, type CreateClaimedAccountOperation as I, type CreateProposalOperation as J, type CustomOperation as K, DEFAULT_SERVER_RPC_PROXY_METHODS as L, Memo as M, type DeclineVotingRightsOperation as N, type Operation as O, PrivateKey as P, type DelegateVestingSharesOperation as Q, type ResilienceOptions as R, type ServerRpcProxyOptions as S, Transaction as T, type DeleteCommentOperation as U, type DigestData as V, type EscrowApproveOperation as W, type EscrowDisputeOperation as X, type EscrowReleaseOperation as Y, type EscrowTransferOperation as Z, type Extension as _, type Authority as a, type LimitOrderCancelOperation as a0, type LimitOrderCreate2Operation as a1, type LimitOrderCreateOperation as a2, type Price as a3, RPCError as a4, type RecoverAccountOperation as a5, type RecurrentTransferOperation as a6, type RemoveProposalOperation as a7, type RequestAccountRecoveryOperation as a8, type ResetAccountOperation as a9, type SetResetAccountOperation as aa, type SetWithdrawVestingRouteOperation as ab, type TransactionStatus as ac, type TransactionType as ad, type TransferFromSavingsOperation as ae, type TransferOperation as af, type TransferToSavingsOperation as ag, type TransferToVestingOperation as ah, type UpdateProposalOperation as ai, type UpdateProposalVotesOperation as aj, type VoteOperation as ak, type WithdrawVestingOperation as al, type WitnessProps$1 as am, type WitnessSetPropertiesOperation as an, type WitnessSetPropertiesParams as ao, type WitnessUpdateOperation as ap, resetRpcProxyBreaker as aq, rpcProxyStats as ar, setNodes as as, setResilience as at, setRestNodes as au, setRestNodesByApi as av, setServerRpcProxy as aw, setUserAgent as ax, PublicKey as b, type OperationName as c, type AccountCreateOperation as d, type AssetSymbol as e, type OperationBody as f, Signature as g, callREST as h, callRPC as i, callRPCBroadcast as j, callWithQuorum as k, config as l, type AccountCreateWithDelegationOperation as m, type AccountUpdate2Operation as n, operations as o, type AccountUpdateOperation as p, type AccountWitnessProxyOperation as q, type AccountWitnessVoteOperation as r, type Beneficiary as s, type BroadcastError as t, utils as u, type CallResponse as v, type CancelTransferFromSavingsOperation as w, type ChainProperties as x, type ChangeRecoveryAccountOperation as y, type ClaimAccountOperation as z };

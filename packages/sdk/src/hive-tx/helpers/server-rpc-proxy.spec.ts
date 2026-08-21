@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { callRPC, rpcProxyStats } from "./call";
+import { callRPC, resetRpcProxyBreaker, rpcProxyStats } from "./call";
 import { config, serverRpcProxy, setServerRpcProxy, DEFAULT_SERVER_RPC_PROXY_METHODS } from "../config";
 
 const ORIGINAL_NODES = [...config.nodes];
@@ -14,17 +14,23 @@ function rpcOk(id: number, result: unknown): Response {
     headers: { "Content-Type": "application/json" }
   });
 }
+type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+const mockFetch = (impl: FetchImpl) => vi.spyOn(globalThis, "fetch").mockImplementation(impl as typeof fetch);
+const bodyOf = (init?: RequestInit): Record<string, unknown> => JSON.parse(String(init?.body)) as Record<string, unknown>;
 function idOf(init?: RequestInit): number {
   try {
-    return JSON.parse(String(init?.body)).id ?? 0;
+    const id = bodyOf(init).id;
+    return typeof id === "number" ? id : 0;
   } catch {
     return 0;
   }
 }
-function resetStats() {
+function resetStats(): void {
   rpcProxyStats.served = 0;
   rpcProxyStats.fallback = 0;
+  rpcProxyStats.skipped = 0;
   for (const k of Object.keys(rpcProxyStats.fallbackByReason)) rpcProxyStats.fallbackByReason[k] = 0;
+  resetRpcProxyBreaker();
 }
 
 beforeEach(() => {
@@ -41,9 +47,9 @@ afterEach(() => {
 
 describe("server-side RPC proxy", () => {
   it("answers an allowlisted read from the proxy and never touches a node", async () => {
-    const calls: Array<{ url: string; body: any; headers: Record<string, string> }> = [];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
-      calls.push({ url: String(input), body: JSON.parse(String(init.body)), headers: init.headers });
+    const calls: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = [];
+    mockFetch(async (input, init) => {
+      calls.push({ url: String(input), body: bodyOf(init), headers: init?.headers as Record<string, string> });
       return jsonOk({ author: "a", permlink: "b" });
     });
     const post = await callRPC("bridge.get_post", { author: "a", permlink: "b" });
@@ -57,9 +63,9 @@ describe("server-side RPC proxy", () => {
   });
 
   it("sends condenser params as the array the caller passed", async () => {
-    const bodies: any[] = [];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (_: any, init: any) => {
-      bodies.push(JSON.parse(String(init.body)));
+    const bodies: Array<Record<string, unknown>> = [];
+    mockFetch(async (_input, init) => {
+      bodies.push(bodyOf(init));
       return jsonOk([{ name: "alice" }]);
     });
     await callRPC("condenser_api.get_accounts", [["alice"]]);
@@ -68,7 +74,7 @@ describe("server-side RPC proxy", () => {
 
   it("goes straight to the nodes for a method outside the allowlist", async () => {
     const urls: string[] = [];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+    mockFetch(async (input, init) => {
       urls.push(String(input));
       return rpcOk(idOf(init), { ok: true });
     });
@@ -85,7 +91,7 @@ describe("server-side RPC proxy", () => {
   ] as const) {
     it(`falls back to the node pool on ${label} and the result is what the node said`, async () => {
       const urls: string[] = [];
-      vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      mockFetch(async (input, init) => {
         urls.push(String(input));
         if (String(input) === PROXY) return answer();
         return rpcOk(idOf(init), { from: "node" });
@@ -101,11 +107,11 @@ describe("server-side RPC proxy", () => {
 
   it("falls back when the proxy exceeds its timeout", async () => {
     const urls: string[] = [];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+    mockFetch(async (input, init) => {
       urls.push(String(input));
       if (String(input) === PROXY) {
         return new Promise<Response>((_, reject) => {
-          init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
         });
       }
       return rpcOk(idOf(init), { from: "node" });
@@ -121,11 +127,11 @@ describe("server-side RPC proxy", () => {
     // node would never be tried after the first one fails.
     setServerRpcProxy({ url: PROXY, headers: {}, timeoutMs: 250 });
     const urls: string[] = [];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+    mockFetch(async (input, init) => {
       urls.push(String(input));
       if (String(input) === PROXY) {
         return new Promise<Response>((_, reject) => {
-          init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
         });
       }
       if (String(input) === "https://node-a.test") return new Response("down", { status: 503 });
@@ -138,7 +144,7 @@ describe("server-side RPC proxy", () => {
   });
 
   it("falls back when the caller's validator rejects the proxy result", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+    mockFetch(async (input, init) => {
       if (String(input) === PROXY) return jsonOk(null);
       return rpcOk(idOf(init), [{ name: "alice" }]);
     });
@@ -149,9 +155,9 @@ describe("server-side RPC proxy", () => {
 
   it("propagates the caller's abort instead of falling back", async () => {
     const ctl = new AbortController();
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (_: any, init: any) => {
+    mockFetch(async (_input, init) => {
       return new Promise<Response>((_, reject) => {
-        init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
         ctl.abort();
       });
     });
@@ -159,10 +165,49 @@ describe("server-side RPC proxy", () => {
     expect(rpcProxyStats.fallback).toBe(0);
   });
 
+  it("opens a breaker after consecutive misses and skips the proxy for the cooldown", async () => {
+    setServerRpcProxy({ url: PROXY, headers: {}, timeoutMs: 500, failureThreshold: 2, cooldownMs: 300 });
+    const urls: string[] = [];
+    mockFetch(async (input, init) => {
+      urls.push(String(input));
+      if (String(input) === PROXY) return jsonOk({ error: "down" }, 502);
+      return rpcOk(idOf(init), { from: "node" });
+    });
+    await callRPC("bridge.get_post", { author: "a", permlink: "1" });
+    await callRPC("bridge.get_post", { author: "a", permlink: "2" });
+    // Two misses opened it: the third read never touches the proxy.
+    await callRPC("bridge.get_post", { author: "a", permlink: "3" });
+    expect(urls.filter((u) => u === PROXY)).toHaveLength(2);
+    expect(rpcProxyStats.skipped).toBe(1);
+    // After the cooldown the proxy is tried again.
+    await new Promise((r) => setTimeout(r, 350));
+    await callRPC("bridge.get_post", { author: "a", permlink: "4" });
+    expect(urls.filter((u) => u === PROXY)).toHaveLength(3);
+  });
+
+  it("a served call closes the breaker count", async () => {
+    setServerRpcProxy({ url: PROXY, headers: {}, timeoutMs: 500, failureThreshold: 2, cooldownMs: 300 });
+    let fail = true;
+    const urls: string[] = [];
+    mockFetch(async (input, init) => {
+      urls.push(String(input));
+      if (String(input) === PROXY) return fail ? jsonOk({ error: "down" }, 502) : jsonOk({ ok: true });
+      return rpcOk(idOf(init), { from: "node" });
+    });
+    await callRPC("bridge.get_post", { author: "a", permlink: "1" }); // miss 1
+    fail = false;
+    await callRPC("bridge.get_post", { author: "a", permlink: "2" }); // served, count reset
+    fail = true;
+    await callRPC("bridge.get_post", { author: "a", permlink: "3" }); // miss 1 again, still closed
+    await callRPC("bridge.get_post", { author: "a", permlink: "4" }); // proxy still tried
+    expect(urls.filter((u) => u === PROXY)).toHaveLength(4);
+    expect(rpcProxyStats.skipped).toBe(0);
+  });
+
   it("is inert when switched off", async () => {
     setServerRpcProxy(null);
     const urls: string[] = [];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+    mockFetch(async (input, init) => {
       urls.push(String(input));
       return rpcOk(idOf(init), { from: "node" });
     });

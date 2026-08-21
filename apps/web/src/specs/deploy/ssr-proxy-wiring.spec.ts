@@ -38,13 +38,15 @@ describe("ssr rpc proxy deploy wiring", () => {
       expect(envEntries(serviceBlock(compose, "vapi")), `${file}: vapi`).toContain("SSR_INTERNAL_SECRET");
       const web = envEntries(serviceBlock(compose, "web"));
       expect(web, `${file}: web`).toContain("SSR_INTERNAL_SECRET");
-      expect(web.some((e) => e === "SSR_RPC_PROXY" || e === "SSR_RPC_PROXY=1"), `${file}: web switch`).toBe(true);
+      expect(web.some((e) => e === "SSR_RPC_PROXY=0" || e === "SSR_RPC_PROXY=1"), `${file}: web switch`).toBe(true);
     }
   );
 
-  it("alpha has the switch on, production leaves it to the deploy", () => {
+  it("alpha has the switch on; production carries an explicit value, never a bare passthrough", () => {
     expect(envEntries(serviceBlock(read("apps/web/docker-compose.yml"), "web"))).toContain("SSR_RPC_PROXY=1");
-    expect(envEntries(serviceBlock(read("apps/web/docker-compose.production.yml"), "web"))).toContain("SSR_RPC_PROXY");
+    const prod = envEntries(serviceBlock(read("apps/web/docker-compose.production.yml"), "web"));
+    expect(prod).not.toContain("SSR_RPC_PROXY");
+    expect(prod.some((e) => /^SSR_RPC_PROXY=[01]$/.test(e))).toBe(true);
   });
 
   it.each(["master.yml", "staging.yml"])(".github/workflows/%s forwards the secret end to end", (file) => {

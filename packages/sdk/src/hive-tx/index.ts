@@ -1,6 +1,6 @@
 export { Transaction } from './Transaction'
 export { PrivateKey } from './helpers/PrivateKey'
-export { callRPC, callRPCBroadcast, callREST, callWithQuorum, RPCError, rpcProxyStats } from './helpers/call'
+export { callRPC, callRPCBroadcast, callREST, callWithQuorum, RPCError, rpcProxyStats, resetRpcProxyBreaker } from './helpers/call'
 export {
   config,
   setNodes,

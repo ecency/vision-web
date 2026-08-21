@@ -172,6 +172,13 @@ export interface ServerRpcProxyOptions {
   /** Fully qualified method names (`bridge.get_post`) the proxy may answer;
    * omitted = DEFAULT_SERVER_RPC_PROXY_METHODS. An empty list is ignored. */
   methods?: string[]
+  /**
+   * After this many consecutive proxy misses the proxy is skipped for
+   * `cooldownMs`, so a proxy that is down costs one failed call per cooldown
+   * window rather than one per read. Default 3 / 10s. A served call resets it.
+   */
+  failureThreshold?: number
+  cooldownMs?: number
 }
 
 /** Default allowlist: the reads a server render makes and the proxy caches. */
@@ -195,7 +202,11 @@ export const DEFAULT_SERVER_RPC_PROXY_METHODS: readonly string[] = [
  * pool). Lives outside `config` so the browser bundle never carries it; it is
  * only ever consulted under Node.
  */
-export let serverRpcProxy: (ServerRpcProxyOptions & { methodSet: Set<string> }) | null = null
+export interface ServerRpcProxyState extends Required<ServerRpcProxyOptions> {
+  methodSet: Set<string>
+}
+
+export let serverRpcProxy: ServerRpcProxyState | null = null
 
 /**
  * Route allowlisted server-side reads through a read-through cache in front
@@ -235,7 +246,17 @@ export const setServerRpcProxy = (opts: ServerRpcProxyOptions | null): void => {
         : []
   // Nothing to route through the proxy: keep whatever was configured before.
   if (methods.length === 0) return
-  serverRpcProxy = { url, headers, timeoutMs, methods, methodSet: new Set(methods) }
+  const pos = (v: unknown, fallback: number): number =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback
+  serverRpcProxy = {
+    url,
+    headers,
+    timeoutMs,
+    methods,
+    failureThreshold: Math.floor(pos(opts.failureThreshold, 3)),
+    cooldownMs: pos(opts.cooldownMs, 10_000),
+    methodSet: new Set(methods)
+  }
 }
 
 /**
