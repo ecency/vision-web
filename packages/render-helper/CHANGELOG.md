@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.28
+
+### Patch Changes
+
+- render-helper: decode entities with entities instead of he (#1606)
+
 ## 2.5.27
 
 ### Patch Changes
