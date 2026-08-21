@@ -10542,7 +10542,8 @@ function stripCodeRegions(body) {
 }
 function blankUnequalAnchors(cleaned, textContent) {
   const lower = cleaned.toLowerCase();
-  let result = cleaned;
+  const parts = [];
+  let from = 0;
   let at = findTag(lower, "<a", 0, OPEN_TAG_NAME_END);
   while (at !== -1) {
     const gt = findOpenTagEnd(lower, at);
@@ -10568,11 +10569,14 @@ function blankUnequalAnchors(cleaned, textContent) {
       text3 = firstTag === -1 ? inner : inner.slice(0, firstTag);
     }
     if (!href || decodeEntities(text3.trim()) !== decodeEntities(href.trim())) {
-      result = result.slice(0, at) + blankChars(result.slice(at, spanEnd)) + result.slice(spanEnd);
+      parts.push(cleaned.slice(from, at), blankChars(cleaned.slice(at, spanEnd)));
+      from = spanEnd;
     }
     at = spanEnd >= cleaned.length ? -1 : findTag(lower, "<a", spanEnd, OPEN_TAG_NAME_END);
   }
-  return result;
+  if (parts.length === 0) return cleaned;
+  parts.push(cleaned.slice(from));
+  return parts.join("");
 }
 var EMPTY_SCAN = { text: "", inTag: new Uint8Array(0) };
 function prepareBody(body) {

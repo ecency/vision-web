@@ -478,7 +478,10 @@ function stripCodeRegions(body: string): string {
 // `>` inside a title must not end it), and the href may be quoted or bare.
 function blankUnequalAnchors(cleaned: string, textContent: boolean): string {
   const lower = cleaned.toLowerCase()
-  let result = cleaned
+  // Output chunks, joined once: rebuilding the string per anchor is quadratic
+  // on a body with thousands of anchors.
+  const parts: string[] = []
+  let from = 0
   let at = findTag(lower, '<a', 0, OPEN_TAG_NAME_END)
   while (at !== -1) {
     const gt = findOpenTagEnd(lower, at)
@@ -507,11 +510,14 @@ function blankUnequalAnchors(cleaned: string, textContent: boolean): string {
       text = firstTag === -1 ? inner : inner.slice(0, firstTag)
     }
     if (!href || decodeEntities(text.trim()) !== decodeEntities(href.trim())) {
-      result = result.slice(0, at) + blankChars(result.slice(at, spanEnd)) + result.slice(spanEnd)
+      parts.push(cleaned.slice(from, at), blankChars(cleaned.slice(at, spanEnd)))
+      from = spanEnd
     }
     at = spanEnd >= cleaned.length ? -1 : findTag(lower, '<a', spanEnd, OPEN_TAG_NAME_END)
   }
-  return result
+  if (parts.length === 0) return cleaned
+  parts.push(cleaned.slice(from))
+  return parts.join('')
 }
 
 /** One scan text plus its inside-a-tag marks. */

@@ -419,6 +419,18 @@ describe('catchPostImage fast mode', () => {
     }
   })
 
+  it('stays linear on a body with thousands of mismatched anchors', () => {
+    const many = Array.from(
+      { length: 20_000 },
+      (_, i) => `<a href="https://example.com/p${i}">https://files.peakd.com/x/t${i}.png</a>`
+    ).join(' ')
+    const started = performance.now()
+    expect(getEntryImageRawUrl(entry(many))).toBeNull()
+    expect(catchPostImage(entry(many), 0, 0, 'match', FAST)).toBeNull()
+    // Generous for slow CI: the quadratic form took over a second at 4,000.
+    expect(performance.now() - started).toBeLessThan(3_000)
+  })
+
   it('does not read an anchor whose first text continues past the href with a literal < as promoted', () => {
     const i = 'https://files.peakd.com/x/lt.png'
     for (const body of [`<a href="${i}">${i} < caption</a>`, `<a href="${i}">${i} <3</a>`]) {
