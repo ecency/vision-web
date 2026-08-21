@@ -43,11 +43,12 @@ const abandonedGraceMs = /^\d{1,6}$/.test(rawGrace || "") ? Number(rawGrace) : 3
 // the Redis-backed sitemap routes. Anything else that reaches this process is
 // work on the render loop and counts: a document, an RSC navigation, an RSS
 // feed (`/@user/rss.xml` renders twenty posts), an agent route
-// (`/@author/permlink.md|.json|.discussion.json` renders the post), and a
-// post whose permlink happens to end like a file (`/@author/post.png` is a
-// valid entry route). That last case is why there is no extension-based
-// bypass at all: every static file this app serves lives under a prefix or
-// at a root path listed here, so a name is the only safe test.
+// (`/@author/permlink.md|.json|.discussion.json`, a suffix the middleware
+// appends to a permlink, renders the post), and an unknown path such as
+// `/@author/post.png` (permlinks never contain a dot, so that is the
+// not-found page, still a render). Hence no extension-based bypass at all:
+// every static file this app serves lives under a prefix or at a root path
+// listed here, so a name is the only safe test.
 const PASS_PREFIXES = ["/_next/", "/api/", "/assets/", "/scripts/", "/geo/", "/dmca/", "/.well-known/", "/sitemap/"];
 const PASS_EXACT = new Set([
   "/favicon.ico",

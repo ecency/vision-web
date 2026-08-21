@@ -131,7 +131,7 @@ describe("ssr-admission preload", () => {
     await a.done;
   });
 
-  it("never sheds the named static paths, and counts everything else including file-like entry routes", async () => {
+  it("never sheds the named static paths, and counts everything else including file-like unknown paths", async () => {
     const { port } = await boot({ SSR_MAX_INFLIGHT: "1" });
     const a = start(port, "/slow/doc");
     await settle();
@@ -161,8 +161,9 @@ describe("ssr-admission preload", () => {
       expect((await get(port, path)).status, path).toBe(200);
     }
     // Everything that renders on the loop is shed while the slot is held: a
-    // page, a dotted username, an RSS feed, the agent routes (rewritten from
-    // .md/.json/.discussion.json) and an unknown data-looking path.
+    // page, a dotted username, an RSS feed, the agent routes (a suffix the
+    // middleware appends to a permlink), and unknown file-looking paths, which
+    // render the not-found page (permlinks never contain a dot).
     for (const path of [
       "/hot",
       "/@demo.com",
