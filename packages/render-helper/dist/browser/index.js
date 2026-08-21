@@ -2280,49 +2280,70 @@ var HTML_BLOCK_TAGS = /* @__PURE__ */ new Set([
   "video"
 ]);
 var HTML_BLOCK_LINE_RE = /^ {0,3}<(?:[!?]|([a-z]{1,15})[\s/>]|\/([a-z]{1,15})[\s>])/;
-function isHtmlBlockLine(lower, at) {
-  const lineStart = at === 0 ? 0 : lower.lastIndexOf("\n", at - 1) + 1;
-  const lineEnd = lower.indexOf("\n", at);
-  const line = lower.slice(lineStart, lineEnd === -1 ? void 0 : lineEnd);
-  const m = HTML_BLOCK_LINE_RE.exec(line);
-  if (!m) return false;
-  const tag = m[1] ?? m[2];
-  return tag === void 0 || HTML_BLOCK_TAGS.has(tag);
+function markHtmlBlockOffsets(lower) {
+  const marks = new Uint8Array(lower.length);
+  let inBlock = false;
+  let lineStart = 0;
+  while (lineStart <= lower.length) {
+    let lineEnd = lower.indexOf("\n", lineStart);
+    if (lineEnd === -1) lineEnd = lower.length;
+    const line = lower.slice(lineStart, lineEnd);
+    if (inBlock) {
+      if (line.trim() === "") inBlock = false;
+    } else {
+      const m = HTML_BLOCK_LINE_RE.exec(line);
+      if (m) {
+        const tag = m[1] ?? m[2];
+        inBlock = tag === void 0 || HTML_BLOCK_TAGS.has(tag);
+      }
+    }
+    if (inBlock) marks.fill(1, lineStart, lineEnd);
+    lineStart = lineEnd + 1;
+  }
+  return marks;
 }
-function stripSpans(text2, open, close, tagNames, blockOnly) {
+function blankRange(text2, from, to) {
+  return text2.slice(0, from) + text2.slice(from, to).replace(/[^\n]/g, " ") + text2.slice(to);
+}
+function blankMatches(text2, re) {
+  return text2.replace(re, (m) => m.replace(/[^\n]/g, " "));
+}
+function blankSpans(text2, open, close, tagNames, blockMask) {
   const lower = text2.toLowerCase();
-  const findOpen = (from2) => {
-    if (!tagNames) return lower.indexOf(open, from2);
-    let at = findTag(lower, open, from2, OPEN_TAG_NAME_END);
-    while (at !== -1 && (Number.isNaN(findOpenTagEnd(lower, at)) || blockOnly && !isHtmlBlockLine(lower, at))) {
+  const findOpen = (from) => {
+    if (!tagNames) return lower.indexOf(open, from);
+    let at = findTag(lower, open, from, OPEN_TAG_NAME_END);
+    while (at !== -1 && (Number.isNaN(findOpenTagEnd(lower, at)) || blockMask !== null && !blockMask[at])) {
       at = findTag(lower, open, at + open.length, OPEN_TAG_NAME_END);
     }
     return at;
   };
-  const findClose = (from2) => tagNames ? findTag(lower, close, from2, CLOSE_TAG_NAME_END) : lower.indexOf(close, from2);
+  const findClose = (from) => tagNames ? findTag(lower, close, from, CLOSE_TAG_NAME_END) : lower.indexOf(close, from);
+  let result = text2;
   let start = findOpen(0);
-  if (start === -1) return text2;
-  let out = "";
-  let from = 0;
   while (start !== -1) {
-    out += text2.slice(from, start);
     const end = findClose(start + open.length);
-    if (end === -1) return out;
-    if (tagNames) {
+    let to;
+    if (end === -1) {
+      to = text2.length;
+    } else if (tagNames) {
       const gt = lower.indexOf(">", end + close.length);
-      if (gt === -1) return out;
-      from = gt + 1;
+      to = gt === -1 ? text2.length : gt + 1;
     } else {
-      from = end + close.length;
+      to = end + close.length;
     }
-    start = findOpen(from);
+    result = blankRange(result, start, to);
+    if (to >= text2.length) break;
+    start = findOpen(to);
   }
-  return out + text2.slice(from);
+  return result;
 }
 function stripHiddenRegions(text2) {
-  let result = stripSpans(text2, "<!--", "-->", false, false);
-  result = stripSpans(result, "<style", "</style", true, false);
-  result = stripSpans(result, "<pre", "</pre", true, true);
+  const blockMask = markHtmlBlockOffsets(text2.toLowerCase());
+  let result = blankSpans(text2, "<!--", "-->", false, null);
+  result = blankSpans(result, "<style", "</style", true, null);
+  result = blankSpans(result, "<pre", "</pre", true, blockMask);
+  result = blankSpans(result, "<code", "</code", true, blockMask);
   return result;
 }
 var MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*([^)\s]{1,2048})(?:\s+["'][^"']*["'])?\s*\)/;
@@ -2385,7 +2406,11 @@ function findFirstImageUrl(body, includeBareUrls = false) {
   return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null;
 }
 function stripCodeRegions(body) {
-  return stripHiddenRegions(body).replace(BACKTICK_FENCE_RE, "").replace(TILDE_FENCE_RE, "").replace(INLINE_CODE_RE, "").replace(INDENTED_CODE_RE, "");
+  let text2 = blankMatches(body, BACKTICK_FENCE_RE);
+  text2 = blankMatches(text2, TILDE_FENCE_RE);
+  text2 = blankMatches(text2, INLINE_CODE_RE);
+  text2 = blankMatches(text2, INDENTED_CODE_RE);
+  return stripHiddenRegions(text2);
 }
 function blankUnequalAnchors(cleaned, textContent) {
   return cleaned.replace(HTML_ANCHOR_RE, (whole, href, inner) => {

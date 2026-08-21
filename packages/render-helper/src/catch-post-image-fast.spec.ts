@@ -295,6 +295,37 @@ describe('catchPostImage fast mode', () => {
     }
   })
 
+  it('decides block context on the original lines, before any region is removed', () => {
+    const U = 'https://files.peakd.com/x/ctx2.png'
+    // A leading comment or <style> opens the block; what follows on that line
+    // (and on following lines up to a blank one) is raw HTML, not prose.
+    for (const body of [
+      `<style>a{}</style><code><pre>${U}</pre></code>\n\nplain`,
+      `<!-- c --><code><pre>${U}</pre></code>\n\nplain`,
+      `<!-- a\nb --><code><pre>${U}</pre></code>\n\nplain`,
+      `<!-- c --><code>${U}</code>\n\nplain`,
+      `<div>\n<code><pre>${U}</pre></code>\n</div>\n\nplain`,
+      `<span>x</span>\n<pre>${U}</pre>\n\nplain`,
+      `intro text\n<pre>${U}</pre>\n\nplain`
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeNull()
+      expect(r.fast, body).toBeNull()
+    }
+    // A blank line ends the block; a line that starts with prose is a paragraph.
+    for (const body of [
+      `<!-- c -->\n\n<code><pre>${U}</pre></code>\n\nplain`,
+      `text <!-- c --> <code><pre>${U}</pre></code>\n\nplain`,
+      `<!-- c --> ${U}\n\nplain`,
+      `<div>x</div>\n\n<code><pre>${U}</pre></code>\n\nplain`,
+      `intro text\n<code><pre>${U}</pre></code>\n\nplain`
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeTruthy()
+      expect(r.fast, body).toBe(r.full)
+    }
+  })
+
   it('does not read an anchor whose first text continues past the href with a literal < as promoted', () => {
     const i = 'https://files.peakd.com/x/lt.png'
     for (const body of [`<a href="${i}">${i} < caption</a>`, `<a href="${i}">${i} <3</a>`]) {

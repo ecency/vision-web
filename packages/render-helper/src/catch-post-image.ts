@@ -99,57 +99,86 @@ const HTML_BLOCK_TAGS = new Set([
 // whitespace or `>`.
 const HTML_BLOCK_LINE_RE = /^ {0,3}<(?:[!?]|([a-z]{1,15})[\s/>]|\/([a-z]{1,15})[\s>])/
 
-// Whether the line holding offset `at` opens a markdown HTML block.
-function isHtmlBlockLine(lower: string, at: number): boolean {
-  const lineStart = at === 0 ? 0 : lower.lastIndexOf('\n', at - 1) + 1
-  const lineEnd = lower.indexOf('\n', at)
-  const line = lower.slice(lineStart, lineEnd === -1 ? undefined : lineEnd)
-  const m = HTML_BLOCK_LINE_RE.exec(line)
-  if (!m) return false
-  const tag = m[1] ?? m[2]
-  return tag === undefined || HTML_BLOCK_TAGS.has(tag)
+// Per-offset mask of the markdown HTML blocks in the ORIGINAL body: a line
+// that opens a block (see HTML_BLOCK_LINE_RE) and every following line up to
+// the next blank line. Computed once, before any region is blanked, because
+// the parser decides on the original lines: removing a leading comment or
+// <style> would otherwise reclassify what follows as inline content. Linear.
+function markHtmlBlockOffsets(lower: string): Uint8Array {
+  const marks = new Uint8Array(lower.length)
+  let inBlock = false
+  let lineStart = 0
+  while (lineStart <= lower.length) {
+    let lineEnd = lower.indexOf('\n', lineStart)
+    if (lineEnd === -1) lineEnd = lower.length
+    const line = lower.slice(lineStart, lineEnd)
+    if (inBlock) {
+      if (line.trim() === '') inBlock = false
+    } else {
+      const m = HTML_BLOCK_LINE_RE.exec(line)
+      if (m) {
+        const tag = m[1] ?? m[2]
+        inBlock = tag === undefined || HTML_BLOCK_TAGS.has(tag)
+      }
+    }
+    if (inBlock) marks.fill(1, lineStart, lineEnd)
+    lineStart = lineEnd + 1
+  }
+  return marks
 }
 
-function stripSpans(text: string, open: string, close: string, tagNames: boolean, blockOnly: boolean): string {
+// Every strip below is offset-preserving (a blanked character becomes a space,
+// newlines stay), so the block mask and every later position stay valid.
+function blankRange(text: string, from: number, to: number): string {
+  return text.slice(0, from) + text.slice(from, to).replace(/[^\n]/g, ' ') + text.slice(to)
+}
+
+function blankMatches(text: string, re: RegExp): string {
+  return text.replace(re, (m: string) => m.replace(/[^\n]/g, ' '))
+}
+
+function blankSpans(text: string, open: string, close: string, tagNames: boolean, blockMask: Uint8Array | null): string {
   const lower = text.toLowerCase()
   const findOpen = (from: number): number => {
     if (!tagNames) return lower.indexOf(open, from)
     let at = findTag(lower, open, from, OPEN_TAG_NAME_END)
-    while (at !== -1 && (Number.isNaN(findOpenTagEnd(lower, at)) || (blockOnly && !isHtmlBlockLine(lower, at)))) {
+    while (at !== -1 && (Number.isNaN(findOpenTagEnd(lower, at)) || (blockMask !== null && !blockMask[at]))) {
       at = findTag(lower, open, at + open.length, OPEN_TAG_NAME_END)
     }
     return at
   }
   const findClose = (from: number): number =>
     tagNames ? findTag(lower, close, from, CLOSE_TAG_NAME_END) : lower.indexOf(close, from)
+  let result = text
   let start = findOpen(0)
-  if (start === -1) return text
-  let out = ''
-  let from = 0
   while (start !== -1) {
-    out += text.slice(from, start)
     const end = findClose(start + open.length)
-    if (end === -1) return out
-    if (tagNames) {
-      // Consume the closing tag through its `>` (`</pre>`, `</pre >`), so what
-      // follows still sits where it sat: at a line start if it was at one.
+    let to: number
+    if (end === -1) {
+      to = text.length
+    } else if (tagNames) {
+      // Through the closing tag's `>` (`</pre>`, `</pre >`).
       const gt = lower.indexOf('>', end + close.length)
-      if (gt === -1) return out
-      from = gt + 1
+      to = gt === -1 ? text.length : gt + 1
     } else {
-      from = end + close.length
+      to = end + close.length
     }
-    start = findOpen(from)
+    result = blankRange(result, start, to)
+    if (to >= text.length) break
+    start = findOpen(to)
   }
-  return out + text.slice(from)
+  return result
 }
 
 function stripHiddenRegions(text: string): string {
-  let result = stripSpans(text, '<!--', '-->', false, false)
-  // <style> is dropped by the sanitizer wherever it sits; <pre> keeps its text
-  // from being linkified only when it opens a markdown HTML block.
-  result = stripSpans(result, '<style', '</style', true, false)
-  result = stripSpans(result, '<pre', '</pre', true, true)
+  const blockMask = markHtmlBlockOffsets(text.toLowerCase())
+  let result = blankSpans(text, '<!--', '-->', false, null)
+  // <style> is dropped by the sanitizer wherever it sits. <pre> and <code> keep
+  // their text from being linkified only inside a markdown HTML block; in a
+  // paragraph both are inline content and their text renders as prose.
+  result = blankSpans(result, '<style', '</style', true, null)
+  result = blankSpans(result, '<pre', '</pre', true, blockMask)
+  result = blankSpans(result, '<code', '</code', true, blockMask)
   return result
 }
 // Requires a closing `)` so broken syntax like `![](url` (no close) doesn't
@@ -298,11 +327,11 @@ function findFirstImageUrl(body: string, includeBareUrls = false): string | null
 }
 
 function stripCodeRegions(body: string): string {
-  return stripHiddenRegions(body)
-    .replace(BACKTICK_FENCE_RE, '')
-    .replace(TILDE_FENCE_RE, '')
-    .replace(INLINE_CODE_RE, '')
-    .replace(INDENTED_CODE_RE, '')
+  let text = blankMatches(body, BACKTICK_FENCE_RE)
+  text = blankMatches(text, TILDE_FENCE_RE)
+  text = blankMatches(text, INLINE_CODE_RE)
+  text = blankMatches(text, INDENTED_CODE_RE)
+  return stripHiddenRegions(text)
 }
 
 // Blank (offset-preserving, so positions stay comparable) every anchor the
