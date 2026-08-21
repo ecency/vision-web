@@ -107,9 +107,12 @@ export interface Entry {
    * Present only on feed rows that went through the slim step
    * (`core/entries/slim-entry.ts`): the body is `""` and everything a card needs
    * has been derived into `json_metadata`. `ext_link` carries the one body fact
-   * the SDK's moderation rules still need. Absent on full entries.
+   * the SDK's moderation rules still need. Absent on full entries. `lang` is
+   * the server-detected content language of the card summary (ISO-639-1, or
+   * null when too short / undetermined); absent when the row was fetched by
+   * the browser, which then detects on its own (core/entries/language-hint.ts).
    */
-  slim?: { ext_link: boolean };
+  slim?: { ext_link: boolean; lang?: string | null };
 }
 
 export interface EntryHeader {

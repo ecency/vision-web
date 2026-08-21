@@ -6,6 +6,7 @@ import { appAxios } from "@/api/axios";
 import { apiBase } from "@/api/helper";
 import { DEFAULT_OBSERVER } from "@/consts/observer";
 import { slimEntryPage, withSlimEntries } from "@/core/entries/slim-entry";
+import { annotateLanguageHints } from "@/core/entries/language-hint";
 
 // Unify all branches on a single page type
 type Page = Entry[] | SearchResponse;
@@ -27,7 +28,7 @@ function getPromotedEntriesInfiniteQuery() {
       const response = await appAxios.get<Entry[]>(
         apiBase(`/private-api/promoted-entries`)
       );
-      return slimEntryPage(response.data);
+      return annotateLanguageHints(slimEntryPage(response.data));
     },
     getNextPageParam: (
       _lastPage: PromotedPage,
