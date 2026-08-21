@@ -26,28 +26,43 @@ const INLINE_CODE_RE = /`[^`\n]*`/g
 const INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm
 // HTML regions whose text never reaches the page as an image: <style> (dropped
 // by the sanitizer) and <pre> (the renderer leaves its text alone), plus HTML
-// comments (stripComments below). Verified against the renderer: a URL inside
-// <code> or <script> text IS linkified into an image, so those are not listed.
-// Lazy bodies bounded by the closing marker: linear on untrusted input.
-const HTML_HIDDEN_RE = /<(style|pre)\b[^>]*>[\s\S]*?<\/\1\s*>/gi
+// comments. Verified against the renderer: a URL inside <code> or <script>
+// text IS linkified into an image, so those are not listed.
+//
+// Plain index scans rather than regex replaces: the text is only ever searched
+// for image URLs, never emitted, so this is candidate extraction and not
+// sanitization, but the scans are also linear and leave nothing behind (an
+// unterminated region runs to the end, as in HTML).
+const HIDDEN_ELEMENTS = ['style', 'pre']
 
-// Drop `<!-- ... -->` spans (an unterminated comment runs to the end, as in
-// HTML). A plain index scan rather than a regex replace: the text is only ever
-// searched for image URLs, never emitted, so this is candidate extraction and
-// not sanitization, but the scan is also linear and leaves nothing behind.
-function stripComments(text: string): string {
-  let start = text.indexOf('<!--')
+function stripSpans(text: string, open: string, close: string, openEndsWithTagChar: boolean): string {
+  const lower = text.toLowerCase()
+  let start = lower.indexOf(open)
   if (start === -1) return text
   let out = ''
   let from = 0
   while (start !== -1) {
+    // `<pre` must be the whole tag name (`<prefix>` is not it); `<!--` needs no such check.
+    const next = lower[start + open.length]
+    if (openEndsWithTagChar && next !== undefined && next !== '>' && next !== ' ' && next !== '\t' && next !== '\n' && next !== '/') {
+      start = lower.indexOf(open, start + open.length)
+      continue
+    }
     out += text.slice(from, start)
-    const end = text.indexOf('-->', start + 4)
+    const end = lower.indexOf(close, start + open.length)
     if (end === -1) return out
-    from = end + 3
-    start = text.indexOf('<!--', from)
+    from = end + close.length
+    start = lower.indexOf(open, from)
   }
   return out + text.slice(from)
+}
+
+function stripHiddenRegions(text: string): string {
+  let result = stripSpans(text, '<!--', '-->', false)
+  for (const tag of HIDDEN_ELEMENTS) {
+    result = stripSpans(result, '<' + tag, '</' + tag, true)
+  }
+  return result
 }
 // Requires a closing `)` so broken syntax like `![](url` (no close) doesn't
 // match. Also tolerates the optional title form `![](url "title")`. The alt-text
@@ -188,12 +203,11 @@ function findFirstImageUrl(body: string, includeBareUrls = false): string | null
 }
 
 function stripCodeRegions(body: string): string {
-  return stripComments(body)
+  return stripHiddenRegions(body)
     .replace(BACKTICK_FENCE_RE, '')
     .replace(TILDE_FENCE_RE, '')
     .replace(INLINE_CODE_RE, '')
     .replace(INDENTED_CODE_RE, '')
-    .replace(HTML_HIDDEN_RE, '')
 }
 
 // Blank (offset-preserving, so positions stay comparable) every anchor the

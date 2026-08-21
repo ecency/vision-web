@@ -10271,20 +10271,33 @@ var BACKTICK_FENCE_RE = /```[\s\S]*?```/g;
 var TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
 var INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm;
-var HTML_HIDDEN_RE = /<(style|pre)\b[^>]*>[\s\S]*?<\/\1\s*>/gi;
-function stripComments(text3) {
-  let start = text3.indexOf("<!--");
+var HIDDEN_ELEMENTS = ["style", "pre"];
+function stripSpans(text3, open, close, openEndsWithTagChar) {
+  const lower = text3.toLowerCase();
+  let start = lower.indexOf(open);
   if (start === -1) return text3;
   let out = "";
   let from = 0;
   while (start !== -1) {
+    const next = lower[start + open.length];
+    if (openEndsWithTagChar && next !== void 0 && next !== ">" && next !== " " && next !== "	" && next !== "\n" && next !== "/") {
+      start = lower.indexOf(open, start + open.length);
+      continue;
+    }
     out += text3.slice(from, start);
-    const end = text3.indexOf("-->", start + 4);
+    const end = lower.indexOf(close, start + open.length);
     if (end === -1) return out;
-    from = end + 3;
-    start = text3.indexOf("<!--", from);
+    from = end + close.length;
+    start = lower.indexOf(open, from);
   }
   return out + text3.slice(from);
+}
+function stripHiddenRegions(text3) {
+  let result = stripSpans(text3, "<!--", "-->", false);
+  for (const tag of HIDDEN_ELEMENTS) {
+    result = stripSpans(result, "<" + tag, "</" + tag, true);
+  }
+  return result;
 }
 var MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*([^)\s]{1,2048})(?:\s+["'][^"']*["'])?\s*\)/;
 var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/;
@@ -10343,7 +10356,7 @@ function findFirstImageUrl(body, includeBareUrls = false) {
   return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null;
 }
 function stripCodeRegions(body) {
-  return stripComments(body).replace(BACKTICK_FENCE_RE, "").replace(TILDE_FENCE_RE, "").replace(INLINE_CODE_RE, "").replace(INDENTED_CODE_RE, "").replace(HTML_HIDDEN_RE, "");
+  return stripHiddenRegions(body).replace(BACKTICK_FENCE_RE, "").replace(TILDE_FENCE_RE, "").replace(INLINE_CODE_RE, "").replace(INDENTED_CODE_RE, "");
 }
 function blankUnequalAnchors(cleaned, textContent) {
   return cleaned.replace(HTML_ANCHOR_RE, (whole, href, inner) => {

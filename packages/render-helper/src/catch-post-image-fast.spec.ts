@@ -212,6 +212,9 @@ describe('catchPostImage fast mode', () => {
       '<!-- one --> text <!-- https://files.peakd.com/x/hidden.png --> more',
       '<style>.x{background:url(https://files.peakd.com/x/hidden.png)}</style>\n\nplain text',
       '<pre>https://files.peakd.com/x/hidden.png</pre>\n\nplain text',
+      '<PRE class="x">https://files.peakd.com/x/hidden.png</PRE>\n\nplain text',
+      '<pre>never closed https://files.peakd.com/x/hidden.png',
+      '<style>a{}</style><pre>https://files.peakd.com/x/hidden.png</pre>\n\nplain text',
       '<pre>https://www.youtube.com/watch?v=dQw4w9WgXcQ</pre>\n\nplain text'
     ]) {
       const r = both(body)
@@ -219,6 +222,12 @@ describe('catchPostImage fast mode', () => {
       expect(r.fast, body).toBeNull()
       expect(getEntryImageRawUrl(entry(body)), body).toBeNull()
     }
+  })
+
+  it('does not mistake a tag that merely starts with pre or style for a hidden region', () => {
+    const r = both('<prefix-tag>https://files.peakd.com/x/shown.png</prefix-tag>')
+    expect(r.fast).toBe(r.full)
+    expect(r.fast).toBeTruthy()
   })
 
   it('keeps a URL in <code> text, which the renderer does linkify', () => {
