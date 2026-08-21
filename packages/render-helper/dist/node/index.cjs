@@ -10272,7 +10272,7 @@ var TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
 var INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm;
 var HIDDEN_ELEMENTS = ["style", "pre"];
-var OPEN_TAG_NAME_END = /[\t\f />]/;
+var OPEN_TAG_NAME_END = /[\t\f\r />]/;
 var CLOSE_TAG_NAME_END = /[\s>]/;
 function isWholeTagName(lower, idx, end) {
   const next = lower[idx];
@@ -10285,16 +10285,27 @@ function findTag(lower, tag, from, end) {
   }
   return at;
 }
-function isSelfClosing(lower, openAt) {
-  const gt = lower.indexOf(">", openAt);
-  return gt !== -1 && lower[gt - 1] === "/";
+function findOpenTagEnd(lower, openAt) {
+  let quote = "";
+  for (let i2 = openAt + 1; i2 < lower.length; i2++) {
+    const c = lower[i2];
+    if (c === "\n") return NaN;
+    if (quote) {
+      if (c === quote) quote = "";
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === ">") {
+      return lower[i2 - 1] === "/" ? NaN : i2;
+    }
+  }
+  return -1;
 }
 function stripSpans(text3, open, close, tagNames) {
   const lower = text3.toLowerCase();
   const findOpen = (from2) => {
     if (!tagNames) return lower.indexOf(open, from2);
     let at = findTag(lower, open, from2, OPEN_TAG_NAME_END);
-    while (at !== -1 && isSelfClosing(lower, at)) {
+    while (at !== -1 && Number.isNaN(findOpenTagEnd(lower, at))) {
       at = findTag(lower, open, at + open.length, OPEN_TAG_NAME_END);
     }
     return at;

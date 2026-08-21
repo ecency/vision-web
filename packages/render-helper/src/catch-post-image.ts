@@ -36,10 +36,10 @@ const INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm
 const HIDDEN_ELEMENTS = ['style', 'pre']
 
 // What may follow a tag name, as the renderer reads it (probed, not the HTML
-// spec): on an opening tag, space, tab or form feed, `/` or `>`. A line break
-// inside the tag breaks the tag for the renderer and the content renders as
-// prose, so CR and LF are deliberately absent there. `<prefix>` is not `<pre`.
-const OPEN_TAG_NAME_END = /[\t\f />]/
+// spec): on an opening tag, space, tab, form feed or carriage return, `/` or
+// `>`. A line feed anywhere inside the tag breaks the tag for the renderer and
+// the content renders as prose (see findOpenTagEnd). `<prefix>` is not `<pre`.
+const OPEN_TAG_NAME_END = /[\t\f\r />]/
 // A closing tag tolerates any whitespace before its `>`; `</prelude>` does not
 // close `<pre>`.
 const CLOSE_TAG_NAME_END = /[\s>]/
@@ -59,10 +59,26 @@ function findTag(lower: string, tag: string, from: number, end: RegExp): number 
   return at
 }
 
-// A self-closing opening tag (`<pre/>`) opens nothing, so its span is empty.
-function isSelfClosing(lower: string, openAt: number): boolean {
-  const gt = lower.indexOf('>', openAt)
-  return gt !== -1 && lower[gt - 1] === '/'
+// Where an opening tag that starts at `openAt` ends, read the way the renderer
+// reads it: the first `>` outside quotes closes it; a line feed before that
+// breaks the tag (it is then prose, not a tag); a `/` right before the `>`
+// makes it self-closing, which opens nothing. Returns the index of the `>`
+// for a real opening tag, -1 for an unterminated one (taken as open to the
+// end), and NaN for a broken or self-closing one, which is skipped.
+function findOpenTagEnd(lower: string, openAt: number): number {
+  let quote = ''
+  for (let i = openAt + 1; i < lower.length; i++) {
+    const c = lower[i]
+    if (c === '\n') return NaN
+    if (quote) {
+      if (c === quote) quote = ''
+    } else if (c === '"' || c === "'") {
+      quote = c
+    } else if (c === '>') {
+      return lower[i - 1] === '/' ? NaN : i
+    }
+  }
+  return -1
 }
 
 function stripSpans(text: string, open: string, close: string, tagNames: boolean): string {
@@ -70,7 +86,7 @@ function stripSpans(text: string, open: string, close: string, tagNames: boolean
   const findOpen = (from: number): number => {
     if (!tagNames) return lower.indexOf(open, from)
     let at = findTag(lower, open, from, OPEN_TAG_NAME_END)
-    while (at !== -1 && isSelfClosing(lower, at)) {
+    while (at !== -1 && Number.isNaN(findOpenTagEnd(lower, at))) {
       at = findTag(lower, open, at + open.length, OPEN_TAG_NAME_END)
     }
     return at

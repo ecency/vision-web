@@ -216,6 +216,10 @@ describe('catchPostImage fast mode', () => {
       '<pre>never closed https://files.peakd.com/x/hidden.png',
       '<style>a{}</style><pre>https://files.peakd.com/x/hidden.png</pre>\n\nplain text',
       '<pre\tclass="x">https://files.peakd.com/x/hidden.png</pre >\n\nplain text',
+      '<pre\r>https://files.peakd.com/x/hidden.png</pre>\n\nplain text',
+      '<pre\rclass="x">https://files.peakd.com/x/hidden.png</pre>\n\nplain text',
+      '<pre data-x="/>">https://files.peakd.com/x/hidden.png</pre>\n\nplain text',
+      '<pre title=\'a > b\'>https://files.peakd.com/x/hidden.png</pre>\n\nplain text',
       '<pre\fclass="x">https://files.peakd.com/x/hidden.png</pre\n>\n\nplain text',
       '<pre>one https://files.peakd.com/x/a.png</prefix> two https://files.peakd.com/x/b.png</pre>\n\nplain',
       '<pre>one</prelude> https://files.peakd.com/x/hidden.png</pre>\n\nplain',
@@ -248,7 +252,10 @@ describe('catchPostImage fast mode', () => {
     // renders as an image, and the scanner must not hide it either.
     for (const body of [
       '<pre\r\nclass="x">https://files.peakd.com/x/shown.png</pre>\n\nplain text',
-      '<pre/>https://files.peakd.com/x/shown.png\n\nplain text'
+      '<pre\n>https://files.peakd.com/x/shown.png</pre>\n\nplain text',
+      '<pre\nclass="x">https://files.peakd.com/x/shown.png</pre>\n\nplain text',
+      '<pre/>https://files.peakd.com/x/shown.png\n\nplain text',
+      '<style data-x="/>">.a{}</style>https://files.peakd.com/x/shown.png\n\nplain text'
     ]) {
       const r = both(body)
       expect(r.full, body).toBeTruthy()
