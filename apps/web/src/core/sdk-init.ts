@@ -101,7 +101,9 @@ function startRpcProxyReport(): void {
     last = line;
     console.log(`[rpc-proxy] ${line}`);
   };
-  setInterval(tick, RPC_PROXY_REPORT_MS).unref();
+  // Node's timer has unref(); a numeric handle elsewhere simply has none.
+  const handle = setInterval(tick, RPC_PROXY_REPORT_MS) as { unref?: () => void };
+  handle.unref?.();
 }
 
 // Initialize DMCA filtering immediately at module load time

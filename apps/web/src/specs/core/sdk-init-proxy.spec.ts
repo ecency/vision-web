@@ -45,7 +45,9 @@ afterEach(() => {
   stats.served = 0;
   stats.fallback = 0;
   stats.skipped = 0;
-  stats.fallbackByReason.transport = 0;
+  for (const reason of Object.keys(stats.fallbackByReason) as (keyof typeof stats.fallbackByReason)[]) {
+    stats.fallbackByReason[reason] = 0;
+  }
 });
 
 describe("sdk-init server rpc proxy", () => {
