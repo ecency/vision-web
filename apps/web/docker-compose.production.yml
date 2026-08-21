@@ -20,6 +20,12 @@ services:
       # Shared secret for the internal SSR RPC cache (/private-api/ssr/*); the
       # web service sends it on every proxied read. Unset = those routes are off.
       - SSR_INTERNAL_SECRET
+      # Upstream fills the SSR RPC cache may run at once, and how many may wait
+      # for a slot. An origin with ~90 misses/s against a 200-900ms node path
+      # needs 45-85 fills in flight; the defaults (64/256) queued fills past the
+      # lookup budget and rejected the rest (first production hour, 2026-08-21).
+      - SSR_RPC_MAX_FILLS=256
+      - SSR_RPC_MAX_QUEUED_FILLS=512
       - STRIPE_INTERNAL_SECRET
       - BLOCKSTREAM_CLIENT_ID
       - BLOCKSTREAM_CLIENT_SECRET
