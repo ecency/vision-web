@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, type Plugin } from 'vitest/config';
 import path from 'path';
 import react from '@vitejs/plugin-react';
 
@@ -18,9 +18,22 @@ const stubStyles = {
   }
 };
 
+// `./locales/en-US.json?faq` is served by a webpack loader in the app build
+// (features/i18n/faq-split.js: only the FAQ articles). Vite has no such loader
+// and chokes on the query, so resolve it to the plain file; faq.ts reduces the
+// whole locale to the same shape.
+const faqQuery: Plugin = {
+  name: 'faq-locale-query',
+  enforce: 'pre',
+  resolveId(id, importer) {
+    if (!id.endsWith('en-US.json?faq')) return null;
+    return this.resolve(id.replace('?faq', ''), importer, { skipSelf: true });
+  }
+};
+
 export default defineConfig({
   // cast: dual vite versions in the workspace make the Plugin types diverge
-  plugins: [stubStyles as any, react()],
+  plugins: [stubStyles as any, faqQuery, react()],
   test: {
     globals: true,
     environment: 'jsdom',

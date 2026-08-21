@@ -8,6 +8,7 @@ import Link from "next/link";
 import { blogSvg, discordSvg, githubSvg, mailSvg, newsSvg, telegramSvg, twitterSvg } from "@ui/svg";
 import { Metadata, ResolvingMetadata } from "next";
 import { PagesMetadataGenerator } from "@/features/metadata";
+import { ensureFaqLoaded } from "@/features/i18n";
 
 export async function generateMetadata(
   props: unknown,
@@ -16,7 +17,9 @@ export async function generateMetadata(
   return PagesMetadataGenerator.getForPage("about");
 }
 
-export default function About() {
+export default async function About() {
+  // The FAQ headers below are not in the eager locale bundle (#1598).
+  await ensureFaqLoaded("en-US");
   return (
     <>
       <Theme />
