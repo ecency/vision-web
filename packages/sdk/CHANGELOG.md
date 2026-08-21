@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.91
+
+### Patch Changes
+
+- SDK rpc proxy: a relayed node error does not trip the breaker (#1629)
+
 ## 2.3.90
 
 ### Patch Changes
