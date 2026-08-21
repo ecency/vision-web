@@ -25,15 +25,14 @@ const TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g
 const INLINE_CODE_RE = /`[^`\n]*`/g
 const INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm
 // HTML regions whose text never reaches the page as an image: <style> (dropped
-// by the sanitizer) and <pre> (the renderer leaves its text alone), plus HTML
-// comments. Verified against the renderer: a URL inside <code> or <script>
-// text IS linkified into an image, so those are not listed.
+// by the sanitizer) and <pre> in block context (the renderer leaves its text
+// alone), plus HTML comments. Verified against the renderer: a URL inside
+// <code> or <script> text IS linkified into an image, so those are not listed.
 //
 // Plain index scans rather than regex replaces: the text is only ever searched
 // for image URLs, never emitted, so this is candidate extraction and not
 // sanitization, but the scans are also linear and leave nothing behind (an
 // unterminated region runs to the end, as in HTML).
-const HIDDEN_ELEMENTS = ['style', 'pre']
 
 // What may follow a tag name, as the renderer reads it (probed, not the HTML
 // spec): on an opening tag, space, tab, form feed or carriage return, `/` or
@@ -81,12 +80,42 @@ function findOpenTagEnd(lower: string, openAt: number): number {
   return -1
 }
 
-function stripSpans(text: string, open: string, close: string, tagNames: boolean): string {
+// The markdown parser's HTML block tags (remarkable `html_blocks`). A line
+// indented at most three spaces that starts with `<` plus one of these (or a
+// closing tag of one, or `<!`/`<?`) is an HTML block, kept raw; any other line
+// is a paragraph and an element in it is inline content whose text is
+// linkified like prose. That is why `<pre>` hides its content only in block
+// context: `<code><pre>URL</pre></code>` renders the image, `<div><pre>` does
+// not. Verified against the renderer for both.
+const HTML_BLOCK_TAGS = new Set([
+  'article', 'aside', 'button', 'blockquote', 'body', 'canvas', 'caption', 'col', 'colgroup', 'dd', 'div',
+  'dl', 'dt', 'embed', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5',
+  'h6', 'header', 'hgroup', 'hr', 'iframe', 'li', 'map', 'object', 'ol', 'output', 'p', 'pre', 'progress',
+  'script', 'section', 'style', 'table', 'tbody', 'td', 'textarea', 'tfoot', 'th', 'tr', 'thead', 'ul', 'video'
+])
+// The parser's own tag patterns: letters only, so `<h1>` never opens a block
+// (and a heading's content is linkified like prose); an opening tag needs
+// whitespace, `/` or `>` after the name on the same line, a closing tag
+// whitespace or `>`.
+const HTML_BLOCK_LINE_RE = /^ {0,3}<(?:[!?]|([a-z]{1,15})[\s/>]|\/([a-z]{1,15})[\s>])/
+
+// Whether the line holding offset `at` opens a markdown HTML block.
+function isHtmlBlockLine(lower: string, at: number): boolean {
+  const lineStart = at === 0 ? 0 : lower.lastIndexOf('\n', at - 1) + 1
+  const lineEnd = lower.indexOf('\n', at)
+  const line = lower.slice(lineStart, lineEnd === -1 ? undefined : lineEnd)
+  const m = HTML_BLOCK_LINE_RE.exec(line)
+  if (!m) return false
+  const tag = m[1] ?? m[2]
+  return tag === undefined || HTML_BLOCK_TAGS.has(tag)
+}
+
+function stripSpans(text: string, open: string, close: string, tagNames: boolean, blockOnly: boolean): string {
   const lower = text.toLowerCase()
   const findOpen = (from: number): number => {
     if (!tagNames) return lower.indexOf(open, from)
     let at = findTag(lower, open, from, OPEN_TAG_NAME_END)
-    while (at !== -1 && Number.isNaN(findOpenTagEnd(lower, at))) {
+    while (at !== -1 && (Number.isNaN(findOpenTagEnd(lower, at)) || (blockOnly && !isHtmlBlockLine(lower, at)))) {
       at = findTag(lower, open, at + open.length, OPEN_TAG_NAME_END)
     }
     return at
@@ -101,17 +130,26 @@ function stripSpans(text: string, open: string, close: string, tagNames: boolean
     out += text.slice(from, start)
     const end = findClose(start + open.length)
     if (end === -1) return out
-    from = end + close.length
+    if (tagNames) {
+      // Consume the closing tag through its `>` (`</pre>`, `</pre >`), so what
+      // follows still sits where it sat: at a line start if it was at one.
+      const gt = lower.indexOf('>', end + close.length)
+      if (gt === -1) return out
+      from = gt + 1
+    } else {
+      from = end + close.length
+    }
     start = findOpen(from)
   }
   return out + text.slice(from)
 }
 
 function stripHiddenRegions(text: string): string {
-  let result = stripSpans(text, '<!--', '-->', false)
-  for (const tag of HIDDEN_ELEMENTS) {
-    result = stripSpans(result, '<' + tag, '</' + tag, true)
-  }
+  let result = stripSpans(text, '<!--', '-->', false, false)
+  // <style> is dropped by the sanitizer wherever it sits; <pre> keeps its text
+  // from being linkified only when it opens a markdown HTML block.
+  result = stripSpans(result, '<style', '</style', true, false)
+  result = stripSpans(result, '<pre', '</pre', true, true)
   return result
 }
 // Requires a closing `)` so broken syntax like `![](url` (no close) doesn't
@@ -280,7 +318,9 @@ function blankUnequalAnchors(cleaned: string, textContent: boolean): string {
     if (textContent) {
       text = stripHtmlTags(inner)
     } else {
-      const firstTag = inner.indexOf('<')
+      // The first text child ends at the first real tag start; a literal `<`
+      // in prose (`URL < caption`) is part of that text and breaks equality.
+      const firstTag = inner.search(/<[A-Za-z/!]/)
       text = firstTag === -1 ? inner : inner.slice(0, firstTag)
     }
     return decodeEntities(text.trim()) === decodeEntities(href.trim()) ? whole : ' '.repeat(whole.length)

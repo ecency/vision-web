@@ -10271,7 +10271,6 @@ var BACKTICK_FENCE_RE = /```[\s\S]*?```/g;
 var TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
 var INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm;
-var HIDDEN_ELEMENTS = ["style", "pre"];
 var OPEN_TAG_NAME_END = /[\t\f\r />]/;
 var CLOSE_TAG_NAME_END = /[\s>]/;
 function isWholeTagName(lower, idx, end) {
@@ -10300,12 +10299,74 @@ function findOpenTagEnd(lower, openAt) {
   }
   return -1;
 }
-function stripSpans(text3, open, close, tagNames) {
+var HTML_BLOCK_TAGS = /* @__PURE__ */ new Set([
+  "article",
+  "aside",
+  "button",
+  "blockquote",
+  "body",
+  "canvas",
+  "caption",
+  "col",
+  "colgroup",
+  "dd",
+  "div",
+  "dl",
+  "dt",
+  "embed",
+  "fieldset",
+  "figcaption",
+  "figure",
+  "footer",
+  "form",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "header",
+  "hgroup",
+  "hr",
+  "iframe",
+  "li",
+  "map",
+  "object",
+  "ol",
+  "output",
+  "p",
+  "pre",
+  "progress",
+  "script",
+  "section",
+  "style",
+  "table",
+  "tbody",
+  "td",
+  "textarea",
+  "tfoot",
+  "th",
+  "tr",
+  "thead",
+  "ul",
+  "video"
+]);
+var HTML_BLOCK_LINE_RE = /^ {0,3}<(?:[!?]|([a-z]{1,15})[\s/>]|\/([a-z]{1,15})[\s>])/;
+function isHtmlBlockLine(lower, at) {
+  const lineStart = at === 0 ? 0 : lower.lastIndexOf("\n", at - 1) + 1;
+  const lineEnd = lower.indexOf("\n", at);
+  const line = lower.slice(lineStart, lineEnd === -1 ? void 0 : lineEnd);
+  const m = HTML_BLOCK_LINE_RE.exec(line);
+  if (!m) return false;
+  const tag = m[1] ?? m[2];
+  return tag === void 0 || HTML_BLOCK_TAGS.has(tag);
+}
+function stripSpans(text3, open, close, tagNames, blockOnly) {
   const lower = text3.toLowerCase();
   const findOpen = (from2) => {
     if (!tagNames) return lower.indexOf(open, from2);
     let at = findTag(lower, open, from2, OPEN_TAG_NAME_END);
-    while (at !== -1 && Number.isNaN(findOpenTagEnd(lower, at))) {
+    while (at !== -1 && (Number.isNaN(findOpenTagEnd(lower, at)) || blockOnly && !isHtmlBlockLine(lower, at))) {
       at = findTag(lower, open, at + open.length, OPEN_TAG_NAME_END);
     }
     return at;
@@ -10319,16 +10380,21 @@ function stripSpans(text3, open, close, tagNames) {
     out += text3.slice(from, start);
     const end = findClose(start + open.length);
     if (end === -1) return out;
-    from = end + close.length;
+    if (tagNames) {
+      const gt = lower.indexOf(">", end + close.length);
+      if (gt === -1) return out;
+      from = gt + 1;
+    } else {
+      from = end + close.length;
+    }
     start = findOpen(from);
   }
   return out + text3.slice(from);
 }
 function stripHiddenRegions(text3) {
-  let result = stripSpans(text3, "<!--", "-->", false);
-  for (const tag of HIDDEN_ELEMENTS) {
-    result = stripSpans(result, "<" + tag, "</" + tag, true);
-  }
+  let result = stripSpans(text3, "<!--", "-->", false, false);
+  result = stripSpans(result, "<style", "</style", true, false);
+  result = stripSpans(result, "<pre", "</pre", true, true);
   return result;
 }
 var MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*([^)\s]{1,2048})(?:\s+["'][^"']*["'])?\s*\)/;
@@ -10399,7 +10465,7 @@ function blankUnequalAnchors(cleaned, textContent) {
     if (textContent) {
       text3 = stripHtmlTags(inner);
     } else {
-      const firstTag = inner.indexOf("<");
+      const firstTag = inner.search(/<[A-Za-z/!]/);
       text3 = firstTag === -1 ? inner : inner.slice(0, firstTag);
     }
     return decodeEntities(text3.trim()) === decodeEntities(href.trim()) ? whole : " ".repeat(whole.length);

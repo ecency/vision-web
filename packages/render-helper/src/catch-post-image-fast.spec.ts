@@ -264,6 +264,47 @@ describe('catchPostImage fast mode', () => {
     }
   })
 
+  it('hides <pre> only in markdown HTML-block context, as the parser does', () => {
+    const U = 'https://files.peakd.com/x/ctx.png'
+    // A line opened by an inline element is a paragraph: the <pre> inside is
+    // inline content and its URL renders as an image.
+    for (const par of ['code', 'kbd', 'em', 'span', 'center', 'h1', 'details']) {
+      const r = both(`<${par}><pre>${U}</pre></${par}>\n\nplain`)
+      expect(r.full, par).toBeTruthy()
+      expect(r.fast, par).toBe(r.full)
+    }
+    for (const body of [
+      `<code>x</code><pre>${U}</pre>\n\nplain`,
+      `<code><div><pre>${U}</pre></div></code>\n\nplain`,
+      `<code><pre>https://www.youtube.com/watch?v=dQw4w9WgXcQ</pre></code>\n\nplain`
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeTruthy()
+      expect(r.fast, body).toBe(r.full)
+    }
+    // A line opened by a block tag is an HTML block: the <pre> is honoured.
+    for (const par of ['div', 'p', 'blockquote', 'li', 'td', 'section']) {
+      const r = both(`<${par}><pre>${U}</pre></${par}>\n\nplain`)
+      expect(r.full, par).toBeNull()
+      expect(r.fast, par).toBeNull()
+    }
+    for (const body of [`<div><code><pre>${U}</pre></code></div>\n\nplain`, `   <pre>${U}</pre>\n\nplain`]) {
+      const r = both(body)
+      expect(r.full, body).toBeNull()
+      expect(r.fast, body).toBeNull()
+    }
+  })
+
+  it('does not read an anchor whose first text continues past the href with a literal < as promoted', () => {
+    const i = 'https://files.peakd.com/x/lt.png'
+    for (const body of [`<a href="${i}">${i} < caption</a>`, `<a href="${i}">${i} <3</a>`]) {
+      const r = both(body)
+      expect(r.full, body).toBeNull()
+      expect(r.fast, body).toBeNull()
+      expect(getEntryImageRawUrl(entry(body)), body).toBeNull()
+    }
+  })
+
   it('does not mistake a tag that merely starts with pre or style for a hidden region', () => {
     const r = both('<prefix-tag>https://files.peakd.com/x/shown.png</prefix-tag>')
     expect(r.fast).toBe(r.full)
