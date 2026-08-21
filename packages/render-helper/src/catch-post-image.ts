@@ -129,16 +129,20 @@ function markHtmlBlockOffsets(lower: string): Uint8Array {
 
 // Every strip below is offset-preserving (a blanked character becomes a space,
 // newlines stay), so the block mask and every later position stay valid.
-function blankRange(text: string, from: number, to: number): string {
-  return text.slice(0, from) + text.slice(from, to).replace(/[^\n]/g, ' ') + text.slice(to)
-}
+const blankChars = (s: string): string => s.replace(/[^\n]/g, ' ')
 
 function blankMatches(text: string, re: RegExp): string {
-  return text.replace(re, (m: string) => m.replace(/[^\n]/g, ' '))
+  return text.replace(re, blankChars)
 }
 
-function blankSpans(text: string, open: string, close: string, tagNames: boolean, blockMask: Uint8Array | null): string {
-  const lower = text.toLowerCase()
+/** One text in two spellings, kept in step: blanking one blanks the other. */
+interface Spellings {
+  text: string
+  lower: string
+}
+
+function blankSpans(input: Spellings, open: string, close: string, tagNames: boolean, blockMask: Uint8Array | null): Spellings {
+  const { text, lower } = input
   const findOpen = (from: number): number => {
     if (!tagNames) return lower.indexOf(open, from)
     let at = findTag(lower, open, from, OPEN_TAG_NAME_END)
@@ -149,8 +153,12 @@ function blankSpans(text: string, open: string, close: string, tagNames: boolean
   }
   const findClose = (from: number): number =>
     tagNames ? findTag(lower, close, from, CLOSE_TAG_NAME_END) : lower.indexOf(close, from)
-  let result = text
   let start = findOpen(0)
+  if (start === -1) return input
+  // Collect the spans, then rebuild both spellings in one pass.
+  const textParts: string[] = []
+  const lowerParts: string[] = []
+  let from = 0
   while (start !== -1) {
     const end = findClose(start + open.length)
     let to: number
@@ -163,23 +171,28 @@ function blankSpans(text: string, open: string, close: string, tagNames: boolean
     } else {
       to = end + close.length
     }
-    result = blankRange(result, start, to)
-    if (to >= text.length) break
-    start = findOpen(to)
+    const blanked = blankChars(lower.slice(start, to))
+    textParts.push(text.slice(from, start), blanked)
+    lowerParts.push(lower.slice(from, start), blanked)
+    from = to
+    start = to >= text.length ? -1 : findOpen(to)
   }
-  return result
+  textParts.push(text.slice(from))
+  lowerParts.push(lower.slice(from))
+  return { text: textParts.join(''), lower: lowerParts.join('') }
 }
 
 function stripHiddenRegions(text: string): string {
-  const blockMask = markHtmlBlockOffsets(text.toLowerCase())
-  let result = blankSpans(text, '<!--', '-->', false, null)
+  let spellings: Spellings = { text, lower: text.toLowerCase() }
+  const blockMask = markHtmlBlockOffsets(spellings.lower)
+  spellings = blankSpans(spellings, '<!--', '-->', false, null)
   // <style> is dropped by the sanitizer wherever it sits. <pre> and <code> keep
   // their text from being linkified only inside a markdown HTML block; in a
   // paragraph both are inline content and their text renders as prose.
-  result = blankSpans(result, '<style', '</style', true, null)
-  result = blankSpans(result, '<pre', '</pre', true, blockMask)
-  result = blankSpans(result, '<code', '</code', true, blockMask)
-  return result
+  spellings = blankSpans(spellings, '<style', '</style', true, null)
+  spellings = blankSpans(spellings, '<pre', '</pre', true, blockMask)
+  spellings = blankSpans(spellings, '<code', '</code', true, blockMask)
+  return spellings.text
 }
 // Requires a closing `)` so broken syntax like `![](url` (no close) doesn't
 // match. Also tolerates the optional title form `![](url "title")`. The alt-text

@@ -2302,25 +2302,26 @@ function markHtmlBlockOffsets(lower) {
   }
   return marks;
 }
-function blankRange(text2, from, to) {
-  return text2.slice(0, from) + text2.slice(from, to).replace(/[^\n]/g, " ") + text2.slice(to);
-}
+var blankChars = (s) => s.replace(/[^\n]/g, " ");
 function blankMatches(text2, re) {
-  return text2.replace(re, (m) => m.replace(/[^\n]/g, " "));
+  return text2.replace(re, blankChars);
 }
-function blankSpans(text2, open, close, tagNames, blockMask) {
-  const lower = text2.toLowerCase();
-  const findOpen = (from) => {
-    if (!tagNames) return lower.indexOf(open, from);
-    let at = findTag(lower, open, from, OPEN_TAG_NAME_END);
+function blankSpans(input, open, close, tagNames, blockMask) {
+  const { text: text2, lower } = input;
+  const findOpen = (from2) => {
+    if (!tagNames) return lower.indexOf(open, from2);
+    let at = findTag(lower, open, from2, OPEN_TAG_NAME_END);
     while (at !== -1 && (Number.isNaN(findOpenTagEnd(lower, at)) || blockMask !== null && !blockMask[at])) {
       at = findTag(lower, open, at + open.length, OPEN_TAG_NAME_END);
     }
     return at;
   };
-  const findClose = (from) => tagNames ? findTag(lower, close, from, CLOSE_TAG_NAME_END) : lower.indexOf(close, from);
-  let result = text2;
+  const findClose = (from2) => tagNames ? findTag(lower, close, from2, CLOSE_TAG_NAME_END) : lower.indexOf(close, from2);
   let start = findOpen(0);
+  if (start === -1) return input;
+  const textParts = [];
+  const lowerParts = [];
+  let from = 0;
   while (start !== -1) {
     const end = findClose(start + open.length);
     let to;
@@ -2332,19 +2333,24 @@ function blankSpans(text2, open, close, tagNames, blockMask) {
     } else {
       to = end + close.length;
     }
-    result = blankRange(result, start, to);
-    if (to >= text2.length) break;
-    start = findOpen(to);
+    const blanked = blankChars(lower.slice(start, to));
+    textParts.push(text2.slice(from, start), blanked);
+    lowerParts.push(lower.slice(from, start), blanked);
+    from = to;
+    start = to >= text2.length ? -1 : findOpen(to);
   }
-  return result;
+  textParts.push(text2.slice(from));
+  lowerParts.push(lower.slice(from));
+  return { text: textParts.join(""), lower: lowerParts.join("") };
 }
 function stripHiddenRegions(text2) {
-  const blockMask = markHtmlBlockOffsets(text2.toLowerCase());
-  let result = blankSpans(text2, "<!--", "-->", false, null);
-  result = blankSpans(result, "<style", "</style", true, null);
-  result = blankSpans(result, "<pre", "</pre", true, blockMask);
-  result = blankSpans(result, "<code", "</code", true, blockMask);
-  return result;
+  let spellings = { text: text2, lower: text2.toLowerCase() };
+  const blockMask = markHtmlBlockOffsets(spellings.lower);
+  spellings = blankSpans(spellings, "<!--", "-->", false, null);
+  spellings = blankSpans(spellings, "<style", "</style", true, null);
+  spellings = blankSpans(spellings, "<pre", "</pre", true, blockMask);
+  spellings = blankSpans(spellings, "<code", "</code", true, blockMask);
+  return spellings.text;
 }
 var MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*([^)\s]{1,2048})(?:\s+["'][^"']*["'])?\s*\)/;
 var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/;
