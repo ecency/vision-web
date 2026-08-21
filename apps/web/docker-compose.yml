@@ -98,7 +98,13 @@ services:
       # semi-space size (fewer scavenges on allocation-heavy renders) and the
       # per-process render cap (ssr-admission.js, loaded by the image CMD).
       - NODE_OPTIONS=--max-semi-space-size=64
-      - SSR_MAX_INFLIGHT=16
+      # Sized from measurement, not as a choke: the heavier origin runs ~14
+      # renders in flight per replica at normal load (60 docs/s x 0.7s / 3),
+      # and at 16 the cap shed 3-5% of documents as 503 for the edge to fail
+      # over. 48 is ~3.5x that average with room for bursts, and 3 x 48 stays
+      # under the origin's site-wide SSR concurrency ceiling. Multi-second
+      # render stalls, the reason for a tight cap, no longer occur.
+      - SSR_MAX_INFLIGHT=48
       # Server-side read-through RPC proxy (core/sdk-init.ts): reads go to
       # vapi's /private-api/ssr/rpc over the overlay, with fallback to the node
       # pool on any failure. The secret is the switch for both services, and

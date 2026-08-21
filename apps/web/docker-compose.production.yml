@@ -131,7 +131,13 @@ services:
       # Normal load is a handful of renders in flight per process; the cap only
       # bites once renders have slowed enough to pile up, which is exactly the
       # state that used to end in a heap abort. Unset or 0 disables it.
-      - SSR_MAX_INFLIGHT=16
+      # Sized from measurement, not as a choke: the heavier origin runs ~14
+      # renders in flight per replica at normal load (60 docs/s x 0.7s / 3),
+      # and at 16 the cap shed 3-5% of documents as 503 for the edge to fail
+      # over. 48 is ~3.5x that average with room for bursts, and 3 x 48 stays
+      # under the origin's site-wide SSR concurrency ceiling. Multi-second
+      # render stalls, the reason for a tight cap, no longer occur.
+      - SSR_MAX_INFLIGHT=48
     restart: always
     ports:
       - "3000:3000"
