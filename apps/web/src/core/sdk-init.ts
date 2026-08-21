@@ -52,6 +52,23 @@ if (isServer) {
   // This bounds SSR render time when a node slows or throttles under a spike,
   // instead of stalled renders piling up into heap exhaustion.
   ConfigManager.setResilience({ hedge: true });
+
+  // Server-side read-through RPC proxy (vapi's /private-api/ssr/rpc): the
+  // allowlisted reads every render makes (accounts, profiles, communities,
+  // per-tag feeds, posts) are answered from one cache per host instead of
+  // being fetched by every renderer process on its own. An optimization, not
+  // a dependency: the SDK falls back to the node pool on any proxy failure.
+  // Switched on per deployment (SSR_RPC_PROXY=1) and only when both sides
+  // carry the shared secret; INTERNAL_API_HOST is the overlay route to vapi.
+  const proxyHost = process.env.INTERNAL_API_HOST;
+  const proxySecret = process.env.SSR_INTERNAL_SECRET;
+  if (process.env.SSR_RPC_PROXY === "1" && proxyHost && proxySecret) {
+    ConfigManager.setServerRpcProxy({
+      url: `${proxyHost.replace(/\/+$/, "")}/private-api/ssr/rpc`,
+      headers: { "X-Ecency-Internal": proxySecret },
+      timeoutMs: 2000
+    });
+  }
 }
 
 // Initialize DMCA filtering immediately at module load time

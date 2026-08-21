@@ -17,6 +17,9 @@ services:
       - SEARCH_API_ADDR
       - SEARCH_API_SECRET
       - TURNSTILE_SECRET
+      # Shared secret for the internal SSR RPC cache (/private-api/ssr/*); the
+      # web service sends it on every proxied read. Unset = those routes are off.
+      - SSR_INTERNAL_SECRET
       - BLOCKSTREAM_CLIENT_ID
       - BLOCKSTREAM_CLIENT_SECRET
       # Pinned to Warning at deploy time (the CI deploy env does not forward
@@ -85,6 +88,12 @@ services:
       - MATTERMOST_WS_ALLOWED_ORIGINS
       - THREESPEAK_EMBED_API_KEY
       - SEO_CRON_SECRET
+      # Server-side read-through RPC proxy (core/sdk-init.ts): reads go to
+      # vapi's /private-api/ssr/rpc over the overlay, with fallback to the node
+      # pool on any failure. Needs the same secret vapi was given above; the
+      # flag switches it on per deployment.
+      - SSR_INTERNAL_SECRET
+      - SSR_RPC_PROXY=1
     restart: always
     ports:
       - "3000:3000"

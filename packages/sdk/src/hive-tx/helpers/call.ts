@@ -1,4 +1,4 @@
-import { config } from '../config'
+import { config, serverRpcProxy } from '../config'
 import { CallResponse } from '../types'
 import type { APIMethods } from '../api-types'
 import { sleep } from './sleep'
@@ -40,6 +40,73 @@ const isNodeRuntime: boolean = (() => {
  */
 function serverIdentityHeaders(): Record<string, string> {
   return isNodeRuntime ? { 'User-Agent': config.userAgent } : {}
+}
+
+// ── Server-side read-through proxy ──────────────────────────────────────────
+
+/**
+ * Counters for the proxy path, readable by a host's diagnostics (the web
+ * tier's event-loop monitor prints them). `served` = answered by the proxy,
+ * `fallback` = proxy configured and eligible but the read went to the node
+ * pool, with the reason.
+ */
+export const rpcProxyStats = {
+  served: 0,
+  fallback: 0,
+  fallbackByReason: { status: 0, timeout: 0, transport: 0, validate: 0, parse: 0 } as Record<string, number>
+}
+
+class ProxyMiss extends Error {
+  constructor(public reason: keyof typeof rpcProxyStats.fallbackByReason, message: string) {
+    super(message)
+  }
+}
+
+/**
+ * One proxy call for an eligible read. Resolves with the upstream `result` the
+ * proxy served, or throws ProxyMiss; the caller then continues with the node
+ * loop exactly as if the proxy did not exist. Never throws anything else.
+ */
+async function proxyRpcCall<T>(
+  method: string,
+  params: any,
+  externalSignal: AbortSignal | undefined,
+  validate?: (result: unknown) => boolean
+): Promise<T> {
+  const proxy = serverRpcProxy!
+  const { signal: tSignal, cleanup: cleanupTimeout } = createTimeoutSignal(proxy.timeoutMs)
+  const { signal, cleanup: cleanupMerge } = mergeSignals(tSignal, externalSignal)
+  const dot = method.indexOf('.')
+  try {
+    let res: Response
+    try {
+      res = await fetch(proxy.url, {
+        method: 'POST',
+        body: JSON.stringify({ api: method.slice(0, dot), method: method.slice(dot + 1), params }),
+        headers: { 'Content-Type': 'application/json', ...serverIdentityHeaders(), ...proxy.headers },
+        signal
+      })
+    } catch (e: any) {
+      if (externalSignal?.aborted) throw e
+      throw new ProxyMiss(tSignal.aborted ? 'timeout' : 'transport', String(e?.message ?? e))
+    }
+    if (res.status !== 200) {
+      throw new ProxyMiss('status', `proxy answered ${res.status}`)
+    }
+    let result: unknown
+    try {
+      result = await res.json()
+    } catch (e: any) {
+      throw new ProxyMiss('parse', String(e?.message ?? e))
+    }
+    if (validate && !validate(result)) {
+      throw new ProxyMiss('validate', 'proxy result rejected by validator')
+    }
+    return result as T
+  } finally {
+    cleanupTimeout()
+    cleanupMerge()
+  }
 }
 
 // ── Error Types ─────────────────────────────────────────────────────────────
@@ -1341,6 +1408,22 @@ export const callRPC = async <T = any>(
   // Note this budget also bounds callers who passed an explicit `retry`: the
   // wall clock, not the attempt count, is the stronger promise here.
   const deadline = Date.now() + config.resilience.totalBudgetFactor * ceiling
+
+  // Server-side read-through proxy, when configured and the method is on its
+  // allowlist: one call, and on any miss the node loop below runs unchanged.
+  if (serverRpcProxy && isNodeRuntime && serverRpcProxy.methodSet.has(method)) {
+    try {
+      const served = await proxyRpcCall<T>(method, params, signal, validate)
+      rpcProxyStats.served++
+      return served
+    } catch (e: any) {
+      if (signal?.aborted) throw e
+      rpcProxyStats.fallback++
+      const reason: string = e instanceof ProxyMiss ? e.reason : 'transport'
+      rpcProxyStats.fallbackByReason[reason] = (rpcProxyStats.fallbackByReason[reason] ?? 0) + 1
+    }
+  }
+
   // Track nodes tried in the current round. When all nodes have been tried,
   // clear the set to allow a second round (wrap-around) using the retry budget.
   const triedInRound = new Set<string>()
