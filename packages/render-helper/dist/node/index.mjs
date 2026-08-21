@@ -10325,27 +10325,55 @@ var HTML_BLOCK_TAGS = /* @__PURE__ */ new Set([
   "video"
 ]);
 var HTML_BLOCK_LINE_RE = /^ {0,3}<(?:[!?]|([a-z]{1,15})[\s/>]|\/([a-z]{1,15})[\s>])/;
-function markHtmlBlockOffsets(lower) {
-  const marks = new Uint8Array(lower.length);
+var BLOCKQUOTE_PREFIX_RE = /^ {0,3}> ?/;
+var LIST_PREFIX_RE = /^(?:[-*+]|\d{1,9}[.)]) +/;
+function markLines(lower) {
+  const block2 = new Uint8Array(lower.length);
+  const code2 = new Uint8Array(lower.length);
   let inBlock = false;
+  let listIndent = 0;
   let lineStart = 0;
   while (lineStart <= lower.length) {
     let lineEnd = lower.indexOf("\n", lineStart);
     if (lineEnd === -1) lineEnd = lower.length;
-    const line = lower.slice(lineStart, lineEnd);
-    if (inBlock) {
-      if (line.trim() === "") inBlock = false;
-    } else {
+    let line = lower.slice(lineStart, lineEnd);
+    let inContainer = false;
+    for (let m = BLOCKQUOTE_PREFIX_RE.exec(line); m; m = BLOCKQUOTE_PREFIX_RE.exec(line)) {
+      line = line.slice(m[0].length);
+      inContainer = true;
+    }
+    const listMarker = LIST_PREFIX_RE.exec(line);
+    if (listMarker) {
+      listIndent = listMarker[0].length;
+      line = line.slice(listMarker[0].length);
+      inContainer = true;
+    } else if (listIndent > 0 && line.trim() !== "") {
+      let indent = 0;
+      while (indent < listIndent && line[indent] === " ") indent++;
+      if (indent >= Math.min(listIndent, 2)) {
+        line = line.slice(indent);
+        inContainer = true;
+      } else {
+        listIndent = 0;
+      }
+    }
+    const blank = line.trim() === "";
+    if (blank) {
+      inBlock = false;
+      listIndent = 0;
+    } else if (inContainer && !inBlock && /^(?: {4}|\t)/.test(line)) {
+      code2.fill(1, lineStart, lineEnd);
+    } else if (!inBlock) {
       const m = HTML_BLOCK_LINE_RE.exec(line);
       if (m) {
         const tag = m[1] ?? m[2];
         inBlock = tag === void 0 || HTML_BLOCK_TAGS.has(tag);
       }
     }
-    if (inBlock) marks.fill(1, lineStart, lineEnd);
+    if (inBlock && !blank) block2.fill(1, lineStart, lineEnd);
     lineStart = lineEnd + 1;
   }
-  return marks;
+  return { block: block2, code: code2 };
 }
 var blankChars = (s) => s.replace(/[^\n]/g, " ");
 function blankMatches(text3, re) {
@@ -10388,9 +10416,26 @@ function blankSpans(input, open, close, tagNames, blockMask) {
   lowerParts.push(lower.slice(from));
   return { text: textParts.join(""), lower: lowerParts.join("") };
 }
+function blankMasked(input, mask) {
+  let text3 = "";
+  let lower = "";
+  let from = 0;
+  for (let i2 = 0; i2 < mask.length; i2++) {
+    if (!mask[i2]) continue;
+    let j = i2;
+    while (j < mask.length && mask[j]) j++;
+    text3 += input.text.slice(from, i2) + blankChars(input.text.slice(i2, j));
+    lower += input.lower.slice(from, i2) + blankChars(input.lower.slice(i2, j));
+    from = j;
+    i2 = j;
+  }
+  if (from === 0) return input;
+  return { text: text3 + input.text.slice(from), lower: lower + input.lower.slice(from) };
+}
 function stripHiddenRegions(text3) {
   let spellings = { text: text3, lower: text3.toLowerCase() };
-  const blockMask = markHtmlBlockOffsets(spellings.lower);
+  const { block: blockMask, code: codeMask } = markLines(spellings.lower);
+  spellings = blankMasked(spellings, codeMask);
   spellings = blankSpans(spellings, "<!--", "-->", false, null);
   spellings = blankSpans(spellings, "<style", "</style", true, null);
   spellings = blankSpans(spellings, "<pre", "</pre", true, blockMask);
@@ -10451,8 +10496,9 @@ function firstStandalone(scan, re) {
 }
 var HTML_ANCHOR_RE = /<a\b[^>]*?\bhref\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
 var MD_LINK_RE = /\[([^[\]]*)\]\(\s*([^)\s[]+)(?:\s+["'][^"']*["'])?\s*\)/g;
-var IMG_HREF_RE = /https?:\/\/.*\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i;
 var SAFE_URL_RE = /^https?:\/\//i;
+var IMG_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i;
+var isImageHref = (href) => SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href);
 function findFirstImageUrl(body, includeBareUrls = false) {
   return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null;
 }
@@ -10546,7 +10592,7 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
       const idx = m.index ?? 0;
       if (idx > 0 && cleaned[idx - 1] === "!") continue;
       const href = m[2];
-      if (href && SAFE_URL_RE.test(href) && IMG_HREF_RE.test(href) && deAmp(m[1]) === deAmp(href)) {
+      if (href && isImageHref(href) && deAmp(m[1]) === deAmp(href)) {
         candidates.push({ url: href, pos: idx });
         break;
       }

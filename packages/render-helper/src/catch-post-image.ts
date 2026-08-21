@@ -99,32 +99,77 @@ const HTML_BLOCK_TAGS = new Set([
 // whitespace or `>`.
 const HTML_BLOCK_LINE_RE = /^ {0,3}<(?:[!?]|([a-z]{1,15})[\s/>]|\/([a-z]{1,15})[\s>])/
 
-// Per-offset mask of the markdown HTML blocks in the ORIGINAL body: a line
-// that opens a block (see HTML_BLOCK_LINE_RE) and every following line up to
-// the next blank line. Computed once, before any region is blanked, because
-// the parser decides on the original lines: removing a leading comment or
-// <style> would otherwise reclassify what follows as inline content. Linear.
-function markHtmlBlockOffsets(lower: string): Uint8Array {
-  const marks = new Uint8Array(lower.length)
+// Markdown container prefixes the parser strips before it looks at a line:
+// blockquote markers (`>` with an optional space, nestable, up to three spaces
+// of indent) and, at column 0 only, a list marker with its following spaces.
+// An indented list marker is not a container for the renderer (`  - <pre>`
+// renders the content inline), hence column 0.
+const BLOCKQUOTE_PREFIX_RE = /^ {0,3}> ?/
+const LIST_PREFIX_RE = /^(?:[-*+]|\d{1,9}[.)]) +/
+
+interface LineMasks {
+  /** Offsets inside a markdown HTML block (raw HTML, <pre>/<code> honoured). */
+  block: Uint8Array
+  /** Offsets on an indented code line inside a container (nothing renders). */
+  code: Uint8Array
+}
+
+// Per-offset masks over the ORIGINAL body, computed once before any region is
+// blanked, because the parser decides on the original lines: removing a
+// leading comment or <style> would otherwise reclassify what follows as
+// inline content. Per line: strip the container prefixes, then a line that
+// opens a block (see HTML_BLOCK_LINE_RE) and every following line up to the
+// next blank one is a block; a remainder indented four spaces inside a
+// container is an indented code block. Linear.
+function markLines(lower: string): LineMasks {
+  const block = new Uint8Array(lower.length)
+  const code = new Uint8Array(lower.length)
   let inBlock = false
+  // Width of the current list item's content indent, for its continuation lines.
+  let listIndent = 0
   let lineStart = 0
   while (lineStart <= lower.length) {
     let lineEnd = lower.indexOf('\n', lineStart)
     if (lineEnd === -1) lineEnd = lower.length
-    const line = lower.slice(lineStart, lineEnd)
-    if (inBlock) {
-      if (line.trim() === '') inBlock = false
-    } else {
+    let line = lower.slice(lineStart, lineEnd)
+    let inContainer = false
+    // Blockquote markers, possibly nested.
+    for (let m = BLOCKQUOTE_PREFIX_RE.exec(line); m; m = BLOCKQUOTE_PREFIX_RE.exec(line)) {
+      line = line.slice(m[0].length)
+      inContainer = true
+    }
+    const listMarker = LIST_PREFIX_RE.exec(line)
+    if (listMarker) {
+      listIndent = listMarker[0].length
+      line = line.slice(listMarker[0].length)
+      inContainer = true
+    } else if (listIndent > 0 && line.trim() !== '') {
+      let indent = 0
+      while (indent < listIndent && line[indent] === ' ') indent++
+      if (indent >= Math.min(listIndent, 2)) {
+        line = line.slice(indent)
+        inContainer = true
+      } else {
+        listIndent = 0
+      }
+    }
+    const blank = line.trim() === ''
+    if (blank) {
+      inBlock = false
+      listIndent = 0
+    } else if (inContainer && !inBlock && /^(?: {4}|\t)/.test(line)) {
+      code.fill(1, lineStart, lineEnd)
+    } else if (!inBlock) {
       const m = HTML_BLOCK_LINE_RE.exec(line)
       if (m) {
         const tag = m[1] ?? m[2]
         inBlock = tag === undefined || HTML_BLOCK_TAGS.has(tag)
       }
     }
-    if (inBlock) marks.fill(1, lineStart, lineEnd)
+    if (inBlock && !blank) block.fill(1, lineStart, lineEnd)
     lineStart = lineEnd + 1
   }
-  return marks
+  return { block, code }
 }
 
 // Every strip below is offset-preserving (a blanked character becomes a space,
@@ -182,9 +227,27 @@ function blankSpans(input: Spellings, open: string, close: string, tagNames: boo
   return { text: textParts.join(''), lower: lowerParts.join('') }
 }
 
+function blankMasked(input: Spellings, mask: Uint8Array): Spellings {
+  let text = ''
+  let lower = ''
+  let from = 0
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue
+    let j = i
+    while (j < mask.length && mask[j]) j++
+    text += input.text.slice(from, i) + blankChars(input.text.slice(i, j))
+    lower += input.lower.slice(from, i) + blankChars(input.lower.slice(i, j))
+    from = j
+    i = j
+  }
+  if (from === 0) return input
+  return { text: text + input.text.slice(from), lower: lower + input.lower.slice(from) }
+}
+
 function stripHiddenRegions(text: string): string {
   let spellings: Spellings = { text, lower: text.toLowerCase() }
-  const blockMask = markHtmlBlockOffsets(spellings.lower)
+  const { block: blockMask, code: codeMask } = markLines(spellings.lower)
+  spellings = blankMasked(spellings, codeMask)
   spellings = blankSpans(spellings, '<!--', '-->', false, null)
   // <style> is dropped by the sanitizer wherever it sits. <pre> and <code> keep
   // their text from being linkified only inside a markdown HTML block; in a
@@ -311,10 +374,6 @@ const HTML_ANCHOR_RE = /<a\b[^>]*?\bhref\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<
 // requires the label to equal the href, and an unescaped `[`/`]` in a URL breaks the label
 // match regardless — so excluding `[` loses nothing and keeps this O(1) per failed start.
 const MD_LINK_RE = /\[([^[\]]*)\]\(\s*([^)\s[]+)(?:\s+["'][^"']*["'])?\s*\)/g
-// Mirrors a.method's `href.match(IMG_REGEX)` — an image URL by extension
-// (anywhere after the dot, matching the renderer). Eligibility for an avif
-// <source> is then decided separately by isPictureEligibleRawUrl.
-const IMG_HREF_RE = /https?:\/\/.*\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i
 
 // The fast-path bypasses sanitize-html (which the full markdown pipeline
 // applies). The sanitizer only preserves http/https <img> sources — ftp,
@@ -322,6 +381,14 @@ const IMG_HREF_RE = /https?:\/\/.*\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw
 // so the fast-path can never surface an image the full path would have
 // dropped. Anything else returns null and falls back to the sanitized parse.
 const SAFE_URL_RE = /^https?:\/\//i
+
+// Mirrors a.method's `href.match(IMG_REGEX)` — an http(s) URL with an image
+// extension anywhere after a dot, matching the renderer. Two anchored tests
+// rather than one `.*\.` pattern, so the check is linear on any input.
+// Eligibility for an avif <source> is then decided separately by
+// isPictureEligibleRawUrl.
+const IMG_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i
+const isImageHref = (href: string): boolean => SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href)
 
 /**
  * Fast-path: extract the first image URL from raw markdown without rendering
@@ -507,7 +574,7 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
       const idx = m.index ?? 0
       if (idx > 0 && cleaned[idx - 1] === '!') continue // it's an image ![](), handled above
       const href = m[2]
-      if (href && SAFE_URL_RE.test(href) && IMG_HREF_RE.test(href) && deAmp(m[1]) === deAmp(href)) {
+      if (href && isImageHref(href) && deAmp(m[1]) === deAmp(href)) {
         candidates.push({ url: href, pos: idx })
         break
       }

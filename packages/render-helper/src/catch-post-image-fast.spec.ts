@@ -326,6 +326,43 @@ describe('catchPostImage fast mode', () => {
     }
   })
 
+  it('strips blockquote and list prefixes before deciding block context, as the parser does', () => {
+    const U = 'https://files.peakd.com/x/ctx3.png'
+    const V = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+    for (const body of [
+      `> <pre>${U}</pre>\n\nplain`,
+      `> <pre>${V}</pre>\n\nplain`,
+      `> > <pre>${U}</pre>\n\nplain`,
+      `><pre>${U}</pre>\n\nplain`,
+      `- <pre>${U}</pre>\n\nplain`,
+      `* <pre>${U}</pre>\n\nplain`,
+      `1. <pre>${U}</pre>\n\nplain`,
+      `1) <pre>${U}</pre>\n\nplain`,
+      `> <div>\n> <pre>${U}</pre>\n\nplain`,
+      `- item\n  <pre>${U}</pre>\n\nplain`,
+      `> text\n> <pre>${U}</pre>\n\nplain`,
+      `> <!-- c --><code>${U}</code>\n\nplain`,
+      `>     <pre>${U}</pre>\n\nplain`,
+      `>     ${U}\n\nplain`
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeNull()
+      expect(r.fast, body).toBeNull()
+    }
+    for (const body of [
+      `> <code>${U}</code>\n\nplain`,
+      `> <code><pre>${U}</pre></code>\n\nplain`,
+      `- <code>${U}</code>\n\nplain`,
+      `- <code><pre>${U}</pre></code>\n\nplain`,
+      `  - <pre>${U}</pre>\n\nplain`,
+      `# <pre>${U}</pre>\n\nplain`
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeTruthy()
+      expect(r.fast, body).toBe(r.full)
+    }
+  })
+
   it('does not read an anchor whose first text continues past the href with a literal < as promoted', () => {
     const i = 'https://files.peakd.com/x/lt.png'
     for (const body of [`<a href="${i}">${i} < caption</a>`, `<a href="${i}">${i} <3</a>`]) {
