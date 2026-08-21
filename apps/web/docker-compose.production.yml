@@ -115,7 +115,17 @@ services:
       # Bound the V8 old-space so a pathological single render crashes (and the
       # replica restarts) rather than ballooning the heap unbounded. Heap working
       # set is ~2GiB, so 3GiB leaves headroom without clipping normal renders.
-      - NODE_OPTIONS=--max-old-space-size=3072
+      # The semi-space (young generation) is raised from V8's default so an
+      # allocation-heavy render triggers fewer scavenges; costs ~128MiB of RSS
+      # per replica, well inside the limit above.
+      - NODE_OPTIONS=--max-old-space-size=3072 --max-semi-space-size=64
+      # Per-process admission control (ssr-admission.js, loaded by the image
+      # CMD): above this many in-flight page renders the process answers 503
+      # with Retry-After, which the edge worker treats as a failover signal.
+      # Normal load is a handful of renders in flight per process; the cap only
+      # bites once renders have slowed enough to pile up, which is exactly the
+      # state that used to end in a heap abort. Unset or 0 disables it.
+      - SSR_MAX_INFLIGHT=16
     restart: always
     ports:
       - "3000:3000"
@@ -181,9 +191,13 @@ services:
   # not one per node — would need `mode: global` + service discovery work.
   # Lives only on the docker overlay network — never publish 6379 publicly.
   # Persistence: AOF every 1s (acceptable <1s write loss for a refetchable cache).
-  # Memory cap: 1gb LRU — well above the post-age working set; headroom for
-  # future cache layers (API responses, profile/community metadata) on this
-  # same instance without re-sizing.
+  # Memory cap: LRU, REDIS_MAXMEMORY overridable per deploy. The post-age set
+  # outgrew the original 1gb: at that cap the instance sat full and evicting,
+  # with a hit rate under 40%, and every evicted entry costs a 60s
+  # entry-unknown cache tier instead of the age-refined one, so those pages
+  # re-render far more often than their age warrants. 2gb doubles the working
+  # set while leaving the hosts' remaining memory to the web replicas at their
+  # limit, vapi and the OS; raise it only with that headroom in mind.
   redis:
     image: redis:7-alpine
     command:
@@ -193,7 +207,7 @@ services:
       - --appendfsync
       - everysec
       - --maxmemory
-      - 1gb
+      - ${REDIS_MAXMEMORY:-2gb}
       - --maxmemory-policy
       - allkeys-lru
       - --save

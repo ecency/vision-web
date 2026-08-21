@@ -10270,28 +10270,455 @@ function isGifLink(link) {
 var BACKTICK_FENCE_RE = /```[\s\S]*?```/g;
 var TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
-var INDENTED_CODE_RE = /^(?: {4}|\t).+$/gm;
+var OPEN_TAG_NAME_END = /[\t\f\r />]/;
+var CLOSE_TAG_NAME_END = /[\s>]/;
+function isWholeTagName(lower, idx, end) {
+  const next = lower[idx];
+  return next === void 0 || end.test(next);
+}
+function findTag(lower, tag, from, end) {
+  let at = lower.indexOf(tag, from);
+  while (at !== -1 && !isWholeTagName(lower, at + tag.length, end)) {
+    at = lower.indexOf(tag, at + tag.length);
+  }
+  return at;
+}
+function findOpenTagEnd(lower, openAt) {
+  let quote = "";
+  for (let i2 = openAt + 1; i2 < lower.length; i2++) {
+    const c = lower[i2];
+    if (c === "\n") return NaN;
+    if (quote) {
+      if (c === quote) quote = "";
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === ">") {
+      return lower[i2 - 1] === "/" ? NaN : i2;
+    }
+  }
+  return -1;
+}
+var HTML_BLOCK_TAGS = /* @__PURE__ */ new Set([
+  "article",
+  "aside",
+  "button",
+  "blockquote",
+  "body",
+  "canvas",
+  "caption",
+  "col",
+  "colgroup",
+  "dd",
+  "div",
+  "dl",
+  "dt",
+  "embed",
+  "fieldset",
+  "figcaption",
+  "figure",
+  "footer",
+  "form",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "header",
+  "hgroup",
+  "hr",
+  "iframe",
+  "li",
+  "map",
+  "object",
+  "ol",
+  "output",
+  "p",
+  "pre",
+  "progress",
+  "script",
+  "section",
+  "style",
+  "table",
+  "tbody",
+  "td",
+  "textarea",
+  "tfoot",
+  "th",
+  "tr",
+  "thead",
+  "ul",
+  "video"
+]);
+var HTML_BLOCK_LINE_RE = /^ {0,3}<(?:[!?]|([a-z]{1,15})[\s/>]|\/([a-z]{1,15})[\s>])/;
+var BLOCKQUOTE_PREFIX_RE = /^ {0,3}> ?/;
+var LIST_PREFIX_RE = /^(?:[-*+]|\d{1,9}[.)]) +/;
+function markLines(lower) {
+  const block2 = new Uint8Array(lower.length);
+  const code2 = new Uint8Array(lower.length);
+  let inBlock = false;
+  let listIndent = 0;
+  let nestedItem = false;
+  let lineStart = 0;
+  while (lineStart <= lower.length) {
+    let lineEnd = lower.indexOf("\n", lineStart);
+    if (lineEnd === -1) lineEnd = lower.length;
+    let line = lower.slice(lineStart, lineEnd);
+    if (inBlock) {
+      if (line.trim() === "") {
+        inBlock = false;
+        listIndent = 0;
+        nestedItem = false;
+      } else {
+        block2.fill(1, lineStart, lineEnd);
+      }
+      lineStart = lineEnd + 1;
+      continue;
+    }
+    let stripped = 0;
+    let sawList = false;
+    let lastWasList = false;
+    let inlineRemainder = false;
+    for (; ; ) {
+      const bq = BLOCKQUOTE_PREFIX_RE.exec(line);
+      if (bq) {
+        line = line.slice(bq[0].length);
+        stripped += bq[0].length;
+        lastWasList = false;
+        inlineRemainder = false;
+        continue;
+      }
+      const lm = LIST_PREFIX_RE.exec(line);
+      if (lm) {
+        line = line.slice(lm[0].length);
+        stripped += lm[0].length;
+        if (lastWasList) inlineRemainder = true;
+        sawList = true;
+        lastWasList = true;
+        continue;
+      }
+      break;
+    }
+    if (sawList) {
+      listIndent = stripped;
+      nestedItem = inlineRemainder;
+    } else if (listIndent > 0 && line.trim() !== "") {
+      let indent = 0;
+      while (indent < listIndent && line[indent] === " ") indent++;
+      if (indent >= Math.min(listIndent, 2)) {
+        line = line.slice(indent);
+        inlineRemainder = nestedItem;
+      } else {
+        listIndent = 0;
+        nestedItem = false;
+      }
+    }
+    const blank = line.trim() === "";
+    if (blank) {
+      inBlock = false;
+      listIndent = 0;
+      nestedItem = false;
+    } else if (inlineRemainder) {
+      inBlock = false;
+    } else if (!inBlock && /^(?: {4}|\t)/.test(line)) {
+      code2.fill(1, lineStart, lineEnd);
+    } else if (!inBlock) {
+      const m = HTML_BLOCK_LINE_RE.exec(line);
+      if (m) {
+        const tag = m[1] ?? m[2];
+        inBlock = tag === void 0 || HTML_BLOCK_TAGS.has(tag);
+      }
+    }
+    if (inBlock && !blank) block2.fill(1, lineStart, lineEnd);
+    lineStart = lineEnd + 1;
+  }
+  return { block: block2, code: code2 };
+}
+var blankChars = (s) => s.replace(/[^\n]/g, " ");
+function blankMatches(text3, re) {
+  return text3.replace(re, blankChars);
+}
+function blankSpans(input, open, close, tagNames, blockMask) {
+  const { text: text3, lower } = input;
+  const findOpen = (from2) => {
+    if (!tagNames) return lower.indexOf(open, from2);
+    let at = findTag(lower, open, from2, OPEN_TAG_NAME_END);
+    while (at !== -1 && (Number.isNaN(findOpenTagEnd(lower, at)) || blockMask !== null && !blockMask[at])) {
+      at = findTag(lower, open, at + open.length, OPEN_TAG_NAME_END);
+    }
+    return at;
+  };
+  const findClose = (from2) => tagNames ? findTag(lower, close, from2, CLOSE_TAG_NAME_END) : lower.indexOf(close, from2);
+  let start = findOpen(0);
+  if (start === -1) return input;
+  const textParts = [];
+  const lowerParts = [];
+  let from = 0;
+  while (start !== -1) {
+    const end = findClose(start + open.length);
+    let to;
+    if (end === -1) {
+      to = text3.length;
+    } else if (tagNames) {
+      const gt = lower.indexOf(">", end + close.length);
+      to = gt === -1 ? text3.length : gt + 1;
+    } else {
+      to = end + close.length;
+    }
+    const blanked = blankChars(lower.slice(start, to));
+    textParts.push(text3.slice(from, start), blanked);
+    lowerParts.push(lower.slice(from, start), blanked);
+    from = to;
+    start = to >= text3.length ? -1 : findOpen(to);
+  }
+  textParts.push(text3.slice(from));
+  lowerParts.push(lower.slice(from));
+  return { text: textParts.join(""), lower: lowerParts.join("") };
+}
+function blankMasked(input, mask) {
+  let text3 = "";
+  let lower = "";
+  let from = 0;
+  for (let i2 = 0; i2 < mask.length; i2++) {
+    if (!mask[i2]) continue;
+    let j = i2;
+    while (j < mask.length && mask[j]) j++;
+    text3 += input.text.slice(from, i2) + blankChars(input.text.slice(i2, j));
+    lower += input.lower.slice(from, i2) + blankChars(input.lower.slice(i2, j));
+    from = j;
+    i2 = j;
+  }
+  if (from === 0) return input;
+  return { text: text3 + input.text.slice(from), lower: lower + input.lower.slice(from) };
+}
+function stripHiddenRegions(text3) {
+  let spellings = { text: text3, lower: text3.toLowerCase() };
+  const { block: blockMask, code: codeMask } = markLines(spellings.lower);
+  spellings = blankMasked(spellings, codeMask);
+  spellings = blankSpans(spellings, "<!--", "-->", false, null);
+  spellings = blankSpans(spellings, "<style", "</style", true, null);
+  spellings = blankSpans(spellings, "<pre", "</pre", true, blockMask);
+  spellings = blankSpans(spellings, "<code", "</code", true, blockMask);
+  return spellings.text;
+}
 var MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*([^)\s]{1,2048})(?:\s+["'][^"']*["'])?\s*\)/;
 var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/;
 var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
-var BARE_IMAGE_RE = /(^|\s)(https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)(?:[?#][^\s<>"'()[\]]*)?)/im;
+var URL_TOKEN_RE = /https?:\/\/[^\s<>"'()[\]]+/gi;
+var IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi;
+var YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/;
+function imageToken(token) {
+  let end = -1;
+  for (const m of token.matchAll(IMAGE_EXT_G)) {
+    end = (m.index ?? 0) + m[0].length;
+  }
+  if (end === -1) return null;
+  if (end < token.length && (token[end] === "?" || token[end] === "#")) end = token.length;
+  const url = token.slice(0, end);
+  return SAFE_URL_RE.test(url) ? url : null;
+}
+function youtubeIdOf(url) {
+  const m = /^https?:\/\/([^/?#]+)/i.exec(url);
+  if (!m) return null;
+  const host = m[1].toLowerCase();
+  const isShort = host === "youtu.be";
+  const isFull = host === "youtube.com" || host.endsWith(".youtube.com");
+  if (!isShort && !isFull) return null;
+  const rest = url.slice(m[0].length);
+  const hashAt = rest.indexOf("#");
+  const beforeHash = hashAt === -1 ? rest : rest.slice(0, hashAt);
+  const qAt = beforeHash.indexOf("?");
+  const path = qAt === -1 ? beforeHash : beforeHash.slice(0, qAt);
+  const query = qAt === -1 ? "" : beforeHash.slice(qAt + 1);
+  const candidate = (value) => {
+    const id = value === void 0 ? "" : value.slice(0, 11);
+    return YOUTUBE_ID_RE.test(id) ? id : null;
+  };
+  if (isFull && query) {
+    for (const part of query.split("&")) {
+      if (part.startsWith("v=")) {
+        const id = candidate(part.slice(2));
+        if (id) return id;
+      }
+    }
+  }
+  const segments = path.split("/").filter((seg) => seg.length > 0);
+  if (isShort) return candidate(segments[0]);
+  if (segments.length >= 2 && ["v", "e", "embed", "shorts"].includes(segments[0].toLowerCase())) {
+    return candidate(segments[1]);
+  }
+  if (segments.length >= 3) return candidate(segments[segments.length - 1]);
+  return null;
+}
+function isAutolinkAt(text3, idx) {
+  return /^https?:\/\//i.test(text3.slice(idx, idx + 8));
+}
+function markInsideTags(text3) {
+  const marks = new Uint8Array(text3.length);
+  let inTag = false;
+  let quote = "";
+  for (let i2 = 0; i2 < text3.length; i2++) {
+    const c = text3[i2];
+    if (!inTag) {
+      if (c === "<" && i2 + 1 < text3.length && /[A-Za-z/!?]/.test(text3[i2 + 1]) && !isAutolinkAt(text3, i2 + 1)) {
+        inTag = true;
+        marks[i2] = 1;
+      }
+      continue;
+    }
+    marks[i2] = 1;
+    if (quote) {
+      if (c === quote) quote = "";
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === ">") {
+      inTag = false;
+    }
+  }
+  return marks;
+}
+function isStandalone(scan, idx) {
+  if (scan.inTag[idx]) return false;
+  if (idx === 0) return true;
+  const text3 = scan.text;
+  const prev = text3[idx - 1];
+  if (/[\w/.:%?&=#[-]/.test(prev)) return false;
+  const prev2 = idx > 1 ? text3[idx - 2] : "";
+  if (prev === "(" && prev2 === "]") return false;
+  return true;
+}
+function* standaloneMatches(scan, classify) {
+  for (const m of scan.text.matchAll(URL_TOKEN_RE)) {
+    const idx = m.index ?? 0;
+    if (!isStandalone(scan, idx)) continue;
+    const value = classify(m[0]);
+    if (value !== null) yield { url: value, pos: idx };
+  }
+}
+function firstStandalone(scan, classify) {
+  for (const hit of standaloneMatches(scan, classify)) return hit;
+  return null;
+}
+var HREF_ATTR_RE = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
+function hasGluedAttribute(tag) {
+  let quote = "";
+  for (let i2 = 0; i2 < tag.length; i2++) {
+    const c = tag[i2];
+    if (quote) {
+      if (c === quote) {
+        quote = "";
+        const next = tag[i2 + 1];
+        if (next !== void 0 && /[A-Za-z]/.test(next)) return true;
+      }
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    }
+  }
+  return false;
+}
 var MD_LINK_RE = /\[([^[\]]*)\]\(\s*([^)\s[]+)(?:\s+["'][^"']*["'])?\s*\)/g;
-var IMG_HREF_RE = /https?:\/\/.*\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i;
 var SAFE_URL_RE = /^https?:\/\//i;
+var IMG_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i;
+var isImageHref = (href) => SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href);
 function findFirstImageUrl(body, includeBareUrls = false) {
-  if (!body) return null;
-  const cleaned = body.replace(BACKTICK_FENCE_RE, "").replace(TILDE_FENCE_RE, "").replace(INLINE_CODE_RE, "").replace(INDENTED_CODE_RE, "");
+  return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null;
+}
+function stripCodeRegions(body) {
+  let text3 = blankMatches(body, BACKTICK_FENCE_RE);
+  text3 = blankMatches(text3, TILDE_FENCE_RE);
+  text3 = blankMatches(text3, INLINE_CODE_RE);
+  return stripHiddenRegions(text3);
+}
+function blankUnequalAnchors(cleaned, textContent) {
+  const lower = cleaned.toLowerCase();
+  const parts = [];
+  let from = 0;
+  let at = findTag(lower, "<a", 0, OPEN_TAG_NAME_END);
+  while (at !== -1) {
+    const gt = findOpenTagEnd(lower, at);
+    if (Number.isNaN(gt) || gt === -1 || hasGluedAttribute(cleaned.slice(at, gt))) {
+      at = findTag(lower, "<a", at + 2, OPEN_TAG_NAME_END);
+      continue;
+    }
+    const closeAt = findTag(lower, "</a", gt + 1, CLOSE_TAG_NAME_END);
+    const innerEnd = closeAt === -1 ? cleaned.length : closeAt;
+    let spanEnd = cleaned.length;
+    if (closeAt !== -1) {
+      const closeGt = lower.indexOf(">", closeAt + 3);
+      spanEnd = closeGt === -1 ? cleaned.length : closeGt + 1;
+    }
+    const hrefMatch = HREF_ATTR_RE.exec(cleaned.slice(at, gt));
+    const href = hrefMatch ? hrefMatch[1] ?? hrefMatch[2] ?? hrefMatch[3] ?? "" : "";
+    const inner = cleaned.slice(gt + 1, innerEnd);
+    let text3;
+    if (textContent) {
+      text3 = stripHtmlTags(inner);
+    } else {
+      const firstTag = inner.search(/<[A-Za-z/!]/);
+      text3 = firstTag === -1 ? inner : inner.slice(0, firstTag);
+    }
+    if (!href || decodeEntities(text3.trim()) !== decodeEntities(href.trim())) {
+      parts.push(cleaned.slice(from, at), blankChars(cleaned.slice(at, spanEnd)));
+      from = spanEnd;
+    }
+    at = spanEnd >= cleaned.length ? -1 : findTag(lower, "<a", spanEnd, OPEN_TAG_NAME_END);
+  }
+  if (parts.length === 0) return cleaned;
+  parts.push(cleaned.slice(from));
+  return parts.join("");
+}
+var EMPTY_SCAN = { text: "", inTag: new Uint8Array(0) };
+function prepareBody(body) {
+  const cleaned = body ? stripCodeRegions(body) : "";
+  if (!cleaned) return { cleaned, image: EMPTY_SCAN, video: EMPTY_SCAN };
+  const imageText = blankUnequalAnchors(cleaned, false);
+  const videoText = blankUnequalAnchors(cleaned, true);
+  return {
+    cleaned,
+    image: { text: imageText, inTag: markInsideTags(imageText) },
+    video: { text: videoText, inTag: markInsideTags(videoText) }
+  };
+}
+function findFirstVideoPoster(prepared) {
+  const { cleaned } = prepared;
+  if (!cleaned) return null;
+  let best = null;
+  for (const hit of standaloneMatches(prepared.video, youtubeIdOf)) {
+    best = { url: hit.url, pos: hit.pos };
+    break;
+  }
+  for (const m of cleaned.matchAll(MD_LINK_RE)) {
+    const idx = m.index ?? 0;
+    if (idx > 0 && cleaned[idx - 1] === "!") continue;
+    if (best && idx >= best.pos) break;
+    const href = m[2];
+    if (href && m[1].trim() === href) {
+      const id = youtubeIdOf(href);
+      if (id) {
+        best = { url: id, pos: idx };
+        break;
+      }
+    }
+  }
+  if (!best) return null;
+  return { url: `https://img.youtube.com/vi/${best.url.split("?")[0]}/hqdefault.jpg`, pos: best.pos };
+}
+var NONE = { candidate: null, ambiguous: false };
+var AMBIGUOUS = { candidate: null, ambiguous: true };
+function findFirstImageCandidate(prepared, includeBareUrls = false) {
+  const { cleaned } = prepared;
+  if (!cleaned) return NONE;
   const mdMatch = cleaned.match(MD_IMAGE_RE);
   const htmlMatch = cleaned.match(HTML_IMAGE_RE);
   if (mdMatch) {
     const url = mdMatch[1];
     if (!url || !SAFE_URL_RE.test(url) || url.includes("(")) {
-      return null;
+      return AMBIGUOUS;
     }
   }
   const priorRegion = mdMatch ? cleaned.slice(0, mdMatch.index ?? 0) : cleaned;
   if (MD_IMAGE_PRESENT_RE.test(priorRegion)) {
-    return null;
+    return AMBIGUOUS;
   }
   const candidates = [];
   if (mdMatch) candidates.push({ url: mdMatch[1], pos: mdMatch.index ?? 0 });
@@ -10299,24 +10726,49 @@ function findFirstImageUrl(body, includeBareUrls = false) {
     candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0 });
   }
   if (includeBareUrls) {
-    const bareMatch = cleaned.match(BARE_IMAGE_RE);
-    if (bareMatch && bareMatch[2] && SAFE_URL_RE.test(bareMatch[2])) {
-      candidates.push({ url: bareMatch[2], pos: (bareMatch.index ?? 0) + bareMatch[1].length });
+    const bareMatch = firstStandalone(prepared.image, imageToken);
+    if (bareMatch && SAFE_URL_RE.test(bareMatch.url)) {
+      candidates.push(bareMatch);
     }
     const deAmp = (s) => s.trim().replace(/&amp;/g, "&");
     for (const m of cleaned.matchAll(MD_LINK_RE)) {
       const idx = m.index ?? 0;
       if (idx > 0 && cleaned[idx - 1] === "!") continue;
       const href = m[2];
-      if (href && SAFE_URL_RE.test(href) && IMG_HREF_RE.test(href) && deAmp(m[1]) === deAmp(href)) {
+      if (href && isImageHref(href) && deAmp(m[1]) === deAmp(href)) {
         candidates.push({ url: href, pos: idx });
         break;
       }
     }
   }
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) return NONE;
   candidates.sort((a2, b) => a2.pos - b.pos);
-  return candidates[0].url;
+  return { candidate: candidates[0], ambiguous: false };
+}
+function fastBodyImage(body, width, height, format) {
+  const prepared = prepareBody(body);
+  const strict = findFirstImageCandidate(prepared, false);
+  if (strict.candidate) {
+    return proxifyFound(strict.candidate.url, width, height, format);
+  }
+  if (strict.ambiguous) {
+    return null;
+  }
+  const bare = findFirstImageCandidate(prepared, true).candidate;
+  const poster = findFirstVideoPoster(prepared);
+  if (poster && (!bare || poster.pos < bare.pos)) {
+    return proxifyFound(proxifyImageSrc(poster.url, 0, 0, "match"), width, height, format);
+  }
+  return bare ? proxifyFound(bare.url, width, height, format) : null;
+}
+function firstMetaUrl(value) {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.find((url) => typeof url === "string" && url.trim().length > 0);
+  }
+  return void 0;
 }
 function proxifyFound(src, width, height, format) {
   const decoded = decodeEntities(src);
@@ -10325,7 +10777,7 @@ function proxifyFound(src, width, height, format) {
   }
   return proxifyImageSrc(decoded, width, height, format);
 }
-function getImage(entry, width = 0, height = 0, format = "match") {
+function getImage(entry, width = 0, height = 0, format = "match", fastMode = false) {
   let meta;
   if (typeof entry.json_metadata === "object") {
     meta = entry.json_metadata;
@@ -10334,6 +10786,14 @@ function getImage(entry, width = 0, height = 0, format = "match") {
       meta = JSON.parse(entry.json_metadata);
     } catch (e) {
       meta = null;
+    }
+  }
+  const thumbnail = firstMetaUrl(meta?.thumbnails);
+  if (thumbnail) {
+    const decodedThumbnail = decodeEntities(thumbnail);
+    const proxied = isGifLink(decodedThumbnail) ? proxifyImageSrc(decodedThumbnail, 0, 0, format) : proxifyImageSrc(decodedThumbnail, width, height, format);
+    if (proxied) {
+      return proxied;
     }
   }
   if (meta && typeof meta.image === "string" && meta.image.length > 0) {
@@ -10355,6 +10815,9 @@ function getImage(entry, width = 0, height = 0, format = "match") {
       return proxifyImageSrc(meta.image[0], 0, 0, format);
     }
     return proxifyImageSrc(meta.image[0], width, height, format);
+  }
+  if (fastMode) {
+    return fastBodyImage(entry.body, width, height, format);
   }
   const fast = findFirstImageUrl(entry.body);
   if (fast) {
@@ -10399,8 +10862,12 @@ function getEntryImageRawUrl(obj) {
   const bodySrc = findFirstImageUrl(obj.body, true);
   return bodySrc ? decodeImageSrc(bodySrc) : null;
 }
-function catchPostImage(obj, width = 0, height = 0, format = "match") {
+function catchPostImage(obj, width = 0, height = 0, format = "match", options = {}) {
+  const fastMode = options.fast === true;
   if (typeof obj === "string") {
+    if (fastMode) {
+      return fastBodyImage(obj, width, height, format);
+    }
     const fast = findFirstImageUrl(obj);
     if (fast) {
       return proxifyFound(fast, width, height, format);
@@ -10420,12 +10887,12 @@ function catchPostImage(obj, width = 0, height = 0, format = "match") {
     }
     return null;
   }
-  const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}`;
+  const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}${fastMode ? "-fast" : ""}`;
   const item = cacheGet(key);
-  if (item) {
+  if (item !== void 0) {
     return item;
   }
-  const res = getImage(obj, width, height, format);
+  const res = getImage(obj, width, height, format, fastMode);
   cacheSet(key, res);
   return res;
 }

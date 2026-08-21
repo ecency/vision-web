@@ -108,6 +108,7 @@ COPY --from=base /var/app/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=base /var/app/apps/web/package.json ./apps/web/package.json
 COPY --from=base /var/app/apps/web/healthCheck.js ./apps/web/healthCheck.js
 COPY --from=base /var/app/apps/web/next-runtime-config.js ./apps/web/next-runtime-config.js
+COPY --from=base /var/app/apps/web/ssr-admission.js ./apps/web/ssr-admission.js
 COPY --from=base /var/app/apps/web/public ./apps/web/public
 COPY --from=base /var/app/apps/web/.next ./apps/web/.next
 COPY --from=base /var/app/node_modules ./node_modules
@@ -130,5 +131,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 CMD node
 # images, experimental flags, compress, ...). The preload hands the server the
 # config the build resolved, from .next/required-server-files.json, the way
 # Next's own standalone server.js does. See next-runtime-config.js.
+#
+# ssr-admission.js caps in-flight page renders per process (SSR_MAX_INFLIGHT,
+# set in the stack file) and answers 503 above the cap before Next sees the
+# request, so the edge fails over instead of queueing behind a stuck loop.
 WORKDIR /var/app/apps/web
-CMD ["node", "--require", "./next-runtime-config.js", "./node_modules/next/dist/bin/next", "start"]
+CMD ["node", "--require", "./next-runtime-config.js", "--require", "./ssr-admission.js", "./node_modules/next/dist/bin/next", "start"]
