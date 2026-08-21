@@ -482,6 +482,27 @@ function firstStandalone(scan: ScanText, classify: (token: string) => string | n
 // The href of an anchor's opening tag, quoted either way or bare. Preceded by
 // whitespace, never by `-`: `data-href` is not the href.
 const HREF_ATTR_RE = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i
+// Whether a quoted attribute value runs straight into the next attribute
+// name (`title="x"href=`). The renderer does not read such a tag as an anchor
+// at all: it escapes the tag as text and linkifies the URL inside, so the
+// scans must leave it alone rather than blank it. A quote-state walk: only a
+// CLOSING quote followed by a letter counts.
+function hasGluedAttribute(tag: string): boolean {
+  let quote = ''
+  for (let i = 0; i < tag.length; i++) {
+    const c = tag[i]
+    if (quote) {
+      if (c === quote) {
+        quote = ''
+        const next = tag[i + 1]
+        if (next !== undefined && /[A-Za-z]/.test(next)) return true
+      }
+    } else if (c === '"' || c === "'") {
+      quote = c
+    }
+  }
+  return false
+}
 // Markdown link `[label](href)` (NOT an image — the `!` is excluded by the
 // caller). The renderer (a.method) promotes such a link to an image only when
 // the href is an image URL AND the label text equals the href. Used to find the
@@ -555,8 +576,8 @@ function blankUnequalAnchors(cleaned: string, textContent: boolean): string {
   let at = findTag(lower, '<a', 0, OPEN_TAG_NAME_END)
   while (at !== -1) {
     const gt = findOpenTagEnd(lower, at)
-    if (Number.isNaN(gt) || gt === -1) {
-      // Broken or self-closing: not an anchor around any text.
+    if (Number.isNaN(gt) || gt === -1 || hasGluedAttribute(cleaned.slice(at, gt))) {
+      // Broken, self-closing or malformed: not an anchor around any text.
       at = findTag(lower, '<a', at + 2, OPEN_TAG_NAME_END)
       continue
     }

@@ -10573,6 +10573,22 @@ function firstStandalone(scan, classify) {
   return null;
 }
 var HREF_ATTR_RE = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
+function hasGluedAttribute(tag) {
+  let quote = "";
+  for (let i2 = 0; i2 < tag.length; i2++) {
+    const c = tag[i2];
+    if (quote) {
+      if (c === quote) {
+        quote = "";
+        const next = tag[i2 + 1];
+        if (next !== void 0 && /[A-Za-z]/.test(next)) return true;
+      }
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    }
+  }
+  return false;
+}
 var MD_LINK_RE = /\[([^[\]]*)\]\(\s*([^)\s[]+)(?:\s+["'][^"']*["'])?\s*\)/g;
 var SAFE_URL_RE = /^https?:\/\//i;
 var IMG_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i;
@@ -10593,7 +10609,7 @@ function blankUnequalAnchors(cleaned, textContent) {
   let at = findTag(lower, "<a", 0, OPEN_TAG_NAME_END);
   while (at !== -1) {
     const gt = findOpenTagEnd(lower, at);
-    if (Number.isNaN(gt) || gt === -1) {
+    if (Number.isNaN(gt) || gt === -1 || hasGluedAttribute(cleaned.slice(at, gt))) {
       at = findTag(lower, "<a", at + 2, OPEN_TAG_NAME_END);
       continue;
     }

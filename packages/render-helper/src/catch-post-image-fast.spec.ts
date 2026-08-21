@@ -415,7 +415,11 @@ describe('catchPostImage fast mode', () => {
     const dataHref = `<a data-href="${i}" href="https://example.com/page">${i}</a>`
     expect(catchPostImage(entry(dataHref), 0, 0, 'match', FAST)).toBeNull()
     expect(getEntryImageRawUrl(entry(dataHref))).toBeNull()
-    for (const body of [`<a title="a > b" href="${i}">${i}</a>`, `<a href=${i}>${i}</a>`, `<a href="${i}" data-href="x">${i}</a>`]) {
+    for (const body of [
+      `<a title="a > b" href="${i}">${i}</a>`,
+      `<a href=${i}>${i}</a>`,
+      `<a href="${i}" data-href="x">${i}</a>`
+    ]) {
       const r = both(body)
       expect(r.full, body).toBeTruthy()
       expect(r.fast, body).toBe(r.full)
@@ -432,6 +436,21 @@ describe('catchPostImage fast mode', () => {
     expect(catchPostImage(entry(many), 0, 0, 'match', FAST)).toBeNull()
     // Generous for slow CI: the quadratic form took over a second at 4,000.
     expect(performance.now() - started).toBeLessThan(3_000)
+  })
+
+  it('treats a tag with a glued attribute as text, as the renderer does, so its URL is prose', () => {
+    // Probed: `<a title="x"href=...>` is not parsed as an anchor; the tag is
+    // escaped as text and the URL inside is linkified, whatever the href says.
+    const i = 'https://files.peakd.com/x/glued.png'
+    for (const body of [
+      `<a title="x"href="${i}">${i}</a>`,
+      `<a title='x'href="${i}">${i}</a>`,
+      `<a title="x"href="https://example.com/page">${i}</a>`
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeTruthy()
+      expect(r.fast, body).toBe(r.full)
+    }
   })
 
   it('does not read an anchor whose first text continues past the href with a literal < as promoted', () => {
