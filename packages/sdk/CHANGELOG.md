@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.89
+
+### Patch Changes
+
+- SDK: route server-side reads through the vapi RPC cache, with fallback (#1614)
+
 ## 2.3.88
 
 ### Patch Changes
