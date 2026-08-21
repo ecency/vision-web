@@ -10337,6 +10337,17 @@ function markLines(lower) {
     let lineEnd = lower.indexOf("\n", lineStart);
     if (lineEnd === -1) lineEnd = lower.length;
     let line = lower.slice(lineStart, lineEnd);
+    if (inBlock) {
+      if (line.trim() === "") {
+        inBlock = false;
+        listIndent = 0;
+        nestedItem = false;
+      } else {
+        block2.fill(1, lineStart, lineEnd);
+      }
+      lineStart = lineEnd + 1;
+      continue;
+    }
     let stripped = 0;
     let sawList = false;
     let lastWasList = false;

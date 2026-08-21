@@ -351,6 +351,10 @@ describe('catchPostImage fast mode', () => {
       `> > - > <pre>${U}</pre>\n\nplain`,
       `-  > <pre>${U}</pre>\n\nplain`,
       `- item\n  > <pre>${U}</pre>\n\nplain`,
+      `<div>\n- - <pre>${U}</pre>\n</div>\n\nplain`,
+      `<div>\n> <code>${U}</code>\n</div>\n\nplain`,
+      `<div>\n- <code>${U}</code>\n</div>\n\nplain`,
+      `<div>\n    <pre>${U}</pre>\n</div>\n\nplain`,
       `- - > <pre>${U}</pre>\n\nplain`,
       `- - - > <pre>${U}</pre>\n\nplain`,
       `- - > - <pre>${U}</pre>\n\nplain`,
@@ -362,6 +366,7 @@ describe('catchPostImage fast mode', () => {
       expect(getEntryImageRawUrl(entry(body)), body).toBeNull()
     }
     for (const body of [
+      `<div>\n\n- - <pre>${U}</pre>\n\nplain`,
       `- - <pre>${U}</pre>\n\nplain`,
       `- - - <pre>${U}</pre>\n\nplain`,
       `> - - <pre>${U}</pre>\n\nplain`,

@@ -133,6 +133,19 @@ function markLines(lower: string): LineMasks {
     let lineEnd = lower.indexOf('\n', lineStart)
     if (lineEnd === -1) lineEnd = lower.length
     let line = lower.slice(lineStart, lineEnd)
+    // An open HTML block is raw until its blank-line terminator: container
+    // markers inside it are text, not markers, so nothing below applies.
+    if (inBlock) {
+      if (line.trim() === '') {
+        inBlock = false
+        listIndent = 0
+        nestedItem = false
+      } else {
+        block.fill(1, lineStart, lineEnd)
+      }
+      lineStart = lineEnd + 1
+      continue
+    }
     let inContainer = false
     // Container prefixes, in any alternation (`- > <pre>`, `> - <pre>`,
     // `> > - > <pre>`, `- - > <pre>`), all probed: blockquote and list
