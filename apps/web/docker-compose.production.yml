@@ -105,7 +105,17 @@ services:
       # Bound the V8 old-space so a pathological single render crashes (and the
       # replica restarts) rather than ballooning the heap unbounded. Heap working
       # set is ~2GiB, so 3GiB leaves headroom without clipping normal renders.
-      - NODE_OPTIONS=--max-old-space-size=3072
+      # The semi-space (young generation) is raised from V8's default so an
+      # allocation-heavy render triggers fewer scavenges; costs ~128MiB of RSS
+      # per replica, well inside the limit above.
+      - NODE_OPTIONS=--max-old-space-size=3072 --max-semi-space-size=64
+      # Per-process admission control (ssr-admission.js, loaded by the image
+      # CMD): above this many in-flight page renders the process answers 503
+      # with Retry-After, which the edge worker treats as a failover signal.
+      # Normal load is a handful of renders in flight per process; the cap only
+      # bites once renders have slowed enough to pile up, which is exactly the
+      # state that used to end in a heap abort. Unset or 0 disables it.
+      - SSR_MAX_INFLIGHT=16
     restart: always
     ports:
       - "3000:3000"
