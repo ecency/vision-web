@@ -27,12 +27,16 @@ const rawRetryAfter = process.env.SSR_SHED_RETRY_AFTER;
 const retryAfter = /^\d{1,4}$/.test(rawRetryAfter || "") ? rawRetryAfter : "1";
 
 // A client that goes away mid-render (the edge worker's timeout, a navigation)
-// does not stop the render: the server prefetches run on until their own
-// timeout. The slot is therefore held for this long after the socket closes
-// unless the response finishes first, so abandoned renders still count as the
-// work they are. Matches the server-side prefetch timeout.
+// does not end the render in a way this layer can see: Next aborts the stream
+// and destroys the response (no end(), no finish), the render stops at its
+// next chunk boundary, but an async server component already inside a chain
+// of awaited prefetches runs on, each leg bounded by the server prefetch
+// timeout (10s). There is no completion signal for that tail, so the slot is
+// held for a fixed grace after the socket closes, long enough to cover several
+// sequential legs, and the undercount is bounded to renders that outlive it,
+// which the event-loop monitor reports as pathological anyway.
 const rawGrace = process.env.SSR_ABANDONED_GRACE_MS;
-const abandonedGraceMs = /^\d{1,6}$/.test(rawGrace || "") ? Number(rawGrace) : 10_000;
+const abandonedGraceMs = /^\d{1,6}$/.test(rawGrace || "") ? Number(rawGrace) : 30_000;
 
 // Paths that are not page renders. Anything else that reaches this process is
 // a document or an RSC navigation (the reverse proxy keeps private-api and
@@ -54,7 +58,7 @@ function isRender(req) {
   return !PASS_EXTENSIONS.test(path);
 }
 
-const state = { max, inflight: 0, shed: 0 };
+const state = { max, inflight: 0, shed: 0, abandoned: 0 };
 // Read by the event-loop monitor's log lines; never written from outside.
 globalThis.__ecencySsrAdmission = state;
 
@@ -93,6 +97,7 @@ if (Number.isFinite(max) && max > 0) {
       // keep the slot for the grace period, or until end(), whichever first.
       res.once("close", () => {
         if (released) return;
+        state.abandoned += 1;
         if (abandonedGraceMs === 0) {
           release();
           return;
@@ -110,7 +115,7 @@ if (Number.isFinite(max) && max > 0) {
   setInterval(() => {
     if (state.shed === lastShed) return;
     process.stderr.write(
-      `[ssr-admission] shed ${state.shed - lastShed} requests in the last 60s (inflight=${state.inflight}, max=${state.max})\n`
+      `[ssr-admission] shed ${state.shed - lastShed} requests in the last 60s (inflight=${state.inflight}, max=${state.max}, abandoned=${state.abandoned})\n`
     );
     lastShed = state.shed;
   }, 60_000).unref();

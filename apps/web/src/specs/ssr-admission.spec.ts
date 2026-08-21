@@ -227,10 +227,25 @@ describe("ssr-admission preload", () => {
     const dockerfile = readFileSync(join(process.cwd(), "Dockerfile"), "utf8");
     expect(dockerfile).toContain("ssr-admission.js ./apps/web/ssr-admission.js");
     expect(dockerfile).toMatch(/CMD \[.*"--require", "\.\/ssr-admission\.js".*\]/);
+    // Under the web service specifically: a variable placed under another
+    // service is silent (the preload just reports itself disabled).
+    const webBlock = (compose: string): string => {
+      const lines = compose.split("\n");
+      const start = lines.findIndex((l) => l === "  web:");
+      expect(start, "web service").toBeGreaterThan(-1);
+      let end = lines.length;
+      for (let i = start + 1; i < lines.length; i++) {
+        if (/^  [A-Za-z_-]+:/.test(lines[i]) || /^[A-Za-z_-]+:/.test(lines[i])) {
+          end = i;
+          break;
+        }
+      }
+      return lines.slice(start, end).join("\n");
+    };
     for (const file of ["docker-compose.production.yml", "docker-compose.yml"]) {
-      const compose = readFileSync(join(process.cwd(), file), "utf8");
-      expect(compose, file).toMatch(/^\s*- SSR_MAX_INFLIGHT=\d+$/m);
-      expect(compose, file).toMatch(/--max-semi-space-size=\d+/);
+      const web = webBlock(readFileSync(join(process.cwd(), file), "utf8"));
+      expect(web, file).toMatch(/^\s*- SSR_MAX_INFLIGHT=\d+$/m);
+      expect(web, file).toMatch(/^\s*- NODE_OPTIONS=.*--max-semi-space-size=\d+/m);
     }
   });
 });
