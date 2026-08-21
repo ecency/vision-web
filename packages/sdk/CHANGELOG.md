@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.90
+
+### Patch Changes
+
+- SSR RPC proxy: report rpcProxyStats from the web tier (#1623)
+
 ## 2.3.89
 
 ### Patch Changes
