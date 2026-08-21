@@ -131,12 +131,19 @@ services:
       # Normal load is a handful of renders in flight per process; the cap only
       # bites once renders have slowed enough to pile up, which is exactly the
       # state that used to end in a heap abort. Unset or 0 disables it.
-      # Sized from measurement, not as a choke: the heavier origin runs ~14
-      # renders in flight per replica at normal load (60 docs/s x 0.7s / 3),
-      # and at 16 the cap shed 3-5% of documents as 503 for the edge to fail
-      # over. 48 is ~3.5x that average with room for bursts, and 3 x 48 stays
-      # under the origin's site-wide SSR concurrency ceiling. Multi-second
-      # render stalls, the reason for a tight cap, no longer occur.
+      # A per-process backstop against one slow render dragging down everything
+      # sharing its event loop, sized from measurement rather than as a choke:
+      # the heavier origin runs ~14 renders in flight per replica at normal load
+      # (its document rate x mean render time / replicas), and at 16 the cap shed
+      # a few percent of documents as 503 for the edge to fail over. 48 is ~3.5x
+      # that average with room for bursts. Not a global concurrency budget:
+      # anonymous SSR concurrency is bounded separately at the origin (nginx,
+      # over a different population - this cap counts every render, including
+      # logged-in and verified-crawler traffic). Memory is not the constraint
+      # here: replica RSS is flat against in-flight renders (~2.2GB at 5, 11 and
+      # 15 concurrent), being dominated by per-process caches rather than the
+      # renders themselves, and the multi-second stalls this cap was tightened
+      # for no longer occur.
       - SSR_MAX_INFLIGHT=48
     restart: always
     ports:
