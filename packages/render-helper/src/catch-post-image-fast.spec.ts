@@ -227,16 +227,13 @@ describe('catchPostImage fast mode', () => {
     expect(r.fast).toBe(r.full)
   })
 
-  it('gives up on a URL that reads as an attribute value even where the renderer would show it', () => {
-    // The sanitizer drops the <script> tag and the renderer linkifies what was
-    // its text, image included. The regex cannot tell `u="https://..."` in
-    // script source from a real attribute such as <video poster="...">, and
-    // treating attribute values as bare URLs would put posters on cards the
-    // page never renders. Script source in a post body is the rarer case, so
-    // fast mode knowingly hands back null here (never an image the page lacks).
+  it('keeps a URL in <script> text, which the sanitizer unwraps and the renderer linkifies', () => {
+    // `u="https://..."` looks like an attribute value but sits in text, not
+    // inside a tag; the in-tag marks tell the two apart, so this agrees with
+    // the renderer while a real <video poster="..."> still does not count.
     const r = both('<script>var u="https://files.peakd.com/x/shown.png"</script>\n\nplain text')
     expect(r.full).toBeTruthy()
-    expect(r.fast).toBeNull()
+    expect(r.fast).toBe(r.full)
   })
 
   it('finds a bare image URL wrapped in emphasis or quotes, as the renderer does', () => {
@@ -259,6 +256,38 @@ describe('catchPostImage fast mode', () => {
       const r = both(body)
       expect(r.fast, body).toBe(r.full)
     }
+  })
+
+  it('does not read a URL nested anywhere inside a tag as bare: style url(), JSON in data-*, odd quoting', () => {
+    for (const body of [
+      '<div style="background:url(https://files.peakd.com/x/bg.jpg)">text</div>',
+      '<div data-config=\'{"image":"https://files.peakd.com/x/cfg.png"}\'>text</div>',
+      '<div title="a > b" data-x="https://files.peakd.com/x/quoted-gt.png">text</div>',
+      '<span data-v="https://www.youtube.com/watch?v=dQw4w9WgXcQ">text</span>'
+    ]) {
+      const r = both(body)
+      expect(r.fast, body).toBe(r.full)
+      expect(r.fast, body).toBeNull()
+      expect(getEntryImageRawUrl(entry(body)), body).toBeNull()
+    }
+  })
+
+  it('skips a YouTube channel or playlist link and still finds a later watch link', () => {
+    const r = both('my channel https://www.youtube.com/channel/UCabc and the video\n\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ')
+    expect(r.full).toBeTruthy()
+    expect(r.fast).toBe(r.full)
+  })
+
+  it('follows the renderer on anchors with nested markup: video promoted by textContent, image not', () => {
+    const v = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+    const r = both(`<a href="${v}"><span>${v}</span></a>`)
+    expect(r.full).toBeTruthy()
+    expect(r.fast).toBe(r.full)
+    const i = 'https://files.peakd.com/x/wrapped.png'
+    const ri = both(`<a href="${i}"><strong>${i}</strong></a>`)
+    expect(ri.full).toBeNull()
+    expect(ri.fast).toBeNull()
+    expect(getEntryImageRawUrl(entry(`<a href="${i}"><strong>${i}</strong></a>`))).toBeNull()
   })
 
   it('returns null, not a later poster, when an ambiguous markdown image comes first', () => {

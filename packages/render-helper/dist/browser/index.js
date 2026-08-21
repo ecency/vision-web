@@ -2219,20 +2219,48 @@ var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/;
 var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
 var BARE_IMAGE_RE = /https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)(?:[?#][^\s<>"'()[\]]*)?/gi;
 var BARE_YOUTUBE_RE = /https?:\/\/(?:[\w-]+\.)*(?:youtube\.com|youtu\.be)\/[^\s<>"'()[\]]+/gi;
-function isStandalone(text2, idx) {
+function markInsideTags(text2) {
+  const marks = new Uint8Array(text2.length);
+  let inTag = false;
+  let quote = "";
+  for (let i = 0; i < text2.length; i++) {
+    const c = text2[i];
+    if (!inTag) {
+      if (c === "<" && i + 1 < text2.length && /[A-Za-z/!?]/.test(text2[i + 1])) {
+        inTag = true;
+        marks[i] = 1;
+      }
+      continue;
+    }
+    marks[i] = 1;
+    if (quote) {
+      if (c === quote) quote = "";
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === ">") {
+      inTag = false;
+    }
+  }
+  return marks;
+}
+function isStandalone(scan, idx) {
+  if (scan.inTag[idx]) return false;
   if (idx === 0) return true;
+  const text2 = scan.text;
   const prev = text2[idx - 1];
   if (/[\w/.:%?&=#[!-]/.test(prev)) return false;
   const prev2 = idx > 1 ? text2[idx - 2] : "";
   if (prev === "(" && prev2 === "]") return false;
-  if ((prev === '"' || prev === "'") && prev2 === "=") return false;
   return true;
 }
-function firstStandalone(text2, re) {
-  for (const m of text2.matchAll(re)) {
+function* standaloneMatches(scan, re) {
+  for (const m of scan.text.matchAll(re)) {
     const idx = m.index ?? 0;
-    if (isStandalone(text2, idx)) return { url: m[0], pos: idx };
+    if (isStandalone(scan, idx)) yield { url: m[0], pos: idx };
   }
+}
+function firstStandalone(scan, re) {
+  for (const hit of standaloneMatches(scan, re)) return hit;
   return null;
 }
 var HTML_ANCHOR_RE = /<a\b[^>]*?\bhref\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -2245,25 +2273,33 @@ function findFirstImageUrl(body, includeBareUrls = false) {
 function stripCodeRegions(body) {
   return stripComments(body).replace(BACKTICK_FENCE_RE, "").replace(TILDE_FENCE_RE, "").replace(INLINE_CODE_RE, "").replace(INDENTED_CODE_RE, "").replace(HTML_HIDDEN_RE, "");
 }
-function blankUnequalAnchors(cleaned) {
-  return cleaned.replace(
-    HTML_ANCHOR_RE,
-    (whole, href, text2) => decodeEntities(text2.trim()) === decodeEntities(href.trim()) ? whole : " ".repeat(whole.length)
-  );
+function blankUnequalAnchors(cleaned, textContent) {
+  return cleaned.replace(HTML_ANCHOR_RE, (whole, href, inner) => {
+    const text2 = textContent ? stripHtmlTags(inner) : inner;
+    return decodeEntities(text2.trim()) === decodeEntities(href.trim()) ? whole : " ".repeat(whole.length);
+  });
 }
+var EMPTY_SCAN = { text: "", inTag: new Uint8Array(0) };
 function prepareBody(body) {
   const cleaned = body ? stripCodeRegions(body) : "";
-  return { cleaned, blanked: cleaned ? blankUnequalAnchors(cleaned) : "" };
+  if (!cleaned) return { cleaned, image: EMPTY_SCAN, video: EMPTY_SCAN };
+  const imageText = blankUnequalAnchors(cleaned, false);
+  const videoText = blankUnequalAnchors(cleaned, true);
+  return {
+    cleaned,
+    image: { text: imageText, inTag: markInsideTags(imageText) },
+    video: { text: videoText, inTag: markInsideTags(videoText) }
+  };
 }
 function findFirstVideoPoster(prepared) {
-  const { cleaned, blanked } = prepared;
+  const { cleaned } = prepared;
   if (!cleaned) return null;
-  const bare = firstStandalone(blanked, BARE_YOUTUBE_RE);
   let best = null;
-  if (bare) {
-    const id = bare.url.match(YOUTUBE_REGEX);
+  for (const hit of standaloneMatches(prepared.video, BARE_YOUTUBE_RE)) {
+    const id = hit.url.match(YOUTUBE_REGEX);
     if (id && id[1]) {
-      best = { url: id[1], pos: bare.pos };
+      best = { url: id[1], pos: hit.pos };
+      break;
     }
   }
   for (const m of cleaned.matchAll(MD_LINK_RE)) {
@@ -2285,7 +2321,7 @@ function findFirstVideoPoster(prepared) {
 var NONE = { candidate: null, ambiguous: false };
 var AMBIGUOUS = { candidate: null, ambiguous: true };
 function findFirstImageCandidate(prepared, includeBareUrls = false) {
-  const { cleaned, blanked } = prepared;
+  const { cleaned } = prepared;
   if (!cleaned) return NONE;
   const mdMatch = cleaned.match(MD_IMAGE_RE);
   const htmlMatch = cleaned.match(HTML_IMAGE_RE);
@@ -2305,7 +2341,7 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
     candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0 });
   }
   if (includeBareUrls) {
-    const bareMatch = firstStandalone(blanked, BARE_IMAGE_RE);
+    const bareMatch = firstStandalone(prepared.image, BARE_IMAGE_RE);
     if (bareMatch && SAFE_URL_RE.test(bareMatch.url)) {
       candidates.push(bareMatch);
     }

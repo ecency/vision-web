@@ -1,6 +1,6 @@
 import { proxifyImageSrc } from './proxify-image-src'
 import { markdown2Html } from './markdown-2-html'
-import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeEntities } from './helper'
+import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeEntities, stripHtmlTags } from './helper'
 import { cacheGet, cacheSet } from './cache'
 import { Entry } from './types'
 import { YOUTUBE_REGEX } from './consts'
@@ -82,30 +82,65 @@ const BARE_IMAGE_RE = /https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ic
 // renderer's own YOUTUBE_REGEX so the two can never disagree.
 const BARE_YOUTUBE_RE = /https?:\/\/(?:[\w-]+\.)*(?:youtube\.com|youtu\.be)\/[^\s<>"'()[\]]+/gi
 
+// One linear pass marking every offset that sits inside an HTML tag (between
+// a `<` that opens a tag and its closing `>`, quotes respected so a `>` inside
+// an attribute value does not end the tag early). A URL in there is an
+// attribute value of some shape (`src="..."`, `style="url(...)"`, JSON in a
+// `data-*` attribute, `poster=`) and never prose the renderer would linkify.
+function markInsideTags(text: string): Uint8Array {
+  const marks = new Uint8Array(text.length)
+  let inTag = false
+  let quote = ''
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (!inTag) {
+      if (c === '<' && i + 1 < text.length && /[A-Za-z/!?]/.test(text[i + 1])) {
+        inTag = true
+        marks[i] = 1
+      }
+      continue
+    }
+    marks[i] = 1
+    if (quote) {
+      if (c === quote) quote = ''
+    } else if (c === '"' || c === "'") {
+      quote = c
+    } else if (c === '>') {
+      inTag = false
+    }
+  }
+  return marks
+}
+
 // Whether a URL found at `idx` stands on its own in prose, which is what the
 // renderer linkifies into an image or a video poster. Verified against the
 // renderer: it does so after whitespace, a closing `>`, and inside
 // parentheses, emphasis or quotes alike. It does NOT when the URL is:
+//   - anywhere inside a tag (an attribute value of any shape), or
 //   - glued to another token (a longer URL, a word, `=`), or
 //   - the href of a markdown link `[label](href)`, or the label's start `[`
 //     (the `[url](url)` image-link form is found by the link scan instead), or
-//   - an attribute value (`src="..."`, `href='...'`), or
 //   - a markdown image `![alt](href)` (handled by the markdown scan).
-function isStandalone(text: string, idx: number): boolean {
+function isStandalone(scan: ScanText, idx: number): boolean {
+  if (scan.inTag[idx]) return false
   if (idx === 0) return true
+  const text = scan.text
   const prev = text[idx - 1]
   if (/[\w/.:%?&=#[!-]/.test(prev)) return false
   const prev2 = idx > 1 ? text[idx - 2] : ''
   if (prev === '(' && prev2 === ']') return false
-  if ((prev === '"' || prev === "'") && prev2 === '=') return false
   return true
 }
 
-function firstStandalone(text: string, re: RegExp): { url: string; pos: number } | null {
-  for (const m of text.matchAll(re)) {
+function* standaloneMatches(scan: ScanText, re: RegExp): Generator<{ url: string; pos: number }> {
+  for (const m of scan.text.matchAll(re)) {
     const idx = m.index ?? 0
-    if (isStandalone(text, idx)) return { url: m[0], pos: idx }
+    if (isStandalone(scan, idx)) yield { url: m[0], pos: idx }
   }
+}
+
+function firstStandalone(scan: ScanText, re: RegExp): { url: string; pos: number } | null {
+  for (const hit of standaloneMatches(scan, re)) return hit
   return null
 }
 // An HTML anchor. Its text sits right after a `>`, so the standalone-position
@@ -161,28 +196,50 @@ function stripCodeRegions(body: string): string {
     .replace(HTML_HIDDEN_RE, '')
 }
 
-// Blank (offset-preserving, so positions stay comparable) every anchor whose
-// text is not its href. Both sides are entity-decoded first, the way the
-// renderer sees them (textContent vs getAttribute). See HTML_ANCHOR_RE.
-function blankUnequalAnchors(cleaned: string): string {
-  return cleaned.replace(HTML_ANCHOR_RE, (whole: string, href: string, text: string) =>
-    decodeEntities(text.trim()) === decodeEntities(href.trim()) ? whole : ' '.repeat(whole.length)
-  )
+// Blank (offset-preserving, so positions stay comparable) every anchor the
+// renderer would not promote. Verified against the renderer, the two
+// promotions use different tests: a video link is promoted when the anchor's
+// textContent equals its href (nested <span> and the like allowed), an image
+// link only when the anchor's raw content is the bare URL (nested markup means
+// it stays a link). Entities are decoded on both sides, as the DOM exposes
+// them. See HTML_ANCHOR_RE.
+function blankUnequalAnchors(cleaned: string, textContent: boolean): string {
+  return cleaned.replace(HTML_ANCHOR_RE, (whole: string, href: string, inner: string) => {
+    const text = textContent ? stripHtmlTags(inner) : inner
+    return decodeEntities(text.trim()) === decodeEntities(href.trim()) ? whole : ' '.repeat(whole.length)
+  })
+}
+
+/** One scan text plus its inside-a-tag marks. */
+interface ScanText {
+  text: string
+  inTag: Uint8Array
 }
 
 /**
- * The body with every region the page never shows removed, plus the same text
- * with non-promoted anchors blanked for the bare-URL scans. Computed once per
+ * The body with every region the page never shows removed, plus the two
+ * anchor-blanked variants the bare scans need (image rule and video rule, see
+ * blankUnequalAnchors), each with its inside-a-tag marks. Computed once per
  * lookup; every scan below works on these.
  */
 interface PreparedBody {
   cleaned: string
-  blanked: string
+  image: ScanText
+  video: ScanText
 }
+
+const EMPTY_SCAN: ScanText = { text: '', inTag: new Uint8Array(0) }
 
 function prepareBody(body: string): PreparedBody {
   const cleaned = body ? stripCodeRegions(body) : ''
-  return { cleaned, blanked: cleaned ? blankUnequalAnchors(cleaned) : '' }
+  if (!cleaned) return { cleaned, image: EMPTY_SCAN, video: EMPTY_SCAN }
+  const imageText = blankUnequalAnchors(cleaned, false)
+  const videoText = blankUnequalAnchors(cleaned, true)
+  return {
+    cleaned,
+    image: { text: imageText, inTag: markInsideTags(imageText) },
+    video: { text: videoText, inTag: markInsideTags(videoText) }
+  }
 }
 
 interface ImageCandidate {
@@ -197,14 +254,16 @@ interface ImageCandidate {
  * discovers these itself through text.method / a.method.
  */
 function findFirstVideoPoster(prepared: PreparedBody): ImageCandidate | null {
-  const { cleaned, blanked } = prepared
+  const { cleaned } = prepared
   if (!cleaned) return null
-  const bare = firstStandalone(blanked, BARE_YOUTUBE_RE)
   let best: ImageCandidate | null = null
-  if (bare) {
-    const id = bare.url.match(YOUTUBE_REGEX)
+  // The first YouTube-shaped URL that actually carries a video id: a channel
+  // or playlist link earlier in the body must not hide a later watch link.
+  for (const hit of standaloneMatches(prepared.video, BARE_YOUTUBE_RE)) {
+    const id = hit.url.match(YOUTUBE_REGEX)
     if (id && id[1]) {
-      best = { url: id[1], pos: bare.pos }
+      best = { url: id[1], pos: hit.pos }
+      break
     }
   }
   // `[url](url)` form: a.method turns a link whose text equals its href into
@@ -242,7 +301,7 @@ const NONE: CandidateResult = { candidate: null, ambiguous: false }
 const AMBIGUOUS: CandidateResult = { candidate: null, ambiguous: true }
 
 function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false): CandidateResult {
-  const { cleaned, blanked } = prepared
+  const { cleaned } = prepared
   if (!cleaned) return NONE
 
   const mdMatch = cleaned.match(MD_IMAGE_RE)
@@ -277,7 +336,7 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
     candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0 })
   }
   if (includeBareUrls) {
-    const bareMatch = firstStandalone(blanked, BARE_IMAGE_RE)
+    const bareMatch = firstStandalone(prepared.image, BARE_IMAGE_RE)
     if (bareMatch && SAFE_URL_RE.test(bareMatch.url)) {
       candidates.push(bareMatch)
     }
