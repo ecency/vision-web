@@ -5,6 +5,7 @@ import { FormControl } from "@ui/input";
 import { faqKeysGeneral } from "@/consts";
 import i18next from "i18next";
 import { articleSvg } from "@/assets/img/svg";
+import { useFaqTranslations } from "@/features/i18n/use-faq-translations";
 
 interface Props {
   id: string;
@@ -15,8 +16,11 @@ export const DeckFaqColumn = ({ id, draggable }: Props) => {
   const [expandedHelp, setExpandedHelp] = useState(true);
   const [searchText, setSearchText] = useState("");
   const [dataToShow, setDataToShow] = useState<string[]>([...faqKeysGeneral]);
+  // FAQ articles load on demand (#1598); the list renders once they are in.
+  const faqReady = useFaqTranslations();
 
   useEffect(() => {
+    if (!faqReady) return;
     setDataToShow(
       faqKeysGeneral.filter((key) =>
         i18next
@@ -25,7 +29,7 @@ export const DeckFaqColumn = ({ id, draggable }: Props) => {
           .includes(searchText.toLocaleLowerCase())
       )
     );
-  }, [searchText]);
+  }, [searchText, faqReady]);
 
   return (
     <GenericDeckColumn
@@ -61,7 +65,7 @@ export const DeckFaqColumn = ({ id, draggable }: Props) => {
               ""
             )}
             <div className="faq-content">
-              {dataToShow.map((x) => {
+              {faqReady && dataToShow.map((x) => {
                 return (
                   <a className="faq-article" href={`/faq#${x}`} target="_blank" key={x}>
                     <div className="faq-image">{articleSvg}</div>

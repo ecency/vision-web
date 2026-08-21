@@ -7,9 +7,12 @@ import data from "@/features/ecency-center/data/path.json";
 import useMount from "react-use/lib/useMount";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { useFaqTranslations } from "@/features/i18n/use-faq-translations";
 
 export function CenterFaq() {
   const pathname = usePathname();
+  // FAQ articles load on demand (#1598); search and titles wait for them.
+  const faqReady = useFaqTranslations();
 
   const [searchText, setSearchText] = useState("");
   const [faqKeys, setFaqKeys] = useState<string[]>([]);
@@ -17,7 +20,7 @@ export function CenterFaq() {
   const [datatoShow, setDatatoShow] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!searchText) {
+    if (!searchText || !faqReady) {
       setDatatoShow(defaultFaqKeys);
       return;
     }
@@ -35,7 +38,7 @@ export function CenterFaq() {
     });
 
     setDatatoShow(searchResult);
-  }, [defaultFaqKeys, faqKeys, searchText]);
+  }, [defaultFaqKeys, faqKeys, searchText, faqReady]);
 
   useMount(() => {
     const faqKeys = [...faqKeysGeneral];
@@ -68,7 +71,7 @@ export function CenterFaq() {
         ) : (
           ""
         )}
-        {datatoShow.map((x, i) => (
+        {faqReady && datatoShow.map((x, i) => (
           <div
             className="animate-fade-in-up"
             style={{ animationDelay: `${Math.min(i, 5) * 50}ms` }}

@@ -258,6 +258,17 @@ const config = {
         filename: "static/chunks/[path][name].[hash][ext]"
       }
     });
+    // en-US is the only eagerly bundled locale. Its FAQ articles (~17 KB gz, a
+    // quarter of the file) are only rendered by the FAQ surfaces, so the
+    // loader splits them out: the plain import gets the locale without them,
+    // `?faq` gets only them, loaded on demand by features/i18n/faq.ts (#1598).
+    // Applies to the server bundle too so SSR and client agree on what is
+    // eager. The JSON on disk stays whole for Crowdin.
+    config.module.rules.push({
+      test: /[\\/]features[\\/]i18n[\\/]locales[\\/]en-US\.json$/,
+      type: "javascript/auto",
+      use: [{ loader: path.resolve(__dirname, "src/features/i18n/faq-split.js") }]
+    });
     config.resolve.fallback = {
       ...config.resolve.fallback,
       fs: false

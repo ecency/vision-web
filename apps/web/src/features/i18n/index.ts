@@ -108,7 +108,9 @@ const localeLoaders: Record<string, () => Promise<any>> = {
 
 export async function loadLocale(lang: string) {
   if (lang === "en-US" || !localeLoaders[lang]) return;
-  if (i18n.hasResourceBundle(lang, "translation")) return;
+  // Probe a core key rather than the bundle's existence: a partial bundle
+  // (FAQ articles registered early) must not pass for the whole file.
+  if (i18n.getResourceBundle(lang, "translation")?.g) return;
 
   const mod = await localeLoaders[lang]();
   i18n.addResourceBundle(lang, "translation", mod.default || mod);
@@ -180,3 +182,4 @@ export function initI18next(): Promise<void> {
 initI18next().catch((err) => console.error("[i18n] init failed:", err));
 
 export * from "./navigation-locale-watcher";
+export { ensureFaqLoaded, getEnglishFaqResources, isFaqLoaded } from "./faq";

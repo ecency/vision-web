@@ -12,7 +12,13 @@ import {
 } from "@/app/(staticPages)/faq/_components";
 import { searchWithinFaq } from "@/app/(staticPages)/faq/utils";
 import { Tsx } from "@/features/i18n/helper";
-import { NavigationLocaleWatcher } from "@/features/i18n";
+import {
+  NavigationLocaleWatcher,
+  ensureFaqLoaded,
+  getEnglishFaqResources,
+  langOptions
+} from "@/features/i18n";
+import { FaqResources } from "@/features/i18n/faq-resources";
 import { FaqSearchResult } from "@/app/(staticPages)/faq/_components/faq-search-result";
 import { PagesMetadataGenerator } from "@/features/metadata";
 
@@ -32,6 +38,16 @@ interface Props {
 export default async function FAQ({ searchParams }: Props) {
   const params = await searchParams;
 
+  // The FAQ articles are not in the eager locale bundle (#1598). English is
+  // the fallback for every article and the language client components hydrate
+  // in, so it is always loaded and handed to them; a ?lang request (the same
+  // resolution NavigationLocaleWatcher uses) also loads that whole locale.
+  const requestedLang = langOptions.find(
+    (item) => item.code.split("-")[0] === params["lang"]
+  )?.code;
+  await Promise.all([ensureFaqLoaded("en-US"), requestedLang && ensureFaqLoaded(requestedLang)]);
+  const faqResources = getEnglishFaqResources();
+
   const searchResult = searchWithinFaq(params["q"] ?? "");
 
   return (
@@ -40,6 +56,7 @@ export default async function FAQ({ searchParams }: Props) {
       <Feedback />
       <Theme />
       <Navbar />
+      <FaqResources resources={faqResources} />
       <FaqSearchListener searchResult={searchResult} />
       <NavigationLocaleWatcher searchParams={params} />
 
