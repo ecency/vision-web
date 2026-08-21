@@ -60,15 +60,18 @@ if (isServer) {
   // per-tag feeds, posts) are answered from one cache per host instead of
   // being fetched by every renderer process on its own. An optimization, not
   // a dependency: the SDK falls back to the node pool on any proxy failure.
-  // Switched on per deployment (SSR_RPC_PROXY=1) and only when both sides
-  // carry the shared secret; INTERNAL_API_HOST is the overlay route to vapi.
+  // On whenever the deployment hands this process the shared secret (vapi
+  // switches its side on from the same value) and the overlay route to vapi
+  // (INTERNAL_API_HOST). No separate switch: the secret is the switch, in one
+  // place, for both services. SSR_RPC_PROXY=0 is an explicit off for an
+  // on-box kill that leaves the secret alone.
   // The timeout sits just above vapi's own lookup budget (1.5s), so a proxy
   // that cannot answer in time is its 504, and the SDK's per-node timeout
   // bounds it further; the prefetch's own abort signal bounds the whole call
   // either way, so the proxy can never extend a render past the SSR cap.
   const proxyHost = process.env.INTERNAL_API_HOST;
   const proxySecret = process.env.SSR_INTERNAL_SECRET;
-  if (process.env.SSR_RPC_PROXY === "1" && proxyHost && proxySecret) {
+  if (process.env.SSR_RPC_PROXY !== "0" && proxyHost && proxySecret) {
     ConfigManager.setServerRpcProxy({
       url: `${proxyHost.replace(/\/+$/, "")}/private-api/ssr/rpc`,
       headers: { "X-Ecency-Internal": proxySecret },

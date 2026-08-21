@@ -4,11 +4,13 @@ import { describe, expect, it } from "vitest";
 
 /**
  * The server-side RPC proxy is decided at process start in core/sdk-init.ts
- * from SSR_RPC_PROXY, SSR_INTERNAL_SECRET and INTERNAL_API_HOST, and vapi only
- * switches its side on when it holds the same secret. A variable missing from
- * any one of these places is silent: the SDK simply keeps going to the node
- * pool. This pins the whole chain: both services in both stack files, the
- * deploy jobs forwarding the secret, and the origin proxy hiding the path.
+ * from SSR_INTERNAL_SECRET and INTERNAL_API_HOST, and vapi only switches its
+ * side on when it holds the same secret: the secret is the switch for both.
+ * A variable missing from any one of these places is silent: the SDK simply
+ * keeps going to the node pool. This pins the whole chain: both services in
+ * both stack files, the deploy jobs forwarding the secret, the stack files
+ * not pinning the proxy off behind the secret's back, and the origin proxy
+ * hiding the path.
  */
 const root = join(__dirname, "..", "..", "..", "..", "..");
 const read = (p: string): string => readFileSync(join(root, p), "utf8");
@@ -33,23 +35,23 @@ const envNames = (entries: string[]): string[] => entries.map((e) => e.split("="
 
 describe("ssr rpc proxy deploy wiring", () => {
   it.each(["apps/web/docker-compose.yml", "apps/web/docker-compose.production.yml"])(
-    "%s hands the secret to vapi and to web, and web carries the switch",
+    "%s hands the secret to vapi and to web, and does not pin the proxy off behind it",
     (file) => {
       const compose = read(file);
       expect(envEntries(serviceBlock(compose, "vapi")), `${file}: vapi`).toContain("SSR_INTERNAL_SECRET");
       const web = envEntries(serviceBlock(compose, "web"));
       expect(envNames(web), `${file}: web`).toContain("SSR_INTERNAL_SECRET");
-      expect(web.some((e) => e === "SSR_RPC_PROXY=0" || e === "SSR_RPC_PROXY=1"), `${file}: web switch`).toBe(true);
+      // The secret is the switch. A literal SSR_RPC_PROXY here would make the
+      // stack file lie about what the deploy job handed over.
+      expect(envNames(web), `${file}: no separate switch`).not.toContain("SSR_RPC_PROXY");
     }
   );
 
-  it("alpha has the switch on and requires the secret; production carries an explicit value, never a bare passthrough", () => {
+  it("alpha requires the secret so staging always exercises the proxy; production passes it through", () => {
     const alpha = envEntries(serviceBlock(read("apps/web/docker-compose.yml"), "web"));
-    expect(alpha).toContain("SSR_RPC_PROXY=1");
     expect(alpha.some((e) => /^SSR_INTERNAL_SECRET=\$\{SSR_INTERNAL_SECRET:\?/.test(e))).toBe(true);
     const prod = envEntries(serviceBlock(read("apps/web/docker-compose.production.yml"), "web"));
-    expect(prod).not.toContain("SSR_RPC_PROXY");
-    expect(prod.some((e) => /^SSR_RPC_PROXY=[01]$/.test(e))).toBe(true);
+    expect(prod).toContain("SSR_INTERNAL_SECRET");
   });
 
   it.each(["master.yml", "staging.yml"])(".github/workflows/%s forwards the secret end to end", (file) => {
