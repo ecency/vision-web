@@ -102,6 +102,10 @@ const BARE_YOUTUBE_RE = /https?:\/\/(?:[\w-]+\.)*(?:youtube\.com|youtu\.be)\/[^\
 // an attribute value does not end the tag early). A URL in there is an
 // attribute value of some shape (`src="..."`, `style="url(...)"`, JSON in a
 // `data-*` attribute, `poster=`) and never prose the renderer would linkify.
+function isAutolinkAt(text: string, idx: number): boolean {
+  return text.startsWith('https://', idx) || text.startsWith('http://', idx)
+}
+
 function markInsideTags(text: string): Uint8Array {
   const marks = new Uint8Array(text.length)
   let inTag = false
@@ -109,7 +113,9 @@ function markInsideTags(text: string): Uint8Array {
   for (let i = 0; i < text.length; i++) {
     const c = text[i]
     if (!inTag) {
-      if (c === '<' && i + 1 < text.length && /[A-Za-z/!?]/.test(text[i + 1])) {
+      // A markdown autolink `<https://...>` is not a tag: the renderer turns
+      // it into a link, and an image or video URL in it into an image.
+      if (c === '<' && i + 1 < text.length && /[A-Za-z/!?]/.test(text[i + 1]) && !isAutolinkAt(text, i + 1)) {
         inTag = true
         marks[i] = 1
       }

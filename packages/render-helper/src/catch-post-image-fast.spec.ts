@@ -224,6 +224,20 @@ describe('catchPostImage fast mode', () => {
     }
   })
 
+  it('reads a markdown autolink <https://...> as prose, not as a tag', () => {
+    for (const body of [
+      'cover: <https://files.peakd.com/x/autolink.png> end',
+      'watch: <https://www.youtube.com/watch?v=dQw4w9WgXcQ> end'
+    ]) {
+      const r = both(body)
+      expect(r.full, body).toBeTruthy()
+      expect(r.fast, body).toBe(r.full)
+    }
+    expect(getEntryImageRawUrl(entry('cover: <https://files.peakd.com/x/autolink.png> end'))).toBe(
+      'https://files.peakd.com/x/autolink.png'
+    )
+  })
+
   it('does not mistake a tag that merely starts with pre or style for a hidden region', () => {
     const r = both('<prefix-tag>https://files.peakd.com/x/shown.png</prefix-tag>')
     expect(r.fast).toBe(r.full)

@@ -10304,6 +10304,9 @@ var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/;
 var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
 var BARE_IMAGE_RE = /https?:\/\/[^\s<>"'()[\]]+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)(?:[?#][^\s<>"'()[\]]*)?/gi;
 var BARE_YOUTUBE_RE = /https?:\/\/(?:[\w-]+\.)*(?:youtube\.com|youtu\.be)\/[^\s<>"'()[\]]+/gi;
+function isAutolinkAt(text3, idx) {
+  return text3.startsWith("https://", idx) || text3.startsWith("http://", idx);
+}
 function markInsideTags(text3) {
   const marks = new Uint8Array(text3.length);
   let inTag = false;
@@ -10311,7 +10314,7 @@ function markInsideTags(text3) {
   for (let i2 = 0; i2 < text3.length; i2++) {
     const c = text3[i2];
     if (!inTag) {
-      if (c === "<" && i2 + 1 < text3.length && /[A-Za-z/!?]/.test(text3[i2 + 1])) {
+      if (c === "<" && i2 + 1 < text3.length && /[A-Za-z/!?]/.test(text3[i2 + 1]) && !isAutolinkAt(text3, i2 + 1)) {
         inTag = true;
         marks[i2] = 1;
       }
