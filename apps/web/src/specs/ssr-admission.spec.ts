@@ -148,14 +148,34 @@ describe("ssr-admission preload", () => {
       "/firebase-messaging-sw.js",
       "/og.jpg",
       "/geo/cities.min.json",
+      "/dmca/dmca-accounts.json",
+      "/.well-known/assetlinks.json",
+      "/public-nodes.json",
+      "/apple-app-site-association",
+      "/llms.txt",
       "/sitemap.xml",
+      "/sitemap/posts-1.xml",
       "/fonts/inter.woff2"
     ]) {
       expect((await get(port, path)).status, path).toBe(200);
     }
-    // And a page is still shed while the slot is held, a dotted username too.
-    expect((await get(port, "/hot")).status).toBe(503);
-    expect((await get(port, "/@demo.com")).status).toBe(503);
+    // Everything that renders on the loop is shed while the slot is held: a
+    // page, a dotted username, an RSS feed, the agent routes (rewritten from
+    // .md/.json/.discussion.json) and an unknown data-looking path.
+    for (const path of [
+      "/hot",
+      "/@demo.com",
+      "/@someone/rss.xml",
+      "/@someone/rss",
+      "/created/photography/rss.xml",
+      "/@someone/some-post.md",
+      "/@someone/some-post.json",
+      "/@someone/some-post.discussion.json",
+      "/feed.xml",
+      "/notes.txt"
+    ]) {
+      expect((await get(port, path)).status, path).toBe(503);
+    }
     await get(port, "/api/release");
     await a.done;
   });

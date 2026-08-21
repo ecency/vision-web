@@ -38,20 +38,39 @@ const retryAfter = /^\d{1,4}$/.test(rawRetryAfter || "") ? rawRetryAfter : "1";
 const rawGrace = process.env.SSR_ABANDONED_GRACE_MS;
 const abandonedGraceMs = /^\d{1,6}$/.test(rawGrace || "") ? Number(rawGrace) : 30_000;
 
-// Paths that are not page renders. Anything else that reaches this process is
-// a document or an RSC navigation (the reverse proxy keeps private-api and
-// friends away from it), so those are what the cap protects.
-const PASS_PREFIXES = ["/_next/", "/api/", "/assets/", "/scripts/"];
-// Files served from public/ (service workers, social images, geo data, fonts,
-// manifests) carry a file extension; page paths do not. Usernames can contain
-// a dot (`/@demo.com`), hence a fixed list rather than "has any extension".
-const PASS_EXTENSIONS = /\.(?:js|mjs|css|map|json|webmanifest|txt|xml|ico|png|jpe?g|gif|svg|webp|avif|woff2?|ttf|otf|eot|mp4|webm|mp3|m4a|pdf|html?)$/i;
+// Paths that are not page renders, named precisely: the build output, API
+// routes, the public/ directories, the static root files the app serves, the
+// Redis-backed sitemap routes, and media or font files by extension. Anything
+// else that reaches this process is work on the render loop and counts: a
+// document, an RSC navigation, an RSS feed (`/@user/rss.xml` renders twenty
+// posts) or an agent route (`/@author/permlink.md|.json|.discussion.json`
+// renders the post), which is why data extensions such as .xml, .json, .md
+// and .txt are deliberately NOT in the extension list. Usernames can contain
+// a dot (`/@demo.com`), another reason the list is fixed rather than "has any
+// extension".
+const PASS_PREFIXES = ["/_next/", "/api/", "/assets/", "/scripts/", "/geo/", "/dmca/", "/.well-known/", "/sitemap/"];
+const PASS_EXACT = new Set([
+  "/favicon.ico",
+  "/manifest.json",
+  "/robots.txt",
+  "/llms.txt",
+  "/sitemap.xml",
+  "/sw.js",
+  "/firebase-messaging-sw.js",
+  "/og.jpg",
+  "/next.svg",
+  "/vercel.svg",
+  "/public-nodes.json",
+  "/apple-app-site-association"
+]);
+const PASS_EXTENSIONS = /\.(?:js|mjs|css|map|webmanifest|ico|png|jpe?g|gif|svg|webp|avif|woff2?|ttf|otf|eot|mp4|webm|mp3|m4a|pdf)$/i;
 
 function isRender(req) {
   if (req.method !== "GET" && req.method !== "HEAD") return false;
   const url = req.url || "/";
   const q = url.indexOf("?");
   const path = q === -1 ? url : url.slice(0, q);
+  if (PASS_EXACT.has(path)) return false;
   for (const prefix of PASS_PREFIXES) {
     if (path.startsWith(prefix)) return false;
   }
