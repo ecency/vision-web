@@ -21,7 +21,7 @@ interface Params {
  */
 async function FeedThumbPreload({ params }: Params) {
   const [filter = "hot", rawTag = ""] = (await params).sections;
-  const tag = rawTag === "global" ? "" : rawTag;
+  const tag = rawTag === "global" ? "" : rawTag.toLowerCase();
 
   // Layouts get no searchParams; middleware forwards the query string.
   const search = new URLSearchParams((await headers()).get("x-search") ?? "");

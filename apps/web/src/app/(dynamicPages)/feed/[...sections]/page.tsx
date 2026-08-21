@@ -40,14 +40,14 @@ export async function generateMetadata(props: Props, parent: ResolvingMetadata):
   const { sections } = await props.params;
   const { before } = await props.searchParams;
   const [filter = "hot", rawTag = ""] = sections;
-  const tag = rawTag === "global" ? "" : rawTag;
+  const tag = rawTag === "global" ? "" : rawTag.toLowerCase();
   const cursor = isArchivableTag(filter, tag) ? parseArchiveCursor(before) : null;
   return generateFeedMetadata(filter, tag, cursor ? cursorToken(cursor) : undefined);
 }
 
 export default async function FeedPage({ params, searchParams }: Props) {
   const [filter = "hot", rawTag = ""] = (await params).sections;
-  const tag = rawTag === "global" ? "" : rawTag;
+  const tag = rawTag === "global" ? "" : rawTag.toLowerCase();
   const { before } = await searchParams;
 
   const cookiesStore = await cookies();
