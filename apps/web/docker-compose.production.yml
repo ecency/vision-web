@@ -171,9 +171,14 @@ services:
   # not one per node — would need `mode: global` + service discovery work.
   # Lives only on the docker overlay network — never publish 6379 publicly.
   # Persistence: AOF every 1s (acceptable <1s write loss for a refetchable cache).
-  # Memory cap: 1gb LRU — well above the post-age working set; headroom for
-  # future cache layers (API responses, profile/community metadata) on this
-  # same instance without re-sizing.
+  # Memory cap: LRU, sized per host through REDIS_MAXMEMORY (the deploy
+  # workflow sets it per region, like WEB_REPLICAS). The post-age set outgrew
+  # the original 1gb: at that cap the instance sat full and evicting, with a hit
+  # rate under 40%, and every evicted entry costs a 60s entry-unknown cache
+  # tier instead of the age-refined one, so those pages re-render far more
+  # often than their age warrants. The default below is the figure that fits
+  # the smaller host next to its web replicas at their memory limit; the
+  # larger host sets a higher value.
   redis:
     image: redis:7-alpine
     command:
@@ -183,7 +188,7 @@ services:
       - --appendfsync
       - everysec
       - --maxmemory
-      - 1gb
+      - ${REDIS_MAXMEMORY:-2gb}
       - --maxmemory-policy
       - allkeys-lru
       - --save
