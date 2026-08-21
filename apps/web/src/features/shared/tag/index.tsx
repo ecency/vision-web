@@ -7,7 +7,7 @@ import { getCommunityCache } from "@/core/caches";
 import i18next from "i18next";
 import { useRouter } from "next/navigation";
 import { Badge } from "@ui/badge";
-import Link from "next/link";
+import { IntentLink } from "@/features/shared/intent-link";
 import { useQuery } from "@tanstack/react-query";
 
 export const makePathTag = (filter: string, tag: string): string => {
@@ -61,7 +61,7 @@ export function TagLink({ tag, type, children }: Props) {
       }
     );
 
-    return <Link {...props} />;
+    return <IntentLink {...props} />;
   } else if (type === "span") {
     const props = Object.assign({}, children.props);
 

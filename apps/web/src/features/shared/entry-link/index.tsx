@@ -1,6 +1,6 @@
 import React, { PropsWithChildren } from "react";
 import { Entry } from "@/entities";
-import Link from "next/link";
+import { IntentLink } from "@/features/shared/intent-link";
 import { makeEntryPath } from "@/utils/make-path";
 
 export interface PartialEntry {
@@ -19,10 +19,8 @@ export function EntryLink({ children, entry, target, className }: PropsWithChild
   const path = makeEntryPath(entry.category, entry.author, entry.permlink);
 
   return (
-    <Link href={path} target={target} className={className + " no-style"}>
-
+    <IntentLink href={path} target={target} className={className + " no-style"}>
       {children}
-
-    </Link>
+    </IntentLink>
   );
 }
