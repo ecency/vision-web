@@ -108,11 +108,28 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/*
           Guards React against in-page translators (Google/Chrome Translate)
           that wrap text nodes in <font> tags and crash the commit phase with a
-          NotFoundError on insertBefore/removeChild. beforeInteractive installs
-          the Node.prototype patch before React hydrates, so it's in place for
-          the first commit.
+          NotFoundError on insertBefore/removeChild.
+
+          `async` with an explicit high priority, NOT next/script's
+          beforeInteractive. That strategy emits an inline
+          `(self.__next_s=self.__next_s||[]).push([...])` bootstrap into <head>,
+          and an inline classic script cannot execute while render-blocking
+          stylesheets are pending, so it was the one parser-blocking element in
+          the head (issue #1641). An async script never blocks the parser.
+
+          beforeInteractive does not run this file from <head> anyway:
+          next/dist/client/app-bootstrap.js calls
+          loadScriptsInSequence(self.__next_s, hydrate), creating the element at
+          hydration time. Measured on a slow-4G profile, the guard installed at
+          ~2.77s under beforeInteractive versus ~1.12s here.
+
+          fetchPriority is load-bearing, do not drop it. Plain `async` gets low
+          priority and queues behind the app bundle: measured, the file landed at
+          ~6.3s, AFTER React's first commit at ~5.9s, in 5 of 5 runs. That is the
+          exact window this guard exists to cover. With the hint it is installed
+          before the first commit in 5 of 5.
         */}
-        <Script src="/scripts/translate-dom-guard.js" strategy="beforeInteractive" />
+        <script async fetchPriority="high" src="/scripts/translate-dom-guard.js" />
         <script async src="/scripts/config-stub.js" />
         <link rel="dns-prefetch" href="https://i.ecency.com" />
         <link rel="dns-prefetch" href="https://ecency.com" />
