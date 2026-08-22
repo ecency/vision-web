@@ -164,8 +164,13 @@ describe("sitemap-generate route", () => {
     const t0 = Date.now();
     vi.useFakeTimers({ toFake: ["Date"], now: t0 });
     await run();
+    // static.xml is deliberately absent: its hub entries carry the current day,
+    // so its bytes DO change at UTC midnight and its lastmod moves with them.
+    // That is covered by its own test below, with the clock pinned either side
+    // of a rollover — asserting it here made the whole suite fail for any CI
+    // run started in the last two hours of a UTC day.
     const first = Object.fromEntries(
-      ["posts.xml", "authors.xml", "tags.xml", "communities.xml", "static.xml"].map((n) => [n, indexEntry(n)])
+      ["posts.xml", "authors.xml", "tags.xml", "communities.xml"].map((n) => [n, indexEntry(n)])
     );
     // Same data an hour later: nothing changed, nothing may move.
     vi.setSystemTime(new Date(t0 + HOUR));
@@ -186,7 +191,27 @@ describe("sitemap-generate route", () => {
     expect(indexEntry("authors.xml")).toBe(later);
     expect(indexEntry("tags.xml")).toBe(first["tags.xml"]);
     expect(indexEntry("communities.xml")).toBe(first["communities.xml"]);
-    expect(indexEntry("static.xml")).toBe(first["static.xml"]);
+  });
+
+  it("moves static.xml's lastmod across a UTC day rollover, and nothing else's", async () => {
+    // The hub entries (/, /discover, /communities, …) carry the current day, so
+    // static.xml's bytes change once a day by design — an honest signal for
+    // pages whose content really does turn over daily. Pinned either side of a
+    // midnight so it does not depend on when the suite runs.
+    const beforeMidnight = new Date();
+    beforeMidnight.setUTCHours(23, 50, 0, 0);
+    vi.useFakeTimers({ toFake: ["Date"], now: beforeMidnight.getTime() });
+    await run();
+    const first = Object.fromEntries(
+      ["tags.xml", "communities.xml", "static.xml"].map((n) => [n, indexEntry(n)])
+    );
+
+    vi.setSystemTime(new Date(beforeMidnight.getTime() + 20 * 60_000)); // 00:10 the next day
+    await run();
+    expect(indexEntry("static.xml"), "static.xml").not.toBe(first["static.xml"]);
+    // The content-stable shards must not be dragged along by the date.
+    expect(indexEntry("tags.xml"), "tags.xml").toBe(first["tags.xml"]);
+    expect(indexEntry("communities.xml"), "communities.xml").toBe(first["communities.xml"]);
   });
 
   it("keeps the accepted walk's full timestamp when a later walk is rejected", async () => {
