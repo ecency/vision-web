@@ -69,8 +69,8 @@ services:
       # Per-replica memory backstop, per region (WEB_MEM_LIMIT). It sits above
       # where a replica settles, so a genuine runaway is cgroup-OOM-killed and
       # restarted in isolation rather than the host's global OOM-killer picking
-      # an arbitrary victim -- on the smaller host it once took sshd and
-      # qemu-ga with it. Each region's value is chosen so its replica count
+      # an arbitrary victim, which it has done. Each region's value is chosen
+      # so its replica count
       # fits that host with headroom for redis, vapi and the OS, and stays
       # above where healthy replicas settle so it never false-trips one. The
       # per-host figures behind it live with the infrastructure notes.
