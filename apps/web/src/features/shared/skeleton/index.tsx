@@ -1,6 +1,4 @@
 import React from "react";
-import "./index.scss";
-
 interface Props {
   className?: string;
   style?: object;

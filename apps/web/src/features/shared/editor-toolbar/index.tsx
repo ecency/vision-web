@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMountedState } from "react-use";
 import { v4 } from "uuid";
 import { codeTagsSvg, emoticonHappyOutlineSvg, formatBoldSvg, formatItalicSvg, formatListBulletedSvg, formatListNumberedSvg, formatQuoteCloseSvg, formatTitleSvg, gifIcon, gridSvg, imageSvg, textShortSvg, videoSvg } from "@/assets/img/svg";
-import "./_index.scss";
 import { UilPanelAdd } from "@tooni/iconscout-unicons-react";
 import { PollsCreation, PollSnapshot } from "@/features/polls";
 import { useIsMobile } from "@/features/ui/util/use-is-mobile";

@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useMemo, useRef, useState } from "react";
-import "./_index.scss";
 import { Entry } from "@/entities";
 import { PopoverConfirm } from "@/features/ui";
 import i18next from "i18next";

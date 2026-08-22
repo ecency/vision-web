@@ -2,7 +2,6 @@
 
 import React from "react";
 import { setProxyBase } from "@ecency/render-helper";
-import "./_index.scss";
 import defaults from "@/defaults";
 import { Account, Community, Entry, FullAccount } from "@/entities";
 import { makeEntryPath } from "@/utils";

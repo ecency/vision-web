@@ -1,4 +1,3 @@
-import "./_index.scss";
 import { accountReputation, parseDate } from "@/utils";
 import { Entry } from "@/entities";
 import {

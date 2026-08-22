@@ -9,7 +9,6 @@ import React, {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
-import "./hive-post-link-extension.scss";
 import {
   findPostLinkElements,
   isInvalidPermlinkLink,

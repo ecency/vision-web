@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import "./_index.scss";
 import { Modal, ModalBody, ModalHeader } from "@ui/modal";
 import i18next from "i18next";
 import { TransferStep1 } from "@/features/shared/transfer/transfer-step-1";

@@ -25,7 +25,6 @@ import React, {
 import { useDebounce, useMount } from "react-use";
 import useLocalStorage from "react-use/lib/useLocalStorage";
 import useUnmount from "react-use/lib/useUnmount";
-import "./_index.scss";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useIsMobile } from "@/features/ui/util/use-is-mobile";
 import { useQuery } from "@tanstack/react-query";

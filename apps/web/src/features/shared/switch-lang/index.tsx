@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import "./_index.scss";
 import { Dropdown, DropdownItem, DropdownMenu, DropdownToggle } from "@ui/dropdown";
 import Link from "next/link";
 import i18next from "i18next";

@@ -3,7 +3,6 @@
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 import React, { useMemo, useState } from "react";
-import "./_index.scss";
 import dynamic from "next/dynamic";
 import { Modal, ModalBody, ModalHeader } from "@ui/modal";
 import { Account, Entry } from "@/entities";

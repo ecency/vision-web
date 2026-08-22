@@ -1,0 +1,69 @@
+// Generated aggregate of component stylesheets (issue #1632).
+//
+// These were previously imported one-per-component from TS/TSX, which made the
+// build emit one render-blocking <link> per component: 52 of them on a post page.
+// Importing them from a single entry collapses that to one stylesheet, which keeps
+// the immutable long-cache and adds nothing to the HTML response.
+//
+// Keep this list sorted. Each file already pulls its own vars/mixins.
+
+@import "../features/announcement/index";
+@import "../features/post-renderer/components/extensions/hive-operation-extension";
+@import "../features/post-renderer/components/extensions/hive-post-link-extension";
+@import "../features/post-renderer/components/extensions/wave-like-post-extension";
+@import "../features/shared/available-credits/index";
+@import "../features/shared/bookmark-btn/index";
+@import "../features/shared/bookmarks/index";
+@import "../features/shared/boost/index";
+@import "../features/shared/buy-sell-hive/index";
+@import "../features/shared/comment/index";
+@import "../features/shared/discussion/index";
+@import "../features/shared/edit-history/index";
+@import "../features/shared/editor-toolbar/index";
+@import "../features/shared/editor-toolbar/add-image-mobile/index";
+@import "../features/shared/entry-info/index";
+@import "../features/shared/entry-list-content/index";
+@import "../features/shared/entry-list-item/index";
+@import "../features/shared/entry-list-loading-item/index";
+@import "../features/shared/entry-menu/index";
+@import "../features/shared/entry-payout/index";
+@import "../features/shared/entry-reblog-btn/index";
+@import "../features/shared/entry-share/index";
+@import "../features/shared/entry-tip-btn/index";
+@import "../features/shared/entry-vote-btn/index";
+@import "../features/shared/entry-votes/index";
+@import "../features/shared/feedback/index";
+@import "../features/shared/feedback/feedback-modal/index";
+@import "../features/shared/gallery/index";
+@import "../features/shared/key-or-hot/index";
+@import "../features/shared/linear-progress/index";
+@import "../features/shared/list-style-toggle/index";
+@import "../features/shared/login/index";
+@import "../features/shared/message-no-data/index";
+@import "../features/shared/mute-btn/index";
+@import "../features/shared/navbar/index";
+@import "../features/shared/navbar/navbar-notifications-button";
+@import "../features/shared/navbar/sidebar/navbar-side-theme-switcher";
+@import "../features/shared/notifications/index";
+@import "../features/shared/or-divider/index";
+@import "../features/shared/profile-popover/index";
+@import "../features/shared/promote/index";
+@import "../features/shared/schedules/index";
+@import "../features/shared/scroll-to-top/index";
+@import "../features/shared/search-box/index";
+@import "../features/shared/search-list-item/index";
+@import "../features/shared/skeleton/index";
+@import "../features/shared/suggestion-list/index";
+@import "../features/shared/switch-lang/index";
+@import "../features/shared/textarea-autocomplete/index";
+@import "../features/shared/transactions/index";
+@import "../features/shared/transfer/index";
+@import "../features/shared/two-user-avatar/index";
+@import "../features/shared/user-avatar/index";
+@import "../features/shared/video-upload-threespeak/index";
+@import "../features/ui/button-group/index";
+@import "../features/ui/emoji-picker/index";
+@import "../features/ui/gif-picker/index";
+@import "../features/ui/input/input-vote";
+@import "../features/waves/components/wave-actions";
+@import "../features/waves/components/wave-form/index";

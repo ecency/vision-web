@@ -1,8 +1,6 @@
 "use client";
 
 import React from "react";
-import "./_index.scss";
-
 export function LinearProgress() {
   return (
     <div className="linear-progress">

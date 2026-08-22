@@ -14,7 +14,6 @@ import { Button } from "@ui/button";
 import { Tooltip } from "@ui/tooltip";
 import i18next from "i18next";
 import { useMemo, useState } from "react";
-import "./_index.scss";
 import { error, success } from "../feedback";
 import { getAccessToken } from "@/utils";
 import { useGlobalStore } from "@/core/global-store";

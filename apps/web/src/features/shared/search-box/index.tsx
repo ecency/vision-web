@@ -1,5 +1,4 @@
 import React from "react";
-import "./_index.scss";
 import { FormControl, InputGroup } from "@ui/input";
 import { Button } from "@ui/button";
 import { copyContent } from "@/features/ui/svg";

@@ -4,8 +4,6 @@ import { TabItem } from "@/features/ui";
 import { Modal, ModalBody, ModalHeader } from "@ui/modal";
 import i18next from "i18next";
 import { useState } from "react";
-import "./_index.scss";
-
 interface Props {
   show: boolean;
   setShow: (v: boolean) => void;

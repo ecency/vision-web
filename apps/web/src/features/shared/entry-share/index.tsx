@@ -1,5 +1,4 @@
 import React from "react";
-import "./_index.scss";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import { Entry } from "@/entities";
 import {

@@ -12,7 +12,6 @@ import { useCallback, useState } from "react";
 import { OrDivider } from "../or-divider";
 import { MetaMaskSignButton } from "../metamask-sign-button";
 import { ExtensionChooser } from "../extension-chooser";
-import "./index.scss";
 import { shouldUseKeychainMobile } from "@/utils/client";
 import { isInAppBrowser } from "@/utils/keychain";
 import { getLoginType } from "@/utils/user-token";

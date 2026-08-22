@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import "./_index.scss";
 import { Account, Community, Entry } from "@/entities";
 import { EntryListItem } from "@/features/shared";
 import { useVisibleEntries } from "@/features/shared/entry-list-item/use-muted-authors";

@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import dayjs from "@/utils/dayjs";
 import * as ls from "@/utils/local-storage";
 import { Announcement, LaterAnnouncement } from "./types";
-import "./index.scss";
 import { Button } from "@ui/button";
 import { usePathname } from "next/navigation";
 import { closeSvg } from "@ui/svg";

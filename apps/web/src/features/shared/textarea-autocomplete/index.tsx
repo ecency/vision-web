@@ -6,7 +6,6 @@ import React, {
 } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import ReactTextareaAutocomplete from "@webscopeio/react-textarea-autocomplete";
-import "./_index.scss";
 import { lookupAccountsQueryOptions, searchPath } from "@ecency/sdk";
 import { UserAvatar } from "@/features/shared";
 import i18next from "i18next";

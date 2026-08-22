@@ -10,7 +10,6 @@ import React, {
   useState
 } from "react";
 import { UilArrowDown, UilArrowUp } from "@tooni/iconscout-unicons-react";
-import "./_input-vote.scss";
 import { InputGroup } from "@ui/input/input-group";
 import useInterval from "react-use/lib/useInterval";
 import { classNameObject } from "@ui/util";

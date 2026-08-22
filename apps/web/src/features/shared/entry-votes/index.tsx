@@ -1,7 +1,6 @@
 "use client";
 
 import React, { ReactNode, useMemo, useRef, useState } from "react";
-import "./_index.scss";
 import { Entry } from "@/entities";
 import { Tooltip } from "@ui/tooltip";
 import i18next from "i18next";

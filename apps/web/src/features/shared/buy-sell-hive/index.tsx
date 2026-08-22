@@ -3,7 +3,6 @@
 import React, { useCallback, useRef, useState } from "react";
 import { error } from "../feedback";
 import { formatError } from "@/api/format-error";
-import "./_index.scss";
 import { Modal, ModalBody, ModalHeader } from "@ui/modal";
 import { Button } from "@ui/button";
 import i18next from "i18next";

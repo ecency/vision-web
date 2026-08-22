@@ -1,6 +1,5 @@
 import React from "react";
 import { proxifyImageSrc, setProxyBase } from "@ecency/render-helper";
-import "./_index.scss";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import { Button } from "@ui/button";
 import i18next from "i18next";

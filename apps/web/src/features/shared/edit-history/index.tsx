@@ -3,7 +3,6 @@
 import React, { useMemo, useState } from "react";
 import defaults from "@/defaults";
 import { renderPostBody, setProxyBase } from "@ecency/render-helper";
-import "./index.scss";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import { FormControl } from "@ui/input";
 import { Entry } from "@/entities";

@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import "./_index.scss";
 import i18next from "i18next";
 
 export function OrDivider() {

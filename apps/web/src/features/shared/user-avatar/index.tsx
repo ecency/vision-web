@@ -2,7 +2,6 @@
 
 import React, { useMemo } from "react";
 import { proxifyImageSrc, setProxyBase } from "@ecency/render-helper";
-import "./_index.scss";
 import defaults from "@/defaults";
 
 setProxyBase(defaults.imageServer);
