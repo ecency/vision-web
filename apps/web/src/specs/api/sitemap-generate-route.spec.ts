@@ -202,16 +202,18 @@ describe("sitemap-generate route", () => {
     beforeMidnight.setUTCHours(23, 50, 0, 0);
     vi.useFakeTimers({ toFake: ["Date"], now: beforeMidnight.getTime() });
     await run();
+    const stable = ["posts.xml", "authors.xml", "tags.xml", "communities.xml"];
     const first = Object.fromEntries(
-      ["tags.xml", "communities.xml", "static.xml"].map((n) => [n, indexEntry(n)])
+      [...stable, "static.xml"].map((n) => [n, indexEntry(n)])
     );
 
     vi.setSystemTime(new Date(beforeMidnight.getTime() + 20 * 60_000)); // 00:10 the next day
     await run();
     expect(indexEntry("static.xml"), "static.xml").not.toBe(first["static.xml"]);
-    // The content-stable shards must not be dragged along by the date.
-    expect(indexEntry("tags.xml"), "tags.xml").toBe(first["tags.xml"]);
-    expect(indexEntry("communities.xml"), "communities.xml").toBe(first["communities.xml"]);
+    // Every other shard is keyed on its own content — post days, tag names,
+    // community names — none of which the calendar touches. Same data either
+    // side of the rollover must mean the same lastmod.
+    for (const name of stable) expect(indexEntry(name), name).toBe(first[name]);
   });
 
   it("keeps the accepted walk's full timestamp when a later walk is rejected", async () => {
