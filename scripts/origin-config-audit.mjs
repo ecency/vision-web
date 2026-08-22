@@ -175,8 +175,17 @@ const RULES = [
       const lower = line.toLowerCase();
       if (extraMarkers().some((marker) => lower.includes(marker.toLowerCase()))) return true;
       const withoutRefs = line
+        // `${{ secrets.NAME }}`: a reference, nothing of it is a value.
         .replace(/\$\{\{[^}]*\}\}/g, "")
-        .replace(/\$\{[A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?\}/g, "")
+        // `${NAME:?message}` is a required-variable expansion. The message is
+        // an error string, never a credential, so the whole form goes -- and
+        // this repo writes exactly that in its deploy scripts.
+        .replace(/\$\{[A-Za-z_][A-Za-z0-9_]*:\?[^}]*\}/g, "")
+        // `${NAME:-default}` and `${NAME:+alt}` carry a VALUE, and a default
+        // is a place a secret can actually sit, so the name goes and the value
+        // stays to be checked.
+        .replace(/\$\{[A-Za-z_][A-Za-z0-9_]*:[-+]([^}]*)\}/g, "$1")
+        .replace(/\$\{[A-Za-z_][A-Za-z0-9_]*\}/g, "")
         .replace(/\$[A-Za-z_][A-Za-z0-9_]*/g, "");
       return (
         /(?:api[_-]?key|password|secret[_-]?key)\s*[:=]\s*\S/i.test(withoutRefs) ||
@@ -226,10 +235,18 @@ function rulesFor(kind) {
  * and a README saying what a host has discloses exactly as much as a config
  * comment saying it.
  */
-const PROSE_RULES = ["wildcard-protective-include", "host-capacity", "source-address"];
+// Derived, not listed: every rule that is a disclosure anywhere applies to
+// prose too, so adding one covers documentation without a second edit. Listing
+// them by hand is how threshold and the credential rule were left out of
+// markdown while the threshold rule's own comment claimed to cover prose.
+const PROSE_ONLY_NGINX_RULES = ["wildcard-protective-include"];
 
 function rulesForFile(file) {
-  if (file.endsWith(".md")) return RULES.filter((rule) => PROSE_RULES.includes(rule.id));
+  if (file.endsWith(".md")) {
+    return RULES.filter(
+      (rule) => rule.scope === "all" || PROSE_ONLY_NGINX_RULES.includes(rule.id)
+    );
+  }
   if (file.endsWith(".yml") || file.endsWith(".yaml")) return rulesFor("deploy");
   return rulesFor("nginx");
 }
@@ -269,47 +286,57 @@ if (process.argv.includes("--self-test")) {
     ["host-capacity", "        # the host has 144 GiB / 33 cores"],
     ["host-capacity", "        # this tier runs on a cpx99"],
     ["host-capacity", "        # each server carries 512GB"],
+    // The name is stripped, the default is not: a literal in a default is a
+    // literal wherever it sits.
+    ["secret-marker", "          export API_KEY=${API_KEY:-hunter2}"],
   ];
   // Committed today and legitimate: a false positive here breaks the repo.
+  // Each carries the file it would live in, because rules are scoped now and a
+  // check that ignores scope does not mirror the audit it is testing.
   const MUST_NOT_FIRE = [
-    "        proxy_pass         http://127.0.0.1:3000;",
-    "        proxy_pass         http://[::1]:3000;",
-    "    listen [::]:443 ssl http2;",
-    "    listen 0.0.0.0:80;",
-    "        # see nginx 1.24.0 release notes",
-    "        ssl_certificate /etc/letsencrypt/live/eu.ecency.com/fullchain.pem;",
-    "        limit_req zone=ssrlimit burst=50 nodelay;",
-    "        include /etc/nginx/foo-allow*.conf;",
-    "        deny all;",
-    "        include /etc/nginx/rate-limits.conf;",
-    "        include /etc/nginx/conn-limits.conf;",
+    ["vhost.conf", "        proxy_pass         http://127.0.0.1:3000;"],
+    ["vhost.conf", "        proxy_pass         http://[::1]:3000;"],
+    ["vhost.conf", "    listen [::]:443 ssl http2;"],
+    ["vhost.conf", "    listen 0.0.0.0:80;"],
+    ["vhost.conf", "        # see nginx 1.24.0 release notes"],
+    ["vhost.conf", "        ssl_certificate /etc/letsencrypt/live/eu.ecency.com/fullchain.pem;"],
+    ["vhost.conf", "        limit_req zone=ssrlimit burst=50 nodelay;"],
+    ["vhost.conf", "        include /etc/nginx/foo-allow*.conf;"],
+    ["vhost.conf", "        deny all;"],
+    ["vhost.conf", "        include /etc/nginx/rate-limits.conf;"],
+    ["vhost.conf", "        include /etc/nginx/conn-limits.conf;"],
     // Deployment files. A process limit is the configuration and has to be
     // committed; a measurement with no machine noun beside it is rationale.
-    "          memory: ${WEB_MEM_LIMIT:-4608M}",
-    "      - NODE_OPTIONS=--max-old-space-size=${WEB_HEAP_MB:-3072} --max-semi-space-size=64",
-    "      # allocation-heavy render triggers fewer scavenges; costs ~128MiB of RSS",
-    "      - ${REDIS_MAXMEMORY:-2gb}",
-    "      # re-render far more often than their age warrants. 2gb doubles the working",
-    "      # here: replica RSS is flat against in-flight renders (~2.2GB at 5, 11 and",
-    "        WEB_REPLICAS: \"4\"",
-    "      replicas: ${WEB_REPLICAS:-4}",
-    // A secret NAME and a reference to one are the correct handling, not a leak.
-    "        PLAUSIBLE_API_KEY: ${{secrets.PLAUSIBLE_API_KEY}}",
-    "          export PLAUSIBLE_API_KEY=$PLAUSIBLE_API_KEY",
-    "          : \"${NEWSLETTER_API_URL:?NEWSLETTER_API_URL is required for the US deploy}\"",
+    ["deploy.yml", "          memory: ${WEB_MEM_LIMIT:-4608M}"],
+    ["deploy.yml", "      - NODE_OPTIONS=--max-old-space-size=${WEB_HEAP_MB:-3072} --max-semi-space-size=64"],
+    ["deploy.yml", "      # allocation-heavy render triggers fewer scavenges; costs ~128MiB of RSS"],
+    ["deploy.yml", "      - ${REDIS_MAXMEMORY:-2gb}"],
+    ["deploy.yml", "      # re-render far more often than their age warrants. 2gb doubles the working"],
+    ["deploy.yml", "      # here: replica RSS is flat against in-flight renders (~2.2GB at 5, 11 and"],
+    ["deploy.yml", "        WEB_REPLICAS: \"4\""],
+    ["deploy.yml", "      replicas: ${WEB_REPLICAS:-4}"],
+    // A secret NAME, a reference to one, and a required-variable expansion
+    // whose message merely repeats the name, are all correct handling.
+    ["deploy.yml", "        PLAUSIBLE_API_KEY: ${{secrets.PLAUSIBLE_API_KEY}}"],
+    ["deploy.yml", "          export PLAUSIBLE_API_KEY=$PLAUSIBLE_API_KEY"],
+    ["deploy.yml", "          : \"${NEWSLETTER_API_URL:?NEWSLETTER_API_URL is required for the US deploy}\""],
+    ["deploy.yml", "          export API_KEY=${API_KEY:?API_KEY is required}"],
+    ["deploy.yml", "          password=${PASSWORD:?password is required}"],
     // Workflow annotations: `::error::` parses as a valid IPv6 address unless
-    // the matcher requires delimiters, which is how six of these were reported.
-    "    echo \"::error::vision_web rolled back (UpdateStatus=$state); prod still on the previous image\"",
-    "    echo \"::notice::deployed ecency/vision-web:latest\""
+    // the matcher requires delimiters.
+    ["deploy.yml", "    echo \"::error::vision_web rolled back (UpdateStatus=$state); prod still on the previous image\""],
+    ["deploy.yml", "    echo \"::notice::deployed ecency/vision-web:latest\""]
   ];
   const failures = [];
   for (const [id, line] of MUST_FIRE) {
     const rule = RULES.find((r) => r.id === id);
     if (!rule.test(line)) failures.push(`rule ${id} did NOT fire on: ${line.trim()}`);
   }
-  for (const line of MUST_NOT_FIRE) {
-    for (const rule of RULES) {
-      if (rule.test(line)) failures.push(`rule ${rule.id} wrongly fired on: ${line.trim()}`);
+  for (const [file, line] of MUST_NOT_FIRE) {
+    for (const rule of rulesForFile(file)) {
+      if (rule.test(line)) {
+        failures.push(`rule ${rule.id} wrongly fired on ${file}: ${line.trim()}`);
+      }
     }
   }
   // The presence guard is control flow rather than a rule, and it has now broken
@@ -362,6 +389,10 @@ if (process.argv.includes("--self-test")) {
     ["README.md", "host-capacity", true],
     ["README.md", "source-address", true],
     ["README.md", "wildcard-protective-include", true],
+    // Documentation is published too: the threshold rule's own comment says it
+    // covers prose, and a credential in a runbook is a credential.
+    ["README.md", "threshold", true],
+    ["README.md", "secret-marker", true],
     ["README.md", "inline-allowlist", false]
   ];
   for (const [file, id, expected] of SCOPES) {
