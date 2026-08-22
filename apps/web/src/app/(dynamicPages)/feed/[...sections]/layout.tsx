@@ -1,4 +1,5 @@
 import { prefetchGetPostsFeedQuery } from "@/api/queries";
+import { normalizeFeedTag } from "@/app/(dynamicPages)/feed/[...sections]/_helpers";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { DEFAULT_OBSERVER } from "@/consts/observer";
 import { Entry } from "@/entities";
@@ -21,7 +22,12 @@ interface Params {
  */
 async function FeedThumbPreload({ params }: Params) {
   const [filter = "hot", rawTag = ""] = (await params).sections;
-  const tag = rawTag === "global" ? "" : rawTag.toLowerCase();
+  const { tag, queryable } = normalizeFeedTag(rawTag);
+
+  // Nothing to preload for a tag hivemind will refuse: the page renders empty.
+  if (!queryable) {
+    return null;
+  }
 
   // Layouts get no searchParams; middleware forwards the query string.
   const search = new URLSearchParams((await headers()).get("x-search") ?? "");

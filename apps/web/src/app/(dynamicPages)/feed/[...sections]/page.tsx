@@ -6,7 +6,7 @@ import { FeedLayout, FeedList } from "../_components";
 import React from "react";
 import { Metadata, ResolvingMetadata } from "next";
 import { redirect } from "next/navigation";
-import { generateFeedMetadata } from "@/app/(dynamicPages)/feed/[...sections]/_helpers";
+import { generateFeedMetadata, normalizeFeedTag } from "@/app/(dynamicPages)/feed/[...sections]/_helpers";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { getQueryClient, prefetchQuery } from "@/core/react-query";
 import {
@@ -40,14 +40,14 @@ export async function generateMetadata(props: Props, parent: ResolvingMetadata):
   const { sections } = await props.params;
   const { before } = await props.searchParams;
   const [filter = "hot", rawTag = ""] = sections;
-  const tag = rawTag === "global" ? "" : rawTag.toLowerCase();
+  const { tag } = normalizeFeedTag(rawTag);
   const cursor = isArchivableTag(filter, tag) ? parseArchiveCursor(before) : null;
   return generateFeedMetadata(filter, tag, cursor ? cursorToken(cursor) : undefined);
 }
 
 export default async function FeedPage({ params, searchParams }: Props) {
   const [filter = "hot", rawTag = ""] = (await params).sections;
-  const tag = rawTag === "global" ? "" : rawTag.toLowerCase();
+  const { tag, queryable } = normalizeFeedTag(rawTag);
   const { before } = await searchParams;
 
   const cookiesStore = await cookies();
@@ -59,7 +59,7 @@ export default async function FeedPage({ params, searchParams }: Props) {
   const observer = loggedInUser || DEFAULT_OBSERVER;
 
   const basePath = `/${filter}/${tag}`;
-  const cursor = isArchivableTag(filter, tag) ? parseArchiveCursor(before) : null;
+  const cursor = queryable && isArchivableTag(filter, tag) ? parseArchiveCursor(before) : null;
 
   // Cursor archive page: one O(1) fetch of the 20 posts older than the cursor,
   // fully server-rendered (no infinite scroll) with a crawlable pager.
@@ -99,8 +99,10 @@ export default async function FeedPage({ params, searchParams }: Props) {
 
   // Default (page 1): prefetch for hydration; add a crawlable "Older" link into
   // the cursor chain when the first page is full (infinite scroll = JS path).
+  // A tag hivemind cannot accept renders the same empty feed whether or not we
+  // ask it, so the doomed round trip (and the error it raises) is skipped.
   const [feed, appBase] = await Promise.all([
-    prefetchGetPostsFeedQuery(filter, tag, 20, observer),
+    queryable ? prefetchGetPostsFeedQuery(filter, tag, 20, observer) : undefined,
     getServerAppBase()
   ]);
 
