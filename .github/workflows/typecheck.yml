@@ -57,6 +57,16 @@ jobs:
       # one matching no files and reloads clean, i.e. it fails OPEN). --self-test runs first
       # so a rule edited into uselessness fails here rather than passing silently.
       - name: Audit committed origin nginx config
+        env:
+          # Literals that must never appear in a committed file, kept out of the
+          # repository for the obvious reason. Registered as a secret, so if the
+          # audit ever does report one, the offending line is masked in this log
+          # rather than published a second time.
+          #
+          # Absent on a pull request from a fork, where secrets are not exposed:
+          # the rest of the rules still run, that one check is simply inert, and
+          # the same job on the base branch catches it after merge.
+          AUDIT_FORBIDDEN_MARKERS: ${{ secrets.AUDIT_FORBIDDEN_MARKERS }}
         run: |
           node scripts/origin-config-audit.mjs --self-test
           node scripts/origin-config-audit.mjs --fail
