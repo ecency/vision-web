@@ -60,7 +60,7 @@ services:
       update_config:
         parallelism: 1
         delay: 15s
-        order: start-first
+        order: ${WEB_UPDATE_ORDER:-start-first}
         failure_action: rollback
         monitor: 30s
       rollback_config:
@@ -75,7 +75,7 @@ services:
       # plateaus too, so it never false-trips a healthy replica.
       resources:
         limits:
-          memory: 4608M
+          memory: ${WEB_MEM_LIMIT:-4608M}
     environment:
       - USE_PRIVATE
       - INTERNAL_API_HOST=http://vapi:4000
@@ -124,7 +124,11 @@ services:
       # The semi-space (young generation) is raised from V8's default so an
       # allocation-heavy render triggers fewer scavenges; costs ~128MiB of RSS
       # per replica, well inside the limit above.
-      - NODE_OPTIONS=--max-old-space-size=3072 --max-semi-space-size=64
+      # Per-region V8 old-space cap. It governs the heap, NOT the process: RSS
+      # is this plus young generation, native allocations and Buffers. The
+      # bound on total process memory is the cgroup limit above; the two are
+      # set together per region, never one without the other.
+      - NODE_OPTIONS=--max-old-space-size=${WEB_HEAP_MB:-3072} --max-semi-space-size=64
       # Per-process admission control (ssr-admission.js, loaded by the image
       # CMD): above this many in-flight page renders the process answers 503
       # with Retry-After, which the edge worker treats as a failover signal.

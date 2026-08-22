@@ -173,6 +173,12 @@ jobs:
           export SEO_CRON_SECRET=$SEO_CRON_SECRET
           export TURNSTILE_SECRET=$TURNSTILE_SECRET
           export SSR_INTERNAL_SECRET=$SSR_INTERNAL_SECRET
+          # The web sizing knobs default in compose, so `docker-compose config`
+          # would otherwise read whatever the HOST happens to have exported and
+          # this region's memory profile could change with no commit behind it.
+          # EU pins its own values here: same numbers as the compose defaults,
+          # stated rather than inherited.
+          unset WEB_REPLICAS WEB_HEAP_MB WEB_MEM_LIMIT WEB_UPDATE_ORDER
           cd ~/vision-web
           git pull origin main
           cd apps/web
@@ -247,16 +253,35 @@ jobs:
         # region's URL is its own secret. Same token.
         NEWSLETTER_API_URL: ${{secrets.NEWSLETTER_API_URL_US}}
         NEWSLETTER_SERVICE_TOKEN: ${{secrets.NEWSLETTER_SERVICE_TOKEN}}
-        # The US box is smaller than EU (15GiB/8c vs 30GiB/16c). At 4 SSR
-        # replicas (the compose default) each plateaus ~3.7GiB RSS and the box
-        # ran out of RAM -> host global OOM cycling. 3 replicas fit with headroom.
-        WEB_REPLICAS: "3"
+        # This region's host is the smaller of the two. Four replicas once
+        # cycled it out of RAM: each settled far above where they sit now,
+        # because the heap climbed toward its cap for as long as the process
+        # lived. SSR_MAX_INFLIGHT removed that climb, which is what makes a
+        # fourth replica arguable at all.
+        #
+        # A plateau is behaviour, not a bound, so the sizing here is derived
+        # from the cgroup limit, which is enforced. The per-host budget behind
+        # these numbers lives with the infrastructure notes, not in this repo.
+        #
+        # stop-first belongs to that budget rather than being a preference:
+        # start-first runs a FIFTH task through every rollout and the budget
+        # does not cover one. Losing a replica briefly is what admission
+        # control already absorbs by shedding to the other region.
+        #
+        # The heap cap sits under the cgroup limit with room for what lives
+        # outside old space, and was measured on this host at this value
+        # before being set: it plateaued, with no restarts and a few percent
+        # more CPU, which four replicas repay by each carrying less traffic.
+        WEB_REPLICAS: "4"
+        WEB_HEAP_MB: "1536"
+        WEB_MEM_LIMIT: "2304M"
+        WEB_UPDATE_ORDER: "stop-first"
       with:
         host: ${{ secrets.SSH_HOST_US }}
         username: ${{ secrets.SSH_USERNAME }}
         key: ${{ secrets.SSH_KEY }}
         port: ${{ secrets.SSH_PORT }}
-        envs: USE_PRIVATE,PRIVATE_API_ADDR,PRIVATE_API_AUTH,HIVESIGNER_SECRET,SEARCH_API_ADDR,SEARCH_API_SECRET,STRIPE_INTERNAL_SECRET,HOSTING_INTERNAL_SECRET,HIVESEARCHER_ORIGIN_IP,PLAUSIBLE_API_KEY,BLOCKSTREAM_CLIENT_ID,BLOCKSTREAM_CLIENT_SECRET,MATTERMOST_TEAM_ID,MATTERMOST_ADMIN_TOKEN,MATTERMOST_BASE_URL,MATTERMOST_WS_ALLOWED_ORIGINS,THREESPEAK_EMBED_API_KEY,SEO_CRON_SECRET,TURNSTILE_SECRET,NEWSLETTER_API_URL,NEWSLETTER_SERVICE_TOKEN,WEB_REPLICAS,SSR_INTERNAL_SECRET
+        envs: USE_PRIVATE,PRIVATE_API_ADDR,PRIVATE_API_AUTH,HIVESIGNER_SECRET,SEARCH_API_ADDR,SEARCH_API_SECRET,STRIPE_INTERNAL_SECRET,HOSTING_INTERNAL_SECRET,HIVESEARCHER_ORIGIN_IP,PLAUSIBLE_API_KEY,BLOCKSTREAM_CLIENT_ID,BLOCKSTREAM_CLIENT_SECRET,MATTERMOST_TEAM_ID,MATTERMOST_ADMIN_TOKEN,MATTERMOST_BASE_URL,MATTERMOST_WS_ALLOWED_ORIGINS,THREESPEAK_EMBED_API_KEY,SEO_CRON_SECRET,TURNSTILE_SECRET,NEWSLETTER_API_URL,NEWSLETTER_SERVICE_TOKEN,WEB_REPLICAS,WEB_HEAP_MB,WEB_MEM_LIMIT,WEB_UPDATE_ORDER,SSR_INTERNAL_SECRET
         script: |
           set -eo pipefail
           export USE_PRIVATE=$USE_PRIVATE
@@ -282,6 +307,17 @@ jobs:
           export NEWSLETTER_API_URL=$NEWSLETTER_API_URL
           export NEWSLETTER_SERVICE_TOKEN=$NEWSLETTER_SERVICE_TOKEN
           export WEB_REPLICAS=$WEB_REPLICAS
+          # These three are this region's memory budget. Compose defaults to
+          # the other region's values, so a dropped variable would deploy four
+          # replicas at the wrong cap -- the configuration that cycled this
+          # host out of RAM. Fail the deploy instead of shipping it.
+          : "${WEB_HEAP_MB:?WEB_HEAP_MB is required for the US deploy}"
+          : "${WEB_MEM_LIMIT:?WEB_MEM_LIMIT is required for the US deploy}"
+          : "${WEB_UPDATE_ORDER:?WEB_UPDATE_ORDER is required for the US deploy}"
+          case "$WEB_HEAP_MB" in ''|*[!0-9]*) echo "WEB_HEAP_MB must be a number of MiB" >&2; exit 1;; esac
+          export WEB_HEAP_MB=$WEB_HEAP_MB
+          export WEB_MEM_LIMIT=$WEB_MEM_LIMIT
+          export WEB_UPDATE_ORDER=$WEB_UPDATE_ORDER
           cd ~/vision-web
           git pull origin main
           cd apps/web
