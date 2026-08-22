@@ -60,22 +60,23 @@ services:
       update_config:
         parallelism: 1
         delay: 15s
-        order: start-first
+        order: ${WEB_UPDATE_ORDER:-start-first}
         failure_action: rollback
         monitor: 30s
       rollback_config:
         parallelism: 1
         order: start-first
-      # Per-replica memory backstop. Web replicas plateau around 3.7GiB RSS
-      # (with MALLOC_ARENA_MAX=2 below); this cap sits above that so a genuine
-      # runaway is cgroup-OOM-killed and restarted in isolation instead of the
-      # host global OOM-killer picking an arbitrary victim (on the smaller US
-      # box it hit sshd/qemu-ga). 4.5GiB keeps 3 replicas (13.5GiB) under the
-      # 15GiB US box with headroom for redis/vapi/OS, and stays above the EU/SG
-      # plateaus too, so it never false-trips a healthy replica.
+      # Per-replica memory backstop, per region (WEB_MEM_LIMIT). It sits above
+      # where a replica settles, so a genuine runaway is cgroup-OOM-killed and
+      # restarted in isolation rather than the host's global OOM-killer picking
+      # an arbitrary victim -- on the smaller host it once took sshd and
+      # qemu-ga with it. Each region's value is chosen so its replica count
+      # fits that host with headroom for redis, vapi and the OS, and stays
+      # above where healthy replicas settle so it never false-trips one. The
+      # per-host figures behind it live with the infrastructure notes.
       resources:
         limits:
-          memory: 4608M
+          memory: ${WEB_MEM_LIMIT:-4608M}
     environment:
       - USE_PRIVATE
       - INTERNAL_API_HOST=http://vapi:4000
@@ -124,7 +125,11 @@ services:
       # The semi-space (young generation) is raised from V8's default so an
       # allocation-heavy render triggers fewer scavenges; costs ~128MiB of RSS
       # per replica, well inside the limit above.
-      - NODE_OPTIONS=--max-old-space-size=3072 --max-semi-space-size=64
+      # Per-region V8 old-space cap. It governs the heap, NOT the process: RSS
+      # is this plus young generation, native allocations and Buffers. The
+      # bound on total process memory is the cgroup limit above; the two are
+      # set together per region, never one without the other.
+      - NODE_OPTIONS=--max-old-space-size=${WEB_HEAP_MB:-3072} --max-semi-space-size=64
       # Per-process admission control (ssr-admission.js, loaded by the image
       # CMD): above this many in-flight page renders the process answers 503
       # with Retry-After, which the edge worker treats as a failover signal.
