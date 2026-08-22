@@ -21,8 +21,6 @@ import dayjs, { Dayjs } from "@/utils/dayjs";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { PurchaseQrDialog } from "../purchase-qr";
-import "./index.scss";
-
 interface Props {
   username: string;
   operation: RcOperation;

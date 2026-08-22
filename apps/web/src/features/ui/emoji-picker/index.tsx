@@ -10,7 +10,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { flip, offset, shift, size, useFloating } from "@floating-ui/react-dom";
-import "./_index.scss";
 import Picker from "@emoji-mart/react";
 import emojiData from "@emoji-mart/data";
 import { useGlobalStore } from "@/core/global-store";

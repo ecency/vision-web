@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import "./_index.scss";
 import { BeneficiaryRoute, Entry, WaveEntry } from "@/entities";
 import { PollsContext, PollsManager, useEntryPollExtractor } from "@/features/polls";
 import { useLocalStorage } from "react-use";

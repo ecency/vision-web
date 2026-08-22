@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import "./_index.scss";
 import { Dropdown, DropdownItem, DropdownMenu, DropdownToggle } from "@ui/dropdown";
 import { gridView, listView, menuDownSvg } from "@ui/svg";
 import i18next from "i18next";

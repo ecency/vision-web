@@ -1,5 +1,4 @@
 import React, { ReactNode } from "react";
-import "./_index.scss";
 import { Button } from "@ui/button";
 import Image from "next/image";
 import Link from "next/link";

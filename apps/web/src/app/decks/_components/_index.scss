@@ -1,6 +1,12 @@
 @import "src/styles/vars_mixins";
 
-html, body {
+// Scoped to pages that actually render the decks UI. Unscoped, this hides the
+// window scrollbar on EVERY route, which cancels the `scrollbar-gutter: stable`
+// that styles/_base.scss reserves to stop modal-open CLS, and shifts every
+// centered element by 7px. That only stayed invisible while this file compiled
+// into a decks-only chunk; once CSS chunks are consolidated the rule is merged
+// into the shared sheet and leaks site-wide. See issue #1632.
+html:has(.decks), body:has(.decks) {
   &::-webkit-scrollbar {
     display: none;
   }

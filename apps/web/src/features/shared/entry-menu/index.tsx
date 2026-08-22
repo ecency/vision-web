@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { success } from "../feedback";
-import "./_index.scss";
 import { useMenuItemsGenerator } from "./menu-items-generator";
 import { Entry } from "@/entities";
 import { getCommunityCache, useCommunityPin } from "@/core/caches";

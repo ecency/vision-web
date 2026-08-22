@@ -1,7 +1,6 @@
 import React from "react";
 import { InsufficientResourceCreditsDetails } from "./insufficient-resource-credits-details";
 import { CommonDetails } from "./common-details";
-import "./_index.scss";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import { ErrorFeedbackObject } from "../feedback-events";
 import { ErrorTypes } from "@/enums";

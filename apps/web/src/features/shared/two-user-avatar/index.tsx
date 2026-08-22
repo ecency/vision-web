@@ -1,6 +1,4 @@
 import defaults from "@/defaults";
-import "./_index.scss";
-
 interface Props {
   from: string;
   to: string;

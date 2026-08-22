@@ -2,7 +2,6 @@
 
 import React, { RefObject, useEffect, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import "./hive-operation-extension.scss";
 import type { Operation } from "@ecency/sdk";
 import defaults from "@/defaults";
 

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import "./_index.scss";
 import { chevronUpSvg } from "@/features/ui/svg";
 import i18next from "i18next";
 import { Tooltip } from "@ui/tooltip";

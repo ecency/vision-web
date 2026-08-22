@@ -1,7 +1,6 @@
 import React from "react";
 import defaults from "@/defaults";
 import { setProxyBase } from "@ecency/render-helper";
-import "./_index.scss";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import i18next from "i18next";
 import { SchedulesList } from "@/features/shared/schedules/schedules-list";

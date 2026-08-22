@@ -4,7 +4,6 @@ import React, { lazy, Suspense, useEffect, useState } from "react";
 import usePrevious from "react-use/lib/usePrevious";
 import * as ls from "@/utils/local-storage";
 import useMount from "react-use/lib/useMount";
-import "./_index.scss";
 import { NavbarMobile } from "./navbar-mobile";
 import { NavbarDesktop } from "./navbar-desktop";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";

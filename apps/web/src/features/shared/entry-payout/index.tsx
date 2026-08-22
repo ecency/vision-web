@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import "./_index.scss";
 import { Popover, PopoverContent } from "@ui/popover";
 import { EntryPayoutDetail } from "@/features/shared/entry-payout/entry-payout-detail";
 import { parseAsset } from "@/utils";

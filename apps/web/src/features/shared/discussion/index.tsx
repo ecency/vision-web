@@ -22,8 +22,6 @@ import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { UilComment } from "@tooni/iconscout-unicons-react";
 import defaults from "@/defaults";
 import { setProxyBase } from "@ecency/render-helper";
-import "./_index.scss";
-
 setProxyBase(defaults.imageServer);
 
 interface Props {

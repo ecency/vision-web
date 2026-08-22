@@ -17,6 +17,9 @@
 
 @tailwind utilities;
 
+// Component stylesheets, collapsed into this entry (issue #1632).
+@import "./shared-components";
+
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;

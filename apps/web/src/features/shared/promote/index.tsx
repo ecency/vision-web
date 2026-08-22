@@ -3,7 +3,6 @@
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import "./_index.scss";
 import { Modal, ModalBody, ModalHeader } from "@ui/modal";
 import { FormControl } from "@ui/input";
 import { Button } from "@ui/button";

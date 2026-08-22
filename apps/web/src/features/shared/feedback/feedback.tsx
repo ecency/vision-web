@@ -6,8 +6,6 @@ import { useMountTransition } from "@/core/hooks";
 import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useMount, useSet, useUnmount } from "react-use";
-import "./_index.scss";
-
 interface FeedbackItemProps {
   feedback: FeedbackObject;
   live: boolean;

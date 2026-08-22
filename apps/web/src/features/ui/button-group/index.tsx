@@ -1,5 +1,4 @@
 import React from "react";
-import "./_index.scss";
 import { classNameObject } from "@/features/ui/util";
 
 interface Props {

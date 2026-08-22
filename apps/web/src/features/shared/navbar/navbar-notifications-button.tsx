@@ -1,6 +1,5 @@
 "use client";
 
-import "./_navbar-notifications-button.scss";
 import { Button } from "@ui/button";
 import { Tooltip } from "@ui/tooltip";
 import i18next from "i18next";

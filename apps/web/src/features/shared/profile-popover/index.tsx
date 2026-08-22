@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback, useState } from "react";
-import "./index.scss";
 import { Entry } from "@/entities";
 import ProfilePopoverCard from "@/features/shared/profile-popover/profile-popover-card";
 import { ProfilePopoverAuthor } from "@/features/shared/profile-popover/profile-popover-author";

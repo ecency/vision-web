@@ -9,7 +9,6 @@ import { recordVideoSvg } from "@ui/svg";
 import i18next from "i18next";
 import React, { ChangeEvent, ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import useMountedState from "react-use/lib/useMountedState";
-import "./index.scss";
 import { VideoUploadItem } from "./video-upload-item";
 import { VideoUploadRecorder } from "./video-upload-recorder";
 import { useActiveAccount } from "@/core/hooks/use-active-account";

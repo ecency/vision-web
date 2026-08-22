@@ -7,7 +7,6 @@ import { getPostQueryOptions, QueryKeys } from "@ecency/sdk";
 import { getQueryClient } from "@/core/react-query";
 import { makeEntryPath } from "@/utils";
 import { findPostLinkElements, isWaveLikePost } from "../functions";
-import "./wave-like-post-extension.scss";
 import { EcencyRenderer } from "../ecency-renderer";
 import { Logo } from "../icons";
 import defaults from "@/defaults";

@@ -1,7 +1,6 @@
 "use client";
 
 import React, { CSSProperties, JSX, useEffect, useRef, useState } from "react";
-import "./_index.scss";
 import { classNameObject } from "@ui/util";
 import useClickAway from "react-use/lib/useClickAway";
 import i18next from "i18next";

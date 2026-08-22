@@ -1,6 +1,5 @@
 "use client";
 
-import "./_navbar-side-theme-switcher.scss";
 import { classNameObject } from "@ui/util";
 import { Theme } from "@/enums";
 import { brightnessSvg } from "@ui/svg";

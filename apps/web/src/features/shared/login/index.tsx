@@ -2,7 +2,6 @@
 
 import { useGlobalStore } from "@/core/global-store";
 import { Modal, ModalBody, ModalHeader } from "@ui/modal";
-import "./_index.scss";
 import i18next from "i18next";
 import Login from "./login";
 

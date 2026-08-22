@@ -6,7 +6,6 @@ import React, {
   useRef,
   useState
 } from "react";
-import "./_index.scss";
 import { SearchBox } from "@/features/shared";
 import Image from "next/image";
 import { insertOrReplace } from "@/utils/input-util";
