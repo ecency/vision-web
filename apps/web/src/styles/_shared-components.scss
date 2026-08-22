@@ -1,11 +1,17 @@
-// Generated aggregate of component stylesheets (issue #1632).
-//
-// These were previously imported one-per-component from TS/TSX, which made the
-// build emit one render-blocking <link> per component: 52 of them on a post page.
-// Importing them from a single entry collapses that to one stylesheet, which keeps
-// the immutable long-cache and adds nothing to the HTML response.
-//
-// Keep this list sorted. Each file already pulls its own vars/mixins.
+// Aggregate of the SHARED (features/**) component stylesheets, imported once from
+// style.scss. These used to be imported one-per-component from TS/TSX, which made
+// the build emit one render-blocking <link> per component: 52 of them on a post
+// page. Importing them from a single entry collapses that to one stylesheet, keeps
+// the immutable long-cache, and adds nothing to the HTML response. See issue #1632.
+
+// ORDER IS CASCADE-SIGNIFICANT. The list is generated in source-path order (which
+// sorts "_index.scss" partials by their underscore-prefixed filename, so the
+// rendered paths below are not lexicographic). The equivalence of the compiled
+// output was verified against this exact order; do not hand-reorder it.
+
+// Route-scoped app/** stylesheets are deliberately NOT aggregated here: a route
+// sheet carrying a global element selector (html/body/*) would leak site-wide once
+// merged into the shared chunk.
 
 @import "../features/announcement/index";
 @import "../features/post-renderer/components/extensions/hive-operation-extension";
