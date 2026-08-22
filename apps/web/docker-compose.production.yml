@@ -66,13 +66,14 @@ services:
       rollback_config:
         parallelism: 1
         order: start-first
-      # Per-replica memory backstop. Web replicas plateau around 3.7GiB RSS
-      # (with MALLOC_ARENA_MAX=2 below); this cap sits above that so a genuine
-      # runaway is cgroup-OOM-killed and restarted in isolation instead of the
-      # host global OOM-killer picking an arbitrary victim (on the smaller US
-      # box it hit sshd/qemu-ga). 4.5GiB keeps 3 replicas (13.5GiB) under the
-      # 15GiB US box with headroom for redis/vapi/OS, and stays above the EU/SG
-      # plateaus too, so it never false-trips a healthy replica.
+      # Per-replica memory backstop, per region (WEB_MEM_LIMIT). It sits above
+      # where a replica settles, so a genuine runaway is cgroup-OOM-killed and
+      # restarted in isolation rather than the host's global OOM-killer picking
+      # an arbitrary victim -- on the smaller host it once took sshd and
+      # qemu-ga with it. Each region's value is chosen so its replica count
+      # fits that host with headroom for redis, vapi and the OS, and stays
+      # above where healthy replicas settle so it never false-trips one. The
+      # per-host figures behind it live with the infrastructure notes.
       resources:
         limits:
           memory: ${WEB_MEM_LIMIT:-4608M}
