@@ -4,6 +4,7 @@ import {
   getHbdSavingsInterestState,
   MINIMUM_HBD_SAVINGS_AMOUNT
 } from "@/utils/hbd-savings-interest";
+import { formattedNumber } from "@/utils/formatted-number";
 import fixture from "./hbd-savings-accounts.fixture.json";
 
 /**
@@ -273,6 +274,41 @@ describe("invariants that must hold for any input", () => {
       }
     }
   );
+
+  it("never displays an amount the claim gate disagrees with", () => {
+    // The card shows formattedNumber(pendingInterest) and offers the claim on
+    // hasPendingInterest. If the display rounded, a 0.0009 estimate could read
+    // "0.001 HBD" next to no claim button at all. Integer arithmetic makes the
+    // figure a whole number of satoshis, so the two cannot disagree, and this
+    // is what holds that property down.
+    const random = (() => {
+      let state = 4242 >>> 0;
+      return () => {
+        state = (state * 1664525 + 1013904223) >>> 0;
+        return state / 0x100000000;
+      };
+    })();
+
+    for (let i = 0; i < 1000; i++) {
+      // Concentrated just under and just over one satoshi of interest, which
+      // is the only place display and gate could ever part company.
+      const satoshis = Math.floor(random() ** 2 * 200_000);
+      const state = getHbdSavingsInterestState({
+        savingsHbdBalance: `${Math.floor(satoshis / 1000)}.${String(satoshis % 1000).padStart(3, "0")} HBD`,
+        savingsHbdSeconds: Math.floor(random() ** 4 * 4e10),
+        savingsHbdSecondsLastUpdate: NOW.subtract(Math.floor(random() * 90), "day").format(
+          "YYYY-MM-DDTHH:mm:ss"
+        ),
+        hbdInterestRate: RATE,
+        now: NOW
+      });
+
+      const displayed = Number(formattedNumber(state.pendingInterest).replace(/,/g, ""));
+      expect(displayed >= MINIMUM_HBD_SAVINGS_AMOUNT).toBe(state.hasPendingInterest);
+      // And the figure on screen is exactly the estimate, not a rounding of it.
+      expect(displayed).toBe(state.pendingInterest);
+    }
+  });
 
   it("never hides a card that still has claimable interest", () => {
     // isEmpty is what removes the card from the page. Anything it hides has to

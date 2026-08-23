@@ -123,26 +123,34 @@ function parseHbdSatoshis(value: unknown): bigint {
   return BigInt(matched[1]) * SATOSHIS_PER_HBD + BigInt(fraction);
 }
 
+/** Chain timestamps carry no zone marker and are UTC. */
+function asUtcInstant(value: string): string {
+  return value.indexOf(".") !== -1 || value.indexOf("+") !== -1 ? value : `${value}.000Z`;
+}
+
+/**
+ * Reads a chain timestamp as the instant it denotes. Passing the bare string to
+ * dayjs would read it as LOCAL time, which shifts the claim schedule by the
+ * viewer's offset: up to 14 hours, enough to say "ready to claim now" while the
+ * chain would still refuse. The result stays in local mode so it still formats
+ * and reads relative in the viewer's own timezone.
+ */
 function parseChainDate(value: string | undefined): Dayjs | null {
   if (!value || value === UNIX_EPOCH) {
     return null;
   }
 
-  const parsed = dayjs(value);
+  const parsed = dayjs(asUtcInstant(value));
   return parsed.isValid() ? parsed : null;
 }
 
-/**
- * Mirrors `utils/parse-date`'s secondDiff, but against an injectable `now`:
- * chain timestamps carry no zone marker and are UTC.
- */
+/** Mirrors `utils/parse-date`'s secondDiff, but against an injectable `now`. */
 function secondsSince(value: string | undefined, now: Dayjs): number {
   if (!value || value === UNIX_EPOCH) {
     return 0;
   }
 
-  const zoned = value.indexOf(".") !== -1 || value.indexOf("+") !== -1 ? value : `${value}.000Z`;
-  const parsed = new Date(zoned).getTime();
+  const parsed = new Date(asUtcInstant(value)).getTime();
   if (!Number.isFinite(parsed)) {
     return 0;
   }

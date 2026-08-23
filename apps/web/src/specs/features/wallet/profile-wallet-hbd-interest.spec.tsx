@@ -1,8 +1,8 @@
 import "@testing-library/jest-dom";
-import { render, screen } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { screen } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import dayjs from "@/utils/dayjs";
+import { createTestQueryClient, renderWithQueryClient } from "@/specs/test-utils";
 
 // The global @/utils mock exports only `random` and `getAccessToken`; the card
 // reads formattedNumber and the interest helper through the same barrel.
@@ -66,17 +66,11 @@ function renderCard() {
   // Seed both caches before mounting so the first render already has the
   // account row. Otherwise an assertion that the card renders NOTHING would
   // pass simply because the queries had not resolved yet.
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Infinity } }
-  });
+  const queryClient = createTestQueryClient();
   queryClient.setQueryData(["account-full", "alice"], account);
   queryClient.setQueryData(["dynamic-props"], { hbdInterestRate: 1000 });
 
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <ProfileWalletHbdInterest username="alice" />
-    </QueryClientProvider>
-  );
+  return renderWithQueryClient(<ProfileWalletHbdInterest username="alice" />, { queryClient });
 }
 
 describe("ProfileWalletHbdInterest", () => {
