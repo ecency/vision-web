@@ -1,0 +1,440 @@
+{
+  "capturedAt": "2026-08-23T09:00:51",
+  "hbdInterestRate": 1000,
+  "accounts": [
+    {
+      "name": "a-blockchain",
+      "savings_hbd_balance": "2.000 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2018-04-12T16:05:45",
+      "savings_hbd_last_interest_payment": "2018-04-12T16:05:45"
+    },
+    {
+      "name": "a-condor",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "166500",
+      "savings_hbd_seconds_last_update": "2017-12-04T20:28:03",
+      "savings_hbd_last_interest_payment": "2017-12-04T20:26:12"
+    },
+    {
+      "name": "c-mon",
+      "savings_hbd_balance": "0.200 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2019-02-06T14:15:30",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "d-a-d",
+      "savings_hbd_balance": "72.118 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2025-01-24T08:57:54",
+      "savings_hbd_last_interest_payment": "2025-01-24T08:57:54"
+    },
+    {
+      "name": "d-company",
+      "savings_hbd_balance": "0.518 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2026-07-28T03:39:33",
+      "savings_hbd_last_interest_payment": "2026-07-28T03:39:33"
+    },
+    {
+      "name": "d-hive",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "1844050638102",
+      "savings_hbd_seconds_last_update": "2025-01-05T02:11:15",
+      "savings_hbd_last_interest_payment": "2024-12-17T09:37:36"
+    },
+    {
+      "name": "e-haxker",
+      "savings_hbd_balance": "0.159 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2017-12-25T08:38:24",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "e-j",
+      "savings_hbd_balance": "2.000 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2023-11-04T19:40:00",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "e-mc2",
+      "savings_hbd_balance": "0.041 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2025-05-17T19:01:45",
+      "savings_hbd_last_interest_payment": "2025-05-17T19:01:45"
+    },
+    {
+      "name": "e-musik",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "722370114",
+      "savings_hbd_seconds_last_update": "2022-08-22T18:57:30",
+      "savings_hbd_last_interest_payment": "2022-08-08T21:57:03"
+    },
+    {
+      "name": "e-r-k-a-n",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "83616395184",
+      "savings_hbd_seconds_last_update": "2022-03-04T20:56:51",
+      "savings_hbd_last_interest_payment": "2022-02-04T13:15:21"
+    },
+    {
+      "name": "e-rich",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "8027094",
+      "savings_hbd_seconds_last_update": "2025-03-25T14:53:57",
+      "savings_hbd_last_interest_payment": "2025-03-25T14:52:15"
+    },
+    {
+      "name": "e-s",
+      "savings_hbd_balance": "5.885 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2025-01-08T01:58:36",
+      "savings_hbd_last_interest_payment": "2025-01-08T01:58:36"
+    },
+    {
+      "name": "e-sport-gamer",
+      "savings_hbd_balance": "5.309 HBD",
+      "savings_hbd_seconds": "95562",
+      "savings_hbd_seconds_last_update": "2026-04-01T18:22:15",
+      "savings_hbd_last_interest_payment": "2026-04-01T18:21:57"
+    },
+    {
+      "name": "e-sport-girly",
+      "savings_hbd_balance": "5.296 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2026-04-01T18:22:54",
+      "savings_hbd_last_interest_payment": "2026-04-01T18:22:54"
+    },
+    {
+      "name": "f-g",
+      "savings_hbd_balance": "1.000 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2023-11-04T19:37:06",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "f0c0l1bert4r10",
+      "savings_hbd_balance": "0.236 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2021-10-15T04:04:39",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "f0rtunate",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "10877334048",
+      "savings_hbd_seconds_last_update": "2021-12-22T03:45:42",
+      "savings_hbd_last_interest_payment": "2021-11-24T18:46:30"
+    },
+    {
+      "name": "f10rrn",
+      "savings_hbd_balance": "0.190 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2017-08-14T13:14:42",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "g-h",
+      "savings_hbd_balance": "0.005 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2026-08-09T13:28:24",
+      "savings_hbd_last_interest_payment": "2026-08-09T13:28:24"
+    },
+    {
+      "name": "g-lug",
+      "savings_hbd_balance": "29.945 HBD",
+      "savings_hbd_seconds": "23185837215",
+      "savings_hbd_seconds_last_update": "2022-01-11T22:57:03",
+      "savings_hbd_last_interest_payment": "2021-12-17T00:40:27"
+    },
+    {
+      "name": "g-race-c",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "864402",
+      "savings_hbd_seconds_last_update": "2023-04-13T21:33:54",
+      "savings_hbd_last_interest_payment": "2023-04-13T21:33:33"
+    },
+    {
+      "name": "g-tech",
+      "savings_hbd_balance": "0.034 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2023-04-03T15:16:27",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "h-hamilton",
+      "savings_hbd_balance": "2.241 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2023-09-21T12:24:24",
+      "savings_hbd_last_interest_payment": "2023-09-21T12:24:24"
+    },
+    {
+      "name": "i-gordan",
+      "savings_hbd_balance": "6.757 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2019-11-17T15:25:48",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "i-know-that",
+      "savings_hbd_balance": "0.243 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2018-01-21T06:04:57",
+      "savings_hbd_last_interest_payment": "2018-01-11T12:36:03"
+    },
+    {
+      "name": "j-fy",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "366210",
+      "savings_hbd_seconds_last_update": "2022-02-17T10:22:24",
+      "savings_hbd_last_interest_payment": "2022-02-17T10:22:06"
+    },
+    {
+      "name": "j-rodriguez",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "3335409792",
+      "savings_hbd_seconds_last_update": "2018-02-25T01:24:12",
+      "savings_hbd_last_interest_payment": "2018-02-11T13:16:36"
+    },
+    {
+      "name": "k-o-m-c",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "4264043490",
+      "savings_hbd_seconds_last_update": "2025-03-16T23:15:15",
+      "savings_hbd_last_interest_payment": "2025-02-19T06:59:30"
+    },
+    {
+      "name": "k-rapper",
+      "savings_hbd_balance": "0.233 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2016-12-24T15:19:54",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "l-gasper19",
+      "savings_hbd_balance": "0.005 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2023-01-19T13:07:24",
+      "savings_hbd_last_interest_payment": "2023-01-19T13:07:24"
+    },
+    {
+      "name": "l-p",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "1217064",
+      "savings_hbd_seconds_last_update": "2025-11-27T02:49:18",
+      "savings_hbd_last_interest_payment": "2025-11-27T02:47:36"
+    },
+    {
+      "name": "l0k1",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "8385740532",
+      "savings_hbd_seconds_last_update": "2017-04-26T11:29:03",
+      "savings_hbd_last_interest_payment": "2017-03-30T07:02:27"
+    },
+    {
+      "name": "m-5",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "1077255194355",
+      "savings_hbd_seconds_last_update": "2025-04-19T04:38:00",
+      "savings_hbd_last_interest_payment": "2025-04-05T01:22:03"
+    },
+    {
+      "name": "m-abel",
+      "savings_hbd_balance": "10.016 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2021-10-08T12:54:51",
+      "savings_hbd_last_interest_payment": "2021-10-08T12:54:51"
+    },
+    {
+      "name": "m-ali",
+      "savings_hbd_balance": "0.003 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2026-03-05T07:33:45",
+      "savings_hbd_last_interest_payment": "2026-03-05T07:33:45"
+    },
+    {
+      "name": "m-mirage-e",
+      "savings_hbd_balance": "1.002 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2022-01-20T23:13:45",
+      "savings_hbd_last_interest_payment": "2022-01-20T23:13:45"
+    },
+    {
+      "name": "n0m0refak3n3ws",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "7884",
+      "savings_hbd_seconds_last_update": "2024-10-24T18:50:09",
+      "savings_hbd_last_interest_payment": "2024-10-24T18:49:51"
+    },
+    {
+      "name": "o-dot2723",
+      "savings_hbd_balance": "1.000 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2025-11-25T14:19:39",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "o1123581321",
+      "savings_hbd_balance": "0.001 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2018-06-08T13:47:33",
+      "savings_hbd_last_interest_payment": "2018-06-08T13:47:33"
+    },
+    {
+      "name": "p-dope",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "40173108",
+      "savings_hbd_seconds_last_update": "2018-06-12T18:24:51",
+      "savings_hbd_last_interest_payment": "2018-06-10T20:07:03"
+    },
+    {
+      "name": "p-hbd",
+      "savings_hbd_balance": "525.869 HBD",
+      "savings_hbd_seconds": "6519828",
+      "savings_hbd_seconds_last_update": "2023-05-17T13:20:45",
+      "savings_hbd_last_interest_payment": "2023-05-17T13:20:33"
+    },
+    {
+      "name": "q-tv",
+      "savings_hbd_balance": "6.072 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2021-04-06T00:56:54",
+      "savings_hbd_last_interest_payment": "2021-04-06T00:56:54"
+    },
+    {
+      "name": "q0000",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "14171916",
+      "savings_hbd_seconds_last_update": "2018-03-25T16:55:12",
+      "savings_hbd_last_interest_payment": "2018-03-24T21:25:33"
+    },
+    {
+      "name": "q42",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "188325",
+      "savings_hbd_seconds_last_update": "2021-04-05T01:19:15",
+      "savings_hbd_last_interest_payment": "2021-04-05T01:19:00"
+    },
+    {
+      "name": "r-hive",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "9238531980132",
+      "savings_hbd_seconds_last_update": "2026-02-05T01:47:48",
+      "savings_hbd_last_interest_payment": "2026-01-21T02:29:54"
+    },
+    {
+      "name": "r-nyn",
+      "savings_hbd_balance": "2.033 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2025-07-09T20:50:42",
+      "savings_hbd_last_interest_payment": "2025-07-09T20:50:42"
+    },
+    {
+      "name": "s-dbraybrook",
+      "savings_hbd_balance": "12.645 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2018-11-15T15:41:03",
+      "savings_hbd_last_interest_payment": "2018-11-15T15:41:03"
+    },
+    {
+      "name": "s-nijhum",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "2556747648",
+      "savings_hbd_seconds_last_update": "2022-03-06T08:25:57",
+      "savings_hbd_last_interest_payment": "2022-02-20T19:14:45"
+    },
+    {
+      "name": "s-tec",
+      "savings_hbd_balance": "0.012 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2018-04-09T16:43:21",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "t-angel1989",
+      "savings_hbd_balance": "0.003 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2022-02-13T11:18:06",
+      "savings_hbd_last_interest_payment": "2022-02-13T11:18:06"
+    },
+    {
+      "name": "t-aze",
+      "savings_hbd_balance": "12.243 HBD",
+      "savings_hbd_seconds": "21733259655",
+      "savings_hbd_seconds_last_update": "2018-11-19T21:40:09",
+      "savings_hbd_last_interest_payment": "2018-10-29T14:40:33"
+    },
+    {
+      "name": "t-belema",
+      "savings_hbd_balance": "1.000 HBD",
+      "savings_hbd_seconds": "875502000",
+      "savings_hbd_seconds_last_update": "2018-01-23T13:34:42",
+      "savings_hbd_last_interest_payment": "2018-01-18T11:03:27"
+    },
+    {
+      "name": "t-h-x",
+      "savings_hbd_balance": "0.000 HBD",
+      "savings_hbd_seconds": "252000",
+      "savings_hbd_seconds_last_update": "2017-06-17T12:47:57",
+      "savings_hbd_last_interest_payment": "2017-06-17T12:44:36"
+    },
+    {
+      "name": "t-nil",
+      "savings_hbd_balance": "0.075 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2023-03-20T00:21:36",
+      "savings_hbd_last_interest_payment": "2023-03-20T00:21:36"
+    },
+    {
+      "name": "v-36",
+      "savings_hbd_balance": "8.022 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2026-04-14T17:13:27",
+      "savings_hbd_last_interest_payment": "2026-04-14T17:13:27"
+    },
+    {
+      "name": "v-x",
+      "savings_hbd_balance": "0.005 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2023-06-10T22:48:00",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "w-o-w-world",
+      "savings_hbd_balance": "0.208 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2018-03-08T20:31:09",
+      "savings_hbd_last_interest_payment": "2018-03-08T20:31:09"
+    },
+    {
+      "name": "w-t-fi",
+      "savings_hbd_balance": "21.405 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2025-09-16T05:18:06",
+      "savings_hbd_last_interest_payment": "2025-09-16T05:18:06"
+    },
+    {
+      "name": "x-helluva-x",
+      "savings_hbd_balance": "2.002 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2022-04-04T21:26:42",
+      "savings_hbd_last_interest_payment": "2022-04-04T21:26:42"
+    },
+    {
+      "name": "y0ting0",
+      "savings_hbd_balance": "0.984 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2022-06-04T20:16:48",
+      "savings_hbd_last_interest_payment": "1970-01-01T00:00:00"
+    },
+    {
+      "name": "z0rt3r",
+      "savings_hbd_balance": "0.178 HBD",
+      "savings_hbd_seconds": "0",
+      "savings_hbd_seconds_last_update": "2018-01-28T14:55:54",
+      "savings_hbd_last_interest_payment": "2018-01-28T14:55:54"
+    }
+  ]
+}

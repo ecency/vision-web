@@ -11,20 +11,16 @@ import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import i18next from "i18next";
 import { useMemo } from "react";
-import { dayjs, formattedNumber, parseAsset, secondDiff } from "@/utils";
+import {
+  formattedNumber,
+  getHbdSavingsInterestState,
+  MINIMUM_HBD_SAVINGS_AMOUNT
+} from "@/utils";
 
 interface Props {
   username: string;
   className?: string;
 }
-
-// Hive stores HBD balances with three decimal places, so accruing interest
-// effectively requires holding at least 0.001 HBD in savings. Below that
-// threshold there are no satoshis to accumulate seconds against.
-const MINIMUM_SAVINGS_BALANCE = 0.001;
-const INTEREST_INTERVAL_DAYS = 30;
-const SECONDS_PER_YEAR = 365 * 24 * 60 * 60;
-const UNIX_EPOCH = "1970-01-01T00:00:00";
 
 export function ProfileWalletHbdInterest({ username, className }: Props) {
   const { activeUser } = useActiveAccount();
@@ -44,91 +40,42 @@ export function ProfileWalletHbdInterest({ username, className }: Props) {
 
   const aprAnnualPercent = useMemo(() => hbdInterestRate / 100, [hbdInterestRate]);
 
-  const savingsBalance = useMemo(() => {
-    const balanceString = account?.savings_hbd_balance ?? "0.000 HBD";
-    return parseAsset(balanceString).amount;
-  }, [account?.savings_hbd_balance]);
-
-  const trackedHbdSeconds = useMemo(() => {
-    const value = account?.savings_hbd_seconds;
-
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return value / 1000;
-    }
-
-    if (typeof value === "string") {
-      const parsed = Number.parseFloat(value);
-      if (Number.isFinite(parsed)) {
-        return parsed / 1000;
-      }
-    }
-
-    return 0;
-  }, [account?.savings_hbd_seconds]);
-
-  const lastUpdate = useMemo(() => {
-    const value = account?.savings_hbd_seconds_last_update;
-    if (!value || value === UNIX_EPOCH) {
-      return null;
-    }
-
-    const parsed = dayjs(value);
-    return parsed.isValid() ? parsed : null;
-  }, [account?.savings_hbd_seconds_last_update]);
-
-  const lastInterestPayment = useMemo(() => {
-    const value = account?.savings_hbd_last_interest_payment;
-    if (!value || value === UNIX_EPOCH) {
-      return null;
-    }
-    const parsed = dayjs(value);
-    return parsed.isValid() ? parsed : null;
-  }, [account?.savings_hbd_last_interest_payment]);
-
-  const now = dayjs();
-
-  const claimReferenceDate = lastInterestPayment ?? lastUpdate;
-
-  const secondsSinceLastUpdate = useMemo(() => {
-    const value = account?.savings_hbd_seconds_last_update;
-    if (!value || value === UNIX_EPOCH) {
-      return 0;
-    }
-
-    return secondDiff(value);
-  }, [account?.savings_hbd_seconds_last_update]);
-
-  const pendingSeconds = savingsBalance * secondsSinceLastUpdate;
-  const secondsToEstimate = trackedHbdSeconds + pendingSeconds;
-
-  const pendingInterest = useMemo(() => {
-    if (hbdInterestRate <= 0) {
-      return 0;
-    }
-
-    const aprDecimal = hbdInterestRate / 10000;
-    return (secondsToEstimate / SECONDS_PER_YEAR) * aprDecimal;
-  }, [hbdInterestRate, secondsToEstimate]);
-
-  const pendingInterestDisplay = formattedNumber(pendingInterest);
-  const hasPendingInterest = pendingInterest >= MINIMUM_SAVINGS_BALANCE;
-
-  const nextClaimDate = claimReferenceDate
-    ? claimReferenceDate.add(INTEREST_INTERVAL_DAYS, "day")
-    : null;
-
-  const hasMinimumBalance = savingsBalance >= MINIMUM_SAVINGS_BALANCE;
-  const canClaim = Boolean(
-    hasMinimumBalance &&
-      nextClaimDate &&
-      now.isAfter(nextClaimDate) &&
-      hasPendingInterest
+  const {
+    savingsBalance,
+    pendingInterest,
+    hasSavingsBalance,
+    hasPendingInterest,
+    isEmpty,
+    nextClaimDate,
+    needsDepositToClaim,
+    canClaim
+  } = useMemo(
+    () =>
+      getHbdSavingsInterestState({
+        savingsHbdBalance: account?.savings_hbd_balance,
+        savingsHbdSeconds: account?.savings_hbd_seconds,
+        savingsHbdSecondsLastUpdate: account?.savings_hbd_seconds_last_update,
+        savingsHbdLastInterestPayment: account?.savings_hbd_last_interest_payment,
+        hbdInterestRate
+      }),
+    [
+      account?.savings_hbd_balance,
+      account?.savings_hbd_seconds,
+      account?.savings_hbd_seconds_last_update,
+      account?.savings_hbd_last_interest_payment,
+      hbdInterestRate
+    ]
   );
 
+  const pendingInterestDisplay = formattedNumber(pendingInterest);
+
   const nextClaimDescription = (() => {
-    if (!hasMinimumBalance) {
-      return i18next.t("profile-wallet.hbd-interest.minimum-balance", {
-        amount: MINIMUM_SAVINGS_BALANCE.toFixed(3),
+    // Interest keeps accruing on the banked balance-seconds even after the
+    // savings balance is emptied, but releasing it means transferring 0.001 HBD
+    // back out of savings, so it stays stuck until something is deposited.
+    if (needsDepositToClaim) {
+      return i18next.t("profile-wallet.hbd-interest.deposit-to-claim", {
+        amount: MINIMUM_HBD_SAVINGS_AMOUNT.toFixed(3),
       });
     }
 
@@ -147,26 +94,20 @@ export function ProfileWalletHbdInterest({ username, className }: Props) {
 
   const nextClaimExact = nextClaimDate?.format("LLL");
 
-  const helperText = hasMinimumBalance
+  const helperText = hasSavingsBalance
     ? i18next.t("profile-wallet.hbd-interest.note", {
         apr: aprAnnualPercent.toFixed(3),
       })
-    : undefined;
+    : i18next.t("profile-wallet.hbd-interest.minimum-balance", {
+        amount: MINIMUM_HBD_SAVINGS_AMOUNT.toFixed(3),
+      });
 
-  if (savingsBalance < MINIMUM_SAVINGS_BALANCE) {
+  // Nothing saved and nothing accrued: there is no estimate worth a card. A
+  // zero savings balance on its own is not enough to hide it, because the
+  // interest already earned on it is still owed and still claimable.
+  if (isEmpty) {
     return null;
   }
-
-  const claimButton = (
-    <Button
-      appearance="primary"
-      className="w-full sm:w-auto"
-      size="sm"
-      disabled={!isOwnProfile || !canClaim}
-    >
-      {i18next.t("profile-wallet.hbd-interest.claim-button")}
-    </Button>
-  );
 
   return (
     <div
@@ -184,16 +125,23 @@ export function ProfileWalletHbdInterest({ username, className }: Props) {
             {pendingInterestDisplay} HBD
           </div>
         </div>
-        {isOwnProfile && canClaim ? (
+        {/* Only offered once there is interest to collect: below 0.001 HBD the
+            chain has nothing to pay out, so the button would always fail. */}
+        {isOwnProfile && hasPendingInterest && (
           <WalletOperationsDialog
             asset="HBD"
             operation={AssetOperation.ClaimInterest}
             to={username}
           >
-            {claimButton}
+            <Button
+              appearance="primary"
+              className="w-full sm:w-auto"
+              size="sm"
+              disabled={!canClaim}
+            >
+              {i18next.t("profile-wallet.hbd-interest.claim-button")}
+            </Button>
           </WalletOperationsDialog>
-        ) : (
-          claimButton
         )}
       </div>
 
@@ -220,9 +168,7 @@ export function ProfileWalletHbdInterest({ username, className }: Props) {
           <div className="text-sm text-gray-700 dark:text-gray-300">
             {savingsBalance.toFixed(3)} HBD
           </div>
-          {helperText && (
-            <div className="text-xs text-gray-500 dark:text-gray-400">{helperText}</div>
-          )}
+          <div className="text-xs text-gray-500 dark:text-gray-400">{helperText}</div>
         </div>
       </div>
     </div>
