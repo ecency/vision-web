@@ -22,12 +22,15 @@ vi.mock("@ecency/sdk", async () => {
   const actual = await vi.importActual<typeof import("@ecency/sdk")>("@ecency/sdk");
   return {
     ...actual,
+    // Keep the real query options and swap only the fetch. The cache key is
+    // then the app's own, not a literal that could drift from it, and the
+    // seeding below has to agree with QueryKeys or every assertion fails.
     getAccountFullQueryOptions: (username: string) => ({
-      queryKey: ["account-full", username],
+      ...actual.getAccountFullQueryOptions(username),
       queryFn: async () => account
     }),
     getDynamicPropsQueryOptions: () => ({
-      queryKey: ["dynamic-props"],
+      ...actual.getDynamicPropsQueryOptions(),
       // hbd_interest_rate is in basis points: 1000 is the 10% APR in force.
       queryFn: async () => ({ hbdInterestRate: 1000 })
     })
@@ -44,6 +47,7 @@ vi.mock("@/features/wallet", () => ({
   WalletOperationsDialog: ({ children }: { children: React.ReactNode }) => <div>{children}</div>
 }));
 
+const { QueryKeys } = await import("@ecency/sdk");
 const { ProfileWalletHbdInterest } = await import(
   "@/app/(dynamicPages)/profile/[username]/wallet/(token)/_components/profile-wallet-hbd-interest"
 );
@@ -67,8 +71,8 @@ function renderCard() {
   // account row. Otherwise an assertion that the card renders NOTHING would
   // pass simply because the queries had not resolved yet.
   const queryClient = createTestQueryClient();
-  queryClient.setQueryData(["account-full", "alice"], account);
-  queryClient.setQueryData(["dynamic-props"], { hbdInterestRate: 1000 });
+  queryClient.setQueryData(QueryKeys.accounts.full("alice"), account);
+  queryClient.setQueryData(QueryKeys.core.dynamicProps(), { hbdInterestRate: 1000 });
 
   return renderWithQueryClient(<ProfileWalletHbdInterest username="alice" />, { queryClient });
 }
