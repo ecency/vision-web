@@ -27,7 +27,11 @@ export interface WavesFeedParams {
   following?: string;
   /** Only this author's waves (across all containers); the per-author feed. */
   author?: string;
-  /** The viewing user; exclude authors they currently mute. */
+  /**
+   * The viewing user; exclude authors they currently mute. Ecency's own
+   * moderation mutes are applied by esync regardless of this value, so leaving
+   * it unset drops the viewer's personal mutes, not the platform ones.
+   */
   observer?: string;
   /** Page size (default 20). */
   limit?: number;

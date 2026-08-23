@@ -37,7 +37,10 @@ export interface ShortsFeedParams {
   tag?: string;
   /** Only this author's shorts (across all containers). */
   author?: string;
-  /** The viewing user; exclude authors they currently mute. */
+  /**
+   * The viewing user; exclude authors they currently mute. Ecency's own
+   * moderation mutes are applied by esync regardless of this value.
+   */
   observer?: string;
   /** Page size (default 20). */
   limit?: number;
