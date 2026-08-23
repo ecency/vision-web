@@ -164,6 +164,13 @@ export function parseAllExtensionsToDoc(value?: string) {
       const p = document.createElement("p");
       li.insertBefore(p, first);
     }
+    // Ensure completely empty <li> elements get a paragraph child so ProseMirror's
+    // listItem schema is satisfied. Without this, pasting markdown with empty list
+    // items throws "RangeError: Invalid content for node listItem: <>".
+    // Same fix pattern as blockquotes and table cells below.
+    if (!li.firstElementChild && !li.textContent?.trim()) {
+      li.appendChild(document.createElement("p"));
+    }
   });
 
   // Ensure empty blockquotes have at least one paragraph to satisfy ProseMirror schema.
