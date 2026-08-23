@@ -33,27 +33,79 @@ messaging.onBackgroundMessage(function (payload) {
   });
 });
 
-self.addEventListener('notificationclick', function (event) {
-  const data = event.notification.data;
-  let url = 'https://ecency.com';
-  const fullPermlink = data.permlink1 + data.permlink2 + data.permlink3;
-  // Allowlist target pages so a forged/misconfigured push can't route to an arbitrary
-  // ecency.com path. Add new deep-link targets here as they're introduced.
-  const ALLOWED_TARGET_PAGES = ['perks'];
-  if (data.target_page && ALLOWED_TARGET_PAGES.includes(data.target_page)) {
-    // e.g. the perks/quests reminder -> open the perks page directly
-    url += '/' + data.target_page;
-  } else {
-    if (['vote', 'unvote', 'spin', 'inactive'].includes(data.type)) {
-      url += '/@' + data.target;
-    } else {
-      // delegation, mention, transfer, follow, unfollow, ignore, blacklist, reblog
-      url += '/@' + data.source;
-    }
-    if (fullPermlink) {
-      url += '/' + fullPermlink;
-    }
+// Push payloads use their own type vocabulary, produced by enotify's
+// push/format.py. It is NOT the websocket/API vocabulary: "favorite" not
+// "favorites", "bookmark" not "bookmarks", "payout" not "payouts",
+// "delegation" not "delegations". Map on these spellings.
+//
+// `source` is the actor, `target` is the recipient (the signed-in user).
+// Which of the two authored the post a permlink belongs to depends on the
+// type, and getting it backwards opens /@<wrong-author>/<permlink>, which
+// renders the "couldn't load this post" screen.
+
+// The permlink belongs to the recipient's own post.
+var ENTRY_BY_TARGET = ['vote', 'unvote', 'reblog', 'payout'];
+// The permlink belongs to the actor's post: a favourite author's new post, a
+// reply to a bookmarked post, a mention, a reply, one's own scheduled post.
+var ENTRY_BY_SOURCE = ['mention', 'reply', 'favorite', 'bookmark', 'scheduled_published'];
+// Profile of the actor.
+var PROFILE_BY_SOURCE = ['follow', 'unfollow', 'ignore'];
+// The recipient's own wallet, matching where the in-app link for these goes.
+var WALLET_BY_TARGET = ['transfer', 'delegation'];
+// Allowlist target pages so a forged/misconfigured push can't route to an
+// arbitrary ecency.com path. Add new deep-link targets here as they're
+// introduced.
+var ALLOWED_TARGET_PAGES = ['perks'];
+
+function joinPermlink(data) {
+  // Only the entry types send permlink parts, and a part that carries no text
+  // arrives as '' (or as the string 'None' if it was ever serialized from a
+  // Python None). Filtering instead of concatenating keeps a missing part from
+  // landing in the URL as the literal "undefined".
+  return [data.permlink1, data.permlink2, data.permlink3]
+    .filter(function (part) {
+      return typeof part === 'string' && part !== 'None';
+    })
+    .join('')
+    .trim();
+}
+
+function buildNotificationUrl(data) {
+  var base = 'https://ecency.com';
+
+  if (!data) {
+    return base;
   }
 
-  clients.openWindow(url, '_blank');
+  if (data.target_page && ALLOWED_TARGET_PAGES.indexOf(data.target_page) !== -1) {
+    // e.g. the perks/quests reminder -> open the perks page directly
+    return base + '/' + data.target_page;
+  }
+
+  var type = data.type;
+
+  if (WALLET_BY_TARGET.indexOf(type) !== -1) {
+    return data.target ? base + '/@' + data.target + '/wallet' : base;
+  }
+
+  var isEntryBySource = ENTRY_BY_SOURCE.indexOf(type) !== -1;
+  // Everything not authored by the actor resolves against the recipient. That
+  // includes the informational types enotify sends with source 'ecency'
+  // (inactive, checkin, monthly_posts, weekly_earnings, account_update) and
+  // any type added later that isn't listed above: an unknown type lands on the
+  // recipient's own profile rather than on a stranger's permlink.
+  var author =
+    isEntryBySource || PROFILE_BY_SOURCE.indexOf(type) !== -1 ? data.source : data.target;
+
+  if (!author) {
+    return base;
+  }
+
+  var permlink = isEntryBySource || ENTRY_BY_TARGET.indexOf(type) !== -1 ? joinPermlink(data) : '';
+
+  return permlink ? base + '/@' + author + '/' + permlink : base + '/@' + author;
+}
+
+self.addEventListener('notificationclick', function (event) {
+  clients.openWindow(buildNotificationUrl(event.notification.data), '_blank');
 });

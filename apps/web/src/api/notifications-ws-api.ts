@@ -157,16 +157,20 @@ export class NotificationsWebSocket {
 
     switch (data.type) {
       case "vote":
-      case "favorites":
-      case "bookmarks":
       case "reblog":
       case "payouts":
       case "scheduled_published":
         // Action on the user's own content — author is the recipient (target).
+        // (scheduled_published is self-targeted, so source === target.)
         return toEntry(data.target, data.extra?.permlink);
       case "mention":
       case "reply":
-        // The mentioning/reply content is authored by the actor (source).
+      case "favorites":
+      case "bookmarks":
+        // The linked content is authored by the actor (source), not by the
+        // recipient: a favourite author's new post, a reply to a bookmarked
+        // post, a mention, a reply. Resolving these from `target` opens
+        // /@<recipient>/<their-permlink>, which 404s.
         return toEntry(data.source, data.extra?.permlink);
       case "follow":
         return toProfile(data.source);
