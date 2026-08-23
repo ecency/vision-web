@@ -3853,6 +3853,7 @@
       "next-ready": "Ready to claim now",
       "next-in": "Available {{relative}}",
       "next-unknown": "Interest schedule unavailable",
+      "deposit-to-claim": "Deposit at least {{amount}} HBD to savings to release this interest.",
       "next-date": "On {{date}}",
       "balance-label": "Savings balance",
       "minimum-balance": "Interest accrues once you hold at least {{amount}} HBD in savings.",

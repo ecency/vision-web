@@ -14,6 +14,7 @@ export * from "./rnd";
 export * from "./encoder";
 export * from "./account-reputation";
 export * from "./hive-wallet";
+export * from "./hbd-savings-interest";
 export * from "./parse-date";
 export * from "./temp-entry";
 export * from "./posting";
