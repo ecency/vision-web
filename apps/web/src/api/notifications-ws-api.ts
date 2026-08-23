@@ -147,30 +147,37 @@ export class NotificationsWebSocket {
     // (e.g. "/@" or "/@/wallet"); `extra` is read with optional chaining so a
     // malformed message can't throw and abort notification handling.
     const toEntry = (author?: string, permlink?: string) => {
-      if (!author || !permlink || permlink.trim().length === 0 || permlink === "undefined") {
+      // Both fields are typed as strings but arrive off the wire, so check the
+      // type as well as the value: a non-string permlink used to throw out of
+      // here and abort handling of the whole message.
+      if (typeof author !== "string" || typeof permlink !== "string") {
+        return undefined;
+      }
+      if (!author || permlink.trim().length === 0 || permlink === "undefined") {
         return undefined;
       }
       return `/@${author}/${permlink.trim()}`;
     };
     const toProfile = (username?: string, suffix = "") =>
-      username ? `/@${username}${suffix}` : undefined;
+      typeof username === "string" && username ? `/@${username}${suffix}` : undefined;
 
     switch (data.type) {
       case "vote":
       case "reblog":
       case "payouts":
-      case "scheduled_published":
         // Action on the user's own content — author is the recipient (target).
-        // (scheduled_published is self-targeted, so source === target.)
         return toEntry(data.target, data.extra?.permlink);
       case "mention":
       case "reply":
       case "favorites":
       case "bookmarks":
+      case "scheduled_published":
         // The linked content is authored by the actor (source), not by the
         // recipient: a favourite author's new post, a reply to a bookmarked
         // post, a mention, a reply. Resolving these from `target` opens
-        // /@<recipient>/<their-permlink>, which 404s.
+        // /@<recipient>/<their-permlink>, which 404s. scheduled_published is
+        // self-targeted so either field names the author, and reading `source`
+        // keeps this table identical to the push one.
         return toEntry(data.source, data.extra?.permlink);
       case "follow":
         return toProfile(data.source);

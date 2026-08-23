@@ -36,8 +36,9 @@ describe("NotificationsWebSocket.getLink entry authorship", () => {
     ["vote", "/@recipient/a-permlink"],
     ["reblog", "/@recipient/a-permlink"],
     ["payouts", "/@recipient/a-permlink"],
-    // Self-targeted, so either account resolves to the same URL.
-    ["scheduled_published", "/@recipient/a-permlink"],
+    // Self-targeted, so source and target name the same account; read from
+    // source to match the push table exactly.
+    ["scheduled_published", "/@actor/a-permlink"],
     // The linked content belongs to the actor.
     ["mention", "/@actor/a-permlink"],
     ["reply", "/@actor/a-permlink"],
