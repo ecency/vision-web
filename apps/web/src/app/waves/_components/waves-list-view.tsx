@@ -20,7 +20,6 @@ import {
 import { useWavesTagFilter } from "@/app/waves/_context";
 import { useBottomPagination } from "@/core/hooks";
 import { Button } from "@ui/button";
-import { DEFAULT_OBSERVER } from "@/consts/observer";
 import i18next from "i18next";
 import { sentry } from "@/core/sentry/lazy-sentry";
 
@@ -40,11 +39,15 @@ export function WavesListView({ feedType, username }: Props) {
   // server-side and each page still arrives full (client-side filtering would
   // shrink pages). Note esync actually drops muted authors here, unlike the
   // Hive bridge, which only flags them `stats.gray`.
-  // Ecency's own moderation mutes are not this parameter's job: esync applies
-  // that list to every waves request on top of the observer's, so it holds for
-  // signed-in viewers too. The fallback below only keeps anonymous requests
-  // shaped like the rest.
-  const observer = username || DEFAULT_OBSERVER;
+  //
+  // Logged out this stays undefined rather than falling back to Ecency's
+  // moderation account. That fallback used to be what filtered the anonymous
+  // feed; esync now applies the moderation mute list to every waves request on
+  // its own, so sending it changed nothing except the cache tier: any observer
+  // marks a request personalised, and personalised requests skip the 60s shared
+  // response cache. Every anonymous visitor was paying for a per-viewer cache
+  // entry that no other viewer could ever reuse.
+  const observer = username;
   const queryOptions = useMemo(() => {
     if (selectedSource) {
       return getWavesFeedQueryOptions({ containers: [selectedSource], observer });

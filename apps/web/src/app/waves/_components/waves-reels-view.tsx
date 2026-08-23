@@ -8,7 +8,6 @@ import { Button } from "@ui/button";
 import { useInfiniteDataFlow } from "@/utils";
 import { WavesReelItem } from "@/app/waves/_components/waves-reel-item";
 import { WavesFastReplyDialog } from "@/app/waves/_components/waves-fast-reply-dialog";
-import { DEFAULT_OBSERVER } from "@/consts/observer";
 
 interface Props {
   username?: string;
@@ -20,7 +19,10 @@ interface Props {
  * Selected via the "Shorts" source tab; renders in place of the wave card list.
  */
 export function WavesReelsView({ username }: Props) {
-  const observer = username || DEFAULT_OBSERVER;
+  // Undefined when logged out, like the waves list: esync applies the
+  // moderation mute list to the shorts feed itself, and an observer would only
+  // push the request off the shared 60s response cache (see waves-list-view).
+  const observer = username;
   const queryOptions = useMemo(() => getShortsFeedQueryOptions({ observer }), [observer]);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, refetch } =
