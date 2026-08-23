@@ -71,9 +71,9 @@ export const DeckThreadsFormToolbarImagePicker = ({ onAddImage }: Props) => {
       }
     } catch (e) {
       if (axios.isAxiosError(e) && e.response?.status === 413) {
-        error(i18next.t("editor-toolbar.image-error-size"));
+        error(i18next.t("editor-toolbar.image-error-size"), undefined, { error: e });
       } else {
-        error(i18next.t("editor-toolbar.image-error"));
+        error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
       }
       return;
     }

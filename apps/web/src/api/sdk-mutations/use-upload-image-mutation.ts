@@ -61,7 +61,7 @@ export function useUploadImageMutation() {
         } else {
           error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
         }
-      },
+      }
     }
   );
 
@@ -106,11 +106,21 @@ export function useUploadImageMutation() {
         if (status === 413) {
           error(i18next.t("editor-toolbar.image-error-size"), undefined, { error: e });
         } else if (status === 429) {
-          error("Too many upload requests. Please wait a moment and try again.", undefined, { error: e });
+          error("Too many upload requests. Please wait a moment and try again.", undefined, {
+            error: e
+          });
         } else if (status === 503) {
-          error("Image upload service is temporarily unavailable. Please try again later.", undefined, { error: e });
+          error(
+            "Image upload service is temporarily unavailable. Please try again later.",
+            undefined,
+            {
+              error: e
+            }
+          );
         } else if (status === 401 || status === 403) {
-          error("Authentication expired. Please refresh the page and try again.", undefined, { error: e });
+          error("Authentication expired. Please refresh the page and try again.", undefined, {
+            error: e
+          });
         } else {
           error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
         }
@@ -119,6 +129,6 @@ export function useUploadImageMutation() {
       } else {
         error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
       }
-    },
+    }
   });
 }

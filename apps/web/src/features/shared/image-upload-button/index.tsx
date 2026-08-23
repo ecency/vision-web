@@ -54,8 +54,8 @@ export function ImageUploadButton({ onBegin, onEnd, size = "sm", appearance, cla
         const r = await uploadImage(file, token);
         onEnd(r.url);
         success(i18next.t("image-upload-button.uploaded"));
-      } catch {
-        error(i18next.t("g.server-error"));
+      } catch (e) {
+        error(i18next.t("g.server-error"), undefined, { error: e });
       } finally {
         setInProgress(false);
       }
