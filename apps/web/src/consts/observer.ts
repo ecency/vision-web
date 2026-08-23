@@ -18,13 +18,15 @@
  *    swapping to the logged-in user client-side would filter every page except
  *    the one people actually look at. Feeds personalise instead at the server,
  *    where cache-policy already marks those tiers user-specific.
- * 3. This is NOT how Ecency's moderation mutes reach the waves feed. An
- *    observer only ever carries the mute list of whoever is viewing, so before
- *    esync applied the moderation list itself, signed-in users (who send their
- *    own name) got none of it. esync now ANDs `@ecency`'s on-chain mutes into
- *    every waves query on top of the observer's, so muting an account there is
- *    what takes it out of the feed for everyone. Bridge reads still behave as
- *    described above.
+ * 3. This is NOT how Ecency's moderation mutes reach the waves feed, and the
+ *    waves feed no longer sends this default at all. An observer only ever
+ *    carries the mute list of whoever is viewing, so before esync applied the
+ *    moderation list itself, signed-in users (who send their own name) got none
+ *    of it. esync now ANDs `@ecency`'s on-chain mutes into every waves query on
+ *    top of the observer's, so muting an account there is what takes it out of
+ *    the feed for everyone, and the waves views pass `undefined` when logged
+ *    out so the request stays on the shared response cache. Bridge reads still
+ *    behave as described above.
  * 4. Kept as a plain literal on purpose. This mirrors `CONFIG.defaultObserver`
  *    in @ecency/sdk, but reading it from the SDK would make every module that
  *    touches an observer depend on the SDK being mocked in specs, and several
