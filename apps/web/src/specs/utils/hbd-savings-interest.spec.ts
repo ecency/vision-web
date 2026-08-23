@@ -23,7 +23,9 @@ describe("getHbdSavingsInterestState estimate", () => {
       savingsHbdLastInterestPayment: "2026-04-13T13:27:30"
     });
 
-    expect(result.pendingInterest).toBeCloseTo(0.0397, 4);
+    // The chain truncates twice, so it pays 0.039 where a float estimate
+    // would round the same state up to 0.040.
+    expect(result.pendingInterest).toBe(0.039);
     expect(result.hasPendingInterest).toBe(true);
     expect(result.hasSavingsBalance).toBe(true);
     expect(result.canClaim).toBe(true);
@@ -38,7 +40,7 @@ describe("getHbdSavingsInterestState estimate", () => {
       savingsHbdLastInterestPayment: "2026-03-26T10:41:39"
     });
 
-    expect(result.pendingInterest).toBeCloseTo(0.0758, 4);
+    expect(result.pendingInterest).toBe(0.075);
     expect(result.hasPendingInterest).toBe(true);
     expect(result.hasSavingsBalance).toBe(false);
     expect(result.isEmpty).toBe(false);

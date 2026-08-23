@@ -142,7 +142,7 @@ describe("ProfileWalletHbdInterest", () => {
 
     renderCard();
 
-    expect(screen.getByText("0.076 HBD")).toBeInTheDocument();
+    expect(screen.getByText("0.075 HBD")).toBeInTheDocument();
     expect(
       screen.getByText("profile-wallet.hbd-interest.deposit-to-claim")
     ).toBeInTheDocument();

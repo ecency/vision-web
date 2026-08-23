@@ -1,22 +1,27 @@
 import dayjs, { type Dayjs } from "./dayjs";
-import { parseAsset } from "./parse-asset";
 
 /**
- * Hive stores HBD with three decimals, so 0.001 HBD is both the smallest
- * balance that can accrue interest and the smallest amount the chain can pay
- * out. An estimate under it rounds to nothing and cannot be claimed.
+ * Hive stores HBD with three decimals, so 0.001 HBD is the smallest balance
+ * that can sit in savings at all, and the smallest amount the chain can pay.
  */
 export const MINIMUM_HBD_SAVINGS_AMOUNT = 0.001;
 /** HIVE_HBD_INTEREST_COMPOUND_INTERVAL_SEC, expressed in days. */
 export const HBD_INTEREST_INTERVAL_DAYS = 30;
 /** HIVE_SECONDS_PER_YEAR. */
-const SECONDS_PER_YEAR = 365 * 24 * 60 * 60;
+const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n;
+/** HIVE_100_PERCENT: hbd_interest_rate is expressed against this. */
+const HUNDRED_PERCENT = 10000n;
+/** HBD is stored with three decimals, so one satoshi is 0.001 HBD. */
+const SATOSHIS_PER_HBD = 1000n;
 /** What the chain reports for "never happened" on the savings timestamps. */
 const UNIX_EPOCH = "1970-01-01T00:00:00";
 
 interface Input {
-  /** `savings_hbd_balance`, e.g. "1.099 HBD". */
-  savingsHbdBalance?: string;
+  /**
+   * `savings_hbd_balance`, e.g. "1.099 HBD". Nodes may also serve the
+   * `{ amount, precision, nai }` object form.
+   */
+  savingsHbdBalance?: string | number | { amount?: unknown; precision?: unknown } | null;
   /** `savings_hbd_seconds`: HBD satoshi-seconds banked since the last payout. */
   savingsHbdSeconds?: number | string;
   /** `savings_hbd_seconds_last_update`. */
@@ -31,11 +36,17 @@ interface Input {
 
 export interface HbdSavingsInterestState {
   savingsBalance: number;
-  /** Interest accrued but not yet paid out, in HBD. */
+  /**
+   * Interest accrued but not yet paid out, in HBD. This is exactly what the
+   * chain would pay, to the satoshi, so it always renders whole at three
+   * decimals.
+   */
   pendingInterest: number;
+  /** The same figure in satoshis, which is the unit the chain settles in. */
+  pendingInterestSatoshis: number;
   /** The savings balance is at or above the amount the chain can work with. */
   hasSavingsBalance: boolean;
-  /** There is at least 0.001 HBD of interest waiting. */
+  /** The chain would pay at least one satoshi. */
   hasPendingInterest: boolean;
   /** Nothing accrued and nothing saved: there is nothing to tell the user. */
   isEmpty: boolean;
@@ -53,19 +64,63 @@ export interface HbdSavingsInterestState {
   canClaim: boolean;
 }
 
-function parseSeconds(value: number | string | undefined): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+/**
+ * `savings_hbd_seconds` counts satoshi-seconds and outgrows a double for large
+ * balances, so nodes may serve it as a string. Read it as an integer either way.
+ */
+function parseBankedSeconds(value: number | string | undefined): bigint {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? BigInt(Math.trunc(value)) : 0n;
   }
 
   if (typeof value === "string") {
-    const parsed = Number.parseFloat(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
+    const digits = value.trim().match(/^\d+/);
+    if (digits) {
+      return BigInt(digits[0]);
     }
   }
 
-  return 0;
+  return 0n;
+}
+
+/**
+ * The satoshi value of an HBD balance, read off the digits rather than through
+ * a float so a large balance keeps every unit. Accepts the two shapes a Hive
+ * node can serve: "1.099 HBD" from condenser_api, and the
+ * `{ amount, precision, nai }` object from database_api. Anything else, a
+ * negative included, reads as nothing rather than throwing: this runs during
+ * render of the wallet page.
+ */
+function parseHbdSatoshis(value: unknown): bigint {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value > 0 ? BigInt(Math.round(value * 1000)) : 0n;
+  }
+
+  if (value && typeof value === "object") {
+    const asset = value as { amount?: unknown; precision?: unknown };
+    const digits = String(asset.amount ?? "").trim().match(/^\d+/);
+    const precision = Number(asset.precision ?? 3);
+    if (!digits || !Number.isInteger(precision) || precision < 0 || precision > 12) {
+      return 0n;
+    }
+    // Rescale whatever precision the node used to HBD's three decimals.
+    const raw = BigInt(digits[0]);
+    return precision >= 3
+      ? raw / 10n ** BigInt(precision - 3)
+      : raw * 10n ** BigInt(3 - precision);
+  }
+
+  if (typeof value !== "string") {
+    return 0n;
+  }
+
+  const matched = value.trim().match(/^(\d+)(?:\.(\d{0,3}))?/);
+  if (!matched) {
+    return 0n;
+  }
+
+  const fraction = (matched[2] ?? "").padEnd(3, "0");
+  return BigInt(matched[1]) * SATOSHIS_PER_HBD + BigInt(fraction);
 }
 
 function parseChainDate(value: string | undefined): Dayjs | null {
@@ -114,21 +169,28 @@ export function getHbdSavingsInterestState({
   hbdInterestRate,
   now = dayjs()
 }: Input): HbdSavingsInterestState {
-  const savingsBalance = parseAsset(savingsHbdBalance ?? "0.000 HBD").amount;
-  const safeSavingsBalance = Number.isFinite(savingsBalance) ? savingsBalance : 0;
+  const balanceSatoshis = parseHbdSatoshis(savingsHbdBalance);
+  const savingsBalance = Number(balanceSatoshis) / Number(SATOSHIS_PER_HBD);
 
-  // savings_hbd_seconds counts satoshi-seconds; HBD has three decimals.
-  const bankedHbdSeconds = parseSeconds(savingsHbdSeconds) / 1000;
-  const unbankedHbdSeconds =
-    safeSavingsBalance * secondsSince(savingsHbdSecondsLastUpdate, now);
+  // Everything the chain has banked, plus everything earned since it last
+  // looked, in satoshi-seconds.
+  const totalSatoshiSeconds =
+    parseBankedSeconds(savingsHbdSeconds) +
+    balanceSatoshis * BigInt(secondsSince(savingsHbdSecondsLastUpdate, now));
 
-  const pendingInterest =
-    hbdInterestRate > 0
-      ? ((bankedHbdSeconds + unbankedHbdSeconds) / SECONDS_PER_YEAR) * (hbdInterestRate / 10000)
-      : 0;
+  // hived's own arithmetic, in the same order: both divisions truncate, so
+  // computing this in floating point rounds the estimate UP past what the
+  // chain will actually pay.
+  // A malformed dynamic-properties payload must not throw out of a render.
+  const rate = Number.isFinite(hbdInterestRate)
+    ? BigInt(Math.max(0, Math.trunc(hbdInterestRate)))
+    : 0n;
+  const pendingInterestSatoshis =
+    rate > 0n ? ((totalSatoshiSeconds / SECONDS_PER_YEAR) * rate) / HUNDRED_PERCENT : 0n;
+  const pendingInterest = Number(pendingInterestSatoshis) / Number(SATOSHIS_PER_HBD);
 
-  const hasSavingsBalance = safeSavingsBalance >= MINIMUM_HBD_SAVINGS_AMOUNT;
-  const hasPendingInterest = pendingInterest >= MINIMUM_HBD_SAVINGS_AMOUNT;
+  const hasSavingsBalance = balanceSatoshis >= 1n;
+  const hasPendingInterest = pendingInterestSatoshis >= 1n;
 
   // The chain measures the interval from the last payment. Accounts that have
   // never been paid fall back to when the seconds started accumulating, which
@@ -142,8 +204,9 @@ export function getHbdSavingsInterestState({
   const isClaimDue = nextClaimDate ? now.isAfter(nextClaimDate) : false;
 
   return {
-    savingsBalance: safeSavingsBalance,
+    savingsBalance,
     pendingInterest,
+    pendingInterestSatoshis: Number(pendingInterestSatoshis),
     hasSavingsBalance,
     hasPendingInterest,
     isEmpty: !hasSavingsBalance && !hasPendingInterest,
