@@ -1,5 +1,6 @@
 import { getMessaging, getToken, MessagePayload, Messaging, onMessage } from "@firebase/messaging";
 import { FirebaseApp, initializeApp } from "@firebase/app";
+import { buildPushNotificationUrl } from "./push-notification-link";
 
 let app: FirebaseApp;
 export let FCM: Messaging;
@@ -33,21 +34,9 @@ export const handleMessage = (payload: MessagePayload) => {
   });
 
   notification.onclick = () => {
-    let url = "https://ecency.com";
-    const data = (payload.data || {}) as any;
-    const fullPermlink = data.permlink1 + data.permlink2 + data.permlink3;
-
-    if (["vote", "unvote", "spin", "inactive"].includes(data.type)) {
-      url += "/@" + data.target;
-    } else {
-      // delegation, mention, transfer, follow, unfollow, ignore, blacklist, reblog
-      url += "/@" + data.source;
-    }
-    if (fullPermlink) {
-      url += "/" + fullPermlink;
-    }
-
-    window.open(url, "_blank");
+    // Same payload and same routing table as the background service worker;
+    // see api/push-notification-link.
+    window.open(buildPushNotificationUrl(payload.data), "_blank");
   };
 };
 

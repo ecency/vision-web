@@ -107,5 +107,7 @@ function buildNotificationUrl(data) {
 }
 
 self.addEventListener('notificationclick', function (event) {
-  clients.openWindow(buildNotificationUrl(event.notification.data), '_blank');
+  // waitUntil keeps the worker alive until the navigation settles; without it
+  // the worker can be terminated first and the click opens nothing.
+  event.waitUntil(clients.openWindow(buildNotificationUrl(event.notification.data)));
 });

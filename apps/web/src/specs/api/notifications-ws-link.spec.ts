@@ -12,7 +12,16 @@ import { NotificationsWebSocket } from "@/api/notifications-ws-api";
  * (enotify sync.py) and its API serializer, which is what the notification
  * panel rows already follow.
  */
-const getLink = (data: unknown) => (NotificationsWebSocket as any).getLink(data);
+// getLink is a private static; reach it through a narrow structural type
+// rather than `any`, and take a loose payload so malformed messages can be
+// exercised too.
+type LinkPayload = Record<string, unknown>;
+const getLink = (data: LinkPayload) =>
+  (
+    NotificationsWebSocket as unknown as {
+      getLink(data: LinkPayload): string | undefined;
+    }
+  ).getLink(data);
 
 const entry = (type: string, permlink = "a-permlink") => ({
   type,
