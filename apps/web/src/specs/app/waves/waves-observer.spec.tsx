@@ -3,6 +3,7 @@ import { render } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryKeys } from "@ecency/sdk";
 
 /**
  * What the waves views send as `observer`.
@@ -20,7 +21,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 const getWavesFeedQueryOptions = vi.hoisted(() => vi.fn());
 const getShortsFeedQueryOptions = vi.hoisted(() => vi.fn());
 
-const stubInfiniteQuery = (queryKey: unknown[]) => ({
+/**
+ * Keys come from `QueryKeys` rather than a literal, so a mocked feed lands on
+ * the same cache entry production would give it. That matters here: the key
+ * carries the observer, so anonymous and logged-in renders are distinct
+ * entries, exactly as they are in the app. A literal would collapse them onto
+ * one and quietly hide a cache-sharing bug from any later test that seeds or
+ * asserts on cache state.
+ */
+const stubInfiniteQuery = (queryKey: readonly unknown[]) => ({
   queryKey,
   initialPageParam: undefined,
   queryFn: async () => [],
@@ -36,14 +45,16 @@ vi.mock("@/utils", async () => ({
 
 vi.mock("@ecency/sdk", async () => ({
   ...(await vi.importActual<Record<string, unknown>>("@ecency/sdk")),
-  getWavesFeedQueryOptions: getWavesFeedQueryOptions.mockImplementation(() =>
-    stubInfiniteQuery(["waves-feed"])
+  getWavesFeedQueryOptions: getWavesFeedQueryOptions.mockImplementation(
+    (params: Parameters<typeof QueryKeys.posts.wavesFeed>[0] = {}) =>
+      stubInfiniteQuery(QueryKeys.posts.wavesFeed(params))
   ),
-  getShortsFeedQueryOptions: getShortsFeedQueryOptions.mockImplementation(() =>
-    stubInfiniteQuery(["shorts-feed"])
+  getShortsFeedQueryOptions: getShortsFeedQueryOptions.mockImplementation(
+    (params: Parameters<typeof QueryKeys.posts.shortsFeed>[0] = {}) =>
+      stubInfiniteQuery(QueryKeys.posts.shortsFeed(params))
   ),
-  getPromotedPostsQuery: vi.fn(() => ({
-    queryKey: ["promoted"],
+  getPromotedPostsQuery: vi.fn((type: string = "feed") => ({
+    queryKey: QueryKeys.posts.promoted(type),
     queryFn: async () => [],
     enabled: false
   }))
@@ -113,6 +124,22 @@ describe("waves observer", () => {
     for (const [params] of getShortsFeedQueryOptions.mock.calls) {
       expect(params.observer).toBe("viewer");
     }
+  });
+
+  it("puts the anonymous and logged-in feeds on different cache keys", () => {
+    // The whole point of dropping the observer is the cache tier, so the key
+    // has to actually differ. Also guards the mocks above: if they went back to
+    // a literal key, the two renders would share one entry and every
+    // cache-sensitive test written after this would be testing a fiction.
+    renderView(<WavesListView feedType="for-you" />);
+    const anonymous = getWavesFeedQueryOptions.mock.results[0].value.queryKey;
+
+    getWavesFeedQueryOptions.mockClear();
+    renderView(<WavesListView feedType="for-you" username="viewer" />);
+    const signedIn = getWavesFeedQueryOptions.mock.results[0].value.queryKey;
+
+    expect(anonymous).not.toEqual(signedIn);
+    expect(signedIn).toContain("viewer");
   });
 
   it("never substitutes Ecency's moderation account for a missing viewer", () => {
