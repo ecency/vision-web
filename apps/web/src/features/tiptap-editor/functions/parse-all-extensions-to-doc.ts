@@ -6,6 +6,62 @@ import {
   YOUTUBE_REGEX
 } from "../extensions";
 
+/**
+ * Elements the editor schema turns into a block node. A list item may hold these,
+ * but not as its first child, because listItem requires a leading paragraph.
+ */
+const LIST_ITEM_LEADING_BLOCK = [
+  "ol",
+  "ul",
+  "blockquote",
+  "pre",
+  "hr",
+  "table",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "div[data-youtube-video]",
+  "div[data-three-speak-video]",
+  "div[data-loom-video]",
+  "div[data-hive-post]"
+].join(", ");
+
+/**
+ * Elements that render as a node even when they hold no text, so a list item
+ * containing one is not empty and must not be replaced with a blank paragraph.
+ */
+const LIST_ITEM_KEEPS_ITEM_FILLED = [
+  "img",
+  "br",
+  "hr",
+  "table",
+  "pre",
+  "iframe",
+  "video",
+  "audio",
+  "[data-youtube-video]",
+  "[data-three-speak-video]",
+  "[data-loom-video]",
+  "[data-hive-post]",
+  '[data-type="mention"]',
+  '[data-type="tag"]'
+].join(", ");
+
+/** True when the item holds visible text ahead of the given child. */
+function hasTextBefore(child: Element) {
+  let node: ChildNode | null = child.previousSibling;
+  while (node) {
+    if (node.textContent?.trim()) {
+      return true;
+    }
+    node = node.previousSibling;
+  }
+  return false;
+}
+
 export function parseAllExtensionsToDoc(value?: string) {
   const tree = document.createElement("body");
   tree.innerHTML = value ?? "";
@@ -157,18 +213,33 @@ export function parseAllExtensionsToDoc(value?: string) {
     el.removeAttribute("data-align");
   });
 
-  // Ensure list items have a paragraph before nested lists to satisfy ProseMirror schema
+  // ProseMirror's listItem schema is "paragraph block*", so an item's FIRST child
+  // has to be a paragraph. Markdown routinely produces items that break that rule,
+  // and insertContent throws for the whole paste rather than for the one bad item,
+  // so a single one of these silently loses everything the user pasted:
+  //   <li></li>                     an empty item, reported as "listItem: <>"
+  //   <li><ul>...</ul></li>         a nested list with no lead-in
+  //   <li><h2>x</h2></li>           "- one" followed by an indented "-" reads as a setext heading
+  //   <li><blockquote>|<pre>|<hr>|<table>
+  //   <li><div data-youtube-video>  the embeds this file substitutes for a bare link above
+  // Prepending an empty paragraph keeps the content and satisfies the schema.
   (Array.from(tree.querySelectorAll("li")) as HTMLElement[]).forEach((li) => {
     const first = li.firstElementChild;
-    if (first && (first.tagName === "OL" || first.tagName === "UL")) {
-      const p = document.createElement("p");
-      li.insertBefore(p, first);
+
+    // Only when the block leads the item. Text before it already becomes the
+    // required paragraph, and prepending another one there just adds a blank line.
+    if (first && first.matches(LIST_ITEM_LEADING_BLOCK) && !hasTextBefore(first)) {
+      li.insertBefore(document.createElement("p"), first);
+      return;
     }
-    // Ensure completely empty <li> elements get a paragraph child so ProseMirror's
-    // listItem schema is satisfied. Without this, pasting markdown with empty list
-    // items throws "RangeError: Invalid content for node listItem: <>".
-    // Same fix pattern as blockquotes and table cells below.
-    if (!li.firstElementChild && !li.textContent?.trim()) {
+
+    // An item with nothing to render, which is the "listItem: <>" case. Replace
+    // rather than append: the guard also matches items holding only whitespace or
+    // &nbsp;, which the browser already renders as one paragraph, and appending
+    // would leave the invisible text AND an empty paragraph behind. Elements that
+    // carry no text but still produce a node keep the item non-empty.
+    if (!li.textContent?.trim() && !li.querySelector(LIST_ITEM_KEEPS_ITEM_FILLED)) {
+      li.textContent = "";
       li.appendChild(document.createElement("p"));
     }
   });
