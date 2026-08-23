@@ -9,9 +9,15 @@
  *
  * Four things worth knowing before using this:
  *
- * 1. On the Hive bridge an observer only *marks* content. Muted authors' posts
- *    are still returned, so swapping the observer never shortens a feed or a
- *    comment thread. The waves feed (esync) is the exception: it drops them.
+ * 1. On the Hive bridge an observer marks ranked-feed content rather than
+ *    removing it: muted authors' posts come back flagged `stats.gray`, so
+ *    swapping the observer does not shorten a feed. Comment threads are NOT
+ *    like that, despite what this comment used to claim. `bridge.get_discussion`
+ *    drops the observer's muted authors outright — the same thread measured
+ *    2026-08-23 returns 303 nodes under a neutral observer and 60 under this
+ *    one. (An observer that is not a real account returns nothing at all, so
+ *    never pass an unvalidated name here.) The waves feed (esync) also drops
+ *    them, and applies Ecency's moderation list besides — see 3.
  * 2. Only personalise the observer where the whole list is fetched under it.
  *    Profile and community routes server-render their first page as this
  *    default and their infinite lists then discard their own first page, so
