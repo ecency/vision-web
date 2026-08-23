@@ -36,11 +36,14 @@ export function WavesListView({ feedType, username }: Props) {
   // tag / following / source are just filters on the same stream. A source feed
   // scopes to a single container host (e.g. peak.snaps); tag/following overlay
   // the For You stream.
-  // The logged-in user is the observer: server-side mute filtering keeps each
-  // page full of waves they can see (client-side filtering would shrink pages).
-  // Logged out, Ecency's moderation account stands in so anonymous visitors get
-  // the same spam filtering. Note esync actually drops muted authors here,
-  // unlike the Hive bridge, which only flags them `stats.gray`.
+  // The logged-in user is the observer, so esync applies THEIR mute list
+  // server-side and each page still arrives full (client-side filtering would
+  // shrink pages). Note esync actually drops muted authors here, unlike the
+  // Hive bridge, which only flags them `stats.gray`.
+  // Ecency's own moderation mutes are not this parameter's job: esync applies
+  // that list to every waves request on top of the observer's, so it holds for
+  // signed-in viewers too. The fallback below only keeps anonymous requests
+  // shaped like the rest.
   const observer = username || DEFAULT_OBSERVER;
   const queryOptions = useMemo(() => {
     if (selectedSource) {
