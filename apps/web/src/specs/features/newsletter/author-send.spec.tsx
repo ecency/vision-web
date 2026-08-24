@@ -229,6 +229,8 @@ describe("SentIssues", () => {
     const list = await screen.findByRole("list", { name: "newsletter.sent-issues" });
     expect(list.querySelectorAll("li")).toHaveLength(3);
     expect(list).toHaveTextContent("Issue 4");
+    expect(list).toHaveTextContent("Issue 3");
+    expect(list).toHaveTextContent("Issue 2");
     expect(list).not.toHaveTextContent("Issue 1");
   });
 });
