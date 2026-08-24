@@ -31,9 +31,8 @@ vi.mock("@/utils", () => ({
   getAccessToken: vi.fn(() => "mock-token")
 }));
 vi.mock("@/defaults", () => ({ default: { logo: "/logo.png" } }));
-vi.mock("@/features/shared", () => ({
-  UserAvatar: ({ username }: any) => <span data-testid="avatar">{username}</span>,
-  preloadLoginDialog: vi.fn()
+vi.mock("@/features/shared/user-avatar", () => ({
+  UserAvatar: ({ username }: any) => <span data-testid="avatar">{username}</span>
 }));
 vi.mock("@/features/shared/navbar/navbar-notifications-button", () => ({
   NavbarNotificationsButton: () => <button data-testid="notifications">notifs</button>

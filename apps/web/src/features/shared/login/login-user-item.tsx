@@ -1,6 +1,6 @@
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { User } from "@/entities";
-import { UserAvatar } from "@/features/shared";
+import { UserAvatar } from "@/features/shared/user-avatar";
 import { UilTrash } from "@tooni/iconscout-unicons-react";
 import { Button } from "@ui/button";
 import { PopoverConfirm } from "@ui/popover-confirm";

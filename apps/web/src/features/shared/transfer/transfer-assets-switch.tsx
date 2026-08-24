@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { TransferAsset } from "@/features/shared";
+import type { TransferAsset } from "./index";
 import { getTokenLogo } from "@/features/wallet";
 import Image from "next/image";
 import { proxifyImageSrc } from "@ecency/render-helper";

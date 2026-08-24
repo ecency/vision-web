@@ -3,7 +3,7 @@
 import { UseQueryResult } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { hpToVests } from "@/features/shared/transfer/hp-to-vests";
-import { TransferAsset, TransferMode } from "@/features/shared";
+import type { TransferAsset, TransferMode } from "@/features/shared/transfer";
 import { DEFAULT_DYNAMIC_PROPS } from "@/consts/default-dynamic-props";
 import { getDynamicPropsQueryOptions } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks/use-active-account";

@@ -1,5 +1,5 @@
 import { BeneficiaryRoute, DecentMemesEntry, MetaData, RewardType } from "../operations";
-import { PollSnapshot } from "@/features/polls";
+import type { PollSnapshot } from "@/features/polls";
 
 export interface DraftMetadata extends MetaData {
   // Optional because the drafts API genuinely omits them, which is how

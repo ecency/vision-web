@@ -3,7 +3,7 @@
 import { useHydrated } from "@/api/queries";
 import { useGlobalStore } from "@/core/global-store";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { UserAvatar, preloadLoginDialog } from "@/features/shared";
+import { UserAvatar } from "@/features/shared/user-avatar";
 import { NavbarMainSidebar } from "@/features/shared/navbar/navbar-main-sidebar";
 import { NavbarNotificationsButton } from "@/features/shared/navbar/navbar-notifications-button";
 import { NavbarSide } from "@/features/shared/navbar/sidebar/navbar-side";
@@ -210,9 +210,6 @@ export function NavbarMobile({
           <Button
             className="btn-login"
             onClick={() => toggleUIProp("login")}
-            onMouseEnter={preloadLoginDialog}
-            onFocus={preloadLoginDialog}
-            onPointerDown={preloadLoginDialog}
             size="sm"
             icon={<UilLock />}
           >

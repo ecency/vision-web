@@ -1,7 +1,8 @@
 "use client";
 
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { error, KeyOrHot, UserAvatar } from "@/features/shared";
+import { error, UserAvatar } from "@/features/shared";
+import { KeyOrHot } from "@/features/shared/key-or-hot";
 import { ProfilePreview } from "@/features/shared/profile-popover/profile-preview";
 import { Popover } from "@/features/ui";
 import { getAccountFullQueryOptions, useAccountRevokePosting } from "@ecency/sdk";

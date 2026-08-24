@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
-import { ProfileLink, UserAvatar } from "@/features/shared";
+import { ProfileLink } from "@/features/shared/profile-link";
+import { UserAvatar } from "@/features/shared/user-avatar";
 import { chevronUpSvg } from "@ui/svg";
 import { downVotingPower, votingPower } from "@ecency/sdk";
 import i18next from "i18next";

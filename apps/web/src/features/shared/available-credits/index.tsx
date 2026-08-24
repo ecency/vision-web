@@ -20,7 +20,15 @@ import i18next from "i18next";
 import dayjs, { Dayjs } from "@/utils/dayjs";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { PurchaseQrDialog } from "../purchase-qr";
+import dynamic from "next/dynamic";
+
+// Modal-on-demand: available-credits stays in the shared barrel, and a static
+// import here was the last path dragging the purchase-qr family into every
+// route's pre-paint graph (#1668). The chunk loads on first open.
+const PurchaseQrDialog = dynamic(
+  () => import("../purchase-qr").then((m) => ({ default: m.PurchaseQrDialog })),
+  { ssr: false }
+);
 interface Props {
   username: string;
   operation: RcOperation;
@@ -210,7 +218,9 @@ export const AvailableCredits = ({ username, payload, className }: Props) => {
           </div>,
           portalContainer
         )}
-      <PurchaseQrDialog show={showPurchaseDialog} setShow={(v) => setShowPurchaseDialog(v)} />
+      {showPurchaseDialog && (
+        <PurchaseQrDialog show={showPurchaseDialog} setShow={(v) => setShowPurchaseDialog(v)} />
+      )}
     </>
   ) : (
     <></>

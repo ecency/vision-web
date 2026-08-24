@@ -13,9 +13,7 @@ export * from "./notification-handler";
 export * from "./switch-lang";
 export * from "./search-suggester";
 export * from "./suggestion-list";
-export * from "./key-or-hot-dialog";
 export * from "./entry-link";
-export * from "./purchase-qr";
 export * from "./follow-controls";
 export * from "./image-upload-button";
 export * from "./list-style-toggle";
@@ -29,17 +27,20 @@ export * from "./entry-list-content";
 export * from "./entry-list-item";
 export * from "./entry-menu";
 export * from "./skeleton";
-export * from "./promote";
 export * from "./profile-popover";
 export * from "./entry-vote-btn";
 export * from "./entry-tip-btn";
-export * from "./transfer";
 export * from "./entry-payout";
 export * from "./entry-votes";
 export * from "./entry-reblog-btn";
 export * from "./message-no-data";
 export * from "./entry-info";
 export * from "./bookmark-btn";
+// NOTE: the interaction-only dialog families (./transfer, ./promote, ./boost,
+// ./purchase-qr, ./buy-sell-hive, ./key-or-hot, ./transactions) are intentionally
+// NOT re-exported from this barrel. Re-exporting them dragged their chunks into
+// EVERY route's pre-paint graph through the navbar's client boundary (#1668).
+// Deep-import them: "@/features/shared/<family>".
 // NOTE: ./discussion is intentionally NOT re-exported from this barrel. The
 // Discussion tree (DiscussionList -> DiscussionItem) imports the reply/edit
 // composer, so re-exporting it here dragged that whole path into any page that
@@ -51,19 +52,14 @@ export * from "./entry-delete-btn";
 // autocomplete, polls and video upload (~80KB) — importing any unrelated symbol
 // from this barrel dragged all of that into pages that never render a composer.
 // Import it directly: `import { Comment } from "@/features/shared/comment"`.
-export * from "./transactions";
 export * from "./click-away-listener";
 export * from "./available-credits";
 export * from "./login";
 export * from "./wallet-badge";
-export * from "./buy-sell-hive";
-export * from "./boost";
-export * from "./key-or-hot";
 export * from "./metamask-sign-button";
 export * from "./image-upload-button";
 export * from "./notifications";
 export * from "./gallery";
-export * from "./boost";
 export * from "./static-navbar";
 export * from "./edit-history";
 // NOTE: ./editor-toolbar is intentionally NOT re-exported here — see the ./comment

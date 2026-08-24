@@ -1,7 +1,7 @@
 import { TransferFormHeader } from "@/features/shared/transfer/transfer-form-header";
 import i18next from "i18next";
 import { Button } from "@ui/button";
-import { TransferAsset } from "@/features/shared";
+import type { TransferAsset } from "./index";
 import { Form } from "@ui/form";
 import { FormControl, InputGroup, InputGroupCopyClipboard } from "@ui/input";
 import React, { useCallback, useEffect, useMemo, useState } from "react";

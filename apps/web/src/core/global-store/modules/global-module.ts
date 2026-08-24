@@ -1,7 +1,7 @@
 import Cookies from "js-cookie";
 import { AllFilter, ListStyle, Theme } from "@/enums";
 import * as ls from "@/utils/local-storage";
-import { success } from "@/features/shared";
+import { success } from "@/features/shared/feedback";
 import i18next from "i18next";
 import { loadLocale } from "@/features/i18n";
 import { getCurrencyRate } from "@ecency/sdk";

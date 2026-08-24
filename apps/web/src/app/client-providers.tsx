@@ -3,6 +3,7 @@
 import "@/polyfills";
 import "@/core/sdk-init";
 import { ClientInit } from "@/app/client-init";
+import { EntryStatsPrefetch } from "@/app/entry-stats-prefetch";
 import { EcencyConfigManager } from "@/config";
 import { getQueryClient } from "@/core/react-query";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -69,6 +70,10 @@ export function ClientProviders(props: PropsWithChildren) {
       >
         <UIManager>
           <ClientInit />
+          {/* Inside UIManager but OUTSIDE DeferredRender on purpose: its
+              effect must flush with root hydration, not after the lazy
+              feature cascade (#1668). */}
+          <EntryStatsPrefetch />
           {props.children}
           {/* Defer non-critical components for LCP optimization */}
           <DeferredRender>

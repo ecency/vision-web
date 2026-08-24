@@ -2,7 +2,7 @@
 
 import { PurchaseTypes } from "./purchase-types";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
-import { PurchaseQrBuilder } from "@/features/shared";
+import { PurchaseQrBuilder } from "./purchase-qr-builder";
 import i18next from "i18next";
 
 export * from "./purchase-qr-types";

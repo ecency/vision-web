@@ -3,7 +3,6 @@ import React from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useGlobalStore } from "@/core/global-store";
 import i18next from "i18next";
-import { preloadLoginDialog } from "@/features/shared";
 
 export function AnonUserButtons() {
   const { activeUser } = useActiveAccount();
@@ -19,9 +18,6 @@ export function AnonUserButtons() {
         className="btn-login"
         outline={true}
         onClick={() => toggleUIProp("login")}
-        onMouseEnter={preloadLoginDialog}
-        onFocus={preloadLoginDialog}
-        onPointerDown={preloadLoginDialog}
       >
         {i18next.t("g.login")}
       </Button>

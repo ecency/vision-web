@@ -1,6 +1,6 @@
 import i18n from "i18next";
 
-import dayjs from "@/utils/dayjs";
+import { setDayjsLocale } from "@/utils/dayjs";
 import * as ls from "@/utils/local-storage";
 
 export const langOptions = [
@@ -164,7 +164,7 @@ export function initI18next(): Promise<void> {
 
     i18n.on("languageChanged", async function (lang) {
       await loadLocale(lang);
-      dayjs.locale(lang);
+      await setDayjsLocale(lang);
     });
 
     // Load the user's preferred locale on demand

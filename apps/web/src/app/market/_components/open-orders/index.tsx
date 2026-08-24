@@ -3,7 +3,8 @@ import { Button } from "@ui/button";
 import { Table, Td, Th, Tr } from "@ui/table";
 import i18next from "i18next";
 import { OpenOrdersData } from "@/entities";
-import { BuySellHiveDialog, Skeleton } from "@/features/shared";
+import { Skeleton } from "@/features/shared";
+import { BuySellHiveDialog } from "@/features/shared/buy-sell-hive";
 import { BuySellHiveTransactionType } from "@/enums";
 import { dateToFormatted, dateToFullRelative, formattedNumber } from "@/utils";
 

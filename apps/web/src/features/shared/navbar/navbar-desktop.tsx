@@ -1,5 +1,5 @@
 import { useGlobalStore } from "@/core/global-store";
-import { UserAvatar } from "@/features/shared";
+import { UserAvatar } from "@/features/shared/user-avatar";
 import { AnonUserButtons } from "@/features/shared/navbar/anon-user-buttons";
 import { NavbarMainSidebar } from "@/features/shared/navbar/navbar-main-sidebar";
 import { NavbarMainSidebarToggle } from "@/features/shared/navbar/navbar-main-sidebar-toggle";

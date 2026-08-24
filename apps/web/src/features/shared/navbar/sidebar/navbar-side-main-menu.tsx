@@ -1,7 +1,6 @@
 import { EcencyConfigManager } from "@/config";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useGlobalStore } from "@/core/global-store";
-import { preloadLoginDialog } from "@/features/shared";
 import {
   UilArchive,
   UilClock,
@@ -176,12 +175,8 @@ export function NavbarSideMainMenu({ onHide }: Props) {
         <NavbarSideMainMenuItem
           label={i18next.t("g.login-as")}
           onClick={() => {
-            preloadLoginDialog();
             toggleUIProp("login");
           }}
-          onPointerEnter={preloadLoginDialog}
-          onPointerDown={preloadLoginDialog}
-          onFocus={preloadLoginDialog}
           icon={<UilSignin className="size-4" />}
         />
         <NavbarSideMainLogout />

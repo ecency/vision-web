@@ -3,7 +3,8 @@ import { FormControl, InputGroup } from "@ui/input";
 import { Button } from "@ui/button";
 import { Form } from "@ui/form";
 import { BuySellHiveTransactionType } from "@/enums";
-import { BuySellHiveDialog, error, Skeleton } from "@/features/shared";
+import { error, Skeleton } from "@/features/shared";
+import { BuySellHiveDialog } from "@/features/shared/buy-sell-hive";
 import i18next from "i18next";
 
 interface Props {

@@ -1,7 +1,8 @@
 import { formatError } from "@/api/format-error";
 import { updateAccountKeysCache } from "@/api/mutations/update-account-keys-cache";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { error, success, KeyOrHot } from "@/features/shared";
+import { error, success } from "@/features/shared";
+import { KeyOrHot } from "@/features/shared/key-or-hot";
 import { Button } from "@/features/ui";
 import { getAccountFullQueryOptions, dedupeAndSortKeyAuths } from "@ecency/sdk";
 import { deriveHiveMasterPasswordKeys } from "@ecency/wallets";

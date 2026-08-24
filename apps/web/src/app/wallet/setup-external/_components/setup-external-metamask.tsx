@@ -3,7 +3,8 @@
 import { formatError } from "@/api/format-error";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { getQueryClient } from "@/core/react-query";
-import { error, KeyOrHot, Stepper } from "@/features/shared";
+import { error, Stepper } from "@/features/shared";
+import { KeyOrHot } from "@/features/shared/key-or-hot";
 import { Button, Spinner } from "@/features/ui";
 import {
   EcencyWalletCurrency,

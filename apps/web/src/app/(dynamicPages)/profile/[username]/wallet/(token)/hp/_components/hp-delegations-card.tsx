@@ -14,7 +14,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ReceivedVesting } from "./received-vesting-dialog";
 import { useEffect, useMemo, useState } from "react";
 import { DelegatedVesting } from "./delegated-vesting-dialog";
-import { Transfer } from "@/features/shared";
+import { Transfer } from "@/features/shared/transfer";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import useLocalStorage from "react-use/lib/useLocalStorage";
 
