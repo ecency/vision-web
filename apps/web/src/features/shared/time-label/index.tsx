@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   dateToFormatted,
   dateToFormattedUtc,
@@ -84,6 +84,16 @@ export function TimeLabel({
   className = "date",
 }: Props) {
   const [display, setDisplay] = useState<string | null>(() => {
+    // SERVER-ONLY initializer, deliberately. The client must start at null:
+    // with suppressHydrationWarning React keeps the server text in the DOM on
+    // a mismatch while its vdom holds the client-rendered value, so if the
+    // client initializer computed its own (possibly newer) relative value,
+    // the mount effect's setDisplay() would bail out on state equality and
+    // the stale server text would stay visible until the NEXT unit change
+    // (a day, even a month). Starting at null makes the mount effect a real
+    // state transition whose vdom diff (UTC fallback -> relative) always
+    // writes the text node.
+    if (typeof window !== "undefined") return null;
     if (mode === "fullRelative") return dateToFullRelative(created);
     if (mode === "relative") return dateToRelative(created);
     return null;
@@ -94,8 +104,9 @@ export function TimeLabel({
   // so timestamps stay fresh without the parent re-rendering the whole card.
   const tick = useTick(mode === "relative" || mode === "fullRelative");
 
-  // Numeric UTC — identical on server and client, no hydration mismatch.
-  const ssrSafe = dateToFormattedUtc(created);
+  // Numeric UTC fallback; memoized so feeds full of labels parse each date
+  // once per value instead of on every render.
+  const ssrSafe = useMemo(() => dateToFormattedUtc(created), [created]);
 
   useEffect(() => {
     setLocalFormatted(dateToFormatted(created));

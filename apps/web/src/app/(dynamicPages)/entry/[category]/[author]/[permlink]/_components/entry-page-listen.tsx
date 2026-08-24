@@ -9,7 +9,7 @@ import { Button } from "@/features/ui";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import { Spinner } from "@ui/spinner";
 import { Select } from "@ui/input/form-controls/select";
-import { getAccessToken, ensureValidToken, getPurePostText, getPurePostTextForWordCount } from "@/utils";
+import { getAccessToken, ensureValidToken, getPurePostText, countPostWords } from "@/utils";
 import { getTranslation, getLanguages, type Language } from "@/api/translation";
 import { useAiAssist } from "@ecency/sdk";
 import { UilPause, UilPlay, UilSetting } from "@tooni/iconscout-unicons-react";
@@ -21,14 +21,6 @@ interface Props {
 }
 
 const WORDS_PER_MINUTE = 225;
-
-export function countWords(entry: string): number {
-  const words = getPurePostTextForWordCount(entry)
-    .trim()
-    .split(/\s+/)
-    .filter((word) => word);
-  return words.length;
-}
 
 export function EntryPageListen({ entry }: Props) {
   const { activeUser } = useActiveAccount();
@@ -43,7 +35,7 @@ export function EntryPageListen({ entry }: Props) {
   // Pure derivations of entry.body, computed during SSR so the server HTML
   // carries the final values instead of "0" placeholders that flip after
   // hydration (#1662).
-  const wordCount = useMemo(() => countWords(entry.body), [entry.body]);
+  const wordCount = useMemo(() => countPostWords(entry.body), [entry.body]);
   const readTime = useMemo(() => Math.ceil(wordCount / WORDS_PER_MINUTE), [wordCount]);
   const [summary, setSummary] = useState<string | null>(null);
 

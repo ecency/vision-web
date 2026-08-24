@@ -35,15 +35,16 @@ vi.mock("@ui/modal", () => ({
   ModalTitle: () => null
 }));
 
-import { EntryPageListen, countWords } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-listen";
-import type { Entry } from "@/entities";
+import { EntryPageListen } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-listen";
+import { countPostWords } from "@/utils";
+import { mockEntry } from "@/specs/test-utils";
 
 describe("EntryPageListen SSR output (#1662)", () => {
   const body = Array.from({ length: 574 }, (_, i) => `word${i}`).join(" ");
-  const entry = { body } as Entry;
+  const entry = mockEntry({ body });
 
   it("computes the body-derived stats it renders", () => {
-    expect(countWords(body)).toBe(574);
+    expect(countPostWords(body)).toBe(574);
   });
 
   it("server-renders the real word count and read time, not 0 placeholders", () => {

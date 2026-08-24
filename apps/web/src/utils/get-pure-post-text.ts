@@ -43,3 +43,13 @@ export function getPurePostTextForWordCount(text: string) {
   text = text.replace(/[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/g, " $& ");
   return text;
 }
+
+/**
+ * Word count of a post body, as shown in the entry stats bar.
+ */
+export function countPostWords(body: string): number {
+  return getPurePostTextForWordCount(body)
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word).length;
+}
