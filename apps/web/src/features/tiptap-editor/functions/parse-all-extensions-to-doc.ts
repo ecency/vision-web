@@ -375,6 +375,19 @@ export function parseAllExtensionsToDoc(value?: string) {
     // Only when the block leads the item. Text before it already becomes the
     // required paragraph, and prepending another one there just adds a blank line.
     if (first && first.matches(LEADING_BLOCK) && !hasTextBefore(first)) {
+      // Anything text-like ahead of the block is invisible, or hasTextBefore
+      // would have said so. Drop it: ProseMirror still wraps a surviving
+      // zero-width text node in a paragraph of its own, and the item would end
+      // up with that plus the empty one being added here.
+      let ahead: ChildNode | null = first.previousSibling;
+      while (ahead) {
+        const previous: ChildNode | null = ahead.previousSibling;
+        if (ahead.nodeType === Node.TEXT_NODE) {
+          ahead.remove();
+        }
+        ahead = previous;
+      }
+
       li.insertBefore(document.createElement("p"), first);
       return;
     }

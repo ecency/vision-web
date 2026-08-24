@@ -221,6 +221,21 @@ describe("pasting a markdown list whose item starts with a block", () => {
     expect(doc).not.toContain("<p></p>");
   });
 
+  // Review: treating zero-width characters as invisible made hasTextBefore report
+  // no lead-in, so a paragraph was prepended while the zero-width text node
+  // survived. ProseMirror wraps that in a paragraph of its own, so the item ended
+  // up with two and rendered a blank line.
+  it.each([
+    ["a zero-width space", "\u200B"],
+    ["a byte order mark", "\uFEFF"],
+    ["a newline", "\n"],
+    ["spaces", "  "]
+  ])("adds exactly one paragraph when only %s precedes a block", (_l: string, lead: string) => {
+    const html = pasteHtml(`<ul><li>${lead}<ul><li>x</li></ul></li></ul>`);
+
+    expect(html).toBe("<ul><li><p></p><ul><li><p>x</p></li></ul></li></ul>");
+  });
+
   it.each([
     ["a link", "- [text](https://example.com)"],
     ["bold text", "- **bold**"],
