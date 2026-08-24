@@ -61,6 +61,33 @@ function keptOnUnwrap(el: Element) {
   );
 }
 
+/** Elements that only mean anything inside a table. */
+const TABLE_STRUCTURE = "caption, colgroup, col, thead, tbody, tfoot, tr, td, th";
+
+/** Anything that must not be tucked inside a paragraph. */
+const BLOCK_LEVEL = [LEADING_BLOCK, "p", "div"].join(", ");
+
+/**
+ * Lifts a rowless table's content out of its structural wrappers.
+ *
+ * ⛔ Do not keep those wrappers. Outside a table the HTML parser will not accept
+ * a <tbody> or a <caption>, and the markup ends up in the document as escaped
+ * literal text: `<p>&lt;caption&gt;Totals&lt;/caption&gt;</p>`. Only the content
+ * inside them is worth anything, and loose inline content becomes a paragraph on
+ * its own. A nested table cannot be lost here, because a table holding one with
+ * any row at all is left alone.
+ */
+function unwrapTableStructure(el: Element): Node[] {
+  return Array.from(el.childNodes).flatMap((node) => {
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return node.textContent?.trim() ? [node] : [];
+    }
+
+    const child = node as Element;
+    return child.matches(TABLE_STRUCTURE) ? unwrapTableStructure(child) : [child];
+  });
+}
+
 /** True when the element holds nothing the schema would render. */
 function holdsNothingRenderable(el: Element) {
   return !el.textContent?.trim() && !el.querySelector(RENDERS_AS_NODE);
@@ -286,11 +313,31 @@ export function parseAllExtensionsToDoc(value?: string) {
   });
 
   // Unwrap the table too rather than dropping it: a rowless one can still hold a
-  // caption, and that text is the author's.
+  // caption, and that text is the author's. The wrappers themselves are discarded,
+  // see unwrapTableStructure.
   (Array.from(tree.querySelectorAll("table")) as HTMLElement[]).forEach((table) => {
-    if (!table.querySelector("tr")) {
-      table.replaceWith(...keptOnUnwrap(table));
+    if (table.querySelector("tr")) {
+      return;
     }
+
+    const kept = unwrapTableStructure(table);
+    const isInline = kept.every(
+      (node) => node.nodeType !== Node.ELEMENT_NODE || !(node as Element).matches(BLOCK_LEVEL)
+    );
+
+    // ⛔ Wrap loose inline content in a paragraph rather than leaving it bare.
+    // When the whole paste parses to text alone, tiptap's insertContentAt takes
+    // its isOnlyTextContent branch and calls tr.insertText with the RAW HTML
+    // STRING, so `A &amp; B` reaches the document as the literal characters
+    // `A &amp;amp; B`. A block wrapper keeps it on the normal parse path.
+    if (kept.length && isInline) {
+      const paragraph = document.createElement("p");
+      paragraph.append(...kept);
+      table.replaceWith(paragraph);
+      return;
+    }
+
+    table.replaceWith(...kept);
   });
 
   // ProseMirror's listItem schema is "paragraph block*", so an item's FIRST child

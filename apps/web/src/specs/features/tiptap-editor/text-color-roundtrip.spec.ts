@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
 vi.mock("@/features/shared", () => ({
   error: vi.fn()
@@ -48,29 +48,19 @@ describe("editor formatting persistence", () => {
     const colorClass = `${TEXT_COLOR_CLASS_PREFIX}${colorSuffix}`;
     const initialHtml = `<p><span class="${colorClass}">Colored text</span></p>`;
 
-    const {
-      markdownAfterSave,
-      reopenedHtml,
-      markdownAfterPublishing,
-      postEditHtml
-    } = await runEditorRoundTrip(initialHtml);
+    const { markdownAfterSave, reopenedHtml, markdownAfterPublishing, postEditHtml } =
+      await runEditorRoundTrip(initialHtml);
 
-    [markdownAfterSave, reopenedHtml, markdownAfterPublishing, postEditHtml].forEach(
-      (content) => {
-        expect(content).toContain(colorClass);
-      }
-    );
+    [markdownAfterSave, reopenedHtml, markdownAfterPublishing, postEditHtml].forEach((content) => {
+      expect(content).toContain(colorClass);
+    });
   });
 
   it("keeps bold text formatting across the editor lifecycle", async () => {
     const initialHtml = "<p><strong>Bold text</strong></p>";
 
-    const {
-      markdownAfterSave,
-      reopenedHtml,
-      markdownAfterPublishing,
-      postEditHtml
-    } = await runEditorRoundTrip(initialHtml);
+    const { markdownAfterSave, reopenedHtml, markdownAfterPublishing, postEditHtml } =
+      await runEditorRoundTrip(initialHtml);
 
     expect(markdownAfterSave).toContain("**Bold text**");
     expect(reopenedHtml).toContain("<strong>Bold text</strong>");
@@ -81,12 +71,8 @@ describe("editor formatting persistence", () => {
   it("keeps strikethrough formatting across the editor lifecycle", async () => {
     const initialHtml = "<p><del>Struck text</del></p>";
 
-    const {
-      markdownAfterSave,
-      reopenedHtml,
-      markdownAfterPublishing,
-      postEditHtml
-    } = await runEditorRoundTrip(initialHtml);
+    const { markdownAfterSave, reopenedHtml, markdownAfterPublishing, postEditHtml } =
+      await runEditorRoundTrip(initialHtml);
 
     expect(markdownAfterSave).toContain("~~Struck text~~");
     expect(reopenedHtml).toContain("<del>Struck text</del>");
@@ -106,12 +92,8 @@ describe("editor formatting persistence", () => {
   it("keeps strikethrough formatting applied to headings", async () => {
     const initialHtml = "<h2><del>Struck heading</del></h2>";
 
-    const {
-      markdownAfterSave,
-      reopenedHtml,
-      markdownAfterPublishing,
-      postEditHtml
-    } = await runEditorRoundTrip(initialHtml);
+    const { markdownAfterSave, reopenedHtml, markdownAfterPublishing, postEditHtml } =
+      await runEditorRoundTrip(initialHtml);
 
     expect(markdownAfterSave).toMatch(/~~Struck heading~~\n[-=]+/);
     expect(reopenedHtml).toContain("<h2");
@@ -124,12 +106,8 @@ describe("editor formatting persistence", () => {
   it("keeps mixed strikethrough text inside headings", async () => {
     const initialHtml = "<h3><del>Struck</del> and plain</h3>";
 
-    const {
-      markdownAfterSave,
-      reopenedHtml,
-      markdownAfterPublishing,
-      postEditHtml
-    } = await runEditorRoundTrip(initialHtml);
+    const { markdownAfterSave, reopenedHtml, markdownAfterPublishing, postEditHtml } =
+      await runEditorRoundTrip(initialHtml);
 
     expect(markdownAfterSave).toMatch(/~~Struck~~ and plain/);
     expect(reopenedHtml).toContain("<h3");
@@ -144,12 +122,8 @@ describe("editor formatting persistence", () => {
   it("keeps paragraph alignment metadata for non-image content", async () => {
     const initialHtml = '<p style="text-align: right">Aligned text</p>';
 
-    const {
-      markdownAfterSave,
-      reopenedHtml,
-      markdownAfterPublishing,
-      postEditHtml
-    } = await runEditorRoundTrip(initialHtml);
+    const { markdownAfterSave, reopenedHtml, markdownAfterPublishing, postEditHtml } =
+      await runEditorRoundTrip(initialHtml);
 
     // Turndown outputs data-align, parseAllExtensionsToDoc converts it to style.textAlign
     expect(markdownAfterSave).toContain('data-align="right"');
@@ -162,12 +136,8 @@ describe("editor formatting persistence", () => {
     const initialHtml =
       '<p style="text-align: center"><img src="https://example.com/image.png" alt="Example" /></p>';
 
-    const {
-      markdownAfterSave,
-      reopenedHtml,
-      markdownAfterPublishing,
-      postEditHtml
-    } = await runEditorRoundTrip(initialHtml);
+    const { markdownAfterSave, reopenedHtml, markdownAfterPublishing, postEditHtml } =
+      await runEditorRoundTrip(initialHtml);
 
     expect(markdownAfterSave).toContain("<center><img");
     expect(markdownAfterSave).toContain('src="https://example.com/image.png"');

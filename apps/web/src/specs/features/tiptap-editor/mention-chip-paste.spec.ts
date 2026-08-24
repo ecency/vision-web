@@ -1,23 +1,33 @@
 import { vi } from "vitest";
 
-// Use the production mention/tag regexes so this spec cannot drift from them.
-// The three link-based ones are stubbed to never match on purpose: their passes
-// read `el.innerText`, which jsdom does not implement, and the hive-post filter
-// calls `.trim()` on it unguarded, so a real hive-post href would throw here
-// rather than exercise anything. Same re-mock pattern CLAUDE.md documents for
-// `@/utils`.
+// Only the hive-post pass needs stubbing here: it is the one that reads
+// `el.innerText`, which jsdom does not implement, and it calls `.trim()` on it
+// unguarded, so a hive-post-shaped href throws in a spec instead of exercising
+// anything. Everything else, including the YouTube and Loom passes, runs for
+// real. Same re-mock pattern CLAUDE.md documents for `@/utils`.
 vi.mock("@/features/tiptap-editor/extensions", async () => ({
   ...(await vi.importActual("@/features/tiptap-editor/extensions")),
-  HIVE_POST_PURE_REGEX: /$a^/,
-  LOOM_REGEX: /$a^/,
-  YOUTUBE_REGEX: /$a^/
+  HIVE_POST_PURE_REGEX: /$a^/
 }));
 
+import { Editor } from "@tiptap/core";
 import { simpleMarkdownToHTML } from "@ecency/render-helper";
 
 import { parseAllExtensionsToDoc } from "@/features/tiptap-editor/functions/parse-all-extensions-to-doc";
+import { PUBLISH_EDITOR_EXTENSIONS } from "./publish-editor-extensions";
 
 const paste = (markdown: string) => parseAllExtensionsToDoc(simpleMarkdownToHTML(markdown));
+
+/** What the editor actually ends up showing, which is what the reader sees. */
+function render(markdown: string): string {
+  const editor = new Editor({ extensions: PUBLISH_EDITOR_EXTENSIONS, content: "<p></p>" });
+  try {
+    editor.chain().insertContent(paste(markdown)).run();
+    return editor.getHTML();
+  } finally {
+    editor.destroy();
+  }
+}
 
 describe("turning mentions and tags into chips on paste", () => {
   // Regression: the rewrite used to run over innerHTML, which carries attribute
@@ -87,5 +97,28 @@ describe("turning mentions and tags into chips on paste", () => {
 
     expect(doc).toContain("1 &lt; 2 &amp; ");
     expect(doc).toContain('data-id="alice"');
+  });
+});
+
+// The assertions above read the intermediate HTML. These pin what the editor
+// itself ends up with, because that is the thing the corruption destroyed and an
+// intermediate-only assertion has already let this class of bug through once.
+describe("what the editor ends up showing", () => {
+  it("still has the image after chipping a mention beside it", () => {
+    const html = render("@alice ![pic](https://files.peakd.com/file/peakd-hive/@bob/p.png)");
+
+    expect(html).toContain('src="https://files.peakd.com/file/peakd-hive/@bob/p.png"');
+    expect(html).not.toContain("&lt;");
+  });
+
+  it("renders the mention as a node rather than literal markup", () => {
+    const html = render("hello @alice");
+
+    expect(html).toContain('data-type="mention"');
+    expect(html).not.toContain("&lt;span");
+  });
+
+  it("keeps the surrounding words", () => {
+    expect(render("ping @alice about it")).toContain("about it");
   });
 });

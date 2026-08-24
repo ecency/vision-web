@@ -1,38 +1,22 @@
 import { vi } from "vitest";
 
-// Real mention/tag regexes; nothing here contains a mention or a tag, so they
-// are inert. The three link-based ones are stubbed to never match on purpose:
-// their passes
-// read `el.innerText`, which jsdom does not implement, and the hive-post filter
-// calls `.trim()` on it unguarded, so a real hive-post href would throw here
-// rather than exercise anything. Same re-mock pattern CLAUDE.md documents for
-// `@/utils`.
+// Only the hive-post pass needs stubbing here: it is the one that reads
+// `el.innerText`, which jsdom does not implement, and it calls `.trim()` on it
+// unguarded, so a hive-post-shaped href throws in a spec instead of exercising
+// anything. Everything else, including the YouTube and Loom passes, runs for
+// real. Same re-mock pattern CLAUDE.md documents for `@/utils`.
 vi.mock("@/features/tiptap-editor/extensions", async () => ({
   ...(await vi.importActual("@/features/tiptap-editor/extensions")),
-  HIVE_POST_PURE_REGEX: /$a^/,
-  LOOM_REGEX: /$a^/,
-  YOUTUBE_REGEX: /$a^/
+  HIVE_POST_PURE_REGEX: /$a^/
 }));
 
 import { Editor } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
-import Table from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
 import { simpleMarkdownToHTML } from "@ecency/render-helper";
 
 import { parseAllExtensionsToDoc } from "@/features/tiptap-editor/functions/parse-all-extensions-to-doc";
+import { PUBLISH_EDITOR_EXTENSIONS } from "./publish-editor-extensions";
 
-const EXTENSIONS = [
-  StarterKit,
-  Image.configure({ inline: true }),
-  Table,
-  TableRow,
-  TableCell,
-  TableHeader
-];
+const EXTENSIONS = PUBLISH_EDITOR_EXTENSIONS;
 
 function insert(html: string): string {
   const editor = new Editor({ extensions: EXTENSIONS, content: "<p></p>" });
@@ -81,9 +65,10 @@ describe("pasting an empty list or a rowless table", () => {
   });
 
   it("leaves an item empty by removal with a paragraph, not a broken bullet", () => {
-    const doc = parseAllExtensionsToDoc("<ul><li>a</li><li><ul></ul></li></ul>");
+    const html = "<ul><li>a</li><li><ul></ul></li></ul>";
 
-    expect(doc).toContain("<li><p></p></li>");
+    expect(parseAllExtensionsToDoc(html)).toContain("<li><p></p></li>");
+    expect(insert(html)).toBe("<ul><li><p>a</p></li><li><p></p></li></ul>");
   });
 
   it.each([
@@ -101,18 +86,54 @@ describe("pasting an empty list or a rowless table", () => {
   ])(
     "does not leave a blank paragraph behind for a list holding only %s",
     (_l: string, html: string) => {
-      const doc = parseAllExtensionsToDoc(html);
-
-      expect(doc).toBe(html.replace(/<ul>[\s]*<\/ul>/, ""));
+      expect(parseAllExtensionsToDoc(html)).toBe(html.replace(/<ul>[\s]*<\/ul>/, ""));
+      expect(insert(html)).toBe("<p>a</p><p>b</p>");
     }
   );
 
   // Review: a rowless table can still carry a caption, and that text is the
-  // author's, so unwrap rather than drop.
-  it("keeps the caption of a rowless table", () => {
-    const doc = parseAllExtensionsToDoc("<table><caption>Quarterly totals</caption></table>");
+  // author's, so unwrap rather than drop. Assert the editor's own output, not the
+  // intermediate HTML: keeping the <caption> wrapper also "contains" the text,
+  // while the editor renders the tag itself as escaped literal markup.
+  it("keeps the caption text of a rowless table as text", () => {
+    const html = insert("<table><caption>Quarterly totals</caption></table>");
 
-    expect(doc).toContain("Quarterly totals");
+    expect(html).toContain("Quarterly totals");
+    expect(html).not.toContain("&lt;");
+  });
+
+  it.each([
+    ["an empty body", "<table><tbody></tbody></table>"],
+    ["an empty head and body", "<table><thead></thead><tbody></tbody></table>"],
+    ["a column group", "<table><colgroup><col></colgroup></table>"],
+    ["a caption beside an empty body", "<table><caption>Totals</caption><tbody></tbody></table>"]
+  ])("does not leak the wrappers of a rowless table holding %s", (_l: string, html: string) => {
+    const rendered = insert(html);
+
+    // Not a tag-name proxy: caption TEXT may legitimately contain those words.
+    // What must never appear is escaped markup, which is how tiptap surfaces a
+    // paste that parses to nothing.
+    expect(rendered).not.toContain("&lt;");
+    expect(rendered).not.toContain("&gt;");
+  });
+
+  // Regression: flattening a caption to bare text put the whole paste on tiptap's
+  // isOnlyTextContent branch, which calls tr.insertText with the RAW HTML string,
+  // so an entity in the caption reached the document double-escaped.
+  it.each([
+    ["an ampersand", "<table><caption>A &amp; B</caption></table>", "A &amp; B"],
+    ["a less-than", "<table><caption>1 &lt; 2</caption></table>", "1 &lt; 2"]
+  ])("keeps caption text containing %s intact", (_l: string, html: string, expected: string) => {
+    expect(insert(html)).toBe(`<p>${expected}</p>`);
+  });
+
+  it("keeps an image held in the caption of a rowless table", () => {
+    const rendered = insert(
+      '<table><caption><img src="https://images.test/a.png"></caption></table>'
+    );
+
+    expect(rendered).toContain("https://images.test/a.png");
+    expect(rendered).not.toContain("&lt;");
   });
 
   it("keeps a nested table whose outer table has no row of its own", () => {
@@ -121,6 +142,7 @@ describe("pasting an empty list or a rowless table", () => {
 
     expect(() => insert(html)).not.toThrow();
     expect(insert(html)).toContain("x");
+    expect(insert(html)).not.toContain("&lt;");
   });
 
   it("keeps a list whose only item is empty", () => {

@@ -24,7 +24,10 @@ const TABLE_EXTENSIONS = [StarterKit, Table, TableRow, TableCell, TableHeader];
 function pasteMarkdown(markdown: string): string {
   const editor = new Editor({ extensions: TABLE_EXTENSIONS, content: "<p></p>" });
   try {
-    editor.chain().insertContent(parseAllExtensionsToDoc(simpleMarkdownToHTML(markdown))).run();
+    editor
+      .chain()
+      .insertContent(parseAllExtensionsToDoc(simpleMarkdownToHTML(markdown)))
+      .run();
     return editor.getHTML();
   } finally {
     editor.destroy();
@@ -71,7 +74,9 @@ describe("pasting a markdown table with blank cells", () => {
   });
 
   it("preserves the content of the cells that are not blank", () => {
-    const html = pasteMarkdown("| Date | Memo |\n| --- | --- |\n| 2019-02-11 |  |\n| 2023-01-06 | closed off |");
+    const html = pasteMarkdown(
+      "| Date | Memo |\n| --- | --- |\n| 2019-02-11 |  |\n| 2023-01-06 | closed off |"
+    );
 
     expect(html).toContain("2019-02-11");
     expect(html).toContain("2023-01-06");
@@ -87,7 +92,9 @@ describe("pasting a markdown table with blank cells", () => {
   });
 
   it("fills a blank cell with an empty paragraph rather than dropping it", () => {
-    const doc = parseAllExtensionsToDoc("<table><tbody><tr><td>1</td><td></td></tr></tbody></table>");
+    const doc = parseAllExtensionsToDoc(
+      "<table><tbody><tr><td>1</td><td></td></tr></tbody></table>"
+    );
 
     expect(doc).toContain("<td><p></p></td>");
   });
@@ -101,14 +108,17 @@ describe("pasting a markdown table with blank cells", () => {
     ["plain spaces", "   "],
     ["a tab", "\t"],
     ["mixed invisible content", " &nbsp; "]
-  ])("normalises a cell holding only %s to a single empty paragraph", (_label: string, filler: string) => {
-    const doc = parseAllExtensionsToDoc(
-      `<table><tbody><tr><td>1</td><td>${filler}</td></tr></tbody></table>`
-    );
+  ])(
+    "normalises a cell holding only %s to a single empty paragraph",
+    (_label: string, filler: string) => {
+      const doc = parseAllExtensionsToDoc(
+        `<table><tbody><tr><td>1</td><td>${filler}</td></tr></tbody></table>`
+      );
 
-    expect(doc).toContain("<td><p></p></td>");
-    expect(doc).not.toContain("&nbsp;<p>");
-  });
+      expect(doc).toContain("<td><p></p></td>");
+      expect(doc).not.toContain("&nbsp;<p>");
+    }
+  );
 
   it("renders a visually blank cell as exactly one paragraph in the editor", () => {
     const html = pasteHtml("<table><tbody><tr><td>1</td><td>&nbsp;</td></tr></tbody></table>");
@@ -118,7 +128,9 @@ describe("pasting a markdown table with blank cells", () => {
   });
 
   it("leaves a cell with real content alone", () => {
-    const doc = parseAllExtensionsToDoc("<table><tbody><tr><td>1</td><td>kept</td></tr></tbody></table>");
+    const doc = parseAllExtensionsToDoc(
+      "<table><tbody><tr><td>1</td><td>kept</td></tr></tbody></table>"
+    );
 
     expect(doc).toContain("kept");
     expect(doc).not.toContain("<td><p></p></td>");
