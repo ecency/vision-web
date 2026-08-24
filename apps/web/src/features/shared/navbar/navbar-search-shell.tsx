@@ -1,4 +1,5 @@
 import i18next from "i18next";
+import type { JSX } from "react";
 import { SearchBox } from "../search-box";
 
 /**
