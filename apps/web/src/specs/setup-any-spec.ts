@@ -45,6 +45,7 @@ vi.mock("i18next", () => ({
   __esModule: true,
   default: {
     t: vi.fn((key) => key),
+    language: "en-US",
     init: vi.fn(),
     changeLanguage: vi.fn(),
     on: vi.fn()
@@ -157,6 +158,7 @@ vi.mock("@ecency/sdk", async () => ({
     queryFn: vi.fn()
   })),
   useRcDelegation: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useAiAssist: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   buildRcDelegationOp: vi.fn(() => ({})),
   getDeletedEntryQueryOptions: vi.fn((author, permlink) => ({
     queryKey: ["posts", "deleted-entry", `@${author}/${permlink}`],
