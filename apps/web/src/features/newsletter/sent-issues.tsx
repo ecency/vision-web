@@ -24,7 +24,7 @@ export function SentIssues({
   type,
   target,
   isSender,
-  limit = 5,
+  limit = 3,
   className
 }: {
   type: "creator" | "community";
