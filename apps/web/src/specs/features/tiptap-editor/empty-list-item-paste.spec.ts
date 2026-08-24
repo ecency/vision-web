@@ -236,6 +236,32 @@ describe("pasting a markdown list whose item starts with a block", () => {
     expect(html).toBe("<ul><li><p></p><ul><li><p>x</p></li></ul></li></ul>");
   });
 
+  // Review: the same holds for a wrapper the schema drops. It is skipped when
+  // locating the block, so leaving it behind let ProseMirror wrap its invisible
+  // text in a second paragraph.
+  it.each([
+    ["an empty wrapper", "<span></span>"],
+    ["a wrapper holding a zero-width space", "<span>\u200B</span>"],
+    ["two wrappers", "<span></span><u>\u200B</u>"]
+  ])("adds exactly one paragraph when only %s precedes a block", (_l: string, lead: string) => {
+    const html = pasteHtml(`<ul><li>${lead}<ul><li>x</li></ul></li></ul>`);
+
+    expect(html).toBe("<ul><li><p></p><ul><li><p>x</p></li></ul></li></ul>");
+  });
+
+  // ...but a wrapper is only droppable when it holds nothing. One containing an
+  // image renders, so it both keeps its content and satisfies the leading
+  // paragraph on its own.
+  it("keeps a wrapper that holds an image, and adds no paragraph for it", () => {
+    const html = pasteHtml(
+      '<ul><li><span><img src="https://i.test/a.png"></span><ul><li>x</li></ul></li></ul>'
+    );
+
+    expect(html).toBe(
+      '<ul><li><p><img src="https://i.test/a.png"></p><ul><li><p>x</p></li></ul></li></ul>'
+    );
+  });
+
   it.each([
     ["a link", "- [text](https://example.com)"],
     ["bold text", "- **bold**"],

@@ -364,28 +364,26 @@ export function parseAllExtensionsToDoc(value?: string): string {
   //   <li><div data-youtube-video>  the embeds this file substitutes for a bare link above
   // Prepending an empty paragraph keeps the content and satisfies the schema.
   (Array.from(tree.querySelectorAll("li")) as HTMLElement[]).forEach((li) => {
-    // Step over leading elements the schema drops entirely, so a block hiding
+    // Step over leading elements that render nothing at all, so a block hiding
     // behind something like an empty <span> still counts as leading the item.
-    // Cheap matches() first: textContent walks the whole nested subtree.
+    // ⚠️ The test is holdsNothingRenderable, not "has no text": a wrapper can be
+    // dropped by the schema itself and still CONTAIN something, and <span><img></span>
+    // must stop the walk or the image is treated as absent.
+    // Cheap matches() first: the rest walks the nested subtree.
     let first = li.firstElementChild;
-    while (first && !first.matches(RENDERS_AS_NODE) && !hasVisibleText(first.textContent)) {
+    while (first && !first.matches(RENDERS_AS_NODE) && holdsNothingRenderable(first)) {
       first = first.nextElementSibling;
     }
 
     // Only when the block leads the item. Text before it already becomes the
     // required paragraph, and prepending another one there just adds a blank line.
     if (first && first.matches(LEADING_BLOCK) && !hasTextBefore(first)) {
-      // Anything text-like ahead of the block is invisible, or hasTextBefore
-      // would have said so. Drop it: ProseMirror still wraps a surviving
-      // zero-width text node in a paragraph of its own, and the item would end
-      // up with that plus the empty one being added here.
-      let ahead: ChildNode | null = first.previousSibling;
-      while (ahead) {
-        const previous: ChildNode | null = ahead.previousSibling;
-        if (ahead.nodeType === Node.TEXT_NODE) {
-          ahead.remove();
-        }
-        ahead = previous;
+      // Everything ahead of the block renders nothing, or the walk above would
+      // have stopped there. Drop all of it: ProseMirror wraps a surviving
+      // zero-width text node, or a wrapper holding one, in a paragraph of its
+      // own, and the item would end up with that plus the empty one added here.
+      while (first.previousSibling) {
+        first.previousSibling.remove();
       }
 
       li.insertBefore(document.createElement("p"), first);
