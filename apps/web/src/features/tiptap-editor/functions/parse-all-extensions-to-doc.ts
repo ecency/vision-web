@@ -67,6 +67,67 @@ function hasTextBefore(child: Element) {
   return false;
 }
 
+/** Elements whose text must stay literal. */
+const CHIP_EXCLUDED = "a, code, pre";
+
+/**
+ * Turns every `@name` / `#tag` occurrence into a chip span, editing TEXT NODES only.
+ *
+ * ⛔ Do not go back to `el.innerHTML.replace(...)`. innerHTML carries attribute
+ * values, so the replacement also fires inside `src` and `href`, and Hive image
+ * URLs contain `/@author/`: pasting a mention beside a hosted image used to tear
+ * the <img> tag apart and leak its tail into the document as text. Nothing throws,
+ * so the author simply loses the image.
+ *
+ * Working on text nodes also drops the need for `el.innerText`, which does not
+ * exist in jsdom and made this pass silently inert under test.
+ */
+function chipTextNodes(root: HTMLElement, regex: RegExp, type: "mention" | "tag") {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const targets: Text[] = [];
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    // A global regex carries lastIndex between calls, so a shared instance would
+    // start mid-string and miss matches. Reset before every use.
+    regex.lastIndex = 0;
+    if (!node.parentElement?.closest(CHIP_EXCLUDED) && regex.test(node.data)) {
+      targets.push(node);
+    }
+  }
+
+  targets.forEach((node) => {
+    const fragment = document.createDocumentFragment();
+    const text = node.data;
+    let index = 0;
+    let match: RegExpExecArray | null;
+
+    regex.lastIndex = 0;
+    while ((match = regex.exec(text))) {
+      if (match.index > index) {
+        fragment.appendChild(document.createTextNode(text.slice(index, match.index)));
+      }
+
+      const chip = document.createElement("span");
+      chip.setAttribute("data-type", type);
+      chip.setAttribute("data-id", match[0].slice(1));
+      fragment.appendChild(chip);
+
+      index = match.index + match[0].length;
+      // A zero-length match would spin forever otherwise.
+      if (match[0].length === 0) {
+        regex.lastIndex += 1;
+      }
+    }
+
+    if (index < text.length) {
+      fragment.appendChild(document.createTextNode(text.slice(index)));
+    }
+
+    node.replaceWith(fragment);
+  });
+}
+
 export function parseAllExtensionsToDoc(value?: string) {
   const tree = document.createElement("body");
   tree.innerHTML = value ?? "";
@@ -163,29 +224,11 @@ export function parseAllExtensionsToDoc(value?: string) {
       el.parentElement?.replaceChild(newEl, el);
     });
 
-  // Handle mentions
-  // We cannot use :has selector because some browsers like Safari 15 doesn't support it well
-  // Skip code/pre elements so backtick-wrapped text like `@aws-sdk` stays as plain text
-  (Array.from(tree.querySelectorAll("*:not(a):not(code):not(pre)")) as HTMLElement[])
-    .filter((el) => !el.closest("code") && !el.closest("pre") && !el.querySelector("a") && USER_MENTION_PURE_REGEX.test(el.innerText))
-    .forEach((el) => {
-      el.innerHTML = el.innerHTML.replace(
-        USER_MENTION_PURE_REGEX,
-        (match) => `<span data-type="mention" data-id=${match.replace("@", "")}></span>`
-      );
-    });
-
-  // Handle tags
-  // We cannot use :has selector because some browsers like Safari 15 doesn't support it well
-  // Skip code/pre elements so backtick-wrapped text like `#tag` stays as plain text
-  (Array.from(tree.querySelectorAll("*:not(a):not(code):not(pre)")) as HTMLElement[])
-    .filter((el) => !el.closest("code") && !el.closest("pre") && !el.querySelector("a") && TAG_MENTION_PURE_REGEX.test(el.innerText))
-    .forEach((el) => {
-      el.innerHTML = el.innerHTML.replace(
-        TAG_MENTION_PURE_REGEX,
-        (match) => `<span data-type="tag" data-id=${match.replace("#", "")} /></span>`
-      );
-    });
+  // Handle mentions and tags.
+  // Skip code/pre so backtick-wrapped text like `@aws-sdk` or `#tag` stays plain,
+  // and skip anchors so a link whose text is a mention keeps working as a link.
+  chipTextNodes(tree, USER_MENTION_PURE_REGEX, "mention");
+  chipTextNodes(tree, TAG_MENTION_PURE_REGEX, "tag");
 
   // Handle image alignment wrappers
   (Array.from(tree.querySelectorAll("div.pull-left, div.pull-right")) as HTMLElement[]).forEach(
