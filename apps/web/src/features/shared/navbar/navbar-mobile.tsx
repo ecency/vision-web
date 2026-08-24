@@ -17,7 +17,7 @@ import { Button } from "@ui/button";
 import clsx from "clsx";
 import i18next from "i18next";
 import Image from "next/image";
-import Link from "next/link";
+import { IntentLink } from "@/features/shared/intent-link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import defaults from "@/defaults";
@@ -132,11 +132,11 @@ export function NavbarMobile({
                 aria-label={i18next.t("navbar.toggle-menu")}
                 aria-expanded={mainBarExpanded}
               />
-              <Link href="/" className="flex items-center">
+              <IntentLink href="/" className="flex items-center">
                 {/* The image alt provides the link's accessible name (brand/home),
                     distinct from the "Home" feed tab below. */}
                 <Image src={defaults.logo} alt="Ecency" width={30} height={30} className="rounded" />
-              </Link>
+              </IntentLink>
             </div>
             <Button
               className="ml-auto"

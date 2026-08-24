@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { IntentLink } from "@/features/shared/intent-link";
 
 export interface BreadcrumbItem {
   name: string;
@@ -34,9 +34,9 @@ export function EntryPageBreadcrumb({ items }: Props) {
                 </span>
               ) : (
                 <>
-                  <Link href={item.path} className="hover:underline whitespace-nowrap">
+                  <IntentLink href={item.path} className="hover:underline whitespace-nowrap">
                     {item.name}
-                  </Link>
+                  </IntentLink>
                   <span aria-hidden="true">/</span>
                 </>
               )}

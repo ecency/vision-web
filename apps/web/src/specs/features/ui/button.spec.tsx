@@ -234,3 +234,41 @@ describe("Button", () => {
     });
   });
 });
+
+describe("Button href prefetch behavior (#1666)", () => {
+  /*
+    A Button with href used to render a raw next/link, which fires an RSC
+    prefetch plus an origin render the moment it scrolls into view. The href
+    branch now renders IntentLink: no prefetch on render, prefetch on intent.
+  */
+  const makeRouter = () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    refresh: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    prefetch: vi.fn()
+  });
+
+  const renderWithRouter = async (ui: React.ReactElement, router: ReturnType<typeof makeRouter>) => {
+    const { AppRouterContext } = await import(
+      "next/dist/shared/lib/app-router-context.shared-runtime"
+    );
+    return render(
+      <AppRouterContext.Provider value={router as never}>{ui}</AppRouterContext.Provider>
+    );
+  };
+
+  it("does not prefetch on render", async () => {
+    const router = makeRouter();
+    await renderWithRouter(<Button href="/perks">Perks</Button>, router);
+    expect(router.prefetch).not.toHaveBeenCalled();
+  });
+
+  it("prefetches on hover intent", async () => {
+    const router = makeRouter();
+    await renderWithRouter(<Button href="/perks">Perks</Button>, router);
+    fireEvent.mouseEnter(screen.getByText("Perks").closest("a")!);
+    expect(router.prefetch).toHaveBeenCalledWith("/perks", expect.anything());
+  });
+});
