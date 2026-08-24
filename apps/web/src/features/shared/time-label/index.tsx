@@ -60,10 +60,15 @@ interface Props {
    * - "fullRelative": long form, e.g. "5 hours ago"
    * - "absolute": formatted date using `format`
    *
-   * The first paint (SSR + initial client render) is always a UTC numeric
-   * string so the two sides agree and React doesn't fire hydration error
-   * #418. After mount the visible text and tooltip swap to the user's local
-   * timezone and locale.
+   * Relative modes render their value from the first SSR paint: a relative
+   * form is the difference of two instants, so it is timezone-independent
+   * and safe to compute server-side (#1662). The mount effect re-computes it
+   * so an edge-cached page self-corrects; `suppressHydrationWarning` on the
+   * span absorbs the boundary case where the two sides disagree by one unit.
+   *
+   * For "absolute" the first paint stays a UTC numeric string (a local
+   * format depends on the viewer's timezone and locale, which the server
+   * cannot know) and swaps after mount.
    */
   mode?: Mode;
   /** dayjs format token used when `mode` is "absolute". Defaults to "LLLL". */
@@ -78,7 +83,11 @@ export function TimeLabel({
   format = "LLLL",
   className = "date",
 }: Props) {
-  const [display, setDisplay] = useState<string | null>(null);
+  const [display, setDisplay] = useState<string | null>(() => {
+    if (mode === "fullRelative") return dateToFullRelative(created);
+    if (mode === "relative") return dateToRelative(created);
+    return null;
+  });
   const [localFormatted, setLocalFormatted] = useState<string | null>(null);
 
   // Self-tick: re-runs the formatting effect ~once a minute for relative modes,

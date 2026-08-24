@@ -1,5 +1,6 @@
 import { vi, describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import "@testing-library/jest-dom";
 
 vi.mock("@/utils", async () => {
@@ -8,6 +9,23 @@ vi.mock("@/utils", async () => {
 });
 
 import { TimeLabel } from "@/features/shared/time-label";
+import { dateToFormattedUtc, dateToRelative } from "@/utils";
+
+describe("TimeLabel SSR output (#1662)", () => {
+  // A fixed offset from now, so the relative form is deterministic per run.
+  const tenDaysAgo = new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString();
+
+  it("server-renders the relative form for the default mode, not the UTC datetime", () => {
+    const html = renderToString(<TimeLabel created={tenDaysAgo} />);
+    expect(html).toContain(`>${dateToRelative(tenDaysAgo)}<`);
+    expect(html).not.toContain(`>${dateToFormattedUtc(tenDaysAgo)}<`);
+  });
+
+  it("server-renders the UTC datetime for absolute mode (viewer timezone unknown)", () => {
+    const html = renderToString(<TimeLabel created={tenDaysAgo} mode="absolute" />);
+    expect(html).toContain(`>${dateToFormattedUtc(tenDaysAgo)}<`);
+  });
+});
 
 describe("TimeLabel", () => {
   const created = "2024-06-15T12:00:00Z";
