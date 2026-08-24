@@ -28,12 +28,9 @@ function insertPastedMarkdown(markdown: string) {
 describe("blockquote paste normalization", () => {
   // Regression: pasting a bare quote marker produced <blockquote></blockquote>,
   // which ProseMirror rejects with "RangeError: Invalid content for node blockquote: <>"
-  it.each([">", "> ", "hello\n\n>", ">>"])(
-    "inserts markdown %j without throwing",
-    (markdown) => {
-      expect(() => insertPastedMarkdown(markdown)).not.toThrow();
-    }
-  );
+  it.each([">", "> ", "hello\n\n>", ">>"])("inserts markdown %j without throwing", (markdown) => {
+    expect(() => insertPastedMarkdown(markdown)).not.toThrow();
+  });
 
   it("fills empty blockquotes with a paragraph", () => {
     expect(parseAllExtensionsToDoc("<blockquote></blockquote>")).toBe(

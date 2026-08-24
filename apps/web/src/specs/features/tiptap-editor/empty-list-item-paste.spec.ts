@@ -1,35 +1,24 @@
 import { vi } from "vitest";
 
-vi.mock("@/features/tiptap-editor/extensions", () => ({
-  HIVE_POST_PURE_REGEX: /$a^/,
-  LOOM_REGEX: /$a^/,
-  TAG_MENTION_PURE_REGEX: /$a^/,
-  USER_MENTION_PURE_REGEX: /$a^/,
-  YOUTUBE_REGEX:
-    /^https?:\/\/(?:(?:www|m)\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})(?:[^\s]*)?/i
+// Only the hive-post pass needs stubbing here: it is the one that reads
+// `el.innerText`, which jsdom does not implement, and it calls `.trim()` on it
+// unguarded, so a hive-post-shaped href throws in a spec instead of exercising
+// anything. Everything else, including the YouTube and Loom passes, runs for
+// real. Same re-mock pattern CLAUDE.md documents for `@/utils`.
+vi.mock("@/features/tiptap-editor/extensions", async () => ({
+  ...(await vi.importActual("@/features/tiptap-editor/extensions")),
+  HIVE_POST_PURE_REGEX: /$a^/
 }));
 
 import { Editor } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
-import Table from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
 import { simpleMarkdownToHTML } from "@ecency/render-helper";
 
 import { parseAllExtensionsToDoc } from "@/features/tiptap-editor/functions/parse-all-extensions-to-doc";
+import { PUBLISH_EDITOR_EXTENSIONS } from "./publish-editor-extensions";
 
 // Must mirror the publish editor for the nodes under test. StarterKit alone has
 // no image node, which would make a perfectly renderable image look like a crash.
-const LIST_EXTENSIONS = [
-  StarterKit,
-  Image.configure({ inline: true }),
-  Table,
-  TableRow,
-  TableCell,
-  TableHeader
-];
+const LIST_EXTENSIONS = PUBLISH_EDITOR_EXTENSIONS;
 
 /** Pastes markdown exactly as the clipboard text strategy does. */
 function pasteMarkdown(markdown: string): string {

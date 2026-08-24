@@ -50,6 +50,44 @@ const RENDERS_AS_NODE = [
   'span[data-type="tag"]'
 ].join(", ");
 
+/**
+ * What survives when an invalid container is unwrapped: its elements, plus text
+ * that is actually visible. Whitespace-only text is dropped, or unwrapping a list
+ * that held nothing but spaces would leave them behind as a blank paragraph.
+ */
+function keptOnUnwrap(el: Element) {
+  return Array.from(el.childNodes).filter(
+    (node) => node.nodeType === Node.ELEMENT_NODE || node.textContent?.trim()
+  );
+}
+
+/** Elements that only mean anything inside a table. */
+const TABLE_STRUCTURE = "caption, colgroup, col, thead, tbody, tfoot, tr, td, th";
+
+/** Anything that must not be tucked inside a paragraph. */
+const BLOCK_LEVEL = [LEADING_BLOCK, "p", "div"].join(", ");
+
+/**
+ * Lifts a rowless table's content out of its structural wrappers.
+ *
+ * ⛔ Do not keep those wrappers. Outside a table the HTML parser will not accept
+ * a <tbody> or a <caption>, and the markup ends up in the document as escaped
+ * literal text: `<p>&lt;caption&gt;Totals&lt;/caption&gt;</p>`. Only the content
+ * inside them is worth anything, and loose inline content becomes a paragraph on
+ * its own. A nested table cannot be lost here, because a table holding one with
+ * any row at all is left alone.
+ */
+function unwrapTableStructure(el: Element): Node[] {
+  return Array.from(el.childNodes).flatMap((node) => {
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return node.textContent?.trim() ? [node] : [];
+    }
+
+    const child = node as Element;
+    return child.matches(TABLE_STRUCTURE) ? unwrapTableStructure(child) : [child];
+  });
+}
+
 /** True when the element holds nothing the schema would render. */
 function holdsNothingRenderable(el: Element) {
   return !el.textContent?.trim() && !el.querySelector(RENDERS_AS_NODE);
@@ -259,6 +297,47 @@ export function parseAllExtensionsToDoc(value?: string) {
       el.style.textAlign = align;
     }
     el.removeAttribute("data-align");
+  });
+
+  // A list with no item, and a table with no row, are invalid the same way an empty
+  // item is: bulletList and orderedList are "listItem+", table is "tableRow+". The
+  // paste throws and the user loses everything, not just the empty container.
+  // Both render as nothing, so unwrap the list (which keeps a nested list that was
+  // its only child) and drop the table. This has to run BEFORE the item repair
+  // below so an item left empty here still gets its paragraph.
+  (Array.from(tree.querySelectorAll("ul, ol")) as HTMLElement[]).forEach((list) => {
+    const hasItem = Array.from(list.children).some((child) => child.tagName === "LI");
+    if (!hasItem) {
+      list.replaceWith(...keptOnUnwrap(list));
+    }
+  });
+
+  // Unwrap the table too rather than dropping it: a rowless one can still hold a
+  // caption, and that text is the author's. The wrappers themselves are discarded,
+  // see unwrapTableStructure.
+  (Array.from(tree.querySelectorAll("table")) as HTMLElement[]).forEach((table) => {
+    if (table.querySelector("tr")) {
+      return;
+    }
+
+    const kept = unwrapTableStructure(table);
+    const isInline = kept.every(
+      (node) => node.nodeType !== Node.ELEMENT_NODE || !(node as Element).matches(BLOCK_LEVEL)
+    );
+
+    // ⛔ Wrap loose inline content in a paragraph rather than leaving it bare.
+    // When the whole paste parses to text alone, tiptap's insertContentAt takes
+    // its isOnlyTextContent branch and calls tr.insertText with the RAW HTML
+    // STRING, so `A &amp; B` reaches the document as the literal characters
+    // `A &amp;amp; B`. A block wrapper keeps it on the normal parse path.
+    if (kept.length && isInline) {
+      const paragraph = document.createElement("p");
+      paragraph.append(...kept);
+      table.replaceWith(paragraph);
+      return;
+    }
+
+    table.replaceWith(...kept);
   });
 
   // ProseMirror's listItem schema is "paragraph block*", so an item's FIRST child
