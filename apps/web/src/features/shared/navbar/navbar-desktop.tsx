@@ -3,6 +3,7 @@ import { UserAvatar } from "@/features/shared";
 import { AnonUserButtons } from "@/features/shared/navbar/anon-user-buttons";
 import { NavbarMainSidebar } from "@/features/shared/navbar/navbar-main-sidebar";
 import { NavbarMainSidebarToggle } from "@/features/shared/navbar/navbar-main-sidebar-toggle";
+import { NavbarSearchShell } from "@/features/shared/navbar/navbar-search-shell";
 import { NavbarNotificationsButton } from "@/features/shared/navbar/navbar-notifications-button";
 import { NavbarPerksButton } from "@/features/shared/navbar/navbar-perks-button";
 import { NavbarSide } from "@/features/shared/navbar/sidebar/navbar-side";
@@ -99,8 +100,12 @@ export function NavbarDesktop({
         {(step !== 1 || transparentVerify) && (
           // Slot is always rendered so it reserves its flex space (no layout
           // shift when Search mounts). Only the heavy Search itself is gated on
-          // isDesktop, so its chunk never loads on mobile.
-          <div className="max-w-[400px] w-full">{isDesktop && <Search />}</div>
+          // isDesktop, so its chunk never loads on mobile; until it mounts the
+          // pixel-identical server-rendered shell keeps the input visible from
+          // the first paint (#1664).
+          <div className="max-w-[400px] w-full">
+            {isDesktop ? <Search /> : <NavbarSearchShell />}
+          </div>
         )}
         <div className="flex items-center ml-3 gap-3">
           <NavbarPerksButton />
