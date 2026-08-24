@@ -89,7 +89,7 @@ const ForwardedButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, Button
     const children = props.children ? <div>{props.children}</div> : <></>;
 
     return "href" in props ? (
-      <IntentLink {...nativeProps} className={className} ref={ref as any}>
+      <IntentLink {...nativeProps} className={className} ref={ref as React.Ref<HTMLAnchorElement>}>
         {props.isLoading && props.loadingText ? props.loadingText : children}
         {icon}
       </IntentLink>

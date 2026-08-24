@@ -272,3 +272,18 @@ describe("Button href prefetch behavior (#1666)", () => {
     expect(router.prefetch).toHaveBeenCalledWith("/perks", expect.anything());
   });
 });
+
+describe("Button href ref forwarding", () => {
+  it("forwards the ref through IntentLink to the anchor element", () => {
+    // React 19 passes ref as a prop through function components; IntentLink
+    // spreads it onto next/link, which attaches it to the rendered <a>.
+    const ref = React.createRef<HTMLAnchorElement>();
+    render(
+      <Button href="/perks" ref={ref as React.Ref<HTMLButtonElement | HTMLAnchorElement>}>
+        Perks
+      </Button>
+    );
+    expect(ref.current).toBeInstanceOf(HTMLAnchorElement);
+    expect(ref.current?.getAttribute("href")).toBe("/perks");
+  });
+});
