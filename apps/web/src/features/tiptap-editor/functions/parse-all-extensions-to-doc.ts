@@ -6,6 +6,67 @@ import {
   YOUTUBE_REGEX
 } from "../extensions";
 
+/**
+ * Elements the editor schema turns into a BLOCK node. A list item may hold these,
+ * but not as its first child, because listItem is "paragraph block*".
+ */
+const LEADING_BLOCK = [
+  "ol",
+  "ul",
+  "blockquote",
+  "pre",
+  "hr",
+  "table",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "div[data-youtube-video]",
+  "div[data-three-speak-video]",
+  "div[data-loom-video]",
+  "div[data-hive-post]"
+].join(", ");
+
+/**
+ * Every element the schema turns into a node, block or inline, so an element
+ * holding one of these renders as something and must not be blanked.
+ *
+ * ⚠️ These MUST mirror the extensions' own parse rules, tag and attributes both.
+ * Anything not listed here parses to NOTHING: raw <iframe>, <video> and <audio>
+ * have no node in this editor, and neither does an <img> without a usable src,
+ * which is why Image's exact rule is reproduced rather than a bare "img". Listing
+ * something the schema does not parse leaves the container schema-empty, and
+ * insertContent then throws away the user's entire paste.
+ */
+const RENDERS_AS_NODE = [
+  LEADING_BLOCK,
+  "p",
+  // @tiptap/extension-image, allowBase64 defaults to false
+  'img[src]:not([src^="data:"])',
+  "br",
+  'span[data-type="mention"]',
+  'span[data-type="tag"]'
+].join(", ");
+
+/** True when the element holds nothing the schema would render. */
+function holdsNothingRenderable(el: Element) {
+  return !el.textContent?.trim() && !el.querySelector(RENDERS_AS_NODE);
+}
+
+/** True when the item holds visible text ahead of the given child. */
+function hasTextBefore(child: Element) {
+  let node: ChildNode | null = child.previousSibling;
+  while (node) {
+    if (node.textContent?.trim()) {
+      return true;
+    }
+    node = node.previousSibling;
+  }
+  return false;
+}
+
 export function parseAllExtensionsToDoc(value?: string) {
   const tree = document.createElement("body");
   tree.innerHTML = value ?? "";
@@ -157,19 +218,49 @@ export function parseAllExtensionsToDoc(value?: string) {
     el.removeAttribute("data-align");
   });
 
-  // Ensure list items have a paragraph before nested lists to satisfy ProseMirror schema
+  // ProseMirror's listItem schema is "paragraph block*", so an item's FIRST child
+  // has to be a paragraph. Markdown routinely produces items that break that rule,
+  // and insertContent throws for the whole paste rather than for the one bad item,
+  // so a single one of these silently loses everything the user pasted:
+  //   <li></li>                     an empty item, reported as "listItem: <>"
+  //   <li><ul>...</ul></li>         a nested list with no lead-in
+  //   <li><h2>x</h2></li>           "- one" followed by an indented "-" reads as a setext heading
+  //   <li><blockquote>|<pre>|<hr>|<table>
+  //   <li><div data-youtube-video>  the embeds this file substitutes for a bare link above
+  // Prepending an empty paragraph keeps the content and satisfies the schema.
   (Array.from(tree.querySelectorAll("li")) as HTMLElement[]).forEach((li) => {
-    const first = li.firstElementChild;
-    if (first && (first.tagName === "OL" || first.tagName === "UL")) {
-      const p = document.createElement("p");
-      li.insertBefore(p, first);
+    // Step over leading elements the schema drops entirely, so a block hiding
+    // behind something like an empty <span> still counts as leading the item.
+    // Cheap matches() first: textContent walks the whole nested subtree.
+    let first = li.firstElementChild;
+    while (first && !first.matches(RENDERS_AS_NODE) && !first.textContent?.trim()) {
+      first = first.nextElementSibling;
+    }
+
+    // Only when the block leads the item. Text before it already becomes the
+    // required paragraph, and prepending another one there just adds a blank line.
+    if (first && first.matches(LEADING_BLOCK) && !hasTextBefore(first)) {
+      li.insertBefore(document.createElement("p"), first);
+      return;
+    }
+
+    // An item with nothing to render, which is the "listItem: <>" case. Replace
+    // rather than append: the guard also matches items holding only whitespace or
+    // &nbsp;, which the browser already renders as one paragraph, and appending
+    // would leave the invisible text AND an empty paragraph behind. Elements that
+    // carry no text but still produce a node keep the item non-empty.
+    if (holdsNothingRenderable(li)) {
+      li.textContent = "";
+      li.appendChild(document.createElement("p"));
     }
   });
 
   // Ensure empty blockquotes have at least one paragraph to satisfy ProseMirror schema.
   // Blockquotes with bare text are left alone — the editor wraps that text in a paragraph itself.
+  // The test is "renders as nothing", not "has no element child": a blockquote holding only an
+  // element the schema drops, such as `> <iframe src=x></iframe>`, is just as empty to ProseMirror.
   (Array.from(tree.querySelectorAll("blockquote")) as HTMLElement[]).forEach((bq) => {
-    if (!bq.firstElementChild && !bq.textContent?.trim()) {
+    if (holdsNothingRenderable(bq)) {
       bq.appendChild(document.createElement("p"));
     }
   });
@@ -185,7 +276,7 @@ export function parseAllExtensionsToDoc(value?: string) {
   // Appending to those would leave the invisible text AND an empty paragraph
   // behind, doubling the cell's height for no visible reason.
   (Array.from(tree.querySelectorAll("td, th")) as HTMLElement[]).forEach((cell) => {
-    if (!cell.firstElementChild && !cell.textContent?.trim()) {
+    if (holdsNothingRenderable(cell)) {
       cell.textContent = "";
       cell.appendChild(document.createElement("p"));
     }
