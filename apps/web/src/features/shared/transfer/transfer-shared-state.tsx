@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import { TransferAsset, TransferMode } from "@/features/shared";
+import type { TransferAsset, TransferMode } from "./index";
 
 export const TransferSharedStateContext = createContext<{
   memo: string;

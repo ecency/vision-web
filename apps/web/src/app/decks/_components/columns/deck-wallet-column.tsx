@@ -10,7 +10,7 @@ import { Transaction } from "@/entities";
 import { getDynamicPropsQueryOptions, getTransactionsInfiniteQueryOptions } from "@ecency/sdk";
 import i18next from "i18next";
 import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
-import { TransactionRow } from "@/features/shared";
+import { TransactionRow } from "@/features/shared/transactions";
 
 interface Props {
   id: string;

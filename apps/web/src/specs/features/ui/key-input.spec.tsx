@@ -12,7 +12,9 @@ const h = vi.hoisted(() => ({
 
 // KeyInput imports only `error` from the shared barrel; stub it to a spy so we
 // can count exactly how many user-facing toasts are produced.
-vi.mock("@/features/shared", () => ({
+// key-input imports error from the feedback module directly since the barrel
+// stopped carrying pre-paint routes through it (#1668).
+vi.mock("@/features/shared/feedback", () => ({
   error: (message: string) => h.errorSpy(message)
 }));
 

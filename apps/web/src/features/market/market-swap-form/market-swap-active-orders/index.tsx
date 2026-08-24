@@ -4,7 +4,7 @@ import "./index.scss";
 import { OpenOrdersData } from "@/entities";
 import { getOpenOrdersQueryOptions } from "@ecency/sdk";
 import i18next from "i18next";
-import { BuySellHiveDialog } from "@/features/shared";
+import { BuySellHiveDialog } from "@/features/shared/buy-sell-hive";
 import { BuySellHiveTransactionType } from "@/enums";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useQueryClient } from "@tanstack/react-query";

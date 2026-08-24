@@ -16,7 +16,7 @@ import {
 } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useGlobalStore } from "@/core/global-store";
-import { error } from "@/features/shared";
+import { error } from "@/features/shared/feedback";
 import clsx from "clsx";
 
 interface Props {

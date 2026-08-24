@@ -5,9 +5,9 @@ import { SelectionPopover } from "./selection-popover";
 import { EntryPageViewerManager } from "./entry-page-viewer-manager";
 import { useContext, useEffect, useState } from "react";
 import { SafeTweet } from "@/features/shared/safe-tweet";
-import TransactionSigner from "@/features/shared/transactions/transaction-signer";
 import { EntryPageContext } from "./context";
 import dynamic from "next/dynamic";
+import { DialogChunkSpinner } from "@/features/shared/dialog-chunk-spinner";
 import { makeEntryPath } from "@/utils";
 import i18next from "i18next";
 
@@ -15,6 +15,14 @@ import i18next from "i18next";
 // polls, gif picker). It only renders in edit mode, so keep it out of the
 // read-path bundle and load it on demand when the user enters editing. The
 // loading fallback avoids a blank slot during the first chunk download.
+// Interaction-only: the signing dialog opens when a reader clicks an embedded
+// hive:// operation link. Keep it out of the read-path bundle (#1668) and load
+// it on demand; `show` is false until then, so nothing renders during SSR.
+const TransactionSigner = dynamic(
+  () => import("@/features/shared/transactions/transaction-signer"),
+  { ssr: false, loading: () => <DialogChunkSpinner /> }
+);
+
 const EntryPageEdit = dynamic(
   () => import("./entry-page-edit").then((m) => m.EntryPageEdit),
   {
@@ -152,11 +160,13 @@ export function EntryPageBodyViewer({ entry }: Props) {
         </SelectionPopover>
       )}
       {isEdit && entry.parent_author && <EntryPageEdit entry={entry} />}
-      <TransactionSigner
-        show={!!signingOperation}
-        onHide={() => setSigningOperation(undefined)}
-        operation={signingOperation}
-      />
+      {signingOperation !== undefined && (
+        <TransactionSigner
+          show={true}
+          onHide={() => setSigningOperation(undefined)}
+          operation={signingOperation}
+        />
+      )}
     </EntryPageViewerManager>
   );
 }

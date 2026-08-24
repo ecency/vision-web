@@ -8,7 +8,7 @@ import { usePinPostMutation } from "@/api/sdk-mutations";
 import { Community, Entry } from "@/entities";
 import { isCommunity } from "@/utils";
 import { clone } from "remeda";
-import { error, success } from "@/features/shared";
+import { error, success } from "@/features/shared/feedback";
 import i18next from "i18next";
 
 /**

@@ -2,9 +2,19 @@
 
 import { EcencyRenderer } from "@/features/post-renderer";
 import type { RenderOptions, SeoContext } from "@ecency/render-helper";
+import dynamic from "next/dynamic";
+import { DialogChunkSpinner } from "./dialog-chunk-spinner";
 import { HTMLProps, memo, useCallback, useMemo, useState } from "react";
 import { SafeTweet } from "./safe-tweet";
-import TransactionSigner from "./transactions/transaction-signer";
+
+// Interaction-only: the signing dialog opens when a reader clicks an embedded
+// hive:// operation link. Keep it out of the read-path bundle (#1668) and load
+// it on demand; it is only mounted once an operation is clicked, so nothing
+// renders during SSR.
+const TransactionSigner = dynamic(() => import("./transactions/transaction-signer"), {
+  ssr: false,
+  loading: () => <DialogChunkSpinner />
+});
 
 const MemoizedEcencyRenderer = memo(EcencyRenderer);
 
@@ -86,11 +96,13 @@ export function PostContentRenderer({
         onHiveOperationClick={handleHiveOperationClick}
         TwitterComponent={SafeTweet}
       />
-      <TransactionSigner
-        show={!!signingOperation}
-        onHide={() => setSigningOperation(undefined)}
-        operation={signingOperation}
-      />
+      {signingOperation !== undefined && (
+        <TransactionSigner
+          show={true}
+          onHide={() => setSigningOperation(undefined)}
+          operation={signingOperation}
+        />
+      )}
     </>
   );
 }

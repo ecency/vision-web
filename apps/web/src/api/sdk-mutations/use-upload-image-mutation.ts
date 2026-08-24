@@ -4,7 +4,7 @@ import { useAddImage, useUploadImage } from "@ecency/sdk";
 import { useActiveUsername } from "@/core/hooks/use-active-username";
 import { ensureValidToken } from "@/utils";
 import { useMutation } from "@tanstack/react-query";
-import { error, success } from "@/features/shared";
+import { error, success } from "@/features/shared/feedback";
 import i18next from "i18next";
 import { EcencyConfigManager } from "@/config";
 

@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo } from "react";
 import { useGlobalStore } from "@/core/global-store";
 import useUnmount from "react-use/lib/useUnmount";
 import i18next from "i18next";
-import dayjs from "@/utils/dayjs";
+import { setDayjsLocale } from "@/utils/dayjs";
 
 interface Props {
   targetLanguage?: string | null;
@@ -25,12 +25,15 @@ export function NavigationLocaleWatcherClient({ targetLanguage }: Props) {
   const lang = useGlobalStore((state) => state.lang);
   const setLang = useGlobalStore((state) => state.setLang);
 
-  const localeChanged = useCallback((lang: string) => dayjs.locale(lang), []);
+  const localeChanged = useCallback((lang: string) => void setDayjsLocale(lang), []);
 
   useEffect(() => {
     if (derivedLanguage && lang !== derivedLanguage) {
+      // setLang is the ordered pipeline: it loads the i18n resources and the
+      // dayjs table, switches i18next and only then publishes the state. A
+      // separate direct changeLanguage() here would re-render with a
+      // half-switched locale (#1669 review).
       setLang(derivedLanguage);
-      void i18next.changeLanguage(derivedLanguage);
     }
   }, [derivedLanguage, lang, setLang]);
 
@@ -45,7 +48,6 @@ export function NavigationLocaleWatcherClient({ targetLanguage }: Props) {
   useUnmount(() => {
     const currentLang = ls.get("current-language");
     setLang(currentLang);
-    i18next.changeLanguage(currentLang);
     i18next.off("languageChanged", localeChanged);
   });
 

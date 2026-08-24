@@ -3,7 +3,7 @@ import {
   useCreateCommunityByHivesigner,
   useCreateCommunityByKeychain
 } from "@/api/mutations";
-import { KeyOrHot } from "@/features/shared";
+import { KeyOrHot } from "@/features/shared/key-or-hot";
 import { PrivateKey } from "@ecency/sdk";
 import { useCallback } from "react";
 import { CommunityCreateCardLayout } from "./community-create-card-layout";

@@ -18,7 +18,7 @@ import { NavbarSideThemeSwitcher } from "@/features/shared/navbar/sidebar";
 import { Button } from "@ui/button";
 import i18next from "i18next";
 import { closeSvg, WavyDashIcon } from "@ui/svg";
-import { SwitchLang } from "@/features/shared";
+import { SwitchLang } from "@/features/shared/switch-lang";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
