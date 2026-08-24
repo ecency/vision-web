@@ -57,7 +57,7 @@ const RENDERS_AS_NODE = [
  */
 function keptOnUnwrap(el: Element) {
   return Array.from(el.childNodes).filter(
-    (node) => node.nodeType === Node.ELEMENT_NODE || node.textContent?.trim()
+    (node) => node.nodeType === Node.ELEMENT_NODE || hasVisibleText(node.textContent)
   );
 }
 
@@ -80,7 +80,7 @@ const BLOCK_LEVEL = [LEADING_BLOCK, "p", "div"].join(", ");
 function unwrapTableStructure(el: Element): Node[] {
   return Array.from(el.childNodes).flatMap((node) => {
     if (node.nodeType !== Node.ELEMENT_NODE) {
-      return node.textContent?.trim() ? [node] : [];
+      return hasVisibleText(node.textContent) ? [node] : [];
     }
 
     const child = node as Element;
@@ -88,16 +88,29 @@ function unwrapTableStructure(el: Element): Node[] {
   });
 }
 
+/**
+ * Characters that take up no space, so text made only of them reads as empty.
+ * `trim()` already drops U+00A0, but not these: they are format characters
+ * rather than whitespace, and a list item holding only one of them would
+ * otherwise count as content and render as a blank line.
+ */
+const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g;
+
+/** True when the text holds something a reader would actually see. */
+function hasVisibleText(value?: string | null) {
+  return !!value?.replace(ZERO_WIDTH, "").trim();
+}
+
 /** True when the element holds nothing the schema would render. */
 function holdsNothingRenderable(el: Element) {
-  return !el.textContent?.trim() && !el.querySelector(RENDERS_AS_NODE);
+  return !hasVisibleText(el.textContent) && !el.querySelector(RENDERS_AS_NODE);
 }
 
 /** True when the item holds visible text ahead of the given child. */
 function hasTextBefore(child: Element) {
   let node: ChildNode | null = child.previousSibling;
   while (node) {
-    if (node.textContent?.trim()) {
+    if (hasVisibleText(node.textContent)) {
       return true;
     }
     node = node.previousSibling;
@@ -355,7 +368,7 @@ export function parseAllExtensionsToDoc(value?: string) {
     // behind something like an empty <span> still counts as leading the item.
     // Cheap matches() first: textContent walks the whole nested subtree.
     let first = li.firstElementChild;
-    while (first && !first.matches(RENDERS_AS_NODE) && !first.textContent?.trim()) {
+    while (first && !first.matches(RENDERS_AS_NODE) && !hasVisibleText(first.textContent)) {
       first = first.nextElementSibling;
     }
 

@@ -11,7 +11,7 @@ import {
   LIBRETRANSLATE_TARGETS,
   normLang
 } from "@/features/shared/entry-translate/iso639";
-import { parseAllExtensionsToDoc } from "@/features/tiptap-editor";
+import { parseAllExtensionsToDoc, resolveInsertContent } from "@/features/tiptap-editor";
 import { postBodySummary, simpleMarkdownToHTML } from "@ecency/render-helper";
 import { Editor } from "@tiptap/core";
 import { Button } from "@ui/button";
@@ -132,11 +132,17 @@ export function PublishTranslateDialog({ show, setShow, editor }: Props) {
 
   const apply = () => {
     const appendix = `\n\n---\n\n## ${languageDisplayName(target, target)}\n\n${translated}`;
-    editor
-      ?.chain()
-      .focus("end")
-      .insertContent(parseAllExtensionsToDoc(simpleMarkdownToHTML(appendix)))
-      .run();
+    const content = editor
+      ? resolveInsertContent(
+          editor.schema,
+          parseAllExtensionsToDoc(simpleMarkdownToHTML(appendix)),
+          appendix
+        )
+      : null;
+
+    if (content) {
+      editor?.chain().focus("end").insertContent(content).run();
+    }
     if (addTitleMarker && title?.trim()) {
       const marker = ` [${source.toUpperCase()} | ${target.toUpperCase()}]`;
       if (title.length + marker.length <= SUBMIT_TITLE_MAX_LENGTH) {

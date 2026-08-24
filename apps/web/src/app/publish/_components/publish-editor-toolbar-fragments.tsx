@@ -1,6 +1,6 @@
 import { EcencyConfigManager } from "@/config";
 import { FragmentsDialog } from "@/features/shared/fragments";
-import { parseAllExtensionsToDoc } from "@/features/tiptap-editor";
+import { parseAllExtensionsToDoc, resolveInsertContent } from "@/features/tiptap-editor";
 import { Editor } from "@tiptap/core";
 import { simpleMarkdownToHTML } from "@ecency/render-helper";
 import { PublishEditorHtmlWarning } from "./publish-editor-html-warning";
@@ -23,11 +23,13 @@ export function PublishEditorToolbarFragments({ showFragments, setShowFragments,
         return;
       }
 
-      editor
-        ?.chain()
-        .focus()
-        .insertContent(parseAllExtensionsToDoc(simpleMarkdownToHTML(e)))
-        .run();
+      const content = editor
+        ? resolveInsertContent(editor.schema, parseAllExtensionsToDoc(simpleMarkdownToHTML(e)), e)
+        : null;
+
+      if (content) {
+        editor?.chain().focus().insertContent(content).run();
+      }
       setShowFragments(false);
     },
     [editor, setShowFragments]

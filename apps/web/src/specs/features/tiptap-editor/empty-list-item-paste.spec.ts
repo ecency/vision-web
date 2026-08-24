@@ -100,7 +100,12 @@ describe("pasting a markdown list with blank items", () => {
     // them as content left the item schema-empty and lost the whole paste.
     ["an audio element", '<audio src="x"></audio>'],
     ["a video element", '<video src="x"></video>'],
-    ["an iframe", '<iframe src="x"></iframe>']
+    ["an iframe", '<iframe src="x"></iframe>'],
+    // trim() drops U+00A0 but not the zero-width format characters, so these
+    // used to count as content and render as a blank-looking bullet.
+    ["a zero-width space", "\u200B"],
+    ["a byte order mark", "\uFEFF"],
+    ["a zero-width joiner", "\u200D"]
   ])(
     "normalises an item holding only %s to a single empty paragraph",
     (_label: string, filler: string) => {

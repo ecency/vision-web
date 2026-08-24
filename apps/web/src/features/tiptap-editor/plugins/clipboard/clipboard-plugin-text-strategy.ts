@@ -1,6 +1,6 @@
 import { Editor } from "@tiptap/core";
 import { ClipboardStrategy } from "./clipboard-strategy";
-import { parseAllExtensionsToDoc } from "../../functions";
+import { parseAllExtensionsToDoc, resolveInsertContent } from "../../functions";
 import { simpleMarkdownToHTML } from "@ecency/render-helper";
 
 export class ClipboardPluginTextStrategy implements ClipboardStrategy {
@@ -17,11 +17,16 @@ export class ClipboardPluginTextStrategy implements ClipboardStrategy {
       if (/<[a-z]+>.*<\/[a-z]+>/gim.test(pastedText)) {
         this.onHtmlPaste();
       } else {
-        const parsedText = parseAllExtensionsToDoc(
-          simpleMarkdownToHTML(pastedText)
-        );
+        const parsedText = parseAllExtensionsToDoc(simpleMarkdownToHTML(pastedText));
+        // Falls back to the clipboard text when nothing in the paste renders, so
+        // the editor never shows our intermediate HTML as literal markup.
+        const content = this.editor
+          ? resolveInsertContent(this.editor.schema, parsedText, pastedText)
+          : null;
 
-        this.editor?.chain().insertContent(parsedText).run();
+        if (content) {
+          this.editor?.chain().insertContent(content).run();
+        }
       }
 
       event.preventDefault();
