@@ -13,21 +13,12 @@ import { Tooltip } from "@ui/tooltip";
 import { classNameObject } from "@ui/util";
 import i18next from "i18next";
 import { useEffect, useState } from "react";
-import dynamic from "next/dynamic";
 import { NavbarTextMenu } from "./navbar-text-menu";
 import { useHydrated } from "@/api/queries";
 import { useMattermostUnread } from "@/features/chat/mattermost-api";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
-// The desktop search (input + suggester + transfer/bookmarks/drafts/gallery
-// modules) is heavy. The desktop navbar is `hidden md:flex` but still mounts on
-// mobile, so a static import shipped all of that into the mobile critical path
-// purely as waste. Load it as a separate chunk and only mount it once the
-// viewport is actually desktop-width — never on phones.
-const Search = dynamic(
-  () => import("@/features/shared/navbar/search").then((m) => ({ default: m.Search })),
-  { ssr: false }
-);
+import { Search } from "@/features/shared/navbar/navbar-search-dynamic";
 
 interface Props {
   step?: number;
