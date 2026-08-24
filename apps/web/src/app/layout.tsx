@@ -77,15 +77,17 @@ const inter = Inter({
   display: "swap"
 });
 
-/* Lora only styles entry/publish serif text, all of it below or at the fold
-   edge; painting it with the fallback serif first is acceptable, so no
-   preload at all. */
+/* Lora IS preloaded (latin), deliberately: without the preload its file is
+   only discovered from CSS after the first layout (measured start 1.5-3.3s),
+   and the swap then repaints the whole article seconds after it looked done
+   on text-heavy posts (#1670). One ~37 KB file in the preload wave costs
+   ~60 ms of transfer contention; the late repaint cost 1.5-2.7 s of visual
+   settle plus a layout shift. */
 const lora = Lora({
   subsets: ["latin"],
   weight: ["400", "700"],
   variable: "--font-lora",
-  display: "swap",
-  preload: false
+  display: "swap"
 });
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
