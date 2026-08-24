@@ -108,6 +108,7 @@ describe("what the editor ends up showing", () => {
     const html = render("@alice ![pic](https://files.peakd.com/file/peakd-hive/@bob/p.png)");
 
     expect(html).toContain('src="https://files.peakd.com/file/peakd-hive/@bob/p.png"');
+    expect(html).toContain('data-type="mention"');
     expect(html).not.toContain("&lt;");
   });
 
@@ -119,6 +120,9 @@ describe("what the editor ends up showing", () => {
   });
 
   it("keeps the surrounding words", () => {
-    expect(render("ping @alice about it")).toContain("about it");
+    const html = render("ping @alice about it");
+
+    expect(html).toContain("ping");
+    expect(html).toContain("about it");
   });
 });
