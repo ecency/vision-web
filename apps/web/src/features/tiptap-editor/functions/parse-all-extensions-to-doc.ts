@@ -55,9 +55,9 @@ const RENDERS_AS_NODE = [
  * that is actually visible. Whitespace-only text is dropped, or unwrapping a list
  * that held nothing but spaces would leave them behind as a blank paragraph.
  */
-function keptOnUnwrap(el: Element) {
+function keptOnUnwrap(el: Element): ChildNode[] {
   return Array.from(el.childNodes).filter(
-    (node) => node.nodeType === Node.ELEMENT_NODE || node.textContent?.trim()
+    (node) => node.nodeType === Node.ELEMENT_NODE || hasVisibleText(node.textContent)
   );
 }
 
@@ -80,7 +80,7 @@ const BLOCK_LEVEL = [LEADING_BLOCK, "p", "div"].join(", ");
 function unwrapTableStructure(el: Element): Node[] {
   return Array.from(el.childNodes).flatMap((node) => {
     if (node.nodeType !== Node.ELEMENT_NODE) {
-      return node.textContent?.trim() ? [node] : [];
+      return hasVisibleText(node.textContent) ? [node] : [];
     }
 
     const child = node as Element;
@@ -88,16 +88,29 @@ function unwrapTableStructure(el: Element): Node[] {
   });
 }
 
+/**
+ * Characters that take up no space, so text made only of them reads as empty.
+ * `trim()` already drops U+00A0, but not these: they are format characters
+ * rather than whitespace, and a list item holding only one of them would
+ * otherwise count as content and render as a blank line.
+ */
+const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g;
+
+/** True when the text holds something a reader would actually see. */
+function hasVisibleText(value?: string | null): boolean {
+  return !!value?.replace(ZERO_WIDTH, "").trim();
+}
+
 /** True when the element holds nothing the schema would render. */
-function holdsNothingRenderable(el: Element) {
-  return !el.textContent?.trim() && !el.querySelector(RENDERS_AS_NODE);
+function holdsNothingRenderable(el: Element): boolean {
+  return !hasVisibleText(el.textContent) && !el.querySelector(RENDERS_AS_NODE);
 }
 
 /** True when the item holds visible text ahead of the given child. */
-function hasTextBefore(child: Element) {
+function hasTextBefore(child: Element): boolean {
   let node: ChildNode | null = child.previousSibling;
   while (node) {
-    if (node.textContent?.trim()) {
+    if (hasVisibleText(node.textContent)) {
       return true;
     }
     node = node.previousSibling;
@@ -120,7 +133,7 @@ const CHIP_EXCLUDED = "a, code, pre";
  * Working on text nodes also drops the need for `el.innerText`, which does not
  * exist in jsdom and made this pass silently inert under test.
  */
-function chipTextNodes(root: HTMLElement, regex: RegExp, type: "mention" | "tag") {
+function chipTextNodes(root: HTMLElement, regex: RegExp, type: "mention" | "tag"): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const targets: Text[] = [];
 
@@ -166,7 +179,7 @@ function chipTextNodes(root: HTMLElement, regex: RegExp, type: "mention" | "tag"
   });
 }
 
-export function parseAllExtensionsToDoc(value?: string) {
+export function parseAllExtensionsToDoc(value?: string): string {
   const tree = document.createElement("body");
   tree.innerHTML = value ?? "";
 
@@ -351,17 +364,28 @@ export function parseAllExtensionsToDoc(value?: string) {
   //   <li><div data-youtube-video>  the embeds this file substitutes for a bare link above
   // Prepending an empty paragraph keeps the content and satisfies the schema.
   (Array.from(tree.querySelectorAll("li")) as HTMLElement[]).forEach((li) => {
-    // Step over leading elements the schema drops entirely, so a block hiding
+    // Step over leading elements that render nothing at all, so a block hiding
     // behind something like an empty <span> still counts as leading the item.
-    // Cheap matches() first: textContent walks the whole nested subtree.
+    // ⚠️ The test is holdsNothingRenderable, not "has no text": a wrapper can be
+    // dropped by the schema itself and still CONTAIN something, and <span><img></span>
+    // must stop the walk or the image is treated as absent.
+    // Cheap matches() first: the rest walks the nested subtree.
     let first = li.firstElementChild;
-    while (first && !first.matches(RENDERS_AS_NODE) && !first.textContent?.trim()) {
+    while (first && !first.matches(RENDERS_AS_NODE) && holdsNothingRenderable(first)) {
       first = first.nextElementSibling;
     }
 
     // Only when the block leads the item. Text before it already becomes the
     // required paragraph, and prepending another one there just adds a blank line.
     if (first && first.matches(LEADING_BLOCK) && !hasTextBefore(first)) {
+      // Everything ahead of the block renders nothing, or the walk above would
+      // have stopped there. Drop all of it: ProseMirror wraps a surviving
+      // zero-width text node, or a wrapper holding one, in a paragraph of its
+      // own, and the item would end up with that plus the empty one added here.
+      while (first.previousSibling) {
+        first.previousSibling.remove();
+      }
+
       li.insertBefore(document.createElement("p"), first);
       return;
     }

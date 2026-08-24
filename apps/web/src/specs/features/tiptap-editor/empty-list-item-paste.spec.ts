@@ -100,7 +100,12 @@ describe("pasting a markdown list with blank items", () => {
     // them as content left the item schema-empty and lost the whole paste.
     ["an audio element", '<audio src="x"></audio>'],
     ["a video element", '<video src="x"></video>'],
-    ["an iframe", '<iframe src="x"></iframe>']
+    ["an iframe", '<iframe src="x"></iframe>'],
+    // trim() drops U+00A0 but not the zero-width format characters, so these
+    // used to count as content and render as a blank-looking bullet.
+    ["a zero-width space", "\u200B"],
+    ["a byte order mark", "\uFEFF"],
+    ["a zero-width joiner", "\u200D"]
   ])(
     "normalises an item holding only %s to a single empty paragraph",
     (_label: string, filler: string) => {
@@ -214,6 +219,47 @@ describe("pasting a markdown list whose item starts with a block", () => {
     );
 
     expect(doc).not.toContain("<p></p>");
+  });
+
+  // Review: treating zero-width characters as invisible made hasTextBefore report
+  // no lead-in, so a paragraph was prepended while the zero-width text node
+  // survived. ProseMirror wraps that in a paragraph of its own, so the item ended
+  // up with two and rendered a blank line.
+  it.each([
+    ["a zero-width space", "\u200B"],
+    ["a byte order mark", "\uFEFF"],
+    ["a newline", "\n"],
+    ["spaces", "  "]
+  ])("adds exactly one paragraph when only %s precedes a block", (_l: string, lead: string) => {
+    const html = pasteHtml(`<ul><li>${lead}<ul><li>x</li></ul></li></ul>`);
+
+    expect(html).toBe("<ul><li><p></p><ul><li><p>x</p></li></ul></li></ul>");
+  });
+
+  // Review: the same holds for a wrapper the schema drops. It is skipped when
+  // locating the block, so leaving it behind let ProseMirror wrap its invisible
+  // text in a second paragraph.
+  it.each([
+    ["an empty wrapper", "<span></span>"],
+    ["a wrapper holding a zero-width space", "<span>\u200B</span>"],
+    ["two wrappers", "<span></span><u>\u200B</u>"]
+  ])("adds exactly one paragraph when only %s precedes a block", (_l: string, lead: string) => {
+    const html = pasteHtml(`<ul><li>${lead}<ul><li>x</li></ul></li></ul>`);
+
+    expect(html).toBe("<ul><li><p></p><ul><li><p>x</p></li></ul></li></ul>");
+  });
+
+  // ...but a wrapper is only droppable when it holds nothing. One containing an
+  // image renders, so it both keeps its content and satisfies the leading
+  // paragraph on its own.
+  it("keeps a wrapper that holds an image, and adds no paragraph for it", () => {
+    const html = pasteHtml(
+      '<ul><li><span><img src="https://i.test/a.png"></span><ul><li>x</li></ul></li></ul>'
+    );
+
+    expect(html).toBe(
+      '<ul><li><p><img src="https://i.test/a.png"></p><ul><li><p>x</p></li></ul></li></ul>'
+    );
   });
 
   it.each([
