@@ -275,6 +275,11 @@ export default async function EntryPage({ params, searchParams }: Props) {
                 content-visibility on the two big below-fold sections keeps
                 them out of the first layout/paint pass; the intrinsic-size
                 hints reserve approximate scroll height until they render.
+                The discussions hint matches the ANON SSR shell (heading +
+                "Show N comments" button, ~150px), not loaded comments: on a
+                zero-comment post an oversized hint would reserve blank space
+                and visibly collapse (#1669 review). The auto keyword memoizes
+                the real size after first render.
                 Both wrappers start off-screen on any normal post, which is
                 the precondition for content-visibility:auto to help (#1668).
               */}
@@ -284,7 +289,7 @@ export default async function EntryPage({ params, searchParams }: Props) {
                 </div>
               </Suspense>
               <EntryPageContentClient entry={entry} />
-              <div className="[content-visibility:auto] [contain-intrinsic-size:auto_800px]">
+              <div className="[content-visibility:auto] [contain-intrinsic-size:auto_150px]">
                 <EntryPageDiscussionsWrapper entry={entry} category={category} />
               </div>
             </EntryRenderBoundary>

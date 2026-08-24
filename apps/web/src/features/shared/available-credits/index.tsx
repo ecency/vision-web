@@ -21,13 +21,14 @@ import dayjs, { Dayjs } from "@/utils/dayjs";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
+import { DialogChunkSpinner } from "../dialog-chunk-spinner";
 
 // Modal-on-demand: available-credits stays in the shared barrel, and a static
 // import here was the last path dragging the purchase-qr family into every
 // route's pre-paint graph (#1668). The chunk loads on first open.
 const PurchaseQrDialog = dynamic(
   () => import("../purchase-qr").then((m) => ({ default: m.PurchaseQrDialog })),
-  { ssr: false }
+  { ssr: false, loading: () => <DialogChunkSpinner /> }
 );
 interface Props {
   username: string;

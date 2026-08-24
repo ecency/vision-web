@@ -32,7 +32,7 @@ vi.mock("@/utils", () => ({
 }));
 vi.mock("@/defaults", () => ({ default: { logo: "/logo.png" } }));
 vi.mock("@/features/shared/user-avatar", () => ({
-  UserAvatar: ({ username }: any) => <span data-testid="avatar">{username}</span>
+  UserAvatar: ({ username }: { username: string }) => <span data-testid="avatar">{username}</span>
 }));
 vi.mock("@/features/shared/navbar/navbar-notifications-button", () => ({
   NavbarNotificationsButton: () => <button data-testid="notifications">notifs</button>

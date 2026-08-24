@@ -44,3 +44,18 @@ describe("dayjs locale race protection (#1669 review)", () => {
     expect(dayjs.locale()).toBe("es");
   });
 });
+
+describe("dayjs locale server safety (#1669 review)", () => {
+  it("is a no-op without a window (dayjs.locale is a process-global on the server)", async () => {
+    const before = dayjs.locale();
+    const win = globalThis.window;
+    // @ts-expect-error deliberately simulating the server environment
+    delete globalThis.window;
+    try {
+      await setDayjsLocale("th-TH");
+    } finally {
+      globalThis.window = win;
+    }
+    expect(dayjs.locale()).toBe(before);
+  });
+});

@@ -3,6 +3,7 @@
 import { EcencyRenderer } from "@/features/post-renderer";
 import type { RenderOptions, SeoContext } from "@ecency/render-helper";
 import dynamic from "next/dynamic";
+import { DialogChunkSpinner } from "./dialog-chunk-spinner";
 import { HTMLProps, memo, useCallback, useMemo, useState } from "react";
 import { SafeTweet } from "./safe-tweet";
 
@@ -11,7 +12,8 @@ import { SafeTweet } from "./safe-tweet";
 // it on demand; it is only mounted once an operation is clicked, so nothing
 // renders during SSR.
 const TransactionSigner = dynamic(() => import("./transactions/transaction-signer"), {
-  ssr: false
+  ssr: false,
+  loading: () => <DialogChunkSpinner />
 });
 
 const MemoizedEcencyRenderer = memo(EcencyRenderer);

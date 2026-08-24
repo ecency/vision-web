@@ -60,6 +60,14 @@ const DAYJS_LOCALE_LOADERS: Record<string, () => Promise<unknown>> = {
 let localeRequestId = 0;
 
 export async function setDayjsLocale(lang: string): Promise<void> {
+  // CLIENT-ONLY by design. dayjs.locale() mutates a process-global singleton;
+  // on the server one request's ?lang= would leak its locale into every
+  // concurrent request's SSR (and the request-id below would race across
+  // requests). Server renders always use the built-in default and the client
+  // pipeline corrects after hydration, same contract as TimeLabel (#1669).
+  if (typeof window === "undefined") {
+    return;
+  }
   // Stale-request guard: rapid language switches fetch chunks that can
   // resolve out of order, and only the LATEST request may apply its locale.
   const requestId = ++localeRequestId;

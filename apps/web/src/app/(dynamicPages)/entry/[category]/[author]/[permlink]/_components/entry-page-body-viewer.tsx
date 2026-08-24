@@ -7,6 +7,7 @@ import { useContext, useEffect, useState } from "react";
 import { SafeTweet } from "@/features/shared/safe-tweet";
 import { EntryPageContext } from "./context";
 import dynamic from "next/dynamic";
+import { DialogChunkSpinner } from "@/features/shared/dialog-chunk-spinner";
 import { makeEntryPath } from "@/utils";
 import i18next from "i18next";
 
@@ -19,7 +20,7 @@ import i18next from "i18next";
 // it on demand; `show` is false until then, so nothing renders during SSR.
 const TransactionSigner = dynamic(
   () => import("@/features/shared/transactions/transaction-signer"),
-  { ssr: false }
+  { ssr: false, loading: () => <DialogChunkSpinner /> }
 );
 
 const EntryPageEdit = dynamic(

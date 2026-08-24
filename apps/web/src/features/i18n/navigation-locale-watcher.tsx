@@ -1,6 +1,5 @@
 import i18next from "i18next";
 import { langOptions } from "@/features/i18n";
-import { setDayjsLocale } from "@/utils/dayjs";
 import { NavigationLocaleWatcherClient } from "@/features/i18n/navigation-locale-watcher-client";
 
 interface Props {
@@ -14,7 +13,6 @@ export async function NavigationLocaleWatcher({ searchParams }: Props) {
   const nextLanguage = languageFromList?.code;
 
   if (nextLanguage) {
-    await setDayjsLocale(nextLanguage);
     await i18next.changeLanguage(nextLanguage);
   }
 
