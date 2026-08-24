@@ -7,10 +7,10 @@ import {
 } from "../extensions";
 
 /**
- * Elements the editor schema turns into a block node. A list item may hold these,
- * but not as its first child, because listItem requires a leading paragraph.
+ * Elements the editor schema turns into a BLOCK node. A list item may hold these,
+ * but not as its first child, because listItem is "paragraph block*".
  */
-const LIST_ITEM_LEADING_BLOCK = [
+const LEADING_BLOCK = [
   "ol",
   "ul",
   "blockquote",
@@ -30,25 +30,30 @@ const LIST_ITEM_LEADING_BLOCK = [
 ].join(", ");
 
 /**
- * Elements that render as a node even when they hold no text, so a list item
- * containing one is not empty and must not be replaced with a blank paragraph.
+ * Every element the schema turns into a node, block or inline, so an element
+ * holding one of these renders as something and must not be blanked.
+ *
+ * ⚠️ These MUST mirror the extensions' own parse rules, tag and attributes both.
+ * Anything not listed here parses to NOTHING: raw <iframe>, <video> and <audio>
+ * have no node in this editor, and neither does an <img> without a usable src,
+ * which is why Image's exact rule is reproduced rather than a bare "img". Listing
+ * something the schema does not parse leaves the container schema-empty, and
+ * insertContent then throws away the user's entire paste.
  */
-const LIST_ITEM_KEEPS_ITEM_FILLED = [
-  "img",
+const RENDERS_AS_NODE = [
+  LEADING_BLOCK,
+  "p",
+  // @tiptap/extension-image, allowBase64 defaults to false
+  'img[src]:not([src^="data:"])',
   "br",
-  "hr",
-  "table",
-  "pre",
-  "iframe",
-  "video",
-  "audio",
-  "[data-youtube-video]",
-  "[data-three-speak-video]",
-  "[data-loom-video]",
-  "[data-hive-post]",
-  '[data-type="mention"]',
-  '[data-type="tag"]'
+  'span[data-type="mention"]',
+  'span[data-type="tag"]'
 ].join(", ");
+
+/** True when the element holds nothing the schema would render. */
+function holdsNothingRenderable(el: Element) {
+  return !el.textContent?.trim() && !el.querySelector(RENDERS_AS_NODE);
+}
 
 /** True when the item holds visible text ahead of the given child. */
 function hasTextBefore(child: Element) {
@@ -224,11 +229,17 @@ export function parseAllExtensionsToDoc(value?: string) {
   //   <li><div data-youtube-video>  the embeds this file substitutes for a bare link above
   // Prepending an empty paragraph keeps the content and satisfies the schema.
   (Array.from(tree.querySelectorAll("li")) as HTMLElement[]).forEach((li) => {
-    const first = li.firstElementChild;
+    // Step over leading elements the schema drops entirely, so a block hiding
+    // behind something like an empty <span> still counts as leading the item.
+    // Cheap matches() first: textContent walks the whole nested subtree.
+    let first = li.firstElementChild;
+    while (first && !first.matches(RENDERS_AS_NODE) && !first.textContent?.trim()) {
+      first = first.nextElementSibling;
+    }
 
     // Only when the block leads the item. Text before it already becomes the
     // required paragraph, and prepending another one there just adds a blank line.
-    if (first && first.matches(LIST_ITEM_LEADING_BLOCK) && !hasTextBefore(first)) {
+    if (first && first.matches(LEADING_BLOCK) && !hasTextBefore(first)) {
       li.insertBefore(document.createElement("p"), first);
       return;
     }
@@ -238,7 +249,7 @@ export function parseAllExtensionsToDoc(value?: string) {
     // &nbsp;, which the browser already renders as one paragraph, and appending
     // would leave the invisible text AND an empty paragraph behind. Elements that
     // carry no text but still produce a node keep the item non-empty.
-    if (!li.textContent?.trim() && !li.querySelector(LIST_ITEM_KEEPS_ITEM_FILLED)) {
+    if (holdsNothingRenderable(li)) {
       li.textContent = "";
       li.appendChild(document.createElement("p"));
     }
@@ -246,8 +257,10 @@ export function parseAllExtensionsToDoc(value?: string) {
 
   // Ensure empty blockquotes have at least one paragraph to satisfy ProseMirror schema.
   // Blockquotes with bare text are left alone — the editor wraps that text in a paragraph itself.
+  // The test is "renders as nothing", not "has no element child": a blockquote holding only an
+  // element the schema drops, such as `> <iframe src=x></iframe>`, is just as empty to ProseMirror.
   (Array.from(tree.querySelectorAll("blockquote")) as HTMLElement[]).forEach((bq) => {
-    if (!bq.firstElementChild && !bq.textContent?.trim()) {
+    if (holdsNothingRenderable(bq)) {
       bq.appendChild(document.createElement("p"));
     }
   });
@@ -263,7 +276,7 @@ export function parseAllExtensionsToDoc(value?: string) {
   // Appending to those would leave the invisible text AND an empty paragraph
   // behind, doubling the cell's height for no visible reason.
   (Array.from(tree.querySelectorAll("td, th")) as HTMLElement[]).forEach((cell) => {
-    if (!cell.firstElementChild && !cell.textContent?.trim()) {
+    if (holdsNothingRenderable(cell)) {
       cell.textContent = "";
       cell.appendChild(document.createElement("p"));
     }
