@@ -29,8 +29,11 @@ export function NavigationLocaleWatcherClient({ targetLanguage }: Props) {
 
   useEffect(() => {
     if (derivedLanguage && lang !== derivedLanguage) {
+      // setLang is the ordered pipeline: it loads the i18n resources and the
+      // dayjs table, switches i18next and only then publishes the state. A
+      // separate direct changeLanguage() here would re-render with a
+      // half-switched locale (#1669 review).
       setLang(derivedLanguage);
-      void i18next.changeLanguage(derivedLanguage);
     }
   }, [derivedLanguage, lang, setLang]);
 
@@ -45,7 +48,6 @@ export function NavigationLocaleWatcherClient({ targetLanguage }: Props) {
   useUnmount(() => {
     const currentLang = ls.get("current-language");
     setLang(currentLang);
-    i18next.changeLanguage(currentLang);
     i18next.off("languageChanged", localeChanged);
   });
 

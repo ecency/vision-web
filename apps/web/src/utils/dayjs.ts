@@ -57,7 +57,12 @@ const DAYJS_LOCALE_LOADERS: Record<string, () => Promise<unknown>> = {
  * old eager-import setup behaved. Dates rendered between the language change
  * and the table arriving stay in the previous locale for that one render.
  */
+let localeRequestId = 0;
+
 export async function setDayjsLocale(lang: string): Promise<void> {
+  // Stale-request guard: rapid language switches fetch chunks that can
+  // resolve out of order, and only the LATEST request may apply its locale.
+  const requestId = ++localeRequestId;
   const lower = lang.toLowerCase();
   const key = lower in DAYJS_LOCALE_LOADERS ? lower : lower.split("-")[0];
   const hasTable = key in DAYJS_LOCALE_LOADERS;
@@ -67,6 +72,9 @@ export async function setDayjsLocale(lang: string): Promise<void> {
     } catch {
       return; // chunk fetch failed: keep the current locale
     }
+  }
+  if (requestId !== localeRequestId) {
+    return; // a newer switch superseded this one while the chunk loaded
   }
   dayjs.locale(hasTable ? key : lang);
 }

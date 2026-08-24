@@ -1,6 +1,7 @@
 import Cookies from "js-cookie";
 import { AllFilter, ListStyle, Theme } from "@/enums";
 import * as ls from "@/utils/local-storage";
+import { setDayjsLocale } from "@/utils/dayjs";
 import { success } from "@/features/shared/feedback";
 import i18next from "i18next";
 import { loadLocale } from "@/features/i18n";
@@ -86,7 +87,10 @@ export function createGlobalActions(set: (state: Partial<State>) => void, getSta
     setLang: async (lang: string) => {
       ls.set("lang", lang);
       ls.set("current-language", lang);
-      await loadLocale(lang);
+      // Both loads complete BEFORE i18next switches and BEFORE the state
+      // publish below, so every render triggered by the change already has
+      // the translation resources AND the dayjs table (#1669 review).
+      await Promise.all([loadLocale(lang), setDayjsLocale(lang)]);
       await i18next.changeLanguage(lang);
       set({
         lang: lang ?? "en-US"

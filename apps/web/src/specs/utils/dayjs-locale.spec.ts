@@ -31,3 +31,16 @@ describe("dayjs locale loading (#1668)", () => {
     expect(dayjs.locale()).toBe("en");
   });
 });
+
+describe("dayjs locale race protection (#1669 review)", () => {
+  it("ignores an older request that resolves after a newer one", async () => {
+    await setDayjsLocale("es-ES"); // warm the es table so the newer call applies instantly
+    // Older request needs an uncached chunk (slow); newer hits the cache
+    // (instant). Without the stale-request guard the late-resolving older
+    // request would overwrite the newer selection with "ru".
+    const older = setDayjsLocale("ru-RU");
+    const newer = setDayjsLocale("es-ES");
+    await Promise.all([older, newer]);
+    expect(dayjs.locale()).toBe("es");
+  });
+});

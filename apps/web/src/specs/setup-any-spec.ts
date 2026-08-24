@@ -89,6 +89,7 @@ vi.mock("@ecency/sdk", async () => ({
   getBoostPlusPricesQueryOptions: vi.fn(() => ({ queryKey: ["boost-prices"], queryFn: vi.fn() })),
   getPointsQueryOptions: vi.fn(() => ({ queryKey: ["points"], queryFn: vi.fn() })),
   getProMembersQueryOptions: vi.fn(() => ({ queryKey: ["accounts", "pro-members"], queryFn: vi.fn() })),
+  getPostTipsQueryOptions: vi.fn((author: string, permlink: string) => ({ queryKey: ["posts", "tips", author, permlink], queryFn: vi.fn() })),
   getTrendingTagsQueryOptions: vi.fn((limit?: number) => ({
     queryKey: ["tags", "trending", limit],
     queryFn: vi.fn(() => []),

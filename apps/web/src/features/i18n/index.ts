@@ -173,6 +173,7 @@ export function initI18next(): Promise<void> {
     if (userLang !== "en-US") {
       await loadLocale(userLang);
     }
+    await setDayjsLocale(userLang);
     await i18n.changeLanguage(userLang);
   })();
 
