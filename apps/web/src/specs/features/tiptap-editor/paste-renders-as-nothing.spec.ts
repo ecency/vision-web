@@ -1,13 +1,6 @@
-import { vi } from "vitest";
-
-// Only the hive-post pass needs stubbing here: it is the one that reads
-// `el.innerText`, which jsdom does not implement, and it calls `.trim()` on it
-// unguarded, so a hive-post-shaped href throws in a spec instead of exercising
-// anything. Same re-mock pattern CLAUDE.md documents for `@/utils`.
-vi.mock("@/features/tiptap-editor/extensions", async () => ({
-  ...(await vi.importActual("@/features/tiptap-editor/extensions")),
-  HIVE_POST_PURE_REGEX: /$a^/
-}));
+// No mock needed here: none of these inputs contains an <a href>, so the
+// hive-post filter never runs and never touches el.innerText, which jsdom does
+// not implement.
 
 import { Editor, getSchema } from "@tiptap/core";
 import { simpleMarkdownToHTML } from "@ecency/render-helper";

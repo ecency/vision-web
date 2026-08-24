@@ -55,7 +55,7 @@ const RENDERS_AS_NODE = [
  * that is actually visible. Whitespace-only text is dropped, or unwrapping a list
  * that held nothing but spaces would leave them behind as a blank paragraph.
  */
-function keptOnUnwrap(el: Element) {
+function keptOnUnwrap(el: Element): ChildNode[] {
   return Array.from(el.childNodes).filter(
     (node) => node.nodeType === Node.ELEMENT_NODE || hasVisibleText(node.textContent)
   );
@@ -97,17 +97,17 @@ function unwrapTableStructure(el: Element): Node[] {
 const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g;
 
 /** True when the text holds something a reader would actually see. */
-function hasVisibleText(value?: string | null) {
+function hasVisibleText(value?: string | null): boolean {
   return !!value?.replace(ZERO_WIDTH, "").trim();
 }
 
 /** True when the element holds nothing the schema would render. */
-function holdsNothingRenderable(el: Element) {
+function holdsNothingRenderable(el: Element): boolean {
   return !hasVisibleText(el.textContent) && !el.querySelector(RENDERS_AS_NODE);
 }
 
 /** True when the item holds visible text ahead of the given child. */
-function hasTextBefore(child: Element) {
+function hasTextBefore(child: Element): boolean {
   let node: ChildNode | null = child.previousSibling;
   while (node) {
     if (hasVisibleText(node.textContent)) {
@@ -133,7 +133,7 @@ const CHIP_EXCLUDED = "a, code, pre";
  * Working on text nodes also drops the need for `el.innerText`, which does not
  * exist in jsdom and made this pass silently inert under test.
  */
-function chipTextNodes(root: HTMLElement, regex: RegExp, type: "mention" | "tag") {
+function chipTextNodes(root: HTMLElement, regex: RegExp, type: "mention" | "tag"): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const targets: Text[] = [];
 
@@ -179,7 +179,7 @@ function chipTextNodes(root: HTMLElement, regex: RegExp, type: "mention" | "tag"
   });
 }
 
-export function parseAllExtensionsToDoc(value?: string) {
+export function parseAllExtensionsToDoc(value?: string): string {
   const tree = document.createElement("body");
   tree.innerHTML = value ?? "";
 
