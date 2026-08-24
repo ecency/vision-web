@@ -50,6 +50,17 @@ const RENDERS_AS_NODE = [
   'span[data-type="tag"]'
 ].join(", ");
 
+/**
+ * What survives when an invalid container is unwrapped: its elements, plus text
+ * that is actually visible. Whitespace-only text is dropped, or unwrapping a list
+ * that held nothing but spaces would leave them behind as a blank paragraph.
+ */
+function keptOnUnwrap(el: Element) {
+  return Array.from(el.childNodes).filter(
+    (node) => node.nodeType === Node.ELEMENT_NODE || node.textContent?.trim()
+  );
+}
+
 /** True when the element holds nothing the schema would render. */
 function holdsNothingRenderable(el: Element) {
   return !el.textContent?.trim() && !el.querySelector(RENDERS_AS_NODE);
@@ -270,13 +281,15 @@ export function parseAllExtensionsToDoc(value?: string) {
   (Array.from(tree.querySelectorAll("ul, ol")) as HTMLElement[]).forEach((list) => {
     const hasItem = Array.from(list.children).some((child) => child.tagName === "LI");
     if (!hasItem) {
-      list.replaceWith(...Array.from(list.childNodes));
+      list.replaceWith(...keptOnUnwrap(list));
     }
   });
 
+  // Unwrap the table too rather than dropping it: a rowless one can still hold a
+  // caption, and that text is the author's.
   (Array.from(tree.querySelectorAll("table")) as HTMLElement[]).forEach((table) => {
     if (!table.querySelector("tr")) {
-      table.remove();
+      table.replaceWith(...keptOnUnwrap(table));
     }
   });
 

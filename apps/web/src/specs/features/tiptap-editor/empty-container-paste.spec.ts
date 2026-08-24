@@ -87,6 +87,36 @@ describe("pasting an empty list or a rowless table", () => {
     expect(pasteMarkdown(markdown)).toContain(kept);
   });
 
+  // Review: unwrapping used to carry whitespace-only text out of the container,
+  // which the editor then rendered as a blank paragraph.
+  it.each([
+    ["spaces", "<p>a</p><ul>   </ul><p>b</p>"],
+    ["a newline", "<p>a</p><ul>\n</ul><p>b</p>"]
+  ])(
+    "does not leave a blank paragraph behind for a list holding only %s",
+    (_l: string, html: string) => {
+      const doc = parseAllExtensionsToDoc(html);
+
+      expect(doc).toBe(html.replace(/<ul>[\s]*<\/ul>/, ""));
+    }
+  );
+
+  // Review: a rowless table can still carry a caption, and that text is the
+  // author's, so unwrap rather than drop.
+  it("keeps the caption of a rowless table", () => {
+    const doc = parseAllExtensionsToDoc("<table><caption>Quarterly totals</caption></table>");
+
+    expect(doc).toContain("Quarterly totals");
+  });
+
+  it("keeps a nested table whose outer table has no row of its own", () => {
+    const html =
+      "<table><caption><table><tbody><tr><td>x</td></tr></tbody></table></caption></table>";
+
+    expect(() => insert(html)).not.toThrow();
+    expect(insert(html)).toContain("x");
+  });
+
   it("keeps a list whose only item is empty", () => {
     expect(parseAllExtensionsToDoc("<ul><li></li></ul>")).toBe("<ul><li><p></p></li></ul>");
   });
