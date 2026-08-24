@@ -53,15 +53,15 @@ export function useUploadImageMutation() {
       onError: (e: Error) => {
         // Web-specific error handling for add
         if ("status" in e) {
-          error(i18next.t("editor-toolbar.image-error-network"));
+          error(i18next.t("editor-toolbar.image-error-network"), undefined, { error: e });
         } else if (e.message === "Token missed") {
-          error(i18next.t("g.image-error-cache"));
+          error(i18next.t("g.image-error-cache"), undefined, { error: e });
         } else if (e.message === "URL missed") {
-          error(i18next.t("editor-toolbar.image-error-url-missed"));
+          error(i18next.t("editor-toolbar.image-error-url-missed"), undefined, { error: e });
         } else {
-          error(i18next.t("editor-toolbar.image-error"));
+          error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
         }
-      },
+      }
     }
   );
 
@@ -104,21 +104,31 @@ export function useUploadImageMutation() {
       if ("status" in e) {
         const status = (e as { status?: number }).status;
         if (status === 413) {
-          error(i18next.t("editor-toolbar.image-error-size"));
+          error(i18next.t("editor-toolbar.image-error-size"), undefined, { error: e });
         } else if (status === 429) {
-          error("Too many upload requests. Please wait a moment and try again.");
+          error("Too many upload requests. Please wait a moment and try again.", undefined, {
+            error: e
+          });
         } else if (status === 503) {
-          error("Image upload service is temporarily unavailable. Please try again later.");
+          error(
+            "Image upload service is temporarily unavailable. Please try again later.",
+            undefined,
+            {
+              error: e
+            }
+          );
         } else if (status === 401 || status === 403) {
-          error("Authentication expired. Please refresh the page and try again.");
+          error("Authentication expired. Please refresh the page and try again.", undefined, {
+            error: e
+          });
         } else {
-          error(i18next.t("editor-toolbar.image-error"));
+          error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
         }
       } else if (e.message === "Token missed") {
-        error(i18next.t("g.image-error-cache"));
+        error(i18next.t("g.image-error-cache"), undefined, { error: e });
       } else {
-        error(i18next.t("editor-toolbar.image-error"));
+        error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
       }
-    },
+    }
   });
 }

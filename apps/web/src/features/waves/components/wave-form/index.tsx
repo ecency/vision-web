@@ -304,9 +304,9 @@ const WaveFormComponent = ({
             break;
           } catch (err) {
             if (axios.isAxiosError(err) && err.response?.status === 413) {
-              error(i18next.t("editor-toolbar.image-error-size"));
+              error(i18next.t("editor-toolbar.image-error-size"), undefined, { error: err });
             } else {
-              error(i18next.t("editor-toolbar.image-error"));
+              error(i18next.t("editor-toolbar.image-error"), undefined, { error: err });
             }
             break;
           }
