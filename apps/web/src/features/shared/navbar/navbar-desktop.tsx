@@ -3,6 +3,7 @@ import { UserAvatar } from "@/features/shared";
 import { AnonUserButtons } from "@/features/shared/navbar/anon-user-buttons";
 import { NavbarMainSidebar } from "@/features/shared/navbar/navbar-main-sidebar";
 import { NavbarMainSidebarToggle } from "@/features/shared/navbar/navbar-main-sidebar-toggle";
+import { NavbarSearchShell } from "@/features/shared/navbar/navbar-search-shell";
 import { NavbarNotificationsButton } from "@/features/shared/navbar/navbar-notifications-button";
 import { NavbarPerksButton } from "@/features/shared/navbar/navbar-perks-button";
 import { NavbarSide } from "@/features/shared/navbar/sidebar/navbar-side";
@@ -12,21 +13,12 @@ import { Tooltip } from "@ui/tooltip";
 import { classNameObject } from "@ui/util";
 import i18next from "i18next";
 import { useEffect, useState } from "react";
-import dynamic from "next/dynamic";
 import { NavbarTextMenu } from "./navbar-text-menu";
 import { useHydrated } from "@/api/queries";
 import { useMattermostUnread } from "@/features/chat/mattermost-api";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
-// The desktop search (input + suggester + transfer/bookmarks/drafts/gallery
-// modules) is heavy. The desktop navbar is `hidden md:flex` but still mounts on
-// mobile, so a static import shipped all of that into the mobile critical path
-// purely as waste. Load it as a separate chunk and only mount it once the
-// viewport is actually desktop-width — never on phones.
-const Search = dynamic(
-  () => import("@/features/shared/navbar/search").then((m) => ({ default: m.Search })),
-  { ssr: false }
-);
+import { Search } from "@/features/shared/navbar/navbar-search-dynamic";
 
 interface Props {
   step?: number;
@@ -99,8 +91,12 @@ export function NavbarDesktop({
         {(step !== 1 || transparentVerify) && (
           // Slot is always rendered so it reserves its flex space (no layout
           // shift when Search mounts). Only the heavy Search itself is gated on
-          // isDesktop, so its chunk never loads on mobile.
-          <div className="max-w-[400px] w-full">{isDesktop && <Search />}</div>
+          // isDesktop, so its chunk never loads on mobile; until it mounts the
+          // pixel-identical server-rendered shell keeps the input visible from
+          // the first paint (#1664).
+          <div className="max-w-[400px] w-full">
+            {isDesktop ? <Search /> : <NavbarSearchShell />}
+          </div>
         )}
         <div className="flex items-center ml-3 gap-3">
           <NavbarPerksButton />
