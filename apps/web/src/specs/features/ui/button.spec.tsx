@@ -234,3 +234,56 @@ describe("Button", () => {
     });
   });
 });
+
+describe("Button href prefetch behavior (#1666)", () => {
+  /*
+    A Button with href used to render a raw next/link, which fires an RSC
+    prefetch plus an origin render the moment it scrolls into view. The href
+    branch now renders IntentLink: no prefetch on render, prefetch on intent.
+  */
+  const makeRouter = () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    refresh: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    prefetch: vi.fn()
+  });
+
+  const renderWithRouter = async (ui: React.ReactElement, router: ReturnType<typeof makeRouter>) => {
+    const { AppRouterContext } = await import(
+      "next/dist/shared/lib/app-router-context.shared-runtime"
+    );
+    return render(
+      <AppRouterContext.Provider value={router as never}>{ui}</AppRouterContext.Provider>
+    );
+  };
+
+  it("does not prefetch on render", async () => {
+    const router = makeRouter();
+    await renderWithRouter(<Button href="/perks">Perks</Button>, router);
+    expect(router.prefetch).not.toHaveBeenCalled();
+  });
+
+  it("prefetches on hover intent", async () => {
+    const router = makeRouter();
+    await renderWithRouter(<Button href="/perks">Perks</Button>, router);
+    fireEvent.mouseEnter(screen.getByText("Perks").closest("a")!);
+    expect(router.prefetch).toHaveBeenCalledWith("/perks", expect.anything());
+  });
+});
+
+describe("Button href ref forwarding", () => {
+  it("forwards the ref through IntentLink to the anchor element", () => {
+    // React 19 passes ref as a prop through function components; IntentLink
+    // spreads it onto next/link, which attaches it to the rendered <a>.
+    const ref = React.createRef<HTMLAnchorElement>();
+    render(
+      <Button href="/perks" ref={ref as React.Ref<HTMLButtonElement | HTMLAnchorElement>}>
+        Perks
+      </Button>
+    );
+    expect(ref.current).toBeInstanceOf(HTMLAnchorElement);
+    expect(ref.current?.getAttribute("href")).toBe("/perks");
+  });
+});

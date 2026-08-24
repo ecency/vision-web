@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Fragment } from "react";
-import Link from "next/link";
+import { IntentLink } from "@/features/shared/intent-link";
 import i18next from "i18next";
 import i18n from "i18next";
 import { EcencyConfigManager } from "@/config";
@@ -50,7 +50,7 @@ export function NavbarTextMenu() {
     <div className="hidden sm:flex md:hidden xl:flex text-menu items-center gap-4 justify-center h-full md:mr-2">
       {visibleItems.map((item, i) => (
         <Fragment key={i}>
-          <Link
+          <IntentLink
             key={item.link}
             className={classNameObject({
               "text-sm font-semibold duration-300 hover:opacity-75 mt-0 px-2 py-0.5 rounded-2xl":
@@ -63,7 +63,7 @@ export function NavbarTextMenu() {
             href={item.link}
           >
             {item.label}
-          </Link>
+          </IntentLink>
           {i !== visibleItems.length - 1 && (
             <i
               key={"circle" + item.label}

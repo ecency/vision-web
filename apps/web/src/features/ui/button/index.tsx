@@ -2,7 +2,10 @@ import React, { forwardRef } from "react";
 import { ButtonProps } from "./props";
 import { classNameObject, useFilteredProps } from "@/features/ui/util";
 import { BUTTON_OUTLINE_STYLES, BUTTON_SIZES, BUTTON_STYLES } from "@/features/ui/button/styles";
-import Link from "next/link";
+// IntentLink prefetches on hover/touch/focus instead of viewport entry:
+// every visible href Button used to fire an RSC prefetch + origin render
+// just by scrolling into view (#1666).
+import { IntentLink } from "@/features/shared/intent-link";
 import { UilSpinner } from "@tooni/iconscout-unicons-react";
 
 export * from "./props";
@@ -86,10 +89,10 @@ const ForwardedButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, Button
     const children = props.children ? <div>{props.children}</div> : <></>;
 
     return "href" in props ? (
-      <Link {...nativeProps} className={className} ref={ref as any}>
+      <IntentLink {...nativeProps} className={className} ref={ref as React.Ref<HTMLAnchorElement>}>
         {props.isLoading && props.loadingText ? props.loadingText : children}
         {icon}
-      </Link>
+      </IntentLink>
     ) : (
       <button
         {...nativeProps}
