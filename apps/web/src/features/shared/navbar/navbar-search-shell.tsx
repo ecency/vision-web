@@ -16,7 +16,7 @@ import { SearchBox } from "../search-box";
  * placeholder so the server output is stable. The input is readOnly until
  * the live component takes over.
  */
-export function NavbarSearchShell() {
+export function NavbarSearchShell(): JSX.Element {
   return (
     <div className="suggestion relative">
       <SearchBox placeholder={i18next.t("search.placeholder")} value="" readOnly={true} />
