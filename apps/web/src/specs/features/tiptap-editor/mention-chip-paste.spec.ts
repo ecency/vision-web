@@ -1,12 +1,16 @@
 import { vi } from "vitest";
 
-vi.mock("@/features/tiptap-editor/extensions", () => ({
+// Use the production mention/tag regexes so this spec cannot drift from them.
+// The three link-based ones are stubbed to never match on purpose: their passes
+// read `el.innerText`, which jsdom does not implement, and the hive-post filter
+// calls `.trim()` on it unguarded, so a real hive-post href would throw here
+// rather than exercise anything. Same re-mock pattern CLAUDE.md documents for
+// `@/utils`.
+vi.mock("@/features/tiptap-editor/extensions", async () => ({
+  ...(await vi.importActual("@/features/tiptap-editor/extensions")),
   HIVE_POST_PURE_REGEX: /$a^/,
   LOOM_REGEX: /$a^/,
-  YOUTUBE_REGEX: /$a^/,
-  TAG_MENTION_PURE_REGEX: /#\w+/gi,
-  USER_MENTION_PURE_REGEX:
-    /@(?=[a-zA-Z][a-zA-Z0-9.-]{1,15}\b)[a-zA-Z][a-zA-Z0-9-]{2,}(?:\.[a-zA-Z][a-zA-Z0-9-]{2,})*\b/gi
+  YOUTUBE_REGEX: /$a^/
 }));
 
 import { simpleMarkdownToHTML } from "@ecency/render-helper";

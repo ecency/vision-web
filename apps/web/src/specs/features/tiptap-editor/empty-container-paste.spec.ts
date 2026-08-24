@@ -1,10 +1,16 @@
 import { vi } from "vitest";
 
-vi.mock("@/features/tiptap-editor/extensions", () => ({
+// Real mention/tag regexes; nothing here contains a mention or a tag, so they
+// are inert. The three link-based ones are stubbed to never match on purpose:
+// their passes
+// read `el.innerText`, which jsdom does not implement, and the hive-post filter
+// calls `.trim()` on it unguarded, so a real hive-post href would throw here
+// rather than exercise anything. Same re-mock pattern CLAUDE.md documents for
+// `@/utils`.
+vi.mock("@/features/tiptap-editor/extensions", async () => ({
+  ...(await vi.importActual("@/features/tiptap-editor/extensions")),
   HIVE_POST_PURE_REGEX: /$a^/,
   LOOM_REGEX: /$a^/,
-  TAG_MENTION_PURE_REGEX: /$a^/,
-  USER_MENTION_PURE_REGEX: /$a^/,
   YOUTUBE_REGEX: /$a^/
 }));
 
