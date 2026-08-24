@@ -64,17 +64,28 @@ export const viewport: Viewport = {
   ]
 };
 
+/*
+  Only Inter's latin subset is preloaded. The generated @font-face rules keep
+  every subset via unicode-range, so cyrillic text still upgrades to the
+  webfont after a fallback-first paint. The four preloaded woff2 (~126 KB,
+  priority High) were racing the last render-blocking stylesheet on the same
+  connection and delaying first paint (#1600).
+*/
 const inter = Inter({
-  subsets: ["latin", "cyrillic"],
+  subsets: ["latin"],
   variable: "--font-inter",
   display: "swap"
 });
 
+/* Lora only styles entry/publish serif text, all of it below or at the fold
+   edge; painting it with the fallback serif first is acceptable, so no
+   preload at all. */
 const lora = Lora({
-  subsets: ["latin", "cyrillic"],
+  subsets: ["latin"],
   weight: ["400", "700"],
   variable: "--font-lora",
-  display: "swap"
+  display: "swap",
+  preload: false
 });
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
