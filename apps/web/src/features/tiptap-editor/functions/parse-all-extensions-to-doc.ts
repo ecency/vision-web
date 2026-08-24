@@ -261,6 +261,25 @@ export function parseAllExtensionsToDoc(value?: string) {
     el.removeAttribute("data-align");
   });
 
+  // A list with no item, and a table with no row, are invalid the same way an empty
+  // item is: bulletList and orderedList are "listItem+", table is "tableRow+". The
+  // paste throws and the user loses everything, not just the empty container.
+  // Both render as nothing, so unwrap the list (which keeps a nested list that was
+  // its only child) and drop the table. This has to run BEFORE the item repair
+  // below so an item left empty here still gets its paragraph.
+  (Array.from(tree.querySelectorAll("ul, ol")) as HTMLElement[]).forEach((list) => {
+    const hasItem = Array.from(list.children).some((child) => child.tagName === "LI");
+    if (!hasItem) {
+      list.replaceWith(...Array.from(list.childNodes));
+    }
+  });
+
+  (Array.from(tree.querySelectorAll("table")) as HTMLElement[]).forEach((table) => {
+    if (!table.querySelector("tr")) {
+      table.remove();
+    }
+  });
+
   // ProseMirror's listItem schema is "paragraph block*", so an item's FIRST child
   // has to be a paragraph. Markdown routinely produces items that break that rule,
   // and insertContent throws for the whole paste rather than for the one bad item,
