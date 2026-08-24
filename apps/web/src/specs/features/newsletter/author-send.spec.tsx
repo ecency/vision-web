@@ -221,6 +221,16 @@ describe("SentIssues", () => {
     render(<SentIssues type="creator" target="alice" isSender />);
     await waitFor(() => expect(screen.getByText("newsletter.sent-issues-unavailable")).toBeInTheDocument());
   });
+
+  it("shows only the 3 most recent issues, keeping the card compact", async () => {
+    const issue = (n: number) => ({ id: String(n), cadence: "weekly", kind: "digest", period_start: `2026-08-0${n}`, subject: `Issue ${n}`, status: "sent", post_author: null, post_permlink: null, requested_by: null, created_at: `2026-08-0${n}T09:00:00Z`, delivered: n, bounced: 0, rejected: 0 });
+    fetchMock.mockReturnValue(json(200, { issues: [issue(4), issue(3), issue(2), issue(1)] }));
+    render(<SentIssues type="creator" target="alice" isSender />);
+    const list = await screen.findByRole("list", { name: "newsletter.sent-issues" });
+    expect(list.querySelectorAll("li")).toHaveLength(3);
+    expect(list).toHaveTextContent("Issue 4");
+    expect(list).not.toHaveTextContent("Issue 1");
+  });
 });
 
 describe("ComposeDigestDialog", () => {
