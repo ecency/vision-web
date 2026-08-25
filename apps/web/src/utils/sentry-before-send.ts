@@ -58,14 +58,16 @@ export function beforeSend(event: SentryErrorEvent): SentryErrorEvent | null {
   // boundaries and spawning a fresh error-level issue after every deploy. This is
   // the only hook that sees that path, so reclassify here too into the SAME shape
   // (so the events merge with the boundary-caught twin instead of grouping anew).
-  // isDeploySkewError matches on `stack`; beforeSend frames carry `filename`, so
-  // join them into a newline string. The webpack-<hash>.js frame requirement in
-  // the matcher keeps this off ordinary ".call of undefined" app bugs. We keep
-  // the event (at warning level) rather than dropping it so skew frequency and
-  // release-spread stay visible.
+  // isDeploySkewError matches on `stack`; beforeSend frames carry `filename` and
+  // `abs_path`, so join both into a newline string — the matcher's mixed-build
+  // rule needs the chunk URL's `?dpl=` query, and which of the two fields
+  // preserves it varies by SDK stack parser. The webpack-<hash>.js frame
+  // requirement in the matcher keeps this off ordinary ".call of undefined" app
+  // bugs. We keep the event (at warning level) rather than dropping it so skew
+  // frequency and release-spread stay visible.
   const skewCandidate = {
     message,
-    stack: frames.map((f) => f.filename ?? "").join("\n")
+    stack: frames.map((f) => `${f.filename ?? ""} ${f.abs_path ?? ""}`).join("\n")
   };
   if (isDeploySkewError(skewCandidate)) {
     event.level = "warning";

@@ -78,6 +78,88 @@ describe("isDeploySkewError", () => {
     expect(isDeploySkewError(undefined)).toBe(false);
     expect(isDeploySkewError(42)).toBe(false);
   });
+
+  describe("mixed-build frames (foreign ?dpl) — ECENCY-NEXT-1GNN", () => {
+    beforeEach(() => {
+      // The own build id derives from SENTRY_RELEASE exactly as next.config.js
+      // builds `deploymentId`: strip the app prefix, keep the first 8 hex.
+      vi.stubEnv("SENTRY_RELEASE", "ecency-next@9e6dd083a2a19c103c2bf813a8bd2a8dd3ad9a83");
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("matches an error executing a chunk from a DIFFERENT deployment", () => {
+      // The real crash shape: the foreign chunk LOADED fine (CDN cache), so no
+      // ChunkLoadError — it binds shifted module ids and a named export comes
+      // back undefined. No message grammar is required; the dpl mismatch alone
+      // proves a mixed build.
+      expect(
+        isDeploySkewError({
+          message: "(0 , y.useNewsletterEnabled) is not a function",
+          stack:
+            "TypeError: (0 , y.useNewsletterEnabled) is not a function\n" +
+            "    at x (https://ecency.com/_next/static/chunks/app/page-77d004dc07e923a7.js?dpl=67bf6584:1:7873)\n" +
+            "    at l9 (https://ecency.com/_next/static/chunks/fab31ea0-a826f330bcfe7eac.js?dpl=9e6dd083:1:51471)"
+        })
+      ).toBe(true);
+    });
+
+    it("does NOT match when every frame is from this build", () => {
+      expect(
+        isDeploySkewError({
+          message: "(0 , y.useNewsletterEnabled) is not a function",
+          stack:
+            "    at x (https://ecency.com/_next/static/chunks/app/page-abc123.js?dpl=9e6dd083:1:7873)\n" +
+            "    at l9 (https://ecency.com/_next/static/chunks/fab31ea0-a826f330bcfe7eac.js?dpl=9e6dd083:1:51471)"
+        })
+      ).toBe(false);
+    });
+
+    it("does NOT match a third-party script carrying its own dpl query", () => {
+      // A foreign script's dpl value is unrelated to our builds — classifying
+      // it as skew would burn the session's one guarded reload and bury the
+      // real error under the skew fingerprint.
+      expect(
+        isDeploySkewError({
+          message: "foreignSdk is not a function",
+          stack:
+            "    at init (https://cdn.example.com/analytics/sdk.js?dpl=deadbeef:1:100)\n" +
+            "    at l9 (https://ecency.com/_next/static/chunks/fab31ea0-a826f330bcfe7eac.js?dpl=9e6dd083:1:51471)"
+        })
+      ).toBe(false);
+    });
+
+    it("does NOT match a dpl value that isn't the 8-hex id our builds bake", () => {
+      expect(
+        isDeploySkewError({
+          message: "x is not a function",
+          stack:
+            "    at x (https://ecency.com/_next/static/chunks/app/page-abc123.js?dpl=67bf65841bc03b34:1:1)"
+        })
+      ).toBe(false);
+    });
+
+    it("does NOT match dpl-less frames, and is inert when SENTRY_RELEASE is unset", () => {
+      // No dpl in the stack (an app bug on a normal build) — never skew.
+      expect(
+        isDeploySkewError({
+          message: "x is not a function",
+          stack: "    at x (https://ecency.com/_next/static/chunks/app/page-abc123.js:1:7873)"
+        })
+      ).toBe(false);
+
+      // Local dev: no release inlined, so there is no own id to compare against.
+      vi.stubEnv("SENTRY_RELEASE", undefined);
+      expect(
+        isDeploySkewError({
+          message: "x is not a function",
+          stack: "    at x (https://ecency.com/_next/static/chunks/app/page-abc123.js?dpl=67bf6584:1:1)"
+        })
+      ).toBe(false);
+    });
+  });
 });
 
 describe("ServiceWorkerRecovery", () => {

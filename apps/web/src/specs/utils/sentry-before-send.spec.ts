@@ -1,11 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { beforeSend } from "@/utils/sentry-before-send";
 
 type Ev = Parameters<typeof beforeSend>[0];
 
 function makeEvent(
   value: string,
-  frames: { filename?: string; function?: string }[] = [],
+  frames: { filename?: string; function?: string; abs_path?: string }[] = [],
   opts: { type?: string; handled?: boolean } = {}
 ): Ev {
   return {
@@ -74,6 +74,51 @@ describe("beforeSend — deploy-skew reclassification", () => {
     expect(out).not.toBeNull();
     expect(out!.level).toBeUndefined();
     expect(out!.fingerprint).toBeUndefined();
+  });
+
+  describe("mixed-build frames (foreign ?dpl) — ECENCY-NEXT-1GNN", () => {
+    const OWN_RELEASE = "ecency-next@9e6dd083a2a19c103c2bf813a8bd2a8dd3ad9a83";
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("reclassifies a chunk executing from a DIFFERENT deployment", () => {
+      vi.stubEnv("SENTRY_RELEASE", OWN_RELEASE);
+      // The chunk loaded fine, so the symptom is a missing export in an app
+      // frame — no webpack frame, no chunk-load message. Only the foreign dpl
+      // in the frame URL gives it away.
+      const ev = makeEvent("(0 , y.useNewsletterEnabled) is not a function", [
+        { filename: "app:///_next/static/chunks/app/page-77d004dc07e923a7.js?dpl=67bf6584" }
+      ]);
+      const out = beforeSend(ev);
+      expect(out).not.toBeNull();
+      expect(out!.level).toBe("warning");
+      expect(out!.tags?.deploy_skew).toBe("true");
+      expect(out!.fingerprint).toEqual(["deploy-skew-auto-recovered"]);
+    });
+
+    it("reads the dpl from abs_path when filename lost the query", () => {
+      vi.stubEnv("SENTRY_RELEASE", OWN_RELEASE);
+      const ev = makeEvent("(0 , y.useNewsletterEnabled) is not a function", [
+        {
+          filename: "app:///_next/static/chunks/app/page-77d004dc07e923a7.js",
+          abs_path: "https://ecency.com/_next/static/chunks/app/page-77d004dc07e923a7.js?dpl=67bf6584"
+        }
+      ]);
+      expect(beforeSend(ev)!.fingerprint).toEqual(["deploy-skew-auto-recovered"]);
+    });
+
+    it("does NOT reclassify a missing-export bug from this build's own chunks", () => {
+      vi.stubEnv("SENTRY_RELEASE", OWN_RELEASE);
+      const ev = makeEvent("(0 , y.someExport) is not a function", [
+        { filename: "app:///_next/static/chunks/app/page-abc123.js?dpl=9e6dd083" }
+      ]);
+      const out = beforeSend(ev);
+      expect(out).not.toBeNull();
+      expect(out!.level).toBeUndefined();
+      expect(out!.fingerprint).toBeUndefined();
+    });
   });
 });
 
