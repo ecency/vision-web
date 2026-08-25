@@ -99,6 +99,24 @@ vi.mock("@ecency/sdk", async () => ({
   // Real pure impl (no deps) so pro-config's isProMember + its spec behave like production.
   proMembersSet: (members?: string[]) =>
     new Set((members ?? []).map((m: string) => m.toLowerCase())),
+  // The newsletter ERROR CLASSES are handed out for real (from source, same
+  // reason as moderation above): the web wrappers re-export them and dialogs
+  // branch on instanceof + .status, which only works when everyone holds the
+  // SAME class. The request functions are stubs; newsletter specs give them
+  // per-test implementations and assert delegation, while the wire format
+  // stays pinned by the SDK's own api.spec.ts.
+  ...(await vi.importActual<Record<string, unknown>>(
+    "../../../../packages/sdk/src/modules/newsletter/errors"
+  )),
+  subscribeDigestRequest: vi.fn(),
+  getDigestSubscriptionsRequest: vi.fn(),
+  leaveDigestRequest: vi.fn(),
+  unsubscribeAllDigestsRequest: vi.fn(),
+  getNewsletterSenderRequest: vi.fn(),
+  getNewsletterIssuesRequest: vi.fn(),
+  getNewsletterPostsRequest: vi.fn(),
+  previewNewsletterSendRequest: vi.fn(),
+  sendNewsletterIssueRequest: vi.fn(),
   getQuestsQueryOptions: vi.fn((username?: string) => ({
     queryKey: ["quests", "status", username],
     queryFn: vi.fn(),

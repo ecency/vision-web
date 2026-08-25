@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NewsletterApiError, NewsletterSendRefusedError } from "./errors";
 import {
-  NewsletterApiError,
-  NewsletterSendRefusedError,
   getDigestSubscriptionsRequest,
   getNewsletterIssuesRequest,
   getNewsletterPostsRequest,

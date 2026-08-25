@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
 import type { ReactElement } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { getDigestSubscriptionsRequest, subscribeDigestRequest, unsubscribeAllDigestsRequest } from "@ecency/sdk";
 import { EmailDigestsSettings } from "@/app/(dynamicPages)/profile/[username]/settings/_email-digests";
 import { digestSubscriptionsKey } from "@/features/newsletter";
 import {
@@ -26,8 +27,10 @@ vi.mock("@/utils", async () => ({
   ensureValidToken: vi.fn(async () => "mock-token")
 }));
 
-const fetchMock = vi.fn();
-const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: async () => body } as Response);
+// Transport is the SDK's (pinned in its api.spec.ts); this file pins the
+// settings surface: what is asked of the SDK client and what the cache keeps.
+const subscribeMock = vi.mocked(subscribeDigestRequest);
+const unsubscribeAllMock = vi.mocked(unsubscribeAllDigestsRequest);
 
 const A1 = { id: "a1", email: "alice@example.com", account: "alice", type: "community", target: "hive-1", cadence: "weekly", status: "active", created_at: "" };
 const A2 = { id: "a2", email: "alice@example.com", account: "alice", type: "creator", target: "good-karma", cadence: "weekly", status: "active", created_at: "" };
@@ -43,8 +46,11 @@ function renderConfigured(ui: ReactElement, options?: Parameters<typeof renderWi
 describe("EmailDigestsSettings", () => {
   beforeEach(() => {
     setupModalContainers();
-    vi.stubGlobal("fetch", fetchMock);
-    fetchMock.mockReset();
+    subscribeMock.mockReset();
+    unsubscribeAllMock.mockReset();
+    // The list refetch after a mutation must resolve, or the query errors.
+    vi.mocked(getDigestSubscriptionsRequest).mockReset();
+    vi.mocked(getDigestSubscriptionsRequest).mockResolvedValue([]);
     vi.mocked(useActiveAccount).mockReturnValue({
       activeUser: mockActiveUser({ username: "alice" }),
       username: "alice",
@@ -59,21 +65,20 @@ describe("EmailDigestsSettings", () => {
   });
   afterEach(() => {
     cleanupModalContainers();
-    vi.unstubAllGlobals();
   });
 
   it("changes the cadence of the OWN digest through the service like any other", async () => {
     const OWN = { id: "o1", email: "alice@example.com", account: "alice", type: "own", target: "alice", cadence: "weekly", status: "active", created_at: "" };
     const client = createTestQueryClient();
     client.setQueryData(digestSubscriptionsKey("alice"), [OWN]);
-    fetchMock.mockImplementation((url: string) =>
-      url === "/api/newsletter/subscribe" ? ok({ status: "active", created: false, subscription: { ...OWN, cadence: "monthly" } }) : ok({ subscriptions: [OWN] })
-    );
+    subscribeMock.mockResolvedValue({ status: "active", created: false, subscription: { ...OWN, cadence: "monthly" } } as never);
     renderConfigured(<EmailDigestsSettings />, { queryClient: client });
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "monthly" } });
     await waitFor(() => {
-      const call = fetchMock.mock.calls.find((c) => c[0] === "/api/newsletter/subscribe");
-      expect(JSON.parse(call![1].body)).toMatchObject({ type: "own", target: "alice", cadence: "monthly", source: "settings", code: "mock-token" });
+      expect(subscribeMock).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "own", target: "alice", cadence: "monthly", source: "settings" }),
+        "mock-token"
+      );
     });
   });
 
@@ -88,9 +93,7 @@ describe("EmailDigestsSettings", () => {
   it("stopping all mail to ONE address keeps the account's subscriptions on other addresses visible", async () => {
     const client = createTestQueryClient();
     client.setQueryData(digestSubscriptionsKey("alice"), [A1, A2, B1]);
-    fetchMock.mockImplementation((url: string) =>
-      url === "/api/newsletter/unsubscribe-all" ? ok({ suppressed: true }) : ok({ subscriptions: [A1, A2, B1] })
-    );
+    unsubscribeAllMock.mockResolvedValue(undefined as never);
     renderConfigured(<EmailDigestsSettings />, { queryClient: client });
 
     // One "stop all" per address; press the one for the first address and confirm.
@@ -100,8 +103,7 @@ describe("EmailDigestsSettings", () => {
     fireEvent.click(await screen.findByRole("button", { name: "newsletter.stop-all-ok" }));
 
     await waitFor(() => {
-      const call = fetchMock.mock.calls.find((c) => c[0] === "/api/newsletter/unsubscribe-all");
-      expect(JSON.parse(call![1].body)).toMatchObject({ email: "alice@example.com", code: "mock-token" });
+      expect(unsubscribeAllMock).toHaveBeenCalledWith("alice@example.com", "mock-token");
     });
     // The other address's subscription is still there; only alice@ rows went.
     await waitFor(() => expect(client.getQueryData(digestSubscriptionsKey("alice"))).toEqual([B1]));

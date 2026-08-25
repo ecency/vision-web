@@ -9740,6 +9740,31 @@ declare function getContentModerationReason(content: ModerationCandidate | undef
 /** True if the post body contains an outbound (non-Hive, non-image) link. */
 declare function hasExternalLink(body: string | undefined | null): boolean;
 
+/**
+ * Error types for the newsletter client, in their own dependency-free file so
+ * test setups can hand out the REAL classes (instanceof must hold across the
+ * app) without pulling the SDK config chain along.
+ */
+declare class NewsletterApiError extends Error {
+    readonly status: number;
+    readonly data?: unknown | undefined;
+    constructor(message: string, status: number, data?: unknown | undefined);
+}
+/** A refused send, carrying the relay's routing `code` (already_sent, suspended, ...). */
+declare class NewsletterSendRefusedError extends NewsletterApiError {
+    readonly code?: string | undefined;
+    readonly taken?: Array<{
+        cadence: string;
+        period: string;
+        kind: string;
+    }> | undefined;
+    constructor(message: string, status: number, code?: string | undefined, taken?: Array<{
+        cadence: string;
+        period: string;
+        kind: string;
+    }> | undefined, data?: unknown);
+}
+
 type DigestType = "own" | "community" | "creator" | "site";
 type DigestCadence = "weekly" | "monthly";
 type DigestStatus = "active" | "pending_confirmation" | "suppressed" | "ended";
@@ -9874,42 +9899,6 @@ interface NewsletterSenderStanding {
     };
 }
 
-/**
- * Client for the newsletter relay at {privateApiHost}/api/newsletter/*
- * (Next.js route handlers on ecency.com, which alone hold the news-service
- * credentials — clients never talk to the service directly).
- *
- * Identity is the HiveSigner access token, passed here as the explicit `code`
- * argument. Transport mirrors the deployed web client per route: subscribe and
- * unsubscribe-all carry it in the POST body as `code` (the subscribe route
- * authenticates ONLY from the body — a header alone is treated as anonymous);
- * every other call, the send/preview POSTs included, uses the `X-HS-Token`
- * header. The relay verifies it upstream and derives the account from it, so
- * a stale token 401s — callers are responsible for supplying a fresh one
- * (web: ensureValidToken; mobile: the token-refresh wrapper).
- *
- * The email-token confirm/unsubscribe flows are deliberately absent: those
- * links land on web pages.
- */
-declare class NewsletterApiError extends Error {
-    readonly status: number;
-    readonly data?: unknown | undefined;
-    constructor(message: string, status: number, data?: unknown | undefined);
-}
-/** A refused send, carrying the relay's routing `code` (already_sent, suspended, ...). */
-declare class NewsletterSendRefusedError extends NewsletterApiError {
-    readonly code?: string | undefined;
-    readonly taken?: Array<{
-        cadence: string;
-        period: string;
-        kind: string;
-    }> | undefined;
-    constructor(message: string, status: number, code?: string | undefined, taken?: Array<{
-        cadence: string;
-        period: string;
-        kind: string;
-    }> | undefined, data?: unknown);
-}
 /**
  * Subscribe an address to a digest. Authenticated callers (code given) skip
  * the captcha; anonymous callers must supply `captchaToken` in the input and

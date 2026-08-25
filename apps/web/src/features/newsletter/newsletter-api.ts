@@ -1,26 +1,27 @@
 import { ensureValidToken } from "@/utils";
+import {
+  NewsletterApiError,
+  getDigestSubscriptionsRequest,
+  leaveDigestRequest,
+  subscribeDigestRequest,
+  unsubscribeAllDigestsRequest,
+} from "@ecency/sdk";
 import type { DigestSubscription, SubscribeInput, SubscribeResult } from "./types";
 
 /**
- * Browser-side client for the newsletter route handlers. Everything goes through
- * /api/newsletter/*, never to the newsletter service directly.
+ * Web wrapper over the SDK newsletter client (which owns the transport,
+ * shared with mobile). What stays here is web-specific: identity for
+ * logged-in calls is sourced with ensureValidToken(), which AWAITS a refresh
+ * when the stored token has expired; getAccessToken() only kicks off a
+ * background refresh and hands back the expired token, and the first request
+ * after a long absence then 401s and leaves the subscriptions query in an
+ * error state.
  *
- * Identity for logged-in calls is the HiveSigner access token, sent as `code` in a POST
- * body or as X-HS-Token on GET/DELETE, exactly as the hosting and 3Speak proxies do; the
- * route handler verifies it upstream and derives the account from it. The token is
- * obtained with ensureValidToken(), which AWAITS a refresh when the stored one has
- * expired; getAccessToken() only kicks off a background refresh and hands back the
- * expired token, and the first request after a long absence then 401s and leaves the
- * subscriptions query in an error state.
+ * The email-token confirm/unsubscribe flows below stay web-local relative
+ * fetches: their pages exist only on the web origin and the SDK deliberately
+ * does not carry them.
  */
-export class NewsletterApiError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number
-  ) {
-    super(message);
-  }
-}
+export { NewsletterApiError };
 
 async function parse<T>(res: Response): Promise<T> {
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
@@ -28,44 +29,22 @@ async function parse<T>(res: Response): Promise<T> {
   return data;
 }
 
-async function authHeaders(username?: string | null): Promise<Record<string, string>> {
-  const token = username ? await ensureValidToken(username) : null;
-  return token ? { "X-HS-Token": token } : {};
-}
-
 export const newsletterApi = {
   async subscribe(input: SubscribeInput, username?: string | null): Promise<SubscribeResult> {
     const code = username ? await ensureValidToken(username) : null;
-    const res = await fetch("/api/newsletter/subscribe", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...input, ...(code ? { code } : {}) })
-    });
-    return parse<SubscribeResult>(res);
+    return subscribeDigestRequest(input, code ?? undefined);
   },
 
   async list(username: string): Promise<DigestSubscription[]> {
-    const res = await fetch("/api/newsletter/subscriptions", { headers: await authHeaders(username) });
-    const data = await parse<{ subscriptions: DigestSubscription[] }>(res);
-    return data.subscriptions ?? [];
+    return getDigestSubscriptionsRequest((await ensureValidToken(username)) ?? "");
   },
 
   async leave(id: string, username: string): Promise<void> {
-    const res = await fetch(`/api/newsletter/subscriptions/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-      headers: await authHeaders(username)
-    });
-    await parse<{ left: boolean }>(res);
+    await leaveDigestRequest(id, (await ensureValidToken(username)) ?? "");
   },
 
   async unsubscribeAll(email: string, username: string): Promise<void> {
-    const code = await ensureValidToken(username);
-    const res = await fetch("/api/newsletter/unsubscribe-all", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, code })
-    });
-    await parse<{ suppressed: boolean }>(res);
+    await unsubscribeAllDigestsRequest(email, (await ensureValidToken(username)) ?? "");
   },
 
   // Link-driven flows. GET inspects, POST acts.

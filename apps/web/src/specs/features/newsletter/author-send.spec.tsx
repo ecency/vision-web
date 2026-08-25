@@ -7,6 +7,14 @@ import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
 import { AuthorSendDialog, candidatesKey, communityDigestRoles, ComposeDigestButton, ComposeDigestDialog, sendPreviewKey, type SentIssue, SentIssues, useAuthorSendTarget } from "@/features/newsletter";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import {
+  NewsletterApiError,
+  NewsletterSendRefusedError,
+  getNewsletterIssuesRequest,
+  getNewsletterPostsRequest,
+  previewNewsletterSendRequest,
+  sendNewsletterIssueRequest
+} from "@ecency/sdk";
+import {
   cleanupModalContainers,
   createTestQueryClient,
   mockActiveUser,
@@ -29,8 +37,18 @@ vi.mock("@/utils", async () => ({
   ensureValidToken: vi.fn(async () => "mock-token")
 }));
 
-const fetchMock = vi.fn();
-const json = (status: number, body: unknown) => Promise.resolve({ ok: status < 400, status, json: async () => body } as Response);
+// Transport is the SDK's (pinned in its own api.spec.ts); these specs pin the
+// dialogs: what they ask of the SDK client and how each outcome renders.
+const previewMock = vi.mocked(previewNewsletterSendRequest);
+const sendMock = vi.mocked(sendNewsletterIssueRequest);
+const issuesMock = vi.mocked(getNewsletterIssuesRequest);
+const postsMock = vi.mocked(getNewsletterPostsRequest);
+function resetNewsletterMocks() {
+  previewMock.mockReset();
+  sendMock.mockReset();
+  issuesMock.mockReset();
+  postsMock.mockReset();
+}
 
 function loggedIn(username: string | null) {
   vi.mocked(useActiveAccount).mockReturnValue({
@@ -111,20 +129,17 @@ describe("useAuthorSendTarget", () => {
 describe("AuthorSendDialog", () => {
   beforeEach(() => {
     setupModalContainers();
-    vi.stubGlobal("fetch", fetchMock);
-    fetchMock.mockReset();
+    resetNewsletterMocks();
     flags.newsletter = true;
     loggedIn("alice");
   });
   afterEach(() => {
     cleanupModalContainers();
-    vi.unstubAllGlobals();
   });
 
   it("previews, states the readers and the one-per-period rule, sends, and reports what went out", async () => {
-    fetchMock.mockImplementation((url: string) =>
-      url.endsWith("/preview") ? json(200, preview()) : json(201, { issues: [{ issueId: "i1", cadence: "weekly", period: "2026-08-17", send: { recipients: 12, sent: 12, pending: 0 } }, { issueId: "i2", cadence: "monthly", period: "2026-08-01", send: { recipients: 3, sent: 3, pending: 0 } }] })
-    );
+    previewMock.mockResolvedValue(preview() as never);
+    sendMock.mockResolvedValue({ issues: [{ issueId: "i1", cadence: "weekly", period: "2026-08-17", send: { recipients: 12, sent: 12, pending: 0 } }, { issueId: "i2", cadence: "monthly", period: "2026-08-01", send: { recipients: 3, sent: 3, pending: 0 } }] } as never);
     render(<AuthorSendDialog target={target} author="alice" permlink="hello" show onHide={() => {}} />);
     await waitFor(() => expect(screen.getByText("Hello world")).toBeInTheDocument());
     expect(screen.getByText("newsletter.send-readers")).toBeInTheDocument();
@@ -138,12 +153,13 @@ describe("AuthorSendDialog", () => {
   });
 
   it("when this period's issue already went out for every cadence, says so and offers no send; a partial take-over is stated and still sends", async () => {
-    fetchMock.mockImplementation(() => json(200, preview({ alreadySent: ["weekly", "monthly"] })));
+    previewMock.mockResolvedValue(preview({ alreadySent: ["weekly", "monthly"] }) as never);
     const { unmount } = render(<AuthorSendDialog target={target} author="alice" permlink="hello" show onHide={() => {}} />);
     await waitFor(() => expect(screen.getByText("newsletter.send-period-taken-all")).toBeInTheDocument());
     expect(screen.getByText("newsletter.send-now").closest("button")).toBeDisabled();
     unmount();
-    fetchMock.mockImplementation((url: string) => (url.endsWith("/preview") ? json(200, preview({ alreadySent: ["weekly"] })) : json(201, { issues: [{ issueId: "i2", cadence: "monthly", period: "2026-08-01", send: { recipients: 3, sent: 3, pending: 0 } }] })));
+    previewMock.mockResolvedValue(preview({ alreadySent: ["weekly"] }) as never);
+    sendMock.mockResolvedValue({ issues: [{ issueId: "i2", cadence: "monthly", period: "2026-08-01", send: { recipients: 3, sent: 3, pending: 0 } }] } as never);
     render(<AuthorSendDialog target={target} author="alice" permlink="hello" show onHide={() => {}} />);
     await waitFor(() => expect(screen.getByText("newsletter.send-period-taken-some")).toBeInTheDocument());
     expect(screen.getByText("newsletter.send-now").closest("button")).not.toBeDisabled();
@@ -159,7 +175,10 @@ describe("AuthorSendDialog", () => {
       [503, { error: "not configured" }, "newsletter.error-unavailable"]
     ];
     for (const [status, body, key] of cases) {
-      fetchMock.mockImplementation((url: string) => (url.endsWith("/preview") ? json(200, preview()) : json(status, body)));
+      previewMock.mockResolvedValue(preview() as never);
+      sendMock.mockRejectedValue(
+        new NewsletterSendRefusedError(String(body.error), status, body.code as string | undefined, body.taken as never)
+      );
       const { unmount } = render(<AuthorSendDialog target={target} author="alice" permlink="hello" show onHide={() => {}} />);
       await waitFor(() => expect(screen.getByText("newsletter.send-now")).toBeInTheDocument());
       fireEvent.click(screen.getByText("newsletter.send-now"));
@@ -173,7 +192,7 @@ describe("AuthorSendDialog", () => {
       unmount();
     }
     // A refused preview shows the reason too, and no send button.
-    fetchMock.mockImplementation(() => json(422, { error: "the post is not by this creator", code: "post_refused" }));
+    previewMock.mockRejectedValue(new NewsletterSendRefusedError("the post is not by this creator", 422, "post_refused"));
     render(<AuthorSendDialog target={target} author="alice" permlink="hello" show onHide={() => {}} />);
     await waitFor(() => expect(screen.getByText("newsletter.send-post-refused")).toBeInTheDocument());
     expect(screen.queryByText("newsletter.send-now")).toBeNull();
@@ -182,22 +201,16 @@ describe("AuthorSendDialog", () => {
 
 describe("SentIssues", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", fetchMock);
-    fetchMock.mockReset();
+    resetNewsletterMocks();
     flags.newsletter = true;
     loggedIn("alice");
   });
-  afterEach(() => vi.unstubAllGlobals());
 
   it("lists the sender's issues with what became of them; nothing for a non-sender, nothing when empty", async () => {
-    fetchMock.mockReturnValue(
-      json(200, {
-        issues: [
-          { id: "1", cadence: "weekly", kind: "post", period_start: "2026-08-17", subject: "Hello world", status: "sent", post_author: "alice", post_permlink: "hello", requested_by: "alice", created_at: "2026-08-19T10:00:00Z", delivered: 12, bounced: 1, rejected: 0 },
-          { id: "2", cadence: "weekly", kind: "digest", period_start: "2026-08-10", subject: "@alice's weekly digest: 3 new posts", status: "sent", post_author: null, post_permlink: null, requested_by: null, created_at: "2026-08-17T09:00:00Z", delivered: 11, bounced: 0, rejected: 1 }
-        ]
-      })
-    );
+    issuesMock.mockResolvedValue([
+      { id: "1", cadence: "weekly", kind: "post", period_start: "2026-08-17", subject: "Hello world", status: "sent", post_author: "alice", post_permlink: "hello", requested_by: "alice", created_at: "2026-08-19T10:00:00Z", delivered: 12, bounced: 1, rejected: 0 },
+      { id: "2", cadence: "weekly", kind: "digest", period_start: "2026-08-10", subject: "@alice's weekly digest: 3 new posts", status: "sent", post_author: null, post_permlink: null, requested_by: null, created_at: "2026-08-17T09:00:00Z", delivered: 11, bounced: 0, rejected: 1 }
+    ] as never);
     render(<SentIssues type="creator" target="alice" isSender />);
     const list = await screen.findByRole("list", { name: "newsletter.sent-issues" });
     expect(list).toHaveTextContent("Hello world");
@@ -206,25 +219,26 @@ describe("SentIssues", () => {
     // Bounced and rejected are different outcomes and are shown as such.
     expect(list).toHaveTextContent("newsletter.sent-issue-stats");
     expect(screen.getAllByText(/newsletter.sent-issue-rejected/)).toHaveLength(1);
-    fetchMock.mockReset();
+    issuesMock.mockReset();
     const { container } = render(<SentIssues type="creator" target="alice" isSender={false} />);
     await new Promise((r) => setTimeout(r, 30));
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(issuesMock).not.toHaveBeenCalled();
     expect(container.textContent).toBe("");
-    fetchMock.mockReturnValue(json(200, { issues: [] }));
+    issuesMock.mockResolvedValue([]);
     const { container: c2, unmount } = render(<SentIssues type="community" target="hive-125125" isSender />);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(issuesMock).toHaveBeenCalledTimes(1));
     expect(c2.textContent).toBe("");
     unmount();
     // A failed load is not "nothing sent yet".
-    fetchMock.mockReturnValue(json(503, { error: "down" }));
+    issuesMock.mockReset();
+    issuesMock.mockRejectedValue(new NewsletterApiError("down", 503));
     render(<SentIssues type="creator" target="alice" isSender />);
     await waitFor(() => expect(screen.getByText("newsletter.sent-issues-unavailable")).toBeInTheDocument());
   });
 
   it("shows only the 3 most recent issues, keeping the card compact", async () => {
     const issue = (n: number): SentIssue => ({ id: String(n), cadence: "weekly", kind: "digest", period_start: `2026-08-0${n}`, subject: `Issue ${n}`, status: "sent", post_author: null, post_permlink: null, requested_by: null, created_at: `2026-08-0${n}T09:00:00Z`, delivered: n, bounced: 0, rejected: 0 });
-    fetchMock.mockReturnValue(json(200, { issues: [issue(4), issue(3), issue(2), issue(1)] }));
+    issuesMock.mockResolvedValue([issue(4), issue(3), issue(2), issue(1)] as never);
     render(<SentIssues type="creator" target="alice" isSender />);
     const list = await screen.findByRole("list", { name: "newsletter.sent-issues" });
     expect(list.querySelectorAll("li")).toHaveLength(3);
@@ -243,22 +257,18 @@ describe("ComposeDigestDialog", () => {
   ];
   beforeEach(() => {
     setupModalContainers();
-    vi.stubGlobal("fetch", fetchMock);
-    fetchMock.mockReset();
+    resetNewsletterMocks();
     flags.newsletter = true;
     loggedIn("alice");
   });
   afterEach(() => {
     cleanupModalContainers();
-    vi.unstubAllGlobals();
   });
 
   it("picks 2..10 posts in the sender's order, takes subject and intro, then hands the composition to the send flow", async () => {
-    fetchMock.mockImplementation((url: string) => {
-      if (url.startsWith("/api/newsletter/posts")) return json(200, { posts: candidates });
-      if (url.endsWith("/preview")) return json(200, preview({ subject: "Two things", posts: [{ author: "alice", permlink: "two", title: "Two" }, { author: "alice", permlink: "one", title: "One" }] }));
-      return json(201, { issues: [{ issueId: "i1", cadence: "weekly", period: "2026-08-17", send: { recipients: 12, sent: 12, pending: 0 } }] });
-    });
+    postsMock.mockResolvedValue(candidates as never);
+    previewMock.mockResolvedValue(preview({ subject: "Two things", posts: [{ author: "alice", permlink: "two", title: "Two" }, { author: "alice", permlink: "one", title: "One" }] }) as never);
+    sendMock.mockResolvedValue({ issues: [{ issueId: "i1", cadence: "weekly", period: "2026-08-17", send: { recipients: 12, sent: 12, pending: 0 } }] } as never);
     render(<ComposeDigestDialog target={target} show onHide={() => {}} />);
     await screen.findByRole("list", { name: "newsletter.compose-pick" });
     expect(screen.getByText(/newsletter.compose-featured/)).toBeInTheDocument();
@@ -273,14 +283,16 @@ describe("ComposeDigestDialog", () => {
     fireEvent.click(cont());
     // The send flow previews the composition: picked order (Two, then One), subject and intro travel with it.
     await waitFor(() => expect(screen.getByText("Two things")).toBeInTheDocument());
-    const previewCall = fetchMock.mock.calls.find((c) => String(c[0]).endsWith("/preview"))!;
-    expect(JSON.parse(previewCall[1].body)).toEqual({
-      type: "creator",
-      target: "alice",
-      posts: [{ author: "alice", permlink: "two" }, { author: "alice", permlink: "one" }],
-      subject: "Two things",
-      intro: "Hi all"
-    });
+    expect(previewMock).toHaveBeenCalledWith(
+      {
+        type: "creator",
+        target: "alice",
+        posts: [{ author: "alice", permlink: "two" }, { author: "alice", permlink: "one" }],
+        subject: "Two things",
+        intro: "Hi all"
+      },
+      "mock-token"
+    );
     // Back returns to the picker with the choices kept.
     fireEvent.click(screen.getByText("g.back"));
     await screen.findByRole("list", { name: "newsletter.compose-pick" });
@@ -292,10 +304,8 @@ describe("ComposeDigestDialog", () => {
   });
 
   it("a refused preview offers the way back to the picker; the picks and text survive", async () => {
-    fetchMock.mockImplementation((url: string) => {
-      if (url.startsWith("/api/newsletter/posts")) return json(200, { posts: candidates });
-      return json(422, { error: "@alice/two: the post is tagged nsfw", code: "post_refused" });
-    });
+    postsMock.mockResolvedValue(candidates as never);
+    previewMock.mockRejectedValue(new NewsletterSendRefusedError("@alice/two: the post is tagged nsfw", 422, "post_refused"));
     render(<ComposeDigestDialog target={target} show onHide={() => {}} />);
     await screen.findByRole("list", { name: "newsletter.compose-pick" });
     fireEvent.click(screen.getByLabelText("Two"));
@@ -316,7 +326,7 @@ describe("ComposeDigestDialog", () => {
   });
 
   it("picks that no longer resolve to a candidate do not count towards the minimum", async () => {
-    fetchMock.mockImplementation(() => json(200, { posts: candidates }));
+    postsMock.mockResolvedValue(candidates as never);
     const client = createTestQueryClient();
     render(<ComposeDigestDialog target={target} show onHide={() => {}} />, client);
     await screen.findByRole("list", { name: "newsletter.compose-pick" });
@@ -330,11 +340,9 @@ describe("ComposeDigestDialog", () => {
   });
 
   it("a sent composition invalidates the candidates, so the featured marks refresh on the next open", async () => {
-    fetchMock.mockImplementation((url: string) => {
-      if (url.startsWith("/api/newsletter/posts")) return json(200, { posts: candidates });
-      if (url.endsWith("/preview")) return json(200, preview({ subject: "Two things" }));
-      return json(201, { issues: [{ issueId: "i1", cadence: "weekly", period: "2026-08-17", send: { recipients: 12, sent: 12, pending: 0 } }] });
-    });
+    postsMock.mockResolvedValue(candidates as never);
+    previewMock.mockResolvedValue(preview({ subject: "Two things" }) as never);
+    sendMock.mockResolvedValue({ issues: [{ issueId: "i1", cadence: "weekly", period: "2026-08-17", send: { recipients: 12, sent: 12, pending: 0 } }] } as never);
     const client = createTestQueryClient();
     render(<ComposeDigestDialog target={target} show onHide={() => {}} />, client);
     await screen.findByRole("list", { name: "newsletter.compose-pick" });
@@ -342,7 +350,7 @@ describe("ComposeDigestDialog", () => {
     fireEvent.click(screen.getByLabelText("One"));
     fireEvent.click(screen.getByText("newsletter.compose-continue"));
     await waitFor(() => expect(screen.getByText("newsletter.send-now")).toBeInTheDocument());
-    const candidateFetches = () => fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("/api/newsletter/posts")).length;
+    const candidateFetches = () => postsMock.mock.calls.length;
     expect(candidateFetches()).toBe(1);
     fireEvent.click(screen.getByText("newsletter.send-now"));
     await waitFor(() => expect(screen.getByText("newsletter.send-done")).toBeInTheDocument());
@@ -363,11 +371,12 @@ describe("ComposeDigestDialog", () => {
   });
 
   it("says when there are no candidates or they could not be loaded", async () => {
-    fetchMock.mockImplementation(() => json(200, { posts: [] }));
+    postsMock.mockResolvedValue([]);
     const { unmount } = render(<ComposeDigestDialog target={target} show onHide={() => {}} />);
     await waitFor(() => expect(screen.getByText("newsletter.compose-no-candidates")).toBeInTheDocument());
     unmount();
-    fetchMock.mockImplementation(() => json(503, { error: "down" }));
+    postsMock.mockReset();
+    postsMock.mockRejectedValue(new NewsletterApiError("down", 503));
     render(<ComposeDigestDialog target={target} show onHide={() => {}} />);
     await waitFor(() => expect(screen.getByText("newsletter.compose-candidates-unavailable")).toBeInTheDocument());
   });
