@@ -587,6 +587,38 @@ export const QueryKeys = {
   },
 
   // ===========================================================================
+  // Newsletter (digest subscriptions + sender API)
+  // ===========================================================================
+  newsletter: {
+    subscriptions: (username: string | undefined) => [
+      "newsletter",
+      "subscriptions",
+      username,
+    ],
+    sender: (type: string, target: string, username: string | undefined) => [
+      "newsletter",
+      "sender",
+      type,
+      target,
+      username,
+    ],
+    issues: (type: string, target: string, username: string | undefined) => [
+      "newsletter",
+      "issues",
+      type,
+      target,
+      username,
+    ],
+    posts: (
+      type: string,
+      target: string,
+      username: string | undefined,
+      limit: number,
+    ) => ["newsletter", "posts", type, target, username, limit],
+    _prefix: ["newsletter"],
+  },
+
+  // ===========================================================================
   // Support Ecency
   // ===========================================================================
   support: {
