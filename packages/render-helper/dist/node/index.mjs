@@ -833,7 +833,9 @@ function img(el, state, forApp = true) {
     return;
   }
   el.setAttribute("itemprop", "image");
-  const isAvatar = decodedSrc.includes("/avatar") || (el.getAttribute("class") || "").includes("er-author-link-image");
+  const avatarRoute = new RegExp(`^${trimTrailingSlash(getProxyBase()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/u/[^/]+/avatar(?:/[a-z]+)?$`);
+  const classTokens = (el.getAttribute("class") || "").split(/\s+/);
+  const isAvatar = avatarRoute.test(decodedSrc) || classTokens.includes("er-author-link-image");
   if (isAvatar) {
     el.setAttribute("loading", "lazy");
     el.setAttribute("decoding", "async");
@@ -852,6 +854,9 @@ function img(el, state, forApp = true) {
   } else {
     el.setAttribute("loading", "lazy");
     el.setAttribute("decoding", "async");
+  }
+  if (isAvatar || imageIndex !== 0) {
+    el.removeAttribute("fetchpriority");
   }
   const cls = el.getAttribute("class") || "";
   const shouldReplace = !cls.includes("no-replace");

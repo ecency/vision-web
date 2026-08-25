@@ -631,3 +631,72 @@ describe('img() method - Image Processing', () => {
     })
   })
 })
+
+describe('exclusive high hint and precise avatar detection (#1673 review)', () => {
+  const doc = DOMParser.parseFromString('<html><body></body></html>', 'text/html')
+
+  function makeImg(src: string, cls?: string): HTMLElement {
+    const parent = doc.createElement('div')
+    const el = doc.createElement('img')
+    el.setAttribute('src', src)
+    if (cls) el.setAttribute('class', cls)
+    parent.appendChild(el)
+    return el
+  }
+
+  it('strips an inherited fetchpriority from every non-LCP tier', () => {
+    const state = { firstImageFound: false }
+    const first = makeImg('https://example.com/one.jpg')
+    const second = makeImg('https://example.com/two.jpg')
+    const fourth = makeImg('https://example.com/four.jpg')
+    second.setAttribute('fetchpriority', 'high')
+    fourth.setAttribute('fetchpriority', 'high')
+    img(first, state)
+    img(second, state)
+    img(makeImg('https://example.com/three.jpg'), state)
+    img(fourth, state)
+    expect(first.getAttribute('fetchpriority')).toBe('high')
+    expect(second.getAttribute('fetchpriority')).toBeNull()
+    expect(fourth.getAttribute('fetchpriority')).toBeNull()
+  })
+
+  it('strips an inherited fetchpriority from avatars', () => {
+    const el = makeImg('https://i.ecency.com/u/foo/avatar/small')
+    el.setAttribute('fetchpriority', 'high')
+    img(el, { firstImageFound: false })
+    expect(el.getAttribute('fetchpriority')).toBeNull()
+    expect(el.getAttribute('loading')).toBe('lazy')
+  })
+
+  it('treats only the proxy avatar route as an avatar, not arbitrary /avatar/ URLs', () => {
+    const state = { firstImageFound: false }
+    const content = makeImg('https://cdn.example/avatar/art.jpg')
+    img(content, state)
+    // Legitimate content image: consumes slot 0 and gets the LCP treatment.
+    expect(content.getAttribute('loading')).toBe('eager')
+    expect(content.getAttribute('fetchpriority')).toBe('high')
+
+    const avatar = makeImg('https://i.ecency.com/u/foo/avatar/medium')
+    img(avatar, state)
+    expect(avatar.getAttribute('loading')).toBe('lazy')
+
+    // The avatar did not consume slot 1.
+    const next = makeImg('https://example.com/next.jpg')
+    img(next, state)
+    expect(next.getAttribute('loading')).toBe('eager')
+    expect(next.getAttribute('fetchpriority')).toBeNull()
+  })
+
+  it('matches the author-link class as an exact token only', () => {
+    const state = { firstImageFound: true, imageCount: 3 }
+    const notAvatar = makeImg('https://example.com/pic.jpg', 'not-er-author-link-image-x')
+    img(notAvatar, state)
+    // Exact-token miss: tiered normally (index 3+ here, lazy) but counted.
+    expect(state.imageCount).toBe(4)
+
+    const avatar = makeImg('https://example.com/pic2.jpg', 'foo er-author-link-image')
+    img(avatar, state)
+    expect(avatar.getAttribute('loading')).toBe('lazy')
+    expect(state.imageCount).toBe(4)
+  })
+})

@@ -87,8 +87,14 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCo
     shape keep the old first-image behavior.
   */
   // Avatars (mention bylines, tiny inline profile images) neither deserve an
-  // eager slot nor should they consume one that a content image needs.
-  const isAvatar = decodedSrc.includes("/avatar") || (el.getAttribute("class") || "").includes("er-author-link-image");
+  // eager slot nor should they consume one that a content image needs. Match
+  // ONLY the proxy avatar route and the exact author-link class token: a
+  // substring test on arbitrary URLs would misclassify legitimate content
+  // like https://cdn.example/avatar/art.jpg, lazy-load a real LCP candidate
+  // and hand the high hint to the wrong image.
+  const avatarRoute = new RegExp(`^${trimTrailingSlash(getProxyBase()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/u/[^/]+/avatar(?:/[a-z]+)?$`);
+  const classTokens = (el.getAttribute("class") || "").split(/\s+/);
+  const isAvatar = avatarRoute.test(decodedSrc) || classTokens.includes("er-author-link-image");
   if (isAvatar) {
     el.setAttribute("loading", "lazy");
     el.setAttribute("decoding", "async");
@@ -109,6 +115,12 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCo
   } else {
     el.setAttribute("loading", "lazy");
     el.setAttribute("decoding", "async");
+  }
+  // The high hint is EXCLUSIVE to index 0. Anything else that arrives with
+  // one (author HTML passes the sanitizer; linkify grants a "first image"
+  // high per text node) would compete with the real LCP request.
+  if (isAvatar || imageIndex !== 0) {
+    el.removeAttribute("fetchpriority");
   }
 
   const cls = el.getAttribute("class") || "";
