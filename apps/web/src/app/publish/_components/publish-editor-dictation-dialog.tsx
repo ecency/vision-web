@@ -6,6 +6,7 @@ import { error } from "@/features/shared";
 import { PointsTopupCta } from "@/features/shared/points-topup-cta";
 import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from "@/features/ui";
 import { ensureValidToken } from "@/utils";
+import { uuidV4 } from "@/utils/uuid";
 import {
   getAiTranscribePriceQueryOptions,
   getPointsQueryOptions,
@@ -158,7 +159,7 @@ export function PublishEditorDictationDialog({ show, setShow, onInsert }: Props)
     if (!result || !username || isSubmitting) return;
 
     if (!idempotencyKeyRef.current) {
-      idempotencyKeyRef.current = crypto.randomUUID();
+      idempotencyKeyRef.current = uuidV4();
     }
 
     setIsSubmitting(true);
