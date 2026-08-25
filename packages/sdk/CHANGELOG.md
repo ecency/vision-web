@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.94
+
+### Patch Changes
+
+- feat(ai-image): history tab so delivered images are findable after an error (#1688)
+
 ## 2.3.93
 
 ### Patch Changes
