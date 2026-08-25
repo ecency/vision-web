@@ -4059,7 +4059,11 @@
     "select-power": "Quality boost",
     "finishing": "Your image is generated and finishing upload. Tap below to fetch it — you won't be charged again.",
     "finishing-retry": "Fetch image",
-    "still-generating": "Your image is still generating. It will be fetched automatically with no extra charge."
+    "still-generating": "Your image is still generating. It will be fetched automatically with no extra charge.",
+    "tab-generate": "Generate",
+    "tab-history": "History",
+    "history-error": "Could not load your generation history. Please try again later.",
+    "history-login-required": "Log in to see your generation history."
   },
   "ai-usage": {
     "menu": "AI usage",

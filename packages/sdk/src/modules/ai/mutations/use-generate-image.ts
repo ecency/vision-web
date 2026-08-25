@@ -27,6 +27,18 @@ function makeIdempotencyKey(): string {
     .join("");
 }
 
+// What a completed generation invalidates: the Points balance (it changed) and the
+// per-user generation history (the new image belongs there right away). Exported so the
+// side effect stays unit-testable without rendering the hook.
+export function invalidateGenerateImageCaches(username: string) {
+  getQueryClient().invalidateQueries({
+    queryKey: QueryKeys.points._prefix(username),
+  });
+  getQueryClient().invalidateQueries({
+    queryKey: QueryKeys.ai.images(username),
+  });
+}
+
 export function useGenerateImage(
   username: string | undefined,
   accessToken: string | undefined,
@@ -104,11 +116,8 @@ export function useGenerateImage(
       return data;
     },
     onSuccess: () => {
-      // Invalidate points cache since balance changed
       if (username) {
-        getQueryClient().invalidateQueries({
-          queryKey: QueryKeys.points._prefix(username),
-        });
+        invalidateGenerateImageCaches(username);
       }
     },
   });

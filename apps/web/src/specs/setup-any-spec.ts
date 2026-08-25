@@ -52,6 +52,16 @@ vi.mock("i18next", () => ({
   }
 }));
 
+// Shared by the mocked ai query options AND the QueryKeys stand-in below, so specs that
+// seed a cache entry use exactly the key the mocked options read. Hoisted because the
+// vi.mock factory runs before module-level code.
+const { aiQueryKeys } = vi.hoisted(() => ({
+  aiQueryKeys: {
+    prices: () => ["ai", "prices"] as const,
+    images: (username?: string) => ["ai", "images", username] as const
+  }
+}));
+
 vi.mock("@ecency/sdk", async () => ({
   // The moderation rules are pure functions with no dependencies, and components
   // call them during render, so hand out the real implementations from source
@@ -88,8 +98,14 @@ vi.mock("@ecency/sdk", async () => ({
   })),
   getBoostPlusPricesQueryOptions: vi.fn(() => ({ queryKey: ["boost-prices"], queryFn: vi.fn() })),
   getPointsQueryOptions: vi.fn(() => ({ queryKey: ["points"], queryFn: vi.fn() })),
-  // Key shape matches the SDK's QueryKeys.ai.prices().
-  getAiGeneratePriceQueryOptions: vi.fn(() => ({ queryKey: ["ai", "prices"], queryFn: vi.fn() })),
+  // Key shapes match the SDK's QueryKeys.ai.* builders; the mocked query options and the
+  // QueryKeys stand-in below share aiQueryKeys so specs seed the same keys the mocked
+  // options read (see aiQueryKeys at the top of this factory).
+  getAiGeneratePriceQueryOptions: vi.fn(() => ({ queryKey: aiQueryKeys.prices(), queryFn: vi.fn() })),
+  getAiImagesQueryOptions: vi.fn((username?: string) => ({
+    queryKey: aiQueryKeys.images(username),
+    queryFn: vi.fn()
+  })),
   useGenerateImage: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useAddImage: vi.fn(() => ({ mutateAsync: vi.fn(async () => ({})) })),
   getProMembersQueryOptions: vi.fn(() => ({ queryKey: ["accounts", "pro-members"], queryFn: vi.fn() })),
@@ -144,7 +160,8 @@ vi.mock("@ecency/sdk", async () => ({
     accounts: {
       full: (username?: string) => ["get-account-full", username],
       mutedUsers: (username?: string) => ["accounts", "muted-users", username]
-    }
+    },
+    ai: aiQueryKeys
   },
   getSpotlightsQueryOptions: vi.fn(() => ({
     queryKey: ["notifications", "spotlights"],
