@@ -27,4 +27,27 @@ describe("uuidV4", () => {
     vi.stubGlobal("crypto", { getRandomValues });
     expect(uuidV4()).toMatch(V4_SHAPE);
   });
+
+  it("zero-pads low bytes", () => {
+    vi.stubGlobal("crypto", {
+      getRandomValues: (arr: Uint8Array) => {
+        arr.fill(0);
+        return arr;
+      }
+    });
+    expect(uuidV4()).toBe("00000000-0000-4000-8000-000000000000");
+  });
+
+  // padStart is ES2017 and absent on part of the range this helper targets
+  // (Chrome 49-56, Firefox 36-47, Safari 9); the app strips Next's client polyfills.
+  it("works when String.prototype.padStart is unavailable", () => {
+    const proto = String.prototype as { padStart?: typeof String.prototype.padStart };
+    const padStart = proto.padStart;
+    delete proto.padStart;
+    try {
+      expect(uuidV4()).toMatch(V4_SHAPE);
+    } finally {
+      proto.padStart = padStart;
+    }
+  });
 });
