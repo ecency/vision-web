@@ -512,9 +512,10 @@ export function Search({ containerClassName, autoFocus }: Props) {
           value={query}
           onChange={(e: ChangeEvent<HTMLInputElement>) => setQuery(e.target.value.toLowerCase())}
           onKeyDown={onKeyDown}
-          autoComplete="non-autocomplete-field"
-          name="non-autocomplete-field"
-          id="non-autocomplete-field"
+          type="search"
+          autoComplete="off"
+          name="search"
+          id="navbar-search"
           autoFocus={autoFocus}
         />
       </SearchSuggester>
