@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.93
+
+### Patch Changes
+
+- refactor(newsletter): migrate the web client onto the SDK newsletter module (#1681)
+
 ## 2.3.92
 
 ### Patch Changes
