@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.92
+
+### Patch Changes
+
+- feat(sdk): shared newsletter client module for digest subscriptions and sender API (#1677)
+
 ## 2.3.91
 
 ### Patch Changes
