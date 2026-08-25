@@ -43,7 +43,7 @@ function wrapInPicture(el: HTMLElement, rawUrl: string): void {
   picture.appendChild(el);
 }
 
-export function img(el: HTMLElement, state?: { firstImageFound: boolean }, forApp = true): void {
+export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCount?: number }, forApp = true): void {
   const src = el.getAttribute("src") || "";
 
   // Normalize encoded characters (shared with getEntryImageRawUrl so the LCP
@@ -73,15 +73,54 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean }, forAp
   }
 
   el.setAttribute("itemprop", "image");
-  const isLCP = state && !state.firstImageFound;
 
-  if (isLCP) {
+  /*
+    Tiered loading (#1672). Index 0 is the LCP candidate: eager + high, and the
+    entry page separately preloads it. Index 1 is very likely inside or near
+    the first viewport on multi-image posts; plain lazy put it at priority Low
+    behind the script wave, so its blur-up placeholder sharpened seconds after
+    the page looked settled. It loads eager at default priority, which keeps
+    the high hint exclusive to the LCP image. Index 2 onward stays lazy: eager
+    is not free (it fetches unconditionally, even for images never scrolled
+    to), so the eager set is kept to the two images that plausibly pay off.
+    imageCount falls back to firstImageFound so callers passing the old state
+    shape keep the old first-image behavior.
+  */
+  // Avatars (mention bylines, tiny inline profile images) neither deserve an
+  // eager slot nor should they consume one that a content image needs. Match
+  // ONLY the proxy avatar route and the exact author-link class token: a
+  // substring test on arbitrary URLs would misclassify legitimate content
+  // like https://cdn.example/avatar/art.jpg, lazy-load a real LCP candidate
+  // and hand the high hint to the wrong image.
+  const avatarRoute = new RegExp(`^${trimTrailingSlash(getProxyBase()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/u/[^/]+/avatar(?:/[a-z]+)?$`);
+  const classTokens = (el.getAttribute("class") || "").split(/\s+/);
+  const isAvatar = avatarRoute.test(decodedSrc) || classTokens.includes("er-author-link-image");
+  if (isAvatar) {
+    el.setAttribute("loading", "lazy");
+    el.setAttribute("decoding", "async");
+  }
+  const imageIndex = !state || isAvatar ? 3 : (state.imageCount ?? (state.firstImageFound ? 1 : 0));
+  if (state && !isAvatar) {
+    state.imageCount = imageIndex + 1;
+    state.firstImageFound = true;
+  }
+  if (isAvatar) {
+    // attributes already set above; skip the tier
+  } else if (imageIndex === 0) {
     el.setAttribute("loading", "eager");
     el.setAttribute("fetchpriority", "high");
-    state.firstImageFound = true;
+  } else if (imageIndex === 1) {
+    el.setAttribute("loading", "eager");
+    el.setAttribute("decoding", "async");
   } else {
     el.setAttribute("loading", "lazy");
     el.setAttribute("decoding", "async");
+  }
+  // The high hint is EXCLUSIVE to index 0. Anything else that arrives with
+  // one (author HTML passes the sanitizer; linkify grants a "first image"
+  // high per text node) would compete with the real LCP request.
+  if (isAvatar || imageIndex !== 0) {
+    el.removeAttribute("fetchpriority");
   }
 
   const cls = el.getAttribute("class") || "";

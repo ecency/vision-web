@@ -835,14 +835,30 @@ function img(el, state, forApp = true) {
     return;
   }
   el.setAttribute("itemprop", "image");
-  const isLCP = state && !state.firstImageFound;
-  if (isLCP) {
+  const avatarRoute = new RegExp(`^${trimTrailingSlash(getProxyBase()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/u/[^/]+/avatar(?:/[a-z]+)?$`);
+  const classTokens = (el.getAttribute("class") || "").split(/\s+/);
+  const isAvatar = avatarRoute.test(decodedSrc) || classTokens.includes("er-author-link-image");
+  if (isAvatar) {
+    el.setAttribute("loading", "lazy");
+    el.setAttribute("decoding", "async");
+  }
+  const imageIndex = !state || isAvatar ? 3 : state.imageCount ?? (state.firstImageFound ? 1 : 0);
+  if (state && !isAvatar) {
+    state.imageCount = imageIndex + 1;
+    state.firstImageFound = true;
+  }
+  if (isAvatar) ; else if (imageIndex === 0) {
     el.setAttribute("loading", "eager");
     el.setAttribute("fetchpriority", "high");
-    state.firstImageFound = true;
+  } else if (imageIndex === 1) {
+    el.setAttribute("loading", "eager");
+    el.setAttribute("decoding", "async");
   } else {
     el.setAttribute("loading", "lazy");
     el.setAttribute("decoding", "async");
+  }
+  if (isAvatar || imageIndex !== 0) {
+    el.removeAttribute("fetchpriority");
   }
   const cls = el.getAttribute("class") || "";
   const shouldReplace = !cls.includes("no-replace");

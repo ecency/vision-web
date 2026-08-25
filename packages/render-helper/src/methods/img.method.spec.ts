@@ -23,24 +23,33 @@ describe('img() method - Image Processing', () => {
       expect(image.getAttribute('fetchpriority')).toBe('high')
     })
 
-    it('should lazy load subsequent images after first', () => {
+    it('tiers subsequent images: second eager at default priority, third onward lazy (#1672)', () => {
       const parent = doc.createElement('div')
-      const image1 = doc.createElement('img')
-      const image2 = doc.createElement('img')
-      image1.setAttribute('src', 'https://example.com/image1.jpg')
-      image2.setAttribute('src', 'https://example.com/image2.jpg')
-      parent.appendChild(image1)
-      parent.appendChild(image2)
+      const images = Array.from({ length: 5 }, (_, i) => {
+        const el = doc.createElement('img')
+        el.setAttribute('src', `https://example.com/image${i + 1}.jpg`)
+        parent.appendChild(el)
+        return el
+      })
 
       const state = { firstImageFound: false }
-      img(image1, state)
-      img(image2, state)
+      images.forEach((el) => img(el, state))
 
       expect(state.firstImageFound).toBe(true)
-      expect(image1.getAttribute('loading')).toBe('eager')
-      expect(image1.getAttribute('fetchpriority')).toBe('high')
-      expect(image2.getAttribute('loading')).toBe('lazy')
-      expect(image2.getAttribute('decoding')).toBe('async')
+      // Image 1: the LCP candidate keeps the exclusive high hint.
+      expect(images[0].getAttribute('loading')).toBe('eager')
+      expect(images[0].getAttribute('fetchpriority')).toBe('high')
+      // Image 2: likely in the first viewport; eager, but never high, so it
+      // cannot compete with the LCP image.
+      expect(images[1].getAttribute('loading')).toBe('eager')
+      expect(images[1].getAttribute('fetchpriority')).toBeNull()
+      expect(images[1].getAttribute('decoding')).toBe('async')
+      // Images 3+: stay lazy; eager fetches unconditionally, so the eager set
+      // stops at the two images that plausibly pay off.
+      for (const el of [images[2], images[3], images[4]]) {
+        expect(el.getAttribute('loading')).toBe('lazy')
+        expect(el.getAttribute('decoding')).toBe('async')
+      }
     })
 
     it('should use lazy loading when state is not provided', () => {
@@ -56,7 +65,7 @@ describe('img() method - Image Processing', () => {
       expect(image.getAttribute('fetchpriority')).toBeNull()
     })
 
-    it('should use lazy loading when firstImageFound is already true', () => {
+    it('treats an old-shape state with firstImageFound as index 1 (eager, default priority)', () => {
       const parent = doc.createElement('div')
       const image = doc.createElement('img')
       image.setAttribute('src', 'https://example.com/image.jpg')
@@ -65,7 +74,8 @@ describe('img() method - Image Processing', () => {
       const state = { firstImageFound: true }
       img(image, state)
 
-      expect(image.getAttribute('loading')).toBe('lazy')
+      expect(image.getAttribute('loading')).toBe('eager')
+      expect(image.getAttribute('fetchpriority')).toBeNull()
       expect(image.getAttribute('decoding')).toBe('async')
     })
 
@@ -542,7 +552,8 @@ describe('img() method - Image Processing', () => {
       image.setAttribute('src', 'https://example.com/image.jpg')
       parent.appendChild(image)
 
-      const state = { firstImageFound: true }
+      // Index 3+ under the tiered policy (#1672): genuinely below the fold.
+      const state = { firstImageFound: true, imageCount: 3 }
       img(image, state)
 
       expect(image.getAttribute('loading')).toBe('lazy')
@@ -618,5 +629,74 @@ describe('img() method - Image Processing', () => {
       expect((image.parentNode as HTMLElement).nodeName.toLowerCase()).toBe('picture')
       expect(pic.getElementsByTagName('picture').length).toBe(0)
     })
+  })
+})
+
+describe('exclusive high hint and precise avatar detection (#1673 review)', () => {
+  const doc = DOMParser.parseFromString('<html><body></body></html>', 'text/html')
+
+  function makeImg(src: string, cls?: string): HTMLElement {
+    const parent = doc.createElement('div')
+    const el = doc.createElement('img')
+    el.setAttribute('src', src)
+    if (cls) el.setAttribute('class', cls)
+    parent.appendChild(el)
+    return el
+  }
+
+  it('strips an inherited fetchpriority from every non-LCP tier', () => {
+    const state = { firstImageFound: false }
+    const first = makeImg('https://example.com/one.jpg')
+    const second = makeImg('https://example.com/two.jpg')
+    const fourth = makeImg('https://example.com/four.jpg')
+    second.setAttribute('fetchpriority', 'high')
+    fourth.setAttribute('fetchpriority', 'high')
+    img(first, state)
+    img(second, state)
+    img(makeImg('https://example.com/three.jpg'), state)
+    img(fourth, state)
+    expect(first.getAttribute('fetchpriority')).toBe('high')
+    expect(second.getAttribute('fetchpriority')).toBeNull()
+    expect(fourth.getAttribute('fetchpriority')).toBeNull()
+  })
+
+  it('strips an inherited fetchpriority from avatars', () => {
+    const el = makeImg('https://i.ecency.com/u/foo/avatar/small')
+    el.setAttribute('fetchpriority', 'high')
+    img(el, { firstImageFound: false })
+    expect(el.getAttribute('fetchpriority')).toBeNull()
+    expect(el.getAttribute('loading')).toBe('lazy')
+  })
+
+  it('treats only the proxy avatar route as an avatar, not arbitrary /avatar/ URLs', () => {
+    const state = { firstImageFound: false }
+    const content = makeImg('https://cdn.example/avatar/art.jpg')
+    img(content, state)
+    // Legitimate content image: consumes slot 0 and gets the LCP treatment.
+    expect(content.getAttribute('loading')).toBe('eager')
+    expect(content.getAttribute('fetchpriority')).toBe('high')
+
+    const avatar = makeImg('https://i.ecency.com/u/foo/avatar/medium')
+    img(avatar, state)
+    expect(avatar.getAttribute('loading')).toBe('lazy')
+
+    // The avatar did not consume slot 1.
+    const next = makeImg('https://example.com/next.jpg')
+    img(next, state)
+    expect(next.getAttribute('loading')).toBe('eager')
+    expect(next.getAttribute('fetchpriority')).toBeNull()
+  })
+
+  it('matches the author-link class as an exact token only', () => {
+    const state = { firstImageFound: true, imageCount: 3 }
+    const notAvatar = makeImg('https://example.com/pic.jpg', 'not-er-author-link-image-x')
+    img(notAvatar, state)
+    // Exact-token miss: tiered normally (index 3+ here, lazy) but counted.
+    expect(state.imageCount).toBe(4)
+
+    const avatar = makeImg('https://example.com/pic2.jpg', 'foo er-author-link-image')
+    img(avatar, state)
+    expect(avatar.getAttribute('loading')).toBe('lazy')
+    expect(state.imageCount).toBe(4)
   })
 })
