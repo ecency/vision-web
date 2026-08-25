@@ -91,6 +91,14 @@ function resolveQueryClient(): QueryClient {
 export const CONFIG = {
   privateApiHost: "https://ecency.com",
   /**
+   * Host for the newsletter relay routes (/api/newsletter/*), which live on
+   * the WEB origin (Next.js route handlers), not on the private API service.
+   * `undefined` falls back to `privateApiHost` (right for mobile, whose one
+   * host serves both); the web client pins it to "" so newsletter requests
+   * stay same-origin on ANY deployment, hostname regardless.
+   */
+  newsletterHost: undefined as string | undefined,
+  /**
    * Observer used for bridge calls when nobody is logged in. The bridge applies
    * this account's mute list to the response, marking muted authors' posts and
    * comments `stats.gray` so clients can dim or collapse them. Anonymous
@@ -182,6 +190,15 @@ export namespace ConfigManager {
    */
   export function setPrivateApiHost(host: string) {
     CONFIG.privateApiHost = host;
+  }
+
+  /**
+   * Set the host for the newsletter relay routes (/api/newsletter/*), or
+   * `undefined` to fall back to the private API host. Use "" for same-origin
+   * relative requests (the web client's case).
+   */
+  export function setNewsletterHost(host: string | undefined) {
+    CONFIG.newsletterHost = host;
   }
 
   /**

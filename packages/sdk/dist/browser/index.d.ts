@@ -1059,6 +1059,14 @@ declare const SERVER_GC_TIME_MS: number;
 declare const CONFIG: {
     privateApiHost: string;
     /**
+     * Host for the newsletter relay routes (/api/newsletter/*), which live on
+     * the WEB origin (Next.js route handlers), not on the private API service.
+     * `undefined` falls back to `privateApiHost` (right for mobile, whose one
+     * host serves both); the web client pins it to "" so newsletter requests
+     * stay same-origin on ANY deployment, hostname regardless.
+     */
+    newsletterHost: string | undefined;
+    /**
      * Observer used for bridge calls when nobody is logged in. The bridge applies
      * this account's mute list to the response, marking muted authors' posts and
      * comments `stats.gray` so clients can dim or collapse them. Anonymous
@@ -1131,6 +1139,12 @@ declare namespace ConfigManager {
      * @param host - The private API host URL (e.g., "https://ecency.com" or "" for relative URLs)
      */
     function setPrivateApiHost(host: string): void;
+    /**
+     * Set the host for the newsletter relay routes (/api/newsletter/*), or
+     * `undefined` to fall back to the private API host. Use "" for same-origin
+     * relative requests (the web client's case).
+     */
+    function setNewsletterHost(host: string | undefined): void;
     /**
      * Set the first-party client identifier sent as the `X-Ecency-Client` header
      * on search/private API requests (e.g. "web" or "mobile"). Defaults to

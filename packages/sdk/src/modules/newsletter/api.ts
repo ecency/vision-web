@@ -31,7 +31,10 @@ import type {
  * links land on web pages.
  */
 function newsletterUrl(path: string): string {
-  return `${CONFIG.privateApiHost}/api/newsletter${path}`;
+  // The relay lives on the WEB origin; newsletterHost overrides where that is
+  // ("" = same-origin, the web client's case). Nullish on purpose: only an
+  // unset override falls back, an empty string is a meaningful host.
+  return `${CONFIG.newsletterHost ?? CONFIG.privateApiHost}/api/newsletter${path}`;
 }
 
 async function parse<T>(response: Response): Promise<T> {

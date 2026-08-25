@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ConfigManager } from "@/modules/core";
 import { NewsletterApiError, NewsletterSendRefusedError } from "./errors";
 import {
   getDigestSubscriptionsRequest,
@@ -82,6 +83,24 @@ describe("newsletter api", () => {
         status: 403,
         message: "Security check failed",
       });
+    });
+  });
+
+  describe("newsletter host override", () => {
+    afterEach(() => ConfigManager.setNewsletterHost(undefined));
+
+    it("follows privateApiHost by default and the override when set ('' = same-origin)", async () => {
+      fetchMock.mockResolvedValue(okJson({ subscriptions: [] }));
+      await getDigestSubscriptionsRequest("t");
+      expect(String(fetchMock.mock.calls[0][0])).toBe(
+        "https://ecency.com/api/newsletter/subscriptions",
+      );
+      // "" is a meaningful host (same-origin), not a fall-through.
+      ConfigManager.setNewsletterHost("");
+      await getDigestSubscriptionsRequest("t");
+      expect(String(fetchMock.mock.calls[1][0])).toBe(
+        "/api/newsletter/subscriptions",
+      );
     });
   });
 
