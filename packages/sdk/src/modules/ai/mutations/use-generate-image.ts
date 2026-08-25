@@ -109,6 +109,10 @@ export function useGenerateImage(
         getQueryClient().invalidateQueries({
           queryKey: QueryKeys.points._prefix(username),
         });
+        // The new image belongs in the user's generation history right away.
+        getQueryClient().invalidateQueries({
+          queryKey: QueryKeys.ai.images(username),
+        });
       }
     },
   });

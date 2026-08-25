@@ -34,6 +34,18 @@ export interface AiGenerationResponse {
   idempotent_replay?: boolean;
 }
 
+// One entry of the per-user generation history (the backend's last 20 successful
+// generations). Exists so a delivered image is findable even when the client never
+// saw the success response (timeout, closed tab, reconciler-finished delivery).
+export interface AiImageHistoryItem {
+  id: number;
+  prompt: string;
+  url: string;
+  aspect_ratio: string;
+  cost: number;
+  created: string;
+}
+
 export interface AiAssistPrice {
   action: string;
   cost: number;

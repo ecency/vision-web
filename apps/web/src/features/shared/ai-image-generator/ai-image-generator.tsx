@@ -19,6 +19,8 @@ import i18next from "i18next";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { AiImageHistory } from "./ai-image-history";
+
 interface Props {
   onInsert?: (url: string) => void;
   showInsertAction?: boolean;
@@ -84,6 +86,7 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
 
   const { mutateAsync: addToGallery } = useAddImage(username, accessToken);
 
+  const [activeTab, setActiveTab] = useState<"generate" | "history">("generate");
   const [prompt, setPrompt] = useState("");
   const [selectedRatio, setSelectedRatio] = useState<string | null>(null);
   const [selectedPower, setSelectedPower] = useState<AiImagePowerTier | null>(null);
@@ -296,10 +299,44 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
     }
   }, [generatedUrl]);
 
+  // Switching tabs never touches the generate state: a pending attempt keeps its key
+  // and timers, and the result view is still there when the user switches back.
+  const tabBar = (
+    <div className="flex items-center gap-1 border-b border-[--border-color]">
+      {(["generate", "history"] as const).map((tab) => (
+        <button
+          key={tab}
+          type="button"
+          onClick={() => setActiveTab(tab)}
+          className={clsx(
+            "px-3 py-2 text-sm font-medium -mb-px border-b-2 transition-colors",
+            activeTab === tab
+              ? "border-blue-dark-sky text-blue-dark-sky"
+              : "border-transparent opacity-60 hover:opacity-100"
+          )}
+        >
+          {i18next.t(`ai-image-generator.tab-${tab}`)}
+        </button>
+      ))}
+    </div>
+  );
+
+  // History view: where an already-paid image is found again when the client never
+  // saw the success response (timeout, closed tab, delivery finished later).
+  if (activeTab === "history") {
+    return (
+      <div className="flex flex-col gap-4">
+        {tabBar}
+        <AiImageHistory onInsert={onInsert} showInsertAction={showInsertAction} />
+      </div>
+    );
+  }
+
   // Result view
   if (generatedUrl) {
     return (
       <div className="animate-fade-in-up flex flex-col gap-4">
+        {tabBar}
         <div className="font-semibold">{i18next.t("ai-image-generator.result-title")}</div>
         <div className="border border-[--border-color] rounded-xl overflow-hidden">
           <Image
@@ -331,6 +368,7 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
   // Generator form
   return (
     <div className="flex flex-col gap-4">
+      {tabBar}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="opacity-50">{i18next.t("ai-image-generator.balance-label")}:</div>
