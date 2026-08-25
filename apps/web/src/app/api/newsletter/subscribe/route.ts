@@ -18,7 +18,7 @@ const CADENCES = new Set(["weekly", "monthly"]);
  */
 const TURNSTILE_ACTION = "newsletter-subscribe";
 
-const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-page", "publish-prompt", "post-page", "self-hosted-blog"]);
+const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-page", "publish-prompt", "post-page", "self-hosted-blog", "mobile-app"]);
 
 /**
  * Subscribe to a community or creator digest.

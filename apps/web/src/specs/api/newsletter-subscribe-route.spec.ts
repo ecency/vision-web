@@ -132,6 +132,19 @@ describe("POST /api/newsletter/subscribe", () => {
     expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toMatchObject({ type: "site", target: "ecency", source: "landing-page" });
   });
 
+  it("accepts a signed-in mobile-app subscribe and relays the source intact", async () => {
+    mocks.verify.mockResolvedValue({ ok: true, username: "alice" });
+    mocks.fetch.mockResolvedValue(upstream(200, { status: "active" }));
+    const r = await post({ ...VALID, type: "creator", target: "someone", source: "mobile-app", code: "hs-token", captchaToken: undefined });
+    expect(r.status).toBe(200);
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toMatchObject({
+      type: "creator",
+      target: "someone",
+      source: "mobile-app",
+      account: "alice"
+    });
+  });
+
   it("the own digest needs a verified account and its target must be that account", async () => {
     // Anonymous: no account to be the target of.
     expect((await post({ ...VALID, type: "own", target: "alice" })).status).toBe(401);

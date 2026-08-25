@@ -1629,6 +1629,13 @@ declare const QueryKeys: {
     readonly quests: {
         readonly status: (username: string | undefined) => (string | undefined)[];
     };
+    readonly newsletter: {
+        readonly subscriptions: (username: string | undefined) => (string | undefined)[];
+        readonly sender: (type: string, target: string, username: string | undefined) => (string | undefined)[];
+        readonly issues: (type: string, target: string, username: string | undefined) => (string | undefined)[];
+        readonly posts: (type: string, target: string, username: string | undefined, limit: number) => (string | number | undefined)[];
+        readonly _prefix: readonly ["newsletter"];
+    };
     readonly support: {
         readonly settings: (username: string | undefined) => (string | undefined)[];
         readonly _prefix: readonly ["support"];
@@ -4384,7 +4391,11 @@ interface WavesFeedParams {
     following?: string;
     /** Only this author's waves (across all containers); the per-author feed. */
     author?: string;
-    /** The viewing user; exclude authors they currently mute. */
+    /**
+     * The viewing user; exclude authors they currently mute. Ecency's own
+     * moderation mutes are applied by esync regardless of this value, so leaving
+     * it unset drops the viewer's personal mutes, not the platform ones.
+     */
     observer?: string;
     /** Page size (default 20). */
     limit?: number;
@@ -4441,7 +4452,10 @@ interface ShortsFeedParams {
     tag?: string;
     /** Only this author's shorts (across all containers). */
     author?: string;
-    /** The viewing user; exclude authors they currently mute. */
+    /**
+     * The viewing user; exclude authors they currently mute. Ecency's own
+     * moderation mutes are applied by esync regardless of this value.
+     */
     observer?: string;
     /** Page size (default 20). */
     limit?: number;
@@ -9726,4 +9740,280 @@ declare function getContentModerationReason(content: ModerationCandidate | undef
 /** True if the post body contains an outbound (non-Hive, non-image) link. */
 declare function hasExternalLink(body: string | undefined | null): boolean;
 
-export { ACCOUNT_OPERATION_GROUPS, ALL_ACCOUNT_OPERATIONS, ALL_NOTIFY_TYPES, type AccountBookmark, type AccountDelegations, type AccountFavorite, type AccountFollowStats, type AccountKeys, type AccountNotification, type AccountProfile, type AccountRelationship, type AccountReputation, type AggregatedBalanceEntry, type AiAssistParams, type AiAssistPrice, type AiAssistResponse, type AiGenerationPrice, type AiGenerationRequest, type AiGenerationResponse, type AiImagePowerTier, type AiImagePriceResponse, type AiTranscribeParams, type AiTranscribePrice, type AiTranscribeResponse, type Announcement, type ApiBookmarkNotification, type ApiDelegationsNotification, type ApiFavoriteNotification, type ApiFollowNotification, type ApiInactiveNotification, type ApiMentionNotification, type ApiNotification, type ApiNotificationSetting, type ApiPayoutsNotification, type ApiReblogNotification, type ApiReferralNotification, type ApiReplyNotification, type ApiResponse, type ApiScheduledPublishedNotification, type ApiSpinNotification, type ApiTransferNotification, type ApiVoteNotification, type ApiWeeklyEarningsNotification, type Asset, AssetOperation, type AuthContext, type AuthContextV2, type AuthMethod, type AuthorReward, Authority, type AuthorityLevel, type AuthorityType, BROADCAST_INCLUSION_DELAY_MS, type BalanceAggregationGranularity, type BalanceCoinType, type BalanceHistoryEntry, type BalanceHistoryResponse, type Beneficiary, type BeneficiaryRoute, type BlogEntry, type BoostPlusAccountPrice, type BoostPlusPayload, type BroadcastMode, BroadcastResult, type BuildProfileMetadataArgs, type BuiltSearchQuery, BuySellTransactionType, CONFIG, type CancelTransferFromSavings, type CantAfford, type CheckUsernameWalletsPendingResponse, type ClaimAccountPayload, type ClaimEngineRewardsPayload, type ClaimInterestPayload, type ClaimRewardBalance, type ClaimRewardsPayload, type CollateralizedConversionRequest, type CollateralizedConvert, type CommentBenefactor, type CommentLike, type CommentOptionsLike, type CommentPayload, type CommentPayoutUpdate, type CommentRcCostEstimate, type CommentResourceUsageInput, type CommentReward, type CommentTransactionInput, type Communities, type Community, type CommunityProps, type CommunityRewardsRegisterPayload, type CommunityRole, type CommunityTeam, type CommunityType, ConfigManager, ContentModerationReason, type ConversionRequest, type ConvertPayload, type CreateAccountPayload, type CrossPostPayload, type CurationDuration, type CurationItem, type CurationReward, type CurrencyRates, type DailyCheckinQuest, type DailyContentQuest, type DailyQuest, type DelegateEngineTokenPayload, type DelegateRcPayload, type DelegateVestingShares, type DelegateVestingSharesPayload, type DelegatedVestingShare, type DeleteCommentPayload, type DeletedEntry, type Draft, type DraftMetadata, type DraftRewardType, type DraftsWrappedResponse, type DynamicProps$1 as DynamicProps, index as EcencyAnalytics, EcencyQueriesManager, type EffectiveCommentVote, type EngineMarketOrderPayload, EntriesCacheManagement, type Entry$1 as Entry, type EntryBeneficiaryRoute, type EntryHeader, type EntryStat, type EntryVote, ErrorType, type EstimateCommentRcCostInput, type FeedHistoryItem, type FillCollateralizedConvertRequest, type FillConvertRequest, type FillOrder, type FillRecurrentTransfers, type FillTransferFromSavings, type FillVestingWithdraw, type Follow, type FollowPayload, type Fragment, type FriendSearchResult, type FriendsPageParam, type FriendsRow, type FullAccount, type GameClaim, type GeneralAssetInfo, type GeneralAssetTransaction, type GenerateImageParams, type GetGameStatus, type GetRecoveriesEmailResponse, type GrantPostingPermissionPayload, HIDDEN_POST_MIN_VOTES, HIDDEN_POST_RSHARES_THRESHOLD, HIVE_ACCOUNT_OPERATION_GROUPS, HIVE_OPERATION_LIST, HIVE_OPERATION_NAME_BY_ID, HIVE_OPERATION_ORDERS, type HiveBasedAssetSignType, type HiveEngineMarketResponse, type HiveEngineMetric, type HiveEngineOpenOrder, type HiveEngineOrderBookEntry, HiveEngineToken, type HiveEngineTokenBalance, type HiveEngineTokenInfo, type HiveEngineTokenMetadataResponse, type HiveEngineTokenStatus, type HiveEngineTransaction, type HiveHbdStats, type HiveMarketMetric, type HiveOperationFilter, type HiveOperationFilterKey, type HiveOperationFilterValue, type HiveOperationGroup, type HiveOperationName, HiveSignerIntegration, type HiveTransaction, type HsTokenRenewResponse, INTERNAL_API_TIMEOUT_MS, type IncomingDelegation, type IncomingRcDelegation, type IncomingRcResponse, type Interest, type JsonMetadata, type JsonPollMetadata, type Keys, LOW_TRUST_REPUTATION_THRESHOLD, type LeaderBoardDuration, type LeaderBoardItem, type LimitOrderCancel, type LimitOrderCancelPayload, type LimitOrderCreate, type LimitOrderCreatePayload, MAX_SEARCH_QUERY_LENGTH, MAX_SEARCH_TAGS, type MarketCandlestickDataItem, type MarketData, type MarketStatistics, type MedianHistoryPrice, type ModerationCandidate, type MutePostPayload, NaiMap, NotificationFilter, NotificationViewType, type Notifications, NotifyTypes, OPERATION_AUTHORITY_MAP, type OpenOrdersData, Operation, type OperationGroup, OperationName, OrderIdPrefix, type OrdersData, type OrdersDataItem, type OutgoingDelegation, POLLS_PROTOCOL_VERSION, type PageStatsResponse, type PaginationMeta, type ParsedChainError, type Payer, type PeriodQuest, type PinPostPayload, type PlatformAdapter, type PointTransaction, PointTransactionType, type Points, type PointsResponse, type Poll, type PollChoice, type PollChoiceVotes, PollPreferredInterpretation, type PollStats, type PollVotePayload, type PollVoter, type PortfolioResponse, type PortfolioWalletItem, type PostTip, type PostTipsResponse, PrivateKey, type ProMembersResponse, type ProducerReward, type Profile, type ProfileTokens, type PromotePayload, type PromotePrice, type Proposal, type ProposalCreatePayload, type ProposalPay, type ProposalVote, type ProposalVotePayload, type ProposalVoteRow, PublicKey, QUEST_CATALOG, QUEST_MIN_CONTENT_LENGTH, QueryKeys, type QuestCatalogEntry, type QuestMilestone, type QuestPeriod, type QuestStreak, type QuestTier, type QuestsResponse, type RCAccount, RC_RESOURCE_NAMES, ROLES, type RcCostBreakdown, type RcDelegationActive, type RcDelegationPayload, type RcDirectDelegation, type RcDirectDelegationsResponse, type RcPrecheckInput, type RcPrecheckOperation, type RcPrecheckPayload, type RcPrecheckResult, type RcPriceCurveParams, type RcPricedUsage, type RcResourceDynamicsParams, type RcResourceName, type RcResourceParamEntry, type RcResourceParams, type RcResourceUsage, type RcSizeInfo, type RcStats, type Reblog, type ReblogPayload, type ReceivedVestingShare, type RecordActivityOptions, type Recoveries, type RecurrentTransfer, type RecurrentTransfers, type ReferralItem, type ReferralItems, type ReferralStat, ResilienceOptions, type ReturnVestingDelegation, type RewardFund, type RewardedCommunity, SERVER_GC_TIME_MS, SIGNATURE_BYTES, SIMILAR_ENTRIES_MIN_RENDER, type SMTAsset, STREAK_FREEZE_MAX_OWNED, STREAK_FREEZE_PRICE, SUBSCRIBERS_PAGE_SIZE, type SavingsWithdrawRequest, type Schedule, SearchQuery, type SearchQueryParts, type SearchResponse, type SearchResult, SearchType, type SetCommunityRolePayload, type SetLastReadPayload, type SetWithdrawRoute, type SetWithdrawVestingRoutePayload, type ShortVideo, type ShortsFeedEntry, type ShortsFeedParams, SortOrder, type Spotlight, type StakeEngineTokenPayload, type StatsResponse, type StreakFreezeBuyResult, type SubscribeCommunityPayload, type Subscription, type SupportSettings, Symbol, THREESPEAK_BENEFICIARY_ACCOUNT, THREESPEAK_BENEFICIARY_WEIGHT, TRANSACTION_HEADER_BYTES, type ThreadItemEntry, type ThreeSpeakBeneficiaryRoute, ThreeSpeakIntegration, type ThreeSpeakVideo, type Token, type TokenMetadata, type Transaction, type TransactionConfirmation, type Transfer, type TransferEngineTokenPayload, type TransferFromSavings, type TransferFromSavingsPayload, type TransferPayload, type TransferPointPayload, type TransferToSavings, type TransferToSavingsPayload, type TransferToVesting, type TransferToVestingPayload, type TrendingTag, type UndelegateEngineTokenPayload, type UnfollowPayload, type UnstakeEngineTokenPayload, type UnsubscribeCommunityPayload, type UpdateCommunityPayload, type UpdateProposalVotes, type UpdateReplyPayload, type UpdateSupportSettingsPayload, type User, type UserImage, type ValidatePostCreatingOptions, type VestingDelegationExpiration, type Vote, type VoteHistoryPage, type VoteHistoryPageParam, type VoteLike, type VotePayload, type VoteProxy, type WalletMetadataCandidate, type WalletOperationPayload, type WaveEntry, type WaveTrendingAuthor, type WaveTrendingTag, type WavesFeedEntry, type WavesFeedParams, type WithdrawRoute, type WithdrawVesting, type WithdrawVestingPayload, type Witness, type WitnessProxyPayload, type WitnessVotePayload, type WitnessVoter, type WitnessVoterSortDirection, type WitnessVoterSortField, type WitnessVotersResponse, type WrappedResponse, type WsBookmarkNotification, type WsDelegationsNotification, type WsFavoriteNotification, type WsFollowNotification, type WsInactiveNotification, type WsMentionNotification, type WsNotification, type WsPayoutsNotification, type WsReblogNotification, type WsReferralNotification, type WsReplyNotification, type WsSpinNotification, type WsTransferNotification, type WsVoteNotification, accountNameByteLength, addDraft, addImage, addOptimisticDiscussionEntry, addSchedule, applySupportSettingsUpdate, applyVoteCacheUpdate, bridgeApiCall, broadcastJson, broadcastOperations, broadcastOperationsAsync, buildAccountCreateOp, buildAccountUpdate2Op, buildAccountUpdateOp, buildActiveCustomJsonOp, buildBoostPlusOp, buildCancelTransferFromSavingsOp, buildChangeRecoveryAccountOp, buildClaimAccountOp, buildClaimInterestOps, buildClaimRewardBalanceOp, buildCollateralizedConvertOp, buildCommentOp, buildCommentOptionsOp, buildCommunityRegistrationOp, buildConvertOp, buildCreateClaimedAccountOp, buildDelegateRcOp, buildDelegateVestingSharesOp, buildDeleteCommentOp, buildEngineClaimOp, buildEngineOp, buildFlagPostOp, buildFollowOp, buildGrantPostingPermissionOp, buildIgnoreOp, buildLimitOrderCancelOp, buildLimitOrderCreateOp, buildLimitOrderCreateOpWithType, buildMultiPointTransferOps, buildMultiTransferOps, buildMutePostOp, buildMuteUserOp, buildPinPostOp, buildPointTransferOp, buildPostingCustomJsonOp, buildPostingJsonMetadata, buildProfileMetadata, buildPromoteOp, buildProposalCreateOp, buildProposalVoteOp, buildRcDelegationOp, buildReblogOp, buildRecoverAccountOp, buildRecurrentTransferOp, buildRemoveProposalOp, buildRequestAccountRecoveryOp, buildRevokeKeysOp, buildRevokePostingPermissionOp, buildSearchQuery, buildSetLastReadOps, buildSetRoleOp, buildSetWithdrawVestingRouteOp, buildSubscribeOp, buildTransferFromSavingsOp, buildTransferOp, buildTransferToSavingsOp, buildTransferToVestingOp, buildUnfollowOp, buildUnignoreOp, buildUnsubscribeOp, buildUpdateCommunityOp, buildUpdateProposalOp, buildVoteOp, buildWithdrawVestingOp, buildWitnessProxyOp, buildWitnessVoteOp, buyStreakFreezeRequest, calculateRCMana, calculateVPMana, canRevokeFromAuthority, checkFavoriteQueryOptions, checkUsernameWalletsPendingQueryOptions, claimPointsRequest, collectRequestedOperations, computeResourceCost, countCommentResourceUsage, countVoteResourceUsage, decodeObj, dedupeAndSortKeyAuths, deleteDraft, deleteImage, deleteSchedule, downVotingPower, earnsQuestContentCredit, encodeObj, enforceThreeSpeakBeneficiary, estimateCommentRcCost, estimateCommentTransactionBytes, estimateRcPrecheck, estimateVoteTransactionBytes, extractAccountProfile, formatError, formattedNumber, gameClaimRequest, getAccountDelegationsQueryOptions, getAccountFullQueryOptions, getAccountNotificationsInfiniteQueryOptions, getAccountPendingRecoveryQueryOptions, getAccountPosts, getAccountPostsInfiniteQueryOptions, getAccountPostsQueryOptions, getAccountRcQueryOptions, getAccountRecoveriesQueryOptions, getAccountReputationsQueryOptions, getAccountSubscriptionsQueryOptions, getAccountVoteHistoryInfiniteQueryOptions, getAccountWalletAssetInfoQueryOptions, getAccountsQueryOptions, getAggregatedBalanceQueryOptions, getAiAssistPriceQueryOptions, getAiGeneratePriceQueryOptions, getAiTranscribePriceQueryOptions, getAllHiveEngineTokensQueryOptions, getAnnouncementsQueryOptions, getBadActorsQueryOptions, getBalanceHistoryInfiniteQueryOptions, getBookmarksInfiniteQueryOptions, getBookmarksQueryOptions, getBoostPlusAccountPricesQueryOptions, getBoostPlusPricesQueryOptions, getBotsQueryOptions, getBoundFetch, getChainPropertiesQueryOptions, getCollateralizedConversionRequestsQueryOptions, getCommentHistoryQueryOptions, getCommunities, getCommunitiesQueryOptions, getCommunity, getCommunityContextQueryOptions, getCommunityPermissions, getCommunityQueryOptions, getCommunitySubscribersInfiniteQueryOptions, getCommunitySubscribersQueryOptions, getCommunityType, getContentModerationReason, getContentQueryOptions, getContentRepliesQueryOptions, getControversialRisingInfiniteQueryOptions, getConversionRequestsQueryOptions, getCurrencyRate, getCurrencyRates, getCurrencyTokenRate, getCurrentMedianHistoryPriceQueryOptions, getCustomJsonAuthority, getDeletedEntryQueryOptions, getDiscoverCurationQueryOptions, getDiscoverLeaderboardQueryOptions, getDiscussion, getDiscussionQueryOptions, getDiscussionsQueryOptions, getDraftsInfiniteQueryOptions, getDraftsQueryOptions, getDynamicPropsQueryOptions, getEntryActiveVotesQueryOptions, getFavoritesInfiniteQueryOptions, getFavoritesQueryOptions, getFeedHistoryQueryOptions, getFollowCountQueryOptions, getFollowersQueryOptions, getFollowingQueryOptions, getFragmentsInfiniteQueryOptions, getFragmentsQueryOptions, getFriendsInfiniteQueryOptions, getGalleryImagesQueryOptions, getGameStatusCheckQueryOptions, getHbdAssetGeneralInfoQueryOptions, getHbdAssetTransactionsQueryOptions, getHiveAssetGeneralInfoQueryOptions, getHiveAssetMetricQueryOptions, getHiveAssetTransactionsQueryOptions, getHiveAssetWithdrawalRoutesQueryOptions, getHiveEngineBalancesWithUsdQueryOptions, getHiveEngineMetrics, getHiveEngineOpenOrders, getHiveEngineOrderBook, getHiveEngineTokenGeneralInfoQueryOptions, getHiveEngineTokenMetrics, getHiveEngineTokenTransactions, getHiveEngineTokenTransactionsQueryOptions, getHiveEngineTokensBalances, getHiveEngineTokensBalancesQueryOptions, getHiveEngineTokensMarket, getHiveEngineTokensMarketQueryOptions, getHiveEngineTokensMetadata, getHiveEngineTokensMetadataQueryOptions, getHiveEngineTokensMetricsQueryOptions, getHiveEngineTradeHistory, getHiveEngineUnclaimedRewards, getHiveEngineUnclaimedRewardsQueryOptions, getHiveHbdStatsQueryOptions, getHivePoshLinksQueryOptions, getHivePowerAssetGeneralInfoQueryOptions, getHivePowerAssetTransactionsQueryOptions, getHivePowerDelegatesInfiniteQueryOptions, getHivePowerDelegatingsQueryOptions, getHivePrice, getImagesInfiniteQueryOptions, getImagesQueryOptions, getIncomingRcQueryOptions, getMarketData, getMarketDataQueryOptions, getMarketHistoryQueryOptions, getMarketStatisticsQueryOptions, getMutedUsersQueryOptions, getNextAccountHistoryPageParam, getNormalizePostQueryOptions, getNotificationSetting, getNotifications, getNotificationsInfiniteQueryOptions, getNotificationsSettingsQueryOptions, getNotificationsUnreadCountQueryOptions, getOpenOrdersQueryOptions, getOperationAuthority, getOrderBookQueryOptions, getOutgoingRcDelegationsInfiniteQueryOptions, getPageStatsQueryOptions, getPointsAssetGeneralInfoQueryOptions, getPointsAssetTransactionsQueryOptions, getPointsQueryOptions, getPollQueryOptions, getPortfolioQueryOptions, getPost, getPostHeader, getPostHeaderQueryOptions, getPostQueryOptions, getPostTipsQueryOptions, getPostsRanked, getPostsRankedInfiniteQueryOptions, getPostsRankedQueryOptions, getProMembersQueryOptions, getProfiles, getProfilesQueryOptions, getPromotePriceQueryOptions, getPromotedPost, getPromotedPostsQuery, getProposalAuthority, getProposalQueryOptions, getProposalVotesInfiniteQueryOptions, getProposalsQueryOptions, getQueryClient, getQuestCatalogEntry, getQuestsQueryOptions, getRcDelegationActiveQueryOptions, getRcDelegationPricesQueryOptions, getRcResourceParamsQueryOptions, getRcStatsQueryOptions, getRebloggedByQueryOptions, getReblogsQueryOptions, getReceivedVestingSharesQueryOptions, getRecurrentTransfersQueryOptions, getReferralsInfiniteQueryOptions, getReferralsStatsQueryOptions, getRelationshipBetweenAccounts, getRelationshipBetweenAccountsQueryOptions, getRequiredAuthority, getRewardFundQueryOptions, getRewardedCommunitiesQueryOptions, getSavingsWithdrawFromQueryOptions, getSchedulesInfiniteQueryOptions, getSchedulesQueryOptions, getSearchAccountQueryOptions, getSearchAccountsByUsernameQueryOptions, getSearchApiInfiniteQueryOptions, getSearchFriendsQueryOptions, getSearchPathQueryOptions, getSearchTopicsQueryOptions, getShortsFeedQueryOptions, getSimilarEntriesQueryOptions, getSpotlightsQueryOptions, getStatsQueryOptions, getSubscribers, getSubscriptions, getSupportSettingsQueryOptions, getSupportSettingsRequest, getTradeHistoryQueryOptions, getTransactionsInfiniteQueryOptions, getTrendingTagsQueryOptions, getTrendingTagsWithStatsQueryOptions, getUserPostVoteQueryOptions, getUserProposalVotesQueryOptions, getVestingDelegationExpirationsQueryOptions, getVestingDelegationsQueryOptions, getVisibleFirstLevelThreadItems, getWavesByAccountQueryOptions, getWavesByHostQueryOptions, getWavesByTagQueryOptions, getWavesFeedQueryOptions, getWavesFollowingQueryOptions, getWavesLatestFeedQueryOptions, getWavesTrendingAuthorsQueryOptions, getWavesTrendingTagsQueryOptions, getWithdrawRoutesQueryOptions, getWitnessVoterCountQueryOptions, getWitnessVotersPageQueryOptions, getWitnessesInfiniteQueryOptions, hasExternalLink, hasThreeSpeakEmbed, hsTokenRenew, invalidateAfterBroadcast, isAuthorMuted, isCommunity, isEmptyDate, isHiddenPost, isInfoError, isLowTrustSeoPost, isNetworkError, isQueryableAccountName, isResourceCreditsError, isThreeSpeakBeneficiary, isVoteAlreadyReflected, isWif, isWrappedResponse, lookupAccountsQueryOptions, makeQueryClient, mapMetaChoicesToPollChoices, mapThreadItemsToWaveEntries, markNotifications, measureQuestContentLength, moveSchedule, normalizePost, normalizeSearchAuthor, normalizeSearchCategory, normalizeSearchTags, normalizeToWrappedResponse, normalizeWaveEntryFromApi, onboardEmail, parseAccounts, parseAsset, parseChainError, parsePostingMetadataRoot, parseProfileMetadata, pickRicherMetadataSnapshot, powerRechargeTime, priceRcUsage, proMembersSet, rcPower, removeOptimisticDiscussionEntry, resolveAccountHistoryLimit, resolveContentActivityType, resolveHiveOperationFilters, resolvePost, restoreDiscussionSnapshots, restoreEntryInCache, roleMap, saveNotificationSetting, search, searchPath, searchQueryOptions, sha256, shouldTriggerAuthFallback, signUp, similar, sortDiscussions, stringFieldBytes, subscribeEmail, toEntryArray, updateDraft, updateEntryInCache, updateSupportSettingsRequest, uploadImage, uploadImageWithSignature, useAccountFavoriteAdd, useAccountFavoriteDelete, useAccountRelationsUpdate, useAccountRevokeKey, useAccountRevokePosting, useAccountUpdate, useAccountUpdateKeyAuths, useAccountUpdatePassword, useAccountUpdateRecovery, useAddDraft, useAddFragment, useAddImage, useAddSchedule, useAiAssist, useAiTranscribe, useBookmarkAdd, useBookmarkDelete, useBoostPlus, useBroadcastMutation, useBuyStreakFreeze, useClaimAccount, useClaimEngineRewards, useClaimInterest, useClaimPoints, useClaimRewards, useComment, useConvert, useCreateAccount, useCrossPost, useDelegateEngineToken, useDelegateRc, useDelegateVestingShares, useDeleteComment, useDeleteDraft, useDeleteImage, useDeleteSchedule, useEditFragment, useEngineMarketOrder, useFollow, useGameClaim, useGenerateImage, useGrantPostingPermission, useLimitOrderCancel, useLimitOrderCreate, useMarkNotificationsRead, useMoveSchedule, useMutePost, usePinPost, usePollVote, usePromote, useProposalCreate, useProposalVote, useRcDelegation, useReblog, useRecordActivity, useRegisterCommunityRewards, useRemoveFragment, useSetCommunityRole, useSetLastRead, useSetWithdrawVestingRoute, useSignOperationByHivesigner, useSignOperationByKey, useSignOperationByKeychain, useStakeEngineToken, useSubscribeCommunity, useTransfer, useTransferEngineToken, useTransferFromSavings, useTransferPoint, useTransferToSavings, useTransferToVesting, useUndelegateEngineToken, useUnfollow, useUnstakeEngineToken, useUnsubscribeCommunity, useUpdateCommunity, useUpdateDraft, useUpdateReply, useUpdateSupportSettings, useUploadImage, useVote, useWalletOperation, useWithdrawVesting, useWitnessProxy, useWitnessVote, usrActivity, utf8ByteLength, validatePostCreating, varintByteLength, verifyPostOnAlternateNode, vestsToHp, votingPower, votingRshares, votingValue, withTimeoutSignal };
+type DigestType = "own" | "community" | "creator" | "site";
+type DigestCadence = "weekly" | "monthly";
+type DigestStatus = "active" | "pending_confirmation" | "suppressed" | "ended";
+/** The two list types that have a sender side (own/site digests are system-sent). */
+type NewsletterListType = "creator" | "community";
+interface DigestSubscription {
+    id: string;
+    email: string;
+    account: string | null;
+    type: DigestType;
+    target: string;
+    cadence: DigestCadence;
+    status: DigestStatus;
+    created_at: string;
+}
+/**
+ * Where the subscribe request originated. The relay keeps a closed allowlist
+ * (apps/web/src/app/api/newsletter/subscribe/route.ts SOURCES) — a value the
+ * route does not accept is a silent 400, so additions land there first.
+ */
+type DigestSubscribeSource = "community-page" | "creator-page" | "settings" | "landing-page" | "publish-prompt" | "post-page" | "self-hosted-blog" | "mobile-app";
+interface DigestSubscribeInput {
+    email: string;
+    type: DigestType;
+    target: string;
+    cadence: DigestCadence;
+    source: DigestSubscribeSource;
+    /**
+     * Cloudflare Turnstile token. Required by the relay whenever the caller has
+     * no verified account; ignored for authenticated callers, whose account is
+     * the proof.
+     */
+    captchaToken?: string;
+}
+interface DigestSubscribeResult {
+    status: "active" | "pending_confirmation" | "refused";
+    /** Proven (authenticated or already-confirmed) callers only. */
+    subscription?: DigestSubscription;
+    created?: boolean;
+    confirmationSent?: boolean;
+    reason?: "suppressed";
+}
+interface NewsletterPostRef {
+    author: string;
+    permlink: string;
+}
+/** One post, the post being the issue. */
+interface NewsletterSendRef extends NewsletterPostRef {
+    type: NewsletterListType;
+    target: string;
+}
+/** Several posts with a subject and an intro. */
+interface NewsletterComposeRequest {
+    type: NewsletterListType;
+    target: string;
+    posts: NewsletterPostRef[];
+    subject?: string;
+    intro?: string;
+}
+type NewsletterSendRequest = NewsletterSendRef | NewsletterComposeRequest;
+interface NewsletterCandidatePost extends NewsletterPostRef {
+    title: string;
+    created: string;
+    featured: boolean;
+}
+interface NewsletterSendPreview {
+    subject: string;
+    html: string;
+    text: string;
+    post: {
+        author: string;
+        permlink: string;
+        title: string;
+    };
+    posts: Array<{
+        author: string;
+        permlink: string;
+        title: string;
+    }>;
+    subscribers: {
+        weekly: number;
+        monthly: number;
+    };
+    alreadySent: DigestCadence[];
+}
+interface NewsletterSendResult {
+    issues: Array<{
+        issueId: string;
+        cadence: DigestCadence;
+        period: string;
+        send: {
+            recipients: number;
+            sent: number;
+            pending: number;
+        };
+    }>;
+}
+interface NewsletterSentIssue {
+    id: string;
+    cadence: DigestCadence;
+    kind: "digest" | "post";
+    period_start: string;
+    subject: string;
+    status: string;
+    post_author: string | null;
+    post_permlink: string | null;
+    requested_by: string | null;
+    created_at: string;
+    delivered: number;
+    bounced: number;
+    rejected: number;
+}
+interface NewsletterSenderStanding {
+    type: DigestType;
+    target: string;
+    status: "active" | "suspended";
+    reason: string | null;
+    since: string | null;
+    stats: {
+        delivered: number;
+        bounced: number;
+        rejected: number;
+        complaints: number;
+        unsubscribed: number;
+        complaintRate: number;
+        bounceRate: number;
+    };
+    /** Live, mailable subscribers per cadence. */
+    subscribers?: {
+        weekly: number;
+        monthly: number;
+    };
+}
+
+/**
+ * Client for the newsletter relay at {privateApiHost}/api/newsletter/*
+ * (Next.js route handlers on ecency.com, which alone hold the news-service
+ * credentials — clients never talk to the service directly).
+ *
+ * Identity is the HiveSigner access token, passed here as the explicit `code`
+ * argument. Transport mirrors the deployed web client per route: subscribe and
+ * unsubscribe-all carry it in the POST body as `code` (the subscribe route
+ * authenticates ONLY from the body — a header alone is treated as anonymous);
+ * every other call, the send/preview POSTs included, uses the `X-HS-Token`
+ * header. The relay verifies it upstream and derives the account from it, so
+ * a stale token 401s — callers are responsible for supplying a fresh one
+ * (web: ensureValidToken; mobile: the token-refresh wrapper).
+ *
+ * The email-token confirm/unsubscribe flows are deliberately absent: those
+ * links land on web pages.
+ */
+declare class NewsletterApiError extends Error {
+    readonly status: number;
+    readonly data?: unknown | undefined;
+    constructor(message: string, status: number, data?: unknown | undefined);
+}
+/** A refused send, carrying the relay's routing `code` (already_sent, suspended, ...). */
+declare class NewsletterSendRefusedError extends NewsletterApiError {
+    readonly code?: string | undefined;
+    readonly taken?: Array<{
+        cadence: string;
+        period: string;
+        kind: string;
+    }> | undefined;
+    constructor(message: string, status: number, code?: string | undefined, taken?: Array<{
+        cadence: string;
+        period: string;
+        kind: string;
+    }> | undefined, data?: unknown);
+}
+/**
+ * Subscribe an address to a digest. Authenticated callers (code given) skip
+ * the captcha; anonymous callers must supply `captchaToken` in the input and
+ * get double opt-in. The `own` digest type is always authenticated.
+ */
+declare function subscribeDigestRequest(input: DigestSubscribeInput, code?: string): Promise<DigestSubscribeResult>;
+/** Every live digest subscription attributed to the token's account. */
+declare function getDigestSubscriptionsRequest(code: string): Promise<DigestSubscription[]>;
+/** Leave one digest by subscription id. */
+declare function leaveDigestRequest(id: string, code: string): Promise<void>;
+/**
+ * Suppress ONE address entirely (no Ecency bulk mail to it again). Only that
+ * address stops: an account can hold subscriptions under several addresses.
+ */
+declare function unsubscribeAllDigestsRequest(email: string, code: string): Promise<void>;
+/** Sender standing (status, complaint/bounce stats, subscriber counts) for a list. */
+declare function getNewsletterSenderRequest(type: NewsletterListType, target: string, code: string): Promise<NewsletterSenderStanding>;
+/** Already-sent issues for a list, newest first. */
+declare function getNewsletterIssuesRequest(type: NewsletterListType, target: string, code: string): Promise<NewsletterSentIssue[]>;
+/** Candidate posts for composing a digest issue. */
+declare function getNewsletterPostsRequest(type: NewsletterListType, target: string, code: string, limit?: number): Promise<NewsletterCandidatePost[]>;
+/** Render the would-be issue (subject/html/text, counts, taken periods) without sending. */
+declare function previewNewsletterSendRequest(request: NewsletterSendRequest, code: string): Promise<NewsletterSendPreview>;
+/** Send a post or composed digest to the list's subscribers. Pro/team gated by the relay. */
+declare function sendNewsletterIssueRequest(request: NewsletterSendRequest, code: string): Promise<NewsletterSendResult>;
+
+/**
+ * The signed-in account's live digest subscriptions. Disabled without a
+ * username + token: callers render nothing then, and a request that
+ * predictably 401s is noise. `retry: false` because the common failure is a
+ * stale token, which a retry with the same token cannot fix.
+ */
+declare function getDigestSubscriptionsQueryOptions(username: string | undefined, code: string | undefined): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<DigestSubscription[], Error, DigestSubscription[], (string | undefined)[]>, "queryFn"> & {
+    queryFn?: _tanstack_react_query.QueryFunction<DigestSubscription[], (string | undefined)[], never> | undefined;
+} & {
+    queryKey: (string | undefined)[] & {
+        [dataTagSymbol]: DigestSubscription[];
+        [dataTagErrorSymbol]: Error;
+    };
+};
+
+/**
+ * Sender standing for a creator/community list. View access is the list's
+ * owner (creator) or the community team, decided by the relay — enable this
+ * only for callers already known to be the sender.
+ */
+declare function getNewsletterSenderQueryOptions(type: NewsletterListType, target: string, username: string | undefined, code: string | undefined): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<NewsletterSenderStanding, Error, NewsletterSenderStanding, (string | undefined)[]>, "queryFn"> & {
+    queryFn?: _tanstack_react_query.QueryFunction<NewsletterSenderStanding, (string | undefined)[], never> | undefined;
+} & {
+    queryKey: (string | undefined)[] & {
+        [dataTagSymbol]: NewsletterSenderStanding;
+        [dataTagErrorSymbol]: Error;
+    };
+};
+
+/** Already-sent issues for a creator/community list (sender-only view). */
+declare function getNewsletterIssuesQueryOptions(type: NewsletterListType, target: string, username: string | undefined, code: string | undefined): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<NewsletterSentIssue[], Error, NewsletterSentIssue[], (string | undefined)[]>, "queryFn"> & {
+    queryFn?: _tanstack_react_query.QueryFunction<NewsletterSentIssue[], (string | undefined)[], never> | undefined;
+} & {
+    queryKey: (string | undefined)[] & {
+        [dataTagSymbol]: NewsletterSentIssue[];
+        [dataTagErrorSymbol]: Error;
+    };
+};
+
+/** Candidate posts for composing a digest issue (send-gated by the relay). */
+declare function getNewsletterPostsQueryOptions(type: NewsletterListType, target: string, username: string | undefined, code: string | undefined, limit?: number): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<NewsletterCandidatePost[], Error, NewsletterCandidatePost[], (string | number | undefined)[]>, "queryFn"> & {
+    queryFn?: _tanstack_react_query.QueryFunction<NewsletterCandidatePost[], (string | number | undefined)[], never> | undefined;
+} & {
+    queryKey: (string | number | undefined)[] & {
+        [dataTagSymbol]: NewsletterCandidatePost[];
+        [dataTagErrorSymbol]: Error;
+    };
+};
+
+/**
+ * Subscribe to a digest (also re-used to change cadence: same list + address
+ * with a new cadence updates the row). Works signed-in (code) and anonymous
+ * (input.captchaToken); the signed-in path refreshes the account's
+ * subscriptions list on success.
+ */
+declare function useSubscribeDigest(username: string | undefined, code: string | undefined): _tanstack_react_query.UseMutationResult<DigestSubscribeResult, Error, DigestSubscribeInput, unknown>;
+
+/** Leave one digest by subscription id; drops the row from the cached list. */
+declare function useLeaveDigest(username: string | undefined, code: string | undefined): _tanstack_react_query.UseMutationResult<void, Error, string, unknown>;
+
+/**
+ * Stop all Ecency mail to ONE address. Only that address's rows leave the
+ * cached list: an account can hold subscriptions under more than one address,
+ * and those stay visible.
+ */
+declare function useUnsubscribeAllDigests(username: string | undefined, code: string | undefined): _tanstack_react_query.UseMutationResult<void, Error, string, unknown>;
+
+/**
+ * Preview the would-be issue. No cache side effects: a preview changes
+ * nothing server-side.
+ */
+declare function usePreviewNewsletterIssue(username: string | undefined, code: string | undefined): _tanstack_react_query.UseMutationResult<NewsletterSendPreview, Error, NewsletterSendRequest, unknown>;
+/**
+ * Send a post or composed digest to a list. Errors are
+ * NewsletterSendRefusedError with the relay's routing `code`
+ * (already_sent + taken periods, suspended, post_refused, ...). On success the
+ * list's issues + sender standing refresh.
+ */
+declare function useSendNewsletterIssue(username: string | undefined, code: string | undefined): _tanstack_react_query.UseMutationResult<NewsletterSendResult, Error, NewsletterSendRequest, unknown>;
+
+export { ACCOUNT_OPERATION_GROUPS, ALL_ACCOUNT_OPERATIONS, ALL_NOTIFY_TYPES, type AccountBookmark, type AccountDelegations, type AccountFavorite, type AccountFollowStats, type AccountKeys, type AccountNotification, type AccountProfile, type AccountRelationship, type AccountReputation, type AggregatedBalanceEntry, type AiAssistParams, type AiAssistPrice, type AiAssistResponse, type AiGenerationPrice, type AiGenerationRequest, type AiGenerationResponse, type AiImagePowerTier, type AiImagePriceResponse, type AiTranscribeParams, type AiTranscribePrice, type AiTranscribeResponse, type Announcement, type ApiBookmarkNotification, type ApiDelegationsNotification, type ApiFavoriteNotification, type ApiFollowNotification, type ApiInactiveNotification, type ApiMentionNotification, type ApiNotification, type ApiNotificationSetting, type ApiPayoutsNotification, type ApiReblogNotification, type ApiReferralNotification, type ApiReplyNotification, type ApiResponse, type ApiScheduledPublishedNotification, type ApiSpinNotification, type ApiTransferNotification, type ApiVoteNotification, type ApiWeeklyEarningsNotification, type Asset, AssetOperation, type AuthContext, type AuthContextV2, type AuthMethod, type AuthorReward, Authority, type AuthorityLevel, type AuthorityType, BROADCAST_INCLUSION_DELAY_MS, type BalanceAggregationGranularity, type BalanceCoinType, type BalanceHistoryEntry, type BalanceHistoryResponse, type Beneficiary, type BeneficiaryRoute, type BlogEntry, type BoostPlusAccountPrice, type BoostPlusPayload, type BroadcastMode, BroadcastResult, type BuildProfileMetadataArgs, type BuiltSearchQuery, BuySellTransactionType, CONFIG, type CancelTransferFromSavings, type CantAfford, type CheckUsernameWalletsPendingResponse, type ClaimAccountPayload, type ClaimEngineRewardsPayload, type ClaimInterestPayload, type ClaimRewardBalance, type ClaimRewardsPayload, type CollateralizedConversionRequest, type CollateralizedConvert, type CommentBenefactor, type CommentLike, type CommentOptionsLike, type CommentPayload, type CommentPayoutUpdate, type CommentRcCostEstimate, type CommentResourceUsageInput, type CommentReward, type CommentTransactionInput, type Communities, type Community, type CommunityProps, type CommunityRewardsRegisterPayload, type CommunityRole, type CommunityTeam, type CommunityType, ConfigManager, ContentModerationReason, type ConversionRequest, type ConvertPayload, type CreateAccountPayload, type CrossPostPayload, type CurationDuration, type CurationItem, type CurationReward, type CurrencyRates, type DailyCheckinQuest, type DailyContentQuest, type DailyQuest, type DelegateEngineTokenPayload, type DelegateRcPayload, type DelegateVestingShares, type DelegateVestingSharesPayload, type DelegatedVestingShare, type DeleteCommentPayload, type DeletedEntry, type DigestCadence, type DigestStatus, type DigestSubscribeInput, type DigestSubscribeResult, type DigestSubscribeSource, type DigestSubscription, type DigestType, type Draft, type DraftMetadata, type DraftRewardType, type DraftsWrappedResponse, type DynamicProps$1 as DynamicProps, index as EcencyAnalytics, EcencyQueriesManager, type EffectiveCommentVote, type EngineMarketOrderPayload, EntriesCacheManagement, type Entry$1 as Entry, type EntryBeneficiaryRoute, type EntryHeader, type EntryStat, type EntryVote, ErrorType, type EstimateCommentRcCostInput, type FeedHistoryItem, type FillCollateralizedConvertRequest, type FillConvertRequest, type FillOrder, type FillRecurrentTransfers, type FillTransferFromSavings, type FillVestingWithdraw, type Follow, type FollowPayload, type Fragment, type FriendSearchResult, type FriendsPageParam, type FriendsRow, type FullAccount, type GameClaim, type GeneralAssetInfo, type GeneralAssetTransaction, type GenerateImageParams, type GetGameStatus, type GetRecoveriesEmailResponse, type GrantPostingPermissionPayload, HIDDEN_POST_MIN_VOTES, HIDDEN_POST_RSHARES_THRESHOLD, HIVE_ACCOUNT_OPERATION_GROUPS, HIVE_OPERATION_LIST, HIVE_OPERATION_NAME_BY_ID, HIVE_OPERATION_ORDERS, type HiveBasedAssetSignType, type HiveEngineMarketResponse, type HiveEngineMetric, type HiveEngineOpenOrder, type HiveEngineOrderBookEntry, HiveEngineToken, type HiveEngineTokenBalance, type HiveEngineTokenInfo, type HiveEngineTokenMetadataResponse, type HiveEngineTokenStatus, type HiveEngineTransaction, type HiveHbdStats, type HiveMarketMetric, type HiveOperationFilter, type HiveOperationFilterKey, type HiveOperationFilterValue, type HiveOperationGroup, type HiveOperationName, HiveSignerIntegration, type HiveTransaction, type HsTokenRenewResponse, INTERNAL_API_TIMEOUT_MS, type IncomingDelegation, type IncomingRcDelegation, type IncomingRcResponse, type Interest, type JsonMetadata, type JsonPollMetadata, type Keys, LOW_TRUST_REPUTATION_THRESHOLD, type LeaderBoardDuration, type LeaderBoardItem, type LimitOrderCancel, type LimitOrderCancelPayload, type LimitOrderCreate, type LimitOrderCreatePayload, MAX_SEARCH_QUERY_LENGTH, MAX_SEARCH_TAGS, type MarketCandlestickDataItem, type MarketData, type MarketStatistics, type MedianHistoryPrice, type ModerationCandidate, type MutePostPayload, NaiMap, NewsletterApiError, type NewsletterCandidatePost, type NewsletterComposeRequest, type NewsletterListType, type NewsletterPostRef, type NewsletterSendPreview, type NewsletterSendRef, NewsletterSendRefusedError, type NewsletterSendRequest, type NewsletterSendResult, type NewsletterSenderStanding, type NewsletterSentIssue, NotificationFilter, NotificationViewType, type Notifications, NotifyTypes, OPERATION_AUTHORITY_MAP, type OpenOrdersData, Operation, type OperationGroup, OperationName, OrderIdPrefix, type OrdersData, type OrdersDataItem, type OutgoingDelegation, POLLS_PROTOCOL_VERSION, type PageStatsResponse, type PaginationMeta, type ParsedChainError, type Payer, type PeriodQuest, type PinPostPayload, type PlatformAdapter, type PointTransaction, PointTransactionType, type Points, type PointsResponse, type Poll, type PollChoice, type PollChoiceVotes, PollPreferredInterpretation, type PollStats, type PollVotePayload, type PollVoter, type PortfolioResponse, type PortfolioWalletItem, type PostTip, type PostTipsResponse, PrivateKey, type ProMembersResponse, type ProducerReward, type Profile, type ProfileTokens, type PromotePayload, type PromotePrice, type Proposal, type ProposalCreatePayload, type ProposalPay, type ProposalVote, type ProposalVotePayload, type ProposalVoteRow, PublicKey, QUEST_CATALOG, QUEST_MIN_CONTENT_LENGTH, QueryKeys, type QuestCatalogEntry, type QuestMilestone, type QuestPeriod, type QuestStreak, type QuestTier, type QuestsResponse, type RCAccount, RC_RESOURCE_NAMES, ROLES, type RcCostBreakdown, type RcDelegationActive, type RcDelegationPayload, type RcDirectDelegation, type RcDirectDelegationsResponse, type RcPrecheckInput, type RcPrecheckOperation, type RcPrecheckPayload, type RcPrecheckResult, type RcPriceCurveParams, type RcPricedUsage, type RcResourceDynamicsParams, type RcResourceName, type RcResourceParamEntry, type RcResourceParams, type RcResourceUsage, type RcSizeInfo, type RcStats, type Reblog, type ReblogPayload, type ReceivedVestingShare, type RecordActivityOptions, type Recoveries, type RecurrentTransfer, type RecurrentTransfers, type ReferralItem, type ReferralItems, type ReferralStat, ResilienceOptions, type ReturnVestingDelegation, type RewardFund, type RewardedCommunity, SERVER_GC_TIME_MS, SIGNATURE_BYTES, SIMILAR_ENTRIES_MIN_RENDER, type SMTAsset, STREAK_FREEZE_MAX_OWNED, STREAK_FREEZE_PRICE, SUBSCRIBERS_PAGE_SIZE, type SavingsWithdrawRequest, type Schedule, SearchQuery, type SearchQueryParts, type SearchResponse, type SearchResult, SearchType, type SetCommunityRolePayload, type SetLastReadPayload, type SetWithdrawRoute, type SetWithdrawVestingRoutePayload, type ShortVideo, type ShortsFeedEntry, type ShortsFeedParams, SortOrder, type Spotlight, type StakeEngineTokenPayload, type StatsResponse, type StreakFreezeBuyResult, type SubscribeCommunityPayload, type Subscription, type SupportSettings, Symbol, THREESPEAK_BENEFICIARY_ACCOUNT, THREESPEAK_BENEFICIARY_WEIGHT, TRANSACTION_HEADER_BYTES, type ThreadItemEntry, type ThreeSpeakBeneficiaryRoute, ThreeSpeakIntegration, type ThreeSpeakVideo, type Token, type TokenMetadata, type Transaction, type TransactionConfirmation, type Transfer, type TransferEngineTokenPayload, type TransferFromSavings, type TransferFromSavingsPayload, type TransferPayload, type TransferPointPayload, type TransferToSavings, type TransferToSavingsPayload, type TransferToVesting, type TransferToVestingPayload, type TrendingTag, type UndelegateEngineTokenPayload, type UnfollowPayload, type UnstakeEngineTokenPayload, type UnsubscribeCommunityPayload, type UpdateCommunityPayload, type UpdateProposalVotes, type UpdateReplyPayload, type UpdateSupportSettingsPayload, type User, type UserImage, type ValidatePostCreatingOptions, type VestingDelegationExpiration, type Vote, type VoteHistoryPage, type VoteHistoryPageParam, type VoteLike, type VotePayload, type VoteProxy, type WalletMetadataCandidate, type WalletOperationPayload, type WaveEntry, type WaveTrendingAuthor, type WaveTrendingTag, type WavesFeedEntry, type WavesFeedParams, type WithdrawRoute, type WithdrawVesting, type WithdrawVestingPayload, type Witness, type WitnessProxyPayload, type WitnessVotePayload, type WitnessVoter, type WitnessVoterSortDirection, type WitnessVoterSortField, type WitnessVotersResponse, type WrappedResponse, type WsBookmarkNotification, type WsDelegationsNotification, type WsFavoriteNotification, type WsFollowNotification, type WsInactiveNotification, type WsMentionNotification, type WsNotification, type WsPayoutsNotification, type WsReblogNotification, type WsReferralNotification, type WsReplyNotification, type WsSpinNotification, type WsTransferNotification, type WsVoteNotification, accountNameByteLength, addDraft, addImage, addOptimisticDiscussionEntry, addSchedule, applySupportSettingsUpdate, applyVoteCacheUpdate, bridgeApiCall, broadcastJson, broadcastOperations, broadcastOperationsAsync, buildAccountCreateOp, buildAccountUpdate2Op, buildAccountUpdateOp, buildActiveCustomJsonOp, buildBoostPlusOp, buildCancelTransferFromSavingsOp, buildChangeRecoveryAccountOp, buildClaimAccountOp, buildClaimInterestOps, buildClaimRewardBalanceOp, buildCollateralizedConvertOp, buildCommentOp, buildCommentOptionsOp, buildCommunityRegistrationOp, buildConvertOp, buildCreateClaimedAccountOp, buildDelegateRcOp, buildDelegateVestingSharesOp, buildDeleteCommentOp, buildEngineClaimOp, buildEngineOp, buildFlagPostOp, buildFollowOp, buildGrantPostingPermissionOp, buildIgnoreOp, buildLimitOrderCancelOp, buildLimitOrderCreateOp, buildLimitOrderCreateOpWithType, buildMultiPointTransferOps, buildMultiTransferOps, buildMutePostOp, buildMuteUserOp, buildPinPostOp, buildPointTransferOp, buildPostingCustomJsonOp, buildPostingJsonMetadata, buildProfileMetadata, buildPromoteOp, buildProposalCreateOp, buildProposalVoteOp, buildRcDelegationOp, buildReblogOp, buildRecoverAccountOp, buildRecurrentTransferOp, buildRemoveProposalOp, buildRequestAccountRecoveryOp, buildRevokeKeysOp, buildRevokePostingPermissionOp, buildSearchQuery, buildSetLastReadOps, buildSetRoleOp, buildSetWithdrawVestingRouteOp, buildSubscribeOp, buildTransferFromSavingsOp, buildTransferOp, buildTransferToSavingsOp, buildTransferToVestingOp, buildUnfollowOp, buildUnignoreOp, buildUnsubscribeOp, buildUpdateCommunityOp, buildUpdateProposalOp, buildVoteOp, buildWithdrawVestingOp, buildWitnessProxyOp, buildWitnessVoteOp, buyStreakFreezeRequest, calculateRCMana, calculateVPMana, canRevokeFromAuthority, checkFavoriteQueryOptions, checkUsernameWalletsPendingQueryOptions, claimPointsRequest, collectRequestedOperations, computeResourceCost, countCommentResourceUsage, countVoteResourceUsage, decodeObj, dedupeAndSortKeyAuths, deleteDraft, deleteImage, deleteSchedule, downVotingPower, earnsQuestContentCredit, encodeObj, enforceThreeSpeakBeneficiary, estimateCommentRcCost, estimateCommentTransactionBytes, estimateRcPrecheck, estimateVoteTransactionBytes, extractAccountProfile, formatError, formattedNumber, gameClaimRequest, getAccountDelegationsQueryOptions, getAccountFullQueryOptions, getAccountNotificationsInfiniteQueryOptions, getAccountPendingRecoveryQueryOptions, getAccountPosts, getAccountPostsInfiniteQueryOptions, getAccountPostsQueryOptions, getAccountRcQueryOptions, getAccountRecoveriesQueryOptions, getAccountReputationsQueryOptions, getAccountSubscriptionsQueryOptions, getAccountVoteHistoryInfiniteQueryOptions, getAccountWalletAssetInfoQueryOptions, getAccountsQueryOptions, getAggregatedBalanceQueryOptions, getAiAssistPriceQueryOptions, getAiGeneratePriceQueryOptions, getAiTranscribePriceQueryOptions, getAllHiveEngineTokensQueryOptions, getAnnouncementsQueryOptions, getBadActorsQueryOptions, getBalanceHistoryInfiniteQueryOptions, getBookmarksInfiniteQueryOptions, getBookmarksQueryOptions, getBoostPlusAccountPricesQueryOptions, getBoostPlusPricesQueryOptions, getBotsQueryOptions, getBoundFetch, getChainPropertiesQueryOptions, getCollateralizedConversionRequestsQueryOptions, getCommentHistoryQueryOptions, getCommunities, getCommunitiesQueryOptions, getCommunity, getCommunityContextQueryOptions, getCommunityPermissions, getCommunityQueryOptions, getCommunitySubscribersInfiniteQueryOptions, getCommunitySubscribersQueryOptions, getCommunityType, getContentModerationReason, getContentQueryOptions, getContentRepliesQueryOptions, getControversialRisingInfiniteQueryOptions, getConversionRequestsQueryOptions, getCurrencyRate, getCurrencyRates, getCurrencyTokenRate, getCurrentMedianHistoryPriceQueryOptions, getCustomJsonAuthority, getDeletedEntryQueryOptions, getDigestSubscriptionsQueryOptions, getDigestSubscriptionsRequest, getDiscoverCurationQueryOptions, getDiscoverLeaderboardQueryOptions, getDiscussion, getDiscussionQueryOptions, getDiscussionsQueryOptions, getDraftsInfiniteQueryOptions, getDraftsQueryOptions, getDynamicPropsQueryOptions, getEntryActiveVotesQueryOptions, getFavoritesInfiniteQueryOptions, getFavoritesQueryOptions, getFeedHistoryQueryOptions, getFollowCountQueryOptions, getFollowersQueryOptions, getFollowingQueryOptions, getFragmentsInfiniteQueryOptions, getFragmentsQueryOptions, getFriendsInfiniteQueryOptions, getGalleryImagesQueryOptions, getGameStatusCheckQueryOptions, getHbdAssetGeneralInfoQueryOptions, getHbdAssetTransactionsQueryOptions, getHiveAssetGeneralInfoQueryOptions, getHiveAssetMetricQueryOptions, getHiveAssetTransactionsQueryOptions, getHiveAssetWithdrawalRoutesQueryOptions, getHiveEngineBalancesWithUsdQueryOptions, getHiveEngineMetrics, getHiveEngineOpenOrders, getHiveEngineOrderBook, getHiveEngineTokenGeneralInfoQueryOptions, getHiveEngineTokenMetrics, getHiveEngineTokenTransactions, getHiveEngineTokenTransactionsQueryOptions, getHiveEngineTokensBalances, getHiveEngineTokensBalancesQueryOptions, getHiveEngineTokensMarket, getHiveEngineTokensMarketQueryOptions, getHiveEngineTokensMetadata, getHiveEngineTokensMetadataQueryOptions, getHiveEngineTokensMetricsQueryOptions, getHiveEngineTradeHistory, getHiveEngineUnclaimedRewards, getHiveEngineUnclaimedRewardsQueryOptions, getHiveHbdStatsQueryOptions, getHivePoshLinksQueryOptions, getHivePowerAssetGeneralInfoQueryOptions, getHivePowerAssetTransactionsQueryOptions, getHivePowerDelegatesInfiniteQueryOptions, getHivePowerDelegatingsQueryOptions, getHivePrice, getImagesInfiniteQueryOptions, getImagesQueryOptions, getIncomingRcQueryOptions, getMarketData, getMarketDataQueryOptions, getMarketHistoryQueryOptions, getMarketStatisticsQueryOptions, getMutedUsersQueryOptions, getNewsletterIssuesQueryOptions, getNewsletterIssuesRequest, getNewsletterPostsQueryOptions, getNewsletterPostsRequest, getNewsletterSenderQueryOptions, getNewsletterSenderRequest, getNextAccountHistoryPageParam, getNormalizePostQueryOptions, getNotificationSetting, getNotifications, getNotificationsInfiniteQueryOptions, getNotificationsSettingsQueryOptions, getNotificationsUnreadCountQueryOptions, getOpenOrdersQueryOptions, getOperationAuthority, getOrderBookQueryOptions, getOutgoingRcDelegationsInfiniteQueryOptions, getPageStatsQueryOptions, getPointsAssetGeneralInfoQueryOptions, getPointsAssetTransactionsQueryOptions, getPointsQueryOptions, getPollQueryOptions, getPortfolioQueryOptions, getPost, getPostHeader, getPostHeaderQueryOptions, getPostQueryOptions, getPostTipsQueryOptions, getPostsRanked, getPostsRankedInfiniteQueryOptions, getPostsRankedQueryOptions, getProMembersQueryOptions, getProfiles, getProfilesQueryOptions, getPromotePriceQueryOptions, getPromotedPost, getPromotedPostsQuery, getProposalAuthority, getProposalQueryOptions, getProposalVotesInfiniteQueryOptions, getProposalsQueryOptions, getQueryClient, getQuestCatalogEntry, getQuestsQueryOptions, getRcDelegationActiveQueryOptions, getRcDelegationPricesQueryOptions, getRcResourceParamsQueryOptions, getRcStatsQueryOptions, getRebloggedByQueryOptions, getReblogsQueryOptions, getReceivedVestingSharesQueryOptions, getRecurrentTransfersQueryOptions, getReferralsInfiniteQueryOptions, getReferralsStatsQueryOptions, getRelationshipBetweenAccounts, getRelationshipBetweenAccountsQueryOptions, getRequiredAuthority, getRewardFundQueryOptions, getRewardedCommunitiesQueryOptions, getSavingsWithdrawFromQueryOptions, getSchedulesInfiniteQueryOptions, getSchedulesQueryOptions, getSearchAccountQueryOptions, getSearchAccountsByUsernameQueryOptions, getSearchApiInfiniteQueryOptions, getSearchFriendsQueryOptions, getSearchPathQueryOptions, getSearchTopicsQueryOptions, getShortsFeedQueryOptions, getSimilarEntriesQueryOptions, getSpotlightsQueryOptions, getStatsQueryOptions, getSubscribers, getSubscriptions, getSupportSettingsQueryOptions, getSupportSettingsRequest, getTradeHistoryQueryOptions, getTransactionsInfiniteQueryOptions, getTrendingTagsQueryOptions, getTrendingTagsWithStatsQueryOptions, getUserPostVoteQueryOptions, getUserProposalVotesQueryOptions, getVestingDelegationExpirationsQueryOptions, getVestingDelegationsQueryOptions, getVisibleFirstLevelThreadItems, getWavesByAccountQueryOptions, getWavesByHostQueryOptions, getWavesByTagQueryOptions, getWavesFeedQueryOptions, getWavesFollowingQueryOptions, getWavesLatestFeedQueryOptions, getWavesTrendingAuthorsQueryOptions, getWavesTrendingTagsQueryOptions, getWithdrawRoutesQueryOptions, getWitnessVoterCountQueryOptions, getWitnessVotersPageQueryOptions, getWitnessesInfiniteQueryOptions, hasExternalLink, hasThreeSpeakEmbed, hsTokenRenew, invalidateAfterBroadcast, isAuthorMuted, isCommunity, isEmptyDate, isHiddenPost, isInfoError, isLowTrustSeoPost, isNetworkError, isQueryableAccountName, isResourceCreditsError, isThreeSpeakBeneficiary, isVoteAlreadyReflected, isWif, isWrappedResponse, leaveDigestRequest, lookupAccountsQueryOptions, makeQueryClient, mapMetaChoicesToPollChoices, mapThreadItemsToWaveEntries, markNotifications, measureQuestContentLength, moveSchedule, normalizePost, normalizeSearchAuthor, normalizeSearchCategory, normalizeSearchTags, normalizeToWrappedResponse, normalizeWaveEntryFromApi, onboardEmail, parseAccounts, parseAsset, parseChainError, parsePostingMetadataRoot, parseProfileMetadata, pickRicherMetadataSnapshot, powerRechargeTime, previewNewsletterSendRequest, priceRcUsage, proMembersSet, rcPower, removeOptimisticDiscussionEntry, resolveAccountHistoryLimit, resolveContentActivityType, resolveHiveOperationFilters, resolvePost, restoreDiscussionSnapshots, restoreEntryInCache, roleMap, saveNotificationSetting, search, searchPath, searchQueryOptions, sendNewsletterIssueRequest, sha256, shouldTriggerAuthFallback, signUp, similar, sortDiscussions, stringFieldBytes, subscribeDigestRequest, subscribeEmail, toEntryArray, unsubscribeAllDigestsRequest, updateDraft, updateEntryInCache, updateSupportSettingsRequest, uploadImage, uploadImageWithSignature, useAccountFavoriteAdd, useAccountFavoriteDelete, useAccountRelationsUpdate, useAccountRevokeKey, useAccountRevokePosting, useAccountUpdate, useAccountUpdateKeyAuths, useAccountUpdatePassword, useAccountUpdateRecovery, useAddDraft, useAddFragment, useAddImage, useAddSchedule, useAiAssist, useAiTranscribe, useBookmarkAdd, useBookmarkDelete, useBoostPlus, useBroadcastMutation, useBuyStreakFreeze, useClaimAccount, useClaimEngineRewards, useClaimInterest, useClaimPoints, useClaimRewards, useComment, useConvert, useCreateAccount, useCrossPost, useDelegateEngineToken, useDelegateRc, useDelegateVestingShares, useDeleteComment, useDeleteDraft, useDeleteImage, useDeleteSchedule, useEditFragment, useEngineMarketOrder, useFollow, useGameClaim, useGenerateImage, useGrantPostingPermission, useLeaveDigest, useLimitOrderCancel, useLimitOrderCreate, useMarkNotificationsRead, useMoveSchedule, useMutePost, usePinPost, usePollVote, usePreviewNewsletterIssue, usePromote, useProposalCreate, useProposalVote, useRcDelegation, useReblog, useRecordActivity, useRegisterCommunityRewards, useRemoveFragment, useSendNewsletterIssue, useSetCommunityRole, useSetLastRead, useSetWithdrawVestingRoute, useSignOperationByHivesigner, useSignOperationByKey, useSignOperationByKeychain, useStakeEngineToken, useSubscribeCommunity, useSubscribeDigest, useTransfer, useTransferEngineToken, useTransferFromSavings, useTransferPoint, useTransferToSavings, useTransferToVesting, useUndelegateEngineToken, useUnfollow, useUnstakeEngineToken, useUnsubscribeAllDigests, useUnsubscribeCommunity, useUpdateCommunity, useUpdateDraft, useUpdateReply, useUpdateSupportSettings, useUploadImage, useVote, useWalletOperation, useWithdrawVesting, useWitnessProxy, useWitnessVote, usrActivity, utf8ByteLength, validatePostCreating, varintByteLength, verifyPostOnAlternateNode, vestsToHp, votingPower, votingRshares, votingValue, withTimeoutSignal };
