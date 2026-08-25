@@ -43,7 +43,7 @@ function wrapInPicture(el: HTMLElement, rawUrl: string): void {
   picture.appendChild(el);
 }
 
-export function img(el: HTMLElement, state?: { firstImageFound: boolean }, forApp = true): void {
+export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCount?: number }, forApp = true): void {
   const src = el.getAttribute("src") || "";
 
   // Normalize encoded characters (shared with getEntryImageRawUrl so the LCP
@@ -73,12 +73,37 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean }, forAp
   }
 
   el.setAttribute("itemprop", "image");
-  const isLCP = state && !state.firstImageFound;
 
-  if (isLCP) {
+  /*
+    Tiered loading (#1672). Index 0 is the LCP candidate: eager + high, and the
+    entry page separately preloads it. Indexes 1-2 are very likely inside or
+    near the first viewport on multi-image posts; plain lazy put them at
+    priority Low behind the script wave, so their blur-up placeholders
+    sharpened seconds after the page looked settled. They load eager at
+    default priority, which keeps the high hint exclusive to the LCP image.
+    Index 3 onward stays lazy. imageCount falls back to firstImageFound so
+    callers passing the old state shape keep the old first-image behavior.
+  */
+  // Avatars (mention bylines, tiny inline profile images) neither deserve an
+  // eager slot nor should they consume one that a content image needs.
+  const isAvatar = decodedSrc.includes("/avatar") || (el.getAttribute("class") || "").includes("er-author-link-image");
+  if (isAvatar) {
+    el.setAttribute("loading", "lazy");
+    el.setAttribute("decoding", "async");
+  }
+  const imageIndex = !state || isAvatar ? 3 : (state.imageCount ?? (state.firstImageFound ? 1 : 0));
+  if (state && !isAvatar) {
+    state.imageCount = imageIndex + 1;
+    state.firstImageFound = true;
+  }
+  if (isAvatar) {
+    // attributes already set above; skip the tier
+  } else if (imageIndex === 0) {
     el.setAttribute("loading", "eager");
     el.setAttribute("fetchpriority", "high");
-    state.firstImageFound = true;
+  } else if (imageIndex <= 2) {
+    el.setAttribute("loading", "eager");
+    el.setAttribute("decoding", "async");
   } else {
     el.setAttribute("loading", "lazy");
     el.setAttribute("decoding", "async");

@@ -181,7 +181,7 @@ describe('traverse() method - DOM Traversal', () => {
 
         expect(img1.getAttribute('loading')).toBe('eager')
         expect(img1.getAttribute('fetchpriority')).toBe('high')
-        expect(img2.getAttribute('loading')).toBe('lazy')
+        expect(img2.getAttribute('loading')).toBe('eager')
         expect(state.firstImageFound).toBe(true)
       })
 
@@ -534,8 +534,8 @@ describe('traverse() method - DOM Traversal', () => {
 
         // Only first image should be LCP
         expect(img1.getAttribute('loading')).toBe('eager')
-        expect(img2.getAttribute('loading')).toBe('lazy')
-        expect(img3.getAttribute('loading')).toBe('lazy')
+        expect(img2.getAttribute('loading')).toBe('eager')
+        expect(img3.getAttribute('loading')).toBe('eager')
         expect(state.firstImageFound).toBe(true)
       })
     })
@@ -722,7 +722,7 @@ describe('traverse() method - DOM Traversal', () => {
         traverse(container, false, 0, state)
 
         expect(img1.getAttribute('loading')).toBe('eager')
-        expect(img2.getAttribute('loading')).toBe('lazy')
+        expect(img2.getAttribute('loading')).toBe('eager')
         expect(state.firstImageFound).toBe(true)
       })
 
@@ -744,7 +744,7 @@ describe('traverse() method - DOM Traversal', () => {
         traverse(container, false, 0, state)
 
         expect(img1.getAttribute('loading')).toBe('eager')
-        expect(img2.getAttribute('loading')).toBe('lazy')
+        expect(img2.getAttribute('loading')).toBe('eager')
       })
 
       it('should not mark as LCP if state already marked', () => {
@@ -756,7 +756,7 @@ describe('traverse() method - DOM Traversal', () => {
         const state = { firstImageFound: true }
         traverse(container, false, 0, state)
 
-        expect(img.getAttribute('loading')).toBe('lazy')
+        expect(img.getAttribute('loading')).toBe('eager')
       })
     })
 
@@ -852,8 +852,8 @@ describe('traverse() method - DOM Traversal', () => {
 
         // First image should be eager, others lazy
         expect(img1.getAttribute('loading')).toBe('eager')
-        expect(img2.getAttribute('loading')).toBe('lazy')
-        expect(img3.getAttribute('loading')).toBe('lazy')
+        expect(img2.getAttribute('loading')).toBe('eager')
+        expect(img3.getAttribute('loading')).toBe('eager')
       })
     })
 
@@ -946,7 +946,7 @@ describe('traverse() method - DOM Traversal', () => {
         expect(state.firstImageFound).toBe(true)
         // Only first image marked as LCP
         expect(img1.getAttribute('loading')).toBe('eager')
-        expect(img2.getAttribute('loading')).toBe('lazy')
+        expect(img2.getAttribute('loading')).toBe('eager')
       })
 
       it('should share state between parent and child traversals', () => {
@@ -968,7 +968,7 @@ describe('traverse() method - DOM Traversal', () => {
 
         expect(state.firstImageFound).toBe(true)
         expect(img1.getAttribute('loading')).toBe('eager')
-        expect(img2.getAttribute('loading')).toBe('lazy')
+        expect(img2.getAttribute('loading')).toBe('eager')
       })
 
       it('should handle state mutation with deep nesting', () => {

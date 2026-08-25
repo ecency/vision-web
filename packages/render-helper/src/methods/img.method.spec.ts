@@ -23,24 +23,34 @@ describe('img() method - Image Processing', () => {
       expect(image.getAttribute('fetchpriority')).toBe('high')
     })
 
-    it('should lazy load subsequent images after first', () => {
+    it('tiers subsequent images: 2-3 eager at default priority, 4+ lazy (#1672)', () => {
       const parent = doc.createElement('div')
-      const image1 = doc.createElement('img')
-      const image2 = doc.createElement('img')
-      image1.setAttribute('src', 'https://example.com/image1.jpg')
-      image2.setAttribute('src', 'https://example.com/image2.jpg')
-      parent.appendChild(image1)
-      parent.appendChild(image2)
+      const images = Array.from({ length: 5 }, (_, i) => {
+        const el = doc.createElement('img')
+        el.setAttribute('src', `https://example.com/image${i + 1}.jpg`)
+        parent.appendChild(el)
+        return el
+      })
 
       const state = { firstImageFound: false }
-      img(image1, state)
-      img(image2, state)
+      images.forEach((el) => img(el, state))
 
       expect(state.firstImageFound).toBe(true)
-      expect(image1.getAttribute('loading')).toBe('eager')
-      expect(image1.getAttribute('fetchpriority')).toBe('high')
-      expect(image2.getAttribute('loading')).toBe('lazy')
-      expect(image2.getAttribute('decoding')).toBe('async')
+      // Image 1: the LCP candidate keeps the exclusive high hint.
+      expect(images[0].getAttribute('loading')).toBe('eager')
+      expect(images[0].getAttribute('fetchpriority')).toBe('high')
+      // Images 2-3: likely in the first viewport; eager, but never high, so
+      // they cannot compete with the LCP image.
+      for (const el of [images[1], images[2]]) {
+        expect(el.getAttribute('loading')).toBe('eager')
+        expect(el.getAttribute('fetchpriority')).toBeNull()
+        expect(el.getAttribute('decoding')).toBe('async')
+      }
+      // Images 4+: below the fold, stay lazy.
+      for (const el of [images[3], images[4]]) {
+        expect(el.getAttribute('loading')).toBe('lazy')
+        expect(el.getAttribute('decoding')).toBe('async')
+      }
     })
 
     it('should use lazy loading when state is not provided', () => {
@@ -56,7 +66,7 @@ describe('img() method - Image Processing', () => {
       expect(image.getAttribute('fetchpriority')).toBeNull()
     })
 
-    it('should use lazy loading when firstImageFound is already true', () => {
+    it('treats an old-shape state with firstImageFound as index 1 (eager, default priority)', () => {
       const parent = doc.createElement('div')
       const image = doc.createElement('img')
       image.setAttribute('src', 'https://example.com/image.jpg')
@@ -65,7 +75,8 @@ describe('img() method - Image Processing', () => {
       const state = { firstImageFound: true }
       img(image, state)
 
-      expect(image.getAttribute('loading')).toBe('lazy')
+      expect(image.getAttribute('loading')).toBe('eager')
+      expect(image.getAttribute('fetchpriority')).toBeNull()
       expect(image.getAttribute('decoding')).toBe('async')
     })
 
@@ -542,7 +553,8 @@ describe('img() method - Image Processing', () => {
       image.setAttribute('src', 'https://example.com/image.jpg')
       parent.appendChild(image)
 
-      const state = { firstImageFound: true }
+      // Index 3+ under the tiered policy (#1672): genuinely below the fold.
+      const state = { firstImageFound: true, imageCount: 3 }
       img(image, state)
 
       expect(image.getAttribute('loading')).toBe('lazy')
