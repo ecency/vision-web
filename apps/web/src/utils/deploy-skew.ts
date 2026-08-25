@@ -69,9 +69,14 @@ function hasForeignDeploymentFrame(error: { stack?: string }): boolean {
     return false;
   }
   const stack = error.stack ?? "";
-  const dplRe = /\.js\?dpl=([\w-]+)/g;
-  let match;
-  while ((match = dplRe.exec(stack)) !== null) {
+  // Only OUR build-versioned chunks may vote: require the `/_next/static/`
+  // path (the same narrowing the resource-error listener in
+  // service-worker-recovery uses) and the exact 8-hex id shape
+  // ownDeploymentId() produces. A third-party script that happens to carry a
+  // dpl query must not be classified as skew — that would burn the session's
+  // one guarded reload and bury the real error under the skew fingerprint.
+  const dplRe = /\/_next\/static\/\S*?\.js\?dpl=([0-9a-f]{8})\b/g;
+  for (const match of stack.matchAll(dplRe)) {
     if (match[1] !== own) {
       return true;
     }

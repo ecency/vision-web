@@ -117,6 +117,30 @@ describe("isDeploySkewError", () => {
       ).toBe(false);
     });
 
+    it("does NOT match a third-party script carrying its own dpl query", () => {
+      // A foreign script's dpl value is unrelated to our builds — classifying
+      // it as skew would burn the session's one guarded reload and bury the
+      // real error under the skew fingerprint.
+      expect(
+        isDeploySkewError({
+          message: "foreignSdk is not a function",
+          stack:
+            "    at init (https://cdn.example.com/analytics/sdk.js?dpl=deadbeef:1:100)\n" +
+            "    at l9 (https://ecency.com/_next/static/chunks/fab31ea0-a826f330bcfe7eac.js?dpl=9e6dd083:1:51471)"
+        })
+      ).toBe(false);
+    });
+
+    it("does NOT match a dpl value that isn't the 8-hex id our builds bake", () => {
+      expect(
+        isDeploySkewError({
+          message: "x is not a function",
+          stack:
+            "    at x (https://ecency.com/_next/static/chunks/app/page-abc123.js?dpl=67bf65841bc03b34:1:1)"
+        })
+      ).toBe(false);
+    });
+
     it("does NOT match dpl-less frames, and is inert when SENTRY_RELEASE is unset", () => {
       // No dpl in the stack (an app bug on a normal build) — never skew.
       expect(

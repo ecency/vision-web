@@ -138,30 +138,32 @@ describe("SentryErrorBoundary", () => {
     });
     sessionStorage.clear();
 
-    // shouldThrow stays true: the mixed-build case — the broken module is
-    // already registered, so a re-render throws the identical error instantly.
-    render(
-      <SentryErrorBoundary fallback={fallback}>
-        <Maybe />
-      </SentryErrorBoundary>
-    );
-    expect(screen.getByTestId("fallback")).toBeInTheDocument();
-    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
-    expect(reloadMock).not.toHaveBeenCalled();
+    try {
+      // shouldThrow stays true: the mixed-build case — the broken module is
+      // already registered, so a re-render throws the identical error instantly.
+      render(
+        <SentryErrorBoundary fallback={fallback}>
+          <Maybe />
+        </SentryErrorBoundary>
+      );
+      expect(screen.getByTestId("fallback")).toBeInTheDocument();
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+      expect(reloadMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "retry" }));
+      fireEvent.click(screen.getByRole("button", { name: "retry" }));
 
-    // The second, identical catch is tagged as a failed retry and escalates to
-    // a reload after the transport flush (so the event isn't lost on unload).
-    expect(Sentry.captureException).toHaveBeenCalledTimes(2);
-    expect(Sentry.captureException).toHaveBeenLastCalledWith(
-      expect.any(Error),
-      expect.objectContaining({ tags: { retry_reload: "true" } })
-    );
-    expect(Sentry.flush).toHaveBeenCalled();
-    await vi.waitFor(() => expect(reloadMock).toHaveBeenCalledTimes(1));
-
-    Object.defineProperty(window, "location", { configurable: true, value: realLocation });
+      // The second, identical catch is tagged as a failed retry and escalates to
+      // a reload after the transport flush (so the event isn't lost on unload).
+      expect(Sentry.captureException).toHaveBeenCalledTimes(2);
+      expect(Sentry.captureException).toHaveBeenLastCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ tags: { retry_reload: "true" } })
+      );
+      expect(Sentry.flush).toHaveBeenCalled();
+      await vi.waitFor(() => expect(reloadMock).toHaveBeenCalledTimes(1));
+    } finally {
+      Object.defineProperty(window, "location", { configurable: true, value: realLocation });
+    }
   });
 
   it("does NOT reload when an identical error recurs AFTER a successful retry", async () => {
@@ -173,37 +175,39 @@ describe("SentryErrorBoundary", () => {
     });
     sessionStorage.clear();
 
-    const { rerender } = render(
-      <SentryErrorBoundary fallback={fallback}>
-        <Maybe />
-      </SentryErrorBoundary>
-    );
-    expect(screen.getByTestId("fallback")).toBeInTheDocument();
+    try {
+      const { rerender } = render(
+        <SentryErrorBoundary fallback={fallback}>
+          <Maybe />
+        </SentryErrorBoundary>
+      );
+      expect(screen.getByTestId("fallback")).toBeInTheDocument();
 
-    // The retry recovers: a committed render of the children resets the
-    // escalation memory.
-    shouldThrow = false;
-    fireEvent.click(screen.getByRole("button", { name: "retry" }));
-    expect(screen.getByText("recovered child")).toBeInTheDocument();
+      // The retry recovers: a committed render of the children resets the
+      // escalation memory.
+      shouldThrow = false;
+      fireEvent.click(screen.getByRole("button", { name: "retry" }));
+      expect(screen.getByText("recovered child")).toBeInTheDocument();
 
-    // A later crash with the very same message (e.g. the same flaky error
-    // minutes later) starts a fresh retry cycle: fallback, no reload.
-    shouldThrow = true;
-    rerender(
-      <SentryErrorBoundary fallback={fallback}>
-        <Maybe />
-      </SentryErrorBoundary>
-    );
-    expect(screen.getByTestId("fallback")).toBeInTheDocument();
-    // Drain the flush → reload microtask chain that a (wrong) escalation would
-    // have queued before asserting nothing reloaded.
-    await new Promise((r) => setTimeout(r, 0));
-    expect(reloadMock).not.toHaveBeenCalled();
-    expect(Sentry.captureException).not.toHaveBeenCalledWith(
-      expect.any(Error),
-      expect.objectContaining({ tags: { retry_reload: "true" } })
-    );
-
-    Object.defineProperty(window, "location", { configurable: true, value: realLocation });
+      // A later crash with the very same message (e.g. the same flaky error
+      // minutes later) starts a fresh retry cycle: fallback, no reload.
+      shouldThrow = true;
+      rerender(
+        <SentryErrorBoundary fallback={fallback}>
+          <Maybe />
+        </SentryErrorBoundary>
+      );
+      expect(screen.getByTestId("fallback")).toBeInTheDocument();
+      // Drain the flush → reload microtask chain that a (wrong) escalation would
+      // have queued before asserting nothing reloaded.
+      await new Promise((r) => setTimeout(r, 0));
+      expect(reloadMock).not.toHaveBeenCalled();
+      expect(Sentry.captureException).not.toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ tags: { retry_reload: "true" } })
+      );
+    } finally {
+      Object.defineProperty(window, "location", { configurable: true, value: realLocation });
+    }
   });
 });
