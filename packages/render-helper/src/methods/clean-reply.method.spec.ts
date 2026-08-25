@@ -226,8 +226,19 @@ describe('cleanReply() method - Reply Cleaning', () => {
         'My review of the movie\n\n---\n_Originally posted through [scrobble.life/movies](https://scrobble.life/review/user/some-permlink)._'
       const result = cleanReply(input)
 
-      expect(result).toContain('My review of the movie')
+      expect(result.trim()).toBe('My review of the movie')
       expect(result).not.toContain('scrobble.life')
+      expect(result).not.toContain('---')
+    })
+
+    it('should preserve unrelated horizontal rules when removing the scrobble.life footer', () => {
+      const input =
+        'Intro\n\n---\n\nMore thoughts\n\n---\n_Originally posted through [scrobble.life/tv](https://scrobble.life/review/user/show-permlink)._'
+      const result = cleanReply(input)
+
+      expect(result).toContain('Intro\n\n---\n\nMore thoughts')
+      expect(result).not.toContain('scrobble.life')
+      expect(result.trim().endsWith('More thoughts')).toBe(true)
     })
 
     it('should remove scrobble.life tv footer', () => {
