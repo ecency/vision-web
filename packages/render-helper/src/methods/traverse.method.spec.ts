@@ -535,7 +535,7 @@ describe('traverse() method - DOM Traversal', () => {
         // Only first image should be LCP
         expect(img1.getAttribute('loading')).toBe('eager')
         expect(img2.getAttribute('loading')).toBe('eager')
-        expect(img3.getAttribute('loading')).toBe('eager')
+        expect(img3.getAttribute('loading')).toBe('lazy')
         expect(state.firstImageFound).toBe(true)
       })
     })
@@ -853,7 +853,7 @@ describe('traverse() method - DOM Traversal', () => {
         // First image should be eager, others lazy
         expect(img1.getAttribute('loading')).toBe('eager')
         expect(img2.getAttribute('loading')).toBe('eager')
-        expect(img3.getAttribute('loading')).toBe('eager')
+        expect(img3.getAttribute('loading')).toBe('lazy')
       })
     })
 

@@ -23,7 +23,7 @@ describe('img() method - Image Processing', () => {
       expect(image.getAttribute('fetchpriority')).toBe('high')
     })
 
-    it('tiers subsequent images: 2-3 eager at default priority, 4+ lazy (#1672)', () => {
+    it('tiers subsequent images: second eager at default priority, third onward lazy (#1672)', () => {
       const parent = doc.createElement('div')
       const images = Array.from({ length: 5 }, (_, i) => {
         const el = doc.createElement('img')
@@ -39,15 +39,14 @@ describe('img() method - Image Processing', () => {
       // Image 1: the LCP candidate keeps the exclusive high hint.
       expect(images[0].getAttribute('loading')).toBe('eager')
       expect(images[0].getAttribute('fetchpriority')).toBe('high')
-      // Images 2-3: likely in the first viewport; eager, but never high, so
-      // they cannot compete with the LCP image.
-      for (const el of [images[1], images[2]]) {
-        expect(el.getAttribute('loading')).toBe('eager')
-        expect(el.getAttribute('fetchpriority')).toBeNull()
-        expect(el.getAttribute('decoding')).toBe('async')
-      }
-      // Images 4+: below the fold, stay lazy.
-      for (const el of [images[3], images[4]]) {
+      // Image 2: likely in the first viewport; eager, but never high, so it
+      // cannot compete with the LCP image.
+      expect(images[1].getAttribute('loading')).toBe('eager')
+      expect(images[1].getAttribute('fetchpriority')).toBeNull()
+      expect(images[1].getAttribute('decoding')).toBe('async')
+      // Images 3+: stay lazy; eager fetches unconditionally, so the eager set
+      // stops at the two images that plausibly pay off.
+      for (const el of [images[2], images[3], images[4]]) {
         expect(el.getAttribute('loading')).toBe('lazy')
         expect(el.getAttribute('decoding')).toBe('async')
       }

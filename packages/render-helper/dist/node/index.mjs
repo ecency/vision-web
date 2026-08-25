@@ -846,7 +846,7 @@ function img(el, state, forApp = true) {
   if (isAvatar) ; else if (imageIndex === 0) {
     el.setAttribute("loading", "eager");
     el.setAttribute("fetchpriority", "high");
-  } else if (imageIndex <= 2) {
+  } else if (imageIndex === 1) {
     el.setAttribute("loading", "eager");
     el.setAttribute("decoding", "async");
   } else {
