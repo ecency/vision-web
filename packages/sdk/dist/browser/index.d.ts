@@ -1059,6 +1059,14 @@ declare const SERVER_GC_TIME_MS: number;
 declare const CONFIG: {
     privateApiHost: string;
     /**
+     * Host for the newsletter relay routes (/api/newsletter/*), which live on
+     * the WEB origin (Next.js route handlers), not on the private API service.
+     * `undefined` falls back to `privateApiHost` (right for mobile, whose one
+     * host serves both); the web client pins it to "" so newsletter requests
+     * stay same-origin on ANY deployment, hostname regardless.
+     */
+    newsletterHost: string | undefined;
+    /**
      * Observer used for bridge calls when nobody is logged in. The bridge applies
      * this account's mute list to the response, marking muted authors' posts and
      * comments `stats.gray` so clients can dim or collapse them. Anonymous
@@ -1131,6 +1139,12 @@ declare namespace ConfigManager {
      * @param host - The private API host URL (e.g., "https://ecency.com" or "" for relative URLs)
      */
     function setPrivateApiHost(host: string): void;
+    /**
+     * Set the host for the newsletter relay routes (/api/newsletter/*), or
+     * `undefined` to fall back to the private API host. Use "" for same-origin
+     * relative requests (the web client's case).
+     */
+    function setNewsletterHost(host: string | undefined): void;
     /**
      * Set the first-party client identifier sent as the `X-Ecency-Client` header
      * on search/private API requests (e.g. "web" or "mobile"). Defaults to
@@ -9740,6 +9754,31 @@ declare function getContentModerationReason(content: ModerationCandidate | undef
 /** True if the post body contains an outbound (non-Hive, non-image) link. */
 declare function hasExternalLink(body: string | undefined | null): boolean;
 
+/**
+ * Error types for the newsletter client, in their own dependency-free file so
+ * test setups can hand out the REAL classes (instanceof must hold across the
+ * app) without pulling the SDK config chain along.
+ */
+declare class NewsletterApiError extends Error {
+    readonly status: number;
+    readonly data?: unknown | undefined;
+    constructor(message: string, status: number, data?: unknown | undefined);
+}
+/** A refused send, carrying the relay's routing `code` (already_sent, suspended, ...). */
+declare class NewsletterSendRefusedError extends NewsletterApiError {
+    readonly code?: string | undefined;
+    readonly taken?: Array<{
+        cadence: string;
+        period: string;
+        kind: string;
+    }> | undefined;
+    constructor(message: string, status: number, code?: string | undefined, taken?: Array<{
+        cadence: string;
+        period: string;
+        kind: string;
+    }> | undefined, data?: unknown);
+}
+
 type DigestType = "own" | "community" | "creator" | "site";
 type DigestCadence = "weekly" | "monthly";
 type DigestStatus = "active" | "pending_confirmation" | "suppressed" | "ended";
@@ -9874,42 +9913,6 @@ interface NewsletterSenderStanding {
     };
 }
 
-/**
- * Client for the newsletter relay at {privateApiHost}/api/newsletter/*
- * (Next.js route handlers on ecency.com, which alone hold the news-service
- * credentials — clients never talk to the service directly).
- *
- * Identity is the HiveSigner access token, passed here as the explicit `code`
- * argument. Transport mirrors the deployed web client per route: subscribe and
- * unsubscribe-all carry it in the POST body as `code` (the subscribe route
- * authenticates ONLY from the body — a header alone is treated as anonymous);
- * every other call, the send/preview POSTs included, uses the `X-HS-Token`
- * header. The relay verifies it upstream and derives the account from it, so
- * a stale token 401s — callers are responsible for supplying a fresh one
- * (web: ensureValidToken; mobile: the token-refresh wrapper).
- *
- * The email-token confirm/unsubscribe flows are deliberately absent: those
- * links land on web pages.
- */
-declare class NewsletterApiError extends Error {
-    readonly status: number;
-    readonly data?: unknown | undefined;
-    constructor(message: string, status: number, data?: unknown | undefined);
-}
-/** A refused send, carrying the relay's routing `code` (already_sent, suspended, ...). */
-declare class NewsletterSendRefusedError extends NewsletterApiError {
-    readonly code?: string | undefined;
-    readonly taken?: Array<{
-        cadence: string;
-        period: string;
-        kind: string;
-    }> | undefined;
-    constructor(message: string, status: number, code?: string | undefined, taken?: Array<{
-        cadence: string;
-        period: string;
-        kind: string;
-    }> | undefined, data?: unknown);
-}
 /**
  * Subscribe an address to a digest. Authenticated callers (code given) skip
  * the captcha; anonymous callers must supply `captchaToken` in the input and

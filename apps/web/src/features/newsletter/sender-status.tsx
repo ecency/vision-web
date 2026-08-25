@@ -5,6 +5,7 @@ import { QueryIdentifiers } from "@/core/react-query";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { ensureValidToken } from "@/utils";
 import i18next from "i18next";
+import { getNewsletterSenderRequest, type NewsletterSenderStanding } from "@ecency/sdk";
 import { useNewsletterEnabled } from "./runtime";
 import type { DigestType } from "./types";
 
@@ -13,26 +14,10 @@ import type { DigestType } from "./types";
  * profile, a community's team on the community page. Renders NOTHING unless
  * the digest is suspended; the numbers stay in the API for the operator and
  * for a fuller surface later. Only the sender is ever asked for it (the route
- * refuses everyone else), and only when the feature is on.
+ * refuses everyone else), and only when the feature is on. The shape lives in
+ * @ecency/sdk now, shared with mobile.
  */
-export interface SenderStanding {
-  type: DigestType;
-  target: string;
-  status: "active" | "suspended";
-  reason: string | null;
-  since: string | null;
-  stats: {
-    delivered: number;
-    bounced: number;
-    rejected: number;
-    complaints: number;
-    unsubscribed: number;
-    complaintRate: number;
-    bounceRate: number;
-  };
-  /** Live, mailable subscribers per cadence. */
-  subscribers?: { weekly: number; monthly: number };
-}
+export type SenderStanding = NewsletterSenderStanding;
 
 /**
  * Scoped to the VIEWER as well as the list: the standing is the sender's private
@@ -56,11 +41,7 @@ export function useSenderStanding(
     staleTime: 5 * 60_000,
     queryFn: async (): Promise<SenderStanding> => {
       const token = activeUser?.username ? await ensureValidToken(activeUser.username) : null;
-      const res = await fetch(`/api/newsletter/sender?type=${type}&target=${encodeURIComponent(target)}`, {
-        headers: token ? { "X-HS-Token": token } : {}
-      });
-      if (!res.ok) throw new Error(`sender standing: ${res.status}`);
-      return (await res.json()) as SenderStanding;
+      return getNewsletterSenderRequest(type, target, token ?? "");
     }
   });
 }

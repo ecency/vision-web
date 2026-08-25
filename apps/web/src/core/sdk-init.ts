@@ -32,6 +32,14 @@ const privateApiHost = isMainProductionClient
     ? (process.env.INTERNAL_API_HOST || "https://ecency.com")
     : "https://ecency.com";
 ConfigManager.setPrivateApiHost(privateApiHost);
+// The newsletter relay is our OWN /api/newsletter route handlers, so in the
+// browser those requests stay same-origin on EVERY deployment (localhost and
+// custom hostnames included) instead of following privateApiHost to
+// ecency.com. SSR never calls the relay, and Node cannot fetch a relative
+// URL anyway, so the override is browser-only.
+if (!isServer) {
+  ConfigManager.setNewsletterHost("");
+}
 ConfigManager.setImageHost(defaults.imageServer);
 ConfigManager.setHiveNodes(publicNodes);
 

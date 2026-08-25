@@ -1,48 +1,19 @@
-export type DigestType = "own" | "community" | "creator" | "site";
-export type DigestCadence = "weekly" | "monthly";
-export type DigestStatus = "active" | "pending_confirmation" | "suppressed" | "ended";
-
-export interface DigestSubscription {
-  id: string;
-  email: string;
-  account: string | null;
-  type: DigestType | "own";
-  target: string;
-  cadence: DigestCadence;
-  status: DigestStatus;
-  created_at: string;
-}
-
-export interface SubscribeResult {
-  status: "active" | "pending_confirmation" | "refused";
-  subscription?: DigestSubscription;
-  created?: boolean;
-  confirmationSent?: boolean;
-  reason?: "suppressed";
-}
-
-export interface SubscribeInput {
-  email: string;
-  type: DigestType;
-  target: string;
-  cadence: DigestCadence;
-  /**
-   * Kept in lockstep with SOURCES in app/api/newsletter/subscribe/route.ts by hand: a
-   * value here that the route does not accept is a silent 400 with a generic message.
-   * "self-hosted-blog" is the managed-blog embed, which posts to the same route.
-   */
-  source:
-    | "community-page"
-    | "creator-page"
-    | "settings"
-    | "landing-page"
-    | "publish-prompt"
-    | "post-page"
-    | "self-hosted-blog"
-    | "mobile-app";
-  /**
-   * Cloudflare Turnstile token. Required by the route whenever the caller has no
-   * account; ignored for signed-in callers, whose account is the proof.
-   */
-  captchaToken?: string;
-}
+/**
+ * The newsletter contract types live in @ecency/sdk (modules/newsletter),
+ * shared with the mobile app; this file re-exports them under the names the
+ * web app has always used. The subscribe `source` union stays in lockstep
+ * with SOURCES in app/api/newsletter/subscribe/route.ts by hand: a value in
+ * the union that the route does not accept is a silent 400 with a generic
+ * message.
+ */
+export type {
+  DigestCadence,
+  DigestStatus,
+  DigestSubscribeSource,
+  DigestSubscription,
+  DigestType,
+} from "@ecency/sdk";
+export type {
+  DigestSubscribeInput as SubscribeInput,
+  DigestSubscribeResult as SubscribeResult,
+} from "@ecency/sdk";

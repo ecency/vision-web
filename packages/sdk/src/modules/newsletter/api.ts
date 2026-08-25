@@ -1,4 +1,5 @@
 import { CONFIG, getBoundFetch } from "@/modules/core";
+import { NewsletterApiError, NewsletterSendRefusedError } from "./errors";
 import type {
   DigestSubscribeInput,
   DigestSubscribeResult,
@@ -29,31 +30,11 @@ import type {
  * The email-token confirm/unsubscribe flows are deliberately absent: those
  * links land on web pages.
  */
-export class NewsletterApiError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-    public readonly data?: unknown,
-  ) {
-    super(message);
-  }
-}
-
-/** A refused send, carrying the relay's routing `code` (already_sent, suspended, ...). */
-export class NewsletterSendRefusedError extends NewsletterApiError {
-  constructor(
-    message: string,
-    status: number,
-    public readonly code?: string,
-    public readonly taken?: Array<{ cadence: string; period: string; kind: string }>,
-    data?: unknown,
-  ) {
-    super(message, status, data);
-  }
-}
-
 function newsletterUrl(path: string): string {
-  return `${CONFIG.privateApiHost}/api/newsletter${path}`;
+  // The relay lives on the WEB origin; newsletterHost overrides where that is
+  // ("" = same-origin, the web client's case). Nullish on purpose: only an
+  // unset override falls back, an empty string is a meaningful host.
+  return `${CONFIG.newsletterHost ?? CONFIG.privateApiHost}/api/newsletter${path}`;
 }
 
 async function parse<T>(response: Response): Promise<T> {

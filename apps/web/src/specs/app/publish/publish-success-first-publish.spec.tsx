@@ -5,6 +5,7 @@ import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
 import type { ReactElement } from "react";
 import { PublishSuccessState } from "@/app/publish/_components/publish-success-state";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { getDigestSubscriptionsRequest } from "@ecency/sdk";
 import { mockActiveUser, mockFullAccount, renderWithQueryClient } from "@/specs/test-utils";
 
 vi.mock("@/config", () => ({
@@ -19,7 +20,6 @@ vi.mock("@/utils", async () => ({
   ensureValidToken: vi.fn(async () => "mock-token")
 }));
 
-const fetchMock = vi.fn();
 const entry = { title: "First!", author: "newbie", permlink: "first", category: "hive-1" };
 
 /**
@@ -36,13 +36,10 @@ function renderConfigured(ui: ReactElement, options?: Parameters<typeof renderWi
 
 describe("PublishSuccessState and the first-publish digest offer", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", fetchMock);
-    fetchMock.mockReset();
-    fetchMock.mockImplementation((url: string) =>
-      url === "/api/newsletter/subscriptions"
-        ? Promise.resolve({ ok: true, status: 200, json: async () => ({ subscriptions: [] }) } as Response)
-        : Promise.resolve({ ok: true, status: 200, json: async () => ({}) } as Response)
-    );
+    // The prompt appears only once the subscriptions query has LOADED empty;
+    // the SDK client is a stub in specs, so give it that answer.
+    vi.mocked(getDigestSubscriptionsRequest).mockReset();
+    vi.mocked(getDigestSubscriptionsRequest).mockResolvedValue([]);
     window.localStorage.clear();
     vi.mocked(useActiveAccount).mockReturnValue({
       activeUser: mockActiveUser({ username: "newbie" }),

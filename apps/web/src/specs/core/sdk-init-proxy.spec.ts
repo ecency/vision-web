@@ -16,6 +16,7 @@ const stats = {
 };
 const manager = {
   setPrivateApiHost: vi.fn(),
+  setNewsletterHost: vi.fn(),
   setImageHost: vi.fn(),
   setHiveNodes: vi.fn(),
   setUserAgent: vi.fn(),

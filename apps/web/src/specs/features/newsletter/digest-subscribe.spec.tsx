@@ -4,6 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewsletterRuntimeProvider } from "@/features/newsletter/runtime";
 import type { ReactElement } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import {
+  NewsletterApiError,
+  getDigestSubscriptionsRequest,
+  leaveDigestRequest,
+  subscribeDigestRequest
+} from "@ecency/sdk";
 import { DigestSubscribeButton, DigestSubscribeDialog, digestSubscriptionsKey } from "@/features/newsletter";
 import {
   cleanupModalContainers,
@@ -61,11 +67,12 @@ vi.mock("@/utils", async () => ({
   ensureValidToken: vi.fn(async () => "mock-token")
 }));
 
-const fetchMock = vi.fn();
-
-function jsonResponse(status: number, body: unknown) {
-  return Promise.resolve({ ok: status < 400, status, json: async () => body } as Response);
-}
+// Transport (paths, bodies, auth placement) is pinned by the SDK's own
+// api.spec.ts; this file pins the dialog: what it asks of the SDK client and
+// how it renders each outcome.
+const subscribeMock = vi.mocked(subscribeDigestRequest);
+const listMock = vi.mocked(getDigestSubscriptionsRequest);
+const leaveMock = vi.mocked(leaveDigestRequest);
 
 const SUB = {
   id: "6f1c2c1a-2b3c-4d5e-8f90-123456789abc",
@@ -110,26 +117,22 @@ function renderConfigured(ui: ReactElement, options?: Parameters<typeof renderWi
 describe("DigestSubscribeDialog", () => {
   beforeEach(() => {
     setupModalContainers();
-    vi.stubGlobal("fetch", fetchMock);
-    fetchMock.mockReset();
+    subscribeMock.mockReset();
+    leaveMock.mockReset();
+    listMock.mockReset();
+    listMock.mockResolvedValue([]);
     flags.newsletter = true;
     loggedIn(null);
   });
   afterEach(() => {
     cleanupModalContainers();
-    vi.unstubAllGlobals();
     captcha.verify = null;
     captcha.resets = 0;
   });
 
   it("anonymous: asks for an address, clears a bot check, subscribes without an account token, and shows the confirmation prompt", async () => {
-    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (url === "/api/newsletter/subscribe" && init?.method === "POST") {
-        // What the service returns to an unproven caller: this and nothing more.
-        return jsonResponse(200, { status: "pending_confirmation" });
-      }
-      return jsonResponse(404, {});
-    });
+    // What the service returns to an unproven caller: this and nothing more.
+    subscribeMock.mockResolvedValue({ status: "pending_confirmation" } as never);
     renderConfigured(<DigestSubscribeDialog {...dialogProps} />);
 
     const email = screen.getByPlaceholderText("you@example.com");
@@ -144,9 +147,8 @@ describe("DigestSubscribeDialog", () => {
     fireEvent.click(subscribeBtn);
 
     await waitFor(() => expect(screen.getByText("newsletter.check-inbox")).toBeInTheDocument());
-    const call = fetchMock.mock.calls.find((c) => c[0] === "/api/newsletter/subscribe");
-    const body = JSON.parse(call![1].body);
-    expect(body).toMatchObject({
+    const [input, code] = subscribeMock.mock.calls[0];
+    expect(input).toMatchObject({
       email: "reader@example.com",
       type: "community",
       target: "hive-140217",
@@ -154,10 +156,11 @@ describe("DigestSubscribeDialog", () => {
       source: "community-page",
       captchaToken: CAPTCHA_TOKEN
     });
-    expect(body.code).toBeUndefined();
+    // Anonymous: no token argument reaches the SDK client.
+    expect(code).toBeUndefined();
     // The display label is the dialog's own copy; it is not sent, so a caller cannot
     // write part of a sentence into mail our domain sends.
-    expect(body.targetLabel).toBeUndefined();
+    expect(input).not.toHaveProperty("targetLabel");
     // Nothing that a logged-in flow would offer.
     expect(screen.queryByText("newsletter.manage-all")).not.toBeInTheDocument();
   });
@@ -166,16 +169,9 @@ describe("DigestSubscribeDialog", () => {
     loggedIn("alice");
     const client = createTestQueryClient();
     client.setQueryData(digestSubscriptionsKey("alice"), [SUB]);
-    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (url === "/api/newsletter/subscribe") {
-        return jsonResponse(200, { status: "active", created: false, subscription: { ...SUB, cadence: "monthly" } });
-      }
-      if (url.startsWith("/api/newsletter/subscriptions/") && init?.method === "DELETE") {
-        return jsonResponse(200, { left: true });
-      }
-      if (url === "/api/newsletter/subscriptions") return jsonResponse(200, { subscriptions: [SUB] });
-      return jsonResponse(404, {});
-    });
+    subscribeMock.mockResolvedValue({ status: "active", created: false, subscription: { ...SUB, cadence: "monthly" } } as never);
+    leaveMock.mockResolvedValue(undefined as never);
+    listMock.mockResolvedValue([SUB] as never);
     renderConfigured(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
 
     expect(screen.getByText("newsletter.status-active")).toBeInTheDocument();
@@ -188,24 +184,22 @@ describe("DigestSubscribeDialog", () => {
     expect(update).not.toBeDisabled();
     fireEvent.click(update);
     await waitFor(() => {
-      const call = fetchMock.mock.calls.find((c) => c[0] === "/api/newsletter/subscribe");
-      expect(call).toBeTruthy();
-      const body = JSON.parse(call![1].body);
-      expect(body).toMatchObject({ email: "alice@example.com", cadence: "monthly" });
-      expect(body.code).toBe("mock-token");
+      expect(subscribeMock).toHaveBeenCalledWith(
+        expect.objectContaining({ email: "alice@example.com", cadence: "monthly" }),
+        "mock-token"
+      );
     });
 
     fireEvent.click(screen.getByRole("button", { name: "newsletter.leave" }));
     await waitFor(() => {
-      const call = fetchMock.mock.calls.find((c) => c[1]?.method === "DELETE");
-      expect(call?.[0]).toBe(`/api/newsletter/subscriptions/${SUB.id}`);
+      expect(leaveMock).toHaveBeenCalledWith(SUB.id, "mock-token");
     });
     await waitFor(() => expect(dialogProps.onHide).toHaveBeenCalled());
     expect(client.getQueryData(digestSubscriptionsKey("alice"))).toEqual([]);
   });
 
   it("a refusal is not a dead end: the copy is shown and the form can be tried again", async () => {
-    fetchMock.mockImplementation(() => jsonResponse(200, { status: "refused", reason: "suppressed" }));
+    subscribeMock.mockResolvedValue({ status: "refused", reason: "suppressed" } as never);
     renderConfigured(<DigestSubscribeDialog {...dialogProps} />);
     fireEvent.change(screen.getByPlaceholderText("you@example.com"), { target: { value: "gone@example.com" } });
     await solveCaptcha();
@@ -228,11 +222,7 @@ describe("DigestSubscribeDialog", () => {
     loggedIn("alice");
     const client = createTestQueryClient();
     client.setQueryData(digestSubscriptionsKey("alice"), []);
-    fetchMock.mockImplementation((url: string) =>
-      url === "/api/newsletter/subscribe"
-        ? jsonResponse(403, { error: "Security check failed" })
-        : jsonResponse(404, {})
-    );
+    subscribeMock.mockRejectedValue(new NewsletterApiError("Security check failed", 403));
     renderConfigured(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
 
     // Signed in, so no widget yet.
@@ -251,17 +241,17 @@ describe("DigestSubscribeDialog", () => {
     loggedIn("alice");
     const client = createTestQueryClient();
     client.setQueryData(digestSubscriptionsKey("alice"), [{ ...SUB, status: "pending_confirmation" }]);
-    fetchMock.mockImplementation((url: string) =>
-      url === "/api/newsletter/subscribe" ? jsonResponse(200, { status: "pending_confirmation" }) : jsonResponse(404, {})
-    );
+    subscribeMock.mockResolvedValue({ status: "pending_confirmation" } as never);
     renderConfigured(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
     // Same cadence, pending: the primary action is "resend", and it is enabled.
     const resend = screen.getByRole("button", { name: "newsletter.resend" });
     expect(resend).not.toBeDisabled();
     fireEvent.click(resend);
     await waitFor(() => {
-      const call = fetchMock.mock.calls.find((c) => c[0] === "/api/newsletter/subscribe");
-      expect(JSON.parse(call![1].body)).toMatchObject({ email: "alice@example.com", cadence: "weekly" });
+      expect(subscribeMock).toHaveBeenCalledWith(
+        expect.objectContaining({ email: "alice@example.com", cadence: "weekly" }),
+        "mock-token"
+      );
     });
   });
 
@@ -269,17 +259,12 @@ describe("DigestSubscribeDialog", () => {
     loggedIn("alice");
     const client = createTestQueryClient();
     let subscribed = false;
-    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (url === "/api/newsletter/subscribe" && init?.method === "POST") {
-        subscribed = true;
-        return jsonResponse(200, { status: "pending_confirmation" });
-      }
-      if (url === "/api/newsletter/subscriptions") {
-        // Empty until the subscribe happened, then the refetch brings the pending row.
-        return jsonResponse(200, { subscriptions: subscribed ? [{ ...SUB, status: "pending_confirmation" }] : [] });
-      }
-      return jsonResponse(404, {});
+    subscribeMock.mockImplementation(async () => {
+      subscribed = true;
+      return { status: "pending_confirmation" } as never;
     });
+    // Empty until the subscribe happened, then the refetch brings the pending row.
+    listMock.mockImplementation(async () => (subscribed ? [{ ...SUB, status: "pending_confirmation" }] : []) as never);
     renderConfigured(<DigestSubscribeDialog {...dialogProps} />, { queryClient: client });
     fireEvent.change(await screen.findByPlaceholderText("you@example.com"), { target: { value: "alice@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "newsletter.subscribe" }));
@@ -294,15 +279,14 @@ describe("DigestSubscribeDialog", () => {
 describe("DigestSubscribeButton", () => {
   beforeEach(() => {
     setupModalContainers();
-    vi.stubGlobal("fetch", fetchMock);
-    fetchMock.mockReset();
-    fetchMock.mockImplementation(() => jsonResponse(404, {}));
+    subscribeMock.mockReset();
+    listMock.mockReset();
+    listMock.mockResolvedValue([]);
     flags.newsletter = true;
     loggedIn(null);
   });
   afterEach(() => {
     cleanupModalContainers();
-    vi.unstubAllGlobals();
   });
 
   it("renders nothing when the feature is off, and asks the service for nothing", async () => {
@@ -313,7 +297,8 @@ describe("DigestSubscribeButton", () => {
     );
     expect(container).toBeEmptyDOMElement();
     await new Promise((r) => setTimeout(r, 30));
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(listMock).not.toHaveBeenCalled();
+    expect(subscribeMock).not.toHaveBeenCalled();
   });
 
   it("offers a creator digest for every creator: no Pro roster involved (2026-08-19)", () => {
