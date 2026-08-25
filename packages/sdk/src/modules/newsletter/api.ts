@@ -18,11 +18,13 @@ import type {
  * credentials — clients never talk to the service directly).
  *
  * Identity is the HiveSigner access token, passed here as the explicit `code`
- * argument: POST bodies carry it as `code` (the subscribe route authenticates
- * ONLY from the body), GET/DELETE requests as the `X-HS-Token` header. The
- * relay verifies it upstream and derives the account from it, so a stale
- * token 401s — callers are responsible for supplying a fresh one (web:
- * ensureValidToken; mobile: the token-refresh wrapper).
+ * argument. Transport mirrors the deployed web client per route: subscribe and
+ * unsubscribe-all carry it in the POST body as `code` (the subscribe route
+ * authenticates ONLY from the body — a header alone is treated as anonymous);
+ * every other call, the send/preview POSTs included, uses the `X-HS-Token`
+ * header. The relay verifies it upstream and derives the account from it, so
+ * a stale token 401s — callers are responsible for supplying a fresh one
+ * (web: ensureValidToken; mobile: the token-refresh wrapper).
  *
  * The email-token confirm/unsubscribe flows are deliberately absent: those
  * links land on web pages.
@@ -44,8 +46,9 @@ export class NewsletterSendRefusedError extends NewsletterApiError {
     status: number,
     public readonly code?: string,
     public readonly taken?: Array<{ cadence: string; period: string; kind: string }>,
+    data?: unknown,
   ) {
-    super(message, status);
+    super(message, status, data);
   }
 }
 
@@ -205,6 +208,7 @@ async function postSend<T>(
       response.status,
       data?.code,
       data?.taken,
+      data,
     );
   }
   if (!data || typeof data !== "object") {

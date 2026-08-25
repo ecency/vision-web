@@ -38,7 +38,8 @@ export interface SubscribeInput {
     | "landing-page"
     | "publish-prompt"
     | "post-page"
-    | "self-hosted-blog";
+    | "self-hosted-blog"
+    | "mobile-app";
   /**
    * Cloudflare Turnstile token. Required by the route whenever the caller has no
    * account; ignored for signed-in callers, whose account is the proof.

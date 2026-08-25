@@ -216,12 +216,17 @@ describe("newsletter api", () => {
       expect(JSON.parse((init as RequestInit).body as string)).toEqual(SEND);
     });
 
-    it("POSTs the send to /api/newsletter/send", async () => {
+    it("POSTs the send to /api/newsletter/send with the header token and the request as body", async () => {
       fetchMock.mockResolvedValueOnce(okJson({ issues: [] }));
-      await sendNewsletterIssueRequest(SEND, "t");
-      expect(String(fetchMock.mock.calls[0][0])).toContain(
-        "/api/newsletter/send",
-      );
+      await sendNewsletterIssueRequest(SEND, "hs-token");
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(String(url)).toContain("/api/newsletter/send");
+      expect(String(url)).not.toContain("/send/preview");
+      expect((init as RequestInit).method).toBe("POST");
+      expect((init as RequestInit).headers).toMatchObject({
+        "X-HS-Token": "hs-token",
+      });
+      expect(JSON.parse((init as RequestInit).body as string)).toEqual(SEND);
     });
 
     it("surfaces a refused send with the relay's code and taken periods", async () => {
@@ -239,6 +244,9 @@ describe("newsletter api", () => {
         status: 409,
         code: "already_sent",
         taken: [{ cadence: "weekly", period: "2026-W34", kind: "post" }],
+        // The full parsed payload rides along too, so callers handling
+        // NewsletterApiError uniformly see the same body either way.
+        data: { error: "Already sent", code: "already_sent" },
       });
     });
 
