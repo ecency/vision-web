@@ -30,6 +30,7 @@ export function cleanReply(s: string): string {
       const l = item.toLowerCase();
       return !(l.includes('posted from liketu speak') && l.includes('auto-transcrib'));
     })
+    .filter(item => item.toLowerCase().includes('originally posted through [scrobble.life') === false)
     .filter(item => item.toLowerCase().includes('[via Inbox]') === false)
     .filter(item => item.toLowerCase().includes('<sub>[via apps from](') === false)
     .join('\n') : '')

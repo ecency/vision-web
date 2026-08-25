@@ -221,6 +221,31 @@ describe('cleanReply() method - Reply Cleaning', () => {
       expect(result).toContain('great work')
     })
 
+    it('should remove scrobble.life movies footer', () => {
+      const input =
+        'My review of the movie\n\n---\n_Originally posted through [scrobble.life/movies](https://scrobble.life/review/user/some-permlink)._'
+      const result = cleanReply(input)
+
+      expect(result).toContain('My review of the movie')
+      expect(result).not.toContain('scrobble.life')
+    })
+
+    it('should remove scrobble.life tv footer', () => {
+      const input =
+        'Series thoughts\n\n_Originally posted through [scrobble.life/tv](https://scrobble.life/review/user/show-permlink)._'
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe('Series thoughts')
+      expect(result).not.toContain('scrobble.life')
+    })
+
+    it('should preserve replies that merely mention scrobble.life', () => {
+      const input = 'I started tracking what I watch on scrobble.life recently'
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe(input)
+    })
+
     it('should handle Inbox mentions', () => {
       const input = 'Reply content here'
       const result = cleanReply(input)
