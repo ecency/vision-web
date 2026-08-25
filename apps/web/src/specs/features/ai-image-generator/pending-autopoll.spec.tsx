@@ -10,7 +10,7 @@ vi.mock("@/utils", async () => ({
 }));
 
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { useGenerateImage } from "@ecency/sdk";
+import { QueryKeys, useGenerateImage } from "@ecency/sdk";
 import { AiImageGenerator } from "@/features/shared/ai-image-generator/ai-image-generator";
 
 type HttpishError = Error & { status: number; data: Record<string, unknown> };
@@ -23,7 +23,7 @@ function httpError(status: number, data: Record<string, unknown>): HttpishError 
 function seededClient() {
   const queryClient = createTestQueryClient();
   // Same key shape as the SDK's QueryKeys.ai.prices().
-  queryClient.setQueryData(["ai", "prices"], {
+  queryClient.setQueryData(QueryKeys.ai.prices(), {
     prices: [{ aspect_ratio: "1:1", cost: 150 }],
     power: [{ power: 1, multiplier: 1 }]
   });

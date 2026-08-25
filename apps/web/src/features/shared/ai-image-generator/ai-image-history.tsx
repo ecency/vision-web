@@ -2,11 +2,14 @@
 
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { Button } from "@/features/ui";
-import { getAccessToken } from "@/utils";
+import { ensureValidToken, getAccessToken } from "@/utils";
 import { getAiImagesQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import i18next from "i18next";
 import Image from "next/image";
+import { useEffect, useState } from "react";
+
+import { downloadImage } from "./download-image";
 
 interface Props {
   onInsert?: (url: string) => void;
@@ -21,23 +24,53 @@ interface Props {
 export function AiImageHistory({ onInsert, showInsertAction = true }: Props) {
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username;
-  const accessToken = username ? getAccessToken(username) : "";
 
-  const { data, isLoading, isError } = useQuery(
-    getAiImagesQueryOptions(username, accessToken ?? "")
-  );
+  // getAccessToken can hand back an EXPIRED token while a background refresh runs; the
+  // query would then 401 and sit on the error state until remount. Resolve a valid
+  // token first and only enable the query once it exists.
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    if (!username) {
+      setAccessToken(null);
+      return;
+    }
+    ensureValidToken(username)
+      .then((token) => {
+        if (alive) setAccessToken(token ?? getAccessToken(username) ?? null);
+      })
+      .catch(() => {
+        if (alive) setAccessToken(getAccessToken(username) ?? null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [username]);
 
-  if (isLoading) {
+  const { data, isError } = useQuery(getAiImagesQueryOptions(username, accessToken ?? ""));
+
+  // A disabled query is not an empty history: without an account there was no request.
+  if (!username) {
+    return (
+      <div className="opacity-50 py-4">
+        {i18next.t("ai-image-generator.history-login-required")}
+      </div>
+    );
+  }
+
+  if (!data) {
+    if (isError) {
+      return (
+        <div className="opacity-50 py-4">{i18next.t("ai-image-generator.history-error")}</div>
+      );
+    }
+    // Token resolution or the fetch itself is still in flight.
     return <div className="opacity-50 py-4">...</div>;
   }
 
-  if (!data || data.length === 0) {
+  if (data.length === 0) {
     return (
-      <div className="opacity-50 py-4">
-        {i18next.t(
-          isError ? "ai-image-generator.history-error" : "ai-image-generator.history-empty"
-        )}
-      </div>
+      <div className="opacity-50 py-4">{i18next.t("ai-image-generator.history-empty")}</div>
     );
   }
 
@@ -71,11 +104,7 @@ export function AiImageHistory({ onInsert, showInsertAction = true }: Props) {
                   {i18next.t("ai-image-generator.insert-button")}
                 </Button>
               )}
-              <Button
-                size="xs"
-                appearance="gray"
-                onClick={() => window.open(item.url, "_blank")}
-              >
+              <Button size="xs" appearance="gray" onClick={() => downloadImage(item.url)}>
                 {i18next.t("ai-image-generator.download-button")}
               </Button>
             </div>

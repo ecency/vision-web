@@ -9,17 +9,19 @@ import { getAccessToken, ensureValidToken } from "@/utils";
 import {
   getAiGeneratePriceQueryOptions,
   getPointsQueryOptions,
+  QueryKeys,
   useAddImage,
   useGenerateImage,
   type AiImagePowerTier,
 } from "@ecency/sdk";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import i18next from "i18next";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AiImageHistory } from "./ai-image-history";
+import { downloadImage } from "./download-image";
 
 interface Props {
   onInsert?: (url: string) => void;
@@ -62,6 +64,7 @@ const AUTO_FETCH_DEFAULT_DELAY_S = 5;
 export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedPrompt }: Props) {
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username;
+  const queryClient = useQueryClient();
 
   const accessToken = username ? getAccessToken(username) : "";
 
@@ -238,6 +241,13 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
       const status = err?.status;
       const data = err?.data;
 
+      // Whatever the client saw, the generation may have completed server-side (that is
+      // the entire recovery design). Mark the history stale so an open or next-opened
+      // History tab shows what the server actually delivered.
+      if (username) {
+        queryClient.invalidateQueries({ queryKey: QueryKeys.ai.images(username) });
+      }
+
       // 202 = paid, upload finishing. 409 in_progress = the prediction is still running
       // server-side. Both mean: keep the key (a retry only fetches, never re-bills) and
       // poll automatically at the backend's suggested cadence, up to a bounded budget.
@@ -285,7 +295,7 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
       inFlightRef.current = false;
     }
   }, [selectedRatio, selectedPower, prompt, username, generateImage, addToGallery, cost,
-      clearAutoFetch]);
+      clearAutoFetch, queryClient]);
 
   handleGenerateRef.current = handleGenerate;
 
@@ -295,7 +305,7 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
 
   const handleDownload = useCallback(() => {
     if (generatedUrl) {
-      window.open(generatedUrl, "_blank");
+      downloadImage(generatedUrl);
     }
   }, [generatedUrl]);
 

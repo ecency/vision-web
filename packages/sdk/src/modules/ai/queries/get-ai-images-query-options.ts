@@ -27,6 +27,11 @@ export function getAiImagesQueryOptions(username: string | undefined, accessToke
       return (await response.json()) as AiImageHistoryItem[];
     },
     staleTime: 30_000,
+    // This list is a recovery surface: a generation can complete server-side while the
+    // client saw only an error, in which case no success-path invalidation ever runs.
+    // Every mount of the history view therefore refetches unconditionally, so opening
+    // the tab always shows what the server actually delivered.
+    refetchOnMount: "always",
     enabled: !!username && !!accessToken,
   });
 }
