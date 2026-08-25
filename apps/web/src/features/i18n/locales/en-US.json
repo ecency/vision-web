@@ -4058,7 +4058,8 @@
     "use-suggestion": "Use: {{suggestion}}",
     "select-power": "Quality boost",
     "finishing": "Your image is generated and finishing upload. Tap below to fetch it — you won't be charged again.",
-    "finishing-retry": "Fetch image"
+    "finishing-retry": "Fetch image",
+    "still-generating": "Your image is still generating. It will be fetched automatically with no extra charge."
   },
   "ai-usage": {
     "menu": "AI usage",
