@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.31
+
+### Patch Changes
+
+- fix(render-helper): strip scrobble.life footer byline in cleanReply (#1679)
+
 ## 2.5.30
 
 ### Patch Changes

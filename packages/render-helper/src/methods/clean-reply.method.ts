@@ -1,5 +1,9 @@
 export function cleanReply(s: string): string {
-  return (s ? s.split('\n')
+  // scrobble.life's footer arrives as "---\n_Originally posted through [scrobble.life/...";
+  // drop the separator too (lookahead keeps unrelated horizontal rules), otherwise the
+  // line filter below leaves a dangling <hr> at the end of the post.
+  const pre = s ? s.replace(/(^|\n)-{3,}[ \t]*\n+(?=[^\n]*originally posted through \[scrobble\.life)/i, '$1') : s
+  return (pre ? pre.split('\n')
     .filter(item => item.toLowerCase().includes('posted using [partiko') === false)
     .filter(item => item.toLowerCase().includes('posted using [dapplr') === false)
     .filter(item => item.toLowerCase().includes('posted using [leofinance') === false)
@@ -30,6 +34,7 @@ export function cleanReply(s: string): string {
       const l = item.toLowerCase();
       return !(l.includes('posted from liketu speak') && l.includes('auto-transcrib'));
     })
+    .filter(item => item.toLowerCase().includes('originally posted through [scrobble.life') === false)
     .filter(item => item.toLowerCase().includes('[via Inbox]') === false)
     .filter(item => item.toLowerCase().includes('<sub>[via apps from](') === false)
     .join('\n') : '')
