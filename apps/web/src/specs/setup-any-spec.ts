@@ -88,7 +88,8 @@ vi.mock("@ecency/sdk", async () => ({
   })),
   getBoostPlusPricesQueryOptions: vi.fn(() => ({ queryKey: ["boost-prices"], queryFn: vi.fn() })),
   getPointsQueryOptions: vi.fn(() => ({ queryKey: ["points"], queryFn: vi.fn() })),
-  getAiGeneratePriceQueryOptions: vi.fn(() => ({ queryKey: ["ai-image-price"], queryFn: vi.fn() })),
+  // Key shape matches the SDK's QueryKeys.ai.prices().
+  getAiGeneratePriceQueryOptions: vi.fn(() => ({ queryKey: ["ai", "prices"], queryFn: vi.fn() })),
   useGenerateImage: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useAddImage: vi.fn(() => ({ mutateAsync: vi.fn(async () => ({})) })),
   getProMembersQueryOptions: vi.fn(() => ({ queryKey: ["accounts", "pro-members"], queryFn: vi.fn() })),

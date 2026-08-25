@@ -103,6 +103,16 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
   const autoFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoFetchAttemptsRef = useRef(0);
 
+  // Identifies the attempt (user + inputs + key) that the outstanding request and any
+  // armed timer belong to. Bumped whenever those change, and on unmount, so a resolution
+  // or timer from an earlier attempt is dropped instead of acting on state it no longer
+  // owns: an old 202/409 must never schedule a poll that would submit the NEW inputs
+  // under a fresh key (an unrequested, billed generation) or bill another account.
+  const attemptRef = useRef(0);
+  // Synchronous re-entrancy guard: a timer firing around a manual fetch must not start a
+  // second concurrent request racing the same key's pending/success state.
+  const inFlightRef = useRef(false);
+
   const clearAutoFetch = useCallback(() => {
     if (autoFetchTimerRef.current) {
       clearTimeout(autoFetchTimerRef.current);
@@ -110,7 +120,15 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
     }
   }, []);
 
-  useEffect(() => clearAutoFetch, [clearAutoFetch]);
+  useEffect(
+    () => () => {
+      // Unmount invalidates the in-flight resolution too, not just the armed timer --
+      // otherwise its 202/409 handler re-arms and keeps polling a dead dialog.
+      attemptRef.current += 1;
+      clearAutoFetch();
+    },
+    [clearAutoFetch]
+  );
 
   useEffect(() => {
     if (prices && prices.length > 0 && !selectedRatio) {
@@ -125,13 +143,15 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
     }
   }, [powerTiers, selectedPower]);
 
-  // Changing any request input starts a fresh attempt: drop the reused key + pending state.
+  // Changing any request input (or the account) starts a fresh attempt: invalidate the
+  // outstanding request/timer and drop the reused key + pending state.
   useEffect(() => {
+    attemptRef.current += 1;
     idempotencyKeyRef.current = null;
     autoFetchAttemptsRef.current = 0;
     clearAutoFetch();
     setPendingPhase(null);
-  }, [prompt, selectedRatio, selectedPower, clearAutoFetch]);
+  }, [prompt, selectedRatio, selectedPower, username, clearAutoFetch]);
 
   const charsRemaining = 1000 - prompt.length;
 
@@ -166,6 +186,14 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
   const handleGenerate = useCallback(async () => {
     if (!selectedRatio || !prompt.trim()) return;
 
+    // A manual click replaces any armed poll timer, and nothing ever runs two requests
+    // for the same attempt concurrently -- overlapping completions would race the
+    // pending/success state and duplicate the gallery insert.
+    clearAutoFetch();
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    const attempt = attemptRef.current;
+
     try {
       const token = username ? await ensureValidToken(username) : undefined;
       if (!token) {
@@ -186,6 +214,10 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
         idempotency_key: idempotencyKeyRef.current,
       });
 
+      // Inputs, account, or mount state changed while this request was in flight: the
+      // response belongs to an abandoned attempt, so drop it without touching state.
+      if (attempt !== attemptRef.current) return;
+
       setPendingPhase(null);
       idempotencyKeyRef.current = null;
       autoFetchAttemptsRef.current = 0;
@@ -196,6 +228,10 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
       // Auto-add to user's gallery (non-blocking)
       addToGallery({ url: result.url, code: token }).catch(() => {});
     } catch (err: any) {
+      // Same stale-attempt gate as the success path: this failure (or pending answer)
+      // belongs to an abandoned attempt and must not touch state or schedule a poll.
+      if (attempt !== attemptRef.current) return;
+
       const status = err?.status;
       const data = err?.data;
 
@@ -215,6 +251,7 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
           clearAutoFetch();
           autoFetchTimerRef.current = setTimeout(() => {
             autoFetchTimerRef.current = null;
+            if (attempt !== attemptRef.current) return;
             handleGenerateRef.current();
           }, delayS * 1000);
         }
@@ -241,6 +278,8 @@ export function AiImageGenerator({ onInsert, showInsertAction = true, suggestedP
       } else {
         error(i18next.t("ai-image-generator.error-generic"));
       }
+    } finally {
+      inFlightRef.current = false;
     }
   }, [selectedRatio, selectedPower, prompt, username, generateImage, addToGallery, cost,
       clearAutoFetch]);
