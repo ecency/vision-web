@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.30
+
+### Patch Changes
+
+- Tiered post-image loading: first three eager, high hint exclusive to the LCP image (#1673)
+
 ## 2.5.29
 
 ### Patch Changes
