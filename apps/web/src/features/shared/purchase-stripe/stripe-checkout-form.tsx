@@ -15,9 +15,19 @@ interface Props {
    * creates an intent. A rejection keeps the form mounted so the buyer can retry.
    */
   createIntent: () => Promise<string>;
-  /** Fired with the confirmed PaymentIntent id (drives the caller's delivery poll). */
+  /**
+   * Fired with the confirmed PaymentIntent id (drives the caller's delivery poll). Fires
+   * even if this form instance unmounted mid-confirm: once the confirm resolved succeeded
+   * or processing, money moved; a completed payment is never silently discarded.
+   */
   onPaid: (paymentIntentId: string) => void;
   onError: (message: string) => void;
+  /**
+   * Fired with true when a Pay submit starts and false when it settles (success, decline
+   * or mint failure). Parents use it to lock every control that could remount this form
+   * or alter the purchase identity while the submit-mint-confirm window is open.
+   */
+  onSubmittingChange?: (submitting: boolean) => void;
 }
 
 /**
@@ -27,7 +37,14 @@ interface Props {
  * then confirm with the fresh client secret. Card payments resolve in-place; a
  * redirect-only method would bounce to returnUrl.
  */
-export function StripeCheckoutForm({ returnUrl, payLabel, createIntent, onPaid, onError }: Props) {
+export function StripeCheckoutForm({
+  returnUrl,
+  payLabel,
+  createIntent,
+  onPaid,
+  onError,
+  onSubmittingChange
+}: Props) {
   const stripe = useStripe();
   const elements = useElements();
   const [submitting, setSubmitting] = useState(false);
@@ -50,6 +67,10 @@ export function StripeCheckoutForm({ returnUrl, payLabel, createIntent, onPaid, 
       return;
     }
     setSubmitting(true);
+    // Tell the parent FIRST, before any await: it must lock selection controls for the
+    // whole submit-mint-confirm window so the purchase identity cannot change (and the
+    // keyed checkout cannot remount) while money may be moving.
+    onSubmittingChange?.(true);
     try {
       // Validate the Payment Element (and collect wallet data) BEFORE minting, so an
       // incomplete card never creates an intent. On error the form stays usable.
@@ -90,8 +111,17 @@ export function StripeCheckoutForm({ returnUrl, payLabel, createIntent, onPaid, 
         redirect: "if_required",
         confirmParams: { return_url: returnUrl }
       });
-      // No bail can help mid-confirm (Stripe owns that window and destroys the Payment
-      // Element on unmount), but the result must not drive a stale caller's state.
+      // Once confirmPayment is dispatched, nothing here can cancel it: Stripe owns that
+      // window and the charge can complete server side even if this instance unmounts.
+      // So the success path below reports to onPaid UNCONDITIONALLY, mounted or not - a
+      // completed payment must never be silently discarded. At worst the parent is gone
+      // and the call is a no-op; when only this form subtree was replaced, the parent
+      // still reacts and starts its delivery poll. Only the cosmetic error paths keep a
+      // mounted bail (there is no state worth painting into a replaced form).
+      if (paymentIntent && ["succeeded", "processing"].includes(paymentIntent.status)) {
+        onPaid(paymentIntent.id);
+        return;
+      }
       if (!mountedRef.current) {
         return;
       }
@@ -100,14 +130,13 @@ export function StripeCheckoutForm({ returnUrl, payLabel, createIntent, onPaid, 
         onError(error.message ?? i18next.t("stripe-points.pay-failed"));
         return;
       }
-      if (paymentIntent && ["succeeded", "processing"].includes(paymentIntent.status)) {
-        onPaid(paymentIntent.id);
-        return;
-      }
       // requires_action handled by Stripe.js; anything else here is unexpected
       onError(i18next.t("stripe-points.pay-failed"));
     } finally {
-      // guarantee the button unlocks even if confirmPayment throws
+      // Unlock the parent's controls in every outcome (the parent outlives this form
+      // subtree, so no mounted bail here) and guarantee the button unlocks even if
+      // confirmPayment throws.
+      onSubmittingChange?.(false);
       if (mountedRef.current) {
         setSubmitting(false);
       }

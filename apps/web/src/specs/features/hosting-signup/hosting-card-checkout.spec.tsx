@@ -1,8 +1,18 @@
 import { HostingCardCheckout } from "@/features/hosting-signup/hosting-card-checkout";
 import "@testing-library/jest-dom";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// A promise resolvable from the test body, to hold the confirm in flight while the
+// submitting lock is asserted.
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 
 // Shapes the mocks exchange with the component under test; typed so the assertions on
 // mock.calls stay checked instead of being cast through any.
@@ -103,12 +113,14 @@ describe("HostingCardCheckout (deferred intent)", () => {
     hostingTarget?: string;
     onActivated?: () => void;
     onConfirmed?: () => void;
+    onSubmittingChange?: (submitting: boolean) => void;
   }
 
   const checkout = ({
     hostingTarget,
     onActivated = vi.fn(),
-    onConfirmed = vi.fn()
+    onConfirmed = vi.fn(),
+    onSubmittingChange
   }: Overrides = {}) => (
     <HostingCardCheckout
       username="alice"
@@ -118,6 +130,7 @@ describe("HostingCardCheckout (deferred intent)", () => {
       returnUrl="https://ecency.com/hosting"
       onActivated={onActivated}
       onConfirmed={onConfirmed}
+      onSubmittingChange={onSubmittingChange}
     />
   );
 
@@ -231,6 +244,32 @@ describe("HostingCardCheckout (deferred intent)", () => {
     expect(payloads[1].nonce).toBe(payloads[0].nonce);
     expect(payloads[2].nonce).not.toBe(payloads[1].nonce);
     expect(payloads[2].hosting_target).toBe("hive-999999");
+    expect(h.statusMock).not.toHaveBeenCalled();
+  });
+
+  it("forwards onSubmittingChange: true while the confirm is pending, false after a decline", async () => {
+    const confirmGate = deferred<MockConfirmResult>();
+    h.confirmPaymentMock.mockImplementation(() => {
+      h.callOrder.push("confirmPayment");
+      return confirmGate.promise;
+    });
+    const onSubmittingChange = vi.fn();
+    render(checkout({ onSubmittingChange }));
+
+    await clickPay();
+
+    // While the confirm is in flight the parent has been told to lock the term, add-on
+    // and method controls: a change now would remount the keyed checkout under a charge
+    // that can still complete server side.
+    await waitFor(() => expect(h.confirmPaymentMock).toHaveBeenCalledTimes(1));
+    expect(onSubmittingChange).toHaveBeenCalledWith(true);
+    expect(onSubmittingChange).not.toHaveBeenCalledWith(false);
+
+    // A decline settles the submit: the parent unlocks so the buyer can edit and retry.
+    await act(async () => {
+      confirmGate.resolve({ error: { message: "stripe-decline-message" } });
+    });
+    await waitFor(() => expect(onSubmittingChange).toHaveBeenLastCalledWith(false));
     expect(h.statusMock).not.toHaveBeenCalled();
   });
 });

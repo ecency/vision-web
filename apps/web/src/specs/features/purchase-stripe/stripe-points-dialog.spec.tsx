@@ -1,9 +1,19 @@
 import { StripePointsDialog } from "@/features/shared/purchase-stripe/stripe-points-dialog";
 import { cleanupModalContainers, setupModalContainers } from "@/specs/test-utils";
 import "@testing-library/jest-dom";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// A promise resolvable from the test body, to hold the confirm in flight while the
+// close-blocking behavior is asserted.
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 
 // Shapes the mocks exchange with the component under test; typed so the assertions on
 // mock.calls stay checked instead of being cast through any.
@@ -81,14 +91,17 @@ describe("StripePointsDialog (deferred intent)", () => {
     // mockImplementation would otherwise leak into the next test.
     h.mintMock.mockImplementation(async () => ({ client_secret: "pi_minted_555_secret_abc" }));
     h.statusMock.mockImplementation(async () => ({ status: "pending" }));
+    h.confirmPaymentMock.mockImplementation(async () => ({
+      paymentIntent: { id: "pi_confirmed_555", status: "succeeded" }
+    }));
   });
 
   afterEach(() => {
     cleanupModalContainers();
   });
 
-  const openDialog = (defaultSku?: string) =>
-    render(<StripePointsDialog show={true} setShow={vi.fn()} defaultSku={defaultSku} />);
+  const openDialog = (defaultSku?: string, setShow: (v: boolean) => void = vi.fn()) =>
+    render(<StripePointsDialog show={true} setShow={setShow} defaultSku={defaultSku} />);
 
   it("advances to the pay step on Continue WITHOUT creating an intent", async () => {
     openDialog();
@@ -193,6 +206,36 @@ describe("StripePointsDialog (deferred intent)", () => {
     expect(payloads).toHaveLength(2);
     expect(payloads[1].nonce).toBe(payloads[0].nonce);
     expect(screen.queryByText("Your card was declined.")).not.toBeInTheDocument();
+  });
+
+  it("blocks closing while a confirm is in flight and closes normally when idle", async () => {
+    // Hold the confirm open: this is the window where the charge can complete server
+    // side, so the dialog must refuse to close (a closed dialog would offer the buyer a
+    // fresh checkout for a payment that already went through).
+    const confirmGate = deferred<MockConfirmResult>();
+    h.confirmPaymentMock.mockImplementation(() => confirmGate.promise);
+    const setShow = vi.fn();
+    openDialog(undefined, setShow);
+
+    fireEvent.click(screen.getByRole("button", { name: "stripe-points.continue" }));
+    const payButton = await screen.findByRole("button", { name: "stripe-points.pay" });
+    await waitFor(() => expect(payButton).not.toBeDisabled());
+    fireEvent.click(payButton);
+    await waitFor(() => expect(h.confirmPaymentMock).toHaveBeenCalledTimes(1));
+
+    // The header close button routes through the guarded onHide: mid-confirm it must be
+    // a no-op, leaving the dialog open and the payment element mounted.
+    fireEvent.click(screen.getByLabelText("g.close"));
+    expect(setShow).not.toHaveBeenCalled();
+    expect(screen.getByTestId("payment-element")).toBeInTheDocument();
+
+    // A decline settles the submit; the dialog is idle again and closes normally.
+    await act(async () => {
+      confirmGate.resolve({ error: { message: "Your card was declined." } });
+    });
+    await screen.findByText("Your card was declined.");
+    fireEvent.click(screen.getByLabelText("g.close"));
+    await waitFor(() => expect(setShow).toHaveBeenCalledWith(false));
   });
 
   it("falls back to the default tier when defaultSku is unknown", async () => {

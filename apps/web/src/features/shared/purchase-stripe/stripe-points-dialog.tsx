@@ -69,6 +69,12 @@ export function StripePointsDialog({
   const [paidIntentId, setPaidIntentId] = useState("");
   const [deliveredPoints, setDeliveredPoints] = useState<number | undefined>(undefined);
   const [errorMsg, setErrorMsg] = useState("");
+  // True while a Pay submit is in flight (validate, mint, confirm). The dialog must not
+  // close in that window: once confirmPayment is dispatched the charge can complete
+  // server side; a closed dialog would show the buyer a fresh checkout for a payment
+  // that already went through. Delivering stays closable (the payment is acknowledged by
+  // then) and a decline flips this back to false so the dialog closes normally again.
+  const [submitting, setSubmitting] = useState(false);
   const pollingRef = useRef(false);
 
   const createIntent = useCreateStripeIntent(username);
@@ -82,6 +88,7 @@ export function StripePointsDialog({
       setPaidIntentId("");
       setDeliveredPoints(undefined);
       setErrorMsg("");
+      setSubmitting(false);
       pollingRef.current = true;
       // Returning from a redirect-based method: skip straight to the delivery poll.
       setStep(resumePaymentIntent ? "delivering" : "select");
@@ -150,7 +157,22 @@ export function StripePointsDialog({
   const amountCents = skuUsdCents(sku);
 
   return (
-    <Modal show={show} centered={true} onHide={() => setShow(false)} size="md">
+    // dismissViaOnHide routes the close button, backdrop and Escape through onHide, so
+    // the submitting guard below actually decides whether the dialog closes.
+    <Modal
+      show={show}
+      centered={true}
+      onHide={() => {
+        // No close while a Pay submit is in flight: the confirm may already have charged
+        // the card and the buyer must stay on this dialog to see the outcome.
+        if (submitting) {
+          return;
+        }
+        setShow(false);
+      }}
+      dismissViaOnHide={true}
+      size="md"
+    >
       <ModalHeader closeButton={true}>
         <ModalTitle>{i18next.t("stripe-points.title")}</ModalTitle>
       </ModalHeader>
@@ -224,6 +246,7 @@ export function StripePointsDialog({
                   setStep("delivering");
                 }}
                 onError={setErrorMsg}
+                onSubmittingChange={setSubmitting}
               />
             </Elements>
           </div>

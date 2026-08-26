@@ -1,8 +1,18 @@
 import { GiftCardCheckout } from "@/features/points-gift/gift-card-checkout";
 import "@testing-library/jest-dom";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// A promise resolvable from the test body, to hold the confirm in flight while the
+// submitting lock is asserted.
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 
 // Shapes the mocks exchange with the component under test; typed so the assertions on
 // mock.calls stay checked instead of being cast through any.
@@ -105,13 +115,15 @@ describe("GiftCardCheckout (deferred intent)", () => {
     message?: string;
     onDelivered?: () => void;
     onConfirmed?: () => void;
+    onSubmittingChange?: (submitting: boolean) => void;
   }
 
   const checkout = ({
     recipient = "friend-a",
     message = "happy birthday",
     onDelivered = vi.fn(),
-    onConfirmed = vi.fn()
+    onConfirmed = vi.fn(),
+    onSubmittingChange
   }: Overrides = {}) => (
     <GiftCardCheckout
       username="alice"
@@ -122,6 +134,7 @@ describe("GiftCardCheckout (deferred intent)", () => {
       returnUrl="https://ecency.com/points-gift"
       onDelivered={onDelivered}
       onConfirmed={onConfirmed}
+      onSubmittingChange={onSubmittingChange}
     />
   );
 
@@ -244,6 +257,32 @@ describe("GiftCardCheckout (deferred intent)", () => {
     expect(payloads[3].nonce).not.toBe(payloads[2].nonce);
     expect(payloads[3].gift_recipient).toBe("friend-b");
     expect(payloads[3].gift_message).toBe("happy new year");
+    expect(h.statusMock).not.toHaveBeenCalled();
+  });
+
+  it("forwards onSubmittingChange: true while the confirm is pending, false after a decline", async () => {
+    const confirmGate = deferred<MockConfirmResult>();
+    h.confirmPaymentMock.mockImplementation(() => {
+      h.callOrder.push("confirmPayment");
+      return confirmGate.promise;
+    });
+    const onSubmittingChange = vi.fn();
+    render(checkout({ onSubmittingChange }));
+
+    await clickPay();
+
+    // While the confirm is in flight the parent has been told to lock the gift selection
+    // controls (recipient, message, pack): a change now would remount the keyed checkout
+    // under a charge that can still complete server side.
+    await waitFor(() => expect(h.confirmPaymentMock).toHaveBeenCalledTimes(1));
+    expect(onSubmittingChange).toHaveBeenCalledWith(true);
+    expect(onSubmittingChange).not.toHaveBeenCalledWith(false);
+
+    // A decline settles the submit: the parent unlocks so the buyer can edit and retry.
+    await act(async () => {
+      confirmGate.resolve({ error: { message: "stripe-decline-message" } });
+    });
+    await waitFor(() => expect(onSubmittingChange).toHaveBeenLastCalledWith(false));
     expect(h.statusMock).not.toHaveBeenCalled();
   });
 });

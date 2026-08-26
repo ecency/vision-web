@@ -29,6 +29,10 @@ interface Props {
   /** Set when returning from a redirect-based method: the intent already exists, so skip
    *  minting and go straight to polling it (Stripe re-appends payment_intent to returnUrl). */
   resumePaymentIntent?: string;
+  /** Forwarded from the payment form: true while a Pay submit is in flight (validate,
+   *  mint, confirm), false once it settles. The dialog uses it to block closing while a
+   *  charge may be completing; a decline flips it back to false. */
+  onSubmittingChange?: (submitting: boolean) => void;
 }
 
 /**
@@ -39,7 +43,13 @@ interface Props {
  * it reaches "success" ePoints has granted the membership. No tenant step (unlike
  * hosting) -- the SKU alone drives the grant.
  */
-export function ProCheckout({ username, returnUrl, onActivated, resumePaymentIntent }: Props) {
+export function ProCheckout({
+  username,
+  returnUrl,
+  onActivated,
+  resumePaymentIntent,
+  onSubmittingChange
+}: Props) {
   const [nonce] = useState(genNonce);
   // Non-terminal problems (a decline, a failed mint, element validation): shown above the
   // still-mounted payment form so the buyer can correct and retry.
@@ -154,6 +164,7 @@ export function ProCheckout({ username, returnUrl, onActivated, resumePaymentInt
             startPoll(paymentIntentId);
           }}
           onError={setFormError}
+          onSubmittingChange={onSubmittingChange}
         />
       </Elements>
     </div>

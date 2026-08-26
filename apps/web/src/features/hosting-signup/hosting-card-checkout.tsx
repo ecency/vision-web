@@ -36,6 +36,12 @@ interface Props {
   /** Fired once the card is confirmed (payment taken); the parent locks the term selector so
    *  a remount can't cancel the poll for an already-paid intent. */
   onConfirmed?: () => void;
+  /** Forwarded from the payment form: true while a Pay submit is in flight (validate,
+   *  mint, confirm), false once it settles. The parent must disable the term, add-on and
+   *  method controls while true so an in-flight payment cannot be detached from what the
+   *  buyer sees; a decline flips it back to false so the controls stay editable after a
+   *  failed attempt. */
+  onSubmittingChange?: (submitting: boolean) => void;
 }
 
 /**
@@ -55,7 +61,8 @@ export function HostingCardCheckout({
   payLabel,
   returnUrl,
   onActivated,
-  onConfirmed
+  onConfirmed,
+  onSubmittingChange
 }: Props) {
   // The nonce is the create-intent idempotency key (user:sku:nonce server-side), so it must
   // change when the checkout identity (sku or target tenant) changes; otherwise a mint for a
@@ -182,6 +189,7 @@ export function HostingCardCheckout({
             startPoll(paymentIntentId);
           }}
           onError={setFormError}
+          onSubmittingChange={onSubmittingChange}
         />
       </Elements>
     </div>

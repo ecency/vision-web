@@ -59,11 +59,13 @@ describe("StripeCheckoutForm (unmount during the Pay handler)", () => {
   const renderForm = ({
     createIntent = vi.fn(async () => "pi_minted_123_secret_x"),
     onPaid = vi.fn(),
-    onError = vi.fn()
+    onError = vi.fn(),
+    onSubmittingChange
   }: {
     createIntent?: () => Promise<string>;
     onPaid?: (paymentIntentId: string) => void;
     onError?: (message: string) => void;
+    onSubmittingChange?: (submitting: boolean) => void;
   } = {}) => {
     const view = render(
       <StripeCheckoutForm
@@ -72,6 +74,7 @@ describe("StripeCheckoutForm (unmount during the Pay handler)", () => {
         createIntent={createIntent}
         onPaid={onPaid}
         onError={onError}
+        onSubmittingChange={onSubmittingChange}
       />
     );
     return { ...view, createIntent, onPaid, onError };
@@ -125,7 +128,7 @@ describe("StripeCheckoutForm (unmount during the Pay handler)", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
-  it("drops the confirm result when the form unmounts while confirmPayment is in flight", async () => {
+  it("still calls onPaid with the confirmed intent id when the form unmounts mid-confirm", async () => {
     const confirmGate = deferred<MockConfirmResult>();
     h.confirmPaymentMock.mockImplementation(() => confirmGate.promise);
     const { unmount, onPaid, onError } = renderForm();
@@ -138,9 +141,44 @@ describe("StripeCheckoutForm (unmount during the Pay handler)", () => {
       confirmGate.resolve({ paymentIntent: { id: "pi_confirmed_123", status: "succeeded" } });
     });
 
-    // The dispatch itself cannot be aborted (Stripe owns that window), but the result
-    // must not drive a stale caller's state after the unmount.
-    expect(onPaid).not.toHaveBeenCalled();
+    // Once confirmPayment is dispatched the charge can complete server side; unmounting
+    // cannot cancel it. A confirm that resolves succeeded is a payment that HAPPENED, so
+    // it must always reach onPaid - a mounted bail here would silently discard a real
+    // charge and offer the buyer a fresh checkout to pay again. Only the cosmetic error
+    // path stays gated on mount.
+    expect(onPaid).toHaveBeenCalledTimes(1);
+    expect(onPaid).toHaveBeenCalledWith("pi_confirmed_123");
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("reports submitting true on Pay and false after a decline", async () => {
+    const onSubmittingChange = vi.fn();
+    h.confirmPaymentMock.mockImplementation(async () => ({
+      error: { message: "Your card was declined." }
+    }));
+    const { onError } = renderForm({ onSubmittingChange });
+
+    await clickPay();
+
+    // The parent locked its controls for the whole submit-mint-confirm window and
+    // unlocked them once the decline settled, so the buyer can edit and retry.
+    await waitFor(() => expect(onError).toHaveBeenCalledWith("Your card was declined."));
+    await waitFor(() => expect(onSubmittingChange).toHaveBeenLastCalledWith(false));
+    expect(onSubmittingChange.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it("reports submitting false after a mint failure", async () => {
+    const onSubmittingChange = vi.fn();
+    const createIntent = vi.fn(async (): Promise<string> => {
+      throw new Error("Request failed with status code 500");
+    });
+    const { onError } = renderForm({ createIntent, onSubmittingChange });
+
+    await clickPay();
+
+    await waitFor(() => expect(onError).toHaveBeenCalledWith("stripe-points.create-failed"));
+    await waitFor(() => expect(onSubmittingChange).toHaveBeenLastCalledWith(false));
+    expect(onSubmittingChange.mock.calls).toEqual([[true], [false]]);
+    expect(h.confirmPaymentMock).not.toHaveBeenCalled();
   });
 });

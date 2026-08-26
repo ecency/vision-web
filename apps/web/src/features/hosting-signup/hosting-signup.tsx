@@ -137,6 +137,12 @@ export function HostingSignup() {
   const [busy, setBusy] = useState(false);
   // Card confirmed -> the term/method are locked so a remount can't cancel the activation poll.
   const [paying, setPaying] = useState(false);
+  // True while a card Pay submit is in flight (validate, mint, confirm). The term, add-on
+  // and method controls must be frozen for that whole window: once confirmPayment is
+  // dispatched the charge can complete server side, so an edit mid-confirm would remount
+  // the keyed checkout and show a fresh form for a purchase that already went through. A
+  // decline sets this back to false so the controls stay editable after a failed attempt.
+  const [cardSubmitting, setCardSubmitting] = useState(false);
   // Whether this payment-step entry is for an UNPAID reservation (fresh create, refresh or
   // resume), which is what the grace-window notice is about. Deliberately not derived from
   // renewBaselineExpiryRef: that is also null for expired and suspended tenants, whose names
@@ -167,7 +173,9 @@ export function HostingSignup() {
   // blog account itself; for a community the owner (any logged-in account) pays and the community is
   // activated via hostingTarget, so it does not need to equal the tenant.
   const cardEnabled =
-    !!methods?.card.enabled && !!activeUser && (isCommunity || tenantUsername === activeUser.username);
+    !!methods?.card.enabled &&
+    !!activeUser &&
+    (isCommunity || tenantUsername === activeUser.username);
 
   // The custom-domain add-on is only offered to a logged-in OWNER of the tenant (their own personal
   // blog, or a community they own) — on either rail. This matches the condition that gates the
@@ -183,7 +191,10 @@ export function HostingSignup() {
   const canOneClickHive = !!activeUser && getLoginType(activeUser.username) === "keychain";
 
   useEffect(() => {
-    hostingApi.paymentMethods().then(setMethods).catch(() => setMethods(null));
+    hostingApi
+      .paymentMethods()
+      .then(setMethods)
+      .catch(() => setMethods(null));
   }, []);
 
   // Default to HBD whenever card is not actually available to this visitor (logged out, or
@@ -323,7 +334,14 @@ export function HostingSignup() {
     try {
       localStorage.setItem(
         customizeDraftKey(tenantUsername),
-        JSON.stringify({ styleTemplate, accent, fontPreset, title, description, savedAt: Date.now() })
+        JSON.stringify({
+          styleTemplate,
+          accent,
+          fontPreset,
+          title,
+          description,
+          savedAt: Date.now()
+        })
       );
     } catch {}
   }, [step, tenantUsername, styleTemplate, accent, fontPreset, title, description]);
@@ -446,7 +464,16 @@ export function HostingSignup() {
     } finally {
       setBusy(false);
     }
-  }, [tenantUsername, isCommunity, title, description, styleTemplate, accent, fontPreset, activeUser]);
+  }, [
+    tenantUsername,
+    isCommunity,
+    title,
+    description,
+    styleTemplate,
+    accent,
+    fontPreset,
+    activeUser
+  ]);
 
   // Mint a one-time handoff CODE as soon as the success screen shows: the
   // Customize link used to carry the session bearer itself in its fragment,
@@ -456,9 +483,7 @@ export function HostingSignup() {
   // worthless afterwards. Re-minted on an interval while the screen stays
   // open (codes outlive nobody's coffee break); a failed mint leaves the
   // click on the credential-free fallback href.
-  const [handoff, setHandoff] = useState<{ code: string; expiresAt: number } | null>(
-    null
-  );
+  const [handoff, setHandoff] = useState<{ code: string; expiresAt: number } | null>(null);
   // Bumped by a click: the opened code is consumed by the instance, so the
   // click clears it and this forces a fresh mint for any further click.
   const [mintNonce, setMintNonce] = useState(0);
@@ -668,7 +693,11 @@ export function HostingSignup() {
     try {
       sessionStorage.setItem(
         PENDING_HBD_KEY,
-        JSON.stringify({ tenant: tenantUsername, blogUrl, baseline: renewBaselineExpiryRef.current })
+        JSON.stringify({
+          tenant: tenantUsername,
+          blogUrl,
+          baseline: renewBaselineExpiryRef.current
+        })
       );
     } catch {}
     try {
@@ -758,6 +787,9 @@ export function HostingSignup() {
   const usdPer = customDomain ? HOSTING_CUSTOM_DOMAIN_MONTHLY_USD : usdPerBase;
   const hbdPer = customDomain ? hbdPerBase + 1 : hbdPerBase;
   const cardSku = customDomain ? hostingProSkuForMonths(months) : hostingSkuForMonths(months);
+  // The payment-step selection controls are locked while a card submit is in flight
+  // (cardSubmitting) and stay locked once the payment is confirmed (paying).
+  const payLocked = paying || cardSubmitting;
 
   // Only surface a well-formed https URL as a link so a validated subdomain or API-returned blog URL
   // cannot carry an unexpected scheme into the href (guards CodeQL js/xss-through-dom).
@@ -811,7 +843,9 @@ export function HostingSignup() {
             <button
               onClick={() => setInstanceType("blog")}
               className={`flex-1 px-3 py-2 rounded-lg border text-sm ${
-                !isCommunity ? "border-blue-dark-sky bg-blue-dark-sky/10" : "border-[--border-color]"
+                !isCommunity
+                  ? "border-blue-dark-sky bg-blue-dark-sky/10"
+                  : "border-[--border-color]"
               }`}
             >
               {i18next.t("hosting.type-blog")}
@@ -937,9 +971,7 @@ export function HostingSignup() {
 
           <p className="text-sm opacity-60">{i18next.t("hosting.changeable-later")}</p>
 
-          <label className="text-sm font-semibold">
-            {i18next.t("hosting.destination-label")}
-          </label>
+          <label className="text-sm font-semibold">{i18next.t("hosting.destination-label")}</label>
           <DestinationPicker
             value={destination}
             onChange={setDestination}
@@ -993,10 +1025,12 @@ export function HostingSignup() {
               <button
                 key={m}
                 onClick={() => setMonths(m)}
-                disabled={paying}
+                disabled={payLocked}
                 className={`px-3 py-2 rounded-lg border text-sm ${
-                  months === m ? "border-blue-dark-sky bg-blue-dark-sky/10" : "border-[--border-color]"
-                } ${paying ? "opacity-50 cursor-not-allowed" : ""}`}
+                  months === m
+                    ? "border-blue-dark-sky bg-blue-dark-sky/10"
+                    : "border-[--border-color]"
+                } ${payLocked ? "opacity-50 cursor-not-allowed" : ""}`}
               >
                 {i18next.t("hosting.term-months", { n: m })}
               </button>
@@ -1009,18 +1043,24 @@ export function HostingSignup() {
           {methods && canManageDomain && (
             <button
               onClick={() => setCustomDomain((v) => !v)}
-              disabled={paying}
+              disabled={payLocked}
               className={`text-left px-4 py-3 rounded-lg border ${
-                customDomain ? "border-blue-dark-sky bg-blue-dark-sky/10" : "border-[--border-color]"
-              } ${paying ? "opacity-50 cursor-not-allowed" : ""}`}
+                customDomain
+                  ? "border-blue-dark-sky bg-blue-dark-sky/10"
+                  : "border-[--border-color]"
+              } ${payLocked ? "opacity-50 cursor-not-allowed" : ""}`}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold">{i18next.t("hosting.custom-domain-option")}</span>
                 <span className="text-sm text-blue-dark-sky">
-                  {customDomain ? i18next.t("hosting.custom-domain-added") : i18next.t("hosting.custom-domain-price")}
+                  {customDomain
+                    ? i18next.t("hosting.custom-domain-added")
+                    : i18next.t("hosting.custom-domain-price")}
                 </span>
               </div>
-              <p className="text-sm opacity-75 mt-1">{i18next.t("hosting.custom-domain-explainer")}</p>
+              <p className="text-sm opacity-75 mt-1">
+                {i18next.t("hosting.custom-domain-explainer")}
+              </p>
             </button>
           )}
 
@@ -1029,20 +1069,24 @@ export function HostingSignup() {
             {cardEnabled && (
               <button
                 onClick={() => setMethod("card")}
-                disabled={paying}
+                disabled={payLocked}
                 className={`flex-1 px-3 py-2 rounded-lg border text-sm ${
-                  method === "card" ? "border-blue-dark-sky bg-blue-dark-sky/10" : "border-[--border-color]"
-                } ${paying ? "opacity-50 cursor-not-allowed" : ""}`}
+                  method === "card"
+                    ? "border-blue-dark-sky bg-blue-dark-sky/10"
+                    : "border-[--border-color]"
+                } ${payLocked ? "opacity-50 cursor-not-allowed" : ""}`}
               >
                 {i18next.t("hosting.pay-card", { amount: (usdPer * months).toFixed(2) })}
               </button>
             )}
             <button
               onClick={() => setMethod("hbd")}
-              disabled={paying}
+              disabled={payLocked}
               className={`flex-1 px-3 py-2 rounded-lg border text-sm ${
-                method === "hbd" ? "border-blue-dark-sky bg-blue-dark-sky/10" : "border-[--border-color]"
-              } ${paying ? "opacity-50 cursor-not-allowed" : ""}`}
+                method === "hbd"
+                  ? "border-blue-dark-sky bg-blue-dark-sky/10"
+                  : "border-[--border-color]"
+              } ${payLocked ? "opacity-50 cursor-not-allowed" : ""}`}
             >
               {i18next.t("hosting.pay-hbd", { amount: (hbdPer * months).toFixed(3) })}
             </button>
@@ -1061,6 +1105,7 @@ export function HostingSignup() {
               payLabel={i18next.t("hosting.pay-now")}
               returnUrl={typeof window !== "undefined" ? window.location.href : ""}
               onConfirmed={() => setPaying(true)}
+              onSubmittingChange={setCardSubmitting}
               onActivated={() => setStep("success")}
             />
           )}
@@ -1214,12 +1259,14 @@ export function HostingSignup() {
               community the tenant is the community id while the logged-in owner authorizes.
               Compare the normalized tenantUsername (not the raw field) so "Alice"/"alice "
               still shows the manager for tenant "alice". */}
-          {customDomain && activeUser && (isCommunity || tenantUsername === activeUser.username) && (
-            <CustomDomainManager
-              username={activeUser.username}
-              tenant={isCommunity ? tenantUsername : undefined}
-            />
-          )}
+          {customDomain &&
+            activeUser &&
+            (isCommunity || tenantUsername === activeUser.username) && (
+              <CustomDomainManager
+                username={activeUser.username}
+                tenant={isCommunity ? tenantUsername : undefined}
+              />
+            )}
         </div>
       )}
     </div>

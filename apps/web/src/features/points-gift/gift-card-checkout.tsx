@@ -39,6 +39,12 @@ interface Props {
   onPending?: () => void;
   /** Fired once the card is confirmed (payment taken) so the parent can lock the form. */
   onConfirmed?: () => void;
+  /** Forwarded from the payment form: true while a Pay submit is in flight (validate,
+   *  mint, confirm), false once it settles. The parent must disable the gift selection
+   *  controls while true so an in-flight payment cannot be detached from what the buyer
+   *  sees; a decline flips it back to false so selections stay editable after a failed
+   *  attempt. */
+  onSubmittingChange?: (submitting: boolean) => void;
 }
 
 /**
@@ -57,7 +63,8 @@ export function GiftCardCheckout({
   returnUrl,
   onDelivered,
   onPending,
-  onConfirmed
+  onConfirmed,
+  onSubmittingChange
 }: Props) {
   // The nonce is the create-intent idempotency key (user:sku:nonce server-side), so it
   // must change when the checkout identity (sku, recipient or message) changes: a Pay for
@@ -181,6 +188,7 @@ export function GiftCardCheckout({
             startPoll(paymentIntentId);
           }}
           onError={setFormError}
+          onSubmittingChange={onSubmittingChange}
         />
       </Elements>
     </div>
