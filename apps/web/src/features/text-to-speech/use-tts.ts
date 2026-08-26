@@ -30,10 +30,17 @@ export function useTts(text: string) {
       }
     });
 
-    utterance.addEventListener("start", () => setHasStarted(true));
-    utterance.addEventListener("end", () => setHasStarted(false));
-    utterance.addEventListener("pause", () => setHasPaused(true));
-    utterance.addEventListener("resume", () => setHasPaused(false));
+    if (typeof utterance.addEventListener === "function") {
+      utterance.addEventListener("start", () => setHasStarted(true));
+      utterance.addEventListener("end", () => setHasStarted(false));
+      utterance.addEventListener("pause", () => setHasPaused(true));
+      utterance.addEventListener("resume", () => setHasPaused(false));
+    } else {
+      utterance.onstart = () => setHasStarted(true);
+      utterance.onend = () => setHasStarted(false);
+      utterance.onpause = () => setHasPaused(true);
+      utterance.onresume = () => setHasPaused(false);
+    }
 
     return () => {
       speechSynthesis.cancel();
