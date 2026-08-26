@@ -48,6 +48,12 @@ export function PointsGiftPage() {
   const [sku, setSku] = useState(DEFAULT_STRIPE_TIER_SKU);
   // Locked once the card is confirmed so a remount can't cancel the delivery poll.
   const [locked, setLocked] = useState(false);
+  // True while a Pay submit is in flight (validate, mint, confirm). The selection controls
+  // must be frozen for that whole window: once confirmPayment is dispatched the charge can
+  // complete server side, so an edit mid-confirm would remount the keyed checkout and show
+  // a fresh form for a purchase that already went through. A decline sets this back to
+  // false so the buyer can still change selections after a failed attempt.
+  const [cardSubmitting, setCardSubmitting] = useState(false);
   const [deliveredPoints, setDeliveredPoints] = useState<number | undefined>(undefined);
   const [errorMsg, setErrorMsg] = useState("");
   // Payment intent to resume delivery polling for after a redirect-based method returns.
@@ -156,6 +162,7 @@ export function PointsGiftPage() {
     pollingRef.current = false;
     setStep("form");
     setLocked(false);
+    setCardSubmitting(false);
     setResumePi(undefined);
     setDeliveredPoints(undefined);
     setErrorMsg("");
@@ -208,9 +215,7 @@ export function PointsGiftPage() {
         </div>
       )}
 
-      {step === "pending" && (
-        <Alert appearance="primary">{i18next.t("points-gift.pending")}</Alert>
-      )}
+      {step === "pending" && <Alert appearance="primary">{i18next.t("points-gift.pending")}</Alert>}
 
       {step === "delivering" && (
         <div className="py-6 text-center text-sm opacity-75">
@@ -236,7 +241,7 @@ export function PointsGiftPage() {
             <FormControl
               type="text"
               value={recipient}
-              disabled={locked}
+              disabled={locked || cardSubmitting}
               onChange={(e: any) => setRecipient(e.target.value)}
               placeholder={i18next.t("points-gift.recipient-placeholder")}
             />
@@ -246,15 +251,13 @@ export function PointsGiftPage() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold">
-              {i18next.t("points-gift.amount-label")}
-            </label>
+            <label className="text-sm font-semibold">{i18next.t("points-gift.amount-label")}</label>
             <div className="grid grid-cols-2 gap-2">
               {STRIPE_POINTS_TIERS.map((t) => (
                 <button
                   key={t.sku}
                   type="button"
-                  disabled={locked}
+                  disabled={locked || cardSubmitting}
                   onClick={() => setSku(t.sku)}
                   className={`rounded-lg p-3 text-left transition-colors disabled:opacity-60 ${
                     t.sku === sku
@@ -279,7 +282,7 @@ export function PointsGiftPage() {
               type="textarea"
               rows={2}
               value={message}
-              disabled={locked}
+              disabled={locked || cardSubmitting}
               maxLength={MESSAGE_MAX}
               onChange={(e: any) => setMessage(e.target.value.slice(0, MESSAGE_MAX))}
               placeholder={i18next.t("points-gift.message-placeholder")}
@@ -307,6 +310,7 @@ export function PointsGiftPage() {
               payLabel={i18next.t("points-gift.pay", { usd: `$${selectedTier.usd.toFixed(2)}` })}
               returnUrl={typeof window !== "undefined" ? window.location.href : ""}
               onConfirmed={() => setLocked(true)}
+              onSubmittingChange={setCardSubmitting}
               onDelivered={() => {
                 setDeliveredPoints(selectedTier.points);
                 setStep("done");

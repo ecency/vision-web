@@ -6,10 +6,11 @@ import { Button } from "@ui/button";
 import i18next from "i18next";
 import { useEffect, useRef, useState } from "react";
 import { StripeCheckoutForm } from "./stripe-checkout-form";
-import { getStripePromise } from "./stripe-config";
+import { getStripePromise, skuUsdCents } from "./stripe-config";
 import {
   AccountPurchaseMeta,
   fetchStripeAccountStatus,
+  STRIPE_ACCOUNT_SKU,
   STRIPE_ACCOUNT_USD,
   useCreateAccountIntent
 } from "./use-stripe-account-purchase";
@@ -70,6 +71,13 @@ function createIntentError(e: any): string {
  * are created + emailed by the onboard service, so "done" means requested, not delivered.
  * When `resumePaymentIntent` is set the order already exists (redirect-return), so minting is
  * skipped and we go straight to polling.
+ *
+ * Deliberate exception to the deferred-mint rule the other card rails follow: the single
+ * use Turnstile token is consumed at create intent and expires within minutes, so deferring
+ * the mint to the Pay click would let it expire while the buyer types card details. This
+ * step is only reached after an explicit submit on the signup form, so mint-on-mount does
+ * not create browse-and-abandon intents here. The already-minted client secret is handed to
+ * the shared form via createIntent.
  */
 export function StripeAccountCheckout({ meta, captchaToken, onBack, resumePaymentIntent }: Props) {
   const [step, setStep] = useState<Step>(resumePaymentIntent ? "delivering" : "creating");
@@ -182,11 +190,20 @@ export function StripeAccountCheckout({ meta, captchaToken, onBack, resumePaymen
       {step === "pay" && stripePromise && clientSecret && (
         <Elements
           stripe={stripePromise}
-          options={{ clientSecret, appearance: { theme: isDarkMode() ? "night" : "stripe" } }}
+          options={{
+            mode: "payment",
+            amount: skuUsdCents(STRIPE_ACCOUNT_SKU),
+            currency: "usd",
+            appearance: { theme: isDarkMode() ? "night" : "stripe" }
+          }}
         >
           <StripeCheckoutForm
             returnUrl={buildReturnUrl(meta.username)}
-            payLabel={i18next.t("sign-up.account-pay", { usd: `$${STRIPE_ACCOUNT_USD.toFixed(2)}` })}
+            payLabel={i18next.t("sign-up.account-pay", {
+              usd: `$${STRIPE_ACCOUNT_USD.toFixed(2)}`
+            })}
+            /* The intent already exists (minted on mount, captcha-gated); hand its secret over. */
+            createIntent={async () => clientSecret}
             onPaid={() => setStep("delivering")}
             onError={(m) => {
               setErrorMsg(m);

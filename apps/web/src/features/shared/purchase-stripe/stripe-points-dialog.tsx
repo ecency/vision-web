@@ -11,6 +11,8 @@ import { StripeCheckoutForm } from "./stripe-checkout-form";
 import {
   DEFAULT_STRIPE_TIER_SKU,
   getStripePromise,
+  isKnownTierSku,
+  skuUsdCents,
   STRIPE_POINTS_TIERS
 } from "./stripe-config";
 import { fetchStripeOrderStatus, useCreateStripeIntent } from "./use-stripe-points-purchase";
@@ -36,11 +38,18 @@ const genNonce = (): string =>
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+// An unknown defaultSku (a stale caller, a renamed tier) must not leave the dialog with no
+// selected tile and a zero-cent pay step; fall back to the default tier instead.
+const resolveTierSku = (sku?: string): string =>
+  sku && isKnownTierSku(sku) ? sku : DEFAULT_STRIPE_TIER_SKU;
+
 /**
- * Reusable card-payment dialog for buying Points. Flow: pick a tier -> create a
- * PaymentIntent via vapi -> confirm with the Stripe Payment Element -> poll the order
- * status until the worker delivers. Credits the authenticated user (vapi forces it).
- * Card payment is hidden entirely when the publishable key is unconfigured.
+ * Reusable card-payment dialog for buying Points. Flow: pick a tier -> render the Payment
+ * Element (deferred: no intent yet) -> mint the PaymentIntent via vapi on the Pay click ->
+ * confirm -> poll the order status until the worker delivers. Credits the authenticated
+ * user (vapi forces it). Deferring the mint to the Pay click means browsing tiers or
+ * closing the dialog never creates an abandoned intent. Card payment is hidden entirely
+ * when the publishable key is unconfigured.
  */
 export function StripePointsDialog({
   show,
@@ -53,11 +62,19 @@ export function StripePointsDialog({
   const username = activeUser?.username;
 
   const [step, setStep] = useState<Step>("select");
-  const [sku, setSku] = useState(defaultSku ?? DEFAULT_STRIPE_TIER_SKU);
+  const [sku, setSku] = useState(() => resolveTierSku(defaultSku));
   const [nonce, setNonce] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
+  // The confirmed PaymentIntent id, handed over by onPaid. With deferred minting there is
+  // no client secret in state to derive it from; the confirm result is the source.
+  const [paidIntentId, setPaidIntentId] = useState("");
   const [deliveredPoints, setDeliveredPoints] = useState<number | undefined>(undefined);
   const [errorMsg, setErrorMsg] = useState("");
+  // True while a Pay submit is in flight (validate, mint, confirm). The dialog must not
+  // close in that window: once confirmPayment is dispatched the charge can complete
+  // server side; a closed dialog would show the buyer a fresh checkout for a payment
+  // that already went through. Delivering stays closable (the payment is acknowledged by
+  // then) and a decline flips this back to false so the dialog closes normally again.
+  const [submitting, setSubmitting] = useState(false);
   const pollingRef = useRef(false);
 
   const createIntent = useCreateStripeIntent(username);
@@ -67,10 +84,11 @@ export function StripePointsDialog({
   useEffect(() => {
     if (show) {
       setNonce(genNonce());
-      setSku(defaultSku ?? DEFAULT_STRIPE_TIER_SKU);
-      setClientSecret("");
+      setSku(resolveTierSku(defaultSku));
+      setPaidIntentId("");
       setDeliveredPoints(undefined);
       setErrorMsg("");
+      setSubmitting(false);
       pollingRef.current = true;
       // Returning from a redirect-based method: skip straight to the delivery poll.
       setStep(resumePaymentIntent ? "delivering" : "select");
@@ -79,20 +97,16 @@ export function StripePointsDialog({
     }
   }, [show, defaultSku, resumePaymentIntent]);
 
-  // The PaymentIntent id is the resume value (redirect return) or the client-secret prefix.
-  const paymentIntentId =
-    resumePaymentIntent || (clientSecret ? clientSecret.split("_secret_")[0] : "");
+  // The PaymentIntent id is the resume value (redirect return) or the one from onPaid.
+  const paymentIntentId = resumePaymentIntent || paidIntentId;
 
-  const startPayment = useCallback(async () => {
+  // Mints the PaymentIntent at Pay time (deferred flow) for the selected tier. The nonce
+  // is stable for the session, so a double-submit returns the same intent. Clears the
+  // inline pay-step error so a retry starts clean.
+  const mintIntent = useCallback(async () => {
     setErrorMsg("");
-    try {
-      const { client_secret } = await createIntent.mutateAsync({ sku, nonce });
-      setClientSecret(client_secret);
-      setStep("pay");
-    } catch {
-      setErrorMsg(i18next.t("stripe-points.create-failed"));
-      setStep("error");
-    }
+    const { client_secret } = await createIntent.mutateAsync({ sku, nonce });
+    return client_secret;
   }, [createIntent, sku, nonce]);
 
   // After the intent is confirmed, poll until the worker delivers the Points.
@@ -140,9 +154,25 @@ export function StripePointsDialog({
   }, [step, username, paymentIntentId, onDelivered]);
 
   const selectedTier = STRIPE_POINTS_TIERS.find((t) => t.sku === sku);
+  const amountCents = skuUsdCents(sku);
 
   return (
-    <Modal show={show} centered={true} onHide={() => setShow(false)} size="md">
+    // dismissViaOnHide routes the close button, backdrop and Escape through onHide, so
+    // the submitting guard below actually decides whether the dialog closes.
+    <Modal
+      show={show}
+      centered={true}
+      onHide={() => {
+        // No close while a Pay submit is in flight: the confirm may already have charged
+        // the card and the buyer must stay on this dialog to see the outcome.
+        if (submitting) {
+          return;
+        }
+        setShow(false);
+      }}
+      dismissViaOnHide={true}
+      size="md"
+    >
       <ModalHeader closeButton={true}>
         <ModalTitle>{i18next.t("stripe-points.title")}</ModalTitle>
       </ModalHeader>
@@ -174,31 +204,52 @@ export function StripePointsDialog({
                 </button>
               ))}
             </div>
-            <Button full={true} isLoading={createIntent.isPending} onClick={startPayment}>
+            {/* Advances to the payment form only; the intent is minted on the Pay click. */}
+            <Button
+              full={true}
+              onClick={() => {
+                setErrorMsg("");
+                setStep("pay");
+              }}
+            >
               {i18next.t("stripe-points.continue")}
             </Button>
           </div>
         )}
 
-        {step === "pay" && stripePromise && clientSecret && (
-          <Elements
-            stripe={stripePromise}
-            options={{ clientSecret, appearance: { theme: isDarkMode() ? "night" : "stripe" } }}
-          >
-            <StripeCheckoutForm
-              returnUrl={typeof window !== "undefined" ? window.location.href : ""}
-              payLabel={
-                selectedTier
-                  ? i18next.t("stripe-points.pay", { usd: `$${selectedTier.usd.toFixed(2)}` })
-                  : i18next.t("stripe-points.pay-generic")
-              }
-              onPaid={() => setStep("delivering")}
-              onError={(m) => {
-                setErrorMsg(m);
-                setStep("error");
+        {step === "pay" && stripePromise && amountCents > 0 && (
+          <div className="flex flex-col gap-3">
+            {/* A mint failure or card decline surfaces HERE, above the still-mounted form,
+                so the buyer retries without retyping the card. The terminal error step is
+                reserved for a failed delivery poll. */}
+            {errorMsg && <Alert appearance="danger">{errorMsg}</Alert>}
+            <Elements
+              stripe={stripePromise}
+              options={{
+                mode: "payment",
+                amount: amountCents,
+                currency: "usd",
+                appearance: { theme: isDarkMode() ? "night" : "stripe" }
               }}
-            />
-          </Elements>
+            >
+              <StripeCheckoutForm
+                returnUrl={typeof window !== "undefined" ? window.location.href : ""}
+                payLabel={
+                  selectedTier
+                    ? i18next.t("stripe-points.pay", { usd: `$${selectedTier.usd.toFixed(2)}` })
+                    : i18next.t("stripe-points.pay-generic")
+                }
+                createIntent={mintIntent}
+                onPaid={(paymentIntent) => {
+                  setErrorMsg("");
+                  setPaidIntentId(paymentIntent);
+                  setStep("delivering");
+                }}
+                onError={setErrorMsg}
+                onSubmittingChange={setSubmitting}
+              />
+            </Elements>
+          </div>
         )}
 
         {step === "delivering" && (
