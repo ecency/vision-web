@@ -33,6 +33,20 @@ export function SignupLayoutClient({ children }: PropsWithChildren) {
       <Feedback />
       <Navbar experimental={true} />
 
+      {/* Hoisted into <head> by React. The hero <img> below must stay lazy:
+          its container is display:none under md, and a lazy image with no box
+          is never fetched, which keeps this ~47KB file off mobile. The media
+          query scopes the early fetch to the viewports that paint it. */}
+      {!hideHeader && (
+        <link
+          rel="preload"
+          as="image"
+          href="/assets/signup-main.svg"
+          media="(min-width: 768px)"
+          fetchPriority="high"
+        />
+      )}
+
       <div className="container mb-24 md:mb-0 px-2 mx-auto mt-6 md:mt-8">
         {!hideHeader && (
           <div className="grid grid-cols-12 mb-10 items-center gap-4 md:gap-6 lg:gap-8 xl:gap-10">
