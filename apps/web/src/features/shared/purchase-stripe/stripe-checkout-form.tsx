@@ -3,7 +3,7 @@
 import { Button } from "@ui/button";
 import { PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import i18next from "i18next";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Props {
   /** Where redirect-based methods return to; card resolves in-page (redirect: if_required). */
@@ -32,6 +32,17 @@ export function StripeCheckoutForm({ returnUrl, payLabel, createIntent, onPaid, 
   const elements = useElements();
   const [submitting, setSubmitting] = useState(false);
   const [ready, setReady] = useState(false);
+  const mountedRef = useRef(true);
+
+  // Track real mount state for the async Pay handler below. Set in its OWN mount effect so
+  // React StrictMode's dev setup->cleanup->setup leaves it TRUE (the final setup wins); a
+  // per-mount closure flag would be torn down to a stale `false` and swallow the result.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +54,12 @@ export function StripeCheckoutForm({ returnUrl, payLabel, createIntent, onPaid, 
       // Validate the Payment Element (and collect wallet data) BEFORE minting, so an
       // incomplete card never creates an intent. On error the form stays usable.
       const { error: submitError } = await elements.submit();
+      // A still-enabled selection (hosting term, gift recipient) may change while this
+      // handler is in flight; the keyed checkout remounts and THIS instance unmounts.
+      // Bail after every await so a discarded selection never mints or confirms.
+      if (!mountedRef.current) {
+        return;
+      }
       if (submitError) {
         onError(submitError.message ?? i18next.t("stripe-points.pay-failed"));
         return;
@@ -55,7 +72,13 @@ export function StripeCheckoutForm({ returnUrl, payLabel, createIntent, onPaid, 
       try {
         clientSecret = await createIntent();
       } catch {
+        if (!mountedRef.current) {
+          return;
+        }
         onError(i18next.t("stripe-points.create-failed"));
+        return;
+      }
+      if (!mountedRef.current) {
         return;
       }
 
@@ -67,6 +90,11 @@ export function StripeCheckoutForm({ returnUrl, payLabel, createIntent, onPaid, 
         redirect: "if_required",
         confirmParams: { return_url: returnUrl }
       });
+      // No bail can help mid-confirm (Stripe owns that window and destroys the Payment
+      // Element on unmount), but the result must not drive a stale caller's state.
+      if (!mountedRef.current) {
+        return;
+      }
       if (error) {
         // card declined / validation / network -- surface Stripe's localized message
         onError(error.message ?? i18next.t("stripe-points.pay-failed"));
@@ -80,7 +108,9 @@ export function StripeCheckoutForm({ returnUrl, payLabel, createIntent, onPaid, 
       onError(i18next.t("stripe-points.pay-failed"));
     } finally {
       // guarantee the button unlocks even if confirmPayment throws
-      setSubmitting(false);
+      if (mountedRef.current) {
+        setSubmitting(false);
+      }
     }
   };
 

@@ -1,7 +1,27 @@
 import { ProCheckout } from "@/features/pro/pro-checkout";
 import "@testing-library/jest-dom";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Shapes the mocks exchange with the component under test; typed so the assertions on
+// mock.calls stay checked instead of being cast through any.
+interface MockElementsOptions {
+  mode?: string;
+  amount?: number;
+  currency?: string;
+  clientSecret?: string;
+}
+
+interface MintPayload {
+  sku: string;
+  nonce: string;
+}
+
+interface MockConfirmResult {
+  paymentIntent?: { id: string; status: string };
+  error?: { message: string };
+}
 
 // Shared stubs, hoisted so the vi.mock factories (which run before top-level consts
 // initialize) can reference them. callOrder pins the deferred sequence: validate the
@@ -10,7 +30,7 @@ const h = vi.hoisted(() => {
   const callOrder: string[] = [];
   return {
     callOrder,
-    elementsOptions: [] as any[],
+    elementsOptions: [] as MockElementsOptions[],
     submitMock: vi.fn(async () => {
       callOrder.push("elements.submit");
       return {};
@@ -18,11 +38,11 @@ const h = vi.hoisted(() => {
     // The confirmed intent id is DELIBERATELY different from the minted secret's prefix:
     // the delivery poll must use the id handed to onPaid (from the confirm result), never
     // one derived from state captured at render.
-    confirmPaymentMock: vi.fn(async (_args: any) => {
+    confirmPaymentMock: vi.fn(async (): Promise<MockConfirmResult> => {
       callOrder.push("confirmPayment");
       return { paymentIntent: { id: "pi_confirmed_777", status: "succeeded" } };
     }),
-    mintMock: vi.fn(async (_args: any) => {
+    mintMock: vi.fn(async (_payload: MintPayload) => {
       callOrder.push("createIntent");
       return { client_secret: "pi_minted_abc_secret_xyz" };
     }),
@@ -33,13 +53,13 @@ const h = vi.hoisted(() => {
 vi.mock("@stripe/react-stripe-js", async () => {
   const React = await import("react");
   return {
-    Elements: ({ options, children }: any) => {
+    Elements: ({ options, children }: { options: MockElementsOptions; children?: ReactNode }) => {
       h.elementsOptions.push(options);
       return React.createElement("div", { "data-testid": "elements" }, children);
     },
     useStripe: () => ({ confirmPayment: h.confirmPaymentMock }),
     useElements: () => ({ submit: h.submitMock }),
-    PaymentElement: ({ onReady }: any) => {
+    PaymentElement: ({ onReady }: { onReady?: () => void }) => {
       React.useEffect(() => {
         onReady?.();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -115,7 +135,7 @@ describe("ProCheckout (deferred intent)", () => {
 
     await waitFor(() => expect(h.mintMock).toHaveBeenCalledTimes(1));
     expect(h.mintMock).toHaveBeenCalledWith({ sku: "1999pro", nonce: expect.any(String) });
-    expect((h.mintMock.mock.calls[0][0] as any).nonce.length).toBeGreaterThan(0);
+    expect(h.mintMock.mock.calls[0][0].nonce.length).toBeGreaterThan(0);
 
     await waitFor(() => expect(h.confirmPaymentMock).toHaveBeenCalledTimes(1));
     // elements.submit ran BEFORE the intent was minted, and the confirm used the fresh secret.

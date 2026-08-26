@@ -11,6 +11,7 @@ import { StripeCheckoutForm } from "./stripe-checkout-form";
 import {
   DEFAULT_STRIPE_TIER_SKU,
   getStripePromise,
+  isKnownTierSku,
   skuUsdCents,
   STRIPE_POINTS_TIERS
 } from "./stripe-config";
@@ -37,6 +38,11 @@ const genNonce = (): string =>
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+// An unknown defaultSku (a stale caller, a renamed tier) must not leave the dialog with no
+// selected tile and a zero-cent pay step; fall back to the default tier instead.
+const resolveTierSku = (sku?: string): string =>
+  sku && isKnownTierSku(sku) ? sku : DEFAULT_STRIPE_TIER_SKU;
+
 /**
  * Reusable card-payment dialog for buying Points. Flow: pick a tier -> render the Payment
  * Element (deferred: no intent yet) -> mint the PaymentIntent via vapi on the Pay click ->
@@ -56,7 +62,7 @@ export function StripePointsDialog({
   const username = activeUser?.username;
 
   const [step, setStep] = useState<Step>("select");
-  const [sku, setSku] = useState(defaultSku ?? DEFAULT_STRIPE_TIER_SKU);
+  const [sku, setSku] = useState(() => resolveTierSku(defaultSku));
   const [nonce, setNonce] = useState("");
   // The confirmed PaymentIntent id, handed over by onPaid. With deferred minting there is
   // no client secret in state to derive it from; the confirm result is the source.
@@ -72,7 +78,7 @@ export function StripePointsDialog({
   useEffect(() => {
     if (show) {
       setNonce(genNonce());
-      setSku(defaultSku ?? DEFAULT_STRIPE_TIER_SKU);
+      setSku(resolveTierSku(defaultSku));
       setPaidIntentId("");
       setDeliveredPoints(undefined);
       setErrorMsg("");
@@ -88,8 +94,10 @@ export function StripePointsDialog({
   const paymentIntentId = resumePaymentIntent || paidIntentId;
 
   // Mints the PaymentIntent at Pay time (deferred flow) for the selected tier. The nonce
-  // is stable for the session, so a double-submit returns the same intent.
+  // is stable for the session, so a double-submit returns the same intent. Clears the
+  // inline pay-step error so a retry starts clean.
   const mintIntent = useCallback(async () => {
+    setErrorMsg("");
     const { client_secret } = await createIntent.mutateAsync({ sku, nonce });
     return client_secret;
   }, [createIntent, sku, nonce]);
@@ -188,33 +196,37 @@ export function StripePointsDialog({
         )}
 
         {step === "pay" && stripePromise && amountCents > 0 && (
-          <Elements
-            stripe={stripePromise}
-            options={{
-              mode: "payment",
-              amount: amountCents,
-              currency: "usd",
-              appearance: { theme: isDarkMode() ? "night" : "stripe" }
-            }}
-          >
-            <StripeCheckoutForm
-              returnUrl={typeof window !== "undefined" ? window.location.href : ""}
-              payLabel={
-                selectedTier
-                  ? i18next.t("stripe-points.pay", { usd: `$${selectedTier.usd.toFixed(2)}` })
-                  : i18next.t("stripe-points.pay-generic")
-              }
-              createIntent={mintIntent}
-              onPaid={(paymentIntent) => {
-                setPaidIntentId(paymentIntent);
-                setStep("delivering");
+          <div className="flex flex-col gap-3">
+            {/* A mint failure or card decline surfaces HERE, above the still-mounted form,
+                so the buyer retries without retyping the card. The terminal error step is
+                reserved for a failed delivery poll. */}
+            {errorMsg && <Alert appearance="danger">{errorMsg}</Alert>}
+            <Elements
+              stripe={stripePromise}
+              options={{
+                mode: "payment",
+                amount: amountCents,
+                currency: "usd",
+                appearance: { theme: isDarkMode() ? "night" : "stripe" }
               }}
-              onError={(m) => {
-                setErrorMsg(m);
-                setStep("error");
-              }}
-            />
-          </Elements>
+            >
+              <StripeCheckoutForm
+                returnUrl={typeof window !== "undefined" ? window.location.href : ""}
+                payLabel={
+                  selectedTier
+                    ? i18next.t("stripe-points.pay", { usd: `$${selectedTier.usd.toFixed(2)}` })
+                    : i18next.t("stripe-points.pay-generic")
+                }
+                createIntent={mintIntent}
+                onPaid={(paymentIntent) => {
+                  setErrorMsg("");
+                  setPaidIntentId(paymentIntent);
+                  setStep("delivering");
+                }}
+                onError={setErrorMsg}
+              />
+            </Elements>
+          </div>
         )}
 
         {step === "delivering" && (
