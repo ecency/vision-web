@@ -13,14 +13,14 @@ export async function generateMetadata(
   return PagesMetadataGenerator.getForPage("signup");
 }
 
-const options: { key: string; image: string; href: string; desktopOnly?: boolean; priority?: boolean }[] = [
+const options: { key: string; image: string; href: string; desktopOnly?: boolean; mobileLcp?: boolean }[] = [
   {
     key: "free",
     image: "/assets/undraw-mailbox.svg",
     href: "/signup/free",
     // The desktop hero is hidden on mobile, so this first card's illustration
-    // is the page's LCP element there; fetch it eagerly at high priority.
-    priority: true
+    // is the page's LCP element there; preload it for mobile viewports.
+    mobileLcp: true
   },
   {
     key: "premium",
@@ -52,6 +52,23 @@ export default async function Page({
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 py-6">
+      {/* Hoisted into <head> by React. The card <img>s stay lazy: at md+ the
+          layout's hero is the LCP element and an unconditional high-priority
+          card fetch would compete with it, so only mobile (where the hero is
+          hidden and this card IS the LCP element) gets the early fetch. The
+          media query complements the hero preload's (min-width: 768px). */}
+      {options
+        .filter((option) => option.mobileLcp)
+        .map((option) => (
+          <link
+            key={`${option.key}-preload`}
+            rel="preload"
+            as="image"
+            href={option.image}
+            media="(max-width: 767px)"
+            fetchPriority="high"
+          />
+        ))}
       {options.map((option) => (
         <div key={option.key} className={`bg-white dark:bg-dark-200 rounded-2xl p-6 flex flex-col justify-between ${option.desktopOnly ? "hidden md:flex" : ""}`}>
           <div className="uppercase opacity-50 font-bold text-sm">
@@ -63,10 +80,6 @@ export default async function Page({
               alt=""
               width={400}
               height={400}
-              priority={option.priority}
-              // next/image `priority` emits the preload but leaves the <img>
-              // without fetchpriority; set it explicitly.
-              fetchPriority={option.priority ? "high" : undefined}
               className="max-w-[160px] md:max-w-[200px] mx-auto my-6"
             />
             <div className="text-xl font-bold">

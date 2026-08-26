@@ -76,23 +76,35 @@ describe("signup LCP images", () => {
   });
 
   describe("option cards", () => {
-    it("loads the first card's illustration eagerly at high priority", async () => {
+    it("preloads the first card's illustration for mobile viewports only", async () => {
+      const ui = await SignupPage({ searchParams: Promise.resolve({}) });
+      render(ui);
+
+      const link = document.head.querySelector(
+        'link[rel="preload"][href="/assets/undraw-mailbox.svg"]'
+      );
+      expect(link).not.toBeNull();
+      expect(link).toHaveAttribute("as", "image");
+      // At md+ the hero is the LCP element; without the media gate this
+      // preload would compete with it on desktop.
+      expect(link).toHaveAttribute("media", "(max-width: 767px)");
+      expect(link).toHaveAttribute("fetchpriority", "high");
+    });
+
+    it("keeps every card <img> lazy and preloads no other card", async () => {
       const ui = await SignupPage({ searchParams: Promise.resolve({}) });
       const { container } = render(ui);
 
       const mailbox = container.querySelector('img[src="/assets/undraw-mailbox.svg"]');
       expect(mailbox).not.toBeNull();
-      expect(mailbox).toHaveAttribute("fetchpriority", "high");
-      expect(mailbox).not.toHaveAttribute("loading", "lazy");
-    });
-
-    it("leaves the remaining card illustrations lazy", async () => {
-      const ui = await SignupPage({ searchParams: Promise.resolve({}) });
-      const { container } = render(ui);
+      expect(mailbox).toHaveAttribute("loading", "lazy");
 
       const creditCard = container.querySelector('img[src="/assets/undraw-credit-card.svg"]');
       expect(creditCard).not.toBeNull();
       expect(creditCard).toHaveAttribute("loading", "lazy");
+      expect(
+        document.head.querySelector('link[rel="preload"][href="/assets/undraw-credit-card.svg"]')
+      ).toBeNull();
     });
   });
 });
