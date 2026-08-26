@@ -162,6 +162,39 @@ describe("StripePointsDialog (deferred intent)", () => {
     expect(payloads[1].nonce).toBe(payloads[0].nonce);
   });
 
+  it("keeps the form mounted after a decline and reuses the same intent on retry", async () => {
+    h.confirmPaymentMock.mockImplementationOnce(async () => ({
+      error: { message: "Your card was declined." }
+    }));
+    openDialog();
+
+    fireEvent.click(screen.getByRole("button", { name: "stripe-points.continue" }));
+    const payButton = await screen.findByRole("button", { name: "stripe-points.pay" });
+    await waitFor(() => expect(payButton).not.toBeDisabled());
+    fireEvent.click(payButton);
+
+    // The intent WAS minted, then the confirm was declined: Stripe's message renders
+    // above the still-mounted form instead of dead-ending on the terminal error step.
+    await screen.findByText("Your card was declined.");
+    expect(screen.getByTestId("payment-element")).toBeInTheDocument();
+    expect(screen.queryByText("stripe-points.try-again")).not.toBeInTheDocument();
+    expect(h.mintMock).toHaveBeenCalledTimes(1);
+
+    // Retry: the session nonce is unchanged, so the re-mint hits the same server
+    // idempotency key and returns the SAME intent instead of leaving another
+    // incomplete one behind; the second confirm then succeeds with that secret.
+    fireEvent.click(payButton);
+    await screen.findByText("stripe-points.delivering");
+    expect(h.confirmPaymentMock).toHaveBeenCalledTimes(2);
+    expect(h.confirmPaymentMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ clientSecret: "pi_minted_555_secret_abc" })
+    );
+    const payloads = h.mintMock.mock.calls.map((call) => call[0]);
+    expect(payloads).toHaveLength(2);
+    expect(payloads[1].nonce).toBe(payloads[0].nonce);
+    expect(screen.queryByText("Your card was declined.")).not.toBeInTheDocument();
+  });
+
   it("falls back to the default tier when defaultSku is unknown", async () => {
     openDialog("nope");
 
