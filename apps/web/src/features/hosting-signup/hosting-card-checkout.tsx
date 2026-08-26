@@ -1,6 +1,6 @@
 "use client";
 
-import { getStripePromise } from "@/features/shared/purchase-stripe";
+import { getStripePromise, skuUsdCents } from "@/features/shared/purchase-stripe";
 import { StripeCheckoutForm } from "@/features/shared/purchase-stripe/stripe-checkout-form";
 import {
   fetchStripeOrderStatus,
@@ -28,8 +28,7 @@ interface Props {
   sku: string;
   /** Optional: activate a DIFFERENT tenant than the payer -- e.g. a community (hive-NNNNN) whose
    *  owner (the `username` above) pays. Omit for a personal blog (the payer's own account is
-   *  activated). The parent MUST include this in the component `key` so a target change remounts
-   *  with a fresh nonce (the intent is minted once per mount). */
+   *  activated). */
   hostingTarget?: string;
   payLabel: string;
   returnUrl: string;
@@ -40,12 +39,14 @@ interface Props {
 }
 
 /**
- * Card payment for hosting, riding the shared ePoints Stripe rail: create a PaymentIntent for
- * a hosting SKU via vapi, confirm with the Payment Element, then poll the order status. For a
- * hosting SKU the order reaching "success" means ePoints has already called the hosting
- * service's activate endpoint, so the blog is live. The activated tenant is `hostingTarget` when
- * supplied (e.g. a community), otherwise the payer's own account. The tenant must already exist
- * (the signup flow creates it before this renders).
+ * Card payment for hosting, riding the shared ePoints Stripe rail. Deferred intent flow:
+ * the Payment Element renders immediately and the PaymentIntent is minted only on the Pay
+ * click, so switching terms or abandoning the form never creates an intent. After
+ * confirmation the order status is polled; for a hosting SKU the order reaching "success"
+ * means ePoints has already called the hosting service's activate endpoint, so the blog is
+ * live. The activated tenant is `hostingTarget` when supplied (e.g. a community),
+ * otherwise the payer's own account. The tenant must already exist (the signup flow
+ * creates it before this renders).
  */
 export function HostingCardCheckout({
   username,
@@ -56,17 +57,18 @@ export function HostingCardCheckout({
   onActivated,
   onConfirmed
 }: Props) {
-  // The nonce is the create-intent idempotency key, so it must change when the checkout identity
-  // (sku or target tenant) changes; otherwise a re-mint for a new target would return the
-  // PaymentIntent already created for the previous one. Fresh nonce per (sku, hostingTarget).
+  // The nonce is the create-intent idempotency key (user:sku:nonce server-side), so it must
+  // change when the checkout identity (sku or target tenant) changes; otherwise a mint for a
+  // new target would return the PaymentIntent already created for the previous one. Fresh
+  // nonce per (sku, hostingTarget).
   const nonce = useMemo(genNonce, [sku, hostingTarget]);
-  const [clientSecret, setClientSecret] = useState("");
-  // Terminal states that replace the whole checkout (mint failure, order failed, activation
-  // pending). A card decline is NOT terminal — it uses formError below so the user can retry.
+  // Terminal states that replace the whole checkout (order failed, activation pending).
+  // A card decline or a failed mint is NOT terminal -- it uses formError below so the user
+  // can retry.
   const [error, setError] = useState("");
   const [errorAppearance, setErrorAppearance] = useState<"danger" | "primary">("danger");
-  // Decline / validation error shown ABOVE the still-mounted payment form so the buyer can
-  // fix the card and try again instead of dead-ending on a red alert.
+  // Decline / validation / mint error shown ABOVE the still-mounted payment form so the
+  // buyer can fix the card and try again instead of dead-ending on a red alert.
   const [formError, setFormError] = useState("");
   const [activating, setActivating] = useState(false);
   const pollingRef = useRef(false);
@@ -74,31 +76,7 @@ export function HostingCardCheckout({
 
   const createIntent = useCreateStripeIntent(username);
   const stripePromise = getStripePromise();
-
-  // Mint the PaymentIntent for this checkout. Re-mint when the SKU or the target tenant changes so
-  // the active clientSecret always matches what the UI shows: paying with a stale intent would
-  // charge for the previously minted (sku, hostingTarget) rather than the current one.
-  useEffect(() => {
-    let alive = true;
-    setClientSecret("");
-    (async () => {
-      try {
-        const { client_secret } = await createIntent.mutateAsync({ sku, nonce, hosting_target: hostingTarget });
-        if (alive) setClientSecret(client_secret);
-      } catch {
-        // Intent-mint failures throw raw messages / i18n keys (e.g. "stripe-points.not-
-        // authenticated") and axios status text; show a stable user-facing message instead.
-        if (alive) {
-          setErrorAppearance("danger");
-          setError(i18next.t("hosting.card-unavailable"));
-        }
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sku, nonce, hostingTarget]);
+  const amountCents = skuUsdCents(sku);
 
   // Stop polling on unmount.
   useEffect(
@@ -109,82 +87,99 @@ export function HostingCardCheckout({
     []
   );
 
-  const paymentIntentId = clientSecret ? clientSecret.split("_secret_")[0] : "";
+  // Mints the PaymentIntent at Pay time with the CURRENT sku + target tenant, so the
+  // intent always matches what the UI shows.
+  const mintIntent = useCallback(async () => {
+    const { client_secret } = await createIntent.mutateAsync({
+      sku,
+      nonce,
+      hosting_target: hostingTarget
+    });
+    return client_secret;
+  }, [createIntent, sku, nonce, hostingTarget]);
 
-  const startPoll = useCallback(() => {
-    if (!paymentIntentId || pollingRef.current) return;
-    pollingRef.current = true;
-    setActivating(true);
-    // Payment is confirmed at this point -- lock the term selector in the parent so a remount
-    // cannot cancel this poll and strand a paid user.
-    onConfirmed?.();
-    let attempts = 0;
-    const MAX_ATTEMPTS = 45; // ~90s
-    const poll = async () => {
-      if (!pollingRef.current) return;
-      try {
-        const st = await fetchStripeOrderStatus(username, paymentIntentId);
+  // The poll takes the confirmed intent id from onPaid; with deferred minting there is no
+  // client secret in render state to derive it from.
+  const startPoll = useCallback(
+    (intentId: string) => {
+      if (!intentId || pollingRef.current) return;
+      pollingRef.current = true;
+      setActivating(true);
+      // Payment is confirmed at this point -- lock the term selector in the parent so a remount
+      // cannot cancel this poll and strand a paid user.
+      onConfirmed?.();
+      let attempts = 0;
+      const MAX_ATTEMPTS = 45; // ~90s
+      const poll = async () => {
         if (!pollingRef.current) return;
-        if (st.status === "success") {
-          pollingRef.current = false;
-          onActivated();
-          return;
+        try {
+          const st = await fetchStripeOrderStatus(username, intentId);
+          if (!pollingRef.current) return;
+          if (st.status === "success") {
+            pollingRef.current = false;
+            onActivated();
+            return;
+          }
+          if (st.status === "failed") {
+            pollingRef.current = false;
+            setActivating(false);
+            setErrorAppearance("danger");
+            setError(i18next.t("hosting.card-failed"));
+            return;
+          }
+        } catch {
+          // transient (network / not-yet-recorded) -> keep polling
         }
-        if (st.status === "failed") {
+        attempts += 1;
+        if (attempts >= MAX_ATTEMPTS) {
+          // Payment succeeded; ePoints keeps retrying activation with backoff, so this is not a
+          // hard failure -- stop the spinner and reassure (primary, not danger) rather than loop.
           pollingRef.current = false;
           setActivating(false);
-          setErrorAppearance("danger");
-          setError(i18next.t("hosting.card-failed"));
+          setErrorAppearance("primary");
+          setError(i18next.t("hosting.activation-pending"));
           return;
         }
-      } catch {
-        // transient (network / not-yet-recorded) -> keep polling
-      }
-      attempts += 1;
-      if (attempts >= MAX_ATTEMPTS) {
-        // Payment succeeded; ePoints keeps retrying activation with backoff, so this is not a
-        // hard failure -- stop the spinner and reassure (primary, not danger) rather than loop.
-        pollingRef.current = false;
-        setActivating(false);
-        setErrorAppearance("primary");
-        setError(i18next.t("hosting.activation-pending"));
-        return;
-      }
-      timerRef.current = setTimeout(poll, 2000);
-    };
-    poll();
-  }, [paymentIntentId, username, onActivated, onConfirmed]);
+        timerRef.current = setTimeout(poll, 2000);
+      };
+      poll();
+    },
+    [username, onActivated, onConfirmed]
+  );
 
-  if (!stripePromise) {
+  if (!stripePromise || amountCents === 0) {
     return <Alert appearance="danger">{i18next.t("hosting.card-unavailable")}</Alert>;
   }
-  // Terminal states (mint failure, order failed, activation pending) replace the checkout.
+  // Terminal states (order failed, activation pending) replace the checkout.
   if (error) {
     return <Alert appearance={errorAppearance}>{error}</Alert>;
   }
   if (activating) {
-    return <div className="py-6 text-center text-sm opacity-75">{i18next.t("hosting.activating")}</div>;
-  }
-  if (!clientSecret) {
     return (
-      <div className="py-6 text-center text-sm opacity-75">{i18next.t("hosting.preparing-checkout")}</div>
+      <div className="py-6 text-center text-sm opacity-75">{i18next.t("hosting.activating")}</div>
     );
   }
 
   return (
     <div className="flex flex-col gap-3">
-      {/* A card decline keeps the form mounted so the buyer can correct and retry. */}
+      {/* A card decline or a failed mint keeps the form mounted so the buyer can retry. */}
       {formError && <Alert appearance="danger">{formError}</Alert>}
       <Elements
         stripe={stripePromise}
-        options={{ clientSecret, appearance: { theme: isDarkMode() ? "night" : "stripe" } }}
+        options={{
+          mode: "payment",
+          amount: amountCents,
+          currency: "usd",
+          appearance: { theme: isDarkMode() ? "night" : "stripe" }
+        }}
       >
         <StripeCheckoutForm
           returnUrl={returnUrl}
           payLabel={payLabel}
-          onPaid={() => {
+          createIntent={mintIntent}
+          onPaid={(paymentIntentId) => {
             setFormError("");
-            startPoll();
+            startPoll(paymentIntentId);
           }}
           onError={setFormError}
         />

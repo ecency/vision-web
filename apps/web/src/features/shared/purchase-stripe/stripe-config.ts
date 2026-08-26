@@ -8,6 +8,7 @@ export {
   STRIPE_POINTS_TIERS,
   isKnownTierSku,
   isStripeEnabled,
+  skuUsdCents,
   suggestPointsSkuForDeficit,
   type StripePointsTier
 } from "./stripe-tiers";

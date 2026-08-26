@@ -1,6 +1,6 @@
 "use client";
 
-import { getStripePromise } from "@/features/shared/purchase-stripe";
+import { getStripePromise, skuUsdCents } from "@/features/shared/purchase-stripe";
 import { StripeCheckoutForm } from "@/features/shared/purchase-stripe/stripe-checkout-form";
 import {
   fetchStripeOrderStatus,
@@ -42,12 +42,11 @@ interface Props {
 }
 
 /**
- * Card payment for gifting Points, riding the shared ePoints Stripe rail: create a
- * PaymentIntent for a Points SKU via vapi -- passing `gift_recipient` + `gift_message` so
- * ePoints credits the recipient instead of the payer -- confirm with the Payment Element,
- * then poll the order status until the worker delivers. The parent MUST include `sku` and
- * `recipient` in this component's `key` so a change remounts with a fresh nonce (the intent
- * is minted once per mount).
+ * Card payment for gifting Points, riding the shared ePoints Stripe rail. Deferred intent
+ * flow: the Payment Element renders immediately and the PaymentIntent is minted only on
+ * the Pay click -- passing `gift_recipient` + `gift_message` so ePoints credits the
+ * recipient instead of the payer -- then confirmed, then the order status is polled until
+ * the worker delivers. Browsing packs or abandoning the form never creates an intent.
  */
 export function GiftCardCheckout({
   username,
@@ -60,11 +59,15 @@ export function GiftCardCheckout({
   onPending,
   onConfirmed
 }: Props) {
-  // The nonce is the create-intent idempotency key, so it must change when the checkout
-  // identity (sku, recipient or message) changes; otherwise a re-mint would return the
-  // PaymentIntent already created for the previous gift. Fresh nonce per (sku, recipient, message).
+  // The nonce is the create-intent idempotency key (user:sku:nonce server-side), so it
+  // must change when the checkout identity (sku, recipient or message) changes: a Pay for
+  // recipient A followed by an edit to recipient B and a second Pay would otherwise reuse
+  // intent A with A's gift metadata. Fresh nonce per (sku, recipient, message).
   const nonce = useMemo(genNonce, [sku, recipient, message]);
-  const [clientSecret, setClientSecret] = useState("");
+  // Non-terminal problems (a decline, a failed mint, element validation): shown above the
+  // still-mounted payment form so the buyer can correct and retry.
+  const [formError, setFormError] = useState("");
+  // Terminal states that replace the checkout (order failed after payment).
   const [error, setError] = useState("");
   const [delivering, setDelivering] = useState(false);
   const pollingRef = useRef(false);
@@ -72,30 +75,7 @@ export function GiftCardCheckout({
 
   const createIntent = useCreateStripeIntent(username);
   const stripePromise = getStripePromise();
-
-  // Mint the PaymentIntent for this checkout. Re-mint when the sku/recipient/message changes so
-  // the active clientSecret always matches what the UI shows.
-  useEffect(() => {
-    let alive = true;
-    setClientSecret("");
-    (async () => {
-      try {
-        const { client_secret } = await createIntent.mutateAsync({
-          sku,
-          nonce,
-          gift_recipient: recipient,
-          gift_message: message?.trim() || undefined
-        });
-        if (alive) setClientSecret(client_secret);
-      } catch (e) {
-        if (alive) setError((e as Error).message || i18next.t("points-gift.card-unavailable"));
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sku, nonce, recipient, message]);
+  const amountCents = skuUsdCents(sku);
 
   // Stop polling on unmount.
   useEffect(
@@ -106,51 +86,66 @@ export function GiftCardCheckout({
     []
   );
 
-  const paymentIntentId = clientSecret ? clientSecret.split("_secret_")[0] : "";
+  // Mints the PaymentIntent at Pay time with the CURRENT gift fields, so the intent's
+  // metadata always matches what the UI shows.
+  const mintIntent = useCallback(async () => {
+    const { client_secret } = await createIntent.mutateAsync({
+      sku,
+      nonce,
+      gift_recipient: recipient,
+      gift_message: message?.trim() || undefined
+    });
+    return client_secret;
+  }, [createIntent, sku, nonce, recipient, message]);
 
-  const startPoll = useCallback(() => {
-    if (!paymentIntentId || pollingRef.current) return;
-    pollingRef.current = true;
-    setDelivering(true);
-    // Payment is confirmed -- tell the parent to lock the form so a remount can't cancel
-    // this poll and strand a paid user.
-    onConfirmed?.();
-    let attempts = 0;
-    const MAX_ATTEMPTS = 45; // ~90s
-    const poll = async () => {
-      if (!pollingRef.current) return;
-      try {
-        const st = await fetchStripeOrderStatus(username, paymentIntentId);
+  // The poll takes the confirmed intent id from onPaid; with deferred minting there is no
+  // client secret in render state to derive it from.
+  const startPoll = useCallback(
+    (intentId: string) => {
+      if (!intentId || pollingRef.current) return;
+      pollingRef.current = true;
+      setDelivering(true);
+      // Payment is confirmed -- tell the parent to lock the form so a remount can't cancel
+      // this poll and strand a paid user.
+      onConfirmed?.();
+      let attempts = 0;
+      const MAX_ATTEMPTS = 45; // ~90s
+      const poll = async () => {
         if (!pollingRef.current) return;
-        if (st.status === "success") {
+        try {
+          const st = await fetchStripeOrderStatus(username, intentId);
+          if (!pollingRef.current) return;
+          if (st.status === "success") {
+            pollingRef.current = false;
+            onDelivered();
+            return;
+          }
+          if (st.status === "failed") {
+            pollingRef.current = false;
+            setDelivering(false);
+            setError(i18next.t("points-gift.delivery-failed"));
+            return;
+          }
+        } catch {
+          // transient (network / not-yet-recorded) -> keep polling
+        }
+        attempts += 1;
+        if (attempts >= MAX_ATTEMPTS) {
+          // Payment succeeded but delivery never confirmed within the window. ePoints keeps
+          // retrying, so this is not a hard failure -- but we have NOT seen `success`, so report
+          // it as pending (in flight) rather than telling the buyer the gift was delivered.
           pollingRef.current = false;
-          onDelivered();
+          onPending?.();
           return;
         }
-        if (st.status === "failed") {
-          pollingRef.current = false;
-          setDelivering(false);
-          setError(i18next.t("points-gift.delivery-failed"));
-          return;
-        }
-      } catch {
-        // transient (network / not-yet-recorded) -> keep polling
-      }
-      attempts += 1;
-      if (attempts >= MAX_ATTEMPTS) {
-        // Payment succeeded but delivery never confirmed within the window. ePoints keeps
-        // retrying, so this is not a hard failure -- but we have NOT seen `success`, so report
-        // it as pending (in flight) rather than telling the buyer the gift was delivered.
-        pollingRef.current = false;
-        onPending?.();
-        return;
-      }
-      timerRef.current = setTimeout(poll, 2000);
-    };
-    poll();
-  }, [paymentIntentId, username, onDelivered, onPending, onConfirmed]);
+        timerRef.current = setTimeout(poll, 2000);
+      };
+      poll();
+    },
+    [username, onDelivered, onPending, onConfirmed]
+  );
 
-  if (!stripePromise) {
+  if (!stripePromise || amountCents === 0) {
     return <Alert appearance="danger">{i18next.t("points-gift.card-unavailable")}</Alert>;
   }
   if (error) {
@@ -163,25 +158,31 @@ export function GiftCardCheckout({
       </div>
     );
   }
-  if (!clientSecret) {
-    return (
-      <div className="py-6 text-center text-sm opacity-75">
-        {i18next.t("points-gift.preparing-checkout")}
-      </div>
-    );
-  }
 
   return (
-    <Elements
-      stripe={stripePromise}
-      options={{ clientSecret, appearance: { theme: isDarkMode() ? "night" : "stripe" } }}
-    >
-      <StripeCheckoutForm
-        returnUrl={returnUrl}
-        payLabel={payLabel}
-        onPaid={startPoll}
-        onError={setError}
-      />
-    </Elements>
+    <div className="flex flex-col gap-3">
+      {/* A decline or failed mint keeps the form mounted so the buyer can retry. */}
+      {formError && <Alert appearance="danger">{formError}</Alert>}
+      <Elements
+        stripe={stripePromise}
+        options={{
+          mode: "payment",
+          amount: amountCents,
+          currency: "usd",
+          appearance: { theme: isDarkMode() ? "night" : "stripe" }
+        }}
+      >
+        <StripeCheckoutForm
+          returnUrl={returnUrl}
+          payLabel={payLabel}
+          createIntent={mintIntent}
+          onPaid={(paymentIntentId) => {
+            setFormError("");
+            startPoll(paymentIntentId);
+          }}
+          onError={setFormError}
+        />
+      </Elements>
+    </div>
   );
 }

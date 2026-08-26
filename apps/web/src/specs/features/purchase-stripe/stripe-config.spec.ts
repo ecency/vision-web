@@ -1,5 +1,13 @@
 import {
+  HOSTING_CUSTOM_DOMAIN_MONTHLY_USD,
+  HOSTING_MONTHLY_USD,
+  hostingProSkuForMonths,
+  hostingSkuForMonths
+} from "@/features/hosting-signup/hosting-api";
+import { PRO_PRICE_USD, PRO_SKU } from "@/features/pro/pro-config";
+import {
   DEFAULT_STRIPE_TIER_SKU,
+  skuUsdCents,
   STRIPE_POINTS_TIERS
 } from "@/features/shared/purchase-stripe/stripe-config";
 import { describe, expect, it } from "vitest";
@@ -33,5 +41,39 @@ describe("stripe-config", () => {
 
   it("uses a default tier that exists in the catalog", () => {
     expect(STRIPE_POINTS_TIERS.some((t) => t.sku === DEFAULT_STRIPE_TIER_SKU)).toBe(true);
+  });
+});
+
+// The deferred Elements render prices from skuUsdCents BEFORE any intent exists, so this
+// derivation must stay in lockstep with the server product map on every rail: a drift
+// would show one price on the Payment Element and charge another.
+describe("skuUsdCents", () => {
+  it("matches the USD price in cents for every Points tier", () => {
+    STRIPE_POINTS_TIERS.forEach((t) => {
+      expect(skuUsdCents(t.sku)).toBe(Math.round(t.usd * 100));
+    });
+  });
+
+  it("matches the Pro price for the Pro SKU", () => {
+    expect(skuUsdCents(PRO_SKU)).toBe(Math.round(PRO_PRICE_USD * 100));
+  });
+
+  it("prices every hosting term from the SKU leading number", () => {
+    [1, 3, 6, 12].forEach((months) => {
+      const standard = hostingSkuForMonths(months);
+      expect(standard.endsWith("hosting")).toBe(true);
+      expect(skuUsdCents(standard)).toBe(HOSTING_MONTHLY_USD * 100 * months);
+
+      const custom = hostingProSkuForMonths(months);
+      expect(custom.endsWith("prohosting")).toBe(true);
+      expect(skuUsdCents(custom)).toBe(HOSTING_CUSTOM_DOMAIN_MONTHLY_USD * 100 * months);
+    });
+  });
+
+  it("returns 0 (unconfigured) for a SKU without a leading number", () => {
+    expect(skuUsdCents("")).toBe(0);
+    expect(skuUsdCents("points")).toBe(0);
+    expect(skuUsdCents("garbage")).toBe(0);
+    expect(skuUsdCents("-499points")).toBe(0);
   });
 });
