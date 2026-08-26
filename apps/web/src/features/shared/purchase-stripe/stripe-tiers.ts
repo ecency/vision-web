@@ -35,6 +35,17 @@ export const STRIPE_POINTS_TIERS: StripePointsTier[] = [
 
 export const DEFAULT_STRIPE_TIER_SKU = "999points";
 
+/**
+ * USD price in cents derived from the SKU's leading number. Every SKU on the ePoints
+ * card rail encodes its price this way (499points, 1999pro, 200hosting, 3600prohosting),
+ * mirroring the server product map. Returns 0 for a malformed SKU; callers treat 0 as
+ * unconfigured and refuse to render a checkout for it.
+ */
+export function skuUsdCents(sku: string): number {
+  const cents = parseInt(sku, 10);
+  return Number.isFinite(cents) && cents > 0 ? cents : 0;
+}
+
 /** Whether a sku string is one of the known card-rail tiers. */
 export const isKnownTierSku = (sku: string): boolean =>
   STRIPE_POINTS_TIERS.some((tier) => tier.sku === sku);

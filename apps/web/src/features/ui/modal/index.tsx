@@ -20,6 +20,13 @@ interface Props {
   // stays mounted this long after closing so CSS exits can play
   // (e.g. ModalSidebar's 300ms slide).
   exitDurationMs?: number;
+  // Route every dismiss gesture (header close button, backdrop click, Escape)
+  // through onHide instead of closing internally, so the parent DECIDES whether
+  // the modal closes: it closes only when the parent flips `show` to false. By
+  // default a gesture closes the modal first and onHide is only a notification,
+  // which makes an onHide guard useless. Opt in when a flow must stay on screen
+  // (e.g. a card payment confirm in flight).
+  dismissViaOnHide?: boolean;
 }
 
 export function Modal(props: Omit<HTMLProps<HTMLDivElement>, "size"> & Props) {
@@ -33,7 +40,8 @@ export function Modal(props: Omit<HTMLProps<HTMLDivElement>, "size"> & Props) {
     "centered",
     "dialogClassName",
     "raw",
-    "exitDurationMs"
+    "exitDurationMs",
+    "dismissViaOnHide"
   ]);
   const isAnimated = useMemo(() => props.animation ?? true, [props.animation]);
 
@@ -63,10 +71,24 @@ export function Modal(props: Omit<HTMLProps<HTMLDivElement>, "size"> & Props) {
   // open→close transition (see the effect below). Updated inside that effect.
   const prevShowRef = useRef(show);
 
+  // A dismiss GESTURE (as opposed to the parent clearing `show`). With
+  // dismissViaOnHide the gesture is forwarded to the parent, which closes by
+  // flipping `show`; otherwise it closes internally as before. Kept in a ref so
+  // the mount-scoped Escape listener always sees the current props.
+  const dismiss = () => {
+    if (props.dismissViaOnHide) {
+      props.onHide();
+    } else {
+      setShow(false);
+    }
+  };
+  const dismissRef = useRef(dismiss);
+  dismissRef.current = dismiss;
+
   useEffect(() => {
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === "Escape" && showRef.current === true) {
-        setShow(false);
+        dismissRef.current();
       }
     };
     document.addEventListener("keyup", onKeyUp);
@@ -106,16 +128,25 @@ export function Modal(props: Omit<HTMLProps<HTMLDivElement>, "size"> & Props) {
     };
   }, [show]);
 
+  // Children (e.g. the header close button) close via context.setShow(false);
+  // that is a dismiss gesture too, so route it the same way. Opening stays direct.
+  const contextSetShow = (v: boolean) => {
+    if (v === false) {
+      dismiss();
+    } else {
+      setShow(v);
+    }
+  };
+
   return (
-    <ModalContext.Provider value={{ show, setShow, open }}>
+    <ModalContext.Provider value={{ show, setShow: contextSetShow, open }}>
       {isMounted() &&
         portalContainer &&
         mounted &&
         createPortal(
           <div
             className={classNameObject({
-              "bg-black z-[1100] fixed top-0 left-0 right-0 bottom-0 transition-opacity duration-200":
-                true,
+              "bg-black z-[1100] fixed top-0 left-0 right-0 bottom-0 transition-opacity duration-200": true,
               "opacity-50": open,
               // While closing, let clicks reach the page instead of the dying
               // overlay/wrapper (restored automatically on mid-exit reopen).
@@ -133,13 +164,12 @@ export function Modal(props: Omit<HTMLProps<HTMLDivElement>, "size"> & Props) {
           <div
             {...nativeProps}
             className={classNameObject({
-              "z-[1100] fixed top-0 pt-24 sm:py-4 md:py-8 left-0 right-0 bottom-0 overflow-y-auto h-full sm:h-auto":
-                true,
+              "z-[1100] fixed top-0 pt-24 sm:py-4 md:py-8 left-0 right-0 bottom-0 overflow-y-auto h-full sm:h-auto": true,
               [props.className ?? ""]: true,
               "pointer-events-none": !open,
               "flex justify-center items-start": props.centered
             })}
-            onClick={() => setShow(false)}
+            onClick={() => dismiss()}
           >
             <div
               onClick={(e) => e.stopPropagation()}

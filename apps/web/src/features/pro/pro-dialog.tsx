@@ -23,6 +23,11 @@ interface Props {
  */
 export function ProDialog({ username, onHide, resumePaymentIntent }: Props) {
   const [done, setDone] = useState(false);
+  // True while a Pay submit is in flight (validate, mint, confirm). The dialog must not
+  // close in that window: once confirmPayment is dispatched the charge can complete
+  // server side; a closed dialog would offer the buyer a fresh checkout for a
+  // payment that already went through. A decline flips this back to false.
+  const [submitting, setSubmitting] = useState(false);
   const queryClient = useQueryClient();
 
   // On activation, reflect the new membership immediately. The /perks card and every ProBadge
@@ -47,7 +52,22 @@ export function ProDialog({ username, onHide, resumePaymentIntent }: Props) {
   const returnUrl = typeof window !== "undefined" ? `${window.location.origin}/perks?pro=1` : "";
 
   return (
-    <Modal show={true} centered={true} onHide={onHide} size="md">
+    // dismissViaOnHide routes the close button, backdrop and Escape through onHide, so
+    // the submitting guard below actually decides whether the dialog closes.
+    <Modal
+      show={true}
+      centered={true}
+      onHide={() => {
+        // No close while a Pay submit is in flight: the confirm may already have charged
+        // the card and the buyer must stay on this dialog to see the outcome.
+        if (submitting) {
+          return;
+        }
+        onHide();
+      }}
+      dismissViaOnHide={true}
+      size="md"
+    >
       <ModalHeader closeButton={true}>{i18next.t("pro.title")}</ModalHeader>
       <ModalBody>
         {done ? (
@@ -75,6 +95,7 @@ export function ProDialog({ username, onHide, resumePaymentIntent }: Props) {
               returnUrl={returnUrl}
               resumePaymentIntent={resumePaymentIntent}
               onActivated={handleActivated}
+              onSubmittingChange={setSubmitting}
             />
           </div>
         )}
