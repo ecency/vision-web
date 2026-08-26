@@ -13,11 +13,14 @@ export async function generateMetadata(
   return PagesMetadataGenerator.getForPage("signup");
 }
 
-const options: { key: string; image: string; href: string; desktopOnly?: boolean }[] = [
+const options: { key: string; image: string; href: string; desktopOnly?: boolean; priority?: boolean }[] = [
   {
     key: "free",
     image: "/assets/undraw-mailbox.svg",
-    href: "/signup/free"
+    href: "/signup/free",
+    // The desktop hero is hidden on mobile, so this first card's illustration
+    // is the page's LCP element there; fetch it eagerly at high priority.
+    priority: true
   },
   {
     key: "premium",
@@ -60,6 +63,10 @@ export default async function Page({
               alt=""
               width={400}
               height={400}
+              priority={option.priority}
+              // next/image `priority` emits the preload but leaves the <img>
+              // without fetchpriority; set it explicitly.
+              fetchPriority={option.priority ? "high" : undefined}
               className="max-w-[160px] md:max-w-[200px] mx-auto my-6"
             />
             <div className="text-xl font-bold">
