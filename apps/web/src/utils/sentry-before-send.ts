@@ -372,5 +372,40 @@ export function beforeSend(event: SentryErrorEvent): SentryErrorEvent | null {
     return event;
   }
 
+  // ECENCY-NEXT-1GP9 + 16 sibling buckets (issue #1699): `RangeError: Maximum call stack
+  // size exceeded` thrown by a script GOOGLE'S iOS BROWSERS inject into the page, never by
+  // our bundle. Across the latest+oldest event of all 17 buckets (895 events, 35 users,
+  // first seen 2025-06-26) the shape is invariant:
+  //   - every stack is the same two-function mutual recursion at the same columns, whose
+  //     minified names track the BROWSER build rather than our release (release 2e1e3039
+  //     gave Fk/Hk under Chrome iOS and Gk/Ik under the Google Search app on the same
+  //     page; other builds give Ik/Kk, Qk/Sk),
+  //   - `abs_path` is the PAGE URL itself (`app:///@user/post`), which is how WebKit
+  //     attributes an inline script that has no URL of its own, and the reported lines sit
+  //     past the end of our served document, i.e. the code was appended after our HTML,
+  //   - the browser is Chrome Mobile iOS or the Google Search app in 100% of events, over
+  //     14 months and iOS 15.8 through 26.6.1.
+  // Probably the in-page translate / page-analysis walker recursing over the DOM; the same
+  // browser family already forced public/scripts/translate-dom-guard.js. The app itself
+  // keeps working (visitors keep navigating and keep emitting these), so warning is the
+  // honest level.
+  // Grouping is the actual damage: Sentry keys these on the culprit, which here is the page
+  // URL, so ONE visitor spawned 12 fresh issues in a single session. One fingerprint, one
+  // bucket, spikes still visible.
+  // The gate is the absence of any `_next/static` frame, NOT the message alone: a genuine
+  // runaway recursion in our own code (or in a dep we bundle) always carries chunk frames,
+  // so it keeps reporting at error level under its own grouping. A frameless copy is caught
+  // by this rule on purpose: with no frames there is nothing to act on either way, and a
+  // single labelled bucket beats a per-URL fan-out of unactionable issues.
+  // Matched on the message alone rather than on `RangeError`: the phrase is thrown by the
+  // engine and appears nowhere in our own throw sites, so the type adds no safety, while
+  // requiring it would miss a copy that reaches the SDK wrapped as a plain Error.
+  if (/Maximum call stack size exceeded/i.test(message) && !/_next\/static/.test(stackStr)) {
+    event.level = "warning";
+    event.tags = { ...event.tags, injected_script_overflow: "true" };
+    event.fingerprint = ["browser-injected-stack-overflow"];
+    return event;
+  }
+
   return event;
 }

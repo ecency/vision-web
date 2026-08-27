@@ -777,3 +777,103 @@ describe("beforeSend — @noble/ciphers module-init self-test failure is reclass
     expect(out!.fingerprint).toBeUndefined();
   });
 });
+
+describe("beforeSend — browser-injected stack overflow is reclassified", () => {
+  // ECENCY-NEXT-1GP9 and 16 siblings (issue #1699). Google's iOS browsers inject a
+  // script that recurses over the DOM until the stack blows. Being inline it has no
+  // URL of its own, so WebKit attributes every frame to the PAGE URL, which is also
+  // what Sentry groups on: one visitor produced 12 issues in a single session.
+  const OVERFLOW = "Maximum call stack size exceeded.";
+  const injectedFrames = (page: string) => [
+    { filename: `app:///${page}`, function: "Gk", abs_path: `app:///${page}` },
+    { filename: `app:///${page}`, function: "Ik", abs_path: `app:///${page}` }
+  ];
+
+  it("reclassifies the injected-script recursion into a single fingerprint", () => {
+    const ev = makeEvent(OVERFLOW, injectedFrames("@wotjsozm/following"), {
+      type: "RangeError",
+      handled: false
+    });
+    const out = beforeSend(ev);
+    expect(out).not.toBeNull();
+    expect(out!.level).toBe("warning");
+    expect(out!.tags?.injected_script_overflow).toBe("true");
+    expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+  });
+
+  it("groups every page URL into the SAME bucket (the fan-out this fixes)", () => {
+    const a = beforeSend(
+      makeEvent(OVERFLOW, injectedFrames("@wotjsozm/following"), { type: "RangeError" })
+    );
+    const b = beforeSend(
+      makeEvent(OVERFLOW, injectedFrames("@dasunkwo/my-poetry"), { type: "RangeError" })
+    );
+    expect(a!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+    expect(b!.fingerprint).toEqual(a!.fingerprint);
+  });
+
+  it("catches the frame-less copy (ECENCY-NEXT-MC8's single unparsed frame)", () => {
+    // The long-running bucket carries one frame whose filename is the literal
+    // string "undefined". Nothing to act on, so it belongs in the same bucket.
+    const ev = makeEvent(OVERFLOW, [{ filename: "undefined" }], { type: "RangeError" });
+    const out = beforeSend(ev);
+    expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+  });
+
+  it("does NOT touch a real overflow recursing inside our own bundle", () => {
+    // A runaway recursion in app code always carries chunk frames: it must stay an
+    // error-level issue with its own grouping.
+    const ev = makeEvent(OVERFLOW, [APP_FRAME, APP_FRAME], { type: "RangeError" });
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.tags?.injected_script_overflow).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch a mixed stack where our code appears even once", () => {
+    const ev = makeEvent(OVERFLOW, [...injectedFrames("@wotjsozm/following"), WEBPACK_FRAME], {
+      type: "RangeError"
+    });
+    const out = beforeSend(ev);
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("reads abs_path too, not just filename", () => {
+    const ev = makeEvent(
+      OVERFLOW,
+      [{ abs_path: "app:///_next/static/chunks/9959-4f643fb493706780.js" }],
+      { type: "RangeError" }
+    );
+    const out = beforeSend(ev);
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch a different RangeError with no app frames", () => {
+    // e.g. `new Array(-1)` from a third-party script: not this family, not this bucket.
+    const ev = makeEvent("Invalid array length", injectedFrames("@wotjsozm"), {
+      type: "RangeError"
+    });
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("collapses a copy that arrives wrapped as a plain Error (no RangeError type)", () => {
+    // The rule reads the message, not the exception type: the phrase is engine-thrown
+    // and appears in none of our own throw sites.
+    const ev = makeEvent(OVERFLOW, injectedFrames("@wotjsozm"), { type: "Error" });
+    const out = beforeSend(ev);
+    expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+  });
+
+  it("does NOT touch the Firefox phrasing of a recursion limit", () => {
+    // "InternalError: too much recursion" was never observed in this family (it is
+    // exclusively Google's iOS browsers), so it stays reported as it arrives.
+    const ev = makeEvent("too much recursion", injectedFrames("@wotjsozm"), {
+      type: "InternalError"
+    });
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+});
