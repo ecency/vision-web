@@ -76,7 +76,7 @@ function hasForeignDeploymentFrame(error: { stack?: string }): boolean {
   // dpl query must not be classified as skew — that would burn the session's
   // one guarded reload and bury the real error under the skew fingerprint.
   const dplRe = /\/_next\/static\/\S*?\.js\?dpl=([0-9a-f]{8})\b/g;
-  for (const match of stack.matchAll(dplRe)) {
+  let match; while ((match = dplRe.exec(stack)) !== null) {
     if (match[1] !== own) {
       return true;
     }
