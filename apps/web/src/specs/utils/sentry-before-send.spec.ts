@@ -896,6 +896,30 @@ describe("beforeSend — browser-injected stack overflow is reclassified", () =>
     }
   });
 
+  it("still collapses when the page URL carries a query or hash ending in .js", () => {
+    // `?ref=widget.js` is part of the page address, not a script frame.
+    for (const page of ["app:///@wotjsozm/following?ref=widget.js", "app:///@wotjsozm#widget.js"]) {
+      const out = beforeSend(makeEvent(OVERFLOW, [{ filename: page, abs_path: page }]));
+      expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+    }
+  });
+
+  it("still collapses a permlink that merely mentions .js mid-path", () => {
+    // Only a TRAILING extension names a file. `@user/why-i-left-node.js-for-deno`
+    // is a page, and a dotted account name (`@ecency.app`) is too.
+    for (const page of ["app:///@wotjsozm/why-i-left-node.js-for-deno", "app:///@ecency.app"]) {
+      const out = beforeSend(makeEvent(OVERFLOW, [{ filename: page, abs_path: page }]));
+      expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+    }
+  });
+
+  it("does NOT touch a chunk whose extension sits before a ?dpl= query", () => {
+    const ev = makeEvent(OVERFLOW, [
+      { filename: "app:///_next/static/chunks/app/page-77d.js?dpl=67bf6584" }
+    ]);
+    expect(beforeSend(ev)!.fingerprint).toBeUndefined();
+  });
+
   it("does NOT touch an overflow inside WebAssembly", () => {
     const ev = makeEvent(OVERFLOW, [{ filename: "app:///_next/static/media/codec.wasm" }]);
     expect(beforeSend(ev)!.fingerprint).toBeUndefined();

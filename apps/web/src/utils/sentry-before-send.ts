@@ -16,7 +16,16 @@ type SentryErrorEvent = Parameters<NonNullable<Sentry.BrowserOptions["beforeSend
 // on its own origin, a blob:/data: script, WebAssembly, an extension URL, and a
 // source the stack parser could not read at all ("undefined", empty).
 function isPageAttributedFrame(source?: string): boolean {
-  return !!source && source.startsWith("app:///") && !/\.(?:[cm]?js|wasm)(?:[?#]|$)/i.test(source);
+  if (!source || !source.startsWith("app:///")) {
+    return false;
+  }
+  // The extension test reads the PATH only. A page URL can carry a query or hash
+  // that ends in ".js" (`?ref=widget.js`), and matching that would read the page
+  // frame as a script frame, leaving the injected event uncollapsed (CodeRabbit
+  // on #1700). A chunk keeps its extension before the query, so `page-abc.js?dpl=`
+  // is still recognised.
+  const path = source.split(/[?#]/)[0];
+  return !/\.(?:[cm]?js|wasm)$/i.test(path);
 }
 
 // React's streaming runtime ships as INLINE script in the document, so its frames
