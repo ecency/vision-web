@@ -1,73 +1,95 @@
 ---
 name: code-review
-description: Review code changes for bugs, patterns violations, and common pitfalls in the vision-web codebase
+description: Repo-specific review checklist for this vision-web monorepo. Use when reviewing a diff, PR, branch or changed files under apps/web, apps/self-hosted or packages/*, to check them against this codebase's known traps and CI guards.
 argument-hint: [file-or-branch]
-disable-model-invocation: true
 ---
 
 # Code Review
 
-Review code for bugs, anti-patterns, and common issues specific to this codebase.
+Traps specific to this repo, each with the guard that proves it. General review
+technique belongs to the built-in reviewer; commands and audits are in CLAUDE.md.
 
-## How to Review
+Note each changed file's workspace. Run the checks its diff can trip plus the
+CLAUDE.md audits it touches. Read the cited source before flagging: what you
+cannot point at is not a finding. Report `[SEVERITY] path:line`, what breaks,
+then the fix. Severities: `BUG`, `SECURITY`, `PERF`, `STYLE`, `NITPICK`.
 
-1. **Read the changed files** — understand what changed and why
-2. **Verify each finding against current code** — don't assume; read the actual file before flagging
-3. **Categorize findings** by severity:
-   - **Inline (must fix)**: Bugs, security issues, data corruption risks
-   - **Outside-diff (should fix)**: Issues in unchanged code exposed by the change
-   - **Nitpick (nice to have)**: Style, naming, test quality improvements
-4. **Only fix what's confirmed** — if a finding doesn't apply to current code, skip it
+## Checks
 
-## What to Check
+**Slim feed wrappers are not interchangeable** (`apps/web/src/core/entries/slim-entry.ts`).
+`withSlimPageEntries` takes SINGLE-PAGE builders (`getPostsRankedQueryOptions`,
+`getAccountPostsQueryOptions`), 3 call sites: it isolates the key, which deck
+columns otherwise read for `entry.body`. `withSlimEntries` takes INFINITE
+builders plus the promoted feed, 5 call sites: its key must stay what the SDK
+produced, since the feed poll hand-builds it for a `setQueryData` merge.
+`withCardOnlyPageEntries`: 3. Guard: `node scripts/slim-entries-audit.mjs --fail`.
 
-### React & Hooks
-- [ ] **Missing cleanup in useEffect** — every addEventListener needs removeEventListener, every setInterval needs clearInterval returned from useEffect cleanup
-- [ ] **Missing dependencies** in useMemo/useCallback/useEffect dependency arrays
-- [ ] **setState on unmounted components** — setTimeout/async callbacks may fire after unmount
-- [ ] **Module-level `let` variables** in hooks — multiple instances overwrite each other (use `useRef` instead)
-- [ ] **Stale state in callbacks** — event handlers capturing stale closure values
+**No server component may reach a `"use client"` module through `@/features/shared`.**
+That `export *` barrel hands it `undefined`, so the subtree renders as nothing at
+HTTP 200 while `next build` and vitest both pass. Guard:
+`apps/web/src/specs/app/server-components-avoid-client-barrel.spec.ts`.
 
-### React Query
-- [ ] **Undefined parameter guards** — query options must return `{ enabled: false }` when params are missing (fetchQuery bypasses `enabled`)
-- [ ] **Cache key consistency** — use `QueryKeys` from `@ecency/sdk`, never hardcoded arrays
-- [ ] **Missing invalidation** — mutations should invalidate affected queries
-- [ ] **Infinite query pageParam** — verify getNextPageParam returns undefined (not null) to stop pagination
+**Package code may not read `process`, `Buffer`, `__dirname` or `__filename`.**
+Next shims them, Rsbuild does not, so the chunk throws at load and hosted blogs
+go blank. A `typeof` test must GOVERN the read; a nearby one does not count.
+Guard: `apps/self-hosted/scripts/check-node-globals.mjs`, run by its build.
 
-### SDK & Architecture
-- [ ] **Package boundary violations** — heavy deps in SDK, app logic in packages, circular imports
-- [ ] **Mutation authority level** — posting vs active key requirement must match the Hive operation
-- [ ] **Platform-specific code in SDK** — toasts, i18n, DOM access belong in web app, not SDK
-- [ ] **Missing SDK rebuild** — changes to packages/sdk won't be visible to web until `pnpm --filter @ecency/sdk build`
+**Query options**
+- Guard a missing param TWICE: `enabled: !!a && !!b` (82 `enabled: !!` in
+  `packages/sdk/src`) plus an early return in the queryFn, since `prefetchQuery`
+  and `fetchQuery` ignore `enabled`. See `get-post-query-options.ts`. The SDK's
+  one `enabled: false` is a manual-refetch query, not the pattern.
+- Keys come from `QueryKeys` (`packages/sdk/src/modules/core/query-keys.ts`; 359
+  `QueryKeys.` uses across apps and packages). A raw array duplicating an SDK key
+  splits the cache. `QueryIdentifiers` (`apps/web/src/core/react-query`, 25 uses)
+  is only for web-only features with no SDK query.
+- Post and feed results pass through `filterDmcaEntry`: five SDK modules
+  apply it (get-post, get-posts-ranked, get-account-posts, get-discussions,
+  bridge/requests). A reader that skips it serves takedown-listed content.
+- `prefetchQuery` resolves to `undefined` past `SSR_PREFETCH_TIMEOUT_MS` (10s,
+  `apps/web/src/core/react-query/query-helpers.ts`), so the server component must
+  still render without it.
+- An SDK builder's FINITE `gcTime` must bound itself on the server with
+  `SERVER_GC_TIME_MS` (2 min, `packages/sdk/src/modules/core/config.ts`).
+  `Infinity` is exempt: it schedules no gc timer, so it roots nothing; clamping
+  it to a finite window would CREATE one. `apps/web` re-clamps finite overrides
+  in `makeQueryClient` (`core/react-query/index.ts`, its own `SERVER_GC_TIME`),
+  so the builder is where a bad window is worth flagging. Guard:
+  `packages/sdk/src/modules/core/server-gc-time.spec.ts`.
 
-### Hive Blockchain Specific
-- [ ] **RPC response validation** — don't trust API responses blindly; verify author/permlink identity on get_post responses
-- [ ] **Node failover gotcha** — don't snapshot `CONFIG.hiveClient.currentAddress` before async operations; the active node may change mid-request
-- [ ] **DMCA filtering** — post queries should use `filterDmcaEntry`
-- [ ] **Null RPC responses** — some bridge methods return null for missing data; handle gracefully instead of throwing
+**A null `bridge.get_post` is not proof the post is gone.** `getPostQueryOptions`
+re-checks through `verifyPostOnAlternateNode`, which accepts a response only when
+`author` and `permlink` match the request. New RPC readers do the same.
 
-### CSS/Styling
-- [ ] **Conflicting Tailwind utilities** — e.g., `cursor-pointer` and `cursor-not-allowed` on same element
-- [ ] **Missing AnimatePresence** — framer-motion `exit` prop needs `AnimatePresence` wrapper to work
-- [ ] **Dark mode** — new styles should support `dark:` variants
+**SDK mutation wrappers** (`apps/web/src/api/sdk-mutations/`, 56 wrappers) all
+read `useActiveUsername()`. The 48 that broadcast pass `getWebBroadcastAdapter()`,
+the shared singleton (123 non-spec uses in `apps/web/src`); the other 8 (drafts,
+images, schedules, notifications) hit the private API and broadcast nothing.
+`createWebBroadcastAdapter()` is internal: its 4 references all sit in
+`apps/web/src/providers/sdk`.
 
-### Common Bug Patterns Found in This Codebase
+**Icon sizing** is one `size-N` class or a sanctioned slot: CLAUDE.md and
+`docs/icons.md` carry the rule plus its enforcement. **framer-motion is gone**
+(0 imports); modals use CSS transitions
+(`apps/web/src/features/ui/modal/index.tsx`). Do not reintroduce it.
 
-1. **Race conditions in state transitions** — component shows stale UI after async operation completes (fix: add guard flags like `hasTransitioned`)
-2. **Silent no-ops in switch cases** — empty case blocks that silently do nothing (e.g., hivesigner case in auth)
-3. **Interval-based polling decoupled from actual data** — using setInterval to increment a counter instead of reacting to React Query's `dataUpdatedAt`
-4. **Conflating errors with empty data** — treating query errors the same as "no data found" (e.g., showing "deleted" when it was actually a network error)
-5. **Position-based array operations** — using `.slice(1)` when identity-based `.filter()` is needed (e.g., excluding primary node)
-6. **Paste handlers masking validation** — unconditionally clearing warnings before validation runs
+**Tests**
+- Placement decides collection. Four workspaces pin `include`, so a misplaced or
+  wrongly suffixed file there is silently never run: `apps/web` takes
+  `src/specs/**/*.spec.{ts,tsx}` only (372 files, 0 co-located),
+  `packages/wallets` `src/**/*.spec.ts`, `packages/ui` and `apps/self-hosted`
+  `src/**/*.test.{ts,tsx}` (77 in self-hosted). sdk and render-helper pin no
+  `include`, so vitest's default picks up either suffix anywhere; co-located
+  `*.spec.ts` is their convention, not a rule the runner enforces.
+- One `vi.mock()` per module per spec: vitest 4 keeps the LAST factory, so an
+  earlier one's exports vanish and reading them throws `No "x" export is defined
+  on the mock`. `setup-any-spec.ts` also mocks partially, so
+  re-mock with `importActual` as 80 specs do (CLAUDE.md has the snippet).
+- Root `pnpm test` is web only; CI runs `pnpm -r test`. `apps/web` also resolves
+  `@ecency/sdk` through the COMMITTED `packages/sdk/dist` (15 tracked files), so
+  SDK edits stay invisible to web tests until `pnpm build:packages`.
 
-## Output Format
-
-For each finding, provide:
-```
-**[SEVERITY]** file:line — Description
-- What's wrong
-- Why it matters
-- Suggested fix
-```
-
-Severities: `BUG`, `SECURITY`, `PERF`, `STYLE`, `NITPICK`
+**Strings** go into `en-US.json` only (CLAUDE.md). Nothing enforces that, so it
+is yours to catch. A duplicate key is a separate trap: valid JSON whose earlier
+value `JSON.parse` silently discards. That one IS guarded, across all 19 locale
+files, by `apps/web/src/specs/features/i18n-locale-duplicate-keys.spec.ts`.
