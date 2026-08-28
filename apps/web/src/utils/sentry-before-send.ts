@@ -6,6 +6,15 @@ import { isDeploySkewError } from "./deploy-skew";
 // in lockstep with the SDK without a runtime import of @sentry/nextjs here.
 type SentryErrorEvent = Parameters<NonNullable<Sentry.BrowserOptions["beforeSend"]>>[0];
 
+// A stack-frame source that names an actual JavaScript file: our own chunks, the
+// first-party helpers under /scripts, analytics, any vendor SDK. Query and hash
+// are allowed after the extension (`page-abc.js?dpl=67bf6584`). A frame the
+// engine attributed to the document itself (`app:///@user/post`) or failed to
+// parse ("undefined") has no extension and is NOT one of these.
+function isScriptFileUrl(source?: string): boolean {
+  return !!source && /\.[cm]?js(?:[?#]|$)/i.test(source);
+}
+
 /**
  * The single Sentry `beforeSend` hook for the web client — the only place EVERY
  * event passes through (render-boundary captures, global handlers, and the
@@ -392,15 +401,27 @@ export function beforeSend(event: SentryErrorEvent): SentryErrorEvent | null {
   // Grouping is the actual damage: Sentry keys these on the culprit, which here is the page
   // URL, so ONE visitor spawned 12 fresh issues in a single session. One fingerprint, one
   // bucket, spikes still visible.
-  // The gate is the absence of any `_next/static` frame, NOT the message alone: a genuine
-  // runaway recursion in our own code (or in a dep we bundle) always carries chunk frames,
-  // so it keeps reporting at error level under its own grouping. A frameless copy is caught
-  // by this rule on purpose: with no frames there is nothing to act on either way, and a
-  // single labelled bucket beats a per-URL fan-out of unactionable issues.
+  // The gate is that NO frame names a real script file, NOT the message alone: a genuine
+  // runaway recursion in code we can actually edit always leaves a `.js` frame behind, so it
+  // keeps reporting at error level under its own grouping. Testing for a script file rather
+  // than for `_next/static` is deliberate (Qodo + Codex on #1700): we also serve first-party
+  // JS from outside the chunk path (`/scripts/chunk-reload.js`,
+  // `/scripts/translate-dom-guard.js`, `/scripts/config-stub.js`, analytics at
+  // `/pl/js/script.js`) plus third-party SDKs, and an overflow in any of those is a real bug
+  // that must not be buried here. translate-dom-guard in particular patches
+  // Node.prototype.removeChild/insertBefore, where runaway recursion is a live possibility.
+  // The injected script has no URL of its own, so WebKit attributes it to the page URL
+  // (`app:///@user/post`, no extension) or leaves it unparsed, which is what makes the
+  // absence of any `.js` frame a positive signature rather than a guess. A frameless copy is
+  // caught by this rule on purpose: with no frames there is nothing to act on either way, and
+  // a single labelled bucket beats a per-URL fan-out of unactionable issues.
   // Matched on the message alone rather than on `RangeError`: the phrase is thrown by the
   // engine and appears nowhere in our own throw sites, so the type adds no safety, while
   // requiring it would miss a copy that reaches the SDK wrapped as a plain Error.
-  if (/Maximum call stack size exceeded/i.test(message) && !/_next\/static/.test(stackStr)) {
+  const namesAScriptFile = frames.some(
+    (f) => isScriptFileUrl(f.filename) || isScriptFileUrl(f.abs_path)
+  );
+  if (/Maximum call stack size exceeded/i.test(message) && !namesAScriptFile) {
     event.level = "warning";
     event.tags = { ...event.tags, injected_script_overflow: "true" };
     event.fingerprint = ["browser-injected-stack-overflow"];

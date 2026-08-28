@@ -830,10 +830,40 @@ describe("beforeSend — browser-injected stack overflow is reclassified", () =>
     expect(out!.fingerprint).toBeUndefined();
   });
 
+  it("does NOT touch an overflow in our first-party /scripts helpers", () => {
+    // chunk-reload.js, translate-dom-guard.js and config-stub.js are served from
+    // outside the chunk path, so a `_next/static` test would have swallowed them.
+    // translate-dom-guard patches Node.prototype.removeChild/insertBefore, which is
+    // exactly where a runaway recursion of ours would show up.
+    const ev = makeEvent(OVERFLOW, [
+      { filename: "app:///scripts/translate-dom-guard.js", function: "removeChild" }
+    ]);
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch an overflow in the analytics script", () => {
+    const ev = makeEvent(OVERFLOW, [{ filename: "app:///pl/js/script.js" }]);
+    expect(beforeSend(ev)!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch an overflow in a third-party SDK", () => {
+    const ev = makeEvent(OVERFLOW, [{ filename: "https://s3.tradingview.com/tv.js?v=2" }]);
+    expect(beforeSend(ev)!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch a .mjs or .cjs frame either", () => {
+    for (const filename of ["https://cdn.example.com/sdk.mjs", "https://cdn.example.com/sdk.cjs"]) {
+      expect(beforeSend(makeEvent(OVERFLOW, [{ filename }]))!.fingerprint).toBeUndefined();
+    }
+  });
+
   it("does NOT touch a mixed stack where our code appears even once", () => {
     const ev = makeEvent(OVERFLOW, [...injectedFrames("@wotjsozm/following"), WEBPACK_FRAME], {
       type: "RangeError"
     });
+    // One real script frame anywhere in the stack is enough to disqualify it.
     const out = beforeSend(ev);
     expect(out!.fingerprint).toBeUndefined();
   });
