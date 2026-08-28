@@ -243,4 +243,8 @@ and runs from the workspace root as `pnpm test src/specs/api/queries/<name>.spec
   `get-account-notifications-infinite-query-options.ts` and
   `get-community-subscribers-query-options.ts`. What never ends is returning an object, or any
   other non-nullish value: `hasNextPage` stays true forever and the list appends empty pages.
-- Never hardcode a key array at a call site. Use `QueryKeys`, per CLAUDE.md.
+- Never hardcode a key array at a call site. Import the owning builder's key from its own
+  workspace registry, which is `QueryKeys` for `@ecency/sdk`, the package-local namespaced
+  array for `@ecency/wallets`, and `QueryIdentifiers` for `apps/web`. CLAUDE.md states the
+  rule for the SDK; the point is to reuse the builder's key, never to move a wallets or web
+  key into the SDK.
