@@ -249,7 +249,11 @@ and runs from the workspace root as `pnpm test src/specs/api/queries/<name>.spec
   `discussionsQueryOptions.queryKey` in `features/shared/discussion/index.tsx:99`. Only
   `@ecency/sdk` has a key registry you can reach independently (`QueryKeys`, which CLAUDE.md
   points at); `apps/web` supplies just the first element through the `QueryIdentifiers` enum,
-  and `@ecency/wallets` has none at all, its 16 key arrays being inline in the builders. So
-  for a wallets key, `.queryKey` is the only reuse path. Prefix invalidation is the one case
-  it cannot serve, since it gives the exact key rather than a prefix: the SDK covers that with
-  the `_prefix` entries above. Wallets would need a new exported helper.
+  and `@ecency/wallets` has none at all, its 13 key arrays being inline in the builders. So
+  for a wallets key, `.queryKey` is the only reuse path, as
+  `mutations/save-wallet-information-to-metadata.ts:188` does. Prefix invalidation is the one
+  case it cannot serve, since it gives the exact key rather than a prefix: the SDK covers that
+  with the `_prefix` entries above, while wallets has no helper, so
+  `mutations/use-external-transfer.ts:40` hardcodes the
+  `["ecency-wallets", "external-wallet-balance"]` prefix. Follow that only for a prefix, never
+  for a whole key.
