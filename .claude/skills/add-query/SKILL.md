@@ -33,9 +33,11 @@ Key style is per workspace, so pick the right one before writing anything:
 | `apps/web` | the `QueryIdentifiers` enum |
 
 `@ecency/wallets` deliberately keeps its keys local so the multi-chain code does not reach
-back into the SDK. It uses `["ecency-wallets", ...]` for the wallet list, market data and
-external balances, `["assets", "<chain>", ...]` for the per-chain builders, plus `["wallets",
-"token-operations", ...]` and `["portfolio", ...]`. Follow the neighbouring builder rather
+back into the SDK. It uses `["ecency-wallets", ...]` for the wallet list, the all-tokens
+list, market data plus external balances, `["assets", "<chain>", ...]` for the per-chain
+builders, then `["wallets", "token-operations", ...]`. Those three namespaces cover all 13
+keys. Portfolio is not one of them: the package calls the SDK's `getPortfolioQueryOptions`,
+whose key is `["wallet", "portfolio", "v2", ...]`. Follow the neighbouring builder rather
 than adding a wallets key to the SDK.
 
 For SDK keys: `packages/sdk/src/modules/core/query-keys.ts` is one object literal
@@ -61,9 +63,11 @@ extend any of those shapes.
 For an optional trailing argument use the file-local `key(...)` helper, which strips
 trailing `undefined` so the key still matches as an invalidation prefix (see
 `posts.draftsInfinite`). Only 7 call sites use it today: the infinite keys for drafts,
-schedules, fragments, images, favorites and bookmarks, plus `search.api`. Every other key
-with an optional tail, `posts.drafts` and `accounts.full` among them, embeds the
-`undefined` and is not prefix-safe. Web-only queries extend the `QueryIdentifiers` enum in
+schedules, fragments, images, favorites and bookmarks, plus `search.api`. Most other keys
+with an optional tail, `posts.drafts` and `accounts.full` among them, embed the
+`undefined` and are not prefix-safe. Three stay prefix-safe without the helper by branching
+on the missing argument and returning the shorter array: `search.similarEntries`,
+`wallet.aggregatedHistory` plus `polls.vote`. Web-only queries extend the `QueryIdentifiers` enum in
 `apps/web/src/core/react-query/index.ts` instead.
 
 ## 2. Write the builder
@@ -74,9 +78,10 @@ File: `packages/sdk/src/modules/<domain>/queries/get-<entity>-query-options.ts`.
 ETH, BNB or SOL sits directly in `packages/wallets/src/modules/assets/external/<chain>/`,
 with no `queries/` level. A web-only
 query is `apps/web/src/api/queries/<name>-query.ts` (`get-contributors-query.ts`,
-`get-gifs-query.ts`) with its key from `QueryIdentifiers`. Everything below holds in all
-three. Export a function, never a hook, so one options object serves a component, a server
-prefetch or a non-React caller. 164 of the 173 top-level `export function` declarations in
+`get-gifs-query.ts`) with its key from `QueryIdentifiers`. The builder shape below holds in
+all three; the imports do not. Export a function, never a hook, so one options object serves a component, a server
+prefetch or a non-React caller. 164 of the 173 distinct top-level `export function` names
+(174 declarations, since `getChainPropertiesQueryOptions` appears in two modules) in
 the non-spec files under `packages/sdk/src/modules/*/queries/` are named `get...`; the four query
 builders that are not (`searchQueryOptions`, `lookupAccountsQueryOptions`,
 `checkFavoriteQueryOptions`, `checkUsernameWalletsPendingQueryOptions`) are older names, so
@@ -135,8 +140,16 @@ export function getPostQueryOptions(author: string, permlink?: string, observer 
   missing-auth guard throw; the `!response.ok` throw is almost always the unprefixed
   ``Failed to fetch <thing>: ${response.status}``. Follow whichever the nearby files in your
   domain use.
-- `QueryKeys`, `CONFIG` and `getBoundFetch` come from `@/modules/core`; `callRPC` from
-  `@/modules/core/hive-tx`.
+- Those specifiers are SDK-only. `@/` points at each workspace's own `src`, so
+  `@/modules/core` plus `@/modules/core/hive-tx` resolve in `packages/sdk` alone: inside it,
+  `QueryKeys`, `CONFIG` and `getBoundFetch` come from the first, `callRPC` from the second.
+  In `apps/web`, take `QueryKeys` plus `callRPC` from `@ecency/sdk` (route handlers use the
+  `@ecency/sdk/hive` subpath for `callRPC`); there is no `getBoundFetch`, app-owned requests
+  go through `appAxios` with `apiBase` from `@/api/helper`, and `CONFIG` there is the
+  unrelated `EcencyConfigManager.CONFIG` from `@/config`. In `@ecency/wallets`, `CONFIG`
+  comes from `@ecency/sdk`, `getBoundFetch` is package-local at
+  `@/modules/wallets/utils/get-bound-fetch`, the private-API host is
+  `ConfigManager.getValidatedBaseUrl()`, and neither `QueryKeys` nor `callRPC` is used.
 
 Paginated lists use `infiniteQueryOptions`. Plenty of them take an inline scalar cursor
 (`initialPageParam: 0`, or `""`); give an object cursor a named type. Stop on a short page
@@ -172,7 +185,7 @@ re-exports. A brand new domain also needs `export * from "./modules/<domain>";` 
 `packages/sdk/src/index.ts`. A web-only query takes one line in
 `apps/web/src/api/queries/index.ts` and nothing else.
 
-`@ecency/wallets` has one working chain plus one broken one. A wallet-level builder follows the
+`@ecency/wallets` has four working chains plus one broken one. A wallet-level builder follows the
 SDK shape: `modules/wallets/queries/index.ts`, re-exported by that module's `index.ts`, which
 `packages/wallets/src/index.ts` exports.
 
@@ -244,14 +257,19 @@ and runs from the workspace root as `pnpm test src/specs/api/queries/<name>.spec
   `get-community-subscribers-query-options.ts`. What never ends is returning an object, or any
   other non-nullish value: `hasNextPage` stays true forever and the list appends empty pages.
 - Never hardcode a key array at a call site. Read it off the builder:
-  `getFooQueryOptions(...).queryKey`, which works in every workspace because the builder
-  returns the options object that owns the key. About 145 call sites already do this, as in
+  `getFooQueryOptions(...).queryKey`, which is not workspace-specific: wherever a builder is
+  exported and returns the options object, it owns the key. About 58 non-spec call sites read
+  a key this way, as in
   `discussionsQueryOptions.queryKey` in `features/shared/discussion/index.tsx:99`. Only
   `@ecency/sdk` has a key registry you can reach independently (`QueryKeys`, which CLAUDE.md
   points at); `apps/web` supplies just the first element through the `QueryIdentifiers` enum,
-  and `@ecency/wallets` has none at all, its 13 key arrays being inline in the builders. So
-  for a wallets key, `.queryKey` is the only reuse path, as
-  `mutations/save-wallet-information-to-metadata.ts:188` does. Prefix invalidation is the one
+  and `@ecency/wallets` has none at all, its 13 key arrays being inline in the definitions
+  that own them. So for a wallets key, `.queryKey` is the only reuse path, as
+  `mutations/save-wallet-information-to-metadata.ts:188` does. 12 of the 13 support it because
+  they return an options object; `queries/use-get-external-wallet-query.ts:106` is the
+  exception, since `useGetExternalWalletBalanceQuery` passes its key straight into `useQuery`
+  and never exposes one. Extract a `getExternalWalletBalanceQueryOptions` builder before
+  reusing that key rather than retyping the array. Prefix invalidation is the one
   case it cannot serve, since it gives the exact key rather than a prefix: the SDK covers that
   with the `_prefix` entries above, while wallets has no helper, so
   `mutations/use-external-transfer.ts:40` hardcodes the
