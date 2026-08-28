@@ -24,7 +24,21 @@ rules: the multi-chain code stays in `@ecency/wallets`.
 
 ## 1. Add the key
 
-`packages/sdk/src/modules/core/query-keys.ts` is one object literal
+Key style is per workspace, so pick the right one before writing anything:
+
+| Workspace | Where the key comes from |
+|---|---|
+| `@ecency/sdk` | the shared `QueryKeys` object, below |
+| `@ecency/wallets` | a package-local namespaced array; `QueryKeys` is imported in 0 files |
+| `apps/web` | the `QueryIdentifiers` enum |
+
+`@ecency/wallets` deliberately keeps its keys local so the multi-chain code does not reach
+back into the SDK. It uses `["ecency-wallets", ...]` for the wallet list, market data and
+external balances, `["assets", "<chain>", ...]` for the per-chain builders, plus `["wallets",
+"token-operations", ...]` and `["portfolio", ...]`. Follow the neighbouring builder rather
+than adding a wallets key to the SDK.
+
+For SDK keys: `packages/sdk/src/modules/core/query-keys.ts` is one object literal
 (`export const QueryKeys = { ... } as const;`), not a class, so there is no `static` in it.
 For a new key, return a plain array whose first element is the block name. 10 of the 23
 blocks also end with a `_prefix` used for bulk invalidation (a plain array, or a function
@@ -54,8 +68,11 @@ with an optional tail, `posts.drafts` and `accounts.full` among them, embeds the
 
 ## 2. Write the builder
 
-File: `packages/sdk/src/modules/<domain>/queries/get-<entity>-query-options.ts`. The same file
-in `@ecency/wallets` is `packages/wallets/src/modules/wallets/queries/<name>.ts`; a web-only
+File: `packages/sdk/src/modules/<domain>/queries/get-<entity>-query-options.ts`. In
+`@ecency/wallets` there are two homes: a wallet-level builder is
+`packages/wallets/src/modules/wallets/queries/<name>.ts`, while a per-chain builder for BTC,
+ETH, BNB or SOL sits directly in `packages/wallets/src/modules/assets/external/<chain>/`,
+with no `queries/` level. A web-only
 query is `apps/web/src/api/queries/<name>-query.ts` (`get-contributors-query.ts`,
 `get-gifs-query.ts`) with its key from `QueryIdentifiers`. Everything below holds in all
 three. Export a function, never a hook, so one options object serves a component, a server
@@ -152,10 +169,20 @@ type PageParam = {
 
 Add one line to the domain's `queries/index.ts`, which `modules/<domain>/index.ts` already
 re-exports. A brand new domain also needs `export * from "./modules/<domain>";` in
-`packages/sdk/src/index.ts`. `@ecency/wallets` is the same shape:
-`packages/wallets/src/modules/wallets/queries/index.ts`, re-exported by that module's
-`index.ts`. A web-only query takes one line in `apps/web/src/api/queries/index.ts` and nothing
-else.
+`packages/sdk/src/index.ts`. A web-only query takes one line in
+`apps/web/src/api/queries/index.ts` and nothing else.
+
+`@ecency/wallets` has one working chain plus one broken one. A wallet-level builder follows the
+SDK shape: `modules/wallets/queries/index.ts`, re-exported by that module's `index.ts`, which
+`packages/wallets/src/index.ts` exports.
+
+An external chain builder does not reach the package root today. The links are
+`external/<chain>/index.ts` then `external/index.ts` (which re-exports bnb, btc, eth and sol),
+but `packages/wallets/src/modules/assets/index.ts` exports only `./hive`, `./types`, `./utils`,
+`./hive-engine` plus `./points`. It never exports `./external`, so nothing outside that
+directory can import the BTC, ETH, BNB or SOL builders. Nothing does. Adding a builder
+there means adding the missing `export * from "./external";` line as well, otherwise the new
+export is unreachable.
 
 ## 4. Consume it
 
