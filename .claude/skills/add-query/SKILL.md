@@ -20,7 +20,8 @@ Hive, Hive Engine and Points asset builders already live in the SDK under
 `packages/wallets/src/modules/assets/{hive,hive-engine,points}/queries/index.ts` files are
 re-export lists pointing back at `@ecency/sdk`, so a new builder for one of those assets is
 an SDK file plus one line in the wallets re-export. CLAUDE.md holds the package boundary
-rules: the multi-chain code stays in `@ecency/wallets`.
+rules: the multi-chain code stays in `@ecency/wallets`. Its external chain list is stale,
+since the chains under `assets/external/` are BTC, ETH, BNB and SOL.
 
 ## 1. Add the key
 
@@ -29,22 +30,23 @@ Key style is per workspace, so pick the right one before writing anything:
 | Workspace | Where the key comes from |
 |---|---|
 | `@ecency/sdk` | the shared `QueryKeys` object, below |
-| `@ecency/wallets` | a package-local namespaced array; `QueryKeys` is imported in 0 files |
+| `@ecency/wallets` | a package-local namespaced array; `QueryKeys` is not imported there |
 | `apps/web` | the `QueryIdentifiers` enum, or a local suffix constant appended to another builder's key (step 3) |
 
-`@ecency/wallets` deliberately keeps its keys local so the multi-chain code does not reach
-back into the SDK. It uses `["ecency-wallets", ...]` for the wallet list, the all-tokens
+`@ecency/wallets` keeps its keys local so the multi-chain code does not reach
+back into the SDK, so CLAUDE.md's blanket rule to take every cache key from `QueryKeys` is
+stale here. It uses `["ecency-wallets", ...]` for the wallet list, the all-tokens
 list, market data plus external balances, `["assets", "<chain>", ...]` for the per-chain
-builders, then `["wallets", "token-operations", ...]`. Those three namespaces cover all 13
-keys. Portfolio is not one of them: the package calls the SDK's `getPortfolioQueryOptions`,
+builders, then `["wallets", "token-operations", ...]`. Those namespaces cover its keys.
+Portfolio is not one of them: the package calls the SDK's `getPortfolioQueryOptions`,
 whose key is `["wallet", "portfolio", "v2", ...]`. Follow the neighbouring builder rather
 than adding a wallets key to the SDK.
 
 For SDK keys: `packages/sdk/src/modules/core/query-keys.ts` is one object literal
 (`export const QueryKeys = { ... } as const;`), not a class, so there is no `static` in it.
-For a new key, return a plain array whose first element is the block name. 10 of the 23
-blocks also end with a `_prefix` used for bulk invalidation (a plain array, or a function
-where the prefix takes an argument, as in `points`):
+For a new key, return a plain array whose first element is the block name. Some blocks
+also end with a `_prefix` used for bulk invalidation (a plain array, or a function where
+the prefix takes an argument, as in `points`):
 
 ```typescript
   support: {
@@ -62,13 +64,12 @@ extend any of those shapes.
 
 For an optional trailing argument use the file-local `key(...)` helper, which strips
 trailing `undefined` so the key still matches as an invalidation prefix (see
-`posts.draftsInfinite`). Only 7 call sites use it today: the infinite keys for drafts,
-schedules, fragments, images, favorites and bookmarks, plus `search.api`. Most other keys
-with an optional tail, `posts.drafts` and `accounts.full` among them, embed the
-`undefined` and are not prefix-safe. Three stay prefix-safe without the helper by branching
-on the missing argument and returning the shorter array: `search.similarEntries`,
-`wallet.aggregatedHistory` plus `polls.vote`. Web-only queries extend the `QueryIdentifiers` enum in
-`apps/web/src/core/react-query/index.ts` instead.
+`posts.draftsInfinite`). It is used by the infinite keys for drafts, schedules, fragments,
+images, favorites and bookmarks, plus `search.api`. Most other keys with an optional tail,
+`posts.drafts` and `accounts.full` among them, embed the `undefined` and are not
+prefix-safe. Some keys stay prefix-safe without the helper by branching on the missing
+argument and returning the shorter array: `search.similarEntries`,
+`wallet.aggregatedHistory` plus `polls.vote`.
 
 ## 2. Write the builder
 
@@ -78,15 +79,14 @@ File: `packages/sdk/src/modules/<domain>/queries/get-<entity>-query-options.ts`.
 ETH, BNB or SOL sits directly in `packages/wallets/src/modules/assets/external/<chain>/`,
 with no `queries/` level. A web-only
 query is `apps/web/src/api/queries/<name>-query.ts` (`get-contributors-query.ts`,
-`get-gifs-query.ts`) with its key from `QueryIdentifiers`. The builder shape below holds in
-all three; the imports do not. Export a function, never a hook, so one options object serves a component, a server
-prefetch or a non-React caller. 164 of the 173 distinct top-level `export function` names
-(174 declarations, since `getChainPropertiesQueryOptions` appears in two modules) in
-the non-spec files under `packages/sdk/src/modules/*/queries/` are named `get...`; the four query
-builders that are not (`searchQueryOptions`, `lookupAccountsQueryOptions`,
-`checkFavoriteQueryOptions`, `checkUsernameWalletsPendingQueryOptions`) are older names, so
-name a new one `get...`. The other five non-`get` exports are helpers such as
-`sortDiscussions`, not builders. `@ecency/wallets` is looser and
+`get-gifs-query.ts`), usually with its key from `QueryIdentifiers` (step 3). The builder
+shape below carries across those homes; the imports do not. Export a function, never a
+hook, so one options object serves a component, a server prefetch or a non-React caller.
+Almost all top-level `export function` names under
+`packages/sdk/src/modules/*/queries/` are `get...`; the query builders that are not
+(`searchQueryOptions`, `lookupAccountsQueryOptions`, `checkFavoriteQueryOptions`,
+`checkUsernameWalletsPendingQueryOptions`) are older names, so name a new one `get...`.
+The remaining non-`get` exports are helpers such as `sortDiscussions`, not builders. `@ecency/wallets` is looser and
 `modules/wallets/queries/use-get-external-wallet-query.ts` does export a hook
 (`useGetExternalWalletBalanceQuery`); do not copy it. Trimmed from
 `modules/posts/queries/get-post-query-options.ts`:
@@ -132,8 +132,8 @@ export function getPostQueryOptions(author: string, permlink?: string, observer 
   anything paginated or slow.
 - A `null` from a single-record read is not proof the record is gone. `verifyPostOnAlternateNode`
   (`modules/bridge/verify-on-alternate-node.ts`) re-asks through `callWithQuorum(..., 1)`, which
-  shuffles the node list; only a second `null` means deleted. `get-post` is the only caller
-  today. Copy that branch where a missing result renders as a deleted post; skip it where `null`
+  shuffles the node list; only a second `null` means deleted. `get-post` uses it today.
+  Copy that branch where a missing result renders as a deleted post; skip it where `null`
   is an ordinary empty answer.
 - Private API: `getBoundFetch()` with `CONFIG.privateApiHost + "/private-api/<route>"`, then
   check `response.ok` and throw. The `[SDK][Domain]` prefix is the convention for the
@@ -145,15 +145,15 @@ export function getPostQueryOptions(author: string, permlink?: string, observer 
   `QueryKeys`, `CONFIG` and `getBoundFetch` come from the first, `callRPC` from the second.
   In `apps/web`, take `QueryKeys` plus `callRPC` from `@ecency/sdk` (route handlers use the
   `@ecency/sdk/hive` subpath for `callRPC`); there is no `getBoundFetch`, app-owned requests
-  go through `appAxios` with `apiBase` from `@/api/helper`, and `CONFIG` there is the
+  go through `appAxios` with `apiBase` from `@/api/helper`, while `CONFIG` there is the
   unrelated `EcencyConfigManager.CONFIG` from `@/config`. In `@ecency/wallets`, `CONFIG`
   comes from `@ecency/sdk`, `getBoundFetch` is package-local at
   `@/modules/wallets/utils/get-bound-fetch`, the private-API host is
-  `ConfigManager.getValidatedBaseUrl()`, and neither `QueryKeys` nor `callRPC` is used.
+  `ConfigManager.getValidatedBaseUrl()`; neither `QueryKeys` nor `callRPC` is used.
 
 Paginated lists use `infiniteQueryOptions`. Plenty of them take an inline scalar cursor
 (`initialPageParam: 0`, or `""`); give an object cursor a named type. Stop on a short page
-rather than on an empty one, or the list pays one wasted fetch at the end. Trimmed from
+rather than on an empty one, or the list pays a wasted fetch at the end. Trimmed from
 `modules/posts/queries/get-account-posts-query-options.ts`:
 
 ```typescript
@@ -183,14 +183,13 @@ type PageParam = {
 Add one line to the domain's `queries/index.ts`, which `modules/<domain>/index.ts` already
 re-exports. A brand new domain also needs `export * from "./modules/<domain>";` in
 `packages/sdk/src/index.ts`. A web-only query takes a line in
-`apps/web/src/api/queries/index.ts`, plus its key entry: three of the four query files
-there key off `QueryIdentifiers`, so they also need an enum member in
-`apps/web/src/core/react-query/index.ts`. The fourth, `pending-payouts-query.ts`, instead
-exports its own `PENDING_PAYOUTS_KEY` constant and appends it to another builder's key, so
-match whichever the neighbouring file does rather than assuming the enum.
+`apps/web/src/api/queries/index.ts`, plus its key entry: most of the query files there key
+off `QueryIdentifiers`, so they also need an enum member in
+`apps/web/src/core/react-query/index.ts`. `pending-payouts-query.ts` instead exports its own
+`PENDING_PAYOUTS_KEY` constant and appends it to another builder's key, so match whichever
+the neighbouring file does rather than assuming the enum.
 
-`@ecency/wallets` has four export paths that reach the package root plus one that does not.
-A wallet-level builder follows the
+A wallet-level builder in `@ecency/wallets` follows the
 SDK shape: `modules/wallets/queries/index.ts`, re-exported by that module's `index.ts`, which
 `packages/wallets/src/index.ts` exports.
 
@@ -227,9 +226,7 @@ pnpm --filter @ecency/wallets test src/modules/wallets/queries/<name>.spec.ts
 ```
 
 **Never add `--` before the path.** pnpm forwards it to vitest as a passthrough separator
-rather than a file filter, so the whole package suite runs. Measured on 2026-08-28 against
-`get-post-query-options.spec.ts`: with `--`, 64 files and 860 tests; without it, 1 file and 22
-tests.
+rather than a file filter, so the whole package suite runs instead of the one spec.
 
 A web query does not colocate. `apps/web/vitest.config.mts` includes
 `src/specs/**/*.spec.{ts,tsx}` only, so the spec goes under `apps/web/src/specs/api/queries/`
@@ -245,7 +242,7 @@ and runs from the workspace root as `pnpm test src/specs/api/queries/<name>.spec
   inside the queryFn but leaves `author` to `enabled`, so a server prefetch with an empty author
   still reaches the node.
 - A query that returns `Entry` objects should pass them through `filterDmcaEntry`
-  (`modules/posts/utils/filter-dmca-entries.ts`). Only `get-post`, `get-account-posts`,
+  (`modules/posts/utils/filter-dmca-entries.ts`). `get-post`, `get-account-posts`,
   `get-posts-ranked` and `get-discussions` call it directly; the ones that go through
   `modules/bridge/requests.ts` inherit it, because `resolvePosts` filters inside. Anything
   calling `callRPC` straight from the queryFn does not:
@@ -255,28 +252,27 @@ and runs from the workspace root as `pnpm test src/specs/api/queries/<name>.spec
   entry of the page you return and the node continues in its own ranking, so sorting there
   repeats and skips posts. Sort in `select`, which runs after pagination.
 - `getNextPageParam` must return `undefined` or `null` at the end of a list. `hasNextPage` is
-  `getNextPageParam(...) != null` (query-core 5.90.2, `infiniteQueryBehavior.ts`), so either one
-  stops it. Three builders return `null` through a cursor type that allows it:
+  `getNextPageParam(...) != null` (query-core's `infiniteQueryBehavior.ts`), so either one
+  stops it. Some builders return `null` through a cursor type that allows it:
   `get-outgoing-rc-delegations-infinite-query-options.ts`,
   `get-account-notifications-infinite-query-options.ts` and
   `get-community-subscribers-query-options.ts`. What never ends is returning an object, or any
   other non-nullish value: `hasNextPage` stays true forever and the list appends empty pages.
-- Never hardcode a key array at a call site. Read it off the builder:
+- Never hardcode a whole key array at a call site. Read it off the builder:
   `getFooQueryOptions(...).queryKey`, which is not workspace-specific: wherever a builder is
-  exported and returns the options object, it owns the key. About 58 non-spec call sites read
-  a key this way, as in
-  `discussionsQueryOptions.queryKey` in `features/shared/discussion/index.tsx:99`. Only
+  exported and returns the options object, it owns the key. Call sites across the workspace
+  read a key this way, as in
+  `discussionsQueryOptions.queryKey` in `features/shared/discussion/index.tsx:99`.
   `@ecency/sdk` has a key registry you can reach independently (`QueryKeys`, which CLAUDE.md
-  points at); `apps/web` supplies just the first element through the `QueryIdentifiers` enum,
-  and `@ecency/wallets` has none at all, its 13 key arrays being inline in the definitions
-  that own them. So for a wallets key, `.queryKey` is the only reuse path, as
-  `mutations/save-wallet-information-to-metadata.ts:188` does. 12 of the 13 support it because
-  they return an options object; `queries/use-get-external-wallet-query.ts:106` is the
+  points at), while `@ecency/wallets` has none, its key arrays being inline in the
+  definitions that own them. So for a wallets key, `.queryKey` is the reuse path, as
+  `mutations/save-wallet-information-to-metadata.ts:188` does. Most of them support it because
+  they return an options object; `queries/use-get-external-wallet-query.ts` is the
   exception, since `useGetExternalWalletBalanceQuery` passes its key straight into `useQuery`
-  and never exposes one. Extract a `getExternalWalletBalanceQueryOptions` builder before
-  reusing that key rather than retyping the array. Prefix invalidation is the one
-  case it cannot serve, since it gives the exact key rather than a prefix: the SDK covers that
-  with the `_prefix` entries above, while wallets has no helper, so
+  and does not expose one. Extract a `getExternalWalletBalanceQueryOptions` builder before
+  reusing that key rather than retyping the array. Prefix invalidation is a case it cannot
+  serve, since it gives the exact key rather than a prefix: the SDK covers that
+  with the `_prefix` entries above, while wallets has no such helper, so
   `mutations/use-external-transfer.ts:40` hardcodes the
   `["ecency-wallets", "external-wallet-balance"]` prefix. Follow that only for a prefix, never
   for a whole key.

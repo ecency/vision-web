@@ -63,18 +63,18 @@ Authority is a lowercase string literal from
 `'owner'` for recovery or key changes. `OPERATION_AUTHORITY_MAP` in that same file
 is the per-operation lookup.
 
-Imports as the SDK uses them: `useBroadcastMutation` from `@/modules/core` (31 files)
-or `@/modules/core/mutations` (19); `QueryKeys` only from `@/modules/core` (160
-files), since `core/mutations` re-exports just the three broadcast helpers;
-`AuthContextV2` always as `import type`, from `@/modules/core/types` in 54 of its 55
-import sites. `invalidateAfterBroadcast` (24 consumers) already defers about one
-block on async broadcasts, so no hand rolled `setTimeout`. Other models:
+Imports as the SDK uses them: `useBroadcastMutation` from `@/modules/core` or
+`@/modules/core/mutations`; `QueryKeys` typically from `@/modules/core`;
+`AuthContextV2` as `import type`, usually from `@/modules/core/types`.
+`invalidateAfterBroadcast` already defers on async broadcasts, so no hand rolled
+`setTimeout`. Other models:
 `posts/mutations/use-vote.ts`, `use-reblog.ts`, `use-comment.ts`. Co-locate a
 `use-<operation>.spec.ts` when the hook has logic of its own; most hooks have none,
 so copy the pattern from `posts/mutations/use-vote.spec.ts`.
 
 Export with `export * from "./use-<operation>";` in the domain's
-`mutations/index.ts`. The chain up to `packages/sdk/src/index.ts` is already wired.
+`mutations/index.ts`. The chain up to `packages/sdk/src/index.ts` is usually
+already wired.
 
 ## 2. QueryKeys, if you invalidate
 
@@ -82,15 +82,15 @@ Export with `export * from "./use-<operation>";` in the domain's
 `static`. Add the builder to its domain namespace:
 `withdrawRoutes: (account: string) => ["wallet", "withdraw-routes", account],`.
 Some namespaces also carry `_prefix` for broad invalidation. Never hardcode key
-arrays, see CLAUDE.md. The two inline arrays in the transfer hook above are the
+arrays, see CLAUDE.md. The inline arrays in the transfer hook above are an
 exception: they are bare prefixes, while `QueryKeys.assets.ecencyAssetInfo` and
-`QueryKeys.wallet.portfolio` both take trailing arguments that no builder call can
+`QueryKeys.wallet.portfolio` both take trailing arguments that a builder call cannot
 omit.
 
 ## 3. Web wrapper
 
-`apps/web/src/api/sdk-mutations/use-<operation>-mutation.ts`. 48 of the 56 wrappers
-call the adapter; 46 of those are exactly this, from `use-transfer-mutation.ts`:
+`apps/web/src/api/sdk-mutations/use-<operation>-mutation.ts`. Most wrappers call the
+adapter. Almost all of those are exactly this, from `use-transfer-mutation.ts`:
 
 ```typescript
 "use client";
@@ -105,15 +105,15 @@ export function useTransferMutation() {
 }
 ```
 
-Match it: `"use client"`, then `useActiveUsername()` rather than `useActiveAccount()`
-(which subscribes to full account data no wrapper needs), then the shared singleton
-`getWebBroadcastAdapter()` rather than `createWebBroadcastAdapter`, which no wrapper
-calls. The other 2 adapter wrappers keep that core then add orchestration:
-`use-proposal-vote-mutation.ts` plus `use-witness-vote-mutation.ts` feed the SDK hook
-into their own `useMutation`, which polls the chain for confirmation. The 8 wrappers
-with no adapter cover private-API mutations (drafts, images, schedules,
-notifications) that never broadcast. Add the named export to
-`apps/web/src/api/sdk-mutations/index.ts`.
+Match it: `"use client"`, then `useActiveUsername()` rather than `useActiveAccount()`,
+then the shared singleton `getWebBroadcastAdapter()` rather than
+`createWebBroadcastAdapter`. The CLAUDE.md "Mutation Architecture" section still
+names the older pair in its prose, so follow this file instead. A couple of adapter
+wrappers keep that core then add orchestration: `use-proposal-vote-mutation.ts` plus
+`use-witness-vote-mutation.ts` feed the SDK hook into their own `useMutation`, which
+polls the chain for confirmation. The wrappers with no adapter cover private-API
+mutations (drafts, images, schedules, notifications) that never broadcast. Add the
+named export to `apps/web/src/api/sdk-mutations/index.ts`.
 
 ## 4. Verify
 
@@ -122,23 +122,18 @@ so `pnpm typecheck` reports your new export as missing from the package until th
 is rebuilt:
 
 ```bash
-pnpm sdk         # or pnpm build:packages; web typecheck reads dist types, never src
+pnpm sdk         # or pnpm build:packages; web typecheck reads dist types, not src
 pnpm --filter @ecency/sdk test
 pnpm test        # web app; the root script is web-only despite the name
 pnpm typecheck && pnpm lint
 ```
-
-Only typecheck really needs that first line. `pnpm lint` runs `next lint` plus a
-per-package `eslint .` with no import resolution rules. `setup-any-spec.ts` mocks
-`@ecency/sdk` for every web spec, so only 28 of the 372 spec files reach the built
-module, through `vi.importActual("@ecency/sdk")`.
 
 **Never commit `packages/sdk/dist`.** It is tracked in git, so a hand built dist in
 your commit buries the real diff in generated output and causes merge conflicts. CI
 rebuilds it: `.github/workflows/auto-changeset.yml` fires when a version label is put
 on the PR, then pushes the version bump plus the rebuilt dist back to the PR branch.
 Do not add those labels yourself; the maintainer applies them. Building it locally is
-expected, as in step 4 above; just keep `dist` out of what you stage.
+expected; just keep `dist` out of what you stage.
 
 ## Gotchas
 
