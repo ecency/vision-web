@@ -182,8 +182,12 @@ type PageParam = {
 
 Add one line to the domain's `queries/index.ts`, which `modules/<domain>/index.ts` already
 re-exports. A brand new domain also needs `export * from "./modules/<domain>";` in
-`packages/sdk/src/index.ts`. A web-only query takes one line in
-`apps/web/src/api/queries/index.ts` and nothing else.
+`packages/sdk/src/index.ts`. A web-only query takes a line in
+`apps/web/src/api/queries/index.ts`, plus its key entry: three of the four query files
+there key off `QueryIdentifiers`, so they also need an enum member in
+`apps/web/src/core/react-query/index.ts`. The fourth, `pending-payouts-query.ts`, instead
+exports its own `PENDING_PAYOUTS_KEY` constant and appends it to another builder's key, so
+match whichever the neighbouring file does rather than assuming the enum.
 
 `@ecency/wallets` has four working chains plus one broken one. A wallet-level builder follows the
 SDK shape: `modules/wallets/queries/index.ts`, re-exported by that module's `index.ts`, which
