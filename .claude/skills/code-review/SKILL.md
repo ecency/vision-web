@@ -47,10 +47,13 @@ Guard: `apps/self-hosted/scripts/check-node-globals.mjs`, run by its build.
   queryFn, since `prefetchQuery` and `fetchQuery` ignore `enabled`. See
   `get-post-query-options.ts`. The SDK's `enabled: false` is a manual-refetch
   query, not the pattern.
-- Keys come from `QueryKeys` (`packages/sdk/src/modules/core/query-keys.ts`). A
-  raw array duplicating an SDK key splits the cache. `QueryIdentifiers`
-  (`apps/web/src/core/react-query`) is for web-only features that have no SDK
-  query.
+- Key source is per workspace, so check against the right one before flagging.
+  See the table in the `add-query` skill. `@ecency/sdk` uses `QueryKeys`
+  (`packages/sdk/src/modules/core/query-keys.ts`), `@ecency/wallets` uses its own
+  package-local arrays, `apps/web` uses `QueryIdentifiers`
+  (`apps/web/src/core/react-query`) or a local constant appended to another
+  builder's key. What is worth flagging is a raw array that duplicates a key some
+  builder already owns, since that splits the cache.
 - Post and feed results pass through `filterDmcaEntry`, which the SDK applies in
   get-post, get-posts-ranked, get-account-posts, get-discussions and
   bridge/requests. A reader that skips it serves takedown-listed content.
