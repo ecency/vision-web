@@ -30,7 +30,7 @@ Key style is per workspace, so pick the right one before writing anything:
 |---|---|
 | `@ecency/sdk` | the shared `QueryKeys` object, below |
 | `@ecency/wallets` | a package-local namespaced array; `QueryKeys` is imported in 0 files |
-| `apps/web` | the `QueryIdentifiers` enum |
+| `apps/web` | the `QueryIdentifiers` enum, or a local suffix constant appended to another builder's key (step 3) |
 
 `@ecency/wallets` deliberately keeps its keys local so the multi-chain code does not reach
 back into the SDK. It uses `["ecency-wallets", ...]` for the wallet list, the all-tokens
@@ -189,7 +189,8 @@ there key off `QueryIdentifiers`, so they also need an enum member in
 exports its own `PENDING_PAYOUTS_KEY` constant and appends it to another builder's key, so
 match whichever the neighbouring file does rather than assuming the enum.
 
-`@ecency/wallets` has four working chains plus one broken one. A wallet-level builder follows the
+`@ecency/wallets` has four export paths that reach the package root plus one that does not.
+A wallet-level builder follows the
 SDK shape: `modules/wallets/queries/index.ts`, re-exported by that module's `index.ts`, which
 `packages/wallets/src/index.ts` exports.
 
