@@ -24,10 +24,17 @@ builders plus the promoted feed, 5 call sites: its key must stay what the SDK
 produced, since the feed poll hand-builds it for a `setQueryData` merge.
 `withCardOnlyPageEntries`: 3. Guard: `node scripts/slim-entries-audit.mjs --fail`.
 
-**No server component may reach a `"use client"` module through `@/features/shared`.**
-That `export *` barrel hands it `undefined`, so the subtree renders as nothing at
-HTTP 200 while `next build` and vitest both pass. Guard:
-`apps/web/src/specs/app/server-components-avoid-client-barrel.spec.ts`.
+**No server component may reach a `"use client"` module that imports
+`@/features/shared` back through that barrel.** Module and barrel then form a
+cycle across the client boundary: entering at the barrel reads exports that do
+not exist yet so `export *` hands the server component `undefined`. The subtree
+renders as nothing at HTTP 200 while `next build` and vitest both pass. Importing
+the same component by its own path enters at the module instead and keeps
+working, so that is the fix. The directive alone is not the trap: a client
+boundary with no cycle server-renders through the barrel fine (`user-avatar`).
+Guard: `apps/web/src/specs/app/server-components-avoid-client-barrel.spec.ts`,
+which counts direct static and `export *` edges only, so a cycle closed through a
+deeper ordinary import is still yours to catch.
 
 **Package code may not read `process`, `Buffer`, `__dirname` or `__filename`.**
 Next shims them, Rsbuild does not, so the chunk throws at load and hosted blogs

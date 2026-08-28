@@ -26,10 +26,11 @@ include: ['src/specs/**/*.spec.{ts,tsx}']
 ```
 
 A spec outside `src/specs/` is never collected, so it silently never runs. All 372 spec files
-live under `apps/web/src/specs/`; zero are co-located with source. Two lines in CLAUDE.md's
-"Main App (Vitest)" bullet list are stale: the "co-located" test pattern plus
-"Configuration: `apps/web/vitest.config.ts`". Its "Test Structure" section has the right
-location but lists only three of the nine places specs actually live.
+live under `apps/web/src/specs/`; zero are co-located with source. Three lines in CLAUDE.md's
+"Main App (Vitest)" bullet list are stale: the "co-located" test pattern,
+"Configuration: `apps/web/vitest.config.ts`" (the real file is `vitest.config.mts`), plus the
+mocked-modules list. Its "Test Structure" section has the right location but lists only three
+of the nine places specs actually live.
 
 Pick the subdirectory matching the source area. Current counts: `features/` 211, `utils/` 51,
 `api/` 41, `app/` 40, `core/` 19, `deploy/` 3, `config/` 2, `scripts/` 1, plus 4 at the root.
@@ -55,9 +56,11 @@ and the entire suite runs. Measured here on 2026-08-28:
 Run the whole suite with `pnpm test` before pushing. The PR gate is `PR-branch.yml`
 (triggered on `pull_request`); it runs `pnpm build:packages` ahead of `pnpm -r test`, because
 `apps/web` resolves `@ecency/sdk` to the committed `packages/sdk/dist`. A local `pnpm test`
-runs against whatever dist is checked out, so rebuild the packages yourself after touching SDK
-source. The same `pnpm -r test` also runs post-merge in `web-build.yml` (push to `develop`),
-`staging.yml` and `master.yml`; none of those three gate a PR.
+runs against whatever dist is checked out, so run `pnpm build:packages` yourself after touching
+SDK source. Keep that rebuilt `dist` out of what you stage; `auto-changeset.yml` commits a fresh
+one to the PR branch once a version label is added. The same `pnpm -r test` also runs post-merge
+in `web-build.yml` (push to `develop`), `staging.yml` and `master.yml`; none of those three gate
+a PR.
 
 ## 3. Global mocks and their exact limits
 
@@ -78,7 +81,7 @@ It also polyfills `TextEncoder`, `TextDecoder` and `IntersectionObserver` for js
 
 Touching any export the mock omits throws at property access:
 
-```
+```text
 [vitest] No "parseAsset" export is defined on the "@/utils" mock. Did you forget to return it from "vi.mock"?
 ```
 

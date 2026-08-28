@@ -117,19 +117,28 @@ notifications) that never broadcast. Add the named export to
 
 ## 4. Verify
 
+The web app resolves `@ecency/sdk` through `dist`,
+so `pnpm typecheck` reports your new export as missing from the package until the SDK
+is rebuilt:
+
 ```bash
+pnpm sdk         # or pnpm build:packages; web typecheck reads dist types, never src
 pnpm --filter @ecency/sdk test
 pnpm test        # web app; the root script is web-only despite the name
 pnpm typecheck && pnpm lint
 ```
 
+Only typecheck really needs that first line. `pnpm lint` runs `next lint` plus a
+per-package `eslint .` with no import resolution rules. `setup-any-spec.ts` mocks
+`@ecency/sdk` for every web spec, so only 28 of the 372 spec files reach the built
+module, through `vi.importActual("@ecency/sdk")`.
+
 **Never commit `packages/sdk/dist`.** It is tracked in git, so a hand built dist in
 your commit buries the real diff in generated output and causes merge conflicts. CI
 rebuilds it: `.github/workflows/auto-changeset.yml` fires when a version label is put
 on the PR, then pushes the version bump plus the rebuilt dist back to the PR branch.
-Do not add those labels yourself; the maintainer applies them. Building it locally is fine when the
-web app needs to see the change (`pnpm build:packages`); just keep `dist` out of what
-you stage.
+Do not add those labels yourself; the maintainer applies them. Building it locally is
+expected, as in step 4 above; just keep `dist` out of what you stage.
 
 ## Gotchas
 

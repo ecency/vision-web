@@ -16,7 +16,7 @@ Files sit flat at the feature root with an `index.ts` barrel. Of 34 dirs in `fea
 have a root barrel; only 4 use `components/`, 5 `hooks/`, 1 `api/`, 1 `types/`. Never
 scaffold empty subfolders.
 
-```
+```text
 apps/web/src/features/<feature-name>/
   <feature-name>.tsx      component(s), kebab-case filenames
   <feature-name>-api.ts   only when it calls a service
@@ -110,5 +110,7 @@ missing export. `pnpm test` at the root is web-only.
 Finish with `pnpm lint`, `pnpm typecheck` and `pnpm test`. Those three run none of the script
 audits in `.github/workflows/typecheck.yml`; the ones a feature can trip are
 `node scripts/icon-scss-audit.mjs`, `node scripts/icon-tsx-audit.mjs --fail` and
-`node scripts/slim-entries-audit.mjs --fail`. Copy the `--fail` flags: without one the audit
-reports its findings then exits 0, so it passes locally then fails in CI.
+`node scripts/slim-entries-audit.mjs --fail`. Copy each line's flags exactly. The two
+`--fail` audits report their findings then exit 0 without it, so they pass locally then fail
+in CI. `icon-scss-audit` is inverted: with no flag it already exits 1 on a finding, while
+`--report` is what downgrades it. It never reads `--fail`, so adding one there changes nothing.

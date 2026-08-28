@@ -54,10 +54,13 @@ with an optional tail, `posts.drafts` and `accounts.full` among them, embeds the
 
 ## 2. Write the builder
 
-File: `packages/sdk/src/modules/<domain>/queries/get-<entity>-query-options.ts`. Export a
-function, never a hook, so one options object serves a component, a server prefetch or a
-non-React caller. 164 of the 173 top-level `export function` declarations in the non-spec
-files under `packages/sdk/src/modules/*/queries/` are named `get...`; the four query
+File: `packages/sdk/src/modules/<domain>/queries/get-<entity>-query-options.ts`. The same file
+in `@ecency/wallets` is `packages/wallets/src/modules/wallets/queries/<name>.ts`; a web-only
+query is `apps/web/src/api/queries/<name>-query.ts` (`get-contributors-query.ts`,
+`get-gifs-query.ts`) with its key from `QueryIdentifiers`. Everything below holds in all
+three. Export a function, never a hook, so one options object serves a component, a server
+prefetch or a non-React caller. 164 of the 173 top-level `export function` declarations in
+the non-spec files under `packages/sdk/src/modules/*/queries/` are named `get...`; the four query
 builders that are not (`searchQueryOptions`, `lookupAccountsQueryOptions`,
 `checkFavoriteQueryOptions`, `checkUsernameWalletsPendingQueryOptions`) are older names, so
 name a new one `get...`. The other five non-`get` exports are helpers such as
@@ -70,6 +73,7 @@ name a new one `get...`. The other five non-`get` exports are helpers such as
 import { queryOptions } from "@tanstack/react-query";
 import { QueryKeys } from "@/modules/core";
 import { callRPC } from "@/modules/core/hive-tx";
+import { verifyPostOnAlternateNode } from "@/modules/bridge/verify-on-alternate-node";
 import { filterDmcaEntry } from "../utils/filter-dmca-entries";
 import { Entry } from "../types";
 
@@ -79,7 +83,7 @@ export function getPostQueryOptions(author: string, permlink?: string, observer 
   return queryOptions({
     queryKey: QueryKeys.posts.entry(`/@${author}/${cleanPermlink ?? ""}`),
     queryFn: async () => {
-      if (!cleanPermlink) {
+      if (!cleanPermlink || cleanPermlink === "undefined") {
         return null;
       }
       const response = await callRPC("bridge.get_post", {
@@ -87,9 +91,14 @@ export function getPostQueryOptions(author: string, permlink?: string, observer 
         permlink: cleanPermlink,
         observer,
       });
-      return response ? filterDmcaEntry(response as Entry) : null;
+      if (!response) {
+        // a lagging node answers null for a post that exists, so ask other nodes
+        const verified = await verifyPostOnAlternateNode(author, cleanPermlink, observer);
+        return verified ? filterDmcaEntry(verified as Entry) : null;
+      }
+      return filterDmcaEntry(response as Entry);
     },
-    enabled: !!author && !!cleanPermlink,
+    enabled: !!author && !!cleanPermlink && cleanPermlink !== "undefined",
   });
 }
 ```
@@ -99,6 +108,11 @@ export function getPostQueryOptions(author: string, permlink?: string, observer 
   `condenser_api.*` takes a positional array, as in
   `callRPC("condenser_api.get_accounts", [usernames])`. Forward the queryFn `signal` for
   anything paginated or slow.
+- A `null` from a single-record read is not proof the record is gone. `verifyPostOnAlternateNode`
+  (`modules/bridge/verify-on-alternate-node.ts`) re-asks through `callWithQuorum(..., 1)`, which
+  shuffles the node list; only a second `null` means deleted. `get-post` is the only caller
+  today. Copy that branch where a missing result renders as a deleted post; skip it where `null`
+  is an ordinary empty answer.
 - Private API: `getBoundFetch()` with `CONFIG.privateApiHost + "/private-api/<route>"`, then
   check `response.ok` and throw. The `[SDK][Domain]` prefix is the convention for the
   missing-auth guard throw; the `!response.ok` throw is almost always the unprefixed
@@ -138,7 +152,10 @@ type PageParam = {
 
 Add one line to the domain's `queries/index.ts`, which `modules/<domain>/index.ts` already
 re-exports. A brand new domain also needs `export * from "./modules/<domain>";` in
-`packages/sdk/src/index.ts`.
+`packages/sdk/src/index.ts`. `@ecency/wallets` is the same shape:
+`packages/wallets/src/modules/wallets/queries/index.ts`, re-exported by that module's
+`index.ts`. A web-only query takes one line in `apps/web/src/api/queries/index.ts` and nothing
+else.
 
 ## 4. Consume it
 
@@ -155,14 +172,33 @@ timeout, so a hanging node cannot hold a render open.
 
 ## 5. Test
 
-Colocate `get-<entity>-query-options.spec.ts` beside the builder, then run
-`pnpm --filter @ecency/sdk test -- <spec path>` plus `pnpm typecheck`.
+In either package, colocate `get-<entity>-query-options.spec.ts` beside the builder (the SDK
+picks up vitest's default spec glob, `packages/wallets/vitest.config.ts` includes
+`src/**/*.spec.ts`), then run the one spec plus `pnpm typecheck`:
+
+```bash
+pnpm --filter @ecency/sdk test src/modules/<domain>/queries/get-<entity>-query-options.spec.ts
+pnpm --filter @ecency/wallets test src/modules/wallets/queries/<name>.spec.ts
+```
+
+**Never add `--` before the path.** pnpm forwards it to vitest as a passthrough separator
+rather than a file filter, so the whole package suite runs. Measured on 2026-08-28 against
+`get-post-query-options.spec.ts`: with `--`, 64 files and 860 tests; without it, 1 file and 22
+tests.
+
+A web query does not colocate. `apps/web/vitest.config.mts` includes
+`src/specs/**/*.spec.{ts,tsx}` only, so the spec goes under `apps/web/src/specs/api/queries/`
+and runs from the workspace root as `pnpm test src/specs/api/queries/<name>.spec.ts`.
 
 ## Gotchas
 
-- `enabled` gates automatic fetching only. `prefetchQuery` and `fetchQuery` call the queryFn
-  regardless, so guard missing params inside it too: return `null` where null is a legal
-  result, otherwise throw.
+- `enabled` gates automatic fetching only. The helpers in
+  `apps/web/src/core/react-query/query-helpers.ts` call `queryClient.prefetchQuery` and
+  `fetchQuery`, which ignore `enabled` and run the queryFn regardless, so guard missing params
+  inside it too: return `null` where null is a legal result, otherwise throw. Guard every param
+  the call cannot survive without. The example above is short of that: it guards `cleanPermlink`
+  inside the queryFn but leaves `author` to `enabled`, so a server prefetch with an empty author
+  still reaches the node.
 - A query that returns `Entry` objects should pass them through `filterDmcaEntry`
   (`modules/posts/utils/filter-dmca-entries.ts`). Only `get-post`, `get-account-posts`,
   `get-posts-ranked` and `get-discussions` call it directly; the ones that go through
@@ -173,6 +209,11 @@ Colocate `get-<entity>-query-options.spec.ts` beside the builder, then run
 - Never reorder a paginated bridge response inside the queryFn. The cursor is the last
   entry of the page you return and the node continues in its own ranking, so sorting there
   repeats and skips posts. Sort in `select`, which runs after pagination.
-- `getNextPageParam` must return `undefined` at the end of a list. Returning an object keeps
-  `hasNextPage` true forever and appends empty pages.
+- `getNextPageParam` must return `undefined` or `null` at the end of a list. `hasNextPage` is
+  `getNextPageParam(...) != null` (query-core 5.90.2, `infiniteQueryBehavior.ts`), so either one
+  stops it. Three builders return `null` through a cursor type that allows it:
+  `get-outgoing-rc-delegations-infinite-query-options.ts`,
+  `get-account-notifications-infinite-query-options.ts` and
+  `get-community-subscribers-query-options.ts`. What never ends is returning an object, or any
+  other non-nullish value: `hasNextPage` stays true forever and the list appends empty pages.
 - Never hardcode a key array at a call site. Use `QueryKeys`, per CLAUDE.md.
