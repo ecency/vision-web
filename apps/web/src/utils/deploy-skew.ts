@@ -76,7 +76,15 @@ function hasForeignDeploymentFrame(error: { stack?: string }): boolean {
   // dpl query must not be classified as skew — that would burn the session's
   // one guarded reload and bury the real error under the skew fingerprint.
   const dplRe = /\/_next\/static\/\S*?\.js\?dpl=([0-9a-f]{8})\b/g;
-  let match; while ((match = dplRe.exec(stack)) !== null) {
+  // `exec` in a loop rather than `String.prototype.matchAll`: matchAll is
+  // Safari 13+, and this helper runs inside Sentry's beforeSend, where a throw
+  // costs the WHOLE event (the SDK drops it and reports the TypeError instead,
+  // so nothing real is ever reported from that browser again). ECENCY-NEXT-1GNZ
+  // was exactly that on iOS 12.5.8. `dplRe` is built fresh per call, so the
+  // stateful `lastIndex` an early return leaves behind cannot leak, and the
+  // pattern cannot match empty, so the loop always advances.
+  let match: RegExpExecArray | null;
+  while ((match = dplRe.exec(stack)) !== null) {
     if (match[1] !== own) {
       return true;
     }
