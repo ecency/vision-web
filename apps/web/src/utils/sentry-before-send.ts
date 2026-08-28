@@ -6,13 +6,25 @@ import { isDeploySkewError } from "./deploy-skew";
 // in lockstep with the SDK without a runtime import of @sentry/nextjs here.
 type SentryErrorEvent = Parameters<NonNullable<Sentry.BrowserOptions["beforeSend"]>>[0];
 
-// A stack-frame source that names an actual JavaScript file: our own chunks, the
-// first-party helpers under /scripts, analytics, any vendor SDK. Query and hash
-// are allowed after the extension (`page-abc.js?dpl=67bf6584`). A frame the
-// engine attributed to the document itself (`app:///@user/post`) or failed to
-// parse ("undefined") has no extension and is NOT one of these.
-function isScriptFileUrl(source?: string): boolean {
-  return !!source && /\.[cm]?js(?:[?#]|$)/i.test(source);
+// A frame the engine attributed to the DOCUMENT rather than to a file it could
+// name: `app:///@user/post`, our own origin with a page path and no extension.
+// The SDK's rewriteFrames runs as an event processor, i.e. BEFORE beforeSend, so
+// same-origin sources already carry the `app:///` prefix here.
+//
+// Everything else fails this test on purpose, because it is code someone can open
+// and fix: a chunk, a first-party helper under /scripts, analytics, a vendor SDK
+// on its own origin, a blob:/data: script, WebAssembly, an extension URL, and a
+// source the stack parser could not read at all ("undefined", empty).
+function isPageAttributedFrame(source?: string): boolean {
+  return !!source && source.startsWith("app:///") && !/\.(?:[cm]?js|wasm)(?:[?#]|$)/i.test(source);
+}
+
+// React's streaming runtime ships as INLINE script in the document, so its frames
+// are page-attributed exactly like an injected script's. Its helpers are named
+// `$RS`, `$RC`, `$RB`, `$RV`, `$RT` (the hydration rule above keys on the same
+// marker), so a recursion of theirs is ours to investigate, not noise to bucket.
+function isFrameworkInlineFrame(frame: { function?: string }): boolean {
+  return !!frame.function && /\$R[A-Z]/.test(frame.function);
 }
 
 /**
@@ -401,27 +413,38 @@ export function beforeSend(event: SentryErrorEvent): SentryErrorEvent | null {
   // Grouping is the actual damage: Sentry keys these on the culprit, which here is the page
   // URL, so ONE visitor spawned 12 fresh issues in a single session. One fingerprint, one
   // bucket, spikes still visible.
-  // The gate is that NO frame names a real script file, NOT the message alone: a genuine
-  // runaway recursion in code we can actually edit always leaves a `.js` frame behind, so it
-  // keeps reporting at error level under its own grouping. Testing for a script file rather
-  // than for `_next/static` is deliberate (Qodo + Codex on #1700): we also serve first-party
-  // JS from outside the chunk path (`/scripts/chunk-reload.js`,
-  // `/scripts/translate-dom-guard.js`, `/scripts/config-stub.js`, analytics at
-  // `/pl/js/script.js`) plus third-party SDKs, and an overflow in any of those is a real bug
-  // that must not be buried here. translate-dom-guard in particular patches
-  // Node.prototype.removeChild/insertBefore, where runaway recursion is a live possibility.
-  // The injected script has no URL of its own, so WebKit attributes it to the page URL
-  // (`app:///@user/post`, no extension) or leaves it unparsed, which is what makes the
-  // absence of any `.js` frame a positive signature rather than a guess. A frameless copy is
-  // caught by this rule on purpose: with no frames there is nothing to act on either way, and
-  // a single labelled bucket beats a per-URL fan-out of unactionable issues.
+  // The gate is POSITIVE: every frame must be attributed to the document itself, which is
+  // the shape the injected script leaves because it has no URL of its own. An absence test
+  // ("no `_next/static` frame", or even "no `.js` frame") proves too little, since it also
+  // swallows an overflow in a blob:/data: script, in WebAssembly, or in a stack the parser
+  // could not read (Qodo + Codex on #1700, then a P2 follow-up). Those keep their own
+  // error-level grouping, because nothing about them says the code is unreachable to us.
+  // What the positive test buys: every line of first-party logic we author is served as a
+  // FILE, either a `_next/static` chunk or `/scripts/chunk-reload.js`,
+  // `/scripts/translate-dom-guard.js`, `/scripts/config-stub.js`, with analytics at
+  // `/pl/js/script.js` and vendor SDKs on their own origins. All of those name a file, so a
+  // genuine runaway recursion in code we can edit can never land in this bucket.
+  // translate-dom-guard matters most here: it patches Node.prototype.removeChild and
+  // insertBefore, where runaway recursion is a live possibility, and it is not under
+  // `_next/static`.
+  // The one first-party exception is React's streaming runtime, which IS inline and so is
+  // page-attributed too. Its `$R*` helpers are excluded by name.
+  // A frameless or unparsed event is NOT collapsed: with no frames there is no evidence of
+  // anything, and burying an unattributed overflow in a bucket labelled "injected" is how a
+  // real regression goes unnoticed. ECENCY-NEXT-MC8 is that shape and already sits in one
+  // stable bucket of its own, so nothing fans out by leaving it alone.
   // Matched on the message alone rather than on `RangeError`: the phrase is thrown by the
   // engine and appears nowhere in our own throw sites, so the type adds no safety, while
   // requiring it would miss a copy that reaches the SDK wrapped as a plain Error.
-  const namesAScriptFile = frames.some(
-    (f) => isScriptFileUrl(f.filename) || isScriptFileUrl(f.abs_path)
-  );
-  if (/Maximum call stack size exceeded/i.test(message) && !namesAScriptFile) {
+  const isPageAttributedOverflow =
+    frames.length > 0 &&
+    frames.every((f) => {
+      const sources = [f.filename, f.abs_path].filter(Boolean);
+      return (
+        sources.length > 0 && sources.every(isPageAttributedFrame) && !isFrameworkInlineFrame(f)
+      );
+    });
+  if (/Maximum call stack size exceeded/i.test(message) && isPageAttributedOverflow) {
     event.level = "warning";
     event.tags = { ...event.tags, injected_script_overflow: "true" };
     event.fingerprint = ["browser-injected-stack-overflow"];

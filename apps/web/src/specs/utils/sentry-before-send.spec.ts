@@ -801,6 +801,27 @@ describe("beforeSend — browser-injected stack overflow is reclassified", () =>
     expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
   });
 
+  it("collapses the real ECENCY-NEXT-1GP9 shape, whose frames span TWO page URLs", () => {
+    // A client nav means frames compiled under the previous URL sit in the same
+    // stack as frames from the current one. Verbatim from event fb68d39c: 50
+    // frames alternating Gk/Ik on the profile URL, bottoming out in anonymous
+    // frames on the /following URL.
+    const frames = [
+      ...Array.from({ length: 46 }, (_, i) => ({
+        filename: "app:///@wotjsozm",
+        abs_path: "app:///@wotjsozm",
+        function: i % 2 === 0 ? "Gk" : "Ik"
+      })),
+      ...Array.from({ length: 4 }, () => ({
+        filename: "app:///@wotjsozm/following",
+        abs_path: "app:///@wotjsozm/following"
+      }))
+    ];
+    const out = beforeSend(makeEvent(OVERFLOW, frames, { type: "RangeError", handled: false }));
+    expect(out!.level).toBe("warning");
+    expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+  });
+
   it("groups every page URL into the SAME bucket (the fan-out this fixes)", () => {
     const a = beforeSend(
       makeEvent(OVERFLOW, injectedFrames("@wotjsozm/following"), { type: "RangeError" })
@@ -812,12 +833,19 @@ describe("beforeSend — browser-injected stack overflow is reclassified", () =>
     expect(b!.fingerprint).toEqual(a!.fingerprint);
   });
 
-  it("catches the frame-less copy (ECENCY-NEXT-MC8's single unparsed frame)", () => {
-    // The long-running bucket carries one frame whose filename is the literal
-    // string "undefined". Nothing to act on, so it belongs in the same bucket.
+  it("does NOT collapse an unparsed stack (ECENCY-NEXT-MC8's 'undefined' frame)", () => {
+    // No frames means no evidence. Burying an unattributed overflow in a bucket
+    // labelled "injected" is how a real regression goes unnoticed, and MC8 already
+    // sits in one stable bucket of its own, so nothing fans out by leaving it.
     const ev = makeEvent(OVERFLOW, [{ filename: "undefined" }], { type: "RangeError" });
     const out = beforeSend(ev);
-    expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT collapse an event with no frames at all", () => {
+    const out = beforeSend(makeEvent(OVERFLOW, [], { type: "RangeError" }));
+    expect(out!.fingerprint).toBeUndefined();
   });
 
   it("does NOT touch a real overflow recursing inside our own bundle", () => {
@@ -857,6 +885,46 @@ describe("beforeSend — browser-injected stack overflow is reclassified", () =>
     for (const filename of ["https://cdn.example.com/sdk.mjs", "https://cdn.example.com/sdk.cjs"]) {
       expect(beforeSend(makeEvent(OVERFLOW, [{ filename }]))!.fingerprint).toBeUndefined();
     }
+  });
+
+  it("does NOT touch an overflow from a blob: or data: script", () => {
+    // Neither names a .js file, so an absence test would have swallowed both.
+    for (const filename of ["blob:https://ecency.com/9f2c-4a1b", "data:text/javascript,void 0"]) {
+      const out = beforeSend(makeEvent(OVERFLOW, [{ filename }]));
+      expect(out!.level).toBeUndefined();
+      expect(out!.fingerprint).toBeUndefined();
+    }
+  });
+
+  it("does NOT touch an overflow inside WebAssembly", () => {
+    const ev = makeEvent(OVERFLOW, [{ filename: "app:///_next/static/media/codec.wasm" }]);
+    expect(beforeSend(ev)!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch React's inline streaming runtime, which is page-attributed too", () => {
+    // $RS/$RC/$RB ship as inline script in the document, so their frames carry the
+    // page URL exactly like an injected script's. A recursion there is ours.
+    const ev = makeEvent(OVERFLOW, [
+      { filename: "app:///@wotjsozm/following", function: "$RS" },
+      { filename: "app:///@wotjsozm/following", function: "$RC" }
+    ]);
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch a frame on a foreign origin that names no file", () => {
+    // Only our own origin is rewritten to app:///, so anything absolute is
+    // someone else's code with a real URL: not the shape we are bucketing.
+    const ev = makeEvent(OVERFLOW, [{ filename: "https://cdn.example.com/bundle" }]);
+    expect(beforeSend(ev)!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch a frame whose abs_path names a file even if filename does not", () => {
+    const ev = makeEvent(OVERFLOW, [
+      { filename: "app:///@wotjsozm/following", abs_path: "app:///scripts/config-stub.js" }
+    ]);
+    expect(beforeSend(ev)!.fingerprint).toBeUndefined();
   });
 
   it("does NOT touch a mixed stack where our code appears even once", () => {
