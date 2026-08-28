@@ -243,8 +243,13 @@ and runs from the workspace root as `pnpm test src/specs/api/queries/<name>.spec
   `get-account-notifications-infinite-query-options.ts` and
   `get-community-subscribers-query-options.ts`. What never ends is returning an object, or any
   other non-nullish value: `hasNextPage` stays true forever and the list appends empty pages.
-- Never hardcode a key array at a call site. Import the owning builder's key from its own
-  workspace registry, which is `QueryKeys` for `@ecency/sdk`, the package-local namespaced
-  array for `@ecency/wallets`, and `QueryIdentifiers` for `apps/web`. CLAUDE.md states the
-  rule for the SDK; the point is to reuse the builder's key, never to move a wallets or web
-  key into the SDK.
+- Never hardcode a key array at a call site. Read it off the builder:
+  `getFooQueryOptions(...).queryKey`, which works in every workspace because the builder
+  returns the options object that owns the key. About 145 call sites already do this, as in
+  `discussionsQueryOptions.queryKey` in `features/shared/discussion/index.tsx:99`. Only
+  `@ecency/sdk` has a key registry you can reach independently (`QueryKeys`, which CLAUDE.md
+  points at); `apps/web` supplies just the first element through the `QueryIdentifiers` enum,
+  and `@ecency/wallets` has none at all, its 16 key arrays being inline in the builders. So
+  for a wallets key, `.queryKey` is the only reuse path. Prefix invalidation is the one case
+  it cannot serve, since it gives the exact key rather than a prefix: the SDK covers that with
+  the `_prefix` entries above. Wallets would need a new exported helper.
