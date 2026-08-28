@@ -10,10 +10,13 @@ CLAUDE.md has the architecture and commands; note that root `pnpm test` is web-o
 the `node scripts/*-audit.mjs` checks gate CI without running under it. Below is triage
 plus the invariants that break easily.
 
-Data flows component -> SDK query/mutation -> `callRPC`
+Query data flows component -> SDK query -> `callRPC`
 (`packages/sdk/src/hive-tx/helpers/call.ts`), often through a wrapper in `apps/web/src/api/`
 but not always: SDK query options are also spread straight into a component's `useQuery`
-(the entry fallback below does that). Read `packages/sdk/src/` rather than `dist/`:
+(the entry fallback below does that). Mutations do not take that path: a broadcast goes
+through `useBroadcastMutation` plus the web broadcast adapter, while a private-API mutation
+goes through its own API client. Check the adapter or the operation before blaming
+`callRPC`. Read `packages/sdk/src/` rather than `dist/`:
 `exports` in `packages/sdk/package.json` points at the build, so an unbuilt SDK edit is
 invisible. Most invariants below have a spec; find it before a repro; web specs live under
 `apps/web/src/specs/` (CLAUDE.md's co-location note is stale for the web app). A report from

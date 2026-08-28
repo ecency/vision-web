@@ -53,7 +53,9 @@ Guard: `apps/self-hosted/scripts/check-node-globals.mjs`, run by its build.
   package-local arrays, `apps/web` uses `QueryIdentifiers`
   (`apps/web/src/core/react-query`) or a local constant appended to another
   builder's key. What is worth flagging is a raw array that duplicates a key some
-  builder already owns, since that splits the cache.
+  builder already owns. TanStack hashes keys structurally, so an identical copy hits the
+  same cache entry rather than splitting it; the risk is drift, since the copy stops
+  matching the moment the builder's key changes.
 - Post and feed results pass through `filterDmcaEntry`, which the SDK applies in
   get-post, get-posts-ranked, get-account-posts, get-discussions and
   bridge/requests. A reader that skips it serves takedown-listed content.

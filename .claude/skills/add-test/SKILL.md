@@ -70,6 +70,7 @@ in `web-build.yml` (push to `develop`), `staging.yml` and `master.yml`; none of 
 | `i18next` | default export only. `default.t()` returns the key verbatim, so assert on i18n keys; there is no named `t` export |
 | `uuid` | `v4()` returns `"test-uuid-1234"` |
 | `@/features/post-renderer`, `@/features/pro/pro-badge` | stubbed to no-ops |
+| `react-tweet` | an EMPTY module, no exports at all. Reaching any export throws, so a spec touching it needs its own local re-mock |
 
 It also polyfills `TextEncoder`, `TextDecoder` and `IntersectionObserver` for jsdom.
 `@ecency/render-helper` is **not** globally mocked despite CLAUDE.md listing it; mock it locally.
