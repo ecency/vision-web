@@ -1,120 +1,92 @@
 ---
 name: debug
-description: Debug common issues in the vision-web Hive web app with known solutions and investigation patterns
+description: Diagnose a runtime bug in this vision-web app or @ecency/sdk: post shown as deleted, failed broadcast or auth upgrade, stale query, infinite scroll that stops, SSR memory growth, or an SDK edit with no effect.
 argument-hint: [issue-description]
-disable-model-invocation: true
 ---
 
 # Debug Guide
 
-Investigate and fix issues in the Ecency Vision-Next codebase. Start by identifying the category.
+CLAUDE.md has the architecture and commands; note that root `pnpm test` is web-only and
+the four `node scripts/*-audit.mjs` checks gate CI without running under it. Below is triage
+plus the invariants that break easily.
 
-## Issue Categories
+Data flows component -> `apps/web/src/api/` wrapper -> SDK query/mutation -> `callRPC`
+(`packages/sdk/src/hive-tx/helpers/call.ts`). Read `packages/sdk/src/`, never `dist/`:
+`exports` in `packages/sdk/package.json` points at the build, so an unbuilt SDK edit is
+invisible. Most invariants below have a spec; find it before a repro. A report from
+one browser only, or only right after a deploy, is often already handled by the
+scripts in `apps/web/public/scripts/`; check those first.
 
-### 1. Post Not Loading / "Deleted" Shown Incorrectly
+## Post shown as deleted, 404, or spinning
 
-**Symptoms**: Post shows as deleted, 404, or loading forever
+`getPostQueryOptions(author, permlink?, observer = "", num?)`
+(`packages/sdk/src/modules/posts/queries/`) calls `callRPC("bridge.get_post", ...)`; on a falsy
+response (`if (!response)`) it retries via `verifyPostOnAlternateNode` (`.../modules/bridge/`),
+which shuffles nodes through `callWithQuorum(..., 1)` and accepts a result only if `author` and
+`permlink` both match. `permlink` is optional: a blank one or the literal `"undefined"` leaves
+the query disabled and the queryFn returning `null`. Node list
+`apps/web/public/public-nodes.json` is applied by `ConfigManager.setHiveNodes()` in
+`apps/web/src/core/sdk-init.ts`.
 
-**Investigation**:
-1. Check `apps/web/src/app/(dynamicPages)/entry/[category]/[author]/[permlink]/` components
-2. Look at `entry-not-found-fallback.tsx` — handles the "not found on primary node" flow
-3. Check `packages/sdk/src/modules/bridge/verify-on-alternate-node.ts` — verifies post exists on other Hive API nodes
+- Body reading "copyright/fraudulent claim" with an empty title is `filterDmcaEntry`
+  (`.../posts/utils/`) hitting `apps/web/public/dmca/*.json`, not a node fault.
+- `.../[permlink]/_components/entry-not-found-fallback.tsx` picks the screen: `post_id === 1`
+  marks a local optimistic entry; `isVerifying` is
+  `!isOptimistic && !hasTransitioned && verifyPollCount < VERIFY_MAX_POLLS`, so the deleted
+  screen is held off only for the 3 verification polls. Once `handleSuccess` sets
+  `hasTransitioned` a non-optimistic entry falls straight through to `DeletedPostScreen`
+  until the `router.refresh()` tree lands. `isError` shows a retry prompt instead of the
+  deleted screen. Its own poll key `["entry-chain-poll", ...]` keeps it from clobbering the
+  optimistic entry.
 
-**Known issues**:
-- **Race condition**: `isVerifying` guard must check `hasTransitioned` to prevent showing deleted screen after successful verification
-- **Response validation**: `verify-on-alternate-node` must validate `response.author === author && response.permlink === permlink` — don't trust any truthy response
-- **RPC node failover**: The active node can change mid-request. Don't snapshot `CONFIG.hiveClient.currentAddress` before async operations
+Specs: `verify-on-alternate-node.spec.ts`, `get-post-query-options.spec.ts`.
 
-**RPC node configuration**: `apps/web/public/public-nodes.json`
+## Broadcast or auth-upgrade failure
 
-### 2. Memory Leaks / Performance
+CLAUDE.md covers the auth methods. What bites:
 
-**Common leak sources found in this codebase**:
+- `AuthorityLevel` and `getRequiredAuthority(ops)` are in
+  `packages/sdk/src/modules/operations/authority-map.ts`; `use-broadcast-mutation.ts` only
+  imports the type.
+- Its HiveSigner shortcut needs all three of `authority === 'posting'`,
+  `adapter.hasPostingAuthorization(username)` and a `getLoginType()` of
+  `key`/`keychain`/`hiveauth`, else the user's own method runs. "HiveSigner was skipped"
+  usually means no posting authorization.
+- Fallback is gated on `shouldTriggerAuthFallback` (`.../core/errors/chain-errors.ts`), true
+  only for `MISSING_AUTHORITY` and `TOKEN_EXPIRED`; everything else rethrows by design, so a
+  network failure mid-broadcast never retries another method.
+- `auth-upgrade-dialog.tsx` listens for the `ecency-auth-upgrade` CustomEvent, but the
+  dispatch is in the sibling `auth-upgrade-events.ts` (`requestAuthUpgrade()`), reached from
+  `showAuthUpgradeUI` in `apps/web/src/providers/sdk/web-broadcast-adapter.ts`. That module
+  holds one `pendingResolve`, so a second concurrent upgrade resolves the first with `false`,
+  cancelling it rather than hanging it.
+- Token refresh route: `apps/web/src/app/api/auth-api/hs-token-refresh/route.ts`.
+- Error text is web-local: `formatError` from `@/api/format-error`, 62 importers, 76 sites
+  shaped `error(...formatError(err))`. It maps chain strings to `chain-error.*` keys, else
+  truncates to 80 chars, so raw text means `handleChainError` lacks a branch. The SDK's
+  `parseChainError`/`ErrorType` in that same `chain-errors.ts` is a separate classifier no web
+  file calls; it reaches web behavior only through `shouldTriggerAuthFallback`.
 
-| Hook/Component | Issue | Fix |
-|---|---|---|
-| `useIsMobile` | Missing removeEventListener | Return cleanup from useEffect |
-| `useCountdown` | Missing clearInterval | Return cleanup from useEffect |
-| `HiveMarketRateListener` | Module-level `let` for interval | Use `useRef` instead |
-| `useUploadTracker` | setTimeout without cleanup | Store timeout ID, clear on unmount |
-| React Query cache | No `gcTime` configured | Set explicit gcTime on QueryClient |
+## Stale data, or infinite scroll that stops
 
-**Investigation pattern**:
-1. Search for `addEventListener` without matching `removeEventListener`
-2. Search for `setInterval`/`setTimeout` without cleanup in useEffect return
-3. Search for module-level `let` variables in React components/hooks
-4. Check React Query QueryClient config for missing `gcTime`/`staleTime`
+`apps/web/src/core/react-query/index.ts` sets app-wide `staleTime: 60_000`,
+`refetchOnWindowFocus: false`, `refetchOnMount: false`. Most "never updates" reports are
+those defaults; opt one query back in with `refetchOnMount: "always"` (see
+`features/shared/entry-translate/index.tsx`).
 
-### 3. Authentication / Broadcast Failures
+`getNextPageParam` stops on `null` **or** `undefined` (query-core 5.90.2 tests
+`param == null`) and `null` is used deliberately here, so a stuck list is rarely a
+null-versus-undefined problem. The real trap: `initialData` makes `state.data` defined,
+`shouldLoadOnMount` goes false and page 1 is never fetched under `refetchOnMount: false`,
+leaving the bottom sentinel as the only trigger. See
+`apps/web/src/app/search/_components/search-comment/index.tsx`.
 
-**Auth methods**: key (direct), keychain (extension), hivesigner (OAuth), hiveauth (QR)
+## SSR renderer memory climbs
 
-**Investigation**:
-1. Check which auth method: `adapter.getLoginType()` in web broadcast adapter
-2. Check authority level: posting vs active — see `AuthorityLevel` in `use-broadcast-mutation.ts`
-3. Auth upgrade flow: `apps/web/src/features/shared/auth-upgrade/`
-
-**Known issues**:
-- **HiveSigner token expired**: Token refresh at `/api/hs-token-refresh` route
-- **Posting authority not granted**: HiveSigner optimization skipped, falls back to user's auth method
-- **Auth upgrade dialog not appearing**: Check `ecency-auth-upgrade` CustomEvent dispatch in web-broadcast-adapter.ts
-- **Single-flight race condition**: If two mutations trigger auth upgrade simultaneously, only one dialog resolves
-
-### 4. Third-Party Browser Issues
-
-**Twitter/X in-app browser**:
-- Error: `Can't find variable: CONFIG` — caused by Twitter widget scripts expecting global `window.CONFIG`
-- Fix: Defensive stub in `apps/web/src/app/layout.tsx` that sets `window.CONFIG = window.CONFIG || {}`
-
-### 5. Image Issues
-
-**Zoom positioning (medium-zoom)**:
-- First click shows image off-center — library initialized before images loaded
-- Fix: Wait for all images to load (`img.complete && img.naturalHeight !== 0`) before initializing medium-zoom
-- Files: `features/post-renderer/components/utils/imageZoomEnhancer.ts`
-
-### 6. Infinite Scroll Issues
-
-**Symptoms**: Runaway fetching, lost content on scroll back
-
-**Investigation**:
-1. Check `getNextPageParam` — must return `undefined` (not `null`) to stop pagination
-2. Check `initialPageParam` type
-3. Verify React Query infinite query is not refetching all pages on window focus
-
-### 7. SDK Changes Not Taking Effect
-
-```bash
-# Always rebuild after SDK changes
-pnpm --filter @ecency/sdk build
-
-# Or rebuild all packages
-pnpm build:packages
-```
-
-The web app imports from `packages/sdk/dist/`, not source files.
-
-## General Investigation Steps
-
-1. **Reproduce**: Identify exact steps and which component/page is affected
-2. **Find the component**: Use file structure — `app/(dynamicPages)/` for dynamic routes, `features/` for feature modules
-3. **Check React Query**: Look at query keys, enabled conditions, error handling
-4. **Check SDK layer**: If data-related, trace from web wrapper → SDK mutation/query → Hive RPC call
-5. **Check state**: Zustand stores in `core/global-store/modules/`, React Query cache
-6. **Run tests**: `pnpm test -- <relevant-test-file>`
-
-## Useful Commands
-
-```bash
-# Check for common issues
-pnpm lint
-pnpm typecheck
-pnpm test
-
-# Run specific test
-pnpm --filter @ecency/web test -- path/to/test.spec.tsx
-pnpm --filter @ecency/sdk test -- path/to/test.spec.ts
-
-# Check bundle
-pnpm --filter @ecency/sdk build
-```
+Same file. `SERVER_GC_TIME` is 2 minutes and the server wraps `client.defaultQueryOptions` to
+clamp longer per-query `gcTime` down to it: a pending gc timer is a GC root holding its
+`Query`, which holds the whole `QueryCache`, so one long-lived entry pins that request's
+cache. `Infinity` is exempt: it schedules no timer at all. Pinned by
+`apps/web/src/specs/core/react-query/gc-time.spec.ts`; the SDK-side
+`packages/sdk/src/modules/core/server-gc-time.spec.ts` is a different check, over the separate
+`SERVER_GC_TIME_MS` in `packages/sdk/src/modules/core/config.ts`.
