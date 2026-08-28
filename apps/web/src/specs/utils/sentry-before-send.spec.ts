@@ -777,3 +777,225 @@ describe("beforeSend — @noble/ciphers module-init self-test failure is reclass
     expect(out!.fingerprint).toBeUndefined();
   });
 });
+
+describe("beforeSend — browser-injected stack overflow is reclassified", () => {
+  // ECENCY-NEXT-1GP9 and 16 siblings (issue #1699). Google's iOS browsers inject a
+  // script that recurses over the DOM until the stack blows. Being inline it has no
+  // URL of its own, so WebKit attributes every frame to the PAGE URL, which is also
+  // what Sentry groups on: one visitor produced 12 issues in a single session.
+  const OVERFLOW = "Maximum call stack size exceeded.";
+  const injectedFrames = (page: string) => [
+    { filename: `app:///${page}`, function: "Gk", abs_path: `app:///${page}` },
+    { filename: `app:///${page}`, function: "Ik", abs_path: `app:///${page}` }
+  ];
+
+  it("reclassifies the injected-script recursion into a single fingerprint", () => {
+    const ev = makeEvent(OVERFLOW, injectedFrames("@wotjsozm/following"), {
+      type: "RangeError",
+      handled: false
+    });
+    const out = beforeSend(ev);
+    expect(out).not.toBeNull();
+    expect(out!.level).toBe("warning");
+    expect(out!.tags?.injected_script_overflow).toBe("true");
+    expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+  });
+
+  it("collapses the real ECENCY-NEXT-1GP9 shape, whose frames span TWO page URLs", () => {
+    // A client nav means frames compiled under the previous URL sit in the same
+    // stack as frames from the current one. Verbatim from event fb68d39c: 50
+    // frames alternating Gk/Ik on the profile URL, bottoming out in anonymous
+    // frames on the /following URL.
+    const frames = [
+      ...Array.from({ length: 46 }, (_, i) => ({
+        filename: "app:///@wotjsozm",
+        abs_path: "app:///@wotjsozm",
+        function: i % 2 === 0 ? "Gk" : "Ik"
+      })),
+      ...Array.from({ length: 4 }, () => ({
+        filename: "app:///@wotjsozm/following",
+        abs_path: "app:///@wotjsozm/following"
+      }))
+    ];
+    const out = beforeSend(makeEvent(OVERFLOW, frames, { type: "RangeError", handled: false }));
+    expect(out!.level).toBe("warning");
+    expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+  });
+
+  it("groups every page URL into the SAME bucket (the fan-out this fixes)", () => {
+    const a = beforeSend(
+      makeEvent(OVERFLOW, injectedFrames("@wotjsozm/following"), { type: "RangeError" })
+    );
+    const b = beforeSend(
+      makeEvent(OVERFLOW, injectedFrames("@dasunkwo/my-poetry"), { type: "RangeError" })
+    );
+    expect(a!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+    expect(b!.fingerprint).toEqual(a!.fingerprint);
+  });
+
+  it("does NOT collapse an unparsed stack (ECENCY-NEXT-MC8's 'undefined' frame)", () => {
+    // No frames means no evidence. Burying an unattributed overflow in a bucket
+    // labelled "injected" is how a real regression goes unnoticed, and MC8 already
+    // sits in one stable bucket of its own, so nothing fans out by leaving it.
+    const ev = makeEvent(OVERFLOW, [{ filename: "undefined" }], { type: "RangeError" });
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT collapse an event with no frames at all", () => {
+    const out = beforeSend(makeEvent(OVERFLOW, [], { type: "RangeError" }));
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch a real overflow recursing inside our own bundle", () => {
+    // A runaway recursion in app code always carries chunk frames: it must stay an
+    // error-level issue with its own grouping.
+    const ev = makeEvent(OVERFLOW, [APP_FRAME, APP_FRAME], { type: "RangeError" });
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.tags?.injected_script_overflow).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch an overflow in our first-party /scripts helpers", () => {
+    // chunk-reload.js, translate-dom-guard.js and config-stub.js are served from
+    // outside the chunk path, so a `_next/static` test would have swallowed them.
+    // translate-dom-guard patches Node.prototype.removeChild/insertBefore, which is
+    // exactly where a runaway recursion of ours would show up.
+    const ev = makeEvent(OVERFLOW, [
+      { filename: "app:///scripts/translate-dom-guard.js", function: "removeChild" }
+    ]);
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch an overflow in the analytics script", () => {
+    const ev = makeEvent(OVERFLOW, [{ filename: "app:///pl/js/script.js" }]);
+    expect(beforeSend(ev)!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch an overflow in a third-party SDK", () => {
+    const ev = makeEvent(OVERFLOW, [{ filename: "https://s3.tradingview.com/tv.js?v=2" }]);
+    expect(beforeSend(ev)!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch a .mjs or .cjs frame either", () => {
+    for (const filename of ["https://cdn.example.com/sdk.mjs", "https://cdn.example.com/sdk.cjs"]) {
+      expect(beforeSend(makeEvent(OVERFLOW, [{ filename }]))!.fingerprint).toBeUndefined();
+    }
+  });
+
+  it("does NOT touch an overflow from a blob: or data: script", () => {
+    // Neither names a .js file, so an absence test would have swallowed both.
+    for (const filename of ["blob:https://ecency.com/9f2c-4a1b", "data:text/javascript,void 0"]) {
+      const out = beforeSend(makeEvent(OVERFLOW, [{ filename }]));
+      expect(out!.level).toBeUndefined();
+      expect(out!.fingerprint).toBeUndefined();
+    }
+  });
+
+  it("still collapses when the page URL carries a query or hash ending in .js", () => {
+    // `?ref=widget.js` is part of the page address, not a script frame.
+    for (const page of ["app:///@wotjsozm/following?ref=widget.js", "app:///@wotjsozm#widget.js"]) {
+      const out = beforeSend(makeEvent(OVERFLOW, [{ filename: page, abs_path: page }]));
+      expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+    }
+  });
+
+  it("still collapses a permlink that merely mentions .js mid-path", () => {
+    // Only a TRAILING extension names a file. `@user/why-i-left-node.js-for-deno`
+    // is a page, and a dotted account name (`@ecency.app`) is too.
+    for (const page of ["app:///@wotjsozm/why-i-left-node.js-for-deno", "app:///@ecency.app"]) {
+      const out = beforeSend(makeEvent(OVERFLOW, [{ filename: page, abs_path: page }]));
+      expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+    }
+  });
+
+  it("does NOT touch a chunk whose extension sits before a ?dpl= query", () => {
+    const ev = makeEvent(OVERFLOW, [
+      { filename: "app:///_next/static/chunks/app/page-77d.js?dpl=67bf6584" }
+    ]);
+    expect(beforeSend(ev)!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch an overflow inside WebAssembly", () => {
+    const ev = makeEvent(OVERFLOW, [{ filename: "app:///_next/static/media/codec.wasm" }]);
+    expect(beforeSend(ev)!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch React's inline streaming runtime, which is page-attributed too", () => {
+    // $RS/$RC/$RB ship as inline script in the document, so their frames carry the
+    // page URL exactly like an injected script's. A recursion there is ours.
+    const ev = makeEvent(OVERFLOW, [
+      { filename: "app:///@wotjsozm/following", function: "$RS" },
+      { filename: "app:///@wotjsozm/following", function: "$RC" }
+    ]);
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch a frame on a foreign origin that names no file", () => {
+    // Only our own origin is rewritten to app:///, so anything absolute is
+    // someone else's code with a real URL: not the shape we are bucketing.
+    const ev = makeEvent(OVERFLOW, [{ filename: "https://cdn.example.com/bundle" }]);
+    expect(beforeSend(ev)!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch a frame whose abs_path names a file even if filename does not", () => {
+    const ev = makeEvent(OVERFLOW, [
+      { filename: "app:///@wotjsozm/following", abs_path: "app:///scripts/config-stub.js" }
+    ]);
+    expect(beforeSend(ev)!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch a mixed stack where our code appears even once", () => {
+    const ev = makeEvent(OVERFLOW, [...injectedFrames("@wotjsozm/following"), WEBPACK_FRAME], {
+      type: "RangeError"
+    });
+    // One real script frame anywhere in the stack is enough to disqualify it.
+    const out = beforeSend(ev);
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("reads abs_path too, not just filename", () => {
+    const ev = makeEvent(
+      OVERFLOW,
+      [{ abs_path: "app:///_next/static/chunks/9959-4f643fb493706780.js" }],
+      { type: "RangeError" }
+    );
+    const out = beforeSend(ev);
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("does NOT touch a different RangeError with no app frames", () => {
+    // e.g. `new Array(-1)` from a third-party script: not this family, not this bucket.
+    const ev = makeEvent("Invalid array length", injectedFrames("@wotjsozm"), {
+      type: "RangeError"
+    });
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+
+  it("collapses a copy that arrives wrapped as a plain Error (no RangeError type)", () => {
+    // The rule reads the message, not the exception type: the phrase is engine-thrown
+    // and appears in none of our own throw sites.
+    const ev = makeEvent(OVERFLOW, injectedFrames("@wotjsozm"), { type: "Error" });
+    const out = beforeSend(ev);
+    expect(out!.fingerprint).toEqual(["browser-injected-stack-overflow"]);
+  });
+
+  it("does NOT touch the Firefox phrasing of a recursion limit", () => {
+    // "InternalError: too much recursion" was never observed in this family (it is
+    // exclusively Google's iOS browsers), so it stays reported as it arrives.
+    const ev = makeEvent("too much recursion", injectedFrames("@wotjsozm"), {
+      type: "InternalError"
+    });
+    const out = beforeSend(ev);
+    expect(out!.level).toBeUndefined();
+    expect(out!.fingerprint).toBeUndefined();
+  });
+});
