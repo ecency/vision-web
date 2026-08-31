@@ -143,16 +143,28 @@ export default function MobilePage() {
             </p>
           </div>
           <div className="mobile-hero__visual">
-            <img
-              src="/assets/phone-light-tablet.png"
-              alt={i18next.t("static.mobile.screenshots-tablet-alt")}
-              loading="lazy"
-            />
-            <img
-              src="/assets/phone-dark-tablet.png"
-              alt={i18next.t("static.mobile.screenshots-dark-alt")}
-              loading="lazy"
-            />
+            <figure className="mobile-hero__device mobile-hero__device--dark">
+              <img
+                src="/assets/ecency-feed1.jpg"
+                alt={`${i18next.t("static.mobile.screenshots.feed-title", {
+                  defaultValue: "Feed"
+                })} ${i18next.t("static.mobile.screenshots.dark-label", {
+                  defaultValue: "Dark theme"
+                })}`}
+                loading="eager"
+              />
+            </figure>
+            <figure className="mobile-hero__device mobile-hero__device--light">
+              <img
+                src="/assets/ecency-reply2.jpg"
+                alt={`${i18next.t("static.mobile.screenshots.replies-title", {
+                  defaultValue: "Replies"
+                })} ${i18next.t("static.mobile.screenshots.light-label", {
+                  defaultValue: "Light theme"
+                })}`}
+                loading="eager"
+              />
+            </figure>
           </div>
         </section>
 
