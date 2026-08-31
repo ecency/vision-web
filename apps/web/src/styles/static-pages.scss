@@ -1540,13 +1540,13 @@
     box-shadow: 0 28px 64px rgba(8, 28, 54, 0.28);
     flex: 0 1 215px;
     margin: 0;
+    min-width: 0;
     overflow: hidden;
     padding: 7px;
     position: relative;
     transform: rotate(-4deg) translateY(14px);
     transform-origin: center bottom;
     transition: transform 0.25s ease;
-    width: 100%;
 
     &::before {
       background: #111a29;
