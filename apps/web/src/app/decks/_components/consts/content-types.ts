@@ -97,3 +97,21 @@ export const NOTIFICATION_CONTENT_TYPES = [
     type: "scheduled_published"
   }
 ];
+
+/**
+ * Notification content types that are Ecency-only rather than chain-derived, so they are
+ * served solely to the account they belong to.
+ *
+ * nfavorites and nbookmarks reveal who a user has favorited and what they saved, and
+ * scheduled_published is Ecency scheduling metadata. vision-api downgrades a request for
+ * another account's notifications to scope=public, which makes enotify withhold these, so
+ * a column built for someone else with one of these types would render permanently empty.
+ * They are hidden in the picker instead.
+ *
+ * `all` and `transfers` stay available: they still return their chain-derived subset.
+ */
+export const SELF_ONLY_NOTIFICATION_CONTENT_TYPES = [
+  "nfavorites",
+  "nbookmarks",
+  "scheduled_published"
+];
