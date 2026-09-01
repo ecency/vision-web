@@ -158,3 +158,29 @@ export function effectiveNotificationContentType(
   const allowed = notificationContentTypesFor(targetUsername, activeUsername);
   return allowed.some(({ type }) => type === contentType) ? contentType : "all";
 }
+
+/**
+ * Whether a column's stored contentType should be corrected on disk.
+ *
+ * Separate from effectiveNotificationContentType because the two answer different
+ * questions. What to FETCH is safe to decide immediately, and "all" is the right
+ * temporary answer while signed out. What to PERSIST is not: the global store starts
+ * with no active user and ClientInit restores it after mount, so during that first
+ * render every column looks cross-account. Writing then would erase a valid self-only
+ * filter on an ordinary page reload.
+ *
+ * So: never persist until the active account is known.
+ */
+export function shouldPersistContentTypeCorrection(
+  contentType: string,
+  targetUsername: string | undefined,
+  activeUsername: string | undefined
+) {
+  if (!activeUsername) {
+    return false;
+  }
+
+  return (
+    effectiveNotificationContentType(contentType, targetUsername, activeUsername) !== contentType
+  );
+}

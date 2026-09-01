@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   effectiveNotificationContentType,
+  shouldPersistContentTypeCorrection,
   NOTIFICATION_CONTENT_TYPES,
   notificationContentTypesFor,
   SELF_ONLY_NOTIFICATION_CONTENT_TYPES
@@ -134,5 +135,40 @@ describe("effectiveNotificationContentType", () => {
     expect(effectiveNotificationContentType("retired-type", "good-karma", "good-karma")).toBe(
       "all"
     );
+  });
+});
+
+/**
+ * The lifecycle half. What to FETCH can be decided immediately, but what to PERSIST
+ * cannot: the global store starts with no active user and ClientInit restores it after
+ * mount, so during that first render every column looks cross-account.
+ */
+describe("shouldPersistContentTypeCorrection", () => {
+  it("never persists while the active account is unknown", () => {
+    // The regression: a locally stored self column using nfavorites would otherwise be
+    // rewritten to `all` on an ordinary reload, before the account was restored.
+    for (const type of SELF_ONLY_NOTIFICATION_CONTENT_TYPES) {
+      expect(shouldPersistContentTypeCorrection(type, "good-karma", undefined)).toBe(false);
+      expect(shouldPersistContentTypeCorrection(type, "good-karma", "")).toBe(false);
+    }
+  });
+
+  it("undefined then the owning username leaves the stored filter intact", () => {
+    // Explicitly the sequence a page reload performs.
+    expect(shouldPersistContentTypeCorrection("nfavorites", "good-karma", undefined)).toBe(false);
+    expect(shouldPersistContentTypeCorrection("nfavorites", "good-karma", "good-karma")).toBe(
+      false
+    );
+  });
+
+  it("persists once a DIFFERENT account is known to be active", () => {
+    expect(shouldPersistContentTypeCorrection("nfavorites", "good-karma", "someone-else")).toBe(
+      true
+    );
+  });
+
+  it("does not persist when the stored type is already allowed", () => {
+    expect(shouldPersistContentTypeCorrection("rvotes", "someone-else", "good-karma")).toBe(false);
+    expect(shouldPersistContentTypeCorrection("all", "someone-else", "good-karma")).toBe(false);
   });
 });

@@ -6,7 +6,8 @@ import { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
 import {
   effectiveNotificationContentType,
   notificationContentTypesFor,
-  notificationsTitles
+  notificationsTitles,
+  shouldPersistContentTypeCorrection
 } from "../consts";
 import { DeckGridContext } from "../deck-manager";
 import { DeckPostViewer } from "./content-viewer";
@@ -63,13 +64,27 @@ export const DeckNotificationsColumn = ({ id, settings, draggable }: Props) => {
   );
 
   // Persist the correction so the stored value, the header subtitle and the selector all
-  // agree, and so it survives a reload. Depends on the active user too, since signing in
-  // as a different account is what turns a self column into a cross-account one.
+  // agree, and so it survives a reload. Guarded on the active account being KNOWN: the
+  // store starts empty and ClientInit restores the user after mount, so writing during
+  // that first render would erase a valid self-only filter on an ordinary reload.
   useEffect(() => {
-    if (effectiveContentType !== settings.contentType) {
+    if (
+      shouldPersistContentTypeCorrection(
+        settings.contentType,
+        settings.username,
+        activeUser?.username
+      )
+    ) {
       updateColumnSpecificSettings(id, { contentType: effectiveContentType });
     }
-  }, [effectiveContentType, settings.contentType, id, updateColumnSpecificSettings]);
+  }, [
+    settings.contentType,
+    settings.username,
+    activeUser?.username,
+    effectiveContentType,
+    id,
+    updateColumnSpecificSettings
+  ]);
 
   const fetchData = useCallback(
     async (since?: ApiNotification) => {
