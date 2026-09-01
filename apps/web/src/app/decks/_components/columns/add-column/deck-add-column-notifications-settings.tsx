@@ -2,11 +2,7 @@ import React, { useContext, useEffect, useState } from "react";
 import { DeckGridContext } from "../../deck-manager";
 import { DeckAddColumnSearchBox } from "./deck-add-column-search-box";
 import { SettingsProps, UsernameDataItem } from "./common";
-import {
-  ICONS,
-  NOTIFICATION_CONTENT_TYPES,
-  SELF_ONLY_NOTIFICATION_CONTENT_TYPES
-} from "../../consts";
+import { ICONS, notificationContentTypesFor } from "../../consts";
 import useLocalStorage from "react-use/lib/useLocalStorage";
 import { Button } from "@ui/button";
 import i18next from "i18next";
@@ -25,21 +21,24 @@ export const DeckAddColumnNotificationsSettings = ({ deckKey }: SettingsProps) =
 
   // Favourites, bookmarks and scheduled posts are Ecency-only data and are served only to
   // the account they belong to, so offering them for someone else would build a column
-  // that can never load. Hive names are lowercase, but compare defensively.
-  const isSelf = !!activeUser && username.toLowerCase() === activeUser.username.toLowerCase();
-  const contentTypes = isSelf
-    ? NOTIFICATION_CONTENT_TYPES
-    : NOTIFICATION_CONTENT_TYPES.filter(
-        ({ type }) => !SELF_ONLY_NOTIFICATION_CONTENT_TYPES.includes(type)
-      );
+  // that can never load.
+  const contentTypes = notificationContentTypesFor(username, activeUser?.username);
 
   // Picking a self-only type and then changing the username to someone else would
   // otherwise leave that choice selected and let the column be created anyway.
+  //
+  // Skipped while the username is empty: clearing the field to re-pick an account passes
+  // through "" on the way, and treating that as a switch would drop a valid selection
+  // even when the same account is chosen again.
   useEffect(() => {
+    if (!username) {
+      return;
+    }
+
     if (contentType && !contentTypes.some(({ type }) => type === contentType)) {
       setContentType(null);
     }
-  }, [contentTypes, contentType]);
+  }, [username, contentTypes, contentType]);
 
   return (
     <div className="deck-add-column-user-settings p-3">

@@ -115,3 +115,27 @@ export const SELF_ONLY_NOTIFICATION_CONTENT_TYPES = [
   "nbookmarks",
   "scheduled_published"
 ];
+
+/**
+ * The notification content types offered for a given column target.
+ *
+ * Used by BOTH the add-column picker and the settings of an existing column. Filtering
+ * only the picker left the settings able to switch a cross-account column onto a
+ * restricted type, which recreated the empty-column problem the filtering exists to
+ * prevent.
+ */
+export function notificationContentTypesFor(
+  targetUsername: string | undefined,
+  activeUsername: string | undefined
+) {
+  const isSelf =
+    !!activeUsername &&
+    !!targetUsername &&
+    targetUsername.toLowerCase() === activeUsername.toLowerCase();
+
+  return isSelf
+    ? NOTIFICATION_CONTENT_TYPES
+    : NOTIFICATION_CONTENT_TYPES.filter(
+        ({ type }) => !SELF_ONLY_NOTIFICATION_CONTENT_TYPES.includes(type)
+      );
+}

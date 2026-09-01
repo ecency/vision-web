@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   NOTIFICATION_CONTENT_TYPES,
+  notificationContentTypesFor,
   SELF_ONLY_NOTIFICATION_CONTENT_TYPES
 } from "@/app/decks/_components/consts";
 
@@ -50,5 +51,45 @@ describe("Decks self-only notification content types", () => {
     const offered = NOTIFICATION_CONTENT_TYPES.map(({ type }) => type);
     const unknown = SELF_ONLY_NOTIFICATION_CONTENT_TYPES.filter((t) => !offered.includes(t));
     expect(unknown).toEqual([]);
+  });
+});
+
+/**
+ * Both the add-column picker and an existing column's settings resolve their options
+ * through this, so a cross-account column cannot be switched onto a restricted type
+ * after the fact.
+ */
+describe("notificationContentTypesFor", () => {
+  const names = (list: { type: string }[]) => list.map(({ type }) => type);
+
+  it("offers everything for your own account, case-insensitively", () => {
+    for (const target of ["good-karma", "Good-Karma", "GOOD-KARMA"]) {
+      expect(names(notificationContentTypesFor(target, "good-karma"))).toEqual(
+        names(NOTIFICATION_CONTENT_TYPES)
+      );
+    }
+  });
+
+  it("withholds the self-only types for another account", () => {
+    const offered = names(notificationContentTypesFor("someone-else", "good-karma"));
+
+    for (const type of SELF_ONLY_NOTIFICATION_CONTENT_TYPES) {
+      expect(offered).not.toContain(type);
+    }
+    expect(offered).toContain("all");
+    expect(offered).toContain("transfers");
+  });
+
+  it("withholds them when signed out or with no target chosen", () => {
+    // Neither an unknown viewer nor an unset target can be shown to be self.
+    for (const [target, active] of [
+      ["someone", undefined],
+      [undefined, "good-karma"],
+      ["", "good-karma"],
+      [undefined, undefined]
+    ] as [string | undefined, string | undefined][]) {
+      const offered = names(notificationContentTypesFor(target, active));
+      expect(offered).not.toContain("nfavorites");
+    }
   });
 });

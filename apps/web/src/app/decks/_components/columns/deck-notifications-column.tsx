@@ -3,7 +3,7 @@ import { ShortListItemSkeleton } from "./deck-items";
 import { GenericDeckWithDataColumn } from "./generic-deck-with-data-column";
 import { UserDeckGridItem } from "../types";
 import { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
-import { NOTIFICATION_CONTENT_TYPES, notificationsTitles } from "../consts";
+import { notificationContentTypesFor, notificationsTitles } from "../consts";
 import { DeckGridContext } from "../deck-manager";
 import { DeckPostViewer } from "./content-viewer";
 import { DeckLoginOverlayPlaceholder } from "./deck-login-overlay-placeholder";
@@ -106,7 +106,7 @@ export const DeckNotificationsColumn = ({ id, settings, draggable }: Props) => {
         setUpdateIntervalMs: (v) => updateColumnIntervalMs(id, v),
         additionalSettings: (
           <DeckContentTypeColumnSettings
-            contentTypes={NOTIFICATION_CONTENT_TYPES}
+            contentTypes={notificationContentTypesFor(settings.username, activeUser?.username)}
             settings={settings}
             id={id}
           />
