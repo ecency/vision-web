@@ -1,9 +1,13 @@
-import React, { useCallback, useContext, useEffect, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { ShortListItemSkeleton } from "./deck-items";
 import { GenericDeckWithDataColumn } from "./generic-deck-with-data-column";
 import { UserDeckGridItem } from "../types";
 import { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
-import { notificationContentTypesFor, notificationsTitles } from "../consts";
+import {
+  effectiveNotificationContentType,
+  notificationContentTypesFor,
+  notificationsTitles
+} from "../consts";
 import { DeckGridContext } from "../deck-manager";
 import { DeckPostViewer } from "./content-viewer";
 import { DeckLoginOverlayPlaceholder } from "./deck-login-overlay-placeholder";
@@ -39,20 +43,45 @@ export const DeckNotificationsColumn = ({ id, settings, draggable }: Props) => {
   const [isFirstLoaded, setIsFirstLoaded] = useState(false);
   const [hasNextPage, setHasNextPage] = useState(true);
 
-  const { updateColumnIntervalMs } = useContext(DeckGridContext);
+  const { updateColumnIntervalMs, updateColumnSpecificSettings } = useContext(DeckGridContext);
   const prevSettings = usePrevious(settings);
+
+  const allowedContentTypes = useMemo(
+    () => notificationContentTypesFor(settings.username, activeUser?.username),
+    [settings.username, activeUser?.username]
+  );
+
+  // Used for fetching straight away, before the correction below has been persisted.
+  const effectiveContentType = useMemo(
+    () =>
+      effectiveNotificationContentType(
+        settings.contentType,
+        settings.username,
+        activeUser?.username
+      ),
+    [settings.contentType, settings.username, activeUser?.username]
+  );
+
+  // Persist the correction so the stored value, the header subtitle and the selector all
+  // agree, and so it survives a reload. Depends on the active user too, since signing in
+  // as a different account is what turns a self column into a cross-account one.
+  useEffect(() => {
+    if (effectiveContentType !== settings.contentType) {
+      updateColumnSpecificSettings(id, { contentType: effectiveContentType });
+    }
+  }, [effectiveContentType, settings.contentType, id, updateColumnSpecificSettings]);
 
   const fetchData = useCallback(
     async (since?: ApiNotification) => {
       if (data.length) {
         setIsReloading(true);
       }
-      const isAll = settings.contentType === "all";
+      const isAll = effectiveContentType === "all";
 
       try {
         const response = await getNotifications(
           getAccessToken(activeUser!.username),
-          isAll ? null : (settings.contentType as NotificationFilter),
+          isAll ? null : (effectiveContentType as NotificationFilter),
           since?.id,
           settings.username
         );
@@ -72,7 +101,7 @@ export const DeckNotificationsColumn = ({ id, settings, draggable }: Props) => {
         setIsFirstLoaded(true);
       }
     },
-    [activeUser, data, settings.contentType, settings.username]
+    [activeUser, data, effectiveContentType, settings.username]
   );
 
   useEffect(() => {
@@ -106,7 +135,7 @@ export const DeckNotificationsColumn = ({ id, settings, draggable }: Props) => {
         setUpdateIntervalMs: (v) => updateColumnIntervalMs(id, v),
         additionalSettings: (
           <DeckContentTypeColumnSettings
-            contentTypes={notificationContentTypesFor(settings.username, activeUser?.username)}
+            contentTypes={allowedContentTypes}
             settings={settings}
             id={id}
           />

@@ -139,3 +139,22 @@ export function notificationContentTypesFor(
         ({ type }) => !SELF_ONLY_NOTIFICATION_CONTENT_TYPES.includes(type)
       );
 }
+
+/**
+ * The content type a column should actually use, falling back to "all" when the stored
+ * one is not available for its target.
+ *
+ * A column persists its contentType, so one created before its target became
+ * cross-account, or created while signed in as a different account, can still hold a
+ * self-only type. Filtering the selector does not change a stored value, so without this
+ * the column keeps fetching a filter that returns nothing and sits permanently empty
+ * with its own current value missing from the selector.
+ */
+export function effectiveNotificationContentType(
+  contentType: string,
+  targetUsername: string | undefined,
+  activeUsername: string | undefined
+) {
+  const allowed = notificationContentTypesFor(targetUsername, activeUsername);
+  return allowed.some(({ type }) => type === contentType) ? contentType : "all";
+}

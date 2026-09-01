@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  effectiveNotificationContentType,
   NOTIFICATION_CONTENT_TYPES,
   notificationContentTypesFor,
   SELF_ONLY_NOTIFICATION_CONTENT_TYPES
@@ -91,5 +92,47 @@ describe("notificationContentTypesFor", () => {
       const offered = names(notificationContentTypesFor(target, active));
       expect(offered).not.toContain("nfavorites");
     }
+  });
+});
+
+/**
+ * Filtering the selector does not change an already-stored value. A column created before
+ * its target became cross-account, or created while signed in as another account, keeps
+ * its persisted contentType and would otherwise fetch a filter that returns nothing.
+ */
+describe("effectiveNotificationContentType", () => {
+  it("keeps a stored type that is still allowed", () => {
+    expect(effectiveNotificationContentType("rvotes", "someone-else", "good-karma")).toBe(
+      "rvotes"
+    );
+    expect(effectiveNotificationContentType("nfavorites", "good-karma", "good-karma")).toBe(
+      "nfavorites"
+    );
+    expect(effectiveNotificationContentType("all", "someone-else", "good-karma")).toBe("all");
+  });
+
+  it("falls back to `all` for a stored self-only type on another account", () => {
+    for (const type of SELF_ONLY_NOTIFICATION_CONTENT_TYPES) {
+      expect(effectiveNotificationContentType(type, "someone-else", "good-karma")).toBe("all");
+    }
+  });
+
+  it("falls back when the ACTIVE account changes, not just the target", () => {
+    // A self column holding nfavorites becomes cross-account the moment someone else
+    // signs in, which is the case a target-only check would miss.
+    expect(effectiveNotificationContentType("nfavorites", "good-karma", "good-karma")).toBe(
+      "nfavorites"
+    );
+    expect(effectiveNotificationContentType("nfavorites", "good-karma", "someone-else")).toBe(
+      "all"
+    );
+    // Signed out entirely.
+    expect(effectiveNotificationContentType("nfavorites", "good-karma", undefined)).toBe("all");
+  });
+
+  it("falls back for a type that no longer exists at all", () => {
+    expect(effectiveNotificationContentType("retired-type", "good-karma", "good-karma")).toBe(
+      "all"
+    );
   });
 });
