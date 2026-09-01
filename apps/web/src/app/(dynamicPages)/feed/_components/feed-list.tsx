@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { usePostsFeedQuery } from "@/api/queries";
 import { Entry, SearchResponse } from "@/entities";
 import type { InfiniteData } from "@tanstack/react-query";
@@ -24,6 +24,11 @@ type Page = Entry[] | SearchResponse;
 export function FeedList({ filter, tag, observer }: Props) {
   const searchParams = useSearchParams();
   const noReblog = searchParams?.get("no-reblog") === "true";
+
+  // Defer client-only filtering until after hydration to prevent SSR/client DOM mismatch.
+  // The server renders the full list; the client must match on first render before filtering.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const visionFeatures = EcencyConfigManager.CONFIG.visionFeatures;
 
   // Fetch promoted posts if feature is enabled and get the data
@@ -45,14 +50,14 @@ export function FeedList({ filter, tag, observer }: Props) {
       Array.isArray(page) ? page : ((page as any).items ?? (page as any).results ?? [])
     );
 
-    if (noReblog) {
+    if (mounted && noReblog) {
       return extracted.filter(
         (entry: Entry) => !entry.reblogged_by || entry.reblogged_by.length === 0
       );
     }
 
     return extracted;
-  }, [data, filter, tag, observer, noReblog]); // Include filter/tag/observer to ensure recalc on param changes
+  }, [data, filter, tag, observer, noReblog, mounted]); // Include filter/tag/observer to ensure recalc on param changes
 
   // Everything the viewer can actually see: a feed whose every author they muted
   // has to reach the empty state below, not render as blank space.
