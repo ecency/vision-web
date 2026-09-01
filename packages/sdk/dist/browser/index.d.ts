@@ -6775,7 +6775,7 @@ interface WsBookmarkNotification extends BaseWsNotification {
     };
 }
 interface WsFollowNotification extends BaseWsNotification {
-    type: "follow";
+    type: "follow" | "unfollow" | "ignore" | "blacklist";
     extra: {
         what: string[];
     };
@@ -6864,7 +6864,7 @@ interface ApiMentionNotification extends BaseAPiNotification {
     deck?: boolean;
 }
 interface ApiFollowNotification extends BaseAPiNotification {
-    type: "follow" | "unfollow" | "ignore";
+    type: "follow" | "unfollow" | "ignore" | "blacklist";
     follower: string;
     following: string;
     blog: boolean;

@@ -193,7 +193,8 @@ export const NotificationListItem = memo(function NotificationListItem({
           )}
           {(notification.type === "follow" ||
             notification.type === "unfollow" ||
-            notification.type === "ignore") && (
+            notification.type === "ignore" ||
+            notification.type === "blacklist") && (
             <NotificationFollowType sourceLink={sourceLink} notification={notification} />
           )}
           {notification.type === "reblog" && (
@@ -252,7 +253,7 @@ export const NotificationListItem = memo(function NotificationListItem({
           )}
           {![
             "vote", "unvote", "reply", "mention", "favorites", "bookmarks",
-            "follow", "unfollow", "ignore", "reblog", "transfer", "delegations",
+            "follow", "unfollow", "ignore", "blacklist", "reblog", "transfer", "delegations",
             "checkins", "checkin", "payouts", "monthly-posts", "monthly_posts",
             "spin", "inactive", "referral", "account_update", "weekly_earnings",
             "scheduled_published"

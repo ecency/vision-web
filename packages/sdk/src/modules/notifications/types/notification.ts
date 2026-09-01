@@ -50,7 +50,11 @@ export interface WsBookmarkNotification extends BaseWsNotification {
 }
 
 export interface WsFollowNotification extends BaseWsNotification {
-  type: "follow";
+  // The websocket carries the whole follow family, not just "follow": enotify's
+  // str_activity_type() emits unfollow / ignore / blacklist too, and they all share
+  // ACTIVITY_MAIN_TYPE_FOLLOW. Narrowing this to "follow" is what left the other three
+  // without a body, a link or a toggle mapping.
+  type: "follow" | "unfollow" | "ignore" | "blacklist";
   extra: {
     what: string[];
   };
@@ -168,7 +172,7 @@ export interface ApiMentionNotification extends BaseAPiNotification {
 }
 
 export interface ApiFollowNotification extends BaseAPiNotification {
-  type: "follow" | "unfollow" | "ignore";
+  type: "follow" | "unfollow" | "ignore" | "blacklist";
   follower: string;
   following: string;
   blog: boolean;

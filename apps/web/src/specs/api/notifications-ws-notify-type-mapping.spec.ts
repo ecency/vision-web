@@ -42,6 +42,16 @@ describe("NotificationsWebSocket.getNotificationType", () => {
     expect(missing).toEqual([]);
   });
 
+  it("maps the whole follow family to the Follows toggle", () => {
+    // enotify's str_activity_type() emits all four over the websocket and they share
+    // ACTIVITY_MAIN_TYPE_FOLLOW, so one toggle governs them. Leaving unfollow/ignore/
+    // blacklist unmapped returned null, which the delivery gate reads as always-allowed,
+    // so turning Follows off did not silence them.
+    for (const wireType of ["follow", "unfollow", "ignore", "blacklist"]) {
+      expect(ws.getNotificationType(wireType)).toBe(NotifyTypes.FOLLOW);
+    }
+  });
+
   it("returns null for types with no per-type toggle", () => {
     // These are intentionally always-allowed, gated only by the global switch.
     expect(ws.getNotificationType("checkins")).toBeNull();
@@ -102,5 +112,26 @@ describe("NotificationsWebSocket body for account_update", () => {
       accounts: "@alice"
     });
     spy.mockRestore();
+  });
+});
+
+/**
+ * getBody() returning "" makes the delivery path drop the notification entirely, so a
+ * type the server can send but this switch has no branch for is silently undeliverable.
+ * unfollow, ignore and blacklist were in exactly that state.
+ */
+describe("NotificationsWebSocket body for the follow family", () => {
+  const getBody = (type: string) =>
+    (NotificationsWebSocket as any).getBody({ type, source: "alice", extra: { what: [] } });
+
+  it.each([
+    ["follow", "notification.followed"],
+    ["unfollow", "notification.unfollowed"],
+    ["ignore", "notification.ignored"],
+    ["blacklist", "notification.blacklisted"]
+  ])("gives %s a non-empty body", (type, expected) => {
+    const body = getBody(type);
+    expect(body).toBe(expected);
+    expect(body).not.toBe("");
   });
 });
