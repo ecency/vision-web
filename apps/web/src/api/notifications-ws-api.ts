@@ -40,6 +40,12 @@ export class NotificationsWebSocket {
         return i18next.t("notification.bookmark", { source });
       case "follow":
         return i18next.t("notification.followed", { source });
+      case "unfollow":
+        return i18next.t("notification.unfollowed", { source });
+      case "ignore":
+        return i18next.t("notification.ignored", { source });
+      case "blacklist":
+        return i18next.t("notification.blacklisted", { source });
       case "reply":
         return i18next.t("notification.replied", { source });
       case "reblog":
@@ -180,6 +186,10 @@ export class NotificationsWebSocket {
         // keeps this table identical to the push one.
         return toEntry(data.source, data.extra?.permlink);
       case "follow":
+      case "unfollow":
+      case "ignore":
+      case "blacklist":
+        // The whole follow family points at the actor's profile, never at an entry.
         return toProfile(data.source);
       case "transfer":
       case "delegations":
@@ -357,6 +367,12 @@ export class NotificationsWebSocket {
       case "mention":
         return NotifyTypes.MENTION;
       case "follow":
+      case "unfollow":
+      case "ignore":
+      case "blacklist":
+        // All four share ACTIVITY_MAIN_TYPE_FOLLOW server side, so they ride one
+        // toggle. Leaving them unmapped returned null, which this gate reads as
+        // always-allowed, so the user's Follows switch did not apply to them.
         return NotifyTypes.FOLLOW;
       case "reply":
         return NotifyTypes.COMMENT;

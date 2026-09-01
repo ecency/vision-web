@@ -30,6 +30,14 @@ const entry = (type: string, permlink = "a-permlink") => ({
   extra: { permlink }
 });
 
+describe("NotificationsWebSocket.getLink follow family", () => {
+  // The whole family points at the actor's profile. None of them carry a permlink, so
+  // resolving one as an entry would build a URL that cannot exist.
+  it.each(["follow", "unfollow", "ignore", "blacklist"])("links %s to the actor", (type) => {
+    expect(getLink({ type, source: "actor", target: "recipient" })).toBe("/@actor");
+  });
+});
+
 describe("NotificationsWebSocket.getLink entry authorship", () => {
   it.each([
     // The recipient's own post was acted on.

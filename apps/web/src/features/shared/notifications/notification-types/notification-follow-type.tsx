@@ -21,6 +21,9 @@ export function NotificationFollowType({ notification, sourceLink }: Props) {
         {notification.type === "ignore" && (
           <span className="ignore-label">{i18next.t("notifications.ignored-str")}</span>
         )}
+        {notification.type === "blacklist" && (
+          <span className="blacklist-label">{i18next.t("notifications.blacklisted-str")}</span>
+        )}
       </div>
     </div>
   );
