@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.95
+
+### Patch Changes
+
+- fix(notifications): handle the whole follow family, not just follow (#1708)
+
 ## 2.3.94
 
 ### Patch Changes
