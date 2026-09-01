@@ -20,6 +20,11 @@ services:
       # Shared secret for the internal SSR RPC cache (/private-api/ssr/*); the
       # web service sends it on every proxied read. Unset = those routes are off.
       - SSR_INTERNAL_SECRET
+      # Shared secret vapi presents to enotify to unlock a user's OWN complete
+      # notification feed. enotify defaults to chain-derived activity only and
+      # fails closed, so unset means every user silently loses favorites,
+      # bookmarks, Points transfers and the aggregates from their own list.
+      - ENOTIFY_INTERNAL_TOKEN
       # Upstream fills the SSR RPC cache may run at once, and how many may wait
       # for a slot. An origin with ~90 misses/s against a 200-900ms node path
       # needs 45-85 fills in flight; the defaults (64/256) queued fills past the
