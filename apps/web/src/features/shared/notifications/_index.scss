@@ -222,7 +222,8 @@
 
             .follow-label,
             .unfollow-label,
-            .ignore-label {
+            .ignore-label,
+            .blacklist-label {
               border-radius: 25px;
               @apply text-white;
               display: inline-block;
@@ -240,6 +241,13 @@
 
             .ignore-label {
               @apply bg-red-030;
+            }
+
+            // Darkest of the family, matching that blacklist is its harshest member.
+            // Deliberately not a brighter red: red-040 (#ec3323) is only 4.15:1 against
+            // white, under AA for 12px text, while red-030 is already taken by ignore.
+            .blacklist-label {
+              @apply bg-blue-dark-grey;
             }
           }
         }
