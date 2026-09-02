@@ -45,6 +45,7 @@ export function NotificationsActions({ filter }: Props) {
     [NotifyTypes.ACCOUNT_UPDATE]: false,
     [NotifyTypes.WEEKLY_EARNINGS]: false,
     [NotifyTypes.SCHEDULED_PUBLISHED]: false,
+    [NotifyTypes.TAGS]: false,
     [NotifyTypes.ALLOW_NOTIFY]: false
   });
 
@@ -233,6 +234,9 @@ export function NotificationsActions({ filter }: Props) {
               i18next.t(`notifications.type-nbookmarks`),
               NotifyTypes.BOOKMARKS
             )}
+          </DropdownItem>
+          <DropdownItem>
+            {getNotificationSettingsItem(i18next.t(`notifications.type-tags`), NotifyTypes.TAGS)}
           </DropdownItem>
           <DropdownItem>
             {getNotificationSettingsItem(

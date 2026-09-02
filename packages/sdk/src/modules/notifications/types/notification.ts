@@ -123,6 +123,24 @@ export interface WsReferralNotification extends BaseWsNotification {
   type: "referral";
 }
 
+/**
+ * A post carrying a hashtag the user follows (enotify `tags`, main type 23).
+ * Two shapes share the type: a single post, where `source` is its author and
+ * `permlink` is set, and an hourly bundle for a busy tag, where `source` is
+ * "ecency", `count` is set and there is no permlink.
+ */
+export interface WsTagsNotification extends BaseWsNotification {
+  type: "tags";
+  extra: {
+    /** The followed tag that matched, normalised (lowercase, no `#`). */
+    tag: string;
+    permlink?: string;
+    title?: string | null;
+    img_url?: string | null;
+    count?: number;
+  };
+}
+
 export type WsNotification =
   | WsVoteNotification
   | WsMentionNotification
@@ -136,7 +154,8 @@ export type WsNotification =
   | WsSpinNotification
   | WsInactiveNotification
   | WsReferralNotification
-  | WsDelegationsNotification;
+  | WsDelegationsNotification
+  | WsTagsNotification;
 
 // HTTP api notification _types
 
@@ -282,6 +301,23 @@ export interface ApiNotificationSetting {
   status: number; //0|1
 }
 
+/**
+ * A post carrying a hashtag the user follows. Per-post rows carry the post and
+ * name its author in `source`; bundle rows carry `count` and up to three of the
+ * posts in `latest`, with `source` "ecency" and no permlink.
+ */
+export interface ApiTagsNotification extends BaseAPiNotification {
+  type: "tags";
+  /** Normalised (lowercase, no `#`). */
+  tag: string;
+  author?: string;
+  permlink?: string;
+  title?: string | null;
+  img_url?: string | null;
+  count?: number;
+  latest?: { author: string; permlink: string; title: string | null }[];
+}
+
 export type ApiNotification =
   | ApiVoteNotification
   | ApiMentionNotification
@@ -297,7 +333,8 @@ export type ApiNotification =
   | ApiReferralNotification
   | ApiDelegationsNotification
   | ApiWeeklyEarningsNotification
-  | ApiScheduledPublishedNotification;
+  | ApiScheduledPublishedNotification
+  | ApiTagsNotification;
 
 export interface Notifications {
   filter: NotificationFilter | null;

@@ -69,6 +69,10 @@ export const NOTIFICATION_CONTENT_TYPES = [
     type: "nbookmarks"
   },
   {
+    title: i18next.t("decks.columns.tags"),
+    type: "tags"
+  },
+  {
     title: i18next.t("decks.columns.follows"),
     type: "follows"
   },
@@ -102,8 +106,8 @@ export const NOTIFICATION_CONTENT_TYPES = [
  * Notification content types that are Ecency-only rather than chain-derived, so they are
  * served solely to the account they belong to.
  *
- * nfavorites and nbookmarks reveal who a user has favorited and what they saved, and
- * scheduled_published is Ecency scheduling metadata. vision-api downgrades a request for
+ * nfavorites and nbookmarks reveal who a user has favorited and what they saved, tags
+ * reveals which hashtags they follow, and scheduled_published is Ecency scheduling metadata. vision-api downgrades a request for
  * another account's notifications to scope=public, which makes enotify withhold these, so
  * a column built for someone else with one of these types would render permanently empty.
  * They are hidden in the picker instead.
@@ -113,6 +117,7 @@ export const NOTIFICATION_CONTENT_TYPES = [
 export const SELF_ONLY_NOTIFICATION_CONTENT_TYPES = [
   "nfavorites",
   "nbookmarks",
+  "tags",
   "scheduled_published"
 ];
 

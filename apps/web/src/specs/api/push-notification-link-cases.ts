@@ -69,6 +69,33 @@ export const PUSH_LINK_CASES: PushLinkCase[] = [
     expected: "https://ecency.com/@author/a-permlink"
   },
 
+  // A followed tag: one post by the actor, or an hourly bundle that opens the tag feed.
+  {
+    name: "tag opens the new post by its author",
+    data: { type: "tag", source: "alice", target: "recipient", tag: "photography", ...permlinkParts },
+    expected: "https://ecency.com/@alice/a-permlink"
+  },
+  {
+    name: "a tag bundle opens the tag's feed",
+    data: { type: "tag", source: "ecency", target: "recipient", tag: "photography", count: "12" },
+    expected: "https://ecency.com/created/photography"
+  },
+  {
+    name: "a tag bundle with a forged tag opens the recipient's profile, not the forged path",
+    data: { type: "tag", source: "ecency", target: "recipient", tag: "../evil", count: "12" },
+    expected: "https://ecency.com/@recipient"
+  },
+  {
+    name: "a tag bundle with a slash in the tag opens the recipient's profile",
+    data: { type: "tag", source: "ecency", target: "recipient", tag: "a/b", count: "3" },
+    expected: "https://ecency.com/@recipient"
+  },
+  {
+    name: "a tag bundle naming no tag opens the recipient's profile",
+    data: { type: "tag", source: "ecency", target: "recipient", count: "3" },
+    expected: "https://ecency.com/@recipient"
+  },
+
   // Profiles and wallets.
   {
     name: "follow opens the follower's profile",

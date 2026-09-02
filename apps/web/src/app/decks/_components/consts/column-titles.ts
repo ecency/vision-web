@@ -15,6 +15,7 @@ export const notificationsTitles: Record<string, string> = {
   mentions: i18next.t("decks.columns.mentions"),
   nfavorites: i18next.t("decks.columns.favourites"),
   nbookmarks: i18next.t("decks.columns.bookmarks"),
+  tags: i18next.t("decks.columns.tags"),
   follows: i18next.t("decks.columns.follows"),
   replies: i18next.t("decks.columns.replies"),
   reblogs: i18next.t("decks.columns.reblogs"),

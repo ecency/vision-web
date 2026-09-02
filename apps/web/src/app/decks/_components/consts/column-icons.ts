@@ -17,6 +17,7 @@ export const ICONS: Record<string, any> = {
     mentions: mentionsIconSvg,
     nfavorites: favouritesIconSvg,
     nbookmarks: bookmarksIconSvg,
+    tags: topicsIconSvg,
     follows: followsIconSvg,
     replies: repliesIconSvg,
     reblogs: reblogsIconSvg,

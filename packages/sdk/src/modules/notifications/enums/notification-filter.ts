@@ -14,4 +14,5 @@ export enum NotificationFilter {
   // (`account_update`) - enotify routes on the plural form.
   ACCOUNT_UPDATES = "account_updates",
   WEEKLY_EARNINGS = "weekly_earnings",
+  TAGS = "tags",
 }

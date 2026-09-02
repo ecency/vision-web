@@ -25,7 +25,8 @@ describe("NotificationsWebSocket.getNotificationType", () => {
     ["delegations", NotifyTypes.DELEGATIONS],
     ["payouts", NotifyTypes.PAYOUTS],
     ["account_update", NotifyTypes.ACCOUNT_UPDATE],
-    ["weekly_earnings", NotifyTypes.WEEKLY_EARNINGS]
+    ["weekly_earnings", NotifyTypes.WEEKLY_EARNINGS],
+    ["tags", NotifyTypes.TAGS]
   ];
 
   it.each(TOGGLEABLE)("maps %s to its NotifyTypes value", (wireType, expected) => {

@@ -52,6 +52,11 @@ var ENTRY_BY_SOURCE = ['mention', 'reply', 'favorite', 'bookmark', 'scheduled_pu
 var PROFILE_BY_SOURCE = ['follow', 'unfollow', 'ignore'];
 // The recipient's own wallet, matching where the in-app link for these goes.
 var WALLET_BY_TARGET = ['transfer', 'delegation'];
+// A post carrying a followed tag. With a permlink it is one post by the actor;
+// without one it is an hourly bundle, which opens the tag's feed.
+var TAG_FEED_TYPES = ['tag'];
+// The shape of a tag on chain; anything else is not allowed into a URL.
+var TAG_SHAPE = /^[a-z0-9-]{1,32}$/;
 // Allowlist target pages so a forged/misconfigured push can't route to an
 // arbitrary ecency.com path. Add new deep-link targets here as they're
 // introduced.
@@ -86,6 +91,19 @@ function buildNotificationUrl(data) {
 
   if (WALLET_BY_TARGET.indexOf(type) !== -1) {
     return data.target ? base + '/@' + data.target + '/wallet' : base;
+  }
+
+  if (TAG_FEED_TYPES.indexOf(type) !== -1) {
+    var tagPermlink = joinPermlink(data);
+    if (tagPermlink && data.source) {
+      return base + '/@' + data.source + '/' + tagPermlink;
+    }
+    if (typeof data.tag === 'string' && TAG_SHAPE.test(data.tag)) {
+      return base + '/created/' + data.tag;
+    }
+    // A bundle naming no usable tag lands on the recipient's own profile, like
+    // any other payload this table cannot place.
+    return data.target ? base + '/@' + data.target : base;
   }
 
   var isEntryBySource = ENTRY_BY_SOURCE.indexOf(type) !== -1;

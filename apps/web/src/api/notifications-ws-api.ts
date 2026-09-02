@@ -36,6 +36,14 @@ export class NotificationsWebSocket {
           : i18next.t("notification.mention-comment", { source });
       case "favorites":
         return i18next.t("notification.favorite", { source });
+      case "tags": {
+        // One post carries the tag, or an hourly bundle of them for a busy tag.
+        const tag = data.extra?.tag ?? "";
+        const count = Number(data.extra?.count ?? 0);
+        return count > 0
+          ? i18next.t("notification.tags-bundle", { count, tag })
+          : i18next.t("notification.tags", { source, tag });
+      }
       case "bookmarks":
         return i18next.t("notification.bookmark", { source });
       case "follow":
@@ -166,6 +174,10 @@ export class NotificationsWebSocket {
     };
     const toProfile = (username?: string, suffix = "") =>
       typeof username === "string" && username ? `/@${username}${suffix}` : undefined;
+    // A tag is a lowercase word with digits and hyphens; anything else stays
+    // out of the URL, so a forged payload cannot route beyond a tag feed.
+    const toTagFeed = (tag?: unknown) =>
+      typeof tag === "string" && /^[a-z0-9-]{1,32}$/.test(tag) ? `/created/${tag}` : undefined;
 
     switch (data.type) {
       case "vote":
@@ -191,6 +203,11 @@ export class NotificationsWebSocket {
       case "blacklist":
         // The whole follow family points at the actor's profile, never at an entry.
         return toProfile(data.source);
+      case "tags":
+        // A single post is the actor's; a bundle has no post and opens the tag feed.
+        return data.extra?.permlink
+          ? toEntry(data.source, data.extra.permlink)
+          : toTagFeed(data.extra?.tag);
       case "transfer":
       case "delegations":
         return toProfile(data.target, "/wallet");
@@ -394,6 +411,8 @@ export class NotificationsWebSocket {
         return NotifyTypes.ACCOUNT_UPDATE;
       case "weekly_earnings":
         return NotifyTypes.WEEKLY_EARNINGS;
+      case "tags":
+        return NotifyTypes.TAGS;
       default:
         // Types without a user-facing settings toggle (checkins, monthly-posts,
         // spin, inactive, referral) have no per-type opt-out, so they're treated
