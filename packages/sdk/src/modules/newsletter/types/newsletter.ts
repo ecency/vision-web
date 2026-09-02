@@ -1,4 +1,4 @@
-export type DigestType = "own" | "community" | "creator" | "site";
+export type DigestType = "own" | "community" | "creator" | "site" | "tag";
 export type DigestCadence = "weekly" | "monthly";
 export type DigestStatus = "active" | "pending_confirmation" | "suppressed" | "ended";
 
@@ -29,7 +29,9 @@ export type DigestSubscribeSource =
   | "publish-prompt"
   | "post-page"
   | "self-hosted-blog"
-  | "mobile-app";
+  | "mobile-app"
+  | "tag-page"
+  | "tag-chip";
 
 export interface DigestSubscribeInput {
   email: string;

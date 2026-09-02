@@ -1955,7 +1955,10 @@
     "added": "Following tag! You'll be notified when new posts are published",
     "delete": "Unfollow tag and stop notifications",
     "deleted": "Unfollowed tag",
-    "header-hint": "Follow to get notified about new posts with this tag"
+    "header-hint": "Follow to get notified about new posts with this tag",
+    "anon-title": "Follow #{{tag}}",
+    "anon-body": "Log in to follow this tag and get notified about new posts, or get its best posts as a weekly or monthly email instead.",
+    "anon-login": "Log in to follow"
   },
   "editor-toolbar": {
     "bold": "Bold (Ctrl + B)",
@@ -4144,6 +4147,7 @@
   },
   "newsletter": {
     "button": "Email digest",
+    "button-tag": "Get #{{name}} by email",
     "button-subscribed": "Digest: {{cadence}}",
     "button-pending": "Digest: confirm email",
     "button-title": "Get a digest of this by email",
@@ -4209,12 +4213,16 @@
     "error-gateway": "The digest service did not answer. Please try again in a moment.",
     "error-captcha": "That verification did not go through. Please try the check again.",
     "error-too-many": "Too many signups from your network today. Please try again tomorrow.",
+    "error-tag-quiet": "This tag does not have enough recent authors for a digest yet. Try again once more people post with it.",
     "row-site": "Ecency digest",
+    "row-tag": "Posts tagged #{{name}}",
     "row-unknown": "Digest ({{type}})",
     "own-digest": "Your notification digest by email",
     "site-digest": "Ecency digest by email",
+    "tag-digest": "{{name}} digest by email",
     "intro-own": "Get a summary of what happened on your posts, mentions and followers delivered to your inbox. You choose how often, and you can leave from any email.",
     "intro-site": "Get a summary of the best new posts across Ecency delivered to your inbox. You choose how often, and you can leave from any email.",
+    "intro-tag": "Get a summary of the best new posts tagged {{name}} delivered to your inbox. You choose how often, and you can unsubscribe any time.",
     "prompt-title": "Want a digest of your Ecency activity by email?",
     "prompt-body": "Replies, mentions and new followers, once a week or once a month. Nothing is sent until you confirm your address, and you can leave from any email.",
     "prompt-accept": "Yes, set it up",

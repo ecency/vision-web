@@ -15,7 +15,8 @@ import { UilCheck, UilPlus, UilSpinner } from "@tooni/iconscout-unicons-react";
 import { Button } from "@ui/button";
 import { Tooltip } from "@ui/tooltip";
 import i18next from "i18next";
-import { KeyboardEvent, MouseEvent, useCallback, useMemo } from "react";
+import { KeyboardEvent, MouseEvent, useCallback, useMemo, useState } from "react";
+import { AnonFollowTagDialog } from "./anon-follow-tag-dialog";
 
 /**
  * A user can follow at most this many tags (the server refuses the next one), and
@@ -47,12 +48,15 @@ export function useFollowTag(rawTag: string) {
   const tag = useMemo(() => normalizeTag(rawTag), [rawTag]);
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username;
-  const accessToken = useMemo(
-    () => (username ? getAccessToken(username) : undefined),
-    [username]
-  );
+  const accessToken = useMemo(() => (username ? getAccessToken(username) : undefined), [username]);
 
-  const { tags: data, isPending, isFetching, isError, refetch } = useFollowedTags(username, accessToken);
+  const {
+    tags: data,
+    isPending,
+    isFetching,
+    isError,
+    refetch
+  } = useFollowedTags(username, accessToken);
   // Pending state shared across every control for this user on the page (the tag
   // feed header and the Topics card can both show the same tag), so two clicks
   // cannot both send an add before the list refreshes.
@@ -71,10 +75,7 @@ export function useFollowTag(rawTag: string) {
   );
 
   const canMutate = !!username && !!accessToken;
-  const followed = useMemo(
-    () => !!tag && (data?.some((f) => f.tag === tag) ?? false),
-    [data, tag]
-  );
+  const followed = useMemo(() => !!tag && (data?.some((f) => f.tag === tag) ?? false), [data, tag]);
   // While the list is being (re)fetched its answer is not known: after an add the
   // SDK invalidates it, and in that window a stale "unfollowed" with an enabled
   // control would accept a second add. isPending alone misses it, since cached
@@ -122,7 +123,14 @@ interface FollowTagBtnProps {
 
 /** The Follow / Following button on a tag feed's header. */
 export function FollowTagBtn({ tag, size = "sm" }: FollowTagBtnProps) {
-  const { tag: normalized, followed, inProgress, canMutate, isLoggedIn, toggle } = useFollowTag(tag);
+  const {
+    tag: normalized,
+    followed,
+    inProgress,
+    canMutate,
+    isLoggedIn,
+    toggle
+  } = useFollowTag(tag);
 
   if (!normalized) {
     return null;
@@ -178,7 +186,16 @@ interface FollowTagChipToggleProps {
  * is not a followable tag (a community, or a tag outside the allowed shape).
  */
 export function FollowTagChipToggle({ tag }: FollowTagChipToggleProps) {
-  const { tag: normalized, followed, inProgress, canMutate, isLoggedIn, toggle } = useFollowTag(tag);
+  const {
+    tag: normalized,
+    followed,
+    inProgress,
+    canMutate,
+    isLoggedIn,
+    toggle
+  } = useFollowTag(tag);
+  // A signed-out reader's choice: log in to follow, or the tag's email digest.
+  const [anonOpen, setAnonOpen] = useState(false);
 
   if (!normalized) {
     return null;
@@ -195,6 +212,10 @@ export function FollowTagChipToggle({ tag }: FollowTagChipToggleProps) {
   const activate = (e: MouseEvent | KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isLoggedIn) {
+      setAnonOpen(true);
+      return;
+    }
     if (!disabled) {
       void toggle();
     }
@@ -242,5 +263,15 @@ export function FollowTagChipToggle({ tag }: FollowTagChipToggleProps) {
     </span>
   );
 
-  return isLoggedIn ? control : <LoginRequired promptOnAnon>{control}</LoginRequired>;
+  if (isLoggedIn) {
+    return control;
+  }
+  return (
+    <>
+      {control}
+      {anonOpen && (
+        <AnonFollowTagDialog tag={normalized} show={anonOpen} onHide={() => setAnonOpen(false)} />
+      )}
+    </>
+  );
 }

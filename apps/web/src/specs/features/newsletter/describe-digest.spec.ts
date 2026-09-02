@@ -9,6 +9,7 @@ describe("describeDigest", () => {
     expect(describeDigest("creator", "alice")).toBe("newsletter.row-creator");
     expect(describeDigest("site", "ecency")).toBe("newsletter.row-site");
     expect(describeDigest("own", "alice")).toBe("newsletter.row-own");
+    expect(describeDigest("tag", "photography")).toBe("newsletter.row-tag");
     expect(describeDigest("something-new", "x")).toBe("newsletter.row-unknown");
   });
 });

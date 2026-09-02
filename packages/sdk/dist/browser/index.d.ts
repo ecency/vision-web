@@ -9961,7 +9961,7 @@ declare class NewsletterSendRefusedError extends NewsletterApiError {
     }> | undefined, data?: unknown);
 }
 
-type DigestType = "own" | "community" | "creator" | "site";
+type DigestType = "own" | "community" | "creator" | "site" | "tag";
 type DigestCadence = "weekly" | "monthly";
 type DigestStatus = "active" | "pending_confirmation" | "suppressed" | "ended";
 /** The two list types that have a sender side (own/site digests are system-sent). */
@@ -9981,7 +9981,7 @@ interface DigestSubscription {
  * (apps/web/src/app/api/newsletter/subscribe/route.ts SOURCES) — a value the
  * route does not accept is a silent 400, so additions land there first.
  */
-type DigestSubscribeSource = "community-page" | "creator-page" | "settings" | "landing-page" | "publish-prompt" | "post-page" | "self-hosted-blog" | "mobile-app";
+type DigestSubscribeSource = "community-page" | "creator-page" | "settings" | "landing-page" | "publish-prompt" | "post-page" | "self-hosted-blog" | "mobile-app" | "tag-page" | "tag-chip";
 interface DigestSubscribeInput {
     email: string;
     type: DigestType;
