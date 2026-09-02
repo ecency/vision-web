@@ -5,6 +5,12 @@ import { ApiTagsNotification } from "@/entities";
 import { EntryLink } from "@/features/shared";
 import { getNotificationEntryCategory } from "../utils";
 
+/**
+ * The shape of a tag on chain. The websocket and push routers hold a tag to it
+ * before it enters a URL; a row must too, since the API row is the same data.
+ */
+const TAG_SHAPE = /^[a-z0-9-]{1,32}$/;
+
 interface Props {
   sourceLink: ReactElement;
   onLinkClick?: () => void;
@@ -26,6 +32,9 @@ export function NotificationTagsType({
   openLinksInNewTab
 }: Props) {
   const tag = notification.tag;
+  // Only a well-formed tag may reach a URL; anything else is shown as text and
+  // never linked, so a malformed row cannot route beyond a tag feed.
+  const safeTag = typeof tag === "string" && TAG_SHAPE.test(tag) ? tag : null;
   const isBundle = !notification.permlink;
   const target = openLinksInNewTab ? "_blank" : undefined;
 
@@ -38,16 +47,18 @@ export function NotificationTagsType({
             {i18next.t("notifications.tags-bundle-str", { count: notification.count ?? 0 })}
           </span>
         </div>
-        <div className="second-line">
-          <Link
-            href={`/created/${tag}`}
-            className="post-link"
-            target={target}
-            onClick={afterClick}
-          >
-            {i18next.t("notifications.tags-bundle-link", { tag })}
-          </Link>
-        </div>
+        {safeTag && (
+          <div className="second-line">
+            <Link
+              href={`/created/${safeTag}`}
+              className="post-link"
+              target={target}
+              onClick={afterClick}
+            >
+              {i18next.t("notifications.tags-bundle-link", { tag: safeTag })}
+            </Link>
+          </div>
+        )}
       </div>
     );
   }
@@ -77,7 +88,7 @@ export function NotificationTagsType({
         ) : (
           <EntryLink
             entry={{
-              category: getNotificationEntryCategory(notification) ?? tag,
+              category: getNotificationEntryCategory(notification) ?? safeTag ?? "created",
               author: notification.author ?? notification.source,
               permlink: notification.permlink!
             }}

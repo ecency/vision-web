@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, expect, it, vi } from "vitest";
 import { ApiTagsNotification } from "@/entities";
@@ -82,6 +82,72 @@ describe("NotificationTagsType", () => {
       "href",
       "/created/photography"
     );
+    expect(screen.queryByTestId("entry-link")).not.toBeInTheDocument();
+  });
+
+  // The websocket and push routers refuse a malformed tag before it reaches a
+  // URL; the row is the same data and must refuse it the same way.
+  it.each(["../evil", "a/b", "a?x=1", "../@user", ""])("never links a bundle whose tag is %j", (tag) => {
+    const notification: ApiTagsNotification = { ...base, tag, source: "ecency", count: 3 };
+
+    render(
+      <NotificationTagsType
+        sourceLink={<span>@ecency</span>}
+        afterClick={vi.fn()}
+        notification={notification}
+        openLinksInNewTab={false}
+      />
+    );
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the created feed as category when the tag is malformed", () => {
+    const notification: ApiTagsNotification = {
+      ...base,
+      tag: "a/b",
+      source: "alice",
+      author: "alice",
+      permlink: "sunset",
+      title: null,
+      img_url: null
+    };
+
+    render(
+      <NotificationTagsType
+        sourceLink={<span>@alice</span>}
+        afterClick={vi.fn()}
+        notification={notification}
+        openLinksInNewTab={false}
+      />
+    );
+
+    expect(screen.getByTestId("entry-link")).toHaveAttribute("href", "/created/@alice/sunset");
+  });
+
+  it("uses the deck's own click handler for a single post", () => {
+    const onLinkClick = vi.fn();
+    const notification: ApiTagsNotification = {
+      ...base,
+      source: "alice",
+      author: "alice",
+      permlink: "sunset",
+      title: "Sunset",
+      img_url: null
+    };
+
+    render(
+      <NotificationTagsType
+        sourceLink={<span>@alice</span>}
+        onLinkClick={onLinkClick}
+        afterClick={vi.fn()}
+        notification={notification}
+        openLinksInNewTab={false}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sunset" }));
+    expect(onLinkClick).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId("entry-link")).not.toBeInTheDocument();
   });
 });
