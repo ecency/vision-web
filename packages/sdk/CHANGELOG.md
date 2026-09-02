@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.98
+
+### Patch Changes
+
+- Offer a tag digest by email on tag pages and chips (#1720)
+
 ## 2.3.97
 
 ### Patch Changes
