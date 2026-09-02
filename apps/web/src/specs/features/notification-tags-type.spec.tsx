@@ -27,8 +27,7 @@ const base = {
   ts: 1,
   gk: "g",
   gkf: true,
-  type: "tags" as const,
-  tag: "photography"
+  type: "tags" as const
 };
 
 describe("NotificationTagsType", () => {
@@ -42,6 +41,7 @@ describe("NotificationTagsType", () => {
       title: "Sunset over the bay",
       img_url: null
     };
+
 
     render(
       <NotificationTagsType
@@ -62,6 +62,7 @@ describe("NotificationTagsType", () => {
   it("links a bundle to the tag's feed and names the tag, not @ecency", () => {
     const notification: ApiTagsNotification = {
       ...base,
+      tag: "photography",
       source: "ecency",
       count: 12,
       latest: [{ author: "alice", permlink: "sunset", title: "Sunset" }]
@@ -89,7 +90,7 @@ describe("NotificationTagsType", () => {
   // The websocket and push routers refuse a malformed tag before it reaches a
   // URL; the row is the same data and must refuse it the same way.
   it.each(["../evil", "a/b", "a?x=1", "../@user", ""])("never links a bundle whose tag is %j", (tag) => {
-    const notification: ApiTagsNotification = { ...base, tag, source: "ecency", count: 3 };
+    const notification: ApiTagsNotification = { ...base, tag, source: "ecency", count: 3, latest: [] };
 
     render(
       <NotificationTagsType
@@ -106,7 +107,6 @@ describe("NotificationTagsType", () => {
   it("falls back to the created feed as category when the tag is malformed", () => {
     const notification: ApiTagsNotification = {
       ...base,
-      tag: "a/b",
       source: "alice",
       tags: ["a/b"],
       author: "alice",
@@ -127,20 +127,17 @@ describe("NotificationTagsType", () => {
     expect(screen.getByTestId("entry-link")).toHaveAttribute("href", "/created/@alice/sunset");
   });
 
-  // The producer sends `tag` on both shapes, but a post row also lists every
-  // followed tag it matched; should `tag` ever be missing, the first of those
-  // is what the row shows, never an empty hashtag.
-  it("falls back to the first matched tag when a post row carries only the list", () => {
-    const notification = {
+  // A post shows the first of the tags it matched, however many there are.
+  it("shows the first matched tag of a post that matched several", () => {
+    const notification: ApiTagsNotification = {
       ...base,
-      tag: undefined,
       source: "alice",
       tags: ["contest-2026", "hive"],
       author: "alice",
       permlink: "entry",
       title: null,
       img_url: null
-    } as unknown as ApiTagsNotification;
+    };
 
     render(
       <NotificationTagsType

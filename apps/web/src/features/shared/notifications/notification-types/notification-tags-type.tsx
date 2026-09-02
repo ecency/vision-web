@@ -31,9 +31,9 @@ export function NotificationTagsType({
   afterClick,
   openLinksInNewTab
 }: Props) {
-  // A post lists every followed tag it matched; `tag` is the first, the one to
-  // show, and the list is the fallback should a row arrive without it.
-  const tag = notification.tag || notification.tags?.[0] || "";
+  // A post lists every followed tag it matched and shows the first; a bundle
+  // names its one tag.
+  const tag = notification.tags?.[0] || notification.tag || "";
   // Only a well-formed tag may reach a URL; anything else is shown as text and
   // never linked, so a malformed row cannot route beyond a tag feed.
   const safeTag = TAG_SHAPE.test(tag) ? tag : null;

@@ -179,21 +179,23 @@ export interface WsScheduledPublishedNotification extends BaseWsNotification {
  * Two shapes share the type, told apart by `permlink` (a single post, whose
  * author is `source`) versus `count` (an hourly bundle for a busy tag, sent
  * with `source` "ecency"). A post carries every followed tag it matched in
- * `tags`; `tag` is the one to show, the first of them.
+ * `tags`, normalised (lowercase, no `#`); the first is the one to show. A
+ * bundle names its one tag in `tag`.
  */
 export interface WsTagsPostExtra {
-  /** Normalised (lowercase, no `#`). */
-  tag: string;
+  author: string;
   tags: string[];
   permlink: string;
   title: string | null;
   img_url: string | null;
+  tag?: undefined;
   count?: undefined;
 }
 
 export interface WsTagsBundleExtra {
   tag: string;
   count: number;
+  author?: undefined;
   tags?: undefined;
   permlink?: undefined;
   title?: undefined;
@@ -403,12 +405,11 @@ export interface ApiNotificationSetting {
  * A post carrying a hashtag the user follows. A single post names its author in
  * `source` and carries the post plus every followed tag it matched; a bundle
  * (busy tag, one row an hour) carries `count` and up to three of the posts in
- * `latest`, with `source` "ecency". `tag` is the one to show on both.
+ * `latest`, with `source` "ecency". Tags are normalised (lowercase, no `#`);
+ * a post shows the first of its `tags`, a bundle its one `tag`.
  */
 interface ApiTagsNotificationBase extends BaseAPiNotification {
   type: "tags";
-  /** Normalised (lowercase, no `#`). */
-  tag: string;
 }
 
 export interface ApiTagsPostNotification extends ApiTagsNotificationBase {
@@ -417,11 +418,13 @@ export interface ApiTagsPostNotification extends ApiTagsNotificationBase {
   permlink: string;
   title: string | null;
   img_url: string | null;
+  tag?: undefined;
   count?: undefined;
   latest?: undefined;
 }
 
 export interface ApiTagsBundleNotification extends ApiTagsNotificationBase {
+  tag: string;
   count: number;
   latest: { author: string; permlink: string; title: string | null }[];
   tags?: undefined;

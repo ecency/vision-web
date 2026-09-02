@@ -38,8 +38,9 @@ export class NotificationsWebSocket {
         return i18next.t("notification.favorite", { source });
       case "tags": {
         // One post carries the tag, or an hourly bundle of them for a busy tag.
-        // A post lists every followed tag it matched; the first is the one to show.
-        const tag = data.extra?.tag || data.extra?.tags?.[0] || "";
+        // A post lists every followed tag it matched and shows the first; a
+        // bundle names its one tag.
+        const tag = data.extra?.tags?.[0] || data.extra?.tag || "";
         const count = Number(data.extra?.count ?? 0);
         return count > 0
           ? i18next.t("notification.tags-bundle", { count, tag })
