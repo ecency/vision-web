@@ -1947,6 +1947,15 @@
     "delete": "Remove favorite and stop notifications",
     "deleted": "Removed from favorites"
   },
+  "follow-tag": {
+    "follow": "Follow",
+    "following": "Following",
+    "add": "Follow tag - get notified about new posts",
+    "added": "Following tag! You'll be notified when new posts are published",
+    "delete": "Unfollow tag and stop notifications",
+    "deleted": "Unfollowed tag",
+    "header-hint": "Follow to get notified about new posts with this tag"
+  },
   "editor-toolbar": {
     "bold": "Bold (Ctrl + B)",
     "italic": "Italic (Ctrl + I)",
@@ -2419,6 +2428,10 @@
   "favorites": {
     "title": "Favorites",
     "hint": "You'll receive notifications when a favorite author publishes new content."
+  },
+  "favorite-tags": {
+    "title": "Tags",
+    "hint": "You'll receive notifications when new posts are published with a tag you follow."
   },
   "fragments": {
     "title": "Snippets",

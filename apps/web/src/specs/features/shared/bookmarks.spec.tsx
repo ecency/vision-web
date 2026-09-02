@@ -19,6 +19,10 @@ vi.mock("@/features/shared/bookmarks/favorites-list", () => ({
   FavoritesList: vi.fn(() => <div>Favorites List</div>)
 }));
 
+vi.mock("@/features/shared/bookmarks/favorite-tags-list", () => ({
+  FavoriteTagsList: vi.fn(() => <div>Favorite Tags List</div>)
+}));
+
 describe("BookmarksDialog", () => {
   const setShowMock = vi.fn();
 
@@ -77,6 +81,31 @@ describe("BookmarksDialog", () => {
 
     // Check if the favourites [...sections] is active and rendered
     expect(screen.getByText("Favorites List")).toBeInTheDocument();
+  });
+
+  test("switches to the tags tab when its menu item is clicked", () => {
+    useBookmarksQuery.mockReturnValue({ refetch: vi.fn() });
+    useFavouritesQuery.mockReturnValue({ refetch: vi.fn() });
+
+    render(<BookmarksDialog show={true} setShow={setShowMock} />, {
+      container: document.getElementById("modal-dialog-container")
+    });
+
+    fireEvent.click(screen.getByText("favorite-tags.title"));
+
+    expect(screen.getByText("Favorite Tags List")).toBeInTheDocument();
+    expect(screen.queryByText("Favorites List")).not.toBeInTheDocument();
+  });
+
+  test("opens on the tags tab when asked", () => {
+    useBookmarksQuery.mockReturnValue({ refetch: vi.fn() });
+    useFavouritesQuery.mockReturnValue({ refetch: vi.fn() });
+
+    render(<BookmarksDialog show={true} setShow={setShowMock} initialTab="tags" />, {
+      container: document.getElementById("modal-dialog-container")
+    });
+
+    expect(screen.getByText("Favorite Tags List")).toBeInTheDocument();
   });
 
   test("hides the modal when close button is clicked", () => {

@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { DEFAULT_OBSERVER } from "@/consts/observer";
 import { prefetchGetPostsFeedQuery } from "@/api/queries";
-import { FeedLayout, FeedList } from "../_components";
+import { FeedLayout, FeedList, TagFeedHeader } from "../_components";
+import { isCommunity } from "@/utils";
 import React from "react";
 import { Metadata, ResolvingMetadata } from "next";
 import { redirect } from "next/navigation";
@@ -121,6 +122,16 @@ export default async function FeedPage({ params, searchParams }: Props) {
   // have no pin-at-top semantics, so a short page means the tag really ended.
   const olderCursor = isTagHub && filter === "created" ? olderCursorToken(firstPage) : null;
 
+  // A plain hashtag's feed carries a follow header. Communities have their own
+  // card, `my` is the subscribed-communities feed, and the archive-only tags
+  // hivemind cannot query would only show an empty feed under it.
+  const showTagHeader =
+    queryable &&
+    tag !== "" &&
+    tag !== "my" &&
+    !isCommunity(tag) &&
+    ["trending", "hot", "created"].includes(filter);
+
   // Tag hubs get a BreadcrumbList (desktop SERPs show it in place of the raw URL trail).
   let breadcrumbJsonLd = null;
   if (isTagHub) {
@@ -140,6 +151,7 @@ export default async function FeedPage({ params, searchParams }: Props) {
         {/* Personal feed (/@user/feed) is where new users land after login;
             the card self-gates to fresh accounts and renders nothing otherwise. */}
         {filter === "feed" && <WavesOnboardingChecklist />}
+        {showTagHeader && <TagFeedHeader tag={tag} />}
         <FeedList filter={filter} tag={tag} observer={observer} />
         {olderCursor && (
           <EntryArchivePager basePath={basePath} olderCursor={olderCursor} showLatest={false} />
