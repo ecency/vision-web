@@ -41,10 +41,14 @@ vi.mock("@ecency/sdk", async () => {
       initialPageParam: 0,
       getNextPageParam: () => undefined
     })),
-    getFavoriteTagsQueryOptions: vi.fn((username?: string) => ({
-      queryKey: ["accounts", "favorite-tags", username],
-      queryFn: async () =>
-        followedTags.map((tag) => ({ _id: `id-${tag}`, tag, created: "", timestamp: 1 })),
+    getFavoriteTagsInfiniteQueryOptions: vi.fn((username?: string, _code?: string, limit = 10) => ({
+      queryKey: ["accounts", "favorite-tags", "infinite", username, limit],
+      queryFn: async () => ({
+        data: followedTags.map((tag) => ({ _id: `id-${tag}`, tag, created: "", timestamp: 1 })),
+        pagination: { total: followedTags.length, limit, offset: 0, has_next: false }
+      }),
+      initialPageParam: 0,
+      getNextPageParam: () => undefined,
       enabled: !!username
     })),
     useFavoriteTagAdd: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),

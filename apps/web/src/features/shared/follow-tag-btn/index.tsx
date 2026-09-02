@@ -4,12 +4,13 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { error, LoginRequired, success } from "@/features/shared";
 import { getAccessToken } from "@/utils";
 import {
-  getFavoriteTagsQueryOptions,
+  AccountFavoriteTag,
+  getFavoriteTagsInfiniteQueryOptions,
   normalizeTag,
   useFavoriteTagAdd,
   useFavoriteTagDelete
 } from "@ecency/sdk";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useIsMutating } from "@tanstack/react-query";
 import { UilCheck, UilPlus } from "@tooni/iconscout-unicons-react";
 import { Button } from "@ui/button";
 import { Tooltip } from "@ui/tooltip";
@@ -17,11 +18,30 @@ import i18next from "i18next";
 import { KeyboardEvent, MouseEvent, useCallback, useMemo } from "react";
 
 /**
+ * A user can follow at most this many tags (the server refuses the next one), and
+ * the list endpoint pages at this size at most, so one page is the whole list.
+ */
+export const FOLLOWED_TAGS_PAGE_SIZE = 100;
+
+/** The user's followed tags, as one page covering the cap. */
+export function useFollowedTags(username: string | undefined, accessToken: string | undefined) {
+  const query = useInfiniteQuery(
+    getFavoriteTagsInfiniteQueryOptions(username, accessToken, FOLLOWED_TAGS_PAGE_SIZE)
+  );
+  const tags = useMemo<AccountFavoriteTag[] | undefined>(
+    () => query.data?.pages.flatMap((page) => page.data),
+    [query.data]
+  );
+  return { ...query, tags };
+}
+
+/**
  * Follow state and actions for one hashtag.
  *
- * Reads the user's whole followed list (one request, cached, at most 100 rows)
- * rather than one check query per tag: a post footer shows up to ten chips at
- * once, and the Topics card thirty.
+ * Reads the user's whole followed list (one request, cached) rather than one
+ * check query per tag: a post footer shows up to ten chips at once, and the
+ * Topics card thirty. The paginated endpoint is used at the cap, since the
+ * plain list answers its default page of 20 and would misread the 21st tag.
  */
 export function useFollowTag(rawTag: string) {
   const tag = useMemo(() => normalizeTag(rawTag), [rawTag]);
@@ -32,7 +52,11 @@ export function useFollowTag(rawTag: string) {
     [username]
   );
 
-  const { data, isPending } = useQuery(getFavoriteTagsQueryOptions(username, accessToken));
+  const { tags: data, isPending, isError, refetch } = useFollowedTags(username, accessToken);
+  // Pending state shared across every control for this user on the page (the tag
+  // feed header and the Topics card can both show the same tag), so two clicks
+  // cannot both send an add before the list refreshes.
+  const isMutating = useIsMutating({ mutationKey: ["accounts", "favorite-tags"] }) > 0;
   const { mutateAsync: add, isPending: isAddPending } = useFavoriteTagAdd(
     username,
     accessToken,
@@ -51,18 +75,35 @@ export function useFollowTag(rawTag: string) {
     () => !!tag && (data?.some((f) => f.tag === tag) ?? false),
     [data, tag]
   );
-  const inProgress = isAddPending || isDeletePending || (canMutate && isPending);
+  const inProgress =
+    isAddPending || isDeletePending || isMutating || (canMutate && isPending && !isError);
 
   const toggle = useCallback(async () => {
     if (!tag || !canMutate || inProgress) {
       return;
     }
-    if (followed) {
-      await remove(tag);
-    } else {
-      await add(tag);
+    // A list that failed to load says nothing about the tag; a missing list
+    // would read every tag as unfollowed and send an add for one the user
+    // already follows. Ask again before acting, and act on that answer.
+    let list = isError ? undefined : data;
+    if (!list) {
+      list = (await refetch()).data?.pages.flatMap((page) => page.data);
+      if (!list) {
+        return;
+      }
     }
-  }, [add, canMutate, followed, inProgress, remove, tag]);
+    // The hooks already toast the failure; a rejection here would only surface
+    // as an unhandled promise in every control that fires and forgets.
+    try {
+      if (list.some((f) => f.tag === tag)) {
+        await remove(tag);
+      } else {
+        await add(tag);
+      }
+    } catch {
+      // reported by the mutation's onError
+    }
+  }, [add, canMutate, data, inProgress, isError, refetch, remove, tag]);
 
   return { tag, followed, inProgress, canMutate, isLoggedIn: !!activeUser, toggle };
 }

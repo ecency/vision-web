@@ -23,6 +23,8 @@ export function FavoriteTagsList({ onHide }: Props) {
   const {
     data,
     isPending: isLoading,
+    isError,
+    refetch,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage
@@ -58,7 +60,16 @@ export function FavoriteTagsList({ onHide }: Props) {
           )}
         </div>
       )}
-      {!isLoading && items.length === 0 && (
+      {!isLoading && isError && (
+        // A failed request is not an empty list; say so and offer to try again.
+        <div className="dialog-list flex flex-col items-start gap-2">
+          <span className="text-red">{i18next.t("g.server-error")}</span>
+          <Button size="sm" appearance="gray" onClick={() => refetch()}>
+            {i18next.t("g.retry", { defaultValue: "Retry" })}
+          </Button>
+        </div>
+      )}
+      {!isLoading && !isError && items.length === 0 && (
         <div className="dialog-list">{i18next.t("g.empty-list")}</div>
       )}
     </div>

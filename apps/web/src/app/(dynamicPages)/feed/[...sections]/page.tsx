@@ -62,6 +62,17 @@ export default async function FeedPage({ params, searchParams }: Props) {
   const basePath = `/${filter}/${tag}`;
   const cursor = queryable && isArchivableTag(filter, tag) ? parseArchiveCursor(before) : null;
 
+  // A plain hashtag's feed carries a follow header, on the live page and on the
+  // archive pages behind it alike. Communities have their own card, `my` is the
+  // subscribed-communities feed, and the tags hivemind cannot query would only
+  // show an empty feed under it.
+  const showTagHeader =
+    queryable &&
+    tag !== "" &&
+    tag !== "my" &&
+    !isCommunity(tag) &&
+    ["trending", "hot", "created"].includes(filter);
+
   // Cursor archive page: one O(1) fetch of the 20 posts older than the cursor,
   // fully server-rendered (no infinite scroll) with a crawlable pager.
   if (cursor) {
@@ -79,6 +90,7 @@ export default async function FeedPage({ params, searchParams }: Props) {
       >
         <div className="entry-list">
           <div className="entry-list-body">
+            {showTagHeader && <TagFeedHeader tag={tag} />}
             <EntryListContent
               username=""
               loading={false}
@@ -121,16 +133,6 @@ export default async function FeedPage({ params, searchParams }: Props) {
   // created chain already reaches every post). No pin-shrink here: tag feeds
   // have no pin-at-top semantics, so a short page means the tag really ended.
   const olderCursor = isTagHub && filter === "created" ? olderCursorToken(firstPage) : null;
-
-  // A plain hashtag's feed carries a follow header. Communities have their own
-  // card, `my` is the subscribed-communities feed, and the archive-only tags
-  // hivemind cannot query would only show an empty feed under it.
-  const showTagHeader =
-    queryable &&
-    tag !== "" &&
-    tag !== "my" &&
-    !isCommunity(tag) &&
-    ["trending", "hot", "created"].includes(filter);
 
   // Tag hubs get a BreadcrumbList (desktop SERPs show it in place of the raw URL trail).
   let breadcrumbJsonLd = null;

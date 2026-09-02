@@ -2,12 +2,12 @@
 
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
-import { FollowTagChipToggle } from "@/features/shared/follow-tag-btn";
+import { FollowTagChipToggle, useFollowedTags } from "@/features/shared/follow-tag-btn";
 import { TagLink } from "@/features/shared/tag";
 import { getAccessToken } from "@/utils";
 import { Button } from "@ui/button";
-import { getFavoriteTagsQueryOptions, getTrendingTagsQueryOptions } from "@ecency/sdk";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { getTrendingTagsQueryOptions } from "@ecency/sdk";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { UilMultiply } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
 import Link from "next/link";
@@ -35,7 +35,7 @@ export function TrendingTagsCard() {
   const { data: trendingTagsPages } = useInfiniteQuery(getTrendingTagsQueryOptions(250));
   // The user's followed tags come first, then the trending list without them,
   // so a followed topic is one click away and never listed twice.
-  const { data: favoriteTags } = useQuery(getFavoriteTagsQueryOptions(username, accessToken));
+  const { tags: favoriteTags } = useFollowedTags(username, accessToken);
   const pinnedTags = useMemo(() => favoriteTags?.map((f) => f.tag) ?? [], [favoriteTags]);
   const trendingTags = useMemo(() => {
     const first = trendingTagsPages?.pages[0];
