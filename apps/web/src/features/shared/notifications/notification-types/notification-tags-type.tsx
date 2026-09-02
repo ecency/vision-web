@@ -31,14 +31,15 @@ export function NotificationTagsType({
   afterClick,
   openLinksInNewTab
 }: Props) {
-  const tag = notification.tag;
+  // A post lists every followed tag it matched; `tag` is the first, the one to
+  // show, and the list is the fallback should a row arrive without it.
+  const tag = notification.tag || notification.tags?.[0] || "";
   // Only a well-formed tag may reach a URL; anything else is shown as text and
   // never linked, so a malformed row cannot route beyond a tag feed.
-  const safeTag = typeof tag === "string" && TAG_SHAPE.test(tag) ? tag : null;
-  const isBundle = !notification.permlink;
+  const safeTag = TAG_SHAPE.test(tag) ? tag : null;
   const target = openLinksInNewTab ? "_blank" : undefined;
 
-  if (isBundle) {
+  if (notification.permlink === undefined) {
     return (
       <div className="item-content">
         <div className="first-line">
@@ -89,8 +90,8 @@ export function NotificationTagsType({
           <EntryLink
             entry={{
               category: getNotificationEntryCategory(notification) ?? safeTag ?? "created",
-              author: notification.author ?? notification.source,
-              permlink: notification.permlink!
+              author: notification.author,
+              permlink: notification.permlink
             }}
             target={target}
           >

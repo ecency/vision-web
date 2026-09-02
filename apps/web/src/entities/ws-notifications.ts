@@ -176,20 +176,33 @@ export interface WsScheduledPublishedNotification extends BaseWsNotification {
 
 /**
  * A post carrying a hashtag the user follows (enotify `tags`, main type 23).
- * Two shapes share the type: a single post, where `source` is its author and
- * `permlink` is set, and an hourly bundle for a busy tag, where `source` is
- * "ecency", `count` is set and there is no permlink.
+ * Two shapes share the type, told apart by `permlink` (a single post, whose
+ * author is `source`) versus `count` (an hourly bundle for a busy tag, sent
+ * with `source` "ecency"). A post carries every followed tag it matched in
+ * `tags`; `tag` is the one to show, the first of them.
  */
+export interface WsTagsPostExtra {
+  /** Normalised (lowercase, no `#`). */
+  tag: string;
+  tags: string[];
+  permlink: string;
+  title: string | null;
+  img_url: string | null;
+  count?: undefined;
+}
+
+export interface WsTagsBundleExtra {
+  tag: string;
+  count: number;
+  tags?: undefined;
+  permlink?: undefined;
+  title?: undefined;
+  img_url?: undefined;
+}
+
 export interface WsTagsNotification extends BaseWsNotification {
   type: "tags";
-  extra: {
-    /** The followed tag that matched, normalised (lowercase, no `#`). */
-    tag: string;
-    permlink?: string;
-    title?: string | null;
-    img_url?: string | null;
-    count?: number;
-  };
+  extra: WsTagsPostExtra | WsTagsBundleExtra;
 }
 
 export type WsNotification =
@@ -387,21 +400,38 @@ export interface ApiNotificationSetting {
 }
 
 /**
- * A post carrying a hashtag the user follows. Per-post rows carry the post and
- * name its author in `source`; bundle rows carry `count` and up to three of the
- * posts in `latest`, with `source` "ecency" and no permlink.
+ * A post carrying a hashtag the user follows. A single post names its author in
+ * `source` and carries the post plus every followed tag it matched; a bundle
+ * (busy tag, one row an hour) carries `count` and up to three of the posts in
+ * `latest`, with `source` "ecency". `tag` is the one to show on both.
  */
-export interface ApiTagsNotification extends BaseAPiNotification {
+interface ApiTagsNotificationBase extends BaseAPiNotification {
   type: "tags";
   /** Normalised (lowercase, no `#`). */
   tag: string;
-  author?: string;
-  permlink?: string;
-  title?: string | null;
-  img_url?: string | null;
-  count?: number;
-  latest?: { author: string; permlink: string; title: string | null }[];
 }
+
+export interface ApiTagsPostNotification extends ApiTagsNotificationBase {
+  tags: string[];
+  author: string;
+  permlink: string;
+  title: string | null;
+  img_url: string | null;
+  count?: undefined;
+  latest?: undefined;
+}
+
+export interface ApiTagsBundleNotification extends ApiTagsNotificationBase {
+  count: number;
+  latest: { author: string; permlink: string; title: string | null }[];
+  tags?: undefined;
+  author?: undefined;
+  permlink?: undefined;
+  title?: undefined;
+  img_url?: undefined;
+}
+
+export type ApiTagsNotification = ApiTagsPostNotification | ApiTagsBundleNotification;
 
 export type ApiNotification =
   | ApiVoteNotification

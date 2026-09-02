@@ -36,6 +36,7 @@ describe("NotificationTagsType", () => {
     const notification: ApiTagsNotification = {
       ...base,
       source: "alice",
+      tags: ["photography", "hive"],
       author: "alice",
       permlink: "sunset",
       title: "Sunset over the bay",
@@ -107,6 +108,7 @@ describe("NotificationTagsType", () => {
       ...base,
       tag: "a/b",
       source: "alice",
+      tags: ["a/b"],
       author: "alice",
       permlink: "sunset",
       title: null,
@@ -125,11 +127,39 @@ describe("NotificationTagsType", () => {
     expect(screen.getByTestId("entry-link")).toHaveAttribute("href", "/created/@alice/sunset");
   });
 
+  // The producer sends `tag` on both shapes, but a post row also lists every
+  // followed tag it matched; should `tag` ever be missing, the first of those
+  // is what the row shows, never an empty hashtag.
+  it("falls back to the first matched tag when a post row carries only the list", () => {
+    const notification = {
+      ...base,
+      tag: undefined,
+      source: "alice",
+      tags: ["contest-2026", "hive"],
+      author: "alice",
+      permlink: "entry",
+      title: null,
+      img_url: null
+    } as unknown as ApiTagsNotification;
+
+    render(
+      <NotificationTagsType
+        sourceLink={<span>@alice</span>}
+        afterClick={vi.fn()}
+        notification={notification}
+        openLinksInNewTab={false}
+      />
+    );
+
+    expect(screen.getByTestId("entry-link")).toHaveAttribute("href", "/contest-2026/@alice/entry");
+  });
+
   it("uses the deck's own click handler for a single post", () => {
     const onLinkClick = vi.fn();
     const notification: ApiTagsNotification = {
       ...base,
       source: "alice",
+      tags: ["photography"],
       author: "alice",
       permlink: "sunset",
       title: "Sunset",
