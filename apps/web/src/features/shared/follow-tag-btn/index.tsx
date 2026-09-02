@@ -186,9 +186,12 @@ export function FollowTagChipToggle({ tag }: FollowTagChipToggleProps) {
 
   const label = i18next.t(followed ? "follow-tag.delete" : "follow-tag.add");
   // Signed in without an access token is a supported state (the favorite button
-  // renders disabled for it too); the control must say so rather than swallow
-  // the activation while looking enabled.
-  const disabled = isLoggedIn && !canMutate;
+  // renders disabled for it too), and so is "busy": the list still loading or
+  // refetching, or a mutation in flight. Either way the control must say it
+  // cannot be activated rather than look enabled and swallow the click. Busy
+  // keeps focus, so a control the user just activated does not lose it.
+  const noToken = isLoggedIn && !canMutate;
+  const disabled = noToken || (isLoggedIn && inProgress);
   const activate = (e: MouseEvent | KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -200,7 +203,7 @@ export function FollowTagChipToggle({ tag }: FollowTagChipToggleProps) {
   const control = (
     <span
       role="button"
-      tabIndex={disabled ? -1 : 0}
+      tabIndex={noToken ? -1 : 0}
       aria-label={label}
       aria-pressed={isLoggedIn ? followed : undefined}
       aria-busy={inProgress || undefined}
@@ -208,11 +211,13 @@ export function FollowTagChipToggle({ tag }: FollowTagChipToggleProps) {
       title={label}
       className={
         "ml-1 -mr-0.5 inline-flex shrink-0 items-center justify-center rounded-full size-4 transition-colors " +
-        (disabled
+        (noToken
           ? "cursor-not-allowed text-gray-400 opacity-50 dark:text-gray-500"
-          : followed
-            ? "text-blue-dark-sky dark:text-blue-dark-sky"
-            : "text-gray-500 hover:text-blue-dark-sky dark:text-gray-400 dark:hover:text-blue-dark-sky")
+          : disabled
+            ? "cursor-wait text-gray-400 opacity-50 dark:text-gray-500"
+            : followed
+              ? "text-blue-dark-sky dark:text-blue-dark-sky"
+              : "text-gray-500 hover:text-blue-dark-sky dark:text-gray-400 dark:hover:text-blue-dark-sky")
       }
       onClick={activate}
       onKeyDown={(e) => {

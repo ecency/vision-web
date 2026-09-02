@@ -218,6 +218,30 @@ describe("FollowTagChipToggle", () => {
     vi.mocked(getAccessToken).mockReturnValue("mock-token");
   });
 
+  // While the list loads or refetches, the header button shows a spinner; the
+  // chip has no spinner, so it must read as disabled instead of looking
+  // enabled and dropping the click.
+  it("reads as disabled while the followed list is loading or refetching", async () => {
+    signedIn();
+    holdList = true;
+    const { queryClient } = renderWithQueryClient(<FollowTagChipToggle tag="photography" />);
+    await waitFor(() => expect(releaseList).toBeDefined());
+
+    const toggle = screen.getByRole("button", { name: "follow-tag.add" });
+    expect(toggle).toHaveAttribute("aria-disabled", "true");
+    expect(toggle).toHaveAttribute("aria-busy", "true");
+    // Busy keeps focus: a control the user just activated must not lose it.
+    expect(toggle).toHaveAttribute("tabindex", "0");
+    fireEvent.click(toggle);
+    expect(addMock).not.toHaveBeenCalled();
+
+    releaseList!();
+    await settled(queryClient);
+    await waitFor(() => expect(toggle).not.toHaveAttribute("aria-disabled"));
+    fireEvent.click(toggle);
+    await waitFor(() => expect(addMock).toHaveBeenCalledWith("photography"));
+  });
+
   // Signed in without an access token is a supported state; the chip must say
   // it is disabled rather than look enabled and ignore the activation.
   it("exposes a disabled state when the account has no access token", () => {
