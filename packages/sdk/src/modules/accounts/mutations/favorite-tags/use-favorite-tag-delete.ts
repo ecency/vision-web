@@ -1,23 +1,52 @@
 import { getQueryClient, QueryKeys } from "@/modules/core";
 import { WrappedResponse } from "@/modules/core/types";
-import { InfiniteData, useMutation } from "@tanstack/react-query";
+import { InfiniteData, QueryKey, useMutation, UseMutationOptions } from "@tanstack/react-query";
 import { AccountFavoriteTag } from "../../types";
 import { normalizeTag } from "../../utils/normalize-tag";
 import { deleteFavoriteTagRequest } from "./requests";
 
-export function useFavoriteTagDelete(
+type InfinitePages = InfiniteData<WrappedResponse<AccountFavoriteTag>>;
+
+interface DeleteContext {
+  normalized: string;
+  previousList: AccountFavoriteTag[] | undefined;
+  previousInfinite: Map<QueryKey, InfinitePages | undefined>;
+  /** `undefined` when the check query had no cached value before the mutation. */
+  previousCheck: boolean | undefined;
+}
+
+/**
+ * The mutation options behind useFavoriteTagDelete, exported so the cache
+ * behaviour can be exercised without rendering a hook.
+ *
+ * The tag is removed from the list, the infinite pages and the check entry
+ * optimistically. On failure the snapshots are put back for an instant revert, and
+ * then every touched key is invalidated anyway: a snapshot taken while another
+ * delete was in flight still holds that other tag, so the restore alone would
+ * resurrect it. The refetch is what makes the cache converge.
+ */
+export function favoriteTagDeleteMutationOptions(
   username: string | undefined,
   code: string | undefined,
   onSuccess: () => void,
   onError: (e: Error) => void
-) {
-  return useMutation({
+): UseMutationOptions<AccountFavoriteTag[], Error, string, DeleteContext | undefined> {
+  const invalidateAll = (normalized: string | undefined) => {
+    const qc = getQueryClient();
+    qc.invalidateQueries({ queryKey: QueryKeys.accounts.favoriteTags(username) });
+    qc.invalidateQueries({ queryKey: QueryKeys.accounts.favoriteTagsInfinite(username) });
+    if (normalized) {
+      qc.invalidateQueries({ queryKey: QueryKeys.accounts.checkFavoriteTag(username!, normalized) });
+    }
+  };
+
+  return {
     mutationKey: ["accounts", "favorite-tags", "delete", username],
     mutationFn: (tag: string) => deleteFavoriteTagRequest(username, code, tag),
     onMutate: async (tag: string) => {
       const normalized = normalizeTag(tag);
       if (!username || normalized === null) {
-        return;
+        return undefined;
       }
 
       const qc = getQueryClient();
@@ -42,9 +71,7 @@ export function useFavoriteTagDelete(
       const previousCheck = qc.getQueryData<boolean>(checkKey);
       qc.setQueryData<boolean>(checkKey, false);
 
-      const infiniteQueries = qc.getQueriesData<InfiniteData<WrappedResponse<AccountFavoriteTag>>>({
-        queryKey: infinitePrefix,
-      });
+      const infiniteQueries = qc.getQueriesData<InfinitePages>({ queryKey: infinitePrefix });
       const previousInfinite = new Map(infiniteQueries);
       for (const [key, data] of infiniteQueries) {
         if (data) {
@@ -58,34 +85,41 @@ export function useFavoriteTagDelete(
         }
       }
 
-      return { previousList, previousInfinite, previousCheck, normalized };
+      return { normalized, previousList, previousInfinite, previousCheck };
     },
     onSuccess: (_data, tag) => {
       onSuccess();
-      const qc = getQueryClient();
-      qc.invalidateQueries({ queryKey: QueryKeys.accounts.favoriteTags(username) });
-      qc.invalidateQueries({ queryKey: QueryKeys.accounts.favoriteTagsInfinite(username) });
-      qc.invalidateQueries({
-        queryKey: QueryKeys.accounts.checkFavoriteTag(username!, normalizeTag(tag) ?? tag),
-      });
+      invalidateAll(normalizeTag(tag) ?? undefined);
     },
     onError: (err, _tag, context) => {
       const qc = getQueryClient();
-      if (context?.previousList) {
-        qc.setQueryData(QueryKeys.accounts.favoriteTags(username), context.previousList);
-      }
-      if (context?.previousInfinite) {
+      if (context) {
+        if (context.previousList) {
+          qc.setQueryData(QueryKeys.accounts.favoriteTags(username), context.previousList);
+        }
         for (const [key, data] of context.previousInfinite) {
           qc.setQueryData(key, data);
         }
+        const checkKey = QueryKeys.accounts.checkFavoriteTag(username!, context.normalized);
+        if (context.previousCheck !== undefined) {
+          qc.setQueryData(checkKey, context.previousCheck);
+        } else {
+          // Nothing was cached before, so the optimistic `false` must not outlive
+          // the failure as if it were an answer from the server.
+          qc.removeQueries({ queryKey: checkKey, exact: true });
+        }
       }
-      if (context?.previousCheck !== undefined && context.normalized) {
-        qc.setQueryData(
-          QueryKeys.accounts.checkFavoriteTag(username!, context.normalized),
-          context.previousCheck
-        );
-      }
+      invalidateAll(context?.normalized);
       onError(err);
     },
-  });
+  };
+}
+
+export function useFavoriteTagDelete(
+  username: string | undefined,
+  code: string | undefined,
+  onSuccess: () => void,
+  onError: (e: Error) => void
+) {
+  return useMutation(favoriteTagDeleteMutationOptions(username, code, onSuccess, onError));
 }
