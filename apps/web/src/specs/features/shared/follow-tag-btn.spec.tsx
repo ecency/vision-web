@@ -230,6 +230,8 @@ describe("FollowTagChipToggle", () => {
     const toggle = screen.getByRole("button", { name: "follow-tag.add" });
     expect(toggle).toHaveAttribute("aria-disabled", "true");
     expect(toggle).toHaveAttribute("aria-busy", "true");
+    // The loading state lives on the chip itself, not on the page.
+    expect(toggle.querySelector(".animate-spin")).not.toBeNull();
     // Busy keeps focus: a control the user just activated must not lose it.
     expect(toggle).toHaveAttribute("tabindex", "0");
     fireEvent.click(toggle);
@@ -256,6 +258,19 @@ describe("FollowTagChipToggle", () => {
 
     fireEvent.click(toggle);
     expect(addMock).not.toHaveBeenCalled();
+  });
+
+  // The page progress bar hooks every anchor's click in the capture phase, so it
+  // starts before this control can stop the click; the attribute is the
+  // library's opt-out and must sit on the control (vision-web#1717).
+  it("opts out of the page progress bar", () => {
+    signedIn();
+    renderWithQueryClient(<FollowTagChipToggle tag="photography" />);
+
+    expect(screen.getByRole("button", { name: "follow-tag.add" })).toHaveAttribute(
+      "data-prevent-progress",
+      "true"
+    );
   });
 
   it("toggles without letting the click reach the chip's link", async () => {
