@@ -23,7 +23,9 @@ export function FavoriteTagItem({ item, onHide, i }: Props) {
     [username]
   );
 
-  const { mutateAsync: unfollow, isPending: isDeletePending } = useFavoriteTagDelete(
+  // mutate, not mutateAsync: the hook's onError already reports the failure, and
+  // an ignored rejected promise would still reach the global error reporter.
+  const { mutate: unfollow, isPending: isDeletePending } = useFavoriteTagDelete(
     username,
     accessToken,
     () => success(i18next.t("follow-tag.deleted")),

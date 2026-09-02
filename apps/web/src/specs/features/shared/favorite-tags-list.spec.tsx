@@ -25,6 +25,7 @@ vi.mock("@/utils", async () => ({
 
 let listFailures = 0;
 let rows: string[] = [];
+const deleteMock = vi.fn();
 
 vi.mock("@ecency/sdk", async () => {
   const actual = await vi.importActual<typeof import("@ecency/sdk")>("@ecency/sdk");
@@ -46,7 +47,11 @@ vi.mock("@ecency/sdk", async () => {
       getNextPageParam: () => undefined,
       enabled: !!username && !!code
     })),
-    useFavoriteTagDelete: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false }))
+    useFavoriteTagDelete: vi.fn(() => ({
+      mutate: deleteMock,
+      mutateAsync: vi.fn(() => Promise.reject(new Error("must not be used"))),
+      isPending: false
+    }))
   };
 });
 
@@ -76,6 +81,18 @@ describe("FavoriteTagsList", () => {
 
     expect(screen.queryByTestId("progress")).not.toBeInTheDocument();
     expect(screen.getByText("g.empty-list")).toBeInTheDocument();
+  });
+
+  // A failed unfollow is reported by the hook's own onError; the row must not
+  // also leave a rejected promise behind for the global error reporter.
+  it("unfollows through mutate, leaving no promise to reject", async () => {
+    rows = ["photography"];
+    renderWithQueryClient(<FavoriteTagsList onHide={vi.fn()} />);
+    await screen.findByText("#photography");
+
+    fireEvent.click(screen.getByRole("button", { name: "follow-tag.delete" }));
+
+    expect(deleteMock).toHaveBeenCalledWith("photography");
   });
 
   it("shows a failed request as an error with a retry, not as an empty list", async () => {
