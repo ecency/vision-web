@@ -1,14 +1,18 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, expect, it, vi } from "vitest";
+import { ReactNode } from "react";
 import { ApiTagsNotification } from "@/entities";
 import { NotificationTagsType } from "@/features/shared/notifications/notification-types/notification-tags-type";
 
+interface EntryLinkMockProps {
+  children: ReactNode;
+  entry: { category: string; author: string; permlink: string };
+}
+
 vi.mock("@/features/shared", () => ({
-  EntryLink: ({ children, entry }: any) => (
-    <a href={`/${entry.category}/@${entry.author}/${entry.permlink}`} data-testid="entry-link">
-      {children}
-    </a>
+  EntryLink: ({ children, entry }: EntryLinkMockProps) => (
+    <a href={`/${entry.category}/@${entry.author}/${entry.permlink}`}>{children}</a>
   )
 }));
 
@@ -55,8 +59,10 @@ describe("NotificationTagsType", () => {
     expect(screen.getByText("@alice")).toBeInTheDocument();
     expect(screen.getByText("notifications.tags-str")).toBeInTheDocument();
     // No metadata on the row, so the followed tag stands in as the category.
-    expect(screen.getByTestId("entry-link")).toHaveAttribute("href", "/photography/@alice/sunset");
-    expect(screen.getByText("Sunset over the bay")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sunset over the bay" })).toHaveAttribute(
+      "href",
+      "/photography/@alice/sunset"
+    );
   });
 
   it("links a bundle to the tag's feed and names the tag, not @ecency", () => {
@@ -84,7 +90,8 @@ describe("NotificationTagsType", () => {
       "href",
       "/created/photography"
     );
-    expect(screen.queryByTestId("entry-link")).not.toBeInTheDocument();
+    // The feed link is the only one; there is no post to link.
+    expect(screen.getAllByRole("link")).toHaveLength(1);
   });
 
   // The websocket and push routers refuse a malformed tag before it reaches a
@@ -124,7 +131,7 @@ describe("NotificationTagsType", () => {
       />
     );
 
-    expect(screen.getByTestId("entry-link")).toHaveAttribute("href", "/created/@alice/sunset");
+    expect(screen.getByRole("link", { name: "sunset" })).toHaveAttribute("href", "/created/@alice/sunset");
   });
 
   // A post shows the first of the tags it matched, however many there are.
@@ -148,7 +155,7 @@ describe("NotificationTagsType", () => {
       />
     );
 
-    expect(screen.getByTestId("entry-link")).toHaveAttribute("href", "/contest-2026/@alice/entry");
+    expect(screen.getByRole("link", { name: "entry" })).toHaveAttribute("href", "/contest-2026/@alice/entry");
   });
 
   it("uses the deck's own click handler for a single post", () => {
@@ -175,6 +182,7 @@ describe("NotificationTagsType", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Sunset" }));
     expect(onLinkClick).toHaveBeenCalledTimes(1);
-    expect(screen.queryByTestId("entry-link")).not.toBeInTheDocument();
+    // The deck's handler replaces the entry link entirely.
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 });
