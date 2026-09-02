@@ -11,7 +11,7 @@ import {
   useFavoriteTagDelete
 } from "@ecency/sdk";
 import { useInfiniteQuery, useIsMutating } from "@tanstack/react-query";
-import { UilCheck, UilPlus } from "@tooni/iconscout-unicons-react";
+import { UilCheck, UilPlus, UilSpinner } from "@tooni/iconscout-unicons-react";
 import { Button } from "@ui/button";
 import { Tooltip } from "@ui/tooltip";
 import i18next from "i18next";
@@ -208,6 +208,12 @@ export function FollowTagChipToggle({ tag }: FollowTagChipToggleProps) {
       aria-pressed={isLoggedIn ? followed : undefined}
       aria-busy={inProgress || undefined}
       aria-disabled={disabled || undefined}
+      // The page progress bar attaches a capture-phase click listener to every
+      // anchor, so it fires before this control can stop the click and runs as
+      // if a navigation had begun. This is the library's opt-out for an
+      // in-place action inside a link; it is read off the clicked element or
+      // any ancestor below the anchor, so a click on the icon is covered too.
+      data-prevent-progress="true"
       title={label}
       className={
         "ml-1 -mr-0.5 inline-flex shrink-0 items-center justify-center rounded-full size-4 transition-colors " +
@@ -226,7 +232,13 @@ export function FollowTagChipToggle({ tag }: FollowTagChipToggleProps) {
         }
       }}
     >
-      {followed ? <UilCheck className="size-3.5" /> : <UilPlus className="size-3.5" />}
+      {isLoggedIn && inProgress ? (
+        <UilSpinner className="size-3.5 animate-spin" />
+      ) : followed ? (
+        <UilCheck className="size-3.5" />
+      ) : (
+        <UilPlus className="size-3.5" />
+      )}
     </span>
   );
 
