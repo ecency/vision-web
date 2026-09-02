@@ -66,6 +66,10 @@ describe("NotificationsWebSocket.getLink entry authorship", () => {
       extra: { tag, count: 12 }
     });
     expect(getLink(bundle("photography"))).toBe("/created/photography");
+    // The list form a post row uses is accepted for a bundle too.
+    expect(
+      getLink({ type: "tags", source: "ecency", target: "recipient", extra: { tags: ["photography"], count: 12 } })
+    ).toBe("/created/photography");
     // Not a tag shape: a path segment, a query, whitespace, a community name is
     // fine (it is a tag shape) but the others must not reach the URL.
     expect(getLink(bundle("../evil"))).toBeUndefined();

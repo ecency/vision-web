@@ -206,10 +206,12 @@ export class NotificationsWebSocket {
         // The whole follow family points at the actor's profile, never at an entry.
         return toProfile(data.source);
       case "tags":
-        // A single post is the actor's; a bundle has no post and opens the tag feed.
+        // A single post is the actor's; a bundle has no post and opens the tag
+        // feed. A bundle names its tag in `tag`; a post lists its matches in
+        // `tags`, and reading both here mirrors the body text.
         return data.extra?.permlink
           ? toEntry(data.source, data.extra.permlink)
-          : toTagFeed(data.extra?.tag);
+          : toTagFeed(data.extra?.tag ?? data.extra?.tags?.[0]);
       case "transfer":
       case "delegations":
         return toProfile(data.target, "/wallet");
