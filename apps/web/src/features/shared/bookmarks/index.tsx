@@ -1,5 +1,6 @@
 import { BookmarksList } from "@/features/shared/bookmarks/bookmarks-list";
 import { FavoritesList } from "@/features/shared/bookmarks/favorites-list";
+import { FavoriteTagsList } from "@/features/shared/bookmarks/favorite-tags-list";
 import { TabItem } from "@/features/ui";
 import { Modal, ModalBody, ModalHeader } from "@ui/modal";
 import i18next from "i18next";
@@ -7,7 +8,7 @@ import { useState } from "react";
 interface Props {
   show: boolean;
   setShow: (v: boolean) => void;
-  initialTab?: "bookmarks" | "favorites";
+  initialTab?: "bookmarks" | "favorites" | "tags";
 }
 
 export function BookmarksDialog({ show, setShow, initialTab = "bookmarks" }: Props) {
@@ -31,11 +32,19 @@ export function BookmarksDialog({ show, setShow, initialTab = "bookmarks" }: Pro
             name="favorites"
             i={1}
           />
+          <TabItem
+            title={i18next.t("favorite-tags.title")}
+            isSelected={section === "tags"}
+            onSelect={() => setSection("tags")}
+            name="tags"
+            i={2}
+          />
         </div>
       </ModalHeader>
       <ModalBody className="bg-gray-100 dark:bg-gray-900 rounded-b-2xl">
         {section === "bookmarks" && <BookmarksList onHide={() => setShow(false)} />}
         {section === "favorites" && <FavoritesList onHide={() => setShow(false)} />}
+        {section === "tags" && <FavoriteTagsList onHide={() => setShow(false)} />}
       </ModalBody>
     </Modal>
   );

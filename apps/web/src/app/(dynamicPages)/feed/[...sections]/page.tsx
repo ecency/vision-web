@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { DEFAULT_OBSERVER } from "@/consts/observer";
 import { prefetchGetPostsFeedQuery } from "@/api/queries";
-import { FeedLayout, FeedList } from "../_components";
+import { FeedLayout, FeedList, TagFeedHeader } from "../_components";
+import { isCommunity } from "@/utils";
 import React from "react";
 import { Metadata, ResolvingMetadata } from "next";
 import { redirect } from "next/navigation";
@@ -61,6 +62,17 @@ export default async function FeedPage({ params, searchParams }: Props) {
   const basePath = `/${filter}/${tag}`;
   const cursor = queryable && isArchivableTag(filter, tag) ? parseArchiveCursor(before) : null;
 
+  // A plain hashtag's feed carries a follow header, on the live page and on the
+  // archive pages behind it alike. Communities have their own card, `my` is the
+  // subscribed-communities feed, and the tags hivemind cannot query would only
+  // show an empty feed under it.
+  const showTagHeader =
+    queryable &&
+    tag !== "" &&
+    tag !== "my" &&
+    !isCommunity(tag) &&
+    ["trending", "hot", "created"].includes(filter);
+
   // Cursor archive page: one O(1) fetch of the 20 posts older than the cursor,
   // fully server-rendered (no infinite scroll) with a crawlable pager.
   if (cursor) {
@@ -78,6 +90,7 @@ export default async function FeedPage({ params, searchParams }: Props) {
       >
         <div className="entry-list">
           <div className="entry-list-body">
+            {showTagHeader && <TagFeedHeader tag={tag} />}
             <EntryListContent
               username=""
               loading={false}
@@ -140,6 +153,7 @@ export default async function FeedPage({ params, searchParams }: Props) {
         {/* Personal feed (/@user/feed) is where new users land after login;
             the card self-gates to fresh accounts and renders nothing otherwise. */}
         {filter === "feed" && <WavesOnboardingChecklist />}
+        {showTagHeader && <TagFeedHeader tag={tag} />}
         <FeedList filter={filter} tag={tag} observer={observer} />
         {olderCursor && (
           <EntryArchivePager basePath={basePath} olderCursor={olderCursor} showLatest={false} />

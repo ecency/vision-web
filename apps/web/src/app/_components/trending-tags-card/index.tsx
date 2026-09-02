@@ -2,7 +2,9 @@
 
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
+import { FollowTagChipToggle, useFollowedTags } from "@/features/shared/follow-tag-btn";
 import { TagLink } from "@/features/shared/tag";
+import { getAccessToken } from "@/utils";
 import { Button } from "@ui/button";
 import { getTrendingTagsQueryOptions } from "@ecency/sdk";
 import { useInfiniteQuery } from "@tanstack/react-query";
@@ -24,9 +26,25 @@ export function TrendingTagsCard() {
   }
 
   const { activeUser } = useActiveAccount();
+  const username = activeUser?.username;
+  const accessToken = useMemo(
+    () => (username ? getAccessToken(username) : undefined),
+    [username]
+  );
 
   const { data: trendingTagsPages } = useInfiniteQuery(getTrendingTagsQueryOptions(250));
-  const trendingTags = useMemo(() => trendingTagsPages?.pages[0], [trendingTagsPages?.pages]);
+  // The user's followed tags come first, then the trending list without them,
+  // so a followed topic is one click away and never listed twice.
+  const { tags: favoriteTags } = useFollowedTags(username, accessToken);
+  const pinnedTags = useMemo(() => favoriteTags?.map((f) => f.tag) ?? [], [favoriteTags]);
+  const trendingTags = useMemo(() => {
+    const first = trendingTagsPages?.pages[0];
+    if (!first) {
+      return first;
+    }
+    const pinned = new Set(pinnedTags);
+    return [...pinnedTags, ...first.filter((t) => !pinned.has(t))];
+  }, [pinnedTags, trendingTagsPages?.pages]);
 
   const handleUnselection = useCallback(() => {
     router.push("/" + filter + ((activeUser && activeUser.username && "/my") || ""));
@@ -43,6 +61,7 @@ export function TrendingTagsCard() {
               <TagLink tag={t} type="link">
                 <>
                   {t}
+                  {activeUser && <FollowTagChipToggle tag={t} />}
                   {tag === t && (
                     <div
                       className="text-gray-600 flex dark:text-gray-400 ml-1 cursor-pointer"
