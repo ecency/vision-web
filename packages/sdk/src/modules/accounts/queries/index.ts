@@ -12,6 +12,8 @@ export * from "./get-account-subscriptions-query-options";
 export * from "./get-bookmarks-query-options";
 export * from "./get-favorites-query-options";
 export * from "./check-favorite-query-options";
+export * from "./get-favorite-tags-query-options";
+export * from "./get-favorite-tag-check-query-options";
 export * from "./get-account-recoveries-query-options";
 export * from "./get-account-pending-recovery-query-options";
 export * from "./get-account-reputations-query-options";

@@ -264,6 +264,12 @@ export const QueryKeys = {
         activeUsername,
         targetUsername,
       ],
+    favoriteTags: (activeUsername?: string) =>
+      ["accounts", "favorite-tags", activeUsername],
+    favoriteTagsInfinite: (activeUsername?: string, limit?: number) =>
+      key("accounts", "favorite-tags", "infinite", activeUsername, limit),
+    checkFavoriteTag: (activeUsername: string, tag: string) =>
+      ["accounts", "favorite-tags", "check", activeUsername, tag],
     relations: (reference: string | undefined, target: string | undefined) =>
       ["accounts", "relations", reference, target],
     bots: () => ["accounts", "bots"],

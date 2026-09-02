@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.96
+
+### Patch Changes
+
+- @ecency/sdk: favorite tags query options and mutations (#1714)
+
 ## 2.3.95
 
 ### Patch Changes

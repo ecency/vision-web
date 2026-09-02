@@ -4,6 +4,7 @@ export * from "./use-follow";
 export * from "./use-unfollow";
 export * from "./bookmarks";
 export * from "./favorites";
+export * from "./favorite-tags";
 export * from "./use-account-update-key-auths";
 export * from "./use-account-update-password";
 export * from "./use-account-revoke-posting";
