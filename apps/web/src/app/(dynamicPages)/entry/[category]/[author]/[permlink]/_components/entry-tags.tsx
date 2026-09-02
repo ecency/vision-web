@@ -1,4 +1,5 @@
 import { TagLink } from "@/features/shared/tag";
+import { TagChipLabel } from "@/features/shared/tag/tag-chip-label";
 import { FollowTagChipToggle } from "@/features/shared/follow-tag-btn";
 import { Entry } from "@/entities";
 
@@ -32,7 +33,8 @@ export function EntryTags({ entry }: Props) {
             type="link"
           >
             <span className="inline-flex items-center">
-              {t}
+              {/* A community id reads as the community's title, as in the header. */}
+              <TagChipLabel tag={t} title={isCommunityChip ? entry.community_title : undefined} />
               {/* A community is subscribed to, not followed as a tag; the toggle
                   also hides itself for any value the follow rule refuses. */}
               {!isCommunityChip && <FollowTagChipToggle tag={t} />}
