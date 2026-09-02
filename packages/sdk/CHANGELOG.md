@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.97
+
+### Patch Changes
+
+- Notifications: the tags type for posts carrying a followed hashtag (#1716)
+
 ## 2.3.96
 
 ### Patch Changes
