@@ -77,6 +77,14 @@ describe("NotificationsWebSocket.getLink entry authorship", () => {
     expect(getLink(bundle("a?x=1"))).toBeUndefined();
     expect(getLink(bundle(undefined))).toBeUndefined();
     expect(getLink(bundle(12))).toBeUndefined();
+    // The wire's types are checked, not the declared ones: a bare string in the
+    // list field must not be indexed into its first letter.
+    expect(
+      getLink({ type: "tags", source: "ecency", target: "recipient", extra: { tags: "photography", count: 1 } })
+    ).toBeUndefined();
+    expect(
+      getLink({ type: "tags", source: "ecency", target: "recipient", extra: { tags: [123], count: 1 } })
+    ).toBeUndefined();
   });
 
   it("links a favourite author's new post to the author, not to the recipient", () => {

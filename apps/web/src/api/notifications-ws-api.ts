@@ -4,6 +4,7 @@ import { NotifyTypes } from "@/enums";
 import i18next from "i18next";
 import { playNotificationSound, requestNotificationPermission } from "@/utils";
 import { info } from "@/features/shared/feedback/feedback-events";
+import { notificationTag } from "@/features/shared/notifications/utils/notification-tag";
 import logo from "@/assets/img/logo-circle.svg";
 
 declare var window: Window & {
@@ -39,8 +40,8 @@ export class NotificationsWebSocket {
       case "tags": {
         // One post carries the tag, or an hourly bundle of them for a busy tag.
         // A post lists every followed tag it matched and shows the first; a
-        // bundle names its one tag.
-        const tag = data.extra?.tags?.[0] || data.extra?.tag || "";
+        // bundle names its one tag. Read with the wire's types checked.
+        const tag = notificationTag(data.extra);
         const count = Number(data.extra?.count ?? 0);
         return count > 0
           ? i18next.t("notification.tags-bundle", { count, tag })
@@ -178,8 +179,7 @@ export class NotificationsWebSocket {
       typeof username === "string" && username ? `/@${username}${suffix}` : undefined;
     // A tag is a lowercase word with digits and hyphens; anything else stays
     // out of the URL, so a forged payload cannot route beyond a tag feed.
-    const toTagFeed = (tag?: unknown) =>
-      typeof tag === "string" && /^[a-z0-9-]{1,32}$/.test(tag) ? `/created/${tag}` : undefined;
+    const toTagFeed = (tag: string) => (tag ? `/created/${tag}` : undefined);
 
     switch (data.type) {
       case "vote":
@@ -211,7 +211,7 @@ export class NotificationsWebSocket {
         // `tags`, and reading both here mirrors the body text.
         return data.extra?.permlink
           ? toEntry(data.source, data.extra.permlink)
-          : toTagFeed(data.extra?.tag ?? data.extra?.tags?.[0]);
+          : toTagFeed(notificationTag(data.extra));
       case "transfer":
       case "delegations":
         return toProfile(data.target, "/wallet");

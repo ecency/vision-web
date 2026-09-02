@@ -111,6 +111,24 @@ describe("NotificationTagsType", () => {
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
+  // The declared types say string; the wire may say otherwise.
+  it.each([
+    ["a numeric tag", { tag: 123, source: "ecency", count: 3, latest: [] }],
+    ["a bare string in the list field", { tags: "photography", source: "ecency", count: 3, latest: [] }],
+    ["a list holding a number", { tags: [123], source: "ecency", count: 3, latest: [] }]
+  ])("never links a bundle carrying %s", (_name, row) => {
+    render(
+      <NotificationTagsType
+        sourceLink={<span>@ecency</span>}
+        afterClick={vi.fn()}
+        notification={{ ...base, ...row } as unknown as ApiTagsNotification}
+        openLinksInNewTab={false}
+      />
+    );
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
   it("falls back to the created feed as category when the tag is malformed", () => {
     const notification: ApiTagsNotification = {
       ...base,

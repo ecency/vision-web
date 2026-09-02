@@ -3,13 +3,7 @@ import i18next from "i18next";
 import Link from "next/link";
 import { ApiTagsNotification } from "@/entities";
 import { EntryLink } from "@/features/shared";
-import { getNotificationEntryCategory } from "../utils";
-
-/**
- * The shape of a tag on chain. The websocket and push routers hold a tag to it
- * before it enters a URL; a row must too, since the API row is the same data.
- */
-const TAG_SHAPE = /^[a-z0-9-]{1,32}$/;
+import { getNotificationEntryCategory, notificationTag } from "../utils";
 
 interface Props {
   sourceLink: ReactElement;
@@ -31,12 +25,11 @@ export function NotificationTagsType({
   afterClick,
   openLinksInNewTab
 }: Props) {
-  // A post lists every followed tag it matched and shows the first; a bundle
-  // names its one tag.
-  const tag = notification.tags?.[0] || notification.tag || "";
-  // Only a well-formed tag may reach a URL; anything else is shown as text and
-  // never linked, so a malformed row cannot route beyond a tag feed.
-  const safeTag = TAG_SHAPE.test(tag) ? tag : null;
+  // Read with the wire's types checked, not the declared ones: only a
+  // well-formed tag may reach a URL, anything else is shown as text and never
+  // linked, so a malformed row cannot route beyond a tag feed.
+  const safeTag = notificationTag(notification) || null;
+  const tag = safeTag ?? String(notification.tags?.[0] ?? notification.tag ?? "");
   const target = openLinksInNewTab ? "_blank" : undefined;
 
   if (notification.permlink === undefined) {
