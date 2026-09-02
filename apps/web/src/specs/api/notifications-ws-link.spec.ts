@@ -51,9 +51,40 @@ describe("NotificationsWebSocket.getLink entry authorship", () => {
     ["mention", "/@actor/a-permlink"],
     ["reply", "/@actor/a-permlink"],
     ["favorites", "/@actor/a-permlink"],
-    ["bookmarks", "/@actor/a-permlink"]
+    ["bookmarks", "/@actor/a-permlink"],
+    // A post carrying a followed tag belongs to the actor too.
+    ["tags", "/@actor/a-permlink"]
   ])("links %s to %s", (type, expected) => {
     expect(getLink(entry(type))).toBe(expected);
+  });
+
+  it("links a tag bundle to the tag's feed and refuses a forged tag", () => {
+    const bundle = (tag: unknown) => ({
+      type: "tags",
+      source: "ecency",
+      target: "recipient",
+      extra: { tag, count: 12 }
+    });
+    expect(getLink(bundle("photography"))).toBe("/created/photography");
+    // The list form a post row uses is accepted for a bundle too.
+    expect(
+      getLink({ type: "tags", source: "ecency", target: "recipient", extra: { tags: ["photography"], count: 12 } })
+    ).toBe("/created/photography");
+    // Not a tag shape: a path segment, a query, whitespace, a community name is
+    // fine (it is a tag shape) but the others must not reach the URL.
+    expect(getLink(bundle("../evil"))).toBeUndefined();
+    expect(getLink(bundle("a/b"))).toBeUndefined();
+    expect(getLink(bundle("a?x=1"))).toBeUndefined();
+    expect(getLink(bundle(undefined))).toBeUndefined();
+    expect(getLink(bundle(12))).toBeUndefined();
+    // The wire's types are checked, not the declared ones: a bare string in the
+    // list field must not be indexed into its first letter.
+    expect(
+      getLink({ type: "tags", source: "ecency", target: "recipient", extra: { tags: "photography", count: 1 } })
+    ).toBeUndefined();
+    expect(
+      getLink({ type: "tags", source: "ecency", target: "recipient", extra: { tags: [123], count: 1 } })
+    ).toBeUndefined();
   });
 
   it("links a favourite author's new post to the author, not to the recipient", () => {

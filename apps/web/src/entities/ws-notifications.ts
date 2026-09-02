@@ -174,6 +174,39 @@ export interface WsScheduledPublishedNotification extends BaseWsNotification {
   };
 }
 
+/**
+ * A post carrying a hashtag the user follows (enotify `tags`, main type 23).
+ * Two shapes share the type, told apart by `permlink` (a single post, whose
+ * author is `source`) versus `count` (an hourly bundle for a busy tag, sent
+ * with `source` "ecency"). A post carries every followed tag it matched in
+ * `tags`, normalised (lowercase, no `#`); the first is the one to show. A
+ * bundle names its one tag in `tag`.
+ */
+export interface WsTagsPostExtra {
+  author: string;
+  tags: string[];
+  permlink: string;
+  title: string | null;
+  img_url: string | null;
+  tag?: undefined;
+  count?: undefined;
+}
+
+export interface WsTagsBundleExtra {
+  tag: string;
+  count: number;
+  author?: undefined;
+  tags?: undefined;
+  permlink?: undefined;
+  title?: undefined;
+  img_url?: undefined;
+}
+
+export interface WsTagsNotification extends BaseWsNotification {
+  type: "tags";
+  extra: WsTagsPostExtra | WsTagsBundleExtra;
+}
+
 export type WsNotification =
   | WsVoteNotification
   | WsMentionNotification
@@ -194,7 +227,8 @@ export type WsNotification =
   | WsMonthlyPostsUnderscoreNotification
   | WsWeeklyEarningsNotification
   | WsAccountUpdateNotification
-  | WsScheduledPublishedNotification;
+  | WsScheduledPublishedNotification
+  | WsTagsNotification;
 
 // HTTP api notification _types
 
@@ -367,6 +401,41 @@ export interface ApiNotificationSetting {
   status: number; //0|1
 }
 
+/**
+ * A post carrying a hashtag the user follows. A single post names its author in
+ * `source` and carries the post plus every followed tag it matched; a bundle
+ * (busy tag, one row an hour) carries `count` and up to three of the posts in
+ * `latest`, with `source` "ecency". Tags are normalised (lowercase, no `#`);
+ * a post shows the first of its `tags`, a bundle its one `tag`.
+ */
+interface ApiTagsNotificationBase extends BaseAPiNotification {
+  type: "tags";
+}
+
+export interface ApiTagsPostNotification extends ApiTagsNotificationBase {
+  tags: string[];
+  author: string;
+  permlink: string;
+  title: string | null;
+  img_url: string | null;
+  tag?: undefined;
+  count?: undefined;
+  latest?: undefined;
+}
+
+export interface ApiTagsBundleNotification extends ApiTagsNotificationBase {
+  tag: string;
+  count: number;
+  latest: { author: string; permlink: string; title: string | null }[];
+  tags?: undefined;
+  author?: undefined;
+  permlink?: undefined;
+  title?: undefined;
+  img_url?: undefined;
+}
+
+export type ApiTagsNotification = ApiTagsPostNotification | ApiTagsBundleNotification;
+
 export type ApiNotification =
   | ApiVoteNotification
   | ApiMentionNotification
@@ -386,7 +455,8 @@ export type ApiNotification =
   | ApiMonthlyPostsNotification
   | ApiAccountUpdateNotification
   | ApiWeeklyEarningsNotification
-  | ApiScheduledPublishedNotification;
+  | ApiScheduledPublishedNotification
+  | ApiTagsNotification;
 
 export interface Notifications {
   filter: NotificationFilter | null;

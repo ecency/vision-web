@@ -15,6 +15,7 @@ export enum NotifyTypes {
   ACCOUNT_UPDATE = 20,
   WEEKLY_EARNINGS = 21,
   SCHEDULED_PUBLISHED = 22,
+  TAGS = 23,
   ALLOW_NOTIFY = "ALLOW_NOTIFY"
 }
 
@@ -31,7 +32,8 @@ export const ALL_NOTIFY_TYPES = [
   NotifyTypes.PAYOUTS,
   NotifyTypes.ACCOUNT_UPDATE,
   NotifyTypes.WEEKLY_EARNINGS,
-  NotifyTypes.SCHEDULED_PUBLISHED
+  NotifyTypes.SCHEDULED_PUBLISHED,
+  NotifyTypes.TAGS
 ] as const;
 
 export enum NotificationViewType {

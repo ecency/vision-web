@@ -207,6 +207,20 @@ export const DeckNotificationsColumn = ({ id, settings, draggable }: Props) => {
                   }
                   break;
                 }
+              case "tags":
+                {
+                  // A single post opens in the deck like the entry types above; a
+                  // bundle has no post behind it, its row links to the tag feed.
+                  if (item.author && item.permlink) {
+                    const entry = await queryClient.fetchQuery(
+                      getContentQueryOptions(item.author, item.permlink)
+                    );
+                    if (entry) {
+                      setCurrentViewingEntry(entry);
+                    }
+                  }
+                  break;
+                }
               case "delegations":
               case "follow":
               case "ignore":

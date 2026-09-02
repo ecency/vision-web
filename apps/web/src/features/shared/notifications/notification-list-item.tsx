@@ -19,6 +19,7 @@ import { NotificationMonthlyPostsType } from "@/features/shared/notifications/no
 import { NotificationAccountUpdateType } from "@/features/shared/notifications/notification-types/notification-account-update-type";
 import { NotificationWeeklyEarningsType } from "@/features/shared/notifications/notification-types/notification-weekly-earnings-type";
 import { NotificationScheduledPublishedType } from "@/features/shared/notifications/notification-types/notification-scheduled-published-type";
+import { NotificationTagsType } from "@/features/shared/notifications/notification-types/notification-tags-type";
 import i18next from "i18next";
 import { Tooltip } from "@ui/tooltip";
 import { classNameObject } from "@ui/util";
@@ -251,12 +252,21 @@ export const NotificationListItem = memo(function NotificationListItem({
               openLinksInNewTab={openLinksInNewTab}
             />
           )}
+          {notification.type === "tags" && (
+            <NotificationTagsType
+              onLinkClick={onLinkClick}
+              sourceLink={sourceLink}
+              afterClick={afterClick}
+              notification={notification}
+              openLinksInNewTab={openLinksInNewTab}
+            />
+          )}
           {![
             "vote", "unvote", "reply", "mention", "favorites", "bookmarks",
             "follow", "unfollow", "ignore", "blacklist", "reblog", "transfer", "delegations",
             "checkins", "checkin", "payouts", "monthly-posts", "monthly_posts",
             "spin", "inactive", "referral", "account_update", "weekly_earnings",
-            "scheduled_published"
+            "scheduled_published", "tags"
           ].includes(notification.type) && (
             <div className="item-content">
               <div className="first-line">

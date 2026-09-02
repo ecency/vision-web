@@ -22,7 +22,8 @@ describe("Decks self-only notification content types", () => {
     expect([...SELF_ONLY_NOTIFICATION_CONTENT_TYPES].sort()).toEqual([
       "nbookmarks",
       "nfavorites",
-      "scheduled_published"
+      "scheduled_published",
+      "tags"
     ]);
   });
 
