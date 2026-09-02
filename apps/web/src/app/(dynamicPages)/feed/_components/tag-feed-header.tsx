@@ -28,14 +28,19 @@ export function TagFeedHeader({ tag, hasPosts = true }: Props) {
   }
 
   return (
-    <div className="tag-feed-header mb-3 flex items-center justify-between gap-3 rounded-2xl border border-[--border-color] bg-white px-4 py-3 dark:bg-dark-default">
+    <div className="tag-feed-header mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[--border-color] bg-white px-4 py-3 dark:bg-dark-default">
       <div className="flex min-w-0 flex-col">
         <h1 className="notranslate truncate text-lg font-semibold">#{tag}</h1>
         <span className="text-xs text-gray-500 dark:text-gray-400">
           {i18next.t("follow-tag.header-hint")}
         </span>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      {/*
+        A tag can be 32 characters, so the email label alone can outgrow a phone
+        viewport: the row wraps under the title, and the button caps at the row's
+        width with an ellipsized label rather than pushing the header wider.
+      */}
+      <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
         {hasPosts && (
           <NewsletterGate>
             <DigestSubscribeButton
@@ -44,6 +49,7 @@ export function TagFeedHeader({ tag, hasPosts = true }: Props) {
               targetLabel={`#${tag}`}
               source="tag-page"
               size="sm"
+              className="max-w-full [&>div]:min-w-0 [&>div]:truncate"
               label={i18next.t("newsletter.button-tag", { name: tag })}
             />
           </NewsletterGate>
