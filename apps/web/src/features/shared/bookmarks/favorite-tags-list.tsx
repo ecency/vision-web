@@ -20,9 +20,11 @@ export function FavoriteTagsList({ onHide }: Props) {
     [username]
   );
 
+  // isLoading, not isPending: without an access token the query is disabled,
+  // and a disabled query with nothing cached stays pending forever.
   const {
     data,
-    isPending: isLoading,
+    isLoading,
     isError,
     refetch,
     fetchNextPage,

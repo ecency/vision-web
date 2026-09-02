@@ -3,6 +3,7 @@ import "@testing-library/jest-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQueryClient } from "@/specs/test-utils";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { getAccessToken } from "@/utils";
 import { FollowTagBtn, FollowTagChipToggle } from "@/features/shared/follow-tag-btn";
 
 vi.mock("@/core/hooks/use-active-account", () => ({
@@ -15,6 +16,9 @@ let followedTags: string[] = [];
 // Set to make the followed-list request fail that many times before answering.
 let listFailures = 0;
 const listFetches = vi.fn();
+// When set, the next list request waits until `releaseList()` is called.
+let holdList = false;
+let releaseList: (() => void) | undefined;
 
 vi.mock("@ecency/sdk", async () => {
   const actual = await vi.importActual<typeof import("@ecency/sdk")>("@ecency/sdk");
@@ -25,6 +29,12 @@ vi.mock("@ecency/sdk", async () => {
       queryKey: ["accounts", "favorite-tags", "infinite", username, limit],
       queryFn: async () => {
         listFetches(limit);
+        if (holdList) {
+          holdList = false;
+          await new Promise<void>((resolve) => {
+            releaseList = resolve;
+          });
+        }
         if (listFailures > 0) {
           listFailures -= 1;
           throw new Error("list failed");
@@ -60,6 +70,39 @@ describe("FollowTagBtn", () => {
     vi.clearAllMocks();
     followedTags = [];
     listFailures = 0;
+    holdList = false;
+    releaseList = undefined;
+    vi.mocked(getAccessToken).mockReturnValue("mock-token");
+  });
+
+  // After an add the SDK invalidates the list. Cached data keeps isPending false
+  // during that refetch, so without isFetching the control re-enabled while still
+  // reading "unfollowed" and accepted a second add.
+  it("holds the control while the followed list is refetching", async () => {
+    signedIn();
+    const { queryClient } = renderWithQueryClient(<FollowTagBtn tag="photography" />);
+    await settled(queryClient);
+
+    holdList = true;
+    void queryClient.invalidateQueries({ queryKey: LIST_KEY });
+    await waitFor(() => expect(releaseList).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button"));
+    expect(addMock).not.toHaveBeenCalled();
+
+    releaseList!();
+    await waitFor(() => expect(queryClient.getQueryState(LIST_KEY)?.fetchStatus).toBe("idle"));
+    fireEvent.click(screen.getByRole("button"));
+    await waitFor(() => expect(addMock).toHaveBeenCalledWith("photography"));
+  });
+
+  it("renders disabled when the account has no access token", () => {
+    signedIn();
+    vi.mocked(getAccessToken).mockReturnValue(undefined as never);
+
+    renderWithQueryClient(<FollowTagBtn tag="photography" />);
+
+    expect(screen.getByRole("button", { name: "follow-tag.add" })).toBeDisabled();
   });
 
   it("reads the followed list through the paginated endpoint at the cap", async () => {
@@ -170,6 +213,25 @@ describe("FollowTagChipToggle", () => {
     vi.clearAllMocks();
     followedTags = [];
     listFailures = 0;
+    holdList = false;
+    releaseList = undefined;
+    vi.mocked(getAccessToken).mockReturnValue("mock-token");
+  });
+
+  // Signed in without an access token is a supported state; the chip must say
+  // it is disabled rather than look enabled and ignore the activation.
+  it("exposes a disabled state when the account has no access token", () => {
+    signedIn();
+    vi.mocked(getAccessToken).mockReturnValue(undefined as never);
+
+    renderWithQueryClient(<FollowTagChipToggle tag="photography" />);
+
+    const toggle = screen.getByRole("button", { name: "follow-tag.add" });
+    expect(toggle).toHaveAttribute("aria-disabled", "true");
+    expect(toggle).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.click(toggle);
+    expect(addMock).not.toHaveBeenCalled();
   });
 
   it("toggles without letting the click reach the chip's link", async () => {

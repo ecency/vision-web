@@ -52,7 +52,7 @@ export function useFollowTag(rawTag: string) {
     [username]
   );
 
-  const { tags: data, isPending, isError, refetch } = useFollowedTags(username, accessToken);
+  const { tags: data, isPending, isFetching, isError, refetch } = useFollowedTags(username, accessToken);
   // Pending state shared across every control for this user on the page (the tag
   // feed header and the Topics card can both show the same tag), so two clicks
   // cannot both send an add before the list refreshes.
@@ -75,8 +75,15 @@ export function useFollowTag(rawTag: string) {
     () => !!tag && (data?.some((f) => f.tag === tag) ?? false),
     [data, tag]
   );
+  // While the list is being (re)fetched its answer is not known: after an add the
+  // SDK invalidates it, and in that window a stale "unfollowed" with an enabled
+  // control would accept a second add. isPending alone misses it, since cached
+  // data keeps isPending false during a refetch.
   const inProgress =
-    isAddPending || isDeletePending || isMutating || (canMutate && isPending && !isError);
+    isAddPending ||
+    isDeletePending ||
+    isMutating ||
+    (canMutate && (isFetching || (isPending && !isError)));
 
   const toggle = useCallback(async () => {
     if (!tag || !canMutate || inProgress) {
@@ -178,10 +185,14 @@ export function FollowTagChipToggle({ tag }: FollowTagChipToggleProps) {
   }
 
   const label = i18next.t(followed ? "follow-tag.delete" : "follow-tag.add");
+  // Signed in without an access token is a supported state (the favorite button
+  // renders disabled for it too); the control must say so rather than swallow
+  // the activation while looking enabled.
+  const disabled = isLoggedIn && !canMutate;
   const activate = (e: MouseEvent | KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (canMutate) {
+    if (!disabled) {
       void toggle();
     }
   };
@@ -189,16 +200,19 @@ export function FollowTagChipToggle({ tag }: FollowTagChipToggleProps) {
   const control = (
     <span
       role="button"
-      tabIndex={0}
+      tabIndex={disabled ? -1 : 0}
       aria-label={label}
       aria-pressed={isLoggedIn ? followed : undefined}
       aria-busy={inProgress || undefined}
+      aria-disabled={disabled || undefined}
       title={label}
       className={
         "ml-1 -mr-0.5 inline-flex shrink-0 items-center justify-center rounded-full size-4 transition-colors " +
-        (followed
-          ? "text-blue-dark-sky dark:text-blue-dark-sky"
-          : "text-gray-500 hover:text-blue-dark-sky dark:text-gray-400 dark:hover:text-blue-dark-sky")
+        (disabled
+          ? "cursor-not-allowed text-gray-400 opacity-50 dark:text-gray-500"
+          : followed
+            ? "text-blue-dark-sky dark:text-blue-dark-sky"
+            : "text-gray-500 hover:text-blue-dark-sky dark:text-gray-400 dark:hover:text-blue-dark-sky")
       }
       onClick={activate}
       onKeyDown={(e) => {
