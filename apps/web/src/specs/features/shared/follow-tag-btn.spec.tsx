@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { renderWithQueryClient } from "@/specs/test-utils";
+import { cleanupModalContainers, renderWithQueryClient, setupModalContainers } from "@/specs/test-utils";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { getAccessToken } from "@/utils";
 import { FollowTagBtn, FollowTagChipToggle } from "@/features/shared/follow-tag-btn";
@@ -314,14 +314,31 @@ describe("FollowTagChipToggle", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("does not expose a pressed state to a signed-out reader", () => {
+  // A signed-out reader cannot follow, so the chip opens the choice dialog (log
+  // in, or the tag's email digest) rather than running the follow or letting the
+  // click reach the chip's link.
+  it("does not expose a pressed state to a signed-out reader and opens the choice dialog on activation", () => {
     signedOut();
-    renderWithQueryClient(<FollowTagChipToggle tag="photography" />);
+    setupModalContainers();
+    try {
+      const onLinkClick = vi.fn();
+      renderWithQueryClient(
+        <a href="/trending/photography" onClick={onLinkClick}>
+          <FollowTagChipToggle tag="photography" />
+        </a>
+      );
 
-    const toggle = screen.getByRole("button", { name: "follow-tag.add" });
-    expect(toggle).not.toHaveAttribute("aria-pressed");
+      const toggle = screen.getByRole("button", { name: "follow-tag.add" });
+      expect(toggle).not.toHaveAttribute("aria-pressed");
+      expect(screen.queryByText("follow-tag.anon-title")).not.toBeInTheDocument();
 
-    fireEvent.click(toggle);
-    expect(addMock).not.toHaveBeenCalled();
+      fireEvent.click(toggle);
+      expect(addMock).not.toHaveBeenCalled();
+      expect(onLinkClick).not.toHaveBeenCalled();
+      expect(screen.getByText("follow-tag.anon-title")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "follow-tag.anon-login" })).toBeInTheDocument();
+    } finally {
+      cleanupModalContainers();
+    }
   });
 });

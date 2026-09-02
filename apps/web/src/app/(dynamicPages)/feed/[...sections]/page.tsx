@@ -90,7 +90,7 @@ export default async function FeedPage({ params, searchParams }: Props) {
       >
         <div className="entry-list">
           <div className="entry-list-body">
-            {showTagHeader && <TagFeedHeader tag={tag} />}
+            {showTagHeader && <TagFeedHeader tag={tag} hasPosts={entries.length > 0} />}
             <EntryListContent
               username=""
               loading={false}
@@ -153,7 +153,7 @@ export default async function FeedPage({ params, searchParams }: Props) {
         {/* Personal feed (/@user/feed) is where new users land after login;
             the card self-gates to fresh accounts and renders nothing otherwise. */}
         {filter === "feed" && <WavesOnboardingChecklist />}
-        {showTagHeader && <TagFeedHeader tag={tag} />}
+        {showTagHeader && <TagFeedHeader tag={tag} hasPosts={firstPage.length > 0} />}
         <FeedList filter={filter} tag={tag} observer={observer} />
         {olderCursor && (
           <EntryArchivePager basePath={basePath} olderCursor={olderCursor} showLatest={false} />

@@ -50,7 +50,32 @@ interface Props {
  * `{ status: "pending_confirmation" }`, and the dialog shows the check-your-inbox state
  * without assuming any of the richer fields a proven caller receives.
  */
-export function DigestSubscribeDialog({ type, target, targetLabel, source, show, onHide, onSubscribed }: Props) {
+/**
+ * What a failed subscribe says. Keyed on the relay's status: the service's own
+ * codes ride in the body, but the status is what the transport preserves for
+ * every failure, including the ones that never reached the service. 422 is the
+ * tag offer gate (`tag_too_quiet`): the tag exists but too few people post
+ * under it for a digest yet.
+ */
+export function subscribeErrorMessage(e: unknown): string {
+  if (!(e instanceof NewsletterApiError)) return i18next.t("newsletter.error-generic");
+  if (e.status === 503) return i18next.t("newsletter.error-unavailable");
+  if (e.status === 502 || e.status === 504) return i18next.t("newsletter.error-gateway");
+  if (e.status === 403) return i18next.t("newsletter.error-captcha");
+  if (e.status === 429) return i18next.t("newsletter.error-too-many");
+  if (e.status === 422) return i18next.t("newsletter.error-tag-quiet");
+  return i18next.t("newsletter.error-generic");
+}
+
+export function DigestSubscribeDialog({
+  type,
+  target,
+  targetLabel,
+  source,
+  show,
+  onHide,
+  onSubscribed
+}: Props) {
   const { activeUser } = useActiveAccount();
   const { subscription, isLoading } = useDigestSubscription(type, target);
   const knownAddress = useKnownDigestAddress();
@@ -128,7 +153,9 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
           ? i18next.t("newsletter.site-digest")
           : type === "community"
             ? i18next.t("newsletter.community-digest", { name: targetLabel })
-            : i18next.t("newsletter.creator-digest", { name: targetLabel }),
+            : type === "tag"
+              ? i18next.t("newsletter.tag-digest", { name: targetLabel })
+              : i18next.t("newsletter.creator-digest", { name: targetLabel }),
     [type, targetLabel]
   );
 
@@ -155,17 +182,7 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
       }
     } catch (e) {
       if (e instanceof NewsletterApiError && e.status === 403) setCaptchaRequired(true);
-      const message =
-        e instanceof NewsletterApiError && e.status === 503
-          ? i18next.t("newsletter.error-unavailable")
-          : e instanceof NewsletterApiError && (e.status === 502 || e.status === 504)
-            ? i18next.t("newsletter.error-gateway")
-            : e instanceof NewsletterApiError && e.status === 403
-              ? i18next.t("newsletter.error-captcha")
-              : e instanceof NewsletterApiError && e.status === 429
-                ? i18next.t("newsletter.error-too-many")
-                : i18next.t("newsletter.error-generic");
-      toastError(message);
+      toastError(subscribeErrorMessage(e));
       resetCaptcha();
     }
   };
@@ -190,9 +207,13 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
         <div className="flex flex-col gap-4">
           {outcome?.status === "pending_confirmation" ? (
             <Alert appearance="success">
-              {i18next.t("newsletter.check-inbox", { email: (subscription?.email ?? email).trim() })}
+              {i18next.t("newsletter.check-inbox", {
+                email: (subscription?.email ?? email).trim()
+              })}
               {outcome.confirmationSent === false && (
-                <div className="mt-1 text-xs opacity-80">{i18next.t("newsletter.recently-sent")}</div>
+                <div className="mt-1 text-xs opacity-80">
+                  {i18next.t("newsletter.recently-sent")}
+                </div>
               )}
             </Alert>
           ) : outcome?.status === "refused" ? (
@@ -230,7 +251,9 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
                   ? i18next.t("newsletter.intro-site")
                   : type === "community"
                     ? i18next.t("newsletter.intro-community", { name: targetLabel })
-                    : i18next.t("newsletter.intro-creator", { name: targetLabel })}
+                    : type === "tag"
+                      ? i18next.t("newsletter.intro-tag", { name: targetLabel })
+                      : i18next.t("newsletter.intro-creator", { name: targetLabel })}
             </p>
           )}
 
@@ -291,7 +314,8 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
 
               <p className="text-xs text-gray-500 dark:text-gray-400 px-2">
                 {i18next.t("newsletter.disclosure")}
-                {type === "creator" && " " + i18next.t("newsletter.disclosure-creator", { name: targetLabel })}
+                {type === "creator" &&
+                  " " + i18next.t("newsletter.disclosure-creator", { name: targetLabel })}
               </p>
 
               <div className="flex flex-wrap gap-2 items-center">
@@ -299,7 +323,13 @@ export function DigestSubscribeDialog({ type, target, targetLabel, source, show,
                   {primaryLabel}
                 </Button>
                 {subscription && (
-                  <Button appearance="danger" outline={true} onClick={doLeave} disabled={busy} isLoading={leave.isPending}>
+                  <Button
+                    appearance="danger"
+                    outline={true}
+                    onClick={doLeave}
+                    disabled={busy}
+                    isLoading={leave.isPending}
+                  >
                     {i18next.t("newsletter.leave")}
                   </Button>
                 )}

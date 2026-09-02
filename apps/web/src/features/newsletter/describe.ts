@@ -16,6 +16,8 @@ export function describeDigest(type: DigestType | string, target: string): strin
       return i18next.t("newsletter.row-creator", { name: target });
     case "site":
       return i18next.t("newsletter.row-site");
+    case "tag":
+      return i18next.t("newsletter.row-tag", { name: target });
     case "own":
       return i18next.t("newsletter.row-own");
     default:

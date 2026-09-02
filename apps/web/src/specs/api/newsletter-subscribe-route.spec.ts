@@ -145,6 +145,25 @@ describe("POST /api/newsletter/subscribe", () => {
     });
   });
 
+  // A tag digest is anonymous by nature (the signed-in path is a follow, not an
+  // email) and comes from the tag page or a post's tag chip. The service decides
+  // whether the tag is busy enough; its refusal must reach the dialog as the 422
+  // it is, since the dialog keys its copy on the status.
+  it("accepts a tag digest from the tag page and the chip, and relays the too-quiet refusal as-is", async () => {
+    mocks.fetch.mockResolvedValue(upstream(200, { status: "pending_confirmation" }));
+    for (const source of ["tag-page", "tag-chip"]) {
+      const r = await post({ ...VALID, type: "tag", target: "Photography", source });
+      expect(r.status).toBe(200);
+      expect(JSON.parse(mocks.fetch.mock.calls.at(-1)![1].body)).toMatchObject({ type: "tag", target: "photography", source });
+    }
+
+    const refusal = { error: "tag too quiet", code: "tag_too_quiet", authors: 2, required: 5 };
+    mocks.fetch.mockResolvedValue(upstream(422, refusal));
+    const r = await post({ ...VALID, type: "tag", target: "quiet", source: "tag-page" });
+    expect(r.status).toBe(422);
+    expect(r.json).toEqual(refusal);
+  });
+
   it("the own digest needs a verified account and its target must be that account", async () => {
     // Anonymous: no account to be the target of.
     expect((await post({ ...VALID, type: "own", target: "alice" })).status).toBe(401);

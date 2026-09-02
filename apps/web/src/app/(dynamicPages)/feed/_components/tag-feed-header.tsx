@@ -1,19 +1,28 @@
 "use client";
 
 import { FollowTagBtn } from "@/features/shared/follow-tag-btn";
+import { DigestSubscribeButton } from "@/features/newsletter";
+import { NewsletterGate } from "@/features/newsletter/runtime";
 import { normalizeTag } from "@ecency/sdk";
 import i18next from "i18next";
 
 interface Props {
   tag: string;
+  /**
+   * Whether the feed behind this header has posts. The email digest is offered
+   * only then: the service refuses a tag nobody posts under anyway, and a button
+   * that can only fail is worse than none.
+   */
+  hasPosts?: boolean;
 }
 
 /**
- * The header of a plain tag's feed: the tag's name and a Follow button. A
- * community feed has its own card, and a value the follow rule refuses (an
- * underscore tag, say) gets no header rather than a button that cannot work.
+ * The header of a plain tag's feed: the tag's name, a Follow button, and the
+ * tag's email digest. A community feed has its own card, and a value the follow
+ * rule refuses (an underscore tag, say) gets no header rather than a button
+ * that cannot work.
  */
-export function TagFeedHeader({ tag }: Props) {
+export function TagFeedHeader({ tag, hasPosts = true }: Props) {
   if (!normalizeTag(tag)) {
     return null;
   }
@@ -26,7 +35,20 @@ export function TagFeedHeader({ tag }: Props) {
           {i18next.t("follow-tag.header-hint")}
         </span>
       </div>
-      <FollowTagBtn tag={tag} />
+      <div className="flex shrink-0 items-center gap-2">
+        {hasPosts && (
+          <NewsletterGate>
+            <DigestSubscribeButton
+              type="tag"
+              target={tag}
+              targetLabel={`#${tag}`}
+              source="tag-page"
+              size="sm"
+            />
+          </NewsletterGate>
+        )}
+        <FollowTagBtn tag={tag} />
+      </div>
     </div>
   );
 }

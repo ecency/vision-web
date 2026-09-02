@@ -10,7 +10,7 @@ import {
   relay
 } from "@/server/newsletter-internal";
 
-const TYPES = new Set(["own", "community", "creator", "site"]);
+const TYPES = new Set(["own", "community", "creator", "site", "tag"]);
 const CADENCES = new Set(["weekly", "monthly"]);
 /**
  * Newsletter tokens are scoped to this action. The sitekey is shared with signup, so
@@ -18,7 +18,7 @@ const CADENCES = new Set(["weekly", "monthly"]);
  */
 const TURNSTILE_ACTION = "newsletter-subscribe";
 
-const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-page", "publish-prompt", "post-page", "self-hosted-blog", "mobile-app"]);
+const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-page", "publish-prompt", "post-page", "self-hosted-blog", "mobile-app", "tag-page", "tag-chip"]);
 
 /**
  * Subscribe to a community or creator digest.
@@ -36,7 +36,8 @@ const SOURCES = new Set(["community-page", "creator-page", "settings", "landing-
  * sending a chosen post and composing an issue, which server/newsletter-sender-gate checks
  * on the send routes.
  * The site digest (`type: "site"`, the homepage form) has one target, `ecency`, which the
- * service enforces.
+ * service enforces. A tag digest (`type: "tag"`) is offered by the service only once the
+ * tag has enough recent authors; its 422 `tag_too_quiet` is relayed as-is.
  */
 export async function POST(request: NextRequest) {
   if (!newsletterConfigured()) return notConfigured();
