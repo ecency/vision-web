@@ -17,6 +17,13 @@ interface Props {
   source: SubscribeInput["source"];
   size?: ButtonProps["size"];
   className?: string;
+  /**
+   * The label while the account holds no subscription. Defaults to the generic
+   * "Email digest"; a surface whose target is not obvious from its context (a
+   * tag page beside a Follow button) names the target instead. The subscribed
+   * and pending states keep their own copy.
+   */
+  label?: string;
 }
 
 /**
@@ -48,11 +55,23 @@ function useSubscribeLinkOpener(onOpen: (() => void) | null): void {
     onOpen();
     params.delete(SUBSCRIBE_PARAM);
     const rest = params.toString();
-    window.history.replaceState(window.history.state, "", `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`
+    );
   }, [onOpen]);
 }
 
-export function DigestSubscribeButton({ type, target, targetLabel, source, size, className }: Props) {
+export function DigestSubscribeButton({
+  type,
+  target,
+  targetLabel,
+  source,
+  size,
+  className,
+  label: idleLabel
+}: Props) {
   const enabled = useNewsletterEnabled();
   const [open, setOpen] = useState(false);
   const { subscription } = useDigestSubscription(type, target);
@@ -71,7 +90,7 @@ export function DigestSubscribeButton({ type, target, targetLabel, source, size,
           cadence: i18next.t(`newsletter.cadence.${subscription.cadence}`)
         })
       : i18next.t("newsletter.button-pending")
-    : i18next.t("newsletter.button");
+    : (idleLabel ?? i18next.t("newsletter.button"));
 
   return (
     <>

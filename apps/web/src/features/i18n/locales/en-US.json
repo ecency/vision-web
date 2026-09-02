@@ -1958,8 +1958,7 @@
     "header-hint": "Follow to get notified about new posts with this tag",
     "anon-title": "Follow #{{tag}}",
     "anon-body": "Log in to follow this tag and get notified about new posts, or get its best posts as a weekly or monthly email instead.",
-    "anon-login": "Log in to follow",
-    "anon-email": "Get #{{tag}} by email"
+    "anon-login": "Log in to follow"
   },
   "editor-toolbar": {
     "bold": "Bold (Ctrl + B)",
@@ -2083,7 +2082,6 @@
     "thumbnail-upload-failed": "Failed to upload thumbnail. Please try again.",
     "error-too-large": "Video file is too large. Please use a smaller file.",
     "error-too-many": "Too many upload requests. Please wait a moment and try again.",
-    "error-tag-quiet": "This tag does not have enough recent authors for a digest yet. Try again once more people post with it.",
     "error-unavailable": "Upload service is temporarily unavailable. Please try again later.",
     "error-auth": "Authentication failed. Please contact support.",
     "error-generic": "Failed to upload video. Please try again.",
@@ -4149,6 +4147,7 @@
   },
   "newsletter": {
     "button": "Email digest",
+    "button-tag": "Get #{{name}} by email",
     "button-subscribed": "Digest: {{cadence}}",
     "button-pending": "Digest: confirm email",
     "button-title": "Get a digest of this by email",
@@ -4214,6 +4213,7 @@
     "error-gateway": "The digest service did not answer. Please try again in a moment.",
     "error-captcha": "That verification did not go through. Please try the check again.",
     "error-too-many": "Too many signups from your network today. Please try again tomorrow.",
+    "error-tag-quiet": "This tag does not have enough recent authors for a digest yet. Try again once more people post with it.",
     "row-site": "Ecency digest",
     "row-tag": "Posts tagged #{{name}}",
     "row-unknown": "Digest ({{type}})",

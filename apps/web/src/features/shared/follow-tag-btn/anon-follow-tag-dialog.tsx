@@ -48,7 +48,7 @@ export function AnonFollowTagDialog({ tag, show, onHide }: Props) {
               </Button>
               <NewsletterGate>
                 <Button appearance="gray" onClick={() => setEmailOpen(true)}>
-                  {i18next.t("follow-tag.anon-email", { tag })}
+                  {i18next.t("newsletter.button-tag", { name: tag })}
                 </Button>
               </NewsletterGate>
             </div>

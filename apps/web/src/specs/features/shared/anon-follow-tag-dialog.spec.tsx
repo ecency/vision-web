@@ -75,7 +75,7 @@ describe("AnonFollowTagDialog", () => {
     const onHide = vi.fn();
     renderConfigured(<AnonFollowTagDialog tag="photography" show={true} onHide={onHide} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "follow-tag.anon-email" }));
+    fireEvent.click(screen.getByRole("button", { name: "newsletter.button-tag" }));
 
     await waitFor(() => expect(screen.getByText("newsletter.tag-digest")).toBeInTheDocument());
     expect(screen.getByText("newsletter.intro-tag")).toBeInTheDocument();
@@ -91,12 +91,12 @@ describe("AnonFollowTagDialog", () => {
       <AnonFollowTagDialog tag="photography" show={true} onHide={vi.fn()} />
     );
     expect(screen.getByRole("button", { name: "follow-tag.anon-login" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "follow-tag.anon-email" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "newsletter.button-tag" })).not.toBeInTheDocument();
     unmount();
 
     flags.newsletter = true;
     renderWithQueryClient(<AnonFollowTagDialog tag="photography" show={true} onHide={vi.fn()} />);
     expect(screen.getByRole("button", { name: "follow-tag.anon-login" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "follow-tag.anon-email" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "newsletter.button-tag" })).not.toBeInTheDocument();
   });
 });

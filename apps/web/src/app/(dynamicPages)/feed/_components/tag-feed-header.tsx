@@ -44,6 +44,7 @@ export function TagFeedHeader({ tag, hasPosts = true }: Props) {
               targetLabel={`#${tag}`}
               source="tag-page"
               size="sm"
+              label={i18next.t("newsletter.button-tag", { name: tag })}
             />
           </NewsletterGate>
         )}
