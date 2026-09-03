@@ -59,7 +59,10 @@ const DAYJS_LOCALE_LOADERS: Record<string, () => Promise<unknown>> = {
  */
 let localeRequestId = 0;
 
-export async function setDayjsLocale(lang: string): Promise<void> {
+export async function setDayjsLocale(lang: string | null | undefined): Promise<void> {
+  if (!lang) {
+    return;
+  }
   // CLIENT-ONLY by design. dayjs.locale() mutates a process-global singleton;
   // on the server one request's ?lang= would leak its locale into every
   // concurrent request's SSR (and the request-id below would race across
