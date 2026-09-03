@@ -47,7 +47,9 @@ export function NavigationLocaleWatcherClient({ targetLanguage }: Props) {
 
   useUnmount(() => {
     const currentLang = ls.get("current-language");
-    setLang(currentLang);
+    if (currentLang) {
+      setLang(currentLang);
+    }
     i18next.off("languageChanged", localeChanged);
   });
 
