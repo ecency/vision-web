@@ -7484,10 +7484,18 @@ interface IncomingRcResponse {
     list: IncomingRcDelegation[];
 }
 
+/**
+ * One incoming HP delegation, as the received-delegation queries return it.
+ *
+ * `vesting_shares` is the legacy "n.nnnnnn VESTS" string. `timestamp` is
+ * optional: the balance-api rows these are built from carry a block number
+ * but no time, so it is absent there; only rows from the old Ecency endpoint
+ * ever had it.
+ */
 interface ReceivedVestingShare {
     delegatee: string;
     delegator: string;
-    timestamp: string;
+    timestamp?: string;
     vesting_shares: string;
 }
 
@@ -7736,6 +7744,15 @@ declare function getIncomingRcQueryOptions(username: string | undefined): _tanst
     };
 };
 
+/**
+ * Who delegates HP to `username`, largest first.
+ *
+ * Read from the HAF balance-api through {@link getAccountDelegationsQueryOptions}
+ * (fetched via the shared query client, so a page showing the totals and the
+ * list makes one request), not from the Ecency notification database any more.
+ * The return shape is unchanged apart from `timestamp`, which balance-api does
+ * not carry.
+ */
 declare function getReceivedVestingSharesQueryOptions(username: string): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<ReceivedVestingShare[], Error, ReceivedVestingShare[], string[]>, "queryFn"> & {
     queryFn?: _tanstack_react_query.QueryFunction<ReceivedVestingShare[], string[], never> | undefined;
 } & {
@@ -8154,6 +8171,12 @@ declare function getHivePowerDelegatesInfiniteQueryOptions(username: string, lim
     };
 };
 
+/**
+ * The same list as {@link getReceivedVestingSharesQueryOptions} under the key
+ * the wallet's HP asset views use. Both read the HAF balance-api through the
+ * shared account-delegations query, so neither depends on the Ecency
+ * notification database.
+ */
 declare function getHivePowerDelegatingsQueryOptions(username: string): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<ReceivedVestingShare[], Error, ReceivedVestingShare[], string[]>, "queryFn"> & {
     queryFn?: _tanstack_react_query.QueryFunction<ReceivedVestingShare[], string[], never> | undefined;
 } & {

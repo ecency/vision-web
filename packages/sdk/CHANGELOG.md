@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.99
+
+### Patch Changes
+
+- SDK: read received HP delegations from balance-api (#1724)
+
 ## 2.3.98
 
 ### Patch Changes
