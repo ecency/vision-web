@@ -3,10 +3,11 @@ import type { ReceivedVestingShare } from "../types/received-vesting-share";
 
 /**
  * Raw vests from balance-api ("903311000000" = 903311.000000 VESTS) as the
- * legacy asset string. String arithmetic, so a large delegation keeps every
- * digit: balances above 2^53 raw units would lose precision as a float.
+ * legacy asset string. Takes the decimal string (or a bigint), never a number:
+ * a float has already rounded anything above 2^53 raw units before it gets
+ * here, and the string arithmetic below keeps every digit.
  */
-export function rawVestsToAsset(amount: string | number): string {
+export function rawVestsToAsset(amount: string | bigint): string {
   const digits = String(amount).replace(/\D/g, "") || "0";
   const padded = digits.padStart(7, "0");
   const whole = padded.slice(0, -6).replace(/^0+(?=\d)/, "");
@@ -23,11 +24,13 @@ export function toReceivedVestingShares(
 ): ReceivedVestingShare[] {
   return (delegations?.incoming_delegations ?? [])
     .map((d) => ({
-      delegatee,
       delegator: d.delegator,
-      vesting_shares: rawVestsToAsset(d.amount),
       raw: BigInt(String(d.amount).replace(/\D/g, "") || "0"),
     }))
     .sort((a, b) => (a.raw === b.raw ? 0 : a.raw > b.raw ? -1 : 1))
-    .map(({ raw: _raw, ...share }) => share);
+    .map(({ delegator, raw }) => ({
+      delegatee,
+      delegator,
+      vesting_shares: rawVestsToAsset(raw),
+    }));
 }

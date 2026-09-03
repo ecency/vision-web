@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfigManager } from "@/modules/core/config";
+import { QueryKeys } from "@/modules/core/query-keys";
 import { getHivePowerDelegatingsQueryOptions } from "./get-hive-power-delegatings-query-options";
 import { getReceivedVestingSharesQueryOptions } from "./get-received-vesting-shares-query-options";
 import {
@@ -97,12 +98,12 @@ describe("received-delegation queries", () => {
     [
       "getReceivedVestingSharesQueryOptions",
       getReceivedVestingSharesQueryOptions,
-      ["wallet", "received-vesting-shares", "alice"],
+      QueryKeys.wallet.receivedVestingShares("alice"),
     ],
     [
       "getHivePowerDelegatingsQueryOptions",
       getHivePowerDelegatingsQueryOptions,
-      ["assets", "hive-power", "delegatings", "alice"],
+      QueryKeys.assets.hivePowerDelegatings("alice"),
     ],
   ] as const)(
     "%s reads balance-api, never the Ecency endpoint, under its own key",
