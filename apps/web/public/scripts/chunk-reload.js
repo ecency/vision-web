@@ -40,10 +40,7 @@
     function (event) {
       var el = event.target;
       if (el && (el.tagName === "SCRIPT" || el.tagName === "LINK")) {
-        var src = el.src || el.href || "";
-        if (src.indexOf("/_next/") !== -1) {
-          tryReload();
-        }
+        tryReload();
       }
     },
     true
