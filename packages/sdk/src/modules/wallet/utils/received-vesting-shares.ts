@@ -19,7 +19,7 @@ export function rawVestsToAsset(amount: string | number): string {
  */
 export function toReceivedVestingShares(
   delegatee: string,
-  delegations: AccountDelegations | null | undefined
+  delegations: AccountDelegations | null | undefined,
 ): ReceivedVestingShare[] {
   return (delegations?.incoming_delegations ?? [])
     .map((d) => ({

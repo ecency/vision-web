@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { getQueryClient } from "@/modules/core";
+import { getQueryClient, QueryKeys } from "@/modules/core";
 import { getAccountDelegationsQueryOptions } from "./get-account-delegations-query-options";
 import { toReceivedVestingShares } from "../utils/received-vesting-shares";
 
@@ -11,7 +11,7 @@ import { toReceivedVestingShares } from "../utils/received-vesting-shares";
  */
 export function getHivePowerDelegatingsQueryOptions(username: string) {
   return queryOptions({
-    queryKey: ["assets", "hive-power", "delegatings", username],
+    queryKey: QueryKeys.assets.hivePowerDelegatings(username),
     enabled: !!username,
     queryFn: async () =>
       toReceivedVestingShares(
@@ -21,7 +21,7 @@ export function getHivePowerDelegatingsQueryOptions(username: string) {
         await getQueryClient().fetchQuery({
           ...getAccountDelegationsQueryOptions(username),
           staleTime: 60_000,
-        })
+        }),
       ),
   });
 }

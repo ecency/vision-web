@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { getQueryClient } from "@/modules/core";
+import { getQueryClient, QueryKeys } from "@/modules/core";
 import { getAccountDelegationsQueryOptions } from "./get-account-delegations-query-options";
 import { toReceivedVestingShares } from "../utils/received-vesting-shares";
 
@@ -14,7 +14,7 @@ import { toReceivedVestingShares } from "../utils/received-vesting-shares";
  */
 export function getReceivedVestingSharesQueryOptions(username: string) {
   return queryOptions({
-    queryKey: ["wallet", "received-vesting-shares", username],
+    queryKey: QueryKeys.wallet.receivedVestingShares(username),
     enabled: !!username,
     queryFn: async () =>
       toReceivedVestingShares(
@@ -24,7 +24,7 @@ export function getReceivedVestingSharesQueryOptions(username: string) {
         await getQueryClient().fetchQuery({
           ...getAccountDelegationsQueryOptions(username),
           staleTime: 60_000,
-        })
+        }),
       ),
   });
 }
