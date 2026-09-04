@@ -250,6 +250,40 @@ describe('cleanReply() method - Reply Cleaning', () => {
       expect(result).not.toContain('scrobble.life')
     })
 
+    it('should remove the Lumen post footer and its separator', () => {
+      const input = 'My thoughts on the release\n\n---\n*Posted via Lumen*'
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe('My thoughts on the release')
+      expect(result).not.toContain('Lumen')
+      expect(result).not.toContain('---')
+    })
+
+    it('should remove the Lumen lite-account footer with the "by <user>" suffix', () => {
+      const input = 'This is a comment from a Lumen lite account\n\n---\n*Posted via Lumen by testeraccount*'
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe('This is a comment from a Lumen lite account')
+      expect(result).not.toContain('Posted via')
+      expect(result).not.toContain('---')
+    })
+
+    it('should preserve unrelated horizontal rules when removing the Lumen footer', () => {
+      const input = 'Intro\n\n---\n\nMore thoughts\n\n---\n*Posted via Lumen by ethuser*'
+      const result = cleanReply(input)
+
+      expect(result).toContain('Intro\n\n---\n\nMore thoughts')
+      expect(result).not.toContain('Posted via')
+      expect(result.trim().endsWith('More thoughts')).toBe(true)
+    })
+
+    it('should preserve replies that merely mention Lumen', () => {
+      const input = 'I posted via Lumen for the first time today and it worked'
+      const result = cleanReply(input)
+
+      expect(result).toBe(input)
+    })
+
     it('should preserve replies that merely mention scrobble.life', () => {
       const input = 'I started tracking what I watch on scrobble.life recently'
       const result = cleanReply(input)
