@@ -1652,3 +1652,17 @@
     @apply border-dark-default;
   }
 }
+
+// Honeyback: the game's landing and privacy pages stack their sections.
+// .app-content is a flex row by default; without this the sections sit
+// side by side as narrow columns.
+.static-page.honeyback-page {
+  display: block;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 4rem 0 0 !important;
+
+  @media (min-width: 768px) {
+    padding: 0 !important;
+  }
+}
