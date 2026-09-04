@@ -287,20 +287,17 @@ def write_private(contents: str, path: str | None) -> str:
     return path
 
 
-def broadcast_metadata(
-    account: str, serialized: str, json_metadata: str, key: str, nodes: list[str]
-) -> None:
+def broadcast_metadata(account: str, serialized: str, key: str, nodes: list[str]) -> None:
     """
     Update the account's posting_json_metadata.
 
-    The account's CURRENT json_metadata is sent back verbatim rather than left
-    empty. hived's account_update2 evaluator only writes a field whose string is
-    non-empty, so an empty one would in fact be left alone, but that is a detail
-    of an evaluator this script cannot test against, and the cost of being wrong
-    about it is erasing the app account's global metadata on a live account. Both
-    readings of the rule give the same result when the current value is echoed:
-    either it is skipped, or it is written back unchanged. Being explicit costs a
-    few bytes in a transaction that happens only when an instance is unregistered.
+    json_metadata is sent EMPTY, and must be. hived requires the account's
+    active authority for an account_update2 whose json_metadata is non-empty,
+    whatever it contains, and only the posting authority when it is empty; an
+    empty string leaves the field on chain untouched. An earlier version echoed
+    the account's current json_metadata back "to be safe", and the node refused
+    it with "Missing Active Authority": this runs with a posting key, and a
+    posting key is all it should ever hold.
 
     lighthive serializes through the node's own get_transaction_hex, so this needs
     no client-side operation table that could fall behind the chain.
@@ -317,7 +314,7 @@ def broadcast_metadata(
             "account_update2",
             {
                 "account": account,
-                "json_metadata": json_metadata,
+                "json_metadata": "",
                 "posting_json_metadata": serialized,
                 "extensions": [],
             },
@@ -568,14 +565,7 @@ def main() -> int:
 
     if missing:
         log(f"\nbroadcasting {len(missing)} addition(s) as {args.account}...")
-        broadcast_metadata(
-            args.account,
-            serialized,
-            # Echoed back rather than left empty: see broadcast_metadata.
-            account.get("json_metadata") or "",
-            key,
-            args.rpc.split(","),
-        )
+        broadcast_metadata(args.account, serialized, key, args.rpc.split(","))
         confirm_registered(args.rpc, args.account, wanted)
         log("confirmed on chain")
     else:
