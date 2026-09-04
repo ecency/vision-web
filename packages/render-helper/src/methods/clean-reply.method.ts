@@ -1,8 +1,14 @@
 export function cleanReply(s: string): string {
-  // scrobble.life's footer arrives as "---\n_Originally posted through [scrobble.life/...";
-  // drop the separator too (lookahead keeps unrelated horizontal rules), otherwise the
-  // line filter below leaves a dangling <hr> at the end of the post.
-  const pre = s ? s.replace(/(^|\n)-{3,}[ \t]*\n+(?=[^\n]*originally posted through \[scrobble\.life)/i, '$1') : s
+  // scrobble.life ("---\n_Originally posted through [scrobble.life/...") and Lumen
+  // ("---\n*Posted via Lumen*" or "---\n*Posted via Lumen by <user>*") both put a separator
+  // right before their byline; drop it too (lookahead keeps unrelated horizontal rules),
+  // otherwise the line filters below leave a dangling <hr> at the end of the post.
+  const pre = s
+    ? s.replace(
+        /(^|\n)-{3,}[ \t]*\n+(?=[^\n]*(?:originally posted through \[scrobble\.life|\*posted via lumen))/i,
+        '$1'
+      )
+    : s
   return (pre ? pre.split('\n')
     .filter(item => item.toLowerCase().includes('posted using [partiko') === false)
     .filter(item => item.toLowerCase().includes('posted using [dapplr') === false)
@@ -35,6 +41,7 @@ export function cleanReply(s: string): string {
       return !(l.includes('posted from liketu speak') && l.includes('auto-transcrib'));
     })
     .filter(item => item.toLowerCase().includes('originally posted through [scrobble.life') === false)
+    .filter(item => item.toLowerCase().includes('*posted via lumen') === false)
     .filter(item => item.toLowerCase().includes('[via Inbox]') === false)
     .filter(item => item.toLowerCase().includes('<sub>[via apps from](') === false)
     .join('\n') : '')
