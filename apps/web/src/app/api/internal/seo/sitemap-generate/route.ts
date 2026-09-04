@@ -366,7 +366,9 @@ export async function POST(req: Request): Promise<Response> {
     "whitepaper",
     "privacy-policy",
     "terms-of-service",
-    "child-safety"
+    "child-safety",
+    "honeyback-about",
+    "honeyback-privacy"
   ];
   const staticUrls: SitemapUrl[] = [
     ...hubPaths.map((p) => ({ loc: p ? `${BASE}/${p}` : `${BASE}/`, lastmod: nowDay })),

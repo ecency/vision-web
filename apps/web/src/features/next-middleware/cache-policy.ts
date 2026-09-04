@@ -110,6 +110,8 @@ const STATIC_PAGES = new Set([
   "/contributors",
   "/creator-economy",
   "/privacy-policy",
+  "/honeyback-about",
+  "/honeyback-privacy",
   "/terms-of-service",
   "/whitepaper",
   "/mobile"

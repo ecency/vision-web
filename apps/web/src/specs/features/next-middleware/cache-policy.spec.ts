@@ -68,7 +68,9 @@ describe("getCachePolicyForPath", () => {
       "/privacy-policy",
       "/terms-of-service",
       "/whitepaper",
-      "/mobile"
+      "/mobile",
+      "/honeyback-about",
+      "/honeyback-privacy"
     ])("returns static tier for %s", (path) => {
       const policy = getCachePolicyForPath(path);
       expect(policy).toEqual({ tier: "static", sMaxAge: 86400, staleWhileRevalidate: 604800 });
