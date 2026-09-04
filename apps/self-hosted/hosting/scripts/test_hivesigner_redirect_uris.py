@@ -250,7 +250,7 @@ class BroadcastMetadata(unittest.TestCase):
     whose mistakes are not undoable by running it again.
     """
 
-    def broadcast(self, json_metadata):
+    def broadcast(self):
         sent = {}
 
         class FakeClient:
@@ -282,23 +282,24 @@ class BroadcastMetadata(unittest.TestCase):
             sys.modules[name] = module
             self.addCleanup(sys.modules.pop, name, None)
 
-        registrar.broadcast_metadata("app", '{"profile":{}}', json_metadata, "wif", ["n"])
+        registrar.broadcast_metadata("app", '{"profile":{}}', "wif", ["n"])
         return sent
 
     def test_updates_the_posting_copy(self):
-        sent = self.broadcast("")
+        sent = self.broadcast()
         self.assertEqual(sent["op"][0], "account_update2")
         self.assertEqual(sent["op"][1]["posting_json_metadata"], '{"profile":{}}')
 
-    def test_echoes_the_accounts_existing_json_metadata_back(self):
-        # Sending an empty string here would rely on the evaluator treating it as
-        # "leave alone". If that reading is ever wrong, or ever changes, the app
-        # account's global metadata is erased and cannot be recovered from here.
-        sent = self.broadcast('{"keep":"me"}')
-        self.assertEqual(sent["op"][1]["json_metadata"], '{"keep":"me"}')
+    def test_leaves_json_metadata_empty_so_the_posting_key_suffices(self):
+        # A non-empty json_metadata, even the account's own current value echoed
+        # back, makes hived demand the ACTIVE authority ("Missing Active
+        # Authority"), and this runs with a posting key. Empty leaves the field
+        # alone on chain.
+        sent = self.broadcast()
+        self.assertEqual(sent["op"][1]["json_metadata"], "")
 
     def test_does_not_put_the_key_in_the_operation(self):
-        sent = self.broadcast("")
+        sent = self.broadcast()
         self.assertNotIn("wif", json.dumps(sent["op"]))
 
 
