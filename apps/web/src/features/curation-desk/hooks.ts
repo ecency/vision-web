@@ -332,7 +332,12 @@ function loadedHeadPostId(
  * head above the newest loaded row is a post the queue does not have yet.
  */
 function headAheadOfLoaded(next: FeedHeadVersion, loadedHead: number | null): boolean {
-  if (next.latestPostId == null || loadedHead == null) return false;
+  if (next.latestPostId == null) return false;
+  // An empty page one has no head to compare against, so the first status
+  // with a head is an initial refresh: without it an initially empty desk
+  // would record that status as its baseline and stay empty until the global
+  // head moved again. The baseline is recorded once the refreshed page lands.
+  if (loadedHead == null) return true;
   return next.latestPostId > loadedHead;
 }
 

@@ -114,6 +114,36 @@ describe("useStatusPoll", () => {
     expect(fetchPageOne).toHaveBeenCalledTimes(1);
   });
 
+  it("treats a head against an empty page one as an initial refresh, then records the baseline", async () => {
+    // A desk that opened empty has no row to compare against; the first status
+    // with a head must fetch page one or the page stays empty until the global
+    // head moves again.
+    seed(feedKey, [makeRosterPage([])]);
+    statusBody = makeStatus({ latest_post_id: 9 });
+    const fetchPageOne = vi.fn(async () => makeRosterPage([makeRow({ post_id: 9 })]));
+
+    renderHook(() => useStatusPoll({ enabled: true, feedKey, fetchPageOne }), { wrapper });
+    await poll();
+
+    expect(fetchPageOne).toHaveBeenCalledTimes(1);
+    expect(loaded(feedKey).pages[0].items[0].post_id).toBe(9);
+
+    await poll();
+    expect(fetchPageOne).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an empty page one at rest while the status carries no head", async () => {
+    seed(feedKey, [makeRosterPage([])]);
+    statusBody = makeStatus({ latest_post_id: null });
+    const fetchPageOne = vi.fn(async () => makeRosterPage([]));
+
+    renderHook(() => useStatusPoll({ enabled: true, feedKey, fetchPageOne }), { wrapper });
+    await poll();
+    await poll();
+
+    expect(fetchPageOne).not.toHaveBeenCalled();
+  });
+
   it("leaves a roster page one alone while the status head matches its newest row", async () => {
     seed(feedKey, [makeRosterPage([makeRow({ post_id: 9 }), makeRow({ post_id: 4 })])]);
     statusBody = makeStatus({ latest_post_id: 9 });
