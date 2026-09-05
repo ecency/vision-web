@@ -2,6 +2,7 @@ import React from "react";
 import "@testing-library/jest-dom";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { CurationPost } from "@ecency/sdk";
 import { renderWithQueryClient } from "@/specs/test-utils";
 import { installFetchRouter, jsonResponse, makePost, makeRoster, makeRow } from "./curation-test-utils";
 
@@ -44,15 +45,18 @@ vi.mock("@/api/sdk-mutations/use-curation-recommend-mutation", () => ({
 }));
 
 import { CurationRecommendBtn } from "@/features/curation-desk/curation-recommend-btn";
+import { error as errorToast } from "@/features/shared/feedback";
 import { resetRecommendFlowForTests } from "@/features/curation-desk/curation-recommend-flow";
 import { getRecommendState, resetRecommendStoreForTests } from "@/features/curation-desk/curation-recommend-store";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
     resolve = res;
+    reject = rej;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 /**
@@ -71,6 +75,7 @@ describe("recommend confirmation", () => {
     state.broadcasts.length = 0;
     resetRecommendFlowForTests();
     resetRecommendStoreForTests();
+    vi.mocked(errorToast).mockClear();
     router = installFetchRouter()
       .on(/curation-desk\/roster$/, () => makeRoster())
       .on(/curation-desk\/recommend-meta$/, () => jsonResponse({ ok: true }, 202));
@@ -177,5 +182,65 @@ describe("recommend confirmation", () => {
     });
     expect(getRecommendState("member1", "alice", "morning-light")).toEqual({ phase: "recommended", confirmed: true });
     expect(screen.getByLabelText("curation-desk.recommend.withdraw-aria")).toBeInTheDocument();
+  });
+
+  it("keeps what the poll confirmed when the broadcast rejects afterwards", async () => {
+    router.on(/curation-desk\/post\//, () => makePost(row, { recommend_count: 5, recommenders: [mine] }));
+    // The signer window is still open while the poll reads the chain.
+    const gate = deferred<unknown>();
+    state.result = () => gate.promise;
+
+    renderWithQueryClient(<CurationRecommendBtn author="alice" permlink="morning-light" />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("curation-desk.recommend.aria"));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("curation-desk.recommend.confirm"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(getRecommendState("member1", "alice", "morning-light")).toEqual({ phase: "recommended", confirmed: true });
+
+    // The rejection lands at 12 s, long after the operation reached the chain.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7_000);
+    });
+    await act(async () => {
+      gate.reject(new Error("signer window closed"));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    // The viewer is told, and the row still says the chain has it: reverting
+    // to idle would send the next click to broadcast a duplicate.
+    expect(errorToast).toHaveBeenCalled();
+    expect(getRecommendState("member1", "alice", "morning-light")).toEqual({ phase: "recommended", confirmed: true });
+    expect(screen.getByLabelText("curation-desk.recommend.withdraw-aria")).toBeInTheDocument();
+    expect(state.broadcasts).toEqual([false]);
+  });
+
+  it("never reads a body that carries no recommend_count as a count that dropped", async () => {
+    // The later answer omits the field instead of counting zero, and lists
+    // nobody either, so it says nothing about the withdrawal.
+    let carriesCount = true;
+    router.on(/curation-desk\/post\//, () => {
+      const post = makePost(row, { recommend_count: 4, recommenders: [] });
+      if (carriesCount) return post;
+      const { recommend_count: _absent, ...rest } = post;
+      return rest as CurationPost;
+    });
+    renderWithQueryClient(<CurationRecommendBtn author="alice" permlink="morning-light" alreadyRecommended />);
+    await clickWithdraw();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(getRecommendState("member1", "alice", "morning-light").phase).toBe("pending");
+
+    carriesCount = false;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(getRecommendState("member1", "alice", "morning-light").phase).toBe("pending");
   });
 });

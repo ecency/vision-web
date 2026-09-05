@@ -126,6 +126,52 @@ describe("useStatusPoll", () => {
     expect(loaded(feedKey).pages[0].items[0].post_id).toBe(9);
   });
 
+  it("re-applies a change first seen while nothing was loaded under the key", async () => {
+    // The poll runs on an empty view too, so the first change it reads often
+    // arrives before page one does.
+    statusBody = makeStatus({ feed_version: "v2", latest_post_id: 9 });
+    const fetchPageOne = vi.fn(async () => makeFeedPage([makeRow({ post_id: 9 })], { feed_version: "v2" }));
+
+    renderHook(() => useStatusPoll({ enabled: true, feedKey, fetchPageOne, feedVersion: "v1" }), { wrapper });
+    await poll();
+    expect(fetchPageOne).not.toHaveBeenCalled();
+
+    // Page one lands, built on the head the request carried.
+    seed(feedKey, [makeFeedPage([makeRow({ post_id: 1 })], { feed_version: "v1" })]);
+    await poll();
+
+    expect(fetchPageOne).toHaveBeenCalledTimes(1);
+    expect(loaded(feedKey).pages[0].items[0].post_id).toBe(9);
+  });
+
+  it("leaves the change alone while page one is still in flight", async () => {
+    seed(feedKey, [makeFeedPage([makeRow({ post_id: 1 })], { feed_version: "v1" })]);
+    const inFlight = deferred<InfiniteData<CurationFeedPage>>();
+    void queryClient
+      .fetchQuery({ queryKey: feedKey, queryFn: () => inFlight.promise, staleTime: 0 })
+      .catch(() => undefined);
+    statusBody = makeStatus({ feed_version: "v2", latest_post_id: 9 });
+    const fetchPageOne = vi.fn(async () => makeFeedPage([makeRow({ post_id: 9 })], { feed_version: "v2" }));
+
+    renderHook(() => useStatusPoll({ enabled: true, feedKey, fetchPageOne, feedVersion: "v1" }), { wrapper });
+    await poll();
+    // That request was sent under the older head, so its answer would put the
+    // change back the moment it installs.
+    expect(fetchPageOne).not.toHaveBeenCalled();
+
+    await act(async () => {
+      inFlight.resolve({
+        pages: [makeFeedPage([makeRow({ post_id: 1 })], { feed_version: "v1" })],
+        pageParams: [undefined],
+      });
+    });
+    await flush();
+    await poll();
+
+    expect(fetchPageOne).toHaveBeenCalledTimes(1);
+    expect(loaded(feedKey).pages[0].items[0].post_id).toBe(9);
+  });
+
   it("resets to the refreshed page instead of leaving a hole behind a new head", async () => {
     seed(feedKey, [
       makeFeedPage([makeRow({ post_id: 100 }), makeRow({ post_id: 76 })], { feed_version: "v1" }),

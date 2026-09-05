@@ -263,10 +263,15 @@ export function useCurationTick(options: TickOptions): TickState {
   }, [enabled, username, tickNow]);
 
   // A new feed key (filters changed) starts a fresh delta window; every tick
-  // still in flight belongs to the window that just ended.
+  // still in flight belongs to the window that just ended. Unmounting ends a
+  // window the same way, so the cleanup bumps the generation too: an answer
+  // that lands after the desk is gone has no queue left to write to.
   useEffect(() => {
     generationRef.current += 1;
     sinceRef.current = null;
+    return () => {
+      generationRef.current += 1;
+    };
   }, [feedKey]);
 
   return { ...state, tickNow };
@@ -354,9 +359,12 @@ export function useStatusPoll({ enabled, feedKey, fetchPageOne, feedVersion }: S
         versionRef.current = next;
         return;
       }
-      // Nothing is loaded under this key, so whatever loads next loads fresh.
-      if (queryClient.getQueryData(key) === undefined) {
-        versionRef.current = next;
+      // Page one is missing, or it is in flight and was asked for under the
+      // older head. Recording the version here would consume a change the
+      // page that lands next may not carry, so the poll leaves it: the next
+      // one reads the same change against a queue that is actually there.
+      const feedState = queryClient.getQueryState(key);
+      if (!feedState || feedState.data === undefined || feedState.fetchStatus === "fetching") {
         return;
       }
       try {

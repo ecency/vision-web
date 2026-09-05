@@ -198,6 +198,40 @@ describe("useCurationTick", () => {
     expect(router.callsTo(/tick/)[0].body?.since).toBeNull();
   });
 
+  it("discards an answer that arrives after the desk unmounted", async () => {
+    seed();
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    tickResponse = tickBody({
+      deltas: { marks: [{ post_id: 2, curator: "riyat", state: "reviewed", updated_at: iso(0) }], flags: [], signals: [] },
+    });
+    router.on(/curation-desk\/tick/, async () => {
+      await gate;
+      return tickResponse;
+    });
+    const setQueryData = vi.spyOn(queryClient, "setQueryData");
+
+    const { unmount } = renderHook(
+      () => useCurationTick({ username: "curator1", enabled: true, feedKey, rows: [rowA, rowB], getVisibleIds: () => [1, 2] }),
+      { wrapper }
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    // The viewer leaves the desk with the tick still in flight.
+    unmount();
+    await act(async () => {
+      release?.();
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    expect(setQueryData).not.toHaveBeenCalled();
+    const after = queryClient.getQueryData<InfiniteData<CurationRosterFeedPage>>(feedKey)!;
+    expect(after.pages[0].items[1].overlay).toBeNull();
+  });
+
   it("merges deltas keeping identity for untouched rows and invalidates on truncated", async () => {
     seed();
     const before = queryClient.getQueryData<InfiniteData<CurationRosterFeedPage>>(feedKey)!;

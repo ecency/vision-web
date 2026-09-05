@@ -138,7 +138,8 @@ function viewerRow(post: CurationPost | undefined, username: string) {
  * indexed is missing the name for a reason that has nothing to do with the
  * withdrawal. A recommend_count below the first count this poll saw is the
  * other proof the row moved, for the viewer whose recommendation was already
- * gone from the first body.
+ * gone from the first body. A body that carries no count at all is not a
+ * count that fell to zero: it says nothing, exactly like the missing name.
  */
 export function startRecommendPoll(
   queryClient: QueryClient,
@@ -193,7 +194,10 @@ export function startRecommendPoll(
       if (firstCount === null) firstCount = post.recommend_count ?? null;
     }
     const countDropped =
-      post !== undefined && firstCount !== null && (post.recommend_count ?? 0) < firstCount;
+      post !== undefined &&
+      firstCount !== null &&
+      typeof post.recommend_count === "number" &&
+      post.recommend_count < firstCount;
     const seen = withdraw ? post !== undefined && !mine && (sawViewer || countDropped) : !!mine;
     if (seen) {
       finish(true);
@@ -227,9 +231,13 @@ export function useRecommendFlow(author: string, permlink: string) {
     async (withdraw: boolean, reason?: CurationReason) => {
       if (!username) throw new Error("[CurationDesk] recommend needs a logged in user");
       const previous = getRecommendState(username, author, permlink);
+      // `since` doubles as this run's token. The poll and a later click both
+      // write over the pending record, so only the run that installed it may
+      // take it back.
+      const since = Date.now();
       setRecommendState(username, author, permlink, {
         phase: "pending",
-        since: Date.now(),
+        since,
         withdraw,
         trxId: null,
         pinged: false,
@@ -259,8 +267,16 @@ export function useRecommendFlow(author: string, permlink: string) {
         }
         return result;
       } catch (error) {
-        clearTimers(recommendKey(username, author, permlink));
-        setRecommendState(username, author, permlink, previous);
+        const current = getRecommendState(username, author, permlink);
+        // A rejection only undoes the pending record this run installed. The
+        // poll reads the chain while the broadcast is unresolved and a signer
+        // can reject long after the operation landed, so restoring `previous`
+        // over a confirmed state would send the next click to broadcast a
+        // duplicate. The caller still shows the error either way.
+        if (current.phase === "pending" && current.since === since) {
+          clearTimers(recommendKey(username, author, permlink));
+          setRecommendState(username, author, permlink, previous);
+        }
         throw error;
       }
     },
