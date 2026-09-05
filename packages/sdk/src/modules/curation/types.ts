@@ -122,6 +122,10 @@ export interface CurationRow {
   trailed_by: CurationTrailedBy | null;
   voted_by: CurationVotedBy[];
   author_trailed_at: string | null;
+  /** Set on the hivewatchers unvote path. */
+  unvoted_at?: string | null;
+  /** Materialization time; with `created` it tells a late row (roster feed). */
+  inserted_at?: string | null;
   recommend_count: number;
   unique_recommenders: number;
   reco_no_meta_count: number;
