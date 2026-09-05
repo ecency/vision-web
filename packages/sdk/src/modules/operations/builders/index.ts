@@ -109,6 +109,8 @@ export {
   buildBoostPlusOp,
   buildRcDelegationOp,
   buildPromoteOp,
+  buildCurationRecommendOp,
+  buildCurationUnrecommendOp,
   buildPointTransferOp,
   buildMultiPointTransferOps,
   buildCommunityRegistrationOp,
