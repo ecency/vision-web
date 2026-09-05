@@ -7,7 +7,11 @@ export function LandingSignInLink() {
   const toggleUIProp = useGlobalStore((s) => s.toggleUiProp);
 
   return (
-    <button type="button" className="cursor-pointer" onClick={() => toggleUIProp("login")}>
+    <button
+      type="button"
+      className="cursor-pointer text-gray-700 dark:text-gray-light hover:underline"
+      onClick={() => toggleUIProp("login")}
+    >
       {i18next.t("landing-page.sign-in")}
     </button>
   );

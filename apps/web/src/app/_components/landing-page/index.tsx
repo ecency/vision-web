@@ -11,17 +11,15 @@ import { Suspense } from "react";
 import { LandingTrending, LandingTrendingSkeleton } from "./landing-trending";
 import { LandingExplore } from "./landing-explore";
 import { hostingApi } from "@/features/hosting-signup/hosting-api";
+import { LandingCommunityPreview } from "./landing-community-preview";
 
 /**
  * Anonymous landing page — conversion-first, mobile-first.
  *
- * Everything above the fold (logo + hero text + CTAs + stats) is plain
- * server-rendered HTML styled with Tailwind utilities that already ship in the
- * global stylesheet. The page no longer imports a route-specific SCSS bundle,
- * so the hero (the LCP element) is not gated behind a ~91KB render-blocking
- * <link>. Heavy illustrated marketing sections were removed; the value prop is
- * carried by a compact icon row plus the live trending strip + topic hubs,
- * which double as crawl entry points into deep content.
+ * The hero and its small inline illustration are server-rendered. Tailwind
+ * utilities keep this route free of an additional blocking stylesheet, fonts,
+ * image requests or animation libraries. Trending still streams independently
+ * and topic links remain crawlable without JavaScript.
  *
  * Inline SVG feature icons avoid pulling the @ui/svg barrel onto this path.
  */
@@ -88,48 +86,50 @@ export async function LandingPage() {
   const t = i18next.t.bind(i18next);
 
   return (
-    <div className="landing-wrapper relative w-full">
+    <div className="landing-wrapper relative w-full bg-white dark:bg-dark-200 text-indigo-dark dark:text-white-500 [&_a:focus-visible]:outline [&_a:focus-visible]:outline-2 [&_a:focus-visible]:outline-offset-4 [&_a:focus-visible]:outline-blue-dark-sky">
       {/* HERO — fully server-rendered, the LCP element */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-blue-duck-egg to-blue-dark-sky-030 dark:from-dark-default dark:to-dark-200">
-        <div className="max-w-[1000px] mx-auto px-4 pt-14 pb-12 md:pt-24 md:pb-16 text-center">
-          {/* Brand kicker (eyebrow) above the headline. The navbar already
+      <section
+        className="relative overflow-hidden border-b border-[--border-color] bg-gradient-to-br from-blue-duck-egg via-white to-blue-dark-sky-040 dark:from-dark-default dark:via-dark-200 dark:to-dark-default"
+        aria-labelledby="hero-heading"
+      >
+        <div className="max-w-[1200px] mx-auto px-5 md:px-8 pt-20 pb-10 md:py-20 grid lg:grid-cols-[1.2fr_1fr] items-center gap-12">
+          <div className="relative z-[1]">
+            {/* Brand kicker (eyebrow) above the headline. The navbar already
               carries the logo, so the hero leads with the name as a small,
               uppercase, letter-spaced label - distinct in treatment from the
               headline so it reads as a brand prefix, not a competing heading.
               Text only, so the hero stays an all-text LCP (no image request). */}
-          <p className="mb-3 font-bold uppercase tracking-[0.2em] text-blue-dark-sky dark:text-gray-pinkish text-sm md:text-base">
-            {defaults.name}
-          </p>
-          <h1 className="font-extrabold tracking-tight leading-[1.05] text-blue-dark-sky dark:text-gray-pinkish text-[2rem] sm:text-5xl md:text-6xl">
-            {t("landing-page.hero-title")}
-          </h1>
-          <p className="mt-4 mx-auto max-w-xl font-light text-gray-700 dark:text-gray-light text-lg md:text-2xl">
-            {t("landing-page.what-is-ecency")}
-          </p>
+            <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-dark-sky/20 bg-white/70 dark:bg-dark-200 px-3 py-1.5 font-semibold text-blue-dusk dark:text-blue-pastel text-xs tracking-wide">
+              <span className="size-2 rounded-full bg-blue-dark-sky" aria-hidden="true" />
+              {defaults.name} · {t("landing-page.powered-by-hive")}
+            </p>
+            <h1
+              id="hero-heading"
+              className="max-w-[650px] font-extrabold tracking-[-0.045em] leading-[1.06] text-[2.75rem] sm:text-6xl lg:text-[4.5rem] text-indigo-dark dark:text-white"
+            >
+              {t("landing-page.hero-title")}
+            </h1>
+            <p className="mt-6 max-w-lg text-gray-700 dark:text-gray-light text-lg md:text-xl leading-relaxed">
+              {t("landing-page.what-is-ecency")}
+            </p>
 
-          <LandingHeroActions />
-
-          <ul className="mt-10 flex flex-wrap justify-center items-center gap-x-5 gap-y-2 p-0 m-0 list-none text-sm md:text-base text-gray-700 dark:text-gray-light">
+            <LandingHeroActions />
+          </div>
+          <LandingCommunityPreview />
+        </div>
+        <div className="max-w-[1200px] mx-auto px-5 md:px-8">
+          <ul className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-7 border-t border-blue-dark-sky/20 py-8 p-0 m-0 list-none text-xs sm:text-sm text-gray-700 dark:text-gray-light [&_strong]:block [&_strong]:mb-1 [&_strong]:text-2xl md:[&_strong]:text-3xl [&_strong]:tracking-tight">
             <li>
               <strong className="text-blue-dark-sky dark:text-gray-pinkish">130M+</strong>{" "}
               {t("landing-page.posts")}
-            </li>
-            <li aria-hidden="true" className="opacity-40">
-              ·
             </li>
             <li>
               <strong className="text-blue-dark-sky dark:text-gray-pinkish">200K+</strong>{" "}
               {t("landing-page.new-users")}
             </li>
-            <li aria-hidden="true" className="opacity-40">
-              ·
-            </li>
             <li>
               <strong className="text-blue-dark-sky dark:text-gray-pinkish">446M</strong>{" "}
               {t("landing-page.points-distrubuted")}
-            </li>
-            <li aria-hidden="true" className="opacity-40">
-              ·
             </li>
             <li>
               <strong className="text-blue-dark-sky dark:text-gray-pinkish">1M+</strong>{" "}
@@ -141,9 +141,11 @@ export async function LandingPage() {
 
       {/* Real product first: live trending posts (SEO + click-through). Streams
           via Suspense so the hero flushes immediately. */}
-      <Suspense fallback={<LandingTrendingSkeleton />}>
-        <LandingTrending />
-      </Suspense>
+      <div id="trending" className="scroll-mt-20">
+        <Suspense fallback={<LandingTrendingSkeleton />}>
+          <LandingTrending />
+        </Suspense>
+      </div>
 
       {/* Topic hubs — crawl entry points into deep content */}
       <LandingExplore />
@@ -154,10 +156,10 @@ export async function LandingPage() {
           barrel off this path. */}
       {hostingApi.isConfigured() && (
         <section className="relative z-[2] w-full" aria-labelledby="hosting-promo-heading">
-          <div className="inner max-w-[1200px] mx-auto w-full px-4 py-4">
+          <div className="inner max-w-[1200px] mx-auto w-full px-5 md:px-8 py-4">
             <Link
               href="/hosting"
-              className="group flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5 rounded-2xl border border-[--border-color] bg-white dark:bg-dark-200 px-5 py-5 transition-shadow hover:shadow-md"
+              className="group flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5 rounded-2xl border border-[--border-color] bg-white dark:bg-dark-200 text-indigo-dark dark:text-white-500 px-5 py-5 transition-shadow hover:shadow-md"
             >
               <span className="inline-flex items-center justify-center size-11 shrink-0 rounded-lg bg-blue-dark-sky-040 dark:bg-dark-default text-blue-dark-sky">
                 <svg
@@ -174,9 +176,11 @@ export async function LandingPage() {
                 <h2 id="hosting-promo-heading" className="text-lg font-semibold">
                   {t("hosting.landing-title")}
                 </h2>
-                <p className="mt-1 opacity-70">{t("hosting.landing-description")}</p>
+                <p className="mt-1 text-gray-700 dark:text-gray-light">
+                  {t("hosting.landing-description")}
+                </p>
               </div>
-              <span className="shrink-0 font-semibold text-blue-dark-sky group-hover:underline">
+              <span className="shrink-0 font-semibold text-blue-dusk dark:text-blue-pastel group-hover:underline">
                 {t("hosting.landing-action")}
               </span>
             </Link>
@@ -186,17 +190,17 @@ export async function LandingPage() {
 
       {/* Why Ecency — compact value prop replacing the old illustrated sections */}
       <section className="relative z-[2] w-full" aria-labelledby="why-heading">
-        <div className="inner max-w-[1200px] mx-auto w-full px-4 py-10">
-          <h2 id="why-heading" className="text-2xl md:text-3xl font-bold mb-6">
+        <div className="inner max-w-[1200px] mx-auto w-full px-5 md:px-8 py-12 md:py-16">
+          <h2 id="why-heading" className="text-3xl md:text-4xl tracking-tight font-bold mb-8">
             {t("landing-page.why-ecency")}
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {FEATURES.map((f) => (
               <div
                 key={f.key}
-                className="rounded-xl border border-[--border-color] bg-white dark:bg-dark-200 p-5"
+                className="rounded-2xl border border-[--border-color] bg-blue-duck-egg/50 dark:bg-dark-default p-6 md:p-8"
               >
-                <span className="inline-flex items-center justify-center size-11 rounded-lg bg-blue-dark-sky-040 dark:bg-dark-default text-blue-dark-sky">
+                <span className="inline-flex items-center justify-center size-12 rounded-2xl bg-white dark:bg-dark-200 text-blue-dark-sky border border-blue-dark-sky/20">
                   <svg
                     width="24"
                     height="24"
@@ -207,8 +211,10 @@ export async function LandingPage() {
                     {f.icon}
                   </svg>
                 </span>
-                <h3 className="mt-4 text-lg font-semibold">{t(f.title)}</h3>
-                <p className="mt-1 opacity-70">{t(f.desc)}</p>
+                <h3 className="mt-6 text-xl font-semibold">{t(f.title)}</h3>
+                <p className="mt-3 text-gray-700 dark:text-gray-light leading-relaxed">
+                  {t(f.desc)}
+                </p>
               </div>
             ))}
           </div>
@@ -217,13 +223,22 @@ export async function LandingPage() {
 
       {/* Download */}
       <section className="relative z-[2] w-full" id="download">
-        <div className="inner max-w-[1200px] mx-auto w-full px-4 py-10">
-          <div className="rounded-2xl border border-[--border-color] bg-blue-duck-egg dark:bg-dark-200 px-5 py-8 text-center">
-            <h2 className="text-2xl md:text-3xl font-bold">
+        <div className="inner max-w-[1200px] mx-auto w-full px-5 md:px-8 pb-12">
+          <div className="relative overflow-hidden rounded-3xl bg-indigo-dark px-6 py-10 md:p-12 text-white">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-20 -top-32 size-96 rounded-full border-[48px] border-white/5"
+            />
+            <p className="relative mb-3 text-sm font-semibold text-blue-pastel">
+              {defaults.name} · {t("landing-page.get-mobile-app")}
+            </p>
+            <h2 className="relative text-3xl md:text-4xl tracking-tight font-bold">
               {t("landing-page.download-our-application")}
             </h2>
-            <p className="mt-2 opacity-70">{t("landing-page.download-our-application-desc-1")}</p>
-            <div className="mt-5 flex flex-wrap justify-center gap-3 [&_a]:inline-flex [&_a]:items-center [&_a]:gap-2 [&_a]:h-12 [&_a]:px-5 [&_a]:rounded-full [&_a]:border [&_a]:border-[--border-color] [&_a]:bg-white [&_a]:dark:bg-dark-default [&_a]:font-medium [&_a]:transition-shadow hover:[&_a]:shadow-md [&_img]:size-5 [&_svg]:size-5">
+            <p className="relative mt-3 max-w-xl text-white/75 leading-relaxed">
+              {t("landing-page.download-our-application-desc-2")}
+            </p>
+            <div className="relative mt-7 flex flex-wrap gap-3 [&_a]:inline-flex [&_a]:items-center [&_a]:gap-2 [&_a]:min-h-[3rem] [&_a]:px-5 [&_a]:py-3 [&_a]:rounded-full [&_a]:border [&_a]:border-white/20 [&_a]:bg-white [&_a]:text-indigo-dark [&_a]:dark:bg-dark-default [&_a]:dark:text-white [&_a]:font-medium [&_a]:transition-shadow hover:[&_a]:shadow-md [&_img]:size-5 [&_svg]:size-5">
               <LandingDownloadLinks
                 iosIcon={`${defaults.base}/assets/icon-apple.svg`}
                 iosIconWhite={`${defaults.base}/assets/icon-apple-white.svg`}
@@ -236,45 +251,25 @@ export async function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="relative z-[2] w-full border-t border-[--border-color] mt-4">
-        <div className="inner max-w-[1200px] mx-auto w-full px-4 py-10">
+      <footer className="relative z-[2] w-full border-t border-[--border-color] mt-4 [&_nav_a]:text-gray-700 dark:[&_nav_a]:text-gray-light [&_nav_a]:opacity-100 hover:[&_nav_a]:underline">
+        <div className="inner max-w-[1200px] mx-auto w-full px-5 md:px-8 py-10">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             <nav className="flex flex-col gap-2" aria-label={t("landing-page.about")}>
-              <Link href="/about" className="opacity-70 hover:opacity-100">
-                {t("landing-page.about")}
-              </Link>
-              <Link href="/contributors" className="opacity-70 hover:opacity-100">
-                {t("landing-page.community-contributors")}
-              </Link>
-              <Link href="/faq" className="opacity-70 hover:opacity-100">
-                {t("landing-page.faq")}
-              </Link>
-              <Link href="/terms-of-service" className="opacity-70 hover:opacity-100">
-                {t("landing-page.terms-of-service")}
-              </Link>
-              <Link href="/privacy-policy" className="opacity-70 hover:opacity-100">
-                {t("landing-page.privacy-policy")}
-              </Link>
+              <Link href="/about">{t("landing-page.about")}</Link>
+              <Link href="/contributors">{t("landing-page.community-contributors")}</Link>
+              <Link href="/faq">{t("landing-page.faq")}</Link>
+              <Link href="/terms-of-service">{t("landing-page.terms-of-service")}</Link>
+              <Link href="/privacy-policy">{t("landing-page.privacy-policy")}</Link>
             </nav>
             <nav className="flex flex-col gap-2" aria-label={t("landing-page.discover")}>
-              <Link href="/discover" className="opacity-70 hover:opacity-100">
-                {t("landing-page.discover")}
-              </Link>
-              <span className="opacity-70 hover:opacity-100">
+              <Link href="/discover">{t("landing-page.discover")}</Link>
+              <span>
                 <LandingSignInLink />
               </span>
-              <Link href="/communities" className="opacity-70 hover:opacity-100">
-                {t("landing-page.communities")}
-              </Link>
-              <Link href="/creator-economy" className="opacity-70 hover:opacity-100">
-                {t("landing-page.creator-economy")}
-              </Link>
-              <Link href="/faq" className="opacity-70 hover:opacity-100">
-                {t("landing-page.help")}
-              </Link>
-              <Link href="/mobile" className="opacity-70 hover:opacity-100">
-                {t("landing-page.get-mobile-app")}
-              </Link>
+              <Link href="/communities">{t("landing-page.communities")}</Link>
+              <Link href="/creator-economy">{t("landing-page.creator-economy")}</Link>
+              <Link href="/faq">{t("landing-page.help")}</Link>
+              <Link href="/mobile">{t("landing-page.get-mobile-app")}</Link>
             </nav>
 
             <div className="col-span-2">
