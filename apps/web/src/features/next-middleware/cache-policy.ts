@@ -64,8 +64,17 @@ const NO_CACHE_PREFIXES = [
  * - `/perks`  — Subscription perks page; mostly static
  * - `/search` — Search results; query is in the URL so different queries
  *               get different cache entries automatically
+ * - `/curation` — Curation desk; the server shell is anonymous-equivalent and
+ *               the queue, marks and recommendations load client-side. The
+ *               guide under it is static and matched explicitly below.
  */
-const DYNAMIC_PAGE_PREFIXES = ["/chats", "/decks", "/waves", "/perks", "/search"];
+const DYNAMIC_PAGE_PREFIXES = ["/chats", "/decks", "/waves", "/perks", "/search", "/curation"];
+
+/**
+ * Static pages that live UNDER a dynamic prefix. They have to be matched before
+ * the prefix loop, because `STATIC_PAGES` is only consulted after it.
+ */
+const STATIC_UNDER_DYNAMIC = new Set(["/curation/guide"]);
 
 /**
  * Profile subsections that must never be edge-cached.
@@ -167,6 +176,11 @@ export function getCachePolicyForPath(pathname: string): CachePolicy | null {
     if (path === prefix || path.startsWith(prefix + "/")) {
       return { tier: NO_CACHE_TIER, sMaxAge: 0, staleWhileRevalidate: 0 };
     }
+  }
+
+  // Static pages nested under a dynamic prefix (the curation guide).
+  if (STATIC_UNDER_DYNAMIC.has(path)) {
+    return { tier: "static", sMaxAge: 86400, staleWhileRevalidate: 604800 };
   }
 
   // Dynamic pages: anonymous-equivalent SSR with client-hydrated content.

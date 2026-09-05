@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useAuthorSendTarget } from "@/features/newsletter/author-send-eligibility";
-import { UilEnvelopeSend } from "@tooni/iconscout-unicons-react";
+import { UilAward, UilEnvelopeSend } from "@tooni/iconscout-unicons-react";
 import { success } from "../feedback";
 import { Community, Entry, FullAccount, ROLES } from "@/entities";
 import { useCommunityPinCache } from "@/core/caches";
@@ -57,6 +57,7 @@ export function useMenuItemsGenerator(
   const [unpin, setUnpin] = useState(false);
   const [mute, setMute] = useState(false);
   const [promote, setPromote] = useState(false);
+  const [recommend, setRecommend] = useState(false);
   const [translate, setTranslate] = useState(false);
   const [sendNewsletter, setSendNewsletter] = useState(false);
   // vision-web#1532: the list this post may be sent to by this viewer, or null.
@@ -219,6 +220,19 @@ export function useMenuItemsGenerator(
             icon: bullHornSvg
           })
         ),
+        // Recommend to curators: an on-chain custom_json, so it is offered to
+        // any logged-in viewer except the post's own author (self rows count 0).
+        EcencyConfigManager.withConditional(
+          ({ visionFeatures }) =>
+            visionFeatures.curationDesk.enabled &&
+            visionFeatures.curationDesk.recommendations.enabled &&
+            entry.author !== activeUser?.username,
+          () => ({
+            label: i18next.t("curation-desk.recommend.menu-item"),
+            onClick: activeUser !== null ? () => setRecommend(true) : () => toggleUIProp("login"),
+            icon: <UilAward className="size-4" />
+          })
+        ),
         EcencyConfigManager.withConditional(
           ({ privateMode }) => Boolean(parseInt(privateMode, 10)),
           () => ({
@@ -332,6 +346,8 @@ export function useMenuItemsGenerator(
     setMute,
     promote,
     setPromote,
+    recommend,
+    setRecommend,
     translate,
     setTranslate,
     sendNewsletter,

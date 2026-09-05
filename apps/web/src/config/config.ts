@@ -119,6 +119,12 @@ const CONFIG = {
       waves: {
         enabled: true
       },
+      curationDesk: {
+        enabled: false,
+        recommendations: {
+          enabled: true
+        }
+      },
       publish: {
         geoPicker: {
           enabled: true,

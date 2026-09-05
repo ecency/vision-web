@@ -32,6 +32,7 @@ const routes = {
   EDIT: `/:username(@[\\w\\.\\d-]+)/:permlink/edit`,
   EDIT_DRAFT: `/draft/:draftId`,
   DISCOVER: `/discover`,
+  CURATION: `/curation`,
   SEARCH: `/search/`,
   SEARCH_MORE: `/search-more/`,
   WITNESSES: `/witnesses`,
