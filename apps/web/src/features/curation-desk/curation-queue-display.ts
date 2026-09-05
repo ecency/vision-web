@@ -40,8 +40,8 @@ export function rowKey(row: DeskRow): string {
  * Turns the loaded pages into what the list renders: pinned late and
  * resurfaced rows, the working queue, the half and eighth weight tails, the
  * team cursor divider and the collapsed older reviewed rows. Only a display
- * boundary: every row below the divider is still served by the server, and no
- * row is ever filtered out (a client filter would make endReached walk forever).
+ * boundary: every row below the divider is still served by the server; no row
+ * is ever filtered out (a client filter would make endReached walk forever).
  */
 export function buildQueueDisplay(options: QueueDisplayOptions): QueueDisplay {
   const { rows, teamCursor, sort, now, window, expanded } = options;
@@ -61,12 +61,17 @@ export function buildQueueDisplay(options: QueueDisplayOptions): QueueDisplay {
     const open = row.state === 0;
     const reviewedByCursor = belowCursor && unmarked && open;
 
-    const insertedMs = parseChainDate((row as DeskRow & { inserted_at?: string | null }).inserted_at);
+    // A row the desk materialized well after it was created reached the queue
+    // late, so it is pinned even though the cursor already passed its time.
+    // `resurfaced_at` says the same thing on its own: a row whose snooze ended
+    // pins with no inserted_at at all.
+    const insertedMs = parseChainDate(row.inserted_at);
     const createdMs = parseChainDate(row.created);
     const late =
       belowCursor && unmarked && open && insertedMs != null && createdMs != null && insertedMs - createdMs > LATE_MS;
     const resurfaced = belowCursor && unmarked && open && !!overlay?.resurfaced_at;
 
+    const state = computeWindow(row.created, row.payout_at, now);
     let section: RowSection = "queue";
     if (chronological) {
       if (late || resurfaced) {
@@ -74,7 +79,6 @@ export function buildQueueDisplay(options: QueueDisplayOptions): QueueDisplay {
       } else if (belowCursor) {
         section = "below-cursor";
       } else if (unmarked && open && window === "all") {
-        const state = computeWindow(row.created, row.payout_at, now);
         if (state.kind === "half") section = "tail-half";
         else if (state.kind === "eighth" || state.kind === "locked") section = "tail-eighth";
       }
@@ -89,6 +93,10 @@ export function buildQueueDisplay(options: QueueDisplayOptions): QueueDisplay {
       resurfaced,
       belowCursor,
       reviewedByCursor,
+      windowKind: state.kind,
+      locked: state.kind === "locked",
+      voteHidden: state.kind === "locked" && state.voteHidden,
+      scalePct: state.kind === "locked" ? state.scalePct : 100,
     };
     switch (section) {
       case "pinned":

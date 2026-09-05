@@ -21,13 +21,16 @@ export interface CurationKeyHandlers {
 const EDITABLE = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
 /**
- * True when a keydown must be ignored: an editable target, an open modal
- * (`#modal-dialog-container` has children) other than the desk's own quick
- * view drawer, an open vote slider (it renders inline in `.tooltiptext`, not
- * in the modal container) or a Ctrl/Meta/Alt chord.
+ * True when a keydown must be ignored: an editable target, Enter on a control
+ * that activates natively (a row action button would otherwise fire and open
+ * the drawer), an open modal (`#modal-dialog-container` has children) other
+ * than the desk's own quick view drawer, an open vote slider (it renders
+ * inline in `.tooltiptext`, not in the modal container) or a Ctrl/Meta/Alt
+ * chord. Plain letter keys stay alive on a focused button, so j and k keep
+ * working after a row action.
  */
 export function isKeyboardInert(
-  event: Pick<KeyboardEvent, "target" | "ctrlKey" | "metaKey" | "altKey">,
+  event: Pick<KeyboardEvent, "target" | "ctrlKey" | "metaKey" | "altKey"> & { key?: string },
   doc: Document = document
 ): boolean {
   if (event.ctrlKey || event.metaKey || event.altKey) return true;
@@ -35,12 +38,15 @@ export function isKeyboardInert(
   if (target && typeof target.tagName === "string") {
     if (EDITABLE.has(target.tagName) || target.isContentEditable) return true;
     if (target.closest?.('[contenteditable="true"]')) return true;
+    if (event.key === "Enter" && target.closest?.('button, a[href], [role="button"]')) return true;
   }
   const modal = doc.getElementById("modal-dialog-container");
   if (modal) {
-    for (const child of Array.from(modal.children)) {
-      if (!child.querySelector("[data-curation-drawer]")) return true;
-    }
+    // Modal portals TWO children per open dialog: an empty backdrop and the
+    // content wrapper. Only the wrapper can carry the drawer marker, so the
+    // empty backdrop must not count as a foreign modal.
+    const open = Array.from(modal.children).filter((child) => child.childElementCount > 0);
+    if (open.some((child) => !child.querySelector("[data-curation-drawer]"))) return true;
   }
   if (doc.querySelector('.entry-vote-btn[aria-expanded="true"]')) return true;
   return false;

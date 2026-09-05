@@ -20,6 +20,7 @@ import type { CurationRecommendHandle } from "./curation-recommend-btn";
 import { CurationSortFilterBar } from "./curation-sort-filter-bar";
 import { useCurationTicker } from "./curation-ticker";
 import { CurationToolbar } from "./curation-toolbar";
+import { formatUtcHm } from "./curation-window";
 import {
   filtersToParams,
   publicPageOneFetcher,
@@ -93,13 +94,16 @@ export function CurationQueueView() {
   const feed = viewer.isRoster ? rosterFeed : publicFeed;
   const status = useCurationStatus();
 
+  // The page objects ARE the rows: normalising each one into a new object here
+  // would hand every memoized row a new identity on every tick, which is what
+  // the identity preserving merge exists to avoid. A public row simply has no
+  // overlay; every consumer reads it with `?.`.
   const rows = useMemo<DeskRow[]>(() => {
     const pages = feed.data?.pages ?? [];
     const out: DeskRow[] = [];
-    for (const page of pages) for (const item of page.items) out.push({ ...item, overlay: (item as DeskRow).overlay ?? null });
+    for (const page of pages) for (const item of page.items) out.push(item);
     return out;
   }, [feed.data]);
-  // Stable identity for rows the pages did not change: reuse the page objects.
   const rowById = useMemo(() => new Map(rows.map((r) => [r.post_id, r])), [rows]);
 
   const visibleRef = useRef<DeskRow[]>([]);
@@ -116,12 +120,15 @@ export function CurationQueueView() {
     [viewer.isRoster, viewer.username, params, publicParams]
   );
 
+  const firstPage = feed.data?.pages?.[0];
+
   const tick = useCurationTick({
     username: viewer.username,
     enabled: viewer.isRoster && rows.length > 0,
     feedKey: queryKey,
     rows,
     getVisibleIds,
+    feedGeneratedAt: firstPage?.generated_at,
   });
 
   const fetchPageOne = useMemo(
@@ -131,9 +138,10 @@ export function CurationQueueView() {
         : publicPageOneFetcher(publicParams),
     [viewer.isRoster, viewer.username, params, publicParams]
   );
+  // Kept for the roster too: the tick answers about loaded rows, so a post
+  // that reached page 1 after the last fetch only appears through this poll.
   useStatusPoll({ enabled: rows.length > 0, feedKey: queryKey, fetchPageOne });
 
-  const firstPage = feed.data?.pages?.[0];
   const teamCursor = tick.teamCursor ?? firstPage?.team_cursor ?? status.data?.team_cursor ?? null;
   const totalEstimate = viewer.isRoster ? (firstPage as { total_estimate?: number | null } | undefined)?.total_estimate : undefined;
   const communities = (firstPage as { facets?: { communities: Array<{ community: string; title?: string | null; count?: number }> } } | undefined)?.facets?.communities ?? [];
@@ -148,6 +156,7 @@ export function CurationQueueView() {
 
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [quickView, setQuickView] = useState(false);
+  const [voteOnOpen, setVoteOnOpen] = useState(false);
   const [dialog, setDialog] = useState<Dialog>({ kind: "none" });
   const [undo, setUndo] = useState<Undo | null>(null);
   const listRef = useRef<VirtuosoHandle | null>(null);
@@ -216,23 +225,18 @@ export function CurationQueueView() {
     setActiveKey(rowKey(row));
     setQuickView(true);
   }, []);
-  const clickVoteInDrawer = useCallback(() => {
-    const btn = document.querySelector<HTMLElement>('[data-curation-drawer] .entry-vote-btn[role="button"]');
-    btn?.click();
+  const closeQuickView = useCallback(() => {
+    setQuickView(false);
+    setVoteOnOpen(false);
   }, []);
-  const onVote = useCallback(
-    (row: DeskRow) => {
-      setActiveKey(rowKey(row));
-      if (quickView) {
-        clickVoteInDrawer();
-        return;
-      }
-      setQuickView(true);
-      // The slider lives inside the drawer; give it one frame to mount.
-      setTimeout(clickVoteInDrawer, 400);
-    },
-    [quickView, clickVoteInDrawer]
-  );
+  const onVote = useCallback((row: DeskRow) => {
+    setActiveKey(rowKey(row));
+    setQuickView(true);
+    // The slider lives inside the drawer and only mounts once the entry query
+    // resolves, so the drawer consumes this flag then. A fixed delay here
+    // clicked nothing whenever the fetch took longer.
+    setVoteOnOpen(true);
+  }, []);
   const onReviewed = useCallback(
     (row: DeskRow) => {
       if (!viewer.isRoster) return;
@@ -332,7 +336,9 @@ export function CurationQueueView() {
     setExpanded((prev) => ({ ...prev, [which]: !prev[which] }));
   }, []);
 
-  const empty = !feed.isLoading && rows.length === 0;
+  // The roster lookup decides WHICH feed is read, so "nothing here" cannot be
+  // said while it, or the feed it selects, is still in flight.
+  const empty = !viewer.isLoading && !feed.isLoading && !feed.isFetching && rows.length === 0;
 
   return (
     <div className="bg-white dark:bg-dark-200 rounded-2xl overflow-hidden" data-curation-queue>
@@ -422,7 +428,9 @@ export function CurationQueueView() {
         neighbour={neighbour}
         viewer={viewer}
         recommendationsEnabled={recommendationsEnabled}
-        onClose={() => setQuickView(false)}
+        voteOnOpen={voteOnOpen}
+        onVoteHandled={() => setVoteOnOpen(false)}
+        onClose={closeQuickView}
         onPrev={() => move(-1)}
         onNext={() => move(1)}
         onReviewed={onReviewed}
@@ -469,7 +477,7 @@ export function CurationQueueView() {
           titleText={i18next.t("curation-desk.cursor.confirm-title")}
           descriptionText={i18next.t("curation-desk.cursor.confirm-body", {
             count: dialog.count,
-            time: new Date(dialog.row.created.endsWith("Z") ? dialog.row.created : `${dialog.row.created}Z`).toISOString().slice(11, 16),
+            time: formatUtcHm(dialog.row.created),
           })}
           okText={i18next.t("curation-desk.cursor.confirm-ok")}
           onConfirm={() => void confirmCursor(dialog.row)}

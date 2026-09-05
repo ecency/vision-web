@@ -20,13 +20,29 @@ function emptyOverlay(): CurationOverlay {
   };
 }
 
+/**
+ * A delta carries `has_note`, never the body (notes are only in the roster
+ * feed and the overlay), so a mark with no `note` field says nothing about
+ * whether a note exists.
+ */
+function markHasNote(mark: CurationMark): boolean {
+  if (typeof mark.has_note === "boolean") return mark.has_note;
+  return mark.state === "noted" || !!mark.note;
+}
+
 function upsertMark(marks: CurationMark[], mark: CurationMark): CurationMark[] {
   const index = marks.findIndex((m) => m.curator === mark.curator);
   if (index === -1) return [...marks, mark];
   const existing = marks[index];
   if (existing.updated_at >= mark.updated_at) return marks;
   const next = marks.slice();
-  next[index] = mark;
+  // Merge rather than replace: the note-less delta would otherwise drop a
+  // colleague's note body that the feed already delivered.
+  next[index] = {
+    ...mark,
+    note: mark.note ?? existing.note,
+    has_note: mark.has_note ?? markHasNote(existing),
+  };
   return next;
 }
 
@@ -79,7 +95,7 @@ export function mergeTickIntoPages(
   let anyPageChanged = false;
   const pages = data.pages.map((page) => {
     let pageChanged = false;
-    const items = page.items.map((row): DeskRow => {
+    const items = page.items.map((row) => {
       const id = row.post_id;
       const fullOverlay = overlayById.get(id);
       const marks = marksById.get(id);
@@ -95,7 +111,7 @@ export function mergeTickIntoPages(
           ...overlay,
           marks: list,
           ...teamLevel(list),
-          notes_count: list.filter((m) => m.state === "noted" || !!m.note).length,
+          notes_count: list.filter(markHasNote).length,
         };
       }
       if (flags) {
@@ -120,7 +136,9 @@ export function replaceRowInPages<TPage extends { items: DeskRow[] }>(
   data: InfiniteData<TPage, unknown> | undefined,
   next: DeskRow
 ): InfiniteData<TPage, unknown> | undefined {
-  if (!data) return data;
+  // The `latest` key of the status poll holds a single page object, not an
+  // InfiniteData; setQueriesData hands it to this updater too.
+  if (!data || !Array.isArray(data.pages)) return data;
   let changed = false;
   const pages = data.pages.map((page) => {
     const index = page.items.findIndex((r) => r.post_id === next.post_id);

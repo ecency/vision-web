@@ -15,8 +15,8 @@ function toMs(value: string | null | undefined): number | null {
 /**
  * Curation window of a post at `now`, from `created` and `payout_at` only.
  * The chain pays full curation inside 24 h, half from 24 to 72 h, one eighth
- * after that, and scales a vote's rshares linearly toward zero in the last
- * 12 h before payout (hive_evaluator_social.cpp:711-713). There is no early
+ * after that. In the last 12 h before payout it scales a vote's rshares
+ * linearly toward zero (hive_evaluator_social.cpp:711-713). There is no early
  * vote penalty since HF25.
  */
 export function computeWindow(
@@ -57,4 +57,22 @@ export function formatHm(ms: number): string {
 
 export function parseChainDate(value: string | null | undefined): number | null {
   return toMs(value);
+}
+
+/**
+ * "14:05" in UTC. Chain and desk timestamps arrive without a zone, so they go
+ * through parseChainDate first: `new Date(value)` would read them as local
+ * time and print an hour that is off by the viewer's offset.
+ */
+export function formatUtcHm(value: string | null | undefined): string {
+  const ms = toMs(value);
+  if (ms == null) return "";
+  return new Date(ms).toISOString().slice(11, 16);
+}
+
+/** "2026-09-05 14:05" in UTC, for a date that is not necessarily today. */
+export function formatUtcDateHm(value: string | null | undefined): string {
+  const ms = toMs(value);
+  if (ms == null) return "";
+  return new Date(ms).toISOString().slice(0, 16).replace("T", " ");
 }

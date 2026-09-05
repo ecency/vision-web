@@ -16,12 +16,12 @@ export const RECOMMEND_CONFIRM_DEADLINE_MS = 60_000;
 /** Meta ping retry delays. */
 export const META_RETRY_MS = [2_000, 10_000, 30_000] as const;
 export const QUICK_VIEW_PREFETCH_DEBOUNCE_MS = 300;
-export const SNAPSHOT_FROZEN_MS = 10 * 60_000;
 export const UNDO_REVIEWED_MS = 5_000;
 export const UNDO_CURSOR_MS = 30_000;
 export const SORT_STORAGE_KEY = "curation-desk-sort";
 export const SEED_STORAGE_KEY = "curation-desk-seed";
 export const MY_MARKS_KEY_SUFFIX = "my-marks";
+/** Word count presets, offered as both a minimum and a maximum. */
 export const WORD_PRESETS = [300, 600, 1000] as const;
 /** Vote is hidden under this payout scale-down factor (percent). */
 export const LOCKED_VOTE_FLOOR_PCT = 25;

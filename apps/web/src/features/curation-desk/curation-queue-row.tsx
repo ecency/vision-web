@@ -25,8 +25,8 @@ import { Chip, CurationMarkBadges } from "./curation-mark-badges";
 import { CurationRecommendBtn } from "./curation-recommend-btn";
 import { CurationWindowBadge } from "./curation-window-badge";
 import { useCurationTicker } from "./curation-ticker";
-import { computeWindow, parseChainDate } from "./curation-window";
-import type { DeskRow, RowSection } from "./types";
+import { formatUtcHm, parseChainDate } from "./curation-window";
+import type { DeskRow, RowSection, WindowState } from "./types";
 
 export interface RowActions {
   onSelect: (row: DeskRow) => void;
@@ -52,12 +52,11 @@ interface Props extends RowActions {
   belowCursor: boolean;
   reviewedByCursor: boolean;
   chronological: boolean;
-}
-
-function utcHm(created: string): string {
-  const ms = parseChainDate(created);
-  if (ms == null) return "";
-  return new Date(ms).toISOString().slice(11, 16);
+  /** Window state from the parent's clock; the row never reads the ticker. */
+  windowKind: WindowState["kind"];
+  locked: boolean;
+  voteHidden: boolean;
+  scalePct: number;
 }
 
 function accountAgeDays(authorCreated: string | null | undefined, now: number): number | null {
@@ -71,6 +70,17 @@ function formatAge(days: number): string {
   if (days >= 30) return i18next.t("curation-desk.row.age-months", { count: Math.floor(days / 30) });
   return i18next.t("curation-desk.row.age-days", { count: days });
 }
+
+/**
+ * Account age of the author, amber under 30 days. Its own memo child on the
+ * shared clock, so the day counter never re-renders the row around it.
+ */
+export const AuthorAgeChip = memo(function AuthorAgeChip({ authorCreated }: { authorCreated: string | null | undefined }) {
+  const now = useCurationTicker();
+  const days = accountAgeDays(authorCreated, now);
+  if (days == null) return null;
+  return <span className={clsx(days < 30 && "text-amber-600 dark:text-amber-400")}>{formatAge(days)}</span>;
+});
 
 function appLabel(app: string | null): string {
   if (!app) return "";
@@ -140,6 +150,10 @@ export const CurationQueueRow = memo(function CurationQueueRow(props: Props) {
     belowCursor,
     reviewedByCursor,
     chronological,
+    windowKind,
+    locked,
+    voteHidden,
+    scalePct,
     onSelect,
     onOpen,
     onVote,
@@ -149,19 +163,14 @@ export const CurationQueueRow = memo(function CurationQueueRow(props: Props) {
     onNote,
     onClearMark,
   } = props;
-  const now = useCurationTicker();
   const overlay = row.overlay;
   const teamMark = overlay?.team_mark ?? null;
   const curated = row.state === 1;
   const trailSent = !!row.trailed_by && !row.trailed_by.confirmed;
   const flagged = teamMark === "flagged";
   const reviewed = teamMark === "reviewed" || (reviewedByCursor && !late && !resurfaced);
-  const window = computeWindow(row.created, row.payout_at, now);
-  const locked = window.kind === "locked";
-  const voteHidden = locked && window.voteHidden;
   const voteDimmed = locked || !!row.is_declined;
   const isOwnPost = username === row.author;
-  const age = accountAgeDays(row.author_created, now);
   const titleId = `curation-row-title-${row.post_id}`;
   const descId = `curation-row-desc-${row.post_id}`;
   const title = row.title?.trim() || i18next.t("curation-desk.row.untitled", { author: row.author });
@@ -180,9 +189,6 @@ export const CurationQueueRow = memo(function CurationQueueRow(props: Props) {
       tabIndex={isActive ? 0 : -1}
       onClick={() => onSelect(row)}
       onDoubleClick={() => onOpen(row)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && e.target === e.currentTarget) onOpen(row);
-      }}
       className={clsx(
         "group relative flex gap-3 border-b border-[--border-color] px-3 py-2 md:min-h-[72px] outline-none",
         "hover:bg-gray-50 dark:hover:bg-dark-default/60 focus-visible:ring-2 focus-visible:ring-blue-dark-sky",
@@ -199,13 +205,13 @@ export const CurationQueueRow = memo(function CurationQueueRow(props: Props) {
         {i18next.t("curation-desk.row.describe", {
           author: row.author,
           words: row.word_count ?? 0,
-          window: window.kind,
+          window: windowKind,
         })}
       </span>
 
       <div className="flex flex-col items-start gap-1 w-[4.5rem] shrink-0 text-xs text-gray-600 dark:text-gray-400">
         <time dateTime={row.created} className="font-mono">
-          <span className="hidden md:inline">{utcHm(row.created)}</span>
+          <span className="hidden md:inline">{formatUtcHm(row.created)}</span>
           <span className="md:hidden">{dateToRelative(row.created)}</span>
         </time>
         {!collapsed && <CurationWindowBadge created={row.created} payoutAt={row.payout_at} />}
@@ -229,21 +235,14 @@ export const CurationQueueRow = memo(function CurationQueueRow(props: Props) {
         </div>
 
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
-          <span
-            role="presentation"
-            className="inline-flex items-center gap-1"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
+          <span role="presentation" className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <UserAvatar username={row.author} size="xsmall" className="size-4 rounded-full" />
             <span className="[&_.profile-popover-author]:inline">
               <ProfilePopover entry={entryStub} />
             </span>
           </span>
           {row.rep != null && <span>{i18next.t("curation-desk.row.rep", { rep: row.rep })}</span>}
-          {age != null && (
-            <span className={clsx(age < 30 && "text-amber-600 dark:text-amber-400")}>{formatAge(age)}</span>
-          )}
+          <AuthorAgeChip authorCreated={row.author_created} />
           {row.is_new_author && (
             <Chip tone="green">{i18next.t("curation-desk.row.new-author", { n: row.author_post_count ?? 1 })}</Chip>
           )}
@@ -286,7 +285,6 @@ export const CurationQueueRow = memo(function CurationQueueRow(props: Props) {
           isActive && "md:opacity-100"
         )}
         onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
       >
         {!voteHidden && (
           <Button
@@ -296,7 +294,7 @@ export const CurationQueueRow = memo(function CurationQueueRow(props: Props) {
             aria-label={i18next.t("curation-desk.actions.vote")}
             title={
               locked
-                ? i18next.t("curation-desk.window.locked-tooltip", { pct: window.scalePct })
+                ? i18next.t("curation-desk.window.locked-tooltip", { pct: scalePct })
                 : row.is_declined
                   ? i18next.t("curation-desk.marks.declined")
                   : i18next.t("curation-desk.actions.vote-key")

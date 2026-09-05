@@ -1,12 +1,13 @@
 "use client";
 
-import React, { forwardRef, useCallback, useRef } from "react";
+import React, { forwardRef, useCallback, useMemo, useRef } from "react";
 import i18next from "i18next";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { UilAngleDown, UilAngleUp, UilCheck } from "@tooni/iconscout-unicons-react";
 import { Button } from "@ui/button";
 import type { CurationTeamCursor } from "@ecency/sdk";
 import { CurationQueueRow, type RowActions } from "./curation-queue-row";
+import { formatUtcHm } from "./curation-window";
 import type { DeskRow, QueueDisplayItem } from "./types";
 
 interface Props extends RowActions {
@@ -50,7 +51,16 @@ export const CurationQueueList = forwardRef<VirtuosoHandle, Props>(function Cura
     onReviewedUpToHere,
     onVisibleRows,
     isBusy,
-    ...actions
+    // Destructured one by one: a rest object is a new identity on every render,
+    // so itemContent would be rebuilt and every row re-rendered.
+    onSelect,
+    onOpen,
+    onVote,
+    onReviewed,
+    onSnooze,
+    onFlag,
+    onNote,
+    onClearMark,
   } = props;
   const isFetchingRef = useRef(isFetching);
   isFetchingRef.current = isFetching;
@@ -92,7 +102,18 @@ export const CurationQueueList = forwardRef<VirtuosoHandle, Props>(function Cura
               belowCursor={item.belowCursor}
               reviewedByCursor={item.reviewedByCursor}
               chronological={chronological}
-              {...actions}
+              windowKind={item.windowKind}
+              locked={item.locked}
+              voteHidden={item.voteHidden}
+              scalePct={item.scalePct}
+              onSelect={onSelect}
+              onOpen={onOpen}
+              onVote={onVote}
+              onReviewed={onReviewed}
+              onSnooze={onSnooze}
+              onFlag={onFlag}
+              onNote={onNote}
+              onClearMark={onClearMark}
             />
           );
         case "tail":
@@ -121,10 +142,15 @@ export const CurationQueueList = forwardRef<VirtuosoHandle, Props>(function Cura
               <UilCheck className="size-4" aria-hidden />
               <span className="flex-1">
                 {teamCursor?.created
-                  ? i18next.t("curation-desk.list.divider", {
-                      time: new Date(teamCursor.created).toISOString().slice(11, 16),
-                      by: teamCursor.set_by ? `@${teamCursor.set_by}` : "",
-                    })
+                  ? i18next
+                      .t("curation-desk.list.divider", {
+                        time: formatUtcHm(teamCursor.created),
+                        by: teamCursor.set_by ? `@${teamCursor.set_by}` : "",
+                      })
+                      // A public cursor carries no set_by, so the copy would
+                      // end on a dangling separator.
+                      .replace(/\s+/g, " ")
+                      .replace(/[\s·]+$/, "")
                   : i18next.t("curation-desk.list.divider-none")}
               </span>
               {isRoster && (
@@ -160,7 +186,40 @@ export const CurationQueueList = forwardRef<VirtuosoHandle, Props>(function Cura
           );
       }
     },
-    [activeKey, isRoster, isTrial, username, recommendationsEnabled, chronological, teamCursor, isBusy, onToggleTail, onReviewedUpToHere, actions]
+    [
+      activeKey,
+      isRoster,
+      isTrial,
+      username,
+      recommendationsEnabled,
+      chronological,
+      teamCursor,
+      isBusy,
+      onToggleTail,
+      onReviewedUpToHere,
+      onSelect,
+      onOpen,
+      onVote,
+      onReviewed,
+      onSnooze,
+      onFlag,
+      onNote,
+      onClearMark,
+    ]
+  );
+
+  // A component defined inline is a new type on every render, which unmounts
+  // and remounts the footer each time.
+  const components = useMemo(
+    () => ({
+      Footer: () =>
+        isFetching ? (
+          <div className="p-4 text-center text-xs text-gray-500" aria-live="polite">
+            {i18next.t("curation-desk.list.loading")}
+          </div>
+        ) : null,
+    }),
+    [isFetching]
   );
 
   return (
@@ -173,14 +232,7 @@ export const CurationQueueList = forwardRef<VirtuosoHandle, Props>(function Cura
       endReached={endReached}
       rangeChanged={rangeChanged}
       itemContent={itemContent}
-      components={{
-        Footer: () =>
-          isFetching ? (
-            <div className="p-4 text-center text-xs text-gray-500" aria-live="polite">
-              {i18next.t("curation-desk.list.loading")}
-            </div>
-          ) : null,
-      }}
+      components={components}
     />
   );
 });

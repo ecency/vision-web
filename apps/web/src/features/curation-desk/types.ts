@@ -2,14 +2,19 @@ import type {
   CurationApp,
   CurationFlagReason,
   CurationMarkState,
+  CurationOverlay,
   CurationRole,
-  CurationRosterRow,
+  CurationRow,
   CurationSort,
   CurationWindow,
 } from "@ecency/sdk";
 
-/** Row as the desk renders it: public rows have a null overlay. */
-export type DeskRow = CurationRosterRow;
+/**
+ * Row as the desk renders it. The roster feed adds an overlay; a public row
+ * carries none; the desk reads it with `?.` rather than normalising every
+ * loaded row into a new object (that would defeat React.memo on every tick).
+ */
+export type DeskRow = CurationRow & { overlay?: CurationOverlay | null };
 
 export type ViewerKind = "anon" | "member" | "roster";
 
@@ -41,6 +46,8 @@ export interface QueueFilters {
   hasImages: boolean;
   repMin: number;
   repMax: number;
+  /** Roster only: `view=excluded`, the rows the public queue never serves. */
+  excluded: boolean;
 }
 
 export type ResolvedQueueFilters = Omit<QueueFilters, "sort" | "unreviewedOnly"> & {
@@ -67,6 +74,14 @@ export type QueueDisplayItem =
       resurfaced: boolean;
       belowCursor: boolean;
       reviewedByCursor: boolean;
+      /**
+       * Window state at the `now` the display was built with. The row takes it
+       * as props so only the badge subscribes to the shared clock.
+       */
+      windowKind: WindowState["kind"];
+      locked: boolean;
+      voteHidden: boolean;
+      scalePct: number;
     }
   | { type: "divider"; key: string }
   | { type: "tail"; key: string; window: "half" | "eighth"; count: number; expanded: boolean }

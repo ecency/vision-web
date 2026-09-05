@@ -64,7 +64,7 @@ const NO_CACHE_PREFIXES = [
  * - `/perks`  — Subscription perks page; mostly static
  * - `/search` — Search results; query is in the URL so different queries
  *               get different cache entries automatically
- * - `/curation` — Curation desk; the server shell is anonymous-equivalent and
+ * - `/curation`: Curation desk; the server shell is anonymous-equivalent and
  *               the queue, marks and recommendations load client-side. The
  *               guide under it is static and matched explicitly below.
  */

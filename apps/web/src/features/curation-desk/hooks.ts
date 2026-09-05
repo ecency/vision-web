@@ -11,12 +11,12 @@ import {
 } from "@tanstack/react-query";
 import {
   QueryKeys,
-  dedupeCurationPages,
   fetchCurationFeedPage,
   getCurationFeedInfiniteQueryOptions,
   getCurationRosterQueryOptions,
   getCurationStatusQueryOptions,
   normalizeCurationParams,
+  selectCurationFeedPages,
   type CurationActiveCurator,
   type CurationCursorInput,
   type CurationDismissAction,
@@ -115,7 +115,8 @@ export function rosterFeedQueryOptions(username: string | undefined, params: Cur
       const last = lastPage.items[lastPage.items.length - 1];
       return last?._cursor ?? lastPage.next_cursor ?? undefined;
     },
-    select: dedupeCurationPages<CurationRosterFeedPage>,
+    // The public feed's select: same dedupe, same takedown masking.
+    select: selectCurationFeedPages<CurationRosterFeedPage>,
     staleTime: 10_000,
   };
 }
@@ -143,6 +144,12 @@ export interface TickOptions {
   feedKey: QueryKey;
   rows: DeskRow[];
   getVisibleIds: () => number[];
+  /**
+   * `generated_at` of the loaded feed page. It seeds the delta window, so the
+   * first tick asks for what changed since the page was built instead of
+   * asking for everything with `since: null`.
+   */
+  feedGeneratedAt?: string | null;
 }
 
 export interface TickState {
@@ -158,8 +165,11 @@ export interface TickState {
 /**
  * 15 s delta loop while visible, rows are loaded and the curator was active
  * in the last 10 min. `since` is the previous response's `generated_at`
- * echoed verbatim (never the client clock). Deltas merge with an identity
- * preserving Map; `truncated` invalidates the feed.
+ * echoed verbatim (never the client clock), seeded from the loaded feed page
+ * so the first tick already carries one. Deltas merge with an identity
+ * preserving Map; `truncated` invalidates the feed, but only for a request
+ * that named a window: a `since: null` tick asks for a snapshot, so treating
+ * its answer as truncated would refetch the whole queue on every mount.
  */
 export function useCurationTick(options: TickOptions): TickState {
   const { username, enabled, feedKey } = options;
@@ -168,6 +178,8 @@ export function useCurationTick(options: TickOptions): TickState {
   rowsRef.current = options.rows;
   const visibleRef = useRef(options.getVisibleIds);
   visibleRef.current = options.getVisibleIds;
+  const feedGeneratedAtRef = useRef(options.feedGeneratedAt);
+  feedGeneratedAtRef.current = options.feedGeneratedAt;
   const sinceRef = useRef<string | null>(null);
   const inFlightRef = useRef(false);
   const feedKeyRef = useRef(feedKey);
@@ -190,10 +202,11 @@ export function useCurationTick(options: TickOptions): TickState {
 
     const visible = visibleRef.current().slice(0, 100);
     const need = rows.filter((r) => r.overlay == null).map((r) => r.post_id).slice(0, 100);
+    const since = sinceRef.current ?? feedGeneratedAtRef.current ?? null;
     inFlightRef.current = true;
     try {
       const response: CurationTickResponse = await curationDeskApi.tick(username, {
-        since: sinceRef.current,
+        since,
         need,
         visible,
       });
@@ -201,7 +214,7 @@ export function useCurationTick(options: TickOptions): TickState {
       queryClient.setQueryData<InfiniteData<CurationRosterFeedPage, unknown>>(feedKeyRef.current, (old) =>
         mergeTickIntoPages(old, response)
       );
-      if (response.truncated) {
+      if (response.truncated && since !== null) {
         queryClient.invalidateQueries({ queryKey: feedKeyRef.current });
       }
       setState({
@@ -445,6 +458,7 @@ export function defaultQueueFilters(): QueueFilters {
     hasImages: false,
     repMin: 0,
     repMax: 100,
+    excluded: false,
   };
 }
 
@@ -506,6 +520,10 @@ export function filtersToParams(input: QueueFilters, isRoster: boolean): Curatio
     params.flagged = filters.flagged || undefined;
     params.hide_reviewed = filters.unreviewedOnly;
     params.hide_snoozed = filters.unreviewedOnly;
+    // `excluded` is the only view v1 offers, roster only: the public feed
+    // never serves the rows it selects. The other views of the contract stay
+    // unused until the desk has a place for them.
+    if (filters.excluded) params.view = "excluded";
     if (sort === "random") params.seed = filters.seed;
   }
   return params;
@@ -572,6 +590,7 @@ export function countActiveFilters(input: QueueFilters, isRoster: boolean): numb
   if (filters.newAuthors) n++;
   if (filters.recommended) n++;
   if (isRoster && filters.flagged) n++;
+  if (isRoster && filters.excluded) n++;
   if (filters.window !== "all") n++;
   if (filters.minWords != null || filters.maxWords != null) n++;
   if (filters.hasImages) n++;
