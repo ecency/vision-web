@@ -44,7 +44,25 @@ export class CurationApiError extends Error {
   }
 }
 
-async function parse<T>(response: Response, what: string): Promise<T> {
+/**
+ * A light shape check per response family, not a schema validator: it answers
+ * "is this the kind of body the consumers dereference", so a 200 that carries
+ * something else (an error envelope, another route's body) fails here instead
+ * of inside a query builder reading `.items.length`.
+ */
+type ShapeCheck = (data: unknown) => boolean;
+
+function isRecord(data: unknown): data is Record<string, unknown> {
+  return typeof data === "object" && data !== null && !Array.isArray(data);
+}
+
+/** Every paged family: the list is what the consumers page over. */
+const hasItems: ShapeCheck = (data) => isRecord(data) && Array.isArray(data.items);
+const hasCurators: ShapeCheck = (data) => isRecord(data) && Array.isArray(data.curators);
+/** `vp` is nullable, so the field has to be present rather than truthy. */
+const isStatus: ShapeCheck = (data) => isRecord(data) && "vp" in data;
+
+async function parse<T>(response: Response, what: string, check?: ShapeCheck): Promise<T> {
   if (!response.ok) {
     let data: unknown = undefined;
     try {
@@ -62,11 +80,16 @@ async function parse<T>(response: Response, what: string): Promise<T> {
   if (contentType && !contentType.includes("json")) {
     throw new CurationApiError(`Unexpected response for ${what}`, response.status);
   }
+  let data: unknown;
   try {
-    return (await response.json()) as T;
+    data = await response.json();
   } catch {
     throw new CurationApiError(`Unexpected response for ${what}`, response.status);
   }
+  if (check && !check(data)) {
+    throw new CurationApiError(`Unexpected response for ${what}`, response.status);
+  }
+  return data as T;
 }
 
 const COMMUNITY_RE = /^hive-\d{5,6}$/;
@@ -153,10 +176,40 @@ function url(path: string): string {
   return `${CONFIG.privateApiHost}${ROUTE}${path}`;
 }
 
-async function getJson<T>(path: string, what: string, signal?: AbortSignal): Promise<T> {
+/** Hosts a credential may reach without TLS: a local gateway has no certificate. */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+/**
+ * The authed routes put the HiveSigner code in the body, so the transport is
+ * the only thing keeping a replayable credential private. An empty host means
+ * same-origin relative requests, whose transport is the page's own.
+ */
+function assertCredentialTransport(what: string) {
+  const host =
+    CONFIG.privateApiHost ||
+    (typeof window !== "undefined" ? (window.location?.origin ?? "") : "");
+  if (!host) return;
+  let parsed: URL;
+  try {
+    parsed = new URL(host);
+  } catch {
+    // A host that is not absolute says nothing about the transport.
+    return;
+  }
+  if (parsed.protocol === "https:") return;
+  if (parsed.protocol === "http:" && LOOPBACK_HOSTS.has(parsed.hostname)) return;
+  throw new CurationApiError(`Refusing to ${what} over an insecure connection`, 0);
+}
+
+async function getJson<T>(
+  path: string,
+  what: string,
+  signal?: AbortSignal,
+  check?: ShapeCheck
+): Promise<T> {
   const fetchApi = getBoundFetch();
   const response = await fetchApi(url(path), { method: "GET", signal });
-  return parse<T>(response, what);
+  return parse<T>(response, what, check);
 }
 
 async function postJson<T>(
@@ -164,19 +217,24 @@ async function postJson<T>(
   code: string | undefined,
   body: Record<string, unknown>,
   what: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  check?: ShapeCheck
 ): Promise<T> {
   if (!code) {
     throw new Error("[SDK][Curation] missing auth");
   }
+  assertCredentialTransport(what);
   const fetchApi = getBoundFetch();
   const response = await fetchApi(url(path), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...body, code }),
+    // A 307 or 308 would resend this body, code included, to wherever the
+    // redirect points.
+    redirect: "error",
     signal,
   });
-  return parse<T>(response, what);
+  return parse<T>(response, what, check);
 }
 
 // ---------------------------------------------------------------------------
@@ -191,16 +249,17 @@ export function fetchCurationFeedPage(
   return getJson<CurationFeedPage>(
     `/feed${toQuery(normalizeCurationParams(params), cursor)}`,
     "fetch curation feed",
-    signal
+    signal,
+    hasItems
   );
 }
 
 export function fetchCurationStatus(signal?: AbortSignal): Promise<CurationStatus> {
-  return getJson<CurationStatus>("/status", "fetch curation status", signal);
+  return getJson<CurationStatus>("/status", "fetch curation status", signal, isStatus);
 }
 
 export function fetchCurationRoster(signal?: AbortSignal): Promise<CurationRoster> {
-  return getJson<CurationRoster>("/roster", "fetch curation roster", signal);
+  return getJson<CurationRoster>("/roster", "fetch curation roster", signal, hasCurators);
 }
 
 export function fetchCurationRecommendationsPage(
@@ -216,7 +275,8 @@ export function fetchCurationRecommendationsPage(
   return getJson<CurationRecommendationsPage>(
     `/recommendations${text ? `?${text}` : ""}`,
     "fetch curation recommendations",
-    signal
+    signal,
+    hasItems
   );
 }
 
@@ -244,7 +304,14 @@ export function curationRosterFeedRequest(
 ): Promise<CurationRosterFeedPage> {
   const body: Record<string, unknown> = { ...normalizeCurationParams(params) };
   if (cursor) body.cursor = cursor;
-  return postJson<CurationRosterFeedPage>("/roster-feed", code, body, "fetch roster feed", signal);
+  return postJson<CurationRosterFeedPage>(
+    "/roster-feed",
+    code,
+    body,
+    "fetch roster feed",
+    signal,
+    hasItems
+  );
 }
 
 export function curationTickRequest(
@@ -304,7 +371,7 @@ export function curationMyMarksRequest(
   if (params.state) body.state = params.state;
   if (params.cursor) body.cursor = params.cursor;
   if (params.limit) body.limit = params.limit;
-  return postJson<CurationMyMarksResponse>("/marks", code, body, "fetch my marks", signal);
+  return postJson<CurationMyMarksResponse>("/marks", code, body, "fetch my marks", signal, hasItems);
 }
 
 export function curationCursorRequest(

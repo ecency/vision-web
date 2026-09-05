@@ -1,10 +1,11 @@
 import React from "react";
 import "@testing-library/jest-dom";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CurationMarkState, CurationMyMarksResponse } from "@ecency/sdk";
 import { renderWithQueryClient } from "@/specs/test-utils";
-import { installFetchRouter, iso, makeRoster } from "./curation-test-utils";
+import { installFetchRouter, iso, jsonResponse, makeRoster } from "./curation-test-utils";
 
 const state = vi.hoisted(() => ({ username: "curator1" as string | undefined }));
 
@@ -99,6 +100,24 @@ describe("CurationMyMarksView", () => {
     expect(calls[0].body).toMatchObject({ state: "snoozed", limit: 50, code: "code-1" });
     expect(calls[0].body).not.toHaveProperty("cursor");
     expect(calls[1].body).toMatchObject({ state: "snoozed", limit: 50, cursor: "m2", code: "code-1" });
+  });
+
+  // TanStack keeps the loaded pages when a later one fails, and raises isError
+  // on the whole query. Replacing the list with the error paragraph there would
+  // throw away records the viewer is reading.
+  it("keeps the loaded marks on screen when a later page fails", async () => {
+    router.on(/curation-desk\/marks$/, (_url, init) => {
+      const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+      return body.cursor === "m2" ? jsonResponse({ error: "boom" }, 500) : marksPage([1, 2], "m2");
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderWithQueryClient(<CurationMyMarksView />, { queryClient });
+
+    fireEvent.click(await screen.findByText("g.load-more"));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(screen.getByText("Mark 1")).toBeInTheDocument();
+    expect(screen.getByText("Mark 2")).toBeInTheDocument();
   });
 
   it("starts a fresh list for another mark state", async () => {

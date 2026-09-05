@@ -214,6 +214,9 @@ const stableFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =
 export function installFetchRouter() {
   const state: RouterState = { calls: [], routes: [] };
   current = state;
+  // The mock itself is shared with every earlier install, so a spec reading
+  // fetchMock.mock.calls would otherwise see the previous test's requests.
+  stableFetch.mockClear();
   vi.stubGlobal("fetch", stableFetch);
   return {
     calls: state.calls,

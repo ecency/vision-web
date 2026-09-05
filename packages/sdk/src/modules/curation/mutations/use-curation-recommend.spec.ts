@@ -38,6 +38,8 @@ describe("useCurationRecommend", () => {
   it("broadcasts with posting authority under the curation mutation key", () => {
     useCurationRecommend("alice", { adapter: {} } as any, "sync");
     const [key, username, , , , authority, options] = mockUseBroadcastMutation.mock.calls[0];
+    // The key comes from the registry, so an invalidation elsewhere can name it.
+    expect(key).toEqual(QueryKeys.curation.recommend());
     expect(key).toEqual(["curation", "recommend"]);
     expect(username).toBe("alice");
     expect(authority).toBe("posting");

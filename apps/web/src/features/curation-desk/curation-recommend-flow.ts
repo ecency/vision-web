@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import i18next from "i18next";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   QueryKeys,
@@ -136,10 +137,10 @@ function viewerRow(post: CurationPost | undefined, username: string) {
  * to disappear instead of appearing, but only from a body that once carried
  * it: route 5 is memoized, so an answer built before the recommendation was
  * indexed is missing the name for a reason that has nothing to do with the
- * withdrawal. A recommend_count below the first count this poll saw is the
- * other proof the row moved, for the viewer whose recommendation was already
- * gone from the first body. A body that carries no count at all is not a
- * count that fell to zero: it says nothing, exactly like the missing name.
+ * withdrawal. Nothing else is proof. A recommend_count that fell is a fact
+ * about the post, not about this viewer: another recommender withdrawing
+ * between two polls moves it just as well, and reading that as "withdrawn"
+ * would send the next click to broadcast a duplicate recommendation.
  */
 export function startRecommendPoll(
   queryClient: QueryClient,
@@ -154,8 +155,6 @@ export function startRecommendPoll(
   const handles: ReturnType<typeof setTimeout>[] = [];
   /** The viewer's recommendation was listed by at least one answer. */
   let sawViewer = false;
-  /** recommend_count of the first answer this poll read. */
-  let firstCount: number | null = null;
 
   const finish = (confirmed: boolean) => {
     clearTimers(key);
@@ -189,16 +188,8 @@ export function startRecommendPoll(
       post = undefined;
     }
     const mine = viewerRow(post, username);
-    if (post) {
-      if (mine) sawViewer = true;
-      if (firstCount === null) firstCount = post.recommend_count ?? null;
-    }
-    const countDropped =
-      post !== undefined &&
-      firstCount !== null &&
-      typeof post.recommend_count === "number" &&
-      post.recommend_count < firstCount;
-    const seen = withdraw ? post !== undefined && !mine && (sawViewer || countDropped) : !!mine;
+    if (post && mine) sawViewer = true;
+    const seen = withdraw ? post !== undefined && !mine && sawViewer : !!mine;
     if (seen) {
       finish(true);
       if (post) patchRecommendCounts(queryClient, post);
@@ -229,7 +220,7 @@ export function useRecommendFlow(author: string, permlink: string) {
 
   const run = useCallback(
     async (withdraw: boolean, reason?: CurationReason) => {
-      if (!username) throw new Error("[CurationDesk] recommend needs a logged in user");
+      if (!username) throw new Error(i18next.t("curation-desk.recommend.needs-login"));
       const previous = getRecommendState(username, author, permlink);
       // `since` doubles as this run's token. The poll and a later click both
       // write over the pending record, so only the run that installed it may
@@ -284,7 +275,30 @@ export function useRecommendFlow(author: string, permlink: string) {
   );
 
   const recommend = useCallback((reason: CurationReason) => run(false, reason), [run]);
-  const withdraw = useCallback(() => run(true), [run]);
+
+  // One withdrawal per recommendation. The button is disabled while the state
+  // says a withdrawal is in flight or confirming, but the keyboard binding and
+  // the entry menu reach this without asking the button, and a second
+  // `unrecommend` spends RC for a row the chain no longer has.
+  const withdrawing = useRef(false);
+  const withdraw = useCallback(async () => {
+    if (withdrawing.current) return undefined;
+    const current = username ? getRecommendState(username, author, permlink) : undefined;
+    if (
+      current &&
+      (current.phase === "withdrawn" ||
+        (current.phase === "pending" && current.withdraw) ||
+        (current.phase === "confirming" && current.withdraw))
+    ) {
+      return undefined;
+    }
+    withdrawing.current = true;
+    try {
+      return await run(true);
+    } finally {
+      withdrawing.current = false;
+    }
+  }, [run, username, author, permlink]);
 
   return { state, recommend, withdraw, isPending: mutation.isPending, username };
 }

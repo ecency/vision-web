@@ -186,6 +186,16 @@ describe("CurationQuickView", () => {
     expect(screen.queryByText("curation-desk.quick-view.team")).toBeNull();
   });
 
+  // `row.rshares_total && ...` renders the number 0 as a text child, so a post
+  // with no rshares yet printed a stray "0" into the rewards list.
+  it("never prints a bare zero into the rewards list", async () => {
+    renderDrawer({ row: { ...row, rshares_total: 0, rshares_after_24h: 0 } });
+    await screen.findByTestId("renderer");
+    const rewards = screen.getByText("curation-desk.quick-view.rewards").parentElement!.querySelector("ul")!;
+    expect(rewards.textContent).not.toContain("0");
+    expect(screen.queryByText("curation-desk.quick-view.late-rshares")).toBeNull();
+  });
+
   it("never offers Dismiss to a trial curator (the route answers them 403)", async () => {
     router.on(/curation-desk\/post\//, () =>
       makePost(row, { recommend_count: 2, unique_recommenders: 2, recommenders: [] })

@@ -42,7 +42,7 @@ export function useCurationRecommend(
   broadcastMode?: BroadcastMode
 ) {
   return useBroadcastMutation<CurationRecommendPayload>(
-    ["curation", "recommend"],
+    QueryKeys.curation.recommend(),
     username,
     (payload) => [
       payload.withdraw

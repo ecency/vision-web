@@ -662,6 +662,8 @@ export const QueryKeys = {
     ],
     _recommendationsPrefix: ["curation", "recommendations"],
     post: (author: string, permlink: string) => ["curation", "post", author, permlink],
+    /** Mutation key of the recommend and unrecommend broadcast. */
+    recommend: () => ["curation", "recommend"],
     _prefix: ["curation"],
   },
 

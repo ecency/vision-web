@@ -1694,6 +1694,8 @@ declare const QueryKeys: {
         readonly recommendations: (params?: Record<string, string>) => (string | Record<string, string>)[];
         readonly _recommendationsPrefix: readonly ["curation", "recommendations"];
         readonly post: (author: string, permlink: string) => string[];
+        /** Mutation key of the recommend and unrecommend broadcast. */
+        readonly recommend: () => string[];
         readonly _prefix: readonly ["curation"];
     };
     readonly ai: {
