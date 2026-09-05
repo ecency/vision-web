@@ -177,6 +177,24 @@ describe("CurationQueueView", () => {
     expect(second.url).not.toContain("cursor=");
   });
 
+  it("keeps polling status while the queue is empty, so the first matching post arrives", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    feedPage = makeFeedPage([]);
+    renderWithQueryClient(<CurationQueueView />, { queryClient: prodLikeClient() });
+    await waitFor(() => expect(fetchRouter.callsTo(/curation-desk\/feed\?/)).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText("curation-desk.list.empty")).toBeInTheDocument());
+
+    // An empty filtered view is the one that most needs to hear about a new
+    // post, so the poll cannot be gated on the rows it does not have.
+    statusBody = makeStatus({ feed_version: "v2", latest_post_id: 7 });
+    feedPage = makeFeedPage([makeRow({ post_id: 7 })], { feed_version: "v2" });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    await waitFor(() => expect(fetchRouter.callsTo(/curation-desk\/feed\?/)).toHaveLength(2));
+    expect(await screen.findAllByRole("article")).toHaveLength(1);
+  });
+
   it("renders the list as a feed of articles with an aria-labelledby title", async () => {
     renderWithQueryClient(<CurationQueueView />, { queryClient: prodLikeClient() });
     const articles = await screen.findAllByRole("article");

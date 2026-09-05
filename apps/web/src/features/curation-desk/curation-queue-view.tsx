@@ -138,9 +138,15 @@ export function CurationQueueView() {
         : publicPageOneFetcher(publicParams),
     [viewer.isRoster, viewer.username, params, publicParams]
   );
+  // The public feed page carries the version its rows were selected under; the
+  // roster page carries none, so there the poll takes its baseline from the
+  // first answer.
+  const feedVersion = (firstPage as { feed_version?: string | null } | undefined)?.feed_version;
   // Kept for the roster too: the tick answers about loaded rows, so a post
   // that reached page 1 after the last fetch only appears through this poll.
-  useStatusPoll({ enabled: rows.length > 0, feedKey: queryKey, fetchPageOne });
+  // Enabled whatever the row count is: an empty filtered view is exactly the
+  // one that needs to hear about the first post that matches it.
+  useStatusPoll({ enabled: true, feedKey: queryKey, fetchPageOne, feedVersion });
 
   const teamCursor = tick.teamCursor ?? firstPage?.team_cursor ?? status.data?.team_cursor ?? null;
   const totalEstimate = viewer.isRoster ? (firstPage as { total_estimate?: number | null } | undefined)?.total_estimate : undefined;

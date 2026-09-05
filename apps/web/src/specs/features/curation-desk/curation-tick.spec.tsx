@@ -151,6 +151,53 @@ describe("useCurationTick", () => {
     expect(invalidate).not.toHaveBeenCalledWith({ queryKey: feedKey });
   });
 
+  it("discards an answer that arrives after the filters changed", async () => {
+    seed();
+    const otherKey = ["curation", "roster-feed", "curator1", { sort: "newest" }];
+    queryClient.setQueryData<InfiniteData<CurationRosterFeedPage>>(otherKey, {
+      pages: [makeRosterPage([rowA, rowB])],
+      pageParams: [undefined],
+    });
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    tickResponse = tickBody({
+      deltas: { marks: [{ post_id: 2, curator: "riyat", state: "reviewed", updated_at: iso(0) }], flags: [], signals: [] },
+    });
+    router.on(/curation-desk\/tick/, async () => {
+      await gate;
+      return tickResponse;
+    });
+
+    const { rerender } = renderHook(
+      ({ key }: { key: unknown[] }) =>
+        useCurationTick({ username: "curator1", enabled: true, feedKey: key, rows: [rowA, rowB], getVisibleIds: () => [1, 2] }),
+      { wrapper, initialProps: { key: feedKey as unknown[] } }
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    // The tick is in flight for the queue the viewer is about to leave.
+    rerender({ key: otherKey });
+    await act(async () => {
+      release?.();
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    const left = queryClient.getQueryData<InfiniteData<CurationRosterFeedPage>>(feedKey)!;
+    const arrived = queryClient.getQueryData<InfiniteData<CurationRosterFeedPage>>(otherKey)!;
+    expect(arrived.pages[0].items[1].overlay).toBeNull();
+    expect(left.pages[0].items[1].overlay).toBeNull();
+
+    // The delta window of the queue that left is not the new queue's window.
+    router.reset();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(router.callsTo(/tick/)[0].body?.since).toBeNull();
+  });
+
   it("merges deltas keeping identity for untouched rows and invalidates on truncated", async () => {
     seed();
     const before = queryClient.getQueryData<InfiniteData<CurationRosterFeedPage>>(feedKey)!;

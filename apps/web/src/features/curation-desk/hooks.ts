@@ -184,6 +184,12 @@ export function useCurationTick(options: TickOptions): TickState {
   const inFlightRef = useRef(false);
   const feedKeyRef = useRef(feedKey);
   feedKeyRef.current = feedKey;
+  /**
+   * Bumped whenever the queue changes. A tick that started under an older
+   * generation answers about a queue nobody is reading any more, so its rows,
+   * its cursor and its delta window all belong to the feed that left.
+   */
+  const generationRef = useRef(0);
 
   const [state, setState] = useState<Omit<TickState, "tickNow">>({
     teamCursor: null,
@@ -203,6 +209,11 @@ export function useCurationTick(options: TickOptions): TickState {
     const visible = visibleRef.current().slice(0, 100);
     const need = rows.filter((r) => r.overlay == null).map((r) => r.post_id).slice(0, 100);
     const since = sinceRef.current ?? feedGeneratedAtRef.current ?? null;
+    // Captured at the start of the request, never read back off the refs
+    // around the await: the account or the filters may change while the tick
+    // is in flight, so the answer describes the queue that asked for it.
+    const generation = generationRef.current;
+    const key = feedKeyRef.current;
     inFlightRef.current = true;
     try {
       const response: CurationTickResponse = await curationDeskApi.tick(username, {
@@ -210,12 +221,13 @@ export function useCurationTick(options: TickOptions): TickState {
         need,
         visible,
       });
+      if (generation !== generationRef.current) return;
       sinceRef.current = response.generated_at ?? sinceRef.current;
-      queryClient.setQueryData<InfiniteData<CurationRosterFeedPage, unknown>>(feedKeyRef.current, (old) =>
+      queryClient.setQueryData<InfiniteData<CurationRosterFeedPage, unknown>>(key, (old) =>
         mergeTickIntoPages(old, response)
       );
       if (response.truncated && since !== null) {
-        queryClient.invalidateQueries({ queryKey: feedKeyRef.current });
+        queryClient.invalidateQueries({ queryKey: key });
       }
       setState({
         teamCursor: response.team_cursor ?? null,
@@ -225,6 +237,7 @@ export function useCurationTick(options: TickOptions): TickState {
         lastTickAt: Date.now(),
       });
     } catch {
+      if (generation !== generationRef.current) return;
       setState((prev) => ({ ...prev, paused: true }));
     } finally {
       inFlightRef.current = false;
@@ -249,8 +262,10 @@ export function useCurationTick(options: TickOptions): TickState {
     };
   }, [enabled, username, tickNow]);
 
-  // A new feed key (filters changed) starts a fresh delta window.
+  // A new feed key (filters changed) starts a fresh delta window; every tick
+  // still in flight belongs to the window that just ended.
   useEffect(() => {
+    generationRef.current += 1;
     sinceRef.current = null;
   }, [feedKey]);
 
@@ -265,71 +280,138 @@ export interface StatusPollOptions {
   enabled: boolean;
   feedKey: QueryKey;
   fetchPageOne: (signal?: AbortSignal) => Promise<CurationFeedPage | CurationRosterFeedPage>;
+  /**
+   * `feed_version` of the loaded page one. It seeds the baseline, so a head
+   * that moved between the page load and the first poll still refreshes. The
+   * roster feed carries no version, so there the first poll is the baseline.
+   */
+  feedVersion?: string | null;
+}
+
+/** What the poll compares. A null `latestPostId` means "not observed yet". */
+interface FeedHeadVersion {
+  feedVersion: string | null;
+  latestPostId: number | null;
+}
+
+function statusHeadVersion(status: CurationStatus): FeedHeadVersion {
+  return { feedVersion: status.feed_version ?? null, latestPostId: status.latest_post_id ?? null };
+}
+
+/** A part nobody has observed yet says nothing, so it never counts as a move. */
+function headVersionMoved(previous: FeedHeadVersion, next: FeedHeadVersion): boolean {
+  if (previous.feedVersion !== next.feedVersion) return true;
+  if (previous.latestPostId == null || next.latestPostId == null) return false;
+  return previous.latestPostId !== next.latestPostId;
 }
 
 /**
  * `status` every 60 s while visible. Feed page 1 is fetched into a separate
  * `latest` key ONLY when `feed_version` or `latest_post_id` moved, then
  * swapped in with setQueryData (structural sharing keeps untouched rows).
+ *
+ * The version is committed only once a page was installed, so a failed refresh
+ * leaves the change for the next poll instead of consuming it. Key, fetcher and
+ * a generation are captured when the request starts: an answer that arrives
+ * after the filters or the account changed belongs to the queue that left.
+ * Overlapping interval and visibilitychange polls share one in-flight promise.
  */
-export function useStatusPoll({ enabled, feedKey, fetchPageOne }: StatusPollOptions) {
+export function useStatusPoll({ enabled, feedKey, fetchPageOne, feedVersion }: StatusPollOptions) {
   const queryClient = useQueryClient();
-  const versionRef = useRef<string | null>(null);
+  const versionRef = useRef<FeedHeadVersion | null>(null);
   const feedKeyRef = useRef(feedKey);
   feedKeyRef.current = feedKey;
   const fetchRef = useRef(fetchPageOne);
   fetchRef.current = fetchPageOne;
+  const feedVersionRef = useRef(feedVersion);
+  feedVersionRef.current = feedVersion;
+  const generationRef = useRef(0);
+  const inFlightRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
-    let cancelled = false;
 
-    const poll = async () => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    const run = async () => {
+      const generation = generationRef.current;
+      const key = feedKeyRef.current;
+      const fetchPage = fetchRef.current;
       let status: CurationStatus;
       try {
         status = await queryClient.fetchQuery({ ...getCurationStatusQueryOptions(), staleTime: 0 });
       } catch {
         return;
       }
-      if (cancelled) return;
-      const version = `${status.feed_version ?? ""}|${status.latest_post_id ?? ""}`;
-      if (versionRef.current === null) {
-        versionRef.current = version;
+      if (generation !== generationRef.current) return;
+      const next = statusHeadVersion(status);
+      const baseline =
+        versionRef.current ??
+        (typeof feedVersionRef.current === "string"
+          ? { feedVersion: feedVersionRef.current, latestPostId: null }
+          : null);
+      // Nothing to refresh: recording what status says costs nothing and fills
+      // the half a loaded page could not seed.
+      if (!baseline || !headVersionMoved(baseline, next)) {
+        versionRef.current = next;
         return;
       }
-      if (versionRef.current === version) return;
-      versionRef.current = version;
+      // Nothing is loaded under this key, so whatever loads next loads fresh.
+      if (queryClient.getQueryData(key) === undefined) {
+        versionRef.current = next;
+        return;
+      }
       try {
         const page = await queryClient.fetchQuery({
-          queryKey: [...feedKeyRef.current, "latest"],
-          queryFn: ({ signal }) => fetchRef.current(signal),
+          queryKey: [...key, "latest"],
+          queryFn: ({ signal }) => fetchPage(signal),
           staleTime: 0,
           gcTime: 0,
         });
-        if (cancelled) return;
+        if (generation !== generationRef.current) return;
         queryClient.setQueryData<InfiniteData<CurationFeedPage | CurationRosterFeedPage, unknown>>(
-          feedKeyRef.current,
-          (old) => (old ? { ...old, pages: [page, ...old.pages.slice(1)] } : old)
+          key,
+          // Later pages continue from a cursor the old head produced, so
+          // keeping them behind a refreshed head leaves a hole where the head
+          // grew. The refreshed page is the queue again and pagination
+          // continues from its own cursor; scroll position is best effort.
+          (old) => (old ? { ...old, pages: [page], pageParams: old.pageParams.slice(0, 1) } : old)
         );
+        versionRef.current = next;
       } catch {
-        // The loaded queue stays; the next poll tries again.
+        // The loaded queue stays and the version is not consumed, so the next
+        // poll asks for the same change again.
       }
     };
 
-    const interval = setInterval(poll, POLL_MS_PUBLIC);
+    const poll = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return inFlightRef.current ?? Promise.resolve();
+      }
+      // One refresh at a time: the interval and a visibilitychange both fire
+      // the moment a backgrounded tab comes back.
+      if (inFlightRef.current) return inFlightRef.current;
+      const pending = run().finally(() => {
+        if (inFlightRef.current === pending) inFlightRef.current = null;
+      });
+      inFlightRef.current = pending;
+      return pending;
+    };
+
+    const interval = setInterval(() => void poll(), POLL_MS_PUBLIC);
     const onVisible = () => {
       if (document.visibilityState === "visible") void poll();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
-      cancelled = true;
+      generationRef.current += 1;
+      inFlightRef.current = null;
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [enabled, queryClient]);
 
+  // A different queue: its own head version, its own page one.
   useEffect(() => {
+    generationRef.current += 1;
     versionRef.current = null;
   }, [feedKey]);
 }
