@@ -100,6 +100,13 @@ export function CurationSortFilterBar({ filters, isRoster, communities, onChange
           onClick={() => onChange({ flagged: !filters.flagged })}
         />
       )}
+      {isRoster && (
+        <ToggleChip
+          on={filters.excluded}
+          label={i18next.t("curation-desk.filters.excluded")}
+          onClick={() => onChange({ excluded: !filters.excluded })}
+        />
+      )}
       <FormControl
         type="select"
         size="sm"
@@ -124,6 +131,20 @@ export function CurationSortFilterBar({ filters, isRoster, communities, onChange
         {WORD_PRESETS.map((n) => (
           <option key={n} value={n}>
             {i18next.t("curation-desk.filters.words-min", { count: n })}
+          </option>
+        ))}
+      </FormControl>
+      <FormControl
+        type="select"
+        size="sm"
+        value={filters.maxWords ?? ""}
+        aria-label={i18next.t("curation-desk.filters.words-max-label")}
+        onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onChange({ maxWords: e.target.value ? Number(e.target.value) : null })}
+      >
+        <option value="">{i18next.t("curation-desk.filters.words-any-max")}</option>
+        {WORD_PRESETS.map((n) => (
+          <option key={n} value={n}>
+            {i18next.t("curation-desk.filters.words-max", { count: n })}
           </option>
         ))}
       </FormControl>

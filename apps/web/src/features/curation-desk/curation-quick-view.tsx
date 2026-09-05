@@ -26,10 +26,14 @@ import { EntryPayout } from "@/features/shared/entry-payout";
 import { UserAvatar } from "@/features/shared/user-avatar";
 import { dateToRelative } from "@/utils";
 import type { Entry } from "@/entities";
+import { error as errorToast } from "@/features/shared/feedback";
+import { formatError } from "@/api/format-error";
 import { QUICK_VIEW_PREFETCH_DEBOUNCE_MS } from "./consts";
 import { Chip } from "./curation-mark-badges";
 import { CurationRecommendBtn, type CurationRecommendHandle } from "./curation-recommend-btn";
+import { useCurationTicker } from "./curation-ticker";
 import { CurationWindowBadge } from "./curation-window-badge";
+import { computeWindow, formatUtcHm } from "./curation-window";
 import { useCurationDismissReco } from "./hooks";
 import type { DeskRow, ViewerRole } from "./types";
 
@@ -40,6 +44,9 @@ interface Props {
   neighbour: DeskRow | null;
   viewer: ViewerRole;
   recommendationsEnabled: boolean;
+  /** The `v` key asked for the vote slider; consumed once the entry arrives. */
+  voteOnOpen?: boolean;
+  onVoteHandled?: () => void;
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
@@ -85,6 +92,8 @@ export function CurationQuickView({
   neighbour,
   viewer,
   recommendationsEnabled,
+  voteOnOpen,
+  onVoteHandled,
   onClose,
   onPrev,
   onNext,
@@ -129,6 +138,23 @@ export function CurationQuickView({
     if (open) closeRef.current?.focus();
   }, [open, author, permlink]);
 
+  // The `v` key: the slider only exists once the entry query resolved, so the
+  // click waits for the entry instead of a fixed delay that missed a slow fetch.
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+  const voteHandledRef = useRef(onVoteHandled);
+  voteHandledRef.current = onVoteHandled;
+  useEffect(() => {
+    if (!open || !voteOnOpen || !entry) return;
+    drawerRef.current?.querySelector<HTMLElement>('.entry-vote-btn[role="button"]')?.click();
+    voteHandledRef.current?.();
+  }, [open, voteOnOpen, entry]);
+
+  const now = useCurationTicker();
+  const windowState = useMemo(
+    () => (row ? computeWindow(row.created, row.payout_at, now) : null),
+    [row, now]
+  );
+
   const dismiss = useCurationDismissReco();
   const [noteDraft, setNoteDraft] = useState("");
   useEffect(() => setNoteDraft(""), [author, permlink]);
@@ -147,12 +173,18 @@ export function CurationQuickView({
   if (!row) return null;
   const overlay = row.overlay;
   const isOwn = viewer.username === row.author;
+  // A vote in these windows earns little or nothing, so pointing curators at
+  // the post is not worth an on-chain op.
+  const recommendClosed = windowState?.kind === "locked" || windowState?.kind === "paid";
+  const recoDismissed = !!overlay?.reco_dismissed_at;
+  // The dismiss route is mod and curator only; a trial curator gets a 403.
+  const canDismissReco = viewer.isRoster && !viewer.isTrial;
   const title = row.title?.trim() || i18next.t("curation-desk.row.untitled", { author: row.author });
   const href = `/${row.community ?? row.tags?.[0] ?? "hive"}/@${row.author}/${row.permlink}`;
 
   return (
-    <ModalSidebar show={open} setShow={(v) => !v && onClose()} placement="right" className="w-[min(100vw,44rem)]">
-      <div data-curation-drawer className="flex flex-col h-full" aria-label={i18next.t("curation-desk.quick-view.aria")}>
+    <ModalSidebar show={open} setShow={(v) => !v && onClose()} placement="right" className="min-w-[90%] md:min-w-[44rem]">
+      <div ref={drawerRef} data-curation-drawer className="flex flex-col h-full" aria-label={i18next.t("curation-desk.quick-view.aria")}>
         <div className="flex items-start gap-2 p-3 border-b border-[--border-color]">
           <Button size="xs" appearance="gray-link" className="!rounded-lg" aria-label={i18next.t("curation-desk.quick-view.prev")} title="k" onClick={onPrev} icon={<UilAngleLeft />} />
           <div className="min-w-0 flex-1">
@@ -311,17 +343,27 @@ export function CurationQuickView({
                   {i18next.t("curation-desk.reco.collapse", { accounts: post.recommend_count, networks: post.unique_recommenders })}
                 </p>
               )}
-              {viewer.isRoster && (post?.recommend_count ?? 0) > 0 && (
+              {canDismissReco && ((post?.recommend_count ?? 0) > 0 || recoDismissed) && (
                 <Button
                   size="xs"
                   appearance="gray-link"
                   className="mt-1 !rounded-lg"
                   disabled={dismiss.isPending}
-                  aria-label={i18next.t("curation-desk.reco.dismiss")}
-                  onClick={() => dismiss.mutate({ author: row.author, permlink: row.permlink, action: "dismiss" })}
+                  aria-label={i18next.t(recoDismissed ? "curation-desk.reco.restore" : "curation-desk.reco.dismiss")}
+                  onClick={() =>
+                    dismiss.mutate(
+                      { author: row.author, permlink: row.permlink, action: recoDismissed ? "restore" : "dismiss" },
+                      { onError: (e) => errorToast(...formatError(e)) }
+                    )
+                  }
                 >
-                  {i18next.t("curation-desk.reco.dismiss")}
+                  {i18next.t(recoDismissed ? "curation-desk.reco.restore" : "curation-desk.reco.dismiss")}
                 </Button>
+              )}
+              {recoDismissed && (
+                <p className="text-gray-500 mt-1">
+                  {i18next.t("curation-desk.reco.dismissed-at", { time: formatUtcHm(overlay?.reco_dismissed_at) })}
+                </p>
               )}
             </section>
           </aside>
@@ -347,7 +389,7 @@ export function CurationQuickView({
               </Button>
             </>
           )}
-          {recommendationsEnabled && (!isOwn || mine?.is_self) && (
+          {recommendationsEnabled && !recommendClosed && (!isOwn || mine?.is_self) && (
             <CurationRecommendBtn ref={recommendRef} author={row.author} permlink={row.permlink} alreadyRecommended={!!mine} />
           )}
           <Button size="sm" appearance="gray-link" className={clsx("!rounded-lg ml-auto")} href={href} target="_blank" rel="noopener" aria-label={i18next.t("curation-desk.actions.open")} title="Shift+O" icon={<UilExternalLinkAlt />}>

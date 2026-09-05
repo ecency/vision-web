@@ -14,6 +14,7 @@ import {
 import { isOnAbuseList } from "@ecency/sdk";
 import { dateToRelative } from "@/utils";
 import { UserAvatar } from "@/features/shared/user-avatar";
+import { formatUtcHm } from "./curation-window";
 import type { DeskRow } from "./types";
 
 interface ChipProps {
@@ -147,7 +148,7 @@ export const CurationMarkBadges = memo(function CurationMarkBadges({
           <UilBell className="size-3.5" aria-hidden />
           {i18next.t("curation-desk.marks.snoozed-until", {
             curator: snoozeMark?.curator ?? overlay?.team_mark_by ?? "",
-            until: snoozeMark?.snooze_until ? new Date(snoozeMark.snooze_until).toISOString().slice(11, 16) : "",
+            until: formatUtcHm(snoozeMark?.snooze_until),
           })}
         </Chip>
       )}
@@ -161,6 +162,13 @@ export const CurationMarkBadges = memo(function CurationMarkBadges({
         </Chip>
       )}
       {isRoster && isOnAbuseList(overlay?.flags) && <Chip tone="red">{i18next.t("curation-desk.marks.abuse-list")}</Chip>}
+      {isRoster && overlay?.excluded_reason && (
+        <Chip tone="red" title={i18next.t("curation-desk.marks.excluded-tooltip")}>
+          {i18next.t(`curation-desk.excluded-reasons.${overlay.excluded_reason}`, {
+            defaultValue: i18next.t("curation-desk.marks.excluded", { reason: overlay.excluded_reason }),
+          })}
+        </Chip>
+      )}
       {row.is_gray && <Chip tone="gray">{i18next.t("curation-desk.marks.grayed")}</Chip>}
       {isRoster && (overlay?.notes_count ?? 0) > 0 && (
         <Chip tone="gray">

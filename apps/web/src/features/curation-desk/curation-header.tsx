@@ -19,7 +19,7 @@ import { Button } from "@ui/button";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { UserAvatar } from "@/features/shared/user-avatar";
 import { dateToRelative } from "@/utils";
-import { formatHm } from "./curation-window";
+import { formatHm, formatUtcHm } from "./curation-window";
 
 interface Props {
   status: CurationStatus | undefined;
@@ -120,11 +120,15 @@ export const CurationHeader = memo(function CurationHeader({ status, teamCursor,
         label={i18next.t("curation-desk.header.cursor")}
         value={
           teamCursor?.created
-            ? i18next.t("curation-desk.header.cursor-value", {
-                time: new Date(teamCursor.created).toISOString().slice(11, 16),
-                by: teamCursor.set_by ? `@${teamCursor.set_by}` : "",
-                when: teamCursor.set_at ? dateToRelative(teamCursor.set_at) : "",
-              })
+            ? i18next
+                .t("curation-desk.header.cursor-value", {
+                  time: formatUtcHm(teamCursor.created),
+                  by: teamCursor.set_by ? `@${teamCursor.set_by}` : "",
+                  when: teamCursor.set_at ? dateToRelative(teamCursor.set_at) : "",
+                })
+                // The public cursor names nobody, so the trailing pieces go.
+                .replace(/\s+/g, " ")
+                .trim()
             : i18next.t("curation-desk.header.cursor-none")
         }
       >
@@ -134,6 +138,24 @@ export const CurationHeader = memo(function CurationHeader({ status, teamCursor,
           </span>
         )}
       </Tile>
+
+      {status?.counts && (
+        <Tile
+          label={i18next.t("curation-desk.header.curated-today")}
+          value={status.counts.curated_24h}
+          title={i18next.t("curation-desk.header.curated-today-tooltip", {
+            posts: status.counts.trail_votes_today?.posts ?? 0,
+            comments: status.counts.trail_votes_today?.comments ?? 0,
+          })}
+        >
+          <span className="text-[11px] text-gray-500">
+            {i18next.t("curation-desk.header.trail-votes", {
+              posts: status.counts.trail_votes_today?.posts ?? 0,
+              comments: status.counts.trail_votes_today?.comments ?? 0,
+            })}
+          </span>
+        </Tile>
+      )}
 
       {isRoster && (
         <Tile
@@ -236,6 +258,11 @@ export const CurationHeader = memo(function CurationHeader({ status, teamCursor,
         {status?.head_lag_seconds != null && (
           <span title={i18next.t("curation-desk.header.lag-tooltip")}>
             {i18next.t("curation-desk.header.lag", { seconds: status.head_lag_seconds })}
+          </span>
+        )}
+        {status?.reco_lag_blocks != null && status.reco_lag_blocks > 0 && (
+          <span title={i18next.t("curation-desk.header.reco-lag-tooltip")}>
+            {i18next.t("curation-desk.header.reco-lag", { blocks: status.reco_lag_blocks })}
           </span>
         )}
         {status?.worker_tick_age_seconds != null && status.worker_tick_age_seconds > 120 && (

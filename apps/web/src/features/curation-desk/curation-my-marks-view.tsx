@@ -11,6 +11,7 @@ import { error as errorToast } from "@/features/shared/feedback";
 import { formatError } from "@/api/format-error";
 import { dateToRelative } from "@/utils";
 import { Chip } from "./curation-mark-badges";
+import { formatUtcDateHm } from "./curation-window";
 import { useClearMark, useMyMarks, useViewerRole } from "./hooks";
 
 const TABS: CurationMarkState[] = ["snoozed", "flagged", "reviewed", "noted"];
@@ -35,7 +36,7 @@ function MarksList({ state }: { state: CurationMarkState }) {
               <span>@{mark.author}</span>
               <span>{dateToRelative(mark.updated_at)}</span>
               {mark.state === "snoozed" && mark.snooze_until && (
-                <Chip tone="amber">{i18next.t("curation-desk.marks-view.until", { until: new Date(mark.snooze_until).toISOString().slice(0, 16).replace("T", " ") })}</Chip>
+                <Chip tone="amber">{i18next.t("curation-desk.marks-view.until", { until: formatUtcDateHm(mark.snooze_until) })}</Chip>
               )}
               {mark.reason && <Chip tone="red">{i18next.t(`curation-desk.flag-reasons.${mark.reason}`, { defaultValue: mark.reason })}</Chip>}
             </div>

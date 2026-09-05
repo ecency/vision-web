@@ -4401,6 +4401,11 @@
       "unknown": "n/a",
       "lag": "feed {{seconds}} s behind chain",
       "lag-tooltip": "How far the desk's index is behind the chain head.",
+      "reco-lag": "recommendations {{blocks}} blocks behind",
+      "reco-lag-tooltip": "How far the recommendation index is behind the chain head. Recommendations reach the desk from the chain, so they arrive after the post does.",
+      "curated-today": "Curated today",
+      "curated-today-tooltip": "Posts the trail curated in the last 24 h. Trail votes today: {{posts}} on posts plus {{comments}} on comments.",
+      "trail-votes": "{{posts}} posts \u00b7 {{comments}} comments",
       "worker-stale": "index stalled",
       "live-paused": "live updates paused"
     },
@@ -4437,9 +4442,13 @@
       "window-half": "24 to 72 h, half weight",
       "window-eighth": "Older, one eighth",
       "window-locked": "Last 12 h before payout",
+      "excluded": "Excluded",
       "words": "Words",
       "words-any": "Any length",
       "words-min": "{{count}}+ words",
+      "words-max-label": "Maximum words",
+      "words-any-max": "Any maximum",
+      "words-max": "up to {{count}} words",
       "has-images": "Has images",
       "rep": "Rep {{min}} to {{max}}",
       "rep-min": "Minimum reputation",
@@ -4493,6 +4502,8 @@
       "snoozed-until": "snoozed by @{{curator}} until {{until}} UTC",
       "flagged": "flagged",
       "abuse-list": "on the abuse list",
+      "excluded": "excluded: {{reason}}",
+      "excluded-tooltip": "The public queue never serves this row. Curators see it so nothing disappears without a reason.",
       "grayed": "grayed",
       "late": "late",
       "snooze-ended": "snooze ended",
@@ -4511,6 +4522,14 @@
       "snoozed": "Snoozed",
       "flagged": "Flagged",
       "noted": "Noted"
+    },
+    "excluded-reasons": {
+      "deleted": "deleted post",
+      "abuser": "author on the abuse list",
+      "ignorelist": "author on the ignore list",
+      "blocked_tag": "blocked tag",
+      "patch_body": "body could not be read",
+      "rep_low": "reputation below the floor"
     },
     "flag-reasons": {
       "plagiarism": "Plagiarism",
@@ -4534,7 +4553,9 @@
       "collapse": "{{accounts}} accounts, {{networks}} networks",
       "tooltip": "Networks: shared connections count once; recommendations from other apps count as one network.",
       "author": "author",
-      "dismiss": "Dismiss recommendation"
+      "dismiss": "Dismiss recommendation",
+      "restore": "Restore recommendation",
+      "dismissed-at": "dismissed at {{time}} UTC"
     },
     "recommend": {
       "menu-item": "Recommend to curators",
@@ -4669,7 +4690,7 @@
       "page-title": "How Ecency curation works",
       "page-description": "How the @ecency trail votes, what voting power does to the trail weight, the 24 h curation window, red flags and the etiquette of the curation team.",
       "title": "How Ecency curation works",
-      "lead": "@ecency votes with about 2.6M HP, most of it delegated by about 1,400 people, and returns the curation reward to them every day. Curators are volunteers deciding where that vote goes. This page explains the mechanics so every vote counts.",
+      "lead": "@ecency votes with about 2.6M HP, most of it delegated by about 1,400 people. The curation reward goes back to them every day. Curators are volunteers deciding where that vote goes, so this page explains the mechanics that make a vote count.",
       "contents": "Contents",
       "back-to-desk": "Back to the curation desk",
       "what": {

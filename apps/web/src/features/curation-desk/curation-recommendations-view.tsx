@@ -11,6 +11,8 @@ import {
 } from "@ecency/sdk";
 import { Button } from "@ui/button";
 import { EcencyConfigManager } from "@/config";
+import { error as errorToast } from "@/features/shared/feedback";
+import { formatError } from "@/api/format-error";
 import { useBottomPagination } from "@/core/hooks/use-bottom-pagination";
 import { DetectBottom } from "@/features/shared/detect-bottom";
 import { UserAvatar } from "@/features/shared/user-avatar";
@@ -26,7 +28,7 @@ function reasonsTooltip(item: CurationRecommendationItem): string {
     .join(", ");
 }
 
-function RecommendationRow({ item, isRoster, username, recommendationsEnabled }: { item: CurationRecommendationItem; isRoster: boolean; username: string | undefined; recommendationsEnabled: boolean }) {
+function RecommendationRow({ item, canDismiss, isRoster, username, recommendationsEnabled }: { item: CurationRecommendationItem; canDismiss: boolean; isRoster: boolean; username: string | undefined; recommendationsEnabled: boolean }) {
   const dismiss = useCurationDismissReco();
   const mine = item.recommenders.some((r) => r.username === username);
   return (
@@ -62,14 +64,19 @@ function RecommendationRow({ item, isRoster, username, recommendationsEnabled }:
         {recommendationsEnabled && username !== item.author && (
           <CurationRecommendBtn author={item.author} permlink={item.permlink} alreadyRecommended={mine} compact />
         )}
-        {isRoster && (
+        {canDismiss && (
           <Button
             size="xs"
             appearance="gray-link"
             className="!rounded-lg"
             disabled={dismiss.isPending}
             aria-label={i18next.t("curation-desk.reco.dismiss")}
-            onClick={() => dismiss.mutate({ author: item.author, permlink: item.permlink, action: "dismiss" })}
+            onClick={() =>
+              dismiss.mutate(
+                { author: item.author, permlink: item.permlink, action: "dismiss" },
+                { onError: (e) => errorToast(...formatError(e)) }
+              )
+            }
           >
             {i18next.t("curation-desk.reco.dismiss")}
           </Button>
@@ -126,6 +133,8 @@ export function CurationRecommendationsView() {
           <RecommendationRow
             key={`${item.author}/${item.permlink}`}
             item={item}
+            // The dismiss route answers a trial curator with a 403.
+            canDismiss={viewer.isRoster && !viewer.isTrial}
             isRoster={viewer.isRoster}
             username={viewer.username}
             recommendationsEnabled={recommendationsEnabled}

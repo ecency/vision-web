@@ -42,8 +42,8 @@ const Promote = dynamic(
   () => import("@/features/shared/promote").then((m) => ({ default: m.Promote })),
   { ssr: false }
 );
-// By file, not through the curation-desk barrel, and on demand: the dialog is
-// only mounted after the menu item is clicked.
+// By file, not through the curation-desk barrel; loaded on demand, so the
+// dialog is only mounted after the menu item is clicked.
 const CurationRecommendDialog = dynamic(
   () =>
     import("@/features/curation-desk/curation-recommend-btn").then((m) => ({
