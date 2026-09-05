@@ -8,8 +8,14 @@ import { renderWithQueryClient } from "@/specs/test-utils";
 import { installFetchRouter, jsonResponse, makeFeedPage, makePost, makeRoster, makeRow } from "./curation-test-utils";
 
 const state = vi.hoisted(() => ({ username: "member1" as string | undefined }));
+// The external SDK hook is the mock; the app's own wrapper around it runs, so
+// the active user and the broadcast adapter it passes are exercised here.
+const useCurationRecommend = vi.hoisted(() => vi.fn());
 
-vi.mock("@ecency/sdk", async () => ({ ...(await vi.importActual<Record<string, unknown>>("@ecency/sdk")) }));
+vi.mock("@ecency/sdk", async () => ({
+  ...(await vi.importActual<Record<string, unknown>>("@ecency/sdk")),
+  useCurationRecommend,
+}));
 vi.mock("@/utils", async () => ({
   ...(await vi.importActual<Record<string, unknown>>("@/utils")),
   ensureValidToken: vi.fn(async () => "code-1"),
@@ -30,10 +36,6 @@ vi.mock("@ui/modal", () => ({
   ModalFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ModalTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("@/api/sdk-mutations/use-curation-recommend-mutation", () => ({
-  useCurationRecommendMutation: () => ({ isPending: false, mutateAsync: async () => ({ tx_id: "e".repeat(40) }) }),
-}));
-
 import { CurationRecommendBtn } from "@/features/curation-desk/curation-recommend-btn";
 import { resetRecommendFlowForTests } from "@/features/curation-desk/curation-recommend-flow";
 import { getRecommendState, resetRecommendStoreForTests } from "@/features/curation-desk/curation-recommend-store";
@@ -46,6 +48,11 @@ describe("recommend state after a broadcast", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    useCurationRecommend.mockReset();
+    useCurationRecommend.mockReturnValue({
+      isPending: false,
+      mutateAsync: async () => ({ tx_id: "e".repeat(40) }),
+    });
     listsViewer = false;
     resetRecommendFlowForTests();
     resetRecommendStoreForTests();
@@ -119,6 +126,18 @@ describe("recommend state after a broadcast", () => {
     });
     expect(router.callsTo(/curation-desk\/post\//)).toHaveLength(3);
     expect(screen.getByLabelText("curation-desk.recommend.withdraw-aria")).toBeInTheDocument();
+  });
+
+  it("broadcasts through the app wrapper, with the active user and the web adapter", async () => {
+    renderWithQueryClient(<CurationRecommendBtn author="alice" permlink="morning-light" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    expect(useCurationRecommend).toHaveBeenCalled();
+    const [username, auth] = useCurationRecommend.mock.calls[0];
+    expect(username).toBe("member1");
+    expect(auth?.adapter).toBeTruthy();
   });
 
   it("after 60 s of misses shows sent, confirming with Withdraw and never renders Recommend again", async () => {

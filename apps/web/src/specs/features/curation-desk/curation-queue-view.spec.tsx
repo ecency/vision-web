@@ -1,11 +1,12 @@
 import React from "react";
 import "@testing-library/jest-dom";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQueryClient } from "@/specs/test-utils";
 import {
   installFetchRouter,
+  jsonResponse,
   makeFeedPage,
   makeOverlay,
   makeRoster,
@@ -75,6 +76,7 @@ vi.mock("@/api/sdk-mutations/use-curation-recommend-mutation", () => ({
 }));
 
 import { CurationQueueView } from "@/features/curation-desk/curation-queue-view";
+import { error as errorToast } from "@/features/shared/feedback";
 
 /** Mirrors production: refetchOnMount false, so page 1 must come from the mount itself. */
 function prodLikeClient() {
@@ -90,6 +92,7 @@ describe("CurationQueueView", () => {
 
   beforeEach(() => {
     state.username = undefined;
+    vi.mocked(errorToast).mockClear();
     statusBody = makeStatus();
     feedPage = makeFeedPage([makeRow({ post_id: 1 }), makeRow({ post_id: 2 })]);
     fetchRouter = installFetchRouter()
@@ -193,6 +196,36 @@ describe("CurationQueueView", () => {
     });
     await waitFor(() => expect(fetchRouter.callsTo(/curation-desk\/feed\?/)).toHaveLength(2));
     expect(await screen.findAllByRole("article")).toHaveLength(1);
+  });
+
+  // The undo bar is the only place a viewer can see whether the undo landed,
+  // so it may not disappear before the request it started has answered.
+  it("keeps the undo bar up until the undo settled and reports a rejection", async () => {
+    state.username = "curator1";
+    let settleClear: (value: unknown) => void = () => undefined;
+    const clearing = new Promise((resolve) => {
+      settleClear = resolve;
+    });
+    fetchRouter.on(/curation-desk\/mark$/, () => ({ ok: true }));
+    fetchRouter.on(/curation-desk\/mark-clear$/, () => clearing);
+
+    renderWithQueryClient(<CurationQueueView />, { queryClient: prodLikeClient() });
+    await screen.findAllByRole("article");
+
+    fireEvent.click(screen.getAllByLabelText("curation-desk.actions.reviewed")[0]);
+    const undo = await screen.findByLabelText("curation-desk.live.undo");
+
+    fireEvent.click(undo);
+    await waitFor(() => expect(fetchRouter.callsTo(/curation-desk\/mark-clear$/)).toHaveLength(1));
+    // The request has not answered yet: the bar stays, and nothing is reported.
+    expect(screen.getByLabelText("curation-desk.live.undo")).toBeInTheDocument();
+    expect(errorToast).not.toHaveBeenCalled();
+
+    await act(async () => {
+      settleClear(jsonResponse({ error: "gone" }, 500));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(errorToast).toHaveBeenCalled());
   });
 
   it("renders the list as a feed of articles with an aria-labelledby title", async () => {

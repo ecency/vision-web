@@ -23,7 +23,10 @@ function MarksList({ state }: { state: CurationMarkState }) {
   const items = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data]);
 
   if (isLoading) return <p className="p-4 text-sm text-gray-500">{i18next.t("curation-desk.list.loading")}</p>;
-  if (isError) return <p className="p-4 text-sm text-red-600 dark:text-red-400" role="alert">{i18next.t("curation-desk.list.error")}</p>;
+  // A failed later page leaves the loaded ones in the cache and raises isError,
+  // so the full-page error is only right while nothing is on screen.
+  if (isError && items.length === 0)
+    return <p className="p-4 text-sm text-red-600 dark:text-red-400" role="alert">{i18next.t("curation-desk.list.error")}</p>;
   if (!items.length) return <p className="p-6 text-sm text-gray-500 text-center">{i18next.t("curation-desk.marks-view.empty")}</p>;
 
   return (
@@ -63,6 +66,12 @@ function MarksList({ state }: { state: CurationMarkState }) {
           </li>
         ))}
       </ul>
+      {/* The loaded records stay; the page that failed is reported under them. */}
+      {isError && (
+        <p className="px-3 py-2 text-xs text-red-600 dark:text-red-400" role="alert">
+          {i18next.t("curation-desk.list.error")}
+        </p>
+      )}
       {hasNextPage && (
         <div className="flex justify-center p-3">
           <Button

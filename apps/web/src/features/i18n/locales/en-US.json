@@ -4576,7 +4576,8 @@
       "cost": "Costs Resource Credits only (about as much as two votes). No quota; curators count networks, not accounts.",
       "sent-toast": "Recommendation sent to the chain.",
       "withdrawn-toast": "Recommendation withdrawn.",
-      "rc-error": "Not enough Resource Credits for this recommendation right now. RC refills over five days."
+      "rc-error": "Not enough Resource Credits for this recommendation right now. RC refills over five days.",
+      "needs-login": "Log in to recommend a post to the curators."
     },
     "actions": {
       "vote": "Vote",

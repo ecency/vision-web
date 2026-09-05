@@ -71,6 +71,15 @@ export function CurationReasonPicker({ show, onHide, onPick, busy }: ReasonPicke
   );
 }
 
+/**
+ * Busy covers a broadcast in flight AND a withdrawal the chain has not shown
+ * yet: while that is confirming, a second Withdraw would broadcast a second
+ * `unrecommend` for a row the chain no longer has.
+ */
+export function recommendBusy(state: RecommendState, isPending: boolean): boolean {
+  return isPending || state.phase === "pending" || (state.phase === "confirming" && state.withdraw);
+}
+
 export function recommendLabel(state: RecommendState, isSelf: boolean): string {
   if (state.phase === "pending") {
     return i18next.t(state.withdraw ? "curation-desk.recommend.withdrawing" : "curation-desk.recommend.sending");
@@ -154,7 +163,7 @@ export const CurationRecommendBtn = forwardRef<CurationRecommendHandle, Props>(f
 
   if (hidden) return null;
 
-  const busy = isPending || state.phase === "pending";
+  const busy = recommendBusy(state, isPending);
   const label = recommendLabel(state, !!alreadyRecommended);
 
   return (
@@ -197,7 +206,7 @@ export function CurationRecommendDialog({ author, permlink, onHide }: DialogProp
   const { state, recommend, withdraw, isPending } = useRecommendFlow(author, permlink);
   const alreadySent =
     state.phase === "pending" || state.phase === "recommended" || state.phase === "confirming";
-  const busy = isPending || state.phase === "pending";
+  const busy = recommendBusy(state, isPending);
 
   const onPick = useCallback(
     async (reason: CurationReason) => {

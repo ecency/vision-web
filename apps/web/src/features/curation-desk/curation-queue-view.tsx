@@ -71,7 +71,8 @@ type Dialog =
 
 interface Undo {
   message: string;
-  action: (() => void) | null;
+  /** Awaited by the bar, which reports a rejection and keeps itself up until then. */
+  action: (() => Promise<unknown>) | null;
   until: number;
 }
 
@@ -166,6 +167,7 @@ export function CurationQueueView() {
   const [recommendOnOpen, setRecommendOnOpen] = useState(false);
   const [dialog, setDialog] = useState<Dialog>({ kind: "none" });
   const [undo, setUndo] = useState<Undo | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
   const listRef = useRef<VirtuosoHandle | null>(null);
   const recommendRef = useRef<CurationRecommendHandle | null>(null);
 
@@ -177,11 +179,27 @@ export function CurationQueueView() {
   const clearMark = useClearMark();
   const setCursor = useSetCursor();
 
+  // The bar outlives its window while an undo is in flight: dropping it there
+  // would tell the viewer the undo applied before the request answered.
   useEffect(() => {
-    if (!undo) return;
+    if (!undo || undoBusy) return;
     const handle = setTimeout(() => setUndo(null), Math.max(0, undo.until - Date.now()));
     return () => clearTimeout(handle);
-  }, [undo]);
+  }, [undo, undoBusy]);
+
+  const runUndo = useCallback(async () => {
+    const action = undo?.action;
+    if (!action || undoBusy) return;
+    setUndoBusy(true);
+    try {
+      await action();
+      setUndo(null);
+    } catch (e) {
+      errorToast(...formatError(e));
+    } finally {
+      setUndoBusy(false);
+    }
+  }, [undo, undoBusy]);
 
   const scrollTo = useCallback(
     (index: number) => {
@@ -217,7 +235,7 @@ export function CurationQueueView() {
         await mark.mutateAsync({ row, ...input });
         setUndo({
           message,
-          action: input.state === "reviewed" ? () => void clearMark.mutateAsync(row) : null,
+          action: input.state === "reviewed" ? () => clearMark.mutateAsync(row) : null,
           until: Date.now() + UNDO_REVIEWED_MS,
         });
       } catch (e) {
@@ -299,7 +317,7 @@ export function CurationQueueView() {
           message: i18next.t("curation-desk.live.cursor-moved", { count: result.swept_count ?? 0 }),
           action:
             viewer.canRewindCursor && previous?.post_id != null
-              ? () => void setCursor.mutateAsync({ post_id: previous.post_id!, action: "rewind", reason: "undo" })
+              ? () => setCursor.mutateAsync({ post_id: previous.post_id!, action: "rewind", reason: "undo" })
               : null,
           until: Date.now() + UNDO_CURSOR_MS,
         });
@@ -382,10 +400,8 @@ export function CurationQueueView() {
               type="button"
               className="underline"
               aria-label={i18next.t("curation-desk.live.undo")}
-              onClick={() => {
-                undo.action?.();
-                setUndo(null);
-              }}
+              disabled={undoBusy}
+              onClick={() => void runUndo()}
             >
               {i18next.t("curation-desk.live.undo")}
             </button>

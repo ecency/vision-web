@@ -288,7 +288,7 @@ export function CurationQuickView({
                     votes: row.votes ?? entry?.active_votes?.length ?? 0,
                   })}
                 </li>
-                {row.rshares_total && row.rshares_after_24h != null && row.rshares_total > 0 && (
+                {row.rshares_total != null && row.rshares_total > 0 && row.rshares_after_24h != null && (
                   <li>{i18next.t("curation-desk.quick-view.late-rshares", { pct: Math.round((100 * row.rshares_after_24h) / row.rshares_total) })}</li>
                 )}
                 {topVoters.map((v) => (

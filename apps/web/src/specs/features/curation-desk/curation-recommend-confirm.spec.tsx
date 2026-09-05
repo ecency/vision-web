@@ -44,7 +44,7 @@ vi.mock("@/api/sdk-mutations/use-curation-recommend-mutation", () => ({
   }),
 }));
 
-import { CurationRecommendBtn } from "@/features/curation-desk/curation-recommend-btn";
+import { CurationRecommendBtn, type CurationRecommendHandle } from "@/features/curation-desk/curation-recommend-btn";
 import { error as errorToast } from "@/features/shared/feedback";
 import { resetRecommendFlowForTests } from "@/features/curation-desk/curation-recommend-flow";
 import { getRecommendState, resetRecommendStoreForTests } from "@/features/curation-desk/curation-recommend-store";
@@ -138,10 +138,17 @@ describe("recommend confirmation", () => {
     expect(getRecommendState("member1", "alice", "morning-light")).toEqual({ phase: "withdrawn" });
   });
 
-  it("confirms the withdrawal on a recommend_count that dropped", async () => {
-    // The memo never listed this viewer, so only the count can say the row moved.
+  it("never reads another recommender's withdrawal as this viewer's", async () => {
+    // Someone else withdraws between two polls: recommend_count falls while
+    // this viewer's own recommendation is still on chain. Reading that as
+    // proof would send the next Recommend to broadcast a duplicate.
     let count = 4;
-    router.on(/curation-desk\/post\//, () => makePost(row, { recommend_count: count, recommenders: [] }));
+    router.on(/curation-desk\/post\//, () =>
+      makePost(row, {
+        recommend_count: count,
+        recommenders: [{ username: "bob", rep: 51, reason: "quality" as const, at: "2026-09-05T11:00:00Z", has_meta: true }]
+      })
+    );
     renderWithQueryClient(<CurationRecommendBtn author="alice" permlink="morning-light" alreadyRecommended />);
     await clickWithdraw();
 
@@ -152,9 +159,37 @@ describe("recommend confirmation", () => {
 
     count = 3;
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(56_000);
     });
-    expect(getRecommendState("member1", "alice", "morning-light")).toEqual({ phase: "withdrawn" });
+    // No answer ever listed this viewer, so the flow stays where it can be
+    // asked again instead of claiming the recommendation is gone.
+    expect(getRecommendState("member1", "alice", "morning-light")).toEqual({ phase: "confirming", withdraw: true });
+  });
+
+  it("sends one withdrawal only, however the second Withdraw is triggered", async () => {
+    router.on(/curation-desk\/post\//, () => makePost(row, { recommend_count: 4, recommenders: [] }));
+    const ref = React.createRef<CurationRecommendHandle>();
+    renderWithQueryClient(
+      <CurationRecommendBtn ref={ref} author="alice" permlink="morning-light" alreadyRecommended />
+    );
+    await clickWithdraw();
+
+    // The chain has not shown the withdrawal yet: the poll parks the row in
+    // "confirming" with Withdraw still on the label.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(61_000);
+    });
+    expect(getRecommendState("member1", "alice", "morning-light")).toEqual({ phase: "confirming", withdraw: true });
+    expect(screen.getByLabelText("curation-desk.recommend.withdraw-aria")).toBeDisabled();
+
+    // The keyboard binding reaches the flow without asking the button.
+    await act(async () => {
+      ref.current?.trigger();
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    await clickWithdraw();
+
+    expect(state.broadcasts).toEqual([true]);
   });
 
   it("a broadcast that resolves after the poll confirmed never downgrades the state", async () => {
