@@ -23,41 +23,39 @@ const APP_BASE = (
   defaults.base
 ).replace(/\/+$/, "");
 
-export async function generateMetadata(): Promise<Metadata> {
-  const base = APP_BASE;
-
-  return {
-    title: { absolute: defaults.title },
+// Homepage metadata is fixed, so it needs no per-request callback. The site's
+// htmlLimitedBots policy still controls blocking versus streamed delivery.
+export const metadata: Metadata = {
+  title: { absolute: defaults.title },
+  description: defaults.description,
+  openGraph: {
+    title: defaults.title,
     description: defaults.description,
-    openGraph: {
-      title: defaults.title,
-      description: defaults.description,
-      url: base,
-      siteName: defaults.name,
-      images: [
-        {
-          url: `${base}/og.jpg`,
-          width: 1200,
-          height: 630,
-          alt: defaults.name,
-        },
-      ],
-      locale: "en_US",
-      type: "website"
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: defaults.title,
-      description: defaults.description,
-      site: defaults.twitterHandle,
-      creator: defaults.twitterHandle,
-      images: [`${base}/og.jpg`]
-    },
-    alternates: {
-      canonical: base
-    }
-  };
-}
+    url: APP_BASE,
+    siteName: defaults.name,
+    images: [
+      {
+        url: `${APP_BASE}/og.jpg`,
+        width: 1200,
+        height: 630,
+        alt: defaults.name
+      }
+    ],
+    locale: "en_US",
+    type: "website"
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: defaults.title,
+    description: defaults.description,
+    site: defaults.twitterHandle,
+    creator: defaults.twitterHandle,
+    images: [`${APP_BASE}/og.jpg`]
+  },
+  alternates: {
+    canonical: APP_BASE
+  }
+};
 
 export default async function Home() {
   return (
