@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.100
+
+### Patch Changes
+
+- feat: curation desk (/curation) with on-chain recommendations (#1731)
+
 ## 2.3.99
 
 ### Patch Changes
