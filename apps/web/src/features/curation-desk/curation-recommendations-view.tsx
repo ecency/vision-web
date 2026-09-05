@@ -93,7 +93,12 @@ export function CurationRecommendationsView() {
     ({ visionFeatures }) => visionFeatures.curationDesk.recommendations.enabled
   );
   const [sort, setSort] = useState<CurationRecommendationsSort>("unique");
-  const query = useInfiniteQuery(getCurationRecommendationsInfiniteQueryOptions({ sort }));
+  // The public list is part of what the sub-flag turns off, so a disabled
+  // build asks for nothing.
+  const query = useInfiniteQuery({
+    ...getCurationRecommendationsInfiniteQueryOptions({ sort }),
+    enabled: recommendationsEnabled,
+  });
   const items = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
   const loadMore = useBottomPagination({
     data: query.data,

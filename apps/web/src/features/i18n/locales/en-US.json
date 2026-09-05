@@ -4569,6 +4569,8 @@
       "confirming": "sent, confirming",
       "title": "Recommend to curators",
       "intro": "Tell the Ecency curators why this post deserves a look. The recommendation is written to the Hive chain with your posting key.",
+      "already-title": "Recommendation sent",
+      "already-body": "You already recommended this post to the curators. Withdraw it if you changed your mind.",
       "reason-label": "Reason",
       "confirm": "Recommend",
       "cost": "Costs Resource Credits only (about as much as two votes). No quota; curators count networks, not accounts.",

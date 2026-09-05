@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { getCurationStatusQueryOptions } from "@ecency/sdk";
+import { EcencyConfigManager } from "@/config";
 
 const TABS = [
   { href: "/curation", key: "queue" },
@@ -19,6 +20,12 @@ export function CurationTabs() {
   const pathname = usePathname() ?? "/curation";
   const onGuide = pathname.startsWith("/curation/guide");
   const { data: status } = useQuery({ ...getCurationStatusQueryOptions(), enabled: !onGuide });
+  // The recommendations route answers notFound while the sub-flag is off, so
+  // the tab that points at it goes with it.
+  const recommendationsEnabled = EcencyConfigManager.useConfig(
+    ({ visionFeatures }) => visionFeatures.curationDesk.recommendations.enabled
+  );
+  const tabs = recommendationsEnabled ? TABS : TABS.filter((tab) => tab.key !== "recommendations");
 
   const counts: Record<string, number | undefined> = {
     queue: status?.counts?.unreviewed,
@@ -28,7 +35,7 @@ export function CurationTabs() {
   return (
     <nav aria-label={i18next.t("curation-desk.tabs.aria")} className="flex flex-wrap items-center gap-1 text-sm">
       <h1 className="text-lg font-bold mr-3">{i18next.t("curation-desk.page-title")}</h1>
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const active = tab.href === "/curation" ? pathname === "/curation" : pathname.startsWith(tab.href);
         const count = counts[tab.key];
         return (

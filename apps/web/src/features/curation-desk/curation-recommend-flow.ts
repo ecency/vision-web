@@ -133,7 +133,12 @@ function viewerRow(post: CurationPost | undefined, username: string) {
 
 /**
  * Poll route 5 with backoff after a broadcast. `withdraw` waits for the name
- * to disappear instead of appearing.
+ * to disappear instead of appearing, but only from a body that once carried
+ * it: route 5 is memoized, so an answer built before the recommendation was
+ * indexed is missing the name for a reason that has nothing to do with the
+ * withdrawal. A recommend_count below the first count this poll saw is the
+ * other proof the row moved, for the viewer whose recommendation was already
+ * gone from the first body.
  */
 export function startRecommendPoll(
   queryClient: QueryClient,
@@ -146,6 +151,10 @@ export function startRecommendPoll(
   clearTimers(key);
   const startedAt = Date.now();
   const handles: ReturnType<typeof setTimeout>[] = [];
+  /** The viewer's recommendation was listed by at least one answer. */
+  let sawViewer = false;
+  /** recommend_count of the first answer this poll read. */
+  let firstCount: number | null = null;
 
   const finish = (confirmed: boolean) => {
     clearTimers(key);
@@ -179,7 +188,13 @@ export function startRecommendPoll(
       post = undefined;
     }
     const mine = viewerRow(post, username);
-    const seen = withdraw ? post !== undefined && !mine : !!mine;
+    if (post) {
+      if (mine) sawViewer = true;
+      if (firstCount === null) firstCount = post.recommend_count ?? null;
+    }
+    const countDropped =
+      post !== undefined && firstCount !== null && (post.recommend_count ?? 0) < firstCount;
+    const seen = withdraw ? post !== undefined && !mine && (sawViewer || countDropped) : !!mine;
     if (seen) {
       finish(true);
       if (post) patchRecommendCounts(queryClient, post);
@@ -226,11 +241,20 @@ export function useRecommendFlow(author: string, permlink: string) {
         const result = await mutation.mutateAsync({ author, permlink, reason, withdraw });
         const trxId = normalizeBroadcastTrxId(result);
         const current = getRecommendState(username, author, permlink);
+        // The poll runs while the broadcast is pending, so by now it may have
+        // confirmed the recommendation or landed on a state of its own. A
+        // resolved broadcast only advances the state it started: writing
+        // "recommended, unconfirmed" over either of those loses what the chain
+        // already told us.
         if (current.phase === "pending") {
-          setRecommendState(username, author, permlink, { ...current, trxId });
+          setRecommendState(
+            username,
+            author,
+            permlink,
+            withdraw ? { ...current, trxId } : { phase: "recommended", confirmed: false }
+          );
         }
         if (!withdraw) {
-          setRecommendState(username, author, permlink, { phase: "recommended", confirmed: false });
           void pingRecommendMeta(username, author, permlink, trxId);
         }
         return result;

@@ -187,9 +187,18 @@ interface DialogProps {
   onHide: () => void;
 }
 
-/** Entry menu entry point: the same reason picker over the same flow. */
+/**
+ * Entry menu entry point: the same reason picker over the same flow, unless
+ * this viewer already recommended the post. The menu is a second surface onto
+ * one flow state, so it reads that state instead of offering a picker whose
+ * every confirmation is another identical broadcast.
+ */
 export function CurationRecommendDialog({ author, permlink, onHide }: DialogProps) {
-  const { recommend, isPending } = useRecommendFlow(author, permlink);
+  const { state, recommend, withdraw, isPending } = useRecommendFlow(author, permlink);
+  const alreadySent =
+    state.phase === "pending" || state.phase === "recommended" || state.phase === "confirming";
+  const busy = isPending || state.phase === "pending";
+
   const onPick = useCallback(
     async (reason: CurationReason) => {
       try {
@@ -203,5 +212,45 @@ export function CurationRecommendDialog({ author, permlink, onHide }: DialogProp
     },
     [recommend, onHide]
   );
-  return <CurationReasonPicker show onHide={onHide} onPick={onPick} busy={isPending} />;
+
+  const onWithdraw = useCallback(async () => {
+    try {
+      await withdraw();
+      success(i18next.t("curation-desk.recommend.withdrawn-toast"));
+    } catch (e) {
+      errorToast(...formatError(e));
+    } finally {
+      onHide();
+    }
+  }, [withdraw, onHide]);
+
+  if (alreadySent) {
+    return (
+      <Modal show onHide={onHide} centered size="sm">
+        <ModalHeader closeButton>
+          <ModalTitle>{i18next.t("curation-desk.recommend.already-title")}</ModalTitle>
+        </ModalHeader>
+        <ModalBody>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            {i18next.t("curation-desk.recommend.already-body")}
+          </p>
+        </ModalBody>
+        <ModalFooter className="flex justify-end gap-2">
+          <Button appearance="gray-link" onClick={onHide} aria-label={i18next.t("g.cancel")}>
+            {i18next.t("g.cancel")}
+          </Button>
+          <Button
+            onClick={() => void onWithdraw()}
+            disabled={busy}
+            isLoading={busy}
+            aria-label={i18next.t("curation-desk.recommend.withdraw-aria")}
+          >
+            {i18next.t("curation-desk.recommend.withdraw")}
+          </Button>
+        </ModalFooter>
+      </Modal>
+    );
+  }
+
+  return <CurationReasonPicker show onHide={onHide} onPick={onPick} busy={busy} />;
 }
