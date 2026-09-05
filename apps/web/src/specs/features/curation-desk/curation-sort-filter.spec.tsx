@@ -32,6 +32,7 @@ describe("sort and filter chips", () => {
     ["New authors", { newAuthors: true }],
     ["Recommended", { recommended: true }],
     ["Flagged", { flagged: true }],
+    ["Excluded", { excluded: true }],
     ["Window", { window: "half" }],
     ["Words", { minWords: 600 }],
     ["Has images", { hasImages: true }],
@@ -57,6 +58,19 @@ describe("sort and filter chips", () => {
     const random = filtersToParams({ ...defaultQueueFilters(), sort: "random", seed: "abcd1234" }, false);
     expect(random.sort).toBe("newest");
     expect(random.seed).toBeUndefined();
+  });
+
+  it("sends view=excluded for the roster chip and never for a public viewer", () => {
+    const roster = filtersToParams({ ...defaultQueueFilters(), excluded: true }, true);
+    expect(roster.view).toBe("excluded");
+    // The public feed does not serve excluded rows, so the chip is roster only.
+    expect(filtersToParams({ ...defaultQueueFilters(), excluded: true }, false).view).toBeUndefined();
+    expect(filtersToParams(defaultQueueFilters(), true).view).toBeUndefined();
+  });
+
+  it("reaches max_words through its own preset select", () => {
+    const params = filtersToParams({ ...defaultQueueFilters(), minWords: 300, maxWords: 1000 }, true);
+    expect(params).toMatchObject({ min_words: 300, max_words: 1000 });
   });
 
   it("maps every chip to a server param and never filters rows client-side", () => {

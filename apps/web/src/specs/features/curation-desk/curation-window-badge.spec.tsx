@@ -3,7 +3,7 @@ import "@testing-library/jest-dom";
 import { act, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQueryClient } from "@/specs/test-utils";
-import { installFetchRouter, makeRow } from "./curation-test-utils";
+import { installFetchRouter, makeRow, rowWindowProps } from "./curation-test-utils";
 
 vi.mock("@ecency/sdk", async () => ({ ...(await vi.importActual<Record<string, unknown>>("@ecency/sdk")) }));
 vi.mock("@/utils", async () => ({ ...(await vi.importActual<Record<string, unknown>>("@/utils")) }));
@@ -26,7 +26,7 @@ const actions = { onSelect: noop, onOpen: noop, onVote: noop, onReviewed: noop, 
 
 function renderRow(row: DeskRow) {
   return renderWithQueryClient(
-    <CurationQueueRow row={row} isActive={false} isRoster={false} isTrial={false} username="member1" recommendationsEnabled section="queue" late={false} resurfaced={false} belowCursor={false} reviewedByCursor={false} chronological {...actions} />
+    <CurationQueueRow row={row} isActive={false} isRoster={false} isTrial={false} username="member1" recommendationsEnabled section="queue" late={false} resurfaced={false} belowCursor={false} reviewedByCursor={false} chronological {...rowWindowProps(row)} {...actions} />
   );
 }
 
@@ -93,5 +93,33 @@ describe("CurationWindowBadge on a row", () => {
   it("renders PAID when payout_at is not after now", () => {
     renderRow(makeRow({ post_id: 4, created: new Date(Date.now() - 7 * 24 * HOUR).toISOString(), payout_at: new Date(Date.now()).toISOString() }));
     expect(document.querySelector("[data-window]")!.getAttribute("data-window")).toBe("paid");
+  });
+});
+
+describe("author account age", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-05T12:00:00Z"));
+    installFetchRouter();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("warns in amber for an account younger than 30 days", () => {
+    renderRow(makeRow({ post_id: 5, author_created: new Date(Date.now() - 9 * 24 * HOUR).toISOString() }));
+    const chip = screen.getByText("curation-desk.row.age-days");
+    expect(chip.className).toContain("text-amber-600");
+  });
+
+  it("stays neutral for an older account and renders nothing without author_created", () => {
+    const { unmount } = renderRow(makeRow({ post_id: 6, author_created: new Date(Date.now() - 800 * 24 * HOUR).toISOString() }));
+    expect(screen.getByText("curation-desk.row.age-years").className).not.toContain("text-amber-600");
+    unmount();
+
+    renderRow(makeRow({ post_id: 7, author_created: null }));
+    expect(screen.queryByText("curation-desk.row.age-days")).toBeNull();
+    expect(screen.queryByText("curation-desk.row.age-years")).toBeNull();
   });
 });

@@ -3,7 +3,7 @@ import "@testing-library/jest-dom";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQueryClient } from "@/specs/test-utils";
-import { installFetchRouter, jsonResponse, makeOverlay, makePost, makeRoster, makeRow } from "./curation-test-utils";
+import { installFetchRouter, jsonResponse, makeOverlay, makePost, makeRoster, makeRow, rowWindowProps } from "./curation-test-utils";
 
 const state = vi.hoisted(() => ({
   username: undefined as string | undefined,
@@ -76,6 +76,7 @@ function renderRow(row: DeskRow, isRoster = false) {
       belowCursor={false}
       reviewedByCursor={false}
       chronological
+      {...rowWindowProps(row)}
       {...actions}
     />
   );

@@ -6,6 +6,7 @@ import type {
   CurationRosterRow,
   CurationStatus,
 } from "@ecency/sdk";
+import { buildQueueDisplay } from "@/features/curation-desk/curation-queue-display";
 
 export const NOW = Date.parse("2026-09-05T12:00:00Z");
 
@@ -65,6 +66,30 @@ export function makeOverlay(overrides: Partial<NonNullable<CurationRosterRow["ov
     marks: [],
     notes_count: 0,
     ...overrides,
+  };
+}
+
+/**
+ * The window props the list hands a row. They come from the display builder in
+ * production, so a spec that renders a row alone takes them from there too
+ * rather than hand-computing what the row is supposed to receive.
+ */
+export function rowWindowProps(row: CurationRosterRow, now = Date.now()) {
+  const display = buildQueueDisplay({
+    rows: [row],
+    teamCursor: null,
+    sort: "newest",
+    now,
+    window: "all",
+    expanded: { half: true, eighth: true, olderReviewed: true },
+  });
+  const item = display.items.find((i) => i.type === "row");
+  if (!item || item.type !== "row") throw new Error("the display builder dropped the row");
+  return {
+    windowKind: item.windowKind,
+    locked: item.locked,
+    voteHidden: item.voteHidden,
+    scalePct: item.scalePct,
   };
 }
 

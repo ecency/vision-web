@@ -117,6 +117,40 @@ describe("useCurationTick", () => {
     expect(second.body?.since).toBe("2026-09-05T12:00:15.123456Z");
   });
 
+  it("seeds `since` from the loaded feed page instead of asking for everything", async () => {
+    seed();
+    renderHook(
+      () =>
+        useCurationTick({
+          username: "curator1",
+          enabled: true,
+          feedKey,
+          rows: [rowA, rowB],
+          getVisibleIds: () => [1, 2],
+          feedGeneratedAt: "2026-09-05T11:59:00.000000Z",
+        }),
+      { wrapper }
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(router.callsTo(/tick/)[0].body?.since).toBe("2026-09-05T11:59:00.000000Z");
+  });
+
+  it("never invalidates the feed on a truncated answer to a since-less tick", async () => {
+    seed();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    tickResponse = tickBody({ truncated: true });
+    renderHook(() => useCurationTick({ username: "curator1", enabled: true, feedKey, rows: [rowA, rowB], getVisibleIds: () => [1, 2] }), { wrapper });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    // A first tick asks for a snapshot; treating that as truncated would
+    // refetch the whole queue on every mount.
+    expect(router.callsTo(/tick/)[0].body?.since).toBeNull();
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: feedKey });
+  });
+
   it("merges deltas keeping identity for untouched rows and invalidates on truncated", async () => {
     seed();
     const before = queryClient.getQueryData<InfiniteData<CurationRosterFeedPage>>(feedKey)!;
@@ -149,6 +183,58 @@ describe("mergeTickIntoPages", () => {
   it("returns the same data when the tick carries nothing", () => {
     const data: InfiniteData<CurationRosterFeedPage> = { pages: [makeRosterPage([makeRow({ post_id: 1 })])], pageParams: [undefined] };
     expect(mergeTickIntoPages(data, tickBody())).toBe(data);
+  });
+
+  it("keeps a colleague's note body when a note-less delta updates their mark", () => {
+    const withNote = makeRow({
+      post_id: 1,
+      overlay: makeOverlay({
+        marks: [
+          { curator: "riyat", state: "noted", note: "checked the sources", has_note: true, updated_at: iso(-60_000) },
+        ],
+        notes_count: 1,
+      }),
+    });
+    const data: InfiniteData<CurationRosterFeedPage> = {
+      pages: [makeRosterPage([withNote])],
+      pageParams: [undefined],
+    };
+    const result = mergeTickIntoPages(
+      data,
+      tickBody({
+        deltas: {
+          // The delta carries has_note, never the body.
+          marks: [{ post_id: 1, curator: "riyat", state: "flagged", reason: "ai_slop", has_note: true, updated_at: iso(0) }],
+          flags: [],
+          signals: [],
+        },
+      })
+    )!;
+    const [mark] = result.pages[0].items[0].overlay!.marks;
+    expect(mark.state).toBe("flagged");
+    expect(mark.note).toBe("checked the sources");
+    expect(result.pages[0].items[0].overlay!.notes_count).toBe(1);
+  });
+
+  it("counts notes from has_note, not from the body the delta omitted", () => {
+    const data: InfiniteData<CurationRosterFeedPage> = {
+      pages: [makeRosterPage([makeRow({ post_id: 1, overlay: makeOverlay() })])],
+      pageParams: [undefined],
+    };
+    const result = mergeTickIntoPages(
+      data,
+      tickBody({
+        deltas: {
+          marks: [
+            { post_id: 1, curator: "riyat", state: "flagged", has_note: true, updated_at: iso(0) },
+            { post_id: 1, curator: "seckorama", state: "reviewed", has_note: false, updated_at: iso(0) },
+          ],
+          flags: [],
+          signals: [],
+        },
+      })
+    )!;
+    expect(result.pages[0].items[0].overlay!.notes_count).toBe(1);
   });
 
   it("fills a missing overlay from `overlay` and applies flags and signals deltas", () => {

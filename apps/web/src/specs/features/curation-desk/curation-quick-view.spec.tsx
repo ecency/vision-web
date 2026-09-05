@@ -1,6 +1,6 @@
 import React from "react";
 import "@testing-library/jest-dom";
-import { act, screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQueryClient } from "@/specs/test-utils";
 import { installFetchRouter, makePost, makeRoster, makeRow } from "./curation-test-utils";
@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   username: "member1" as string | undefined,
   entryFetch: vi.fn(),
   rendererProps: [] as Array<Record<string, unknown>>,
+  voteClicks: [] as number[],
 }));
 
 vi.mock("@ecency/sdk", async () => {
@@ -45,7 +46,16 @@ vi.mock("@/features/shared/post-content-renderer", () => ({
     return <div data-testid="renderer" />;
   },
 }));
-vi.mock("@/features/shared/entry-vote-btn", () => ({ EntryVoteBtn: () => <div className="entry-vote-btn" role="button" aria-expanded="false" /> }));
+vi.mock("@/features/shared/entry-vote-btn", () => ({
+  EntryVoteBtn: () => (
+    <div
+      className="entry-vote-btn"
+      role="button"
+      aria-expanded="false"
+      onClick={() => state.voteClicks.push(1)}
+    />
+  ),
+}));
 vi.mock("@/features/shared/entry-votes", () => ({ EntryVotes: () => null }));
 vi.mock("@/features/shared/entry-payout", () => ({ EntryPayout: () => null }));
 vi.mock("@/features/shared/user-avatar", () => ({ UserAvatar: () => <span /> }));
@@ -104,6 +114,7 @@ describe("CurationQuickView", () => {
       active_votes: [],
     }));
     state.rendererProps.length = 0;
+    state.voteClicks.length = 0;
     router = installFetchRouter()
       .on(/curation-desk\/roster$/, () => makeRoster())
       .on(/curation-desk\/post\//, () => makePost(row));
@@ -173,5 +184,67 @@ describe("CurationQuickView", () => {
     await screen.findByTestId("renderer");
     expect(screen.queryByLabelText("curation-desk.reco.dismiss")).toBeNull();
     expect(screen.queryByText("curation-desk.quick-view.team")).toBeNull();
+  });
+
+  it("never offers Dismiss to a trial curator (the route answers them 403)", async () => {
+    router.on(/curation-desk\/post\//, () =>
+      makePost(row, { recommend_count: 2, unique_recommenders: 2, recommenders: [] })
+    );
+    renderDrawer({ row, viewer: { ...roster, username: "trial1", role: "trial", isTrial: true } });
+    await screen.findByTestId("renderer");
+    expect(screen.queryByLabelText("curation-desk.reco.dismiss")).toBeNull();
+    expect(screen.queryByLabelText("curation-desk.reco.restore")).toBeNull();
+  });
+
+  it("flips Dismiss to Restore once the overlay carries reco_dismissed_at", async () => {
+    router
+      .on(/curation-desk\/post\//, () => makePost(row, { recommend_count: 2, unique_recommenders: 2, recommenders: [] }))
+      .on(/curation-desk\/recommendation-dismiss$/, () => ({ row }));
+    const dismissed = {
+      ...row,
+      overlay: {
+        signals: null,
+        flags: {},
+        excluded_reason: null,
+        team_mark: null,
+        team_mark_by: null,
+        resurfaced_at: null,
+        reco_dismissed_at: "2026-09-05T11:40:00Z",
+        marks: [],
+        notes_count: 0,
+      },
+    };
+    renderDrawer({ row: dismissed, viewer: roster });
+    const restore = await screen.findByLabelText("curation-desk.reco.restore");
+    expect(screen.queryByLabelText("curation-desk.reco.dismiss")).toBeNull();
+    await act(async () => {
+      restore.click();
+    });
+    const [call] = router.callsTo(/recommendation-dismiss$/);
+    expect(call.body).toMatchObject({ author: "alice", permlink: "morning-light", action: "restore" });
+  });
+
+  it("clicks the vote button when the entry arrives, not after a fixed delay", async () => {
+    const onVoteHandled = vi.fn();
+    let resolveEntry: ((value: unknown) => void) | undefined;
+    state.entryFetch.mockImplementation(
+      (author: string, permlink: string) =>
+        new Promise((resolve) => {
+          resolveEntry = () =>
+            resolve({ author, permlink, body: "slow body", json_metadata: {}, active_votes: [] });
+        })
+    );
+    renderDrawer({ row, voteOnOpen: true, onVoteHandled });
+
+    // The slider does not exist yet, so nothing was clicked and the flag stands.
+    await act(async () => {});
+    expect(state.voteClicks).toHaveLength(0);
+    expect(onVoteHandled).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveEntry?.(undefined);
+    });
+    await waitFor(() => expect(state.voteClicks).toHaveLength(1));
+    expect(onVoteHandled).toHaveBeenCalledTimes(1);
   });
 });

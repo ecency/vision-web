@@ -286,8 +286,11 @@ describe("server components and the shared barrel", () => {
     });
 
     it("is never imported from inside its own feature", () => {
-      const offenders = walk(featureDir).filter(
-        (file) => importedSpecifiers(file).includes(specifier) || importedSpecifiers(file).includes(".")
+      // Every spelling of the barrel from inside the directory, since
+      // "./index" resolves to the same module as ".".
+      const selfImports = new Set([specifier, ".", "./", "./index", "./index.ts"]);
+      const offenders = walk(featureDir).filter((file) =>
+        importedSpecifiers(file).some((s) => selfImports.has(s))
       );
       expect(offenders.map((f) => path.relative(SRC, f))).toEqual([]);
     });

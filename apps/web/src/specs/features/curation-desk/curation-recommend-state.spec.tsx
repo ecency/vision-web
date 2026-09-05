@@ -108,7 +108,7 @@ describe("recommend state after a broadcast", () => {
       await vi.advanceTimersByTimeAsync(15_000);
     });
     expect(router.callsTo(/curation-desk\/post\//)).toHaveLength(3);
-    expect(getRecommendState("alice", "morning-light")).toEqual({ phase: "recommended", confirmed: true });
+    expect(getRecommendState("member1", "alice", "morning-light")).toEqual({ phase: "recommended", confirmed: true });
     const feed = queryClient.getQueryData<InfiniteData<CurationFeedPage>>(feedKey)!;
     expect(feed.pages[0].items[0].recommend_count).toBe(4);
     expect(feed.pages[0].items[0].unique_recommenders).toBe(3);
@@ -128,7 +128,7 @@ describe("recommend state after a broadcast", () => {
       await vi.advanceTimersByTimeAsync(61_000);
     });
     expect(router.callsTo(/curation-desk\/post\//)).toHaveLength(4);
-    expect(getRecommendState("alice", "morning-light")).toEqual({ phase: "confirming", withdraw: false });
+    expect(getRecommendState("member1", "alice", "morning-light")).toEqual({ phase: "confirming", withdraw: false });
     expect(screen.getByText(/curation-desk.recommend.confirming/)).toBeInTheDocument();
     expect(screen.getByLabelText("curation-desk.recommend.withdraw-aria")).toBeInTheDocument();
     expect(screen.queryByLabelText("curation-desk.recommend.aria")).toBeNull();
@@ -137,5 +137,24 @@ describe("recommend state after a broadcast", () => {
       await vi.advanceTimersByTimeAsync(120_000);
     });
     expect(screen.queryByLabelText("curation-desk.recommend.aria")).toBeNull();
+  });
+
+  it("keeps the optimistic state per viewer and drops it on an account switch", async () => {
+    const { unmount } = renderWithQueryClient(<CurationRecommendBtn author="alice" permlink="morning-light" />);
+    await broadcast();
+    expect(getRecommendState("member1", "alice", "morning-light").phase).toBe("recommended");
+    // Another account never inherits somebody else's recommendation.
+    expect(getRecommendState("member2", "alice", "morning-light")).toEqual({ phase: "idle" });
+    unmount();
+
+    state.username = "member2";
+    renderWithQueryClient(<CurationRecommendBtn author="alice" permlink="morning-light" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(screen.getByLabelText("curation-desk.recommend.aria")).toBeInTheDocument();
+    expect(screen.queryByLabelText("curation-desk.recommend.withdraw-aria")).toBeNull();
+    expect(getRecommendState("member1", "alice", "morning-light")).toEqual({ phase: "idle" });
+    state.username = "member1";
   });
 });

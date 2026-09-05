@@ -48,7 +48,9 @@ vi.mock("react-virtuoso", () => ({
     return <div>{props.data.map((item, i) => <React.Fragment key={i}>{props.itemContent(i, item)}</React.Fragment>)}</div>;
   }),
 }));
-vi.mock("@/features/curation-desk/curation-quick-view", () => ({ CurationQuickView: () => null }));
+vi.mock("@/features/curation-desk/curation-quick-view", () => ({
+  CurationQuickView: ({ row }: { row: unknown }) => (row ? <div data-testid="quick-view-open" /> : null),
+}));
 vi.mock("@/features/shared/profile-popover", () => ({ ProfilePopover: ({ entry }: { entry: { author: string } }) => <span>@{entry.author}</span> }));
 vi.mock("@/features/shared/user-avatar", () => ({ UserAvatar: () => <span /> }));
 vi.mock("@/features/shared/feedback", () => ({ success: vi.fn(), error: vi.fn() }));
@@ -102,21 +104,39 @@ describe("keyboard map", () => {
     expect(isKeyboardInert({ target: document.body, ctrlKey: false, metaKey: false, altKey: false })).toBe(true);
     slider.remove();
 
+    // Modal portals a backdrop AND a content wrapper, in that order.
     const modal = document.createElement("div");
     modal.id = "modal-dialog-container";
-    modal.appendChild(document.createElement("div"));
+    const backdrop = document.createElement("div");
+    const wrapper = document.createElement("div");
+    const content = document.createElement("div");
+    wrapper.appendChild(content);
+    modal.append(backdrop, wrapper);
     document.body.appendChild(modal);
     expect(isKeyboardInert({ target: document.body, ctrlKey: false, metaKey: false, altKey: false })).toBe(true);
-    // The desk's own drawer is the one modal that keeps the keys alive.
-    modal.firstElementChild!.setAttribute("data-curation-drawer", "");
-    const drawerHost = document.createElement("div");
-    const drawer = document.createElement("div");
-    drawer.setAttribute("data-curation-drawer", "");
-    drawerHost.appendChild(drawer);
-    modal.replaceChildren(drawerHost);
+
+    // The desk's own drawer is the one modal that keeps the keys alive, and
+    // the empty backdrop beside it must not count as a foreign modal.
+    content.setAttribute("data-curation-drawer", "");
     expect(isKeyboardInert({ target: document.body, ctrlKey: false, metaKey: false, altKey: false })).toBe(false);
+
+    // A second, foreign dialog over the drawer makes the keys inert again.
+    const other = document.createElement("div");
+    other.appendChild(document.createElement("div"));
+    modal.appendChild(other);
+    expect(isKeyboardInert({ target: document.body, ctrlKey: false, metaKey: false, altKey: false })).toBe(true);
     modal.remove();
     input.remove();
+  });
+
+  it("lets a letter key through on a focused row action but not Enter", () => {
+    const button = document.createElement("button");
+    document.body.appendChild(button);
+    // Enter activates the button natively; the desk must not also toggle the
+    // drawer. j and k stay alive so navigation survives a row action.
+    expect(isKeyboardInert({ target: button, key: "Enter", ctrlKey: false, metaKey: false, altKey: false })).toBe(true);
+    expect(isKeyboardInert({ target: button, key: "j", ctrlKey: false, metaKey: false, altKey: false })).toBe(false);
+    button.remove();
   });
 });
 
@@ -191,6 +211,18 @@ describe("keyboard on the queue", () => {
     await act(async () => press("r"));
     await waitFor(() => expect(router.callsTo(/curation-desk\/mark$/)).toHaveLength(1));
     expect(router.callsTo(/curation-desk\/mark$/)[0].body).toMatchObject({ state: "reviewed", code: "code-1" });
+  });
+
+  it("Enter opens the drawer once: the row no longer handles it too", async () => {
+    renderWithQueryClient(<CurationQueueView />, { queryClient: client() });
+    const articles = await screen.findAllByRole("article");
+    // Focus a row the way a keyboard user reaches it, then press Enter on it.
+    await act(async () => press("j"));
+    await act(async () => press("Enter", {}, articles[0]));
+    expect(screen.getByTestId("quick-view-open")).toBeInTheDocument();
+    // A second Enter closes it: one handler, not two cancelling each other.
+    await act(async () => press("Enter", {}, articles[0]));
+    expect(screen.queryByTestId("quick-view-open")).toBeNull();
   });
 
   it("r never posts for a member", async () => {

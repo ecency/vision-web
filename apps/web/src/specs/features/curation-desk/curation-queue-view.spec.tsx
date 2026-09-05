@@ -132,7 +132,11 @@ describe("CurationQueueView", () => {
     await waitFor(() => expect(fetchRouter.callsTo(/curation-desk\/roster-feed/)).toHaveLength(1));
     const [call] = fetchRouter.callsTo(/curation-desk\/roster-feed/);
     expect(call.method).toBe("POST");
-    expect(call.body).toMatchObject({ code: "code-1", sort: "queue", hide_reviewed: "1", hide_snoozed: "1", limit: "25" });
+    expect(call.body).toMatchObject({ code: "code-1", sort: "queue", limit: "25" });
+    // hide_reviewed and hide_snoozed default to on at the desk, so the roster
+    // default sends neither; only switching them off says anything.
+    expect(call.body).not.toHaveProperty("hide_reviewed");
+    expect(call.body).not.toHaveProperty("hide_snoozed");
     expect(fetchRouter.callsTo(/curation-desk\/feed\?/)).toHaveLength(0);
     expect(await screen.findAllByRole("article")).toHaveLength(2);
     // The roster page's total_estimate feeds the match count, never a client count.
