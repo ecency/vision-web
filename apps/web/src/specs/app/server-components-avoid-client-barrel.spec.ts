@@ -28,6 +28,17 @@ const SRC = path.resolve(__dirname, "../..");
 const BARREL = path.join(SRC, "features/shared/index.ts");
 const BARREL_SPECIFIER = "@/features/shared";
 
+/**
+ * Feature barrels that server pages must never import from. Each is checked for
+ * the cycle shape above; the curation desk barrel is additionally required to
+ * be light (views and types only) and never imported from inside its own
+ * feature, so the cycle cannot form in the first place.
+ */
+const FEATURE_BARRELS = [
+  { barrel: BARREL, specifier: BARREL_SPECIFIER },
+  { barrel: path.join(SRC, "features/curation-desk/index.ts"), specifier: "@/features/curation-desk" }
+];
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
@@ -185,15 +196,15 @@ describe("server components and the shared barrel", () => {
    * would slip through; the reproduction in the PR body is how that one gets
    * caught.
    */
-  function closesCycleWithBarrel(file: string, seen = new Set<string>()): boolean {
+  function closesCycleWithBarrel(file: string, specifier = BARREL_SPECIFIER, seen = new Set<string>()): boolean {
     if (seen.has(file)) return false;
     seen.add(file);
 
-    if (importedSpecifiers(file, STATIC_IMPORT).includes(BARREL_SPECIFIER)) return true;
+    if (importedSpecifiers(file, STATIC_IMPORT).includes(specifier)) return true;
 
     for (const m of read(file).matchAll(/export\s*\*\s*from\s*["']([^"']+)["']/g)) {
       const target = resolveSpecifier(file, m[1]);
-      if (target && closesCycleWithBarrel(target, seen)) return true;
+      if (target && closesCycleWithBarrel(target, specifier, seen)) return true;
     }
 
     return false;
@@ -211,14 +222,19 @@ describe("server components and the shared barrel", () => {
   // Client boundaries with no cycle are fine: `/discover` server-renders 146
   // UserAvatars through this barrel. The cycle is what breaks it, not the
   // directive on its own.
-  const clientExports = new Map<string, string>();
-  for (const m of read(BARREL).matchAll(/export\s*\*\s*from\s*["']([^"']+)["']/g)) {
-    const target = resolveSpecifier(BARREL, m[1]);
-    if (!target || !isClientBoundary(target) || !closesCycleWithBarrel(target)) continue;
-    for (const name of exportedNames(target)) {
-      clientExports.set(name, path.relative(SRC, target));
+  function clientExportsOf(barrel: string, specifier: string): Map<string, string> {
+    const exports = new Map<string, string>();
+    for (const m of read(barrel).matchAll(/export\s*(?:\*|\{[^}]*\})\s*from\s*["']([^"']+)["']/g)) {
+      const target = resolveSpecifier(barrel, m[1]);
+      if (!target || !isClientBoundary(target) || !closesCycleWithBarrel(target, specifier)) continue;
+      for (const name of exportedNames(target)) {
+        exports.set(name, path.relative(SRC, target));
+      }
     }
+    return exports;
   }
+
+  const clientExports = clientExportsOf(BARREL, BARREL_SPECIFIER);
 
   it("knows which barrel exports are client boundaries", () => {
     // Guard the guard: if this ever empties out, every assertion below passes
@@ -226,7 +242,8 @@ describe("server components and the shared barrel", () => {
     expect(clientExports.size).toBeGreaterThan(0);
   });
 
-  it("never imports a client-boundary component through the barrel", () => {
+  it.each(FEATURE_BARRELS)("never imports a client-boundary component through $specifier", ({ barrel, specifier }) => {
+    const exportsForBarrel = barrel === BARREL ? clientExports : clientExportsOf(barrel, specifier);
     const violations: string[] = [];
 
     for (const file of files) {
@@ -234,25 +251,60 @@ describe("server components and the shared barrel", () => {
 
       const source = read(file);
       for (const m of source.matchAll(
-        new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*["']${BARREL_SPECIFIER}["']`, "g")
+        new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*["']${specifier}["']`, "g")
       )) {
         for (const part of m[1].split(",")) {
           const name = part.split(/\s+as\s+/)[0].trim();
-          const owner = clientExports.get(name);
+          const owner = exportsForBarrel.get(name);
           if (!owner) continue;
 
           violations.push(
-            `${path.relative(SRC, file)} imports "${name}" from "${BARREL_SPECIFIER}". ` +
+            `${path.relative(SRC, file)} imports "${name}" from "${specifier}". ` +
               `That name comes from ${owner}, which is a "use client" module AND imports ` +
               `the barrel back, so the two form a cycle across the client boundary. ` +
               `Reaching it through the barrel resolves to undefined at server render ` +
               `time and the subtree silently renders as nothing. Import it from its own ` +
-              `module instead: "${BARREL_SPECIFIER}/..." .`
+              `module instead: "${specifier}/..." .`
           );
         }
       }
     }
 
     expect(violations).toEqual([]);
+  });
+
+  describe("the curation desk barrel", () => {
+    const featureDir = path.join(SRC, "features/curation-desk");
+    const specifier = "@/features/curation-desk";
+
+    it("is never imported by a server route: pages reach the views by path", () => {
+      const routeFiles = walk(path.join(SRC, "app/curation"));
+      const offenders = routeFiles.filter((file) =>
+        importedSpecifiers(file).some((s) => s === specifier)
+      );
+      expect(offenders.map((f) => path.relative(SRC, f))).toEqual([]);
+    });
+
+    it("is never imported from inside its own feature", () => {
+      // Every spelling of the barrel from inside the directory, since
+      // "./index" resolves to the same module as ".".
+      const selfImports = new Set([specifier, ".", "./", "./index", "./index.ts"]);
+      const offenders = walk(featureDir).filter((file) =>
+        importedSpecifiers(file).some((s) => selfImports.has(s))
+      );
+      expect(offenders.map((f) => path.relative(SRC, f))).toEqual([]);
+    });
+
+    it("stays light: the four views and the types only", () => {
+      const source = read(path.join(featureDir, "index.ts"));
+      const targets = [...source.matchAll(/from\s*["']\.\/([^"']+)["']/g)].map((m) => m[1]).sort();
+      expect(targets).toEqual([
+        "curation-guide",
+        "curation-my-marks-view",
+        "curation-queue-view",
+        "curation-recommendations-view",
+        "types"
+      ]);
+    });
   });
 });

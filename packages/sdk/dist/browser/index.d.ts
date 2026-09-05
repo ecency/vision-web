@@ -1684,6 +1684,18 @@ declare const QueryKeys: {
         readonly list: () => string[];
         readonly _prefix: readonly ["bad-actors"];
     };
+    readonly curation: {
+        /** Public feed; `params` is the normalized (defaults dropped) param map. */
+        readonly feed: (params?: Record<string, string>) => (string | Record<string, string>)[];
+        /** Authed roster feed; every sort and filter value is on the key. */
+        readonly rosterFeed: (username: string | undefined, params?: Record<string, string>) => (string | Record<string, string> | undefined)[];
+        readonly status: () => string[];
+        readonly roster: () => string[];
+        readonly recommendations: (params?: Record<string, string>) => (string | Record<string, string>)[];
+        readonly _recommendationsPrefix: readonly ["curation", "recommendations"];
+        readonly post: (author: string, permlink: string) => string[];
+        readonly _prefix: readonly ["curation"];
+    };
     readonly ai: {
         readonly prices: () => readonly ["ai", "prices"];
         readonly assistPrices: (username?: string) => readonly ["ai", "assist-prices", string | undefined];
@@ -3117,6 +3129,26 @@ declare function buildRcDelegationOp(user: string, duration: number): Operation;
  * @returns Custom JSON operation for promote
  */
 declare function buildPromoteOp(user: string, author: string, permlink: string, duration: number): Operation;
+declare const CURATION_REASONS$1: readonly ["quality", "underrated", "newcomer", "other"];
+type CurationRecommendReason = (typeof CURATION_REASONS$1)[number];
+/**
+ * Builds a curation recommendation operation (custom_json, posting authority).
+ * The desk indexes `ecency_curation` ops from the chain; there is no write route.
+ * @param recommender - Account recommending the post (signs with posting)
+ * @param author - Post author
+ * @param permlink - Post permlink
+ * @param reason - One of quality, underrated, newcomer, other (defaults to quality)
+ * @returns Custom JSON operation with id "ecency_curation"
+ */
+declare function buildCurationRecommendOp(recommender: string, author: string, permlink: string, reason?: CurationRecommendReason): Operation;
+/**
+ * Builds a curation recommendation withdrawal (custom_json, posting authority).
+ * @param recommender - Account withdrawing its recommendation
+ * @param author - Post author
+ * @param permlink - Post permlink
+ * @returns Custom JSON operation with id "ecency_curation" and op "unrecommend"
+ */
+declare function buildCurationUnrecommendOp(recommender: string, author: string, permlink: string): Operation;
 /**
  * Builds an Ecency point transfer operation (custom_json).
  * @param sender - Sender account
@@ -10224,4 +10256,578 @@ declare function usePreviewNewsletterIssue(username: string | undefined, code: s
  */
 declare function useSendNewsletterIssue(username: string | undefined, code: string | undefined): _tanstack_react_query.UseMutationResult<NewsletterSendResult, Error, NewsletterSendRequest, unknown>;
 
-export { ACCOUNT_OPERATION_GROUPS, ALL_ACCOUNT_OPERATIONS, ALL_NOTIFY_TYPES, type AccountBookmark, type AccountDelegations, type AccountFavorite, type AccountFavoriteTag, type AccountFollowStats, type AccountKeys, type AccountNotification, type AccountProfile, type AccountRelationship, type AccountReputation, type AggregatedBalanceEntry, type AiAssistParams, type AiAssistPrice, type AiAssistResponse, type AiGenerationPrice, type AiGenerationRequest, type AiGenerationResponse, type AiImageHistoryItem, type AiImagePowerTier, type AiImagePriceResponse, type AiTranscribeParams, type AiTranscribePrice, type AiTranscribeResponse, type Announcement, type ApiBookmarkNotification, type ApiDelegationsNotification, type ApiFavoriteNotification, type ApiFollowNotification, type ApiInactiveNotification, type ApiMentionNotification, type ApiNotification, type ApiNotificationSetting, type ApiPayoutsNotification, type ApiReblogNotification, type ApiReferralNotification, type ApiReplyNotification, type ApiResponse, type ApiScheduledPublishedNotification, type ApiSpinNotification, type ApiTagsBundleNotification, type ApiTagsNotification, type ApiTagsPostNotification, type ApiTransferNotification, type ApiVoteNotification, type ApiWeeklyEarningsNotification, type Asset, AssetOperation, type AuthContext, type AuthContextV2, type AuthMethod, type AuthorReward, Authority, type AuthorityLevel, type AuthorityType, BROADCAST_INCLUSION_DELAY_MS, type BalanceAggregationGranularity, type BalanceCoinType, type BalanceHistoryEntry, type BalanceHistoryResponse, type Beneficiary, type BeneficiaryRoute, type BlogEntry, type BoostPlusAccountPrice, type BoostPlusPayload, type BroadcastMode, BroadcastResult, type BuildProfileMetadataArgs, type BuiltSearchQuery, BuySellTransactionType, CONFIG, type CancelTransferFromSavings, type CantAfford, type CheckUsernameWalletsPendingResponse, type ClaimAccountPayload, type ClaimEngineRewardsPayload, type ClaimInterestPayload, type ClaimRewardBalance, type ClaimRewardsPayload, type CollateralizedConversionRequest, type CollateralizedConvert, type CommentBenefactor, type CommentLike, type CommentOptionsLike, type CommentPayload, type CommentPayoutUpdate, type CommentRcCostEstimate, type CommentResourceUsageInput, type CommentReward, type CommentTransactionInput, type Communities, type Community, type CommunityProps, type CommunityRewardsRegisterPayload, type CommunityRole, type CommunityTeam, type CommunityType, ConfigManager, ContentModerationReason, type ConversionRequest, type ConvertPayload, type CreateAccountPayload, type CrossPostPayload, type CurationDuration, type CurationItem, type CurationReward, type CurrencyRates, type DailyCheckinQuest, type DailyContentQuest, type DailyQuest, type DelegateEngineTokenPayload, type DelegateRcPayload, type DelegateVestingShares, type DelegateVestingSharesPayload, type DelegatedVestingShare, type DeleteCommentPayload, type DeletedEntry, type DigestCadence, type DigestStatus, type DigestSubscribeInput, type DigestSubscribeResult, type DigestSubscribeSource, type DigestSubscription, type DigestType, type Draft, type DraftMetadata, type DraftRewardType, type DraftsWrappedResponse, type DynamicProps$1 as DynamicProps, index as EcencyAnalytics, EcencyQueriesManager, type EffectiveCommentVote, type EngineMarketOrderPayload, EntriesCacheManagement, type Entry$1 as Entry, type EntryBeneficiaryRoute, type EntryHeader, type EntryStat, type EntryVote, ErrorType, type EstimateCommentRcCostInput, type FeedHistoryItem, type FillCollateralizedConvertRequest, type FillConvertRequest, type FillOrder, type FillRecurrentTransfers, type FillTransferFromSavings, type FillVestingWithdraw, type Follow, type FollowPayload, type Fragment, type FriendSearchResult, type FriendsPageParam, type FriendsRow, type FullAccount, type GameClaim, type GeneralAssetInfo, type GeneralAssetTransaction, type GenerateImageParams, type GetGameStatus, type GetRecoveriesEmailResponse, type GrantPostingPermissionPayload, HIDDEN_POST_MIN_VOTES, HIDDEN_POST_RSHARES_THRESHOLD, HIVE_ACCOUNT_OPERATION_GROUPS, HIVE_OPERATION_LIST, HIVE_OPERATION_NAME_BY_ID, HIVE_OPERATION_ORDERS, type HiveBasedAssetSignType, type HiveEngineMarketResponse, type HiveEngineMetric, type HiveEngineOpenOrder, type HiveEngineOrderBookEntry, HiveEngineToken, type HiveEngineTokenBalance, type HiveEngineTokenInfo, type HiveEngineTokenMetadataResponse, type HiveEngineTokenStatus, type HiveEngineTransaction, type HiveHbdStats, type HiveMarketMetric, type HiveOperationFilter, type HiveOperationFilterKey, type HiveOperationFilterValue, type HiveOperationGroup, type HiveOperationName, HiveSignerIntegration, type HiveTransaction, type HsTokenRenewResponse, INTERNAL_API_TIMEOUT_MS, type IncomingDelegation, type IncomingRcDelegation, type IncomingRcResponse, type Interest, type JsonMetadata, type JsonPollMetadata, type Keys, LOW_TRUST_REPUTATION_THRESHOLD, type LeaderBoardDuration, type LeaderBoardItem, type LimitOrderCancel, type LimitOrderCancelPayload, type LimitOrderCreate, type LimitOrderCreatePayload, MAX_SEARCH_QUERY_LENGTH, MAX_SEARCH_TAGS, type MarketCandlestickDataItem, type MarketData, type MarketStatistics, type MedianHistoryPrice, type ModerationCandidate, type MutePostPayload, NaiMap, NewsletterApiError, type NewsletterCandidatePost, type NewsletterComposeRequest, type NewsletterListType, type NewsletterPostRef, type NewsletterSendPreview, type NewsletterSendRef, NewsletterSendRefusedError, type NewsletterSendRequest, type NewsletterSendResult, type NewsletterSenderStanding, type NewsletterSentIssue, NotificationFilter, NotificationViewType, type Notifications, NotifyTypes, OPERATION_AUTHORITY_MAP, type OpenOrdersData, Operation, type OperationGroup, OperationName, OrderIdPrefix, type OrdersData, type OrdersDataItem, type OutgoingDelegation, POLLS_PROTOCOL_VERSION, type PageStatsResponse, type PaginationMeta, type ParsedChainError, type Payer, type PeriodQuest, type PinPostPayload, type PlatformAdapter, type PointTransaction, PointTransactionType, type Points, type PointsResponse, type Poll, type PollChoice, type PollChoiceVotes, PollPreferredInterpretation, type PollStats, type PollVotePayload, type PollVoter, type PortfolioResponse, type PortfolioWalletItem, type PostTip, type PostTipsResponse, PrivateKey, type ProMembersResponse, type ProducerReward, type Profile, type ProfileTokens, type PromotePayload, type PromotePrice, type Proposal, type ProposalCreatePayload, type ProposalPay, type ProposalVote, type ProposalVotePayload, type ProposalVoteRow, PublicKey, QUEST_CATALOG, QUEST_MIN_CONTENT_LENGTH, QueryKeys, type QuestCatalogEntry, type QuestMilestone, type QuestPeriod, type QuestStreak, type QuestTier, type QuestsResponse, type RCAccount, RC_RESOURCE_NAMES, ROLES, type RcCostBreakdown, type RcDelegationActive, type RcDelegationPayload, type RcDirectDelegation, type RcDirectDelegationsResponse, type RcPrecheckInput, type RcPrecheckOperation, type RcPrecheckPayload, type RcPrecheckResult, type RcPriceCurveParams, type RcPricedUsage, type RcResourceDynamicsParams, type RcResourceName, type RcResourceParamEntry, type RcResourceParams, type RcResourceUsage, type RcSizeInfo, type RcStats, type Reblog, type ReblogPayload, type ReceivedVestingShare, type RecordActivityOptions, type Recoveries, type RecurrentTransfer, type RecurrentTransfers, type ReferralItem, type ReferralItems, type ReferralStat, ResilienceOptions, type ReturnVestingDelegation, type RewardFund, type RewardedCommunity, SERVER_GC_TIME_MS, SIGNATURE_BYTES, SIMILAR_ENTRIES_MIN_RENDER, type SMTAsset, STREAK_FREEZE_MAX_OWNED, STREAK_FREEZE_PRICE, SUBSCRIBERS_PAGE_SIZE, type SavingsWithdrawRequest, type Schedule, SearchQuery, type SearchQueryParts, type SearchResponse, type SearchResult, SearchType, type SetCommunityRolePayload, type SetLastReadPayload, type SetWithdrawRoute, type SetWithdrawVestingRoutePayload, type ShortVideo, type ShortsFeedEntry, type ShortsFeedParams, SortOrder, type Spotlight, type StakeEngineTokenPayload, type StatsResponse, type StreakFreezeBuyResult, type SubscribeCommunityPayload, type Subscription, type SupportSettings, Symbol, THREESPEAK_BENEFICIARY_ACCOUNT, THREESPEAK_BENEFICIARY_WEIGHT, TRANSACTION_HEADER_BYTES, type ThreadItemEntry, type ThreeSpeakBeneficiaryRoute, ThreeSpeakIntegration, type ThreeSpeakVideo, type Token, type TokenMetadata, type Transaction, type TransactionConfirmation, type Transfer, type TransferEngineTokenPayload, type TransferFromSavings, type TransferFromSavingsPayload, type TransferPayload, type TransferPointPayload, type TransferToSavings, type TransferToSavingsPayload, type TransferToVesting, type TransferToVestingPayload, type TrendingTag, type UndelegateEngineTokenPayload, type UnfollowPayload, type UnstakeEngineTokenPayload, type UnsubscribeCommunityPayload, type UpdateCommunityPayload, type UpdateProposalVotes, type UpdateReplyPayload, type UpdateSupportSettingsPayload, type User, type UserImage, type ValidatePostCreatingOptions, type VestingDelegationExpiration, type Vote, type VoteHistoryPage, type VoteHistoryPageParam, type VoteLike, type VotePayload, type VoteProxy, type WalletMetadataCandidate, type WalletOperationPayload, type WaveEntry, type WaveTrendingAuthor, type WaveTrendingTag, type WavesFeedEntry, type WavesFeedParams, type WithdrawRoute, type WithdrawVesting, type WithdrawVestingPayload, type Witness, type WitnessProxyPayload, type WitnessVotePayload, type WitnessVoter, type WitnessVoterSortDirection, type WitnessVoterSortField, type WitnessVotersResponse, type WrappedResponse, type WsBookmarkNotification, type WsDelegationsNotification, type WsFavoriteNotification, type WsFollowNotification, type WsInactiveNotification, type WsMentionNotification, type WsNotification, type WsPayoutsNotification, type WsReblogNotification, type WsReferralNotification, type WsReplyNotification, type WsSpinNotification, type WsTagsBundleExtra, type WsTagsNotification, type WsTagsPostExtra, type WsTransferNotification, type WsVoteNotification, accountNameByteLength, addDraft, addFavoriteTagRequest, addImage, addOptimisticDiscussionEntry, addSchedule, applySupportSettingsUpdate, applyVoteCacheUpdate, bridgeApiCall, broadcastJson, broadcastOperations, broadcastOperationsAsync, buildAccountCreateOp, buildAccountUpdate2Op, buildAccountUpdateOp, buildActiveCustomJsonOp, buildBoostPlusOp, buildCancelTransferFromSavingsOp, buildChangeRecoveryAccountOp, buildClaimAccountOp, buildClaimInterestOps, buildClaimRewardBalanceOp, buildCollateralizedConvertOp, buildCommentOp, buildCommentOptionsOp, buildCommunityRegistrationOp, buildConvertOp, buildCreateClaimedAccountOp, buildDelegateRcOp, buildDelegateVestingSharesOp, buildDeleteCommentOp, buildEngineClaimOp, buildEngineOp, buildFlagPostOp, buildFollowOp, buildGrantPostingPermissionOp, buildIgnoreOp, buildLimitOrderCancelOp, buildLimitOrderCreateOp, buildLimitOrderCreateOpWithType, buildMultiPointTransferOps, buildMultiTransferOps, buildMutePostOp, buildMuteUserOp, buildPinPostOp, buildPointTransferOp, buildPostingCustomJsonOp, buildPostingJsonMetadata, buildProfileMetadata, buildPromoteOp, buildProposalCreateOp, buildProposalVoteOp, buildRcDelegationOp, buildReblogOp, buildRecoverAccountOp, buildRecurrentTransferOp, buildRemoveProposalOp, buildRequestAccountRecoveryOp, buildRevokeKeysOp, buildRevokePostingPermissionOp, buildSearchQuery, buildSetLastReadOps, buildSetRoleOp, buildSetWithdrawVestingRouteOp, buildSubscribeOp, buildTransferFromSavingsOp, buildTransferOp, buildTransferToSavingsOp, buildTransferToVestingOp, buildUnfollowOp, buildUnignoreOp, buildUnsubscribeOp, buildUpdateCommunityOp, buildUpdateProposalOp, buildVoteOp, buildWithdrawVestingOp, buildWitnessProxyOp, buildWitnessVoteOp, buyStreakFreezeRequest, calculateRCMana, calculateVPMana, canRevokeFromAuthority, checkFavoriteQueryOptions, checkUsernameWalletsPendingQueryOptions, claimPointsRequest, collectRequestedOperations, computeResourceCost, countCommentResourceUsage, countVoteResourceUsage, decodeObj, dedupeAndSortKeyAuths, deleteDraft, deleteFavoriteTagRequest, deleteImage, deleteSchedule, downVotingPower, earnsQuestContentCredit, encodeObj, enforceThreeSpeakBeneficiary, estimateCommentRcCost, estimateCommentTransactionBytes, estimateRcPrecheck, estimateVoteTransactionBytes, extractAccountProfile, favoriteTagDeleteMutationOptions, formatError, formattedNumber, gameClaimRequest, getAccountDelegationsQueryOptions, getAccountFullQueryOptions, getAccountNotificationsInfiniteQueryOptions, getAccountPendingRecoveryQueryOptions, getAccountPosts, getAccountPostsInfiniteQueryOptions, getAccountPostsQueryOptions, getAccountRcQueryOptions, getAccountRecoveriesQueryOptions, getAccountReputationsQueryOptions, getAccountSubscriptionsQueryOptions, getAccountVoteHistoryInfiniteQueryOptions, getAccountWalletAssetInfoQueryOptions, getAccountsQueryOptions, getAggregatedBalanceQueryOptions, getAiAssistPriceQueryOptions, getAiGeneratePriceQueryOptions, getAiImagesQueryOptions, getAiTranscribePriceQueryOptions, getAllHiveEngineTokensQueryOptions, getAnnouncementsQueryOptions, getBadActorsQueryOptions, getBalanceHistoryInfiniteQueryOptions, getBookmarksInfiniteQueryOptions, getBookmarksQueryOptions, getBoostPlusAccountPricesQueryOptions, getBoostPlusPricesQueryOptions, getBotsQueryOptions, getBoundFetch, getChainPropertiesQueryOptions, getCollateralizedConversionRequestsQueryOptions, getCommentHistoryQueryOptions, getCommunities, getCommunitiesQueryOptions, getCommunity, getCommunityContextQueryOptions, getCommunityPermissions, getCommunityQueryOptions, getCommunitySubscribersInfiniteQueryOptions, getCommunitySubscribersQueryOptions, getCommunityType, getContentModerationReason, getContentQueryOptions, getContentRepliesQueryOptions, getControversialRisingInfiniteQueryOptions, getConversionRequestsQueryOptions, getCurrencyRate, getCurrencyRates, getCurrencyTokenRate, getCurrentMedianHistoryPriceQueryOptions, getCustomJsonAuthority, getDeletedEntryQueryOptions, getDigestSubscriptionsQueryOptions, getDigestSubscriptionsRequest, getDiscoverCurationQueryOptions, getDiscoverLeaderboardQueryOptions, getDiscussion, getDiscussionQueryOptions, getDiscussionsQueryOptions, getDraftsInfiniteQueryOptions, getDraftsQueryOptions, getDynamicPropsQueryOptions, getEntryActiveVotesQueryOptions, getFavoriteTagCheckQueryOptions, getFavoriteTagsInfiniteQueryOptions, getFavoriteTagsQueryOptions, getFavoritesInfiniteQueryOptions, getFavoritesQueryOptions, getFeedHistoryQueryOptions, getFollowCountQueryOptions, getFollowersQueryOptions, getFollowingQueryOptions, getFragmentsInfiniteQueryOptions, getFragmentsQueryOptions, getFriendsInfiniteQueryOptions, getGalleryImagesQueryOptions, getGameStatusCheckQueryOptions, getHbdAssetGeneralInfoQueryOptions, getHbdAssetTransactionsQueryOptions, getHiveAssetGeneralInfoQueryOptions, getHiveAssetMetricQueryOptions, getHiveAssetTransactionsQueryOptions, getHiveAssetWithdrawalRoutesQueryOptions, getHiveEngineBalancesWithUsdQueryOptions, getHiveEngineMetrics, getHiveEngineOpenOrders, getHiveEngineOrderBook, getHiveEngineTokenGeneralInfoQueryOptions, getHiveEngineTokenMetrics, getHiveEngineTokenTransactions, getHiveEngineTokenTransactionsQueryOptions, getHiveEngineTokensBalances, getHiveEngineTokensBalancesQueryOptions, getHiveEngineTokensMarket, getHiveEngineTokensMarketQueryOptions, getHiveEngineTokensMetadata, getHiveEngineTokensMetadataQueryOptions, getHiveEngineTokensMetricsQueryOptions, getHiveEngineTradeHistory, getHiveEngineUnclaimedRewards, getHiveEngineUnclaimedRewardsQueryOptions, getHiveHbdStatsQueryOptions, getHivePoshLinksQueryOptions, getHivePowerAssetGeneralInfoQueryOptions, getHivePowerAssetTransactionsQueryOptions, getHivePowerDelegatesInfiniteQueryOptions, getHivePowerDelegatingsQueryOptions, getHivePrice, getImagesInfiniteQueryOptions, getImagesQueryOptions, getIncomingRcQueryOptions, getMarketData, getMarketDataQueryOptions, getMarketHistoryQueryOptions, getMarketStatisticsQueryOptions, getMutedUsersQueryOptions, getNewsletterIssuesQueryOptions, getNewsletterIssuesRequest, getNewsletterPostsQueryOptions, getNewsletterPostsRequest, getNewsletterSenderQueryOptions, getNewsletterSenderRequest, getNextAccountHistoryPageParam, getNormalizePostQueryOptions, getNotificationSetting, getNotifications, getNotificationsInfiniteQueryOptions, getNotificationsSettingsQueryOptions, getNotificationsUnreadCountQueryOptions, getOpenOrdersQueryOptions, getOperationAuthority, getOrderBookQueryOptions, getOutgoingRcDelegationsInfiniteQueryOptions, getPageStatsQueryOptions, getPointsAssetGeneralInfoQueryOptions, getPointsAssetTransactionsQueryOptions, getPointsQueryOptions, getPollQueryOptions, getPortfolioQueryOptions, getPost, getPostHeader, getPostHeaderQueryOptions, getPostQueryOptions, getPostTipsQueryOptions, getPostsRanked, getPostsRankedInfiniteQueryOptions, getPostsRankedQueryOptions, getProMembersQueryOptions, getProfiles, getProfilesQueryOptions, getPromotePriceQueryOptions, getPromotedPost, getPromotedPostsQuery, getProposalAuthority, getProposalQueryOptions, getProposalVotesInfiniteQueryOptions, getProposalsQueryOptions, getQueryClient, getQuestCatalogEntry, getQuestsQueryOptions, getRcDelegationActiveQueryOptions, getRcDelegationPricesQueryOptions, getRcResourceParamsQueryOptions, getRcStatsQueryOptions, getRebloggedByQueryOptions, getReblogsQueryOptions, getReceivedVestingSharesQueryOptions, getRecurrentTransfersQueryOptions, getReferralsInfiniteQueryOptions, getReferralsStatsQueryOptions, getRelationshipBetweenAccounts, getRelationshipBetweenAccountsQueryOptions, getRequiredAuthority, getRewardFundQueryOptions, getRewardedCommunitiesQueryOptions, getSavingsWithdrawFromQueryOptions, getSchedulesInfiniteQueryOptions, getSchedulesQueryOptions, getSearchAccountQueryOptions, getSearchAccountsByUsernameQueryOptions, getSearchApiInfiniteQueryOptions, getSearchFriendsQueryOptions, getSearchPathQueryOptions, getSearchTopicsQueryOptions, getShortsFeedQueryOptions, getSimilarEntriesQueryOptions, getSpotlightsQueryOptions, getStatsQueryOptions, getSubscribers, getSubscriptions, getSupportSettingsQueryOptions, getSupportSettingsRequest, getTradeHistoryQueryOptions, getTransactionsInfiniteQueryOptions, getTrendingTagsQueryOptions, getTrendingTagsWithStatsQueryOptions, getUserPostVoteQueryOptions, getUserProposalVotesQueryOptions, getVestingDelegationExpirationsQueryOptions, getVestingDelegationsQueryOptions, getVisibleFirstLevelThreadItems, getWavesByAccountQueryOptions, getWavesByHostQueryOptions, getWavesByTagQueryOptions, getWavesFeedQueryOptions, getWavesFollowingQueryOptions, getWavesLatestFeedQueryOptions, getWavesTrendingAuthorsQueryOptions, getWavesTrendingTagsQueryOptions, getWithdrawRoutesQueryOptions, getWitnessVoterCountQueryOptions, getWitnessVotersPageQueryOptions, getWitnessesInfiniteQueryOptions, hasExternalLink, hasThreeSpeakEmbed, hsTokenRenew, invalidateAfterBroadcast, invalidateGenerateImageCaches, isAuthorMuted, isCommunity, isEmptyDate, isHiddenPost, isInfoError, isLowTrustSeoPost, isNetworkError, isQueryableAccountName, isResourceCreditsError, isThreeSpeakBeneficiary, isVoteAlreadyReflected, isWif, isWrappedResponse, leaveDigestRequest, lookupAccountsQueryOptions, makeQueryClient, mapMetaChoicesToPollChoices, mapThreadItemsToWaveEntries, markNotifications, measureQuestContentLength, moveSchedule, normalizePost, normalizeSearchAuthor, normalizeSearchCategory, normalizeSearchTags, normalizeTag, normalizeToWrappedResponse, normalizeWaveEntryFromApi, onboardEmail, parseAccounts, parseAsset, parseChainError, parsePostingMetadataRoot, parseProfileMetadata, pickRicherMetadataSnapshot, powerRechargeTime, previewNewsletterSendRequest, priceRcUsage, proMembersSet, rcPower, removeOptimisticDiscussionEntry, resolveAccountHistoryLimit, resolveContentActivityType, resolveHiveOperationFilters, resolvePost, restoreDiscussionSnapshots, restoreEntryInCache, roleMap, saveNotificationSetting, search, searchPath, searchQueryOptions, sendNewsletterIssueRequest, sha256, shouldTriggerAuthFallback, signUp, similar, sortDiscussions, stringFieldBytes, subscribeDigestRequest, subscribeEmail, toEntryArray, unsubscribeAllDigestsRequest, updateDraft, updateEntryInCache, updateSupportSettingsRequest, uploadImage, uploadImageWithSignature, useAccountFavoriteAdd, useAccountFavoriteDelete, useAccountRelationsUpdate, useAccountRevokeKey, useAccountRevokePosting, useAccountUpdate, useAccountUpdateKeyAuths, useAccountUpdatePassword, useAccountUpdateRecovery, useAddDraft, useAddFragment, useAddImage, useAddSchedule, useAiAssist, useAiTranscribe, useBookmarkAdd, useBookmarkDelete, useBoostPlus, useBroadcastMutation, useBuyStreakFreeze, useClaimAccount, useClaimEngineRewards, useClaimInterest, useClaimPoints, useClaimRewards, useComment, useConvert, useCreateAccount, useCrossPost, useDelegateEngineToken, useDelegateRc, useDelegateVestingShares, useDeleteComment, useDeleteDraft, useDeleteImage, useDeleteSchedule, useEditFragment, useEngineMarketOrder, useFavoriteTagAdd, useFavoriteTagDelete, useFollow, useGameClaim, useGenerateImage, useGrantPostingPermission, useLeaveDigest, useLimitOrderCancel, useLimitOrderCreate, useMarkNotificationsRead, useMoveSchedule, useMutePost, usePinPost, usePollVote, usePreviewNewsletterIssue, usePromote, useProposalCreate, useProposalVote, useRcDelegation, useReblog, useRecordActivity, useRegisterCommunityRewards, useRemoveFragment, useSendNewsletterIssue, useSetCommunityRole, useSetLastRead, useSetWithdrawVestingRoute, useSignOperationByHivesigner, useSignOperationByKey, useSignOperationByKeychain, useStakeEngineToken, useSubscribeCommunity, useSubscribeDigest, useTransfer, useTransferEngineToken, useTransferFromSavings, useTransferPoint, useTransferToSavings, useTransferToVesting, useUndelegateEngineToken, useUnfollow, useUnstakeEngineToken, useUnsubscribeAllDigests, useUnsubscribeCommunity, useUpdateCommunity, useUpdateDraft, useUpdateReply, useUpdateSupportSettings, useUploadImage, useVote, useWalletOperation, useWithdrawVesting, useWitnessProxy, useWitnessVote, usrActivity, utf8ByteLength, validatePostCreating, varintByteLength, verifyPostOnAlternateNode, vestsToHp, votingPower, votingRshares, votingValue, withTimeoutSignal };
+/**
+ * Curation desk types.
+ *
+ * Shapes mirror the desk routes behind `/private-api/curation-desk/*`. Public
+ * rows carry no curator identity; the roster feed and the tick add an `overlay`
+ * with marks, signals and flags. The window state (full, half, eighth, locked,
+ * paid) is never in a payload: clients derive it from `created` and `payout_at`.
+ */
+declare const CURATION_REASONS: readonly ["quality", "underrated", "newcomer", "other"];
+type CurationReason = (typeof CURATION_REASONS)[number];
+declare const CURATION_SORTS: readonly ["queue", "newest", "unique", "random"];
+type CurationSort = (typeof CURATION_SORTS)[number];
+declare const CURATION_VIEWS: readonly ["queue", "latest", "new-authors", "recommended", "curated", "all", "excluded"];
+type CurationView = (typeof CURATION_VIEWS)[number];
+declare const CURATION_APPS: readonly ["all", "ecency", "peakd", "other"];
+type CurationApp = (typeof CURATION_APPS)[number];
+declare const CURATION_WINDOWS: readonly ["full", "half", "eighth", "locked", "all"];
+type CurationWindow = (typeof CURATION_WINDOWS)[number];
+declare const CURATION_MARK_STATES: readonly ["reviewed", "snoozed", "flagged", "noted"];
+type CurationMarkState = (typeof CURATION_MARK_STATES)[number];
+declare const CURATION_FLAG_REASONS: readonly ["plagiarism", "ai_slop", "recycled", "image_only", "tag_abuse", "farming", "nsfw_untagged", "other"];
+type CurationFlagReason = (typeof CURATION_FLAG_REASONS)[number];
+type CurationRole = "admin" | "mod" | "curator" | "trial";
+/** Filters shared by the public feed (query params) and the roster feed (body). */
+interface CurationFeedParams {
+    sort?: CurationSort;
+    view?: CurationView;
+    app?: CurationApp;
+    community?: string;
+    window?: CurationWindow;
+    rep_min?: number;
+    rep_max?: number;
+    min_words?: number;
+    max_words?: number;
+    has_images?: boolean;
+    new_authors?: boolean;
+    recommended?: boolean;
+    hide_curated?: boolean;
+    limit?: number;
+}
+/** Roster-only additions: the random seed and the team-mark predicates. */
+interface CurationRosterFeedParams extends CurationFeedParams {
+    seed?: string;
+    flagged?: boolean;
+    hide_reviewed?: boolean;
+    hide_snoozed?: boolean;
+}
+interface CurationTrailedBy {
+    curator: string;
+    at: string;
+    weight: number;
+    source: "erobot_push" | "history" | "inferred" | string;
+    confirmed: boolean;
+}
+interface CurationVotedBy {
+    voter: string;
+    weight: number;
+    at: string;
+}
+/** Public row (route 1, 4 rows are narrower, route 5 adds recommenders). */
+interface CurationRow {
+    post_id: number;
+    author: string;
+    permlink: string;
+    title: string;
+    created: string;
+    app: string | null;
+    is_ecency: boolean;
+    community: string | null;
+    community_title: string | null;
+    tags: string[];
+    rep: number | null;
+    is_new_author: boolean;
+    author_post_count: number | null;
+    author_created?: string | null;
+    word_count: number | null;
+    image_count: number;
+    first_image: string | null;
+    summary: string | null;
+    edited_at: string | null;
+    edit_count: number;
+    votes: number | null;
+    pending_payout: number | null;
+    pending_payout_est?: number | null;
+    payout_at: string | null;
+    is_declined?: boolean | null;
+    is_gray?: boolean | null;
+    rshares_total?: number | null;
+    rshares_after_24h?: number | null;
+    /** 0 open, 1 curated, 2 dropped */
+    state: number;
+    trailed_by: CurationTrailedBy | null;
+    voted_by: CurationVotedBy[];
+    author_trailed_at: string | null;
+    /** Set on the hivewatchers unvote path. */
+    unvoted_at?: string | null;
+    /** Materialization time; with `created` it tells a late row. */
+    inserted_at?: string | null;
+    recommend_count: number;
+    unique_recommenders: number;
+    reco_no_meta_count: number;
+    /** Opaque keyset cursor for the page that follows this row. */
+    _cursor?: string;
+}
+interface CurationMark {
+    curator: string;
+    state: CurationMarkState;
+    reason?: string | null;
+    note?: string | null;
+    /**
+     * Whether a note body exists. Tick deltas carry this instead of the body,
+     * so a delta must never overwrite a note the client already holds.
+     */
+    has_note?: boolean;
+    snooze_until?: string | null;
+    updated_at: string;
+}
+interface CurationSignals {
+    formulaic?: number | null;
+    images?: {
+        on_hive?: number;
+        total?: number;
+    } | null;
+    engagement?: {
+        replies_per_day?: number | null;
+    } | null;
+    style?: {
+        alert?: boolean;
+        sigma?: number;
+        feature?: string;
+        sample?: number;
+    } | null;
+    [key: string]: unknown;
+}
+interface CurationFlags {
+    low_rep?: boolean;
+    ignorelist?: boolean;
+    abuser?: boolean;
+    spaminator?: boolean;
+    blocked_tag?: boolean;
+    patch_body?: boolean;
+    deleted?: boolean;
+    hivewatchers_downvote?: boolean;
+    [key: string]: unknown;
+}
+/** Roster-only overlay shipped inline with the roster feed and in tick deltas. */
+interface CurationOverlay {
+    signals: CurationSignals | null;
+    flags: CurationFlags;
+    excluded_reason: string | null;
+    team_mark: CurationMarkState | null;
+    team_mark_by: string | null;
+    team_snooze_until?: string | null;
+    resurfaced_at: string | null;
+    /** Set when the roster dismissed the recommendations of this post. */
+    reco_dismissed_at?: string | null;
+    marks: CurationMark[];
+    notes_count: number;
+}
+type CurationRosterRow = CurationRow & {
+    overlay: CurationOverlay | null;
+};
+interface CurationTeamCursor {
+    post_id: number | null;
+    created: string | null;
+    set_by?: string;
+    set_at?: string;
+}
+interface CurationActiveCurator {
+    username: string;
+    last_action_at: string;
+}
+interface CurationFeedPage {
+    items: CurationRow[];
+    next_cursor: string | null;
+    team_cursor: CurationTeamCursor;
+    head_lag_seconds: number;
+    feed_version: string | null;
+    generated_at: string;
+}
+interface CurationRosterFeedPage {
+    items: CurationRosterRow[];
+    next_cursor: string | null;
+    team_cursor: CurationTeamCursor;
+    active_curators: CurationActiveCurator[];
+    facets: {
+        communities: Array<{
+            community: string;
+            title?: string | null;
+            count?: number;
+        }>;
+    };
+    total_estimate: number | null;
+    head_lag_seconds: number;
+    generated_at: string;
+}
+interface CurationManaSpent {
+    equiv: number;
+    trail: number;
+    other: number;
+    crosscheck: number | null;
+    since: string;
+}
+interface CurationVp {
+    account: string;
+    percent: number;
+    live_percent: number;
+    implied_weight: number;
+    at: string;
+    sustainable_votes_per_day: number;
+    regen_votes_per_hour: number;
+    reward_fund?: {
+        recent_claims: string | number;
+        reward_balance: number;
+        median_price: number;
+        at: string;
+    } | null;
+}
+interface CurationStatus {
+    team_cursor: CurationTeamCursor;
+    behind_seconds: number | null;
+    counts: {
+        unreviewed: number;
+        curated_24h: number;
+        trail_votes_today: {
+            posts: number;
+            comments: number;
+        };
+        recommended_posts: number;
+    };
+    mana_spent_today: CurationManaSpent | null;
+    vp: CurationVp | null;
+    head_lag_seconds: number;
+    reco_lag_blocks: number | null;
+    feed_version: string | null;
+    latest_post_id: number | null;
+    worker_tick_age_seconds: number | null;
+}
+interface CurationRosterEntry {
+    username: string;
+    role: CurationRole;
+    active: boolean;
+    rules?: Record<string, unknown> | null;
+}
+interface CurationRoster {
+    curators: CurationRosterEntry[];
+    updated_at: string;
+}
+interface CurationRecommender {
+    username: string;
+    rep: number | null;
+    reason: CurationReason | null;
+    at: string;
+    has_meta: boolean;
+    is_self?: boolean;
+}
+type CurationReasonsHistogram = Partial<Record<CurationReason, number>>;
+interface CurationRecommendationItem {
+    author: string;
+    permlink: string;
+    title: string;
+    created: string;
+    recommend_count: number;
+    unique_recommenders: number;
+    no_meta_count: number;
+    reasons: CurationReasonsHistogram;
+    recommenders: CurationRecommender[];
+    _cursor?: string;
+}
+interface CurationRecommendationsPage {
+    items: CurationRecommendationItem[];
+    next_cursor: string | null;
+}
+type CurationRecommendationsSort = "unique" | "newest";
+interface CurationRecommendationsParams {
+    sort?: CurationRecommendationsSort;
+    limit?: number;
+}
+/** Route 5: the public row plus the recommender list, self row included. */
+interface CurationPost extends CurationRow {
+    recommenders: CurationRecommender[];
+    no_meta_count: number;
+    reasons: CurationReasonsHistogram;
+}
+interface CurationTickRequest {
+    /** `generated_at` echoed verbatim from the previous response. */
+    since: string | null;
+    /** Loaded rows that have no overlay yet (at most 100). */
+    need: number[];
+    /** Visible rows (at most 100). */
+    visible: number[];
+}
+/**
+ * Tick answer. `truncated` says the delta window was too wide to answer in
+ * full; it only means something when the request carried a `since`, since a
+ * first tick with `since: null` asks for a snapshot, not a window.
+ */
+interface CurationTickResponse {
+    overlay: Array<{
+        post_id: number;
+    } & CurationOverlay>;
+    deltas: {
+        marks: Array<{
+            post_id: number;
+        } & CurationMark>;
+        flags: Array<{
+            post_id: number;
+            flags: CurationFlags;
+            excluded_reason: string | null;
+        }>;
+        signals: Array<{
+            post_id: number;
+            signals: CurationSignals | null;
+        }>;
+    };
+    team_cursor: CurationTeamCursor;
+    active_curators: CurationActiveCurator[];
+    trail_alerts: unknown[];
+    generated_at: string;
+    truncated: boolean;
+}
+interface CurationMarkInput {
+    author: string;
+    permlink: string;
+    state: CurationMarkState;
+    reason?: string;
+    note?: string;
+    snooze_until?: string;
+}
+interface CurationMarkResponse {
+    mark: CurationMark | null;
+    row: CurationRosterRow;
+}
+interface CurationMarkClearResponse {
+    ok: boolean;
+    row: CurationRosterRow;
+}
+interface CurationMyMarksParams {
+    state?: CurationMarkState;
+    cursor?: string;
+    limit?: number;
+}
+interface CurationMyMark extends CurationMark {
+    post_id: number;
+    author: string;
+    permlink: string;
+    title: string;
+    created: string;
+    row?: CurationRosterRow | null;
+}
+interface CurationMyMarksResponse {
+    items: CurationMyMark[];
+    next_cursor: string | null;
+}
+type CurationCursorAction = "advance" | "rewind";
+interface CurationCursorInput {
+    post_id: number;
+    action: CurationCursorAction;
+    reason?: string;
+}
+interface CurationCursorResponse {
+    team_cursor: CurationTeamCursor;
+    moved: boolean;
+    swept_count: number | null;
+}
+type CurationUaClass = "web" | "mobile";
+interface CurationRecommendMetaInput {
+    author: string;
+    permlink: string;
+    /** 40 hex chars when the broadcast path returned one; omitted otherwise. */
+    trx_id?: string | null;
+    ua_class: CurationUaClass;
+}
+type CurationDismissAction = "dismiss" | "restore";
+interface CurationDismissRecoInput {
+    author: string;
+    permlink: string;
+    action: CurationDismissAction;
+}
+interface CurationDismissRecoResponse {
+    row: CurationRosterRow;
+}
+
+/**
+ * The desk shows the moderation flags the backend materialized from the bot's
+ * config and from external abuse lists. The web reads them through this helper
+ * so the list's name stays a wire detail of the payload: it is a warning the
+ * desk displays, never a verdict and never an input to indexability.
+ */
+declare function isOnAbuseList(flags: CurationFlags | null | undefined): boolean;
+/** Any flag that keeps a row out of the public queue. */
+declare function isExcludedByFlags(flags: CurationFlags | null | undefined): boolean;
+
+/**
+ * Takedown masking for desk payloads.
+ *
+ * The desk serves rows the bridge never touched, so they never pass through
+ * `filterDmcaEntry`. The test is the same one that file runs (`CONFIG`
+ * patterns plus regexes against `@author/permlink`); what a row can leak is
+ * its title, its summary and its thumbnail, so those are what the mask blanks.
+ */
+interface MaskableCurationRow {
+    author: string;
+    permlink: string;
+    title: string;
+    summary?: string | null;
+    first_image?: string | null;
+}
+declare function isDmcaCurationPath(author: string, permlink: string): boolean;
+/** Returns the SAME object when nothing matches, so memoized rows keep identity. */
+declare function maskDmcaCurationRow<T extends MaskableCurationRow>(row: T): T;
+/** Masks every page item; untouched pages keep their identity. */
+declare function maskDmcaCurationPages<TPage extends {
+    items: MaskableCurationRow[];
+}>(data: InfiniteData<TPage, unknown>): InfiniteData<TPage, unknown>;
+
+declare class CurationApiError extends Error {
+    readonly status: number;
+    readonly data: unknown;
+    constructor(message: string, status: number, data?: unknown);
+}
+type NormalizedCurationParams = Record<string, string>;
+/**
+ * Drops defaults and unknown values, emits fixed-order string params. Used for
+ * the query string, the roster body and the React Query key, so all three agree.
+ */
+declare function normalizeCurationParams(params?: CurationRosterFeedParams | CurationFeedParams): NormalizedCurationParams;
+declare function fetchCurationFeedPage(params: CurationFeedParams, cursor?: string, signal?: AbortSignal): Promise<CurationFeedPage>;
+declare function fetchCurationStatus(signal?: AbortSignal): Promise<CurationStatus>;
+declare function fetchCurationRoster(signal?: AbortSignal): Promise<CurationRoster>;
+declare function fetchCurationRecommendationsPage(params: CurationRecommendationsParams, cursor?: string, signal?: AbortSignal): Promise<CurationRecommendationsPage>;
+declare function fetchCurationPost(author: string, permlink: string, signal?: AbortSignal): Promise<CurationPost>;
+declare function curationRosterFeedRequest(code: string | undefined, params: CurationRosterFeedParams, cursor?: string, signal?: AbortSignal): Promise<CurationRosterFeedPage>;
+declare function curationTickRequest(code: string | undefined, body: CurationTickRequest, signal?: AbortSignal): Promise<CurationTickResponse>;
+declare function curationMarkRequest(code: string | undefined, input: CurationMarkInput): Promise<CurationMarkResponse>;
+declare function curationMarkClearRequest(code: string | undefined, input: {
+    author: string;
+    permlink: string;
+}): Promise<CurationMarkClearResponse>;
+declare function curationMyMarksRequest(code: string | undefined, params?: CurationMyMarksParams, signal?: AbortSignal): Promise<CurationMyMarksResponse>;
+declare function curationCursorRequest(code: string | undefined, input: CurationCursorInput): Promise<CurationCursorResponse>;
+declare function curationRecommendMetaRequest(code: string | undefined, input: CurationRecommendMetaInput): Promise<{
+    ok: boolean;
+}>;
+declare function curationDismissRecoRequest(code: string | undefined, input: CurationDismissRecoInput): Promise<CurationDismissRecoResponse>;
+
+declare const CURATION_FEED_PAGE_SIZE = 25;
+declare const CURATION_FEED_STALE_MS = 10000;
+/**
+ * Drops rows whose key already appeared on an earlier page. Needed for the
+ * live-keyset `unique` order (a row whose count rose between two pages repeats),
+ * harmless for the immutable chronological orders. Untouched pages keep their
+ * identity so memoized rows do not re-render.
+ */
+declare function dedupePagesBy<TPage extends {
+    items: unknown[];
+}>(data: InfiniteData<TPage, unknown>, keyOf: (item: TPage["items"][number]) => string | number): InfiniteData<TPage, unknown>;
+/** Feed pages dedupe by `post_id`. */
+declare function dedupeCurationPages<TPage extends {
+    items: Array<{
+        post_id: number;
+    }>;
+}>(data: InfiniteData<TPage, unknown>): InfiniteData<TPage, unknown>;
+interface SelectableFeedRow {
+    post_id: number;
+    author: string;
+    permlink: string;
+    title: string;
+    summary?: string | null;
+    first_image?: string | null;
+}
+/**
+ * The select every desk feed shares: dedupe by `post_id`, then blank the rows
+ * on the takedown list. The roster feed (web owned, because its queryFn needs
+ * a fresh token) uses it too, so both feeds hide the same rows.
+ */
+declare function selectCurationFeedPages<TPage extends {
+    items: SelectableFeedRow[];
+}>(data: InfiniteData<TPage, unknown>): InfiniteData<TPage, unknown>;
+/**
+ * Public curation feed (route 1), keyset paginated.
+ *
+ * `_cursor` on the last row is opaque: it encodes the order's key (`created`
+ * and `post_id` for the chronological sorts, the recommender pair for `unique`,
+ * the hash pair for `random`). A short page ends the list. No `refetchInterval`
+ * (React Query would refetch every loaded page) and no `initialData` (the web
+ * client's `refetchOnMount: false` would then never fetch page 1): the web polls
+ * `status` and refetches page 1 only when `feed_version` changes.
+ */
+declare function getCurationFeedInfiniteQueryOptions(params?: CurationFeedParams): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseInfiniteQueryOptions<CurationFeedPage, Error, InfiniteData<CurationFeedPage, unknown>, (string | Record<string, string>)[], string | undefined>, "queryFn"> & {
+    queryFn?: _tanstack_react_query.QueryFunction<CurationFeedPage, (string | Record<string, string>)[], string | undefined> | undefined;
+} & {
+    queryKey: (string | Record<string, string>)[] & {
+        [dataTagSymbol]: InfiniteData<CurationFeedPage, unknown>;
+        [dataTagErrorSymbol]: Error;
+    };
+};
+
+/**
+ * Desk status (route 2): team cursor, counts, @ecency VP and the mana budget.
+ * Public, memoized 15 s at the gateway. The web polls it every 60 s while
+ * visible and uses `feed_version` to decide whether page 1 needs a refetch.
+ */
+declare function getCurationStatusQueryOptions(): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<CurationStatus, Error, CurationStatus, string[]>, "queryFn"> & {
+    queryFn?: _tanstack_react_query.QueryFunction<CurationStatus, string[], never> | undefined;
+} & {
+    queryKey: string[] & {
+        [dataTagSymbol]: CurationStatus;
+        [dataTagErrorSymbol]: Error;
+    };
+};
+
+/** Curator roster (route 3): usernames and roles. Changes rarely; 10 minutes shared. */
+declare function getCurationRosterQueryOptions(): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<CurationRoster, Error, CurationRoster, string[]>, "queryFn"> & {
+    queryFn?: _tanstack_react_query.QueryFunction<CurationRoster, string[], never> | undefined;
+} & {
+    queryKey: string[] & {
+        [dataTagSymbol]: CurationRoster;
+        [dataTagErrorSymbol]: Error;
+    };
+};
+
+declare const CURATION_RECOMMENDATIONS_PAGE_SIZE = 25;
+/**
+ * Open posts with at least one active recommendation (route 4), ordered by
+ * unique recommenders (networks) or by first recommendation time.
+ */
+declare function getCurationRecommendationsInfiniteQueryOptions(params?: CurationRecommendationsParams): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseInfiniteQueryOptions<CurationRecommendationsPage, Error, _tanstack_react_query.InfiniteData<CurationRecommendationsPage, unknown>, (string | Record<string, string>)[], string | undefined>, "queryFn"> & {
+    queryFn?: _tanstack_react_query.QueryFunction<CurationRecommendationsPage, (string | Record<string, string>)[], string | undefined> | undefined;
+} & {
+    queryKey: (string | Record<string, string>)[] & {
+        [dataTagSymbol]: _tanstack_react_query.InfiniteData<CurationRecommendationsPage, unknown>;
+        [dataTagErrorSymbol]: Error;
+    };
+};
+
+/**
+ * One post's public desk row plus its recommenders (route 5). A viewer finds
+ * their own recommendation state by their username in `recommenders`, so no
+ * authed read exists. Memoized 15 s at the gateway, which is why a recommender's
+ * own row is optimistic and polls this with backoff.
+ */
+declare function getCurationPostQueryOptions(author: string, permlink: string): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<CurationPost, Error, CurationPost, string[]>, "queryFn"> & {
+    queryFn?: _tanstack_react_query.QueryFunction<CurationPost, string[], never> | undefined;
+} & {
+    queryKey: string[] & {
+        [dataTagSymbol]: CurationPost;
+        [dataTagErrorSymbol]: Error;
+    };
+};
+
+interface CurationRecommendPayload {
+    author: string;
+    permlink: string;
+    /** Defaults to "quality" on recommend; ignored on withdraw. */
+    reason?: CurationReason;
+    /** Broadcast the `unrecommend` op instead. */
+    withdraw?: boolean;
+}
+/**
+ * The broadcast result is not uniform across auth paths: the key path returns
+ * `{tx_id, status}`, the HiveSigner token and Keychain extension paths return
+ * `{id, block_num, ...}`; the redirect flows never resolve at all. This
+ * gives the one shape the desk needs (a 40 hex char id) or null.
+ */
+declare function normalizeBroadcastTrxId(result: unknown): string | null;
+/**
+ * Recommend a post to the curators (or withdraw a recommendation) with one
+ * `custom_json` under posting authority. The desk indexes the op from the
+ * chain; nothing is written to a desk route here. Platform wrappers send the
+ * optional meta ping after success.
+ */
+declare function useCurationRecommend(username: string | undefined, auth?: AuthContextV2, broadcastMode?: BroadcastMode): _tanstack_react_query.UseMutationResult<unknown, Error, CurationRecommendPayload, unknown>;
+
+export { ACCOUNT_OPERATION_GROUPS, ALL_ACCOUNT_OPERATIONS, ALL_NOTIFY_TYPES, type AccountBookmark, type AccountDelegations, type AccountFavorite, type AccountFavoriteTag, type AccountFollowStats, type AccountKeys, type AccountNotification, type AccountProfile, type AccountRelationship, type AccountReputation, type AggregatedBalanceEntry, type AiAssistParams, type AiAssistPrice, type AiAssistResponse, type AiGenerationPrice, type AiGenerationRequest, type AiGenerationResponse, type AiImageHistoryItem, type AiImagePowerTier, type AiImagePriceResponse, type AiTranscribeParams, type AiTranscribePrice, type AiTranscribeResponse, type Announcement, type ApiBookmarkNotification, type ApiDelegationsNotification, type ApiFavoriteNotification, type ApiFollowNotification, type ApiInactiveNotification, type ApiMentionNotification, type ApiNotification, type ApiNotificationSetting, type ApiPayoutsNotification, type ApiReblogNotification, type ApiReferralNotification, type ApiReplyNotification, type ApiResponse, type ApiScheduledPublishedNotification, type ApiSpinNotification, type ApiTagsBundleNotification, type ApiTagsNotification, type ApiTagsPostNotification, type ApiTransferNotification, type ApiVoteNotification, type ApiWeeklyEarningsNotification, type Asset, AssetOperation, type AuthContext, type AuthContextV2, type AuthMethod, type AuthorReward, Authority, type AuthorityLevel, type AuthorityType, BROADCAST_INCLUSION_DELAY_MS, type BalanceAggregationGranularity, type BalanceCoinType, type BalanceHistoryEntry, type BalanceHistoryResponse, type Beneficiary, type BeneficiaryRoute, type BlogEntry, type BoostPlusAccountPrice, type BoostPlusPayload, type BroadcastMode, BroadcastResult, type BuildProfileMetadataArgs, type BuiltSearchQuery, BuySellTransactionType, CONFIG, CURATION_APPS, CURATION_FEED_PAGE_SIZE, CURATION_FEED_STALE_MS, CURATION_FLAG_REASONS, CURATION_MARK_STATES, CURATION_REASONS, CURATION_RECOMMENDATIONS_PAGE_SIZE, CURATION_SORTS, CURATION_VIEWS, CURATION_WINDOWS, type CancelTransferFromSavings, type CantAfford, type CheckUsernameWalletsPendingResponse, type ClaimAccountPayload, type ClaimEngineRewardsPayload, type ClaimInterestPayload, type ClaimRewardBalance, type ClaimRewardsPayload, type CollateralizedConversionRequest, type CollateralizedConvert, type CommentBenefactor, type CommentLike, type CommentOptionsLike, type CommentPayload, type CommentPayoutUpdate, type CommentRcCostEstimate, type CommentResourceUsageInput, type CommentReward, type CommentTransactionInput, type Communities, type Community, type CommunityProps, type CommunityRewardsRegisterPayload, type CommunityRole, type CommunityTeam, type CommunityType, ConfigManager, ContentModerationReason, type ConversionRequest, type ConvertPayload, type CreateAccountPayload, type CrossPostPayload, type CurationActiveCurator, CurationApiError, type CurationApp, type CurationCursorAction, type CurationCursorInput, type CurationCursorResponse, type CurationDismissAction, type CurationDismissRecoInput, type CurationDismissRecoResponse, type CurationDuration, type CurationFeedPage, type CurationFeedParams, type CurationFlagReason, type CurationFlags, type CurationItem, type CurationManaSpent, type CurationMark, type CurationMarkClearResponse, type CurationMarkInput, type CurationMarkResponse, type CurationMarkState, type CurationMyMark, type CurationMyMarksParams, type CurationMyMarksResponse, type CurationOverlay, type CurationPost, type CurationReason, type CurationReasonsHistogram, type CurationRecommendMetaInput, type CurationRecommendPayload, type CurationRecommendationItem, type CurationRecommendationsPage, type CurationRecommendationsParams, type CurationRecommendationsSort, type CurationRecommender, type CurationReward, type CurationRole, type CurationRoster, type CurationRosterEntry, type CurationRosterFeedPage, type CurationRosterFeedParams, type CurationRosterRow, type CurationRow, type CurationSignals, type CurationSort, type CurationStatus, type CurationTeamCursor, type CurationTickRequest, type CurationTickResponse, type CurationTrailedBy, type CurationUaClass, type CurationView, type CurationVotedBy, type CurationVp, type CurationWindow, type CurrencyRates, type DailyCheckinQuest, type DailyContentQuest, type DailyQuest, type DelegateEngineTokenPayload, type DelegateRcPayload, type DelegateVestingShares, type DelegateVestingSharesPayload, type DelegatedVestingShare, type DeleteCommentPayload, type DeletedEntry, type DigestCadence, type DigestStatus, type DigestSubscribeInput, type DigestSubscribeResult, type DigestSubscribeSource, type DigestSubscription, type DigestType, type Draft, type DraftMetadata, type DraftRewardType, type DraftsWrappedResponse, type DynamicProps$1 as DynamicProps, index as EcencyAnalytics, EcencyQueriesManager, type EffectiveCommentVote, type EngineMarketOrderPayload, EntriesCacheManagement, type Entry$1 as Entry, type EntryBeneficiaryRoute, type EntryHeader, type EntryStat, type EntryVote, ErrorType, type EstimateCommentRcCostInput, type FeedHistoryItem, type FillCollateralizedConvertRequest, type FillConvertRequest, type FillOrder, type FillRecurrentTransfers, type FillTransferFromSavings, type FillVestingWithdraw, type Follow, type FollowPayload, type Fragment, type FriendSearchResult, type FriendsPageParam, type FriendsRow, type FullAccount, type GameClaim, type GeneralAssetInfo, type GeneralAssetTransaction, type GenerateImageParams, type GetGameStatus, type GetRecoveriesEmailResponse, type GrantPostingPermissionPayload, HIDDEN_POST_MIN_VOTES, HIDDEN_POST_RSHARES_THRESHOLD, HIVE_ACCOUNT_OPERATION_GROUPS, HIVE_OPERATION_LIST, HIVE_OPERATION_NAME_BY_ID, HIVE_OPERATION_ORDERS, type HiveBasedAssetSignType, type HiveEngineMarketResponse, type HiveEngineMetric, type HiveEngineOpenOrder, type HiveEngineOrderBookEntry, HiveEngineToken, type HiveEngineTokenBalance, type HiveEngineTokenInfo, type HiveEngineTokenMetadataResponse, type HiveEngineTokenStatus, type HiveEngineTransaction, type HiveHbdStats, type HiveMarketMetric, type HiveOperationFilter, type HiveOperationFilterKey, type HiveOperationFilterValue, type HiveOperationGroup, type HiveOperationName, HiveSignerIntegration, type HiveTransaction, type HsTokenRenewResponse, INTERNAL_API_TIMEOUT_MS, type IncomingDelegation, type IncomingRcDelegation, type IncomingRcResponse, type Interest, type JsonMetadata, type JsonPollMetadata, type Keys, LOW_TRUST_REPUTATION_THRESHOLD, type LeaderBoardDuration, type LeaderBoardItem, type LimitOrderCancel, type LimitOrderCancelPayload, type LimitOrderCreate, type LimitOrderCreatePayload, MAX_SEARCH_QUERY_LENGTH, MAX_SEARCH_TAGS, type MarketCandlestickDataItem, type MarketData, type MarketStatistics, type MedianHistoryPrice, type ModerationCandidate, type MutePostPayload, NaiMap, NewsletterApiError, type NewsletterCandidatePost, type NewsletterComposeRequest, type NewsletterListType, type NewsletterPostRef, type NewsletterSendPreview, type NewsletterSendRef, NewsletterSendRefusedError, type NewsletterSendRequest, type NewsletterSendResult, type NewsletterSenderStanding, type NewsletterSentIssue, type NormalizedCurationParams, NotificationFilter, NotificationViewType, type Notifications, NotifyTypes, OPERATION_AUTHORITY_MAP, type OpenOrdersData, Operation, type OperationGroup, OperationName, OrderIdPrefix, type OrdersData, type OrdersDataItem, type OutgoingDelegation, POLLS_PROTOCOL_VERSION, type PageStatsResponse, type PaginationMeta, type ParsedChainError, type Payer, type PeriodQuest, type PinPostPayload, type PlatformAdapter, type PointTransaction, PointTransactionType, type Points, type PointsResponse, type Poll, type PollChoice, type PollChoiceVotes, PollPreferredInterpretation, type PollStats, type PollVotePayload, type PollVoter, type PortfolioResponse, type PortfolioWalletItem, type PostTip, type PostTipsResponse, PrivateKey, type ProMembersResponse, type ProducerReward, type Profile, type ProfileTokens, type PromotePayload, type PromotePrice, type Proposal, type ProposalCreatePayload, type ProposalPay, type ProposalVote, type ProposalVotePayload, type ProposalVoteRow, PublicKey, QUEST_CATALOG, QUEST_MIN_CONTENT_LENGTH, QueryKeys, type QuestCatalogEntry, type QuestMilestone, type QuestPeriod, type QuestStreak, type QuestTier, type QuestsResponse, type RCAccount, RC_RESOURCE_NAMES, ROLES, type RcCostBreakdown, type RcDelegationActive, type RcDelegationPayload, type RcDirectDelegation, type RcDirectDelegationsResponse, type RcPrecheckInput, type RcPrecheckOperation, type RcPrecheckPayload, type RcPrecheckResult, type RcPriceCurveParams, type RcPricedUsage, type RcResourceDynamicsParams, type RcResourceName, type RcResourceParamEntry, type RcResourceParams, type RcResourceUsage, type RcSizeInfo, type RcStats, type Reblog, type ReblogPayload, type ReceivedVestingShare, type RecordActivityOptions, type Recoveries, type RecurrentTransfer, type RecurrentTransfers, type ReferralItem, type ReferralItems, type ReferralStat, ResilienceOptions, type ReturnVestingDelegation, type RewardFund, type RewardedCommunity, SERVER_GC_TIME_MS, SIGNATURE_BYTES, SIMILAR_ENTRIES_MIN_RENDER, type SMTAsset, STREAK_FREEZE_MAX_OWNED, STREAK_FREEZE_PRICE, SUBSCRIBERS_PAGE_SIZE, type SavingsWithdrawRequest, type Schedule, SearchQuery, type SearchQueryParts, type SearchResponse, type SearchResult, SearchType, type SetCommunityRolePayload, type SetLastReadPayload, type SetWithdrawRoute, type SetWithdrawVestingRoutePayload, type ShortVideo, type ShortsFeedEntry, type ShortsFeedParams, SortOrder, type Spotlight, type StakeEngineTokenPayload, type StatsResponse, type StreakFreezeBuyResult, type SubscribeCommunityPayload, type Subscription, type SupportSettings, Symbol, THREESPEAK_BENEFICIARY_ACCOUNT, THREESPEAK_BENEFICIARY_WEIGHT, TRANSACTION_HEADER_BYTES, type ThreadItemEntry, type ThreeSpeakBeneficiaryRoute, ThreeSpeakIntegration, type ThreeSpeakVideo, type Token, type TokenMetadata, type Transaction, type TransactionConfirmation, type Transfer, type TransferEngineTokenPayload, type TransferFromSavings, type TransferFromSavingsPayload, type TransferPayload, type TransferPointPayload, type TransferToSavings, type TransferToSavingsPayload, type TransferToVesting, type TransferToVestingPayload, type TrendingTag, type UndelegateEngineTokenPayload, type UnfollowPayload, type UnstakeEngineTokenPayload, type UnsubscribeCommunityPayload, type UpdateCommunityPayload, type UpdateProposalVotes, type UpdateReplyPayload, type UpdateSupportSettingsPayload, type User, type UserImage, type ValidatePostCreatingOptions, type VestingDelegationExpiration, type Vote, type VoteHistoryPage, type VoteHistoryPageParam, type VoteLike, type VotePayload, type VoteProxy, type WalletMetadataCandidate, type WalletOperationPayload, type WaveEntry, type WaveTrendingAuthor, type WaveTrendingTag, type WavesFeedEntry, type WavesFeedParams, type WithdrawRoute, type WithdrawVesting, type WithdrawVestingPayload, type Witness, type WitnessProxyPayload, type WitnessVotePayload, type WitnessVoter, type WitnessVoterSortDirection, type WitnessVoterSortField, type WitnessVotersResponse, type WrappedResponse, type WsBookmarkNotification, type WsDelegationsNotification, type WsFavoriteNotification, type WsFollowNotification, type WsInactiveNotification, type WsMentionNotification, type WsNotification, type WsPayoutsNotification, type WsReblogNotification, type WsReferralNotification, type WsReplyNotification, type WsSpinNotification, type WsTagsBundleExtra, type WsTagsNotification, type WsTagsPostExtra, type WsTransferNotification, type WsVoteNotification, accountNameByteLength, addDraft, addFavoriteTagRequest, addImage, addOptimisticDiscussionEntry, addSchedule, applySupportSettingsUpdate, applyVoteCacheUpdate, bridgeApiCall, broadcastJson, broadcastOperations, broadcastOperationsAsync, buildAccountCreateOp, buildAccountUpdate2Op, buildAccountUpdateOp, buildActiveCustomJsonOp, buildBoostPlusOp, buildCancelTransferFromSavingsOp, buildChangeRecoveryAccountOp, buildClaimAccountOp, buildClaimInterestOps, buildClaimRewardBalanceOp, buildCollateralizedConvertOp, buildCommentOp, buildCommentOptionsOp, buildCommunityRegistrationOp, buildConvertOp, buildCreateClaimedAccountOp, buildCurationRecommendOp, buildCurationUnrecommendOp, buildDelegateRcOp, buildDelegateVestingSharesOp, buildDeleteCommentOp, buildEngineClaimOp, buildEngineOp, buildFlagPostOp, buildFollowOp, buildGrantPostingPermissionOp, buildIgnoreOp, buildLimitOrderCancelOp, buildLimitOrderCreateOp, buildLimitOrderCreateOpWithType, buildMultiPointTransferOps, buildMultiTransferOps, buildMutePostOp, buildMuteUserOp, buildPinPostOp, buildPointTransferOp, buildPostingCustomJsonOp, buildPostingJsonMetadata, buildProfileMetadata, buildPromoteOp, buildProposalCreateOp, buildProposalVoteOp, buildRcDelegationOp, buildReblogOp, buildRecoverAccountOp, buildRecurrentTransferOp, buildRemoveProposalOp, buildRequestAccountRecoveryOp, buildRevokeKeysOp, buildRevokePostingPermissionOp, buildSearchQuery, buildSetLastReadOps, buildSetRoleOp, buildSetWithdrawVestingRouteOp, buildSubscribeOp, buildTransferFromSavingsOp, buildTransferOp, buildTransferToSavingsOp, buildTransferToVestingOp, buildUnfollowOp, buildUnignoreOp, buildUnsubscribeOp, buildUpdateCommunityOp, buildUpdateProposalOp, buildVoteOp, buildWithdrawVestingOp, buildWitnessProxyOp, buildWitnessVoteOp, buyStreakFreezeRequest, calculateRCMana, calculateVPMana, canRevokeFromAuthority, checkFavoriteQueryOptions, checkUsernameWalletsPendingQueryOptions, claimPointsRequest, collectRequestedOperations, computeResourceCost, countCommentResourceUsage, countVoteResourceUsage, curationCursorRequest, curationDismissRecoRequest, curationMarkClearRequest, curationMarkRequest, curationMyMarksRequest, curationRecommendMetaRequest, curationRosterFeedRequest, curationTickRequest, decodeObj, dedupeAndSortKeyAuths, dedupeCurationPages, dedupePagesBy, deleteDraft, deleteFavoriteTagRequest, deleteImage, deleteSchedule, downVotingPower, earnsQuestContentCredit, encodeObj, enforceThreeSpeakBeneficiary, estimateCommentRcCost, estimateCommentTransactionBytes, estimateRcPrecheck, estimateVoteTransactionBytes, extractAccountProfile, favoriteTagDeleteMutationOptions, fetchCurationFeedPage, fetchCurationPost, fetchCurationRecommendationsPage, fetchCurationRoster, fetchCurationStatus, formatError, formattedNumber, gameClaimRequest, getAccountDelegationsQueryOptions, getAccountFullQueryOptions, getAccountNotificationsInfiniteQueryOptions, getAccountPendingRecoveryQueryOptions, getAccountPosts, getAccountPostsInfiniteQueryOptions, getAccountPostsQueryOptions, getAccountRcQueryOptions, getAccountRecoveriesQueryOptions, getAccountReputationsQueryOptions, getAccountSubscriptionsQueryOptions, getAccountVoteHistoryInfiniteQueryOptions, getAccountWalletAssetInfoQueryOptions, getAccountsQueryOptions, getAggregatedBalanceQueryOptions, getAiAssistPriceQueryOptions, getAiGeneratePriceQueryOptions, getAiImagesQueryOptions, getAiTranscribePriceQueryOptions, getAllHiveEngineTokensQueryOptions, getAnnouncementsQueryOptions, getBadActorsQueryOptions, getBalanceHistoryInfiniteQueryOptions, getBookmarksInfiniteQueryOptions, getBookmarksQueryOptions, getBoostPlusAccountPricesQueryOptions, getBoostPlusPricesQueryOptions, getBotsQueryOptions, getBoundFetch, getChainPropertiesQueryOptions, getCollateralizedConversionRequestsQueryOptions, getCommentHistoryQueryOptions, getCommunities, getCommunitiesQueryOptions, getCommunity, getCommunityContextQueryOptions, getCommunityPermissions, getCommunityQueryOptions, getCommunitySubscribersInfiniteQueryOptions, getCommunitySubscribersQueryOptions, getCommunityType, getContentModerationReason, getContentQueryOptions, getContentRepliesQueryOptions, getControversialRisingInfiniteQueryOptions, getConversionRequestsQueryOptions, getCurationFeedInfiniteQueryOptions, getCurationPostQueryOptions, getCurationRecommendationsInfiniteQueryOptions, getCurationRosterQueryOptions, getCurationStatusQueryOptions, getCurrencyRate, getCurrencyRates, getCurrencyTokenRate, getCurrentMedianHistoryPriceQueryOptions, getCustomJsonAuthority, getDeletedEntryQueryOptions, getDigestSubscriptionsQueryOptions, getDigestSubscriptionsRequest, getDiscoverCurationQueryOptions, getDiscoverLeaderboardQueryOptions, getDiscussion, getDiscussionQueryOptions, getDiscussionsQueryOptions, getDraftsInfiniteQueryOptions, getDraftsQueryOptions, getDynamicPropsQueryOptions, getEntryActiveVotesQueryOptions, getFavoriteTagCheckQueryOptions, getFavoriteTagsInfiniteQueryOptions, getFavoriteTagsQueryOptions, getFavoritesInfiniteQueryOptions, getFavoritesQueryOptions, getFeedHistoryQueryOptions, getFollowCountQueryOptions, getFollowersQueryOptions, getFollowingQueryOptions, getFragmentsInfiniteQueryOptions, getFragmentsQueryOptions, getFriendsInfiniteQueryOptions, getGalleryImagesQueryOptions, getGameStatusCheckQueryOptions, getHbdAssetGeneralInfoQueryOptions, getHbdAssetTransactionsQueryOptions, getHiveAssetGeneralInfoQueryOptions, getHiveAssetMetricQueryOptions, getHiveAssetTransactionsQueryOptions, getHiveAssetWithdrawalRoutesQueryOptions, getHiveEngineBalancesWithUsdQueryOptions, getHiveEngineMetrics, getHiveEngineOpenOrders, getHiveEngineOrderBook, getHiveEngineTokenGeneralInfoQueryOptions, getHiveEngineTokenMetrics, getHiveEngineTokenTransactions, getHiveEngineTokenTransactionsQueryOptions, getHiveEngineTokensBalances, getHiveEngineTokensBalancesQueryOptions, getHiveEngineTokensMarket, getHiveEngineTokensMarketQueryOptions, getHiveEngineTokensMetadata, getHiveEngineTokensMetadataQueryOptions, getHiveEngineTokensMetricsQueryOptions, getHiveEngineTradeHistory, getHiveEngineUnclaimedRewards, getHiveEngineUnclaimedRewardsQueryOptions, getHiveHbdStatsQueryOptions, getHivePoshLinksQueryOptions, getHivePowerAssetGeneralInfoQueryOptions, getHivePowerAssetTransactionsQueryOptions, getHivePowerDelegatesInfiniteQueryOptions, getHivePowerDelegatingsQueryOptions, getHivePrice, getImagesInfiniteQueryOptions, getImagesQueryOptions, getIncomingRcQueryOptions, getMarketData, getMarketDataQueryOptions, getMarketHistoryQueryOptions, getMarketStatisticsQueryOptions, getMutedUsersQueryOptions, getNewsletterIssuesQueryOptions, getNewsletterIssuesRequest, getNewsletterPostsQueryOptions, getNewsletterPostsRequest, getNewsletterSenderQueryOptions, getNewsletterSenderRequest, getNextAccountHistoryPageParam, getNormalizePostQueryOptions, getNotificationSetting, getNotifications, getNotificationsInfiniteQueryOptions, getNotificationsSettingsQueryOptions, getNotificationsUnreadCountQueryOptions, getOpenOrdersQueryOptions, getOperationAuthority, getOrderBookQueryOptions, getOutgoingRcDelegationsInfiniteQueryOptions, getPageStatsQueryOptions, getPointsAssetGeneralInfoQueryOptions, getPointsAssetTransactionsQueryOptions, getPointsQueryOptions, getPollQueryOptions, getPortfolioQueryOptions, getPost, getPostHeader, getPostHeaderQueryOptions, getPostQueryOptions, getPostTipsQueryOptions, getPostsRanked, getPostsRankedInfiniteQueryOptions, getPostsRankedQueryOptions, getProMembersQueryOptions, getProfiles, getProfilesQueryOptions, getPromotePriceQueryOptions, getPromotedPost, getPromotedPostsQuery, getProposalAuthority, getProposalQueryOptions, getProposalVotesInfiniteQueryOptions, getProposalsQueryOptions, getQueryClient, getQuestCatalogEntry, getQuestsQueryOptions, getRcDelegationActiveQueryOptions, getRcDelegationPricesQueryOptions, getRcResourceParamsQueryOptions, getRcStatsQueryOptions, getRebloggedByQueryOptions, getReblogsQueryOptions, getReceivedVestingSharesQueryOptions, getRecurrentTransfersQueryOptions, getReferralsInfiniteQueryOptions, getReferralsStatsQueryOptions, getRelationshipBetweenAccounts, getRelationshipBetweenAccountsQueryOptions, getRequiredAuthority, getRewardFundQueryOptions, getRewardedCommunitiesQueryOptions, getSavingsWithdrawFromQueryOptions, getSchedulesInfiniteQueryOptions, getSchedulesQueryOptions, getSearchAccountQueryOptions, getSearchAccountsByUsernameQueryOptions, getSearchApiInfiniteQueryOptions, getSearchFriendsQueryOptions, getSearchPathQueryOptions, getSearchTopicsQueryOptions, getShortsFeedQueryOptions, getSimilarEntriesQueryOptions, getSpotlightsQueryOptions, getStatsQueryOptions, getSubscribers, getSubscriptions, getSupportSettingsQueryOptions, getSupportSettingsRequest, getTradeHistoryQueryOptions, getTransactionsInfiniteQueryOptions, getTrendingTagsQueryOptions, getTrendingTagsWithStatsQueryOptions, getUserPostVoteQueryOptions, getUserProposalVotesQueryOptions, getVestingDelegationExpirationsQueryOptions, getVestingDelegationsQueryOptions, getVisibleFirstLevelThreadItems, getWavesByAccountQueryOptions, getWavesByHostQueryOptions, getWavesByTagQueryOptions, getWavesFeedQueryOptions, getWavesFollowingQueryOptions, getWavesLatestFeedQueryOptions, getWavesTrendingAuthorsQueryOptions, getWavesTrendingTagsQueryOptions, getWithdrawRoutesQueryOptions, getWitnessVoterCountQueryOptions, getWitnessVotersPageQueryOptions, getWitnessesInfiniteQueryOptions, hasExternalLink, hasThreeSpeakEmbed, hsTokenRenew, invalidateAfterBroadcast, invalidateGenerateImageCaches, isAuthorMuted, isCommunity, isDmcaCurationPath, isEmptyDate, isExcludedByFlags, isHiddenPost, isInfoError, isLowTrustSeoPost, isNetworkError, isOnAbuseList, isQueryableAccountName, isResourceCreditsError, isThreeSpeakBeneficiary, isVoteAlreadyReflected, isWif, isWrappedResponse, leaveDigestRequest, lookupAccountsQueryOptions, makeQueryClient, mapMetaChoicesToPollChoices, mapThreadItemsToWaveEntries, markNotifications, maskDmcaCurationPages, maskDmcaCurationRow, measureQuestContentLength, moveSchedule, normalizeBroadcastTrxId, normalizeCurationParams, normalizePost, normalizeSearchAuthor, normalizeSearchCategory, normalizeSearchTags, normalizeTag, normalizeToWrappedResponse, normalizeWaveEntryFromApi, onboardEmail, parseAccounts, parseAsset, parseChainError, parsePostingMetadataRoot, parseProfileMetadata, pickRicherMetadataSnapshot, powerRechargeTime, previewNewsletterSendRequest, priceRcUsage, proMembersSet, rcPower, removeOptimisticDiscussionEntry, resolveAccountHistoryLimit, resolveContentActivityType, resolveHiveOperationFilters, resolvePost, restoreDiscussionSnapshots, restoreEntryInCache, roleMap, saveNotificationSetting, search, searchPath, searchQueryOptions, selectCurationFeedPages, sendNewsletterIssueRequest, sha256, shouldTriggerAuthFallback, signUp, similar, sortDiscussions, stringFieldBytes, subscribeDigestRequest, subscribeEmail, toEntryArray, unsubscribeAllDigestsRequest, updateDraft, updateEntryInCache, updateSupportSettingsRequest, uploadImage, uploadImageWithSignature, useAccountFavoriteAdd, useAccountFavoriteDelete, useAccountRelationsUpdate, useAccountRevokeKey, useAccountRevokePosting, useAccountUpdate, useAccountUpdateKeyAuths, useAccountUpdatePassword, useAccountUpdateRecovery, useAddDraft, useAddFragment, useAddImage, useAddSchedule, useAiAssist, useAiTranscribe, useBookmarkAdd, useBookmarkDelete, useBoostPlus, useBroadcastMutation, useBuyStreakFreeze, useClaimAccount, useClaimEngineRewards, useClaimInterest, useClaimPoints, useClaimRewards, useComment, useConvert, useCreateAccount, useCrossPost, useCurationRecommend, useDelegateEngineToken, useDelegateRc, useDelegateVestingShares, useDeleteComment, useDeleteDraft, useDeleteImage, useDeleteSchedule, useEditFragment, useEngineMarketOrder, useFavoriteTagAdd, useFavoriteTagDelete, useFollow, useGameClaim, useGenerateImage, useGrantPostingPermission, useLeaveDigest, useLimitOrderCancel, useLimitOrderCreate, useMarkNotificationsRead, useMoveSchedule, useMutePost, usePinPost, usePollVote, usePreviewNewsletterIssue, usePromote, useProposalCreate, useProposalVote, useRcDelegation, useReblog, useRecordActivity, useRegisterCommunityRewards, useRemoveFragment, useSendNewsletterIssue, useSetCommunityRole, useSetLastRead, useSetWithdrawVestingRoute, useSignOperationByHivesigner, useSignOperationByKey, useSignOperationByKeychain, useStakeEngineToken, useSubscribeCommunity, useSubscribeDigest, useTransfer, useTransferEngineToken, useTransferFromSavings, useTransferPoint, useTransferToSavings, useTransferToVesting, useUndelegateEngineToken, useUnfollow, useUnstakeEngineToken, useUnsubscribeAllDigests, useUnsubscribeCommunity, useUpdateCommunity, useUpdateDraft, useUpdateReply, useUpdateSupportSettings, useUploadImage, useVote, useWalletOperation, useWithdrawVesting, useWitnessProxy, useWitnessVote, usrActivity, utf8ByteLength, validatePostCreating, varintByteLength, verifyPostOnAlternateNode, vestsToHp, votingPower, votingRshares, votingValue, withTimeoutSignal };

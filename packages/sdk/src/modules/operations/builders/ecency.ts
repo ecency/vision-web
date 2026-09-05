@@ -102,6 +102,80 @@ export function buildPromoteOp(
   ];
 }
 
+const CURATION_REASONS = ["quality", "underrated", "newcomer", "other"] as const;
+type CurationRecommendReason = (typeof CURATION_REASONS)[number];
+
+/**
+ * Builds a curation recommendation operation (custom_json, posting authority).
+ * The desk indexes `ecency_curation` ops from the chain; there is no write route.
+ * @param recommender - Account recommending the post (signs with posting)
+ * @param author - Post author
+ * @param permlink - Post permlink
+ * @param reason - One of quality, underrated, newcomer, other (defaults to quality)
+ * @returns Custom JSON operation with id "ecency_curation"
+ */
+export function buildCurationRecommendOp(
+  recommender: string,
+  author: string,
+  permlink: string,
+  reason: CurationRecommendReason = "quality"
+): Operation {
+  if (!recommender || !author || !permlink) {
+    throw new Error("[SDK][buildCurationRecommendOp] Missing required parameters");
+  }
+  if (!CURATION_REASONS.includes(reason)) {
+    throw new Error("[SDK][buildCurationRecommendOp] Unknown reason");
+  }
+
+  return [
+    "custom_json",
+    {
+      id: "ecency_curation",
+      json: JSON.stringify({
+        v: 1,
+        op: "recommend",
+        author,
+        permlink,
+        reason,
+      }),
+      required_auths: [],
+      required_posting_auths: [recommender],
+    },
+  ];
+}
+
+/**
+ * Builds a curation recommendation withdrawal (custom_json, posting authority).
+ * @param recommender - Account withdrawing its recommendation
+ * @param author - Post author
+ * @param permlink - Post permlink
+ * @returns Custom JSON operation with id "ecency_curation" and op "unrecommend"
+ */
+export function buildCurationUnrecommendOp(
+  recommender: string,
+  author: string,
+  permlink: string
+): Operation {
+  if (!recommender || !author || !permlink) {
+    throw new Error("[SDK][buildCurationUnrecommendOp] Missing required parameters");
+  }
+
+  return [
+    "custom_json",
+    {
+      id: "ecency_curation",
+      json: JSON.stringify({
+        v: 1,
+        op: "unrecommend",
+        author,
+        permlink,
+      }),
+      required_auths: [],
+      required_posting_auths: [recommender],
+    },
+  ];
+}
+
 /**
  * Builds an Ecency point transfer operation (custom_json).
  * @param sender - Sender account

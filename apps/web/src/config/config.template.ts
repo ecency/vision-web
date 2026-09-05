@@ -114,6 +114,12 @@ const CONFIG = {
       waves: {
         enabled: true
       },
+      curationDesk: {
+        enabled: false,
+        recommendations: {
+          enabled: true
+        }
+      },
       plausible: {
         enabled: true,
         host: process.env.PLAUSIBLE_API_HOST || "https://pl.ecency.com",

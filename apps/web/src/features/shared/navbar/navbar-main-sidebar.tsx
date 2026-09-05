@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  UilAward,
   UilCloudComputing,
   UilColumns,
   UilCommentDots,
@@ -127,6 +128,16 @@ export function NavbarMainSidebar({ show, setShow, setStepOne }: Props) {
           onClick={() => setShow(false)}
           icon={<UilUsersAlt className="size-4" />}
         />
+        <EcencyConfigManager.Conditional
+          condition={({ visionFeatures }) => visionFeatures.curationDesk.enabled}
+        >
+          <NavbarSideMainMenuItem
+            label={i18next.t("navbar.curation")}
+            to="/curation"
+            onClick={() => setShow(false)}
+            icon={<UilAward className="size-4" />}
+          />
+        </EcencyConfigManager.Conditional>
         <NavbarSideMainMenuItem
           label={i18next.t("navbar.communities")}
           to="/communities"

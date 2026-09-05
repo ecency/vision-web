@@ -61,3 +61,4 @@ export { useSetLastReadMutation } from "./use-set-last-read-mutation";
 export { useCreateAccountMutation } from "./use-create-account-mutation";
 export { useGrantPostingPermissionMutation } from "./use-grant-posting-permission-mutation";
 export { useGenerateImageMutation } from "./use-generate-image-mutation";
+export { useCurationRecommendMutation } from "./use-curation-recommend-mutation";

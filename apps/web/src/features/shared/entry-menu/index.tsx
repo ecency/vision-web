@@ -42,6 +42,15 @@ const Promote = dynamic(
   () => import("@/features/shared/promote").then((m) => ({ default: m.Promote })),
   { ssr: false }
 );
+// By file, not through the curation-desk barrel; loaded on demand, so the
+// dialog is only mounted after the menu item is clicked.
+const CurationRecommendDialog = dynamic(
+  () =>
+    import("@/features/curation-desk/curation-recommend-btn").then((m) => ({
+      default: m.CurationRecommendDialog
+    })),
+  { ssr: false }
+);
 const EntryTranslate = dynamic(
   () => import("@/features/shared/entry-translate").then((m) => ({ default: m.EntryTranslate })),
   { ssr: false }
@@ -130,6 +139,8 @@ export const EntryMenu = ({
     setMute,
     promote,
     setPromote,
+    recommend,
+    setRecommend,
     translate,
     setTranslate,
     sendNewsletter,
@@ -258,6 +269,13 @@ export const EntryMenu = ({
         />
       )}
       {activeUser && promote && <Promote entry={entry} onHide={() => setPromote(false)} />}
+      {activeUser && recommend && (
+        <CurationRecommendDialog
+          author={entry.author}
+          permlink={entry.permlink}
+          onHide={() => setRecommend(false)}
+        />
+      )}
       {translate && (
         <EntryTranslate entry={entry} onHide={() => setTranslate(false)} />
       )}

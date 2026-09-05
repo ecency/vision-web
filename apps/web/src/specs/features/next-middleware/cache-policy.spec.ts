@@ -41,6 +41,16 @@ describe("getCachePolicyForPath", () => {
     });
   });
 
+  describe("static pages nested under a dynamic prefix", () => {
+    it("matches /curation/guide as static before the /curation prefix", () => {
+      expect(getCachePolicyForPath("/curation/guide")).toEqual({
+        tier: "static",
+        sMaxAge: 86400,
+        staleWhileRevalidate: 604800
+      });
+    });
+  });
+
   describe("dynamic-page tier (anonymous-equivalent SSR, 60s)", () => {
     it.each([
       "/chats",
@@ -52,7 +62,10 @@ describe("getCachePolicyForPath", () => {
       "/perks",
       "/perks/promote-post",
       "/search",
-      "/search?q=hive"
+      "/search?q=hive",
+      "/curation",
+      "/curation/marks",
+      "/curation/recommendations"
     ])("returns dynamic-page tier for %s", (path) => {
       const policy = getCachePolicyForPath(path);
       expect(policy).toEqual({ tier: "dynamic-page", sMaxAge: 60, staleWhileRevalidate: 300 });

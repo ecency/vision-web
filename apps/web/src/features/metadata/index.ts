@@ -55,6 +55,20 @@ export namespace PagesMetadataGenerator {
     };
   }
 
+  function buildForCuration(): Metadata {
+    return {
+      title: i18next.t("curation-desk.page-title"),
+      description: i18next.t("curation-desk.page-description")
+    };
+  }
+
+  function buildForCurationGuide(): Metadata {
+    return {
+      title: i18next.t("curation-desk.guide.page-title"),
+      description: i18next.t("curation-desk.guide.page-description")
+    };
+  }
+
   function buildForPublish(): Metadata {
     return {
       title: i18next.t("publish.get-started.title"),
@@ -152,6 +166,8 @@ export namespace PagesMetadataGenerator {
     if (name === "creator-economy") return buildForCreatorEconomy();
     if (name === "decks") return buildForDecks();
     if (name === "discover") return buildForDiscover();
+    if (name === "curation") return buildForCuration();
+    if (name === "curation-guide") return buildForCurationGuide();
     if (name === "publish") return buildForPublish();
     if (name === "draft") return buildForSubmit();
     if (name === "submit") return buildForSubmit();
