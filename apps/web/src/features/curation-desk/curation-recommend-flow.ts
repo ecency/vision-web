@@ -9,6 +9,8 @@ import {
   type CurationPost,
   type CurationReason,
 } from "@ecency/sdk";
+import type { InfiniteData } from "@tanstack/react-query";
+import type { DeskRow } from "./types";
 import { useActiveUsername } from "@/core/hooks/use-active-username";
 import { useCurationRecommendMutation } from "@/api/sdk-mutations/use-curation-recommend-mutation";
 import { META_RETRY_MS, RECOMMEND_CONFIRM_DEADLINE_MS, RECOMMEND_POLL_AT_S } from "./consts";
@@ -68,6 +70,43 @@ export async function pingRecommendMeta(
   return false;
 }
 
+/**
+ * Route 5 confirmed the change: copy its counts onto every loaded feed row of
+ * that post so the badge updates without refetching a page.
+ */
+export function patchRecommendCounts(queryClient: QueryClient, post: CurationPost) {
+  queryClient.setQueriesData<InfiniteData<{ items: DeskRow[] }, unknown>>(
+    { queryKey: QueryKeys.curation._prefix },
+    (old) => {
+      if (!old || !Array.isArray(old.pages)) return old;
+      let changed = false;
+      const pages = old.pages.map((page) => {
+        if (!Array.isArray(page?.items)) return page;
+        const index = page.items.findIndex((r) => r.author === post.author && r.permlink === post.permlink);
+        if (index === -1) return page;
+        const row = page.items[index];
+        if (
+          row.recommend_count === post.recommend_count &&
+          row.unique_recommenders === post.unique_recommenders &&
+          row.reco_no_meta_count === post.reco_no_meta_count
+        ) {
+          return page;
+        }
+        changed = true;
+        const items = page.items.slice();
+        items[index] = {
+          ...row,
+          recommend_count: post.recommend_count,
+          unique_recommenders: post.unique_recommenders,
+          reco_no_meta_count: post.reco_no_meta_count,
+        };
+        return { ...page, items };
+      });
+      return changed ? { ...old, pages } : old;
+    }
+  );
+}
+
 function viewerRow(post: CurationPost | undefined, username: string) {
   return post?.recommenders?.find((r) => r.username === username);
 }
@@ -115,6 +154,7 @@ export function startRecommendPoll(
     const seen = withdraw ? post !== undefined && !mine : !!mine;
     if (seen) {
       finish(true);
+      if (post) patchRecommendCounts(queryClient, post);
       if (!withdraw && mine && !mine.has_meta) {
         const trxId = current.phase === "pending" ? current.trxId : null;
         void pingRecommendMeta(username, author, permlink, trxId);

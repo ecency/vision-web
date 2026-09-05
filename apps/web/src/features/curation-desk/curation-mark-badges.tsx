@@ -11,6 +11,7 @@ import {
   UilExclamationTriangle,
   UilThumbsUp,
 } from "@tooni/iconscout-unicons-react";
+import { isOnAbuseList } from "@ecency/sdk";
 import { dateToRelative } from "@/utils";
 import { UserAvatar } from "@/features/shared/user-avatar";
 import type { DeskRow } from "./types";
@@ -159,7 +160,7 @@ export const CurationMarkBadges = memo(function CurationMarkBadges({
           {flagMark?.curator ? ` · @${flagMark.curator}` : ""}
         </Chip>
       )}
-      {isRoster && overlay?.flags?.spaminator && <Chip tone="red">{i18next.t("curation-desk.marks.spaminator")}</Chip>}
+      {isRoster && isOnAbuseList(overlay?.flags) && <Chip tone="red">{i18next.t("curation-desk.marks.abuse-list")}</Chip>}
       {row.is_gray && <Chip tone="gray">{i18next.t("curation-desk.marks.grayed")}</Chip>}
       {isRoster && (overlay?.notes_count ?? 0) > 0 && (
         <Chip tone="gray">

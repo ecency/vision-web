@@ -21,7 +21,7 @@ export default function CurationLayout({ children }: PropsWithChildren) {
     <>
       <ScrollToTop />
       <Navbar />
-      <div className="app-content container mx-auto px-2 lg:px-4 pt-[6rem] md:pt-[7rem] pb-8 flex flex-col gap-3">
+      <div className="app-content flex-col gap-3">
         <CurationTabs />
         <RouteErrorBoundary>{children}</RouteErrorBoundary>
       </div>

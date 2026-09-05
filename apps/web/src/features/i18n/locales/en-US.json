@@ -4492,7 +4492,7 @@
       "reviewed-by-cursor": "reviewed by cursor",
       "snoozed-until": "snoozed by @{{curator}} until {{until}} UTC",
       "flagged": "flagged",
-      "spaminator": "on spaminator list",
+      "abuse-list": "on the abuse list",
       "grayed": "grayed",
       "late": "late",
       "snooze-ended": "snooze ended",
@@ -4709,7 +4709,7 @@
       },
       "red-flags": {
         "title": "9. Red flags and how to check them",
-        "body": "<ul><li><strong>Plagiarism:</strong> search a distinctive sentence, reverse image search.</li><li><strong>AI slop:</strong> generic structure, no personal detail, contradictions with the author's earlier posts (the drawer shows them).</li><li><strong>Recycled content</strong>, image-only posts, tag or community abuse.</li><li><strong>Reward farming clusters:</strong> the same accounts voting and recommending each other.</li></ul><p>The spaminator warning is a list we display, not a verdict.</p>"
+        "body": "<ul><li><strong>Plagiarism:</strong> search a distinctive sentence, reverse image search.</li><li><strong>AI slop:</strong> generic structure, no personal detail, contradictions with the author's earlier posts (the drawer shows them).</li><li><strong>Recycled content</strong>, image-only posts, tag or community abuse.</li><li><strong>Reward farming clusters:</strong> the same accounts voting and recommending each other.</li></ul><p>The abuse list warning is a list we display, not a verdict.</p>"
       },
       "signals": {
         "title": "10. Using the signals honestly",

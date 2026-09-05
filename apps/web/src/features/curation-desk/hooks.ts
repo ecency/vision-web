@@ -43,7 +43,7 @@ import {
 } from "./consts";
 import { curationDeskApi } from "./curation-desk-api";
 import { mergeTickIntoPages, replaceRowInPages } from "./curation-tick-merge";
-import type { DeskRow, MarkActionInput, QueueFilters, ViewerRole } from "./types";
+import type { DeskRow, MarkActionInput, QueueFilters, ResolvedQueueFilters, ViewerRole } from "./types";
 
 // ---------------------------------------------------------------------------
 // Role
@@ -428,11 +428,11 @@ export function useMyMarks(state: CurationMarkState | undefined, enabled = true)
 // Filters
 // ---------------------------------------------------------------------------
 
-export function defaultQueueFilters(isRoster: boolean): QueueFilters {
+export function defaultQueueFilters(): QueueFilters {
   return {
-    sort: isRoster ? "queue" : "newest",
+    sort: null,
     seed: "",
-    unreviewedOnly: isRoster,
+    unreviewedOnly: null,
     hideCurated: true,
     app: "all",
     community: "",
@@ -445,6 +445,20 @@ export function defaultQueueFilters(isRoster: boolean): QueueFilters {
     hasImages: false,
     repMin: 0,
     repMax: 100,
+  };
+}
+
+/**
+ * Role defaults resolve synchronously from `isRoster`, so the first roster
+ * feed request already carries sort=queue and hide_reviewed once the roster
+ * lookup has answered, with no second fetch to correct it.
+ */
+export function resolveFilters(filters: QueueFilters, isRoster: boolean): ResolvedQueueFilters {
+  const sort: CurationSort = filters.sort ?? (isRoster ? "queue" : "newest");
+  return {
+    ...filters,
+    sort: !isRoster && sort === "random" ? "newest" : sort,
+    unreviewedOnly: filters.unreviewedOnly ?? isRoster,
   };
 }
 
@@ -470,8 +484,9 @@ function readSessionSeed(): string {
 const SORTS: CurationSort[] = ["queue", "newest", "unique", "random"];
 
 /** Every chip maps to a server param; nothing here filters rows client-side. */
-export function filtersToParams(filters: QueueFilters, isRoster: boolean): CurationRosterFeedParams {
-  const sort: CurationSort = !isRoster && filters.sort === "random" ? "newest" : filters.sort;
+export function filtersToParams(input: QueueFilters, isRoster: boolean): CurationRosterFeedParams {
+  const filters = resolveFilters(input, isRoster);
+  const sort = filters.sort;
   const params: CurationRosterFeedParams = {
     sort,
     app: filters.app,
@@ -497,14 +512,11 @@ export function filtersToParams(filters: QueueFilters, isRoster: boolean): Curat
 }
 
 export function useQueueFilters(isRoster: boolean) {
-  const [filters, setFilters] = useState<QueueFilters>(() => defaultQueueFilters(isRoster));
-  const initializedRef = useRef(false);
+  const [filters, setFilters] = useState<QueueFilters>(defaultQueueFilters);
 
-  // Roster status resolves after mount: adopt the roster defaults once, unless
-  // the viewer already changed something.
+  // Browser-only state after mount: the persisted sort (per viewer, try/catch)
+  // and the session seed, generated once per browser session.
   useEffect(() => {
-    if (initializedRef.current) return;
-    initializedRef.current = true;
     let persisted: CurationSort | null = null;
     try {
       const stored = ls.get(SORT_STORAGE_KEY);
@@ -512,14 +524,9 @@ export function useQueueFilters(isRoster: boolean) {
     } catch {
       persisted = null;
     }
-    setFilters((prev) => ({
-      ...defaultQueueFilters(isRoster),
-      ...prev,
-      sort: persisted ?? (isRoster ? "queue" : prev.sort),
-      unreviewedOnly: isRoster,
-      seed: readSessionSeed(),
-    }));
-  }, [isRoster]);
+    const seed = readSessionSeed();
+    setFilters((prev) => (prev.sort === persisted && prev.seed === seed ? prev : { ...prev, sort: prev.sort ?? persisted, seed }));
+  }, []);
 
   const update = useCallback((patch: Partial<QueueFilters>) => {
     setFilters((prev) => {
@@ -536,8 +543,8 @@ export function useQueueFilters(isRoster: boolean) {
   }, []);
 
   const reset = useCallback(() => {
-    setFilters((prev) => ({ ...defaultQueueFilters(isRoster), sort: prev.sort, seed: prev.seed }));
-  }, [isRoster]);
+    setFilters((prev) => ({ ...defaultQueueFilters(), sort: prev.sort, seed: prev.seed }));
+  }, []);
 
   const reshuffle = useCallback(() => {
     const seed = makeSeed();
@@ -549,14 +556,16 @@ export function useQueueFilters(isRoster: boolean) {
     setFilters((prev) => ({ ...prev, seed }));
   }, []);
 
+  const resolved = useMemo(() => resolveFilters(filters, isRoster), [filters, isRoster]);
   const params = useMemo(() => filtersToParams(filters, isRoster), [filters, isRoster]);
   const activeCount = useMemo(() => countActiveFilters(filters, isRoster), [filters, isRoster]);
 
-  return { filters, params, update, reset, reshuffle, activeCount };
+  return { filters: resolved, params, update, reset, reshuffle, activeCount };
 }
 
-export function countActiveFilters(filters: QueueFilters, isRoster: boolean): number {
-  const defaults = defaultQueueFilters(isRoster);
+export function countActiveFilters(input: QueueFilters, isRoster: boolean): number {
+  const filters = resolveFilters(input, isRoster);
+  const defaults = resolveFilters(defaultQueueFilters(), isRoster);
   let n = 0;
   if (filters.app !== defaults.app) n++;
   if (filters.community) n++;

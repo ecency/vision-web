@@ -24,9 +24,11 @@ export interface ViewerRole {
 }
 
 export interface QueueFilters {
-  sort: CurationSort;
+  /** null = the role's default (queue for the roster, newest for everyone else). */
+  sort: CurationSort | null;
   seed: string;
-  unreviewedOnly: boolean;
+  /** null = the role's default (on for the roster). */
+  unreviewedOnly: boolean | null;
   hideCurated: boolean;
   app: CurationApp;
   community: string;
@@ -40,6 +42,11 @@ export interface QueueFilters {
   repMin: number;
   repMax: number;
 }
+
+export type ResolvedQueueFilters = Omit<QueueFilters, "sort" | "unreviewedOnly"> & {
+  sort: CurationSort;
+  unreviewedOnly: boolean;
+};
 
 export type WindowState =
   | { kind: "full"; msLeft: number; urgent: boolean }

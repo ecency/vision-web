@@ -38,7 +38,7 @@ function sustainable(weightPct: number): number {
 
 /**
  * "How Ecency curation works". Server rendered, static, indexable; the copy
- * lives under curation-desk.guide.* so Crowdin picks it up. No "use client".
+ * lives under curation-desk.guide.* so Crowdin picks it up. Carries no client directive.
  */
 export function CurationGuide() {
   return (

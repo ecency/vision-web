@@ -6,10 +6,10 @@ import type { CurationApp, CurationWindow } from "@ecency/sdk";
 import { Button } from "@ui/button";
 import { FormControl } from "@ui/input";
 import { WORD_PRESETS } from "./consts";
-import type { QueueFilters } from "./types";
+import type { QueueFilters, ResolvedQueueFilters } from "./types";
 
 interface Props {
-  filters: QueueFilters;
+  filters: ResolvedQueueFilters;
   isRoster: boolean;
   communities: Array<{ community: string; title?: string | null; count?: number }>;
   onChange: (patch: Partial<QueueFilters>) => void;

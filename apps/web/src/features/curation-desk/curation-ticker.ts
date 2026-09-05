@@ -13,6 +13,9 @@ const listeners = new Set<() => void>();
 
 function start() {
   if (timer) return;
+  // A fresh clock for the first subscriber: the module may have been imported
+  // long before the page rendered its first badge.
+  now = Date.now();
   timer = setInterval(() => {
     now = Date.now();
     listeners.forEach((l) => l());

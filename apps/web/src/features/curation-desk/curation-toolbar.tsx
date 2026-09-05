@@ -5,10 +5,10 @@ import { UilRedo } from "@tooni/iconscout-unicons-react";
 import type { CurationSort } from "@ecency/sdk";
 import { Button } from "@ui/button";
 import { FormControl } from "@ui/input";
-import type { QueueFilters } from "./types";
+import type { QueueFilters, ResolvedQueueFilters } from "./types";
 
 interface Props {
-  filters: QueueFilters;
+  filters: ResolvedQueueFilters;
   isRoster: boolean;
   totalEstimate: number | null | undefined;
   activeFilterCount: number;

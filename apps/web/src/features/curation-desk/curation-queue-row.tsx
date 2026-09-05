@@ -5,6 +5,7 @@ import clsx from "clsx";
 import i18next from "i18next";
 import Link from "next/link";
 import { proxifyImageSrc } from "@ecency/render-helper";
+import { isOnAbuseList } from "@ecency/sdk";
 import {
   UilBell,
   UilCheck,
@@ -246,8 +247,8 @@ export const CurationQueueRow = memo(function CurationQueueRow(props: Props) {
           {row.is_new_author && (
             <Chip tone="green">{i18next.t("curation-desk.row.new-author", { n: row.author_post_count ?? 1 })}</Chip>
           )}
-          {isRoster && overlay?.flags?.spaminator && (
-            <Chip tone="red">{i18next.t("curation-desk.marks.spaminator")}</Chip>
+          {isRoster && isOnAbuseList(overlay?.flags) && (
+            <Chip tone="red">{i18next.t("curation-desk.marks.abuse-list")}</Chip>
           )}
           <span className="inline-flex items-center gap-1">
             {row.is_ecency ? (
