@@ -157,6 +157,7 @@ export function CurationQueueView() {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [quickView, setQuickView] = useState(false);
   const [voteOnOpen, setVoteOnOpen] = useState(false);
+  const [recommendOnOpen, setRecommendOnOpen] = useState(false);
   const [dialog, setDialog] = useState<Dialog>({ kind: "none" });
   const [undo, setUndo] = useState<Undo | null>(null);
   const listRef = useRef<VirtuosoHandle | null>(null);
@@ -228,6 +229,7 @@ export function CurationQueueView() {
   const closeQuickView = useCallback(() => {
     setQuickView(false);
     setVoteOnOpen(false);
+    setRecommendOnOpen(false);
   }, []);
   const onVote = useCallback((row: DeskRow) => {
     setActiveKey(rowKey(row));
@@ -320,8 +322,10 @@ export function CurationQueueView() {
       note: requireRoster(() => activeRow && onNote(activeRow)),
       recommend: () => {
         if (!activeRow) return;
+        // The button lives in the drawer; the drawer consumes this flag once it
+        // is mounted instead of a fixed delay that misses a slow render.
         if (!quickView) setQuickView(true);
-        setTimeout(() => recommendRef.current?.trigger(), quickView ? 0 : 300);
+        setRecommendOnOpen(true);
       },
       openExternal: () => {
         if (!activeRow) return;
@@ -430,6 +434,8 @@ export function CurationQueueView() {
         recommendationsEnabled={recommendationsEnabled}
         voteOnOpen={voteOnOpen}
         onVoteHandled={() => setVoteOnOpen(false)}
+        recommendOnOpen={recommendOnOpen}
+        onRecommendHandled={() => setRecommendOnOpen(false)}
         onClose={closeQuickView}
         onPrev={() => move(-1)}
         onNext={() => move(1)}

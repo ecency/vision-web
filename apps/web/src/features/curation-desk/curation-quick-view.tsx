@@ -46,6 +46,8 @@ interface Props {
   recommendationsEnabled: boolean;
   /** The `v` key asked for the vote slider; consumed once the entry arrives. */
   voteOnOpen?: boolean;
+  recommendOnOpen?: boolean;
+  onRecommendHandled?: () => void;
   onVoteHandled?: () => void;
   onClose: () => void;
   onPrev: () => void;
@@ -93,6 +95,8 @@ export function CurationQuickView({
   viewer,
   recommendationsEnabled,
   voteOnOpen,
+  recommendOnOpen,
+  onRecommendHandled,
   onVoteHandled,
   onClose,
   onPrev,
@@ -148,6 +152,29 @@ export function CurationQuickView({
     drawerRef.current?.querySelector<HTMLElement>('.entry-vote-btn[role="button"]')?.click();
     voteHandledRef.current?.();
   }, [open, voteOnOpen, entry]);
+
+  // The `x` key: the recommend button mounts with the drawer, so the trigger
+  // waits for the mounted handle (a few frames at most) instead of a fixed delay.
+  const recommendHandledRef = useRef(onRecommendHandled);
+  recommendHandledRef.current = onRecommendHandled;
+  useEffect(() => {
+    if (!open || !recommendOnOpen || !row) return;
+    let tries = 0;
+    let frame = 0;
+    const attempt = () => {
+      const handle = (recommendRef as React.RefObject<CurationRecommendHandle | null>).current;
+      if (handle) {
+        handle.trigger();
+        recommendHandledRef.current?.();
+      } else if (tries++ < 120) {
+        frame = requestAnimationFrame(attempt);
+      } else {
+        recommendHandledRef.current?.();
+      }
+    };
+    attempt();
+    return () => cancelAnimationFrame(frame);
+  }, [open, recommendOnOpen, row, recommendRef]);
 
   const now = useCurationTicker();
   const windowState = useMemo(

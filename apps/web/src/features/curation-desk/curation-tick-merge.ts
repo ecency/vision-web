@@ -40,7 +40,7 @@ function upsertMark(marks: CurationMark[], mark: CurationMark): CurationMark[] {
   // colleague's note body that the feed already delivered.
   next[index] = {
     ...mark,
-    note: mark.note ?? existing.note,
+    note: mark.has_note === false ? null : (mark.note ?? existing.note),
     has_note: mark.has_note ?? markHasNote(existing),
   };
   return next;
