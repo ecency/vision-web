@@ -376,7 +376,8 @@
     "communities": "Communities",
     "chats": "Chats",
     "search": "Search",
-    "toggle-menu": "Toggle navigation menu"
+    "toggle-menu": "Toggle navigation menu",
+    "curation": "Curation desk"
   },
   "search": {
     "placeholder": "Search",
@@ -4363,5 +4364,384 @@
     "post-prompt-dismiss": "Not now",
     "post-prompt-subscribe": "Subscribe",
     "subscribe-link": "Subscribe link"
+  },
+  "curation-desk": {
+    "page-title": "Curation desk",
+    "page-description": "The Ecency curation queue: new posts from every Hive front-end, the team cursor, curation windows and on-chain recommendations.",
+    "tabs": {
+      "aria": "Curation desk views",
+      "queue": "Queue",
+      "marks": "My marks",
+      "recommendations": "Recommended",
+      "guide": "Guide"
+    },
+    "header": {
+      "aria": "Curation status",
+      "cursor": "Team reviewed up to",
+      "cursor-value": "{{time}} UTC {{by}} {{when}}",
+      "cursor-none": "No team cursor yet",
+      "behind": "{{time}} behind",
+      "active": "Active curators",
+      "active-none": "Nobody else active",
+      "active-hint": "Another curator is active: consider the opposite direction.",
+      "your-vp": "Your VP",
+      "your-value": "about ${{value}} per full vote",
+      "ecency-vp": "@ecency VP",
+      "ecency-vp-value": "{{vp}}% -> trail {{weight}}%",
+      "ecency-vp-tooltip": "@ecency chooses its weight from its own VP; the chain pays every vote of that weight the same regardless of VP. The trail weight falls with @ecency VP.",
+      "live-vp": "Live (regenerated to now): {{vp}}%",
+      "recharge": "Full again in about {{hours}} h at 0.833% per hour",
+      "trail-value": "about ${{value}} per trail vote (x5 accounts)",
+      "mana": "Mana today",
+      "mana-value": "{{spent}} / {{max}} vote-eq",
+      "mana-split": "{{trail}} trail + {{other}} other",
+      "regen": "+{{rate}}/h regen",
+      "crosscheck": "Cross-check from the VP series: {{value}} vote-equivalents",
+      "crosscheck-gap": "Another signer is spending @ecency mana.",
+      "unknown": "n/a",
+      "lag": "feed {{seconds}} s behind chain",
+      "lag-tooltip": "How far the desk's index is behind the chain head.",
+      "worker-stale": "index stalled",
+      "live-paused": "live updates paused"
+    },
+    "sort": {
+      "label": "Sort",
+      "queue": "Oldest unreviewed",
+      "newest": "Newest",
+      "unique": "Most unique recommenders",
+      "random": "Random",
+      "unique-hint": "networks, not accounts; other apps count as one",
+      "reshuffle": "Reshuffle"
+    },
+    "toolbar": {
+      "match": "{{count}} match",
+      "reset": "Reset ({{count}})"
+    },
+    "filters": {
+      "aria": "Queue filters",
+      "unreviewed": "Unreviewed only",
+      "hide-curated": "Hide curated",
+      "app": "App",
+      "app-all": "All apps",
+      "app-ecency": "Ecency",
+      "app-peakd": "PeakD",
+      "app-other": "Other apps",
+      "community": "Community",
+      "community-all": "All communities",
+      "new-authors": "New authors",
+      "recommended": "Recommended",
+      "flagged": "Flagged",
+      "window": "Window",
+      "window-all": "All windows",
+      "window-full": "Under 24 h, full weight",
+      "window-half": "24 to 72 h, half weight",
+      "window-eighth": "Older, one eighth",
+      "window-locked": "Last 12 h before payout",
+      "words": "Words",
+      "words-any": "Any length",
+      "words-min": "{{count}}+ words",
+      "has-images": "Has images",
+      "rep": "Rep {{min}} to {{max}}",
+      "rep-min": "Minimum reputation",
+      "rep-max": "Maximum reputation"
+    },
+    "window": {
+      "full": "full · {{left}} left",
+      "half": "half · {{age}} h old",
+      "eighth": "eighth · {{age}} h old",
+      "locked": "locked · scaled to {{pct}}%",
+      "paid": "paid",
+      "full-tooltip": "Full curation weight until 24 h after the post was created.",
+      "half-tooltip": "Half curation weight: 24 to 72 h after creation.",
+      "eighth-tooltip": "One eighth curation weight: more than 72 h after creation.",
+      "locked-tooltip": "Payout scale-down: in the last 12 h before payout a vote's rshares scale linearly toward zero. This vote would count about {{pct}}%.",
+      "paid-tooltip": "Paid out. Votes no longer earn curation."
+    },
+    "row": {
+      "untitled": "@{{author}}'s post",
+      "describe": "By @{{author}}, {{words}} words, curation window {{window}}",
+      "rep": "rep {{rep}}",
+      "age-days": "{{count}} d",
+      "age-months": "{{count}} mo",
+      "age-years": "{{count}} y",
+      "new-author": "New · post #{{n}}",
+      "app-unknown": "unknown app",
+      "no-community": "no community",
+      "words": "{{count}} words",
+      "edited": "edited",
+      "actions": "Row actions"
+    },
+    "signals": {
+      "na": "signals n/a",
+      "formulaic": "Formulaic {{pct}}%",
+      "formulaic-na": "Formulaic n/a",
+      "formulaic-tooltip": "Templated prose score, not an AI check. It proves nothing on its own.",
+      "images": "Images {{hive}}/{{total}} on Hive",
+      "replies": "Replies {{rate}}/day",
+      "replies-na": "Replies no data",
+      "style": "Style shift {{sigma}}σ vs this author's own {{sample}} posts. Read it properly.",
+      "style-tooltip": "This author's writing differs from their own earlier posts. A prompt to read, never a verdict."
+    },
+    "marks": {
+      "curated-by": "curated by @{{curator}} at {{weight}}% {{when}}",
+      "trail-sent": "trail sent · @{{curator}}",
+      "voted-by": "voted by @{{voter}} at {{weight}}%",
+      "not-trailed-why": "Voted by a roster member but not trailed: the trail follows only listed curators, one vote per post, no hivewatchers downvote, VP above the floor.",
+      "unvoted": "unvoted after hivewatchers downvote",
+      "reviewed-by": "reviewed by @{{curator}} {{when}}",
+      "reviewed-by-cursor": "reviewed by cursor",
+      "snoozed-until": "snoozed by @{{curator}} until {{until}} UTC",
+      "flagged": "flagged",
+      "spaminator": "on spaminator list",
+      "grayed": "grayed",
+      "late": "late",
+      "snooze-ended": "snooze ended",
+      "below-cursor": "below cursor",
+      "author-trailed": "author trailed {{when}}",
+      "author-trailed-tooltip": "The last trail vote on any post by this author. A fact, not a rule: one trail per author per half day is team etiquette.",
+      "payout": "${{amount}} · {{votes}} votes",
+      "estimated": "est.",
+      "declined": "declined payout, no curation",
+      "source-erobot": "Trail vote pushed by the bot, waiting for chain history",
+      "source-history": "Confirmed by chain history",
+      "source-inferred": "Inferred from a trail vote; the curator was not reported by the bot"
+    },
+    "mark-states": {
+      "reviewed": "Reviewed",
+      "snoozed": "Snoozed",
+      "flagged": "Flagged",
+      "noted": "Noted"
+    },
+    "flag-reasons": {
+      "plagiarism": "Plagiarism",
+      "ai_slop": "AI slop",
+      "recycled": "Recycled content",
+      "image_only": "Image only",
+      "tag_abuse": "Tag or community abuse",
+      "farming": "Reward farming",
+      "nsfw_untagged": "NSFW untagged",
+      "other": "Other"
+    },
+    "reasons": {
+      "quality": "Quality",
+      "underrated": "Underrated",
+      "newcomer": "Newcomer",
+      "other": "Other"
+    },
+    "reco": {
+      "badge": "Recommended by {{count}} ({{networks}} networks)",
+      "no-meta": "+{{count}} from other apps",
+      "collapse": "{{accounts}} accounts, {{networks}} networks",
+      "tooltip": "Networks: shared connections count once; recommendations from other apps count as one network.",
+      "author": "author",
+      "dismiss": "Dismiss recommendation"
+    },
+    "recommend": {
+      "menu-item": "Recommend to curators",
+      "action": "Recommend",
+      "aria": "Recommend this post to the curators",
+      "withdraw": "Withdraw",
+      "withdraw-aria": "Withdraw your recommendation",
+      "recommended": "Recommended ✓",
+      "sending": "Sending…",
+      "withdrawing": "Withdrawing…",
+      "confirming": "sent, confirming",
+      "title": "Recommend to curators",
+      "intro": "Tell the Ecency curators why this post deserves a look. The recommendation is written to the Hive chain with your posting key.",
+      "reason-label": "Reason",
+      "confirm": "Recommend",
+      "cost": "Costs Resource Credits only (about as much as two votes). No quota; curators count networks, not accounts.",
+      "sent-toast": "Recommendation sent to the chain.",
+      "withdrawn-toast": "Recommendation withdrawn.",
+      "rc-error": "Not enough Resource Credits for this recommendation right now. RC refills over five days."
+    },
+    "actions": {
+      "vote": "Vote",
+      "vote-key": "Vote (v)",
+      "reviewed": "Reviewed",
+      "reviewed-key": "Mark reviewed (r)",
+      "clear-mark": "Clear mark",
+      "skip": "Skip",
+      "snooze": "Snooze",
+      "snooze-key": "Snooze (z)",
+      "flag": "Flag",
+      "flag-key": "Flag (f)",
+      "note": "Note",
+      "note-key": "Note (n)",
+      "note-trial": "Note (n). Trial curators see their own notes only.",
+      "open": "Open on Ecency",
+      "open-key": "Open on Ecency (Shift+O)"
+    },
+    "snooze": {
+      "title": "Snooze until",
+      "preset-1": "1 hour",
+      "preset-3": "3 hours",
+      "preset-12": "12 hours",
+      "preset-tomorrow": "Tomorrow 09:00 UTC"
+    },
+    "flag": {
+      "title": "Flag this post",
+      "reason-label": "Reason",
+      "note-placeholder": "What did you find? (optional, curators only)",
+      "hint": "Flags are private to the roster. Flag instead of arguing; raise disputes with the team.",
+      "confirm": "Flag"
+    },
+    "note": {
+      "title": "Note for the team",
+      "placeholder": "Write a note for the other curators",
+      "hint": "Notes name authors and findings. They stay on the desk; trial curators see their own only.",
+      "save": "Save note"
+    },
+    "cursor": {
+      "confirm-title": "Reviewed up to here?",
+      "confirm-body": "Marks {{count}} loaded posts up to {{time}} UTC as reviewed by the team cursor. The cursor only moves forward.",
+      "confirm-ok": "Move the cursor"
+    },
+    "live": {
+      "reviewed": "Marked reviewed: {{title}}",
+      "noted": "Note saved",
+      "snoozed": "Snoozed for {{preset}}",
+      "flagged": "Flagged for the team",
+      "cleared": "Mark cleared",
+      "cursor-moved": "Team cursor moved, {{count}} posts swept",
+      "cursor-ahead": "The team cursor was already ahead",
+      "undo": "Undo"
+    },
+    "list": {
+      "aria": "Curation queue",
+      "loading": "Loading…",
+      "error": "The queue could not be loaded. The desk keeps what it had; try again in a moment.",
+      "empty": "Nothing to review with these filters.",
+      "member-hint": "Curators see marks, signals and the team cursor here. Everyone can recommend a post to them.",
+      "tail-half": "{{count}} older unreviewed posts at half weight (24 to 72 h)",
+      "tail-eighth": "{{count}} at one eighth (older than 72 h)",
+      "divider": "Team reviewed up to here · {{time}} UTC {{by}}",
+      "divider-aria": "Team cursor",
+      "divider-none": "Team reviewed up to here",
+      "reviewed-up-to-here": "Reviewed up to here",
+      "reviewed-up-to-here-key": "Reviewed up to here (Shift+R)",
+      "older-reviewed": "Show {{count}} older reviewed posts"
+    },
+    "shortcuts": {
+      "title": "Keyboard shortcuts",
+      "next-prev": "Next / previous post",
+      "quick-view": "Open or close the quick view",
+      "vote": "Open the vote slider",
+      "reviewed": "Mark reviewed",
+      "reviewed-up-to-here": "Reviewed up to here (team cursor)",
+      "skip": "Skip (nothing written)",
+      "snooze": "Snooze",
+      "flag": "Flag",
+      "note": "Note",
+      "recommend": "Recommend to curators (withdraw when already recommended)",
+      "open": "Open on Ecency in a new tab",
+      "help": "This sheet"
+    },
+    "quick-view": {
+      "aria": "Post quick view",
+      "prev": "Previous post (k)",
+      "next": "Next post (j)",
+      "open": "Open on Ecency",
+      "posts": "{{count}} posts",
+      "signals-hint": "Numbers prompt a read, they never decide.",
+      "not-found": "This post could not be loaded from the chain.",
+      "author-snapshot": "Author snapshot",
+      "cadence": "{{rate}} posts/day (last posts)",
+      "images-on-hive": "{{hive}}/{{total}} images in the last posts on Hive",
+      "rewards": "Rewards so far",
+      "late-rshares": "{{pct}}% of this post's votes came after 24 h",
+      "team": "Team",
+      "no-marks": "No marks yet",
+      "recommenders": "Recommended by {{count}}",
+      "no-recommenders": "No recommendations yet"
+    },
+    "marks-view": {
+      "title": "My marks",
+      "empty": "No marks here.",
+      "roster-only": "Marks are a curator tool. Read the guide to learn how the roster works.",
+      "until": "until {{until}} UTC"
+    },
+    "reco-view": {
+      "title": "Recommended posts",
+      "empty": "No open recommendations right now."
+    },
+    "guide": {
+      "page-title": "How Ecency curation works",
+      "page-description": "How the @ecency trail votes, what voting power does to the trail weight, the 24 h curation window, red flags and the etiquette of the curation team.",
+      "title": "How Ecency curation works",
+      "lead": "@ecency votes with about 2.6M HP, most of it delegated by about 1,400 people, and returns the curation reward to them every day. Curators are volunteers deciding where that vote goes. This page explains the mechanics so every vote counts.",
+      "contents": "Contents",
+      "back-to-desk": "Back to the curation desk",
+      "what": {
+        "title": "1. What this is",
+        "body": "<p>@ecency votes with about 2.6M HP, 97.6% of it delegated by about 1,400 people. It returns 100% of the curation reward to them daily. Curators are volunteers deciding where that vote goes; the desk is the shared queue they work from.</p>"
+      },
+      "trail": {
+        "title": "2. How the trail works",
+        "body": "<p>Sixteen curators are followed. When one of them votes a post, five Ecency accounts vote it in one transaction within seconds.</p><p>Conditions: the post is inside its payout window (the desk shows the scale factor in the last 12 h because the chain scales those votes linearly toward zero), none of the five has voted it, no hivewatchers downvote, the author is not on the ignore list, the bot is not paused and @ecency VP is above 55%. The desk shows <strong>not trailed</strong> with the reasons it can derive.</p>"
+      },
+      "accounts": {
+        "title": "3. The five accounts",
+        "body": "<p>@ecency, @ecency.stats, @esteem.app, @good-karma and @esteemapp vote together, all at the same weight. @ecency's VP alone drives that weight; the budget is shared by all five.</p>"
+      },
+      "weight": {
+        "title": "4. Weight and voting power",
+        "body": "<p>The base weight is 9.3% for every front-end, scaled by the bot from @ecency's VP between 55% (zero) and 100% (full). At 82% that is about 5.6%; every 1% of VP moves the trail weight by about 0.21%.</p><p>This ramp is the bot's budget rule, not a chain rule: since HF28 the chain pays a vote of a given weight the same rshares at any VP and only refuses the vote when mana is short. <strong>Vote value does not depend on voting power.</strong> VP is a budget that refills 20% a day; a full vote costs 2% of it. About 179 votes a day at 5.6% is the sustainable pace.</p><p>Own posts of the curator and moderator accounts get a flat 10%: do not push them. Comments trail at the same weight.</p>",
+        "table-vp": "@ecency VP",
+        "table-weight": "Trail weight",
+        "table-votes": "Sustainable votes per day"
+      },
+      "windows": {
+        "title": "5. Curation windows",
+        "body": "<p>Full curation weight inside 24 h of the post's creation, half from 24 to 72 h, one eighth after 72 h, scaled linearly toward zero in the last 12 h before payout (92% at 11 h left, half at 6 h, zero at the cashout second).</p><p><strong>There is no early-vote penalty</strong> (the reverse auction is 0 since HF25) and order inside a window does not matter: two curators who both vote a post inside 24 h split the pool by the rshares they added, not by who was first. So never race the first minutes. Read the post, vote inside 24 h. 98% of trail votes already land there; the badge on every row counts down to the boundary.</p>"
+      },
+      "etiquette-author": {
+        "title": "6. One trail per author per half day",
+        "body": "<p>This is team etiquette, not a bot rule: the bot does not enforce it today. The desk shows <strong>author trailed N h ago at X%</strong> so you can choose the author's best post rather than vote every one.</p>"
+      },
+      "budget": {
+        "title": "7. The daily budget",
+        "body": "<p>The header shows @ecency VP, the implied trail weight, the sustainable votes per day at that weight and the mana spent today in vote-equivalents, trail and other separately. Other Ecency bots spend the same mana (the poster bot's self-votes and the flat 10% own-post votes are the other part), which is why the line counts mana and not trail votes.</p><p>More votes a day lower @ecency's VP, which makes the bot cast smaller trail votes for everyone; fewer votes let VP climb toward 100%, where regeneration is wasted. The sweet spot is spending what regenerates: 20% of mana a day. Keep the budget line green.</p>"
+      },
+      "look-for": {
+        "title": "8. What to look for",
+        "body": "<ul><li>Original writing or images with visible effort.</li><li>Engagement: the author answers replies.</li><li>On-topic for its community, readable formatting.</li><li>First posts from new accounts (post #1 to #5 are marked; a comment goes further than a vote).</li><li>Posts from every front-end, not only Ecency.</li></ul>"
+      },
+      "red-flags": {
+        "title": "9. Red flags and how to check them",
+        "body": "<ul><li><strong>Plagiarism:</strong> search a distinctive sentence, reverse image search.</li><li><strong>AI slop:</strong> generic structure, no personal detail, contradictions with the author's earlier posts (the drawer shows them).</li><li><strong>Recycled content</strong>, image-only posts, tag or community abuse.</li><li><strong>Reward farming clusters:</strong> the same accounts voting and recommending each other.</li></ul><p>The spaminator warning is a list we display, not a verdict.</p>"
+      },
+      "signals": {
+        "title": "10. Using the signals honestly",
+        "body": "<p><strong>Formulaic</strong> is a boilerplate score from an old detector: today's AI text scores 0 to 10% and genuine people often score 80% or more, so it proves nothing. <strong>Style shift</strong> compares an author with their own past and alerts rarely. <strong>Images on Hive</strong> shows uploaded versus collected images. <strong>Replies per day</strong> shows conversation.</p><p>Never flag or comment on a number alone. Numbers prompt a read, they never decide.</p>"
+      },
+      "hivewatchers": {
+        "title": "11. Hivewatchers downvotes",
+        "body": "<p>When hivewatchers downvotes a post the five accounts unvote automatically. Do not re-vote; raise disputes with the team on Discord.</p>"
+      },
+      "etiquette": {
+        "title": "12. Etiquette",
+        "body": "<ul><li>No own posts through the trail, no daily friends.</li><li>Comment on first posts.</li><li>Mark honestly: a swept card is <strong>by cursor</strong>, a read card is <strong>by you</strong>.</li><li>Flag instead of arguing; no public call-outs.</li><li>Recommendations are on chain and cost Resource Credits; count networks, not accounts (other apps count as one network); dismiss a ring instead of arguing.</li></ul>"
+      },
+      "becoming": {
+        "title": "13. Becoming a curator",
+        "body": "<p>Four weeks as a trial curator with desk access and untrailed votes. Trial curators mark, snooze and flag like everyone else but do not see other curators' note bodies or flag reasons until promoted (those notes name authors and allegations). Then a review of reviewed-per-hour, flag precision and overlap.</p>"
+      },
+      "checklist": {
+        "title": "Onboarding checklist for a trial curator",
+        "step-1": "Log in on ecency.com, open the curation desk; confirm your name appears under Active after your first mark.",
+        "step-2": "Read this guide once; answer the six-question check (trail weight at 70% VP, which window a 30 h old post is in and what that does to curation, what \"author trailed 2 h ago\" means, what formulaic means, what to do after a hivewatchers downvote, what \"reviewed up to here\" does).",
+        "step-3": "Set your default vote weight in the vote dialog; understand it is your weight, the trail weight is the header number.",
+        "step-4": "Review 20 cards without voting: mark reviewed, open the drawer, read one author snapshot.",
+        "step-5": "Snooze one card and find it in My marks.",
+        "step-6": "Flag one card with a reason; ask a mentor to review the flag.",
+        "step-7": "Vote one post; watch \"waiting for trail\" become \"not trailed: not in trail list\" (expected for trial accounts).",
+        "step-8": "Do one hand-off with a mentor: they set \"reviewed up to here\", you pick up oldest-first from the cursor.",
+        "step-9": "Learn the keys: j k Enter v r Shift+R s z f n x ?.",
+        "step-10": "Read the Team panel: votes today per curator, excluded list, conflicts (flagged and curated).",
+        "step-11": "Do one plagiarism check end to end and write a note on the card.",
+        "step-12": "After two weeks compare your reviewed-per-hour and flag precision with the team medians with your mentor."
+      }
+    }
   }
 }
