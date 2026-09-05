@@ -2,8 +2,11 @@ import React from "react";
 import { act, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, type InfiniteData } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CurationFeedPage } from "@ecency/sdk";
-import { installFetchRouter, makeFeedPage, makeRow, makeStatus } from "./curation-test-utils";
+import type { CurationFeedPage, CurationRosterFeedPage } from "@ecency/sdk";
+import { installFetchRouter, makeFeedPage, makeRosterPage, makeRow, makeStatus } from "./curation-test-utils";
+
+/** The poll reads both feeds through the same key, so the specs do too. */
+type AnyFeedPage = CurationFeedPage | CurationRosterFeedPage;
 
 vi.mock("@ecency/sdk", async () => ({
   ...(await vi.importActual<Record<string, unknown>>("@ecency/sdk")),
@@ -57,15 +60,15 @@ describe("useStatusPoll", () => {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
   }
 
-  function seed(key: unknown[], pages: CurationFeedPage[]) {
-    queryClient.setQueryData<InfiniteData<CurationFeedPage>>(key, {
+  function seed(key: unknown[], pages: AnyFeedPage[]) {
+    queryClient.setQueryData<InfiniteData<AnyFeedPage>>(key, {
       pages,
       pageParams: pages.map((_, index) => (index === 0 ? undefined : `c${index}`)),
     });
   }
 
   function loaded(key: unknown[]) {
-    return queryClient.getQueryData<InfiniteData<CurationFeedPage>>(key)!;
+    return queryClient.getQueryData<InfiniteData<AnyFeedPage>>(key)!;
   }
 
   beforeEach(() => {
@@ -89,6 +92,38 @@ describe("useStatusPoll", () => {
     await poll();
 
     expect(fetchPageOne).toHaveBeenCalledTimes(1);
+    expect(loaded(feedKey).pages[0].items[0].post_id).toBe(9);
+  });
+
+  // A roster page carries no feed_version, so the version path has nothing to
+  // compare and the head id is the only signal the poll gets.
+  it("refreshes a roster page one that the status head has passed, then records the baseline", async () => {
+    seed(feedKey, [makeRosterPage([makeRow({ post_id: 4 }), makeRow({ post_id: 3 })])]);
+    // The post arrived between the feed request and this first poll.
+    statusBody = makeStatus({ latest_post_id: 9 });
+    const fetchPageOne = vi.fn(async () => makeRosterPage([makeRow({ post_id: 9 }), makeRow({ post_id: 4 })]));
+
+    renderHook(() => useStatusPoll({ enabled: true, feedKey, fetchPageOne }), { wrapper });
+    await poll();
+
+    expect(fetchPageOne).toHaveBeenCalledTimes(1);
+    expect(loaded(feedKey).pages[0].items[0].post_id).toBe(9);
+
+    // The baseline landed with the page, so the same head is no longer a change.
+    await poll();
+    expect(fetchPageOne).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a roster page one alone while the status head matches its newest row", async () => {
+    seed(feedKey, [makeRosterPage([makeRow({ post_id: 9 }), makeRow({ post_id: 4 })])]);
+    statusBody = makeStatus({ latest_post_id: 9 });
+    const fetchPageOne = vi.fn(async () => makeRosterPage([makeRow({ post_id: 9 })]));
+
+    renderHook(() => useStatusPoll({ enabled: true, feedKey, fetchPageOne }), { wrapper });
+    await poll();
+    await poll();
+
+    expect(fetchPageOne).not.toHaveBeenCalled();
     expect(loaded(feedKey).pages[0].items[0].post_id).toBe(9);
   });
 

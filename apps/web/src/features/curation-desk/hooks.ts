@@ -288,7 +288,8 @@ export interface StatusPollOptions {
   /**
    * `feed_version` of the loaded page one. It seeds the baseline, so a head
    * that moved between the page load and the first poll still refreshes. The
-   * roster feed carries no version, so there the first poll is the baseline.
+   * roster feed carries no version; there the loaded rows are the baseline
+   * instead, so the same head move is caught without one.
    */
   feedVersion?: string | null;
 }
@@ -310,10 +311,35 @@ function headVersionMoved(previous: FeedHeadVersion, next: FeedHeadVersion): boo
   return previous.latestPostId !== next.latestPostId;
 }
 
+/** Newest `post_id` on the loaded page one, or null when nothing is loaded. */
+function loadedHeadPostId(
+  data: InfiniteData<CurationFeedPage | CurationRosterFeedPage, unknown> | undefined
+): number | null {
+  const items = data?.pages?.[0]?.items;
+  if (!items?.length) return null;
+  let head: number | null = null;
+  for (const item of items) {
+    const id = item?.post_id;
+    if (typeof id === "number" && (head === null || id > head)) head = id;
+  }
+  return head;
+}
+
+/**
+ * The feed independent signal, for a page that carries no version: a status
+ * head above the newest loaded row is a post the queue does not have yet.
+ */
+function headAheadOfLoaded(next: FeedHeadVersion, loadedHead: number | null): boolean {
+  if (next.latestPostId == null || loadedHead == null) return false;
+  return next.latestPostId > loadedHead;
+}
+
 /**
  * `status` every 60 s while visible. Feed page 1 is fetched into a separate
- * `latest` key ONLY when `feed_version` or `latest_post_id` moved, then
- * swapped in with setQueryData (structural sharing keeps untouched rows).
+ * `latest` key ONLY when the head moved, then swapped in with setQueryData
+ * (structural sharing keeps untouched rows). The move is read from
+ * `feed_version` plus `latest_post_id` against a baseline; where no baseline
+ * exists yet, from `latest_post_id` against the loaded rows.
  *
  * The version is committed only once a page was installed, so a failed refresh
  * leaves the change for the next poll instead of consuming it. Key, fetcher and
@@ -348,14 +374,24 @@ export function useStatusPoll({ enabled, feedKey, fetchPageOne, feedVersion }: S
       }
       if (generation !== generationRef.current) return;
       const next = statusHeadVersion(status);
+      const feedState =
+        queryClient.getQueryState<InfiniteData<CurationFeedPage | CurationRosterFeedPage, unknown>>(key);
       const baseline =
         versionRef.current ??
         (typeof feedVersionRef.current === "string"
           ? { feedVersion: feedVersionRef.current, latestPostId: null }
           : null);
+      // A roster page carries no feed_version, so with no baseline the first
+      // answer would only be recorded and a post that arrived while page one
+      // was loading would wait for the head to move again. The head id needs
+      // no version: above the newest loaded row it is a post the queue does
+      // not have. The baseline is then recorded with the page that lands.
+      const moved = baseline
+        ? headVersionMoved(baseline, next)
+        : headAheadOfLoaded(next, loadedHeadPostId(feedState?.data));
       // Nothing to refresh: recording what status says costs nothing and fills
       // the half a loaded page could not seed.
-      if (!baseline || !headVersionMoved(baseline, next)) {
+      if (!moved) {
         versionRef.current = next;
         return;
       }
@@ -363,7 +399,6 @@ export function useStatusPoll({ enabled, feedKey, fetchPageOne, feedVersion }: S
       // older head. Recording the version here would consume a change the
       // page that lands next may not carry, so the poll leaves it: the next
       // one reads the same change against a queue that is actually there.
-      const feedState = queryClient.getQueryState(key);
       if (!feedState || feedState.data === undefined || feedState.fetchStatus === "fetching") {
         return;
       }
