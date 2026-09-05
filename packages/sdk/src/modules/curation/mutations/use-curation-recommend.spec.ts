@@ -44,7 +44,7 @@ describe("useCurationRecommend", () => {
     expect(options).toEqual({ broadcastMode: "sync" });
   });
 
-  it("builds the recommend op, and the unrecommend op when withdraw is set", () => {
+  it("builds the recommend op plus the unrecommend op when withdraw is set", () => {
     useCurationRecommend("alice");
     const operations = mockUseBroadcastMutation.mock.calls[0][2];
 

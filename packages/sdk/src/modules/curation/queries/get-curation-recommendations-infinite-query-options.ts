@@ -1,6 +1,7 @@
 import { infiniteQueryOptions } from "@tanstack/react-query";
 import { QueryKeys } from "@/modules/core";
 import { fetchCurationRecommendationsPage } from "../requests";
+import { maskDmcaCurationPages } from "../dmca";
 import type { CurationRecommendationsPage, CurationRecommendationsParams } from "../types";
 import { dedupePagesBy } from "./get-curation-feed-infinite-query-options";
 
@@ -30,7 +31,8 @@ export function getCurationRecommendationsInfiniteQueryOptions(
       return last?._cursor ?? lastPage.next_cursor ?? undefined;
     },
     // Route 4 items carry no post_id; the author/permlink pair is the identity.
-    select: (data) => dedupePagesBy(data, (item) => `${item.author}/${item.permlink}`),
+    select: (data) =>
+      maskDmcaCurationPages(dedupePagesBy(data, (item) => `${item.author}/${item.permlink}`)),
     staleTime: 10_000,
   });
 }

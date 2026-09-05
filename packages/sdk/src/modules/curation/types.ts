@@ -124,7 +124,7 @@ export interface CurationRow {
   author_trailed_at: string | null;
   /** Set on the hivewatchers unvote path. */
   unvoted_at?: string | null;
-  /** Materialization time; with `created` it tells a late row (roster feed). */
+  /** Materialization time; with `created` it tells a late row. */
   inserted_at?: string | null;
   recommend_count: number;
   unique_recommenders: number;
@@ -138,6 +138,11 @@ export interface CurationMark {
   state: CurationMarkState;
   reason?: string | null;
   note?: string | null;
+  /**
+   * Whether a note body exists. Tick deltas carry this instead of the body,
+   * so a delta must never overwrite a note the client already holds.
+   */
+  has_note?: boolean;
   snooze_until?: string | null;
   updated_at: string;
 }
@@ -171,6 +176,8 @@ export interface CurationOverlay {
   team_mark_by: string | null;
   team_snooze_until?: string | null;
   resurfaced_at: string | null;
+  /** Set when the roster dismissed the recommendations of this post. */
+  reco_dismissed_at?: string | null;
   marks: CurationMark[];
   notes_count: number;
 }
@@ -315,6 +322,11 @@ export interface CurationTickRequest {
   visible: number[];
 }
 
+/**
+ * Tick answer. `truncated` says the delta window was too wide to answer in
+ * full; it only means something when the request carried a `since`, since a
+ * first tick with `since: null` asks for a snapshot, not a window.
+ */
 export interface CurationTickResponse {
   overlay: Array<{ post_id: number } & CurationOverlay>;
   deltas: {

@@ -20,7 +20,7 @@ export interface CurationRecommendPayload {
 /**
  * The broadcast result is not uniform across auth paths: the key path returns
  * `{tx_id, status}`, the HiveSigner token and Keychain extension paths return
- * `{id, block_num, ...}`, and the redirect flows never resolve at all. This
+ * `{id, block_num, ...}`; the redirect flows never resolve at all. This
  * gives the one shape the desk needs (a 40 hex char id) or null.
  */
 export function normalizeBroadcastTrxId(result: unknown): string | null {

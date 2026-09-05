@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InfiniteData } from "@tanstack/react-query";
+import { CONFIG } from "@/modules/core";
 import {
   dedupeCurationPages,
-  getCurationFeedInfiniteQueryOptions
+  getCurationFeedInfiniteQueryOptions,
+  selectCurationFeedPages
 } from "./get-curation-feed-infinite-query-options";
 import type { CurationFeedPage, CurationRow } from "../types";
 
@@ -163,5 +165,41 @@ describe("getCurationFeedInfiniteQueryOptions", () => {
       pageParams: [undefined, "c1"]
     };
     expect(dedupeCurationPages(data)).toBe(data);
+  });
+});
+
+describe("selectCurationFeedPages takedown masking", () => {
+  const patterns = CONFIG.dmcaPatterns;
+  const regexes = CONFIG.dmcaPatternRegexes;
+
+  afterEach(() => {
+    CONFIG.dmcaPatterns = patterns;
+    CONFIG.dmcaPatternRegexes = regexes;
+  });
+
+  it("blanks the title, the summary and the thumbnail of a listed row", () => {
+    CONFIG.dmcaPatterns = ["@a1/p1"];
+    CONFIG.dmcaPatternRegexes = [];
+    const listed = row(1, { title: "t", summary: "s", first_image: "https://i/x.png" });
+    const other = row(2, { title: "t", summary: "s", first_image: "https://i/y.png" });
+    const data: InfiniteData<CurationFeedPage> = { pages: [page([listed, other])], pageParams: [undefined] };
+
+    const result = selectCurationFeedPages(data);
+    const [masked, untouched] = result.pages[0].items;
+    expect(masked).toMatchObject({ title: "", summary: null, first_image: null });
+    // Everything else survives; an unlisted row keeps its identity.
+    expect(masked.post_id).toBe(1);
+    expect(untouched).toBe(other);
+  });
+
+  it("matches a pattern regex too and returns the same data when nothing is listed", () => {
+    CONFIG.dmcaPatterns = [];
+    CONFIG.dmcaPatternRegexes = [/^@a3\//];
+    const data: InfiniteData<CurationFeedPage> = { pages: [page([row(3)])], pageParams: [undefined] };
+    expect(selectCurationFeedPages(data).pages[0].items[0].title).toBe("");
+
+    CONFIG.dmcaPatternRegexes = [];
+    const clean: InfiniteData<CurationFeedPage> = { pages: [page([row(4)])], pageParams: [undefined] };
+    expect(selectCurationFeedPages(clean)).toBe(clean);
   });
 });

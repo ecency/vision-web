@@ -10,7 +10,8 @@ import {
   curationRosterFeedRequest,
   curationTickRequest,
   fetchCurationPost,
-  fetchCurationStatus
+  fetchCurationStatus,
+  normalizeCurationParams
 } from "./requests";
 
 const fetchMock = vi.fn();
@@ -58,7 +59,20 @@ describe("curation desk requests", () => {
   it("sends the roster feed filters as normalized body fields with the cursor", async () => {
     await curationRosterFeedRequest("tok", { sort: "queue", hide_reviewed: true, hide_snoozed: false, app: "all" }, "c1");
     const { body } = lastCall();
-    expect(body).toEqual({ sort: "queue", hide_reviewed: "1", hide_snoozed: "0", cursor: "c1", code: "tok" });
+    // hide_reviewed true is the desk's own default, so it never travels; the
+    // explicit false does; "all" is not a filter.
+    expect(body).toEqual({ sort: "queue", hide_snoozed: "0", cursor: "c1", code: "tok" });
+  });
+
+  it("drops every hide_* true and keeps every hide_* false", () => {
+    expect(normalizeCurationParams({ hide_curated: true, hide_reviewed: true, hide_snoozed: true })).toEqual({});
+    expect(normalizeCurationParams({ hide_curated: false, hide_reviewed: false, hide_snoozed: false })).toEqual({
+      hide_curated: "0",
+      hide_reviewed: "0",
+      hide_snoozed: "0"
+    });
+    // Ordinary booleans keep the opposite rule: only true says anything.
+    expect(normalizeCurationParams({ has_images: true, new_authors: false })).toEqual({ has_images: "1" });
   });
 
   it("caps tick id lists at 100", async () => {
@@ -91,6 +105,20 @@ describe("curation desk requests", () => {
   it("treats a non-JSON 200 as an error, never as an empty result", async () => {
     fetchMock.mockResolvedValueOnce({ ok: true, status: 200, headers: { get: () => "text/html" }, json: async () => ({}) });
     await expect(fetchCurationStatus()).rejects.toThrow(/Unexpected response/);
+  });
+
+  it("turns an unparsable 200 body into a CurationApiError carrying the status", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: json,
+      json: async () => {
+        throw new SyntaxError("Unexpected token < in JSON at position 0");
+      }
+    });
+    const promise = fetchCurationStatus();
+    await expect(promise).rejects.toBeInstanceOf(CurationApiError);
+    await promise.catch((e: CurationApiError) => expect(e.status).toBe(200));
   });
 
   it("escapes the route 5 path segments", async () => {

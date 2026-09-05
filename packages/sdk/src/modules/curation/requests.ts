@@ -55,18 +55,28 @@ async function parse<T>(response: Response, what: string): Promise<T> {
     throw new CurationApiError(`Failed to ${what}: ${response.status}`, response.status, data);
   }
   // The gateway answers an unknown GET with a 200 HTML page. That is never an
-  // empty queue, so a non-JSON body is an error too.
+  // empty queue, so a non-JSON body is an error too. A body that only claims
+  // to be JSON gets the same treatment: parsing it must not reach the caller
+  // as a SyntaxError with no status on it.
   const contentType = response.headers?.get?.("content-type") ?? "";
   if (contentType && !contentType.includes("json")) {
     throw new CurationApiError(`Unexpected response for ${what}`, response.status);
   }
-  return (await response.json()) as T;
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new CurationApiError(`Unexpected response for ${what}`, response.status);
+  }
 }
 
 const COMMUNITY_RE = /^hive-\d{5,6}$/;
 const SEED_RE = /^[a-z0-9]{8,16}$/;
 
-/** Booleans whose DEFAULT is true, so an explicit false has to travel as "0". */
+/**
+ * Booleans the desk already defaults to true, so only an explicit false says
+ * anything. Sending the "1" would split memo and cache keys against a gateway
+ * that drops it.
+ */
 const DEFAULT_TRUE = new Set(["hide_curated", "hide_reviewed", "hide_snoozed"]);
 
 /** Fixed emission order: keeps memo and shared-cache keys stable across clients. */
@@ -106,8 +116,11 @@ export function normalizeCurationParams(
     const value = source[name];
     if (value === undefined || value === null || value === "") continue;
     if (typeof value === "boolean") {
-      if (value) out[name] = "1";
-      else if (DEFAULT_TRUE.has(name)) out[name] = "0";
+      if (DEFAULT_TRUE.has(name)) {
+        if (!value) out[name] = "0";
+      } else if (value) {
+        out[name] = "1";
+      }
       continue;
     }
     if (typeof value === "number") {

@@ -1,5 +1,6 @@
 import { infiniteQueryOptions, type InfiniteData } from "@tanstack/react-query";
 import { QueryKeys } from "@/modules/core";
+import { maskDmcaCurationPages } from "../dmca";
 import { fetchCurationFeedPage, normalizeCurationParams } from "../requests";
 import type { CurationFeedPage, CurationFeedParams, CurationRow } from "../types";
 
@@ -40,6 +41,26 @@ export function dedupeCurationPages<TPage extends { items: Array<{ post_id: numb
   return dedupePagesBy(data, (row) => row.post_id);
 }
 
+interface SelectableFeedRow {
+  post_id: number;
+  author: string;
+  permlink: string;
+  title: string;
+  summary?: string | null;
+  first_image?: string | null;
+}
+
+/**
+ * The select every desk feed shares: dedupe by `post_id`, then blank the rows
+ * on the takedown list. The roster feed (web owned, because its queryFn needs
+ * a fresh token) uses it too, so both feeds hide the same rows.
+ */
+export function selectCurationFeedPages<TPage extends { items: SelectableFeedRow[] }>(
+  data: InfiniteData<TPage, unknown>
+): InfiniteData<TPage, unknown> {
+  return maskDmcaCurationPages(dedupeCurationPages(data));
+}
+
 /**
  * Public curation feed (route 1), keyset paginated.
  *
@@ -65,7 +86,7 @@ export function getCurationFeedInfiniteQueryOptions(params: CurationFeedParams =
       const last: CurationRow | undefined = lastPage.items[lastPage.items.length - 1];
       return last?._cursor ?? lastPage.next_cursor ?? undefined;
     },
-    select: dedupeCurationPages,
+    select: selectCurationFeedPages,
     staleTime: CURATION_FEED_STALE_MS,
   });
 }
