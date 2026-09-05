@@ -23,6 +23,7 @@ import {
   type CurationFeedPage,
   type CurationFeedParams,
   type CurationMarkState,
+  type CurationMyMarksResponse,
   type CurationRosterFeedPage,
   type CurationRosterFeedParams,
   type CurationSort,
@@ -35,6 +36,7 @@ import * as ls from "@/utils/local-storage";
 import {
   IDLE_MS,
   MY_MARKS_KEY_SUFFIX,
+  MY_MARKS_PAGE_SIZE,
   POLL_MS_CURATOR,
   POLL_MS_PUBLIC,
   QUEUE_PAGE_SIZE,
@@ -551,13 +553,22 @@ export function useCurationDismissReco() {
   });
 }
 
-/** My marks (web-owned useQuery; the queryFn awaits ensureValidToken). */
+/**
+ * My marks (web-owned infinite query; every page awaits ensureValidToken).
+ * Keyset pagination on the route's own `next_cursor`, which is null on the
+ * last page, so the list reaches past the first page instead of stopping at
+ * the page size. The state filter stays on the key: each tab is its own list.
+ */
 export function useMyMarks(state: CurationMarkState | undefined, enabled = true) {
   const username = useActiveUsername();
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: myMarksKey(username, state),
     enabled: enabled && !!username,
-    queryFn: ({ signal }) => curationDeskApi.myMarks(username, { state, limit: 50 }, signal),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }: { pageParam?: string; signal?: AbortSignal }) =>
+      curationDeskApi.myMarks(username, { state, limit: MY_MARKS_PAGE_SIZE, cursor: pageParam }, signal),
+    getNextPageParam: (lastPage: CurationMyMarksResponse): string | undefined =>
+      lastPage?.next_cursor ?? undefined,
     staleTime: 15_000,
   });
 }

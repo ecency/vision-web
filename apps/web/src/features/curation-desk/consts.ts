@@ -21,6 +21,8 @@ export const UNDO_CURSOR_MS = 30_000;
 export const SORT_STORAGE_KEY = "curation-desk-sort";
 export const SEED_STORAGE_KEY = "curation-desk-seed";
 export const MY_MARKS_KEY_SUFFIX = "my-marks";
+/** Marks per page; the route answers a `next_cursor` while more remain. */
+export const MY_MARKS_PAGE_SIZE = 50;
 /** Word count presets, offered as both a minimum and a maximum. */
 export const WORD_PRESETS = [300, 600, 1000] as const;
 /** Vote is hidden under this payout scale-down factor (percent). */
