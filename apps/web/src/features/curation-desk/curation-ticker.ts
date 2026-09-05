@@ -50,8 +50,13 @@ export function useCurationTicker(): number {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
-/** Test-only: force the shared clock forward and notify subscribers. */
+/**
+ * Test-only: force the shared clock forward and notify subscribers. The body
+ * is compiled out of a production bundle (`NODE_ENV` is a literal there), so
+ * the export costs a name and nothing else.
+ */
 export function advanceCurationTickerForTests(ms: number) {
+  if (process.env.NODE_ENV === "production") return;
   now += ms;
   listeners.forEach((l) => l());
 }

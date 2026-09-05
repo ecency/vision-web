@@ -21,7 +21,7 @@ import {
  * Web wrapper over the SDK desk client. Identity for every authed call comes
  * from ensureValidToken(), which AWAITS a refresh when the stored token has
  * expired; getAccessToken() only starts one in the background and hands back
- * the expired token, and the first mark after a long absence would then 401.
+ * the expired token; the first mark after a long absence would then 401.
  * The SDK functions take the code as an argument, so no builder ever captures
  * one that can go stale.
  */

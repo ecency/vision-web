@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   QueryKeys,
@@ -16,6 +16,7 @@ import { useCurationRecommendMutation } from "@/api/sdk-mutations/use-curation-r
 import { META_RETRY_MS, RECOMMEND_CONFIRM_DEADLINE_MS, RECOMMEND_POLL_AT_S } from "./consts";
 import { curationDeskApi } from "./curation-desk-api";
 import {
+  clearRecommendStates,
   getRecommendState,
   recommendKey,
   setRecommendState,
@@ -38,11 +39,30 @@ import {
  */
 
 const timers = new Map<string, ReturnType<typeof setTimeout>[]>();
+/** Meta pings already accepted, keyed by viewer and post like the store. */
 const pinged = new Set<string>();
 
 function clearTimers(key: string) {
   for (const t of timers.get(key) ?? []) clearTimeout(t);
   timers.delete(key);
+}
+
+const NO_USER = Symbol("no user");
+let activeUser: string | undefined | typeof NO_USER = NO_USER;
+
+/**
+ * An account switch drops every optimistic state, timer and ping of the
+ * account that left: they answer "did YOU recommend this", to which the new
+ * viewer has their own answer.
+ */
+function onViewerChanged(username: string | undefined) {
+  if (activeUser === username) return;
+  const first = activeUser === NO_USER;
+  activeUser = username;
+  if (first) return;
+  for (const key of Array.from(timers.keys())) clearTimers(key);
+  pinged.clear();
+  clearRecommendStates();
 }
 
 async function sleep(ms: number) {
@@ -56,7 +76,7 @@ export async function pingRecommendMeta(
   permlink: string,
   trxId: string | null
 ): Promise<boolean> {
-  const key = recommendKey(author, permlink);
+  const key = recommendKey(username, author, permlink);
   if (!username || pinged.has(key)) return pinged.has(key);
   for (let attempt = 0; attempt <= META_RETRY_MS.length; attempt++) {
     try {
@@ -122,24 +142,32 @@ export function startRecommendPoll(
   permlink: string,
   withdraw: boolean
 ) {
-  const key = recommendKey(author, permlink);
+  const key = recommendKey(username, author, permlink);
   clearTimers(key);
   const startedAt = Date.now();
   const handles: ReturnType<typeof setTimeout>[] = [];
 
   const finish = (confirmed: boolean) => {
     clearTimers(key);
-    const current = getRecommendState(author, permlink);
+    const current = getRecommendState(username, author, permlink);
     if (confirmed) {
-      setRecommendState(author, permlink, withdraw ? { phase: "withdrawn" } : { phase: "recommended", confirmed: true });
+      setRecommendState(
+        username,
+        author,
+        permlink,
+        withdraw ? { phase: "withdrawn" } : { phase: "recommended", confirmed: true }
+      );
+      // A confirmed withdraw removed the chain row, so a later recommendation
+      // of the same post needs its meta ping to travel again.
+      if (withdraw) pinged.delete(key);
       queryClient.invalidateQueries({ queryKey: QueryKeys.curation._recommendationsPrefix });
     } else if (current.phase === "pending" || (current.phase === "recommended" && !current.confirmed)) {
-      setRecommendState(author, permlink, { phase: "confirming", withdraw });
+      setRecommendState(username, author, permlink, { phase: "confirming", withdraw });
     }
   };
 
   const check = async (last: boolean) => {
-    const current = getRecommendState(author, permlink);
+    const current = getRecommendState(username, author, permlink);
     if (current.phase === "idle" || current.phase === "withdrawn" || (current.phase === "recommended" && current.confirmed)) {
       clearTimers(key);
       return;
@@ -176,13 +204,15 @@ export function useRecommendFlow(author: string, permlink: string) {
   const username = useActiveUsername();
   const queryClient = useQueryClient();
   const mutation = useCurationRecommendMutation();
-  const state = useRecommendState(author, permlink);
+  const state = useRecommendState(username, author, permlink);
+
+  useEffect(() => onViewerChanged(username), [username]);
 
   const run = useCallback(
     async (withdraw: boolean, reason?: CurationReason) => {
       if (!username) throw new Error("[CurationDesk] recommend needs a logged in user");
-      const previous = getRecommendState(author, permlink);
-      setRecommendState(author, permlink, {
+      const previous = getRecommendState(username, author, permlink);
+      setRecommendState(username, author, permlink, {
         phase: "pending",
         since: Date.now(),
         withdraw,
@@ -195,18 +225,18 @@ export function useRecommendFlow(author: string, permlink: string) {
       try {
         const result = await mutation.mutateAsync({ author, permlink, reason, withdraw });
         const trxId = normalizeBroadcastTrxId(result);
-        const current = getRecommendState(author, permlink);
+        const current = getRecommendState(username, author, permlink);
         if (current.phase === "pending") {
-          setRecommendState(author, permlink, { ...current, trxId });
+          setRecommendState(username, author, permlink, { ...current, trxId });
         }
         if (!withdraw) {
-          setRecommendState(author, permlink, { phase: "recommended", confirmed: false });
+          setRecommendState(username, author, permlink, { phase: "recommended", confirmed: false });
           void pingRecommendMeta(username, author, permlink, trxId);
         }
         return result;
       } catch (error) {
-        clearTimers(recommendKey(author, permlink));
-        setRecommendState(author, permlink, previous);
+        clearTimers(recommendKey(username, author, permlink));
+        setRecommendState(username, author, permlink, previous);
         throw error;
       }
     },
@@ -219,8 +249,13 @@ export function useRecommendFlow(author: string, permlink: string) {
   return { state, recommend, withdraw, isPending: mutation.isPending, username };
 }
 
-/** Test-only. */
+/**
+ * Test-only. The body is compiled out of a production bundle (`NODE_ENV` is a
+ * literal there), so the export costs a name and nothing else.
+ */
 export function resetRecommendFlowForTests() {
-  for (const key of timers.keys()) clearTimers(key);
+  if (process.env.NODE_ENV === "production") return;
+  for (const key of Array.from(timers.keys())) clearTimers(key);
   pinged.clear();
+  activeUser = NO_USER;
 }
