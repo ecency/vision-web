@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CONFIG } from "@/modules/core";
 import {
   CurationApiError,
   curationCursorRequest,
@@ -9,11 +10,15 @@ import {
   curationRecommendMetaRequest,
   curationRosterFeedRequest,
   curationTickRequest,
+  fetchCurationFeedPage,
   fetchCurationPost,
+  fetchCurationRecommendationsPage,
+  fetchCurationRoster,
   fetchCurationStatus,
   normalizeCurationParams
 } from "./requests";
 
+const HOST = "https://ecency.com";
 const fetchMock = vi.fn();
 const json = { get: () => "application/json" };
 const ok = (body: unknown) => ({ ok: true, status: 200, headers: json, json: async () => body });
@@ -27,10 +32,16 @@ function lastCall() {
 describe("curation desk requests", () => {
   beforeEach(() => {
     fetchMock.mockReset();
-    fetchMock.mockResolvedValue(ok({}));
+    // A shape every guarded family accepts, so a spec about something else
+    // never trips the response guards.
+    fetchMock.mockResolvedValue(ok({ items: [], curators: [], vp: null }));
     vi.stubGlobal("fetch", fetchMock);
+    CONFIG.privateApiHost = HOST;
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    CONFIG.privateApiHost = HOST;
+  });
 
   it.each([
     ["roster-feed", () => curationRosterFeedRequest("tok", { sort: "queue", hide_reviewed: true }, "c1")],
@@ -125,5 +136,55 @@ describe("curation desk requests", () => {
     await fetchCurationPost("alice", "a-post");
     expect(lastCall().url).toBe("https://ecency.com/private-api/curation-desk/post/alice/a-post");
     expect(lastCall().init.method).toBe("GET");
+  });
+
+  // A 200 that carries another shape reaches the query builders as
+  // `lastPage.items.length` on undefined, which is a crash with no status on
+  // it. Each family is checked for the one field its consumers dereference.
+  it.each([
+    ["feed", () => fetchCurationFeedPage({ sort: "newest" }), {}],
+    ["recommendations", () => fetchCurationRecommendationsPage({}), {}],
+    ["roster feed", () => curationRosterFeedRequest("tok", { sort: "queue" }), { next_cursor: null }],
+    ["my marks", () => curationMyMarksRequest("tok", { state: "snoozed" }), { next_cursor: null }],
+    ["status", () => fetchCurationStatus(), { counts: {} }],
+    ["roster", () => fetchCurationRoster(), { updated_at: null }]
+  ])("rejects a 200 %s body that is not the shape its consumers read", async (_family, run, body) => {
+    fetchMock.mockResolvedValueOnce(ok(body));
+    const promise = run();
+    await expect(promise).rejects.toBeInstanceOf(CurationApiError);
+    await promise.catch((e: CurationApiError) => expect(e.message).toMatch(/Unexpected response/));
+  });
+
+  it("accepts the empty page, the empty roster and a status with no vp", async () => {
+    fetchMock.mockResolvedValueOnce(ok({ items: [], next_cursor: null }));
+    await expect(fetchCurationFeedPage({ sort: "newest" })).resolves.toMatchObject({ items: [] });
+    fetchMock.mockResolvedValueOnce(ok({ curators: [], updated_at: null }));
+    await expect(fetchCurationRoster()).resolves.toMatchObject({ curators: [] });
+    fetchMock.mockResolvedValueOnce(ok({ vp: null, counts: {} }));
+    await expect(fetchCurationStatus()).resolves.toMatchObject({ vp: null });
+  });
+
+  it("refuses a redirect on an authed request, which would resend the code", async () => {
+    await curationMarkRequest("tok", { author: "a", permlink: "p", state: "reviewed" });
+    expect(lastCall().init.redirect).toBe("error");
+  });
+
+  it("never sends the code to a private API host on plain http", async () => {
+    CONFIG.privateApiHost = "http://curation.example";
+    const promise = curationMarkRequest("tok", { author: "a", permlink: "p", state: "reviewed" });
+    await expect(promise).rejects.toBeInstanceOf(CurationApiError);
+    await promise.catch((e: CurationApiError) => expect(e.message).toMatch(/insecure/));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("still reads a public route from a plain http host, and posts to a local one", async () => {
+    CONFIG.privateApiHost = "http://curation.example";
+    // No credential travels on a GET, so the guard has nothing to protect.
+    await expect(fetchCurationStatus()).resolves.toBeTruthy();
+    // A local gateway has no certificate; the code never leaves the machine.
+    CONFIG.privateApiHost = "http://127.0.0.1:3000";
+    await expect(curationMarkRequest("tok", { author: "a", permlink: "p", state: "reviewed" })).resolves.toBeTruthy();
+    CONFIG.privateApiHost = "http://localhost:3000";
+    await expect(curationMarkRequest("tok", { author: "a", permlink: "p", state: "reviewed" })).resolves.toBeTruthy();
   });
 });
