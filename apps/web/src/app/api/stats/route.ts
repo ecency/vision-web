@@ -139,6 +139,11 @@ async function queryPlausibleStats(
   }
 }
 
+/**
+ * POST /api/stats
+ * Public Plausible proxy for a single post's view stats. Returns 400 for a malformed body or
+ * out-of-allowlist fields, 403 for anything but one exact post page.
+ */
 export async function POST(request: NextRequest) {
   const isEnabled = EcencyConfigManager.getConfigValue(
     ({ visionFeatures }) => visionFeatures.plausible.enabled
