@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
     metrics,
     dimensions,
     filterBy = "event:page"
-  } = payload as Record<string, any>;
+  } = payload as Record<string, unknown>;
 
   if (!url) {
     return Response.json({ status: 400 });
@@ -207,13 +207,15 @@ export async function POST(request: NextRequest) {
 
   // Restrict the filter dimension to a known allow-list — `event:page` (viewed the page
   // anywhere in the visit) or `visit:entry_page` (landed on it).
-  const filterDimension = ["event:page", "visit:entry_page"].includes(filterBy)
-    ? filterBy
-    : "event:page";
+  const filterDimension =
+    typeof filterBy === "string" && ["event:page", "visit:entry_page"].includes(filterBy)
+      ? filterBy
+      : "event:page";
 
   // Plausible stores the pathname only, so strip any query string / fragment (e.g.
   // a comment permalink's `#@author/permlink`) before matching what's recorded.
-  const page = safeDecodeURIComponent(url).split(/[?#]/)[0];
+  // A non-string url decodes to "" and is rejected by the tail check below.
+  const page = safeDecodeURIComponent(typeof url === "string" ? url : null).split(/[?#]/)[0];
 
   // Only ever match a single exact post page. Every recorded shape (`/@author/permlink`,
   // `/hive-123/@author/permlink`, `/tag/@author/permlink`) ENDS in `/@author/permlink`, so
