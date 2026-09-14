@@ -147,13 +147,25 @@ export async function POST(request: NextRequest) {
     return Response.json({ status: 404 });
   }
 
+  // A body that is not a JSON object is the caller's error: answer 400 instead of letting the
+  // parse (or the destructure of `null`) throw into an unhandled 500.
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json({ error: "invalid json" }, { status: 400 });
+  }
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return NextResponse.json({ error: "invalid json" }, { status: 400 });
+  }
+
   const {
     url,
     date_range: dateRange = "12mo",
     metrics,
     dimensions,
     filterBy = "event:page"
-  } = await request.json();
+  } = payload as Record<string, any>;
 
   if (!url) {
     return Response.json({ status: 400 });

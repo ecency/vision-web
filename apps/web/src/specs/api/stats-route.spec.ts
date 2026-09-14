@@ -66,6 +66,25 @@ describe("POST /api/stats security boundaries", () => {
     vi.unstubAllGlobals();
   });
 
+  it("rejects a non-JSON body with 400 instead of throwing", async () => {
+    const { POST } = await import("@/app/api/stats/route");
+    const req = new Request("http://localhost/api/stats", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "id=1&user=test"
+    });
+    const res = await POST(req as never);
+    expect(res.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a JSON body that is not an object with 400", async () => {
+    expect((await callPost(null)).status).toBe(400);
+    expect((await callPost([VALID])).status).toBe(400);
+    expect((await callPost("/@alice/my-post")).status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("rejects a bare '/' path with 403 and never queries Plausible", async () => {
     const { status } = await callPost({ ...VALID, url: "/" });
     expect(status).toBe(403);
