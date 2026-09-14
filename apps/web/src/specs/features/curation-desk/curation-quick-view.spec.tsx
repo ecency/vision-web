@@ -4,7 +4,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { renderWithQueryClient } from "@/specs/test-utils";
-import { installFetchRouter, makePost, makeRoster, makeRow } from "./curation-test-utils";
+import { installFetchRouter, makePost, makeRoster, makeRow, NOW } from "./curation-test-utils";
 
 const state = vi.hoisted(() => ({
   username: "member1" as string | undefined,
@@ -151,6 +151,10 @@ describe("CurationQuickView", () => {
   const next = makeRow({ post_id: 2, author: "bob", permlink: "second" });
 
   beforeEach(() => {
+    // Fixture ages are offsets from NOW; the drawer reads the real clock, so the
+    // post drifts into its paid window once wall time passes NOW + 7 d.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(NOW);
     state.username = "member1";
     state.entryFetch.mockReset();
     state.entryFetch.mockImplementation(async (author: string, permlink: string) => ({
