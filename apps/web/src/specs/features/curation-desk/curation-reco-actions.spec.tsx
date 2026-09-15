@@ -474,6 +474,105 @@ describe("recommended list row actions", () => {
     }
   });
 
+  /**
+   * Dismissing the open post closes the drawer and the selection goes with it:
+   * the list refresh waits for no open drawer, so a stale selection would keep
+   * it paused for good.
+   */
+  it("keeps reading the curator list after the open post is dismissed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      router.on(/curation-desk\/recommendation-dismiss/, () => ({
+        row: { ...recoRow(), overlay: makeOverlay({ reco_dismissed_at: new Date().toISOString() }) },
+      }));
+      const listRow = await row();
+      fireEvent.click(listRow.getByLabelText("curation-desk.actions.read-key"));
+      await screen.findByRole("dialog");
+      fireEvent.click(listRow.getByLabelText("curation-desk.reco.dismiss"));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      const before = router.callsTo(/curation-desk\/roster-feed/).length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(61_000);
+      });
+      await waitFor(() => expect(router.callsTo(/curation-desk\/roster-feed/).length).toBeGreaterThan(before));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * A refresh can already be on its way when the curator opens a post. When its
+   * answer no longer holds that post, the drawer, and any reply being written,
+   * stays on it instead of unmounting.
+   */
+  it("keeps the open post in the drawer when a refresh already running drops it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const listRow = await row();
+      let answer: (page: unknown) => void = () => undefined;
+      router.on(
+        /curation-desk\/roster-feed/,
+        () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          })
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(61_000);
+      });
+      await waitFor(() => expect(router.callsTo(/curation-desk\/roster-feed/)).toHaveLength(2));
+
+      fireEvent.click(listRow.getByLabelText("curation-desk.actions.read-key"));
+      await waitFor(() => expect(screen.getByTestId("renderer")).toBeInTheDocument());
+      await act(async () => {
+        answer(makeRosterPage([]));
+      });
+      await waitFor(() => expect(screen.getByText("curation-desk.reco-view.empty")).toBeInTheDocument());
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByTestId("renderer")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * A failed mark puts the curator back on the post only while the drawer
+   * still sits where the automatic advance left it.
+   */
+  it("leaves a closed drawer closed when a mark fails after the curator moved on", async () => {
+    let failMark: () => void = () => undefined;
+    router
+      .on(/curation-desk\/roster-feed/, () =>
+        makeRosterPage([recoRow(), recoRow({ author: "bob", permlink: "second", title: "Second" }, 78)])
+      )
+      .on(
+        /curation-desk\/mark$/,
+        () =>
+          new Promise((_resolve, reject) => {
+            failMark = () => reject(new Error("offline"));
+          })
+      );
+
+    renderWithQueryClient(<CurationRecommendationsView />);
+    await waitFor(() => expect(screen.getAllByRole("toolbar")).toHaveLength(2));
+    const [first] = screen.getAllByRole("toolbar").map((el) => within(el));
+    await waitFor(() => expect(first.getByLabelText("curation-desk.actions.reviewed")).not.toBeDisabled());
+    fireEvent.click(first.getByLabelText("curation-desk.actions.read-key"));
+    const drawer = within(await screen.findByRole("dialog"));
+    await waitFor(() => expect(drawer.getByLabelText("curation-desk.actions.reviewed-key")).not.toBeDisabled());
+    fireEvent.click(drawer.getByLabelText("curation-desk.actions.reviewed-key"));
+    await waitFor(() => expect(state.entryFetch).toHaveBeenCalledWith("bob", "second"));
+    await waitFor(() => expect(router.callsTo(/curation-desk\/mark$/)).toHaveLength(1));
+
+    fireEvent.click(within(screen.getByRole("dialog")).getByLabelText("g.close"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await act(async () => {
+      failMark();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("drops them for a paid post too, which the shared clock can reach with the tab open", async () => {
     router.on(/curation-desk\/roster-feed/, () =>
       makeRosterPage([recoRow({ created: new Date(Date.now() - 8 * DAY).toISOString() })])

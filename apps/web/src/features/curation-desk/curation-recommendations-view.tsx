@@ -8,6 +8,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import {
   getCurationPostQueryOptions,
   getCurationRecommendationsInfiniteQueryOptions,
+  QueryKeys,
   type CurationFlagReason,
   type CurationMyMark,
   type CurationRecommendationItem,
@@ -52,6 +53,9 @@ const OPEN_POST_MS = 7 * DAY_MS;
 
 /** How often the curator list reads again, so a post a colleague handled leaves it. */
 const ROSTER_REFRESH_MS = 60_000;
+
+/** How recent a dismissal made in this tab must be to count as the reason its post left the list. */
+const OWN_DISMISS_MS = 60_000;
 
 /**
  * A roster row of `view=recommended`, which also carries what route 4 draws.
@@ -405,10 +409,49 @@ export function CurationRecommendationsView() {
   const [dialog, setDialog] = useState<Dialog>({ kind: "none" });
   const recommendRef = useRef<CurationRecommendHandle | null>(null);
 
-  // The drawer follows the loaded list: a post that leaves it (a dismissal, a
-  // reordering page) has nothing left to show, so the drawer closes with it.
+  const queryClient = useQueryClient();
+  // A dismissal made in this tab, from the row or from the drawer, is the one
+  // departure the curator chose here, so it is never held. Read off the
+  // mutation cache, where both dismiss controls leave their request.
+  const dismissedHere = useCallback(
+    (key: string) =>
+      queryClient
+        .getMutationCache()
+        .findAll({ mutationKey: [...QueryKeys.curation._prefix, "reco-dismiss"] })
+        .some((mutation) => {
+          const vars = mutation.state.variables as { author?: string; permlink?: string; action?: string } | undefined;
+          return (
+            mutation.state.status !== "error" &&
+            vars?.action === "dismiss" &&
+            `${vars.author}/${vars.permlink}` === key &&
+            Date.now() - mutation.state.submittedAt < OWN_DISMISS_MS
+          );
+        }),
+    [queryClient]
+  );
+
+  // The drawer follows the loaded list, with one exception: a post that leaves
+  // it while open for a reason the curator did not choose here (a refresh that
+  // was already running when the drawer opened, an invalidation) stays in the
+  // drawer, so a reply being written is not unmounted under them. Where it sat
+  // is kept too, so Next lands on the post that took its place. Derived during
+  // render: an effect would unmount the drawer for one commit first.
   const openIndex = openKey ? items.findIndex((item) => keyOf(item) === openKey) : -1;
-  const openItem = openIndex >= 0 ? items[openIndex] : null;
+  const lastOpenRef = useRef<{ key: string; item: ListItem; index: number } | null>(null);
+  if (openKey && openIndex >= 0) lastOpenRef.current = { key: openKey, item: items[openIndex], index: openIndex };
+  const held =
+    openKey && openIndex < 0 && lastOpenRef.current?.key === openKey && !dismissedHere(openKey)
+      ? lastOpenRef.current
+      : null;
+  const openItem = openIndex >= 0 ? items[openIndex] : (held?.item ?? null);
+  // A selection with nothing to show (its post was dismissed here, or it never
+  // loaded) is cleared, or it would keep the list refresh paused for good.
+  useEffect(() => {
+    if (openKey && !openItem) {
+      setOpenKey(null);
+      setVoteFor(null);
+    }
+  }, [openKey, openItem]);
   // The drawer reads route 5 for the recommender list under the same key, so
   // this upgrade costs no second request.
   const { data: post } = useQuery({
@@ -421,19 +464,22 @@ export function CurationRecommendationsView() {
     return post && keyOf(post) === keyOf(openItem) ? { ...stub, ...post } : stub;
   }, [openItem, post]);
   const neighbour = useMemo(() => {
-    const next = openIndex >= 0 ? items[openIndex + 1] : undefined;
+    const at = openIndex >= 0 ? openIndex + 1 : (held?.index ?? -1);
+    const next = at >= 0 ? items[at] : undefined;
     return next ? stubRow(next) : null;
-  }, [items, openIndex]);
+  }, [items, openIndex, held]);
 
   const move = useCallback(
     (delta: number) => {
-      if (openIndex < 0) return;
-      const next = items[openIndex + delta];
+      // From a held post, the post that took its place is next and the one
+      // above it is previous.
+      const at = openIndex >= 0 ? openIndex + delta : held ? held.index + (delta > 0 ? 0 : -1) : -1;
+      const next = at >= 0 ? items[at] : undefined;
       if (!next) return;
       setVoteFor(null);
       setOpenKey(keyOf(next));
     },
-    [items, openIndex]
+    [items, openIndex, held]
   );
 
   const onOpen = useCallback((item: CurationRecommendationItem) => {
@@ -452,7 +498,6 @@ export function CurationRecommendationsView() {
     setVoteFor(null);
   }, []);
 
-  const queryClient = useQueryClient();
   const mark = useCurationMark();
   const clearMark = useClearMark();
   const doMark = useCallback(
@@ -467,11 +512,17 @@ export function CurationRecommendationsView() {
       // the mark fails. A note is not a team mark and keeps the post listed.
       const key = keyOf(post);
       const at = items.findIndex((item) => keyOf(item) === key);
-      const successor = at >= 0 ? (items[at + 1] ?? items[at - 1]) : undefined;
+      const successor =
+        at >= 0
+          ? (items[at + 1] ?? items[at - 1])
+          : held?.key === key
+            ? (items[held.index] ?? items[held.index - 1])
+            : undefined;
+      const advancedTo = successor ? keyOf(successor) : null;
       const moved = input.state !== "noted" && openKeyRef.current === key;
       if (moved) {
         setVoteFor(null);
-        setOpenKey(successor ? keyOf(successor) : null);
+        setOpenKey(advancedTo);
       }
       try {
         // No lane: a mark made here was not earned in a queue, and the hand-off
@@ -479,11 +530,13 @@ export function CurationRecommendationsView() {
         await mark.mutateAsync({ row: post, ...input });
         successToast(message);
       } catch (e) {
-        if (moved) setOpenKey(key);
+        // Back to the post only while the drawer still sits where the advance
+        // left it: a curator who closed it or moved on since keeps their place.
+        if (moved && openKeyRef.current === advancedTo) setOpenKey(key);
         errorToast(...formatError(e));
       }
     },
-    [mark, items]
+    [mark, items, held]
   );
 
   const onReviewed = useCallback(
