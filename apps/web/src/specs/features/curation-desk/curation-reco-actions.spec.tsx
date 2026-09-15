@@ -99,7 +99,9 @@ vi.mock("@/api/sdk-mutations/use-curation-recommend-mutation", () => ({
   useCurationRecommendMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
+import { QueryClient } from "@tanstack/react-query";
 import { CurationRecommendationsView } from "@/features/curation-desk/curation-recommendations-view";
+import { recoDismissMutationKey, rosterFeedPrefix } from "@/features/curation-desk/hooks";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -571,6 +573,31 @@ describe("recommended list row actions", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  /**
+   * The mutation cache outlives an account switch, so a dismissal another
+   * account made in this browser must not read as this curator's own: their
+   * drawer keeps the post when a refresh drops it.
+   */
+  it("does not take another account's dismissal of the same post for this curator's", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const other = client
+      .getMutationCache()
+      .build(client, { mutationKey: recoDismissMutationKey("curator2"), mutationFn: async () => ({}) });
+    await other.execute({ author: "alice", permlink: "morning-light", action: "dismiss" });
+
+    renderWithQueryClient(<CurationRecommendationsView />, { queryClient: client });
+    const toolbar = await screen.findByRole("toolbar");
+    fireEvent.click(within(toolbar.closest("li") as HTMLElement).getByLabelText("curation-desk.actions.read-key"));
+    await waitFor(() => expect(screen.getByTestId("renderer")).toBeInTheDocument());
+
+    router.on(/curation-desk\/roster-feed/, () => makeRosterPage([]));
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: rosterFeedPrefix("curator1") });
+    });
+    await waitFor(() => expect(screen.getByText("curation-desk.reco-view.empty")).toBeInTheDocument());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("drops them for a paid post too, which the shared clock can reach with the tab open", async () => {

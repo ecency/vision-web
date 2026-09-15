@@ -8,7 +8,6 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import {
   getCurationPostQueryOptions,
   getCurationRecommendationsInfiniteQueryOptions,
-  QueryKeys,
   type CurationFlagReason,
   type CurationMyMark,
   type CurationRecommendationItem,
@@ -38,6 +37,7 @@ import { CurationWindowBadge } from "./curation-window-badge";
 import { computeWindow, parseChainDate } from "./curation-window";
 import {
   rosterFeedPrefix,
+  recoDismissMutationKey,
   rosterFeedQueryOptions,
   useClearMark,
   useCoarsePointer,
@@ -412,12 +412,13 @@ export function CurationRecommendationsView() {
   const queryClient = useQueryClient();
   // A dismissal made in this tab, from the row or from the drawer, is the one
   // departure the curator chose here, so it is never held. Read off the
-  // mutation cache, where both dismiss controls leave their request.
+  // mutation cache, where both dismiss controls leave their request, under
+  // this account's key alone: the cache outlives an account switch.
   const dismissedHere = useCallback(
     (key: string) =>
       queryClient
         .getMutationCache()
-        .findAll({ mutationKey: [...QueryKeys.curation._prefix, "reco-dismiss"] })
+        .findAll({ mutationKey: recoDismissMutationKey(viewer.username), exact: true })
         .some((mutation) => {
           const vars = mutation.state.variables as { author?: string; permlink?: string; action?: string } | undefined;
           return (
@@ -427,7 +428,7 @@ export function CurationRecommendationsView() {
             Date.now() - mutation.state.submittedAt < OWN_DISMISS_MS
           );
         }),
-    [queryClient]
+    [queryClient, viewer.username]
   );
 
   // The drawer follows the loaded list, with one exception: a post that leaves
