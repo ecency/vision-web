@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useValidatePostUpdating } from "@/api/mutations/validate-post-updating";
 import { postBodySummary } from "@ecency/render-helper";
+import { usableDescription } from "@/app/publish/_utils/content";
 import { EcencyAnalytics } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
@@ -59,8 +60,8 @@ export function useUpdateApi(onClear: () => void) {
       const metaBuilder = await EntryMetadataManagement.EntryMetadataManager.shared
         .builder()
         .extend(editingEntry)
-        // It should select filled description or if its empty or null/undefined then get auto summary
-        .withSummary(description || postBodySummary(body))
+        // Use the author's description unless it is empty or too short to be meaningful
+        .withSummary(usableDescription(description) ?? postBodySummary(body))
         .withTags(tags)
         .withPoll()
         .withSelectedThumbnail(selectedThumbnail);

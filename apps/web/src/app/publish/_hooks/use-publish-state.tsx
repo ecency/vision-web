@@ -18,9 +18,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from "react";
 import isEqual from "react-fast-compare";
+import { usableDescription } from "../_utils/content";
 import { usePublishPollState } from "./use-publish-poll-state";
 
 interface PublishStateContextValue {
@@ -33,7 +35,10 @@ interface PublishStateContextValue {
   beneficiaries: BeneficiaryRoute[];
   setBeneficiaries: Dispatch<SetStateAction<BeneficiaryRoute[]>>;
   metaDescription: string;
+  /** Sets the description from a loaded draft, template or post, or from a repair. */
   setMetaDescription: (value: string) => void;
+  /** Sets the description the author typed, which the auto summary then leaves alone. */
+  editMetaDescription: (value: string) => void;
   schedule: Date | undefined;
   setSchedule: (value: Date | undefined) => void;
   clearSchedule: () => void;
@@ -138,8 +143,25 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
     [setStoredTitle]
   );
 
+  // The summary last generated from the body, and whether the author has typed
+  // a description since. Together they decide whether the description still
+  // follows the body.
+  const autoDescriptionRef = useRef("");
+  const descriptionEditedRef = useRef(false);
+
   const setMetaDescription = useCallback(
-    (value: string) => setStoredMetaDescription(value.slice(0, SUBMIT_DESCRIPTION_MAX_LENGTH)),
+    (value: string) => {
+      descriptionEditedRef.current = false;
+      setStoredMetaDescription(value.slice(0, SUBMIT_DESCRIPTION_MAX_LENGTH));
+    },
+    [setStoredMetaDescription]
+  );
+
+  const editMetaDescription = useCallback(
+    (value: string) => {
+      descriptionEditedRef.current = true;
+      setStoredMetaDescription(value.slice(0, SUBMIT_DESCRIPTION_MAX_LENGTH));
+    },
     [setStoredMetaDescription]
   );
 
@@ -206,11 +228,32 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
     [poll, setPoll]
   );
 
+  // Keep an auto generated description in step with the body. Filling it only
+  // while empty froze it at the first content update, which for a typed post is
+  // its first letter. That value then left the composer through Back to Classic
+  // Editor and drafts without ever reaching the validation step. A description
+  // the author typed is left alone. So is one loaded from a draft, template or
+  // post, unless it is too short to be meaningful.
   useEffect(() => {
-    if (!metaDescription) {
-      setMetaDescription(postBodySummary(content!, SUBMIT_DESCRIPTION_MAX_LENGTH));
+    if (descriptionEditedRef.current) {
+      return;
     }
-  }, [content, metaDescription, setMetaDescription]);
+
+    const followsBody =
+      !usableDescription(metaDescription) || metaDescription === autoDescriptionRef.current;
+    if (!followsBody) {
+      return;
+    }
+
+    const next = postBodySummary(content ?? "", SUBMIT_DESCRIPTION_MAX_LENGTH).slice(
+      0,
+      SUBMIT_DESCRIPTION_MAX_LENGTH
+    );
+    autoDescriptionRef.current = next;
+    if (next !== metaDescription) {
+      setStoredMetaDescription(next);
+    }
+  }, [content, metaDescription]);
 
   useEffect(() => {
     if (!selectedThumbnail && thumbnails.length && !skipAutoThumbnailSelection) {
@@ -281,6 +324,7 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
         setBeneficiaries,
         metaDescription,
         setMetaDescription,
+        editMetaDescription,
         schedule,
         setSchedule,
         clearSchedule,

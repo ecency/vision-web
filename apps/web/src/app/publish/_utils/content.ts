@@ -35,3 +35,12 @@ export function hasPublishContent(content?: string | null): boolean {
 export function hasDraftableContent(title?: string | null, content?: string | null): boolean {
   return !!title?.trim() || hasPublishContent(content);
 }
+
+/**
+ * The description to publish, or undefined when the body summary should be used
+ * instead. A value of one character or less counts as empty: it is what the
+ * composer used to capture from the first typed letter, never a real summary.
+ */
+export function usableDescription(description?: string | null): string | undefined {
+  return description && description.trim().length > 1 ? description : undefined;
+}

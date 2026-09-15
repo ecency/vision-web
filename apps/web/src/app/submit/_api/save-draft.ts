@@ -9,6 +9,7 @@ import { success, error } from "@/features/shared";
 import { QueryKeys } from "@ecency/sdk";
 import { useRouter } from "next/navigation";
 import { postBodySummary } from "@ecency/render-helper";
+import { usableDescription } from "@/app/publish/_utils/content";
 import { EcencyAnalytics } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { ensureValidToken } from "@/utils";
@@ -54,8 +55,8 @@ export function useSaveDraftApi(onDraftCreated?: (draft: Draft) => void) {
         .default()
         .extractFromBody(body)
         .withTags(tags)
-        // It should select filled description or if its empty or null/undefined then get auto summary
-        .withSummary(description || postBodySummary(body))
+        // Use the author's description unless it is empty or too short to be meaningful
+        .withSummary(usableDescription(description) ?? postBodySummary(body))
         .withSelectedThumbnail(selectedThumbnail);
 
       const meta = metaBuilder.build();

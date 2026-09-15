@@ -13,7 +13,7 @@ interface Props {
 }
 
 export function PublishMetaInfoDialog({ show, setShow }: Props) {
-  const { metaDescription, setMetaDescription } = usePublishState();
+  const { metaDescription, editMetaDescription } = usePublishState();
 
   return (
     <Modal show={show} onHide={() => setShow(false)} centered={true}>
@@ -23,7 +23,7 @@ export function PublishMetaInfoDialog({ show, setShow }: Props) {
         <FormControl
           type="textarea"
           value={metaDescription}
-          onChange={(e) => setMetaDescription((e.target as any).value)}
+          onChange={(e) => editMetaDescription((e.target as any).value)}
           maxLength={SUBMIT_DESCRIPTION_MAX_LENGTH}
         />
       </ModalBody>

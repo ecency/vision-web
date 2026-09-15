@@ -4,7 +4,7 @@ import i18next from "i18next";
 import { SUBMIT_DESCRIPTION_MAX_LENGTH } from "@/app/submit/_consts";
 
 export function PublishValidatePostMeta() {
-  const { title, metaDescription, setMetaDescription } = usePublishState();
+  const { title, metaDescription, editMetaDescription } = usePublishState();
 
     return (
     <div className="flex flex-col gap-2">
@@ -14,7 +14,7 @@ export function PublishValidatePostMeta() {
         placeholder={i18next.t("publish.preview-subtitle")}
         type="textarea"
         value={metaDescription}
-        onChange={(e) => setMetaDescription((e.target as HTMLTextAreaElement).value)}
+        onChange={(e) => editMetaDescription((e.target as HTMLTextAreaElement).value)}
         maxLength={SUBMIT_DESCRIPTION_MAX_LENGTH}
       />
     </div>

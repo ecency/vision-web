@@ -22,7 +22,7 @@ import { createPermlink, isCommunity } from "@/utils";
 import { useQuery } from "@tanstack/react-query";
 import { buildPublishOperation } from "../_utils/build-publish-operation";
 import { wordOverlapSimilarity } from "@/utils/text-similarity";
-import { hasPublishContent } from "../_utils/content";
+import { hasPublishContent, usableDescription } from "../_utils/content";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { AvailableCredits } from "@/features/shared";
 import { RcPrecheckBanner } from "@/features/shared/rc-precheck";
@@ -281,8 +281,8 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
   useEffect(() => {
     if (!content) return;
 
-    // Only generate description if it's empty or 1-char garbage
-    if (!metaDescription || metaDescription.trim().length <= 1) {
+    // Only generate description if it's empty or too short to be meaningful
+    if (!usableDescription(metaDescription)) {
       // Strip HTML tags including unclosed forms (`<[^>]*(?:>|$)`) so a
       // truncated `…<script` substring can't leak into the meta tag.
       // Loop catches nested payloads like `<scr<script>ipt>`.

@@ -10,6 +10,7 @@ import { error } from "@/features/shared";
 import { AxiosError } from "axios";
 import i18next from "i18next";
 import { postBodySummary } from "@ecency/render-helper";
+import { usableDescription } from "@/app/publish/_utils/content";
 import { EcencyAnalytics } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
@@ -79,8 +80,8 @@ export function useScheduleApi(onClear: () => void) {
         .default()
         .extractFromBody(body)
         .withTags(tags)
-        // It should select filled description or if its empty or null/undefined then get auto summary
-        .withSummary(description || postBodySummary(body))
+        // Use the author's description unless it is empty or too short to be meaningful
+        .withSummary(usableDescription(description) ?? postBodySummary(body))
         .withPoll(activePoll)
         .withSelectedThumbnail(selectedThumbnail);
       const jsonMeta = jsonMetaBuilder.build();
