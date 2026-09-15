@@ -698,11 +698,20 @@ export function useClearMark() {
 }
 
 
+/**
+ * The dismiss mutation's key, per account. Web-owned like the hook itself, and
+ * shared with the recommendations view, which reads this account's dismissals
+ * off the mutation cache.
+ */
+export function recoDismissMutationKey(username: string | undefined) {
+  return [...QueryKeys.curation._prefix, "reco-dismiss", username];
+}
+
 export function useCurationDismissReco() {
   const username = useActiveUsername();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: [...QueryKeys.curation._prefix, "reco-dismiss", username],
+    mutationKey: recoDismissMutationKey(username),
     mutationFn: async (input: { author: string; permlink: string; action: CurationDismissAction }) => {
       noteCuratorActivity();
       return curationDeskApi.dismissReco(username, input);

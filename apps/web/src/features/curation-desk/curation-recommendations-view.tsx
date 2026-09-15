@@ -12,6 +12,8 @@ import {
   type CurationMyMark,
   type CurationRecommendationItem,
   type CurationRecommendationsSort,
+  type CurationRosterFeedParams,
+  type CurationRosterRow,
 } from "@ecency/sdk";
 import { Button } from "@ui/button";
 import { UilEyeSlash } from "@tooni/iconscout-unicons-react";
@@ -35,6 +37,8 @@ import { CurationWindowBadge } from "./curation-window-badge";
 import { computeWindow, parseChainDate } from "./curation-window";
 import {
   rosterFeedPrefix,
+  recoDismissMutationKey,
+  rosterFeedQueryOptions,
   useClearMark,
   useCoarsePointer,
   useCurationDismissReco,
@@ -46,6 +50,42 @@ import type { DeskRow, ViewerRole } from "./types";
 
 /** How long a post stays open, and so how far back the marks index must reach. */
 const OPEN_POST_MS = 7 * DAY_MS;
+
+/** How often the curator list reads again, so a post a colleague handled leaves it. */
+const ROSTER_REFRESH_MS = 60_000;
+
+/** How recent a dismissal made in this tab must be to count as the reason its post left the list. */
+const OWN_DISMISS_MS = 60_000;
+
+/**
+ * A roster row of `view=recommended`, which also carries what route 4 draws.
+ * Optional, because a desk older than those fields answers without them.
+ */
+type RosterRecommendationRow = CurationRosterRow &
+  Partial<Pick<CurationRecommendationItem, "recommenders" | "reasons" | "no_meta_count">>;
+
+/**
+ * A list row. `recommendersUnknown` marks a roster row from a desk too old to
+ * send its recommenders: the viewer's own recommendation cannot be told apart
+ * from none, so Recommend is withheld rather than offered as a duplicate.
+ */
+type ListItem = CurationRecommendationItem & { recommendersUnknown?: boolean };
+
+function fromRosterRow(row: RosterRecommendationRow): ListItem {
+  return {
+    recommendersUnknown: row.recommenders === undefined,
+    author: row.author,
+    permlink: row.permlink,
+    title: row.title,
+    created: row.created,
+    first_image: row.first_image ?? null,
+    recommend_count: row.recommend_count,
+    unique_recommenders: row.unique_recommenders,
+    no_meta_count: row.no_meta_count ?? row.reco_no_meta_count ?? 0,
+    reasons: row.reasons ?? {},
+    recommenders: row.recommenders ?? [],
+  };
+}
 
 /** Route 4 items carry no post_id, so the pair is the identity here. */
 const keyOf = (post: { author: string; permlink: string }) => `${post.author}/${post.permlink}`;
@@ -102,7 +142,7 @@ function reasonsTooltip(item: CurationRecommendationItem): string {
 }
 
 interface RowProps {
-  item: CurationRecommendationItem;
+  item: ListItem;
   canDismiss: boolean;
   isRoster: boolean;
   isTrial: boolean;
@@ -228,7 +268,7 @@ function RecommendationRow({
             ? i18next.t("curation-desk.window.locked-tooltip", { pct: windowState.scalePct })
             : i18next.t("curation-desk.actions.vote-key")
         }
-        recommendHidden={locked || paid || username === item.author}
+        recommendHidden={locked || paid || username === item.author || !!item.recommendersUnknown}
         alreadyRecommended={mine}
         href={`/@${item.author}/${item.permlink}`}
         // Below lg the controls take their own line under the post, the way
@@ -273,9 +313,13 @@ type Dialog =
   | { kind: "note"; post: PostRef };
 
 /**
- * Public list of open posts with active recommendations (route 4), with the
- * desk's row actions on every row: the queue is not the only place a curator
- * reads and handles a post, and this list is where the network points them.
+ * List of open posts with active recommendations, with the desk's row actions
+ * on every row: the queue is not the only place a curator reads and handles a
+ * post, and this list is where the network points them.
+ *
+ * Curators read the roster feed's recommended view, which leaves out what the
+ * team already handled (curated, reviewed, snoozed or flagged). Route 4 is
+ * public and edge cached, so it cannot know team marks; everyone else reads it.
  */
 export function CurationRecommendationsView() {
   const viewer: ViewerRole = useViewerRole();
@@ -284,13 +328,42 @@ export function CurationRecommendationsView() {
   );
   const coarsePointer = useCoarsePointer();
   const [sort, setSort] = useState<CurationRecommendationsSort>("unique");
-  // The public list is part of what the sub-flag turns off, so a disabled
-  // build asks for nothing.
-  const query = useInfiniteQuery({
+  const rosterParams = useMemo<CurationRosterFeedParams>(
+    () => ({ view: "recommended", sort, hide_curated: true, hide_reviewed: true, hide_snoozed: true }),
+    [sort]
+  );
+  // The list is part of what the sub-flag turns off, so a disabled build asks
+  // for nothing. Neither list is asked for before the role is known, or a
+  // curator would fetch the public list first and then their own.
+  const publicQuery = useInfiniteQuery({
     ...getCurationRecommendationsInfiniteQueryOptions({ sort }),
-    enabled: recommendationsEnabled,
+    enabled: recommendationsEnabled && !viewer.isLoading && !viewer.isRoster,
   });
-  const items = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const openKeyRef = useRef(openKey);
+  openKeyRef.current = openKey;
+  const rosterQuery = useInfiniteQuery({
+    ...rosterFeedQueryOptions(viewer.username, rosterParams),
+    enabled: recommendationsEnabled && viewer.isRoster && !!viewer.username,
+    // Marks made here leave the list at once through the mark's cache update;
+    // a colleague's mark or a trail vote arrives on the next read. It reads
+    // only while one page is loaded and no drawer is open: an interval
+    // refetches every loaded page, and a post leaving mid-read would take the
+    // drawer, and a reply being written, with it.
+    refetchInterval: (query) =>
+      openKey || (query.state.data?.pages.length ?? 0) > 1 ? false : ROSTER_REFRESH_MS,
+  });
+  const query = viewer.isRoster ? rosterQuery : publicQuery;
+  const items = useMemo<ListItem[]>(
+    () =>
+      viewer.isRoster
+        ? (rosterQuery.data?.pages.flatMap((p) => p.items) ?? []).map((row) =>
+            fromRosterRow(row as RosterRecommendationRow)
+          )
+        : (publicQuery.data?.pages.flatMap((p) => p.items) ?? []),
+    [viewer.isRoster, rosterQuery.data, publicQuery.data]
+  );
+  const listLoading = viewer.isLoading || query.isLoading;
   const loadMore = useBottomPagination({
     data: query.data,
     dataUpdatedAt: query.dataUpdatedAt,
@@ -329,7 +402,6 @@ export function CurationRecommendationsView() {
   // design, exactly as it does in the queue.
   const markStateUnknown = viewer.isRoster && (!myMarks.isSuccess || myMarks.isFetchingNextPage);
 
-  const [openKey, setOpenKey] = useState<string | null>(null);
   // The post whose Vote control asked for the slider, not a bare flag: the
   // drawer only presses it once that post's entry resolves, and a curator who
   // steps to the next post meanwhile must not have their vote land there.
@@ -337,10 +409,50 @@ export function CurationRecommendationsView() {
   const [dialog, setDialog] = useState<Dialog>({ kind: "none" });
   const recommendRef = useRef<CurationRecommendHandle | null>(null);
 
-  // The drawer follows the loaded list: a post that leaves it (a dismissal, a
-  // reordering page) has nothing left to show, so the drawer closes with it.
+  const queryClient = useQueryClient();
+  // A dismissal made in this tab, from the row or from the drawer, is the one
+  // departure the curator chose here, so it is never held. Read off the
+  // mutation cache, where both dismiss controls leave their request, under
+  // this account's key alone: the cache outlives an account switch.
+  const dismissedHere = useCallback(
+    (key: string) =>
+      queryClient
+        .getMutationCache()
+        .findAll({ mutationKey: recoDismissMutationKey(viewer.username), exact: true })
+        .some((mutation) => {
+          const vars = mutation.state.variables as { author?: string; permlink?: string; action?: string } | undefined;
+          return (
+            mutation.state.status !== "error" &&
+            vars?.action === "dismiss" &&
+            `${vars.author}/${vars.permlink}` === key &&
+            Date.now() - mutation.state.submittedAt < OWN_DISMISS_MS
+          );
+        }),
+    [queryClient, viewer.username]
+  );
+
+  // The drawer follows the loaded list, with one exception: a post that leaves
+  // it while open for a reason the curator did not choose here (a refresh that
+  // was already running when the drawer opened, an invalidation) stays in the
+  // drawer, so a reply being written is not unmounted under them. Where it sat
+  // is kept too, so Next lands on the post that took its place. Derived during
+  // render: an effect would unmount the drawer for one commit first.
   const openIndex = openKey ? items.findIndex((item) => keyOf(item) === openKey) : -1;
-  const openItem = openIndex >= 0 ? items[openIndex] : null;
+  const lastOpenRef = useRef<{ key: string; item: ListItem; index: number } | null>(null);
+  if (openKey && openIndex >= 0) lastOpenRef.current = { key: openKey, item: items[openIndex], index: openIndex };
+  const held =
+    openKey && openIndex < 0 && lastOpenRef.current?.key === openKey && !dismissedHere(openKey)
+      ? lastOpenRef.current
+      : null;
+  const openItem = openIndex >= 0 ? items[openIndex] : (held?.item ?? null);
+  // A selection with nothing to show (its post was dismissed here, or it never
+  // loaded) is cleared, or it would keep the list refresh paused for good.
+  useEffect(() => {
+    if (openKey && !openItem) {
+      setOpenKey(null);
+      setVoteFor(null);
+    }
+  }, [openKey, openItem]);
   // The drawer reads route 5 for the recommender list under the same key, so
   // this upgrade costs no second request.
   const { data: post } = useQuery({
@@ -353,19 +465,22 @@ export function CurationRecommendationsView() {
     return post && keyOf(post) === keyOf(openItem) ? { ...stub, ...post } : stub;
   }, [openItem, post]);
   const neighbour = useMemo(() => {
-    const next = openIndex >= 0 ? items[openIndex + 1] : undefined;
+    const at = openIndex >= 0 ? openIndex + 1 : (held?.index ?? -1);
+    const next = at >= 0 ? items[at] : undefined;
     return next ? stubRow(next) : null;
-  }, [items, openIndex]);
+  }, [items, openIndex, held]);
 
   const move = useCallback(
     (delta: number) => {
-      if (openIndex < 0) return;
-      const next = items[openIndex + delta];
+      // From a held post, the post that took its place is next and the one
+      // above it is previous.
+      const at = openIndex >= 0 ? openIndex + delta : held ? held.index + (delta > 0 ? 0 : -1) : -1;
+      const next = at >= 0 ? items[at] : undefined;
       if (!next) return;
       setVoteFor(null);
       setOpenKey(keyOf(next));
     },
-    [items, openIndex]
+    [items, openIndex, held]
   );
 
   const onOpen = useCallback((item: CurationRecommendationItem) => {
@@ -384,7 +499,6 @@ export function CurationRecommendationsView() {
     setVoteFor(null);
   }, []);
 
-  const queryClient = useQueryClient();
   const mark = useCurationMark();
   const clearMark = useClearMark();
   const doMark = useCallback(
@@ -393,16 +507,37 @@ export function CurationRecommendationsView() {
       input: { state: "reviewed" | "snoozed" | "flagged" | "noted"; reason?: string; note?: string; snooze_until?: string },
       message: string
     ) => {
+      // A team mark takes the post off a curator's list, and a drawer on a row
+      // that left the list closes. So a drawer open on the marked post walks on
+      // to the next one on the click, the way the queue does, and comes back if
+      // the mark fails. A note is not a team mark and keeps the post listed.
+      const key = keyOf(post);
+      const at = items.findIndex((item) => keyOf(item) === key);
+      const successor =
+        at >= 0
+          ? (items[at + 1] ?? items[at - 1])
+          : held?.key === key
+            ? (items[held.index] ?? items[held.index - 1])
+            : undefined;
+      const advancedTo = successor ? keyOf(successor) : null;
+      const moved = input.state !== "noted" && openKeyRef.current === key;
+      if (moved) {
+        setVoteFor(null);
+        setOpenKey(advancedTo);
+      }
       try {
         // No lane: a mark made here was not earned in a queue, and the hand-off
         // reads the lane off the mark to say which one it was.
         await mark.mutateAsync({ row: post, ...input });
         successToast(message);
       } catch (e) {
+        // Back to the post only while the drawer still sits where the advance
+        // left it: a curator who closed it or moved on since keeps their place.
+        if (moved && openKeyRef.current === advancedTo) setOpenKey(key);
         errorToast(...formatError(e));
       }
     },
-    [mark]
+    [mark, items, held]
   );
 
   const onReviewed = useCallback(
@@ -461,9 +596,9 @@ export function CurationRecommendationsView() {
         ))}
         {sort === "unique" && <span className="text-gray-500">{i18next.t("curation-desk.sort.unique-hint")}</span>}
       </div>
-      {query.isLoading && <p className="p-4 text-sm text-gray-500">{i18next.t("curation-desk.list.loading")}</p>}
+      {listLoading && <p className="p-4 text-sm text-gray-500">{i18next.t("curation-desk.list.loading")}</p>}
       {query.isError && <p className="p-4 text-sm text-red-030 dark:text-red-light-020" role="alert">{i18next.t("curation-desk.list.error")}</p>}
-      {!query.isLoading && items.length === 0 && !query.isError && (
+      {!listLoading && items.length === 0 && !query.isError && (
         <p className="p-6 text-sm text-gray-500 text-center">{i18next.t("curation-desk.reco-view.empty")}</p>
       )}
       <ul className="divide-y divide-[--border-color]" aria-label={i18next.t("curation-desk.reco-view.title")}>

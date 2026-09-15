@@ -15,6 +15,15 @@ function flag(value: string | boolean | undefined, fallback: boolean): boolean {
 }
 
 /**
+ * The recommended view, the Recommended chip and the unique sort serve active
+ * recommendations only, so a recommendation made or withdrawn changes which
+ * posts they hold.
+ */
+export function feedServesRecommendationsOnly(feed: FeedFilters): boolean {
+  return feed.view === "recommended" || flag(feed.recommended, false) || feed.sort === "unique";
+}
+
+/**
  * Would the roster feed behind `feed` still serve this row? A mirror of the
  * server's own predicate over state, exclusion and the team mark, and the ONE
  * place the client decides that a row it holds has moved outside its feed:
@@ -37,9 +46,17 @@ export function rowHiddenByFeed(row: DeskRow, feed: FeedFilters): boolean {
     if (view === "curated") {
       if (row.state !== 1) return true;
     } else if (view !== "all") {
-      const openOnly = flag(feed.hide_curated, true) || flag(feed.recommended, false) || feed.sort === "unique";
+      const openOnly =
+        view === "recommended" || flag(feed.hide_curated, true) || flag(feed.recommended, false) || feed.sort === "unique";
       if (openOnly && row.state !== 0) return true;
     }
+  }
+  // The recommended view, the Recommended chip and the unique sort serve active
+  // recommendations only, on every view: a dismissed post leaves them, and so
+  // does one whose last recommendation was withdrawn.
+  if (feedServesRecommendationsOnly(feed)) {
+    if (row.overlay?.reco_dismissed_at) return true;
+    if (typeof row.recommend_count === "number" && row.recommend_count <= 0) return true;
   }
   // The team mark rules apply on every roster view, the way the server adds
   // them to every roster query.
