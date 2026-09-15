@@ -423,6 +423,57 @@ describe("recommended list row actions", () => {
     }
   });
 
+  /**
+   * A reviewed post leaves a curator's list, so a drawer open on it would
+   * close under the curator. It walks on to the next post instead, the way
+   * the queue does.
+   */
+  it("walks the drawer on to the next post when the open post is reviewed", async () => {
+    router
+      .on(/curation-desk\/roster-feed/, () =>
+        makeRosterPage([recoRow(), recoRow({ author: "bob", permlink: "second", title: "Second" }, 78)])
+      )
+      .on(/curation-desk\/mark$/, () => ({
+        mark: { curator: "curator1", state: "reviewed", updated_at: new Date().toISOString() },
+        row: { ...recoRow(), overlay: makeOverlay({ team_mark: "reviewed", team_mark_by: "curator1" }) },
+      }));
+
+    renderWithQueryClient(<CurationRecommendationsView />);
+    await waitFor(() => expect(screen.getAllByRole("toolbar")).toHaveLength(2));
+    const [first] = screen.getAllByRole("toolbar").map((el) => within(el));
+    await waitFor(() => expect(first.getByLabelText("curation-desk.actions.reviewed")).not.toBeDisabled());
+    fireEvent.click(first.getByLabelText("curation-desk.actions.read-key"));
+    const drawer = within(await screen.findByRole("dialog"));
+    await waitFor(() => expect(drawer.getByLabelText("curation-desk.actions.reviewed-key")).not.toBeDisabled());
+    fireEvent.click(drawer.getByLabelText("curation-desk.actions.reviewed-key"));
+
+    await waitFor(() => expect(router.callsTo(/curation-desk\/mark$/)).toHaveLength(1));
+    await waitFor(() => expect(state.entryFetch).toHaveBeenCalledWith("bob", "second"));
+    // The reviewed post is gone from the list and from the drawer, which stayed open.
+    await waitFor(() => expect(screen.queryByText("Morning light")).toBeNull());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  /**
+   * A post leaving mid-read would take the drawer, and a reply being written,
+   * with it, so the list does not read again while a drawer is open.
+   */
+  it("does not read the curator list again while the drawer is open", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const listRow = await row();
+      fireEvent.click(listRow.getByLabelText("curation-desk.actions.read-key"));
+      await screen.findByRole("dialog");
+      const before = router.callsTo(/curation-desk\/roster-feed/).length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(61_000);
+      });
+      expect(router.callsTo(/curation-desk\/roster-feed/)).toHaveLength(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("drops them for a paid post too, which the shared clock can reach with the tab open", async () => {
     router.on(/curation-desk\/roster-feed/, () =>
       makeRosterPage([recoRow({ created: new Date(Date.now() - 8 * DAY).toISOString() })])

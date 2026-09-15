@@ -16,6 +16,7 @@ import { useActiveUsername } from "@/core/hooks/use-active-username";
 import { useCurationRecommendMutation } from "@/api/sdk-mutations/use-curation-recommend-mutation";
 import { META_RETRY_MS, RECOMMEND_CONFIRM_DEADLINE_MS, RECOMMEND_POLL_AT_S } from "./consts";
 import { curationDeskApi } from "./curation-desk-api";
+import { feedServesRecommendationsOnly, type FeedFilters } from "./curation-feed-rules";
 import {
   clearRecommendStates,
   getRecommendState,
@@ -103,6 +104,20 @@ export async function pingRecommendMeta(
  * Route 5 confirmed the change: copy its counts onto every loaded feed row of
  * that post so the badge updates without refetching a page.
  */
+/**
+ * A recommendation made or withdrawn changes which posts the recommendation
+ * feeds hold: the public list, and every roster feed that serves active
+ * recommendations only, the curators' recommendations tab among them. Other
+ * roster feeds keep their pages; their counts are patched in place.
+ */
+export function invalidateRecommendationFeeds(queryClient: QueryClient, username: string | undefined) {
+  queryClient.invalidateQueries({ queryKey: QueryKeys.curation._recommendationsPrefix });
+  queryClient.invalidateQueries({
+    queryKey: QueryKeys.curation.rosterFeed(username).slice(0, 3),
+    predicate: (query) => feedServesRecommendationsOnly((query.queryKey[3] ?? {}) as FeedFilters),
+  });
+}
+
 export function patchRecommendCounts(queryClient: QueryClient, post: CurationPost) {
   queryClient.setQueriesData<InfiniteData<{ items: DeskRow[] }, unknown>>(
     { queryKey: QueryKeys.curation._prefix },
@@ -184,7 +199,7 @@ export function startRecommendPoll(
       // A confirmed withdraw removed the chain row, so a later recommendation
       // of the same post needs its meta ping to travel again.
       if (withdraw) pinged.delete(key);
-      queryClient.invalidateQueries({ queryKey: QueryKeys.curation._recommendationsPrefix });
+      invalidateRecommendationFeeds(queryClient, username);
     } else if (current.phase === "pending" || (current.phase === "recommended" && !current.confirmed)) {
       setRecommendState(username, author, permlink, { phase: "confirming", withdraw });
     }
@@ -329,7 +344,7 @@ export function useRecommendFlow(author: string, permlink: string) {
         if (post && !viewerRow(post, username)) {
           setRecommendState(username, author, permlink, { phase: "withdrawn" });
           pinged.delete(recommendKey(username, author, permlink));
-          queryClient.invalidateQueries({ queryKey: QueryKeys.curation._recommendationsPrefix });
+          invalidateRecommendationFeeds(queryClient, username);
           patchRecommendCounts(queryClient, post);
           return true;
         }

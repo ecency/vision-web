@@ -335,12 +335,19 @@ export function CurationRecommendationsView() {
     ...getCurationRecommendationsInfiniteQueryOptions({ sort }),
     enabled: recommendationsEnabled && !viewer.isLoading && !viewer.isRoster,
   });
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const openKeyRef = useRef(openKey);
+  openKeyRef.current = openKey;
   const rosterQuery = useInfiniteQuery({
     ...rosterFeedQueryOptions(viewer.username, rosterParams),
     enabled: recommendationsEnabled && viewer.isRoster && !!viewer.username,
     // Marks made here leave the list at once through the mark's cache update;
-    // a colleague's mark or a trail vote arrives on the next read.
-    refetchInterval: ROSTER_REFRESH_MS,
+    // a colleague's mark or a trail vote arrives on the next read. It reads
+    // only while one page is loaded and no drawer is open: an interval
+    // refetches every loaded page, and a post leaving mid-read would take the
+    // drawer, and a reply being written, with it.
+    refetchInterval: (query) =>
+      openKey || (query.state.data?.pages.length ?? 0) > 1 ? false : ROSTER_REFRESH_MS,
   });
   const query = viewer.isRoster ? rosterQuery : publicQuery;
   const items = useMemo<ListItem[]>(
@@ -391,7 +398,6 @@ export function CurationRecommendationsView() {
   // design, exactly as it does in the queue.
   const markStateUnknown = viewer.isRoster && (!myMarks.isSuccess || myMarks.isFetchingNextPage);
 
-  const [openKey, setOpenKey] = useState<string | null>(null);
   // The post whose Vote control asked for the slider, not a bare flag: the
   // drawer only presses it once that post's entry resolves, and a curator who
   // steps to the next post meanwhile must not have their vote land there.
@@ -455,16 +461,29 @@ export function CurationRecommendationsView() {
       input: { state: "reviewed" | "snoozed" | "flagged" | "noted"; reason?: string; note?: string; snooze_until?: string },
       message: string
     ) => {
+      // A team mark takes the post off a curator's list, and a drawer on a row
+      // that left the list closes. So a drawer open on the marked post walks on
+      // to the next one on the click, the way the queue does, and comes back if
+      // the mark fails. A note is not a team mark and keeps the post listed.
+      const key = keyOf(post);
+      const at = items.findIndex((item) => keyOf(item) === key);
+      const successor = at >= 0 ? (items[at + 1] ?? items[at - 1]) : undefined;
+      const moved = input.state !== "noted" && openKeyRef.current === key;
+      if (moved) {
+        setVoteFor(null);
+        setOpenKey(successor ? keyOf(successor) : null);
+      }
       try {
         // No lane: a mark made here was not earned in a queue, and the hand-off
         // reads the lane off the mark to say which one it was.
         await mark.mutateAsync({ row: post, ...input });
         successToast(message);
       } catch (e) {
+        if (moved) setOpenKey(key);
         errorToast(...formatError(e));
       }
     },
-    [mark]
+    [mark, items]
   );
 
   const onReviewed = useCallback(
