@@ -17,6 +17,7 @@ import { useCurationRecommendMutation } from "@/api/sdk-mutations/use-curation-r
 import { META_RETRY_MS, RECOMMEND_CONFIRM_DEADLINE_MS, RECOMMEND_POLL_AT_S } from "./consts";
 import { curationDeskApi } from "./curation-desk-api";
 import { feedServesRecommendationsOnly, type FeedFilters } from "./curation-feed-rules";
+import { refreshCurationStatus } from "./curation-status-refresh";
 import {
   clearRecommendStates,
   getRecommendState,
@@ -111,6 +112,7 @@ export async function pingRecommendMeta(
  * roster feeds keep their pages; their counts are patched in place.
  */
 export function invalidateRecommendationFeeds(queryClient: QueryClient, username: string | undefined) {
+  refreshCurationStatus(queryClient);
   queryClient.invalidateQueries({ queryKey: QueryKeys.curation._recommendationsPrefix });
   queryClient.invalidateQueries({
     queryKey: QueryKeys.curation.rosterFeed(username).slice(0, 3),

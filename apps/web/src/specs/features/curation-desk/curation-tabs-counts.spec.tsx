@@ -75,6 +75,26 @@ describe("recommendations tab badge", () => {
     expect(badge("recommendations")).toBe("14");
   });
 
+  /**
+   * Until the role is known the tab does not know which list it opens, so a
+   * curator whose role is still loading sees no count rather than the public one.
+   */
+  it("shows no recommendations count while the role is still loading", async () => {
+    let answer: (body: unknown) => void = () => undefined;
+    router.on(
+      /curation-desk\/roster$/,
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    renderWithQueryClient(<CurationTabs />);
+    await waitFor(() => expect(badge("queue")).toBe(String(status.counts.unreviewed)));
+    expect(badge("recommendations")).toBeNull();
+    answer(makeRoster(["curator1"]));
+    await waitFor(() => expect(badge("recommendations")).toBe("3"));
+  });
+
   it("falls back to the public count for a curator on a desk that sends no curator count", async () => {
     status = makeStatus();
     renderWithQueryClient(<CurationTabs />);

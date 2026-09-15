@@ -48,6 +48,7 @@ import {
   SORT_STORAGE_KEY,
 } from "./consts";
 import { curationDeskApi } from "./curation-desk-api";
+import { refreshCurationStatus } from "./curation-status-refresh";
 import { mergeHeadPage } from "./curation-head-merge";
 import { rowHiddenByFeed, type FeedFilters } from "./curation-feed-rules";
 import {
@@ -672,6 +673,8 @@ export function useCurationMark() {
     onSuccess: (response) => {
       if (response?.row) applyMarkedRow(queryClient, username, response.row);
       queryClient.invalidateQueries({ queryKey: [...QueryKeys.curation._prefix, MY_MARKS_KEY_SUFFIX, username] });
+      // A team mark moves the unreviewed and recommendation counts the tabs show.
+      refreshCurationStatus(queryClient);
     },
   });
 }
@@ -693,6 +696,7 @@ export function useClearMark() {
     onSuccess: (response, variables) => {
       if (response?.row) applyMarkedRow(queryClient, username, response.row, variables.restoreAt);
       queryClient.invalidateQueries({ queryKey: [...QueryKeys.curation._prefix, MY_MARKS_KEY_SUFFIX, username] });
+      refreshCurationStatus(queryClient);
     },
   });
 }
@@ -720,6 +724,8 @@ export function useCurationDismissReco() {
       if (response?.row) applyMarkedRow(queryClient, username, response.row);
       queryClient.invalidateQueries({ queryKey: QueryKeys.curation._recommendationsPrefix });
       queryClient.invalidateQueries({ queryKey: QueryKeys.curation.post(variables.author, variables.permlink) });
+      // A dismissal takes the post off both recommendation counts.
+      refreshCurationStatus(queryClient);
     },
   });
 }

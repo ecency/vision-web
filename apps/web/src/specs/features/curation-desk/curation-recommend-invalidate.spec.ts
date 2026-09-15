@@ -32,12 +32,15 @@ describe("invalidateRecommendationFeeds", () => {
       uniqueSort: QueryKeys.curation.rosterFeed("curator1", { sort: "unique" }),
       queue: QueryKeys.curation.rosterFeed("curator1", { sort: "queue" }),
       otherCurator: QueryKeys.curation.rosterFeed("curator2", { view: "recommended" }),
+      status: QueryKeys.curation.status(),
     };
     for (const key of Object.values(keys)) client.setQueryData(key, { pages: [], pageParams: [] });
 
     invalidateRecommendationFeeds(client, "curator1");
 
     const invalidated = (key: readonly unknown[]) => client.getQueryState(key)?.isInvalidated;
+    // The tab badges count recommendations, so status reads again too.
+    expect(invalidated(keys.status)).toBe(true);
     expect(invalidated(keys.publicList)).toBe(true);
     expect(invalidated(keys.recommendedView)).toBe(true);
     expect(invalidated(keys.recommendedChip)).toBe(true);

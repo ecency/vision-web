@@ -4,7 +4,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CurationRosterRow } from "@ecency/sdk";
 import { renderWithQueryClient } from "@/specs/test-utils";
-import { installFetchRouter, makeOverlay, makePost, makeRoster, makeRosterPage, makeRow } from "./curation-test-utils";
+import { installFetchRouter, makeOverlay, makePost, makeRoster, makeRosterPage, makeRow, makeStatus } from "./curation-test-utils";
 
 const state = vi.hoisted(() => ({
   username: "curator1" as string | undefined,
@@ -161,6 +161,7 @@ describe("recommended list row actions", () => {
     marks = [];
     router = installFetchRouter()
       .on(/curation-desk\/roster$/, () => makeRoster(["curator1"]))
+      .on(/curation-desk\/status/, () => makeStatus())
       .on(/curation-desk\/roster-feed/, () => makeRosterPage([recoRow()]))
       .on(/curation-desk\/recommendations/, () => ({ items: [item()], next_cursor: null }))
       .on(/curation-desk\/marks$/, () => ({ items: marks, next_cursor: null }))
@@ -404,6 +405,59 @@ describe("recommended list row actions", () => {
     fireEvent.click(listRow.getByLabelText("curation-desk.reco.dismiss"));
     await waitFor(() => expect(router.callsTo(/curation-desk\/recommendation-dismiss/)).toHaveLength(1));
     await waitFor(() => expect(screen.queryByRole("toolbar")).toBeNull());
+  });
+
+  /**
+   * The tab badges read the status counts, and a mark or a dismissal made here
+   * moves them, so each reads status again instead of leaving the badge on the
+   * count from before.
+   */
+  it("reads the status counts again after a mark and after a dismissal", async () => {
+    router
+      .on(/curation-desk\/roster-feed/, () =>
+        makeRosterPage([recoRow(), recoRow({ author: "bob", permlink: "second", title: "Second" }, 78)])
+      )
+      .on(/curation-desk\/mark$/, () => ({
+        mark: { curator: "curator1", state: "reviewed", updated_at: new Date().toISOString() },
+        row: { ...recoRow(), overlay: makeOverlay({ team_mark: "reviewed", team_mark_by: "curator1" }) },
+      }))
+      .on(/curation-desk\/recommendation-dismiss/, () => ({
+        row: {
+          ...recoRow({ author: "bob", permlink: "second", title: "Second" }, 78),
+          overlay: makeOverlay({ reco_dismissed_at: new Date().toISOString() }),
+        },
+      }));
+
+    renderWithQueryClient(<CurationRecommendationsView />);
+    await waitFor(() => expect(screen.getAllByRole("toolbar")).toHaveLength(2));
+    await waitFor(() => expect(router.callsTo(/curation-desk\/status/).length).toBeGreaterThan(0));
+    const [first, second] = screen.getAllByRole("toolbar").map((el) => within(el));
+    await waitFor(() => expect(first.getByLabelText("curation-desk.actions.reviewed")).not.toBeDisabled());
+
+    const beforeMark = router.callsTo(/curation-desk\/status/).length;
+    fireEvent.click(first.getByLabelText("curation-desk.actions.reviewed"));
+    await waitFor(() => expect(router.callsTo(/curation-desk\/status/).length).toBeGreaterThan(beforeMark));
+    await waitFor(() => expect(screen.getAllByRole("toolbar")).toHaveLength(1));
+
+    const beforeDismiss = router.callsTo(/curation-desk\/status/).length;
+    fireEvent.click(second.getByLabelText("curation-desk.reco.dismiss"));
+    await waitFor(() => expect(router.callsTo(/curation-desk\/recommendation-dismiss/)).toHaveLength(1));
+    await waitFor(() => expect(router.callsTo(/curation-desk\/status/).length).toBeGreaterThan(beforeDismiss));
+  });
+
+  it("reads the status counts on the list's own beat", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await row();
+      await waitFor(() => expect(router.callsTo(/curation-desk\/status/).length).toBeGreaterThan(0));
+      const before = router.callsTo(/curation-desk\/status/).length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(61_000);
+      });
+      await waitFor(() => expect(router.callsTo(/curation-desk\/status/).length).toBeGreaterThan(before));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   /**

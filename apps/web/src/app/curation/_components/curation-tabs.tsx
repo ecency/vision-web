@@ -33,20 +33,23 @@ export function CurationTabs() {
     ({ visionFeatures }) => visionFeatures.curationDesk.recommendations.enabled
   );
   const base = recommendationsEnabled ? TABS : TABS.filter((tab) => tab.key !== "recommendations");
-  const { role, isRoster } = useViewerRole();
+  const { role, isRoster, isLoading: roleLoading } = useViewerRole();
   const tabs = role === "admin" ? [...base, ROSTER_TAB] : base;
 
   // The recommendations tab opens a different list per role, so its badge
   // counts that list: curators read the roster's recommended view, which leaves
-  // out what the team handled, and everyone else reads the public list. A desk
-  // older than the curator count answers without it, and the public count
-  // stands in.
+  // out what the team handled, and everyone else reads the public list. Until
+  // the role is known the tab does not know which list it opens, so it shows no
+  // count rather than the wrong one. A desk older than the curator count
+  // answers without it, and the public count stands in.
   const statusCounts = status?.counts as StatusCounts | undefined;
   const counts: Record<string, number | undefined> = {
     queue: statusCounts?.unreviewed,
-    recommendations: isRoster
-      ? (statusCounts?.recommended_unhandled ?? statusCounts?.recommended_posts)
-      : statusCounts?.recommended_posts
+    recommendations: roleLoading
+      ? undefined
+      : isRoster
+        ? (statusCounts?.recommended_unhandled ?? statusCounts?.recommended_posts)
+        : statusCounts?.recommended_posts
   };
 
   return (
