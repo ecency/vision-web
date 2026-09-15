@@ -129,6 +129,14 @@ describe("Posting", () => {
     expect(extractMetaData(`[![](${url})](https://ecency.com/@ecency)`).image).toEqual([url]);
   });
 
+  it("(10) extractMetadata keeps a closing parenthesis inside an HTML attribute URL", () => {
+    const withExt = "https://i.ecency.com/DQmX/report).png";
+    expect(extractMetaData(`<img src="${withExt}">`).image).toEqual([withExt]);
+
+    const withoutExt = "https://images.ecency.com/p/abc)def";
+    expect(extractMetaData(`<img src="${withoutExt}">`).image).toEqual([withoutExt]);
+  });
+
   it("makeJsonMetaData", () => {
     const meta = {
       image: ["http://www.xx.com/a.png", "https://img.esteem.ws/h74zrad2fh.jpg"]
