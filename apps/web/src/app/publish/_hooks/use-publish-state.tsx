@@ -25,6 +25,10 @@ import isEqual from "react-fast-compare";
 import { usableDescription } from "../_utils/content";
 import { usePublishPollState } from "./use-publish-poll-state";
 
+// EntryMetadataBuilder.withSummary cuts a description to this length when a draft or
+// template is saved.
+const SAVED_SUMMARY_LENGTH = 200;
+
 interface PublishStateContextValue {
   title: string;
   content: string;
@@ -39,6 +43,10 @@ interface PublishStateContextValue {
   setMetaDescription: (value: string) => void;
   /** Sets the description the author typed, which the auto summary then leaves alone. */
   editMetaDescription: (value: string) => void;
+  /** Sets a description loaded with its body, which keeps following the body if it is that body's auto summary. */
+  loadMetaDescription: (value: string, body: string) => void;
+  /** Whether the description is still the auto summary, not one the author wrote or loaded. */
+  isMetaDescriptionAuto: () => boolean;
   schedule: Date | undefined;
   setSchedule: (value: Date | undefined) => void;
   clearSchedule: () => void;
@@ -166,6 +174,34 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
       setStoredMetaDescription(value.slice(0, SUBMIT_DESCRIPTION_MAX_LENGTH));
     },
     [setStoredMetaDescription]
+  );
+
+  const loadMetaDescription = useCallback(
+    (value: string, body: string) => {
+      const loaded = value.slice(0, SUBMIT_DESCRIPTION_MAX_LENGTH);
+      const summary = postBodySummary(body, SUBMIT_DESCRIPTION_MAX_LENGTH).slice(
+        0,
+        SUBMIT_DESCRIPTION_MAX_LENGTH
+      );
+      // A draft or template saved while the description followed its body stores that
+      // summary, cut to the saved length. Recognise both forms so the reopened post keeps
+      // following the body instead of shipping a summary of the old one.
+      const isAutoSummary =
+        loaded === summary ||
+        loaded === postBodySummary(summary, SAVED_SUMMARY_LENGTH) ||
+        loaded === postBodySummary(body, SAVED_SUMMARY_LENGTH);
+      autoDescriptionRef.current = isAutoSummary ? loaded : "";
+      descriptionEditedRef.current = false;
+      setStoredMetaDescription(loaded);
+    },
+    [setStoredMetaDescription]
+  );
+
+  const isMetaDescriptionAuto = useCallback(
+    () =>
+      !descriptionEditedRef.current &&
+      (!usableDescription(metaDescription) || metaDescription === autoDescriptionRef.current),
+    [metaDescription]
   );
 
   const sanitizeTags = useCallback((tagList: string[]) => {
@@ -328,6 +364,8 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
         metaDescription,
         setMetaDescription,
         editMetaDescription,
+        loadMetaDescription,
+        isMetaDescriptionAuto,
         schedule,
         setSchedule,
         clearSchedule,

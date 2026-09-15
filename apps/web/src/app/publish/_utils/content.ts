@@ -42,5 +42,15 @@ export function hasDraftableContent(title?: string | null, content?: string | nu
  * composer used to capture from the first typed letter, never a real summary.
  */
 export function usableDescription(description?: string | null): string | undefined {
-  return description && description.trim().length > 1 ? description : undefined;
+  const trimmed = description?.trim();
+  return trimmed && countGraphemes(trimmed) > 1 ? description! : undefined;
+}
+
+// A single emoji can span several UTF-16 code units, so count what a reader sees.
+function countGraphemes(text: string): number {
+  if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+    return Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text))
+      .length;
+  }
+  return Array.from(text).length;
 }

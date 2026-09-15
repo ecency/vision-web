@@ -44,7 +44,7 @@ export default function PublishPage() {
     setLocation,
     setReward,
     setBeneficiaries,
-    setMetaDescription,
+    loadMetaDescription,
     setSelectedThumbnail,
     setEntryImages,
     setPoll,
@@ -69,7 +69,7 @@ export default function PublishPage() {
       setLocation(draft.meta?.location);
       setReward(draft.meta?.rewardType ?? "default");
       setBeneficiaries(draft.meta?.beneficiaries ?? []);
-      setMetaDescription(draft.meta?.description ?? "");
+      loadMetaDescription(draft.meta?.description ?? "", draft.body);
       setSelectedThumbnail(draft.meta?.image?.[0] ?? "");
       setEntryImages(draft.meta?.image ?? []);
       setPoll(normalizePollSnapshot(draft.meta?.poll));

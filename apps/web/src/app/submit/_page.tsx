@@ -15,6 +15,7 @@ import {
   useSubmitBody
 } from "./_hooks";
 import { postBodySummary, proxifyImageSrc } from "@ecency/render-helper";
+import { usableDescription } from "@/app/publish/_utils/content";
 import useLocalStorage from "react-use/lib/useLocalStorage";
 import usePrevious from "react-use/lib/usePrevious";
 import dayjs from "@/utils/dayjs";
@@ -582,9 +583,8 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
                       maxLength={SUBMIT_DESCRIPTION_MAX_LENGTH}
                     />
                     <small className="text-gray-600 dark:text-gray-400">
-                      {description !== ""
-                        ? description
-                        : postBodySummary(body, SUBMIT_DESCRIPTION_MAX_LENGTH)}
+                      {usableDescription(description) ??
+                        postBodySummary(body, SUBMIT_DESCRIPTION_MAX_LENGTH)}
                     </small>
                   </div>
                 </div>

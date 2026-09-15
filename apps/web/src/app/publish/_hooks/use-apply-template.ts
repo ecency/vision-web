@@ -12,7 +12,7 @@ export function useApplyTemplate(setEditorContent?: (content: string | undefined
     setLocation,
     setReward,
     setBeneficiaries,
-    setMetaDescription,
+    loadMetaDescription,
     setSelectedThumbnail,
     setEntryImages,
     setPoll,
@@ -30,7 +30,7 @@ export function useApplyTemplate(setEditorContent?: (content: string | undefined
       setLocation(draft.meta?.location);
       setReward(draft.meta?.rewardType ?? "default");
       setBeneficiaries(draft.meta?.beneficiaries ?? []);
-      setMetaDescription(draft.meta?.description ?? "");
+      loadMetaDescription(draft.meta?.description ?? "", draft.body);
       setSelectedThumbnail(draft.meta?.image?.[0] ?? "");
       setEntryImages(draft.meta?.image ?? []);
       setPoll(normalizePollSnapshot(draft.meta?.poll));
@@ -45,7 +45,7 @@ export function useApplyTemplate(setEditorContent?: (content: string | undefined
       setLocation,
       setReward,
       setBeneficiaries,
-      setMetaDescription,
+      loadMetaDescription,
       setSelectedThumbnail,
       setEntryImages,
       setPoll,
