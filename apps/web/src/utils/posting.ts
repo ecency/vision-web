@@ -81,6 +81,27 @@ export const ensureValidPermlink = (
 };
 
 
+/**
+ * The Ecency host pattern runs to the next whitespace or quote, so in markdown
+ * (`![](url)`, `[![](url)](link)`) it swallows the closing parenthesis and
+ * whatever follows it. Cut at the first `)` that closes nothing opened inside
+ * the URL, which keeps a filename such as `photo_(1).jpg` intact.
+ */
+const cutAtUnmatchedParen = (url: string): string => {
+  let depth = 0;
+  for (let i = 0; i < url.length; i++) {
+    if (url[i] === "(") {
+      depth++;
+    } else if (url[i] === ")") {
+      if (depth === 0) {
+        return url.slice(0, i);
+      }
+      depth--;
+    }
+  }
+  return url;
+};
+
 export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaData => {
   // Match images with common file extensions (including RAW formats like .arw)
   const imgReg = /https?:\/\/[^\s"']+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi;
@@ -90,7 +111,7 @@ export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaD
     /https?:\/\/(?:i|img|images)\.ecency\.com\/(?:(?:p|DQm[a-zA-Z0-9]+)\/)?[^\s"'<>]+/gi;
 
   const bodyImagesWithExt = body.match(imgReg) || [];
-  const ecencyImages = body.match(ecencyImgReg) || [];
+  const ecencyImages = (body.match(ecencyImgReg) || []).map(cutAtUnmatchedParen);
   const bodyImages = [...bodyImagesWithExt, ...ecencyImages];
 
   const existingImages = initialMeta.image ?? [];

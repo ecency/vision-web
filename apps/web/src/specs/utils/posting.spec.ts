@@ -108,6 +108,27 @@ describe("Posting", () => {
     expect(extractMetaData(input)).toMatchSnapshot();
   });
 
+  it("(6) extractMetadata lists a markdown Ecency image once, without the closing parenthesis", () => {
+    const url = "https://i.ecency.com/DQmUY1PhsHi6rAFjF58wQGVCk7EruY8HyNyYBbWJCMVjedH/photo.png";
+    expect(extractMetaData(`<center>![](${url})</center>`).image).toEqual([url]);
+  });
+
+  it("(7) extractMetadata keeps an extension-less Ecency image in markdown intact", () => {
+    const url =
+      "https://images.ecency.com/p/3W72119s5BjW4PvRk9nXBzqrPWMsMTjNrXDPFFf1?format=match&mode=fit";
+    expect(extractMetaData(`![](${url})`).image).toEqual([url]);
+  });
+
+  it("(8) extractMetadata keeps parentheses that belong to the filename", () => {
+    const url = "https://i.ecency.com/DQmX/photo_(1).jpg";
+    expect(extractMetaData(`![](${url})`).image).toEqual([url]);
+  });
+
+  it("(9) extractMetadata stops a linked Ecency image at its own URL", () => {
+    const url = "https://images.ecency.com/p/abc123";
+    expect(extractMetaData(`[![](${url})](https://ecency.com/@ecency)`).image).toEqual([url]);
+  });
+
   it("makeJsonMetaData", () => {
     const meta = {
       image: ["http://www.xx.com/a.png", "https://img.esteem.ws/h74zrad2fh.jpg"]
