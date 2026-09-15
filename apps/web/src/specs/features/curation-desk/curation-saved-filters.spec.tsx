@@ -158,11 +158,16 @@ describe("saved refine filters", () => {
           users: {
             curator1: { filters: { app: "peakd", window: "half" } },
             curator2: { filters: { window: "12h" } },
+            // Malformed entries pass through untouched and restore nothing.
+            curator3: { filters: null },
+            curator4: { filters: ["peakd"] },
+            curator5: "garbage",
           },
         })
       );
       expect(readSavedFilters("curator1")).toEqual({ app: "peakd" });
       expect(readSavedFilters("curator2")).toEqual({});
+      for (const owner of ["curator3", "curator4", "curator5"]) expect(readSavedFilters(owner)).toEqual({});
 
       saveFilters("curator2", { hasImages: true });
       expect(stored()).toEqual({
@@ -170,6 +175,9 @@ describe("saved refine filters", () => {
         users: {
           curator1: { filters: { app: "peakd" } },
           curator2: { filters: { hasImages: true } },
+          curator3: { filters: null },
+          curator4: { filters: ["peakd"] },
+          curator5: "garbage",
         },
       });
     });

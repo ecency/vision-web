@@ -1,15 +1,17 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import type { CurationWindow } from "@ecency/sdk";
 import { CurationToolbar } from "@/features/curation-desk/curation-toolbar";
 import { defaultQueueFilters, resolveFilters } from "@/features/curation-desk/hooks";
 
-function renderToolbar(isRoster: boolean) {
+function renderToolbar(isRoster: boolean, extra: { totalEstimate?: number; window?: CurationWindow } = {}) {
   const onChange = vi.fn();
+  const filters = { ...defaultQueueFilters(), ...(extra.window ? { window: extra.window } : {}) };
   render(
     <CurationToolbar
-      filters={resolveFilters(defaultQueueFilters(), isRoster)}
+      filters={resolveFilters(filters, isRoster)}
       isRoster={isRoster}
-      totalEstimate={null}
+      totalEstimate={extra.totalEstimate ?? null}
       activeFilterCount={0}
       savedOwner={null}
       onSort={vi.fn()}
@@ -40,6 +42,21 @@ describe("CurationToolbar", () => {
     expect(onChange).toHaveBeenCalledWith({ hideCurated: false });
     fireEvent.click(screen.getByRole("switch", { name: "curation-desk.filters.unreviewed" }));
     expect(onChange).toHaveBeenCalledWith({ unreviewedOnly: false });
+  });
+
+  /**
+   * total_estimate is the team backlog at every age, so under the default
+   * 24 h window it is not the number of posts that match what is on screen.
+   */
+  it("labels the count as backlog under the default window", () => {
+    renderToolbar(true, { totalEstimate: 40 });
+    expect(screen.queryByText("curation-desk.toolbar.backlog")).not.toBeNull();
+    expect(screen.queryByText("curation-desk.toolbar.match")).toBeNull();
+  });
+
+  it("labels the count as matches once every window is shown", () => {
+    renderToolbar(true, { totalEstimate: 40, window: "all" });
+    expect(screen.queryByText("curation-desk.toolbar.match")).not.toBeNull();
   });
 
   it("offers unreviewed only to the roster alone", () => {

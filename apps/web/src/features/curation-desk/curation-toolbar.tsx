@@ -112,8 +112,9 @@ export function CurationToolbar({
         {totalEstimate != null && (
           <span aria-live="polite">
             {/* The server counts the team backlog, not this request, so a
-                narrowed queue must not print that number as "matches". */}
-            {activeFilterCount > 0
+                narrowed queue must not print that number as "matches". The
+                default window narrows too: the backlog counts every age. */}
+            {activeFilterCount > 0 || filters.window !== "all"
               ? i18next.t("curation-desk.toolbar.backlog", { count: totalEstimate })
               : i18next.t("curation-desk.toolbar.match", { count: totalEstimate })}
           </span>
