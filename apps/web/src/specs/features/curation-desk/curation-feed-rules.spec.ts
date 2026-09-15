@@ -41,6 +41,28 @@ describe("rowHiddenByFeed", () => {
     expect(rowHiddenByFeed(open(), { view: "curated" })).toBe(true);
   });
 
+  /**
+   * The recommendations tab reads the roster feed's recommended view for
+   * curators, so a dismissal applied to the cache has to take the row off it
+   * at once, the way the server's recommendation predicate stops serving it.
+   */
+  it("drops a dismissed or no longer recommended row from the recommended feeds", () => {
+    const recommended = makeRow({ post_id: 4, state: 0, recommend_count: 2, overlay: makeOverlay() });
+    const dismissed = makeRow({ post_id: 5, state: 0, recommend_count: 2, overlay: makeOverlay({ reco_dismissed_at: "2026-09-15T08:00:00" }) });
+    const withdrawn = makeRow({ post_id: 6, state: 0, recommend_count: 0, overlay: makeOverlay() });
+    for (const feed of [{ view: "recommended" }, { recommended: true }, { sort: "unique" }]) {
+      expect(rowHiddenByFeed(recommended, feed)).toBe(false);
+      expect(rowHiddenByFeed(dismissed, feed)).toBe(true);
+      expect(rowHiddenByFeed(withdrawn, feed)).toBe(true);
+    }
+    // Every other feed keeps them: a dismissal only ends the recommendation.
+    expect(rowHiddenByFeed(dismissed, {})).toBe(false);
+    expect(rowHiddenByFeed(withdrawn, {})).toBe(false);
+    // The recommended view serves open posts whatever the curated toggle says.
+    const curated = makeRow({ post_id: 7, state: 1, recommend_count: 2, overlay: makeOverlay() });
+    expect(rowHiddenByFeed(curated, { view: "recommended", hide_curated: false })).toBe(true);
+  });
+
   it("follows the flagged lens and the excluded view", () => {
     expect(rowHiddenByFeed(open("flagged"), { flagged: true })).toBe(false);
     expect(rowHiddenByFeed(open("reviewed"), { flagged: "1" })).toBe(true);

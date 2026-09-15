@@ -60,8 +60,16 @@ const ROSTER_REFRESH_MS = 60_000;
 type RosterRecommendationRow = CurationRosterRow &
   Partial<Pick<CurationRecommendationItem, "recommenders" | "reasons" | "no_meta_count">>;
 
-function fromRosterRow(row: RosterRecommendationRow): CurationRecommendationItem {
+/**
+ * A list row. `recommendersUnknown` marks a roster row from a desk too old to
+ * send its recommenders: the viewer's own recommendation cannot be told apart
+ * from none, so Recommend is withheld rather than offered as a duplicate.
+ */
+type ListItem = CurationRecommendationItem & { recommendersUnknown?: boolean };
+
+function fromRosterRow(row: RosterRecommendationRow): ListItem {
   return {
+    recommendersUnknown: row.recommenders === undefined,
     author: row.author,
     permlink: row.permlink,
     title: row.title,
@@ -130,7 +138,7 @@ function reasonsTooltip(item: CurationRecommendationItem): string {
 }
 
 interface RowProps {
-  item: CurationRecommendationItem;
+  item: ListItem;
   canDismiss: boolean;
   isRoster: boolean;
   isTrial: boolean;
@@ -256,7 +264,7 @@ function RecommendationRow({
             ? i18next.t("curation-desk.window.locked-tooltip", { pct: windowState.scalePct })
             : i18next.t("curation-desk.actions.vote-key")
         }
-        recommendHidden={locked || paid || username === item.author}
+        recommendHidden={locked || paid || username === item.author || !!item.recommendersUnknown}
         alreadyRecommended={mine}
         href={`/@${item.author}/${item.permlink}`}
         // Below lg the controls take their own line under the post, the way
@@ -335,7 +343,7 @@ export function CurationRecommendationsView() {
     refetchInterval: ROSTER_REFRESH_MS,
   });
   const query = viewer.isRoster ? rosterQuery : publicQuery;
-  const items = useMemo<CurationRecommendationItem[]>(
+  const items = useMemo<ListItem[]>(
     () =>
       viewer.isRoster
         ? (rosterQuery.data?.pages.flatMap((p) => p.items) ?? []).map((row) =>

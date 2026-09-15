@@ -37,9 +37,17 @@ export function rowHiddenByFeed(row: DeskRow, feed: FeedFilters): boolean {
     if (view === "curated") {
       if (row.state !== 1) return true;
     } else if (view !== "all") {
-      const openOnly = flag(feed.hide_curated, true) || flag(feed.recommended, false) || feed.sort === "unique";
+      const openOnly =
+        view === "recommended" || flag(feed.hide_curated, true) || flag(feed.recommended, false) || feed.sort === "unique";
       if (openOnly && row.state !== 0) return true;
     }
+  }
+  // The recommended view, the Recommended chip and the unique sort serve active
+  // recommendations only, on every view: a dismissed post leaves them, and so
+  // does one whose last recommendation was withdrawn.
+  if (view === "recommended" || flag(feed.recommended, false) || feed.sort === "unique") {
+    if (row.overlay?.reco_dismissed_at) return true;
+    if (typeof row.recommend_count === "number" && row.recommend_count <= 0) return true;
   }
   // The team mark rules apply on every roster view, the way the server adds
   // them to every roster query.

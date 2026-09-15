@@ -1,6 +1,6 @@
 import React from "react";
 import "@testing-library/jest-dom";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CurationRosterRow } from "@ecency/sdk";
 import { renderWithQueryClient } from "@/specs/test-utils";
@@ -362,6 +362,65 @@ describe("recommended list row actions", () => {
     expect(listRow.queryByLabelText("curation-desk.recommend.aria")).toBeNull();
     // Reading it is still on offer: the desk never hides the post itself.
     expect(listRow.getByLabelText("curation-desk.actions.read-key")).toBeInTheDocument();
+  });
+
+  /**
+   * A desk older than the recommender fields answers the roster view without
+   * them. The row still renders, and Recommend is withheld: the viewer's own
+   * recommendation cannot be told apart from none, so offering it could
+   * broadcast a duplicate.
+   */
+  it("withholds Recommend on a row from a desk that sends no recommenders", async () => {
+    router.on(/curation-desk\/roster-feed/, () => {
+      const legacy: Record<string, unknown> = { ...recoRow() };
+      delete legacy.recommenders;
+      delete legacy.reasons;
+      delete legacy.no_meta_count;
+      return makeRosterPage([legacy as unknown as CurationRosterRow]);
+    });
+    const listRow = await row();
+    await waitFor(() => expect(listRow.getByLabelText("curation-desk.actions.reviewed")).toBeInTheDocument());
+    expect(listRow.getByLabelText("curation-desk.actions.vote")).toBeInTheDocument();
+    expect(listRow.queryByLabelText("curation-desk.recommend.aria")).toBeNull();
+    expect(listRow.queryByText("@curator2")).toBeNull();
+  });
+
+  it("offers Recommend on a curator's row once the recommenders are known", async () => {
+    const listRow = await row();
+    await waitFor(() => expect(listRow.getByLabelText("curation-desk.recommend.aria")).toBeInTheDocument());
+  });
+
+  /**
+   * Dismissing a recommendation ends it, so the post leaves the list at once
+   * through the dismissal's own cache update, not at the next refresh.
+   */
+  it("drops a dismissed post from the list at once", async () => {
+    router.on(/curation-desk\/recommendation-dismiss/, () => ({
+      row: { ...recoRow(), overlay: makeOverlay({ reco_dismissed_at: new Date().toISOString() }) },
+    }));
+    const listRow = await row();
+    fireEvent.click(listRow.getByLabelText("curation-desk.reco.dismiss"));
+    await waitFor(() => expect(router.callsTo(/curation-desk\/recommendation-dismiss/)).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByRole("toolbar")).toBeNull());
+  });
+
+  /**
+   * A colleague's mark and a trail vote are not in this tab's cache, so the
+   * list reads again on an interval and a post handled elsewhere leaves it.
+   */
+  it("reads the curator list again, so a post handled elsewhere leaves it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await row();
+      router.on(/curation-desk\/roster-feed/, () => makeRosterPage([]));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(61_000);
+      });
+      await waitFor(() => expect(screen.queryByRole("toolbar")).toBeNull());
+      expect(router.callsTo(/curation-desk\/roster-feed/).length).toBeGreaterThan(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("drops them for a paid post too, which the shared clock can reach with the tab open", async () => {
