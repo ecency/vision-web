@@ -104,6 +104,18 @@ describe("publish state description", () => {
     expect(result.current.state.metaDescription).toBe(summaryOf(FINAL));
   });
 
+  it("keeps a loaded description that matches the previous body's summary", () => {
+    const { result } = renderComposer();
+
+    typeBody(result, [FIRST]);
+    act(() => {
+      result.current.state.setContent("A different post about something else entirely.");
+      result.current.state.setMetaDescription(summaryOf(FIRST));
+    });
+
+    expect(result.current.state.metaDescription).toBe(summaryOf(FIRST));
+  });
+
   it("keeps a loaded description but replaces one too short to be meaningful", () => {
     const { result } = renderComposer();
 

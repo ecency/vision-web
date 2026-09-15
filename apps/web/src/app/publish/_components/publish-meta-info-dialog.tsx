@@ -23,7 +23,7 @@ export function PublishMetaInfoDialog({ show, setShow }: Props) {
         <FormControl
           type="textarea"
           value={metaDescription}
-          onChange={(e) => editMetaDescription((e.target as any).value)}
+          onChange={(e) => editMetaDescription((e.target as HTMLTextAreaElement).value)}
           maxLength={SUBMIT_DESCRIPTION_MAX_LENGTH}
         />
       </ModalBody>

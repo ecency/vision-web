@@ -151,6 +151,9 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
 
   const setMetaDescription = useCallback(
     (value: string) => {
+      // A value set from outside is judged on its own, never as a leftover summary
+      // of whatever body the composer held before.
+      autoDescriptionRef.current = "";
       descriptionEditedRef.current = false;
       setStoredMetaDescription(value.slice(0, SUBMIT_DESCRIPTION_MAX_LENGTH));
     },
