@@ -540,6 +540,7 @@ export function CurationQueueView() {
         totalEstimate={totalEstimate}
         activeFilterCount={activeCount}
         onSort={(sort) => update({ sort })}
+        onChange={update}
         onReshuffle={reshuffle}
         onReset={reset}
         savedOwner={savedOwner}

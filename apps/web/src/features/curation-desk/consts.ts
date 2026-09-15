@@ -30,15 +30,24 @@ export const QUICK_VIEW_PREFETCH_DEBOUNCE_MS = 300;
  */
 export const POPOVER_RECOMMENDER_LIMIT = 5;
 export const UNDO_REVIEWED_MS = 5_000;
-export const SORT_STORAGE_KEY = "curation-desk-sort";
+/**
+ * The persisted order. It moved off `curation-desk-sort` when every viewer was
+ * put on oldest unreviewed by default, so an order picked before that is not
+ * restored; the old key is removed on the next visit.
+ */
+export const SORT_STORAGE_KEY = "curation-desk-order";
+export const LEGACY_SORT_STORAGE_KEY = "curation-desk-sort";
 export const SEED_STORAGE_KEY = "curation-desk-seed";
 /**
  * The saved refine set, per account: `{ v, users: { [username]: { filters } } }`.
  * The sort keeps its own key above and the seed is never persisted; see
  * SAVED_FILTER_FIELDS for why the rest of the panel is in or out.
+ *
+ * Version 2 made under 24 h the default window. A version 1 record was written
+ * while "All windows" was the default, so it is read without its window.
  */
 export const FILTERS_STORAGE_KEY = "curation-desk-filters";
-export const SAVED_FILTERS_VERSION = 1;
+export const SAVED_FILTERS_VERSION = 2;
 export const MY_MARKS_KEY_SUFFIX = "my-marks";
 /** Marks per page; the route answers a `next_cursor` while more remain. */
 export const MY_MARKS_PAGE_SIZE = 50;

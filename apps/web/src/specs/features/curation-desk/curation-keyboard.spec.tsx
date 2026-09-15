@@ -544,7 +544,10 @@ describe("keyboard on the queue", () => {
   it("leaves the selection alone when the selected row only folds into a collapsed tail", async () => {
     state.username = "curator1";
     // Row 11 crosses the 24 h line 30 s from now; under window=all it then
-    // folds into the half-weight tail, still loaded, just not listed.
+    // folds into the half-weight tail, still loaded, just not listed. The
+    // desk opens under 24 h, so the curator has picked All windows.
+    const { saveFilters } = await import("@/features/curation-desk/curation-filter-storage");
+    saveFilters("curator1", { window: "all" });
     router.on(/curation-desk\/roster-feed/, () =>
       makeRosterPage([makeRow({ post_id: 11, created: iso(-(24 * 3_600_000 - 30_000)), overlay: makeOverlay() }), makeRow({ post_id: 12, overlay: makeOverlay() })])
     );

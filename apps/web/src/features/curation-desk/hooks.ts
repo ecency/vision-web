@@ -44,6 +44,7 @@ import {
   POLL_MS_PUBLIC,
   QUEUE_PAGE_SIZE,
   SEED_STORAGE_KEY,
+  LEGACY_SORT_STORAGE_KEY,
   SORT_STORAGE_KEY,
 } from "./consts";
 import { curationDeskApi } from "./curation-desk-api";
@@ -749,7 +750,9 @@ export function defaultQueueFilters(): QueueFilters {
     newAuthors: false,
     recommended: false,
     flagged: false,
-    window: "all",
+    // Full curation weight, where a vote earns the most. Older posts are one
+    // window change away.
+    window: "full",
     minWords: null,
     maxWords: null,
     hasImages: false,
@@ -760,15 +763,16 @@ export function defaultQueueFilters(): QueueFilters {
 }
 
 /**
- * Role defaults resolve synchronously from `isRoster`, so the first roster
- * feed request already carries sort=queue and hide_reviewed once the roster
+ * Every viewer opens on oldest unreviewed, so the whole team works the queue
+ * in the same order. Role defaults resolve synchronously from `isRoster`, so
+ * the first roster feed request already carries hide_reviewed once the roster
  * lookup has answered, with no second fetch to correct it.
  */
 export function resolveFilters(filters: QueueFilters, isRoster: boolean): ResolvedQueueFilters {
-  const sort: CurationSort = filters.sort ?? (isRoster ? "queue" : "newest");
+  const sort: CurationSort = filters.sort ?? "queue";
   return {
     ...filters,
-    sort: !isRoster && sort === "random" ? "newest" : sort,
+    sort: !isRoster && sort === "random" ? "queue" : sort,
     unreviewedOnly: filters.unreviewedOnly ?? isRoster,
   };
 }
@@ -851,6 +855,8 @@ export function useQueueFilters(isRoster: boolean) {
 
     let persisted: CurationSort | null = null;
     try {
+      // An order stored before everyone moved to oldest unreviewed is not restored.
+      ls.remove(LEGACY_SORT_STORAGE_KEY);
       const stored = ls.get(SORT_STORAGE_KEY);
       if (typeof stored === "string" && SORTS.includes(stored as CurationSort)) persisted = stored as CurationSort;
     } catch {
@@ -944,9 +950,9 @@ export function useQueueFilters(isRoster: boolean) {
 
 /**
  * Single source of truth for "how many filters are on". `scope: "refine"`
- * counts the refine panel only, leaving out the two chips that sit next to it
- * in the bar, so the panel badge and the toolbar's Reset count can never
- * disagree about what one filter is (a min/max word range is always one).
+ * counts the refine panel only, leaving out the window and the two chips that
+ * sit in the toolbar, so the panel badge and the toolbar's Reset count can
+ * never disagree about what one filter is (a min/max word range is always one).
  */
 export function countActiveFilters(
   input: QueueFilters,
@@ -962,11 +968,11 @@ export function countActiveFilters(
   if (filters.recommended) n++;
   if (isRoster && filters.flagged) n++;
   if (isRoster && filters.excluded) n++;
-  if (filters.window !== "all") n++;
   if (filters.minWords != null || filters.maxWords != null) n++;
   if (filters.hasImages) n++;
   if (filters.repMin > 0 || filters.repMax < 100) n++;
   if (scope === "all") {
+    if (filters.window !== defaults.window) n++;
     if (filters.hideCurated !== defaults.hideCurated) n++;
     if (isRoster && filters.unreviewedOnly !== defaults.unreviewedOnly) n++;
   }
