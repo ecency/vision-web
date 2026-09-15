@@ -932,6 +932,7 @@ export function useQueueFilters(isRoster: boolean) {
   const resolved = useMemo(() => resolveFilters(filters, isRoster), [filters, isRoster]);
   const params = useMemo(() => filtersToParams(filters, isRoster), [filters, isRoster]);
   const activeCount = useMemo(() => countActiveFilters(filters, isRoster), [filters, isRoster]);
+  const narrowed = useMemo(() => narrowsBacklog(filters, isRoster), [filters, isRoster]);
   // The owner the record was read under, not the store's activeUser: the two
   // resolve from different places on a cold load, so labelling the line with
   // the store could name a different account than the one that was restored.
@@ -945,7 +946,18 @@ export function useQueueFilters(isRoster: boolean) {
     [restored, restoredFor, filters, isRoster]
   );
 
-  return { filters: resolved, params, update, reset, reshuffle, activeCount, restored, restoredFor, savedOwner };
+  return { filters: resolved, params, update, reset, reshuffle, activeCount, narrowed, restored, restoredFor, savedOwner };
+}
+
+/**
+ * Whether the request narrows what the roster page's `total_estimate` counts:
+ * every unhandled open post, of every age. Not the Reset count, which is
+ * measured from the desk's defaults: the default window narrows, and "All
+ * windows" is a Reset filter that narrows nothing.
+ */
+export function narrowsBacklog(input: QueueFilters, isRoster: boolean): boolean {
+  const others = countActiveFilters({ ...input, window: defaultQueueFilters().window }, isRoster);
+  return others > 0 || resolveFilters(input, isRoster).window !== "all";
 }
 
 /**

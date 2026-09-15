@@ -120,7 +120,7 @@ export function CurationQueueView() {
   const recommendationsEnabled = EcencyConfigManager.useConfig(
     ({ visionFeatures }) => visionFeatures.curationDesk.recommendations.enabled
   );
-  const { filters, params, update, reset, reshuffle, activeCount, restored, savedOwner } =
+  const { filters, params, update, reset, reshuffle, activeCount, narrowed, restored, savedOwner } =
     useQueueFilters(viewer.isRoster);
   const coarsePointer = useCoarsePointer();
   const publicParams = useMemo(() => filtersToParams(filters, false), [filters]);
@@ -407,6 +407,10 @@ export function CurationQueueView() {
         // The lane this desk is showing rides on the mark, so the hand-off can
         // say which queue the position was earned in without ever guessing.
         await mark.mutateAsync({ row, ...input, lane: params });
+        // A held post already left the list, so no departure will move the
+        // drawer on once it is snoozed or flagged: the hold is released here,
+        // which resumes at the successor saved when it left.
+        if (input.state !== "noted" && heldRef.current?.row.post_id === row.post_id) releaseHeld();
         setUndo({
           message,
           action: input.state === "reviewed" ? () => clearMark.mutateAsync({ author: row.author, permlink: row.permlink, restoreAt }) : null,
@@ -419,7 +423,7 @@ export function CurationQueueView() {
         errorToast(...formatError(e));
       }
     },
-    [mark, clearMark, params, positionOf, noteOwnMark]
+    [mark, clearMark, params, positionOf, noteOwnMark, releaseHeld]
   );
 
   const onSelect = useCallback((row: DeskRow) => {
@@ -452,10 +456,17 @@ export function CurationQueueView() {
     (row: DeskRow) => {
       if (!viewer.isRoster) return;
       void doMark(row, { state: "reviewed" }, i18next.t("curation-desk.live.reviewed", { title: row.title }));
+      // A held post already left the list, so it has no place in `ordered` to
+      // step down from: the successor saved when it left is the next post, and
+      // releasing the hold is the move.
+      if (heldRef.current?.row.post_id === row.post_id) {
+        releaseHeld();
+        return;
+      }
       const idx = ordered.findIndex((r) => r.post_id === row.post_id);
       if (idx >= 0 && idx + 1 < ordered.length) scrollTo(idx + 1);
     },
-    [viewer.isRoster, doMark, ordered, scrollTo]
+    [viewer.isRoster, doMark, ordered, scrollTo, releaseHeld]
   );
   const onSnooze = useCallback((row: DeskRow) => viewer.isRoster && setDialog({ kind: "snooze", row }), [viewer.isRoster]);
   const onFlag = useCallback((row: DeskRow) => viewer.isRoster && setDialog({ kind: "flag", row }), [viewer.isRoster]);
@@ -547,6 +558,7 @@ export function CurationQueueView() {
         isRoster={viewer.isRoster}
         totalEstimate={totalEstimate}
         activeFilterCount={activeCount}
+        narrowed={narrowed}
         onSort={(sort) => update({ sort })}
         onChange={update}
         onReshuffle={reshuffle}

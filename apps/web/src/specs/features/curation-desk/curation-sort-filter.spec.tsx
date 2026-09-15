@@ -14,7 +14,7 @@ vi.mock("@/core/hooks/use-active-username", () => ({ useActiveUsername: () => "c
 import { getCurationFeedInfiniteQueryOptions } from "@ecency/sdk";
 import { buildQueueDisplay } from "@/features/curation-desk/curation-queue-display";
 import { CURATION_WINDOWS } from "@/features/curation-desk/consts";
-import { countActiveFilters, defaultQueueFilters, filtersToParams, rosterFeedQueryOptions, useQueueFilters } from "@/features/curation-desk/hooks";
+import { countActiveFilters, defaultQueueFilters, filtersToParams, narrowsBacklog, rosterFeedQueryOptions, useQueueFilters } from "@/features/curation-desk/hooks";
 import type { QueueFilters } from "@/features/curation-desk/types";
 
 const hash = (key: unknown) => JSON.stringify(key);
@@ -145,6 +145,18 @@ describe("sort and filter chips", () => {
    * The window sits in the toolbar now, so it is a Reset filter and not a
    * refine-panel one, and the default window is no filter at all.
    */
+  /**
+   * total_estimate counts unhandled open posts of every age, so the label
+   * reads narrowed from the request, not from the Reset tally.
+   */
+  it("tells a request that narrows the backlog from one that only differs from the defaults", () => {
+    expect(narrowsBacklog(defaultQueueFilters(), true)).toBe(true);
+    expect(narrowsBacklog({ ...defaultQueueFilters(), window: "all" }, true)).toBe(false);
+    expect(narrowsBacklog({ ...defaultQueueFilters(), window: "12h" }, true)).toBe(true);
+    expect(narrowsBacklog({ ...defaultQueueFilters(), window: "all", app: "peakd" }, true)).toBe(true);
+    expect(narrowsBacklog({ ...defaultQueueFilters(), window: "all" }, false)).toBe(false);
+  });
+
   it("counts a window other than the default in the Reset tally only", () => {
     expect(countActiveFilters(defaultQueueFilters(), true)).toBe(0);
     expect(countActiveFilters(defaultQueueFilters(), false)).toBe(0);

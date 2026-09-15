@@ -13,7 +13,10 @@ interface Props {
   filters: ResolvedQueueFilters;
   isRoster: boolean;
   totalEstimate: number | null | undefined;
+  /** Filters away from the desk's defaults, for Reset. */
   activeFilterCount: number;
+  /** The request narrows what `total_estimate` counts; see narrowsBacklog. */
+  narrowed: boolean;
   /** The account whose saved refine set is in effect, null when none is. */
   savedOwner: string | null;
   onSort: (sort: CurationSort) => void;
@@ -32,6 +35,7 @@ export function CurationToolbar({
   isRoster,
   totalEstimate,
   activeFilterCount,
+  narrowed,
   savedOwner,
   onSort,
   onChange,
@@ -112,9 +116,10 @@ export function CurationToolbar({
         {totalEstimate != null && (
           <span aria-live="polite">
             {/* The server counts the team backlog, not this request, so a
-                narrowed queue must not print that number as "matches". The
-                default window narrows too: the backlog counts every age. */}
-            {activeFilterCount > 0 || filters.window !== "all"
+                narrowed queue must not print that number as "matches". That is
+                not the Reset count: the default window narrows, and "All
+                windows" is a Reset filter that narrows nothing. */}
+            {narrowed
               ? i18next.t("curation-desk.toolbar.backlog", { count: totalEstimate })
               : i18next.t("curation-desk.toolbar.match", { count: totalEstimate })}
           </span>

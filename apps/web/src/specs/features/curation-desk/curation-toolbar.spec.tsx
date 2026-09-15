@@ -2,17 +2,20 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { CurationWindow } from "@ecency/sdk";
 import { CurationToolbar } from "@/features/curation-desk/curation-toolbar";
-import { defaultQueueFilters, resolveFilters } from "@/features/curation-desk/hooks";
+import { countActiveFilters, defaultQueueFilters, narrowsBacklog, resolveFilters } from "@/features/curation-desk/hooks";
 
 function renderToolbar(isRoster: boolean, extra: { totalEstimate?: number; window?: CurationWindow } = {}) {
   const onChange = vi.fn();
   const filters = { ...defaultQueueFilters(), ...(extra.window ? { window: extra.window } : {}) };
+  // The count and the narrowing flag come from the same functions the queue
+  // view uses, so a label cannot pass here on props the desk never produces.
   render(
     <CurationToolbar
       filters={resolveFilters(filters, isRoster)}
       isRoster={isRoster}
       totalEstimate={extra.totalEstimate ?? null}
-      activeFilterCount={0}
+      activeFilterCount={countActiveFilters(filters, isRoster)}
+      narrowed={narrowsBacklog(filters, isRoster)}
       savedOwner={null}
       onSort={vi.fn()}
       onChange={onChange}
@@ -48,15 +51,22 @@ describe("CurationToolbar", () => {
    * total_estimate is the team backlog at every age, so under the default
    * 24 h window it is not the number of posts that match what is on screen.
    */
-  it("labels the count as backlog under the default window", () => {
+  it("labels the count as backlog under the default window, with nothing to reset", () => {
     renderToolbar(true, { totalEstimate: 40 });
     expect(screen.queryByText("curation-desk.toolbar.backlog")).not.toBeNull();
     expect(screen.queryByText("curation-desk.toolbar.match")).toBeNull();
+    expect(screen.queryByLabelText("curation-desk.toolbar.reset")).toBeNull();
   });
 
-  it("labels the count as matches once every window is shown", () => {
+  /**
+   * "All windows" moves away from the default, so Reset appears, and it
+   * narrows nothing, so the count is the number of matches.
+   */
+  it("labels the count as matches once every window is shown, with Reset on offer", () => {
     renderToolbar(true, { totalEstimate: 40, window: "all" });
     expect(screen.queryByText("curation-desk.toolbar.match")).not.toBeNull();
+    expect(screen.queryByText("curation-desk.toolbar.backlog")).toBeNull();
+    expect(screen.queryByLabelText("curation-desk.toolbar.reset")).not.toBeNull();
   });
 
   it("offers unreviewed only to the roster alone", () => {

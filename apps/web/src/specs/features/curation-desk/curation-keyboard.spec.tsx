@@ -52,7 +52,7 @@ vi.mock("react-virtuoso", () => ({
   }),
 }));
 vi.mock("@/features/curation-desk/curation-quick-view", () => ({
-  CurationQuickView: ({ row, commentOnOpen, tipOnOpen, replyOpenFor }: { row: { post_id: number; author: string; permlink: string } | null; commentOnOpen?: boolean; tipOnOpen?: boolean; replyOpenFor?: { current: string | null } }) => {
+  CurationQuickView: ({ row, commentOnOpen, tipOnOpen, replyOpenFor, onReviewed, onSnooze }: { row: { post_id: number; author: string; permlink: string } | null; commentOnOpen?: boolean; tipOnOpen?: boolean; replyOpenFor?: { current: string | null }; onReviewed?: (row: never) => void; onSnooze?: (row: never) => void }) => {
     if (row) drawerRenders.push({ post_id: row.post_id, comment: !!commentOnOpen, tip: !!tipOnOpen });
     // The real drawer reports an open reply box into this ref and never clears
     // it on unmount; `reply.openFor` is the test's stand-in for the curator
@@ -63,7 +63,13 @@ vi.mock("@/features/curation-desk/curation-quick-view", () => ({
       if (reply.openFor === key) replyOpenFor.current = key;
       else if (replyOpenFor.current === key) replyOpenFor.current = null;
     });
-    return row ? <div data-testid="quick-view-open" data-comment={String(!!commentOnOpen)} data-tip={String(!!tipOnOpen)}>{row.post_id}</div> : null;
+    return row ? (
+      <div data-testid="quick-view-open" data-comment={String(!!commentOnOpen)} data-tip={String(!!tipOnOpen)}>
+        {row.post_id}
+        <button type="button" aria-label="drawer-reviewed" onClick={() => onReviewed?.(row as never)} />
+        <button type="button" aria-label="drawer-snooze" onClick={() => onSnooze?.(row as never)} />
+      </div>
+    ) : null;
   },
 }));
 vi.mock("@/features/shared/profile-popover", () => ({ ProfilePopover: ({ entry }: { entry: { author: string } }) => <span>@{entry.author}</span> }));
@@ -388,6 +394,86 @@ describe("keyboard on the queue", () => {
     await waitFor(() => expect(document.getElementById("curation-row-title-11")).toBeNull());
     expect(screen.getByTestId("quick-view-open")).toHaveTextContent("11");
     expect(infoToast).not.toHaveBeenCalledWith("curation-desk.live.left-queue");
+  });
+
+  /**
+   * A held post has no place left in the list to step down from, so Reviewed
+   * on it releases the hold and walks on to the successor saved when it left.
+   */
+  it("walks on from a post held after it aged out when it is reviewed", async () => {
+    // Own ids: the desk remembers the posts this tab wrote for the whole
+    // module, so marking 11 here would mute the tick deltas later cases send
+    // for it.
+    state.username = "curator1";
+    router.on(/curation-desk\/roster-feed/, () =>
+      makeRosterPage([
+        makeRow({ post_id: 21, created: iso(-(24 * 3_600_000 - 30_000)), overlay: makeOverlay() }),
+        makeRow({ post_id: 22, overlay: makeOverlay() }),
+      ])
+    );
+    renderWithQueryClient(<CurationQueueView />, { queryClient: client() });
+    expect(await screen.findAllByRole("article")).toHaveLength(2);
+    await act(async () => press("j"));
+    await act(async () => press("Enter"));
+
+    router
+      .on(/curation-desk\/roster-feed/, () => makeRosterPage([makeRow({ post_id: 22, overlay: makeOverlay() })]))
+      .on(/curation-desk\/status/, () => makeStatus({ feed_version: "v2", latest_post_id: 99 }));
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+    }
+    await waitFor(() => expect(document.getElementById("curation-row-title-21")).toBeNull());
+    expect(screen.getByTestId("quick-view-open")).toHaveTextContent("21");
+
+    // The mark never answers, so only the click itself can move the drawer,
+    // the way r steps down in the queue before the server has replied.
+    router.on(/curation-desk\/mark$/, () => new Promise(() => {}));
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("drawer-reviewed"));
+    });
+    await waitFor(() => expect(screen.getByTestId("quick-view-open")).toHaveTextContent("22"));
+    await waitFor(() => expect(router.callsTo(/curation-desk\/mark$/)).toHaveLength(1));
+    expect(router.callsTo(/curation-desk\/mark$/)[0].body).toMatchObject({ permlink: "post-21", state: "reviewed" });
+  });
+
+  /**
+   * Snooze and flag go through a dialog and move nothing on the click, so a
+   * held post walks on once the mark has landed.
+   */
+  it("walks on from a held post once a snooze on it has landed", async () => {
+    // Own ids, for the same reason as the case above.
+    state.username = "curator1";
+    router.on(/curation-desk\/roster-feed/, () =>
+      makeRosterPage([
+        makeRow({ post_id: 31, created: iso(-(24 * 3_600_000 - 30_000)), overlay: makeOverlay() }),
+        makeRow({ post_id: 32, overlay: makeOverlay() }),
+      ])
+    );
+    renderWithQueryClient(<CurationQueueView />, { queryClient: client() });
+    expect(await screen.findAllByRole("article")).toHaveLength(2);
+    await act(async () => press("j"));
+    await act(async () => press("Enter"));
+
+    router
+      .on(/curation-desk\/roster-feed/, () => makeRosterPage([makeRow({ post_id: 32, overlay: makeOverlay() })]))
+      .on(/curation-desk\/status/, () => makeStatus({ feed_version: "v2", latest_post_id: 99 }));
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+    }
+    await waitFor(() => expect(document.getElementById("curation-row-title-31")).toBeNull());
+    expect(screen.getByTestId("quick-view-open")).toHaveTextContent("31");
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("drawer-snooze"));
+    });
+    fireEvent.click(await screen.findByLabelText("curation-desk.snooze.preset-3"));
+    await waitFor(() => expect(router.callsTo(/curation-desk\/mark$/)).toHaveLength(1));
+    expect(router.callsTo(/curation-desk\/mark$/)[0].body).toMatchObject({ permlink: "post-31", state: "snoozed" });
+    await waitFor(() => expect(screen.getByTestId("quick-view-open")).toHaveTextContent("32"));
   });
 
   /**
