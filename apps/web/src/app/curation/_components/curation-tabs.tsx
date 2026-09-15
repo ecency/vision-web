@@ -5,7 +5,7 @@ import i18next from "i18next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { getCurationStatusQueryOptions } from "@ecency/sdk";
+import { getCurationStatusQueryOptions, type CurationStatus } from "@ecency/sdk";
 import { EcencyConfigManager } from "@/config";
 import { useViewerRole } from "@/features/curation-desk/hooks";
 
@@ -19,6 +19,9 @@ const TABS = [
 /** The roster tab is admin-only, and the page refuses anyone else besides. */
 const ROSTER_TAB = { href: "/curation/roster", key: "roster" } as const;
 
+/** The counts as the desk sends them; the curator's recommendation count is newer than the SDK type. */
+type StatusCounts = CurationStatus["counts"] & { recommended_unhandled?: number };
+
 /** Queue / Marks / Recommendations / Guide, with counts from the status query. */
 export function CurationTabs() {
   const pathname = usePathname() ?? "/curation";
@@ -30,12 +33,23 @@ export function CurationTabs() {
     ({ visionFeatures }) => visionFeatures.curationDesk.recommendations.enabled
   );
   const base = recommendationsEnabled ? TABS : TABS.filter((tab) => tab.key !== "recommendations");
-  const { role } = useViewerRole();
+  const { role, isRoster, isLoading: roleLoading } = useViewerRole();
   const tabs = role === "admin" ? [...base, ROSTER_TAB] : base;
 
+  // The recommendations tab opens a different list per role, so its badge
+  // counts that list: curators read the roster's recommended view, which leaves
+  // out what the team handled, and everyone else reads the public list. Until
+  // the role is known the tab does not know which list it opens, so it shows no
+  // count rather than the wrong one. A desk older than the curator count
+  // answers without it, and the public count stands in.
+  const statusCounts = status?.counts as StatusCounts | undefined;
   const counts: Record<string, number | undefined> = {
-    queue: status?.counts?.unreviewed,
-    recommendations: status?.counts?.recommended_posts
+    queue: statusCounts?.unreviewed,
+    recommendations: roleLoading
+      ? undefined
+      : isRoster
+        ? (statusCounts?.recommended_unhandled ?? statusCounts?.recommended_posts)
+        : statusCounts?.recommended_posts
   };
 
   return (

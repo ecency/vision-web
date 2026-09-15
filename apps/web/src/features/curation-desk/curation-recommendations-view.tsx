@@ -8,6 +8,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import {
   getCurationPostQueryOptions,
   getCurationRecommendationsInfiniteQueryOptions,
+  getCurationStatusQueryOptions,
   type CurationFlagReason,
   type CurationMyMark,
   type CurationRecommendationItem,
@@ -342,6 +343,14 @@ export function CurationRecommendationsView() {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const openKeyRef = useRef(openKey);
   openKeyRef.current = openKey;
+  // The tab badges read the status counts and nothing else on this page reads
+  // status, so it is read on the list's own beat. Marks, dismissals and
+  // recommendations made here read it again at once.
+  useQuery({
+    ...getCurationStatusQueryOptions(),
+    enabled: recommendationsEnabled,
+    refetchInterval: ROSTER_REFRESH_MS,
+  });
   const rosterQuery = useInfiniteQuery({
     ...rosterFeedQueryOptions(viewer.username, rosterParams),
     enabled: recommendationsEnabled && viewer.isRoster && !!viewer.username,
