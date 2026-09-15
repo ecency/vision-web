@@ -288,8 +288,10 @@ describe("CurationQueueView", () => {
     expect(call.body).not.toHaveProperty("hide_snoozed");
     expect(fetchRouter.callsTo(/curation-desk\/feed\?/)).toHaveLength(0);
     expect(await screen.findAllByRole("article")).toHaveLength(2);
-    // The roster page's total_estimate feeds the match count, never a client count.
-    expect(screen.getByText("curation-desk.toolbar.match")).toBeInTheDocument();
+    // The roster page's total_estimate feeds the count, never a client count.
+    // It is the backlog at every age, so under the default 24 h window it
+    // reads as backlog rather than matches.
+    expect(screen.getByText("curation-desk.toolbar.backlog")).toBeInTheDocument();
   });
 
   it("loads the public feed for a logged-in member who is not on the roster", async () => {

@@ -1,13 +1,12 @@
 "use client";
 
-import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import i18next from "i18next";
 import { UilAngleDown, UilSlidersVAlt } from "@tooni/iconscout-unicons-react";
-import type { CurationApp, CurationWindow } from "@ecency/sdk";
-import { Button } from "@ui/button";
+import type { CurationApp } from "@ecency/sdk";
 import { FormControl } from "@ui/input";
-import { CURATION_APPS, CURATION_WINDOWS, WORD_PRESETS } from "./consts";
+import { CURATION_APPS, WORD_PRESETS } from "./consts";
+import { ToggleChip } from "./curation-toggle-chip";
 import { countActiveFilters } from "./hooks";
 import type { QueueFilters, ResolvedQueueFilters } from "./types";
 
@@ -18,43 +17,13 @@ interface Props {
   onChange: (patch: Partial<QueueFilters>) => void;
 }
 
-function ToggleChip({
-  on,
-  label,
-  onClick,
-  tone
-}: {
-  on: boolean;
-  label: string;
-  onClick: () => void;
-  tone?: "red";
-}) {
-  return (
-    <Button
-      size="xs"
-      appearance={on ? "pressed" : "gray-link"}
-      outline={!on}
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      className={clsx(
-        "!rounded-full !min-h-[36px]",
-        on && "!bg-blue-dark-sky/10 !text-blue-dark-sky",
-        tone === "red" && on && "!bg-red/10 !text-red-030 dark:!bg-red/20 dark:!text-red-light-020"
-      )}
-      onClick={onClick}
-    >
-      {label}
-    </Button>
-  );
-}
-
 /**
- * Filter chips of spec 8.13. Every chip maps to a server param through
- * filtersToParams, never to a client-side row filter.
+ * The refine panel of spec 8.13. Every chip maps to a server param through
+ * filtersToParams, never to a client-side row filter. The window and the
+ * handled-post chips live in the toolbar, next to the sort.
  */
 export function CurationSortFilterBar({ filters, isRoster, communities, onChange }: Props) {
-  // Same tally the toolbar's Reset button shows, minus the two chips above.
+  // Same tally the toolbar's Reset button shows, minus what sits in the toolbar.
   const advancedCount = countActiveFilters(filters, isRoster, "refine");
   // The facets are the server's global top list, so a restored (or simply
   // rarer) community can be absent from it. Without this the select would show
@@ -69,20 +38,6 @@ export function CurationSortFilterBar({ filters, isRoster, communities, onChange
       role="group"
       aria-label={i18next.t("curation-desk.filters.aria")}
     >
-      <div className="flex flex-wrap items-center gap-2 py-1">
-        {isRoster && (
-          <ToggleChip
-            on={filters.unreviewedOnly}
-            label={i18next.t("curation-desk.filters.unreviewed")}
-            onClick={() => onChange({ unreviewedOnly: !filters.unreviewedOnly })}
-          />
-        )}
-        <ToggleChip
-          on={filters.hideCurated}
-          label={i18next.t("curation-desk.filters.hide-curated")}
-          onClick={() => onChange({ hideCurated: !filters.hideCurated })}
-        />
-      </div>
       <details className="group/filters min-w-[12rem] flex-1 rounded-xl border border-[--border-color] open:basis-full">
         <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-3 py-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-dark-sky [&::-webkit-details-marker]:hidden">
           <UilSlidersVAlt className="size-4 text-gray-500" aria-hidden />
@@ -180,24 +135,6 @@ export function CurationSortFilterBar({ filters, isRoster, communities, onChange
             <legend className="mb-3 font-semibold text-gray-600 dark:text-gray-400">
               {i18next.t("curation-desk.filters.content")}
             </legend>
-            <label className="block space-y-1.5">
-              <span>{i18next.t("curation-desk.filters.window")}</span>
-              <FormControl
-                type="select"
-                size="sm"
-                value={filters.window}
-                aria-label={i18next.t("curation-desk.filters.window")}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                  onChange({ window: e.target.value as CurationWindow })
-                }
-              >
-                {CURATION_WINDOWS.map((w) => (
-                  <option key={w} value={w}>
-                    {i18next.t(`curation-desk.filters.window-${w}`)}
-                  </option>
-                ))}
-              </FormControl>
-            </label>
             <div className="grid grid-cols-2 gap-2">
               <label className="block min-w-0 space-y-1.5">
                 <span>{i18next.t("curation-desk.filters.words")}</span>

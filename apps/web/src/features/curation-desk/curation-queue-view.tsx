@@ -24,6 +24,7 @@ import { CurationQuickView } from "./curation-quick-view";
 import type { CurationRecommendHandle } from "./curation-recommend-btn";
 import { CurationSortFilterBar } from "./curation-sort-filter-bar";
 import { useCurationTicker } from "./curation-ticker";
+import { inWindow } from "./curation-window";
 import { CurationToolbar } from "./curation-toolbar";
 import {
   filtersToParams,
@@ -119,7 +120,7 @@ export function CurationQueueView() {
   const recommendationsEnabled = EcencyConfigManager.useConfig(
     ({ visionFeatures }) => visionFeatures.curationDesk.recommendations.enabled
   );
-  const { filters, params, update, reset, reshuffle, activeCount, restored, savedOwner } =
+  const { filters, params, update, reset, reshuffle, activeCount, narrowed, restored, savedOwner } =
     useQueueFilters(viewer.isRoster);
   const coarsePointer = useCoarsePointer();
   const publicParams = useMemo(() => filtersToParams(filters, false), [filters]);
@@ -298,14 +299,21 @@ export function CurationQueueView() {
     ownMarksRef.current.delete(activeKey);
     const own = ownAt != null && Date.now() - ownAt < OWN_MARK_WINDOW_MS;
     const successor = ordered.length ? rowKey(ordered[Math.min(prevIndex, ordered.length - 1)]) : null;
+    const departed = prev[prevIndex];
     if (!own && quickView) {
       // Mid-reply, so the drawer stays on this post instead of unmounting the
       // editor under the curator. The usual way here is their own vote with
       // Hide Curated on: they curate, start a comment, and the post leaves the
       // queue a few seconds later. Nothing is selected while it is held, so a
       // stray keystroke cannot mark the row that took its place.
-      if (replyOpenForRef.current === activeKey && unsentReplyFor(prev[prevIndex])) {
-        setHeld({ row: prev[prevIndex], resumeKey: successor });
+      //
+      // The same hold covers a post that aged out of the chosen window while it
+      // was being read. Under 24 h, oldest first, the rows at the top are the
+      // ones about to cross the edge, and the server stops serving them there.
+      // Nobody took the post, so the colleague word would be wrong.
+      const agedOut = !inWindow(filters.window, departed.created, departed.payout_at, Date.now());
+      if (agedOut || (replyOpenForRef.current === activeKey && unsentReplyFor(departed))) {
+        setHeld({ row: departed, resumeKey: successor });
         setActiveKey(null);
         return;
       }
@@ -313,7 +321,7 @@ export function CurationQueueView() {
       infoToast(i18next.t("curation-desk.live.left-queue"));
     }
     setActiveKey(successor);
-  }, [ordered, rows, queryKey, activeKey, activeIndex, quickView]);
+  }, [ordered, rows, queryKey, activeKey, activeIndex, quickView, filters.window]);
 
   // Every loaded row can leave live while the server still holds more: the
   // list is not mounted to ask for the next page from its end, so it is
@@ -399,6 +407,10 @@ export function CurationQueueView() {
         // The lane this desk is showing rides on the mark, so the hand-off can
         // say which queue the position was earned in without ever guessing.
         await mark.mutateAsync({ row, ...input, lane: params });
+        // A held post already left the list, so no departure will move the
+        // drawer on once it is snoozed or flagged: the hold is released here,
+        // which resumes at the successor saved when it left.
+        if (input.state !== "noted" && heldRef.current?.row.post_id === row.post_id) releaseHeld();
         setUndo({
           message,
           action: input.state === "reviewed" ? () => clearMark.mutateAsync({ author: row.author, permlink: row.permlink, restoreAt }) : null,
@@ -411,7 +423,7 @@ export function CurationQueueView() {
         errorToast(...formatError(e));
       }
     },
-    [mark, clearMark, params, positionOf, noteOwnMark]
+    [mark, clearMark, params, positionOf, noteOwnMark, releaseHeld]
   );
 
   const onSelect = useCallback((row: DeskRow) => {
@@ -444,10 +456,17 @@ export function CurationQueueView() {
     (row: DeskRow) => {
       if (!viewer.isRoster) return;
       void doMark(row, { state: "reviewed" }, i18next.t("curation-desk.live.reviewed", { title: row.title }));
+      // A held post already left the list, so it has no place in `ordered` to
+      // step down from: the successor saved when it left is the next post, and
+      // releasing the hold is the move.
+      if (heldRef.current?.row.post_id === row.post_id) {
+        releaseHeld();
+        return;
+      }
       const idx = ordered.findIndex((r) => r.post_id === row.post_id);
       if (idx >= 0 && idx + 1 < ordered.length) scrollTo(idx + 1);
     },
-    [viewer.isRoster, doMark, ordered, scrollTo]
+    [viewer.isRoster, doMark, ordered, scrollTo, releaseHeld]
   );
   const onSnooze = useCallback((row: DeskRow) => viewer.isRoster && setDialog({ kind: "snooze", row }), [viewer.isRoster]);
   const onFlag = useCallback((row: DeskRow) => viewer.isRoster && setDialog({ kind: "flag", row }), [viewer.isRoster]);
@@ -539,7 +558,9 @@ export function CurationQueueView() {
         isRoster={viewer.isRoster}
         totalEstimate={totalEstimate}
         activeFilterCount={activeCount}
+        narrowed={narrowed}
         onSort={(sort) => update({ sort })}
+        onChange={update}
         onReshuffle={reshuffle}
         onReset={reset}
         savedOwner={savedOwner}

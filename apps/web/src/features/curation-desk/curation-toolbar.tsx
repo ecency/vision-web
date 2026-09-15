@@ -2,31 +2,43 @@
 
 import i18next from "i18next";
 import { UilRedo } from "@tooni/iconscout-unicons-react";
-import type { CurationSort } from "@ecency/sdk";
+import type { CurationSort, CurationWindow } from "@ecency/sdk";
 import { Button } from "@ui/button";
 import { FormControl } from "@ui/input";
-import type { ResolvedQueueFilters } from "./types";
+import { CURATION_WINDOWS } from "./consts";
+import { ToggleChip } from "./curation-toggle-chip";
+import type { QueueFilters, ResolvedQueueFilters } from "./types";
 
 interface Props {
   filters: ResolvedQueueFilters;
   isRoster: boolean;
   totalEstimate: number | null | undefined;
+  /** Filters away from the desk's defaults, for Reset. */
   activeFilterCount: number;
+  /** The request narrows what `total_estimate` counts; see narrowsBacklog. */
+  narrowed: boolean;
   /** The account whose saved refine set is in effect, null when none is. */
   savedOwner: string | null;
   onSort: (sort: CurationSort) => void;
+  onChange: (patch: Partial<QueueFilters>) => void;
   onReshuffle: () => void;
   onReset: () => void;
 }
 
-/** Sort menu, the match count from the server's `total_estimate` and Reset. */
+/**
+ * The controls a curator changes while working, on one line: the order, the
+ * window and the handled-post chips, then the match count from the server's
+ * `total_estimate` and Reset. Everything else stays in the refine panel.
+ */
 export function CurationToolbar({
   filters,
   isRoster,
   totalEstimate,
   activeFilterCount,
+  narrowed,
   savedOwner,
   onSort,
+  onChange,
   onReshuffle,
   onReset
 }: Props) {
@@ -68,12 +80,46 @@ export function CurationToolbar({
           {i18next.t("curation-desk.sort.reshuffle")}
         </Button>
       )}
+      <label className="flex items-center gap-2">
+        <span className="text-gray-500">{i18next.t("curation-desk.filters.window")}</span>
+        <FormControl
+          type="select"
+          size="sm"
+          value={filters.window}
+          aria-label={i18next.t("curation-desk.filters.window")}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+            onChange({ window: e.target.value as CurationWindow })
+          }
+        >
+          {CURATION_WINDOWS.map((w) => (
+            <option key={w} value={w}>
+              {i18next.t(`curation-desk.filters.window-${w}`)}
+            </option>
+          ))}
+        </FormControl>
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        {isRoster && (
+          <ToggleChip
+            on={filters.unreviewedOnly}
+            label={i18next.t("curation-desk.filters.unreviewed")}
+            onClick={() => onChange({ unreviewedOnly: !filters.unreviewedOnly })}
+          />
+        )}
+        <ToggleChip
+          on={filters.hideCurated}
+          label={i18next.t("curation-desk.filters.hide-curated")}
+          onClick={() => onChange({ hideCurated: !filters.hideCurated })}
+        />
+      </div>
       <span className="ml-auto flex flex-wrap items-center justify-end gap-2 text-gray-500">
         {totalEstimate != null && (
           <span aria-live="polite">
             {/* The server counts the team backlog, not this request, so a
-                narrowed queue must not print that number as "matches". */}
-            {activeFilterCount > 0
+                narrowed queue must not print that number as "matches". That is
+                not the Reset count: the default window narrows, and "All
+                windows" is a Reset filter that narrows nothing. */}
+            {narrowed
               ? i18next.t("curation-desk.toolbar.backlog", { count: totalEstimate })
               : i18next.t("curation-desk.toolbar.match", { count: totalEstimate })}
           </span>

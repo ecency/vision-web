@@ -4784,9 +4784,9 @@
       "lane-more": "{{lane}} and {{count}} more",
       "lane-narrowed_one": "{{count}} filter",
       "lane-narrowed_other": "{{count}} filters",
-      "order-newest": "newest first, not a watermark",
-      "order-random": "shuffled, not a watermark",
-      "order-unique": "by recommenders, not a watermark",
+      "order-newest": "newest first (older posts may be unchecked)",
+      "order-random": "random order (older posts may be unchecked)",
+      "order-unique": "most recommended first (older posts may be unchecked)",
       "where-you-start": "Your queue starts at the oldest post nobody has handled."
     },
     "marks-view": {

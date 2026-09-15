@@ -117,7 +117,9 @@ describe("saved refine filters", () => {
      * screen whenever any filter is on.
      */
     it("carries the window, and only a window the backend knows", () => {
-      expect(pickSavedFilters({ ...defaults, window: "full" }, defaults, true)).toEqual({ window: "full" });
+      expect(pickSavedFilters({ ...defaults, window: "full" }, defaults, true)).toEqual({});
+      expect(pickSavedFilters({ ...defaults, window: "all" }, defaults, true)).toEqual({ window: "all" });
+      expect(pickSavedFilters({ ...defaults, window: "12h" }, defaults, true)).toEqual({ window: "12h" });
       expect(sanitizeSavedFilters({ window: "full" })).toEqual({ window: "full" });
       expect(sanitizeSavedFilters({ window: "12h" })).toEqual({ window: "12h" });
       expect(sanitizeSavedFilters({ window: "yesterday" })).toEqual({});
@@ -141,6 +143,43 @@ describe("saved refine filters", () => {
     it("ignores a record written under another version", () => {
       window.localStorage.setItem(KEY, JSON.stringify({ v: 99, users: { curator1: { filters: { app: "peakd" } } } }));
       expect(readSavedFilters("curator1")).toEqual({});
+    });
+
+    /**
+     * Version 1 was written while "All windows" was the default, so its window
+     * is dropped once and the account opens under 24 h like everyone else. The
+     * rest of the lane survives, and the next save writes version 2.
+     */
+    it("reads a version 1 record without its window and keeps the rest", () => {
+      window.localStorage.setItem(
+        KEY,
+        JSON.stringify({
+          v: 1,
+          users: {
+            curator1: { filters: { app: "peakd", window: "half" } },
+            curator2: { filters: { window: "12h" } },
+            // Malformed entries pass through untouched and restore nothing.
+            curator3: { filters: null },
+            curator4: { filters: ["peakd"] },
+            curator5: "garbage",
+          },
+        })
+      );
+      expect(readSavedFilters("curator1")).toEqual({ app: "peakd" });
+      expect(readSavedFilters("curator2")).toEqual({});
+      for (const owner of ["curator3", "curator4", "curator5"]) expect(readSavedFilters(owner)).toEqual({});
+
+      saveFilters("curator2", { hasImages: true });
+      expect(stored()).toEqual({
+        v: 2,
+        users: {
+          curator1: { filters: { app: "peakd" } },
+          curator2: { filters: { hasImages: true } },
+          curator3: { filters: null },
+          curator4: { filters: ["peakd"] },
+          curator5: "garbage",
+        },
+      });
     });
 
     it("stores nothing for a viewer with no account", () => {
@@ -186,7 +225,7 @@ describe("saved refine filters", () => {
 
       act(() => result.current.update({ sort: "newest" }));
 
-      await waitFor(() => expect(window.localStorage.getItem("ecency_curation-desk-sort")).toBe('"newest"'));
+      await waitFor(() => expect(window.localStorage.getItem("ecency_curation-desk-order")).toBe('"newest"'));
       expect(stored()).toBeNull();
     });
 
@@ -197,7 +236,7 @@ describe("saved refine filters", () => {
       await waitFor(() => expect(result.current.restored).toBe(true));
 
       // The role defaults still resolve from the role, not from a frozen value.
-      expect(result.current.filters.sort).toBe("newest");
+      expect(result.current.filters.sort).toBe("queue");
       expect(result.current.filters.unreviewedOnly).toBe(false);
       expect(result.current.filters.app).toBe("peakd");
     });

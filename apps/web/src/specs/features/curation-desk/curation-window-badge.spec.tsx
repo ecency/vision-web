@@ -17,10 +17,34 @@ vi.mock("@/api/format-error", () => ({ formatError: (e: unknown) => [String(e), 
 vi.mock("@/api/sdk-mutations/use-curation-recommend-mutation", () => ({ useCurationRecommendMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) }));
 
 import { CurationQueueRow } from "@/features/curation-desk/curation-queue-row";
-import { computeWindow } from "@/features/curation-desk/curation-window";
+import { computeWindow, inWindow } from "@/features/curation-desk/curation-window";
 import type { DeskRow } from "@/features/curation-desk/types";
 
 const HOUR = 3_600_000;
+
+/**
+ * The bounds of the server's window filter, so a post that fails the check
+ * left the list for its age and the desk does not blame a colleague for it.
+ */
+describe("inWindow", () => {
+  const now = Date.parse("2026-09-05T12:00:00Z");
+  const at = (ms: number) => new Date(now + ms).toISOString();
+
+  it("selects posts with the same edges as the server's window filter", () => {
+    expect(inWindow("all", at(-9 * 24 * HOUR), null, now)).toBe(true);
+    expect(inWindow("12h", at(-11 * HOUR), null, now)).toBe(true);
+    expect(inWindow("12h", at(-13 * HOUR), null, now)).toBe(false);
+    expect(inWindow("full", at(-23.9 * HOUR), null, now)).toBe(true);
+    expect(inWindow("full", at(-24 * HOUR), null, now)).toBe(false);
+    expect(inWindow("half", at(-24 * HOUR), null, now)).toBe(true);
+    expect(inWindow("half", at(-72 * HOUR), null, now)).toBe(false);
+    expect(inWindow("eighth", at(-72 * HOUR), at(4 * 24 * HOUR), now)).toBe(true);
+    expect(inWindow("eighth", at(-80 * HOUR), at(11 * HOUR), now)).toBe(false);
+    expect(inWindow("locked", at(-6.6 * 24 * HOUR), at(11 * HOUR), now)).toBe(true);
+    expect(inWindow("locked", at(-5 * 24 * HOUR), at(2 * 24 * HOUR), now)).toBe(false);
+    expect(inWindow("locked", at(-7 * 24 * HOUR), at(0), now)).toBe(false);
+  });
+});
 const noop = () => {};
 const actions = { onSelect: noop, onOpen: noop, onVote: noop, onReviewed: noop, onSnooze: noop, onFlag: noop, onNote: noop, onClearMark: noop };
 

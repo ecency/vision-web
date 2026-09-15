@@ -6,7 +6,7 @@ import type { QueueFilters, SavedFiltersStore, SavedQueueFilters } from "./types
 /**
  * The refine fields worth carrying between visits. Three are deliberately out:
  *
- * - `sort` keeps its own shipped key, so nobody's saved order is migrated.
+ * - `sort` keeps its own key, SORT_STORAGE_KEY.
  * - `seed` is session scoped: a stored one would freeze Random forever, and
  *   restoring `sort: random` before the seed exists sends `seed=""`, which the
  *   backend rejects.
@@ -102,16 +102,37 @@ export function readStoredUsername(): string | null {
   return typeof stored === "string" && stored ? stored : null;
 }
 
+/**
+ * Version 1 was written while "All windows" was the default, so a stored window
+ * there is a choice made against a default that no longer exists. It is dropped
+ * so every account opens under 24 h once; the rest of the lane is kept.
+ */
+function withoutWindow(users: SavedFiltersStore["users"]): SavedFiltersStore["users"] {
+  const out: SavedFiltersStore["users"] = {};
+  for (const [owner, entry] of Object.entries(users)) {
+    const filters = entry?.filters;
+    if (!filters || typeof filters !== "object" || Array.isArray(filters)) {
+      out[owner] = entry;
+      continue;
+    }
+    const kept = { ...filters };
+    delete kept.window;
+    out[owner] = { filters: kept };
+  }
+  return out;
+}
+
 function readStore(): SavedFiltersStore {
   const raw = ls.get(FILTERS_STORAGE_KEY);
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { v: SAVED_FILTERS_VERSION, users: {} };
   const store = raw as Partial<SavedFiltersStore>;
-  if (store.v !== SAVED_FILTERS_VERSION) return { v: SAVED_FILTERS_VERSION, users: {} };
+  if (store.v !== SAVED_FILTERS_VERSION && store.v !== 1) return { v: SAVED_FILTERS_VERSION, users: {} };
   const users = store.users;
   if (!users || typeof users !== "object" || Array.isArray(users)) {
     return { v: SAVED_FILTERS_VERSION, users: {} };
   }
-  return { v: SAVED_FILTERS_VERSION, users: users as SavedFiltersStore["users"] };
+  const current = users as SavedFiltersStore["users"];
+  return { v: SAVED_FILTERS_VERSION, users: store.v === 1 ? withoutWindow(current) : current };
 }
 
 export function readSavedFilters(owner: string | null): SavedQueueFilters {

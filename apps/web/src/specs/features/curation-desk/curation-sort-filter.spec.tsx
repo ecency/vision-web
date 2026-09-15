@@ -14,7 +14,7 @@ vi.mock("@/core/hooks/use-active-username", () => ({ useActiveUsername: () => "c
 import { getCurationFeedInfiniteQueryOptions } from "@ecency/sdk";
 import { buildQueueDisplay } from "@/features/curation-desk/curation-queue-display";
 import { CURATION_WINDOWS } from "@/features/curation-desk/consts";
-import { countActiveFilters, defaultQueueFilters, filtersToParams, rosterFeedQueryOptions, useQueueFilters } from "@/features/curation-desk/hooks";
+import { countActiveFilters, defaultQueueFilters, filtersToParams, narrowsBacklog, rosterFeedQueryOptions, useQueueFilters } from "@/features/curation-desk/hooks";
 import type { QueueFilters } from "@/features/curation-desk/types";
 
 const hash = (key: unknown) => JSON.stringify(key);
@@ -69,9 +69,9 @@ describe("sort and filter chips", () => {
     expect(hash(app)).not.toBe(hash(base));
     const flagged = getCurationFeedInfiniteQueryOptions(filtersToParams({ ...defaultQueueFilters(), flagged: true, unreviewedOnly: false }, false)).queryKey;
     expect(hash(flagged)).toBe(hash(base));
-    // Random is roster-only in v1: a public viewer falls back to newest.
+    // Random is roster-only in v1: a public viewer falls back to the default order.
     const random = filtersToParams({ ...defaultQueueFilters(), sort: "random", seed: "abcd1234" }, false);
-    expect(random.sort).toBe("newest");
+    expect(random.sort).toBe("queue");
     expect(random.seed).toBeUndefined();
   });
 
@@ -118,15 +118,51 @@ describe("sort and filter chips", () => {
     expect(result.current.filters.seed).not.toBe(seed);
   });
 
-  it("uses the role default sort until the viewer picks one, then persists the pick", () => {
+  it("opens every viewer on oldest unreviewed under 24 h, then persists a picked sort", () => {
     const roster = renderHook(() => useQueueFilters(true));
     expect(roster.result.current.filters.sort).toBe("queue");
-    expect(roster.result.current.params).toMatchObject({ sort: "queue", hide_reviewed: true });
+    expect(roster.result.current.params).toMatchObject({ sort: "queue", window: "full", hide_reviewed: true });
     const member = renderHook(() => useQueueFilters(false));
-    expect(member.result.current.filters.sort).toBe("newest");
+    expect(member.result.current.filters.sort).toBe("queue");
+    expect(member.result.current.params).toMatchObject({ sort: "queue", window: "full" });
     expect(member.result.current.params).not.toHaveProperty("hide_reviewed");
     act(() => roster.result.current.update({ sort: "newest" }));
-    expect(JSON.parse(window.localStorage.getItem("ecency_curation-desk-sort") ?? "null")).toBe("newest");
+    expect(JSON.parse(window.localStorage.getItem("ecency_curation-desk-order") ?? "null")).toBe("newest");
+  });
+
+  /**
+   * The order stored before the default moved was mostly a pick made against
+   * the old default, so it is dropped once rather than restored.
+   */
+  it("does not restore an order stored under the old key, and removes it", () => {
+    window.localStorage.setItem("ecency_curation-desk-sort", JSON.stringify("newest"));
+    const { result } = renderHook(() => useQueueFilters(true));
+    expect(result.current.filters.sort).toBe("queue");
+    expect(window.localStorage.getItem("ecency_curation-desk-sort")).toBeNull();
+  });
+
+  /**
+   * The window sits in the toolbar now, so it is a Reset filter and not a
+   * refine-panel one, and the default window is no filter at all.
+   */
+  /**
+   * total_estimate counts unhandled open posts of every age, so the label
+   * reads narrowed from the request, not from the Reset tally.
+   */
+  it("tells a request that narrows the backlog from one that only differs from the defaults", () => {
+    expect(narrowsBacklog(defaultQueueFilters(), true)).toBe(true);
+    expect(narrowsBacklog({ ...defaultQueueFilters(), window: "all" }, true)).toBe(false);
+    expect(narrowsBacklog({ ...defaultQueueFilters(), window: "12h" }, true)).toBe(true);
+    expect(narrowsBacklog({ ...defaultQueueFilters(), window: "all", app: "peakd" }, true)).toBe(true);
+    expect(narrowsBacklog({ ...defaultQueueFilters(), window: "all" }, false)).toBe(false);
+  });
+
+  it("counts a window other than the default in the Reset tally only", () => {
+    expect(countActiveFilters(defaultQueueFilters(), true)).toBe(0);
+    expect(countActiveFilters(defaultQueueFilters(), false)).toBe(0);
+    const all = { ...defaultQueueFilters(), window: "all" as const };
+    expect(countActiveFilters(all, true)).toBe(1);
+    expect(countActiveFilters(all, true, "refine")).toBe(0);
   });
 
   it("draws the team cursor divider only for the chronological sorts", () => {
