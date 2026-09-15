@@ -62,7 +62,8 @@ const PASS_EXACT = new Set([
   "/next.svg",
   "/vercel.svg",
   "/public-nodes.json",
-  "/apple-app-site-association"
+  "/apple-app-site-association",
+  "/app-ads.txt"
 ]);
 
 function isRender(req) {

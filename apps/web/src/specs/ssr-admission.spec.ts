@@ -153,6 +153,7 @@ describe("ssr-admission preload", () => {
       "/public-nodes.json",
       "/apple-app-site-association",
       "/llms.txt",
+      "/app-ads.txt",
       "/sitemap.xml",
       "/sitemap/posts-1.xml",
       "/assets/fonts/inter.woff2",
