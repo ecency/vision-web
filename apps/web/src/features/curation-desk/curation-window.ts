@@ -1,3 +1,4 @@
+import type { CurationWindow } from "@ecency/sdk";
 import { DAY_MS, HOUR_MS, LOCKED_VOTE_FLOOR_PCT } from "./consts";
 import type { WindowState } from "./types";
 
@@ -10,6 +11,37 @@ function toMs(value: string | null | undefined): number | null {
   const text = /Z|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`;
   const ms = Date.parse(text);
   return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Whether the feed window a curator picked still selects a post at `now`,
+ * with the bounds the server's window filter uses. A post that fails this
+ * left the list for its age, not because anybody handled it.
+ */
+export function inWindow(
+  window: CurationWindow,
+  created: string,
+  payoutAt: string | null | undefined,
+  now: number
+): boolean {
+  const createdMs = toMs(created);
+  if (window === "all" || createdMs == null) return true;
+  const payoutMs = toMs(payoutAt) ?? createdMs + 7 * DAY_MS;
+  const age = now - createdMs;
+  switch (window) {
+    case "12h":
+      return age < 12 * HOUR_MS;
+    case "full":
+      return age < DAY_MS;
+    case "half":
+      return age >= DAY_MS && age < 3 * DAY_MS;
+    case "eighth":
+      return age >= 3 * DAY_MS && payoutMs > now + LOCKED_MS;
+    case "locked":
+      return payoutMs <= now + LOCKED_MS && payoutMs > now;
+    default:
+      return true;
+  }
 }
 
 /**

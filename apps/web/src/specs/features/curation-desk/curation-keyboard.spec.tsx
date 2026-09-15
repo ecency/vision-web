@@ -355,6 +355,42 @@ describe("keyboard on the queue", () => {
   });
 
   /**
+   * The desk opens oldest first under 24 h, so the post at the top is the one
+   * about to cross the window's edge, and the server stops serving it there.
+   * Nobody took it: the drawer stays on the post instead of closing with the
+   * word a colleague's mark gets.
+   */
+  it("keeps the drawer on a post that aged out of the window while it was read", async () => {
+    state.username = "curator1";
+    vi.mocked(infoToast).mockClear();
+    router.on(/curation-desk\/roster-feed/, () =>
+      makeRosterPage([
+        makeRow({ post_id: 11, created: iso(-(24 * 3_600_000 - 30_000)), overlay: makeOverlay() }),
+        makeRow({ post_id: 12, overlay: makeOverlay() }),
+      ])
+    );
+    renderWithQueryClient(<CurationQueueView />, { queryClient: client() });
+    expect(await screen.findAllByRole("article")).toHaveLength(2);
+    await act(async () => press("j"));
+    await act(async () => press("Enter"));
+    expect(screen.getByTestId("quick-view-open")).toHaveTextContent("11");
+
+    // A minute later the post is past 24 h: page one comes back without it
+    // once a new post moves the head.
+    router
+      .on(/curation-desk\/roster-feed/, () => makeRosterPage([makeRow({ post_id: 12, overlay: makeOverlay() })]))
+      .on(/curation-desk\/status/, () => makeStatus({ feed_version: "v2", latest_post_id: 99 }));
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+    }
+    await waitFor(() => expect(document.getElementById("curation-row-title-11")).toBeNull());
+    expect(screen.getByTestId("quick-view-open")).toHaveTextContent("11");
+    expect(infoToast).not.toHaveBeenCalledWith("curation-desk.live.left-queue");
+  });
+
+  /**
    * A reply the curator has not sent. Both halves are the REAL signal: the
    * editor's own draft key (`Comment` writes it on every keystroke) and the
    * drawer reporting which row its box is open for. An earlier version of this

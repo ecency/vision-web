@@ -24,6 +24,7 @@ import { CurationQuickView } from "./curation-quick-view";
 import type { CurationRecommendHandle } from "./curation-recommend-btn";
 import { CurationSortFilterBar } from "./curation-sort-filter-bar";
 import { useCurationTicker } from "./curation-ticker";
+import { inWindow } from "./curation-window";
 import { CurationToolbar } from "./curation-toolbar";
 import {
   filtersToParams,
@@ -298,14 +299,21 @@ export function CurationQueueView() {
     ownMarksRef.current.delete(activeKey);
     const own = ownAt != null && Date.now() - ownAt < OWN_MARK_WINDOW_MS;
     const successor = ordered.length ? rowKey(ordered[Math.min(prevIndex, ordered.length - 1)]) : null;
+    const departed = prev[prevIndex];
     if (!own && quickView) {
       // Mid-reply, so the drawer stays on this post instead of unmounting the
       // editor under the curator. The usual way here is their own vote with
       // Hide Curated on: they curate, start a comment, and the post leaves the
       // queue a few seconds later. Nothing is selected while it is held, so a
       // stray keystroke cannot mark the row that took its place.
-      if (replyOpenForRef.current === activeKey && unsentReplyFor(prev[prevIndex])) {
-        setHeld({ row: prev[prevIndex], resumeKey: successor });
+      //
+      // The same hold covers a post that aged out of the chosen window while it
+      // was being read. Under 24 h, oldest first, the rows at the top are the
+      // ones about to cross the edge, and the server stops serving them there.
+      // Nobody took the post, so the colleague word would be wrong.
+      const agedOut = !inWindow(filters.window, departed.created, departed.payout_at, Date.now());
+      if (agedOut || (replyOpenForRef.current === activeKey && unsentReplyFor(departed))) {
+        setHeld({ row: departed, resumeKey: successor });
         setActiveKey(null);
         return;
       }
@@ -313,7 +321,7 @@ export function CurationQueueView() {
       infoToast(i18next.t("curation-desk.live.left-queue"));
     }
     setActiveKey(successor);
-  }, [ordered, rows, queryKey, activeKey, activeIndex, quickView]);
+  }, [ordered, rows, queryKey, activeKey, activeIndex, quickView, filters.window]);
 
   // Every loaded row can leave live while the server still holds more: the
   // list is not mounted to ask for the next page from its end, so it is
