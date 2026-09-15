@@ -137,6 +137,11 @@ describe("Posting", () => {
     expect(extractMetaData(`<img src="${withoutExt}">`).image).toEqual([withoutExt]);
   });
 
+  it("(11) extractMetadata keeps a closing parenthesis inside a bare proxy URL", () => {
+    const url = "https://images.ecency.com/webp/https://example.com/chart).png";
+    expect(extractMetaData(`Source: ${url} for details`).image).toEqual([url]);
+  });
+
   it("makeJsonMetaData", () => {
     const meta = {
       image: ["http://www.xx.com/a.png", "https://img.esteem.ws/h74zrad2fh.jpg"]
