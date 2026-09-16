@@ -21,7 +21,11 @@ vi.mock("next/navigation", () => ({
 import { PublishStateProvider, usePublishState } from "@/app/publish/_hooks/use-publish-state";
 import { useBackToClassic } from "@/app/publish/_hooks/use-back-to-classic";
 import { useApplyTemplate } from "@/app/publish/_hooks/use-apply-template";
-import { usableDescription } from "@/app/publish/_utils/content";
+import {
+  hasWordCharacter,
+  plainTextDescription,
+  usableDescription
+} from "@/app/publish/_utils/content";
 
 const FIRST = "Let me tell you a story about O.";
 const SECOND = "O is short for Orchestrator.";
@@ -263,6 +267,16 @@ describe("publish state description", () => {
     expect(result.current.state.metaDescription).toBe(rewritten.slice(0, 350));
   });
 
+  it("leaves an image wrapped in HTML without a description rather than a fragment", () => {
+    const { result } = renderComposer();
+
+    typeBody(result, [
+      '<div class="pull-right"><center>![](https://i.ecency.com/DQmX/a.png)</center></div>'
+    ]);
+
+    expect(result.current.state.metaDescription).toBe("");
+  });
+
   it("leaves an image only post without a description rather than its markdown", () => {
     const { result } = renderComposer();
 
@@ -283,6 +297,45 @@ describe("publish state description", () => {
 
     act(() => result.current.state.setMetaDescription("L"));
     expect(result.current.state.metaDescription).toBe(summaryOf(FINAL));
+  });
+});
+
+describe("hasWordCharacter", () => {
+  it("rejects punctuation the summariser can leave behind", () => {
+    expect(hasWordCharacter("![](")).toBe(false);
+    expect(hasWordCharacter("   ")).toBe(false);
+  });
+
+  it("accepts text in any script", () => {
+    expect(hasWordCharacter("Hello")).toBe(true);
+    expect(hasWordCharacter("今日")).toBe(true);
+    expect(hasWordCharacter("7")).toBe(true);
+  });
+});
+
+describe("plainTextDescription", () => {
+  const IMAGE = "https://i.ecency.com/DQmX/a.png";
+
+  it("drops an image whose file name holds parentheses", () => {
+    expect(plainTextDescription("![](https://i.ecency.com/DQmX/a_(1).png)", 350)).toBe("");
+  });
+
+  it("drops a linked image together with the link target", () => {
+    expect(plainTextDescription(`[![](${IMAGE})](https://ecency.com/@ecency)`, 350)).toBe("");
+  });
+
+  it("keeps the label of a link but not its target", () => {
+    expect(plainTextDescription("[Hello there](https://ecency.com/@ecency)", 350)).toBe(
+      "Hello there"
+    );
+  });
+
+  it("keeps the text around a dropped image", () => {
+    expect(plainTextDescription(`Before ![](${IMAGE}) after`, 350)).toBe("Before after");
+  });
+
+  it("leaves brackets that open no link alone", () => {
+    expect(plainTextDescription("see [1] and [2] below", 350)).toBe("see [1] and [2] below");
   });
 });
 

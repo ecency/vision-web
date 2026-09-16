@@ -22,7 +22,7 @@ import {
   useState
 } from "react";
 import isEqual from "react-fast-compare";
-import { plainTextDescription, usableDescription } from "../_utils/content";
+import { hasWordCharacter, plainTextDescription, usableDescription } from "../_utils/content";
 import { usePublishPollState } from "./use-publish-poll-state";
 
 // EntryMetadataBuilder.withSummary cuts a description to this length when a draft or
@@ -294,9 +294,10 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
     // The summariser returns nothing for an image only post or a long run with no spaces,
     // so fall back to the body as plain text. Generating both here, rather than repairing
     // the value later from the validation step, is what keeps it following the body.
-    const summary = usableDescription(
-      postBodySummary(content ?? "", SUBMIT_DESCRIPTION_MAX_LENGTH)
-    );
+    const generated = postBodySummary(content ?? "", SUBMIT_DESCRIPTION_MAX_LENGTH);
+    // An image wrapped in HTML summarises to a fragment such as "![](", which reads as text
+    // while saying nothing, so treat it as nothing and fall back with the rest.
+    const summary = hasWordCharacter(generated) ? usableDescription(generated) : undefined;
     const next = (
       summary ?? plainTextDescription(content ?? "", SUBMIT_DESCRIPTION_MAX_LENGTH)
     ).slice(0, SUBMIT_DESCRIPTION_MAX_LENGTH);

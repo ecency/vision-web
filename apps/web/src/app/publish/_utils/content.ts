@@ -40,12 +40,15 @@ export function hasDraftableContent(title?: string | null, content?: string | nu
  * The body as plain text, for a post the summariser cannot summarise: an image only post,
  * or a long run with no spaces, both of which it returns nothing for.
  *
- * Markdown images go first, so their URL does not become the description. HTML tags are
- * stripped including unclosed forms (`<[^>]*(?:>|$)`), so a truncated `…<script` substring
- * cannot leak into the meta tag, and the loop catches nested payloads like `<scr<script>ipt>`.
+ * Markdown destinations are scanned rather than matched with a pattern, because a URL can
+ * hold parentheses, as in `a_(1).png`, and an image can sit inside a link. An image is
+ * dropped whole. A link keeps its label, which is text the reader sees, and loses its
+ * target. HTML tags are stripped including unclosed forms (`<[^>]*(?:>|$)`), so a truncated
+ * `…<script` substring cannot leak into the meta tag, and the loop catches nested payloads
+ * like `<scr<script>ipt>`.
  */
 export function plainTextDescription(content: string, length: number): string {
-  let stripped = content.replace(/!\[[^\]]*\]\([^)]*\)/g, " ");
+  let stripped = stripMarkdownTargets(content);
   let previous: string;
   do {
     previous = stripped;
@@ -53,6 +56,62 @@ export function plainTextDescription(content: string, length: number): string {
   } while (stripped !== previous);
 
   return stripped.replace(/\s+/g, " ").trim().slice(0, length);
+}
+
+/** Index of the character closing the pair opened at `start`, or -1 while it stays open. */
+function closingIndex(text: string, start: number, open: string, close: string): number {
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === open) {
+      depth++;
+    } else if (text[i] === close) {
+      depth--;
+      if (depth === 0) {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
+/** Drops `![alt](target)` whole and reduces `[label](target)` to its label. */
+function stripMarkdownTargets(text: string): string {
+  let out = "";
+  let i = 0;
+
+  while (i < text.length) {
+    const isImage = text[i] === "!" && text[i + 1] === "[";
+
+    if (isImage || text[i] === "[") {
+      const labelOpen = i + (isImage ? 1 : 0);
+      const labelClose = closingIndex(text, labelOpen, "[", "]");
+      const targetClose =
+        labelClose !== -1 && text[labelClose + 1] === "("
+          ? closingIndex(text, labelClose + 1, "(", ")")
+          : -1;
+
+      if (targetClose !== -1) {
+        // The label of a link can hold an image, so read it the same way.
+        out += isImage ? " " : stripMarkdownTargets(text.slice(labelOpen + 1, labelClose));
+        i = targetClose + 1;
+        continue;
+      }
+    }
+
+    out += text[i];
+    i++;
+  }
+
+  return out;
+}
+
+// A letter or digit in any script. Plain ranges rather than `\p{...}` escapes, for the same
+// reason as the grapheme fallback below.
+const WORD_CHARACTER = /[a-z0-9]|[^\u0000-\u007F]/i;
+
+/** Whether text says anything at all, as opposed to punctuation such as a stray `![](`. */
+export function hasWordCharacter(text: string): boolean {
+  return WORD_CHARACTER.test(text);
 }
 
 /**
