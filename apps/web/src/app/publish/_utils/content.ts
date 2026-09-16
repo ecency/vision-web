@@ -53,6 +53,11 @@ export function usableDescription(description?: string | null): string | undefin
 // is parsed, which would break far more than this count.
 const REGIONAL_INDICATOR_PAIR = /[\u{1F1E6}-\u{1F1FF}]{2}/gu;
 const GRAPHEME_JOINERS = /[\u{1F3FB}-\u{1F3FF}\u{FE0F}\u{200D}]/gu;
+// Marks that hang off the character before them. Normalising composes the ones that have a
+// precomposed form, such as e plus an acute accent; the rest, such as q plus the same accent,
+// have none and are dropped here instead.
+const COMBINING_MARKS =
+  /[\u{0300}-\u{036F}\u{1AB0}-\u{1AFF}\u{1DC0}-\u{1DFF}\u{20D0}-\u{20FF}\u{FE20}-\u{FE2F}]/gu;
 
 // A single emoji can span several UTF-16 code units, so count what a reader sees.
 function countGraphemes(text: string): number {
@@ -61,10 +66,13 @@ function countGraphemes(text: string): number {
       .length;
   }
 
-  // Normalising composes a base character and its combining marks into one code point.
+  // Approximate: a script whose clusters this does not model, such as Devanagari, still
+  // counts high, which keeps a description rather than replacing it. That is the same
+  // direction the old UTF-16 count erred in, and only engines without Intl.Segmenter get here.
   const collapsed = text
     .normalize("NFC")
     .replace(REGIONAL_INDICATOR_PAIR, "\u{1F3F3}")
-    .replace(GRAPHEME_JOINERS, "");
+    .replace(GRAPHEME_JOINERS, "")
+    .replace(COMBINING_MARKS, "");
   return Array.from(collapsed).length;
 }

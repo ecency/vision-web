@@ -283,6 +283,8 @@ describe("usableDescription", () => {
       // One grapheme each, spanning two or more code points.
       expect(usableDescription("😀")).toBeUndefined();
       expect(usableDescription("e\u0301")).toBeUndefined();
+      // No precomposed form, so normalising alone leaves two code points.
+      expect(usableDescription("q\u0301")).toBeUndefined();
       expect(usableDescription("👍🏽")).toBeUndefined();
       expect(usableDescription("🇵🇭")).toBeUndefined();
       expect(usableDescription("Hi")).toBe("Hi");
