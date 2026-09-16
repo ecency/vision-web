@@ -37,6 +37,25 @@ export function hasDraftableContent(title?: string | null, content?: string | nu
 }
 
 /**
+ * The body as plain text, for a post the summariser cannot summarise: an image only post,
+ * or a long run with no spaces, both of which it returns nothing for.
+ *
+ * Markdown images go first, so their URL does not become the description. HTML tags are
+ * stripped including unclosed forms (`<[^>]*(?:>|$)`), so a truncated `…<script` substring
+ * cannot leak into the meta tag, and the loop catches nested payloads like `<scr<script>ipt>`.
+ */
+export function plainTextDescription(content: string, length: number): string {
+  let stripped = content.replace(/!\[[^\]]*\]\([^)]*\)/g, " ");
+  let previous: string;
+  do {
+    previous = stripped;
+    stripped = stripped.replace(/<[^>]*(?:>|$)/g, "");
+  } while (stripped !== previous);
+
+  return stripped.replace(/\s+/g, " ").trim().slice(0, length);
+}
+
+/**
  * The description to publish, or undefined when the body summary should be used
  * instead. A value of one character or less counts as empty: it is what the
  * composer used to capture from the first typed letter, never a real summary.

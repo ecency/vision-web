@@ -22,7 +22,7 @@ import { createPermlink, isCommunity } from "@/utils";
 import { useQuery } from "@tanstack/react-query";
 import { buildPublishOperation } from "../_utils/build-publish-operation";
 import { wordOverlapSimilarity } from "@/utils/text-similarity";
-import { hasPublishContent, usableDescription } from "../_utils/content";
+import { hasPublishContent } from "../_utils/content";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { AvailableCredits } from "@/features/shared";
 import { RcPrecheckBanner } from "@/features/shared/rc-precheck";
@@ -55,7 +55,6 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
     clearAll,
     content,
     metaDescription,
-    setMetaDescription,
     isReblogToCommunity,
     setIsReblogToCommunity,
     beneficiaries,
@@ -277,27 +276,6 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
     const uniqueTagsSet = new Set([...normalizedExistingTags, ...computedTags]);
     setTags(Array.from(uniqueTagsSet).slice(0, 10));
   });
-
-  useEffect(() => {
-    if (!content) return;
-
-    // Only generate description if it's empty or too short to be meaningful
-    if (!usableDescription(metaDescription)) {
-      // Strip HTML tags including unclosed forms (`<[^>]*(?:>|$)`) so a
-      // truncated `…<script` substring can't leak into the meta tag.
-      // Loop catches nested payloads like `<scr<script>ipt>`.
-      let stripped = content;
-      let prev: string;
-      do {
-        prev = stripped;
-        stripped = stripped.replace(/<[^>]*(?:>|$)/g, "");
-      } while (stripped !== prev);
-
-      const plainText = stripped.replace(/\s+/g, " ").trim();
-      const description = plainText.slice(0, 160);
-      setMetaDescription(description);
-    }
-  }, [content]);
 
   return (
     <div className="animate-fade-in-up publish-page max-w-[1024px] mx-auto pb-20 sm:pb-0">

@@ -248,6 +248,29 @@ describe("publish state description", () => {
     expect(result.current.state.metaDescription).toBe(summaryOf(extended));
   });
 
+  it("falls back to the body as plain text when the summariser returns nothing", () => {
+    const { result } = renderComposer();
+    // A long run with no spaces summarises to "", which is why the fallback exists.
+    const spaceless = "今日はいい天気ですね散歩に行きます".repeat(40);
+    const rewritten = "明日は雨が降るでしょう家で本を読みます".repeat(40);
+
+    expect(summaryOf(spaceless)).toBe("");
+    typeBody(result, [spaceless]);
+    expect(result.current.state.metaDescription).toBe(spaceless.slice(0, 350));
+
+    typeBody(result, [rewritten]);
+
+    expect(result.current.state.metaDescription).toBe(rewritten.slice(0, 350));
+  });
+
+  it("leaves an image only post without a description rather than its markdown", () => {
+    const { result } = renderComposer();
+
+    typeBody(result, ["<center>![](https://i.ecency.com/DQmX/a.png)</center>"]);
+
+    expect(result.current.state.metaDescription).toBe("");
+  });
+
   it("keeps a loaded description but replaces one too short to be meaningful", () => {
     const { result } = renderComposer();
 

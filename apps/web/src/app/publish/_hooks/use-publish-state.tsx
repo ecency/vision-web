@@ -22,7 +22,7 @@ import {
   useState
 } from "react";
 import isEqual from "react-fast-compare";
-import { usableDescription } from "../_utils/content";
+import { plainTextDescription, usableDescription } from "../_utils/content";
 import { usePublishPollState } from "./use-publish-poll-state";
 
 // EntryMetadataBuilder.withSummary cuts a description to this length when a draft or
@@ -291,10 +291,15 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
       return;
     }
 
-    const next = postBodySummary(content ?? "", SUBMIT_DESCRIPTION_MAX_LENGTH).slice(
-      0,
-      SUBMIT_DESCRIPTION_MAX_LENGTH
+    // The summariser returns nothing for an image only post or a long run with no spaces,
+    // so fall back to the body as plain text. Generating both here, rather than repairing
+    // the value later from the validation step, is what keeps it following the body.
+    const summary = usableDescription(
+      postBodySummary(content ?? "", SUBMIT_DESCRIPTION_MAX_LENGTH)
     );
+    const next = (
+      summary ?? plainTextDescription(content ?? "", SUBMIT_DESCRIPTION_MAX_LENGTH)
+    ).slice(0, SUBMIT_DESCRIPTION_MAX_LENGTH);
     autoDescriptionRef.current = next;
     if (next !== metaDescription) {
       setStoredMetaDescription(next);

@@ -1,0 +1,120 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, render } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { postBodySummary } from "@ecency/render-helper";
+import { SUBMIT_DESCRIPTION_MAX_LENGTH } from "@/app/submit/_consts";
+import { useActiveAccount } from "@/core/hooks/use-active-account";
+
+vi.mock("@/utils", async () => ({
+  ...(await vi.importActual<typeof import("@/utils")>("@/utils")),
+  random: vi.fn(),
+  getAccessToken: vi.fn(() => "mock-token")
+}));
+// The component reads publish state through the hooks barrel. Hand back the real state
+// module only, so the editor and dictation hooks in that barrel are not loaded.
+vi.mock("@/app/publish/_hooks", async () =>
+  vi.importActual("@/app/publish/_hooks/use-publish-state")
+);
+// The broadcast hooks only need to exist: nothing here publishes.
+vi.mock("@/app/publish/_api", () => ({
+  usePublishApi: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useScheduleApi: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSaveDraftApi: () => ({ mutateAsync: vi.fn() }),
+  useSaveTemplateApi: () => ({ mutateAsync: vi.fn(), isPending: false })
+}));
+vi.mock("@/app/publish/_components/publish-action-bar-community", () => ({
+  PublishActionBarCommunity: () => null
+}));
+vi.mock("@/app/publish/_components/publish-validate-post-thumbnail-picker", () => ({
+  PublishValidatePostThumbnailPicker: () => null
+}));
+vi.mock("@/app/publish/_components/publish-schedule-dialog", () => ({
+  PublishScheduleDialog: () => null
+}));
+vi.mock("@/app/submit/_components", () => ({
+  TagSelector: () => null,
+  sanitizeTagInput: (tag: string) => tag.toLowerCase()
+}));
+vi.mock("@/features/shared/rc-topup/use-rc-topup-action", () => ({
+  useRcTopupAction: () => ({ openTopup: vi.fn(), dialog: null })
+}));
+vi.mock("@/features/shared/points-topup-cta", () => ({ PointsTopupCta: () => null }));
+vi.mock("@/features/shared/rc-precheck", () => ({ RcPrecheckBanner: () => null }));
+vi.mock("@/features/shared", () => ({
+  handleAndReportError: vi.fn(() => true),
+  error: vi.fn(),
+  AvailableCredits: () => null
+}));
+vi.mock("@/features/support-ecency", () => ({
+  canFitBeneficiary: () => false,
+  isSupportEcencyRow: () => false,
+  SUPPORT_ECENCY_ACCOUNT: "ecency",
+  SUPPORT_ECENCY_DEFAULT_PERCENT: 1,
+  useSupportEcencySettingsQuery: () => ({ data: undefined })
+}));
+vi.mock("@/app/publish/_utils/rc-shortfall", () => ({
+  isShortfallStillRelevant: () => false,
+  resolveRcShortfall: () => null
+}));
+// jsdom never fires Image.onload, so the image ratio probe would never settle.
+vi.mock("@/features/entry-management/entry-metadata-manager/get-dimensions-from-data-url", () => ({
+  getDimensionsFromDataUrl: async () => [0, 0]
+}));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => "/publish",
+  useSearchParams: () => null
+}));
+
+import { PublishStateProvider, usePublishState } from "@/app/publish/_hooks/use-publish-state";
+import { PublishValidatePost } from "@/app/publish/_components/publish-validate-post";
+
+// An image only body: the summariser returns nothing for it, which is the case the
+// validation step used to repair.
+const IMAGE_BODY = "<center>![](https://i.ecency.com/DQmX/a.png)</center>";
+const REWRITTEN = "Let me tell you a story about O.\n\nO is short for Orchestrator.";
+
+const summaryOf = (content: string) => postBodySummary(content, SUBMIT_DESCRIPTION_MAX_LENGTH);
+
+// Regression: the validation step generated a description and wrote it back as though the
+// author had typed it, so a body edited afterwards published the older text.
+describe("publish validation step description", () => {
+  beforeEach(() => {
+    vi.mocked(useActiveAccount).mockReturnValue({
+      activeUser: { username: "author" },
+      username: "author",
+      account: { name: "author", post_count: 10 },
+      isLoading: false
+    } as unknown as ReturnType<typeof useActiveAccount>);
+  });
+
+  it("keeps following the body after the validation step has been open", () => {
+    const state: { current: ReturnType<typeof usePublishState> | null } = { current: null };
+    function Harness({ step }: { step: "edit" | "validation" }) {
+      state.current = usePublishState();
+      return step === "validation" ? (
+        <PublishValidatePost onClose={() => {}} onSuccess={() => {}} />
+      ) : null;
+    }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (step: "edit" | "validation") => (
+      <QueryClientProvider client={queryClient}>
+        <PublishStateProvider>
+          <Harness step={step} />
+        </PublishStateProvider>
+      </QueryClientProvider>
+    );
+
+    const { rerender } = render(tree("edit"));
+    act(() => state.current!.setTitle("A photo"));
+    act(() => state.current!.setContent(IMAGE_BODY));
+
+    // Continue, then back to the editor, then rewrite the post and continue again.
+    rerender(tree("validation"));
+    rerender(tree("edit"));
+    act(() => state.current!.setContent(REWRITTEN));
+    rerender(tree("validation"));
+
+    expect(state.current!.metaDescription).toBe(summaryOf(REWRITTEN));
+  });
+});
