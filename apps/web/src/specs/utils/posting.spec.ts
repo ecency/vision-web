@@ -188,6 +188,12 @@ describe("Posting", () => {
     expect(out.thumbnails).toEqual([url]);
   });
 
+  it("(20) extractMetadata keeps two images that differ only by a query string", () => {
+    const plain = "https://images.ecency.com/p/abc";
+    const fitted = "https://images.ecency.com/p/abc?mode=fit";
+    expect(extractMetaData(`![](${plain}) ![](${fitted})`).image).toEqual([plain, fitted]);
+  });
+
   it("(19) extractMetadata keeps two URLs where one only looks like a prefix", () => {
     const short = "https://images.ecency.com/p/abc";
     const long = "https://images.ecency.com/p/abcd";

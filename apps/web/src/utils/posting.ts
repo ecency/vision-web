@@ -115,8 +115,14 @@ const MARKDOWN_OPENER = /\(\s*$/;
  * lets the second one be found. A match that cuts down to something that is no longer an
  * image is dropped rather than stored broken.
  */
-const collectImages = (body: string, pattern: RegExp, needsExtension: boolean): string[] => {
-  const urls: string[] = [];
+interface FoundImage {
+  url: string;
+  /** Where the match started in the body, which is what tells one occurrence from another. */
+  index: number;
+}
+
+const collectImages = (body: string, pattern: RegExp, needsExtension: boolean): FoundImage[] => {
+  const found: FoundImage[] = [];
   const scan = new RegExp(pattern.source, pattern.flags);
   let match: RegExpExecArray | null;
 
@@ -126,13 +132,13 @@ const collectImages = (body: string, pattern: RegExp, needsExtension: boolean): 
     const keep = cut && (!needsExtension || EXTENSION_TAIL.test(cut)) ? cut : "";
 
     if (keep) {
-      urls.push(keep);
+      found.push({ url: keep, index: match.index });
     }
 
     scan.lastIndex = match.index + Math.max((keep || cut).length, 1);
   }
 
-  return urls;
+  return found;
 };
 
 export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaData => {
@@ -143,39 +149,45 @@ export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaD
   const ecencyImgReg =
     /https?:\/\/(?:i|img|images)\.ecency\.com\/(?:(?:p|DQm[a-zA-Z0-9]+)\/)?[^\s"'<>]+/gi;
 
-  const bodyImagesWithExt = collectImages(body, imgReg, true);
-  const ecencyImages = collectImages(body, ecencyImgReg, false);
-  const bodyImages = [...bodyImagesWithExt, ...ecencyImages];
+  const found = [...collectImages(body, imgReg, true), ...collectImages(body, ecencyImgReg, false)];
 
-  // The extension pattern has to end at the extension, so an Ecency URL carrying a query or
-  // fragment is recorded twice: once cut short and once whole. Keep the whole one, since the
-  // parameters are part of what is served. The boundary check is what keeps two genuinely
-  // different URLs, such as /p/abc and /p/abcd, apart.
-  const isCutShortBy = (url: string, other: string) =>
-    other.length > url.length &&
-    other.startsWith(url) &&
-    (other[url.length] === "?" || other[url.length] === "#");
+  // The extension pattern has to end at the extension, so one occurrence can be recorded
+  // twice: cut short by that pattern and whole by the Ecency one. Both start at the same
+  // place in the body, which is what separates them from two different images that merely
+  // share a prefix, such as /p/abc and /p/abc?mode=fit written side by side.
+  const isTruncatedCopy = (image: FoundImage) =>
+    found.some(
+      (other) =>
+        other.index === image.index &&
+        other.url.length > image.url.length &&
+        other.url.startsWith(image.url)
+    );
+  const bodyImages = found.filter((image) => !isTruncatedCopy(image)).map((image) => image.url);
 
   // A post saved before the cut above carries both the URL and the same URL with a trailing
   // parenthesis. Drop the broken twin rather than offer it as a thumbnail forever.
   const isBrokenTwin = (url: string) => url.endsWith(")") && bodyImages.includes(url.slice(0, -1));
 
-  const wholeImages = bodyImages.filter(
-    (url) => !bodyImages.some((other) => isCutShortBy(url, other))
-  );
-  const isStale = (url: string) =>
-    isBrokenTwin(url) || wholeImages.some((other) => isCutShortBy(url, other));
+  // Likewise a URL saved before the fix above, cut short of its query or fragment. It counts
+  // as stale only while the body no longer holds it on its own, so an image that really is
+  // published both ways keeps both entries.
+  const isCutShortCopy = (url: string) =>
+    !bodyImages.includes(url) &&
+    bodyImages.some(
+      (other) => other.startsWith(url) && (other[url.length] === "?" || other[url.length] === "#")
+    );
+  const isStale = (url: string) => isBrokenTwin(url) || isCutShortCopy(url);
   const existingImages = (initialMeta.image ?? []).filter((url) => !isStale(url));
   const existingThumbnails = (initialMeta.thumbnails ?? []).filter((url) => !isStale(url));
 
-  const allImages = Array.from(new Set([...existingImages, ...wholeImages]));
+  const allImages = Array.from(new Set([...existingImages, ...bodyImages]));
 
   const out: MetaData = { ...initialMeta };
 
   if (allImages.length > 0) {
     out.image = allImages.slice(0, 10);
     out.thumbnails = Array.from(
-        new Set([...existingThumbnails, ...existingImages, ...wholeImages])
+        new Set([...existingThumbnails, ...existingImages, ...bodyImages])
     );
   }
 
