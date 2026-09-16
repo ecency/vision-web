@@ -276,12 +276,17 @@ describe("usableDescription", () => {
     expect(usableDescription(value)).toBeUndefined();
   });
 
-  it("counts code points where Intl.Segmenter is missing", () => {
+  it("still reads one symbol as missing where Intl.Segmenter is absent", () => {
     const segmenter = Intl.Segmenter;
     Object.defineProperty(Intl, "Segmenter", { value: undefined, configurable: true });
     try {
+      // One grapheme each, spanning two or more code points.
       expect(usableDescription("😀")).toBeUndefined();
+      expect(usableDescription("e\u0301")).toBeUndefined();
+      expect(usableDescription("👍🏽")).toBeUndefined();
+      expect(usableDescription("🇵🇭")).toBeUndefined();
       expect(usableDescription("Hi")).toBe("Hi");
+      expect(usableDescription("😀😀")).toBe("😀😀");
     } finally {
       Object.defineProperty(Intl, "Segmenter", { value: segmenter, configurable: true });
     }

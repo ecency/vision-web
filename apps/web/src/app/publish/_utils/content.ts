@@ -46,11 +46,25 @@ export function usableDescription(description?: string | null): string | undefin
   return trimmed && countGraphemes(trimmed) > 1 ? description! : undefined;
 }
 
+// A flag is a pair of regional indicators. Everything else a reader sees as one symbol is
+// built by hanging skin tone modifiers, variation selectors or zero width joiners off a
+// base character. Plain code point ranges only: an engine old enough to lack Intl.Segmenter
+// may also lack Unicode property escapes, and an unsupported escape throws while the module
+// is parsed, which would break far more than this count.
+const REGIONAL_INDICATOR_PAIR = /[\u{1F1E6}-\u{1F1FF}]{2}/gu;
+const GRAPHEME_JOINERS = /[\u{1F3FB}-\u{1F3FF}\u{FE0F}\u{200D}]/gu;
+
 // A single emoji can span several UTF-16 code units, so count what a reader sees.
 function countGraphemes(text: string): number {
   if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
     return Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text))
       .length;
   }
-  return Array.from(text).length;
+
+  // Normalising composes a base character and its combining marks into one code point.
+  const collapsed = text
+    .normalize("NFC")
+    .replace(REGIONAL_INDICATOR_PAIR, "\u{1F3F3}")
+    .replace(GRAPHEME_JOINERS, "");
+  return Array.from(collapsed).length;
 }
