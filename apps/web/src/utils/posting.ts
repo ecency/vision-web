@@ -81,6 +81,66 @@ export const ensureValidPermlink = (
 };
 
 
+/**
+ * The Ecency host pattern runs to the next whitespace or quote, so in markdown
+ * (`![](url)`, `[![](url)](link)`) it swallows the closing parenthesis and
+ * whatever follows it. Cut at the first `)` that closes nothing opened inside
+ * the URL, which keeps a filename such as `photo_(1).jpg` intact. Only applied
+ * to a URL that opens right after `(`: in an HTML attribute or bare text a `)`
+ * can belong to the URL itself.
+ */
+const cutAtUnmatchedParen = (url: string): string => {
+  let depth = 0;
+  for (let i = 0; i < url.length; i++) {
+    if (url[i] === "(") {
+      depth++;
+    } else if (url[i] === ")") {
+      if (depth === 0) {
+        return url.slice(0, i);
+      }
+      depth--;
+    }
+  }
+  return url;
+};
+
+const EXTENSION_TAIL = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)$/i;
+// A markdown destination opens right after "(", give or take spaces.
+const MARKDOWN_OPENER = /\(\s*$/;
+
+/**
+ * Collects every URL a pattern finds, cutting a markdown destination at its closing
+ * parenthesis. Matching runs to the next whitespace or quote, so two images written back to
+ * back read as one match: scanning resumes right after the URL that was kept, which is what
+ * lets the second one be found. A match that cuts down to something that is no longer an
+ * image is dropped rather than stored broken.
+ */
+interface FoundImage {
+  url: string;
+  /** Where the match started in the body, which is what tells one occurrence from another. */
+  index: number;
+}
+
+const collectImages = (body: string, pattern: RegExp, needsExtension: boolean): FoundImage[] => {
+  const found: FoundImage[] = [];
+  const scan = new RegExp(pattern.source, pattern.flags);
+  let match: RegExpExecArray | null;
+
+  while ((match = scan.exec(body)) !== null) {
+    const raw = match[0];
+    const cut = MARKDOWN_OPENER.test(body.slice(0, match.index)) ? cutAtUnmatchedParen(raw) : raw;
+    const keep = cut && (!needsExtension || EXTENSION_TAIL.test(cut)) ? cut : "";
+
+    if (keep) {
+      found.push({ url: keep, index: match.index });
+    }
+
+    scan.lastIndex = match.index + Math.max((keep || cut).length, 1);
+  }
+
+  return found;
+};
+
 export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaData => {
   // Match images with common file extensions (including RAW formats like .arw)
   const imgReg = /https?:\/\/[^\s"']+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi;
@@ -89,12 +149,36 @@ export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaD
   const ecencyImgReg =
     /https?:\/\/(?:i|img|images)\.ecency\.com\/(?:(?:p|DQm[a-zA-Z0-9]+)\/)?[^\s"'<>]+/gi;
 
-  const bodyImagesWithExt = body.match(imgReg) || [];
-  const ecencyImages = body.match(ecencyImgReg) || [];
-  const bodyImages = [...bodyImagesWithExt, ...ecencyImages];
+  const found = [...collectImages(body, imgReg, true), ...collectImages(body, ecencyImgReg, false)];
 
-  const existingImages = initialMeta.image ?? [];
-  const existingThumbnails = initialMeta.thumbnails ?? [];
+  // The extension pattern has to end at the extension, so one occurrence can be recorded
+  // twice: cut short by that pattern and whole by the Ecency one. Both start at the same
+  // place in the body, which is what separates them from two different images that merely
+  // share a prefix, such as /p/abc and /p/abc?mode=fit written side by side.
+  const isTruncatedCopy = (image: FoundImage) =>
+    found.some(
+      (other) =>
+        other.index === image.index &&
+        other.url.length > image.url.length &&
+        other.url.startsWith(image.url)
+    );
+  const bodyImages = found.filter((image) => !isTruncatedCopy(image)).map((image) => image.url);
+
+  // A post saved before the cut above carries both the URL and the same URL with a trailing
+  // parenthesis. Drop the broken twin rather than offer it as a thumbnail forever.
+  const isBrokenTwin = (url: string) => url.endsWith(")") && bodyImages.includes(url.slice(0, -1));
+
+  // Likewise a URL saved before the fix above, cut short of its query or fragment. It counts
+  // as stale only while the body no longer holds it on its own, so an image that really is
+  // published both ways keeps both entries.
+  const isCutShortCopy = (url: string) =>
+    !bodyImages.includes(url) &&
+    bodyImages.some(
+      (other) => other.startsWith(url) && (other[url.length] === "?" || other[url.length] === "#")
+    );
+  const isStale = (url: string) => isBrokenTwin(url) || isCutShortCopy(url);
+  const existingImages = (initialMeta.image ?? []).filter((url) => !isStale(url));
+  const existingThumbnails = (initialMeta.thumbnails ?? []).filter((url) => !isStale(url));
 
   const allImages = Array.from(new Set([...existingImages, ...bodyImages]));
 
