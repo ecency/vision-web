@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useValidatePostUpdating } from "@/api/mutations/validate-post-updating";
 import { postBodySummary } from "@ecency/render-helper";
-import { usableDescription } from "@/app/publish/_utils/content";
+import { descriptionToPublish } from "@/app/publish/_utils/content";
 import { EcencyAnalytics } from "@ecency/sdk";
 import { SUBMIT_DESCRIPTION_MAX_LENGTH } from "@/app/submit/_consts";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -61,9 +61,7 @@ export function usePostEdit(entry: Entry | undefined) {
         .builder()
         .extend(entry)
         // The author's description, unless it is empty or too short to be meaningful
-        .withSummary(
-          usableDescription(description) ?? postBodySummary(body, SUBMIT_DESCRIPTION_MAX_LENGTH)
-        )
+        .withSummary(descriptionToPublish(description, body, SUBMIT_DESCRIPTION_MAX_LENGTH))
         .withTags(tags)
         .withPoll()
         .withSelectedThumbnail(selectedThumbnail);

@@ -15,6 +15,14 @@ describe("descriptionToEdit", () => {
     expect(descriptionToEdit(postBodySummary(postBodySummary(BODY), 200), BODY)).toBe("");
   });
 
+  it("empties the form the classic editor stores when the body carries escaped angle brackets", () => {
+    // Summarising a summary is not the summary itself here: the first pass decodes the
+    // entities and the second strips what they became.
+    const entity = "Using &lt;center&gt; tags here. " + "word ".repeat(120);
+
+    expect(descriptionToEdit(postBodySummary(postBodySummary(entity), 200), entity)).toBe("");
+  });
+
   it("keeps a description the author wrote", () => {
     expect(descriptionToEdit("My own summary", BODY)).toBe("My own summary");
   });

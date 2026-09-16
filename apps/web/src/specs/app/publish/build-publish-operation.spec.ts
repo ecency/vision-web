@@ -29,6 +29,18 @@ describe("buildPublishOperation", () => {
     expect(meta.description).toContain("A post about proposal payouts");
   });
 
+  it("never publishes a fragment the summariser produced", async () => {
+    const { op } = await buildPublishOperation({
+      ...draft,
+      content: '<div class="text-justify">![](https://i.ecency.com/DQmX/a.png)</div>',
+      metaDescription: "🙂"
+    });
+    const meta = JSON.parse(op.json_metadata);
+
+    expect(meta.description).not.toContain("![](");
+    expect(meta.description).toBe("");
+  });
+
   it("publishes a description the author wrote", async () => {
     const { op } = await buildPublishOperation({ ...draft, metaDescription: "My own summary" });
     const meta = JSON.parse(op.json_metadata);

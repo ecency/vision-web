@@ -3,7 +3,7 @@ import { Draft, DraftMetadata, RewardType } from "@/entities";
 import { EntryMetadataManagement } from "@/features/entry-management";
 import { error, success, info } from "@/features/shared";
 import { postBodySummary } from "@ecency/render-helper";
-import { usableDescription } from "../_utils/content";
+import { descriptionToPublish } from "../_utils/content";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import i18next from "i18next";
 import { useRouter } from "next/navigation";
@@ -79,10 +79,7 @@ export function useSaveDraftApi(draftId?: string) {
         .extractFromBody(content!)
         .withTags(tags)
         // The author's description, unless it is empty or too short to be meaningful
-        .withSummary(
-          usableDescription(metaDescription) ??
-            postBodySummary(content!, SUBMIT_DESCRIPTION_MAX_LENGTH)
-        )
+        .withSummary(descriptionToPublish(metaDescription, content!, SUBMIT_DESCRIPTION_MAX_LENGTH))
         .withPostLinks(postLinks)
         .withLocation(location)
         .withAiTools(aiTools)
@@ -100,14 +97,7 @@ export function useSaveDraftApi(draftId?: string) {
       const token = await ensureValidToken(username);
 
       if (targetDraftId) {
-        const resp = await updateDraft(
-          token,
-          targetDraftId,
-          title!,
-          content!,
-          tagJ!,
-          draftMeta
-        );
+        const resp = await updateDraft(token, targetDraftId, title!, content!, tagJ!, draftMeta);
         if (showToast) {
           success(i18next.t("submit.draft-updated"));
         }
@@ -117,13 +107,7 @@ export function useSaveDraftApi(draftId?: string) {
       } else {
         const previousDrafts =
           queryClient.getQueryData<Draft[]>(QueryKeys.posts.drafts(username)) ?? [];
-        const resp = await addDraft(
-          token,
-          title!,
-          content!,
-          tagJ!,
-          draftMeta
-        );
+        const resp = await addDraft(token, title!, content!, tagJ!, draftMeta);
         if (showToast) {
           success(i18next.t("submit.draft-saved"));
         }
@@ -137,7 +121,11 @@ export function useSaveDraftApi(draftId?: string) {
         if (redirect) {
           // Wait for any pending uploads before redirecting
           if (uploadTracker?.hasPendingUploads) {
-            info(i18next.t("publish.waiting-for-uploads", { defaultValue: "Waiting for images to upload..." }));
+            info(
+              i18next.t("publish.waiting-for-uploads", {
+                defaultValue: "Waiting for images to upload..."
+              })
+            );
             const uploadResult = await uploadTracker.waitForUploads();
 
             // Show warning if some uploads failed

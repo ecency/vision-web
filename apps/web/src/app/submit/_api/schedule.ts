@@ -10,7 +10,8 @@ import { error } from "@/features/shared";
 import { AxiosError } from "axios";
 import i18next from "i18next";
 import { postBodySummary } from "@ecency/render-helper";
-import { usableDescription } from "@/app/publish/_utils/content";
+import { descriptionToPublish } from "@/app/publish/_utils/content";
+import { SUBMIT_DESCRIPTION_MAX_LENGTH } from "@/app/submit/_consts";
 import { EcencyAnalytics } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
@@ -81,7 +82,7 @@ export function useScheduleApi(onClear: () => void) {
         .extractFromBody(body)
         .withTags(tags)
         // Use the author's description unless it is empty or too short to be meaningful
-        .withSummary(usableDescription(description) ?? postBodySummary(body))
+        .withSummary(descriptionToPublish(description, body, SUBMIT_DESCRIPTION_MAX_LENGTH))
         .withPoll(activePoll)
         .withSelectedThumbnail(selectedThumbnail);
       const jsonMeta = jsonMetaBuilder.build();
