@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Entry } from "@/entities";
+import { mockEntry } from "@/specs/test-utils";
 
 const h = vi.hoisted(() => ({
   addDraft: vi.fn(async (..._args: unknown[]) => ({ _id: "draft-1" })),
@@ -89,19 +89,19 @@ import { usePostEdit } from "@/app/publish/entry/[author]/[permlink]/_hooks/use-
 const TITLE = "Vibe coding";
 const BODY = "Let me tell you a story about O.\n\nO is short for Orchestrator.";
 
-const ENTRY = {
+const ENTRY = mockEntry({
   author: "author",
   permlink: "vibe-coding",
   category: "vibecoding",
   title: TITLE,
   body: "An earlier version of the post.",
   json_metadata: { app: "ecency/4.4.2-vision", tags: ["vibecoding"], description: "L" }
-} as unknown as Entry;
+});
 
 type Metadata = { description?: string };
 
 /** Mounts a composer hook with the real publish state, holding the given description. */
-function mount<R>(useHook: () => R, description: string) {
+function mount<R>(useHook: () => R, description: string): { current: R } {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   h.queryClient.current = queryClient;
   const state: { current: ReturnType<typeof usePublishState> | null } = { current: null };
@@ -137,7 +137,7 @@ async function settle(submit: () => Promise<unknown>) {
   });
 }
 
-function lastArgs(mock: { mock: { calls: unknown[][] } }) {
+function lastArgs(mock: { mock: { calls: unknown[][] } }): unknown[] {
   expect(mock.mock.calls.length).toBeGreaterThan(0);
   return mock.mock.calls.at(-1)!;
 }
