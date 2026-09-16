@@ -147,20 +147,35 @@ export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaD
   const ecencyImages = collectImages(body, ecencyImgReg, false);
   const bodyImages = [...bodyImagesWithExt, ...ecencyImages];
 
+  // The extension pattern has to end at the extension, so an Ecency URL carrying a query or
+  // fragment is recorded twice: once cut short and once whole. Keep the whole one, since the
+  // parameters are part of what is served. The boundary check is what keeps two genuinely
+  // different URLs, such as /p/abc and /p/abcd, apart.
+  const isCutShortBy = (url: string, other: string) =>
+    other.length > url.length &&
+    other.startsWith(url) &&
+    (other[url.length] === "?" || other[url.length] === "#");
+
   // A post saved before the cut above carries both the URL and the same URL with a trailing
   // parenthesis. Drop the broken twin rather than offer it as a thumbnail forever.
   const isBrokenTwin = (url: string) => url.endsWith(")") && bodyImages.includes(url.slice(0, -1));
-  const existingImages = (initialMeta.image ?? []).filter((url) => !isBrokenTwin(url));
-  const existingThumbnails = (initialMeta.thumbnails ?? []).filter((url) => !isBrokenTwin(url));
 
-  const allImages = Array.from(new Set([...existingImages, ...bodyImages]));
+  const wholeImages = bodyImages.filter(
+    (url) => !bodyImages.some((other) => isCutShortBy(url, other))
+  );
+  const isStale = (url: string) =>
+    isBrokenTwin(url) || wholeImages.some((other) => isCutShortBy(url, other));
+  const existingImages = (initialMeta.image ?? []).filter((url) => !isStale(url));
+  const existingThumbnails = (initialMeta.thumbnails ?? []).filter((url) => !isStale(url));
+
+  const allImages = Array.from(new Set([...existingImages, ...wholeImages]));
 
   const out: MetaData = { ...initialMeta };
 
   if (allImages.length > 0) {
     out.image = allImages.slice(0, 10);
     out.thumbnails = Array.from(
-        new Set([...existingThumbnails, ...existingImages, ...bodyImages])
+        new Set([...existingThumbnails, ...existingImages, ...wholeImages])
     );
   }
 

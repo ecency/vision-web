@@ -170,6 +170,30 @@ describe("Posting", () => {
     expect(out.thumbnails).toEqual([url]);
   });
 
+  it("(17) extractMetadata lists an image with a query string once, in full", () => {
+    const url = "https://i.ecency.com/DQmX/photo.png?x=1";
+    expect(extractMetaData(`![](${url})`).image).toEqual([url]);
+
+    const fragment = "https://i.ecency.com/DQmX/photo.png#top";
+    expect(extractMetaData(`![](${fragment})`).image).toEqual([fragment]);
+  });
+
+  it("(18) extractMetadata drops a stored copy that was cut short of its query", () => {
+    const url = "https://i.ecency.com/DQmX/photo.png?x=1";
+    const out = extractMetaData(`![](${url})`, {
+      image: ["https://i.ecency.com/DQmX/photo.png"],
+      thumbnails: ["https://i.ecency.com/DQmX/photo.png"]
+    });
+    expect(out.image).toEqual([url]);
+    expect(out.thumbnails).toEqual([url]);
+  });
+
+  it("(19) extractMetadata keeps two URLs where one only looks like a prefix", () => {
+    const short = "https://images.ecency.com/p/abc";
+    const long = "https://images.ecency.com/p/abcd";
+    expect(extractMetaData(`![](${short}) ![](${long})`).image).toEqual([short, long]);
+  });
+
   it("(11) extractMetadata keeps a closing parenthesis inside a bare proxy URL", () => {
     const url = "https://images.ecency.com/webp/https://example.com/chart).png";
     expect(extractMetaData(`Source: ${url} for details`).image).toEqual([url]);
