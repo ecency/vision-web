@@ -184,8 +184,12 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
         SUBMIT_DESCRIPTION_MAX_LENGTH
       );
       // A draft or template saved while the description followed its body stores that
-      // summary, cut to the saved length. Recognise both forms so the reopened post keeps
-      // following the body instead of shipping a summary of the old one.
+      // summary, cut to the saved length. Recognise those forms so the reopened post keeps
+      // following the body instead of shipping a summary of the old one. A draft saved by
+      // the classic editor stores postBodySummary(postBodySummary(body), 200), which matches
+      // the last form because postBodySummary is idempotent on its own output. The spec
+      // "keeps following the body after a draft saved by the classic editor is reopened"
+      // guards that, so a change to the summariser cannot break it silently.
       const isAutoSummary =
         loaded === summary ||
         loaded === postBodySummary(summary, SAVED_SUMMARY_LENGTH) ||
@@ -197,6 +201,9 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
     [setStoredMetaDescription]
   );
 
+  // The equality clause is what normally answers: while the description follows the body,
+  // the effect below keeps it equal to the stored auto summary. The first clause is belt
+  // and braces for the moment before that effect has run, not a separate case to cover.
   const isMetaDescriptionAuto = useCallback(
     () =>
       !descriptionEditedRef.current &&

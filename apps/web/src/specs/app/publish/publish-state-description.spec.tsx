@@ -217,6 +217,37 @@ describe("publish state description", () => {
     expect(result.current.state.metaDescription).toBe("Written in the draft");
   });
 
+  it("keeps following the body after a draft saved by the classic editor is reopened", () => {
+    const { result } = renderComposer();
+    // The shape submit/_api/save-draft.ts stores: withSummary(postBodySummary(body)).
+    const stored = postBodySummary(postBodySummary(LONG), SAVED_LENGTH);
+
+    act(() => {
+      result.current.state.setContent(LONG);
+      result.current.state.loadMetaDescription(stored, LONG);
+    });
+    typeBody(result, [REWRITTEN]);
+
+    expect(result.current.state.metaDescription).toBe(summaryOf(REWRITTEN));
+  });
+
+  it("treats a loaded description that matches its body summary as auto", () => {
+    const { result } = renderComposer();
+    const body = REWRITTEN;
+    const stored = postBodySummary(body, SAVED_LENGTH);
+    const extended = `${body} And then a second paragraph about the same work.`;
+
+    act(() => {
+      result.current.state.setContent(body);
+      result.current.state.loadMetaDescription(stored, body);
+    });
+    typeBody(result, [extended]);
+
+    // Once saved, a description the author wrote that matches the summary of its own body
+    // cannot be told apart from a generated one, so it follows the body. Deliberate.
+    expect(result.current.state.metaDescription).toBe(summaryOf(extended));
+  });
+
   it("keeps a loaded description but replaces one too short to be meaningful", () => {
     const { result } = renderComposer();
 
@@ -243,6 +274,17 @@ describe("usableDescription", () => {
 
   it.each(["😀", "👍🏽", "🇵🇭", " 😀 "])("treats the single emoji %j as missing", (value) => {
     expect(usableDescription(value)).toBeUndefined();
+  });
+
+  it("counts code points where Intl.Segmenter is missing", () => {
+    const segmenter = Intl.Segmenter;
+    Object.defineProperty(Intl, "Segmenter", { value: undefined, configurable: true });
+    try {
+      expect(usableDescription("😀")).toBeUndefined();
+      expect(usableDescription("Hi")).toBe("Hi");
+    } finally {
+      Object.defineProperty(Intl, "Segmenter", { value: segmenter, configurable: true });
+    }
   });
 
   it("keeps a description of two emoji", () => {
