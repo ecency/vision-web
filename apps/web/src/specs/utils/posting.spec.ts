@@ -137,6 +137,39 @@ describe("Posting", () => {
     expect(extractMetaData(`<img src="${withoutExt}">`).image).toEqual([withoutExt]);
   });
 
+  it("(12) extractMetadata lists both images written back to back", () => {
+    const a = "https://i.ecency.com/DQmX/a.png";
+    const b = "https://i.ecency.com/DQmY/b.jpg";
+    expect(extractMetaData(`![](${a})![](${b})`).image).toEqual([a, b]);
+    expect(extractMetaData(`|![](${a})|![](${b})|`).image).toEqual([a, b]);
+    expect(extractMetaData(`<center>![](${a})![](${b})</center>`).image).toEqual([a, b]);
+  });
+
+  it("(13) extractMetadata lists both extension-less images written back to back", () => {
+    const a = "https://images.ecency.com/p/F1abc";
+    const b = "https://images.ecency.com/p/F2def";
+    expect(extractMetaData(`![](${a})![](${b})`).image).toEqual([a, b]);
+    expect(extractMetaData(`[![](${a})](${b})`).image).toEqual([a, b]);
+  });
+
+  it("(14) extractMetadata skips a link target that is not an image", () => {
+    const image = "https://example.com/x.png";
+    expect(extractMetaData(`[page](https://example.com/page)![](${image})`).image).toEqual([image]);
+  });
+
+  it("(15) extractMetadata cuts a markdown destination written with spaces", () => {
+    const url = "https://images.ecency.com/p/3W72F1";
+    expect(extractMetaData(`![]( ${url})`).image).toEqual([url]);
+  });
+
+  it("(16) extractMetadata drops a stored URL that is a broken twin of a body image", () => {
+    const url = "https://i.ecency.com/DQmX/a.png";
+    const meta = { image: [url, `${url})`], thumbnails: [url, `${url})`] };
+    const out = extractMetaData(`![](${url})`, meta);
+    expect(out.image).toEqual([url]);
+    expect(out.thumbnails).toEqual([url]);
+  });
+
   it("(11) extractMetadata keeps a closing parenthesis inside a bare proxy URL", () => {
     const url = "https://images.ecency.com/webp/https://example.com/chart).png";
     expect(extractMetaData(`Source: ${url} for details`).image).toEqual([url]);

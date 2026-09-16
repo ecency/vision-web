@@ -104,6 +104,37 @@ const cutAtUnmatchedParen = (url: string): string => {
   return url;
 };
 
+const EXTENSION_TAIL = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)$/i;
+// A markdown destination opens right after "(", give or take spaces.
+const MARKDOWN_OPENER = /\(\s*$/;
+
+/**
+ * Collects every URL a pattern finds, cutting a markdown destination at its closing
+ * parenthesis. Matching runs to the next whitespace or quote, so two images written back to
+ * back read as one match: scanning resumes right after the URL that was kept, which is what
+ * lets the second one be found. A match that cuts down to something that is no longer an
+ * image is dropped rather than stored broken.
+ */
+const collectImages = (body: string, pattern: RegExp, needsExtension: boolean): string[] => {
+  const urls: string[] = [];
+  const scan = new RegExp(pattern.source, pattern.flags);
+  let match: RegExpExecArray | null;
+
+  while ((match = scan.exec(body)) !== null) {
+    const raw = match[0];
+    const cut = MARKDOWN_OPENER.test(body.slice(0, match.index)) ? cutAtUnmatchedParen(raw) : raw;
+    const keep = cut && (!needsExtension || EXTENSION_TAIL.test(cut)) ? cut : "";
+
+    if (keep) {
+      urls.push(keep);
+    }
+
+    scan.lastIndex = match.index + Math.max((keep || cut).length, 1);
+  }
+
+  return urls;
+};
+
 export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaData => {
   // Match images with common file extensions (including RAW formats like .arw)
   const imgReg = /https?:\/\/[^\s"']+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi;
@@ -112,14 +143,15 @@ export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaD
   const ecencyImgReg =
     /https?:\/\/(?:i|img|images)\.ecency\.com\/(?:(?:p|DQm[a-zA-Z0-9]+)\/)?[^\s"'<>]+/gi;
 
-  const bodyImagesWithExt = body.match(imgReg) || [];
-  const ecencyImages = Array.from(body.matchAll(ecencyImgReg), (match) =>
-    body[match.index - 1] === "(" ? cutAtUnmatchedParen(match[0]) : match[0]
-  );
+  const bodyImagesWithExt = collectImages(body, imgReg, true);
+  const ecencyImages = collectImages(body, ecencyImgReg, false);
   const bodyImages = [...bodyImagesWithExt, ...ecencyImages];
 
-  const existingImages = initialMeta.image ?? [];
-  const existingThumbnails = initialMeta.thumbnails ?? [];
+  // A post saved before the cut above carries both the URL and the same URL with a trailing
+  // parenthesis. Drop the broken twin rather than offer it as a thumbnail forever.
+  const isBrokenTwin = (url: string) => url.endsWith(")") && bodyImages.includes(url.slice(0, -1));
+  const existingImages = (initialMeta.image ?? []).filter((url) => !isBrokenTwin(url));
+  const existingThumbnails = (initialMeta.thumbnails ?? []).filter((url) => !isBrokenTwin(url));
 
   const allImages = Array.from(new Set([...existingImages, ...bodyImages]));
 
