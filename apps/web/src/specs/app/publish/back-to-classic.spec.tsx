@@ -20,7 +20,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/app/publish/_hooks/use-publish-state", () => ({
-  usePublishState: () => publishState.current
+  usePublishState: () => ({ isMetaDescriptionAuto: () => false, ...publishState.current })
 }));
 
 const { useBackToClassic } = await import("@/app/publish/_hooks/use-back-to-classic");

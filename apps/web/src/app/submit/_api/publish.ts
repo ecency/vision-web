@@ -15,6 +15,7 @@ import { sentry } from "@/core/sentry/lazy-sentry";
 import { useRouter } from "next/navigation";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { postBodySummary } from "@ecency/render-helper";
+import { usableDescription } from "@/app/publish/_utils/content";
 import { validatePostCreating } from "@ecency/sdk";
 import { EcencyAnalytics } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks";
@@ -117,8 +118,8 @@ export function usePublishApi(onClear: () => void) {
         .builder()
         .default()
         .extractFromBody(body)
-        // It should select filled description or if its empty or null/undefined then get auto summary
-        .withSummary(description || postBodySummary(body))
+        // Use the author's description unless it is empty or too short to be meaningful
+        .withSummary(usableDescription(description) ?? postBodySummary(body))
         .withTags(tags)
         .withSelectedThumbnail(selectedThumbnail);
       const jsonMeta = metaBuilder

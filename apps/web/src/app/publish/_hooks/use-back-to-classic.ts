@@ -56,7 +56,7 @@ function holdsPost(draft: PostBase | undefined) {
 export function useBackToClassic() {
   const router = useRouter();
   const [, setLocalDraft] = useLocalStorage<PostBase>(SUBMIT_LOCAL_DRAFT_KEY);
-  const { title, content, tags, metaDescription } = usePublishState();
+  const { title, content, tags, metaDescription, isMetaDescriptionAuto } = usePublishState();
   const [conflict, setConflict] = useState(false);
 
   const handOver = useCallback(() => {
@@ -64,10 +64,12 @@ export function useBackToClassic() {
       title: title ?? "",
       tags: tags ?? [],
       body: content ?? "",
-      description: metaDescription ?? ""
+      // An auto summary describes the body as it is now. Hand over none, so the classic
+      // editor summarises the post it actually publishes.
+      description: isMetaDescriptionAuto() ? "" : (metaDescription ?? "")
     });
     router.push(routes.SUBMIT);
-  }, [content, metaDescription, router, setLocalDraft, tags, title]);
+  }, [content, isMetaDescriptionAuto, metaDescription, router, setLocalDraft, tags, title]);
 
   const backToClassic = useCallback(() => {
     // Nothing worth handing over, so leave whatever is over there alone.
