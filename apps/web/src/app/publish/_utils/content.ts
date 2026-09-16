@@ -1,3 +1,5 @@
+import { postBodySummary } from "@ecency/render-helper";
+
 export function extractPublishContentText(content?: string | null): string {
   if (!content) {
     return "";
@@ -110,6 +112,30 @@ function stripMarkdownTargets(text: string): string {
 const WORD_CHARACTER = /[a-z0-9]|[^\u0000-\u007F]/i;
 
 /** Whether text says anything at all, as opposed to punctuation such as a stray `![](`. */
+/** What EntryMetadataBuilder.withSummary keeps when a draft, template or post is saved. */
+const SAVED_SUMMARY_LENGTH = 200;
+
+/**
+ * Whether a stored description is the summary of the body it was saved with, rather than
+ * something the author wrote. A draft, template or published post stores that summary cut to
+ * the saved length, so those forms count too. A post saved by the classic editor stores the
+ * summary summarised again, which matches the last form because postBodySummary is idempotent
+ * on its own output.
+ */
+export function isGeneratedDescription(description: string, body: string, length: number): boolean {
+  if (!description) {
+    return false;
+  }
+
+  const summary = postBodySummary(body, length).slice(0, length);
+
+  return (
+    description === summary ||
+    description === postBodySummary(summary, SAVED_SUMMARY_LENGTH) ||
+    description === postBodySummary(body, SAVED_SUMMARY_LENGTH)
+  );
+}
+
 export function hasWordCharacter(text: string): boolean {
   return WORD_CHARACTER.test(text);
 }

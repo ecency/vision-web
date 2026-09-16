@@ -3,6 +3,7 @@ import { Draft, DraftMetadata, RewardType } from "@/entities";
 import { EntryMetadataManagement } from "@/features/entry-management";
 import { error, success, info } from "@/features/shared";
 import { postBodySummary } from "@ecency/render-helper";
+import { usableDescription } from "../_utils/content";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import i18next from "i18next";
 import { useRouter } from "next/navigation";
@@ -77,8 +78,11 @@ export function useSaveDraftApi(draftId?: string) {
         .default()
         .extractFromBody(content!)
         .withTags(tags)
-        // It should select filled description or if its empty or null/undefined then get auto summary
-        .withSummary(metaDescription! || postBodySummary(content!, SUBMIT_DESCRIPTION_MAX_LENGTH))
+        // The author's description, unless it is empty or too short to be meaningful
+        .withSummary(
+          usableDescription(metaDescription) ??
+            postBodySummary(content!, SUBMIT_DESCRIPTION_MAX_LENGTH)
+        )
         .withPostLinks(postLinks)
         .withLocation(location)
         .withAiTools(aiTools)

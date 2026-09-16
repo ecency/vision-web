@@ -7,6 +7,7 @@ import { EntryBodyManagement, EntryMetadataManagement } from "@/features/entry-m
 import { error } from "@/features/shared";
 import { createPermlink, ensureValidToken, isCommunity, makeCommentOptions } from "@/utils";
 import { postBodySummary } from "@ecency/render-helper";
+import { usableDescription } from "../_utils/content";
 import { useMutation } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import i18next from "i18next";
@@ -105,9 +106,10 @@ export function useScheduleApi() {
         .default()
         .extractFromBody(cleanBody)
         .withTags(tags)
-        // It should select filled description or if its empty or null/undefined then get auto summary
+        // The author's description, unless it is empty or too short to be meaningful
         .withSummary(
-          metaDescription || postBodySummary(cleanBody, SUBMIT_DESCRIPTION_MAX_LENGTH)
+          usableDescription(metaDescription) ??
+            postBodySummary(cleanBody, SUBMIT_DESCRIPTION_MAX_LENGTH)
         )
         .withPoll(poll)
         .withPostLinks(postLinks)

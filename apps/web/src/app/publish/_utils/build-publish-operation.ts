@@ -11,6 +11,7 @@ import { EntryBodyManagement, EntryMetadataManagement } from "@/features/entry-m
 import { PollSnapshot } from "@/features/polls";
 import { makeCommentOptions } from "@/utils";
 import { postBodySummary } from "@ecency/render-helper";
+import { usableDescription } from "./content";
 
 export interface PublishDraft {
   author: string;
@@ -99,8 +100,9 @@ export async function buildPublishOperation({
   const hasMeme = memeAttribution.templateIds.length > 0;
   const finalTags = hasMeme ? ensureDecentMemesTag(tags ?? []) : tags;
 
-  // It should select filled description or if its empty or null/undefined then get auto summary
-  const summary = metaDescription || postBodySummary(cleanBody, SUBMIT_DESCRIPTION_MAX_LENGTH);
+  // The author's description, unless it is empty or too short to be meaningful
+  const summary =
+    usableDescription(metaDescription) ?? postBodySummary(cleanBody, SUBMIT_DESCRIPTION_MAX_LENGTH);
 
   const metaBuilder = await EntryMetadataManagement.EntryMetadataManager.shared
     .builder()

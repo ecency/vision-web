@@ -15,7 +15,7 @@ import {
   useSubmitBody
 } from "./_hooks";
 import { postBodySummary, proxifyImageSrc } from "@ecency/render-helper";
-import { usableDescription } from "@/app/publish/_utils/content";
+import { isGeneratedDescription, usableDescription } from "@/app/publish/_utils/content";
 import useLocalStorage from "react-use/lib/useLocalStorage";
 import usePrevious from "react-use/lib/usePrevious";
 import dayjs from "@/utils/dayjs";
@@ -194,8 +194,15 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
       applyTitle(entry.title);
       applyTags(Array.from(new Set(entry.json_metadata?.tags ?? [])));
       setBody(entry.body);
+      // A description that is the post's own summary follows the body while it is rewritten,
+      // the way the composer treats one: left empty here, the publish path summarises the body
+      // being saved. Anything the author wrote is kept. The old fallback read the body from
+      // state, which still held whatever was in the editor before this post loaded.
+      const storedDescription = entry.json_metadata?.description ?? "";
       setDescription(
-        entry.json_metadata?.description ?? postBodySummary(body, SUBMIT_DESCRIPTION_MAX_LENGTH)
+        isGeneratedDescription(storedDescription, entry.body, SUBMIT_DESCRIPTION_MAX_LENGTH)
+          ? ""
+          : storedDescription
       );
       entry?.json_metadata?.image && setSelectedThumbnail(entry?.json_metadata?.image[0]);
       setEditingEntry(entry);
@@ -219,7 +226,12 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
       setBeneficiaries(draft.meta?.beneficiaries ?? []);
       setReward(draft.meta?.rewardType ?? "default");
       setSelectedThumbnail(draft.meta?.image?.[0]);
-      setDescription(draft.meta?.description ?? "");
+      const savedDescription = draft.meta?.description ?? "";
+      setDescription(
+        isGeneratedDescription(savedDescription, draft.body, SUBMIT_DESCRIPTION_MAX_LENGTH)
+          ? ""
+          : savedDescription
+      );
     },
     () => {
       clear();

@@ -22,12 +22,13 @@ import {
   useState
 } from "react";
 import isEqual from "react-fast-compare";
-import { hasWordCharacter, plainTextDescription, usableDescription } from "../_utils/content";
+import {
+  hasWordCharacter,
+  isGeneratedDescription,
+  plainTextDescription,
+  usableDescription
+} from "../_utils/content";
 import { usePublishPollState } from "./use-publish-poll-state";
-
-// EntryMetadataBuilder.withSummary cuts a description to this length when a draft or
-// template is saved.
-const SAVED_SUMMARY_LENGTH = 200;
 
 interface PublishStateContextValue {
   title: string;
@@ -179,22 +180,15 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
   const loadMetaDescription = useCallback(
     (value: string, body: string) => {
       const loaded = value.slice(0, SUBMIT_DESCRIPTION_MAX_LENGTH);
-      const summary = postBodySummary(body, SUBMIT_DESCRIPTION_MAX_LENGTH).slice(
-        0,
+      // A description saved while it followed its body keeps following it. Anything else was
+      // written by the author and stays as it is.
+      autoDescriptionRef.current = isGeneratedDescription(
+        loaded,
+        body,
         SUBMIT_DESCRIPTION_MAX_LENGTH
-      );
-      // A draft or template saved while the description followed its body stores that
-      // summary, cut to the saved length. Recognise those forms so the reopened post keeps
-      // following the body instead of shipping a summary of the old one. A draft saved by
-      // the classic editor stores postBodySummary(postBodySummary(body), 200), which matches
-      // the last form because postBodySummary is idempotent on its own output. The spec
-      // "keeps following the body after a draft saved by the classic editor is reopened"
-      // guards that, so a change to the summariser cannot break it silently.
-      const isAutoSummary =
-        loaded === summary ||
-        loaded === postBodySummary(summary, SAVED_SUMMARY_LENGTH) ||
-        loaded === postBodySummary(body, SAVED_SUMMARY_LENGTH);
-      autoDescriptionRef.current = isAutoSummary ? loaded : "";
+      )
+        ? loaded
+        : "";
       descriptionEditedRef.current = false;
       setStoredMetaDescription(loaded);
     },

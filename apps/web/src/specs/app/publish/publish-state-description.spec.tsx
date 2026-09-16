@@ -23,6 +23,7 @@ import { useBackToClassic } from "@/app/publish/_hooks/use-back-to-classic";
 import { useApplyTemplate } from "@/app/publish/_hooks/use-apply-template";
 import {
   hasWordCharacter,
+  isGeneratedDescription,
   plainTextDescription,
   usableDescription
 } from "@/app/publish/_utils/content";
@@ -297,6 +298,37 @@ describe("publish state description", () => {
 
     act(() => result.current.state.setMetaDescription("L"));
     expect(result.current.state.metaDescription).toBe(summaryOf(FINAL));
+  });
+});
+
+describe("isGeneratedDescription", () => {
+  const BODY = "Let me tell you a story about O.\n\nO is short for Orchestrator.";
+  const MAX = 350;
+  const SAVED = 200;
+
+  it("recognises the summary of the body it was saved with", () => {
+    expect(isGeneratedDescription(postBodySummary(BODY, MAX), BODY, MAX)).toBe(true);
+  });
+
+  it("recognises the form a draft or template saves", () => {
+    const saved = postBodySummary(postBodySummary(BODY, MAX), SAVED);
+    expect(isGeneratedDescription(saved, BODY, MAX)).toBe(true);
+  });
+
+  it("recognises the form the classic editor saves", () => {
+    // submit/_api/save-draft.ts stores withSummary(postBodySummary(body)).
+    const saved = postBodySummary(postBodySummary(BODY), SAVED);
+    expect(isGeneratedDescription(saved, BODY, MAX)).toBe(true);
+  });
+
+  it("leaves a description the author wrote alone", () => {
+    expect(isGeneratedDescription("My own summary", BODY, MAX)).toBe(false);
+    expect(isGeneratedDescription("", BODY, MAX)).toBe(false);
+  });
+
+  it("does not take the summary of another body for this one", () => {
+    const other = postBodySummary("A different post about something else entirely.", MAX);
+    expect(isGeneratedDescription(other, BODY, MAX)).toBe(false);
   });
 });
 
