@@ -6848,9 +6848,8 @@ declare function getCommunityPermissions({ communityType, userRole, subscribed, 
     isModerator: boolean;
 };
 
-declare function getNotificationsUnreadCountQueryOptions(activeUsername: string | undefined, code: string | undefined): Omit<_tanstack_react_query.UseQueryOptions<number, Error, number, (string | undefined)[]>, "queryFn"> & {
-    initialData: number | (() => number);
-    queryFn?: _tanstack_react_query.QueryFunction<number, (string | undefined)[]> | undefined;
+declare function getNotificationsUnreadCountQueryOptions(activeUsername: string | undefined, code: string | undefined): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<number, Error, number, (string | undefined)[]>, "queryFn"> & {
+    queryFn?: _tanstack_react_query.QueryFunction<number, (string | undefined)[], never> | undefined;
 } & {
     queryKey: (string | undefined)[] & {
         [dataTagSymbol]: number;
