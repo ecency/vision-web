@@ -8,8 +8,10 @@ export function getNotificationsUnreadCountQueryOptions(
   return queryOptions({
     queryKey: QueryKeys.notifications.unreadCount(activeUsername),
     queryFn: async () => {
+      // fetchQuery and refetch() ignore `enabled`, so a synthetic 0 returned here would be
+      // cached as a real count. Same as the settings query: no code, no result.
       if (!code) {
-        return 0;
+        throw new Error("Missing access token");
       }
       const response = await fetch(
         `${CONFIG.privateApiHost}/private-api/notifications/unread`,

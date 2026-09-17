@@ -36,6 +36,19 @@ describe("getNotificationsUnreadCountQueryOptions", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("caches nothing when called without an access code", async () => {
+    const options = getNotificationsUnreadCountQueryOptions("alice", undefined);
+
+    await expect(client.fetchQuery(options)).rejects.toThrow("Missing access token");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(client.getQueryData(options.queryKey)).toBeUndefined();
+
+    // Once the code is there, the real count comes back at once.
+    await expect(
+      client.fetchQuery(getNotificationsUnreadCountQueryOptions("alice", "code"))
+    ).resolves.toBe(7);
+  });
+
   it("fetches when an observer mounts, showing 0 until the count arrives", async () => {
     const observer = new QueryObserver(
       client,

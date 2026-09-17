@@ -1,68 +1,79 @@
 import { vi } from "vitest";
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
+import { renderWithQueryClient } from "@/specs/test-utils";
 
-type UnreadResult = { data: number | undefined; isPlaceholderData: boolean };
-let unreadResult: UnreadResult = { data: undefined, isPlaceholderData: false };
-
-vi.mock("@tanstack/react-query", () => ({ useQuery: () => unreadResult }));
-vi.mock("@ecency/sdk", () => ({ getNotificationsUnreadCountQueryOptions: vi.fn(() => ({})) }));
-vi.mock("@/core/global-store", () => ({
-  useGlobalStore: (s: any) => s({ toggleUiProp: vi.fn(), globalNotifications: true })
+// The unread count options as the SDK ships them after vision-web#1851: a placeholder 0
+// while loading, then the server's count. Mocked here because web specs load the
+// committed SDK build; the SDK's own spec covers the options themselves.
+const unread = vi.hoisted(() => ({ fetch: vi.fn<() => Promise<number>>() }));
+vi.mock("@ecency/sdk", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@ecency/sdk")>()),
+  getNotificationsUnreadCountQueryOptions: (username?: string) => ({
+    queryKey: ["notifications", "unread", username],
+    queryFn: () => unread.fetch(),
+    placeholderData: 0
+  })
 }));
 vi.mock("@/core/hooks", () => ({
   useActiveAccount: () => ({ activeUser: { username: "tester" } })
 }));
-vi.mock("@/utils", () => ({ getAccessToken: vi.fn(() => "mock-token") }));
-vi.mock("@/config", () => ({
-  EcencyConfigManager: { Conditional: ({ children }: any) => <>{children}</> }
-}));
-vi.mock("@ui/tooltip", () => ({ Tooltip: ({ children }: any) => <>{children}</> }));
-vi.mock("@ui/button", () => ({
-  Button: ({ iconClassName, icon, appearance, onAnimationEnd, ...rest }: any) => (
-    <button data-testid="bell" data-icon-class={iconClassName} {...rest} />
-  )
-}));
-vi.mock("@ui/svg", () => ({ bellSvg: null, bellOffSvg: null }));
 
 import { NavbarNotificationsButton } from "@/features/shared/navbar/navbar-notifications-button";
 
-const ringing = () =>
-  screen.getByTestId("bell").getAttribute("data-icon-class")?.includes("animate-bell-ring");
+const UNREAD_KEY = ["notifications", "unread", "tester"];
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+const bell = (name: string) => screen.getByRole("button", { name });
+const isRinging = (button: HTMLElement) => button.querySelector(".animate-bell-ring") !== null;
 
 describe("NavbarNotificationsButton", () => {
   beforeEach(() => {
-    unreadResult = { data: undefined, isPlaceholderData: false };
+    unread.fetch.mockReset();
   });
 
-  test("the count loaded on page load does not ring the bell", () => {
-    // The first request is running: the options' placeholder 0 is shown.
-    unreadResult = { data: 0, isPlaceholderData: true };
-    const { rerender } = render(<NavbarNotificationsButton />);
-    expect(screen.queryByText("0")).not.toBeInTheDocument();
+  it("does not ring for the count loaded with the page", async () => {
+    const first = deferred<number>();
+    unread.fetch.mockReturnValue(first.promise);
 
-    unreadResult = { data: 5, isPlaceholderData: false };
-    rerender(<NavbarNotificationsButton />);
+    renderWithQueryClient(<NavbarNotificationsButton />);
+    // The placeholder 0 is on screen while the request runs: no badge.
+    expect(bell("user-nav.notifications")).toBeInTheDocument();
 
+    await act(async () => first.resolve(5));
+
+    const button = await waitFor(() => bell("user-nav.notifications-unread"));
     expect(screen.getByText("5")).toBeInTheDocument();
-    expect(ringing()).toBe(false);
+    expect(isRinging(button)).toBe(false);
   });
 
-  test("a count that rises while the page is open rings the bell", () => {
-    unreadResult = { data: 5, isPlaceholderData: false };
-    const { rerender } = render(<NavbarNotificationsButton />);
-    expect(ringing()).toBe(false);
+  it("rings when the count rises while the page is open", async () => {
+    unread.fetch.mockResolvedValue(5);
+    const { queryClient } = renderWithQueryClient(<NavbarNotificationsButton />);
+    const button = await waitFor(() => bell("user-nav.notifications-unread"));
+    expect(isRinging(button)).toBe(false);
 
-    unreadResult = { data: 6, isPlaceholderData: false };
-    rerender(<NavbarNotificationsButton />);
+    act(() => {
+      queryClient.setQueryData(UNREAD_KEY, 6);
+    });
 
-    expect(screen.getByText("6")).toBeInTheDocument();
-    expect(ringing()).toBe(true);
+    expect(await screen.findByText("6")).toBeInTheDocument();
+    expect(isRinging(bell("user-nav.notifications-unread"))).toBe(true);
   });
 
-  test("no count yet renders no badge", () => {
-    render(<NavbarNotificationsButton />);
-    expect(screen.getByTestId("bell")).toHaveAttribute("aria-label", "user-nav.notifications");
+  it("shows no badge before the first count arrives", () => {
+    unread.fetch.mockReturnValue(deferred<number>().promise);
+    renderWithQueryClient(<NavbarNotificationsButton />);
+
+    expect(bell("user-nav.notifications")).toBeInTheDocument();
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 });
