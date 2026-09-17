@@ -18,12 +18,13 @@ export function NavbarNotificationsButton({ onClick }: { onClick?: () => void })
   const toggleUiProp = useGlobalStore((state) => state.toggleUiProp);
   const globalNotifications = useGlobalStore((state) => state.globalNotifications);
 
-  const { data: unread } = useQuery(
+  const { data, isPlaceholderData } = useQuery(
     getNotificationsUnreadCountQueryOptions(
       activeUser?.username,
       getAccessToken(activeUser?.username ?? "")
     )
   );
+  const unread = data ?? 0;
 
   const [ringing, setRinging] = useState(false);
   // Ref guard: remembers the first unread count seen after mount so the bell
@@ -31,15 +32,17 @@ export function NavbarNotificationsButton({ onClick }: { onClick?: () => void })
   const prevUnreadRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    if (typeof unread !== "number") {
+    // Only counts from the server: the 0 shown while the first request runs is not a
+    // reading, and recording it would ring the bell as soon as the real count arrives.
+    if (isPlaceholderData || typeof data !== "number") {
       return;
     }
     const prev = prevUnreadRef.current;
-    prevUnreadRef.current = unread;
-    if (prev !== undefined && unread > prev) {
+    prevUnreadRef.current = data;
+    if (prev !== undefined && data > prev) {
       setRinging(true);
     }
-  }, [unread]);
+  }, [data, isPlaceholderData]);
 
   return (
     <EcencyConfigManager.Conditional

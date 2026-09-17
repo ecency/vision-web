@@ -1,2 +1,0 @@
-import {c}from'./chunk-PS3MSD25.js';import {a}from'./chunk-6SASR6MC.js';import {queryOptions}from'@tanstack/react-query';function p(t,n){return queryOptions({queryKey:a.notifications.unreadCount(t),queryFn:async()=>n?(await(await fetch(`${c.privateApiHost}/private-api/notifications/unread`,{method:"POST",body:JSON.stringify({code:n}),headers:{"Content-Type":"application/json"}})).json()).count:0,enabled:!!t&&!!n,initialData:0,refetchInterval:6e4})}export{p as a};//# sourceMappingURL=chunk-6EHAT3L6.js.map
-//# sourceMappingURL=chunk-6EHAT3L6.js.map

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.11
+
+### Patch Changes
+
+- fix(sdk): unread notification count uses a placeholder, not initialData (#1852)
+
 ## 2.4.10
 
 ### Patch Changes
