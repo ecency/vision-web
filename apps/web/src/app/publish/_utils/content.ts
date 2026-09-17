@@ -1,3 +1,5 @@
+import { postBodySummary } from "@ecency/render-helper";
+
 export function extractPublishContentText(content?: string | null): string {
   if (!content) {
     return "";
@@ -110,6 +112,54 @@ function stripMarkdownTargets(text: string): string {
 const WORD_CHARACTER = /[a-z0-9]|[^\u0000-\u007F]/i;
 
 /** Whether text says anything at all, as opposed to punctuation such as a stray `![](`. */
+/** What EntryMetadataBuilder.withSummary keeps when a draft, template or post is saved. */
+const SAVED_SUMMARY_LENGTH = 200;
+
+/**
+ * Whether a stored description is the summary of the body it was saved with, rather than
+ * something the author wrote. Each writer stores a different form: the composer state holds
+ * the summary at full length, a draft or template keeps it cut to the saved length, and the
+ * classic editor stores the body summarised twice. Summarising a summary is not always the
+ * summary itself, because a pass decodes entities the next one then strips, so the last form
+ * is compared rather than assumed.
+ */
+export function isGeneratedDescription(description: string, body: string, length: number): boolean {
+  if (!description) {
+    return false;
+  }
+
+  const summary = postBodySummary(body, length).slice(0, length);
+
+  return (
+    description === summary ||
+    description === postBodySummary(summary, SAVED_SUMMARY_LENGTH) ||
+    description === postBodySummary(body, SAVED_SUMMARY_LENGTH) ||
+    description ===
+      postBodySummary(postBodySummary(body, SAVED_SUMMARY_LENGTH), SAVED_SUMMARY_LENGTH)
+  );
+}
+
+/**
+ * The description to store or publish. The author's own when it says anything, then the
+ * summary of the body, and the body as plain text when the summariser returns nothing or a
+ * fragment such as `![](`, which reads as text while saying nothing.
+ */
+export function descriptionToPublish(
+  description: string | null | undefined,
+  body: string,
+  length: number
+): string {
+  const authored = usableDescription(description);
+
+  if (authored) {
+    return authored;
+  }
+
+  const summary = postBodySummary(body, length);
+
+  return hasWordCharacter(summary) ? summary : plainTextDescription(body, length);
+}
+
 export function hasWordCharacter(text: string): boolean {
   return WORD_CHARACTER.test(text);
 }

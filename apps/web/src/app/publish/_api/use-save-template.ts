@@ -3,6 +3,7 @@ import { DraftMetadata, RewardType } from "@/entities";
 import { EntryMetadataManagement } from "@/features/entry-management";
 import { error, success } from "@/features/shared";
 import { postBodySummary } from "@ecency/render-helper";
+import { descriptionToPublish } from "../_utils/content";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import i18next from "i18next";
 import { usePublishState } from "../_hooks";
@@ -45,8 +46,8 @@ export function useSaveTemplateApi() {
         .default()
         .extractFromBody(content!)
         .withTags(tags)
-        // It should select filled description or if its empty or null/undefined then get auto summary
-        .withSummary(metaDescription! || postBodySummary(content!, SUBMIT_DESCRIPTION_MAX_LENGTH))
+        // The author's description, unless it is empty or too short to be meaningful
+        .withSummary(descriptionToPublish(metaDescription, content!, SUBMIT_DESCRIPTION_MAX_LENGTH))
         .withPostLinks(postLinks)
         .withLocation(location)
         .withSelectedThumbnail(selectedThumbnail);
@@ -63,13 +64,7 @@ export function useSaveTemplateApi() {
 
       const token = await ensureValidToken(username);
 
-      const resp = await addDraft(
-        token,
-        title!,
-        content!,
-        tagJ,
-        draftMeta
-      );
+      const resp = await addDraft(token, title!, content!, tagJ, draftMeta);
       success(i18next.t("post-templates.saved-toast"));
 
       queryClient.setQueryData(QueryKeys.posts.drafts(username), resp.drafts);

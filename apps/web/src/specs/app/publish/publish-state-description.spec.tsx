@@ -22,7 +22,9 @@ import { PublishStateProvider, usePublishState } from "@/app/publish/_hooks/use-
 import { useBackToClassic } from "@/app/publish/_hooks/use-back-to-classic";
 import { useApplyTemplate } from "@/app/publish/_hooks/use-apply-template";
 import {
+  descriptionToPublish,
   hasWordCharacter,
+  isGeneratedDescription,
   plainTextDescription,
   usableDescription
 } from "@/app/publish/_utils/content";
@@ -297,6 +299,82 @@ describe("publish state description", () => {
 
     act(() => result.current.state.setMetaDescription("L"));
     expect(result.current.state.metaDescription).toBe(summaryOf(FINAL));
+  });
+});
+
+describe("isGeneratedDescription", () => {
+  const BODY = "Let me tell you a story about O.\n\nO is short for Orchestrator.";
+  const MAX = 350;
+  const SAVED = 200;
+
+  it("recognises the summary of the body it was saved with", () => {
+    expect(isGeneratedDescription(postBodySummary(BODY, MAX), BODY, MAX)).toBe(true);
+  });
+
+  it("recognises the form a draft or template saves", () => {
+    const saved = postBodySummary(postBodySummary(BODY, MAX), SAVED);
+    expect(isGeneratedDescription(saved, BODY, MAX)).toBe(true);
+  });
+
+  it("recognises the form the classic editor saves", () => {
+    // submit/_api/save-draft.ts stores withSummary(postBodySummary(body)).
+    const saved = postBodySummary(postBodySummary(BODY), SAVED);
+    expect(isGeneratedDescription(saved, BODY, MAX)).toBe(true);
+  });
+
+  it("recognises the saved form of a body longer than the saved length", () => {
+    const long = "A post about proposal payouts. " + "word ".repeat(120);
+
+    expect(isGeneratedDescription(postBodySummary(long, SAVED), long, MAX)).toBe(true);
+  });
+
+  it("recognises a body summarised once at the saved length", () => {
+    // Only this form matches here: for a body carrying entities, summarising the summary
+    // gives a different string, which is what separates the two saved forms.
+    const entity = "Using &lt;center&gt; tags here. " + "word ".repeat(120);
+
+    expect(postBodySummary(entity, SAVED)).not.toBe(
+      postBodySummary(postBodySummary(entity, MAX), SAVED)
+    );
+    expect(isGeneratedDescription(postBodySummary(entity, SAVED), entity, MAX)).toBe(true);
+  });
+
+  it("recognises the classic form of a body carrying escaped angle brackets", () => {
+    const entity = "Using &lt;center&gt; tags here. " + "word ".repeat(120);
+
+    expect(
+      isGeneratedDescription(postBodySummary(postBodySummary(entity), SAVED), entity, MAX)
+    ).toBe(true);
+  });
+
+  it("leaves a description the author wrote alone", () => {
+    expect(isGeneratedDescription("My own summary", BODY, MAX)).toBe(false);
+    expect(isGeneratedDescription("", BODY, MAX)).toBe(false);
+  });
+
+  it("does not take the summary of another body for this one", () => {
+    const other = postBodySummary("A different post about something else entirely.", MAX);
+    expect(isGeneratedDescription(other, BODY, MAX)).toBe(false);
+  });
+});
+
+describe("descriptionToPublish", () => {
+  const BODY = "Let me tell you a story about O.\n\nO is short for Orchestrator.";
+  // The wrapper Ecency itself emits around an image. Its summary is the fragment "![](".
+  const IMAGE_ONLY = '<div class="text-justify">![](https://i.ecency.com/DQmX/a.png)</div>';
+
+  it("prefers the description the author wrote", () => {
+    expect(descriptionToPublish("My own summary", BODY, 350)).toBe("My own summary");
+  });
+
+  it("falls back to the summary of the body", () => {
+    expect(descriptionToPublish("", BODY, 350)).toBe(postBodySummary(BODY, 350));
+  });
+
+  it("never hands back a fragment the summariser produced", () => {
+    expect(postBodySummary(IMAGE_ONLY, 350)).toBe("![](");
+    expect(descriptionToPublish("🙂", IMAGE_ONLY, 350)).toBe("");
+    expect(descriptionToPublish("", IMAGE_ONLY, 350)).toBe("");
   });
 });
 

@@ -9,7 +9,8 @@ import { success, error } from "@/features/shared";
 import { QueryKeys } from "@ecency/sdk";
 import { useRouter } from "next/navigation";
 import { postBodySummary } from "@ecency/render-helper";
-import { usableDescription } from "@/app/publish/_utils/content";
+import { descriptionToPublish } from "@/app/publish/_utils/content";
+import { SUBMIT_DESCRIPTION_MAX_LENGTH } from "@/app/submit/_consts";
 import { EcencyAnalytics } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { ensureValidToken } from "@/utils";
@@ -56,7 +57,7 @@ export function useSaveDraftApi(onDraftCreated?: (draft: Draft) => void) {
         .extractFromBody(body)
         .withTags(tags)
         // Use the author's description unless it is empty or too short to be meaningful
-        .withSummary(usableDescription(description) ?? postBodySummary(body))
+        .withSummary(descriptionToPublish(description, body, SUBMIT_DESCRIPTION_MAX_LENGTH))
         .withSelectedThumbnail(selectedThumbnail);
 
       const meta = metaBuilder.build();

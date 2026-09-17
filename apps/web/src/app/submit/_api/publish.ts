@@ -15,7 +15,8 @@ import { sentry } from "@/core/sentry/lazy-sentry";
 import { useRouter } from "next/navigation";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { postBodySummary } from "@ecency/render-helper";
-import { usableDescription } from "@/app/publish/_utils/content";
+import { descriptionToPublish } from "@/app/publish/_utils/content";
+import { SUBMIT_DESCRIPTION_MAX_LENGTH } from "@/app/submit/_consts";
 import { validatePostCreating } from "@ecency/sdk";
 import { EcencyAnalytics } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks";
@@ -119,7 +120,7 @@ export function usePublishApi(onClear: () => void) {
         .default()
         .extractFromBody(body)
         // Use the author's description unless it is empty or too short to be meaningful
-        .withSummary(usableDescription(description) ?? postBodySummary(body))
+        .withSummary(descriptionToPublish(description, body, SUBMIT_DESCRIPTION_MAX_LENGTH))
         .withTags(tags)
         .withSelectedThumbnail(selectedThumbnail);
       const jsonMeta = metaBuilder

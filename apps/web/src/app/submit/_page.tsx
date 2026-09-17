@@ -16,6 +16,7 @@ import {
 } from "./_hooks";
 import { postBodySummary, proxifyImageSrc } from "@ecency/render-helper";
 import { usableDescription } from "@/app/publish/_utils/content";
+import { descriptionToEdit } from "@/app/submit/_utils/description";
 import useLocalStorage from "react-use/lib/useLocalStorage";
 import usePrevious from "react-use/lib/usePrevious";
 import dayjs from "@/utils/dayjs";
@@ -81,9 +82,9 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
   // Thumbnails extracted from uploaded 3Speak videos. Held separately because they are not
   // present in the body, so the body driven recompute below cannot rediscover them. Keyed by
   // the embed they belong to, so removing the video also removes its thumbnail.
-  const [videoThumbnails, setVideoThumbnails] = useState<
-    { embedUrl: string; thumbUrl: string }[]
-  >([]);
+  const [videoThumbnails, setVideoThumbnails] = useState<{ embedUrl: string; thumbUrl: string }[]>(
+    []
+  );
   const [preview, setPreview] = useState<PostBase>({
     title: "",
     tags: [],
@@ -106,9 +107,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
   );
 
   const sanitizeTags = useCallback((tagList: string[]) => {
-    const trimmed = tagList
-      .map((tag) => tag.slice(0, SUBMIT_TAG_MAX_LENGTH))
-      .filter((tag) => tag);
+    const trimmed = tagList.map((tag) => tag.slice(0, SUBMIT_TAG_MAX_LENGTH)).filter((tag) => tag);
     return trimmed.filter((tag, index) => trimmed.indexOf(tag) === index);
   }, []);
 
@@ -194,9 +193,11 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
       applyTitle(entry.title);
       applyTags(Array.from(new Set(entry.json_metadata?.tags ?? [])));
       setBody(entry.body);
-      setDescription(
-        entry.json_metadata?.description ?? postBodySummary(body, SUBMIT_DESCRIPTION_MAX_LENGTH)
-      );
+      // A description that is the post's own summary follows the body while it is rewritten,
+      // the way the composer treats one: left empty here, the publish path summarises the body
+      // being saved. Anything the author wrote is kept. The old fallback read the body from
+      // state, which still held whatever was in the editor before this post loaded.
+      setDescription(descriptionToEdit(entry.json_metadata?.description, entry.body));
       entry?.json_metadata?.image && setSelectedThumbnail(entry?.json_metadata?.image[0]);
       setEditingEntry(entry);
     } else if (editingEntry) {
@@ -219,7 +220,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
       setBeneficiaries(draft.meta?.beneficiaries ?? []);
       setReward(draft.meta?.rewardType ?? "default");
       setSelectedThumbnail(draft.meta?.image?.[0]);
-      setDescription(draft.meta?.description ?? "");
+      setDescription(descriptionToEdit(draft.meta?.description, draft.body));
     },
     () => {
       clear();
@@ -290,7 +291,9 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     // A restored draft loses the in-memory list above, and its video thumbnail cannot be
     // recovered by parsing the body, so bring it back from the saved metadata for as long
     // as the video it belongs to is still embedded.
-    const restoredVideoThumbnails = hasThreeSpeakEmbed(body) ? (editingDraft?.meta?.image ?? []) : [];
+    const restoredVideoThumbnails = hasThreeSpeakEmbed(body)
+      ? (editingDraft?.meta?.image ?? [])
+      : [];
 
     const mergedThumbnails = Array.from(
       new Set([...(extracted ?? []), ...activeVideoThumbnails, ...restoredVideoThumbnails])
@@ -465,13 +468,14 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
             />
           </div>
           <div className="tag-input">
-            <TagSelector
-              tags={tags}
-              maxItem={10}
-              onChange={tagsChanged}
-            />
+            <TagSelector tags={tags} maxItem={10} onChange={tagsChanged} />
           </div>
-          <div className="body-input" role="presentation" onKeyDown={handleShortcuts} ref={postBodyRef}>
+          <div
+            className="body-input"
+            role="presentation"
+            onKeyDown={handleShortcuts}
+            ref={postBodyRef}
+          >
             <TextareaAutocomplete
               acceptCharset="UTF-8"
               id="the-editor"
@@ -657,7 +661,9 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
                               }}
                               role="button"
                               tabIndex={0}
-                              aria-label={i18next.t("publish.thumb-selection", { defaultValue: "Select thumbnail" })}
+                              aria-label={i18next.t("publish.thumb-selection", {
+                                defaultValue: "Select thumbnail"
+                              })}
                               aria-pressed={selectedItem === item}
                               onClick={() => setSelectedThumbnail(item)}
                               onKeyDown={(e) => {
