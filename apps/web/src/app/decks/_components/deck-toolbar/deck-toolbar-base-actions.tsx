@@ -21,7 +21,7 @@ export const DeckToolbarBaseActions = ({ setShowPurchaseDialog }: Props) => {
   const { activeUser } = useActiveAccount();
   const toggleUIProp = useGlobalStore((s) => s.toggleUiProp);
 
-  const { data: unread } = useQuery(
+  const { data: unread = 0 } = useQuery(
     getNotificationsUnreadCountQueryOptions(
       activeUser?.username,
       getAccessToken(activeUser?.username ?? "")

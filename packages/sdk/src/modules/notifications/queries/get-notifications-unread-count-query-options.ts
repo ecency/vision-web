@@ -25,7 +25,11 @@ export function getNotificationsUnreadCountQueryOptions(
       return data.count;
     },
     enabled: !!activeUsername && !!code,
-    initialData: 0,
+    // Placeholder, not initialData: initial data is stamped as fetched at creation,
+    // so under a non-zero staleTime it counted as a fresh 0. fetchQuery returned it
+    // without a request and observers skipped the fetch on mount until the next
+    // refetchInterval. A placeholder still gives observers a number while loading.
+    placeholderData: 0,
     refetchInterval: 60000,
   });
 }
