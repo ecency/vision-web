@@ -177,8 +177,8 @@ export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaD
       (other) => other.startsWith(url) && (other[url.length] === "?" || other[url.length] === "#")
     );
   const isStale = (url: string) => isBrokenTwin(url) || isCutShortCopy(url);
-  const existingImages = (initialMeta.image ?? []).filter((url) => !isStale(url));
-  const existingThumbnails = (initialMeta.thumbnails ?? []).filter((url) => !isStale(url));
+  const existingImages = (Array.isArray(initialMeta.image) ? initialMeta.image : []).filter((url) => !isStale(url));
+  const existingThumbnails = (Array.isArray(initialMeta.thumbnails) ? initialMeta.thumbnails : []).filter((url) => !isStale(url));
 
   const allImages = Array.from(new Set([...existingImages, ...bodyImages]));
 
