@@ -1,7 +1,8 @@
 import { useMutation } from "@tanstack/react-query";
 import pack from "../../../package.json";
 import { useUpdateReply } from "./update-reply";
-import { makeApp } from "@/utils/posting";
+import { makeApp, parseJsonMetadata } from "@/utils/posting";
+import i18next from "i18next";
 import { Entry, MetaData } from "@/entities";
 
 export function usePinReply(reply?: Entry, parent?: Entry) {
@@ -20,12 +21,22 @@ export function usePinReply(reply?: Entry, parent?: Entry) {
       // everything else the post carried: its cover image, thumbnails, summary,
       // image ratios and any poll. Pinning a reply must change one field and
       // leave the rest of the post's metadata exactly as its author published it.
-      // Safe to spread a cached entry: slimEntry reduces json_metadata to the card
-      // whitelist and empties the body in the same step, and the update path throws
-      // on a blank body before it broadcasts, so a slimmed parent fails the pin
-      // rather than publishing the card subset over the post's real metadata.
+      // Read the metadata rather than spreading the cached value: the decks
+      // notifications column fetches through condenser_api, which returns
+      // json_metadata as a STRING, and spreading that publishes one key per
+      // character. A post whose metadata cannot be read here is left alone,
+      // because the alternative is broadcasting a wipe over it.
+      const existing = parseJsonMetadata(parent.json_metadata);
+      if (!existing) {
+        throw new Error(i18next.t("entry-menu.pin-metadata-unreadable"));
+      }
+
+      // Spreading a cached entry is otherwise safe: slimEntry reduces json_metadata
+      // to the card whitelist and empties the body in the same step, and the update
+      // path throws on a blank body before it broadcasts, so a slimmed parent fails
+      // the pin rather than publishing the card subset over the post's own.
       const meta: MetaData = {
-        ...parent.json_metadata,
+        ...existing,
         app: makeApp(pack.version),
         format: "markdown+html",
         pinned_reply: pin ? `${reply.author}/${reply.permlink}` : undefined

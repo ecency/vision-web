@@ -8,7 +8,8 @@ import {
   makeCommentOptions,
   makeJsonMetaData,
   makeJsonMetaDataReply,
-  metaStringList
+  metaStringList,
+  parseJsonMetadata
 } from "../../utils/posting";
 
 describe("Posting", () => {
@@ -327,6 +328,19 @@ describe("Posting", () => {
         { account: "foo", weight: 300 }
       ]);
     });
+  });
+
+  it("(26) parseJsonMetadata reads a string, an object, and refuses the rest", () => {
+    // bridge.get_post hands back an object, condenser_api.get_content hands back the
+    // raw string, and both land in the same entry cache.
+    expect(parseJsonMetadata({ tags: ["hive"] })).toEqual({ tags: ["hive"] });
+    expect(parseJsonMetadata('{"tags":["hive"]}')).toEqual({ tags: ["hive"] });
+    expect(parseJsonMetadata("not json at all")).toBeNull();
+    expect(parseJsonMetadata("[1,2]")).toBeNull();
+    expect(parseJsonMetadata([1, 2])).toBeNull();
+    expect(parseJsonMetadata(undefined)).toBeNull();
+    expect(parseJsonMetadata(null)).toBeNull();
+    expect(parseJsonMetadata(7)).toBeNull();
   });
 
   it("makeJsonMetadataReply", () => {
