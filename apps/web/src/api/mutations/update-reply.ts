@@ -32,12 +32,20 @@ export function useUpdateReply(
       text,
       jsonMeta,
       options,
-      point
+      point,
+      title
     }: {
       text: string;
       jsonMeta: MetaData;
       point: boolean;
       options?: CommentOptions;
+      /**
+       * A comment operation REPLACES the title, and a comment's own title is empty,
+       * which is why this defaults to "". A caller that updates a ROOT POST through
+       * here (pinning a reply does) must pass the post's title or the broadcast
+       * blanks it on chain.
+       */
+      title?: string;
     }) => {
       if (!activeUser || !entry) {
         throw new Error("[Reply][Update] – no active user provided");
@@ -74,7 +82,7 @@ export function useUpdateReply(
         permlink: entry.permlink,
         parentAuthor: entry.parent_author ?? "",
         parentPermlink: entry.parent_permlink ?? entry.category,
-        title: "",
+        title: title ?? "",
         body: text,
         jsonMetadata: jsonMeta,
         // For discussions cache invalidation, use root post info when available

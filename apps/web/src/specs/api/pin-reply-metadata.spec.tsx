@@ -1,5 +1,5 @@
 import React from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createTestQueryClient } from "@/specs/test-utils";
@@ -24,6 +24,8 @@ const reply = { author: "bob", permlink: "a-reply" } as Entry;
  * post's metadata from then on.
  */
 describe("usePinReply metadata", () => {
+  beforeEach(() => updateReply.mockClear());
+
   it("keeps everything the post carried and changes only pinned_reply", async () => {
     const parent = {
       author: "alice",
@@ -52,6 +54,25 @@ describe("usePinReply metadata", () => {
     expect(jsonMeta.image_ratios).toEqual(["1.7778"]);
     expect(jsonMeta.description).toBe("the author's own summary");
     expect(jsonMeta.content_type).toBe("poll");
+  });
+
+  it("carries the post's title, which the operation would otherwise blank", async () => {
+    // The update path defaults the title to "" because a comment has none. This
+    // caller updates a ROOT POST, and a comment operation replaces the title, so
+    // a missing one here publishes an empty title over the author's own.
+    const parent = {
+      author: "alice",
+      permlink: "a-post",
+      title: "The famous Balkan meatball",
+      body: "the post body",
+      json_metadata: { tags: ["food"] }
+    } as unknown as Entry;
+
+    const { result } = renderHook(() => usePinReply(reply, parent), { wrapper });
+    await result.current.mutateAsync({ pin: true });
+
+    const payload = updateReply.mock.calls[0][0] as unknown as { title?: string };
+    expect(payload.title).toBe("The famous Balkan meatball");
   });
 
   it("does not invent tags for a post that has none", async () => {

@@ -26,7 +26,9 @@ export function usePinReply(reply?: Entry, parent?: Entry) {
         format: "markdown+html",
         pinned_reply: pin ? `${reply.author}/${reply.permlink}` : undefined
       };
-      return updateReply({ text: parent.body, point: true, jsonMeta: meta });
+      // The title goes with it for the same reason the metadata does: the operation
+      // replaces it, and the default for this path is a comment's empty title.
+      return updateReply({ text: parent.body, point: true, jsonMeta: meta, title: parent.title });
     }
   });
 }
