@@ -1,3 +1,5 @@
+import { metaStringList, parseJsonMetadata } from "@/utils/json-metadata";
+
 const NSFW_TAGS = new Set<string>(["nsfw"]);
 
 // Hive community IDs (e.g. "hive-123456") whose posts should always be treated as NSFW.
@@ -23,7 +25,12 @@ const NSFW_TAG_REGEX = /(porn|nude|xxx|masturbat|erotic|sextape|fetish)/i;
 export interface NsfwCheckableEntry {
   category?: string | null;
   title?: string | null;
-  json_metadata?: { tags?: string[] } | null;
+  /**
+   * Declared as an object because that is what the `Entry` type promises, but
+   * `condenser_api.get_content` hands it over as a raw JSON string and the entry
+   * page reads through this gate, so the value is parsed before it is trusted.
+   */
+  json_metadata?: { tags?: string[] } | string | null;
 }
 
 // Curated NSFW community check — the reliable source of truth. The
@@ -43,12 +50,12 @@ export const isNsfwTag = (tag: string): boolean => {
 export const isNsfwEntry = (entry: NsfwCheckableEntry): boolean => {
   const candidates: string[] = [];
   if (entry.category) candidates.push(entry.category);
-  const metaTags = entry.json_metadata?.tags;
-  if (Array.isArray(metaTags)) {
-    for (const t of metaTags) {
-      if (typeof t === "string") candidates.push(t);
-    }
-  }
+  // Parsed, not read off the value: the entry page and the agent endpoints
+  // source their entry from condenser_api, which returns json_metadata as a raw
+  // string. Reading `.tags` off that string left this gate with nothing but the
+  // category and the title regex, so a post tagged nsfw in an ordinary
+  // community was served indexable.
+  candidates.push(...metaStringList(parseJsonMetadata(entry.json_metadata)?.tags));
   for (const raw of candidates) {
     const tag = raw.toLowerCase().trim();
     if (NSFW_TAGS.has(tag)) return true;
