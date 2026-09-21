@@ -12,7 +12,11 @@ vi.mock("@ecency/render-helper", async () => {
   const actual = await vi.importActual<typeof import("@ecency/render-helper")>(
     "@ecency/render-helper"
   );
-  return { ...actual, catchPostImage: vi.fn(actual.catchPostImage) };
+  return {
+    ...actual,
+    catchPostImage: vi.fn(actual.catchPostImage),
+    postBodySummary: vi.fn(actual.postBodySummary)
+  };
 });
 
 // The global @/utils mock only exposes random/getAccessToken; restore the real
@@ -101,8 +105,18 @@ describe("buildEntryCardFields", () => {
     );
   });
 
-  it("card fallback works without community/tags and guards non-array tags", () => {
+  // A json_metadata list field is a bare string on some posts, and a post that
+  // tagged itself once still has that tag. The shared normaliser reads both
+  // shapes, so the card fallback names it instead of dropping it.
+  it("names a tag the post declared as a bare string", () => {
     const e = entry({ body: "![x](https://example.com/a.jpg)", json_metadata: { tags: "photo" } });
+    expect(buildEntryCardFields(e as any).cardSummary).toBe(
+      "A post by @alice on Ecency. Tags: photo"
+    );
+  });
+
+  it("drops a tags value that is neither a list nor a string", () => {
+    const e = entry({ body: "![x](https://example.com/a.jpg)", json_metadata: { tags: 7 } });
     expect(buildEntryCardFields(e as any).cardSummary).toBe("A post by @alice on Ecency");
   });
 
@@ -111,10 +125,126 @@ describe("buildEntryCardFields", () => {
     expect(buildEntryCardFields(e as any).cardSummary).toBe("A reply by @alice on Ecency");
   });
 
+  // Publishers that seed the description field from the title leave the page
+  // with a meta description identical to its own <title>, which Google reads as
+  // a duplicate and every card renders twice.
+  it("ignores a description that only repeats the title", () => {
+    const e = entry({ json_metadata: { description: "  hello WORLD  " } });
+    expect(e.title).toBe("Hello World");
+    expect(buildEntryCardFields(e as any).summary).toBe(
+      truncate(postBodySummary(e.body, 210), 160)
+    );
+  });
+
+  it("ignores a plain description that repeats a title written in markdown", () => {
+    const e = entry({ title: "**Hello World**", json_metadata: { description: "Hello World" } });
+    expect(buildEntryCardFields(e as any).summary).toBe(
+      truncate(postBodySummary(e.body, 210), 160)
+    );
+  });
+
+  it("ignores a title repeated with markdown around it", () => {
+    const e = entry({ json_metadata: { description: "**Hello World**" } });
+    expect(buildEntryCardFields(e as any).summary).toBe(
+      truncate(postBodySummary(e.body, 210), 160)
+    );
+  });
+
+  it("keeps a short description that says something the title does not", () => {
+    const e = entry({ json_metadata: { description: "Welcome Guys!" } });
+    expect(buildEntryCardFields(e as any).summary).toBe("Welcome Guys!");
+  });
+
   it("ignores a non-string json_metadata.description (untrusted on-chain data)", () => {
     const e = entry({ json_metadata: { description: { evil: true } } });
     const fields = buildEntryCardFields(e as any);
     expect(fields.summary).toBe(truncate(postBodySummary(e.body, 210), 160));
+  });
+
+  // The entry page sources its entry from condenser_api.get_content first, which
+  // returns json_metadata as a raw STRING. Reading a field off that string is
+  // undefined, so every post page served a body summary in place of the
+  // description its author published.
+  it("reads the description when json_metadata arrived as a string", () => {
+    const e = entry({
+      json_metadata: JSON.stringify({ description: "Author provided summary" })
+    });
+    expect(buildEntryCardFields(e as any).summary).toBe("Author provided summary");
+  });
+
+  it("treats metadata that parses to a non-object as no metadata at all", () => {
+    for (const shape of ['"just a string"', "[1,2,3]", "42", "null"]) {
+      const e = entry({ json_metadata: shape });
+      expect(buildEntryCardFields(e as any).summary).toBe(
+        truncate(postBodySummary(e.body, 210), 160)
+      );
+    }
+  });
+
+  it("treats unparseable json_metadata as no metadata at all", () => {
+    const e = entry({ json_metadata: "not json at all" });
+    expect(buildEntryCardFields(e as any).summary).toBe(
+      truncate(postBodySummary(e.body, 210), 160)
+    );
+  });
+
+  // json_metadata is whatever the publishing client wrote: hivesuite/0.1.0 copies
+  // the entire markdown body into `description`. Verbatim, that is several KB of
+  // raw markdown in a meta description.
+  it("strips and caps a description that holds a whole markdown body", () => {
+    const wall =
+      "# A heading\n\n**Bold** intro with a [link](https://example.com) and an " +
+      "![image](https://example.com/a.jpg)\n\n" +
+      "Then a long stretch of prose that runs well past the snippet width so the ".repeat(6);
+    const e = entry({ json_metadata: { description: wall } });
+
+    const { summary } = buildEntryCardFields(e as any);
+
+    // 160 plus the ellipsis truncate appends, the same bound as the body path.
+    // Exactly the bound, not merely under it: asserting `<= 163` leaves a
+    // lowered cap (160 -> 100) green while snippets get cut a third short.
+    expect(summary.length).toBe(163);
+    expect(summary.startsWith("A heading Bold intro with a link")).toBe(true);
+    expect(summary).not.toContain("#");
+    expect(summary).not.toContain("**");
+    expect(summary).not.toContain("](");
+  });
+
+  // Space-less text (CJK prose, an emoji run) defeats the word-boundary
+  // summariser, which falls back to cutting by CODE POINT. 160 code points of
+  // astral characters is 320 UTF-16 units, so the byte-level cap still has to
+  // land, and it must not leave a dangling surrogate behind.
+  it("bounds a space-less description that the summariser cuts by code point", () => {
+    const e = entry({ json_metadata: { description: "\u{1F389}".repeat(300) } });
+
+    const { summary } = buildEntryCardFields(e as any);
+
+    // Starts with the description, not the body: the word-boundary summariser
+    // returns "" for space-less text, so a swap back to it would silently serve
+    // the body summary for every CJK or emoji description and still fit the cap.
+    expect(summary.startsWith("\u{1F389}")).toBe(true);
+    expect(summary.length).toBeLessThanOrEqual(163);
+    expect(summary).not.toMatch(/[\uD800-\uDBFF]$/);
+  });
+
+  it("falls back to the body summary when the description strips to nothing", () => {
+    const e = entry({
+      json_metadata: { description: "![shot](https://example.com/a.jpg)" }
+    });
+    expect(buildEntryCardFields(e as any).summary).toBe(
+      truncate(postBodySummary(e.body, 210), 160)
+    );
+  });
+
+  it("reads the tag fallback out of string metadata too", () => {
+    const e = entry({
+      body: "![shot](https://example.com/a.jpg)",
+      community_title: "Photography Lovers",
+      json_metadata: JSON.stringify({ tags: ["photo", "art", "hive", "extra"] })
+    });
+    expect(buildEntryCardFields(e as any).cardSummary).toBe(
+      "A post by @alice in Photography Lovers on Ecency. Tags: photo, art, hive"
+    );
   });
 });
 
@@ -135,6 +265,47 @@ describe("buildEntryCardFields with a body that breaks the image lookup", () => 
     const fields = buildEntryCardFields(e as any);
     expect(fields.title).toBe("Hello World");
     expect(fields.image).toBeNull();
+  });
+
+  // generateMetadata's outer catch drops the title, cards, canonical and robots
+  // for the post, and the oEmbed route answers 500, so a throw out of the body
+  // summariser costs far more than the summary line it was computing.
+  it("keeps building the card when the body summariser throws", () => {
+    const e = entry({
+      body: "plain body",
+      permlink: "boom-summary",
+      community_title: "Photography Lovers"
+    });
+    vi.mocked(postBodySummary).mockImplementationOnce(() => {
+      throw new RangeError("Invalid code point 1114112");
+    });
+
+    const fields = buildEntryCardFields(e as any);
+
+    expect(fields.summary).toBe("");
+    expect(fields.cardSummary).toBe("A post by @alice in Photography Lovers on Ecency");
+  });
+
+  it("keeps building a comment card when the title summariser throws", () => {
+    const e = entry({ parent_author: "bob", title: "", permlink: "boom-comment-title" });
+    vi.mocked(postBodySummary).mockImplementationOnce(() => {
+      throw new RangeError("Invalid code point 1114112");
+    });
+
+    const fields = buildEntryCardFields(e as any);
+
+    expect(fields.isComment).toBe(true);
+    expect(fields.title).toBe("@alice: ");
+    expect(fields.cardSummary).not.toBe("");
+  });
+
+  it("falls back to the byline when a title-less post's body breaks the summariser", () => {
+    const e = entry({ title: "", permlink: "boom-display-title" });
+    vi.mocked(postBodySummary).mockImplementationOnce(() => {
+      throw new RangeError("Invalid code point 1114112");
+    });
+
+    expect(buildEntryCardFields(e as any).title).toBe("Post by @alice");
   });
 
   it("keeps title and summary when the image lookup throws", () => {

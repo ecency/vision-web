@@ -399,6 +399,29 @@ describe("isIndexable - NSFW and reputation gates", () => {
     expect(idx(e)).toBe(false);
   });
 
+  // The entry page and the agent endpoints source their entry from
+  // condenser_api, which returns json_metadata as a raw JSON STRING. Reading
+  // `.tags` off that string left this gate with the category and the title
+  // regex alone, so a post tagged nsfw in an ordinary community shipped
+  // indexable, advertised its oEmbed card and served its .md/.json documents.
+  it("nsfw tag -> not indexable when the metadata arrived as a string", () => {
+    const e = makeEntry({
+      depth: 0,
+      category: "hive-149888",
+      json_metadata: JSON.stringify({ tags: ["photography", "nsfw"] }) as any
+    });
+    expect(idx(e)).toBe(false);
+  });
+
+  it("an ordinary tag list in string metadata stays indexable", () => {
+    const e = makeEntry({
+      depth: 0,
+      category: "hive-149888",
+      json_metadata: JSON.stringify({ tags: ["photography", "art"] }) as any
+    });
+    expect(idx(e)).toBe(true);
+  });
+
   it("low-reputation author -> not indexable when account known", () => {
     const e = makeEntry({ depth: 0 });
     expect(isIndexable(e, { reputation: 0, post_count: 0 }, false)).toBe(false);
@@ -461,6 +484,21 @@ describe("B2 - effectively-empty guard (multimodal-safe)", () => {
 
   it("short body with markdown image -> indexed (media present)", () => {
     expect(idx(makeEntry({ depth: 0, body: "![](u)", json_metadata: {} }))).toBe(true);
+  });
+
+  // A media-only post declares its image in metadata, which on this path is a
+  // string, so the image signal was invisible and only the body regexes spoke.
+  it("counts a declared image in string metadata as media", () => {
+    const thin = { depth: 0, body: "gm" };
+    expect(idx(makeEntry({ ...thin, json_metadata: JSON.stringify({}) as any }))).toBe(false);
+    expect(
+      idx(
+        makeEntry({
+          ...thin,
+          json_metadata: JSON.stringify({ image: ["https://i.ecency.com/x/cover.png"] }) as any
+        })
+      )
+    ).toBe(true);
   });
 
   it("prose at the floor -> indexed (only the truly contentless is caught)", () => {

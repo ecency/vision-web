@@ -68,6 +68,37 @@ describe("renderEntryMarkdown", () => {
     expect(md).toContain('title: "Line one\\nLine two"');
   });
 
+  // These endpoints are served from an entry fetched through condenser_api,
+  // which hands back json_metadata as a raw string, so both lines were absent
+  // from every document a crawler or model read.
+  it("emits tags and app when json_metadata arrived as a string", () => {
+    const md = renderEntryMarkdown(
+      makeEntry({
+        json_metadata: JSON.stringify({
+          tags: ["hive", "photography"],
+          app: "scrobble.life/1.0"
+        }) as any
+      })
+    );
+    expect(md).toContain('tags: ["hive","photography"]');
+    expect(md).toContain('app: "scrobble.life/1.0"');
+  });
+
+  it("emits a tag the post declared as a bare string", () => {
+    const md = renderEntryMarkdown(makeEntry({ json_metadata: { tags: "photography" } as any }));
+    expect(md).toContain('tags: ["photography"]');
+  });
+
+  it("drops non-string entries from a tag list", () => {
+    const md = renderEntryMarkdown(
+      makeEntry({ json_metadata: { tags: ["hive", 7, null, "", "art"] } as any })
+    );
+    // The empty string belongs in the fixture: without it, dropping the
+    // length check from the filter leaves this test green while the front
+    // matter ships `tags: ["hive","","art"]`.
+    expect(md).toContain('tags: ["hive","art"]');
+  });
+
   it("extracts the app name when json_metadata.app is an object", () => {
     const md = renderEntryMarkdown(
       makeEntry({ json_metadata: { app: { name: "ecency", version: "4.0" } } as any })

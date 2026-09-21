@@ -3,6 +3,7 @@ import { Profile } from "@ecency/sdk";
 import { postBodySummary } from "@ecency/render-helper";
 import { accountReputation } from "@/utils/account-reputation";
 import { isNsfwEntry } from "@/utils/nsfw-detection";
+import { metaStringList, parseJsonMetadata } from "@/utils/json-metadata";
 import defaults from "@/defaults";
 
 /**
@@ -119,8 +120,10 @@ const isContainerAnchorPost = (entry: Entry): boolean =>
 
 /** Cheap media-presence check — any image/video signal ⇒ has media (pass). */
 const hasMedia = (entry: Entry): boolean => {
-  const img = entry.json_metadata?.image;
-  if (Array.isArray(img) && img.length > 0) return true;
+  // Parsed for the same reason as the NSFW gate: on the entry page this value
+  // arrives as a raw string from condenser_api, so the metadata signal was
+  // never read and a media-only post leaned on the body regexes alone.
+  if (metaStringList(parseJsonMetadata(entry.json_metadata)?.image).length > 0) return true;
   const body = entry.body || "";
   return (
     /!\[[^\]]*\]\(/.test(body) || // markdown image
@@ -165,6 +168,13 @@ export function canonicalTarget(
   ignoreDeclaredCanonical = false
 ): string | null {
   // Sitemap mode never looks at json_metadata.canonical_url — see doc above.
+  //
+  // ⛔ Deliberately NOT parsed, unlike every other json_metadata reader on this
+  // request. On the entry page the value arrives as a raw string, so this branch
+  // does not fire and the page keeps emitting its own canonical. Parsing here
+  // would hand rel=canonical to third-party frontends for a large share of posts
+  // in one deploy, which is a product decision and not a cleanup: do not "fix"
+  // it in passing.
   const declared = ignoreDeclaredCanonical
     ? undefined
     : entry.json_metadata?.canonical_url;

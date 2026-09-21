@@ -1,5 +1,8 @@
 import { truncate } from "@/utils";
 import { entryDisplayTitle } from "@/utils/entry-display-title";
+import { metaStringList, parseJsonMetadata } from "@/utils/json-metadata";
+import { summarizeText } from "@/core/entries/entry-summary";
+import { postBodySummarySafely } from "@/core/entries/post-body-summary-safely";
 import { catchPostImage, postBodySummary } from "@ecency/render-helper";
 import type { Entry } from "@/entities";
 
@@ -36,7 +39,10 @@ export function buildEntryCardFields(entry: Entry): EntryCardFields {
 
   let title: string;
   if (isComment) {
-    const rawCommentTitle = truncate(postBodySummary(entry.body, 12), 67);
+    // Safely, for the reason the body summary below gives: a throw here is
+    // generateMetadata dropping every tag for the post, and the oEmbed route
+    // answering 500. A comment with an unrenderable body keeps its byline.
+    const rawCommentTitle = truncate(postBodySummarySafely(entry.body, 12), 67);
     title = `@${entry.author}: ${rawCommentTitle}`;
   } else {
     // entryDisplayTitle never returns "" (title-less microblog posts fall back
@@ -46,14 +52,42 @@ export function buildEntryCardFields(entry: Entry): EntryCardFields {
     title = truncate(entryDisplayTitle(entry), 67);
   }
 
+  // Parsed rather than read off the value: this helper receives json_metadata in
+  // BOTH shapes. `bridge.get_post` hands it over parsed, while
+  // `condenser_api.get_content` returns the raw string, and that is this page's
+  // FIRST source (it carries root_author/root_permlink, which bridge omits). A
+  // field read off a string is undefined, so every post page quietly ignored the
+  // description its author published and fell through to the body summary below.
+  const meta = parseJsonMetadata(entry.json_metadata);
+
   // Cap at 160 chars to match Google's desktop snippet width; consumers may
-  // truncate further. An author-set json_metadata.description wins (guarded:
-  // json_metadata is untrusted on-chain data, a non-string value would leak
-  // "[object Object]" into cards).
-  const declared = entry.json_metadata?.description;
+  // truncate further. An author-set description wins, but it is untrusted
+  // on-chain data: a non-string would leak "[object Object]" into the cards, and
+  // one publishing client copies the WHOLE markdown body into the field. It goes
+  // through the same summariser the feed cards use, so what reaches the meta
+  // tags is bounded plain text whatever was published.
+  const declared = meta?.description;
+  const declaredSummary =
+    typeof declared === "string" ? truncate(summarizeText(declared.trim(), 160), 160) : "";
+  // A description that only repeats the title earns nothing: Google reads the
+  // pair as a duplicate and every card renders the same line twice. Several
+  // publishers seed the field from the title, so those fall through to the body
+  // excerpt, while a short but DIFFERENT description is still the author's.
+  // Both sides through the same summariser, or a title published as
+  // "**Hello World**" would not match the plain "Hello World" a publisher
+  // copied out of it. Computed only when there is something to compare, so the
+  // usual post (no declared description) pays nothing for it.
+  const titleText = declaredSummary
+    ? summarizeText(entry.title ?? "", 160).trim().toLowerCase()
+    : "";
   const summary =
-    (typeof declared === "string" ? declared : "") ||
-    truncate(postBodySummary(entry.body, 210), 160);
+    (titleText && declaredSummary.trim().toLowerCase() === titleText ? "" : declaredSummary) ||
+    // Safely: this runs inside generateMetadata, whose outer catch drops the
+    // title, cards, canonical and robots for the post, and inside the oEmbed
+    // route, which would answer 500. A description that strips to nothing (an
+    // image-only one) falls through to here, so the throwing call is reachable
+    // even for a post that declared a description.
+    truncate(postBodySummarySafely(entry.body, 210), 160);
 
   // Media-only posts (image/video, no prose) summarize to "". Card surfaces
   // (og/twitter/oEmbed) must not render an empty description, so give THEM a
@@ -62,10 +96,9 @@ export function buildEntryCardFields(entry: Entry): EntryCardFields {
   // the common non-empty case never pays for it.
   let cardSummary = summary;
   if (!cardSummary) {
-    const rawTags = entry.json_metadata?.tags;
-    const tags = (Array.isArray(rawTags) ? rawTags : []).filter(
-      (t): t is string => typeof t === "string" && t.length > 0
-    );
+    // Through the shared list normaliser: a json_metadata list field is a bare
+    // string on some posts, and a post that tagged itself once should say so.
+    const tags = metaStringList(meta?.tags);
     cardSummary = truncate(
       isComment
         ? `A reply by @${entry.author} on Ecency`

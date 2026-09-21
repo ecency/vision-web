@@ -1,5 +1,6 @@
 import defaults from "@/defaults";
 import type { Entry } from "@/entities";
+import { metaStringList, parseJsonMetadata } from "@/utils/json-metadata";
 
 /**
  * Pure formatters for the agent-readable post endpoints. Deliberately free of
@@ -36,7 +37,13 @@ function appName(app: unknown): string | undefined {
  * markdown is the most token-efficient form for LLMs to process.
  */
 export function renderEntryMarkdown(entry: Entry): string {
-  const tags = Array.isArray(entry.json_metadata?.tags) ? entry.json_metadata?.tags : undefined;
+  // Parsed, not read off the value: these endpoints are served from an entry
+  // fetched through condenser_api, which returns json_metadata as a raw string,
+  // so both lines below were silently absent from every document.
+  const meta = parseJsonMetadata(entry.json_metadata);
+  // The shared list normaliser, which also accepts the bare-string shape a list
+  // field takes on some posts, and drops junk entries from a mixed array.
+  const tags = metaStringList(meta?.tags);
   const isComment = !!entry.parent_author;
 
   const front = [
@@ -48,7 +55,7 @@ export function renderEntryMarkdown(entry: Entry): string {
     yamlLine("community_title", entry.community_title || undefined),
     yamlLine("category", entry.category || undefined),
     yamlLine("tags", tags),
-    yamlLine("app", appName(entry.json_metadata?.app)),
+    yamlLine("app", appName(meta?.app)),
     yamlLine("created", entry.created),
     yamlLine("updated", entry.updated || entry.last_update || undefined),
     yamlLine("payout", entry.payout),
