@@ -23,6 +23,7 @@ import {
   dateToFullRelative,
   makeJsonMetaDataReply
 } from "@/utils";
+import { parseJsonMetadata } from "@/utils/posting";
 import {
   getCommunityContextQueryOptions,
   getCommunityPermissions,
@@ -101,8 +102,15 @@ export const DiscussionItem = memo(function DiscussionItem({
   const showSubList = useMemo(() => !readMore && entry.children > 0, [entry, readMore]);
   const canEdit = useMemo(() => activeUser?.username === entry.author, [activeUser, entry]);
   const anchorId = useMemo(() => `anchor-@${entry.author}/${entry.permlink}`, [entry]);
+  // Parsed, not read straight off the value: `root` can arrive with
+  // json_metadata still a string (condenser_api.get_content returns it that way
+  // and the decks columns fetch through it), and `"…".pinned_reply` is
+  // undefined. A pinned reply then showed no pin marker and the menu offered
+  // "Pin" again, so the post's own author could not unpin it from that surface.
   const isPinned = useMemo(
-    () => root.json_metadata?.pinned_reply === `${entry.author}/${entry.permlink}`,
+    () =>
+      parseJsonMetadata(root.json_metadata)?.pinned_reply ===
+      `${entry.author}/${entry.permlink}`,
     [root, entry]
   );
   const selected = useMemo(

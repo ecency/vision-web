@@ -4,17 +4,63 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createTestQueryClient } from "@/specs/test-utils";
 
-const updateReply = vi.fn(async () => ({}));
-const updateReplyTarget = vi.fn();
-vi.mock("@/api/mutations/update-reply", () => ({
-  useUpdateReply: (entry: unknown) => {
-    updateReplyTarget(entry);
-    return { mutateAsync: updateReply };
+/**
+ * The real `useUpdateReply` runs here, stubbed only at its leaves, so these
+ * cases read the operation that would actually be broadcast rather than the
+ * argument one hook hands another. A title dropped between the two (the
+ * `title: ""` this path used to hardcode) is invisible from the hook boundary.
+ */
+const sdkUpdateReply = vi.fn(async () => ({ id: "tx" }));
+vi.mock("@/api/sdk-mutations", () => ({
+  useUpdateReplyMutation: () => ({ mutateAsync: sdkUpdateReply })
+}));
+
+vi.mock("@/core/hooks/use-active-account", () => ({
+  useActiveAccount: () => ({ activeUser: { username: "alice" } })
+}));
+
+vi.mock("@/api/mutations/validate-post-updating", () => ({
+  useValidatePostUpdating: () => ({ mutateAsync: vi.fn(async () => true) })
+}));
+
+vi.mock("@/core/caches", () => ({
+  EcencyEntriesCacheManagement: {
+    useUpdateEntry: () => ({ updateEntryQueryData: vi.fn() })
   }
 }));
 
+// The global "@ecency/sdk" mock does not carry the cache writers this path uses.
+vi.mock("@ecency/sdk", () => ({
+  updateEntryInCache: vi.fn(),
+  restoreEntryInCache: vi.fn()
+}));
+
+vi.mock("@/features/shared", () => ({ error: vi.fn(), success: vi.fn() }));
+
+// "@/utils" is globally mocked down to two helpers; the blank-body guard is a
+// real gate on this path, so hand out the real implementation of just that one.
+vi.mock("@/utils", async () => {
+  const { isBlankBody } =
+    await vi.importActual<typeof import("@/utils/is-blank-body")>("@/utils/is-blank-body");
+  return { isBlankBody, random: vi.fn(), getAccessToken: vi.fn(() => "mock-token") };
+});
+
 import { usePinReply } from "@/api/mutations/pin-reply";
+import { useUpdateReply } from "@/api/mutations/update-reply";
 import type { Entry } from "@/entities";
+
+/** The comment operation the pin would broadcast. */
+function broadcastOp() {
+  return sdkUpdateReply.mock.calls.at(-1)![0] as unknown as {
+    author: string;
+    permlink: string;
+    parentAuthor: string;
+    parentPermlink: string;
+    title: string;
+    body: string;
+    jsonMetadata: Record<string, unknown>;
+  };
+}
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <QueryClientProvider client={createTestQueryClient()}>{children}</QueryClientProvider>
@@ -29,8 +75,7 @@ const reply = { author: "bob", permlink: "a-reply" } as Entry;
  */
 describe("usePinReply metadata", () => {
   beforeEach(() => {
-    updateReply.mockClear();
-    updateReplyTarget.mockClear();
+    sdkUpdateReply.mockClear();
   });
 
   it("keeps everything the post carried and changes only pinned_reply", async () => {
@@ -51,8 +96,8 @@ describe("usePinReply metadata", () => {
     const { result } = renderHook(() => usePinReply(reply, parent), { wrapper });
     await result.current.mutateAsync({ pin: true });
 
-    await waitFor(() => expect(updateReply).toHaveBeenCalled());
-    const { jsonMeta } = updateReply.mock.calls[0][0] as unknown as { jsonMeta: Record<string, unknown> };
+    await waitFor(() => expect(sdkUpdateReply).toHaveBeenCalled());
+    const jsonMeta = broadcastOp().jsonMetadata;
 
     expect(jsonMeta.pinned_reply).toBe("bob/a-reply");
     expect(jsonMeta.tags).toEqual(["photography", "hive"]);
@@ -78,8 +123,8 @@ describe("usePinReply metadata", () => {
     const { result } = renderHook(() => usePinReply(reply, parent), { wrapper });
     await result.current.mutateAsync({ pin: true });
 
-    const payload = updateReply.mock.calls[0][0] as unknown as { title?: string };
-    expect(payload.title).toBe("The famous Balkan meatball");
+    await waitFor(() => expect(sdkUpdateReply).toHaveBeenCalled());
+    expect(broadcastOp().title).toBe("The famous Balkan meatball");
   });
 
   it("does not invent tags for a post that has none", async () => {
@@ -93,10 +138,8 @@ describe("usePinReply metadata", () => {
     const { result } = renderHook(() => usePinReply(reply, parent), { wrapper });
     await result.current.mutateAsync({ pin: true });
 
-    const { jsonMeta } = updateReply.mock.calls.at(-1)![0] as unknown as {
-      jsonMeta: Record<string, unknown>;
-    };
-    expect(jsonMeta.tags).toEqual([]);
+    await waitFor(() => expect(sdkUpdateReply).toHaveBeenCalled());
+    expect(broadcastOp().jsonMetadata.tags).toEqual([]);
   });
 
   it("drops pinned_reply when unpinning, without touching the rest", async () => {
@@ -110,11 +153,9 @@ describe("usePinReply metadata", () => {
     const { result } = renderHook(() => usePinReply(reply, parent), { wrapper });
     await result.current.mutateAsync({ pin: false });
 
-    const { jsonMeta } = updateReply.mock.calls.at(-1)![0] as unknown as {
-      jsonMeta: Record<string, unknown>;
-    };
-    expect(jsonMeta.pinned_reply).toBeUndefined();
-    expect(jsonMeta.image).toEqual(["https://i.ecency.com/DQmZ/y.png"]);
+    await waitFor(() => expect(sdkUpdateReply).toHaveBeenCalled());
+    expect(broadcastOp().jsonMetadata.pinned_reply).toBeUndefined();
+    expect(broadcastOp().jsonMetadata.image).toEqual(["https://i.ecency.com/DQmZ/y.png"]);
   });
 
   it("updates the POST, with the post's own body", async () => {
@@ -131,9 +172,10 @@ describe("usePinReply metadata", () => {
     const { result } = renderHook(() => usePinReply(reply, parent), { wrapper });
     await result.current.mutateAsync({ pin: true });
 
-    expect(updateReplyTarget).toHaveBeenCalledWith(parent);
-    const payload = updateReply.mock.calls[0][0] as unknown as { text: string };
-    expect(payload.text).toBe("the post body");
+    await waitFor(() => expect(sdkUpdateReply).toHaveBeenCalled());
+    const op = broadcastOp();
+    expect(op.permlink).toBe("a-post");
+    expect(op.body).toBe("the post body");
   });
 
   it("replaces a pin the post already had, and clears it on unpin", async () => {
@@ -146,18 +188,14 @@ describe("usePinReply metadata", () => {
 
     const { result } = renderHook(() => usePinReply(reply, parent), { wrapper });
     await result.current.mutateAsync({ pin: true });
-    let { jsonMeta } = updateReply.mock.calls.at(-1)![0] as unknown as {
-      jsonMeta: Record<string, unknown>;
-    };
+    await waitFor(() => expect(sdkUpdateReply).toHaveBeenCalled());
     // The explicit key has to follow the spread, or the stale pin wins and the
     // post can never pin another reply or be unpinned.
-    expect(jsonMeta.pinned_reply).toBe("bob/a-reply");
+    expect(broadcastOp().jsonMetadata.pinned_reply).toBe("bob/a-reply");
 
     await result.current.mutateAsync({ pin: false });
-    ({ jsonMeta } = updateReply.mock.calls.at(-1)![0] as unknown as {
-      jsonMeta: Record<string, unknown>;
-    });
-    expect(jsonMeta.pinned_reply).toBeUndefined();
+    await waitFor(() => expect(sdkUpdateReply).toHaveBeenCalledTimes(2));
+    expect(broadcastOp().jsonMetadata.pinned_reply).toBeUndefined();
   });
 
   it("reads metadata that arrived as a string, and never spreads it", async () => {
@@ -174,9 +212,8 @@ describe("usePinReply metadata", () => {
     const { result } = renderHook(() => usePinReply(reply, parent), { wrapper });
     await result.current.mutateAsync({ pin: true });
 
-    const { jsonMeta } = updateReply.mock.calls.at(-1)![0] as unknown as {
-      jsonMeta: Record<string, unknown>;
-    };
+    await waitFor(() => expect(sdkUpdateReply).toHaveBeenCalled());
+    const jsonMeta = broadcastOp().jsonMetadata;
     expect(jsonMeta.tags).toEqual(["hive"]);
     expect(jsonMeta.image).toEqual(["https://i.ecency.com/DQmX/cover.png"]);
     expect(jsonMeta["0"]).toBeUndefined();
@@ -193,6 +230,62 @@ describe("usePinReply metadata", () => {
 
     const { result } = renderHook(() => usePinReply(reply, parent), { wrapper });
     await expect(result.current.mutateAsync({ pin: true })).rejects.toThrow();
-    expect(updateReply).not.toHaveBeenCalled();
+    expect(sdkUpdateReply).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The title default belongs to the update path, not to its callers: a comment
+ * has none, so it sends "", while a caller editing a ROOT POST must be able to
+ * carry the post's own title through. A comment operation replaces the title
+ * either way.
+ */
+describe("useUpdateReply title", () => {
+  beforeEach(() => {
+    sdkUpdateReply.mockClear();
+  });
+
+  it("sends an empty title for a comment, which has none", async () => {
+    const comment = {
+      author: "alice",
+      permlink: "re-a-post",
+      parent_author: "bob",
+      parent_permlink: "a-post",
+      body: "the reply body",
+      json_metadata: {}
+    } as unknown as Entry;
+
+    const { result } = renderHook(() => useUpdateReply(comment), { wrapper });
+    await result.current.mutateAsync({
+      text: "an edited reply",
+      jsonMeta: { tags: ["hive"] },
+      point: true
+    });
+
+    await waitFor(() => expect(sdkUpdateReply).toHaveBeenCalled());
+    expect(broadcastOp().title).toBe("");
+  });
+
+  it("carries a title the caller passes through to the operation", async () => {
+    const post = {
+      author: "alice",
+      permlink: "a-post",
+      parent_author: "",
+      parent_permlink: "hive-125125",
+      category: "hive-125125",
+      body: "the post body",
+      json_metadata: {}
+    } as unknown as Entry;
+
+    const { result } = renderHook(() => useUpdateReply(post), { wrapper });
+    await result.current.mutateAsync({
+      text: "the post body",
+      jsonMeta: { tags: ["hive"] },
+      point: true,
+      title: "The famous Balkan meatball"
+    });
+
+    await waitFor(() => expect(sdkUpdateReply).toHaveBeenCalled());
+    expect(broadcastOp().title).toBe("The famous Balkan meatball");
   });
 });
