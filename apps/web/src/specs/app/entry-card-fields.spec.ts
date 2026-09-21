@@ -125,6 +125,29 @@ describe("buildEntryCardFields", () => {
     expect(buildEntryCardFields(e as any).cardSummary).toBe("A reply by @alice on Ecency");
   });
 
+  // Publishers that seed the description field from the title leave the page
+  // with a meta description identical to its own <title>, which Google reads as
+  // a duplicate and every card renders twice.
+  it("ignores a description that only repeats the title", () => {
+    const e = entry({ json_metadata: { description: "  hello WORLD  " } });
+    expect(e.title).toBe("Hello World");
+    expect(buildEntryCardFields(e as any).summary).toBe(
+      truncate(postBodySummary(e.body, 210), 160)
+    );
+  });
+
+  it("ignores a title repeated with markdown around it", () => {
+    const e = entry({ json_metadata: { description: "**Hello World**" } });
+    expect(buildEntryCardFields(e as any).summary).toBe(
+      truncate(postBodySummary(e.body, 210), 160)
+    );
+  });
+
+  it("keeps a short description that says something the title does not", () => {
+    const e = entry({ json_metadata: { description: "Welcome Guys!" } });
+    expect(buildEntryCardFields(e as any).summary).toBe("Welcome Guys!");
+  });
+
   it("ignores a non-string json_metadata.description (untrusted on-chain data)", () => {
     const e = entry({ json_metadata: { description: { evil: true } } });
     const fields = buildEntryCardFields(e as any);

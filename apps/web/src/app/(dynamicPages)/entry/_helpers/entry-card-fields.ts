@@ -64,8 +64,15 @@ export function buildEntryCardFields(entry: Entry): EntryCardFields {
   // through the same summariser the feed cards use, so what reaches the meta
   // tags is bounded plain text whatever was published.
   const declared = meta?.description;
+  const declaredSummary =
+    typeof declared === "string" ? truncate(summarizeText(declared.trim(), 160), 160) : "";
+  // A description that only repeats the title earns nothing: Google reads the
+  // pair as a duplicate and every card renders the same line twice. Several
+  // publishers seed the field from the title, so those fall through to the body
+  // excerpt, while a short but DIFFERENT description is still the author's.
+  const titleText = (entry.title ?? "").trim().toLowerCase();
   const summary =
-    (typeof declared === "string" ? truncate(summarizeText(declared.trim(), 160), 160) : "") ||
+    (titleText && declaredSummary.trim().toLowerCase() === titleText ? "" : declaredSummary) ||
     // Safely: this runs inside generateMetadata, whose outer catch drops the
     // title, cards, canonical and robots for the post, and inside the oEmbed
     // route, which would answer 500. A description that strips to nothing (an
