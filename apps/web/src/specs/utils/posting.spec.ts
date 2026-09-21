@@ -333,6 +333,19 @@ describe("Posting", () => {
     expect(makeJsonMetaDataReply(["foo", "bar"], "1.1")).toMatchSnapshot();
   });
 
+  it("makeJsonMetadataReply reads the parent's tags as a list whatever shape they are in", () => {
+    // Every caller passes `entry.json_metadata?.tags || ["ecency"]`, and that fallback
+    // catches only null and undefined, so a parent published by another client used to
+    // put its own bad shape into the reply.
+    expect(makeJsonMetaDataReply("food", "1.1").tags).toEqual(["food"]);
+    expect(makeJsonMetaDataReply(["ok", null, 7, ""], "1.1").tags).toEqual(["ok"]);
+    expect(makeJsonMetaDataReply([null, 7], "1.1").tags).toEqual(["ecency"]);
+    expect(makeJsonMetaDataReply("", "1.1").tags).toEqual(["ecency"]);
+    expect(makeJsonMetaDataReply(undefined, "1.1").tags).toEqual(["ecency"]);
+    // Well-formed tags are untouched.
+    expect(makeJsonMetaDataReply(["foo", "bar"], "1.1").tags).toEqual(["foo", "bar"]);
+  });
+
   it("createReplyPermlink", () => {
     // Use fake timers and set system time (timezone is UTC via vitest.config.ts)
     vi.useFakeTimers();

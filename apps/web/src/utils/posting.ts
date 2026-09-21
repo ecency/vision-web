@@ -225,11 +225,20 @@ export const makeJsonMetaData = (
     format: "markdown+html"
   });
 
-export const makeJsonMetaDataReply = (tags: string[], appVer: string) => ({
-  tags,
-  app: makeApp(appVer),
-  format: "markdown+html"
-});
+/**
+ * A reply's metadata is built from its PARENT's tags, which is untrusted chain data:
+ * every caller passes `entry.json_metadata?.tags || ["ecency"]`, and that fallback only
+ * catches null and undefined. Coercing here rather than at the eight call sites keeps a
+ * parent's bare-string or junk-entry tags from being published into the reply.
+ */
+export const makeJsonMetaDataReply = (tags: unknown, appVer: string) => {
+  const list = metaStringList(tags);
+  return {
+    tags: list.length > 0 ? list : ["ecency"],
+    app: makeApp(appVer),
+    format: "markdown+html"
+  };
+};
 
 export const makeCommentOptions = (
   author: string,
