@@ -72,8 +72,42 @@ export function agentNotFound(): Response {
 }
 
 /**
- * Give an entry the `json_metadata` shape the type (and this endpoint family's
- * documentation) promises, for the response body.
+ * Metadata is dropped past this nesting depth. Real metadata is shallow: of
+ * 357 posts sampled from bridge.get_ranked_posts on 2026-09-21 the deepest
+ * was 5 levels (Liketu) and 334 were 2, so this sits an order of magnitude
+ * above anything a person publishes. It sits far below the ~4400 levels where
+ * JSON.stringify blows the stack on node 24, which matters because the
+ * envelope is serialised whole: metadata nested deeper than the serialiser
+ * can emit would throw and take a perfectly good post down with it, and the
+ * route's catch would answer 404 where a raw string used to serve fine.
+ * Capping by depth keeps that deterministic, so the same post always gets the
+ * same body, instead of depending on how much stack was left when it landed.
+ */
+const MAX_METADATA_DEPTH = 64;
+
+/** Iterative: measuring a metadata bomb must not overflow the stack itself. */
+function withinDepth(value: unknown, max: number): boolean {
+  const stack: [unknown, number][] = [[value, 1]];
+
+  while (stack.length > 0) {
+    const [current, depth] = stack.pop() as [unknown, number];
+    if (current === null || typeof current !== "object") continue;
+    if (depth > max) return false;
+    for (const child of Object.values(current)) stack.push([child, depth + 1]);
+  }
+
+  return true;
+}
+
+/** The field in the shape the body promises: an object, always. */
+const cappedMetadata = (value: unknown): JsonMetadata => {
+  const parsed = parseJsonMetadata(value);
+  return (parsed && withinDepth(parsed, MAX_METADATA_DEPTH) ? parsed : {}) as JsonMetadata;
+};
+
+/**
+ * Give an entry the `json_metadata` shape the type (and this endpoint
+ * family's documentation) promises, for the response body.
  *
  * Both sources are cast to `Entry`, whose `json_metadata` is an object, but
  * only `bridge.get_post` actually parses it: `condenser_api.get_content`
@@ -85,9 +119,10 @@ export function agentNotFound(): Response {
  * the tags from the other.
  *
  * Metadata that is not a JSON object (unparseable, `null`, an array, a bare
- * number) becomes `{}`. An envelope advertised as structured JSON should not
- * hand back a raw string for a field typed as an object. Every reader below
- * already collapses unreadable metadata to "no fields".
+ * number) or nested past MAX_METADATA_DEPTH becomes `{}`. An envelope
+ * advertised as structured JSON should not hand back a raw string for a field
+ * typed as an object, and every reader below already collapses unreadable
+ * metadata to "no fields".
  *
  * ⛔ Applied where an entry is SERIALISED, never inside the loader. The
  * indexability gate must keep seeing the entry exactly as the source returned
@@ -97,72 +132,23 @@ export function agentNotFound(): Response {
  * not to. Gating on the raw entry is also what keeps `loadIndexableEntry` a
  * true mirror of generate-entry-metadata.ts.
  *
- * Returns the entry unchanged when the metadata already arrived parsed, so
- * the result may be the object held in the query cache: callers serialise it
- * and must not mutate it.
+ * Copied, never patched in place: `entry` is the object held in the query
+ * cache, which the entry page renders from in the same process.
  */
 export function withParsedMetadata(entry: Entry): Entry {
-  const parsed = parseJsonMetadata(entry.json_metadata);
-  // parseJsonMetadata returns the SAME object when it was already one.
-  if (parsed && parsed === (entry.json_metadata as unknown)) return entry;
-  return { ...entry, json_metadata: (parsed ?? {}) as JsonMetadata };
-}
+  const normalised: Entry = { ...entry, json_metadata: cappedMetadata(entry.json_metadata) };
 
-/** Same entry with the metadata dropped. Used only by the fallbacks below. */
-const withoutMetadata = (entry: Entry): Entry => ({ ...entry, json_metadata: {} });
-
-/**
- * Normalised, unless this entry's own metadata cannot be serialised at all.
- * Probing each entry separately is what keeps one hostile reply from emptying
- * the metadata of every other entry in a thread. It is not exact, because an
- * entry is serialised here at a different stack depth than inside the
- * envelope, which is why the caller keeps a last resort behind it.
- */
-const withSerialisableMetadata = (entry: Entry): Entry => {
-  const parsed = withParsedMetadata(entry);
-  try {
-    JSON.stringify(parsed.json_metadata);
-    return parsed;
-  } catch {
-    return withoutMetadata(entry);
+  // A cross-post carries the entry it quotes, whose own metadata is serialised
+  // into the same body and can be just as deep. The spread above is shallow,
+  // so it would otherwise travel unchecked.
+  if (normalised.original_entry) {
+    normalised.original_entry = {
+      ...normalised.original_entry,
+      json_metadata: cappedMetadata(normalised.original_entry.json_metadata)
+    };
   }
-};
 
-/**
- * Serialise an agent JSON envelope, and if the metadata's nesting blows the
- * stack, serialise it again with that metadata dropped.
- *
- * JSON.parse accepts deeper nesting than JSON.stringify can emit, so metadata
- * nested thousands of levels deep parses in withParsedMetadata and then throws
- * here, where the route's catch would turn a perfectly good post into a 404.
- * It used to serve, because a raw string never recursed.
- *
- * Testing the metadata on its own first is not enough: it is stringified at a
- * different stack depth than the envelope that contains it, so the standalone
- * check can pass while the real serialisation still throws. Serialise for
- * real instead, and keep deep-but-serialisable metadata intact. A post is
- * worth more than its metadata; if the retry throws too, the caller's catch
- * still answers 404.
- *
- * `build` is handed the normaliser to apply to every entry it puts in the body.
- */
-export function stringifyAgentEnvelope(
-  build: (normalise: (entry: Entry) => Entry) => unknown
-): string {
-  try {
-    return JSON.stringify(build(withParsedMetadata));
-  } catch {
-    try {
-      // Strip only the entries that cannot carry their own metadata: a thread
-      // is built from replies by anyone, and one deeply nested reply must not
-      // empty the root post's tags, images and declared canonical.
-      return JSON.stringify(build(withSerialisableMetadata));
-    } catch {
-      // Per-entry probing missed it (see withSerialisableMetadata). Serve the
-      // posts without metadata rather than nothing at all.
-      return JSON.stringify(build(withoutMetadata));
-    }
-  }
+  return normalised;
 }
 
 /**
