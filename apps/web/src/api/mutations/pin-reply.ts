@@ -20,6 +20,10 @@ export function usePinReply(reply?: Entry, parent?: Entry) {
       // everything else the post carried: its cover image, thumbnails, summary,
       // image ratios and any poll. Pinning a reply must change one field and
       // leave the rest of the post's metadata exactly as its author published it.
+      // Safe to spread a cached entry: slimEntry reduces json_metadata to the card
+      // whitelist and empties the body in the same step, and the update path throws
+      // on a blank body before it broadcasts, so a slimmed parent fails the pin
+      // rather than publishing the card subset over the post's real metadata.
       const meta: MetaData = {
         ...parent.json_metadata,
         app: makeApp(pack.version),
