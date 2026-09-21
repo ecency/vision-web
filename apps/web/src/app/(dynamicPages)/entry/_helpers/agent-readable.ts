@@ -3,7 +3,7 @@ import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { getContentQueryOptions, getProfilesQueryOptions } from "@ecency/sdk";
 import { isIndexable, ReputationSource } from "@/utils/entry-indexability";
 import { safeDecodeURIComponent } from "@/utils";
-import { parseJsonMetadata } from "@/utils/json-metadata";
+import { parseJsonMetadata, withinMetadataLimits } from "@/utils/json-metadata";
 import type { Entry, JsonMetadata } from "@/entities";
 
 // Re-exported so route handlers have a single import surface for the endpoints.
@@ -71,39 +71,19 @@ export function agentNotFound(): Response {
   });
 }
 
-/**
- * Metadata is dropped past this nesting depth. Real metadata is shallow: of
- * 357 posts sampled from bridge.get_ranked_posts on 2026-09-21 the deepest
- * was 5 levels (Liketu) and 334 were 2, so this sits an order of magnitude
- * above anything a person publishes. It sits far below the ~4400 levels where
- * JSON.stringify blows the stack on node 24, which matters because the
- * envelope is serialised whole: metadata nested deeper than the serialiser
- * can emit would throw and take a perfectly good post down with it, and the
- * route's catch would answer 404 where a raw string used to serve fine.
- * Capping by depth keeps that deterministic, so the same post always gets the
- * same body, instead of depending on how much stack was left when it landed.
- */
-const MAX_METADATA_DEPTH = 64;
-
-/** Iterative: measuring a metadata bomb must not overflow the stack itself. */
-function withinDepth(value: unknown, max: number): boolean {
-  const stack: [unknown, number][] = [[value, 1]];
-
-  while (stack.length > 0) {
-    const [current, depth] = stack.pop() as [unknown, number];
-    if (current === null || typeof current !== "object") continue;
-    if (depth > max) return false;
-    for (const child of Object.values(current)) stack.push([child, depth + 1]);
-  }
-
-  return true;
-}
-
 /** The field in the shape the body promises: an object, always. */
 const cappedMetadata = (value: unknown): JsonMetadata => {
   const parsed = parseJsonMetadata(value);
-  return (parsed && withinDepth(parsed, MAX_METADATA_DEPTH) ? parsed : {}) as JsonMetadata;
+  return (parsed && withinMetadataLimits(parsed) ? parsed : {}) as JsonMetadata;
 };
+
+/**
+ * How far a chain of quoted cross-posts is followed. Nothing in the app builds
+ * one today (these routes read condenser_api.get_content, bridge.get_post and
+ * bridge.get_discussion, none of which sets original_entry), so this bounds
+ * data that would have to come from a node, not from us.
+ */
+const MAX_QUOTE_CHAIN = 4;
 
 /**
  * Give an entry the `json_metadata` shape the type (and this endpoint
@@ -119,7 +99,7 @@ const cappedMetadata = (value: unknown): JsonMetadata => {
  * the tags from the other.
  *
  * Metadata that is not a JSON object (unparseable, `null`, an array, a bare
- * number) or nested past MAX_METADATA_DEPTH becomes `{}`. An envelope
+ * number) or past the limits in @/utils/json-metadata becomes `{}`. An envelope
  * advertised as structured JSON should not hand back a raw string for a field
  * typed as an object, and every reader below already collapses unreadable
  * metadata to "no fields".
@@ -132,20 +112,31 @@ const cappedMetadata = (value: unknown): JsonMetadata => {
  * not to. Gating on the raw entry is also what keeps `loadIndexableEntry` a
  * true mirror of generate-entry-metadata.ts.
  *
- * Copied, never patched in place: `entry` is the object held in the query
- * cache, which the entry page renders from in the same process.
+ * The entry is copied, never patched in place: it is the object held in the
+ * query cache, which the entry page renders from in the same process. The
+ * copy is shallow, so metadata that arrived parsed is still the cached
+ * object: callers serialise the result and must not mutate it.
  */
 export function withParsedMetadata(entry: Entry): Entry {
   const normalised: Entry = { ...entry, json_metadata: cappedMetadata(entry.json_metadata) };
 
-  // A cross-post carries the entry it quotes, whose own metadata is serialised
-  // into the same body and can be just as deep. The spread above is shallow,
-  // so it would otherwise travel unchecked.
-  if (normalised.original_entry) {
-    normalised.original_entry = {
-      ...normalised.original_entry,
-      json_metadata: cappedMetadata(normalised.original_entry.json_metadata)
+  // A cross-post carries the entry it quotes, which can quote another. Each
+  // one is serialised into the same body and the spread above is shallow, so
+  // walk the chain rather than its first link, and cut a chain longer than
+  // anything a real cross-post produces instead of serialising it unchecked.
+  let quoting = normalised;
+  for (let link = 0; quoting.original_entry; link += 1) {
+    if (link >= MAX_QUOTE_CHAIN) {
+      quoting.original_entry = undefined;
+      break;
+    }
+
+    const quoted: Entry = {
+      ...quoting.original_entry,
+      json_metadata: cappedMetadata(quoting.original_entry.json_metadata)
     };
+    quoting.original_entry = quoted;
+    quoting = quoted;
   }
 
   return normalised;

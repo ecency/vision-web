@@ -37,6 +37,7 @@ vi.mock("@/utils", async () => ({
 }));
 
 import type { Entry } from "@/entities";
+import { MAX_METADATA_DEPTH, MAX_METADATA_NODES } from "@/utils/json-metadata";
 import { GET as agentJson } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/agent-json/route";
 import { GET as agentMd } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/agent-md/route";
 import { GET as agentDiscussion } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/agent-discussion/route";
@@ -81,7 +82,16 @@ const nestedTo = (depth: number, leaf: unknown = "leaf"): Record<string, unknown
   return root;
 };
 
-/** Far past anything JSON.stringify can emit, and it fits in one comment op. */
+/** Wide rather than deep: one value per node, no nesting. */
+const widerThan = (values: number) =>
+  JSON.stringify({ a: Array.from({ length: values }, () => 0) });
+
+/**
+ * Far past anything JSON.stringify can emit. This fixture is 180 KB, more than
+ * one comment operation holds, but the attack does not need it: `{"a":` plus
+ * `}` is 6 bytes per level, so a 64 KB operation still buys ~10,900 levels,
+ * twice what the serialiser can emit.
+ */
 const metadataBomb = () => `${'{"a":'.repeat(30000)}1${"}".repeat(30000)}`;
 
 const leafOf = (metadata: unknown, depth: number): unknown => {
@@ -96,7 +106,9 @@ function serve(condenser: unknown, extra: { bridge?: unknown; discussion?: unkno
     const [kind] = options.queryKey;
     if (kind === "condenser") return condenser;
     if (kind === "bridge") return extra.bridge ?? null;
-    if (kind === "discussion") return extra.discussion ?? null;
+    // Passed through, not defaulted: prefetchQuery resolves undefined on a
+    // failure and the tests need that exact value.
+    if (kind === "discussion") return extra.discussion;
     return [ACCOUNT];
   });
 }
@@ -165,6 +177,25 @@ describe("GET /@author/permlink.json", () => {
     expect(payload.content.json_metadata).toEqual({});
   });
 
+  it("keeps metadata holding fewer values than the budget", async () => {
+    serve(entryFixture({ json_metadata: widerThan(MAX_METADATA_NODES - 10) }));
+
+    const { res, payload } = await jsonEnvelope();
+
+    expect(res.status).toBe(200);
+    expect((payload.content.json_metadata.a as unknown[]).length).toBe(MAX_METADATA_NODES - 10);
+  });
+
+  it("empties metadata holding more values than the budget", async () => {
+    // Reading every value of author-supplied metadata is the one unbounded
+    // step left, so width is bounded as well as depth.
+    serve(entryFixture({ json_metadata: widerThan(MAX_METADATA_NODES + 10) }));
+
+    const { payload } = await jsonEnvelope();
+
+    expect(payload.content.json_metadata).toEqual({});
+  });
+
   it("serves a post whose metadata is a nesting bomb instead of 404ing it", async () => {
     // Nesting this deep parses (V8's parser is not recursive) and would throw
     // in JSON.stringify, taking the whole post down with it. The post is worth
@@ -189,13 +220,18 @@ describe("GET /@author/permlink.json", () => {
     expect(payload.content.json_metadata).toEqual({});
   });
 
-  it("caps the metadata of the entry a cross-post quotes", async () => {
-    // original_entry is serialised into the same body and the copy is shallow,
-    // so its metadata would otherwise travel unchecked.
+  it("caps the metadata of every entry a cross-post quotes, down the chain", async () => {
+    // original_entry is serialised into the same body, it can itself quote
+    // another entry, and the copies are shallow, so a chain would otherwise
+    // travel unchecked.
     serve(
       entryFixture({
         json_metadata: '{"tags":["music"]}',
-        original_entry: entryFixture({ author: "bob", json_metadata: nestedTo(5000) })
+        original_entry: entryFixture({
+          author: "bob",
+          json_metadata: nestedTo(5000),
+          original_entry: entryFixture({ author: "carol", json_metadata: nestedTo(5000) })
+        })
       })
     );
 
@@ -204,6 +240,7 @@ describe("GET /@author/permlink.json", () => {
     expect(res.status).toBe(200);
     expect(payload.content.json_metadata).toEqual({ tags: ["music"] });
     expect(payload.content.original_entry.json_metadata).toEqual({});
+    expect(payload.content.original_entry.original_entry.json_metadata).toEqual({});
   });
 
   it("emits json_metadata even for a post that has no such field at all", async () => {
@@ -365,9 +402,24 @@ describe("GET /@author/permlink.discussion.json", () => {
     expect(Object.keys(payload.content)).toEqual(["alice/a-post"]);
   });
 
+  it("drops an array map value instead of emitting it index by index", async () => {
+    serve(entryFixture({ json_metadata: '{"tags":["music"]}' }), {
+      discussion: {
+        "alice/a-post": entryFixture({ json_metadata: '{"tags":["music"]}' }),
+        "bob/re-a-post": ["x", "y"]
+      }
+    });
+
+    const res = await agentDiscussion(request(".discussion.json"), { params });
+    const payload = JSON.parse(await res.text());
+
+    expect(Object.keys(payload.content)).toEqual(["alice/a-post"]);
+  });
+
   it.each([
     ["the thread lookup failed", undefined],
-    ["the thread came back empty", {}]
+    ["the thread came back empty", {}],
+    ["nothing in the thread was an entry", { "alice/a-post": null, "bob/re-a-post": "oops" }]
   ])("404s rather than serving an empty thread when %s", async (_label, discussion) => {
     // prefetchQuery resolves undefined on an RPC failure or an SSR timeout, and
     // bridge.get_discussion always includes the root post, so an empty map is a
@@ -401,5 +453,17 @@ describe("GET /@author/permlink.md", () => {
     expect(res.status).toBe(200);
     expect(markdown).toContain('tags: ["music"]');
     expect(markdown).toContain('app: "scrobble.life/1.0"');
+  });
+});
+
+describe("GET /llms.txt", () => {
+  it("publishes the limits the endpoints actually apply", async () => {
+    // The document and the code were two sources of truth for the same number.
+    const { GET } = await import("@/app/llms.txt/route");
+    const text = await (await GET()).text();
+
+    expect(text).toContain("`content.json_metadata` is always a JSON object");
+    expect(text).toContain(`nested more than ${MAX_METADATA_DEPTH} levels deep`);
+    expect(text).toContain(`more than ${MAX_METADATA_NODES} values`);
   });
 });

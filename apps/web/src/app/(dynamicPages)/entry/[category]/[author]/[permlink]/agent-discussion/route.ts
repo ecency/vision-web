@@ -33,29 +33,33 @@ export async function GET(_request: Request, { params }: Props): Promise<Respons
 
     const discussion = await prefetchQuery(getDiscussionQueryOptions(rootAuthor, rootPermlink));
 
-    // prefetchQuery resolves undefined when the RPC fails or the SSR budget
-    // runs out, and bridge.get_discussion always includes the root post
-    // itself, so an empty map means the lookup failed rather than that nobody
-    // replied. Serving 200 with an empty thread would pin that lie in the edge
-    // cache for five minutes, where a 404 is capped at sixty seconds.
-    if (!discussion || Object.keys(discussion).length === 0) return agentNotFound();
-
     // bridge parses json_metadata today, so this is a guarantee rather than a
     // repair: the thread and the .json envelope must not be able to disagree
     // about the shape of the same field for the same post, whichever node
     // answered either request.
+    // Anything that is not an entry object is dropped rather than spread: a
+    // string value would otherwise be emitted character by character and an
+    // array index by index, and every entry in the map has to carry the
+    // json_metadata the docs promise.
+    const content = Object.fromEntries(
+      Object.entries((discussion ?? {}) as Record<string, Entry>)
+        .filter(([, value]) => !!value && typeof value === "object" && !Array.isArray(value))
+        .map(([key, value]) => [key, withParsedMetadata(value)])
+    );
+
+    // Checked on the map that is actually served, after the filter. prefetchQuery
+    // resolves undefined when the RPC fails or the SSR budget runs out, and
+    // bridge.get_discussion always includes the root post itself, so an empty
+    // thread means the lookup failed rather than that nobody replied. Serving
+    // 200 with it would pin that lie in the edge cache for five minutes, where
+    // a 404 is capped at sixty seconds.
+    if (Object.keys(content).length === 0) return agentNotFound();
+
     const body = JSON.stringify({
       type: "discussion",
       canonical_url: selfUrl({ author: rootAuthor, permlink: rootPermlink }),
       source: "hive_bridge",
-      // Anything that is not an entry object is dropped rather than spread: a
-      // string value would otherwise be emitted character by character, and
-      // every entry in the map has to carry the json_metadata the docs promise.
-      content: Object.fromEntries(
-        Object.entries(discussion as Record<string, Entry>)
-          .filter(([, value]) => !!value && typeof value === "object")
-          .map(([key, value]) => [key, withParsedMetadata(value)])
-      )
+      content
     });
 
     return agentResponse(body, "application/json; charset=utf-8");
