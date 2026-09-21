@@ -36,13 +36,20 @@ vi.mock("@/utils", async () => ({
   ).safeDecodeURIComponent
 }));
 
+import type { Entry } from "@/entities";
 import { GET as agentJson } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/agent-json/route";
 import { GET as agentMd } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/agent-md/route";
 import { GET as agentDiscussion } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/agent-discussion/route";
 
 const BODY = "A post body long enough to clear the thin-content floor. ".repeat(4);
 
-function entryFixture(overrides: Record<string, unknown> = {}) {
+// Every field but json_metadata is type-checked against Entry. json_metadata
+// is deliberately `unknown` here: the shapes under test (a string, an array, a
+// number) are exactly the ones the Entry type says cannot happen and the nodes
+// return anyway.
+type EntryFixture = Omit<Partial<Entry>, "json_metadata"> & { json_metadata?: unknown };
+
+function entryFixture(overrides: EntryFixture = {}): Entry {
   return {
     author: "alice",
     permlink: "a-post",
@@ -53,14 +60,14 @@ function entryFixture(overrides: Record<string, unknown> = {}) {
     depth: 0,
     author_reputation: 70,
     ...overrides
-  } as any;
+  } as Entry;
 }
 
 const ACCOUNT = { reputation: 70, post_count: 120 };
 
 /** condenser answers first; bridge answers only when `bridge` is given. */
 function serve(condenser: unknown, extra: { bridge?: unknown; discussion?: unknown } = {}) {
-  prefetchQuery.mockImplementation(async (options: any) => {
+  prefetchQuery.mockImplementation(async (options: { queryKey: readonly unknown[] }) => {
     const [kind] = options.queryKey;
     if (kind === "condenser") return condenser;
     if (kind === "bridge") return extra.bridge ?? null;
@@ -114,8 +121,26 @@ describe("GET /@author/permlink.json", () => {
     expect(payload.content.json_metadata).toEqual({});
   });
 
+  it("keeps serving a post whose metadata is nested too deep to re-serialise", async () => {
+    // JSON.parse accepts deeper nesting than JSON.stringify can emit, so a
+    // parsed object can blow the stack when the envelope is stringified and
+    // take the whole post down with it (the route catches and 404s). The exact
+    // depth where that happens is platform dependent, so this pins the
+    // invariant rather than the branch: the post is served either way, and its
+    // metadata is an object.
+    const depth = 6000;
+    const deep = `${'{"a":'.repeat(depth)}1${"}".repeat(depth)}`;
+    serve(entryFixture({ json_metadata: deep }));
+
+    const { res, payload } = await jsonEnvelope();
+
+    expect(res.status).toBe(200);
+    expect(payload.content.body).toBe(BODY);
+    expect(typeof payload.content.json_metadata).toBe("object");
+  });
+
   it("emits json_metadata even for a post that has no such field at all", async () => {
-    const entry = entryFixture();
+    const entry = entryFixture() as Partial<Entry>;
     delete entry.json_metadata;
     serve(entry);
 

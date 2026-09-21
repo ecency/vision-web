@@ -105,7 +105,27 @@ export function withParsedMetadata(entry: Entry): Entry {
   const parsed = parseJsonMetadata(entry.json_metadata);
   // parseJsonMetadata returns the SAME object when it was already one.
   if (parsed && parsed === (entry.json_metadata as unknown)) return entry;
-  return { ...entry, json_metadata: (parsed ?? {}) as JsonMetadata };
+  return {
+    ...entry,
+    json_metadata: (isSerialisable(parsed) ? parsed : {}) as JsonMetadata
+  };
+}
+
+/**
+ * JSON.parse accepts deeper nesting than JSON.stringify can emit, and the
+ * envelope is stringified whole. Metadata nested thousands of levels deep
+ * therefore parses here and then throws in the route, whose catch would turn a
+ * perfectly good post into a 404 where it used to serve (a string is flat, so
+ * it never recursed). Drop only the unserialisable metadata, never the post.
+ */
+function isSerialisable(value: Record<string, unknown> | null): boolean {
+  if (!value) return false;
+  try {
+    JSON.stringify(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
