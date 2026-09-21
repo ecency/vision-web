@@ -4,8 +4,10 @@ import {
   agentNotFound,
   agentResponse,
   loadIndexableEntry,
-  selfUrl
+  selfUrl,
+  withParsedMetadata
 } from "@/app/(dynamicPages)/entry/_helpers/agent-readable";
+import type { Entry } from "@/entities";
 
 // Reached via the middleware rewrite of `/@author/permlink.discussion.json`.
 // Serves the full comment thread (bridge.get_discussion map) as JSON.
@@ -31,11 +33,19 @@ export async function GET(_request: Request, { params }: Props): Promise<Respons
 
     const discussion = await prefetchQuery(getDiscussionQueryOptions(rootAuthor, rootPermlink));
 
+    // bridge parses json_metadata today, so this is a guarantee rather than a
+    // repair: the thread and the .json envelope must not be able to disagree
+    // about the shape of the same field for the same post, whichever node
+    // answered either request.
+    const thread = Object.entries((discussion ?? {}) as Record<string, Entry>).map(
+      ([key, value]) => [key, value ? withParsedMetadata(value) : value] as const
+    );
+
     const body = JSON.stringify({
       type: "discussion",
       canonical_url: selfUrl({ author: rootAuthor, permlink: rootPermlink }),
       source: "hive_bridge",
-      content: discussion ?? {}
+      content: Object.fromEntries(thread)
     });
 
     return agentResponse(body, "application/json; charset=utf-8");

@@ -2,7 +2,8 @@ import {
   agentNotFound,
   agentResponse,
   loadIndexableEntry,
-  selfUrl
+  selfUrl,
+  withParsedMetadata
 } from "@/app/(dynamicPages)/entry/_helpers/agent-readable";
 
 // Reached via the middleware rewrite of `/@author/permlink.json`. Serves the
@@ -23,7 +24,9 @@ export async function GET(_request: Request, { params }: Props): Promise<Respons
       type: loaded.entry.parent_author ? "comment" : "post",
       canonical_url: selfUrl(loaded.entry),
       source: loaded.source,
-      content: loaded.entry
+      // json_metadata reaches the loader in whichever shape the answering node
+      // used; the body always carries the parsed object. See withParsedMetadata.
+      content: withParsedMetadata(loaded.entry)
     });
 
     return agentResponse(body, "application/json; charset=utf-8");

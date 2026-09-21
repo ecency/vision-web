@@ -3,7 +3,8 @@ import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { getContentQueryOptions, getProfilesQueryOptions } from "@ecency/sdk";
 import { isIndexable, ReputationSource } from "@/utils/entry-indexability";
 import { safeDecodeURIComponent } from "@/utils";
-import type { Entry } from "@/entities";
+import { parseJsonMetadata } from "@/utils/json-metadata";
+import type { Entry, JsonMetadata } from "@/entities";
 
 // Re-exported so route handlers have a single import surface for the endpoints.
 export { selfUrl, renderEntryMarkdown } from "./entry-agent-format";
@@ -68,6 +69,43 @@ export function agentNotFound(): Response {
       ...AGENT_SECURITY_HEADERS
     }
   });
+}
+
+/**
+ * Give an entry the `json_metadata` shape the type (and this endpoint family's
+ * documentation) promises, for the response body.
+ *
+ * Both sources are cast to `Entry`, whose `json_metadata` is an object, but
+ * only `bridge.get_post` actually parses it: `condenser_api.get_content`
+ * returns the raw string the author published. That made the field's TYPE
+ * depend on which source answered, inside a public response body: on
+ * 2026-09-21 one post served `content.json_metadata` as a string from `.json`
+ * while all 13 entries of its `.discussion.json` came back parsed, so a
+ * consumer reading `json_metadata.tags` got `undefined` from one endpoint and
+ * the tags from the other.
+ *
+ * Metadata that is not a JSON object (unparseable, `null`, an array, a bare
+ * number) becomes `{}`. An envelope advertised as structured JSON should not
+ * hand back a raw string for a field typed as an object. Every reader below
+ * already collapses unreadable metadata to "no fields".
+ *
+ * ⛔ Applied where an entry is SERIALISED, never inside the loader. The
+ * indexability gate must keep seeing the entry exactly as the source returned
+ * it: `canonicalTarget` (entry-indexability.ts) deliberately does not parse a
+ * declared `canonical_url`, and handing it a parsed entry would switch that
+ * branch on for these endpoints alone, behind a product decision that says
+ * not to. Gating on the raw entry is also what keeps `loadIndexableEntry` a
+ * true mirror of generate-entry-metadata.ts.
+ *
+ * Returns the entry unchanged when the metadata already arrived parsed, so
+ * the result may be the object held in the query cache: callers serialise it
+ * and must not mutate it.
+ */
+export function withParsedMetadata(entry: Entry): Entry {
+  const parsed = parseJsonMetadata(entry.json_metadata);
+  // parseJsonMetadata returns the SAME object when it was already one.
+  if (parsed && parsed === (entry.json_metadata as unknown)) return entry;
+  return { ...entry, json_metadata: (parsed ?? {}) as JsonMetadata };
 }
 
 /**
@@ -138,8 +176,6 @@ export async function loadIndexableEntry(
   } catch {
     accountFetchFailed = true;
   }
-
-  // Shared-Redis read; pass a singleton set so isIndexable keeps its
 
   if (!isIndexable(entry, account, accountFetchFailed)) return null;
 
