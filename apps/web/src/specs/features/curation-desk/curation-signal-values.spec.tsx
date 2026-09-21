@@ -22,16 +22,16 @@ vi.mock("@ecency/sdk", async () => {
   const actual = await vi.importActual<Record<string, unknown>>("@ecency/sdk");
   return {
     ...actual,
-    getAccountFullQueryOptions: (username: string) => ({
+    getAccountFullQueryOptions: vi.fn((username: string) => ({
       queryKey: ["get-account-full", username],
       queryFn: async () => null,
       enabled: false,
-    }),
-    getDynamicPropsQueryOptions: () => ({
+    })),
+    getDynamicPropsQueryOptions: vi.fn(() => ({
       queryKey: ["dynamic-props"],
       queryFn: async () => null,
       enabled: false,
-    }),
+    })),
   };
 });
 vi.mock("@/utils", async () => ({
