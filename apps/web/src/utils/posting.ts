@@ -200,16 +200,6 @@ export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaD
 
   const out: MetaData = { ...initialMeta };
 
-  // The spread above carries a malformed field through untouched, which would publish
-  // the same bad shape back to the chain. Only a field that was not an array is
-  // rewritten, so well-formed metadata reaches the block below exactly as before.
-  if (initialMeta.image !== undefined && !Array.isArray(initialMeta.image)) {
-    out.image = existingImages;
-  }
-  if (initialMeta.thumbnails !== undefined && !Array.isArray(initialMeta.thumbnails)) {
-    out.thumbnails = existingThumbnails;
-  }
-
   if (allImages.length > 0) {
     out.image = allImages.slice(0, 10);
     out.thumbnails = Array.from(

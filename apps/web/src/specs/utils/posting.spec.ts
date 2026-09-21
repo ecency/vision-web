@@ -238,14 +238,13 @@ describe("Posting", () => {
     ).toContain(stored);
   });
 
-  it("(23) extractMetadata never hands a malformed field back in the shape it arrived", () => {
-    // The output is spread from the input, so without a rewrite the same bad value is
-    // published straight back to the chain on the next save.
-    expect(extractMetaData("no images at all", legacyMeta({ image: "" })).image).toEqual([]);
-    expect(extractMetaData("no images at all", legacyMeta({ thumbnails: 7 })).thumbnails).toEqual(
-      []
-    );
-    // A well-formed field with nothing to add is still left exactly as it was.
+  it("(23) extractMetadata adds no image keys to a body that has none", () => {
+    // EntryMetadataBuilder.extractFromBody spreads this result over the metadata of
+    // every new post, so an `image: []` invented here would be published on posts
+    // that have no image at all.
+    expect(extractMetaData("plain text, no images")).toEqual({});
+    expect(extractMetaData("plain text, no images", { tags: ["x"] })).toEqual({ tags: ["x"] });
+    // A well-formed field with nothing to add is left exactly as it was.
     const kept = ["https://i.ecency.com/DQmX/kept.png"];
     expect(extractMetaData("no images at all", { image: kept }).image).toEqual(kept);
   });

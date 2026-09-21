@@ -191,7 +191,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
   useEntryDetector(username, permlink, (entry) => {
     if (entry) {
       applyTitle(entry.title);
-      applyTags(Array.from(new Set(entry.json_metadata?.tags ?? [])));
+      applyTags(Array.from(new Set(metaStringList(entry.json_metadata?.tags))));
       setBody(entry.body);
       // A description that is the post's own summary follows the body while it is rewritten,
       // the way the composer treats one: left empty here, the publish path summarises the body

@@ -2,7 +2,7 @@ import { postBodySummary, proxifyImageSrc } from "@ecency/render-helper";
 import { PollSnapshot } from "../../polls";
 import appPackage from "../../../../package.json";
 import { getDimensionsFromDataUrl } from "./get-dimensions-from-data-url";
-import { extractMetaData, makeApp } from "@/utils/posting";
+import { extractMetaData, makeApp, metaStringList } from "@/utils/posting";
 import { makeEntryPath } from "@/utils/make-path";
 import { AiToolsMeta, Entry, MetaData } from "@/entities";
 import { DECENTMEMES_METADATA_VERSION } from "@/api/decentmemes";
@@ -89,13 +89,22 @@ export class EntryMetadataBuilder {
     selectedThumbnail: string | undefined,
     images?: string[]
   ): Promise<this> {
-    const { image } = this.temporaryMetadata;
+    const { image, thumbnails } = this.temporaryMetadata;
 
-    let nextImages = [...(images ?? []), ...(image ?? [])];
+    // `extend(entry)` copies json_metadata verbatim, so `image` is whatever the
+    // publishing client wrote. Spreading it directly is how a legacy post whose
+    // `image` is one bare URL string gets published back as one entry PER
+    // CHARACTER, with an image_ratios probe for each, and how a numeric or object
+    // value throws "is not iterable" and makes the edit unsaveable.
+    let nextImages = [...(images ?? []), ...metaStringList(image)];
 
     if (selectedThumbnail) {
       nextImages.unshift(selectedThumbnail);
       this.withField("thumbnails", [selectedThumbnail]);
+    } else if (thumbnails !== undefined) {
+      // Nothing new to set, so the copied value is what would be published. Write
+      // the list it was meant to be rather than the shape it arrived in.
+      this.withField("thumbnails", metaStringList(thumbnails));
     }
 
     nextImages = Array.from(new Set(nextImages)).splice(0, 9);
