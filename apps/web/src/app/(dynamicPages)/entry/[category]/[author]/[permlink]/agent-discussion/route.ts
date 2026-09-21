@@ -5,7 +5,7 @@ import {
   agentResponse,
   loadIndexableEntry,
   selfUrl,
-  withParsedMetadata
+  stringifyAgentEnvelope
 } from "@/app/(dynamicPages)/entry/_helpers/agent-readable";
 import type { Entry } from "@/entities";
 
@@ -37,16 +37,17 @@ export async function GET(_request: Request, { params }: Props): Promise<Respons
     // repair: the thread and the .json envelope must not be able to disagree
     // about the shape of the same field for the same post, whichever node
     // answered either request.
-    const thread = Object.entries((discussion ?? {}) as Record<string, Entry>).map(
-      ([key, value]) => [key, value ? withParsedMetadata(value) : value] as const
-    );
-
-    const body = JSON.stringify({
+    const body = stringifyAgentEnvelope((metadata) => ({
       type: "discussion",
       canonical_url: selfUrl({ author: rootAuthor, permlink: rootPermlink }),
       source: "hive_bridge",
-      content: Object.fromEntries(thread)
-    });
+      content: Object.fromEntries(
+        Object.entries((discussion ?? {}) as Record<string, Entry>).map(([key, value]) => [
+          key,
+          value ? metadata(value) : value
+        ])
+      )
+    }));
 
     return agentResponse(body, "application/json; charset=utf-8");
   } catch {

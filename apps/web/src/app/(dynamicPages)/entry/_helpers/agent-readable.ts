@@ -105,26 +105,37 @@ export function withParsedMetadata(entry: Entry): Entry {
   const parsed = parseJsonMetadata(entry.json_metadata);
   // parseJsonMetadata returns the SAME object when it was already one.
   if (parsed && parsed === (entry.json_metadata as unknown)) return entry;
-  return {
-    ...entry,
-    json_metadata: (isSerialisable(parsed) ? parsed : {}) as JsonMetadata
-  };
+  return { ...entry, json_metadata: (parsed ?? {}) as JsonMetadata };
 }
 
+/** Same entry with the metadata dropped. Used only by the fallback below. */
+const withoutMetadata = (entry: Entry): Entry => ({ ...entry, json_metadata: {} });
+
 /**
- * JSON.parse accepts deeper nesting than JSON.stringify can emit, and the
- * envelope is stringified whole. Metadata nested thousands of levels deep
- * therefore parses here and then throws in the route, whose catch would turn a
- * perfectly good post into a 404 where it used to serve (a string is flat, so
- * it never recursed). Drop only the unserialisable metadata, never the post.
+ * Serialise an agent JSON envelope, and if the metadata's nesting blows the
+ * stack, serialise it again with that metadata dropped.
+ *
+ * JSON.parse accepts deeper nesting than JSON.stringify can emit, so metadata
+ * nested thousands of levels deep parses in withParsedMetadata and then throws
+ * here, where the route's catch would turn a perfectly good post into a 404.
+ * It used to serve, because a raw string never recursed.
+ *
+ * Testing the metadata on its own first is not enough: it is stringified at a
+ * different stack depth than the envelope that contains it, so the standalone
+ * check can pass while the real serialisation still throws. Serialise for
+ * real instead, and keep deep-but-serialisable metadata intact. A post is
+ * worth more than its metadata; if the retry throws too, the caller's catch
+ * still answers 404.
+ *
+ * `build` is handed the normaliser to apply to every entry it puts in the body.
  */
-function isSerialisable(value: Record<string, unknown> | null): boolean {
-  if (!value) return false;
+export function stringifyAgentEnvelope(
+  build: (normalise: (entry: Entry) => Entry) => unknown
+): string {
   try {
-    JSON.stringify(value);
-    return true;
+    return JSON.stringify(build(withParsedMetadata));
   } catch {
-    return false;
+    return JSON.stringify(build(withoutMetadata));
   }
 }
 

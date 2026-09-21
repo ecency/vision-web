@@ -65,6 +65,20 @@ function entryFixture(overrides: EntryFixture = {}): Entry {
 
 const ACCOUNT = { reputation: 70, post_count: 120 };
 
+/** Metadata nested deep enough that JSON.stringify can blow the stack. */
+const DEEP = 6000;
+const deepMetadataString = () => `${'{"a":'.repeat(DEEP)}1${"}".repeat(DEEP)}`;
+function deepMetadataObject(): Record<string, unknown> {
+  const root: Record<string, unknown> = {};
+  let cursor = root;
+  for (let i = 0; i < DEEP; i += 1) {
+    const next: Record<string, unknown> = {};
+    cursor.a = next;
+    cursor = next;
+  }
+  return root;
+}
+
 /** condenser answers first; bridge answers only when `bridge` is given. */
 function serve(condenser: unknown, extra: { bridge?: unknown; discussion?: unknown } = {}) {
   prefetchQuery.mockImplementation(async (options: { queryKey: readonly unknown[] }) => {
@@ -121,16 +135,26 @@ describe("GET /@author/permlink.json", () => {
     expect(payload.content.json_metadata).toEqual({});
   });
 
-  it("keeps serving a post whose metadata is nested too deep to re-serialise", async () => {
+  it("keeps serving a post whose metadata is nested too deep to serialise", async () => {
     // JSON.parse accepts deeper nesting than JSON.stringify can emit, so a
-    // parsed object can blow the stack when the envelope is stringified and
+    // parsed object can blow the stack while the envelope is serialised and
     // take the whole post down with it (the route catches and 404s). The exact
     // depth where that happens is platform dependent, so this pins the
     // invariant rather than the branch: the post is served either way, and its
     // metadata is an object.
-    const depth = 6000;
-    const deep = `${'{"a":'.repeat(depth)}1${"}".repeat(depth)}`;
-    serve(entryFixture({ json_metadata: deep }));
+    serve(entryFixture({ json_metadata: deepMetadataString() }));
+
+    const { res, payload } = await jsonEnvelope();
+
+    expect(res.status).toBe(200);
+    expect(payload.content.body).toBe(BODY);
+    expect(typeof payload.content.json_metadata).toBe("object");
+  });
+
+  it("keeps serving it when the node itself returned the deep metadata parsed", async () => {
+    // The bridge shape skips normalisation entirely, so the envelope is the
+    // only place that can catch this.
+    serve(entryFixture({ json_metadata: deepMetadataObject() }));
 
     const { res, payload } = await jsonEnvelope();
 
@@ -251,6 +275,26 @@ describe("GET /@author/permlink.discussion.json", () => {
     expect(payload.content["alice/a-post"].json_metadata).toEqual({ tags: ["music"] });
     expect(payload.content["bob/re-a-post"].json_metadata).toEqual({ tags: ["reply"] });
     expect(payload.content["carol/re-a-post"].json_metadata).toEqual({});
+  });
+
+  it("still serves the thread when one entry's metadata is too deep to serialise", async () => {
+    serve(entryFixture({ json_metadata: '{"tags":["music"]}' }), {
+      discussion: {
+        "alice/a-post": entryFixture({ json_metadata: '{"tags":["music"]}' }),
+        "bob/re-a-post": entryFixture({
+          author: "bob",
+          permlink: "re-a-post",
+          json_metadata: deepMetadataObject()
+        })
+      }
+    });
+
+    const res = await agentDiscussion(request(".discussion.json"), { params });
+    const payload = JSON.parse(await res.text());
+
+    expect(res.status).toBe(200);
+    expect(Object.keys(payload.content)).toEqual(["alice/a-post", "bob/re-a-post"]);
+    expect(typeof payload.content["bob/re-a-post"].json_metadata).toBe("object");
   });
 
   it("still 404s when the requested root is suppressed", async () => {
