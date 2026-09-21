@@ -402,6 +402,20 @@ describe("GET /@author/permlink.discussion.json", () => {
     expect(Object.keys(payload.content)).toEqual(["alice/a-post"]);
   });
 
+  it("drops an authorless entry while keeping the rest of the thread", async () => {
+    serve(entryFixture({ json_metadata: '{"tags":["music"]}' }), {
+      discussion: {
+        "alice/a-post": entryFixture({ json_metadata: '{"tags":["music"]}' }),
+        "ghost/re-a-post": {}
+      }
+    });
+
+    const res = await agentDiscussion(request(".discussion.json"), { params });
+    const payload = JSON.parse(await res.text());
+
+    expect(Object.keys(payload.content)).toEqual(["alice/a-post"]);
+  });
+
   it("drops an array map value instead of emitting it index by index", async () => {
     serve(entryFixture({ json_metadata: '{"tags":["music"]}' }), {
       discussion: {
@@ -419,7 +433,10 @@ describe("GET /@author/permlink.discussion.json", () => {
   it.each([
     ["the thread lookup failed", undefined],
     ["the thread came back empty", {}],
-    ["nothing in the thread was an entry", { "alice/a-post": null, "bob/re-a-post": "oops" }]
+    ["nothing in the thread was an entry", { "alice/a-post": null, "bob/re-a-post": "oops" }],
+    // validateEntry in the SDK fills missing fields with "" rather than
+    // rejecting, so an empty object reaches the route as an authorless entry.
+    ["the thread held only authorless entries", { "alice/a-post": {}, "bob/re": { author: "" } }]
   ])("404s rather than serving an empty thread when %s", async (_label, discussion) => {
     // prefetchQuery resolves undefined on an RPC failure or an SSR timeout, and
     // bridge.get_discussion always includes the root post, so an empty map is a

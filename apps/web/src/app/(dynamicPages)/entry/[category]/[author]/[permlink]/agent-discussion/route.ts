@@ -13,6 +13,25 @@ import type { Entry } from "@/entities";
 // Serves the full comment thread (bridge.get_discussion map) as JSON.
 export const dynamic = "force-dynamic"; // handler runs; CDN caches via headers
 
+/**
+ * An entry we can actually serve. The SDK's validateEntry fills missing
+ * required fields with "" rather than rejecting, so `{}` arrives here as an
+ * entry with no author, and a thread of those would otherwise pass the empty
+ * check below and be served as a real one. A map value with no author or
+ * permlink is not addressable, so it is not a thread member.
+ */
+const isServableEntry = (value: unknown): value is Entry => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+
+  const { author, permlink } = value as Partial<Entry>;
+  return (
+    typeof author === "string" &&
+    author.length > 0 &&
+    typeof permlink === "string" &&
+    permlink.length > 0
+  );
+};
+
 interface Props {
   params: Promise<{ category: string; author: string; permlink: string }>;
 }
@@ -37,14 +56,14 @@ export async function GET(_request: Request, { params }: Props): Promise<Respons
     // repair: the thread and the .json envelope must not be able to disagree
     // about the shape of the same field for the same post, whichever node
     // answered either request.
-    // Anything that is not an entry object is dropped rather than spread: a
+    // Anything that is not a servable entry is dropped rather than spread: a
     // string value would otherwise be emitted character by character and an
     // array index by index, and every entry in the map has to carry the
     // json_metadata the docs promise.
     const content = Object.fromEntries(
-      Object.entries((discussion ?? {}) as Record<string, Entry>)
-        .filter(([, value]) => !!value && typeof value === "object" && !Array.isArray(value))
-        .map(([key, value]) => [key, withParsedMetadata(value)])
+      Object.entries((discussion ?? {}) as Record<string, unknown>)
+        .filter(([, value]) => isServableEntry(value))
+        .map(([key, value]) => [key, withParsedMetadata(value as Entry)])
     );
 
     // Checked on the map that is actually served, after the filter. prefetchQuery
