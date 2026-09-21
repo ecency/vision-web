@@ -108,8 +108,25 @@ export function withParsedMetadata(entry: Entry): Entry {
   return { ...entry, json_metadata: (parsed ?? {}) as JsonMetadata };
 }
 
-/** Same entry with the metadata dropped. Used only by the fallback below. */
+/** Same entry with the metadata dropped. Used only by the fallbacks below. */
 const withoutMetadata = (entry: Entry): Entry => ({ ...entry, json_metadata: {} });
+
+/**
+ * Normalised, unless this entry's own metadata cannot be serialised at all.
+ * Probing each entry separately is what keeps one hostile reply from emptying
+ * the metadata of every other entry in a thread. It is not exact, because an
+ * entry is serialised here at a different stack depth than inside the
+ * envelope, which is why the caller keeps a last resort behind it.
+ */
+const withSerialisableMetadata = (entry: Entry): Entry => {
+  const parsed = withParsedMetadata(entry);
+  try {
+    JSON.stringify(parsed.json_metadata);
+    return parsed;
+  } catch {
+    return withoutMetadata(entry);
+  }
+};
 
 /**
  * Serialise an agent JSON envelope, and if the metadata's nesting blows the
@@ -135,7 +152,16 @@ export function stringifyAgentEnvelope(
   try {
     return JSON.stringify(build(withParsedMetadata));
   } catch {
-    return JSON.stringify(build(withoutMetadata));
+    try {
+      // Strip only the entries that cannot carry their own metadata: a thread
+      // is built from replies by anyone, and one deeply nested reply must not
+      // empty the root post's tags, images and declared canonical.
+      return JSON.stringify(build(withSerialisableMetadata));
+    } catch {
+      // Per-entry probing missed it (see withSerialisableMetadata). Serve the
+      // posts without metadata rather than nothing at all.
+      return JSON.stringify(build(withoutMetadata));
+    }
   }
 }
 

@@ -294,6 +294,9 @@ describe("GET /@author/permlink.discussion.json", () => {
 
     expect(res.status).toBe(200);
     expect(Object.keys(payload.content)).toEqual(["alice/a-post", "bob/re-a-post"]);
+    // Anyone can reply to anyone, so one deep reply must not empty the rest of
+    // the thread's metadata, the root post's least of all.
+    expect(payload.content["alice/a-post"].json_metadata).toEqual({ tags: ["music"] });
     expect(typeof payload.content["bob/re-a-post"].json_metadata).toBe("object");
   });
 
