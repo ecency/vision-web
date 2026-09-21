@@ -116,6 +116,76 @@ describe("buildEntryCardFields", () => {
     const fields = buildEntryCardFields(e as any);
     expect(fields.summary).toBe(truncate(postBodySummary(e.body, 210), 160));
   });
+
+  // The entry page sources its entry from condenser_api.get_content first, which
+  // returns json_metadata as a raw STRING. Reading a field off that string is
+  // undefined, so every post page served a body summary in place of the
+  // description its author published.
+  it("reads the description when json_metadata arrived as a string", () => {
+    const e = entry({
+      json_metadata: JSON.stringify({ description: "Author provided summary" })
+    });
+    expect(buildEntryCardFields(e as any).summary).toBe("Author provided summary");
+  });
+
+  it("treats unparseable json_metadata as no metadata at all", () => {
+    const e = entry({ json_metadata: "not json at all" });
+    expect(buildEntryCardFields(e as any).summary).toBe(
+      truncate(postBodySummary(e.body, 210), 160)
+    );
+  });
+
+  // json_metadata is whatever the publishing client wrote: hivesuite/0.1.0 copies
+  // the entire markdown body into `description`. Verbatim, that is several KB of
+  // raw markdown in a meta description.
+  it("strips and caps a description that holds a whole markdown body", () => {
+    const wall =
+      "# A heading\n\n**Bold** intro with a [link](https://example.com) and an " +
+      "![image](https://example.com/a.jpg)\n\n" +
+      "Then a long stretch of prose that runs well past the snippet width so the ".repeat(6);
+    const e = entry({ json_metadata: { description: wall } });
+
+    const { summary } = buildEntryCardFields(e as any);
+
+    // 160 plus the ellipsis truncate appends, the same bound as the body path.
+    expect(summary.length).toBeLessThanOrEqual(163);
+    expect(summary).not.toContain("#");
+    expect(summary).not.toContain("**");
+    expect(summary).not.toContain("](");
+  });
+
+  // Space-less text (CJK prose, an emoji run) defeats the word-boundary
+  // summariser, which falls back to cutting by CODE POINT. 160 code points of
+  // astral characters is 320 UTF-16 units, so the byte-level cap still has to
+  // land, and it must not leave a dangling surrogate behind.
+  it("bounds a space-less description that the summariser cuts by code point", () => {
+    const e = entry({ json_metadata: { description: "\u{1F389}".repeat(300) } });
+
+    const { summary } = buildEntryCardFields(e as any);
+
+    expect(summary.length).toBeLessThanOrEqual(163);
+    expect(summary).not.toMatch(/[\uD800-\uDBFF]$/);
+  });
+
+  it("falls back to the body summary when the description strips to nothing", () => {
+    const e = entry({
+      json_metadata: { description: "![shot](https://example.com/a.jpg)" }
+    });
+    expect(buildEntryCardFields(e as any).summary).toBe(
+      truncate(postBodySummary(e.body, 210), 160)
+    );
+  });
+
+  it("reads the tag fallback out of string metadata too", () => {
+    const e = entry({
+      body: "![shot](https://example.com/a.jpg)",
+      community_title: "Photography Lovers",
+      json_metadata: JSON.stringify({ tags: ["photo", "art", "hive", "extra"] })
+    });
+    expect(buildEntryCardFields(e as any).cardSummary).toBe(
+      "A post by @alice in Photography Lovers on Ecency. Tags: photo, art, hive"
+    );
+  });
 });
 
 describe("buildEntryCardFields with a body that breaks the image lookup", () => {

@@ -1,5 +1,7 @@
 import { truncate } from "@/utils";
 import { entryDisplayTitle } from "@/utils/entry-display-title";
+import { parseJsonMetadata } from "@/utils/posting";
+import { summarizeText } from "@/core/entries/entry-summary";
 import { catchPostImage, postBodySummary } from "@ecency/render-helper";
 import type { Entry } from "@/entities";
 
@@ -46,13 +48,23 @@ export function buildEntryCardFields(entry: Entry): EntryCardFields {
     title = truncate(entryDisplayTitle(entry), 67);
   }
 
+  // Parsed rather than read off the value: this helper receives json_metadata in
+  // BOTH shapes. `bridge.get_post` hands it over parsed, while
+  // `condenser_api.get_content` returns the raw string, and that is this page's
+  // FIRST source (it carries root_author/root_permlink, which bridge omits). A
+  // field read off a string is undefined, so every post page quietly ignored the
+  // description its author published and fell through to the body summary below.
+  const meta = parseJsonMetadata(entry.json_metadata);
+
   // Cap at 160 chars to match Google's desktop snippet width; consumers may
-  // truncate further. An author-set json_metadata.description wins (guarded:
-  // json_metadata is untrusted on-chain data, a non-string value would leak
-  // "[object Object]" into cards).
-  const declared = entry.json_metadata?.description;
+  // truncate further. An author-set description wins, but it is untrusted
+  // on-chain data: a non-string would leak "[object Object]" into the cards, and
+  // one publishing client copies the WHOLE markdown body into the field. It goes
+  // through the same summariser the feed cards use, so what reaches the meta
+  // tags is bounded plain text whatever was published.
+  const declared = meta?.description;
   const summary =
-    (typeof declared === "string" ? declared : "") ||
+    (typeof declared === "string" ? truncate(summarizeText(declared.trim(), 160), 160) : "") ||
     truncate(postBodySummary(entry.body, 210), 160);
 
   // Media-only posts (image/video, no prose) summarize to "". Card surfaces
@@ -62,7 +74,7 @@ export function buildEntryCardFields(entry: Entry): EntryCardFields {
   // the common non-empty case never pays for it.
   let cardSummary = summary;
   if (!cardSummary) {
-    const rawTags = entry.json_metadata?.tags;
+    const rawTags = meta?.tags;
     const tags = (Array.isArray(rawTags) ? rawTags : []).filter(
       (t): t is string => typeof t === "string" && t.length > 0
     );
