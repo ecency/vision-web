@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.13
+
+### Patch Changes
+
+- Stop untrusted parent metadata reaching replies, imports and pinned posts (#1857)
+
 ## 2.4.12
 
 ### Patch Changes

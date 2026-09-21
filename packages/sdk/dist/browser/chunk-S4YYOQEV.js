@@ -1,0 +1,2 @@
+function t(r){let n=r;if(typeof r=="string")try{n=JSON.parse(r);}catch{return null}return n&&typeof n=="object"&&!Array.isArray(n)?n:null}export{t as a};//# sourceMappingURL=chunk-S4YYOQEV.js.map
+//# sourceMappingURL=chunk-S4YYOQEV.js.map
