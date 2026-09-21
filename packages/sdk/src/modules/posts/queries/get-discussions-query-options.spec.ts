@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { getDiscussionsQueryOptions, SortOrder } from './get-discussions-query-options'
+import { getDiscussionsQueryOptions, sortDiscussions, SortOrder } from './get-discussions-query-options'
 import { CONFIG, ConfigManager } from '@/modules/core'
 import { Entry } from '../types'
 
@@ -110,5 +110,69 @@ describe('getDiscussionsQueryOptions observer resolution', () => {
     expect(anon.queryKey).not.toEqual(loggedIn.queryKey)
     expect(anon.queryKey).toContain('ecency')
     expect(loggedIn.queryKey).toContain('bob')
+  })
+})
+
+
+/**
+ * The pinned reply is hoisted to the top of the thread, and which reply is
+ * pinned is read out of the ROOT's json_metadata. That value is an object when
+ * the root came from `bridge.*` and a raw string when it came from
+ * `condenser_api.get_content`, which is how the decks columns fetch.
+ */
+describe('sortDiscussions pinned reply', () => {
+  const reply = (author: string, permlink: string, created: string) =>
+    ({
+      author,
+      permlink,
+      created,
+      children: 0,
+      net_rshares: 0,
+      author_reputation: 50,
+      pending_payout_value: '0.000 HBD',
+      author_payout_value: '0.000 HBD',
+      curator_payout_value: '0.000 HBD',
+    }) as unknown as Entry
+
+  const replies = () => [
+    reply('carol', 'newest', '2026-09-20T10:00:00'),
+    reply('bob', 'the-pinned-one', '2026-09-18T10:00:00'),
+    reply('dave', 'oldest', '2026-09-17T10:00:00'),
+  ]
+
+  it('hoists the pinned reply when the root carries parsed metadata', () => {
+    const root = {
+      author: 'alice',
+      permlink: 'a-post',
+      json_metadata: { pinned_reply: 'bob/the-pinned-one' },
+    } as unknown as Entry
+
+    const sorted = sortDiscussions(root, replies(), SortOrder.created)
+
+    expect(sorted[0].permlink).toBe('the-pinned-one')
+  })
+
+  it('hoists it just the same when the root carries metadata as a string', () => {
+    const root = {
+      author: 'alice',
+      permlink: 'a-post',
+      json_metadata: '{"pinned_reply":"bob/the-pinned-one"}',
+    } as unknown as Entry
+
+    const sorted = sortDiscussions(root, replies(), SortOrder.created)
+
+    expect(sorted[0].permlink).toBe('the-pinned-one')
+  })
+
+  it('leaves the order alone when the root has no readable metadata', () => {
+    const root = {
+      author: 'alice',
+      permlink: 'a-post',
+      json_metadata: 'not json at all',
+    } as unknown as Entry
+
+    const sorted = sortDiscussions(root, replies(), SortOrder.created)
+
+    expect(sorted.map((i) => i.permlink)).toEqual(['newest', 'the-pinned-one', 'oldest'])
   })
 })

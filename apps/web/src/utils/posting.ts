@@ -150,6 +150,31 @@ const collectImages = (body: string, pattern: RegExp, needsExtension: boolean): 
  * string is its first CHARACTER and `new Set(image)` is its characters, both of
  * which pass every truthiness check and get published back to the chain.
  */
+/**
+ * json_metadata as the object it is meant to be, or null when it cannot be read.
+ *
+ * Nodes disagree about the shape: `bridge.get_post` hands back a parsed object while
+ * `condenser_api.get_content` hands back the raw STRING, and both land in the same
+ * entry cache. Spreading a string produces one key PER CHARACTER, so a write path
+ * that rebuilds metadata from a cached entry can publish `{"0":"{","1":"\""...}` as
+ * the post's json_metadata. Returning null lets the caller refuse rather than guess.
+ */
+export const parseJsonMetadata = (value: unknown): Record<string, unknown> | null => {
+  let parsed: unknown = value;
+
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : null;
+};
+
 export const metaStringList = (value: unknown): string[] => {
   if (Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === "string" && item.length > 0);
@@ -225,11 +250,20 @@ export const makeJsonMetaData = (
     format: "markdown+html"
   });
 
-export const makeJsonMetaDataReply = (tags: string[], appVer: string) => ({
-  tags,
-  app: makeApp(appVer),
-  format: "markdown+html"
-});
+/**
+ * A reply's metadata is built from its PARENT's tags, which is untrusted chain data:
+ * every caller passes `entry.json_metadata?.tags || ["ecency"]`, and that fallback only
+ * catches null and undefined. Coercing here rather than at the eight call sites keeps a
+ * parent's bare-string or junk-entry tags from being published into the reply.
+ */
+export const makeJsonMetaDataReply = (tags: unknown, appVer: string) => {
+  const list = metaStringList(tags);
+  return {
+    tags: list.length > 0 ? list : ["ecency"],
+    app: makeApp(appVer),
+    format: "markdown+html"
+  };
+};
 
 export const makeCommentOptions = (
   author: string,

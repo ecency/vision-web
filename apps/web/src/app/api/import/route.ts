@@ -6,6 +6,7 @@ import { Resolver } from "node:dns/promises";
 import { isIP } from "node:net";
 import { Agent } from "undici";
 import { getPost } from "@ecency/sdk";
+import { metaStringList } from "@/utils/posting";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts/cookies";
 import { createPinnedLookup } from "./pinned-lookup";
 
@@ -232,8 +233,11 @@ async function fetchHivePost(author: string, permlink: string): Promise<ArticleD
   return {
     title: post.title || "",
     content: post.body || "",
-    thumbnail: post.json_metadata?.image?.[0] || "",
-    tags: post.json_metadata?.tags || [],
+    // Straight off the chain, so neither field is the list it is declared to be:
+    // `image[0]` on a bare string is its first character, and the dialog this feeds
+    // types `tags` as a string array.
+    thumbnail: metaStringList(post.json_metadata?.image)[0] || "",
+    tags: metaStringList(post.json_metadata?.tags),
     source: "hive"
   };
 }

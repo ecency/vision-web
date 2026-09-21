@@ -8,7 +8,8 @@ import {
   makeCommentOptions,
   makeJsonMetaData,
   makeJsonMetaDataReply,
-  metaStringList
+  metaStringList,
+  parseJsonMetadata
 } from "../../utils/posting";
 
 describe("Posting", () => {
@@ -329,8 +330,34 @@ describe("Posting", () => {
     });
   });
 
+  it("(26) parseJsonMetadata reads a string, an object, and refuses the rest", () => {
+    // bridge.get_post hands back an object, condenser_api.get_content hands back the
+    // raw string, and both land in the same entry cache.
+    expect(parseJsonMetadata({ tags: ["hive"] })).toEqual({ tags: ["hive"] });
+    expect(parseJsonMetadata('{"tags":["hive"]}')).toEqual({ tags: ["hive"] });
+    expect(parseJsonMetadata("not json at all")).toBeNull();
+    expect(parseJsonMetadata("[1,2]")).toBeNull();
+    expect(parseJsonMetadata([1, 2])).toBeNull();
+    expect(parseJsonMetadata(undefined)).toBeNull();
+    expect(parseJsonMetadata(null)).toBeNull();
+    expect(parseJsonMetadata(7)).toBeNull();
+  });
+
   it("makeJsonMetadataReply", () => {
     expect(makeJsonMetaDataReply(["foo", "bar"], "1.1")).toMatchSnapshot();
+  });
+
+  it("makeJsonMetadataReply reads the parent's tags as a list whatever shape they are in", () => {
+    // Every caller passes `entry.json_metadata?.tags || ["ecency"]`, and that fallback
+    // catches only null and undefined, so a parent published by another client used to
+    // put its own bad shape into the reply.
+    expect(makeJsonMetaDataReply("food", "1.1").tags).toEqual(["food"]);
+    expect(makeJsonMetaDataReply(["ok", null, 7, ""], "1.1").tags).toEqual(["ok"]);
+    expect(makeJsonMetaDataReply([null, 7], "1.1").tags).toEqual(["ecency"]);
+    expect(makeJsonMetaDataReply("", "1.1").tags).toEqual(["ecency"]);
+    expect(makeJsonMetaDataReply(undefined, "1.1").tags).toEqual(["ecency"]);
+    // Well-formed tags are untouched.
+    expect(makeJsonMetaDataReply(["foo", "bar"], "1.1").tags).toEqual(["foo", "bar"]);
   });
 
   it("createReplyPermlink", () => {

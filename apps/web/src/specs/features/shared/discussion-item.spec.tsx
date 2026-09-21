@@ -27,10 +27,11 @@ vi.mock("@/core/hooks/use-active-account", () => ({
 
 // The reply / edit / pin mutations broadcast to the chain — stub them so the
 // component renders without an auth/network graph.
+const pinReply = vi.hoisted(() => vi.fn());
 vi.mock("@/api/mutations", () => ({
   useCreateReply: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateReply: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePinReply: () => ({ mutateAsync: vi.fn() })
+  usePinReply: () => ({ mutateAsync: pinReply })
 }));
 
 // Cache manager used for optimistic mute updates.
@@ -118,6 +119,7 @@ function renderItem(entry: Entry, root: Entry) {
 describe("DiscussionItem", () => {
   afterEach(() => {
     activeUserRef.current = null;
+    pinReply.mockClear();
   });
 
   const root = mockEntry({ author: "bob", permlink: "the-post", category: "hive-101" });
@@ -202,4 +204,54 @@ describe("DiscussionItem", () => {
     fireEvent.click(screen.getByText("g.reply"));
     expect(container.querySelector(".animate-fade-in-up")).toBeNull();
   });
+
+  /**
+   * Which reply is pinned is read out of the ROOT's json_metadata, and that
+   * arrives as an object from `bridge.*` but as a raw string from
+   * `condenser_api.get_content`, which is how the decks columns fetch. Reading
+   * the field straight off a string yields undefined, so a pinned reply looked
+   * unpinned and its own post's author was offered "Pin" with no way back.
+   */
+  describe("pin state on a root whose metadata is a string", () => {
+    function openMenu(root: Entry) {
+      activeUserRef.current = "bob";
+      renderItem(comment, root);
+      fireEvent.click(screen.getByRole("button", { name: "g.menu" }));
+    }
+
+    it("offers Unpin for the pinned reply when the root's metadata is parsed", () => {
+      openMenu(
+        mockEntry({
+          author: "bob",
+          permlink: "the-post",
+          category: "hive-101",
+          json_metadata: { pinned_reply: "alice/re-the-post" }
+        })
+      );
+
+      fireEvent.click(screen.getByText("g.unpin"));
+      expect(pinReply).toHaveBeenCalledWith({ pin: false });
+    });
+
+    it("offers Unpin just the same when the root's metadata is a string", () => {
+      openMenu({
+        ...mockEntry({ author: "bob", permlink: "the-post", category: "hive-101" }),
+        json_metadata: '{"pinned_reply":"alice/re-the-post"}'
+      } as unknown as Entry);
+
+      fireEvent.click(screen.getByText("g.unpin"));
+      expect(pinReply).toHaveBeenCalledWith({ pin: false });
+    });
+
+    it("offers Pin when a string root pins some OTHER reply", () => {
+      openMenu({
+        ...mockEntry({ author: "bob", permlink: "the-post", category: "hive-101" }),
+        json_metadata: '{"pinned_reply":"carol/another-reply"}'
+      } as unknown as Entry);
+
+      fireEvent.click(screen.getByText("g.pin"));
+      expect(pinReply).toHaveBeenCalledWith({ pin: true });
+    });
+  });
+
 });

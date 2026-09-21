@@ -763,7 +763,8 @@
     "translate": "Translate",
     "promote": "Promote",
     "boost": "Boost",
-    "edit-classic": "Classic Edit"
+    "edit-classic": "Classic Edit",
+    "pin-metadata-unreadable": "This post's metadata could not be read, so pinning was stopped to avoid overwriting it. Open the post itself and try again."
   },
   "entry-translate": {
     "target-language": "Target language",

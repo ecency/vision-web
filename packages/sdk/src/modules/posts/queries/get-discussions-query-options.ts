@@ -4,6 +4,7 @@ import { Entry } from "../types";
 import { filterDmcaEntry } from "../utils/filter-dmca-entries";
 import { getDiscussion } from "@/modules/bridge";
 import { callRPC } from "@/modules/core/hive-tx";
+import { parseJsonMetadata } from "../utils/parse-json-metadata";
 
 export enum SortOrder {
   trending = "trending",
@@ -32,8 +33,12 @@ export function sortDiscussions(
     parseAsset(c.curator_payout_value).amount;
 
   const absNegative = (a: Entry) => a.net_rshares < 0;
-  const isPinned = (a: Entry) =>
-    entry.json_metadata?.pinned_reply === `${a.author}/${a.permlink}`;
+  // Parsed rather than read straight off the value: an entry fetched through
+  // condenser_api carries json_metadata as a string (the decks columns fetch
+  // that way), and `"…".pinned_reply` is undefined, so the pinned reply lost
+  // its place at the top of the thread. Parsed once here, not per comparison.
+  const pinnedReply = parseJsonMetadata(entry?.json_metadata)?.pinned_reply;
+  const isPinned = (a: Entry) => pinnedReply === `${a.author}/${a.permlink}`;
 
   const sortOrders = {
     trending: (a: Entry, b: Entry) => {
