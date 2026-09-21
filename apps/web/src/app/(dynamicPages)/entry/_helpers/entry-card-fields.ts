@@ -39,7 +39,10 @@ export function buildEntryCardFields(entry: Entry): EntryCardFields {
 
   let title: string;
   if (isComment) {
-    const rawCommentTitle = truncate(postBodySummary(entry.body, 12), 67);
+    // Safely, for the reason the body summary below gives: a throw here is
+    // generateMetadata dropping every tag for the post, and the oEmbed route
+    // answering 500. A comment with an unrenderable body keeps its byline.
+    const rawCommentTitle = truncate(postBodySummarySafely(entry.body, 12), 67);
     title = `@${entry.author}: ${rawCommentTitle}`;
   } else {
     // entryDisplayTitle never returns "" (title-less microblog posts fall back
@@ -70,7 +73,13 @@ export function buildEntryCardFields(entry: Entry): EntryCardFields {
   // pair as a duplicate and every card renders the same line twice. Several
   // publishers seed the field from the title, so those fall through to the body
   // excerpt, while a short but DIFFERENT description is still the author's.
-  const titleText = (entry.title ?? "").trim().toLowerCase();
+  // Both sides through the same summariser, or a title published as
+  // "**Hello World**" would not match the plain "Hello World" a publisher
+  // copied out of it. Computed only when there is something to compare, so the
+  // usual post (no declared description) pays nothing for it.
+  const titleText = declaredSummary
+    ? summarizeText(entry.title ?? "", 160).trim().toLowerCase()
+    : "";
   const summary =
     (titleText && declaredSummary.trim().toLowerCase() === titleText ? "" : declaredSummary) ||
     // Safely: this runs inside generateMetadata, whose outer catch drops the

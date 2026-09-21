@@ -136,6 +136,13 @@ describe("buildEntryCardFields", () => {
     );
   });
 
+  it("ignores a plain description that repeats a title written in markdown", () => {
+    const e = entry({ title: "**Hello World**", json_metadata: { description: "Hello World" } });
+    expect(buildEntryCardFields(e as any).summary).toBe(
+      truncate(postBodySummary(e.body, 210), 160)
+    );
+  });
+
   it("ignores a title repeated with markdown around it", () => {
     const e = entry({ json_metadata: { description: "**Hello World**" } });
     expect(buildEntryCardFields(e as any).summary).toBe(
@@ -277,6 +284,28 @@ describe("buildEntryCardFields with a body that breaks the image lookup", () => 
 
     expect(fields.summary).toBe("");
     expect(fields.cardSummary).toBe("A post by @alice in Photography Lovers on Ecency");
+  });
+
+  it("keeps building a comment card when the title summariser throws", () => {
+    const e = entry({ parent_author: "bob", title: "", permlink: "boom-comment-title" });
+    vi.mocked(postBodySummary).mockImplementationOnce(() => {
+      throw new RangeError("Invalid code point 1114112");
+    });
+
+    const fields = buildEntryCardFields(e as any);
+
+    expect(fields.isComment).toBe(true);
+    expect(fields.title).toBe("@alice: ");
+    expect(fields.cardSummary).not.toBe("");
+  });
+
+  it("falls back to the byline when a title-less post's body breaks the summariser", () => {
+    const e = entry({ title: "", permlink: "boom-display-title" });
+    vi.mocked(postBodySummary).mockImplementationOnce(() => {
+      throw new RangeError("Invalid code point 1114112");
+    });
+
+    expect(buildEntryCardFields(e as any).title).toBe("Post by @alice");
   });
 
   it("keeps title and summary when the image lookup throws", () => {
