@@ -1,6 +1,6 @@
 import defaults from "@/defaults";
 import type { Entry } from "@/entities";
-import { parseJsonMetadata } from "@/utils/posting";
+import { metaStringList, parseJsonMetadata } from "@/utils/json-metadata";
 
 /**
  * Pure formatters for the agent-readable post endpoints. Deliberately free of
@@ -41,10 +41,9 @@ export function renderEntryMarkdown(entry: Entry): string {
   // fetched through condenser_api, which returns json_metadata as a raw string,
   // so both lines below were silently absent from every document.
   const meta = parseJsonMetadata(entry.json_metadata);
-  const rawTags = meta?.tags;
-  const tags = Array.isArray(rawTags)
-    ? rawTags.filter((tag): tag is string => typeof tag === "string" && tag.length > 0)
-    : undefined;
+  // The shared list normaliser, which also accepts the bare-string shape a list
+  // field takes on some posts, and drops junk entries from a mixed array.
+  const tags = metaStringList(meta?.tags);
   const isComment = !!entry.parent_author;
 
   const front = [

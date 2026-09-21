@@ -1,7 +1,8 @@
 import { truncate } from "@/utils";
 import { entryDisplayTitle } from "@/utils/entry-display-title";
-import { parseJsonMetadata } from "@/utils/posting";
+import { metaStringList, parseJsonMetadata } from "@/utils/json-metadata";
 import { summarizeText } from "@/core/entries/entry-summary";
+import { postBodySummarySafely } from "@/core/entries/post-body-summary-safely";
 import { catchPostImage, postBodySummary } from "@ecency/render-helper";
 import type { Entry } from "@/entities";
 
@@ -65,7 +66,12 @@ export function buildEntryCardFields(entry: Entry): EntryCardFields {
   const declared = meta?.description;
   const summary =
     (typeof declared === "string" ? truncate(summarizeText(declared.trim(), 160), 160) : "") ||
-    truncate(postBodySummary(entry.body, 210), 160);
+    // Safely: this runs inside generateMetadata, whose outer catch drops the
+    // title, cards, canonical and robots for the post, and inside the oEmbed
+    // route, which would answer 500. A description that strips to nothing (an
+    // image-only one) falls through to here, so the throwing call is reachable
+    // even for a post that declared a description.
+    truncate(postBodySummarySafely(entry.body, 210), 160);
 
   // Media-only posts (image/video, no prose) summarize to "". Card surfaces
   // (og/twitter/oEmbed) must not render an empty description, so give THEM a
@@ -74,10 +80,9 @@ export function buildEntryCardFields(entry: Entry): EntryCardFields {
   // the common non-empty case never pays for it.
   let cardSummary = summary;
   if (!cardSummary) {
-    const rawTags = meta?.tags;
-    const tags = (Array.isArray(rawTags) ? rawTags : []).filter(
-      (t): t is string => typeof t === "string" && t.length > 0
-    );
+    // Through the shared list normaliser: a json_metadata list field is a bare
+    // string on some posts, and a post that tagged itself once should say so.
+    const tags = metaStringList(meta?.tags);
     cardSummary = truncate(
       isComment
         ? `A reply by @${entry.author} on Ecency`

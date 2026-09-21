@@ -12,7 +12,11 @@ vi.mock("@ecency/render-helper", async () => {
   const actual = await vi.importActual<typeof import("@ecency/render-helper")>(
     "@ecency/render-helper"
   );
-  return { ...actual, catchPostImage: vi.fn(actual.catchPostImage) };
+  return {
+    ...actual,
+    catchPostImage: vi.fn(actual.catchPostImage),
+    postBodySummary: vi.fn(actual.postBodySummary)
+  };
 });
 
 // The global @/utils mock only exposes random/getAccessToken; restore the real
@@ -101,8 +105,18 @@ describe("buildEntryCardFields", () => {
     );
   });
 
-  it("card fallback works without community/tags and guards non-array tags", () => {
+  // A json_metadata list field is a bare string on some posts, and a post that
+  // tagged itself once still has that tag. The shared normaliser reads both
+  // shapes, so the card fallback names it instead of dropping it.
+  it("names a tag the post declared as a bare string", () => {
     const e = entry({ body: "![x](https://example.com/a.jpg)", json_metadata: { tags: "photo" } });
+    expect(buildEntryCardFields(e as any).cardSummary).toBe(
+      "A post by @alice on Ecency. Tags: photo"
+    );
+  });
+
+  it("drops a tags value that is neither a list nor a string", () => {
+    const e = entry({ body: "![x](https://example.com/a.jpg)", json_metadata: { tags: 7 } });
     expect(buildEntryCardFields(e as any).cardSummary).toBe("A post by @alice on Ecency");
   });
 
@@ -128,6 +142,15 @@ describe("buildEntryCardFields", () => {
     expect(buildEntryCardFields(e as any).summary).toBe("Author provided summary");
   });
 
+  it("treats metadata that parses to a non-object as no metadata at all", () => {
+    for (const shape of ['"just a string"', "[1,2,3]", "42", "null"]) {
+      const e = entry({ json_metadata: shape });
+      expect(buildEntryCardFields(e as any).summary).toBe(
+        truncate(postBodySummary(e.body, 210), 160)
+      );
+    }
+  });
+
   it("treats unparseable json_metadata as no metadata at all", () => {
     const e = entry({ json_metadata: "not json at all" });
     expect(buildEntryCardFields(e as any).summary).toBe(
@@ -148,7 +171,10 @@ describe("buildEntryCardFields", () => {
     const { summary } = buildEntryCardFields(e as any);
 
     // 160 plus the ellipsis truncate appends, the same bound as the body path.
-    expect(summary.length).toBeLessThanOrEqual(163);
+    // Exactly the bound, not merely under it: asserting `<= 163` leaves a
+    // lowered cap (160 -> 100) green while snippets get cut a third short.
+    expect(summary.length).toBe(163);
+    expect(summary.startsWith("A heading Bold intro with a link")).toBe(true);
     expect(summary).not.toContain("#");
     expect(summary).not.toContain("**");
     expect(summary).not.toContain("](");
@@ -163,6 +189,10 @@ describe("buildEntryCardFields", () => {
 
     const { summary } = buildEntryCardFields(e as any);
 
+    // Starts with the description, not the body: the word-boundary summariser
+    // returns "" for space-less text, so a swap back to it would silently serve
+    // the body summary for every CJK or emoji description and still fit the cap.
+    expect(summary.startsWith("\u{1F389}")).toBe(true);
     expect(summary.length).toBeLessThanOrEqual(163);
     expect(summary).not.toMatch(/[\uD800-\uDBFF]$/);
   });
@@ -205,6 +235,25 @@ describe("buildEntryCardFields with a body that breaks the image lookup", () => 
     const fields = buildEntryCardFields(e as any);
     expect(fields.title).toBe("Hello World");
     expect(fields.image).toBeNull();
+  });
+
+  // generateMetadata's outer catch drops the title, cards, canonical and robots
+  // for the post, and the oEmbed route answers 500, so a throw out of the body
+  // summariser costs far more than the summary line it was computing.
+  it("keeps building the card when the body summariser throws", () => {
+    const e = entry({
+      body: "plain body",
+      permlink: "boom-summary",
+      community_title: "Photography Lovers"
+    });
+    vi.mocked(postBodySummary).mockImplementationOnce(() => {
+      throw new RangeError("Invalid code point 1114112");
+    });
+
+    const fields = buildEntryCardFields(e as any);
+
+    expect(fields.summary).toBe("");
+    expect(fields.cardSummary).toBe("A post by @alice in Photography Lovers on Ecency");
   });
 
   it("keeps title and summary when the image lookup throws", () => {
