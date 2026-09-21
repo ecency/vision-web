@@ -43,7 +43,7 @@ import { error, Feedback } from "@/features/shared/feedback";
 import { Navbar } from "@/features/shared/navbar";
 import { Theme } from "@/features/shared/theme";
 import i18next from "i18next";
-import { extractMetaData, isCommunity } from "@/utils";
+import { extractMetaData, isCommunity, metaStringList } from "@/utils";
 import { Draft, Entry, RewardType } from "@/entities";
 import { TextareaAutocomplete } from "@/features/shared/textarea-autocomplete";
 import { useEntryPollExtractor } from "@/features/polls";
@@ -191,14 +191,15 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
   useEntryDetector(username, permlink, (entry) => {
     if (entry) {
       applyTitle(entry.title);
-      applyTags(Array.from(new Set(entry.json_metadata?.tags ?? [])));
+      applyTags(Array.from(new Set(metaStringList(entry.json_metadata?.tags))));
       setBody(entry.body);
       // A description that is the post's own summary follows the body while it is rewritten,
       // the way the composer treats one: left empty here, the publish path summarises the body
       // being saved. Anything the author wrote is kept. The old fallback read the body from
       // state, which still held whatever was in the editor before this post loaded.
       setDescription(descriptionToEdit(entry.json_metadata?.description, entry.body));
-      entry?.json_metadata?.image && setSelectedThumbnail(entry?.json_metadata?.image[0]);
+      const [firstImage] = metaStringList(entry.json_metadata?.image);
+      firstImage && setSelectedThumbnail(firstImage);
       setEditingEntry(entry);
     } else if (editingEntry) {
       setEditingEntry(null);

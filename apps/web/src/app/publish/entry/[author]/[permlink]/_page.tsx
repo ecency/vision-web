@@ -4,6 +4,7 @@ import { PublishEditor, PublishModeHeader } from "@/app/publish/_components";
 import { usePublishEditor, usePublishState } from "@/app/publish/_hooks";
 import { useEntryDetector } from "@/app/submit/_hooks";
 import { Entry } from "@/entities";
+import { metaStringList } from "@/utils";
 import i18next from "i18next";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -56,14 +57,18 @@ export default function Publish() {
         setEnrty(entry);
         setStep("edit");
         setTitle(entry.title);
-        setTags(Array.from(new Set(entry.json_metadata?.tags ?? [])));
+        setTags(Array.from(new Set(metaStringList(entry.json_metadata?.tags))));
         setContent(entry.body); // todo
         // A published post carries its own generated summary, so hand the body over with it:
         // a description that is that summary keeps following the body as the author edits.
         loadMetaDescription(entry.json_metadata?.description ?? "", entry.body);
-        entry?.json_metadata?.image && setSelectedThumbnail(entry?.json_metadata?.image[0]);
-        entry?.json_metadata?.image &&
-          setEntryImages(Array.from(new Set(entry.json_metadata?.image)));
+        // Read through metaStringList: a bare-string `image` indexes to its first
+        // CHARACTER here, and spreads into one entry per character below.
+        const metaImages = metaStringList(entry.json_metadata?.image);
+        if (metaImages.length > 0) {
+          setSelectedThumbnail(metaImages[0]);
+          setEntryImages(Array.from(new Set(metaImages)));
+        }
         entry?.json_metadata?.location && setLocation(entry?.json_metadata?.location);
 
         setEditorContent(entry.body);
