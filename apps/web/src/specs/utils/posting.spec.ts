@@ -7,7 +7,8 @@ import {
   extractMetaData,
   makeCommentOptions,
   makeJsonMetaData,
-  makeJsonMetaDataReply
+  makeJsonMetaDataReply,
+  metaStringList
 } from "../../utils/posting";
 
 describe("Posting", () => {
@@ -203,6 +204,70 @@ describe("Posting", () => {
   it("(11) extractMetadata keeps a closing parenthesis inside a bare proxy URL", () => {
     const url = "https://images.ecency.com/webp/https://example.com/chart).png";
     expect(extractMetaData(`Source: ${url} for details`).image).toEqual([url]);
+  });
+
+  /**
+   * json_metadata is whatever the publishing client wrote, so the initial metadata
+   * handed to extractMetaData is untrusted. Sentry ECENCY-NEXT-1GQM was one of these
+   * reaching `.filter` on a 2022 post whose publisher writes "" for its list fields.
+   */
+  const legacyMeta = (value: unknown) => value as Parameters<typeof extractMetaData>[1];
+
+  it("(21) extractMetadata survives a list field that is not a list", () => {
+    const url = "https://i.ecency.com/DQmX/body.png";
+    expect(() => extractMetaData(`![](${url})`, legacyMeta({ image: "" }))).not.toThrow();
+    expect(extractMetaData(`![](${url})`, legacyMeta({ image: "" })).image).toEqual([url]);
+    expect(extractMetaData(`![](${url})`, legacyMeta({ thumbnails: "" })).thumbnails).toEqual([url]);
+  });
+
+  it("(22) extractMetadata keeps a legacy image stored as a bare string", () => {
+    const stored = "https://i.ecency.com/DQmX/cover.png";
+    const body = "https://i.ecency.com/DQmY/body.png";
+
+    // Nothing in the body to recover it from: dropping it here is what strips the
+    // post's cover image the first time it is edited.
+    expect(extractMetaData("no images at all", legacyMeta({ image: stored })).image).toEqual([
+      stored
+    ]);
+    expect(extractMetaData(`![](${body})`, legacyMeta({ image: stored })).image).toEqual([
+      stored,
+      body
+    ]);
+    expect(
+      extractMetaData(`![](${body})`, legacyMeta({ thumbnails: stored })).thumbnails
+    ).toContain(stored);
+  });
+
+  it("(23) extractMetadata never hands a malformed field back in the shape it arrived", () => {
+    // The output is spread from the input, so without a rewrite the same bad value is
+    // published straight back to the chain on the next save.
+    expect(extractMetaData("no images at all", legacyMeta({ image: "" })).image).toEqual([]);
+    expect(extractMetaData("no images at all", legacyMeta({ thumbnails: 7 })).thumbnails).toEqual(
+      []
+    );
+    // A well-formed field with nothing to add is still left exactly as it was.
+    const kept = ["https://i.ecency.com/DQmX/kept.png"];
+    expect(extractMetaData("no images at all", { image: kept }).image).toEqual(kept);
+  });
+
+  it("(24) extractMetadata ignores non-string entries inside a list field", () => {
+    const url = "https://i.ecency.com/DQmX/cover.png";
+    expect(
+      extractMetaData("no images at all", legacyMeta({ image: [url, null, 7, ""] })).image
+    ).toEqual([url]);
+  });
+
+  it("(25) metaStringList reads any shape a publisher may have written", () => {
+    const url = "https://i.ecency.com/DQmX/cover.png";
+    expect(metaStringList([url])).toEqual([url]);
+    expect(metaStringList(url)).toEqual([url]);
+    expect(metaStringList([url, null, 7, ""])).toEqual([url]);
+    expect(metaStringList("")).toEqual([]);
+    expect(metaStringList(undefined)).toEqual([]);
+    expect(metaStringList({ 0: url })).toEqual([]);
+    // The editors index this list and spread it. On a bare string both read characters.
+    expect(metaStringList(url)[0]).toBe(url);
+    expect(Array.from(new Set(metaStringList(url)))).toEqual([url]);
   });
 
   it("makeJsonMetaData", () => {

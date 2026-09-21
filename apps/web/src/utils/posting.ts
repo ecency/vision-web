@@ -141,6 +141,22 @@ const collectImages = (body: string, pattern: RegExp, needsExtension: boolean): 
   return found;
 };
 
+/**
+ * A list field of json_metadata, read as the list it is declared to be.
+ *
+ * json_metadata is whatever the publishing client wrote, so `image`, `thumbnails`
+ * and `tags` all arrive as bare strings in the wild, and as arrays holding nulls
+ * or numbers. Reading one directly costs more than a crash: `image[0]` on a
+ * string is its first CHARACTER and `new Set(image)` is its characters, both of
+ * which pass every truthiness check and get published back to the chain.
+ */
+export const metaStringList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string" && item.length > 0);
+  }
+  return typeof value === "string" && value.length > 0 ? [value] : [];
+};
+
 export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaData => {
   // Match images with common file extensions (including RAW formats like .arw)
   const imgReg = /https?:\/\/[^\s"']+\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi;
@@ -177,12 +193,22 @@ export const extractMetaData = (body: string, initialMeta: MetaData = {}): MetaD
       (other) => other.startsWith(url) && (other[url.length] === "?" || other[url.length] === "#")
     );
   const isStale = (url: string) => isBrokenTwin(url) || isCutShortCopy(url);
-  const existingImages = (Array.isArray(initialMeta.image) ? initialMeta.image : []).filter((url) => !isStale(url));
-  const existingThumbnails = (Array.isArray(initialMeta.thumbnails) ? initialMeta.thumbnails : []).filter((url) => !isStale(url));
+  const existingImages = metaStringList(initialMeta.image).filter((url) => !isStale(url));
+  const existingThumbnails = metaStringList(initialMeta.thumbnails).filter((url) => !isStale(url));
 
   const allImages = Array.from(new Set([...existingImages, ...bodyImages]));
 
   const out: MetaData = { ...initialMeta };
+
+  // The spread above carries a malformed field through untouched, which would publish
+  // the same bad shape back to the chain. Only a field that was not an array is
+  // rewritten, so well-formed metadata reaches the block below exactly as before.
+  if (initialMeta.image !== undefined && !Array.isArray(initialMeta.image)) {
+    out.image = existingImages;
+  }
+  if (initialMeta.thumbnails !== undefined && !Array.isArray(initialMeta.thumbnails)) {
+    out.thumbnails = existingThumbnails;
+  }
 
   if (allImages.length > 0) {
     out.image = allImages.slice(0, 10);
