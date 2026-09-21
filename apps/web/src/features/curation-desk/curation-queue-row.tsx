@@ -125,7 +125,10 @@ function Signals({ row }: { row: DeskRow }) {
   if (!signals) {
     return <span className="text-xs text-gray-500">{i18next.t("curation-desk.signals.na")}</span>;
   }
-  const formulaic = typeof signals.formulaic === "number" ? Math.round(signals.formulaic * (signals.formulaic <= 1 ? 100 : 1)) : null;
+  // The signals service emits whole percents (0-100), never a 0-1 fraction. The old
+  // normaliser multiplied anything <= 1 by 100, so a post scoring 1 rendered as
+  // "Formulaic 100%" in red, putting the reddest chip on the desk on a clean post.
+  const formulaic = typeof signals.formulaic === "number" ? Math.round(signals.formulaic) : null;
   const images = signals.images;
   const replies = signals.engagement?.replies_per_day;
   const style = signals.style;
@@ -142,7 +145,7 @@ function Signals({ row }: { row: DeskRow }) {
         <Chip tone="gray">{i18next.t("curation-desk.signals.formulaic-na")}</Chip>
       )}
       {images && typeof images.total === "number" ? (
-        <Chip tone="gray">{i18next.t("curation-desk.signals.images", { hive: images.on_hive ?? 0, total: images.total })}</Chip>
+        <Chip tone="gray">{i18next.t("curation-desk.signals.images", { hive: images.hive_hosted ?? 0, total: images.total })}</Chip>
       ) : null}
       {typeof replies === "number" ? (
         <Chip tone="gray">{i18next.t("curation-desk.signals.replies", { rate: replies.toFixed(1) })}</Chip>
@@ -154,7 +157,7 @@ function Signals({ row }: { row: DeskRow }) {
           <UilExclamationTriangle className="size-3.5" aria-hidden />
           {i18next.t("curation-desk.signals.style", {
             sigma: typeof style.sigma === "number" ? style.sigma.toFixed(1) : "",
-            sample: style.sample ?? "",
+            sample: style.n ?? "",
           })}
         </Chip>
       )}
