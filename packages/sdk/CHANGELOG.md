@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.12
+
+### Patch Changes
+
+- Read the curation signal keys the service actually sends (#1855)
+
 ## 2.4.11
 
 ### Patch Changes

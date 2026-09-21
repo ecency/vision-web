@@ -83,7 +83,7 @@ function loadedRow(): DeskRow {
       flags: { abuser: true },
       excluded_reason: "rep_low",
       notes_count: 3,
-      signals: { formulaic: 0.62 },
+      signals: { formulaic: 62 },
       marks: [
         { curator: CURATOR, state: "flagged", reason: "plagiarism", updated_at: iso(-60_000) },
         { curator: CURATOR, state: "reviewed", updated_at: iso(-120_000) },
