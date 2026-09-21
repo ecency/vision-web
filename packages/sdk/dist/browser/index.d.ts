@@ -10414,19 +10414,22 @@ interface CurationMark {
     updated_at: string;
 }
 interface CurationSignals {
+    /** Whole percents (0-100) as the signals service sends them, never a 0-1 fraction. */
     formulaic?: number | null;
     images?: {
-        on_hive?: number;
+        hive_hosted?: number;
+        external?: number;
         total?: number;
     } | null;
     engagement?: {
         replies_per_day?: number | null;
     } | null;
+    /** `n` is how many of the author's own past posts the baseline holds, `driver` the feature that moved most. */
     style?: {
         alert?: boolean;
-        sigma?: number;
-        feature?: string;
-        sample?: number;
+        sigma?: number | null;
+        driver?: string;
+        n?: number;
     } | null;
     /**
      * The detector's read of the post's FIRST image, which is the one rendered as the
