@@ -14,7 +14,8 @@
  * depends on argparse, which is tree-shaken out and must NOT be claimed as
  * bundled.
  *
- * Usage: node scripts/third-party-notices.mjs [outDir=dist]
+ * Usage: node scripts/third-party-notices.mjs [outDir]
+ * Defaults to RENDER_HELPER_DIST_ROOT, then to dist, so it follows the build.
  * The metafiles are consumed and deleted, so they never reach the tarball.
  */
 import { readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -22,7 +23,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const outDir = resolve(PKG, process.argv[2] ?? "dist");
+const outDir = resolve(PKG, process.argv[2] ?? process.env.RENDER_HELPER_DIST_ROOT ?? "dist");
 
 /** Every metafile tsup emitted, at any depth under the output directory. */
 function metafiles(dir) {

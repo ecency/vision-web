@@ -1,5 +1,45 @@
 import { defineConfig } from "tsup";
 
+/**
+ * Where the two builds are written. `dist` in normal use; the plain-node guard
+ * in `test/dist-loads-in-plain-node.spec.ts` points it at a throwaway
+ * directory so it can build without touching the committed `dist`. Same
+ * variable shape as `SDK_DIST_ROOT` in packages/sdk, which solves the same
+ * problem, so there is one convention rather than two.
+ *
+ * It has to be a root rather than `tsup --out-dir`: that flag applies to BOTH
+ * configs in this array, so it points them at one directory. Both emit an esm
+ * bundle, and tsup writes a metafile named after the format into the output
+ * directory, so the two builds then write `metafile-esm.json` to one path.
+ * tsup runs the configs concurrently (one process, `Promise.all`), so one
+ * build's file simply loses, and when the writes overlap the file holds one
+ * document followed by the tail of the other. `third-party-notices.mjs` then
+ * dies parsing it, which is what took a staging deploy down in #1863.
+ */
+const DIST_ROOT = process.env.RENDER_HELPER_DIST_ROOT ?? "dist";
+
+/**
+ * The flag that would undo all of the above, in every spelling cac accepts:
+ * `--out-dir`, its camel-case `--outDir`, the `-d` alias, and each of those
+ * with an `=`. Matching the names one by one missed `--outDir`, which built
+ * both configs into one directory again, so the name is normalised instead.
+ */
+const pointsBothBuildsAtOneDirectory = (arg: string): boolean => {
+    if (!arg.startsWith("-")) return false;
+
+    const name = arg.replace(/^-+/, "").split("=")[0].replace(/-/g, "").toLowerCase();
+    return name === "outdir" || name === "d";
+};
+
+if (process.argv.some(pointsBothBuildsAtOneDirectory)) {
+    // Fail loudly rather than race: a collision that only shows up on a loaded
+    // CI runner is the worst way to find this out.
+    throw new Error(
+        "render-helper: build somewhere else with RENDER_HELPER_DIST_ROOT, not --out-dir. " +
+            "One --out-dir points BOTH builds at one directory, where they overwrite each other's metafile (#1863)."
+    );
+}
+
 const shared = {
     entry: ["src/index.ts"],
     splitting: false,
@@ -34,7 +74,7 @@ export default defineConfig([
         format: ["esm"],
         platform: "browser",
         target: "es2020",
-        outDir: "dist/browser",
+        outDir: `${DIST_ROOT}/browser`,
         // The build script clears dist before running tsup. Cleaning from
         // inside one of two configs only ever cleaned that config's own
         // directory, left dist/node to accumulate stale files, and raced with
@@ -73,7 +113,7 @@ export default defineConfig([
         format: ["esm", "cjs"],
         platform: "node",
         target: "node18",
-        outDir: "dist/node",
+        outDir: `${DIST_ROOT}/node`,
         clean: false,
         minify: false,
         outExtension: ({ format }) => ({ js: format === "esm" ? ".mjs" : ".cjs" }),

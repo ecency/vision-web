@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.38
+
+### Patch Changes
+
+- Stop the two render-helper builds sharing one metafile (#1865)
+
 ## 2.5.37
 
 ### Patch Changes

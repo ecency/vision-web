@@ -1,7 +1,7 @@
 {
   "name": "@ecency/render-helper",
   "private": false,
-  "version": "2.5.37",
+  "version": "2.5.38",
   "description": "Markdown+Html Render helper",
   "repository": {
     "type": "git",
@@ -36,7 +36,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsup --metafile && node scripts/third-party-notices.mjs",
+    "build": "node -e \"const p=require('node:path'),fs=require('node:fs'),r=process.env.RENDER_HELPER_DIST_ROOT??'dist';for(const b of ['browser','node'])fs.rmSync(p.join(r,b),{recursive:true,force:true})\" && tsup --metafile && node scripts/third-party-notices.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
