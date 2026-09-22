@@ -1,6 +1,7 @@
 import { parseDate, safeDecodeURIComponent } from "@/utils";
 import { entryCanonical } from "@/utils/entry-canonical";
 import { isIndexable, ReputationSource } from "@/utils/entry-indexability";
+import { isTakenDownPost } from "@/core/dmca-posts";
 import { isValidPermlink } from "@ecency/render-helper";
 import { buildEntryCardFields } from "./entry-card-fields";
 import type { Entry } from "@/entities";
@@ -83,9 +84,18 @@ export async function generateEntryMetadata(
       console.warn("generateEntryMetadata: failed to load author account", e);
     }
 
-    const robots = isIndexable(entry, authorAccount, accountFetchFailed)
-      ? undefined
-      : "noindex, nofollow";
+    // The takedown decides before the gate does, for the same reason
+    // loadIndexableEntry checks first: this reads getContentQueryOptions, which
+    // now filters, and the filter blanks the metadata and the title and
+    // replaces the body with the notice. That removes two of isNsfwEntry's
+    // three signals and lifts the body over the thin-content floor, so a
+    // listed post that used to be noindex would become indexable, and would
+    // then also advertise its oEmbed endpoint below (#1862).
+    const robots =
+      !isTakenDownPost(entry.author, entry.permlink) &&
+      isIndexable(entry, authorAccount, accountFetchFailed)
+        ? undefined
+        : "noindex, nofollow";
 
     return {
       title,

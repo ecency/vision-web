@@ -9,6 +9,14 @@ import { getPost } from "@ecency/sdk";
 import { metaStringList } from "@/utils/posting";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts/cookies";
 import { createPinnedLookup } from "./pinned-lookup";
+import { loadDmcaLists } from "@/core/dmca-lists";
+import { isTakenDownPost } from "@/core/dmca-posts";
+
+// Route handler: never executes the root layout, so the takedown lists are
+// loaded here or not at all (#1862). Without this the importer handed back the
+// complete on-chain body of a listed post. A call, not a bare side-effect
+// import: see core/dmca-lists.
+loadDmcaLists();
 
 // Undici dispatcher accepts a custom lookup. We pre-resolve and validate
 // every hop's IP via Node's DNS resolver, then pin the TCP connection to
@@ -223,7 +231,91 @@ function parseHiveUrl(url: string): { author: string; permlink: string } | null 
   }
 }
 
+// Our own agent-readable endpoints hang off the permlink, and other frontends
+// may mirror the shape. The takedown list holds canonical chain paths, so a
+// `.md` / `.json` / `.discussion.json` spelling would slip past an exact match.
+// Longest first, so `.discussion.json` is not left as `.discussion`.
+const AGENT_SUFFIXES = [".discussion.json", ".json", ".md"];
+
+const canonicalPermlink = (permlink: string): string => {
+  const suffix = AGENT_SUFFIXES.find((candidate) => permlink.endsWith(candidate));
+  return suffix ? permlink.slice(0, -suffix.length) : permlink;
+};
+
+/**
+ * Both spellings, never just the stripped one: our agent-readable endpoints
+ * hang `.md` / `.json` / `.discussion.json` off the permlink, so the canonical
+ * form has to be tried, but a chain permlink may legitimately end in `.md`
+ * too, and stripping unconditionally would disarm the guard for such an entry.
+ */
+const isListedPath = (author: string, permlink: string): boolean =>
+  isTakenDownPost(author, permlink) || isTakenDownPost(author, canonicalPermlink(permlink));
+
+/**
+ * Every path segment a URL can carry, decoded and re-split.
+ *
+ * The query string is included and each segment is split again after decoding,
+ * because a reader or CORS proxy carries its target either as a nested path
+ * (`/https%3A%2F%2Fecency.com%2F%40a%2Fp`) or as a parameter (`?url=...`), and
+ * in both the `/` separating `@author` from the permlink arrives encoded.
+ */
+const pathSegments = (url: URL): string[] => {
+  const segments: string[] = [];
+
+  for (const raw of `${url.pathname}${url.search}`.split(/[/?&=]+/)) {
+    if (!raw) continue;
+
+    let decoded = raw;
+    try {
+      decoded = decodeURIComponent(raw);
+    } catch {
+      // A malformed escape is used as-is rather than dropping the segment.
+    }
+
+    for (const part of decoded.split("/")) {
+      if (part) segments.push(part);
+    }
+  }
+
+  return segments;
+};
+
+/**
+ * `@author/permlink` on ANY host, for refusing a takedown before scraping.
+ *
+ * Deliberately host-agnostic rather than restricted to HIVE_FRONT_ENDS: the
+ * point is that the post is mirrored by frontends we do not maintain a list
+ * of, and a redirect can reach one of them from a URL that looks like
+ * anything. The match is an exact path from a 15-entry published list, so a
+ * non-Hive page would have to carry a taken-down post's exact
+ * `@author/permlink` to be refused; erring that way costs one unusual import
+ * and erring the other way republishes a takedown.
+ */
+function isTakenDownHivePath(url: string): boolean {
+  try {
+    const segments = pathSegments(new URL(url));
+
+    return segments.some(
+      (segment, i) =>
+        segment.startsWith("@") &&
+        segments[i + 1] !== undefined &&
+        isListedPath(segment.slice(1), segments[i + 1])
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function fetchHivePost(author: string, permlink: string): Promise<ArticleData | null> {
+  // A taken-down post is not importable at all, which is not the same as
+  // importing it censored: `getPost` would hand back the takedown notice as
+  // the body, and this route's only job is to prefill the composer, so that
+  // notice would become a draft ready to publish back to chain under the
+  // importing account. The caller turns null into a 404 (#1862).
+  if (isListedPath(author, permlink)) {
+    return null;
+  }
+
   const post = await getPost(author, permlink);
 
   if (!post || !post.body) {
@@ -249,6 +341,14 @@ async function fetchHivePost(author: string, permlink: string): Promise<ArticleD
 const MAX_REDIRECTS = 5;
 
 async function fetchPage(url: string, redirectCount = 0): Promise<string> {
+  // EVERY url this fetches, not just the one the caller was given: redirects
+  // are followed by recursing here, so a short link or any endpoint that
+  // 302s to a listed post on an unrecognised Hive frontend would otherwise
+  // walk straight past the check in POST and be scraped in full (#1862).
+  if (isTakenDownHivePath(url)) {
+    throw new Error("TAKEN_DOWN");
+  }
+
   if (redirectCount > MAX_REDIRECTS) {
     throw new Error("FETCH_FAILED");
   }
@@ -514,14 +614,16 @@ const ERROR_CODES: Record<string, string> = {
   FETCH_FAILED: "import-error-fetch-failed",
   NOT_HTML: "import-error-not-html",
   RESPONSE_TOO_LARGE: "import-error-too-large",
-  EXTRACT_FAILED: "import-error-extract-failed"
+  EXTRACT_FAILED: "import-error-extract-failed",
+  TAKEN_DOWN: "import-error-not-found"
 };
 
 const ERROR_STATUS: Record<string, number> = {
   INVALID_PROTOCOL: 400,
   BLOCKED_HOST: 400,
   NOT_HTML: 415,
-  RESPONSE_TOO_LARGE: 413
+  RESPONSE_TOO_LARGE: 413,
+  TAKEN_DOWN: 404
 };
 
 // ---------------------------------------------------------------------------
@@ -630,6 +732,18 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: "import-error-invalid-url" }, { status: 400 });
     }
 
+    // Before anything touches the network. parseHiveUrl below only recognises
+    // the frontends we import from, so a listed post reached through any OTHER
+    // Hive frontend fell through to the generic scraper and came back in full,
+    // which is the same draft-ready-to-republish this route refuses (#1862).
+    // Ahead of resolveAndValidate so a takedown answers 404 rather than the
+    // 400 an unresolvable or blocked host would produce first, and so no DNS
+    // lookup is made for a post we will not serve. fetchPage repeats the check
+    // on every URL it fetches, which is what covers redirect targets.
+    if (isTakenDownHivePath(url)) {
+      return Response.json({ error: "import-error-not-found" }, { status: 404 });
+    }
+
     try {
       // Early reject of obviously-bad URLs (private IP, non-http(s) scheme,
       // localhost, unresolvable host). fetchPage will re-resolve and pin
@@ -652,7 +766,7 @@ export async function POST(request: NextRequest) {
       return Response.json(result);
     }
 
-    // External article
+    // External article.
     const result = await fetchExternalArticle(url);
     return Response.json(result);
   } catch (e: unknown) {

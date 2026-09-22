@@ -6,6 +6,11 @@ vi.mock("@ecency/sdk/hive", () => ({
   setNodes: vi.fn(),
   setUserAgent: vi.fn()
 }));
+// The route reads the takedown list straight from the file. This path appears
+// in no other fixture here, so only the case that asks for it is affected.
+vi.mock("../../../public/dmca/dmca-posts.json", () => ({
+  default: { posts: ["@takendown/notice-post"] }
+}));
 vi.mock("@/features/seo/cron-auth", () => ({
   cronAuthorized: () => true,
   notFound: () => new Response("", { status: 404 })
@@ -114,6 +119,29 @@ describe("sitemap-generate route", () => {
     const authors = shard("authors.xml");
     expect(authors).toContain("https://ecency.com/@goodauthor/posts");
     expect(authors).not.toContain("lowrep");
+  });
+
+  it("keeps a taken-down post out of posts.xml and counts it", async () => {
+    // Its page is already a takedown notice, so listing it only invites the
+    // crawl. Route handlers never run sdk-init, so the SDK's own filters have
+    // no list here and this one reads the file (#1862).
+    const listed = post("takendown", "notice-post", HOUR, 72.4, ["photography"]);
+    vi.mocked(callRPC).mockImplementation(async (method: string) => {
+      if (method === "bridge.get_ranked_posts") return [listed, ...PAGE];
+      if (method === "bridge.list_communities") return [];
+      return [];
+    });
+
+    const res = await run();
+    const body = (await res.json()) as { takenDown: number; posts: number };
+
+    expect(shard("posts.xml")).not.toContain("/@takendown/notice-post");
+    expect(shard("posts.xml")).toContain("/@goodauthor/fresh-one");
+    expect(body.takenDown).toBe(1);
+    // The skip has to come before the author and tag harvest, not merely
+    // before the URL push: an author whose only indexable post is taken down
+    // would otherwise still get a hub URL crawled.
+    expect(shard("authors.xml")).not.toContain("/@takendown/posts");
   });
 
   it("gives authors.xml and tags.xml a per-entry lastmod equal to the newest indexable post day", async () => {

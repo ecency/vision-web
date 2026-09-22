@@ -212,6 +212,17 @@ describe("GET /api/speak-audio (author/permlink lookup)", () => {
     expect(callRPC).not.toHaveBeenCalled();
   });
 
+  it("404s a taken-down post without ever looking it up", async () => {
+    // This route proxies the clip from our own origin under a long-lived
+    // immutable cache key, so a takedown has to stop it before the fetch. It
+    // reads the chain through the React-free hive entry, where the SDK query
+    // filters never run, so it checks the published list itself (#1862).
+    const res = await get("author=boombaam1&permlink=coinbase-customer-service-1-8o8-e007d0f9ebe");
+
+    expect(res.status).toBe(404);
+    expect(callRPC).not.toHaveBeenCalled();
+  });
+
   it("404 NOT_SPEAK when the looked-up post has no speak audio", async () => {
     mockRpc.mockResolvedValueOnce({ json_metadata: { app: "ecency" } });
     const res = await get("author=erilej&permlink=not-a-voice-post");

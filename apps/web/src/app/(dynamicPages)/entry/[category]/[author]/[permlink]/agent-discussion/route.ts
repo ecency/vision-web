@@ -52,6 +52,13 @@ export async function GET(_request: Request, { params }: Props): Promise<Respons
 
     const discussion = await prefetchQuery(getDiscussionQueryOptions(rootAuthor, rootPermlink));
 
+    // A takedown reaches each entry in the thread on its own, through the
+    // filter inside getDiscussion, so a listed root comes back as the notice
+    // and its replies come back as published. Deliberate, and the same thing
+    // the HTML entry page does: the takedown covers what was claimed, not
+    // every reply someone wrote under it. A reply that is itself listed is
+    // censored wherever it appears (#1862).
+
     // bridge parses json_metadata today, so this is a guarantee rather than a
     // repair: the thread and the .json envelope must not be able to disagree
     // about the shape of the same field for the same post, whichever node

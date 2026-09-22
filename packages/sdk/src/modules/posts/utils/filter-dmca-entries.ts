@@ -30,6 +30,24 @@ function applyFilter(entry: Entry | null | undefined): Entry | null | undefined 
       ...entry,
       body: "This post is not available due to a copyright/fraudulent claim.",
       title: "",
+      // Blanked with them, because a CARD never reads the body: the summary is
+      // `json_metadata.description` when the author set one, and the image is
+      // `json_metadata.thumbnails`/`image` before anything the body contains.
+      // Clearing body and title alone still served the original summary and
+      // cover through /api/oembed and the entry page's own og:/twitter: tags
+      // (both via buildEntryCardFields), and the whole metadata object through
+      // `.json`. The RSS feeds and the `.md` summary were never affected: both
+      // read the body string, and `.md` takes only `tags` and `app` from here.
+      // The same three fields the curation mask blanks, for the same reason
+      // (modules/curation/dmca.ts).
+      json_metadata: {},
+      // A cross-post renders what it QUOTES, not its own body: the feed card
+      // and the entry page both read `original_entry` and fall back to the
+      // wrapper only when it is absent. So a listed cross-post kept serving
+      // the quoted post's title, summary, cover and body straight through the
+      // takedown. The quoted post is untouched at its own URL; what this
+      // removes is the listed path's rendering of it.
+      original_entry: undefined,
     };
   }
 

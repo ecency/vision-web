@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.15
+
+### Patch Changes
+
+- Apply takedowns on the paths that serve posts to machines (#1867)
+
 ## 2.4.14
 
 ### Patch Changes

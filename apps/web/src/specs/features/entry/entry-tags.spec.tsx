@@ -42,6 +42,18 @@ const entry = (tags: string[], community?: { name: string; title: string }): Ent
   }) as unknown as Entry;
 
 describe("EntryTags", () => {
+  it("renders no chip at all when the post has no tags", () => {
+    // The fallback used to invent "ecency". A taken-down post has its metadata
+    // blanked by the SDK filter, so that fabricated chip became the only thing
+    // its page showed (#1862).
+    const { container } = renderWithQueryClient(
+      <EntryTags entry={{ author: "a", permlink: "p", json_metadata: {} } as unknown as Entry} />
+    );
+
+    expect(screen.queryByText("ecency")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("a")).toHaveLength(0);
+  });
+
   it("names the post's community by its title without a lookup, and plain tags as themselves", () => {
     lookups.mockClear();
     renderWithQueryClient(

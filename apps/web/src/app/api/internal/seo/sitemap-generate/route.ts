@@ -35,6 +35,12 @@ import { callRPC, setNodes, setUserAgent } from "@ecency/sdk/hive";
 // root layout, so sdk-init never runs here — configure the hive entry
 // explicitly. Same file sdk-init feeds ConfigManager: one source of truth.
 import publicNodes from "../../../../../../public/public-nodes.json";
+// Read from the SDK-free leaf, like the node list above: route handlers never
+// execute the root layout, so the SDK's CONFIG takedown lists are empty here
+// (#1862) and the filters inside the queries have nothing to match on. That
+// leaf imports no `@ecency/sdk`, so it does not undo this route's hive-only
+// entry above.
+import { isTakenDownPost } from "@/core/dmca-posts";
 
 export const dynamic = "force-dynamic";
 
@@ -257,6 +263,7 @@ export async function POST(req: Request): Promise<Response> {
   const authorLatest = new Map<string, string>();
   const tagLatest = new Map<string, string>();
   let repGated = 0;
+  let takenDown = 0;
   let startAuthor: string | undefined;
   let startPermlink: string | undefined;
   let pages = 0;
@@ -311,6 +318,12 @@ export async function POST(req: Request): Promise<Response> {
       const hasRep = typeof rep === "number" || (typeof rep === "string" && rep.trim() !== "");
       if (hasRep && isBelowReputationGate(rep as number | string)) {
         repGated += 1;
+        continue;
+      }
+      // A takedown replaces the body with a notice, so the page has nothing
+      // left for a searcher and listing it only invites the crawl.
+      if (isTakenDownPost(e.author, e.permlink)) {
+        takenDown += 1;
         continue;
       }
       // 4th arg = true: keep isIndexable in lockstep with the sitemap-mode
@@ -512,6 +525,7 @@ export async function POST(req: Request): Promise<Response> {
         tags: tagUrls.length,
         pages,
         repGated,
+        takenDown,
         ms: Date.now() - started,
         reachedCutoff,
         acceptedWalk: acceptWalk,
@@ -538,6 +552,7 @@ export async function POST(req: Request): Promise<Response> {
       tags: tagUrls.length,
       pages,
       repGated,
+      takenDown,
       ms: Date.now() - started,
       reachedCutoff,
       acceptedWalk: acceptWalk,

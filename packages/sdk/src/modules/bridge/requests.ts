@@ -248,7 +248,10 @@ export async function getDiscussion(
   if (resp) {
     const validatedResp: Record<string, Entry> = {};
     for (const [key, entry] of Object.entries(resp)) {
-      validatedResp[key] = validateEntry(entry);
+      // Filtered as well as validated: a thread is served by .discussion.json
+      // and rendered under every post, and a takedown covers a comment the
+      // same way it covers the post it hangs under (#1862).
+      validatedResp[key] = filterDmcaEntry(validateEntry(entry)) as Entry;
     }
     return validatedResp;
   }

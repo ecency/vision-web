@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getPostsRankedInfiniteQueryOptions, getPostsRankedQueryOptions } from './get-posts-ranked-query-options'
+import { CONFIG } from '@/modules/core'
 
 const mockCallRPC = vi.hoisted(() => vi.fn());
 const mockGetPostsRanked = vi.hoisted(() => vi.fn());
@@ -47,6 +48,39 @@ function makeInfiniteContext(
 describe('getPostsRankedInfiniteQueryOptions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('serves NOTHING for a taken-down tag, not everything', async () => {
+    // The tag used to be blanked to "", which the bridge reads as "any tag",
+    // so the hub of a tag under takedown answered with the whole site's ranked
+    // feed. Invisible while route handlers had no lists loaded; not any more
+    // now the six RSS routes load them (#1862).
+    CONFIG.dmcaTagRegexes = [/^uniswap-helpline$/]
+    try {
+      const options = getPostsRankedInfiniteQueryOptions('created', 'uniswap-helpline')
+      const result = await (options.queryFn as any)(makeInfiniteContext(options, {}))
+
+      expect(result).toEqual([])
+      expect(mockCallRPC).not.toHaveBeenCalled()
+    } finally {
+      CONFIG.dmcaTagRegexes = []
+    }
+  })
+
+  it('does not empty the global feed when a pattern also matches the empty tag', async () => {
+    // Patterns are compiled unanchored and every untagged caller passes "",
+    // so an over-broad future pattern must not turn the whole site off.
+    CONFIG.dmcaTagRegexes = [/.*/]
+    try {
+      mockCallRPC.mockResolvedValue([{ author: 'a', permlink: 'p', created: '2026-01-01T00:00:00', stats: null }])
+      const options = getPostsRankedInfiniteQueryOptions('created', '')
+      const result = await (options.queryFn as any)(makeInfiniteContext(options, {}))
+
+      expect(result).toHaveLength(1)
+      expect(mockCallRPC).toHaveBeenCalled()
+    } finally {
+      CONFIG.dmcaTagRegexes = []
+    }
   })
 
   it('should return [] when RPC returns null', async () => {
@@ -157,6 +191,22 @@ describe('getPostsRankedQueryOptions', () => {
 
     expect(mockGetPostsRanked).toHaveBeenCalledWith('created', '', '', 20, 'hive', 'obs', undefined)
     expect(result).toEqual(mockEntries)
+  })
+
+  it('serves NOTHING for a taken-down tag here too', async () => {
+    // The same early return exists in both builders; testing only the
+    // infinite one left this branch free to translate a taken-down tag back
+    // into an unrestricted feed (#1862).
+    CONFIG.dmcaTagRegexes = [/^uniswap-helpline$/]
+    try {
+      const options = getPostsRankedQueryOptions('created', '', '', 20, 'uniswap-helpline', 'obs')
+      const result = await (options.queryFn as any)()
+
+      expect(result).toEqual([])
+      expect(mockGetPostsRanked).not.toHaveBeenCalled()
+    } finally {
+      CONFIG.dmcaTagRegexes = []
+    }
   })
 
   it('should return [] when getPostsRanked returns null', async () => {

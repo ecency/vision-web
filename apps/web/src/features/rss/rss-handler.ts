@@ -9,6 +9,11 @@ export abstract class RssHandler<T> {
 
   protected abstract convertItem(item: T, base: string): RSS.ItemOptions;
 
+  /** Items a subclass wants left out of the feed entirely, not just rewritten. */
+  protected includeItem(_item: T): boolean {
+    return true;
+  }
+
   async getFeed() {
     const base = await getServerAppBase();
     const feed = new RSS({
@@ -20,7 +25,9 @@ export abstract class RssHandler<T> {
 
     try {
       const data = await this.fetchData();
-      data.forEach((item) => feed.item(this.convertItem(item, base)));
+      data
+        .filter((item) => this.includeItem(item))
+        .forEach((item) => feed.item(this.convertItem(item, base)));
     } catch (e) {
       if (!isTransientUpstreamError(e)) {
         Sentry.captureException(e, {

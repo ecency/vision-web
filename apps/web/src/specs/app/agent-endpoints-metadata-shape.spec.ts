@@ -8,10 +8,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * envelopes all run for real.
  */
 
-const { prefetchQuery } = vi.hoisted(() => ({ prefetchQuery: vi.fn() }));
+const { prefetchQuery, setDmcaLists } = vi.hoisted(() => ({
+  prefetchQuery: vi.fn(),
+  setDmcaLists: vi.fn()
+}));
 
 vi.mock("@/core/react-query", () => ({ prefetchQuery }));
 vi.mock("@ecency/sdk", () => ({
+  ConfigManager: { setDmcaLists },
   getContentQueryOptions: (author: string, permlink: string) => ({
     queryKey: ["condenser", author, permlink]
   }),
@@ -121,6 +125,58 @@ async function jsonEnvelope() {
   const res = await agentJson(request(".json"), { params });
   return { res, payload: res.status === 200 ? JSON.parse(await res.text()) : null };
 }
+
+// Captured at module scope: the loaders run when the route modules are
+// imported above, and the describes below clear mocks in beforeEach.
+const listsAtImport = setDmcaLists.mock.calls[0]?.[0] as { posts: string[] } | undefined;
+
+describe("the route module", () => {
+  it("loads the takedown lists, which nothing else does for a route handler", () => {
+    // App Router route handlers never execute the root layout, so sdk-init
+    // never runs here and the SDK's filters would check an empty list (#1862).
+    // Reads the module-scope snapshot, not the live mock: sibling describes
+    // clear mocks in beforeEach, so this passed only while it happened to be
+    // declared first. Not a call COUNT either: the loader is idempotent by
+    // design so any entry point can load the policy without knowing whether
+    // another already did.
+    expect(listsAtImport).toBeDefined();
+    expect(listsAtImport?.posts.length).toBeGreaterThan(0);
+  });
+
+  // The real published list, so this also proves the list file and the gate
+  // agree on the path shape.
+  const listedParams = Promise.resolve({
+    category: "hive-125125",
+    author: "boombaam1",
+    permlink: "coinbase-customer-service-1-8o8-e007d0f9ebe"
+  });
+  const listedRequest = (ext: string) =>
+    new Request(`https://ecency.com/@boombaam1/coinbase-customer-service-1-8o8-e007d0f9ebe${ext}`);
+
+  it.each([
+    [".md", agentMd],
+    [".json", agentJson],
+    [".discussion.json", agentDiscussion]
+  ])("404s %s for a taken-down post instead of serving the notice", async (ext, handler) => {
+    // llms.txt promises these endpoints 404 whatever is suppressed for policy
+    // reasons, and a machine has no use for the notice a reader is shown. The
+    // check has to precede the indexability gate: the filter blanks the
+    // metadata and rewrites the body, removing the very signals the gate would
+    // otherwise reject the post on (#1862).
+    // `serve` gives it a real profile and a real thread, so the post is
+    // otherwise fully indexable: without the takedown check these are 200.
+    const listed = entryFixture({
+      author: "boombaam1",
+      permlink: "coinbase-customer-service-1-8o8-e007d0f9ebe"
+    });
+    serve(listed, { discussion: { "boombaam1/coinbase": listed } });
+
+    const res = await handler(listedRequest(ext), { params: listedParams });
+
+    expect(res.status).toBe(404);
+    expect(await res.text()).not.toContain("copyright");
+  });
+});
 
 describe("GET /@author/permlink.json", () => {
   beforeEach(() => vi.clearAllMocks());
