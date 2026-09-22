@@ -1,2 +1,0 @@
-import {e}from'./chunk-M7I2Q4ST.js';import {a}from'./chunk-HEILHNSR.js';import {queryOptions}from'@tanstack/react-query';function m(){return queryOptions({queryKey:a.curation.roster(),queryFn:({signal:e$1})=>e(e$1),staleTime:6e5})}export{m as a};//# sourceMappingURL=chunk-3IBR6HHH.js.map
-//# sourceMappingURL=chunk-3IBR6HHH.js.map

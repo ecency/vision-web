@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.16
+
+### Patch Changes
+
+- Let the curation team review and elect guest curators (#1874)
+
 ## 2.4.15
 
 ### Patch Changes
