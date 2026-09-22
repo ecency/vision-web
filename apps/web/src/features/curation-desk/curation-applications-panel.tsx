@@ -376,26 +376,33 @@ export function CurationApplicationsPanel({
     );
   }
 
-  function saveWindow(open: boolean, withKnobs = false) {
+  /**
+   * One row holds the window, the line and the two numbers, and this screen has a button
+   * for each. Every save therefore sends ONLY the field its button is about: upstream
+   * reads an absent field as "leave it", so anything else sent along would go back over
+   * whatever another admin had changed since this tab last read, while looking like it
+   * had touched nothing.
+   */
+  function saveWindow(open: boolean, about: "open" | "message" | "knobs") {
     setWindow.mutate(
       {
         open,
-        message: messageDraft.trim() ? messageDraft.trim() : null,
-        // Only the knobs that actually CHANGED, and only from the button that is about
-        // them. Upstream reads an absent knob as "leave it alone", so sending a number
-        // back unchanged would re-set one another admin had moved in between, and it
-        // would do it while looking like a no-op.
-        ...(withKnobs ? changedKnobs(quorumShown, termShown, data) : {})
+        ...(about === "message"
+          ? { message: messageDraft.trim() ? messageDraft.trim() : null }
+          : {}),
+        ...(about === "knobs" ? changedKnobs(quorumShown, termShown, data) : {})
       },
       {
         onSuccess: (data) => {
           successToast(i18next.t("curation-desk.applications.window-saved"));
-          // Based on the line this tab was showing BEFORE the save, not on what
-          // was saved: the cached window is still the pre-save one until the
-          // refetch lands, and a draft based on the new text would read as stale
-          // against it, put the old message back in the field, and send it with
-          // the next toggle, undoing the save.
-          setMessage({ value: data.window.message ?? "", basedOn: stored });
+          if (about === "message") {
+            // Based on the line this tab was showing BEFORE the save, not on what
+            // was saved: the cached window is still the pre-save one until the
+            // refetch lands, and a draft based on the new text would read as stale
+            // against it, put the old message back in the field, and send it with
+            // the next toggle, undoing the save.
+            setMessage({ value: data.window.message ?? "", basedOn: stored });
+          }
           // Dropped rather than pinned to what came back: setQueriesData has already put
           // the saved numbers in every cached queue, so the fields read them from there.
           // Pinning them here is what made a draft outlive its basis.
@@ -490,7 +497,7 @@ export function CurationApplicationsPanel({
             size="sm"
             appearance="gray"
             disabled={busy || !applicationWindow}
-            onClick={() => saveWindow(!!applicationWindow?.open)}
+            onClick={() => saveWindow(!!applicationWindow?.open, "message")}
           >
             {i18next.t("curation-desk.applications.message-save")}
           </Button>
@@ -500,7 +507,7 @@ export function CurationApplicationsPanel({
             // Until the window is known the button cannot say which way it flips,
             // and a click would send `open: true` at a desk that is closed.
             disabled={busy || !applicationWindow}
-            onClick={() => saveWindow(!applicationWindow?.open)}
+            onClick={() => saveWindow(!applicationWindow?.open, "open")}
           >
             {applicationWindow?.open
               ? i18next.t("curation-desk.applications.close-action")
@@ -542,7 +549,7 @@ export function CurationApplicationsPanel({
             size="sm"
             appearance="gray"
             disabled={busy || !data || !knobsChanged}
-            onClick={() => saveWindow(!!applicationWindow?.open, true)}
+            onClick={() => saveWindow(!!applicationWindow?.open, "knobs")}
           >
             {i18next.t("curation-desk.applications.knobs-save")}
           </Button>

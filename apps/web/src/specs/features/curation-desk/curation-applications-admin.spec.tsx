@@ -192,10 +192,18 @@ describe("curation applications, admin side", () => {
     fireEvent.change(screen.getByLabelText("curation-desk.applications.message-label"), {
       target: { value: "Back next month." }
     });
+    // Two buttons, two saves. The toggle is about the window and carries nothing else,
+    // so a line typed but not saved does not ride along with it: upstream reads an
+    // absent message as "leave it", and sending this tab's copy would put it over
+    // whatever another admin had written since.
     fireEvent.click(screen.getByText("curation-desk.applications.close-action"));
-
     await waitFor(() => expect(writes).toHaveLength(1));
-    expect(writes[0]).toMatchObject({ open: false, message: "Back next month." });
+    expect(writes[0]).toMatchObject({ open: false });
+    expect("message" in writes[0]).toBe(false);
+
+    fireEvent.click(screen.getByText("curation-desk.applications.message-save"));
+    await waitFor(() => expect(writes).toHaveLength(2));
+    expect(writes[1]).toMatchObject({ message: "Back next month." });
   });
 
   it("asks for nothing while it is not enabled", async () => {
@@ -327,10 +335,15 @@ describe("curation applications, admin side", () => {
     await waitFor(() => expect(writes).toHaveLength(1));
     await waitFor(() => expect(field).toHaveValue("Second line."));
 
-    // an immediate toggle must carry the saved line, not the one it replaced
+    // An immediate toggle used to carry the message, which is how the line it had just
+    // replaced went back over the save. It carries none now, so the stale copy cannot
+    // travel at all, and the field still shows what was saved rather than what the
+    // unrefreshed queue still holds.
     fireEvent.click(screen.getByText("curation-desk.applications.open-action"));
     await waitFor(() => expect(writes).toHaveLength(2));
-    expect(writes[1]).toMatchObject({ open: true, message: "Second line." });
+    expect(writes[1]).toMatchObject({ open: true });
+    expect("message" in writes[1]).toBe(false);
+    expect(field).toHaveValue("Second line.");
     expect(served).toBe("First line.");
   });
 

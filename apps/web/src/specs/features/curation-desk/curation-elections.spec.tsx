@@ -249,6 +249,7 @@ describe("curation elections", () => {
     await waitFor(() => expect(writes).toHaveLength(1));
     expect("quorum" in writes[0]).toBe(false);
     expect("term_days" in writes[0]).toBe(false);
+    expect("message" in writes[0]).toBe(true);
 
     fireEvent.change(quorum, { target: { value: "5" } });
     fireEvent.click(screen.getByText("curation-desk.applications.knobs-save"));
@@ -258,6 +259,27 @@ describe("curation elections", () => {
     // had moved, while looking like a no-op.
     expect(writes[1]).toMatchObject({ quorum: 5 });
     expect("term_days" in writes[1]).toBe(false);
+    // And not the message either. The row holds all four, and a save about a number
+    // that also rewrote the line would put this tab's copy back over another admin's.
+    expect("message" in writes[1]).toBe(false);
+  });
+
+  it("does not rewrite the line when only the window is flipped", async () => {
+    state.role = "admin";
+    const writes: Record<string, unknown>[] = [];
+    router.on(/curation-desk\/application-window$/, (_url: string, init: RequestInit) => {
+      writes.push(JSON.parse(String(init.body)));
+      return jsonResponse({ window: { open: false, message: null }, quorum: 3, term_days: 30 });
+    });
+    renderWithQueryClient(<CurationApplicationsView />);
+    await waitFor(() =>
+      expect(screen.getByText("curation-desk.applications.close-action")).toBeInTheDocument()
+    );
+    fireEvent.click(screen.getByText("curation-desk.applications.close-action"));
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0]).toMatchObject({ open: false });
+    expect("message" in writes[0]).toBe(false);
+    expect("quorum" in writes[0]).toBe(false);
   });
 
   it("lets another admin's change win over a number being edited here", async () => {
