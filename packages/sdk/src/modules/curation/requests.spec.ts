@@ -114,6 +114,29 @@ describe("curation desk requests", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("sends only the window fields that are being changed", async () => {
+    fetchMock.mockResolvedValue(ok({ window: { open: true, message: null }, quorum: 3, term_days: 30 }));
+    // One settings row holds all four, and absent means "leave it" upstream. `open`
+    // matters most: a stale one reopens applications to readers who act on it.
+    await curationApplicationWindowRequest("tok", { message: "back soon" });
+    let { body } = lastCall();
+    expect("open" in body).toBe(false);
+    expect(body.message).toBe("back soon");
+
+    await curationApplicationWindowRequest("tok", { quorum: 4 });
+    ({ body } = lastCall());
+    expect(Object.keys(body).sort()).toEqual(["code", "quorum"]);
+
+    await curationApplicationWindowRequest("tok", { open: false });
+    ({ body } = lastCall());
+    expect(Object.keys(body).sort()).toEqual(["code", "open"]);
+  });
+
+  it("refuses a window save with nothing to set", () => {
+    expect(() => curationApplicationWindowRequest("tok", {})).toThrow(/something to set/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("sends the election knobs only when they are being changed", async () => {
     fetchMock.mockResolvedValue(ok({ window: { open: true, message: null }, quorum: 3, term_days: 30 }));
     await curationApplicationWindowRequest("tok", { open: true });

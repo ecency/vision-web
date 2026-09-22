@@ -259,9 +259,11 @@ describe("curation elections", () => {
     // had moved, while looking like a no-op.
     expect(writes[1]).toMatchObject({ quorum: 5 });
     expect("term_days" in writes[1]).toBe(false);
-    // And not the message either. The row holds all four, and a save about a number
-    // that also rewrote the line would put this tab's copy back over another admin's.
+    // And neither the message nor the window. The row holds all four, and a save about a
+    // number that also carried them would put this tab's copy back over another admin's,
+    // which for `open` means reopening applications to readers who act on it.
     expect("message" in writes[1]).toBe(false);
+    expect("open" in writes[1]).toBe(false);
   });
 
   it("does not rewrite the line when only the window is flipped", async () => {

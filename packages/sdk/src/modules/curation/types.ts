@@ -443,6 +443,15 @@ export interface CurationApplicationAdminEntry extends CurationApplication {
   snapshot: CurationRecommenderStats | null;
   decided_by: string | null;
   admin_note: string | null;
+}
+
+/**
+ * A row as the review QUEUE sends it: the reviewer's view plus the bench's votes on it.
+ * Separate from the entry above because only the queue carries these three. The desk's
+ * vote response returns the plain admin entry with the votes beside it, not inside it,
+ * so a single type covering both would let a caller dereference fields that are not there.
+ */
+export interface CurationApplicationQueueEntry extends CurationApplicationAdminEntry {
   votes: CurationApplicationVote[];
   tally: CurationApplicationTally;
   /** This viewer's own line, so the queue does not walk the list to find it. */
@@ -457,7 +466,7 @@ export interface CurationApplicationMine {
 }
 
 export interface CurationApplicationList {
-  applications: CurationApplicationAdminEntry[];
+  applications: CurationApplicationQueueEntry[];
   counts: Partial<Record<CurationApplicationState, number>>;
   window: CurationApplicationWindow;
   /** Endorsements that grant a seat, and how long that seat lasts. Never public. */
@@ -472,6 +481,7 @@ export interface CurationApplicationVoteInput {
 }
 
 export interface CurationApplicationVoteResult {
+  /** The plain admin entry. The votes and the tally are beside it, not inside it. */
   application: CurationApplicationAdminEntry;
   votes: CurationApplicationVote[];
   tally: CurationApplicationTally;

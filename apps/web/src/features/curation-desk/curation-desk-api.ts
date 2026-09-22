@@ -127,7 +127,7 @@ export const curationDeskApi = {
 
   async applicationWindow(
     username: string | undefined,
-    input: { open: boolean; message?: string | null; quorum?: number; term_days?: number }
+    input: { open?: boolean; message?: string | null; quorum?: number; term_days?: number }
   ) {
     return curationApplicationWindowRequest(await code(username), input);
   },

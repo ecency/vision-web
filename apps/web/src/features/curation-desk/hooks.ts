@@ -1227,7 +1227,7 @@ export function useCurationApplicationWindow() {
   return useMutation({
     mutationKey: [...QueryKeys.curation._prefix, "application-window", username],
     mutationFn: (input: {
-      open: boolean;
+      open?: boolean;
       message?: string | null;
       quorum?: number;
       term_days?: number;

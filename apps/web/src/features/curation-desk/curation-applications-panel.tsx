@@ -6,7 +6,7 @@ import i18next from "i18next";
 import { useQuery } from "@tanstack/react-query";
 import {
   getAccountFullQueryOptions,
-  type CurationApplicationAdminEntry,
+  type CurationApplicationQueueEntry,
   type CurationApplicationVote,
   type CurationApplicationVoteValue,
   type CurationRole
@@ -180,7 +180,7 @@ function ApplicationRow({
   onDecide,
   onVote
 }: {
-  entry: CurationApplicationAdminEntry;
+  entry: CurationApplicationQueueEntry;
   busy: boolean;
   quorum: number;
   isAdmin: boolean;
@@ -357,7 +357,7 @@ export function CurationApplicationsPanel({
     inRange(termShown, TERM_DAYS_MAX) &&
     (Number(quorumShown) !== data.quorum || Number(termShown) !== data.term_days);
 
-  function onVote(entry: CurationApplicationAdminEntry, value: CurationApplicationVoteValue, note: string) {
+  function onVote(entry: CurationApplicationQueueEntry, value: CurationApplicationVoteValue, note: string) {
     vote.mutate(
       { applicant: entry.username, vote: value, note: note.trim() || undefined },
       {
@@ -383,10 +383,13 @@ export function CurationApplicationsPanel({
    * whatever another admin had changed since this tab last read, while looking like it
    * had touched nothing.
    */
-  function saveWindow(open: boolean, about: "open" | "message" | "knobs") {
+  function saveWindow(about: "open" | "message" | "knobs", open?: boolean) {
     setWindow.mutate(
       {
-        open,
+        // `open` travels only from the switch. Sent along with a message or a number it
+        // would carry whatever this tab last read, which can undo another admin's close
+        // and put applications back in front of readers who act on it.
+        ...(about === "open" ? { open } : {}),
         ...(about === "message"
           ? { message: messageDraft.trim() ? messageDraft.trim() : null }
           : {}),
@@ -415,7 +418,7 @@ export function CurationApplicationsPanel({
   }
 
   function onDecide(
-    entry: CurationApplicationAdminEntry,
+    entry: CurationApplicationQueueEntry,
     state: "shortlisted" | "accepted" | "declined",
     role: CurationRole,
     note: string
@@ -497,7 +500,7 @@ export function CurationApplicationsPanel({
             size="sm"
             appearance="gray"
             disabled={busy || !applicationWindow}
-            onClick={() => saveWindow(!!applicationWindow?.open, "message")}
+            onClick={() => saveWindow("message")}
           >
             {i18next.t("curation-desk.applications.message-save")}
           </Button>
@@ -507,7 +510,7 @@ export function CurationApplicationsPanel({
             // Until the window is known the button cannot say which way it flips,
             // and a click would send `open: true` at a desk that is closed.
             disabled={busy || !applicationWindow}
-            onClick={() => saveWindow(!applicationWindow?.open, "open")}
+            onClick={() => saveWindow("open", !applicationWindow?.open)}
           >
             {applicationWindow?.open
               ? i18next.t("curation-desk.applications.close-action")
@@ -549,7 +552,7 @@ export function CurationApplicationsPanel({
             size="sm"
             appearance="gray"
             disabled={busy || !data || !knobsChanged}
-            onClick={() => saveWindow(!!applicationWindow?.open, "knobs")}
+            onClick={() => saveWindow("knobs")}
           >
             {i18next.t("curation-desk.applications.knobs-save")}
           </Button>

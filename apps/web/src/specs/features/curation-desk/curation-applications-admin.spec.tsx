@@ -253,7 +253,11 @@ describe("curation applications, admin side", () => {
     fireEvent.click(screen.getByText("curation-desk.applications.message-save"));
 
     await waitFor(() => expect(writes).toHaveLength(1));
-    expect(writes[0]).toMatchObject({ open: false, message: "Closed until October." });
+    // It used to carry `open: false` to avoid reopening. Carrying NOTHING is stronger:
+    // a stale `open` from this tab's cache can no longer undo another admin's close
+    // either, because the save does not mention the window at all.
+    expect(writes[0]).toMatchObject({ message: "Closed until October." });
+    expect("open" in writes[0]).toBe(false);
   });
 
   it("reads the queue again when a decision is refused", async () => {

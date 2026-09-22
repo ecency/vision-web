@@ -498,15 +498,21 @@ export function curationApplicationVoteRequest(
 
 export function curationApplicationWindowRequest(
   code: string | undefined,
-  input: { open: boolean; message?: string | null; quorum?: number; term_days?: number }
+  input: { open?: boolean; message?: string | null; quorum?: number; term_days?: number }
 ): Promise<{ window: CurationApplicationWindow; quorum: number; term_days: number }> {
-  const body: Record<string, unknown> = { open: input.open };
+  const body: Record<string, unknown> = {};
+  // Every field is sent only when it is being CHANGED. Upstream reads an absent field as
+  // "leave it", and one settings row holds all four: a save that carried the others would
+  // put whatever this caller last read back over whatever changed since. `open` matters
+  // most, because a stale one reopens applications to readers who act on it.
+  if (input.open !== undefined) body.open = input.open;
   // A present null clears the message; absent leaves the stored one in place.
   if (input.message !== undefined) body.message = input.message;
-  // The knobs are absent unless they are being changed: upstream reads absent as "leave
-  // as they are", and this route is called every time the message is reworded.
   if (input.quorum !== undefined) body.quorum = input.quorum;
   if (input.term_days !== undefined) body.term_days = input.term_days;
+  if (Object.keys(body).length === 0) {
+    throw new Error("[SDK][Curation] a window save needs something to set");
+  }
   return postJson("/application-window", code, body, "set the application window", undefined, hasWindow);
 }
 
