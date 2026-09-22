@@ -2,6 +2,7 @@ import { ensureValidToken } from "@/utils";
 import {
   curationApplicationApplyRequest,
   curationApplicationDecideRequest,
+  curationApplicationVoteRequest,
   curationApplicationListRequest,
   curationApplicationMineRequest,
   curationApplicationWindowRequest,
@@ -19,6 +20,7 @@ import {
   type CurationApplicationAnswers,
   type CurationApplicationDecideInput,
   type CurationApplicationState,
+  type CurationApplicationVoteInput,
   type CurationDismissRecoInput,
   type CurationMarkInput,
   type CurationMyMarksParams,
@@ -119,7 +121,14 @@ export const curationDeskApi = {
     return curationApplicationDecideRequest(await code(username), input);
   },
 
-  async applicationWindow(username: string | undefined, input: { open: boolean; message?: string | null }) {
+  async applicationVote(username: string | undefined, input: CurationApplicationVoteInput) {
+    return curationApplicationVoteRequest(await code(username), input);
+  },
+
+  async applicationWindow(
+    username: string | undefined,
+    input: { open: boolean; message?: string | null; quorum?: number; term_days?: number }
+  ) {
     return curationApplicationWindowRequest(await code(username), input);
   },
 };

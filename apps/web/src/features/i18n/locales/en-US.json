@@ -4390,7 +4390,8 @@
       "recommendations": "Recommended",
       "guide": "Guide",
       "apply": "Apply",
-      "roster": "Roster"
+      "roster": "Roster",
+      "applications": "Applications"
     },
     "apply": {
       "page-title": "Apply to be a guest curator",
@@ -4456,6 +4457,21 @@
       "message-placeholder": "Seats open again on the first of the month.",
       "message-save": "Save",
       "window-saved": "Saved.",
+      "reviewers-only": "Applications are reviewed by the curation team. Ask an admin if you think you should see this.",
+      "endorsements_one": "{{count}} of {{quorum}} endorsements",
+      "endorsements_other": "{{count}} of {{quorum}} endorsements",
+      "objections_one": "{{count}} objection",
+      "objections_other": "{{count}} objections",
+      "vote-not-counted": "This vote no longer counts: they are not on the roster any more.",
+      "vote-endorse": "Endorse",
+      "vote-object": "Object",
+      "vote-abstain": "Withdraw my vote",
+      "your-vote": "You voted: {{vote}}",
+      "voted-toast": "Recorded. @{{name}} has {{endorsed}} of {{quorum}} endorsements.",
+      "elected-toast": "@{{name}} reached the quorum and is on the roster as a guest curator.",
+      "quorum-label": "Endorsements needed",
+      "term-label": "Guest term, in days",
+      "knobs-save": "Save numbers",
       "applied": "applied {{when}}",
       "shortlisted": "shortlisted",
       "record": "{{recommended}} recommended · {{curated}} curated · {{dismissed}} dismissed",
@@ -4511,7 +4527,12 @@
       "invalid-name": "That is not a Hive account name.",
       "invalid-weight": "A vote weight is a whole number from 0 to 10000.",
       "invalid-window": "The lowest weight cannot be above the highest.",
-      "note-too-long": "A note is at most 200 characters."
+      "note-too-long": "A note is at most 200 characters.",
+      "applications-link": "Review guest curator applications",
+      "term-ends": "Guest seat, ends {{when}}",
+      "term-over": "Guest seat ended {{when}}",
+      "keep": "Keep",
+      "kept": "@{{name}} keeps their seat. It no longer expires."
     },
     "header": {
       "overview": "Curation overview",

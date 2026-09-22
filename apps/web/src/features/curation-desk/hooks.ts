@@ -29,6 +29,7 @@ import {
   type CurationRosterFeedParams,
   type CurationApplicationAnswers,
   type CurationApplicationDecideInput,
+  type CurationApplicationVoteInput,
   type CurationApplicationList,
   type CurationApplicationMine,
   type CurationApplicationState,
@@ -1197,13 +1198,40 @@ export function useCurationApplicationDecide() {
   });
 }
 
+/**
+ * One reviewer's line on one application. A vote can GRANT the seat, so it
+ * invalidates the roster too: the third endorsement writes a curator row in the
+ * same transaction, and the list below the queue is stale the moment it lands.
+ */
+export function useCurationApplicationVote() {
+  const username = useActiveUsername();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: [...QueryKeys.curation._prefix, "application-vote", username],
+    mutationFn: (input: CurationApplicationVoteInput) =>
+      curationDeskApi.applicationVote(username, input),
+    // onSettled, like the decision: the refusals that matter mean the queue is
+    // ALREADY wrong (404 when somebody decided this applicant first, 400 when they
+    // joined the roster by hand meanwhile), so a failure is exactly when it has to
+    // be read again.
+    onSettled: () => {
+      invalidateApplications(queryClient);
+      invalidateRoster(queryClient);
+    },
+  });
+}
+
 export function useCurationApplicationWindow() {
   const username = useActiveUsername();
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: [...QueryKeys.curation._prefix, "application-window", username],
-    mutationFn: (input: { open: boolean; message?: string | null }) =>
-      curationDeskApi.applicationWindow(username, input),
+    mutationFn: (input: {
+      open: boolean;
+      message?: string | null;
+      quorum?: number;
+      term_days?: number;
+    }) => curationDeskApi.applicationWindow(username, input),
     onSuccess: (data) => {
       // Keep the response authoritative until the refetch lands. Every cached
       // queue still carries the pre-save window, and the panel reads the message
@@ -1212,7 +1240,9 @@ export function useCurationApplicationWindow() {
       queryClient.setQueriesData(
         { queryKey: QueryKeys.curation.applicationsPrefix() },
         (previous: CurationApplicationList | undefined) =>
-          previous ? { ...previous, window: data.window } : previous
+          previous
+            ? { ...previous, window: data.window, quorum: data.quorum, term_days: data.term_days }
+            : previous
       );
       invalidateApplications(queryClient, username);
       // The window rides on status, which every desk page polls.

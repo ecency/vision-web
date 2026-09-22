@@ -2,6 +2,8 @@ import { CONFIG, getBoundFetch } from "@/modules/core";
 import type {
   CurationApplication,
   CurationApplicationDecideInput,
+  CurationApplicationVoteInput,
+  CurationApplicationVoteResult,
   CurationApplicationList,
   CurationApplicationMine,
   CurationApplicationState,
@@ -387,7 +389,7 @@ export function curationRosterSetRequest(
   code: string | undefined,
   input: CurationRosterSetInput
 ): Promise<{ curator: CurationRosterAdminEntry }> {
-  const { curator, role, rules, note } = input;
+  const { curator, role, rules, note, term_days } = input;
   if (!curator || !role) {
     throw new Error("[SDK][Curation] roster set needs a curator and a role");
   }
@@ -396,6 +398,9 @@ export function curationRosterSetRequest(
   // arrives, so a partial object would silently drop the rules left out.
   if (rules) body.rules = rules;
   if (note !== undefined) body.note = note;
+  // `!== undefined`, never a truthiness test: 0 is the one value that MEANS
+  // something here, and it is the whole of "keep this seat".
+  if (term_days !== undefined) body.term_days = term_days;
   return postJson<{ curator: CurationRosterAdminEntry }>("/roster-set", code, body, "set curator");
 }
 
@@ -478,13 +483,30 @@ export function curationApplicationDecideRequest(
   return postJson("/application-decide", code, body, "decide an application", undefined, hasApplication);
 }
 
+export function curationApplicationVoteRequest(
+  code: string | undefined,
+  input: CurationApplicationVoteInput
+): Promise<CurationApplicationVoteResult> {
+  const { applicant, vote, note } = input;
+  if (!applicant || !vote) {
+    throw new Error("[SDK][Curation] a vote needs an applicant and a value");
+  }
+  const body: Record<string, unknown> = { applicant, vote };
+  if (note !== undefined) body.note = note;
+  return postJson("/application-vote", code, body, "vote on an application", undefined, hasApplication);
+}
+
 export function curationApplicationWindowRequest(
   code: string | undefined,
-  input: { open: boolean; message?: string | null }
-): Promise<{ window: CurationApplicationWindow }> {
+  input: { open: boolean; message?: string | null; quorum?: number; term_days?: number }
+): Promise<{ window: CurationApplicationWindow; quorum: number; term_days: number }> {
   const body: Record<string, unknown> = { open: input.open };
   // A present null clears the message; absent leaves the stored one in place.
   if (input.message !== undefined) body.message = input.message;
+  // The knobs are absent unless they are being changed: upstream reads absent as "leave
+  // as they are", and this route is called every time the message is reworded.
+  if (input.quorum !== undefined) body.quorum = input.quorum;
+  if (input.term_days !== undefined) body.term_days = input.term_days;
   return postJson("/application-window", code, body, "set the application window", undefined, hasWindow);
 }
 

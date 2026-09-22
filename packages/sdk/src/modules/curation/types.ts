@@ -363,6 +363,8 @@ export interface CurationRosterAdminEntry extends CurationRosterEntry {
   added_at: string | null;
   removed_at: string | null;
   note: string | null;
+  /** When a guest seat runs out. Null means permanent, which every hand-set seat is. */
+  term_ends?: string | null;
 }
 
 export interface CurationRoster {
@@ -408,6 +410,32 @@ export interface CurationApplication {
 }
 
 /**
+ * How a reviewer answered. An objection stops the automatic grant; it never declines,
+ * and `abstain` is how a stop is lifted without turning into a vote in favour.
+ */
+export type CurationApplicationVoteValue = "endorse" | "object" | "abstain";
+
+/** One reviewer's line on one application. Private to the review queue. */
+export interface CurationApplicationVote {
+  voter: string;
+  vote: CurationApplicationVoteValue;
+  note: string | null;
+  created: string;
+  updated_at: string;
+  /**
+   * Whether that voter is still on the bench. A vote from somebody since retired or
+   * demoted stops counting toward the quorum, and the desk sends the line anyway so a
+   * total one short has a visible reason.
+   */
+  standing: boolean;
+}
+
+export interface CurationApplicationTally {
+  endorsed: number;
+  objected: number;
+}
+
+/**
  * The reviewer's view. `snapshot` is the applicant's recommendation record as it
  * stood when they applied, frozen because the live record keeps moving.
  */
@@ -415,6 +443,10 @@ export interface CurationApplicationAdminEntry extends CurationApplication {
   snapshot: CurationRecommenderStats | null;
   decided_by: string | null;
   admin_note: string | null;
+  votes: CurationApplicationVote[];
+  tally: CurationApplicationTally;
+  /** This viewer's own line, so the queue does not walk the list to find it. */
+  my_vote: CurationApplicationVoteValue | null;
 }
 
 export interface CurationApplicationMine {
@@ -428,14 +460,32 @@ export interface CurationApplicationList {
   applications: CurationApplicationAdminEntry[];
   counts: Partial<Record<CurationApplicationState, number>>;
   window: CurationApplicationWindow;
+  /** Endorsements that grant a seat, and how long that seat lasts. Never public. */
+  quorum: number;
+  term_days: number;
+}
+
+export interface CurationApplicationVoteInput {
+  applicant: string;
+  vote: CurationApplicationVoteValue;
+  note?: string;
+}
+
+export interface CurationApplicationVoteResult {
+  application: CurationApplicationAdminEntry;
+  votes: CurationApplicationVote[];
+  tally: CurationApplicationTally;
+  quorum: number;
+  /** True when this vote reached the quorum and the seat was granted. */
+  elected: boolean;
 }
 
 export interface CurationApplicationDecideInput {
   applicant: string;
   /** Only the three a reviewer may set; `open` and `withdrawn` are not decisions. */
   state: "shortlisted" | "accepted" | "declined";
-  /** Accepting only. Defaults to `trial` upstream, which is not trailed. */
-  role?: Extract<CurationRole, "trial" | "curator" | "mod">;
+  /** Accepting only. Defaults to `curator` upstream, which IS trailed, with a term. */
+  role?: Extract<CurationRole, "curator" | "mod">;
   note?: string;
 }
 
@@ -444,6 +494,12 @@ export interface CurationRosterSetInput {
   role: CurationRole;
   rules?: CurationRosterRules;
   note?: string;
+  /**
+   * Tri-state upstream: leave it out to KEEP the seat's term, 0 to make the seat
+   * permanent, n to restart the clock. Leaving it out is deliberately not "make
+   * permanent", so editing a note cannot quietly turn a guest seat into a standing one.
+   */
+  term_days?: number;
 }
 
 export interface CurationRecommender {

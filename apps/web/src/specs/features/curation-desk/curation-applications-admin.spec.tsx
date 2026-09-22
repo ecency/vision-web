@@ -62,6 +62,7 @@ import {
   draftOrStored
 } from "@/features/curation-desk/curation-applications-panel";
 import { CurationGuide } from "@/features/curation-desk/curation-guide";
+import { CurationApplicationsView } from "@/features/curation-desk/curation-applications-view";
 import { CurationRosterView } from "@/features/curation-desk/curation-roster-view";
 
 const APPLICATION = {
@@ -82,13 +83,17 @@ const APPLICATION = {
   decided_at: null,
   admin_note: null,
   created: iso(-86_400_000),
-  updated_at: iso(-86_400_000)
+  updated_at: iso(-86_400_000),
+  votes: [],
+  tally: { endorsed: 0, objected: 0 },
+  my_vote: null
 };
 
 /**
- * The review side lives in the admin-only roster tab, because promoting writes
- * the roster row the form below it manages. What matters here: nobody but an
- * admin asks for the list, and a promotion says which seat it grants.
+ * The review side has a page of its own, because the bench that votes on it is the
+ * mods and the roster tab is admin-only. What matters here: nobody outside the bench
+ * asks for the list, a promotion says which seat it grants, and the window controls
+ * stay with the admins.
  */
 describe("curation applications, admin side", () => {
   let router: ReturnType<typeof installFetchRouter>;
@@ -111,20 +116,35 @@ describe("curation applications, admin side", () => {
       jsonResponse({
         applications: [APPLICATION],
         counts: { open: 1 },
-        window: { open: true, message: null }
+        window: { open: true, message: null },
+        quorum: 3,
+        term_days: 30
       })
     );
   });
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it("never asks for the queue when the viewer is not an admin", async () => {
-    state.role = "mod";
-    renderWithQueryClient(<CurationRosterView />);
+  it.each(["curator", "trial", null])("never asks for the queue as %s", async (role) => {
+    state.role = role as string;
+    renderWithQueryClient(<CurationApplicationsView />);
     await waitFor(() =>
-      expect(screen.getByText("curation-desk.roster.admins-only")).toBeInTheDocument()
+      expect(screen.getByText("curation-desk.applications.reviewers-only")).toBeInTheDocument()
     );
+    // The request must never leave, not merely be refused upstream: a curator asking
+    // for the queue would be reading other people's private answers on a 200.
     expect(router.callsTo(/application-list/)).toHaveLength(0);
+  });
+
+  it("lets a mod read the queue and keeps the window controls with the admins", async () => {
+    state.role = "mod";
+    renderWithQueryClient(<CurationApplicationsView />);
+    await waitFor(() => expect(screen.getByText("@newbie")).toBeInTheDocument());
+    expect(router.callsTo(/application-list/)).toHaveLength(1);
+    // The bench votes; opening a round is not part of that.
+    expect(screen.queryByText("curation-desk.applications.close-action")).toBeNull();
+    expect(screen.queryByText("curation-desk.applications.promote")).toBeNull();
+    expect(screen.getByText("curation-desk.applications.vote-endorse")).toBeInTheDocument();
   });
 
   it("promotes with the seat it shows, and only an acceptance carries one", async () => {
@@ -134,23 +154,23 @@ describe("curation applications, admin side", () => {
       return jsonResponse({ application: { ...APPLICATION, state: "accepted" } });
     });
 
-    renderWithQueryClient(<CurationRosterView />);
+    renderWithQueryClient(<CurationApplicationsView />);
     await waitFor(() => expect(screen.getByText("@newbie")).toBeInTheDocument());
     const row = screen.getByText("@newbie").closest("li")!;
 
     fireEvent.click(within(row).getByText("curation-desk.applications.promote"));
     await waitFor(() => expect(writes).toHaveLength(1));
-    // A trial is not trailed, which is what makes it a trial: the default seat
-    // must be the one the desk can undo without having voted anything.
-    expect(writes[0]).toMatchObject({ applicant: "newbie", state: "accepted", role: "trial" });
+    // A guest seat is a trailed curator bounded by its term, not an untrailed trial:
+    // a month nothing follows would be a month of shadow work.
+    expect(writes[0]).toMatchObject({ applicant: "newbie", state: "accepted", role: "curator" });
 
     // and the select is what it promotes with, not a constant
     fireEvent.change(within(row).getByLabelText("curation-desk.applications.seat"), {
-      target: { value: "curator" }
+      target: { value: "mod" }
     });
     fireEvent.click(within(row).getByText("curation-desk.applications.promote"));
     await waitFor(() => expect(writes).toHaveLength(2));
-    expect(writes[1]).toMatchObject({ applicant: "newbie", state: "accepted", role: "curator" });
+    expect(writes[1]).toMatchObject({ applicant: "newbie", state: "accepted", role: "mod" });
 
     fireEvent.click(within(row).getByText("curation-desk.applications.decline"));
     await waitFor(() => expect(writes).toHaveLength(3));
@@ -162,10 +182,10 @@ describe("curation applications, admin side", () => {
     const writes: Record<string, unknown>[] = [];
     router.on(/curation-desk\/application-window$/, (_url: string, init: RequestInit) => {
       writes.push(JSON.parse(String(init.body)));
-      return jsonResponse({ window: { open: false, message: "Back next month." } });
+      return jsonResponse({ window: { open: false, message: "Back next month." }, quorum: 3, term_days: 30 });
     });
 
-    renderWithQueryClient(<CurationRosterView />);
+    renderWithQueryClient(<CurationApplicationsView />);
     await waitFor(() =>
       expect(screen.getByText("curation-desk.applications.window-open")).toBeInTheDocument()
     );
@@ -192,7 +212,7 @@ describe("curation applications, admin side", () => {
     // Undefined is not "open": a click here sent `open: true` at a desk that was
     // closed, and the reader saw applications open for the round trip.
     router.on(/curation-desk\/application-list$/, () => jsonResponse({ error: "nope" }, 500));
-    renderWithQueryClient(<CurationRosterView />);
+    renderWithQueryClient(<CurationApplicationsView />);
     await waitFor(() =>
       expect(screen.getByText("curation-desk.applications.error")).toBeInTheDocument()
     );
@@ -212,10 +232,10 @@ describe("curation applications, admin side", () => {
     );
     router.on(/curation-desk\/application-window$/, (_url: string, init: RequestInit) => {
       writes.push(JSON.parse(String(init.body)));
-      return jsonResponse({ window: { open: false, message: "Closed until October." } });
+      return jsonResponse({ window: { open: false, message: "Closed until October." }, quorum: 3, term_days: 30 });
     });
 
-    renderWithQueryClient(<CurationRosterView />);
+    renderWithQueryClient(<CurationApplicationsView />);
     await waitFor(() =>
       expect(screen.getByText("curation-desk.applications.window-closed")).toBeInTheDocument()
     );
@@ -234,7 +254,7 @@ describe("curation applications, admin side", () => {
     router.on(/curation-desk\/application-decide$/, () =>
       jsonResponse({ error: "not found" }, 404)
     );
-    renderWithQueryClient(<CurationRosterView />);
+    renderWithQueryClient(<CurationApplicationsView />);
     await waitFor(() => expect(screen.getByText("@newbie")).toBeInTheDocument());
     const before = router.callsTo(/application-list/).length;
 
@@ -249,7 +269,7 @@ describe("curation applications, admin side", () => {
       return jsonResponse({ application: { ...APPLICATION, state: "shortlisted" } });
     });
 
-    renderWithQueryClient(<CurationRosterView />);
+    renderWithQueryClient(<CurationApplicationsView />);
     await waitFor(() => expect(screen.getByText("@newbie")).toBeInTheDocument());
     const row = screen.getByText("@newbie").closest("li")!;
     fireEvent.click(within(row).getByText("curation-desk.applications.shortlist"));
@@ -267,7 +287,7 @@ describe("curation applications, admin side", () => {
         window: { open: true, message: null }
       })
     );
-    renderWithQueryClient(<CurationRosterView />);
+    renderWithQueryClient(<CurationApplicationsView />);
     await waitFor(() => expect(screen.getByText("@newbie")).toBeInTheDocument());
     const row = screen.getByText("@newbie").closest("li")!;
     expect(within(row).getByText("curation-desk.applications.shortlisted")).toBeInTheDocument();
@@ -295,10 +315,10 @@ describe("curation applications, admin side", () => {
       const body = JSON.parse(String(init.body));
       writes.push(body);
       // The refetch is deliberately NOT told about the save: this is the gap.
-      return jsonResponse({ window: { open: false, message: body.message } });
+      return jsonResponse({ window: { open: false, message: body.message }, quorum: 3, term_days: 30 });
     });
 
-    renderWithQueryClient(<CurationRosterView />);
+    renderWithQueryClient(<CurationApplicationsView />);
     const field = await screen.findByLabelText("curation-desk.applications.message-label");
     await waitFor(() => expect(field).toHaveValue("First line."));
 
@@ -331,7 +351,7 @@ describe("curation applications, admin side", () => {
       });
     });
 
-    renderWithQueryClient(<CurationRosterView />);
+    renderWithQueryClient(<CurationApplicationsView />);
     const field = await screen.findByLabelText("curation-desk.applications.message-label");
     await waitFor(() => expect(field).toHaveValue("Closed."));
     expect(field).not.toBeDisabled();
@@ -353,7 +373,7 @@ describe("curation applications, admin side", () => {
         window: { open: false, message: "Closed until October." }
       })
     );
-    renderWithQueryClient(<CurationRosterView />);
+    renderWithQueryClient(<CurationApplicationsView />);
     const field = await screen.findByLabelText("curation-desk.applications.message-label");
     await waitFor(() => expect(field).toHaveValue("Closed until October."));
   });
@@ -378,10 +398,17 @@ describe("curation applications, admin side", () => {
     expect(screen.queryByText("curation-desk.tabs.apply")).toBeNull();
     tabs.unmount();
 
-    const roster = renderWithQueryClient(<CurationRosterView />);
-    await waitFor(() => expect(screen.getByText("curation-desk.roster.intro")).toBeInTheDocument());
+    const review = renderWithQueryClient(<CurationApplicationsView />);
+    await waitFor(() => expect(router.callsTo(/curation-desk\/roster$/).length).toBeGreaterThan(0));
     expect(screen.queryByText("curation-desk.applications.title")).toBeNull();
     expect(router.callsTo(/application-list/)).toHaveLength(0);
+    review.unmount();
+
+    const roster = renderWithQueryClient(<CurationRosterView />);
+    await waitFor(() => expect(screen.getByText("curation-desk.roster.intro")).toBeInTheDocument());
+    // The pointer to the review queue goes with the flag too, or the roster would
+    // link at a route that answers notFound.
+    expect(screen.queryByText("curation-desk.roster.applications-link")).toBeNull();
     roster.unmount();
 
     flags.notFound.mockClear();

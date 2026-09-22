@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import clsx from "clsx";
 import i18next from "i18next";
 import { useQuery } from "@tanstack/react-query";
 import {
   getAccountFullQueryOptions,
   type CurationApplicationAdminEntry,
+  type CurationApplicationVote,
+  type CurationApplicationVoteValue,
   type CurationRole
 } from "@ecency/sdk";
 import { Button } from "@ui/button";
@@ -19,19 +22,34 @@ import { clampTrimmed } from "./curation-text-limit";
 import { DAY_MS } from "./consts";
 import {
   useCurationApplicationDecide,
+  useCurationApplicationVote,
   useCurationApplicationWindow,
   useCurationApplications
 } from "./hooks";
 
 /**
- * The review side of guest curator applications, inside the admin-only roster
- * tab: promoting writes the roster row the form below manages, so the two
- * belong on one screen rather than in two tabs that disagree.
+ * The review side of guest curator applications. It used to sit inside the roster
+ * tab, which is admin-only; the people who vote on applications are the mods, so
+ * it has a tab of its own and the window controls stay behind the admin check.
  */
 
 /** The caps the desk enforces, counted in code points on both sides. */
 const NOTE_MAX = 500;
 const MESSAGE_MAX = 200;
+
+/** What the desk will take. Out of range is refused at the gateway, not clamped. */
+const QUORUM_MAX = 50;
+const TERM_DAYS_MAX = 365;
+
+/**
+ * A whole number the desk would accept. `Number("")` is 0 and `Number(" ")` is 0 too,
+ * so an empty field would otherwise read as a valid quorum of zero on its way to a
+ * button that looked enabled.
+ */
+function inRange(value: string, max: number): boolean {
+  const n = Number(value);
+  return value.trim() !== "" && Number.isInteger(n) && n >= 1 && n <= max;
+}
 
 /**
  * The line to show in the field: the draft while the stored line is still the one
@@ -46,8 +64,65 @@ export function draftOrStored(
   return draft && draft.basedOn === stored ? draft.value : stored;
 }
 
-/** The seats an acceptance may grant. Admin is not one: that is a roster edit. */
-const SEATS: Extract<CurationRole, "trial" | "curator" | "mod">[] = ["trial", "curator", "mod"];
+/**
+ * The seats an acceptance may grant. Admin is not one: that is a roster edit. Nor is
+ * trial: a guest seat is trailed and bounded by its term, and an untrailed month would
+ * be a month of work nothing follows.
+ */
+const SEATS: Extract<CurationRole, "curator" | "mod">[] = ["curator", "mod"];
+
+/** The three things a reviewer can say. Abstaining is how an objection is lifted. */
+const VOTES: CurationApplicationVoteValue[] = ["endorse", "object", "abstain"];
+
+/**
+ * Where an application stands with the bench. Only votes from people still on it
+ * count, so a line from somebody since retired is shown struck through rather than
+ * dropped: a total one short with no explanation reads as a bug.
+ */
+function VoteTally({
+  votes,
+  endorsed,
+  quorum
+}: {
+  votes: CurationApplicationVote[];
+  endorsed: number;
+  quorum: number;
+}) {
+  const objections = votes.filter((v) => v.standing && v.vote === "object");
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <Chip tone={endorsed >= quorum ? "green" : undefined}>
+        {i18next.t("curation-desk.applications.endorsements", { count: endorsed, quorum })}
+      </Chip>
+      {objections.length > 0 && (
+        <Chip tone="amber">
+          {i18next.t("curation-desk.applications.objections", { count: objections.length })}
+        </Chip>
+      )}
+      {votes
+        .filter((v) => v.vote !== "abstain")
+        .map((v) => (
+          <span
+            key={v.voter}
+            className={clsx(
+              "text-xs",
+              !v.standing && "line-through opacity-60",
+              v.vote === "object"
+                ? "text-warning-ink dark:text-warning-default"
+                : "text-gray-600 dark:text-gray-400"
+            )}
+            title={
+              v.standing
+                ? (v.note ?? undefined)
+                : i18next.t("curation-desk.applications.vote-not-counted")
+            }
+          >
+            {v.vote === "object" ? "-" : "+"}@{v.voter}
+          </span>
+        ))}
+    </div>
+  );
+}
 
 function ApplicantFacts({ username }: { username: string }) {
   const account = useQuery(getAccountFullQueryOptions(username));
@@ -70,17 +145,23 @@ function ApplicantFacts({ username }: { username: string }) {
 function ApplicationRow({
   entry,
   busy,
-  onDecide
+  quorum,
+  isAdmin,
+  onDecide,
+  onVote
 }: {
   entry: CurationApplicationAdminEntry;
   busy: boolean;
+  quorum: number;
+  isAdmin: boolean;
   onDecide: (
     state: "shortlisted" | "accepted" | "declined",
     role: CurationRole,
     note: string
   ) => void;
+  onVote: (vote: CurationApplicationVoteValue, note: string) => void;
 }) {
-  const [role, setRole] = useState<Extract<CurationRole, "trial" | "curator" | "mod">>("trial");
+  const [role, setRole] = useState<Extract<CurationRole, "curator" | "mod">>("curator");
   const [note, setNote] = useState("");
   const record = entry.snapshot;
 
@@ -119,22 +200,27 @@ function ApplicationRow({
       </dl>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm">
-          {i18next.t("curation-desk.applications.seat")}
-          <FormControl
-            type="select"
-            value={role}
-            onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-              setRole(e.target.value as (typeof SEATS)[number])
-            }
-          >
-            {SEATS.map((seat) => (
-              <option key={seat} value={seat}>
-                {i18next.t(`curation-desk.roster.role-${seat}`)}
-              </option>
-            ))}
-          </FormControl>
-        </label>
+        {/* The seat only matters to an acceptance, and only an admin can make one.
+            The note travels with whatever this reviewer does next: a vote or, for an
+            admin, a decision. */}
+        {isAdmin && (
+          <label className="flex flex-col gap-1 text-sm">
+            {i18next.t("curation-desk.applications.seat")}
+            <FormControl
+              type="select"
+              value={role}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                setRole(e.target.value as (typeof SEATS)[number])
+              }
+            >
+              {SEATS.map((seat) => (
+                <option key={seat} value={seat}>
+                  {i18next.t(`curation-desk.roster.role-${seat}`)}
+                </option>
+              ))}
+            </FormControl>
+          </label>
+        )}
         <label className="flex flex-col gap-1 text-sm">
           {i18next.t("curation-desk.applications.note")}
           <FormControl
@@ -148,51 +234,126 @@ function ApplicationRow({
         </label>
       </div>
 
+      <VoteTally votes={entry.votes} endorsed={entry.tally.endorsed} quorum={quorum} />
+
+      {/* Everyone on the bench votes. Reaching the quorum with no objection standing
+          grants the seat by itself, so these buttons are the ordinary path and the
+          admin row below is the exception. */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button size="sm" disabled={busy} onClick={() => onDecide("accepted", role, note)}>
-          {i18next.t("curation-desk.applications.promote")}
-        </Button>
-        {entry.state !== "shortlisted" && (
+        {VOTES.map((vote) => (
+          <Button
+            key={vote}
+            size="sm"
+            appearance={entry.my_vote === vote ? undefined : "gray"}
+            disabled={busy || (vote === "abstain" && !entry.my_vote)}
+            onClick={() => onVote(vote, note)}
+          >
+            {i18next.t(`curation-desk.applications.vote-${vote}`)}
+          </Button>
+        ))}
+        {entry.my_vote && (
+          <span className="text-xs text-gray-600 dark:text-gray-400">
+            {i18next.t("curation-desk.applications.your-vote", {
+              vote: i18next.t(`curation-desk.applications.vote-${entry.my_vote}`)
+            })}
+          </span>
+        )}
+      </div>
+
+      {isAdmin && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[--border-color] pt-3">
+          <Button size="sm" disabled={busy} onClick={() => onDecide("accepted", role, note)}>
+            {i18next.t("curation-desk.applications.promote")}
+          </Button>
+          {entry.state !== "shortlisted" && (
+            <Button
+              size="sm"
+              appearance="gray"
+              disabled={busy}
+              onClick={() => onDecide("shortlisted", role, note)}
+            >
+              {i18next.t("curation-desk.applications.shortlist")}
+            </Button>
+          )}
           <Button
             size="sm"
-            appearance="gray"
+            appearance="gray-link"
             disabled={busy}
-            onClick={() => onDecide("shortlisted", role, note)}
+            onClick={() => onDecide("declined", role, note)}
           >
-            {i18next.t("curation-desk.applications.shortlist")}
+            {i18next.t("curation-desk.applications.decline")}
           </Button>
-        )}
-        <Button
-          size="sm"
-          appearance="gray-link"
-          disabled={busy}
-          onClick={() => onDecide("declined", role, note)}
-        >
-          {i18next.t("curation-desk.applications.decline")}
-        </Button>
-      </div>
+        </div>
+      )}
     </li>
   );
 }
 
-export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
+export function CurationApplicationsPanel({
+  enabled,
+  isAdmin
+}: {
+  enabled: boolean;
+  isAdmin: boolean;
+}) {
   const { data, isLoading, isError } = useCurationApplications(enabled);
   const decide = useCurationApplicationDecide();
+  const vote = useCurationApplicationVote();
   const setWindow = useCurationApplicationWindow();
   // The draft remembers which stored line it was typed against. Holding the text
   // alone made this tab's copy win for ever: another admin's change arrived on a
   // refetch and was ignored, then overwritten by the next save from here.
   const [message, setMessage] = useState<{ value: string; basedOn: string } | null>(null);
+  // Held as strings so the field can be empty while it is being retyped; an empty or
+  // out-of-range value simply leaves the Save button off rather than sending a 0.
+  const [quorumDraft, setQuorum] = useState<string | null>(null);
+  const [termDraft, setTerm] = useState<string | null>(null);
 
   const applications = data?.applications ?? [];
   const applicationWindow = data?.window;
-  const busy = decide.isPending || setWindow.isPending;
+  const busy = decide.isPending || setWindow.isPending || vote.isPending;
   const stored = applicationWindow?.message ?? "";
   const messageDraft = draftOrStored(message, stored);
+  // Until the queue has answered, the quorum is unknown. Showing the default would
+  // put a number on the screen that the desk might not be running on.
+  const quorum = data?.quorum ?? 0;
+  const quorumShown = quorumDraft ?? (data ? String(data.quorum) : "");
+  const termShown = termDraft ?? (data ? String(data.term_days) : "");
+  const knobsChanged =
+    !!data &&
+    inRange(quorumShown, QUORUM_MAX) &&
+    inRange(termShown, TERM_DAYS_MAX) &&
+    (Number(quorumShown) !== data.quorum || Number(termShown) !== data.term_days);
 
-  function saveWindow(open: boolean) {
+  function onVote(entry: CurationApplicationAdminEntry, value: CurationApplicationVoteValue, note: string) {
+    vote.mutate(
+      { applicant: entry.username, vote: value, note: note.trim() || undefined },
+      {
+        onSuccess: (result) =>
+          successToast(
+            result.elected
+              ? i18next.t("curation-desk.applications.elected-toast", { name: entry.username })
+              : i18next.t("curation-desk.applications.voted-toast", {
+                  name: entry.username,
+                  endorsed: result.tally.endorsed,
+                  quorum: result.quorum
+                })
+          ),
+        onError: (e) => errorToast(...formatError(e))
+      }
+    );
+  }
+
+  function saveWindow(open: boolean, withKnobs = false) {
     setWindow.mutate(
-      { open, message: messageDraft.trim() ? messageDraft.trim() : null },
+      {
+        open,
+        message: messageDraft.trim() ? messageDraft.trim() : null,
+        // Only on the button that is ABOUT the knobs. Upstream reads an absent knob as
+        // "leave it alone", so sending the shown value back on every message save would
+        // quietly re-set a number another admin had changed in between.
+        ...(withKnobs ? { quorum: Number(quorumShown), term_days: Number(termShown) } : {})
+      },
       {
         onSuccess: (data) => {
           successToast(i18next.t("curation-desk.applications.window-saved"));
@@ -202,6 +363,10 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
           // against it, put the old message back in the field, and send it with
           // the next toggle, undoing the save.
           setMessage({ value: data.window.message ?? "", basedOn: stored });
+          // Only when the desk answered with them: a response without the knobs would
+          // otherwise put the string "undefined" in both fields.
+          if (data.quorum !== undefined) setQuorum(String(data.quorum));
+          if (data.term_days !== undefined) setTerm(String(data.term_days));
         },
         onError: (e) => errorToast(...formatError(e))
       }
@@ -219,7 +384,7 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
         applicant: entry.username,
         state,
         // The seat only travels with an acceptance; upstream refuses it elsewhere.
-        role: state === "accepted" ? (role as "trial" | "curator" | "mod") : undefined,
+        role: state === "accepted" ? (role as "curator" | "mod") : undefined,
         note: note.trim() || undefined
       },
       {
@@ -263,6 +428,9 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
         {i18next.t("curation-desk.applications.intro")}
       </p>
 
+      {/* The window and the election's own numbers are an admin's to set. A mod reads
+          the queue and votes on it; opening a round is not part of that. */}
+      {isAdmin && (
       <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
         <label className="flex flex-col gap-1 text-sm">
           {i18next.t("curation-desk.applications.message-label")}
@@ -305,7 +473,44 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
               : i18next.t("curation-desk.applications.open-action")}
           </Button>
         </div>
+        {/* Both are left OUT of the save unless they changed: upstream reads an absent
+            knob as "leave it alone", and this form is saved every time the message is
+            reworded. Sending the shown value back would look harmless and would quietly
+            re-set a number another admin had just changed. */}
+        <div className="flex flex-wrap items-end gap-2 sm:col-span-2">
+          <label className="flex flex-col gap-1 text-sm">
+            {i18next.t("curation-desk.applications.quorum-label")}
+            <FormControl
+              type="number"
+              min={1}
+              max={QUORUM_MAX}
+              disabled={setWindow.isPending || !data}
+              value={quorumShown}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuorum(e.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            {i18next.t("curation-desk.applications.term-label")}
+            <FormControl
+              type="number"
+              min={1}
+              max={TERM_DAYS_MAX}
+              disabled={setWindow.isPending || !data}
+              value={termShown}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTerm(e.target.value)}
+            />
+          </label>
+          <Button
+            size="sm"
+            appearance="gray"
+            disabled={busy || !data || !knobsChanged}
+            onClick={() => saveWindow(!!applicationWindow?.open, true)}
+          >
+            {i18next.t("curation-desk.applications.knobs-save")}
+          </Button>
+        </div>
       </div>
+      )}
 
       {isLoading && (
         <p className="mt-3 text-sm text-gray-500">{i18next.t("curation-desk.list.loading")}</p>
@@ -327,7 +532,10 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
             key={entry.id}
             entry={entry}
             busy={busy}
+            quorum={quorum}
+            isAdmin={isAdmin}
             onDecide={(state, role, note) => onDecide(entry, state, role, note)}
+            onVote={(value, note) => onVote(entry, value, note)}
           />
         ))}
       </ul>
