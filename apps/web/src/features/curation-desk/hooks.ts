@@ -1241,7 +1241,16 @@ export function useCurationApplicationWindow() {
         { queryKey: QueryKeys.curation.applicationsPrefix() },
         (previous: CurationApplicationList | undefined) =>
           previous
-            ? { ...previous, window: data.window, quorum: data.quorum, term_days: data.term_days }
+            ? {
+                ...previous,
+                window: data.window,
+                // Spread only when the desk answered with them. A desk that predates
+                // the election answers the window alone, and writing `undefined` over
+                // the cached numbers would put the string "undefined" in the fields
+                // that read them.
+                ...(data.quorum !== undefined ? { quorum: data.quorum } : {}),
+                ...(data.term_days !== undefined ? { term_days: data.term_days } : {}),
+              }
             : previous
       );
       invalidateApplications(queryClient, username);

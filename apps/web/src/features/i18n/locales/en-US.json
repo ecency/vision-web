@@ -4401,7 +4401,7 @@
       "what-body": "Working the queue: reading new posts from every Hive front-end, voting the ones worth supporting from your own account, marking what you have handled so the next curator starts where you stopped, and flagging what does not belong.",
       "what-time": "A few hours a week is enough. There is no shift and no quota; curators pick up where the team cursor sits.",
       "trial-title": "How a seat works",
-      "trial-body": "A guest seat runs for 30 days. You get full desk access and the vote trail follows you from the first day, which means the @ecency stake goes where your votes go. At the end of the month the seat ends on its own and you are welcome to apply again; if the team wants to keep you, they make the seat permanent. Either way you will have seen how curation actually works here.",
+      "trial-body": "A guest seat runs for about a month. You get full desk access and the vote trail follows you from the first day, which means the @ecency stake goes where your votes go. At the end of the term the seat ends on its own and you are welcome to apply again; if the team wants to keep you, they make the seat permanent. Either way you will have seen how curation actually works here.",
       "guide-link": "Read the curation guide first",
       "checklist-title": "How your account looks from here",
       "checklist-hint": "None of this is a rule. Curators read the whole picture, and somebody the desk has never seen can still be exactly the right person.",
@@ -4976,7 +4976,7 @@
         "title": "14. Becoming a curator",
         "apply": "Seats are open to anyone: apply from the desk while applications are open, and the curation team reads it.",
         "apply-link": "Apply to be a guest curator",
-        "body": "<p>Applications are decided by the mods, not by one admin: three endorsements with nobody objecting puts you on the roster as a guest curator. An objection does not refuse anyone, it hands the decision to an admin.</p><p>A guest seat runs 30 days with the vote trail following you from the first day, then ends on its own. A seat the team wants to keep is made permanent by an admin. Guests mark, snooze and flag like everyone else but do not see other curators' note bodies or flag reasons (those notes name authors and allegations).</p><p>How many hours behind the queue is plus what got curated are public; reviewed-per-hour and marks per curator never are.</p>"
+        "body": "<p>Applications are decided by the mods, not by one admin: once enough of them endorse you and nobody objects, you are on the roster as a guest curator. An objection does not refuse anyone, it hands the decision to an admin.</p><p>A guest seat runs for about a month with the vote trail following you from the first day, then ends on its own. A seat the team wants to keep is made permanent by an admin. Guests mark, snooze and flag like everyone else but do not see other curators' note bodies or flag reasons (those notes name authors and allegations).</p><p>How many hours behind the queue is plus what got curated are public; reviewed-per-hour and marks per curator never are.</p>"
       },
       "checklist": {
         "title": "Onboarding checklist for a new curator",

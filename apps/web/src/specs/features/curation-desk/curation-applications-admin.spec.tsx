@@ -201,7 +201,7 @@ describe("curation applications, admin side", () => {
   it("asks for nothing while it is not enabled", async () => {
     // The panel carries its own gate: the view above it already refuses a
     // non-admin, so this proves the prop rather than that refusal.
-    renderWithQueryClient(<CurationApplicationsPanel enabled={false} />);
+    renderWithQueryClient(<CurationApplicationsPanel enabled={false} isAdmin={false} />);
     await waitFor(() =>
       expect(screen.getByText("curation-desk.applications.title")).toBeInTheDocument()
     );

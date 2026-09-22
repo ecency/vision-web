@@ -181,19 +181,32 @@ describe("curation elections", () => {
 
   // --- what the tally says ------------------------------------------------
 
-  it("counts only the votes of people still on the bench", async () => {
+  it("shows a vote from somebody off the bench struck through, not dropped", async () => {
     queue({
       votes: [vote("mod1", "endorse"), vote("gone", "endorse", false)],
       tally: { endorsed: 1, objected: 0 }
     });
     renderWithQueryClient(<CurationApplicationsView />);
     await waitFor(() => expect(screen.getByText("@newbie")).toBeInTheDocument());
-    // The desk has already done the counting; what matters here is that the line
-    // stays VISIBLE and marked, so a total one short has a reason on the screen.
-    expect(screen.getByText("curation-desk.applications.endorsements")).toBeInTheDocument();
+    // The desk does the counting. What this proves is that the line is still on the
+    // screen and marked, so a total one short has a visible reason rather than
+    // reading as a bug.
     const stale = screen.getByText("+@gone");
     expect(stale.className).toContain("line-through");
     expect(screen.getByText("+@mod1").className).not.toContain("line-through");
+  });
+
+  it("does not raise an objection nobody stands behind any more", async () => {
+    // The one piece of counting this client does for itself: whether to show the
+    // objections chip at all. A retired objector must not make it appear.
+    queue({
+      votes: [vote("gone", "object", false)],
+      tally: { endorsed: 0, objected: 0 }
+    });
+    renderWithQueryClient(<CurationApplicationsView />);
+    await waitFor(() => expect(screen.getByText("@newbie")).toBeInTheDocument());
+    expect(screen.queryByText("curation-desk.applications.objections")).toBeNull();
+    expect(screen.getByText("-@gone").className).toContain("line-through");
   });
 
   it("shows an objection apart from the endorsements", async () => {
@@ -240,7 +253,62 @@ describe("curation elections", () => {
     fireEvent.change(quorum, { target: { value: "5" } });
     fireEvent.click(screen.getByText("curation-desk.applications.knobs-save"));
     await waitFor(() => expect(writes).toHaveLength(2));
-    expect(writes[1]).toMatchObject({ quorum: 5, term_days: 30 });
+    // Only what changed. The term is untouched, so it must not travel at all: absent
+    // means "leave it alone", and sending it back would re-set a number another admin
+    // had moved, while looking like a no-op.
+    expect(writes[1]).toMatchObject({ quorum: 5 });
+    expect("term_days" in writes[1]).toBe(false);
+  });
+
+  it("lets another admin's change win over a number being edited here", async () => {
+    state.role = "admin";
+    const writes: Record<string, unknown>[] = [];
+    let served = 3;
+    router.on(/curation-desk\/application-list$/, () =>
+      jsonResponse({
+        applications: [BASE],
+        counts: { open: 1 },
+        window: { open: true, message: null },
+        quorum: served,
+        term_days: 30
+      })
+    );
+    router.on(/curation-desk\/application-window$/, (_url: string, init: RequestInit) => {
+      writes.push(JSON.parse(String(init.body)));
+      return jsonResponse({ window: { open: true, message: null }, quorum: served, term_days: 30 });
+    });
+    router.on(/curation-desk\/application-vote$/, () =>
+      jsonResponse({
+        application: BASE,
+        votes: [],
+        tally: { endorsed: 1, objected: 0 },
+        quorum: served,
+        elected: false
+      })
+    );
+
+    renderWithQueryClient(<CurationApplicationsView />);
+    const quorum = await screen.findByLabelText("curation-desk.applications.quorum-label");
+    await waitFor(() => expect(quorum).toHaveValue(3));
+
+    // Typed here, and meanwhile somebody else sets it to 5. The refetch is triggered by
+    // something this tab did that is NOT a window save, so nothing here clears the
+    // draft: only the draft's basis moving can make the new number win.
+    fireEvent.change(quorum, { target: { value: "4" } });
+    expect(quorum).toHaveValue(4);
+    served = 5;
+    fireEvent.click(screen.getAllByText("curation-desk.applications.vote-endorse")[0]);
+
+    // Held on its own the draft would hide the change and then send 4 back over the 5.
+    await waitFor(() => expect(quorum).toHaveValue(5));
+
+    fireEvent.change(quorum, { target: { value: "6" } });
+    fireEvent.click(screen.getByText("curation-desk.applications.knobs-save"));
+    await waitFor(() => expect(writes).toHaveLength(1));
+    // Only the knob that moved: the term was never touched, and absent means
+    // "leave it alone" upstream.
+    expect(writes[0]).toMatchObject({ quorum: 6 });
+    expect("term_days" in writes[0]).toBe(false);
   });
 
   it("will not save a number the desk would refuse", async () => {

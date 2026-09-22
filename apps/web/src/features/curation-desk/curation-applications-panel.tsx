@@ -51,6 +51,36 @@ function inRange(value: string, max: number): boolean {
   return value.trim() !== "" && Number.isInteger(n) && n >= 1 && n <= max;
 }
 
+/** A number being edited, and the stored number it was typed against. */
+type NumberDraft = { value: string; basedOn: number } | null;
+
+/**
+ * What to show in a number field: the draft while the stored value is still the one it
+ * was typed against, and otherwise what is stored. Holding the text alone made this
+ * tab's copy win for ever, so another admin's change arrived on a refetch, was hidden,
+ * and was then sent back over their save.
+ */
+export function numberShown(draft: NumberDraft, stored: number | undefined): string {
+  if (stored === undefined) return "";
+  return draft && draft.basedOn === stored ? draft.value : String(stored);
+}
+
+/**
+ * The knobs whose value actually differs from what the desk holds. Absent means "leave
+ * it alone" upstream, so an unchanged knob must not travel at all.
+ */
+export function changedKnobs(
+  quorum: string,
+  termDays: string,
+  stored: { quorum: number; term_days: number } | undefined
+): { quorum?: number; term_days?: number } {
+  if (!stored) return {};
+  const out: { quorum?: number; term_days?: number } = {};
+  if (Number(quorum) !== stored.quorum) out.quorum = Number(quorum);
+  if (Number(termDays) !== stored.term_days) out.term_days = Number(termDays);
+  return out;
+}
+
 /**
  * The line to show in the field: the draft while the stored line is still the one
  * it was typed against, and otherwise what is stored. Holding the text alone made
@@ -304,10 +334,12 @@ export function CurationApplicationsPanel({
   // alone made this tab's copy win for ever: another admin's change arrived on a
   // refetch and was ignored, then overwritten by the next save from here.
   const [message, setMessage] = useState<{ value: string; basedOn: string } | null>(null);
-  // Held as strings so the field can be empty while it is being retyped; an empty or
-  // out-of-range value simply leaves the Save button off rather than sending a 0.
-  const [quorumDraft, setQuorum] = useState<string | null>(null);
-  const [termDraft, setTerm] = useState<string | null>(null);
+  // Held as strings so a field can be empty while it is being retyped, and against the
+  // stored number they were typed against, for the same reason the message is: a draft
+  // that outlives the value it was based on hides another admin's change and then sends
+  // the old number back over it.
+  const [quorumDraft, setQuorum] = useState<NumberDraft>(null);
+  const [termDraft, setTerm] = useState<NumberDraft>(null);
 
   const applications = data?.applications ?? [];
   const applicationWindow = data?.window;
@@ -317,8 +349,8 @@ export function CurationApplicationsPanel({
   // Until the queue has answered, the quorum is unknown. Showing the default would
   // put a number on the screen that the desk might not be running on.
   const quorum = data?.quorum ?? 0;
-  const quorumShown = quorumDraft ?? (data ? String(data.quorum) : "");
-  const termShown = termDraft ?? (data ? String(data.term_days) : "");
+  const quorumShown = numberShown(quorumDraft, data?.quorum);
+  const termShown = numberShown(termDraft, data?.term_days);
   const knobsChanged =
     !!data &&
     inRange(quorumShown, QUORUM_MAX) &&
@@ -349,10 +381,11 @@ export function CurationApplicationsPanel({
       {
         open,
         message: messageDraft.trim() ? messageDraft.trim() : null,
-        // Only on the button that is ABOUT the knobs. Upstream reads an absent knob as
-        // "leave it alone", so sending the shown value back on every message save would
-        // quietly re-set a number another admin had changed in between.
-        ...(withKnobs ? { quorum: Number(quorumShown), term_days: Number(termShown) } : {})
+        // Only the knobs that actually CHANGED, and only from the button that is about
+        // them. Upstream reads an absent knob as "leave it alone", so sending a number
+        // back unchanged would re-set one another admin had moved in between, and it
+        // would do it while looking like a no-op.
+        ...(withKnobs ? changedKnobs(quorumShown, termShown, data) : {})
       },
       {
         onSuccess: (data) => {
@@ -363,10 +396,11 @@ export function CurationApplicationsPanel({
           // against it, put the old message back in the field, and send it with
           // the next toggle, undoing the save.
           setMessage({ value: data.window.message ?? "", basedOn: stored });
-          // Only when the desk answered with them: a response without the knobs would
-          // otherwise put the string "undefined" in both fields.
-          if (data.quorum !== undefined) setQuorum(String(data.quorum));
-          if (data.term_days !== undefined) setTerm(String(data.term_days));
+          // Dropped rather than pinned to what came back: setQueriesData has already put
+          // the saved numbers in every cached queue, so the fields read them from there.
+          // Pinning them here is what made a draft outlive its basis.
+          setQuorum(null);
+          setTerm(null);
         },
         onError: (e) => errorToast(...formatError(e))
       }
@@ -486,7 +520,9 @@ export function CurationApplicationsPanel({
               max={QUORUM_MAX}
               disabled={setWindow.isPending || !data}
               value={quorumShown}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuorum(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                data && setQuorum({ value: e.target.value, basedOn: data.quorum })
+              }
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -497,7 +533,9 @@ export function CurationApplicationsPanel({
               max={TERM_DAYS_MAX}
               disabled={setWindow.isPending || !data}
               value={termShown}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTerm(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                data && setTerm({ value: e.target.value, basedOn: data.term_days })
+              }
             />
           </label>
           <Button
