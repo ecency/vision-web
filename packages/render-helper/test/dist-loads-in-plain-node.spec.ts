@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -206,7 +206,14 @@ describe("the build output loads in plain Node", () => {
         ]);
     });
 
-    it.each([["--out-dir", "space separated"], ["--out-dir=", "with an equals sign"]])(
+    it.each([
+        ["--out-dir", "space separated"],
+        ["--out-dir=", "with an equals sign"],
+        ["--outDir", "camel case, which cac also accepts"],
+        ["--outDir=", "camel case with an equals sign"],
+        ["-d", "the short alias"],
+        ["-d=", "the short alias with an equals sign"]
+    ])(
         "refuses %s (%s) rather than letting the two builds share one directory",
         async (flag) => {
             // Aimed at a path nothing else reads: if the guard ever regresses,
@@ -231,11 +238,43 @@ describe("the build output loads in plain Node", () => {
     it("writes both builds where package.json says they are", async () => {
         // The default branch is what ships, and no other case exercises it: the
         // spec always overrides the root, and tsconfig excludes this file.
+        const previous = process.env.RENDER_HELPER_DIST_ROOT;
         delete process.env.RENDER_HELPER_DIST_ROOT;
-        const configs = (await import("../tsup.config")).default as { outDir: string }[];
+        try {
+            const configs = (await import("../tsup.config")).default as { outDir: string }[];
 
-        expect(configs.map((config) => config.outDir)).toEqual(["dist/browser", "dist/node"]);
+            expect(configs.map((config) => config.outDir)).toEqual(["dist/browser", "dist/node"]);
+        } finally {
+            if (previous === undefined) delete process.env.RENDER_HELPER_DIST_ROOT;
+            else process.env.RENDER_HELPER_DIST_ROOT = previous;
+        }
     });
+
+    it(
+        "cleans only the two directories the builds own",
+        async () => {
+            // The clean step used to delete the root itself, so a root that
+            // named anything shared (a stale absolute path, `.`, a workspace
+            // directory) took unrelated files with it before tsup ran.
+            const root = mkdtempSync(join(PKG, "node_modules", ".render-helper-clean-"));
+            const bystander = join(root, "not-ours.txt");
+            writeFileSync(bystander, "keep me");
+
+            await exec("npm", ["run", "build"], {
+                cwd: PKG,
+                timeout: BUILD_MS,
+                env: { ...process.env, RENDER_HELPER_DIST_ROOT: root }
+            });
+
+            const survived = existsSync(bystander);
+            const built = existsSync(join(root, "node", "index.mjs"));
+            rmSync(root, { recursive: true, force: true });
+
+            expect(survived).toBe(true);
+            expect(built).toBe(true);
+        },
+        BUILD_MS
+    );
 
     it("leaves no bundler metafile in the output", () => {
         // --metafile is only there to tell the notices generator what was

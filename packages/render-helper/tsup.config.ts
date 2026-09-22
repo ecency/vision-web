@@ -18,9 +18,18 @@ import { defineConfig } from "tsup";
  */
 const DIST_ROOT = process.env.RENDER_HELPER_DIST_ROOT ?? "dist";
 
-/** The flag that would undo all of the above, in every spelling cac accepts. */
-const pointsBothBuildsAtOneDirectory = (arg: string) =>
-    arg === "--out-dir" || arg === "-d" || arg.startsWith("--out-dir=") || arg.startsWith("-d=");
+/**
+ * The flag that would undo all of the above, in every spelling cac accepts:
+ * `--out-dir`, its camel-case `--outDir`, the `-d` alias, and each of those
+ * with an `=`. Matching the names one by one missed `--outDir`, which built
+ * both configs into one directory again, so the name is normalised instead.
+ */
+const pointsBothBuildsAtOneDirectory = (arg: string): boolean => {
+    if (!arg.startsWith("-")) return false;
+
+    const name = arg.replace(/^-+/, "").split("=")[0].replace(/-/g, "").toLowerCase();
+    return name === "outdir" || name === "d";
+};
 
 if (process.argv.some(pointsBothBuildsAtOneDirectory)) {
     // Fail loudly rather than race: a collision that only shows up on a loaded

@@ -36,7 +36,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "node -e \"const d=process.env.RENDER_HELPER_DIST_ROOT??'dist';require('node:fs').rmSync(d,{recursive:true,force:true})\" && tsup --metafile && node scripts/third-party-notices.mjs",
+    "build": "node -e \"const p=require('node:path'),fs=require('node:fs'),r=process.env.RENDER_HELPER_DIST_ROOT??'dist';for(const b of ['browser','node'])fs.rmSync(p.join(r,b),{recursive:true,force:true})\" && tsup --metafile && node scripts/third-party-notices.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
