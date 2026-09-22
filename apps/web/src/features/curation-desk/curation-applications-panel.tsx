@@ -15,7 +15,7 @@ import { formatError } from "@/api/format-error";
 import { UserAvatar } from "@/features/shared/user-avatar";
 import { accountReputation, dateToRelative } from "@/utils";
 import { Chip } from "./curation-chip";
-import { clampText } from "./curation-text-limit";
+import { clampTrimmed } from "./curation-text-limit";
 import { DAY_MS } from "./consts";
 import {
   useCurationApplicationDecide,
@@ -142,7 +142,7 @@ function ApplicationRow({
             placeholder={i18next.t("curation-desk.applications.note-placeholder")}
             value={note}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setNote(clampText(e.target.value, NOTE_MAX))
+              setNote(clampTrimmed(e.target.value, NOTE_MAX))
             }
           />
         </label>
@@ -196,10 +196,12 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
       {
         onSuccess: (data) => {
           successToast(i18next.t("curation-desk.applications.window-saved"));
-          // Based on what was just saved, so it holds until the refetch catches
-          // up and steps aside the moment somebody else changes it.
-          const saved = data.window.message ?? "";
-          setMessage({ value: saved, basedOn: saved });
+          // Based on the line this tab was showing BEFORE the save, not on what
+          // was saved: the cached window is still the pre-save one until the
+          // refetch lands, and a draft based on the new text would read as stale
+          // against it, put the old message back in the field, and send it with
+          // the next toggle, undoing the save.
+          setMessage({ value: data.window.message ?? "", basedOn: stored });
         },
         onError: (e) => errorToast(...formatError(e))
       }
@@ -269,7 +271,7 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
             placeholder={i18next.t("curation-desk.applications.message-placeholder")}
             value={messageDraft}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setMessage({ value: clampText(e.target.value, MESSAGE_MAX), basedOn: stored })
+              setMessage({ value: clampTrimmed(e.target.value, MESSAGE_MAX), basedOn: stored })
             }
           />
         </label>

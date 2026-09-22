@@ -20,7 +20,7 @@ import { useActiveUsername } from "@/core/hooks/use-active-username";
 import { accountReputation } from "@/utils/account-reputation";
 import { dateToRelative } from "@/utils";
 import { Chip } from "./curation-chip";
-import { clampText, textLength } from "./curation-text-limit";
+import { clampTrimmed, textLength } from "./curation-text-limit";
 import { DAY_MS } from "./consts";
 import {
   useCurationApplication,
@@ -339,13 +339,14 @@ export function CurationApplyView() {
                   aria-describedby={`curation-apply-${key}-count`}
                   placeholder={i18next.t(`curation-desk.apply.${key}-placeholder`)}
                   value={draft[key]}
-                  // clampText rather than maxLength: the attribute counts UTF-16
-                  // units, so it would stop an emoji answer at half the length
-                  // the desk accepts.
+                  // clampTrimmed rather than maxLength: the attribute counts
+                  // UTF-16 units, so it would stop an emoji answer at half the
+                  // length the desk accepts, and it counts whitespace the desk
+                  // trims away before measuring.
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                     setDraft((current) => ({
                       ...current,
-                      [key]: clampText(e.target.value, ANSWER_MAX[key])
+                      [key]: clampTrimmed(e.target.value, ANSWER_MAX[key])
                     }))
                   }
                 />

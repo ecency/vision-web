@@ -29,6 +29,7 @@ import {
   type CurationRosterFeedParams,
   type CurationApplicationAnswers,
   type CurationApplicationDecideInput,
+  type CurationApplicationList,
   type CurationApplicationMine,
   type CurationApplicationState,
   type CurationRosterSetInput,
@@ -1203,7 +1204,16 @@ export function useCurationApplicationWindow() {
     mutationKey: [...QueryKeys.curation._prefix, "application-window", username],
     mutationFn: (input: { open: boolean; message?: string | null }) =>
       curationDeskApi.applicationWindow(username, input),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Keep the response authoritative until the refetch lands. Every cached
+      // queue still carries the pre-save window, and the panel reads the message
+      // it sends from there, so the next toggle would put the old line back over
+      // the one just saved.
+      queryClient.setQueriesData(
+        { queryKey: QueryKeys.curation.applicationsPrefix() },
+        (previous: CurationApplicationList | undefined) =>
+          previous ? { ...previous, window: data.window } : previous
+      );
       invalidateApplications(queryClient, username);
       // The window rides on status, which every desk page polls.
       queryClient.invalidateQueries({ queryKey: QueryKeys.curation.status() });

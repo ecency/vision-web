@@ -158,6 +158,20 @@ describe("CurationApplyView", () => {
     expect(field).toHaveValue(emoji);
   });
 
+  it("spends the limit on the answer, not on the spaces around it", async () => {
+    // The desk trims before it measures, so a leading space used to cost a
+    // character the server would have taken.
+    const full = " " + "a".repeat(200);
+    renderWithQueryClient(<CurationApplyView />);
+    await waitFor(() =>
+      expect(screen.getByText("curation-desk.apply.questions-title")).toBeInTheDocument()
+    );
+    const field = screen.getByLabelText("curation-desk.apply.availability-label");
+    fireEvent.change(field, { target: { value: full } });
+    expect(field).toHaveValue(full);
+    expect(String((field as HTMLTextAreaElement).value).trim()).toHaveLength(200);
+  });
+
   it("waits for the signed read before offering a form", async () => {
     // In that gap the page knows nothing about an application already sent, a
     // wait still running or a closed window, so a form here invites a refusal.

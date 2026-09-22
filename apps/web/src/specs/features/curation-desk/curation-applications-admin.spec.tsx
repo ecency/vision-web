@@ -283,6 +283,37 @@ describe("curation applications, admin side", () => {
     expect(draftOrStored({ value: "Mine.", basedOn: "Old." }, "Theirs.")).toBe("Theirs.");
   });
 
+  it("does not put the old line back over the one just saved", async () => {
+    // The cached queue still holds the pre-save window until the refetch lands,
+    // and the panel sends the message it reads from there.
+    const writes: Record<string, unknown>[] = [];
+    let served = "First line.";
+    router.on(/curation-desk\/application-list$/, () =>
+      jsonResponse({ applications: [], counts: {}, window: { open: false, message: served } })
+    );
+    router.on(/curation-desk\/application-window$/, (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      writes.push(body);
+      // The refetch is deliberately NOT told about the save: this is the gap.
+      return jsonResponse({ window: { open: false, message: body.message } });
+    });
+
+    renderWithQueryClient(<CurationRosterView />);
+    const field = await screen.findByLabelText("curation-desk.applications.message-label");
+    await waitFor(() => expect(field).toHaveValue("First line."));
+
+    fireEvent.change(field, { target: { value: "Second line." } });
+    fireEvent.click(screen.getByText("curation-desk.applications.message-save"));
+    await waitFor(() => expect(writes).toHaveLength(1));
+    await waitFor(() => expect(field).toHaveValue("Second line."));
+
+    // an immediate toggle must carry the saved line, not the one it replaced
+    fireEvent.click(screen.getByText("curation-desk.applications.open-action"));
+    await waitFor(() => expect(writes).toHaveLength(2));
+    expect(writes[1]).toMatchObject({ open: true, message: "Second line." });
+    expect(served).toBe("First line.");
+  });
+
   it("shows the stored closed line in the field", async () => {
     router.on(/curation-desk\/application-list$/, () =>
       jsonResponse({

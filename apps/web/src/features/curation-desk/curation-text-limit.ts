@@ -16,3 +16,14 @@ export function clampText(value: string, max: number): string {
   const points = [...value];
   return points.length <= max ? value : points.slice(0, max).join("");
 }
+
+/**
+ * The value capped where the desk caps it. Both backends TRIM before they measure,
+ * so clamping the raw value spends the budget on whitespace: a leading space and
+ * 500 characters became 499 the server would have taken. A value that fits once
+ * trimmed is returned untouched, spaces and all.
+ */
+export function clampTrimmed(value: string, max: number): string {
+  const trimmed = value.trim();
+  return textLength(trimmed) <= max ? value : clampText(trimmed, max);
+}
