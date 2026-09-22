@@ -314,6 +314,37 @@ describe("curation applications, admin side", () => {
     expect(served).toBe("First line.");
   });
 
+  it("closes the message field while its own save is in flight", async () => {
+    // The success handler replaces this field's state with what was sent, so
+    // anything typed in the gap would be dropped without a trace.
+    let finish: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    router.on(/curation-desk\/application-list$/, () =>
+      jsonResponse({ applications: [], counts: {}, window: { open: false, message: "Closed." } })
+    );
+    router.on(/curation-desk\/application-window$/, async (_url: string, init: RequestInit) => {
+      await held;
+      return jsonResponse({
+        window: { open: false, message: JSON.parse(String(init.body)).message }
+      });
+    });
+
+    renderWithQueryClient(<CurationRosterView />);
+    const field = await screen.findByLabelText("curation-desk.applications.message-label");
+    await waitFor(() => expect(field).toHaveValue("Closed."));
+    expect(field).not.toBeDisabled();
+
+    fireEvent.change(field, { target: { value: "Back in October." } });
+    fireEvent.click(screen.getByText("curation-desk.applications.message-save"));
+    await waitFor(() => expect(field).toBeDisabled());
+
+    finish?.();
+    await waitFor(() => expect(field).not.toBeDisabled());
+    expect(field).toHaveValue("Back in October.");
+  });
+
   it("shows the stored closed line in the field", async () => {
     router.on(/curation-desk\/application-list$/, () =>
       jsonResponse({

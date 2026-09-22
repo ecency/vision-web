@@ -268,6 +268,11 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
           {i18next.t("curation-desk.applications.message-label")}
           <FormControl
             type="text"
+            // Closed while its own save is in flight: the success handler replaces
+            // this field's state with what was sent, so anything typed in the gap
+            // would be dropped without a trace. A decide is not its business, so
+            // `busy` would be too wide a guard here.
+            disabled={setWindow.isPending}
             placeholder={i18next.t("curation-desk.applications.message-placeholder")}
             value={messageDraft}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
