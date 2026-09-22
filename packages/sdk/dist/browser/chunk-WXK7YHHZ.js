@@ -1,0 +1,3 @@
+import {a}from'./chunk-HEILHNSR.js';import {queryOptions}from'@tanstack/react-query';var s="https://raw.githubusercontent.com/openhive-network/watchmen/main/output/flat/badactors.txt";function c(){return queryOptions({queryKey:a.badActors.list(),queryFn:async({signal:o})=>{let t=await fetch(s,{signal:o});if(!t.ok)throw new Error(`Failed to fetch bad actors list: ${t.status}`);let r=await t.text();return new Set(r.split(`
+`).filter(Boolean))},staleTime:1440*60*1e3,gcTime:1/0})}export{c as a};//# sourceMappingURL=chunk-WXK7YHHZ.js.map
+//# sourceMappingURL=chunk-WXK7YHHZ.js.map

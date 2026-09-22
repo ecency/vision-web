@@ -1,2 +1,0 @@
-import {b}from'./chunk-Z6HCXX2D.js';import {a}from'./chunk-5RCSJKZ2.js';import {b as b$1}from'./chunk-VZPJHJWH.js';import {a as a$1}from'./chunk-6SASR6MC.js';import {queryOptions}from'@tanstack/react-query';function u(e){return queryOptions({queryKey:a$1.assets.hivePowerDelegatings(e),enabled:!!e,queryFn:async()=>b(e,await b$1().fetchQuery({...a(e),staleTime:6e4}))})}export{u as a};//# sourceMappingURL=chunk-L7GUKTWI.js.map
-//# sourceMappingURL=chunk-L7GUKTWI.js.map

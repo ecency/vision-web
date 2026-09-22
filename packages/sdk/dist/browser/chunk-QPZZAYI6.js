@@ -1,2 +1,0 @@
-import {e}from'./chunk-OBSTAXZB.js';import {a}from'./chunk-4ETWXS3L.js';import {a as a$1}from'./chunk-6SASR6MC.js';function u(i,o,a$2){return a(["communities","pin-post"],i,({community:n,account:t,permlink:m,pin:p})=>[e(i,n,t,m,p)],async(n,t)=>{o?.adapter?.invalidateQueries&&await o.adapter.invalidateQueries([a$1.posts.entry(`/@${t.account}/${t.permlink}`),[...a$1.communities.singlePrefix(t.community)]]);},o,"posting",{broadcastMode:a$2??"async"})}export{u as a};//# sourceMappingURL=chunk-QPZZAYI6.js.map
-//# sourceMappingURL=chunk-QPZZAYI6.js.map

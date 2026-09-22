@@ -125,6 +125,11 @@ const CONFIG = {
         enabled: true,
         recommendations: {
           enabled: true
+        },
+        // The apply page and the review panel in the roster tab. Off leaves the
+        // desk exactly as it was; the route answers 404 and the tab is hidden.
+        applications: {
+          enabled: true
         }
       },
       publish: {

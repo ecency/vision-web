@@ -1,0 +1,2 @@
+import {a}from'./chunk-HEILHNSR.js';import {j}from'./chunk-UB5YHSMC.js';import {queryOptions}from'@tanstack/react-query';function m(i,e=10){let t=i.trim();return queryOptions({queryKey:a.search.topics(t,e),queryFn:async()=>(await j("condenser_api.get_trending_tags",[t,e+1])).map(r=>r.name).filter(r=>r!==""&&!r.startsWith("hive-")).slice(0,e),enabled:!!t})}export{m as a};//# sourceMappingURL=chunk-XBKPXUCE.js.map
+//# sourceMappingURL=chunk-XBKPXUCE.js.map

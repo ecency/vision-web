@@ -1,0 +1,2 @@
+import {c}from'./chunk-PS3MSD25.js';import {a}from'./chunk-HEILHNSR.js';import {queryOptions}from'@tanstack/react-query';function m(){return queryOptions({queryKey:a.communities.rewarded(),queryFn:async()=>{let e=await fetch(c.privateApiHost+"/private-api/rewarded-communities",{method:"GET",headers:{"Content-Type":"application/json"}});if(!e.ok)throw new Error(`Failed to fetch rewarded communities: ${e.status}`);return e.json()}})}export{m as a};//# sourceMappingURL=chunk-ETC4LO6Q.js.map
+//# sourceMappingURL=chunk-ETC4LO6Q.js.map

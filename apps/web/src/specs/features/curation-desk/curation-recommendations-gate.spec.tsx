@@ -19,7 +19,13 @@ vi.mock("@/config", () => ({
   EcencyConfigManager: {
     useConfig: (condition: (config: unknown) => unknown) =>
       condition({
-        visionFeatures: { curationDesk: { enabled: true, recommendations: { enabled: flags.recommendations } } },
+        visionFeatures: {
+          curationDesk: {
+            enabled: true,
+            recommendations: { enabled: flags.recommendations },
+            applications: { enabled: true },
+          },
+        },
       }),
   },
 }));

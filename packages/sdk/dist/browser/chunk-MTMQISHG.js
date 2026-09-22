@@ -1,0 +1,2 @@
+import {a}from'./chunk-AZ7QNEWY.js';import {b}from'./chunk-HU5GXRZC.js';import {a as a$1}from'./chunk-HEILHNSR.js';import {j}from'./chunk-UB5YHSMC.js';import {queryOptions}from'@tanstack/react-query';function p(r){return queryOptions({queryKey:a$1.accounts.list(...r),enabled:r.length>0,queryFn:async()=>{let e=r.filter(b);if(e.length===0)return [];let u=await j("condenser_api.get_accounts",[e],void 0,void 0,void 0,c=>Array.isArray(c));return a(u??[])}})}export{p as a};//# sourceMappingURL=chunk-MTMQISHG.js.map
+//# sourceMappingURL=chunk-MTMQISHG.js.map

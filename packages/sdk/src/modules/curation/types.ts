@@ -319,6 +319,11 @@ export interface CurationStatus {
     trail_votes_today: { posts: number; comments: number };
     recommended_posts: number;
   };
+  /**
+   * The application window, carried on status so no page needs a second call to
+   * find out whether it may invite anyone. Older desks do not send it.
+   */
+  applications?: CurationApplicationWindow;
   mana_spent_today: CurationManaSpent | null;
   vp: CurationVp | null;
   head_lag_seconds: number;
@@ -367,6 +372,71 @@ export interface CurationRoster {
 
 export interface CurationRosterAdminList {
   curators: CurationRosterAdminEntry[];
+}
+
+/** Open or closed, with the line shown to a reader while it is closed. */
+export interface CurationApplicationWindow {
+  open: boolean;
+  message: string | null;
+  /** Only the admin routes return this; status carries the two fields above. */
+  updated_at?: string | null;
+}
+
+export type CurationApplicationState =
+  | "open"
+  | "shortlisted"
+  | "accepted"
+  | "declined"
+  | "withdrawn";
+
+/** The three questions the apply form asks, as the desk stores them. */
+export interface CurationApplicationAnswers {
+  motivation: string;
+  availability: string;
+  pick: string;
+}
+
+/** What an applicant sees of their own application. */
+export interface CurationApplication {
+  id: number;
+  username: string;
+  answers: CurationApplicationAnswers;
+  state: CurationApplicationState;
+  created: string;
+  updated_at: string;
+  decided_at: string | null;
+}
+
+/**
+ * The reviewer's view. `snapshot` is the applicant's recommendation record as it
+ * stood when they applied, frozen because the live record keeps moving.
+ */
+export interface CurationApplicationAdminEntry extends CurationApplication {
+  snapshot: CurationRecommenderStats | null;
+  decided_by: string | null;
+  admin_note: string | null;
+}
+
+export interface CurationApplicationMine {
+  application: CurationApplication | null;
+  window: CurationApplicationWindow;
+  /** The viewer's roster role, so the page can say "you are already a curator". */
+  role: CurationRole | null;
+}
+
+export interface CurationApplicationList {
+  applications: CurationApplicationAdminEntry[];
+  counts: Partial<Record<CurationApplicationState, number>>;
+  window: CurationApplicationWindow;
+}
+
+export interface CurationApplicationDecideInput {
+  applicant: string;
+  /** Only the three a reviewer may set; `open` and `withdrawn` are not decisions. */
+  state: "shortlisted" | "accepted" | "declined";
+  /** Accepting only. Defaults to `trial` upstream, which is not trailed. */
+  role?: Extract<CurationRole, "trial" | "curator" | "mod">;
+  note?: string;
 }
 
 export interface CurationRosterSetInput {

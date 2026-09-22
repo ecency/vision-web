@@ -1,2 +1,0 @@
-import {f}from'./chunk-QYY3VHLJ.js';import {b}from'./chunk-CNB64U7U.js';import {a}from'./chunk-4ETWXS3L.js';import {a as a$1}from'./chunk-6SASR6MC.js';function m(o,r,e){return a(["accounts","grant-posting-permission"],o,t=>[f(o,t.currentPosting,t.grantedAccount,t.weightThreshold,t.memoKey,t.jsonMetadata)],async()=>{await b(r?.adapter,e,[a$1.accounts.full(o)]);},r,"active",{broadcastMode:e})}export{m as a};//# sourceMappingURL=chunk-RAXKSEAC.js.map
-//# sourceMappingURL=chunk-RAXKSEAC.js.map

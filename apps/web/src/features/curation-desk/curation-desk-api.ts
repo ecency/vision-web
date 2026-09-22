@@ -1,5 +1,11 @@
 import { ensureValidToken } from "@/utils";
 import {
+  curationApplicationApplyRequest,
+  curationApplicationDecideRequest,
+  curationApplicationListRequest,
+  curationApplicationMineRequest,
+  curationApplicationWindowRequest,
+  curationApplicationWithdrawRequest,
   curationDismissRecoRequest,
   curationMarkClearRequest,
   curationMarkRequest,
@@ -10,6 +16,9 @@ import {
   curationRosterRetireRequest,
   curationRosterSetRequest,
   curationTickRequest,
+  type CurationApplicationAnswers,
+  type CurationApplicationDecideInput,
+  type CurationApplicationState,
   type CurationDismissRecoInput,
   type CurationMarkInput,
   type CurationMyMarksParams,
@@ -84,5 +93,33 @@ export const curationDeskApi = {
 
   async rosterRetire(username: string | undefined, curator: string) {
     return curationRosterRetireRequest(await code(username), curator);
+  },
+
+  async applicationApply(username: string | undefined, answers: CurationApplicationAnswers) {
+    return curationApplicationApplyRequest(await code(username), answers);
+  },
+
+  async applicationMine(username: string | undefined, signal?: AbortSignal) {
+    return curationApplicationMineRequest(await code(username), signal);
+  },
+
+  async applicationWithdraw(username: string | undefined) {
+    return curationApplicationWithdrawRequest(await code(username));
+  },
+
+  async applicationList(
+    username: string | undefined,
+    state?: CurationApplicationState,
+    signal?: AbortSignal
+  ) {
+    return curationApplicationListRequest(await code(username), { state }, signal);
+  },
+
+  async applicationDecide(username: string | undefined, input: CurationApplicationDecideInput) {
+    return curationApplicationDecideRequest(await code(username), input);
+  },
+
+  async applicationWindow(username: string | undefined, input: { open: boolean; message?: string | null }) {
+    return curationApplicationWindowRequest(await code(username), input);
   },
 };

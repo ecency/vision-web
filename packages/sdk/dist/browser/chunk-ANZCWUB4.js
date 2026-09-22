@@ -1,0 +1,2 @@
+import {a}from'./chunk-4ETWXS3L.js';import {a as a$1}from'./chunk-HEILHNSR.js';function d(o,r,n){return a(a$1.polls.vote(),o??"",({pollTrxId:s,choices:a})=>{if(!o)throw new Error("[SDK][Polls] Cannot vote without an authenticated username");return [["custom_json",{id:"polls",required_auths:[],required_posting_auths:[o],json:JSON.stringify({poll:s,action:"vote",choices:a})}]]},void 0,r,"posting",{broadcastMode:n??"async"})}export{d as a};//# sourceMappingURL=chunk-ANZCWUB4.js.map
+//# sourceMappingURL=chunk-ANZCWUB4.js.map
