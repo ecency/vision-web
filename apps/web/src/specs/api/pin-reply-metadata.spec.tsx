@@ -232,6 +232,38 @@ describe("usePinReply metadata", () => {
     await expect(result.current.mutateAsync({ pin: true })).rejects.toThrow();
     expect(sdkUpdateReply).not.toHaveBeenCalled();
   });
+
+  it("refuses on a taken-down parent, whose metadata the filter has blanked", async () => {
+    // The filter blanks json_metadata to {}, which is truthy, so a plain
+    // existence check would pass and broadcast {app, format, pinned_reply}
+    // over the author's real on-chain metadata (#1862).
+    const parent = {
+      author: "boombaam1",
+      permlink: "coinbase-customer-service-1-8o8-e007d0f9ebe",
+      body: "This post is not available due to a copyright/fraudulent claim.",
+      json_metadata: {}
+    } as unknown as Entry;
+
+    const { result } = renderHook(() => usePinReply(reply, parent), { wrapper });
+    await expect(result.current.mutateAsync({ pin: true })).rejects.toThrow();
+    expect(sdkUpdateReply).not.toHaveBeenCalled();
+  });
+
+  it("still pins on a post that genuinely published empty metadata", async () => {
+    // `{}` is valid json_metadata, not proof that the filter erased anything,
+    // so emptiness alone must not block a pin.
+    const parent = {
+      author: "alice",
+      permlink: "a-post",
+      body: "the post body",
+      json_metadata: {}
+    } as unknown as Entry;
+
+    const { result } = renderHook(() => usePinReply(reply, parent), { wrapper });
+    await result.current.mutateAsync({ pin: true });
+
+    expect(sdkUpdateReply).toHaveBeenCalled();
+  });
 });
 
 /**

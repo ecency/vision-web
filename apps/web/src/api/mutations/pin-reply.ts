@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import pack from "../../../package.json";
 import { useUpdateReply } from "./update-reply";
 import { makeApp, parseJsonMetadata } from "@/utils/posting";
+import { isTakenDownPost } from "@/core/dmca-posts";
 import i18next from "i18next";
 import { Entry, MetaData } from "@/entities";
 
@@ -26,6 +27,15 @@ export function usePinReply(reply?: Entry, parent?: Entry) {
       // json_metadata as a STRING, and spreading that publishes one key per
       // character. A post whose metadata cannot be read here is left alone,
       // because the alternative is broadcasting a wipe over it.
+      // A takedown is the same hazard from the other direction: the filter
+      // blanks json_metadata to {}, so what we hold is not what the author
+      // published and spreading it would broadcast the wipe. Tested on the
+      // LIST, not on emptiness: {} is metadata a post may genuinely carry, and
+      // refusing every empty object would block pinning on those too (#1862).
+      if (isTakenDownPost(parent.author, parent.permlink)) {
+        throw new Error(i18next.t("entry-menu.pin-metadata-unreadable"));
+      }
+
       const existing = parseJsonMetadata(parent.json_metadata);
       if (!existing) {
         throw new Error(i18next.t("entry-menu.pin-metadata-unreadable"));

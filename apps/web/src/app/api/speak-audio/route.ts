@@ -11,6 +11,7 @@ import {
 // React-free SDK entry: this server route only needs a raw bridge RPC, not the
 // full @ecency/sdk (react-query). @ecency/sdk/hive ships just the tx/RPC engine.
 import { callRPC } from "@ecency/sdk/hive";
+import { isTakenDownPost } from "@/core/dmca-posts";
 import { Resolver } from "node:dns/promises";
 import type { LookupFunction } from "node:net";
 import { Agent } from "undici";
@@ -212,6 +213,15 @@ export async function GET(request: NextRequest) {
   const permlink = request.nextUrl.searchParams.get("permlink");
   if (!isValidAuthor(author) || !isValidPermlink(permlink)) {
     return jsonError("INVALID_REF", 400);
+  }
+
+  // A takedown covers the post's media too, and this route proxies it from our
+  // own origin under a long-lived immutable cache key. It reads the chain
+  // directly through the React-free hive entry, so the SDK's query filters
+  // never see it and loading CONFIG here would not help: check the list
+  // itself (#1862).
+  if (isTakenDownPost(author, permlink)) {
+    return jsonError("NOT_SPEAK", 404);
   }
 
   // Derive the audio URL from the on-chain post (trusted lookup), NOT from a

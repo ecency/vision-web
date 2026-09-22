@@ -10,7 +10,10 @@ interface Props {
 export function EntryTags({ entry }: Props) {
   const tags = Array.isArray(entry?.json_metadata?.tags)
     ? Array.from(new Set(entry.json_metadata?.tags)).filter(Boolean)
-    : ["ecency"];
+    // No tags means no tags. The fallback used to invent "ecency", which a
+    // taken-down post now renders as its only chip once the filter blanks the
+    // metadata (#1862).
+    : [];
 
   return (
     <div className="entry-tags mb-4">

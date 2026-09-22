@@ -8,9 +8,10 @@
 
 import { ConfigManager } from "@ecency/sdk";
 import defaults from "@/defaults";
-import dmcaAccounts from "../../public/dmca/dmca-accounts.json";
-import dmcaTags from "../../public/dmca/dmca-tags.json";
-import dmcaPosts from "../../public/dmca/dmca-posts.json";
+// One loader for the takedown lists, which route handlers call on their own
+// because they never execute the root layout (#1862). A call and not a bare
+// side-effect import, because webpack prunes those here: see core/dmca-lists.
+import { loadDmcaLists } from "@/core/dmca-lists";
 import publicNodes from "../../public/public-nodes.json";
 
 // Configure SDK API host based on environment.
@@ -42,6 +43,7 @@ if (!isServer) {
 }
 ConfigManager.setImageHost(defaults.imageServer);
 ConfigManager.setHiveNodes(publicNodes);
+loadDmcaLists();
 
 // Label server-side (SSR) Hive requests so this traffic is identifiable in node
 // analytics instead of the bare `node` User-Agent that Node's fetch sends by
@@ -116,15 +118,6 @@ function startRpcProxyReport(): void {
   const handle = setInterval(tick, RPC_PROXY_REPORT_MS) as { unref?: () => void };
   handle.unref?.();
 }
-
-// Initialize DMCA filtering immediately at module load time
-// This ensures the lists are available before any React Query fetches execute
-// Files are in public/dmca/ for both bundling and mobile app access
-ConfigManager.setDmcaLists({
-  accounts: dmcaAccounts.accounts ?? [],
-  tags: dmcaTags.tags ?? [],
-  posts: dmcaPosts.posts ?? [],
-});
 
 // NOTE: Web broadcast adapter is NOT initialized here.
 // Mutation hooks should retrieve and pass the shared web adapter singleton

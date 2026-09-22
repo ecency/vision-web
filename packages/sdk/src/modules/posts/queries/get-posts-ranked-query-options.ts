@@ -82,9 +82,16 @@ export function getPostsRankedInfiniteQueryOptions(
   >({
     queryKey: QueryKeys.posts.postsRanked(sort, tag, limit, observer),
     queryFn: async ({ pageParam, signal }: { pageParam: PageParam; signal: AbortSignal }) => {
-      let sanitizedTag = tag;
-      if (CONFIG.dmcaTagRegexes.some((regex) => regex.test(tag))) {
-        sanitizedTag = "";
+      // A taken-down tag serves NOTHING, not everything. Blanking it here used
+      // to leave `tag: ""`, which the bridge reads as "any tag", so the hub of
+      // a tag under takedown answered with the whole site's ranked feed. That
+      // was invisible while route handlers had no lists loaded; it is not any
+      // more (#1862).
+      // `tag &&` guards the global feeds: the patterns are compiled unanchored
+      // and every untagged caller passes "", so a pattern that also matched the
+      // empty string would empty the whole site rather than one hub.
+      if (tag && CONFIG.dmcaTagRegexes.some((regex) => regex.test(tag))) {
+        return [];
       }
 
       const response = await callRPC("bridge.get_ranked_posts", {
@@ -92,7 +99,7 @@ export function getPostsRankedInfiniteQueryOptions(
         start_author: pageParam.author,
         start_permlink: pageParam.permlink,
         limit,
-        tag: sanitizedTag,
+        tag,
         observer,
       }, undefined, undefined, signal);
 
@@ -150,9 +157,16 @@ export function getPostsRankedQueryOptions(
     queryKey: QueryKeys.posts.postsRankedPage(sort, start_author, start_permlink, limit, tag, observer),
     enabled,
     queryFn: async ({ signal } = {} as any) => {
-      let sanitizedTag = tag;
-      if (CONFIG.dmcaTagRegexes.some((regex) => regex.test(tag))) {
-        sanitizedTag = "";
+      // A taken-down tag serves NOTHING, not everything. Blanking it here used
+      // to leave `tag: ""`, which the bridge reads as "any tag", so the hub of
+      // a tag under takedown answered with the whole site's ranked feed. That
+      // was invisible while route handlers had no lists loaded; it is not any
+      // more (#1862).
+      // `tag &&` guards the global feeds: the patterns are compiled unanchored
+      // and every untagged caller passes "", so a pattern that also matched the
+      // empty string would empty the whole site rather than one hub.
+      if (tag && CONFIG.dmcaTagRegexes.some((regex) => regex.test(tag))) {
+        return [];
       }
 
       const response = await getPostsRanked(
@@ -160,7 +174,7 @@ export function getPostsRankedQueryOptions(
         start_author,
         start_permlink,
         limit,
-        sanitizedTag,
+        tag,
         observer,
         signal
       );

@@ -1,10 +1,18 @@
 import { prefetchQuery } from "@/core/react-query";
+import { loadDmcaLists } from "@/core/dmca-lists";
+import { isTakenDownPost } from "@/core/dmca-posts";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { getContentQueryOptions, getProfilesQueryOptions } from "@ecency/sdk";
 import { isIndexable, ReputationSource } from "@/utils/entry-indexability";
 import { safeDecodeURIComponent } from "@/utils";
 import { parseJsonMetadata, withinMetadataLimits } from "@/utils/json-metadata";
 import type { Entry, JsonMetadata } from "@/entities";
+
+// Load-bearing, and a call rather than a bare side-effect import (webpack
+// prunes those here, see core/dmca-lists): these are route handlers, which
+// never execute the root layout, so nothing else loads the takedown lists and
+// every DMCA filter below would otherwise run against an empty list (#1862).
+loadDmcaLists();
 
 // Re-exported so route handlers have a single import surface for the endpoints.
 export { selfUrl, renderEntryMarkdown } from "./entry-agent-format";
@@ -79,9 +87,12 @@ const cappedMetadata = (value: unknown): JsonMetadata => {
 
 /**
  * How far a chain of quoted cross-posts is followed. Nothing in the app builds
- * one today (these routes read condenser_api.get_content, bridge.get_post and
- * bridge.get_discussion, none of which sets original_entry), so this bounds
- * data that would have to come from a node, not from us.
+ * one on these paths: `original_entry` is attached by the SDK's `resolvePost`,
+ * which only `bridge/requests.ts`'s `getPost()` calls, and these routes do not
+ * use it. They read `condenser_api.get_content`, then fall back to
+ * `getPostQueryOptions`, which issues `bridge.get_post` through `callRPC`
+ * directly, and to `bridge.get_discussion`. So a chain here would have to come
+ * from a node rather than from us, and this bounds it.
  */
 const MAX_QUOTE_CHAIN = 4;
 
@@ -201,6 +212,17 @@ export async function loadIndexableEntry(
   if (!loaded) return null;
 
   const { entry } = loaded;
+
+  // A takedown suppresses the path outright here, ahead of the gate below.
+  // llms.txt promises these endpoints 404 whatever is suppressed for policy
+  // reasons, and a machine has no use for the notice the HTML page shows a
+  // reader. It also has to come BEFORE isIndexable: the filter blanks the
+  // metadata and replaces the body, which removes the NSFW tag and the
+  // thin-content signal the gate would otherwise have rejected the post on,
+  // so without this a listed post could answer 200 where it used to 404
+  // (#1862). oEmbed keeps using loadEntry, so link cards still render the
+  // censored card rather than breaking.
+  if (isTakenDownPost(entry.author, entry.permlink)) return null;
 
   let account: ReputationSource = null;
   let accountFetchFailed = false;

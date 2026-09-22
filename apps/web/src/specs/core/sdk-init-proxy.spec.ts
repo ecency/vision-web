@@ -62,6 +62,20 @@ afterEach(() => {
   }
 });
 
+describe("sdk-init and the takedown lists", () => {
+  it("loads them, by outcome rather than by reading the source", async () => {
+    // A source-level check cannot tell a real call from one shadowed by a
+    // local of the same name, and this is the loader the whole app relies on
+    // outside route handlers (#1862).
+    manager.setDmcaLists.mockClear();
+
+    await load({});
+
+    expect(manager.setDmcaLists).toHaveBeenCalled();
+    expect(manager.setDmcaLists.mock.calls[0][0].posts.length).toBeGreaterThan(0);
+  });
+});
+
 describe("sdk-init server rpc proxy", () => {
   it("enables the proxy against the overlay host as soon as the shared secret is present", async () => {
     await load({ SSR_INTERNAL_SECRET: "s3cret", INTERNAL_API_HOST: "http://vapi:4000/" });
