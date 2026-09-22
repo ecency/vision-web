@@ -3,7 +3,8 @@ import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { getContentQueryOptions, getProfilesQueryOptions } from "@ecency/sdk";
 import { isIndexable, ReputationSource } from "@/utils/entry-indexability";
 import { safeDecodeURIComponent } from "@/utils";
-import type { Entry } from "@/entities";
+import { parseJsonMetadata, withinMetadataLimits } from "@/utils/json-metadata";
+import type { Entry, JsonMetadata } from "@/entities";
 
 // Re-exported so route handlers have a single import surface for the endpoints.
 export { selfUrl, renderEntryMarkdown } from "./entry-agent-format";
@@ -68,6 +69,77 @@ export function agentNotFound(): Response {
       ...AGENT_SECURITY_HEADERS
     }
   });
+}
+
+/** The field in the shape the body promises: an object, always. */
+const cappedMetadata = (value: unknown): JsonMetadata => {
+  const parsed = parseJsonMetadata(value);
+  return (parsed && withinMetadataLimits(parsed) ? parsed : {}) as JsonMetadata;
+};
+
+/**
+ * How far a chain of quoted cross-posts is followed. Nothing in the app builds
+ * one today (these routes read condenser_api.get_content, bridge.get_post and
+ * bridge.get_discussion, none of which sets original_entry), so this bounds
+ * data that would have to come from a node, not from us.
+ */
+const MAX_QUOTE_CHAIN = 4;
+
+/**
+ * Give an entry the `json_metadata` shape the type (and this endpoint
+ * family's documentation) promises, for the response body.
+ *
+ * Both sources are cast to `Entry`, whose `json_metadata` is an object, but
+ * only `bridge.get_post` actually parses it: `condenser_api.get_content`
+ * returns the raw string the author published. That made the field's TYPE
+ * depend on which source answered, inside a public response body: on
+ * 2026-09-21 one post served `content.json_metadata` as a string from `.json`
+ * while all 13 entries of its `.discussion.json` came back parsed, so a
+ * consumer reading `json_metadata.tags` got `undefined` from one endpoint and
+ * the tags from the other.
+ *
+ * Metadata that is not a JSON object (unparseable, `null`, an array, a bare
+ * number) or past the limits in @/utils/json-metadata becomes `{}`. An envelope
+ * advertised as structured JSON should not hand back a raw string for a field
+ * typed as an object, and every reader below already collapses unreadable
+ * metadata to "no fields".
+ *
+ * ⛔ Applied where an entry is SERIALISED, never inside the loader. The
+ * indexability gate must keep seeing the entry exactly as the source returned
+ * it: `canonicalTarget` (entry-indexability.ts) deliberately does not parse a
+ * declared `canonical_url`, and handing it a parsed entry would switch that
+ * branch on for these endpoints alone, behind a product decision that says
+ * not to. Gating on the raw entry is also what keeps `loadIndexableEntry` a
+ * true mirror of generate-entry-metadata.ts.
+ *
+ * The entry is copied, never patched in place: it is the object held in the
+ * query cache, which the entry page renders from in the same process. The
+ * copy is shallow, so metadata that arrived parsed is still the cached
+ * object: callers serialise the result and must not mutate it.
+ */
+export function withParsedMetadata(entry: Entry): Entry {
+  const normalised: Entry = { ...entry, json_metadata: cappedMetadata(entry.json_metadata) };
+
+  // A cross-post carries the entry it quotes, which can quote another. Each
+  // one is serialised into the same body and the spread above is shallow, so
+  // walk the chain rather than its first link, and cut a chain longer than
+  // anything a real cross-post produces instead of serialising it unchecked.
+  let quoting = normalised;
+  for (let link = 0; quoting.original_entry; link += 1) {
+    if (link >= MAX_QUOTE_CHAIN) {
+      quoting.original_entry = undefined;
+      break;
+    }
+
+    const quoted: Entry = {
+      ...quoting.original_entry,
+      json_metadata: cappedMetadata(quoting.original_entry.json_metadata)
+    };
+    quoting.original_entry = quoted;
+    quoting = quoted;
+  }
+
+  return normalised;
 }
 
 /**
@@ -138,8 +210,6 @@ export async function loadIndexableEntry(
   } catch {
     accountFetchFailed = true;
   }
-
-  // Shared-Redis read; pass a singleton set so isIndexable keeps its
 
   if (!isIndexable(entry, account, accountFetchFailed)) return null;
 
