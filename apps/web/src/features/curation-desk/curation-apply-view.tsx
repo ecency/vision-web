@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import clsx from "clsx";
 import i18next from "i18next";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
@@ -119,6 +118,19 @@ function ApplicantChecklist({ username }: ChecklistProps) {
   );
 }
 
+/**
+ * When a declined applicant may apply again, or null once that wait has passed.
+ * The desk measures it from the decision, so this does too: it is a display of
+ * the backend's rule, and the backend still decides.
+ */
+function reapplyDate(application: CurationApplication): Date | null {
+  if (application.state !== "declined") return null;
+  const decided = Date.parse(application.decided_at ?? application.updated_at);
+  if (Number.isNaN(decided)) return null;
+  const at = new Date(decided + REAPPLY_DAYS * DAY_MS);
+  return at.getTime() > Date.now() ? at : null;
+}
+
 function SentApplication({
   application,
   onWithdraw,
@@ -129,12 +141,7 @@ function SentApplication({
   busy: boolean;
 }) {
   const live = application.state === "open" || application.state === "shortlisted";
-  const reapplyAt = useMemo(() => {
-    if (application.state !== "declined") return null;
-    const decided = Date.parse(application.decided_at ?? application.updated_at);
-    if (Number.isNaN(decided)) return null;
-    return new Date(decided + REAPPLY_DAYS * DAY_MS);
-  }, [application.state, application.decided_at, application.updated_at]);
+  const reapplyAt = useMemo(() => reapplyDate(application), [application]);
 
   return (
     <div className="mt-6 rounded-lg border border-[--border-color] p-4">
@@ -148,7 +155,7 @@ function SentApplication({
       {reapplyAt && (
         <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
           {i18next.t("curation-desk.apply.declined-again", {
-            when: reapplyAt.toLocaleDateString()
+            when: reapplyAt.toLocaleDateString(i18next.language)
           })}
         </p>
       )}
@@ -209,11 +216,20 @@ export function CurationApplyView() {
     status.data?.applications ?? { open: true, message: null };
 
   const application = mine.data?.application ?? null;
-  const live = application?.state === "open" || application?.state === "shortlisted";
   // The roster read and the signed read can disagree for a moment after a
   // promotion; either saying so is enough to stop offering the form.
   const onRoster = isRoster || !!mine.data?.role;
   const busy = apply.isPending;
+  // A decided application is history, not a wall. The desk lets a declined
+  // applicant back once the wait has passed and an accepted one who has since
+  // left the roster back at once, so a page that showed the old decision and no
+  // form would be refusing on the desk's behalf.
+  const canApplyAgain =
+    !application ||
+    application.state === "withdrawn" ||
+    application.state === "accepted" ||
+    (application.state === "declined" && !reapplyDate(application));
+  const sent = application && application.state !== "withdrawn" ? application : null;
 
   function submit() {
     const answers = {
@@ -260,11 +276,9 @@ export function CurationApplyView() {
 
       {username && !onRoster && <ApplicantChecklist username={username} />}
 
-      {onRoster ? (
-        <p className="mt-6 text-sm">{i18next.t("curation-desk.apply.roster-member")}</p>
-      ) : application && (live || application.state !== "withdrawn") ? (
+      {sent && !onRoster && (
         <SentApplication
-          application={application}
+          application={sent}
           busy={withdraw.isPending}
           onWithdraw={() =>
             withdraw.mutate(undefined, {
@@ -273,7 +287,18 @@ export function CurationApplyView() {
             })
           }
         />
-      ) : !applicationWindow.open ? (
+      )}
+
+      {onRoster ? (
+        <p className="mt-6 text-sm">{i18next.t("curation-desk.apply.roster-member")}</p>
+      ) : mine.isError ? (
+        // A signed read that failed says nothing about whether an application
+        // exists, and offering a form here would send one the desk refuses with
+        // "you have already applied".
+        <p className="mt-6 text-sm text-red-030 dark:text-red-light-020" role="alert">
+          {i18next.t("curation-desk.apply.error")}
+        </p>
+      ) : !canApplyAgain ? null : !applicationWindow.open ? (
         <div className="mt-6 rounded-lg border border-[--border-color] p-4">
           <h3 className="text-base font-semibold">
             {i18next.t("curation-desk.apply.closed-title")}
@@ -296,14 +321,17 @@ export function CurationApplyView() {
           {ANSWERS.map((key) => (
             <div key={key} className="flex flex-col gap-1">
               {/* The counter sits OUTSIDE the label: inside it, it becomes part of
-                  the field's accessible name, so a screen reader reads the count
-                  as part of the question and it changes on every keystroke. */}
+                  the field's accessible name, so a screen reader would read the
+                  count as part of the question and hear it change on every
+                  keystroke. Described-by instead, so the limit is still announced
+                  once, when the field is entered. */}
               <label className="flex flex-col gap-1 text-sm">
                 {i18next.t(`curation-desk.apply.${key}-label`)}
                 <FormControl
                   type="textarea"
                   rows={key === "availability" ? 2 : 4}
                   maxLength={ANSWER_MAX[key]}
+                  aria-describedby={`curation-apply-${key}-count`}
                   placeholder={i18next.t(`curation-desk.apply.${key}-placeholder`)}
                   value={draft[key]}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
@@ -312,13 +340,8 @@ export function CurationApplyView() {
                 />
               </label>
               <span
-                aria-hidden="true"
-                className={clsx(
-                  "self-end text-xs",
-                  draft[key].trim().length > ANSWER_MAX[key]
-                    ? "text-red-030 dark:text-red-light-020"
-                    : "text-gray-600 dark:text-gray-400"
-                )}
+                id={`curation-apply-${key}-count`}
+                className="self-end text-xs text-gray-600 dark:text-gray-400"
               >
                 {i18next.t("curation-desk.apply.counter", {
                   count: draft[key].trim().length,

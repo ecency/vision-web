@@ -57,6 +57,7 @@ vi.mock("@/api/format-error", () => ({ formatError: (e: unknown) => [String(e), 
 
 import CurationApplyPage from "@/app/curation/apply/page";
 import { CurationTabs } from "@/app/curation/_components/curation-tabs";
+import { CurationApplicationsPanel } from "@/features/curation-desk/curation-applications-panel";
 import { CurationRosterView } from "@/features/curation-desk/curation-roster-view";
 
 const APPLICATION = {
@@ -139,10 +140,18 @@ describe("curation applications, admin side", () => {
     // must be the one the desk can undo without having voted anything.
     expect(writes[0]).toMatchObject({ applicant: "newbie", state: "accepted", role: "trial" });
 
-    fireEvent.click(within(row).getByText("curation-desk.applications.decline"));
+    // and the select is what it promotes with, not a constant
+    fireEvent.change(within(row).getByLabelText("curation-desk.applications.seat"), {
+      target: { value: "curator" }
+    });
+    fireEvent.click(within(row).getByText("curation-desk.applications.promote"));
     await waitFor(() => expect(writes).toHaveLength(2));
-    expect(writes[1]).toMatchObject({ applicant: "newbie", state: "declined" });
-    expect(writes[1].role).toBeUndefined();
+    expect(writes[1]).toMatchObject({ applicant: "newbie", state: "accepted", role: "curator" });
+
+    fireEvent.click(within(row).getByText("curation-desk.applications.decline"));
+    await waitFor(() => expect(writes).toHaveLength(3));
+    expect(writes[2]).toMatchObject({ applicant: "newbie", state: "declined" });
+    expect(writes[2].role).toBeUndefined();
   });
 
   it("opens and closes applications with the line readers see", async () => {
@@ -163,6 +172,70 @@ describe("curation applications, admin side", () => {
 
     await waitFor(() => expect(writes).toHaveLength(1));
     expect(writes[0]).toMatchObject({ open: false, message: "Back next month." });
+  });
+
+  it("asks for nothing while it is not enabled", async () => {
+    // The panel carries its own gate: the view above it already refuses a
+    // non-admin, so this proves the prop rather than that refusal.
+    renderWithQueryClient(<CurationApplicationsPanel enabled={false} />);
+    await waitFor(() =>
+      expect(screen.getByText("curation-desk.applications.title")).toBeInTheDocument()
+    );
+    expect(router.callsTo(/application-list/)).toHaveLength(0);
+  });
+
+  it("will not flip a window it has not read yet", async () => {
+    // Undefined is not "open": a click here sent `open: true` at a desk that was
+    // closed, and the reader saw applications open for the round trip.
+    router.on(/curation-desk\/application-list$/, () => jsonResponse({ error: "nope" }, 500));
+    renderWithQueryClient(<CurationRosterView />);
+    await waitFor(() =>
+      expect(screen.getByText("curation-desk.applications.error")).toBeInTheDocument()
+    );
+    expect(
+      screen.getByText("curation-desk.applications.open-action").closest("button")
+    ).toBeDisabled();
+  });
+
+  it("saves the closed line without opening applications to do it", async () => {
+    const writes: Record<string, unknown>[] = [];
+    router.on(/curation-desk\/application-list$/, () =>
+      jsonResponse({
+        applications: [],
+        counts: {},
+        window: { open: false, message: "Closed." }
+      })
+    );
+    router.on(/curation-desk\/application-window$/, (_url: string, init: RequestInit) => {
+      writes.push(JSON.parse(String(init.body)));
+      return jsonResponse({ window: { open: false, message: "Closed until October." } });
+    });
+
+    renderWithQueryClient(<CurationRosterView />);
+    await waitFor(() =>
+      expect(screen.getByText("curation-desk.applications.window-closed")).toBeInTheDocument()
+    );
+    fireEvent.change(screen.getByLabelText("curation-desk.applications.message-label"), {
+      target: { value: "Closed until October." }
+    });
+    fireEvent.click(screen.getByText("curation-desk.applications.message-save"));
+
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0]).toMatchObject({ open: false, message: "Closed until October." });
+  });
+
+  it("reads the queue again when a decision is refused", async () => {
+    // 404 means another admin decided this applicant first, so the row on screen
+    // is already wrong: a failure is exactly when the list has to be re-read.
+    router.on(/curation-desk\/application-decide$/, () =>
+      jsonResponse({ error: "not found" }, 404)
+    );
+    renderWithQueryClient(<CurationRosterView />);
+    await waitFor(() => expect(screen.getByText("@newbie")).toBeInTheDocument());
+    const before = router.callsTo(/application-list/).length;
+
+    fireEvent.click(screen.getByText("curation-desk.applications.decline"));
+    await waitFor(() => expect(router.callsTo(/application-list/).length).toBeGreaterThan(before));
   });
 
   it("goes away entirely with the flag, route, tab and panel together", async () => {
@@ -191,6 +264,14 @@ describe("curation applications, admin side", () => {
     await waitFor(() => expect(screen.getByText("curation-desk.tabs.roster")).toBeInTheDocument());
     expect(screen.queryByText("curation-desk.tabs.apply")).toBeNull();
     asAdmin.unmount();
+
+    // A trial is the case the roster check exists for: already in, nothing to
+    // apply for, and no admin tab to hide behind.
+    state.role = "trial";
+    const asTrial = renderWithQueryClient(<CurationTabs />);
+    await waitFor(() => expect(screen.getByText("curation-desk.tabs.queue")).toBeInTheDocument());
+    expect(screen.queryByText("curation-desk.tabs.apply")).toBeNull();
+    asTrial.unmount();
 
     state.username = "newbie";
     state.role = "admin";

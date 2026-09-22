@@ -28,6 +28,21 @@ vi.mock("@/api/format-error", () => ({ formatError: (e: unknown) => [String(e), 
 
 import { CurationApplyView } from "@/features/curation-desk/curation-apply-view";
 
+const DAY = 86_400_000;
+
+function sentApplication(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 7,
+    username: "newbie",
+    answers: ANSWERS,
+    state: "open",
+    created: iso(-DAY),
+    updated_at: iso(-DAY),
+    decided_at: null,
+    ...overrides
+  };
+}
+
 const ANSWERS = {
   motivation: "I read every day and want to choose on purpose.",
   availability: "About five hours a week, evenings UTC+2.",
@@ -161,6 +176,100 @@ describe("CurationApplyView", () => {
       expect(screen.getByText("curation-desk.apply.roster-member")).toBeInTheDocument()
     );
     expect(screen.queryByText("curation-desk.apply.questions-title")).toBeNull();
+  });
+
+  it("offers the form again once a declined applicant has waited", async () => {
+    // The desk takes a new application 30 days after a decline, so a page that
+    // kept showing the decision and no form would refuse on the desk's behalf.
+    router.on(/curation-desk\/application-mine$/, () =>
+      jsonResponse({
+        application: sentApplication({
+          state: "declined",
+          decided_at: iso(-31 * DAY),
+          updated_at: iso(-31 * DAY)
+        }),
+        window: { open: true, message: null },
+        role: null
+      })
+    );
+    renderWithQueryClient(<CurationApplyView />);
+    await waitFor(() =>
+      expect(screen.getByText("curation-desk.apply.state-declined")).toBeInTheDocument()
+    );
+    expect(screen.getByText("curation-desk.apply.questions-title")).toBeInTheDocument();
+  });
+
+  it("keeps the form away while the wait after a decline is still running", async () => {
+    router.on(/curation-desk\/application-mine$/, () =>
+      jsonResponse({
+        application: sentApplication({
+          state: "declined",
+          decided_at: iso(-2 * DAY),
+          updated_at: iso(-2 * DAY)
+        }),
+        window: { open: true, message: null },
+        role: null
+      })
+    );
+    renderWithQueryClient(<CurationApplyView />);
+    await waitFor(() =>
+      expect(screen.getByText("curation-desk.apply.state-declined")).toBeInTheDocument()
+    );
+    expect(screen.getByText("curation-desk.apply.declined-again")).toBeInTheDocument();
+    expect(screen.queryByText("curation-desk.apply.questions-title")).toBeNull();
+  });
+
+  it("welcomes back an accepted applicant who has left the roster", async () => {
+    router.on(/curation-desk\/application-mine$/, () =>
+      jsonResponse({
+        application: sentApplication({ state: "accepted", decided_at: iso(-30 * DAY) }),
+        window: { open: true, message: null },
+        role: null
+      })
+    );
+    renderWithQueryClient(<CurationApplyView />);
+    await waitFor(() =>
+      expect(screen.getByText("curation-desk.apply.state-accepted")).toBeInTheDocument()
+    );
+    expect(screen.getByText("curation-desk.apply.questions-title")).toBeInTheDocument();
+  });
+
+  it("says nothing it cannot know when the signed read fails", async () => {
+    // A failed read says nothing about whether an application exists, and a form
+    // offered here sends one the desk answers "you have already applied".
+    router.on(/curation-desk\/application-mine$/, () => jsonResponse({ error: "nope" }, 500));
+    renderWithQueryClient(<CurationApplyView />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(screen.queryByText("curation-desk.apply.questions-title")).toBeNull();
+  });
+
+  it("reads the closed window from the public status for a logged out reader", async () => {
+    state.username = undefined;
+    router.on(/curation-desk\/status$/, () =>
+      jsonResponse({
+        ...makeStatus(),
+        applications: { open: false, message: "Closed until October." }
+      })
+    );
+    renderWithQueryClient(<CurationApplyView />);
+    await waitFor(() => expect(screen.getByText("Closed until October.")).toBeInTheDocument());
+    expect(screen.queryByText("curation-desk.apply.questions-title")).toBeNull();
+  });
+
+  it("keeps what was typed when the submit fails", async () => {
+    router.on(/curation-desk\/application-apply$/, () =>
+      jsonResponse({ error: "applications are closed" }, 400)
+    );
+    renderWithQueryClient(<CurationApplyView />);
+    await waitFor(() =>
+      expect(screen.getByText("curation-desk.apply.questions-title")).toBeInTheDocument()
+    );
+    fillForm();
+    fireEvent.click(screen.getByText("curation-desk.apply.submit"));
+    await waitFor(() => expect(router.callsTo(/application-apply/)).toHaveLength(1));
+    expect(screen.getByLabelText("curation-desk.apply.motivation-label")).toHaveValue(
+      ANSWERS.motivation
+    );
   });
 
   it("shows a sent application with a way to take it back", async () => {

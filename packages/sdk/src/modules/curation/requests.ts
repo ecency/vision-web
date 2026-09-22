@@ -471,8 +471,8 @@ export function curationApplicationDecideRequest(
     throw new Error("[SDK][Curation] a decision needs an applicant and a state");
   }
   const body: Record<string, unknown> = { applicant, state };
-  // The role belongs to an acceptance only; sending it with a decline would be
-  // refused upstream rather than ignored.
+  // The role belongs to an acceptance only. The desk ignores it on a decline
+  // rather than refusing it, so sending one would be a lie in the audit log.
   if (state === "accepted" && role) body.role = role;
   if (note !== undefined) body.note = note;
   return postJson("/application-decide", code, body, "decide an application", undefined, hasApplication);

@@ -172,9 +172,11 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
     setWindow.mutate(
       { open, message: messageDraft.trim() ? messageDraft.trim() : null },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
           successToast(i18next.t("curation-desk.applications.window-saved"));
-          setMessage(null);
+          // Hold what was saved rather than dropping back to the stored line,
+          // which is the pre-write one until the list refetches.
+          setMessage(data.window.message ?? "");
         },
         onError: (e) => errorToast(...formatError(e))
       }
@@ -213,7 +215,17 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
   return (
     <section className="mt-2 rounded-lg border border-[--border-color] p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">{i18next.t("curation-desk.applications.title")}</h2>
+        <h2 className="text-base font-semibold">
+          {i18next.t("curation-desk.applications.title")}
+          {data?.counts && (
+            <span className="ml-2 text-xs font-normal text-gray-600 dark:text-gray-400">
+              {i18next.t("curation-desk.applications.counts", {
+                open: data.counts.open ?? 0,
+                shortlisted: data.counts.shortlisted ?? 0
+              })}
+            </span>
+          )}
+        </h2>
         {applicationWindow && (
           <Chip tone={applicationWindow.open ? "green" : "gray"}>
             {applicationWindow.open
@@ -237,16 +249,31 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMessage(e.target.value)}
           />
         </label>
-        <Button
-          size="sm"
-          appearance={applicationWindow?.open ? "gray" : undefined}
-          disabled={busy}
-          onClick={() => saveWindow(!applicationWindow?.open)}
-        >
-          {applicationWindow?.open
-            ? i18next.t("curation-desk.applications.close-action")
-            : i18next.t("curation-desk.applications.open-action")}
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Saving the line and flipping the switch are separate: rewording the
+              message while closed used to mean opening applications for the round
+              trip, which readers could act on. */}
+          <Button
+            size="sm"
+            appearance="gray"
+            disabled={busy || !applicationWindow}
+            onClick={() => saveWindow(!!applicationWindow?.open)}
+          >
+            {i18next.t("curation-desk.applications.message-save")}
+          </Button>
+          <Button
+            size="sm"
+            appearance={applicationWindow?.open ? "gray" : undefined}
+            // Until the window is known the button cannot say which way it flips,
+            // and a click would send `open: true` at a desk that is closed.
+            disabled={busy || !applicationWindow}
+            onClick={() => saveWindow(!applicationWindow?.open)}
+          >
+            {applicationWindow?.open
+              ? i18next.t("curation-desk.applications.close-action")
+              : i18next.t("curation-desk.applications.open-action")}
+          </Button>
+        </div>
       </div>
 
       {isLoading && (

@@ -29,6 +29,7 @@ import {
   type CurationRosterFeedParams,
   type CurationApplicationAnswers,
   type CurationApplicationDecideInput,
+  type CurationApplicationMine,
   type CurationApplicationState,
   type CurationRosterSetInput,
   type CurationSort,
@@ -1125,10 +1126,14 @@ export function useCurationApplications(enabled = true, state?: CurationApplicat
  */
 function invalidateApplications(
   queryClient: ReturnType<typeof useQueryClient>,
-  username: string | undefined
+  username?: string
 ) {
   queryClient.invalidateQueries({ queryKey: QueryKeys.curation.applicationsPrefix() });
-  queryClient.invalidateQueries({ queryKey: QueryKeys.curation.application(username) });
+  // The applicant's own view is a cache in THEIR browser, so a reviewer can only
+  // invalidate their own copy of it; the applicant's refetches on its own.
+  if (username) {
+    queryClient.invalidateQueries({ queryKey: QueryKeys.curation.application(username) });
+  }
 }
 
 export function useCurationApply() {
@@ -1138,7 +1143,19 @@ export function useCurationApply() {
     mutationKey: [...QueryKeys.curation._prefix, "application-apply", username],
     mutationFn: (answers: CurationApplicationAnswers) =>
       curationDeskApi.applicationApply(username, answers),
-    onSuccess: () => invalidateApplications(queryClient, username),
+    // The response carries the stored application, so the page shows it at once
+    // instead of rendering an empty form until the refetch lands.
+    onSuccess: (data) => {
+      queryClient.setQueryData(
+        QueryKeys.curation.application(username),
+        (previous: CurationApplicationMine | undefined) => ({
+          role: previous?.role ?? null,
+          application: data.application,
+          window: data.window,
+        })
+      );
+      invalidateApplications(queryClient, username);
+    },
   });
 }
 
@@ -1148,7 +1165,14 @@ export function useCurationApplicationWithdraw() {
   return useMutation({
     mutationKey: [...QueryKeys.curation._prefix, "application-withdraw", username],
     mutationFn: () => curationDeskApi.applicationWithdraw(username),
-    onSuccess: () => invalidateApplications(queryClient, username),
+    onSuccess: (data) => {
+      queryClient.setQueryData(
+        QueryKeys.curation.application(username),
+        (previous: CurationApplicationMine | undefined) =>
+          previous ? { ...previous, application: data.application } : previous
+      );
+      invalidateApplications(queryClient, username);
+    },
   });
 }
 
@@ -1159,8 +1183,12 @@ export function useCurationApplicationDecide() {
     mutationKey: [...QueryKeys.curation._prefix, "application-decide", username],
     mutationFn: (input: CurationApplicationDecideInput) =>
       curationDeskApi.applicationDecide(username, input),
-    onSuccess: (_data, input) => {
-      invalidateApplications(queryClient, input.applicant);
+    // onSettled, not onSuccess: the two refusals that matter here mean the queue is
+    // ALREADY wrong (404 when another admin decided this applicant first, 400 when
+    // they were added to the roster by hand meanwhile), so a failure is exactly
+    // when the list has to be read again.
+    onSettled: () => {
+      invalidateApplications(queryClient);
       // An acceptance writes a roster row in the same transaction, so the list
       // below the queue is stale the moment this resolves.
       invalidateRoster(queryClient);
