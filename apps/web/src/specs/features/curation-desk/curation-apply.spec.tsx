@@ -139,6 +139,49 @@ describe("CurationApplyView", () => {
     expect(writes).toHaveLength(0);
   });
 
+  it("counts an answer the way the desk counts it", async () => {
+    // Both backends measure in code points, so an emoji is one character there
+    // and two to JavaScript: `maxLength` cut a 200 emoji answer in half.
+    const emoji = "\u{1F600}".repeat(200);
+    expect(emoji.length).toBe(400);
+
+    renderWithQueryClient(<CurationApplyView />);
+    await waitFor(() =>
+      expect(screen.getByText("curation-desk.apply.questions-title")).toBeInTheDocument()
+    );
+    const field = screen.getByLabelText("curation-desk.apply.availability-label");
+    fireEvent.change(field, { target: { value: emoji } });
+    expect(field).toHaveValue(emoji);
+
+    // and one more is where the desk would stop it, not at half the length
+    fireEvent.change(field, { target: { value: emoji + "\u{1F600}" } });
+    expect(field).toHaveValue(emoji);
+  });
+
+  it("waits for the signed read before offering a form", async () => {
+    // In that gap the page knows nothing about an application already sent, a
+    // wait still running or a closed window, so a form here invites a refusal.
+    let answer: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    router.on(/curation-desk\/application-mine$/, async () => {
+      await held;
+      return jsonResponse({ application: null, window: { open: true, message: null }, role: null });
+    });
+
+    renderWithQueryClient(<CurationApplyView />);
+    await waitFor(() =>
+      expect(screen.getByText("curation-desk.apply.what-title")).toBeInTheDocument()
+    );
+    expect(screen.queryByText("curation-desk.apply.questions-title")).toBeNull();
+
+    answer?.();
+    await waitFor(() =>
+      expect(screen.getByText("curation-desk.apply.questions-title")).toBeInTheDocument()
+    );
+  });
+
   it("shows the closed message instead of a form when applications are closed", async () => {
     router.on(/curation-desk\/application-mine$/, () =>
       jsonResponse({

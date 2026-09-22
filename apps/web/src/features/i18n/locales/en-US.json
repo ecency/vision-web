@@ -4953,7 +4953,9 @@
       },
       "becoming": {
         "title": "14. Becoming a curator",
-        "body": "<p>Four weeks as a trial curator with desk access and untrailed votes. Trial curators mark, snooze and flag like everyone else but do not see other curators' note bodies or flag reasons until promoted (those notes name authors and allegations). Then a review of reviewed-per-hour, flag precision and overlap.</p><p>How many hours behind the queue is plus what got curated are public; reviewed-per-hour and marks per curator never are.</p><p>Seats are open to anyone: <a href=\"/curation/apply\">apply from the desk</a> when applications are open, and a desk admin reads it.</p>"
+        "apply": "Seats are open to anyone: apply from the desk when applications are open, and a desk admin reads it.",
+        "apply-link": "Apply to be a guest curator",
+        "body": "<p>Four weeks as a trial curator with desk access and untrailed votes. Trial curators mark, snooze and flag like everyone else but do not see other curators' note bodies or flag reasons until promoted (those notes name authors and allegations). Then a review of reviewed-per-hour, flag precision and overlap.</p><p>How many hours behind the queue is plus what got curated are public; reviewed-per-hour and marks per curator never are.</p>"
       },
       "checklist": {
         "title": "Onboarding checklist for a trial curator",

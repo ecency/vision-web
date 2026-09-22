@@ -1,5 +1,6 @@
 import i18next from "i18next";
 import Link from "next/link";
+import { EcencyConfigManager } from "@/config";
 import { Tsx } from "@/features/i18n/helper";
 import { Table, Td, Th, Tr } from "@/features/ui/table";
 
@@ -61,6 +62,14 @@ function sustainable(weightPct: number): number {
  * lives under curation-desk.guide.* so Crowdin picks it up. Carries no client directive.
  */
 export function CurationGuide() {
+  // The guide is public and static, so the link to the apply page has to go with
+  // the flag: an instance that runs no applications would otherwise send readers
+  // from section 14 to a 404. getConfigValue, not useConfig: this component has
+  // no client directive and a hook here would make it one.
+  const applicationsEnabled = EcencyConfigManager.getConfigValue(
+    ({ visionFeatures }) => visionFeatures.curationDesk.applications.enabled
+  );
+
   return (
     <article className="mx-auto w-full max-w-3xl rounded-2xl reading-surface px-5 py-6 lg:px-8 lg:py-8">
       <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
@@ -97,6 +106,14 @@ export function CurationGuide() {
           <Tsx k={`curation-desk.guide.${id}.body`}>
             <div className={BODY_CLASS} />
           </Tsx>
+          {id === "becoming" && applicationsEnabled && (
+            <p className="mt-3">
+              {i18next.t("curation-desk.guide.becoming.apply")}{" "}
+              <Link className="text-blue-dark-sky" href="/curation/apply">
+                {i18next.t("curation-desk.guide.becoming.apply-link")}
+              </Link>
+            </p>
+          )}
           {id === "weight" && (
             <div className="mt-4">
               <Table full={true}>

@@ -15,8 +15,16 @@ export function getCurationApplicationsQueryOptions(
 ) {
   return queryOptions({
     queryKey: QueryKeys.curation.applications(username, state),
-    queryFn: ({ signal }) =>
-      curationApplicationListRequest(code, { state }, signal),
+    queryFn: ({ signal }) => {
+      // Guarded twice: `enabled` gates automatic fetching only, a prefetch or a
+      // fetchQuery still runs this, and the request would throw "missing auth".
+      if (!username || !code) {
+        throw new Error(
+          "[SDK][Curation] reading the application queue needs a signed-in account",
+        );
+      }
+      return curationApplicationListRequest(code, { state }, signal);
+    },
     enabled: !!username && !!code,
     staleTime: 60_000,
   });

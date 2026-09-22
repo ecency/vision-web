@@ -15,6 +15,7 @@ import { formatError } from "@/api/format-error";
 import { UserAvatar } from "@/features/shared/user-avatar";
 import { accountReputation, dateToRelative } from "@/utils";
 import { Chip } from "./curation-chip";
+import { clampText } from "./curation-text-limit";
 import { DAY_MS } from "./consts";
 import {
   useCurationApplicationDecide,
@@ -27,6 +28,23 @@ import {
  * tab: promoting writes the roster row the form below manages, so the two
  * belong on one screen rather than in two tabs that disagree.
  */
+
+/** The caps the desk enforces, counted in code points on both sides. */
+const NOTE_MAX = 500;
+const MESSAGE_MAX = 200;
+
+/**
+ * The line to show in the field: the draft while the stored line is still the one
+ * it was typed against, and otherwise what is stored. Holding the text alone made
+ * this tab's copy win for ever, so another admin's change arrived on a refetch,
+ * was ignored, and was then overwritten by the next save from here.
+ */
+export function draftOrStored(
+  draft: { value: string; basedOn: string } | null,
+  stored: string
+): string {
+  return draft && draft.basedOn === stored ? draft.value : stored;
+}
 
 /** The seats an acceptance may grant. Admin is not one: that is a roster edit. */
 const SEATS: Extract<CurationRole, "trial" | "curator" | "mod">[] = ["trial", "curator", "mod"];
@@ -121,10 +139,11 @@ function ApplicationRow({
           {i18next.t("curation-desk.applications.note")}
           <FormControl
             type="text"
-            maxLength={500}
             placeholder={i18next.t("curation-desk.applications.note-placeholder")}
             value={note}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNote(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              setNote(clampText(e.target.value, NOTE_MAX))
+            }
           />
         </label>
       </div>
@@ -160,13 +179,16 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
   const { data, isLoading, isError } = useCurationApplications(enabled);
   const decide = useCurationApplicationDecide();
   const setWindow = useCurationApplicationWindow();
-  const [message, setMessage] = useState<string | null>(null);
+  // The draft remembers which stored line it was typed against. Holding the text
+  // alone made this tab's copy win for ever: another admin's change arrived on a
+  // refetch and was ignored, then overwritten by the next save from here.
+  const [message, setMessage] = useState<{ value: string; basedOn: string } | null>(null);
 
   const applications = data?.applications ?? [];
   const applicationWindow = data?.window;
   const busy = decide.isPending || setWindow.isPending;
-  // Edited once and then owned by the field; until then the stored line shows.
-  const messageDraft = message ?? applicationWindow?.message ?? "";
+  const stored = applicationWindow?.message ?? "";
+  const messageDraft = draftOrStored(message, stored);
 
   function saveWindow(open: boolean) {
     setWindow.mutate(
@@ -174,9 +196,10 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
       {
         onSuccess: (data) => {
           successToast(i18next.t("curation-desk.applications.window-saved"));
-          // Hold what was saved rather than dropping back to the stored line,
-          // which is the pre-write one until the list refetches.
-          setMessage(data.window.message ?? "");
+          // Based on what was just saved, so it holds until the refetch catches
+          // up and steps aside the moment somebody else changes it.
+          const saved = data.window.message ?? "";
+          setMessage({ value: saved, basedOn: saved });
         },
         onError: (e) => errorToast(...formatError(e))
       }
@@ -243,10 +266,11 @@ export function CurationApplicationsPanel({ enabled }: { enabled: boolean }) {
           {i18next.t("curation-desk.applications.message-label")}
           <FormControl
             type="text"
-            maxLength={200}
             placeholder={i18next.t("curation-desk.applications.message-placeholder")}
             value={messageDraft}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMessage(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              setMessage({ value: clampText(e.target.value, MESSAGE_MAX), basedOn: stored })
+            }
           />
         </label>
         <div className="flex items-center gap-2">

@@ -22,20 +22,20 @@ vi.mock("@/utils", async () => ({
   ensureValidToken: vi.fn(async () => "code-1"),
   getAccessToken: vi.fn(() => "code-1")
 }));
-vi.mock("@/config", () => ({
-  EcencyConfigManager: {
-    useConfig: (condition: (config: unknown) => unknown) =>
-      condition({
-        visionFeatures: {
-          curationDesk: {
-            enabled: true,
-            recommendations: { enabled: true },
-            applications: { enabled: flags.applications }
-          }
+vi.mock("@/config", () => {
+  // Defined inside the factory: vi.mock is hoisted above any const above it.
+  const read = (condition: (config: unknown) => unknown) =>
+    condition({
+      visionFeatures: {
+        curationDesk: {
+          enabled: true,
+          recommendations: { enabled: true },
+          applications: { enabled: flags.applications }
         }
-      })
-  }
-}));
+      }
+    });
+  return { EcencyConfigManager: { useConfig: read, getConfigValue: read } };
+});
 vi.mock("next/navigation", () => ({
   notFound: () => flags.notFound(),
   usePathname: () => "/curation"
@@ -57,7 +57,11 @@ vi.mock("@/api/format-error", () => ({ formatError: (e: unknown) => [String(e), 
 
 import CurationApplyPage from "@/app/curation/apply/page";
 import { CurationTabs } from "@/app/curation/_components/curation-tabs";
-import { CurationApplicationsPanel } from "@/features/curation-desk/curation-applications-panel";
+import {
+  CurationApplicationsPanel,
+  draftOrStored
+} from "@/features/curation-desk/curation-applications-panel";
+import { CurationGuide } from "@/features/curation-desk/curation-guide";
 import { CurationRosterView } from "@/features/curation-desk/curation-roster-view";
 
 const APPLICATION = {
@@ -236,6 +240,71 @@ describe("curation applications, admin side", () => {
 
     fireEvent.click(screen.getByText("curation-desk.applications.decline"));
     await waitFor(() => expect(router.callsTo(/application-list/).length).toBeGreaterThan(before));
+  });
+
+  it("shortlists without granting a seat", async () => {
+    const writes: Record<string, unknown>[] = [];
+    router.on(/curation-desk\/application-decide$/, (_url: string, init: RequestInit) => {
+      writes.push(JSON.parse(String(init.body)));
+      return jsonResponse({ application: { ...APPLICATION, state: "shortlisted" } });
+    });
+
+    renderWithQueryClient(<CurationRosterView />);
+    await waitFor(() => expect(screen.getByText("@newbie")).toBeInTheDocument());
+    const row = screen.getByText("@newbie").closest("li")!;
+    fireEvent.click(within(row).getByText("curation-desk.applications.shortlist"));
+
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0]).toMatchObject({ applicant: "newbie", state: "shortlisted" });
+    expect(writes[0].role).toBeUndefined();
+  });
+
+  it("hides the shortlist button on a row that is already shortlisted", async () => {
+    router.on(/curation-desk\/application-list$/, () =>
+      jsonResponse({
+        applications: [{ ...APPLICATION, state: "shortlisted" }],
+        counts: { shortlisted: 1 },
+        window: { open: true, message: null }
+      })
+    );
+    renderWithQueryClient(<CurationRosterView />);
+    await waitFor(() => expect(screen.getByText("@newbie")).toBeInTheDocument());
+    const row = screen.getByText("@newbie").closest("li")!;
+    expect(within(row).getByText("curation-desk.applications.shortlisted")).toBeInTheDocument();
+    expect(within(row).queryByText("curation-desk.applications.shortlist")).toBeNull();
+  });
+
+  it("steps aside when another admin changes the closed line", () => {
+    // Holding the text alone made this tab's copy win for ever: another admin's
+    // change arrived on a refetch, was ignored, and was overwritten by the next
+    // save from here.
+    expect(draftOrStored(null, "Theirs.")).toBe("Theirs.");
+    expect(draftOrStored({ value: "Mine.", basedOn: "Theirs." }, "Theirs.")).toBe("Mine.");
+    expect(draftOrStored({ value: "Mine.", basedOn: "Old." }, "Theirs.")).toBe("Theirs.");
+  });
+
+  it("shows the stored closed line in the field", async () => {
+    router.on(/curation-desk\/application-list$/, () =>
+      jsonResponse({
+        applications: [],
+        counts: {},
+        window: { open: false, message: "Closed until October." }
+      })
+    );
+    renderWithQueryClient(<CurationRosterView />);
+    const field = await screen.findByLabelText("curation-desk.applications.message-label");
+    await waitFor(() => expect(field).toHaveValue("Closed until October."));
+  });
+
+  it("does not link the guide at a page the flag has turned off", async () => {
+    flags.applications = false;
+    const off = renderWithQueryClient(<CurationGuide />);
+    expect(screen.queryByText("curation-desk.guide.becoming.apply-link")).toBeNull();
+    off.unmount();
+
+    flags.applications = true;
+    renderWithQueryClient(<CurationGuide />);
+    expect(screen.getByText("curation-desk.guide.becoming.apply-link")).toBeInTheDocument();
   });
 
   it("goes away entirely with the flag, route, tab and panel together", async () => {

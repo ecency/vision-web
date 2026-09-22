@@ -13,7 +13,16 @@ export function getCurationApplicationQueryOptions(
 ) {
   return queryOptions({
     queryKey: QueryKeys.curation.application(username),
-    queryFn: ({ signal }) => curationApplicationMineRequest(code, signal),
+    queryFn: ({ signal }) => {
+      // Guarded twice: `enabled` gates automatic fetching only, a prefetch or a
+      // fetchQuery still runs this, and the request would throw "missing auth".
+      if (!username || !code) {
+        throw new Error(
+          "[SDK][Curation] reading the own application needs a signed-in account",
+        );
+      }
+      return curationApplicationMineRequest(code, signal);
+    },
     enabled: !!username && !!code,
     staleTime: 60_000,
   });

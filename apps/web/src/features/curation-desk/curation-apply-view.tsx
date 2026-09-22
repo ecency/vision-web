@@ -20,6 +20,7 @@ import { useActiveUsername } from "@/core/hooks/use-active-username";
 import { accountReputation } from "@/utils/account-reputation";
 import { dateToRelative } from "@/utils";
 import { Chip } from "./curation-chip";
+import { clampText, textLength } from "./curation-text-limit";
 import { DAY_MS } from "./consts";
 import {
   useCurationApplication,
@@ -251,7 +252,7 @@ export function CurationApplyView() {
     readGuide &&
     ANSWERS.every((key) => {
       const value = draft[key].trim();
-      return value.length > 0 && value.length <= ANSWER_MAX[key];
+      return value.length > 0 && textLength(value) <= ANSWER_MAX[key];
     });
 
   return (
@@ -298,6 +299,11 @@ export function CurationApplyView() {
         <p className="mt-6 text-sm text-red-030 dark:text-red-light-020" role="alert">
           {i18next.t("curation-desk.apply.error")}
         </p>
+      ) : username && mine.isLoading ? (
+        // Until the signed read answers, this page does not know whether there is
+        // already an application, a wait still running or a closed window, and a
+        // form offered in that gap invites a submit the desk refuses.
+        <p className="mt-6 text-sm text-gray-500">{i18next.t("curation-desk.list.loading")}</p>
       ) : !canApplyAgain ? null : !applicationWindow.open ? (
         <div className="mt-6 rounded-lg border border-[--border-color] p-4">
           <h3 className="text-base font-semibold">
@@ -330,12 +336,17 @@ export function CurationApplyView() {
                 <FormControl
                   type="textarea"
                   rows={key === "availability" ? 2 : 4}
-                  maxLength={ANSWER_MAX[key]}
                   aria-describedby={`curation-apply-${key}-count`}
                   placeholder={i18next.t(`curation-desk.apply.${key}-placeholder`)}
                   value={draft[key]}
+                  // clampText rather than maxLength: the attribute counts UTF-16
+                  // units, so it would stop an emoji answer at half the length
+                  // the desk accepts.
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                    setDraft((current) => ({ ...current, [key]: e.target.value }))
+                    setDraft((current) => ({
+                      ...current,
+                      [key]: clampText(e.target.value, ANSWER_MAX[key])
+                    }))
                   }
                 />
               </label>
@@ -344,7 +355,7 @@ export function CurationApplyView() {
                 className="self-end text-xs text-gray-600 dark:text-gray-400"
               >
                 {i18next.t("curation-desk.apply.counter", {
-                  count: draft[key].trim().length,
+                  count: textLength(draft[key].trim()),
                   max: ANSWER_MAX[key]
                 })}
               </span>
