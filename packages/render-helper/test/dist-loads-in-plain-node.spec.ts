@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -44,6 +44,19 @@ const CHILD_MS = 30_000;
 const CASE_MS = CHILD_MS * 3;
 
 let out: string;
+/** Metafile paths, relative to `out`, as they were before the notices generator consumed them. */
+let metafiles: string[] = [];
+
+/** Every metafile tsup emitted, at any depth, relative to `out`. */
+function metafilesUnder(dir: string, prefix = ""): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory()
+            ? metafilesUnder(join(dir, entry.name), `${prefix}${entry.name}/`)
+            : /^metafile-.*\.json$/.test(entry.name)
+              ? [`${prefix}${entry.name}`]
+              : []
+    );
+}
 
 beforeAll(async () => {
     // Under the package's own node_modules: never tracked by git, and Node
@@ -52,8 +65,23 @@ beforeAll(async () => {
     // package tree. Building to the OS temp dir fails with ERR_MODULE_NOT_FOUND
     // on the first external.
     out = mkdtempSync(join(PKG, "node_modules", ".render-helper-build-"));
-    await exec(join(PKG, "node_modules/.bin/tsup"), ["--out-dir", out, "--metafile"], { cwd: PKG, timeout: BUILD_MS });
-    await exec(process.execPath, [join(PKG, "scripts/third-party-notices.mjs"), out], { cwd: PKG, timeout: CHILD_MS });
+    // Through the environment, not --out-dir: that flag applies to every config
+    // at once and would put both builds, and both of their metafile-esm.json,
+    // in one directory (#1863). Same variable shape as the sdk's SDK_DIST_ROOT.
+    await exec(join(PKG, "node_modules/.bin/tsup"), ["--metafile"], {
+        cwd: PKG,
+        timeout: BUILD_MS,
+        env: { ...process.env, RENDER_HELPER_DIST_ROOT: out }
+    });
+    metafiles = metafilesUnder(out).sort();
+    // No path argument, exactly as `pnpm build` calls it: the generator has to
+    // follow the same root the build used, or a build with the override set
+    // would look for metafiles in a `dist` that was never written.
+    await exec(process.execPath, [join(PKG, "scripts/third-party-notices.mjs")], {
+        cwd: PKG,
+        timeout: CHILD_MS,
+        env: { ...process.env, RENDER_HELPER_DIST_ROOT: out }
+    });
 }, BUILD_MS);
 
 afterAll(() => {
@@ -90,7 +118,7 @@ describe("the build output loads in plain Node", () => {
     it(
         "loads as ESM and renders",
         async () => {
-            const result = await load(join(out, "index.mjs"), "esm");
+            const result = await load(join(out, "node", "index.mjs"), "esm");
             expect(result.exports).toBeGreaterThan(0);
             // Not merely "it imported": linkify is the dependency that broke, so
             // an autolinked URL is what proves it is actually wired up.
@@ -102,7 +130,7 @@ describe("the build output loads in plain Node", () => {
     it(
         "loads as CommonJS and renders",
         async () => {
-            const result = await load(join(out, "index.cjs"), "cjs");
+            const result = await load(join(out, "node", "index.cjs"), "cjs");
             expect(result.exports).toBeGreaterThan(0);
             expect(result.linked).toBe(true);
         },
@@ -128,7 +156,7 @@ describe("the build output loads in plain Node", () => {
             ].map((m) => m[1]);
 
         for (const file of ["index.mjs", "index.cjs"]) {
-            const specifiers = specifiersOf(readFileSync(join(out, file), "utf8"));
+            const specifiers = specifiersOf(readFileSync(join(out, "node", file), "utf8"));
             expect(specifiers.length).toBeGreaterThan(0);
             expect(specifiers.filter((s) => s === "remarkable" || s.startsWith("remarkable/"))).toEqual([]);
         }
@@ -165,10 +193,59 @@ describe("the build output loads in plain Node", () => {
         expect(pkg.files).toContain("dist");
     });
 
+    it("gives each build its own metafile", () => {
+        // Both builds emit esm and tsup names the metafile after the format, so
+        // a shared output directory means both builds writing metafile-esm.json
+        // to one path: one copy is simply lost, and when the writes overlap the
+        // notices generator dies parsing one document followed by the tail of
+        // the other, which took a staging deploy with it (#1863).
+        expect(metafiles).toEqual([
+            "browser/metafile-esm.json",
+            "node/metafile-cjs.json",
+            "node/metafile-esm.json"
+        ]);
+    });
+
+    it.each([["--out-dir", "space separated"], ["--out-dir=", "with an equals sign"]])(
+        "refuses %s (%s) rather than letting the two builds share one directory",
+        async (flag) => {
+            // Aimed at a path nothing else reads: if the guard ever regresses,
+            // this must not write into the fixture the other cases assert on.
+            // Cleared first and after, because a regression leaves a real build
+            // there and the next run would otherwise fail on the leftover
+            // rather than on the guard.
+            const target = join(PKG, "node_modules", ".render-helper-refused");
+            rmSync(target, { recursive: true, force: true });
+            const args = flag.endsWith("=") ? [`${flag}${target}`, "--metafile"] : [flag, target, "--metafile"];
+
+            const attempt = exec(join(PKG, "node_modules/.bin/tsup"), args, { cwd: PKG, timeout: CHILD_MS });
+
+            await expect(attempt).rejects.toThrow(/RENDER_HELPER_DIST_ROOT/);
+            const built = existsSync(target);
+            rmSync(target, { recursive: true, force: true });
+            expect(built).toBe(false);
+        },
+        CASE_MS
+    );
+
+    it("writes both builds where package.json says they are", async () => {
+        // The default branch is what ships, and no other case exercises it: the
+        // spec always overrides the root, and tsconfig excludes this file.
+        delete process.env.RENDER_HELPER_DIST_ROOT;
+        const configs = (await import("../tsup.config")).default as { outDir: string }[];
+
+        expect(configs.map((config) => config.outDir)).toEqual(["dist/browser", "dist/node"]);
+    });
+
     it("leaves no bundler metafile in the output", () => {
         // --metafile is only there to tell the notices generator what was
         // inlined. It is consumed and deleted, so it never reaches the tarball.
-        expect(existsSync(join(out, "metafile-esm.json"))).toBe(false);
-        expect(existsSync(join(out, "metafile-cjs.json"))).toBe(false);
+        expect(metafilesUnder(out)).toEqual([]);
+    });
+
+    it("emits the browser build too", () => {
+        // Also what stops the case above passing on an empty directory.
+        expect(existsSync(join(out, "browser", "index.js"))).toBe(true);
+        expect(existsSync(join(out, "browser", "index.d.ts"))).toBe(true);
     });
 });
