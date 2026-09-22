@@ -69,6 +69,13 @@ export namespace PagesMetadataGenerator {
     };
   }
 
+  function buildForCurationApply(): Metadata {
+    return {
+      title: i18next.t("curation-desk.apply.page-title"),
+      description: i18next.t("curation-desk.apply.page-description")
+    };
+  }
+
   function buildForPublish(): Metadata {
     return {
       title: i18next.t("publish.get-started.title"),
@@ -168,6 +175,7 @@ export namespace PagesMetadataGenerator {
     if (name === "discover") return buildForDiscover();
     if (name === "curation") return buildForCuration();
     if (name === "curation-guide") return buildForCurationGuide();
+    if (name === "curation-apply") return buildForCurationApply();
     if (name === "publish") return buildForPublish();
     if (name === "draft") return buildForSubmit();
     if (name === "submit") return buildForSubmit();

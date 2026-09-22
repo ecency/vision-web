@@ -16,6 +16,9 @@ const TABS = [
   { href: "/curation/guide", key: "guide" }
 ] as const;
 
+/** The invitation, for readers who are not on the roster. Curators are already in. */
+const APPLY_TAB = { href: "/curation/apply", key: "apply" } as const;
+
 /** The roster tab is admin-only, and the page refuses anyone else besides. */
 const ROSTER_TAB = { href: "/curation/roster", key: "roster" } as const;
 
@@ -32,9 +35,16 @@ export function CurationTabs() {
   const recommendationsEnabled = EcencyConfigManager.useConfig(
     ({ visionFeatures }) => visionFeatures.curationDesk.recommendations.enabled
   );
+  const applicationsEnabled = EcencyConfigManager.useConfig(
+    ({ visionFeatures }) => visionFeatures.curationDesk.applications.enabled
+  );
   const base = recommendationsEnabled ? TABS : TABS.filter((tab) => tab.key !== "recommendations");
   const { role, isRoster, isLoading: roleLoading } = useViewerRole();
-  const tabs = role === "admin" ? [...base, ROSTER_TAB] : base;
+  // The apply tab is for people outside the roster, including logged-out readers.
+  // Until the role is known it stays hidden rather than inviting a curator to apply.
+  const withApply =
+    applicationsEnabled && !isRoster && !roleLoading ? [...base, APPLY_TAB] : base;
+  const tabs = role === "admin" ? [...base, ROSTER_TAB] : withApply;
 
   // The recommendations tab opens a different list per role, so its badge
   // counts that list: curators read the roster's recommended view, which leaves

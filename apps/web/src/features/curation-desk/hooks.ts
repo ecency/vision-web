@@ -27,6 +27,9 @@ import {
   type CurationMyMarksResponse,
   type CurationRosterFeedPage,
   type CurationRosterFeedParams,
+  type CurationApplicationAnswers,
+  type CurationApplicationDecideInput,
+  type CurationApplicationState,
   type CurationRosterSetInput,
   type CurationSort,
   type CurationStatus,
@@ -1082,5 +1085,100 @@ export function useCurationRosterRetire() {
     mutationKey: [...QueryKeys.curation._prefix, "roster-retire", username],
     mutationFn: (curator: string) => curationDeskApi.rosterRetire(username, curator),
     onSuccess: () => invalidateRoster(queryClient),
+  });
+}
+
+
+// ---------------------------------------------------------------------------
+// Guest curator applications
+// ---------------------------------------------------------------------------
+
+/**
+ * The viewer's own application, the window and their roster role, in one call.
+ * Signed, so it needs an account; the page renders its explainer without one.
+ */
+export function useCurationApplication(enabled = true) {
+  const username = useActiveUsername();
+  return useQuery({
+    queryKey: QueryKeys.curation.application(username),
+    queryFn: ({ signal }) => curationDeskApi.applicationMine(username, signal),
+    enabled: enabled && !!username,
+    staleTime: 60_000,
+  });
+}
+
+/** The review queue. Admin only upstream, so the caller passes its own gate in. */
+export function useCurationApplications(enabled = true, state?: CurationApplicationState) {
+  const username = useActiveUsername();
+  return useQuery({
+    queryKey: QueryKeys.curation.applications(username, state),
+    queryFn: ({ signal }) => curationDeskApi.applicationList(username, state, signal),
+    enabled: enabled && !!username,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Every application cache after a write. The queue goes by PREFIX for the reason
+ * the roster does: it is shared state, so one admin's decision makes another
+ * admin's cached copy wrong, and the applicant's own view moves with it.
+ */
+function invalidateApplications(
+  queryClient: ReturnType<typeof useQueryClient>,
+  username: string | undefined
+) {
+  queryClient.invalidateQueries({ queryKey: QueryKeys.curation.applicationsPrefix() });
+  queryClient.invalidateQueries({ queryKey: QueryKeys.curation.application(username) });
+}
+
+export function useCurationApply() {
+  const username = useActiveUsername();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: [...QueryKeys.curation._prefix, "application-apply", username],
+    mutationFn: (answers: CurationApplicationAnswers) =>
+      curationDeskApi.applicationApply(username, answers),
+    onSuccess: () => invalidateApplications(queryClient, username),
+  });
+}
+
+export function useCurationApplicationWithdraw() {
+  const username = useActiveUsername();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: [...QueryKeys.curation._prefix, "application-withdraw", username],
+    mutationFn: () => curationDeskApi.applicationWithdraw(username),
+    onSuccess: () => invalidateApplications(queryClient, username),
+  });
+}
+
+export function useCurationApplicationDecide() {
+  const username = useActiveUsername();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: [...QueryKeys.curation._prefix, "application-decide", username],
+    mutationFn: (input: CurationApplicationDecideInput) =>
+      curationDeskApi.applicationDecide(username, input),
+    onSuccess: (_data, input) => {
+      invalidateApplications(queryClient, input.applicant);
+      // An acceptance writes a roster row in the same transaction, so the list
+      // below the queue is stale the moment this resolves.
+      invalidateRoster(queryClient);
+    },
+  });
+}
+
+export function useCurationApplicationWindow() {
+  const username = useActiveUsername();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: [...QueryKeys.curation._prefix, "application-window", username],
+    mutationFn: (input: { open: boolean; message?: string | null }) =>
+      curationDeskApi.applicationWindow(username, input),
+    onSuccess: () => {
+      invalidateApplications(queryClient, username);
+      // The window rides on status, which every desk page polls.
+      queryClient.invalidateQueries({ queryKey: QueryKeys.curation.status() });
+    },
   });
 }

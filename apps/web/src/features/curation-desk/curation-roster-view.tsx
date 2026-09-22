@@ -9,7 +9,9 @@ import { FormControl } from "@ui/input";
 import { error as errorToast, success as successToast } from "@/features/shared/feedback";
 import { formatError } from "@/api/format-error";
 import { dateToRelative } from "@/utils";
+import { EcencyConfigManager } from "@/config";
 import { Chip } from "./curation-chip";
+import { CurationApplicationsPanel } from "./curation-applications-panel";
 import { useCurationRosterAdmin, useCurationRosterRetire, useCurationRosterSet, useViewerRole } from "./hooks";
 
 /**
@@ -256,6 +258,9 @@ function CuratorForm({
 export function CurationRosterView() {
   const { role, isLoading: roleLoading } = useViewerRole();
   const isAdmin = role === "admin";
+  const applicationsEnabled = EcencyConfigManager.useConfig(
+    ({ visionFeatures }) => visionFeatures.curationDesk.applications.enabled
+  );
   const { data, isLoading, isError } = useCurationRosterAdmin(isAdmin);
   const setCurator = useCurationRosterSet();
   const retireCurator = useCurationRosterRetire();
@@ -320,7 +325,9 @@ export function CurationRosterView() {
 
   return (
     <div className="p-2">
-      <p className="text-sm text-gray-600 dark:text-gray-400">{i18next.t("curation-desk.roster.intro")}</p>
+      {applicationsEnabled && <CurationApplicationsPanel enabled={isAdmin} />}
+
+      <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">{i18next.t("curation-desk.roster.intro")}</p>
 
       {topForm ? (
         <CuratorForm

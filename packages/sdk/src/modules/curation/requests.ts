@@ -1,5 +1,11 @@
 import { CONFIG, getBoundFetch } from "@/modules/core";
 import type {
+  CurationApplication,
+  CurationApplicationDecideInput,
+  CurationApplicationList,
+  CurationApplicationMine,
+  CurationApplicationState,
+  CurationApplicationWindow,
   CurationCursorInput,
   CurationCursorResponse,
   CurationDismissRecoInput,
@@ -406,6 +412,80 @@ export function curationRosterRetireRequest(
     { curator },
     "retire curator"
   );
+}
+
+/**
+ * Guest curator applications. Apply, mine and withdraw are open to any signed-in
+ * account; the other three are admin-only upstream. All six are POSTs, so every
+ * private field stays off the edge-cached GET tier.
+ */
+const hasApplication: ShapeCheck = (data) => isRecord(data) && "application" in data;
+const hasApplications: ShapeCheck = (data) => isRecord(data) && Array.isArray(data.applications);
+const hasWindow: ShapeCheck = (data) => isRecord(data) && isRecord(data.window);
+
+export function curationApplicationApplyRequest(
+  code: string | undefined,
+  answers: { motivation: string; availability: string; pick: string }
+): Promise<{ application: CurationApplication; window: CurationApplicationWindow }> {
+  const motivation = answers.motivation?.trim();
+  const availability = answers.availability?.trim();
+  const pick = answers.pick?.trim();
+  if (!motivation || !availability || !pick) {
+    throw new Error("[SDK][Curation] an application needs all three answers");
+  }
+  return postJson("/application-apply", code, { motivation, availability, pick }, "apply", undefined, hasApplication);
+}
+
+export function curationApplicationMineRequest(
+  code: string | undefined,
+  signal?: AbortSignal
+): Promise<CurationApplicationMine> {
+  return postJson("/application-mine", code, {}, "read your application", signal, hasApplication);
+}
+
+export function curationApplicationWithdrawRequest(
+  code: string | undefined
+): Promise<{ application: CurationApplication }> {
+  return postJson("/application-withdraw", code, {}, "withdraw your application", undefined, hasApplication);
+}
+
+export function curationApplicationListRequest(
+  code: string | undefined,
+  params: { state?: CurationApplicationState; limit?: number } = {},
+  signal?: AbortSignal
+): Promise<CurationApplicationList> {
+  const body: Record<string, unknown> = {};
+  if (params.state) body.state = params.state;
+  if (params.limit) body.limit = params.limit;
+  // Same reason the roster list checks its shape: without it a 200 carrying an
+  // error envelope renders as an empty queue rather than reaching the error path.
+  return postJson("/application-list", code, body, "list applications", signal, hasApplications);
+}
+
+export function curationApplicationDecideRequest(
+  code: string | undefined,
+  input: CurationApplicationDecideInput
+): Promise<{ application: CurationApplication }> {
+  const { applicant, state, role, note } = input;
+  if (!applicant || !state) {
+    throw new Error("[SDK][Curation] a decision needs an applicant and a state");
+  }
+  const body: Record<string, unknown> = { applicant, state };
+  // The role belongs to an acceptance only; sending it with a decline would be
+  // refused upstream rather than ignored.
+  if (state === "accepted" && role) body.role = role;
+  if (note !== undefined) body.note = note;
+  return postJson("/application-decide", code, body, "decide an application", undefined, hasApplication);
+}
+
+export function curationApplicationWindowRequest(
+  code: string | undefined,
+  input: { open: boolean; message?: string | null }
+): Promise<{ window: CurationApplicationWindow }> {
+  const body: Record<string, unknown> = { open: input.open };
+  // A present null clears the message; absent leaves the stored one in place.
+  if (input.message !== undefined) body.message = input.message;
+  return postJson("/application-window", code, body, "set the application window", undefined, hasWindow);
 }
 
 export function curationMarkRequest(

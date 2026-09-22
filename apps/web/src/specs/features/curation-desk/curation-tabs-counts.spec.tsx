@@ -15,7 +15,11 @@ vi.mock("@/utils", async () => ({
 vi.mock("@/config", () => ({
   EcencyConfigManager: {
     useConfig: (condition: (config: unknown) => unknown) =>
-      condition({ visionFeatures: { curationDesk: { enabled: true, recommendations: { enabled: true } } } }),
+      condition({
+        visionFeatures: {
+          curationDesk: { enabled: true, recommendations: { enabled: true }, applications: { enabled: true } },
+        },
+      }),
   },
 }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/curation" }));

@@ -673,6 +673,19 @@ export const QueryKeys = {
     recommender: (username: string) => ["curation", "recommender", username],
     /** Mutation key of the recommend and unrecommend broadcast. */
     recommend: () => ["curation", "recommend"],
+    /**
+     * Guest curator applications. The applicant's own row is per viewer; the review
+     * queue is per admin but describes shared state, so `applicationsPrefix` covers
+     * every admin's copy the way `rosterAdminPrefix` does.
+     */
+    application: (username: string | undefined) => ["curation", "application", username],
+    applications: (username: string | undefined, state?: string) => [
+      "curation",
+      "applications",
+      username,
+      state ?? "live",
+    ],
+    applicationsPrefix: () => ["curation", "applications"],
     _prefix: ["curation"],
   },
 
