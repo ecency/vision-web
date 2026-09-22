@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
 import i18next from "i18next";
+import Link from "next/link";
 import type { CurationRole, CurationRosterAdminEntry, CurationRosterRules } from "@ecency/sdk";
 import { Button } from "@ui/button";
 import { FormControl } from "@ui/input";
@@ -11,7 +12,6 @@ import { formatError } from "@/api/format-error";
 import { dateToRelative } from "@/utils";
 import { EcencyConfigManager } from "@/config";
 import { Chip } from "./curation-chip";
-import { CurationApplicationsPanel } from "./curation-applications-panel";
 import { useCurationRosterAdmin, useCurationRosterRetire, useCurationRosterSet, useViewerRole } from "./hooks";
 
 /**
@@ -255,6 +255,37 @@ function CuratorForm({
   );
 }
 
+/**
+ * A guest seat says when it runs out. Null means permanent, which every seat an admin
+ * sets by hand is, so most rows show nothing here at all.
+ */
+function GuestTerm({
+  entry,
+  busy,
+  onKeep
+}: {
+  entry: CurationRosterAdminEntry;
+  busy: boolean;
+  onKeep: () => void;
+}) {
+  if (!entry.term_ends) return null;
+  const ends = Date.parse(entry.term_ends);
+  const over = !Number.isNaN(ends) && ends <= Date.now();
+  return (
+    <>
+      <Chip tone={over ? "amber" : "blue"} title={entry.term_ends}>
+        {i18next.t(
+          over ? "curation-desk.roster.term-over" : "curation-desk.roster.term-ends",
+          { when: dateToRelative(entry.term_ends) }
+        )}
+      </Chip>
+      <Button size="sm" appearance="gray-link" disabled={busy} onClick={onKeep}>
+        {i18next.t("curation-desk.roster.keep")}
+      </Button>
+    </>
+  );
+}
+
 export function CurationRosterView() {
   const { role, isLoading: roleLoading } = useViewerRole();
   const isAdmin = role === "admin";
@@ -317,6 +348,26 @@ export function CurationRosterView() {
     });
   }
 
+  /**
+   * Stop the clock on a guest seat. `term_days: 0` is the one way to say permanent;
+   * leaving it out would KEEP the term, which is what every other edit on this page
+   * does so that correcting a note cannot quietly make a guest permanent.
+   */
+  function keep(entry: CurationRosterAdminEntry) {
+    setCurator.mutate(
+      {
+        curator: entry.username,
+        role: entry.role,
+        rules: entry.rules ?? {},
+        term_days: 0
+      },
+      {
+        onSuccess: () => successToast(i18next.t("curation-desk.roster.kept", { name: entry.username })),
+        onError: (e) => errorToast(...formatError(e)),
+      }
+    );
+  }
+
   if (roleLoading) return <p className="p-4 text-sm text-gray-500">{i18next.t("curation-desk.list.loading")}</p>;
   if (!isAdmin)
     return (
@@ -325,7 +376,15 @@ export function CurationRosterView() {
 
   return (
     <div className="p-2">
-      {applicationsEnabled && <CurationApplicationsPanel enabled={isAdmin} />}
+      {/* The review queue used to sit here. It moved to a tab of its own when the
+          people who vote on applications became the mods, who cannot open this page. */}
+      {applicationsEnabled && (
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          <Link href="/curation/applications" className="text-blue-dark-sky hover:underline">
+            {i18next.t("curation-desk.roster.applications-link")}
+          </Link>
+        </p>
+      )}
 
       <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">{i18next.t("curation-desk.roster.intro")}</p>
 
@@ -374,6 +433,7 @@ export function CurationRosterView() {
                 <span className="text-xs text-gray-500">{i18next.t("curation-desk.roster.not-trailed")}</span>
               )}
               <RuleSummary entry={entry} />
+              <GuestTerm entry={entry} busy={busy} onKeep={() => keep(entry)} />
               <span className="ml-auto flex items-center gap-2">
                 <Button
                   size="sm"

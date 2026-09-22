@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CONFIG } from "@/modules/core";
 import {
   CurationApiError,
+  curationApplicationVoteRequest,
+  curationApplicationWindowRequest,
   curationCursorRequest,
   curationDismissRecoRequest,
   curationMarkClearRequest,
@@ -86,6 +88,68 @@ describe("curation desk requests", () => {
     ({ body } = lastCall());
     expect("rules" in body).toBe(false);
     expect("note" in body).toBe(false);
+  });
+
+  it("a vote carries the applicant and the value, and the note only when there is one", async () => {
+    fetchMock.mockResolvedValue(ok({ application: { id: 1 }, votes: [], tally: {}, elected: false }));
+    await curationApplicationVoteRequest("tok", { applicant: "newbie", vote: "endorse" });
+    let { url, body } = lastCall();
+    expect(url).toBe(`https://ecency.com/private-api/curation-desk/application-vote`);
+    // Never `username`: that key carries the caller the gateway validated, and a reviewer
+    // naming themselves there would only ever vote on their own row.
+    expect("username" in body).toBe(false);
+    expect(body.applicant).toBe("newbie");
+    expect(body.vote).toBe("endorse");
+    expect("note" in body).toBe(false);
+
+    await curationApplicationVoteRequest("tok", { applicant: "newbie", vote: "object", note: "farms" });
+    ({ body } = lastCall());
+    expect(body.note).toBe("farms");
+  });
+
+  it("refuses a vote with nothing to vote on", () => {
+    expect(() => curationApplicationVoteRequest("tok", { applicant: "", vote: "endorse" })).toThrow(
+      /applicant and a value/
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sends only the window fields that are being changed", async () => {
+    fetchMock.mockResolvedValue(ok({ window: { open: true, message: null }, quorum: 3, term_days: 30 }));
+    // One settings row holds all four, and absent means "leave it" upstream. `open`
+    // matters most: a stale one reopens applications to readers who act on it.
+    await curationApplicationWindowRequest("tok", { message: "back soon" });
+    let { body } = lastCall();
+    expect("open" in body).toBe(false);
+    expect(body.message).toBe("back soon");
+
+    await curationApplicationWindowRequest("tok", { quorum: 4 });
+    ({ body } = lastCall());
+    expect(Object.keys(body).sort()).toEqual(["code", "quorum"]);
+
+    await curationApplicationWindowRequest("tok", { open: false });
+    ({ body } = lastCall());
+    expect(Object.keys(body).sort()).toEqual(["code", "open"]);
+  });
+
+  it("refuses a window save with nothing to set", () => {
+    expect(() => curationApplicationWindowRequest("tok", {})).toThrow(/something to set/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sends the election knobs only when they are being changed", async () => {
+    fetchMock.mockResolvedValue(ok({ window: { open: true, message: null }, quorum: 3, term_days: 30 }));
+    await curationApplicationWindowRequest("tok", { open: true });
+    let { body } = lastCall();
+    // Absent means "leave as they are" upstream. This route is called every time the
+    // message is reworded, so sending a number here would retune the election by accident.
+    expect("quorum" in body).toBe(false);
+    expect("term_days" in body).toBe(false);
+
+    await curationApplicationWindowRequest("tok", { open: true, quorum: 4, term_days: 14 });
+    ({ body } = lastCall());
+    expect(body.quorum).toBe(4);
+    expect(body.term_days).toBe(14);
   });
 
   it("an empty note is sent, because clearing one is a real edit", async () => {

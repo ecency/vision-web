@@ -22,6 +22,12 @@ const APPLY_TAB = { href: "/curation/apply", key: "apply" } as const;
 /** The roster tab is admin-only, and the page refuses anyone else besides. */
 const ROSTER_TAB = { href: "/curation/roster", key: "roster" } as const;
 
+/**
+ * The review queue, for the bench that votes on it. Mods as well as admins: three
+ * endorsements grant a seat, so the people casting them have to be able to get here.
+ */
+const APPLICATIONS_TAB = { href: "/curation/applications", key: "applications" } as const;
+
 /** The counts as the desk sends them; the curator's recommendation count is newer than the SDK type. */
 type StatusCounts = CurationStatus["counts"] & { recommended_unhandled?: number };
 
@@ -44,7 +50,10 @@ export function CurationTabs() {
   // Until the role is known it stays hidden rather than inviting a curator to apply.
   const withApply =
     applicationsEnabled && !isRoster && !roleLoading ? [...base, APPLY_TAB] : base;
-  const tabs = role === "admin" ? [...base, ROSTER_TAB] : withApply;
+  const isReviewer = role === "admin" || role === "mod";
+  const withReview =
+    applicationsEnabled && isReviewer ? [...base, APPLICATIONS_TAB] : withApply;
+  const tabs = role === "admin" ? [...withReview, ROSTER_TAB] : withReview;
 
   // The recommendations tab opens a different list per role, so its badge
   // counts that list: curators read the roster's recommended view, which leaves
