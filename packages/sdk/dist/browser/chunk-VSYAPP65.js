@@ -1,2 +1,0 @@
-import {g}from'./chunk-27TWZ3S7.js';import {a}from'./chunk-6SASR6MC.js';import {queryOptions}from'@tanstack/react-query';var m=/^[a-z0-9.-]{3,16}$/;function s(r){let e=m.test(r??"");return queryOptions({queryKey:a.curation.recommender(r),queryFn:({signal:n})=>{if(!e)throw new Error("[SDK][Curation] invalid recommender username");return g(r,n)},enabled:e,staleTime:6e4})}export{s as a};//# sourceMappingURL=chunk-VSYAPP65.js.map
-//# sourceMappingURL=chunk-VSYAPP65.js.map

@@ -1,2 +1,0 @@
-import {a}from'./chunk-6SASR6MC.js';import {l as l$1}from'./chunk-UB5YHSMC.js';import {queryOptions}from'@tanstack/react-query';function l(e,a$1="HIVE",t="yearly"){return queryOptions({queryKey:a.wallet.aggregatedHistory(e??"",a$1,t),queryFn:async()=>e?await l$1("balance","/accounts/{account-name}/aggregated-history",{"account-name":e,"coin-type":a$1,granularity:t}):[],enabled:!!e,staleTime:6e4})}export{l as a};//# sourceMappingURL=chunk-G5RI7TAM.js.map
-//# sourceMappingURL=chunk-G5RI7TAM.js.map

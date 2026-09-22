@@ -1,0 +1,2 @@
+import {a as a$1}from'./chunk-JL3A467J.js';import {a}from'./chunk-HEILHNSR.js';import {useQueryClient,useMutation}from'@tanstack/react-query';function y(s,r){let n=useQueryClient(),e=s?.replace("@","");return useMutation({mutationKey:["newsletter","subscribe",e],mutationFn:u=>a$1(u,r),onSuccess(){e&&n.invalidateQueries({queryKey:a.newsletter.subscriptions(e)});}})}export{y as a};//# sourceMappingURL=chunk-UC3LFKCP.js.map
+//# sourceMappingURL=chunk-UC3LFKCP.js.map

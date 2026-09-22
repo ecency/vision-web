@@ -1,0 +1,2 @@
+import {k}from'./chunk-UKK6NLAT.js';import {b}from'./chunk-CNB64U7U.js';import {a}from'./chunk-4ETWXS3L.js';import {a as a$1}from'./chunk-HEILHNSR.js';function p(t,r,i){return a(["wallet","set-withdraw-vesting-route"],t,e=>[k(t,e.toAccount,e.percent,e.autoVest)],async(e,s)=>{await b(r?.adapter,i,[a$1.wallet.withdrawRoutes(t),a$1.accounts.full(t),a$1.accounts.full(s.toAccount)]);},r,"active",{broadcastMode:i})}export{p as a};//# sourceMappingURL=chunk-OQDNSQ2G.js.map
+//# sourceMappingURL=chunk-OQDNSQ2G.js.map

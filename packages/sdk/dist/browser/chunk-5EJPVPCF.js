@@ -1,2 +1,0 @@
-var e=["quality","underrated","newcomer","other"],r=["queue","newest","unique","random"],n=["queue","latest","new-authors","recommended","curated","all","excluded"],t=["all","ecency","peakd","other"],o=["12h","full","half","eighth","locked","all"],a=["reviewed","snoozed","flagged","noted"],i=["plagiarism","ai_slop","recycled","image_only","tag_abuse","farming","nsfw_untagged","other"];export{e as a,r as b,n as c,t as d,o as e,a as f,i as g};//# sourceMappingURL=chunk-5EJPVPCF.js.map
-//# sourceMappingURL=chunk-5EJPVPCF.js.map

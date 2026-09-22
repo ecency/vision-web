@@ -1,2 +1,0 @@
-import {e}from'./chunk-K3LA2I7M.js';import {a}from'./chunk-4ETWXS3L.js';import {a as a$1}from'./chunk-6SASR6MC.js';function p(t,e$1,r){return a(["notifications","set-last-read"],t,({date:d})=>e(t,d),async()=>{e$1?.adapter?.invalidateQueries&&await e$1.adapter.invalidateQueries([a$1.notifications.unreadCount(t)]);},e$1,"posting",{broadcastMode:r??"async"})}export{p as a};//# sourceMappingURL=chunk-2IVGAXUS.js.map
-//# sourceMappingURL=chunk-2IVGAXUS.js.map

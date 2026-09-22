@@ -1,0 +1,2 @@
+import {a}from'./chunk-HEILHNSR.js';import {j}from'./chunk-UB5YHSMC.js';import {queryOptions}from'@tanstack/react-query';function c(t,o){return queryOptions({queryKey:a.accounts.relations(t,o),enabled:!!t&&!!o,refetchOnMount:false,refetchInterval:36e5,queryFn:async()=>{let s={follows:false,ignores:false,blacklists:false,follows_muted:false,follows_blacklists:false};return !t||!o?s:await j("bridge.get_relationship_between_accounts",[t,o])??s}})}export{c as a};//# sourceMappingURL=chunk-6L3UY6XT.js.map
+//# sourceMappingURL=chunk-6L3UY6XT.js.map

@@ -1,0 +1,2 @@
+import {b}from'./chunk-OBSTAXZB.js';import {a as a$1}from'./chunk-4ETWXS3L.js';import {a as a$2}from'./chunk-HEILHNSR.js';function a(t,o,u){return a$1(["communities","unsubscribe"],t,({community:e})=>[b(t,e)],async(e,n)=>{o?.adapter?.invalidateQueries&&await o.adapter.invalidateQueries([a$2.accounts.subscriptions(t),[...a$2.communities.singlePrefix(n.community)],a$2.communities.context(t,n.community)]);},o,"posting",{broadcastMode:u??"sync"})}export{a};//# sourceMappingURL=chunk-JLC2RHFI.js.map
+//# sourceMappingURL=chunk-JLC2RHFI.js.map
