@@ -4446,7 +4446,7 @@
     },
     "applications": {
       "title": "Applications",
-      "intro": "People asking for a guest curator seat. Promoting writes the roster row below, as a trial, which is not trailed.",
+      "intro": "People asking for a guest curator seat. Enough endorsements with nobody objecting puts one on the roster as a guest curator, trailed from that moment, for a term that then runs out on its own.",
       "empty": "Nobody is waiting right now.",
       "error": "The applications could not be loaded.",
       "window-open": "Applications are open",
@@ -4484,7 +4484,7 @@
       "pick": "Their pick",
       "seat": "Seat",
       "note": "Note (optional)",
-      "note-placeholder": "Why this decision, for the other admins.",
+      "note-placeholder": "Why, for the rest of the team.",
       "promote": "Promote",
       "shortlist": "Shortlist",
       "decline": "Decline",
