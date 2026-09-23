@@ -77,6 +77,23 @@ const DYNAMIC_PAGE_PREFIXES = ["/chats", "/decks", "/waves", "/perks", "/search"
 const STATIC_UNDER_DYNAMIC = new Set(["/curation/guide"]);
 
 /**
+ * Paths whose responses set their own Cache-Control, or none. A header set
+ * here lands on the response whatever its status (Next keeps a header the
+ * middleware already set, send-response.js / send-payload.js), so a route
+ * whose 404, 500 or 503 must not be stored for the static tier's day cannot
+ * live under it. The Honeyback share card is one: its page is left to Next's
+ * dynamic default, and its preview image route sets STATIC_POLICY's header on
+ * the card and no-store on a 503.
+ */
+const SELF_CACHED_PREFIXES = ["/honeyback-share"];
+
+export const STATIC_POLICY: CachePolicy = {
+  tier: "static",
+  sMaxAge: 86400,
+  staleWhileRevalidate: 604800
+};
+
+/**
  * Profile subsections that must never be edge-cached.
  *
  * `insights` is here because the route handler reads `active_user` to render
@@ -181,6 +198,13 @@ export function getCachePolicyForPath(pathname: string): CachePolicy | null {
   // Static pages nested under a dynamic prefix (the curation guide).
   if (STATIC_UNDER_DYNAMIC.has(path)) {
     return { tier: "static", sMaxAge: 86400, staleWhileRevalidate: 604800 };
+  }
+
+  // Routes that own their Cache-Control, see SELF_CACHED_PREFIXES.
+  for (const prefix of SELF_CACHED_PREFIXES) {
+    if (path === prefix || path.startsWith(prefix + "/")) {
+      return null;
+    }
   }
 
   // Dynamic pages: anonymous-equivalent SSR with client-hydrated content.

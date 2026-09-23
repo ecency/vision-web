@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCacheControlHeader,
   getCachePolicyForPath,
+  STATIC_POLICY,
   getEntryTierForAge,
   isUserSpecificForLoggedIn,
   parseEntryUrl
@@ -87,6 +88,26 @@ describe("getCachePolicyForPath", () => {
     ])("returns static tier for %s", (path) => {
       const policy = getCachePolicyForPath(path);
       expect(policy).toEqual({ tier: "static", sMaxAge: 86400, staleWhileRevalidate: 604800 });
+    });
+  });
+
+  describe("routes that own their Cache-Control", () => {
+    // A header set by the middleware lands on the response whatever its
+    // status, so the share card's 404 and its image's 503 would be stored for
+    // a day. The routes set their own headers instead.
+    it.each([
+      "/honeyback-share",
+      "/honeyback-share/abc234defg",
+      "/honeyback-share/abc234defg/",
+      "/honeyback-share/abc234defg/opengraph-image-ia9opg",
+      "/honeyback-share/abc234defg/opengraph-image-ia9opg?3fa5cc5dd80e2820"
+    ])("returns no policy for %s", (path) => {
+      expect(getCachePolicyForPath(path)).toBeNull();
+    });
+
+    it("does not swallow the neighbouring static pages", () => {
+      expect(getCachePolicyForPath("/honeyback-about")).toEqual(STATIC_POLICY);
+      expect(getCachePolicyForPath("/honeyback-privacy")).toEqual(STATIC_POLICY);
     });
   });
 
