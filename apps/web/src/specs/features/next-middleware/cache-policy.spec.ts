@@ -91,13 +91,22 @@ describe("getCachePolicyForPath", () => {
   });
 
   describe("static pages keyed by id under a prefix", () => {
+    it.each(["/honeyback-share/abc234defg", "/honeyback-share/abc234defg/"])(
+      "returns static tier for %s",
+      (path) => {
+        const policy = getCachePolicyForPath(path);
+        expect(policy).toEqual({ tier: "static", sMaxAge: 86400, staleWhileRevalidate: 604800 });
+      }
+    );
+
+    // The image route sets its own Cache-Control so a 503 can be no-store; a
+    // header from the middleware would land on that response too.
     it.each([
-      "/honeyback-share/abc234defg",
       "/honeyback-share/abc234defg/opengraph-image-ia9opg",
-      "/honeyback-share/abc234defg/opengraph-image-ia9opg?3fa5cc5dd80e2820"
-    ])("returns static tier for %s", (path) => {
-      const policy = getCachePolicyForPath(path);
-      expect(policy).toEqual({ tier: "static", sMaxAge: 86400, staleWhileRevalidate: 604800 });
+      "/honeyback-share/abc234defg/opengraph-image-ia9opg?3fa5cc5dd80e2820",
+      "/honeyback-share/abc234defg/twitter-image"
+    ])("leaves the preview image route %s to its own header", (path) => {
+      expect(getCachePolicyForPath(path)).toBeNull();
     });
 
     it("does not match the bare prefix, which has no page", () => {

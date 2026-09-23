@@ -1,5 +1,6 @@
 import { fetchHoneybackShare, honeybackShareHeadline, Translate } from "@/features/honeyback/share";
 import { initI18next } from "@/features/i18n";
+import { buildCacheControlHeader, STATIC_POLICY } from "@/features/next-middleware/cache-policy";
 import i18next from "i18next";
 import { ImageResponse } from "next/og";
 
@@ -26,9 +27,12 @@ export default async function HoneybackShareImage({
   const { id } = await params;
   // A route handler has no layout to load the translations for it.
   const [lookup] = await Promise.all([fetchHoneybackShare(id), initI18next()]);
+  // The middleware leaves this route's Cache-Control alone (its header would
+  // land on every status), so the two answers carry their own: the card is
+  // shared for a day like the page, and the 503 for an API that is down is
+  // retried by crawlers and stored by nobody. Not the plain card on failure:
+  // that would be cached for the day against a valid share.
   if (lookup.status === "unavailable") {
-    // Not the plain card: that would be cached for the day against a valid
-    // share. A 503 is retried by crawlers and cached by nobody.
     return new Response(null, {
       status: 503,
       headers: { "retry-after": "60", "cache-control": "no-store" }
@@ -83,6 +87,6 @@ export default async function HoneybackShareImage({
         </div>
       </div>
     ),
-    size
+    { ...size, headers: { "cache-control": buildCacheControlHeader(STATIC_POLICY, false) } }
   );
 }

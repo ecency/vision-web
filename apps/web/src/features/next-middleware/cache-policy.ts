@@ -78,10 +78,20 @@ const STATIC_UNDER_DYNAMIC = new Set(["/curation/guide"]);
 
 /**
  * Static content under a prefix with one page per id. A Honeyback share
- * card never changes once made (the API freezes it and caches it for a day),
- * and its preview image lives under the same path.
+ * card never changes once made (the API freezes it and caches it for a day).
+ * Its preview image lives under the same path but is left out: a header set
+ * here lands on the response whatever its status, and the image route
+ * answers 503 with no-store when the API is down, so that route sets its own
+ * Cache-Control (STATIC_POLICY on success).
  */
 const STATIC_PREFIXES = ["/honeyback-share"];
+const METADATA_IMAGE_SEGMENT = /\/(opengraph|twitter)-image[^/]*$/;
+
+export const STATIC_POLICY: CachePolicy = {
+  tier: "static",
+  sMaxAge: 86400,
+  staleWhileRevalidate: 604800
+};
 
 /**
  * Profile subsections that must never be edge-cached.
@@ -190,10 +200,11 @@ export function getCachePolicyForPath(pathname: string): CachePolicy | null {
     return { tier: "static", sMaxAge: 86400, staleWhileRevalidate: 604800 };
   }
 
-  // Static pages keyed by id under one prefix (share cards and their images).
+  // Static pages keyed by id under one prefix (share cards). Their preview
+  // image routes carry their own header, see STATIC_PREFIXES.
   for (const prefix of STATIC_PREFIXES) {
     if (path.startsWith(prefix + "/")) {
-      return { tier: "static", sMaxAge: 86400, staleWhileRevalidate: 604800 };
+      return METADATA_IMAGE_SEGMENT.test(path) ? null : STATIC_POLICY;
     }
   }
 
