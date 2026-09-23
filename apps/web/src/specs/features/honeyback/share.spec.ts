@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchHoneybackShare,
   honeybackShareHeadline,
+  RETRY_DELAY_MS,
   honeybackWaveComposeUrl,
   isHoneybackShareId,
   parseHoneybackShare,
@@ -63,6 +64,7 @@ describe("honeyback share", () => {
     const original = globalThis.fetch;
     afterEach(() => {
       globalThis.fetch = original;
+      vi.useRealTimers();
     });
     const answer = (...responses: Array<() => Promise<Response>>) => {
       const mock = vi.fn();
@@ -72,47 +74,71 @@ describe("honeyback share", () => {
     };
     const json = (status: number, body: unknown) => () =>
       Promise.resolve(new Response(JSON.stringify(body), { status }));
+    // The retry sleeps RETRY_DELAY_MS; the clock is faked so the test does not.
+    const lookup = async (id: string) => {
+      vi.useFakeTimers();
+      const pending = fetchHoneybackShare(id);
+      await vi.advanceTimersByTimeAsync(RETRY_DELAY_MS);
+      return pending;
+    };
 
     it("never asks the API for an id outside the alphabet", async () => {
       const mock = answer();
-      expect(await fetchHoneybackShare("../etc/pas")).toEqual({ status: "missing" });
+      expect(await lookup("../etc/pas")).toEqual({ status: "missing" });
       expect(mock).not.toHaveBeenCalled();
     });
 
-    it("returns the parsed share on 200", async () => {
+    it("asks the API once, with a timeout and a day of data cache", async () => {
       const mock = answer(json(200, share));
-      expect(await fetchHoneybackShare(share.id)).toEqual({ status: "found", share });
+      expect(await lookup(share.id)).toEqual({ status: "found", share });
       expect(mock).toHaveBeenCalledTimes(1);
-      expect(mock.mock.calls[0][0]).toBe(`https://games-api.ecency.com/v1/shares/${share.id}`);
+      const [url, options] = mock.mock.calls[0] as [string, RequestInit & { next?: unknown }];
+      expect(url).toBe(`https://games-api.ecency.com/v1/shares/${share.id}`);
+      expect(options.signal).toBeInstanceOf(AbortSignal);
+      expect(options.next).toEqual({ revalidate: 86400 });
+    });
+
+    it("refuses a share that is not the one asked for", async () => {
+      const mock = answer(json(200, { ...share, id: "zzz234defg" }));
+      expect(await lookup(share.id)).toEqual({ status: "unavailable" });
+      expect(mock).toHaveBeenCalledTimes(1);
     });
 
     it("treats the API's 404 as missing without a retry", async () => {
       const mock = answer(json(404, { error: "not_found" }));
-      expect(await fetchHoneybackShare(share.id)).toEqual({ status: "missing" });
+      expect(await lookup(share.id)).toEqual({ status: "missing" });
       expect(mock).toHaveBeenCalledTimes(1);
     });
 
     it("retries once and reports unavailable on a rate limit or server error", async () => {
       const mock = answer(json(429, { error: "rate_limited" }), json(500, {}));
-      expect(await fetchHoneybackShare(share.id)).toEqual({ status: "unavailable" });
+      expect(await lookup(share.id)).toEqual({ status: "unavailable" });
       expect(mock).toHaveBeenCalledTimes(2);
     });
 
     it("recovers when the retry succeeds", async () => {
       const mock = answer(json(429, {}), json(200, share));
-      expect(await fetchHoneybackShare(share.id)).toEqual({ status: "found", share });
+      expect(await lookup(share.id)).toEqual({ status: "found", share });
       expect(mock).toHaveBeenCalledTimes(2);
     });
 
-    it("reports unavailable on a network error or timeout", async () => {
-      const abort = () => Promise.reject(new DOMException("timed out", "TimeoutError"));
-      answer(abort, () => Promise.reject(new TypeError("fetch failed")));
-      expect(await fetchHoneybackShare(share.id)).toEqual({ status: "unavailable" });
+    it("retries a dropped connection but not a timeout", async () => {
+      const dropped = answer(
+        () => Promise.reject(new TypeError("fetch failed")),
+        () => Promise.reject(new TypeError("fetch failed"))
+      );
+      expect(await lookup(share.id)).toEqual({ status: "unavailable" });
+      expect(dropped).toHaveBeenCalledTimes(2);
+
+      const slow = answer(() => Promise.reject(new DOMException("timed out", "TimeoutError")));
+      expect(await lookup("bcd234defg")).toEqual({ status: "unavailable" });
+      expect(slow).toHaveBeenCalledTimes(1);
     });
 
-    it("reports unavailable, not missing, on a 200 that does not parse", async () => {
-      answer(json(200, { ...share, kind: "coins" }), json(200, "not json object"));
-      expect(await fetchHoneybackShare(share.id)).toEqual({ status: "unavailable" });
+    it("reports unavailable, not missing, on a 200 that does not parse, without a retry", async () => {
+      const mock = answer(json(200, { ...share, kind: "coins" }));
+      expect(await lookup(share.id)).toEqual({ status: "unavailable" });
+      expect(mock).toHaveBeenCalledTimes(1);
     });
   });
 });

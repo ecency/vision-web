@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCacheControlHeader,
   getCachePolicyForPath,
+  STATIC_POLICY,
   getEntryTierForAge,
   isUserSpecificForLoggedIn,
   parseEntryUrl
@@ -90,29 +91,23 @@ describe("getCachePolicyForPath", () => {
     });
   });
 
-  describe("static pages keyed by id under a prefix", () => {
-    it.each(["/honeyback-share/abc234defg", "/honeyback-share/abc234defg/"])(
-      "returns static tier for %s",
-      (path) => {
-        const policy = getCachePolicyForPath(path);
-        expect(policy).toEqual({ tier: "static", sMaxAge: 86400, staleWhileRevalidate: 604800 });
-      }
-    );
-
-    // The image route sets its own Cache-Control so a 503 can be no-store; a
-    // header from the middleware would land on that response too.
+  describe("routes that own their Cache-Control", () => {
+    // A header set by the middleware lands on the response whatever its
+    // status, so the share card's 404 and its image's 503 would be stored for
+    // a day. The routes set their own headers instead.
     it.each([
+      "/honeyback-share",
+      "/honeyback-share/abc234defg",
+      "/honeyback-share/abc234defg/",
       "/honeyback-share/abc234defg/opengraph-image-ia9opg",
-      "/honeyback-share/abc234defg/opengraph-image-ia9opg?3fa5cc5dd80e2820",
-      "/honeyback-share/abc234defg/twitter-image"
-    ])("leaves the preview image route %s to its own header", (path) => {
+      "/honeyback-share/abc234defg/opengraph-image-ia9opg?3fa5cc5dd80e2820"
+    ])("returns no policy for %s", (path) => {
       expect(getCachePolicyForPath(path)).toBeNull();
     });
 
-    it("does not match the bare prefix, which has no page", () => {
-      expect(getCachePolicyForPath("/honeyback-share")).not.toEqual(
-        expect.objectContaining({ tier: "static" })
-      );
+    it("does not swallow the neighbouring static pages", () => {
+      expect(getCachePolicyForPath("/honeyback-about")).toEqual(STATIC_POLICY);
+      expect(getCachePolicyForPath("/honeyback-privacy")).toEqual(STATIC_POLICY);
     });
   });
 

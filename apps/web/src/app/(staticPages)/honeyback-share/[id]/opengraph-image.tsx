@@ -10,14 +10,23 @@ import { ImageResponse } from "next/og";
 export const alt = "Honeyback";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const revalidate = 86400;
+// No `revalidate` here on purpose: it would make this an ISR route, and Next
+// stores an ISR route's response whatever its status (app-route.js), so one
+// 503 would be replayed from the origin cache for a day. The fetch behind it
+// caches the API answer for a day on its own, and the edge caches the card
+// through the header below.
 
 const ink = "#2B1A0E";
 const accent = "#B8760F";
 const honey = "#F4B223";
 
-const t: Translate = (key, values) =>
-  i18next.t(key, { ...values, interpolation: { escapeValue: false } });
+const t: Translate = (key, values) => i18next.t(key, values);
+
+// The default font of next/og covers Latin only; a name outside it would
+// render as boxes on the one artefact the feature exists for. Such a card
+// says "a Honeyback player" instead of the name, and only here: the page
+// and the wave text render the name as it is.
+const LATIN_ONLY = /^[\u0000-\u024F\u1E00-\u1EFF\u2000-\u206F\u20A0-\u20CF]*$/;
 
 export default async function HoneybackShareImage({
   params
@@ -39,9 +48,16 @@ export default async function HoneybackShareImage({
     });
   }
   const share = lookup.status === "found" ? lookup.share : null;
-  const label = share ? t(`static.honeyback.share.label.${share.kind}`) : "";
-  const value = share ? share.value.toLocaleString("en-US") : "";
-  const headline = share ? honeybackShareHeadline(share, t) : t("static.honeyback.about.tagline");
+  const drawn =
+    share && !LATIN_ONLY.test(share.name)
+      ? { ...share, name: t("static.honeyback.share.someone") }
+      : share;
+  const label = drawn ? t(`static.honeyback.share.label.${drawn.kind}`) : "";
+  const value = drawn ? drawn.value.toLocaleString("en-US") : "";
+  const headline = drawn ? honeybackShareHeadline(drawn, t) : t("static.honeyback.about.tagline");
+  const footer = drawn
+    ? t("static.honeyback.share.footer")
+    : t("static.honeyback.share.pitch-title");
 
   return new ImageResponse(
     (
@@ -83,7 +99,7 @@ export default async function HoneybackShareImage({
           style={{ display: "flex", justifyContent: "space-between", fontSize: 30, opacity: 0.75 }}
         >
           <div>ecency.com/honeyback-about</div>
-          <div>{t("static.honeyback.share.footer")}</div>
+          <div>{footer}</div>
         </div>
       </div>
     ),

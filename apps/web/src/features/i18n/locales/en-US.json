@@ -2661,6 +2661,9 @@
       "share": {
         "description": "Honeyback is a kind little flying game by Ecency. Fly, rewind, send honey to a stranger, and restore a faded garden.",
         "not-found-title": "Honeyback share not found",
+        "unavailable-title": "This share is taking a moment",
+        "unavailable-body": "The game's server did not answer just now. The card is still there; try again in a minute.",
+        "someone": "A Honeyback player",
         "headline": {
           "score": "{{name}} scored {{value}} in Honeyback",
           "best": "{{name}}'s best run in Honeyback is {{value}} gates",
