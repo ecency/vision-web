@@ -598,6 +598,11 @@ const config = {
   async rewrites() {
     return [
       {
+        // Apple looks under /.well-known first; the route lives at the root.
+        source: "/.well-known/apple-app-site-association",
+        destination: "/apple-app-site-association"
+      },
+      {
         source: "/pl/js/script.js",
         destination: "https://pl.ecency.com/js/script.js"
       },
