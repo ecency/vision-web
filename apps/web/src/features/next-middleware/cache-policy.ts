@@ -77,6 +77,13 @@ const DYNAMIC_PAGE_PREFIXES = ["/chats", "/decks", "/waves", "/perks", "/search"
 const STATIC_UNDER_DYNAMIC = new Set(["/curation/guide"]);
 
 /**
+ * Static content under a prefix with one page per id. A Honeyback share
+ * card never changes once made (the API freezes it and caches it for a day),
+ * and its preview image lives under the same path.
+ */
+const STATIC_PREFIXES = ["/honeyback-share"];
+
+/**
  * Profile subsections that must never be edge-cached.
  *
  * `insights` is here because the route handler reads `active_user` to render
@@ -181,6 +188,13 @@ export function getCachePolicyForPath(pathname: string): CachePolicy | null {
   // Static pages nested under a dynamic prefix (the curation guide).
   if (STATIC_UNDER_DYNAMIC.has(path)) {
     return { tier: "static", sMaxAge: 86400, staleWhileRevalidate: 604800 };
+  }
+
+  // Static pages keyed by id under one prefix (share cards and their images).
+  for (const prefix of STATIC_PREFIXES) {
+    if (path.startsWith(prefix + "/")) {
+      return { tier: "static", sMaxAge: 86400, staleWhileRevalidate: 604800 };
+    }
   }
 
   // Dynamic pages: anonymous-equivalent SSR with client-hydrated content.

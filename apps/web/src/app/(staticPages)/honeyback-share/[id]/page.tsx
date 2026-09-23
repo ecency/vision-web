@@ -14,6 +14,7 @@ import i18next from "i18next";
 import { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ReactElement } from "react";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -26,12 +27,20 @@ const t: Translate = (key, values) =>
 
 export const revalidate = 86400;
 
+// A share the API cannot answer for right now is an error, not a 404: the
+// error response is not cached and the next request asks again.
+function unavailable(): never {
+  throw new Error("Honeyback shares are unavailable right now");
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const [share] = await Promise.all([fetchHoneybackShare(id), initI18next()]);
-  if (!share) {
+  const [lookup] = await Promise.all([fetchHoneybackShare(id), initI18next()]);
+  if (lookup.status === "unavailable") unavailable();
+  if (lookup.status === "missing") {
     return { title: t("static.honeyback.share.not-found-title") };
   }
+  const { share } = lookup;
   const title = honeybackShareHeadline(share, t);
   const description = t("static.honeyback.share.description");
   return {
@@ -47,16 +56,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 // A share card from the game: what the player did, the game's pitch and a
 // way to post the same card to Waves. The preview image next to this file
 // is what chat apps and Waves show for the link.
-export default async function HoneybackSharePage({ params }: Props) {
+export default async function HoneybackSharePage({ params }: Props): Promise<ReactElement> {
   const { id } = await params;
-  const [share] = await Promise.all([fetchHoneybackShare(id), initI18next()]);
-  if (!share) {
-    notFound();
-  }
-  return <ShareCard share={share} />;
+  const [lookup] = await Promise.all([fetchHoneybackShare(id), initI18next()]);
+  if (lookup.status === "unavailable") unavailable();
+  if (lookup.status === "missing") notFound();
+  return <ShareCard share={lookup.share} />;
 }
 
-function ShareCard({ share }: { share: HoneybackShare }) {
+function ShareCard({ share }: { share: HoneybackShare }): ReactElement {
   const s = (key: string, values?: Record<string, string | number>) =>
     t(`static.honeyback.share.${key}`, values);
   const ink = "#2B1A0E";

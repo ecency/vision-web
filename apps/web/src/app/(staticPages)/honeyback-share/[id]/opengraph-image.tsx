@@ -18,10 +18,23 @@ const honey = "#F4B223";
 const t: Translate = (key, values) =>
   i18next.t(key, { ...values, interpolation: { escapeValue: false } });
 
-export default async function HoneybackShareImage({ params }: { params: Promise<{ id: string }> }) {
+export default async function HoneybackShareImage({
+  params
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Response> {
   const { id } = await params;
   // A route handler has no layout to load the translations for it.
-  const [share] = await Promise.all([fetchHoneybackShare(id), initI18next()]);
+  const [lookup] = await Promise.all([fetchHoneybackShare(id), initI18next()]);
+  if (lookup.status === "unavailable") {
+    // Not the plain card: that would be cached for the day against a valid
+    // share. A 503 is retried by crawlers and cached by nobody.
+    return new Response(null, {
+      status: 503,
+      headers: { "retry-after": "60", "cache-control": "no-store" }
+    });
+  }
+  const share = lookup.status === "found" ? lookup.share : null;
   const label = share ? t(`static.honeyback.share.label.${share.kind}`) : "";
   const value = share ? share.value.toLocaleString("en-US") : "";
   const headline = share ? honeybackShareHeadline(share, t) : t("static.honeyback.about.tagline");

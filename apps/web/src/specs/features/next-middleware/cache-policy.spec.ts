@@ -90,6 +90,23 @@ describe("getCachePolicyForPath", () => {
     });
   });
 
+  describe("static pages keyed by id under a prefix", () => {
+    it.each([
+      "/honeyback-share/abc234defg",
+      "/honeyback-share/abc234defg/opengraph-image-ia9opg",
+      "/honeyback-share/abc234defg/opengraph-image-ia9opg?3fa5cc5dd80e2820"
+    ])("returns static tier for %s", (path) => {
+      const policy = getCachePolicyForPath(path);
+      expect(policy).toEqual({ tier: "static", sMaxAge: 86400, staleWhileRevalidate: 604800 });
+    });
+
+    it("does not match the bare prefix, which has no page", () => {
+      expect(getCachePolicyForPath("/honeyback-share")).not.toEqual(
+        expect.objectContaining({ tier: "static" })
+      );
+    });
+  });
+
   describe("homepage", () => {
     it("returns home tier for /", () => {
       const policy = getCachePolicyForPath("/");

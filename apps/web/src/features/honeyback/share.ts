@@ -43,19 +43,42 @@ export function parseHoneybackShare(input: unknown): HoneybackShare | null {
   };
 }
 
-// Null for an unknown id, a bad id or an API that is down: the page shows
-// not found rather than an error, and the response is cached for a day the
-// way the API itself caches it.
-export async function fetchHoneybackShare(id: string): Promise<HoneybackShare | null> {
-  if (!isHoneybackShareId(id)) return null;
+export type HoneybackShareLookup =
+  | { status: "found"; share: HoneybackShare }
+  | { status: "missing" }
+  | { status: "unavailable" };
+
+const REQUEST_TIMEOUT_MS = 5000;
+const RETRY_DELAY_MS = 300;
+
+// "missing" only for a bad id or the API's own 404, which never changes; a
+// rate limit, a server error, a timeout or a response that does not parse is
+// "unavailable", so the caller can fail in a way that is retried rather than
+// show a valid share as gone. One retry covers the API's per-minute limit
+// and a single dropped connection. Next caches only 200 responses in the
+// data cache, so an error answer is never kept for the day.
+export async function fetchHoneybackShare(id: string): Promise<HoneybackShareLookup> {
+  if (!isHoneybackShareId(id)) return { status: "missing" };
+  let result = await requestShare(id);
+  if (result.status === "unavailable") {
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    result = await requestShare(id);
+  }
+  return result;
+}
+
+async function requestShare(id: string): Promise<HoneybackShareLookup> {
   try {
     const response = await fetch(`${HONEYBACK_API}/v1/shares/${id}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       next: { revalidate: 86400 }
     });
-    if (!response.ok) return null;
-    return parseHoneybackShare(await response.json());
+    if (response.status === 404) return { status: "missing" };
+    if (!response.ok) return { status: "unavailable" };
+    const share = parseHoneybackShare(await response.json());
+    return share ? { status: "found", share } : { status: "unavailable" };
   } catch {
-    return null;
+    return { status: "unavailable" };
   }
 }
 
