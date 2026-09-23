@@ -2658,6 +2658,29 @@
         "footer": "Built with ♥ by the Ecency team.",
         "privacy-link": "Privacy policy"
       },
+      "share": {
+        "description": "Honeyback is a kind little flying game by Ecency. Fly, rewind, send honey to a stranger, and restore a faded garden.",
+        "not-found-title": "Honeyback share not found",
+        "headline": {
+          "score": "{{name}} scored {{value}} in Honeyback",
+          "best": "{{name}}'s best run in Honeyback is {{value}} gates",
+          "stage": "{{name}} restored stage {{value}} of the Honeyback garden",
+          "streak": "{{name}} has played Honeyback {{value}} days in a row"
+        },
+        "label": {
+          "score": "Points",
+          "best": "Best run",
+          "stage": "Garden stage",
+          "streak": "Day streak"
+        },
+        "made": "Shared from the game on {{date}}",
+        "get-game": "Get Honeyback",
+        "post-wave": "Post it on Waves",
+        "pitch-title": "A kind little flying game",
+        "pitch-body": "One tap keeps the bee in the air. Crash and rewind, send honey to a stranger once a day, and restore a garden that faded. Kindness comes back as karma.",
+        "footer": "Kindness comes back.",
+        "about-link": "About Honeyback"
+      },
       "privacy": {
         "title": "Honeyback Privacy Policy",
         "description": "What the Honeyback game collects, why, who it is shared with, and what you can do about it.",
