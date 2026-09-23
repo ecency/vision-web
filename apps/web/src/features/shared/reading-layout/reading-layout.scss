@@ -299,7 +299,9 @@
           float: left;
           flex: 0 0 150px;
           width: 150px;
-          height: 104px;
+          // 16:9, the ratio authors make cover images in. A taller box
+          // crops the sides of every 16:9 cover under object-fit: cover.
+          height: 84px;
           margin: 0 20px 0 0;
           border-radius: 8px;
         }
@@ -374,7 +376,7 @@
           column-gap: 20px;
 
           > .item-image {
-            height: 104px;
+            height: 84px;
             margin: 0;
           }
         }
