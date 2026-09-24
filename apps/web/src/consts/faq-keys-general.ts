@@ -17,7 +17,7 @@ export const faqKeysGeneral = [
   "what-information-profile",
   "what-ecency-wallet",
   "what-is-points",
-  "what-gift-button-means",
+  "what-gift-button-mean",
   "where-tokens-come",
   "what-do-hive-tokens",
   "value-hive-hbd",
