@@ -2,8 +2,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Entry } from "@/entities";
 import { useGlobalStore } from "@/core/global-store";
 import { EntryLink } from "@/features/shared";
-import { buildSrcSet, getEntryCardImageRawUrl, proxifyImageSrc } from "@ecency/render-helper";
-import { catchPostImageSafely } from "@/core/entries/catch-post-image-safely";
+import { buildSrcSet, proxifyImageSrc } from "@ecency/render-helper";
+import {
+  catchPostImageSafely,
+  getEntryCardImageRawUrlSafely
+} from "@/core/entries/catch-post-image-safely";
 import Image from "next/image";
 import { THUMB_SIZES } from "./thumb-lcp";
 
@@ -74,7 +77,8 @@ export function EntryListItemThumbnail({
     // Card precedence, NOT getEntryImageRawUrl: that one skips
     // json_metadata.thumbnails on purpose, so it can name a different file than
     // the one this card renders.
-    const raw = getEntryCardImageRawUrl(entry);
+    // Guarded for the same reason as the two catchPostImageSafely calls.
+    const raw = getEntryCardImageRawUrlSafely(entry);
     return !!raw && /\.gif(?:[?#]|$)/i.test(raw);
   }, [entry]);
 

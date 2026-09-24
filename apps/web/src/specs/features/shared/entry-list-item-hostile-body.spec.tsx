@@ -2,7 +2,7 @@ import React from "react";
 import { render } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { catchPostImage } from "@ecency/render-helper";
+import { catchPostImage, getEntryCardImageRawUrl } from "@ecency/render-helper";
 
 // The extractor is wrapped, not stubbed away: the package keeps its real
 // implementation and only `catchPostImage` becomes a spy, so the components
@@ -17,7 +17,11 @@ vi.mock("@ecency/render-helper", async () => {
   const actual = await vi.importActual<typeof import("@ecency/render-helper")>(
     "@ecency/render-helper"
   );
-  return { ...actual, catchPostImage: vi.fn(actual.catchPostImage) };
+  return {
+    ...actual,
+    catchPostImage: vi.fn(actual.catchPostImage),
+    getEntryCardImageRawUrl: vi.fn(actual.getEntryCardImageRawUrl)
+  };
 });
 
 vi.mock("@/core/global-store", () => ({
@@ -146,5 +150,50 @@ describe("feed thumbnail with a body that breaks the image extractor", () => {
     expect(sentry.captureException).toHaveBeenCalledTimes(2);
     expect(catchPostImageSafely(HOSTILE_BODY, 600, 500)).toBeNull();
     expect(sentry.captureException).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("feed thumbnail when the animated-cover check throws", () => {
+  // The profile tabs (#1805), the feed and the community routes render these
+  // cards in the SSR shell with no boundary above them. The animated-cover check
+  // reads the same metadata and body as the extractor, so it gets the same
+  // guard: a throw here must cost the card its gif carve-out, not the page.
+  beforeEach(async () => {
+    vi.mocked(sentry.captureException).mockClear();
+    const actual = await vi.importActual<typeof import("@ecency/render-helper")>(
+      "@ecency/render-helper"
+    );
+    vi.mocked(catchPostImage).mockReset();
+    vi.mocked(catchPostImage).mockImplementation(actual.catchPostImage);
+    vi.mocked(getEntryCardImageRawUrl).mockReset();
+    vi.mocked(getEntryCardImageRawUrl).mockImplementation(() => {
+      throw new RangeError("Invalid code point 1114112");
+    });
+  });
+
+  it("renders the real thumbnail, srcset included, and reports the post once", () => {
+    const entry = {
+      ...hostileEntry("plain text"),
+      json_metadata: { image: ["https://images.example/cover.jpg"] }
+    };
+    const { container, rerender } = render(
+      <EntryListItemThumbnail entry={entry} entryProp={entry} isCrossPost={false} noImage={NO_IMG} />
+    );
+    const img = container.querySelector("img:not([aria-hidden])")!;
+    expect(img.getAttribute("src")).not.toBe(NO_IMG);
+    // Null from the guard reads as "not animated", so the srcset survives.
+    expect(img.getAttribute("srcset")).toBeTruthy();
+    expect(sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(sentry.captureException).toHaveBeenCalledWith(
+      expect.any(RangeError),
+      expect.objectContaining({
+        extra: expect.objectContaining({ where: "getEntryCardImageRawUrl" })
+      })
+    );
+
+    rerender(
+      <EntryListItemThumbnail entry={entry} entryProp={entry} isCrossPost={false} noImage={NO_IMG} />
+    );
+    expect(sentry.captureException).toHaveBeenCalledTimes(1);
   });
 });

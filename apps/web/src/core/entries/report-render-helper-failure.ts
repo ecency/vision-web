@@ -7,7 +7,7 @@ import { sentry } from "@/core/sentry/lazy-sentry";
  * and the Sentry grouping tag, so a typo would quietly split one call site's
  * events in two and defeat the suppression for it.
  */
-export type RenderHelperCallSite = "catchPostImage" | "postBodySummary";
+export type RenderHelperCallSite = "catchPostImage" | "getEntryCardImageRawUrl" | "postBodySummary";
 
 /** What a wrapped render-helper call was handed: an entry, or a raw body string. */
 export type RenderHelperSubject =

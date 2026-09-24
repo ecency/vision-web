@@ -95,11 +95,11 @@ const read = (file: string) => fs.readFileSync(path.join(SRC, file), "utf8");
 /** A named import of `catchPostImage` (not `...Safely`) from the package. */
 const IMPORTS_RAW = /import\s*(?:type\s*)?{([^}]*)}\s*from\s*["']@ecency\/render-helper["']/g;
 
-function importsRawExport(source: string): boolean {
+function importsRawExport(source: string, name = "catchPostImage"): boolean {
   IMPORTS_RAW.lastIndex = 0;
   for (const m of source.matchAll(IMPORTS_RAW)) {
     const names = m[1].split(",").map((n) => n.trim().split(/\s+as\s+/)[0].trim());
-    if (names.includes("catchPostImage")) {
+    if (names.includes(name)) {
       return true;
     }
   }
@@ -124,8 +124,8 @@ function walk(dir: string, out: string[] = []): string[] {
 describe("catchPostImage call sites go through the guard", () => {
   it.each(GUARDED)("$file imports the guard, not the raw export", ({ file }) => {
     const source = read(file);
-    expect(source).toContain(
-      'import { catchPostImageSafely } from "@/core/entries/catch-post-image-safely";'
+    expect(source).toMatch(
+      /import\s*{[^}]*\bcatchPostImageSafely\b[^}]*}\s*from "@\/core\/entries\/catch-post-image-safely";/
     );
     expect(importsRawExport(source)).toBe(false);
   });
@@ -158,6 +158,39 @@ describe("the call sites that keep the raw export", () => {
       .filter((f) => !f.startsWith("specs" + path.sep))
       .filter((f) => !allowed.has(f.split(path.sep).join("/")))
       .filter((f) => importsRawExport(read(f)));
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * The card's animated-cover check reads the same metadata and body as the
+ * extractor's first tier, on the same entry, in the same SSR render. Left raw,
+ * a body that breaks that scan is caught by catchPostImageSafely and then
+ * thrown again by this call, with no boundary above the profile tabs (#1805),
+ * the feed or the community routes to contain it.
+ */
+describe("getEntryCardImageRawUrl goes through its guard", () => {
+  const THUMBNAIL = "features/shared/entry-list-item/entry-list-item-thumbnail.tsx";
+
+  it("the feed card makes its one call through the guard", () => {
+    const source = read(THUMBNAIL);
+    expect(source.match(/getEntryCardImageRawUrlSafely\(/g)?.length ?? 0).toBe(1);
+    expect(source.match(/(?<!Safely)\bgetEntryCardImageRawUrl\(/g)).toBeNull();
+  });
+
+  it("the guard swallows the throw and reports rather than rethrowing", () => {
+    const source = read(GUARD_MODULE);
+    expect(source).toMatch(
+      /getEntryCardImageRawUrl\(\.\.\.args\);\s*}\s*catch\s*\(e\)\s*{\s*reportRenderHelperFailureOnce\(\s*"getEntryCardImageRawUrl"[\s\S]*?return null;/
+    );
+  });
+
+  it("no other file in apps/web reaches for the raw export", () => {
+    const offenders = walk(SRC)
+      .filter((f) => !f.startsWith("specs" + path.sep))
+      .filter((f) => f.split(path.sep).join("/") !== GUARD_MODULE)
+      .filter((f) => importsRawExport(read(f), "getEntryCardImageRawUrl"));
 
     expect(offenders).toEqual([]);
   });
