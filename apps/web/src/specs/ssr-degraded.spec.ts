@@ -16,10 +16,12 @@ import { join } from "node:path";
 
 const PRELOAD = join(process.cwd(), "ssr-degraded.js");
 
-// ?mark=<ms> calls mark() after that delay (behind a setTimeout, a promise and
-// a setImmediate, as a timed-out prefetch deep in a render would), ?end=<ms>
-// ends the response after that delay, ?early=1 flushes the head first like a
-// streamed shell. /api/state returns the preload's counters.
+// ?mark=<ms> calls mark(?reason, default prefetch-timeout) after that delay
+// (behind a setTimeout, a promise and a setImmediate, as a prefetch deep in a
+// render would), ?end=<ms> ends the response after that delay, ?early=1
+// flushes the head first like a streamed shell, ?status= sets the status the
+// page answers with. /api/state returns the preload's lifetime counters and
+// /api/flush writes (and resets) the per-minute log line on demand.
 const CHILD_SERVER = `
   const http = require("http");
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -29,9 +31,15 @@ const CHILD_SERVER = `
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
     if (url.pathname === "/api/state") {
-      res.end(JSON.stringify(globalThis.__ecencySsrDegraded.state));
+      res.end(JSON.stringify(globalThis.__ecencySsrDegraded.totals));
       return;
     }
+    if (url.pathname === "/api/flush") {
+      globalThis.__ecencySsrDegraded.flush();
+      res.end("ok");
+      return;
+    }
+    if (url.searchParams.get("status")) res.statusCode = Number(url.searchParams.get("status"));
     res.setHeader("Cache-Control", "public, max-age=0, s-maxage=300, stale-while-revalidate=3600");
     res.setHeader("x-cache-tier", "profile");
     if (url.searchParams.get("early")) res.write("<html>");
@@ -39,7 +47,7 @@ const CHILD_SERVER = `
     const marked = markAt === null ? Promise.resolve() : new Promise((done) => {
       setTimeout(() => {
         Promise.resolve().then(() => setImmediate(() => {
-          globalThis.__ecencySsrDegraded.mark("prefetch-timeout");
+          globalThis.__ecencySsrDegraded.mark(url.searchParams.get("reason") || "prefetch-timeout");
           done();
         }));
       }, Number(markAt));
@@ -55,7 +63,9 @@ const children: ChildProcess[] = [];
 
 type Reply = { status: number; headers: http.IncomingHttpHeaders; body: string };
 
-function boot(preloads: string[] = [PRELOAD], env: NodeJS.ProcessEnv = {}): Promise<number> {
+type Booted = { port: number; stderr: () => string };
+
+function boot(preloads: string[] = [PRELOAD], env: NodeJS.ProcessEnv = {}): Promise<Booted> {
   return new Promise((resolve, reject) => {
     const args = preloads.flatMap((p) => ["--require", p]);
     const child = spawn(process.execPath, [...args, "-e", CHILD_SERVER], {
@@ -66,7 +76,9 @@ function boot(preloads: string[] = [PRELOAD], env: NodeJS.ProcessEnv = {}): Prom
     children.push(child);
     let err = "";
     child.stderr!.on("data", (d) => (err += String(d)));
-    child.stdout!.once("data", (d) => resolve(Number(String(d).trim())));
+    child.stdout!.once("data", (d) =>
+      resolve({ port: Number(String(d).trim()), stderr: () => err })
+    );
     child.once("exit", (code) => reject(new Error(`child exited ${code}: ${err}`)));
   });
 }
@@ -82,13 +94,15 @@ function get(port: number, path: string): Promise<Reply> {
   });
 }
 
+const state = async (port: number) => JSON.parse((await get(port, "/api/state")).body);
+
 afterEach(() => {
   for (const c of children.splice(0)) c.kill("SIGKILL");
 });
 
 describe("ssr-degraded preload", () => {
   it("leaves a render that did not time out exactly as the middleware set it", async () => {
-    const port = await boot();
+    const { port } = await boot();
     const reply = await get(port, "/@someone/posts");
     expect(reply.status).toBe(200);
     expect(reply.headers["cache-control"]).toBe(
@@ -98,17 +112,17 @@ describe("ssr-degraded preload", () => {
   });
 
   it("sends a render that timed out as private, no-store and tags its tier", async () => {
-    const port = await boot();
+    const { port } = await boot();
     const reply = await get(port, "/@someone/posts?mark=20");
     expect(reply.status).toBe(200);
     expect(reply.body).toBe("body");
     expect(reply.headers["cache-control"]).toBe("private, no-store");
     expect(reply.headers["x-cache-tier"]).toBe("profile-degraded");
-    expect(JSON.parse((await get(port, "/api/state")).body)).toEqual({ degraded: 1, late: 0 });
+    expect(await state(port)).toEqual({ sent: { "prefetch-timeout": 1 }, late: {}, abandoned: {} });
   });
 
   it("flags only the request the timeout ran under, not one rendering beside it", async () => {
-    const port = await boot();
+    const { port } = await boot();
     const pause = () => new Promise((r) => setTimeout(r, 30));
     // Both orders: a clean render in flight for the whole time the other is
     // marked, and a clean render that arrived after the one that times out.
@@ -129,24 +143,71 @@ describe("ssr-degraded preload", () => {
   });
 
   it("counts a timeout after the head was flushed as late and leaves that response alone", async () => {
-    const port = await boot();
+    const { port } = await boot();
     const reply = await get(port, "/@someone/posts?early=1&mark=20");
     expect(reply.status).toBe(200);
     expect(reply.body).toBe("<html>body");
     expect(reply.headers["cache-control"]).toContain("s-maxage=300");
-    expect(JSON.parse((await get(port, "/api/state")).body)).toEqual({ degraded: 0, late: 1 });
+    expect(await state(port)).toEqual({ sent: {}, late: { "prefetch-timeout": 1 }, abandoned: {} });
+  });
+
+  it("marks a failed prefetch the same way and keeps the page's own status", async () => {
+    const { port } = await boot();
+    const reply = await get(port, "/@missing?mark=10&reason=prefetch-error&status=404");
+    expect(reply.status).toBe(404);
+    expect(reply.body).toBe("body");
+    expect(reply.headers["cache-control"]).toBe("private, no-store");
+    expect(await state(port)).toEqual({ sent: { "prefetch-error": 1 }, late: {}, abandoned: {} });
+  });
+
+  it("does not count a marked response whose client left before any head as sent", async () => {
+    const { port } = await boot();
+    await new Promise<void>((resolve) => {
+      const req = http.get({ host: "127.0.0.1", port, path: "/@gone/posts?mark=10&end=300" });
+      req.on("error", () => resolve());
+      setTimeout(() => {
+        req.destroy();
+        resolve();
+      }, 100);
+    });
+    await new Promise((r) => setTimeout(r, 400));
+    expect(await state(port)).toEqual({ sent: {}, late: {}, abandoned: { "prefetch-timeout": 1 } });
+  });
+
+  it("logs one line per window with each outcome by reason and its own sample paths", async () => {
+    const { port, stderr } = await boot();
+    await get(port, "/@a/posts?mark=10");
+    await get(port, "/@b/posts?mark=10&reason=prefetch-error");
+    await get(port, "/@c/followers?early=1&mark=10");
+    await get(port, "/api/flush");
+    await new Promise((r) => setTimeout(r, 50));
+    const lines = stderr()
+      .split("\n")
+      .filter((l) => l.startsWith("[ssr-degraded]"));
+    expect(lines).toEqual([
+      "[ssr-degraded] last 60s: sent prefetch-timeout=1,prefetch-error=1 [/@a/posts /@b/posts]; late prefetch-timeout=1 [/@c/followers]"
+    ]);
+    // Nothing happened since: the next window writes nothing.
+    await get(port, "/@d/posts");
+    await get(port, "/api/flush");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(
+      stderr()
+        .split("\n")
+        .filter((l) => l.startsWith("[ssr-degraded]"))
+    ).toHaveLength(1);
   });
 
   it("is a no-op outside any request", async () => {
-    const port = await boot();
+    const { port } = await boot();
     // The child calls mark() at startup and from a module-level timer, with
     // no request to flag; the process must keep serving and count nothing.
     expect((await get(port, "/@someone/posts")).headers["cache-control"]).toContain("public");
-    expect(JSON.parse((await get(port, "/api/state")).body)).toEqual({ degraded: 0, late: 0 });
+    expect(await state(port)).toEqual({ sent: {}, late: {}, abandoned: {} });
   });
 
   it("runs behind ssr-admission in the image's order without changing what either does", async () => {
-    const port = await boot([join(process.cwd(), "ssr-admission.js"), PRELOAD], {
+    const { port } = await boot([join(process.cwd(), "ssr-admission.js"), PRELOAD], {
       SSR_MAX_INFLIGHT: "1"
     });
     const parked = get(port, "/@someone/posts?mark=20&end=200");

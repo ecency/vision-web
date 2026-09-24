@@ -7,12 +7,16 @@ vi.mock("../../../core/react-query/index", () => ({
 }));
 vi.mock("../../../config", () => ({ EcencyConfigManager: { CONFIG: {} } }));
 
-import { prefetchQuery, fetchQuery } from "../../../core/react-query/query-helpers";
+import {
+  prefetchQuery,
+  prefetchInfiniteQuery,
+  fetchQuery
+} from "../../../core/react-query/query-helpers";
 import { getQueryClient } from "../../../core/react-query/index";
 
 type DegradedGlobal = { __ecencySsrDegraded?: { mark: (reason: string) => void } };
 
-describe("SSR prefetch timeout", () => {
+describe("SSR prefetch timeout and failure", () => {
   const mark = vi.fn();
   let client: any;
 
@@ -21,7 +25,9 @@ describe("SSR prefetch timeout", () => {
     (globalThis as DegradedGlobal).__ecencySsrDegraded = { mark };
     client = {
       prefetchQuery: vi.fn(() => new Promise(() => {})),
+      prefetchInfiniteQuery: vi.fn(() => new Promise(() => {})),
       fetchQuery: vi.fn(() => new Promise(() => {})),
+      getQueryState: vi.fn(() => undefined),
       cancelQueries: vi.fn(),
       getQueryData: vi.fn(() => undefined)
     };
@@ -56,6 +62,48 @@ describe("SSR prefetch timeout", () => {
     const pending = prefetchQuery({ queryKey: ["account", "someone"], queryFn: vi.fn() });
     await vi.advanceTimersByTimeAsync(10_000);
     await expect(pending).resolves.toEqual({ name: "someone" });
+    expect(mark).not.toHaveBeenCalled();
+  });
+
+  it("marks a prefetch that failed (react-query swallows it, the state says error)", async () => {
+    client.prefetchQuery.mockResolvedValue(undefined);
+    client.getQueryState.mockReturnValue({ status: "error" });
+    await expect(
+      prefetchQuery({ queryKey: ["account", "someone"], queryFn: vi.fn() })
+    ).resolves.toBeUndefined();
+    expect(client.getQueryState).toHaveBeenCalledWith(["account", "someone"]);
+    expect(mark).toHaveBeenCalledTimes(1);
+    expect(mark).toHaveBeenCalledWith("prefetch-error");
+  });
+
+  it("marks a failed infinite prefetch too", async () => {
+    client.prefetchInfiniteQuery.mockResolvedValue(undefined);
+    client.getQueryState.mockReturnValue({ status: "error" });
+    await prefetchInfiniteQuery({
+      queryKey: ["posts", "someone"],
+      queryFn: vi.fn(),
+      initialPageParam: undefined,
+      getNextPageParam: vi.fn()
+    } as any);
+    expect(mark).toHaveBeenCalledWith("prefetch-error");
+  });
+
+  it("marks a fetchQuery that rejected", async () => {
+    client.fetchQuery.mockRejectedValue(new Error("all nodes failed"));
+    await expect(
+      fetchQuery({ queryKey: ["post", "a", "b"], queryFn: vi.fn() })
+    ).resolves.toBeUndefined();
+    expect(mark).toHaveBeenCalledTimes(1);
+    expect(mark).toHaveBeenCalledWith("prefetch-error");
+  });
+
+  it("does not mark a prefetch whose query succeeded with no data (a genuine not-found)", async () => {
+    client.prefetchQuery.mockResolvedValue(undefined);
+    client.getQueryState.mockReturnValue({ status: "success" });
+    client.getQueryData.mockReturnValue(null);
+    await expect(
+      prefetchQuery({ queryKey: ["account", "nobody"], queryFn: vi.fn() })
+    ).resolves.toBeNull();
     expect(mark).not.toHaveBeenCalled();
   });
 

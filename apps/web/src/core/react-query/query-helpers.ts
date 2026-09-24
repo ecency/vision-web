@@ -21,6 +21,19 @@ import { EcencyConfigManager } from "@/config";
 const SSR_PREFETCH_TIMEOUT_MS = 10_000;
 
 /**
+ * Flag the current server response as rendered without some of its data, so
+ * the ssr-degraded.js preload sends it `private, no-store` and no shared cache
+ * keeps it. A no-op in the browser and wherever the preload is not loaded
+ * (dev, tests).
+ */
+function markSsrDegraded(reason: "prefetch-timeout" | "prefetch-error") {
+  if (!isServer) return;
+  (
+    globalThis as { __ecencySsrDegraded?: { mark(reason: string): void } }
+  ).__ecencySsrDegraded?.mark(reason);
+}
+
+/**
  * Race a promise against a timeout with real cancellation.
  *
  * When the timeout fires, cancels the in-progress React Query fetch via
@@ -29,7 +42,8 @@ const SSR_PREFETCH_TIMEOUT_MS = 10_000;
  * `fetch()`, the underlying TCP connection is torn down immediately
  * instead of running as a zombie until it naturally completes.
  *
- * Resolves to undefined on timeout so SSR renders gracefully degrade.
+ * Resolves to undefined on timeout or rejection so SSR renders gracefully
+ * degrade, and marks the response degraded either way (markSsrDegraded).
  */
 function withSsrTimeout<T>(
   promise: Promise<T>,
@@ -43,18 +57,33 @@ function withSsrTimeout<T>(
       if (queryKey) {
         getQueryClient().cancelQueries({ queryKey });
       }
-      // The page now renders without this data: keep that response out of
-      // shared caches (the ssr-degraded.js preload, absent outside the image).
-      (
-        globalThis as { __ecencySsrDegraded?: { mark(reason: string): void } }
-      ).__ecencySsrDegraded?.mark("prefetch-timeout");
+      markSsrDegraded("prefetch-timeout");
       resolve(undefined);
     }, SSR_PREFETCH_TIMEOUT_MS);
 
     promise
       .then((result) => { clearTimeout(timer); resolve(result); })
-      .catch(() => { clearTimeout(timer); resolve(undefined); });
+      .catch(() => {
+        clearTimeout(timer);
+        markSsrDegraded("prefetch-error");
+        resolve(undefined);
+      });
   });
+}
+
+/**
+ * `qc.prefetchQuery` never rejects: a failed fetch (RPC 5xx, every node
+ * exhausted) resolves with the query in error state, so withSsrTimeout's catch
+ * never sees it. Some genuine not-founds land here too: bridge.get_post asserts
+ * on a missing post, so the entry page's not-found fallback goes out uncached
+ * (a missing account resolves null and is unaffected). Only Cache-Control
+ * changes; a page that answers notFound() still sends its 404.
+ */
+function markIfPrefetchFailed(queryKey: QueryKey) {
+  if (!isServer) return;
+  if (getQueryClient().getQueryState(queryKey)?.status === "error") {
+    markSsrDegraded("prefetch-error");
+  }
 }
 
 /**
@@ -76,6 +105,7 @@ export async function prefetchQuery<
 >(options: FetchQueryOptions<T, Error, T, TKey>) {
   const qc = getQueryClient();
   await withSsrTimeout(qc.prefetchQuery(options), options.queryKey);
+  markIfPrefetchFailed(options.queryKey);
   return qc.getQueryData<T>(options.queryKey);
 }
 
@@ -94,6 +124,7 @@ export async function prefetchInfiniteQuery<
 >(options: FetchInfiniteQueryOptions<TPage, Error, TPage, TKey, TCursor>) {
   const qc = getQueryClient();
   await withSsrTimeout(qc.prefetchInfiniteQuery(options), options.queryKey);
+  markIfPrefetchFailed(options.queryKey);
   return qc.getQueryData<InfiniteData<TPage, TCursor>>(options.queryKey);
 }
 
