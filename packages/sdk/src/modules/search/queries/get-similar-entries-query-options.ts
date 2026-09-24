@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { QueryKeys } from "@/modules/core";
 import { similar } from "../requests";
 import { SearchResult } from "../types/search-response";
+import { isDmcaCurationPath } from "@/modules/curation/dmca";
 
 // Without a recency window the backend ranks across the entire historical
 // index and surfaces years-old posts. Constrain suggestions to the last
@@ -119,13 +120,16 @@ export function getSimilarEntriesQueryOptions(entry: Entry) {
       );
 
       // Light client guard mirroring the render contract: never the source
-      // post, never nsfw, one per author, capped at the render target.
+      // post, never nsfw, never a taken-down post (`similar` masks it, but a
+      // blank card is no suggestion), one per author, capped at the render
+      // target.
       const collected: SearchResult[] = [];
       const seenAuthors = new Set<string>();
       for (const r of response.results) {
         if (collected.length >= SIMILAR_ENTRIES_TARGET) break;
         if (r.permlink === entry.permlink) continue;
         if ((r.tags ?? []).indexOf("nsfw") !== -1) continue;
+        if (isDmcaCurationPath(r.author, r.permlink)) continue;
         if (seenAuthors.has(r.author)) continue;
         seenAuthors.add(r.author);
         collected.push(r);
