@@ -43,6 +43,12 @@ Sentry.init({
   // Middleware sees every page URL, including /auth?code=... and the
   // newsletter token links (issue #1651).
   beforeSend: (event) => scrubSentryEvent(event),
+  // Transactions never reach beforeSend (tracesSampleRate > 0 here): incoming
+  // /auth?code= and newsletter-token requests and outgoing fetch spans such as
+  // the HiveSigner token exchange carry the raw URL in the name, request,
+  // contexts.trace.data and spans[].data/description.
+  beforeSendTransaction: (event) => scrubSentryEvent(event),
+
   beforeBreadcrumb(crumb) {
     try {
       return scrubBreadcrumb(crumb);

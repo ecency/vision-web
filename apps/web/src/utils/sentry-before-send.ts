@@ -49,8 +49,11 @@ export function beforeSend(event: SentryErrorEvent): SentryErrorEvent | null {
   // Redact secrets carried in URLs (the imagehoster upload token in
   // `/hs/<token>`, OAuth codes, newsletter tokens; issue #1651) FIRST, so every
   // return path below, including the timeoutUrl tag derived from breadcrumbs,
-  // only ever sees the scrubbed values. Never throws (see sentry-scrub).
-  scrubSentryEvent(event);
+  // only ever sees the scrubbed values. Never throws; `null` means a location
+  // could be neither scrubbed nor removed, so the event is dropped.
+  if (!scrubSentryEvent(event)) {
+    return null;
+  }
 
   // Drop value-less captures — captureException(null/undefined/"") produces a
   // synthetic exception with no message and no stack frames (zero actionable

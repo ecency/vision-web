@@ -57,6 +57,12 @@ Sentry.init({
     return scrubSentryEvent(event);
   },
 
+  // Transactions never reach beforeSend (tracesSampleRate > 0 here): incoming
+  // /auth?code= and newsletter-token requests and outgoing fetch spans such as
+  // the HiveSigner token exchange carry the raw URL in the name, request,
+  // contexts.trace.data and spans[].data/description.
+  beforeSendTransaction: (event) => scrubSentryEvent(event),
+
   // Outgoing fetch breadcrumbs include the HiveSigner token exchange, whose
   // URL carries `code` and `client_secret`.
   beforeBreadcrumb(crumb) {
