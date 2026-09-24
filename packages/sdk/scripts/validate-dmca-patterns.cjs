@@ -143,11 +143,12 @@ function validatePattern(pattern, maxLength = 200) {
  * Author follows hived's account name rule: 3 to 16 characters, dot separated
  * segments of at least 3, each starting with a letter and ending with a letter
  * or digit, with only a-z, 0-9 and hyphen in between.
- * Permlink: hived only requires UTF-8 under 256 bytes, but every entry here is
- * compared lowercased, so it is held to lowercase a-z, 0-9, hyphen, dot and
- * underscore, up to 255 characters. That keeps out whitespace, uppercase and
- * every regex quantifier, class or group character; a dot on its own is
- * compared literally, which is what a permlink carrying one needs.
+ * Permlink: since HF1 (2016) hived's validate_permlink_0_1 only accepts
+ * lowercase a-z, 0-9 and hyphen, 1 to 255 characters, for every new comment,
+ * so no post created since then can carry anything else. Dot and underscore
+ * are also allowed here for the few pre-HF1 posts that have them. That keeps
+ * out whitespace, uppercase, non-ASCII and every regex quantifier, class or
+ * group character; a dot on its own is compared literally.
  */
 const POST_PATH_RE =
   /^@(?=[a-z0-9.-]{3,16}\/)[a-z][a-z0-9-]+[a-z0-9](?:\.[a-z][a-z0-9-]+[a-z0-9])*\/[a-z0-9._-]{1,255}$/;
