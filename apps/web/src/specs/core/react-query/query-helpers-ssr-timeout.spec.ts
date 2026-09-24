@@ -107,6 +107,28 @@ describe("SSR prefetch timeout and failure", () => {
     expect(mark).not.toHaveBeenCalled();
   });
 
+  it("leaves a node's not-found answer cacheable (prefetch state and fetchQuery rejection)", async () => {
+    const notFound = new Error("Assert Exception:Post ecency/gone does not exist");
+    client.prefetchQuery.mockResolvedValue(undefined);
+    client.getQueryState.mockReturnValue({ status: "error", error: notFound });
+    await prefetchQuery({ queryKey: ["post", "ecency", "gone"], queryFn: vi.fn() });
+    client.fetchQuery.mockRejectedValue(notFound);
+    await fetchQuery({ queryKey: ["post", "ecency", "gone"], queryFn: vi.fn() });
+    expect(mark).not.toHaveBeenCalled();
+  });
+
+  it("still marks a transport failure in both paths", async () => {
+    const transport = new Error("HTTP 503 from https://node.example");
+    client.prefetchQuery.mockResolvedValue(undefined);
+    client.getQueryState.mockReturnValue({ status: "error", error: transport });
+    await prefetchQuery({ queryKey: ["post", "a", "b"], queryFn: vi.fn() });
+    client.fetchQuery.mockRejectedValue(transport);
+    await fetchQuery({ queryKey: ["post", "a", "b"], queryFn: vi.fn() });
+    expect(mark).toHaveBeenCalledTimes(2);
+    expect(mark).toHaveBeenNthCalledWith(1, "prefetch-error");
+    expect(mark).toHaveBeenNthCalledWith(2, "prefetch-error");
+  });
+
   it("still degrades gracefully without the preload (dev, tests, other entry points)", async () => {
     delete (globalThis as DegradedGlobal).__ecencySsrDegraded;
     const pending = prefetchQuery({ queryKey: ["account", "someone"], queryFn: vi.fn() });

@@ -13,6 +13,7 @@ import type {
   QueryKey
 } from "@tanstack/query-core";
 import { EcencyConfigManager } from "@/config";
+import { isHiveNotFoundError } from "@/utils/hive-not-found-error";
 
 // Hard ceiling on any single SSR prefetch. Must be under nginx's
 // proxy_read_timeout for SSR (20s in infra/origin) so the render completes before
@@ -43,7 +44,8 @@ function markSsrDegraded(reason: "prefetch-timeout" | "prefetch-error") {
  * instead of running as a zombie until it naturally completes.
  *
  * Resolves to undefined on timeout or rejection so SSR renders gracefully
- * degrade, and marks the response degraded either way (markSsrDegraded).
+ * degrade, and marks the response degraded (markSsrDegraded) unless the
+ * rejection is a node's not-found answer.
  */
 function withSsrTimeout<T>(
   promise: Promise<T>,
@@ -63,9 +65,9 @@ function withSsrTimeout<T>(
 
     promise
       .then((result) => { clearTimeout(timer); resolve(result); })
-      .catch(() => {
+      .catch((error) => {
         clearTimeout(timer);
-        markSsrDegraded("prefetch-error");
+        if (!isHiveNotFoundError(error)) markSsrDegraded("prefetch-error");
         resolve(undefined);
       });
   });
@@ -74,14 +76,15 @@ function withSsrTimeout<T>(
 /**
  * `qc.prefetchQuery` never rejects: a failed fetch (RPC 5xx, every node
  * exhausted) resolves with the query in error state, so withSsrTimeout's catch
- * never sees it. Some genuine not-founds land here too: bridge.get_post asserts
- * on a missing post, so the entry page's not-found fallback goes out uncached
- * (a missing account resolves null and is unaffected). Only Cache-Control
- * changes; a page that answers notFound() still sends its 404.
+ * never sees it. A node's not-found answer (bridge.get_post asserts on a missing
+ * post) is an error too, but a real one: those pages keep their normal caching
+ * (isHiveNotFoundError). Only Cache-Control changes; a page that answers
+ * notFound() after a failed lookup still sends its 404.
  */
 function markIfPrefetchFailed(queryKey: QueryKey) {
   if (!isServer) return;
-  if (getQueryClient().getQueryState(queryKey)?.status === "error") {
+  const state = getQueryClient().getQueryState(queryKey);
+  if (state?.status === "error" && !isHiveNotFoundError(state.error)) {
     markSsrDegraded("prefetch-error");
   }
 }
