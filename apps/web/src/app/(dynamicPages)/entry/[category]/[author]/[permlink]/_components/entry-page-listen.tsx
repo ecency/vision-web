@@ -4,6 +4,7 @@ import { EcencyConfigManager } from "@/config";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { Entry } from "@/entities";
 import { error, success } from "@/features/shared";
+import { getAiAssistErrorMessage } from "@/features/shared/ai-assist/ai-assist-error-message";
 import { TextToSpeechSettingsDialog, useTts } from "@/features/text-to-speech";
 import { Button } from "@/features/ui";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
@@ -71,17 +72,8 @@ export function EntryPageListen({ entry }: Props) {
 
       setSummary(res.output);
       success(i18next.t("ai-assist.success"));
-    } catch (err: any) {
-      const status = err?.status;
-      if (status === 402) {
-        error(i18next.t("ai-assist.error-insufficient-points"));
-      } else if (status === 422) {
-        error(i18next.t("ai-assist.error-content-policy"));
-      } else if (status === 429) {
-        error(i18next.t("ai-assist.error-rate-limit"));
-      } else {
-        error(i18next.t("ai-assist.error-generic"));
-      }
+    } catch (err) {
+      error(getAiAssistErrorMessage(err));
     }
   }, [username, runAssist, text]);
 

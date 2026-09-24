@@ -35,15 +35,7 @@ const LOCALE = path.join(SRC, "features/i18n/locales/en-US.json");
  * broken. Each renders its placeholders to the user; listing one here pins the
  * bug rather than hiding it. Fix the site, then delete the entry.
  */
-const KNOWN_BROKEN: { file: string; key: string }[] = [
-  // 402 toast: needs `required` and `available` off the error payload, which
-  // the catch block does not read today. Shows "You need {{required}} but have
-  // {{available}}." to anyone who runs out of points mid-summarize.
-  {
-    file: "app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-listen.tsx",
-    key: "ai-assist.error-insufficient-points"
-  }
-];
+const KNOWN_BROKEN: { file: string; key: string }[] = [];
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of fs.readdirSync(dir)) {
