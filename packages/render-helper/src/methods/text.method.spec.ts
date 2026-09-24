@@ -459,6 +459,7 @@ describe('text() method - Text Node Processing', () => {
         link.getAttribute('class')?.includes('markdown-video-link-youtube')
       )
       expect(videoLinks.length).toBe(1)
+      expect(videoLinks[0].getAttribute('class')).not.toContain('portrait')
     })
 
     it('should handle YouTube shorts', () => {
@@ -473,6 +474,8 @@ describe('text() method - Text Node Processing', () => {
         link.getAttribute('class')?.includes('markdown-video-link-youtube')
       )
       expect(videoLinks.length).toBe(1)
+      // #1271: the /shorts/ path is the only orientation signal
+      expect(videoLinks[0].getAttribute('class')).toContain('markdown-video-link-youtube-portrait')
     })
 
     it('should extract start time from t parameter', () => {

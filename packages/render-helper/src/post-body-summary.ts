@@ -1,5 +1,5 @@
 import { decodeEntities, makeEntryCacheKey, stripHtmlTags } from './helper'
-import { cacheGet, cacheSet } from './cache'
+import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { cleanReply } from './methods'
 import { ENTITY_REGEX } from './consts'
@@ -145,13 +145,13 @@ export function getPostBodySummary(obj: Entry | string, length?: number, platfor
 
   const key = `${makeEntryCacheKey(obj)}-sum-${normalizedLength}-${normalizedPlatform}`
 
-  const item = cacheGet<string>(key)
-  if (item) {
+  const item = entryMemoGet<string>(key, obj.body)
+  if (item !== MEMO_MISS) {
     return item
   }
 
   const res = postBodySummary(obj.body, normalizedLength, normalizedPlatform)
-  cacheSet(key, res)
+  entryMemoSet(key, obj.body, undefined, res)
 
   return res
 }

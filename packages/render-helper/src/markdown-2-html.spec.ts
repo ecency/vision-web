@@ -982,9 +982,32 @@ describe('Markdown2Html', () => {
         last_update: '2019-05-10T09:15:21',
         body: 'https://www.youtube.com/shorts/IaehbZnsi4w'
       }
-      const expected = '<p dir=\"auto\"><a class="markdown-video-link markdown-video-link-youtube" data-embed-src="https://www.youtube.com/embed/IaehbZnsi4w?autoplay=1" data-youtube="IaehbZnsi4w"><img class="no-replace video-thumbnail" itemprop="image" src="https://i.ecency.com/p/S5Eokt4BcQdk7EHeT1aYjzebg2hC7hkthT45e5VviwaTq13pYBZesC7Hh3idYK26Q1RMUHU?format=match&amp;mode=fit" loading="eager" fetchpriority="high" /><span class="markdown-video-play"></span></a></p>'
+      const expected = '<p dir=\"auto\"><a class="markdown-video-link markdown-video-link-youtube markdown-video-link-youtube-portrait" data-embed-src="https://www.youtube.com/embed/IaehbZnsi4w?autoplay=1" data-youtube="IaehbZnsi4w"><img class="no-replace video-thumbnail" itemprop="image" src="https://i.ecency.com/p/S5Eokt4BcQdk7EHeT1aYjzebg2hC7hkthT45e5VviwaTq13pYBZesC7Hh3idYK26Q1RMUHU?format=match&amp;mode=fit" loading="eager" fetchpriority="high" /><span class="markdown-video-play"></span></a></p>'
 
       expect(markdown2Html(input)).toBe(expected)
+    })
+
+    it('70b- Should mark a pasted youtube shorts iframe portrait', () => {
+      const input = {
+        author: 'foo370b',
+        permlink: 'bar370b',
+        last_update: '2019-05-10T09:15:21',
+        body: '<iframe src="https://www.youtube.com/shorts/IaehbZnsi4w?feature=share"></iframe>'
+      }
+      const out = markdown2Html(input)
+
+      expect(out).toContain('<iframe src="https://www.youtube.com/embed/IaehbZnsi4w" class="portrait-embed">')
+    })
+
+    it('70c- Should play a pasted non-www youtube shorts iframe', () => {
+      const input = {
+        author: 'foo370c',
+        permlink: 'bar370c',
+        last_update: '2019-05-10T09:15:21',
+        body: '<iframe src="https://youtube.com/shorts/IaehbZnsi4w"></iframe>'
+      }
+
+      expect(markdown2Html(input)).toContain('<iframe src="https://www.youtube.com/embed/IaehbZnsi4w" class="portrait-embed">')
     })
   })
 

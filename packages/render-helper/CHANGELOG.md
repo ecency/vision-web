@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.39
+
+### Patch Changes
+
+- fix: YouTube Shorts render 9:16, render-helper memo keyed on body, taken-down posts masked in search (#1880)
+
 ## 2.5.38
 
 ### Patch Changes

@@ -19,3 +19,30 @@ export function cacheGet<T extends unknown>(key: string): T {
 export function cacheSet(key: string, value: unknown): void {
   cache.set(key, value)
 }
+
+// An entry memo slot keeps the inputs its value was computed from, and a lookup
+// is a hit only when they are the same ones. The key carries a cheap digest of
+// the body to spread entries over slots, but a digest can collide, and an
+// author who crafted a body colliding with the takedown notice would otherwise
+// keep serving the original after the takedown. The body is stored by
+// reference (the entry already holds that string), and the comparison is O(1)
+// for the same string instance.
+interface EntryMemo {
+  body: unknown
+  meta: unknown
+  value: unknown
+}
+
+export const MEMO_MISS: unique symbol = Symbol('memo-miss')
+
+export function entryMemoGet<T>(key: string, body: unknown, meta?: unknown): T | typeof MEMO_MISS {
+  const slot = cache.get(key) as EntryMemo | undefined
+  if (slot === undefined || slot.body !== body || slot.meta !== meta) {
+    return MEMO_MISS
+  }
+  return slot.value as T
+}
+
+export function entryMemoSet(key: string, body: unknown, meta: unknown, value: unknown): void {
+  cache.set(key, { body, meta, value })
+}

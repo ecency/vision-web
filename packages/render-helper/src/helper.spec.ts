@@ -486,7 +486,7 @@ describe('Helper Functions', () => {
         updated: ''
       }
 
-      expect(makeEntryCacheKey(input)).toBe('foo1-bar1-2019-05-10T09:15:21-')
+      expect(makeEntryCacheKey(input)).toBe('foo1-bar1-2019-05-10T09:15:21--0.ztntfp')
     })
 
     it('should generate cache key with updated field', () => {
@@ -497,7 +497,7 @@ describe('Helper Functions', () => {
         updated: '2024-01-15T13:00:00'
       }
 
-      expect(makeEntryCacheKey(input)).toBe('author1-post-title-2024-01-15T12:30:00-2024-01-15T13:00:00')
+      expect(makeEntryCacheKey(input)).toBe('author1-post-title-2024-01-15T12:30:00-2024-01-15T13:00:00-0.ztntfp')
     })
 
     it('should handle entry with special characters in author', () => {
@@ -508,7 +508,7 @@ describe('Helper Functions', () => {
         updated: ''
       }
 
-      expect(makeEntryCacheKey(input)).toBe('author.name-123-permlink-2024-01-15T12:00:00-')
+      expect(makeEntryCacheKey(input)).toBe('author.name-123-permlink-2024-01-15T12:00:00--0.ztntfp')
     })
 
     it('should handle entry with special characters in permlink', () => {
@@ -519,7 +519,7 @@ describe('Helper Functions', () => {
         updated: ''
       }
 
-      expect(makeEntryCacheKey(input)).toBe('author-my-blog-post-2024-2024-01-15T12:00:00-')
+      expect(makeEntryCacheKey(input)).toBe('author-my-blog-post-2024-2024-01-15T12:00:00--0.ztntfp')
     })
 
     it('should handle entry with undefined updated field', () => {
@@ -530,7 +530,7 @@ describe('Helper Functions', () => {
         updated: undefined
       }
 
-      expect(makeEntryCacheKey(input)).toBe('author-permlink-2024-01-15T12:00:00-undefined')
+      expect(makeEntryCacheKey(input)).toBe('author-permlink-2024-01-15T12:00:00-undefined-0.ztntfp')
     })
 
     it('should handle entry with null values', () => {
@@ -541,7 +541,7 @@ describe('Helper Functions', () => {
         updated: null
       }
 
-      expect(makeEntryCacheKey(input)).toBe('author-permlink-null-null')
+      expect(makeEntryCacheKey(input)).toBe('author-permlink-null-null-0.ztntfp')
     })
 
     it('should create unique keys for different entries', () => {
@@ -578,6 +578,34 @@ describe('Helper Functions', () => {
       }
 
       expect(makeEntryCacheKey(entry1)).toBe(makeEntryCacheKey(entry2))
+    })
+
+    it('should differentiate entries whose body differs under the same last_update', () => {
+      const base = { author: 'author', permlink: 'post', last_update: '2024-01-15T12:00:00', updated: '' }
+
+      // Same length, one character apart: length alone would collide.
+      expect(makeEntryCacheKey({ ...base, body: 'abc' })).not.toBe(makeEntryCacheKey({ ...base, body: 'abd' }))
+      expect(makeEntryCacheKey({ ...base, body: 'abc' })).toBe(makeEntryCacheKey({ ...base, body: 'abc' }))
+    })
+
+    it('should hash the body of one entry object once across memo calls', () => {
+      const entry = { author: 'author', permlink: 'hash-once', last_update: '2024-01-15T12:00:00', body: 'x'.repeat(1000) }
+      const spy = vi.spyOn(String.prototype, 'charCodeAt')
+      try {
+        const first = makeEntryCacheKey(entry)
+        expect(makeEntryCacheKey(entry)).toBe(first)
+        expect(makeEntryCacheKey(entry)).toBe(first)
+        expect(spy).toHaveBeenCalledTimes(entry.body.length)
+      } finally {
+        spy.mockRestore()
+      }
+    })
+
+    it('should give a new key when the body is replaced in place on the same object', () => {
+      const entry = { author: 'author', permlink: 'in-place', last_update: '2024-01-15T12:00:00', body: 'original' }
+      const before = makeEntryCacheKey(entry)
+      entry.body = 'replaced'
+      expect(makeEntryCacheKey(entry)).not.toBe(before)
     })
 
     it('should differentiate entries with different last_update', () => {

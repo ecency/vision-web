@@ -1,2 +1,0 @@
-async function s(n,r){let t=await(async()=>{let e;try{e=await n.text();}catch{return}if(e!=="")try{return JSON.parse(e)}catch{return n.ok?void 0:e}})();if(!n.ok){let e=new Error(`Request failed with status ${n.status}`);throw e.status=n.status,e.data=t,e}if(t===void 0||r!==void 0&&!r(t))throw new Error("Response body was empty, invalid JSON, or not the expected shape");return t}function a(n){return typeof n=="object"&&n!==null&&Array.isArray(n.results)}export{s as a,a as b};//# sourceMappingURL=chunk-RXGIT5EC.js.map
-//# sourceMappingURL=chunk-RXGIT5EC.js.map

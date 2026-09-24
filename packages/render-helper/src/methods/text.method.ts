@@ -1,5 +1,5 @@
 import { IMG_REGEX, YOUTUBE_REGEX, WHITE_LIST, DOMParser, POST_REGEX  } from '../consts'
-import { extractYtStartTime, isValidPermlink, isValidUsername, sanitizePermlink } from '../helper'
+import { extractYtStartTime, youtubeVideoLinkClass, isValidPermlink, isValidUsername, sanitizePermlink } from '../helper'
 import { proxifyImageSrc } from '../proxify-image-src'
 import { linkify } from './linkify.method'
 import {createImageHTML} from "./img.method";
@@ -107,7 +107,7 @@ export function text(node: HTMLElement | null, forApp: boolean, renderOptions?: 
 
       // Create anchor element
       const anchor = node.ownerDocument.createElement('a')
-      anchor.setAttribute('class', 'markdown-video-link markdown-video-link-youtube')
+      anchor.setAttribute('class', youtubeVideoLinkClass(e[0]))
       anchor.setAttribute('data-embed-src', embedSrc)
       anchor.setAttribute('data-youtube', vid)
       if (startTime) {

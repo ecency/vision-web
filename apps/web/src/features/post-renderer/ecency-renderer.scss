@@ -466,6 +466,24 @@ $xxxl-break: "1600px";
     max-width: 600px;
   }
 
+  // YouTube Shorts (9:16). render-helper adds the modifier when the posted URL
+  // is a /shorts/ link; the embed URL alone cannot tell a Short from a normal
+  // video. Same ratio and max width as iframe.portrait-embed below. The
+  // click-to-play extension only adds classes, so this survives the swap to
+  // the iframe.
+  .markdown-video-link-youtube.markdown-video-link-youtube-portrait {
+    padding-bottom: 0;
+    aspect-ratio: 9 / 16;
+    height: auto;
+    max-width: 360px;
+
+    // hqdefault is 4:3 with the vertical frame pillarboxed inside it; cover
+    // crops it to the 9:16 box instead of letterboxing a letterbox.
+    .video-thumbnail {
+      object-fit: cover;
+    }
+  }
+
   // Portrait embeds (9:16 aspect ratio)
   // Target iframe.portrait-embed since the class is applied to iframe elements, not anchors
   iframe.portrait-embed {
@@ -506,7 +524,7 @@ $xxxl-break: "1600px";
   // Fallback for standalone iframes not inside video containers.
   // Use :where() to keep specificity at (0,0,1) so video container rules
   // (.markdown-video-link-* iframe) win by specificity and aren't shadowed.
-  iframe:where(:not(.youtube-shorts-iframe, .speak-iframe, .portrait-embed)) {
+  iframe:where(:not(.youtube-shorts-iframe, .youtube-player, .speak-iframe, .portrait-embed)) {
     max-width: 100% !important;
     display: block;
     aspect-ratio: 16 / 9;

@@ -921,6 +921,61 @@ describe('a() method - Link Processing', () => {
         expect(el.getAttribute('data-youtube')).toBe('dQw4w9WgXcQ')
       })
 
+      // #1271: a Short's embed URL is the same /embed/<id> as a landscape
+      // video, so the /shorts/ source path is the only orientation signal.
+      it('should mark YouTube shorts portrait in click-to-play mode', () => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://www.youtube.com/shorts/dQw4w9WgXcQ'
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false)
+
+        expect(el.getAttribute('class')).toBe(
+          'markdown-video-link markdown-video-link-youtube markdown-video-link-youtube-portrait'
+        )
+        expect(el.getAttribute('data-embed-src')).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1')
+        expect(el.hasAttribute('href')).toBe(false)
+      })
+
+      it('should mark YouTube shorts portrait when embedding directly', () => {
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://youtube.com/shorts/dQw4w9WgXcQ?feature=share'
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false, 'ecency.com', undefined, { embedVideosDirectly: true })
+
+        expect(el.getAttribute('class')).toBe(
+          'markdown-video-link markdown-video-link-youtube markdown-video-link-youtube-portrait er-youtube'
+        )
+        const iframe = el.getElementsByTagName('iframe')[0]
+        expect(iframe.getAttribute('src')).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ')
+      })
+
+      it.each([
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        'https://youtu.be/dQw4w9WgXcQ',
+        'https://www.youtube.com/embed/dQw4w9WgXcQ'
+      ])('should not mark %s portrait', (href) => {
+        for (const renderOptions of [undefined, { embedVideosDirectly: true }]) {
+          const parent = doc.createElement('div')
+          const el = doc.createElement('a')
+          el.setAttribute('href', href)
+          el.textContent = href
+          parent.appendChild(el)
+
+          a(el, false, 'ecency.com', undefined, renderOptions)
+
+          expect(el.getAttribute('class')).toContain('markdown-video-link-youtube')
+          expect(el.getAttribute('class')).not.toContain('portrait')
+        }
+      })
+
       it('should extract start time from t parameter', () => {
         const parent = doc.createElement('div')
         const el = doc.createElement('a')

@@ -1,5 +1,5 @@
 import { iframe } from './iframe.method'
-import { DOMParser } from '../consts'
+import { DOMParser, isAllowedEmbedSrc } from '../consts'
 
 // Helper to check if an element with class exists in childNodes
 function hasChildWithClass(parent: any, className: string): boolean {
@@ -192,13 +192,111 @@ describe('iframe() method - Iframe Sanitization', () => {
     it('should handle YouTube shorts embeds', () => {
       const parent = doc.createElement('div')
       const el = doc.createElement('iframe')
-      el.setAttribute('src', 'https://www.youtube.com/shorts/abc123?param=value')
+      el.setAttribute('src', 'https://www.youtube.com/shorts/IaehbZnsi4w?param=value')
       parent.appendChild(el)
 
       iframe(el)
 
       expect(hasChildWithTag(parent, 'iframe')).toBe(true)
-      expect(el.getAttribute('src')).toBe('https://www.youtube.com/shorts/abc123')
+      // #1271: /shorts/ is not frameable, so it is pointed at the embed route
+      expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/IaehbZnsi4w')
+      expect(isAllowedEmbedSrc(el.getAttribute('src'))).toBe(true)
+      // no wrapper anchor, so the iframe itself carries the 9:16 marker
+      expect(el.getAttribute('class')).toBe('portrait-embed')
+    })
+
+    it('should rewrite a protocol-relative YouTube shorts iframe', () => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', '//www.youtube.com/shorts/IaehbZnsi4w/')
+      parent.appendChild(el)
+
+      iframe(el)
+
+      expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/IaehbZnsi4w')
+      expect(el.getAttribute('class')).toBe('portrait-embed')
+    })
+
+    it.each([
+      'https://www.youtube.com/shorts/IaehbZnsi4w#t=3',
+      'https://www.youtube.com/shorts/IaehbZnsi4w?'
+    ])('should rewrite a shorts iframe with a trailing fragment or bare ? (%s)', (src) => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', src)
+      parent.appendChild(el)
+      iframe(el)
+      expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/IaehbZnsi4w')
+      expect(el.getAttribute('class')).toBe('portrait-embed')
+    })
+
+    it.each([
+      'https://youtube.com/shorts/IaehbZnsi4w?feature=share',
+      'https://m.youtube.com/shorts/IaehbZnsi4w'
+    ])('should rewrite a non-www shorts iframe %s', (src) => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', src)
+      parent.appendChild(el)
+
+      iframe(el)
+
+      expect(hasChildWithTag(parent, 'iframe')).toBe(true)
+      expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/IaehbZnsi4w')
+      expect(el.getAttribute('class')).toBe('portrait-embed')
+    })
+
+    it.each([
+      'https://youtube.com/embed/dQw4w9WgXcQ?autoplay=1',
+      'https://m.youtube.com/embed/dQw4w9WgXcQ',
+      '//youtube.com/embed/dQw4w9WgXcQ'
+    ])('should keep a non-www YouTube embed iframe %s on the www host', (src) => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', src)
+      parent.appendChild(el)
+
+      iframe(el)
+
+      expect(hasChildWithTag(parent, 'iframe')).toBe(true)
+      expect(hasChildWithClass(parent, 'unsupported-iframe')).toBeFalsy()
+      expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ')
+      expect(isAllowedEmbedSrc(el.getAttribute('src'))).toBe(true)
+      expect(el.hasAttribute('class')).toBe(false)
+    })
+
+    it('should not treat a lookalike youtube host as YouTube', () => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', 'https://evilyoutube.com/embed/dQw4w9WgXcQ')
+      parent.appendChild(el)
+
+      iframe(el)
+
+      expect(hasChildWithTag(parent, 'iframe')).toBe(false)
+    })
+
+    it('should not rewrite a shorts iframe whose id is not a video id', () => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', 'https://www.youtube.com/shorts/abc123/../../redirect')
+      parent.appendChild(el)
+
+      iframe(el)
+
+      expect(el.getAttribute('src')).not.toContain('/embed/')
+      expect(el.hasAttribute('class')).toBe(false)
+    })
+
+    it('should not mark a regular YouTube embed portrait', () => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', 'https://www.youtube.com/embed/dQw4w9WgXcQ')
+      parent.appendChild(el)
+
+      iframe(el)
+
+      expect(el.hasAttribute('class')).toBe(false)
     })
 
     it('should handle YouTube embed with protocol-relative URL', () => {

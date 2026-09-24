@@ -240,8 +240,48 @@ export function createDoc(html: string): Document | null {
   }
 }
 
+/**
+ * FNV-1a over the UTF-16 code units. Not cryptographic: it only has to tell two
+ * bodies of the same entry apart, and it is linear with no allocation, so it
+ * costs a small fraction of the markdown render a cache miss would run.
+ */
+function hashBody(body: unknown): string {
+  const s = typeof body === 'string' ? body : ''
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return `${s.length}.${(h >>> 0).toString(36)}`
+}
+
+// The body is part of the key because the same author/permlink/last_update can
+// reach the renderer with different bodies: a takedown replaces the body
+// (filterDmcaEntry) without touching last_update, so a post rendered before the
+// lists were in force, or from a surface that does not filter, kept serving its
+// original HTML, cover and summary to later filtered requests.
+// A memo hit would otherwise cost a full hash, and one entry object goes
+// through several memo calls per render (card, og and preload sizes, summary).
+// The stored hash is reused only while the body is the same string, so a body
+// replaced in place on the same object is hashed again.
+const bodyHashes = new WeakMap<object, { body: string; hash: string }>()
+
+function entryBodyHash(entry: any): string {
+  const body = entry.body
+  if (typeof body !== 'string' || typeof entry !== 'object' || entry === null) {
+    return hashBody(body)
+  }
+  const stored = bodyHashes.get(entry)
+  if (stored && stored.body === body) {
+    return stored.hash
+  }
+  const hash = hashBody(body)
+  bodyHashes.set(entry, { body, hash })
+  return hash
+}
+
 export function makeEntryCacheKey(entry: any): string {
-  return `${entry.author}-${entry.permlink}-${entry.last_update}-${entry.updated}`
+  return `${entry.author}-${entry.permlink}-${entry.last_update}-${entry.updated}-${entryBodyHash(entry)}`
 }
 
 /**
@@ -418,6 +458,20 @@ export function extractYtStartTime(url:string):string {
     return '';
   }
 }
+/**
+ * Class list for a YouTube video wrapper. A Short is vertical (9:16) but its
+ * embed URL is the same `/embed/<id>` as a landscape video, so the `/shorts/`
+ * path of the posted URL is the only orientation signal. Pass the segment
+ * YOUTUBE_REGEX matched, before the source URL is discarded, and the extra
+ * `markdown-video-link-youtube-portrait` modifier lets the stylesheets size the
+ * player 9:16. Links posted as `watch?v=` or `youtu.be/` carry no such hint and
+ * stay 16:9.
+ */
+export function youtubeVideoLinkClass(matchedUrl: string): string {
+  const base = 'markdown-video-link markdown-video-link-youtube'
+  return /youtube\.com\/shorts\//i.test(matchedUrl) ? `${base} markdown-video-link-youtube-portrait` : base
+}
+
 export function sanitizePermlink(permlink: string): string {
   if (!permlink || typeof permlink !== 'string') {
     return ''

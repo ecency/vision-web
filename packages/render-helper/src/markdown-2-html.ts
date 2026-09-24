@@ -1,6 +1,6 @@
 import { makeEntryCacheKey } from './helper'
 import { cleanReply, markdownToHTML } from './methods'
-import { cacheGet, cacheSet } from './cache'
+import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry, RenderOptions, SeoContext } from './types'
 
 // Warn when a single markdown render exceeds this threshold. Surfaces both
@@ -64,8 +64,8 @@ export function markdown2Html(obj: Entry | string, forApp = true, _webp = false,
   // other's HTML from cache.
   const key = `${makeEntryCacheKey(obj)}-md-${forApp ? 'app' : 'site'}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ''}-${seoContext.postPayout ?? ''}` : ''}${renderOptions?.embedVideosDirectly ? '-embed' : ''}${renderOptions?.inertAuthorAndTagChips ? '-inert' : ''}${renderOptions?.externalProfileBase ? '-ext' + renderOptions.externalProfileBase : ''}`
 
-  const item = cacheGet<string>(key)
-  if (item) {
+  const item = entryMemoGet<string>(key, obj.body)
+  if (item !== MEMO_MISS) {
     return item
   }
 
@@ -77,7 +77,7 @@ export function markdown2Html(obj: Entry | string, forApp = true, _webp = false,
     performance.now() - t0,
     `author=@${obj.author} permlink=${obj.permlink} body_len=${obj.body?.length ?? 0}`
   )
-  cacheSet(key, res)
+  entryMemoSet(key, obj.body, undefined, res)
 
   return res
 }

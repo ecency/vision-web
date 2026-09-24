@@ -1,6 +1,9 @@
 import { CONFIG } from "@/modules/core";
 import { Entry } from "../types";
 
+/** What a listed post shows in place of its body (the search mask reuses it). */
+export const DMCA_NOTICE_BODY = "This post is not available due to a copyright/fraudulent claim.";
+
 /**
  * Filters and censors entries that match DMCA patterns
  * @param entry - Single entry or array of entries to filter
@@ -28,7 +31,7 @@ function applyFilter(entry: Entry | null | undefined): Entry | null | undefined 
   if (isDmca) {
     return {
       ...entry,
-      body: "This post is not available due to a copyright/fraudulent claim.",
+      body: DMCA_NOTICE_BODY,
       title: "",
       // Blanked with them, because a CARD never reads the body: the summary is
       // `json_metadata.description` when the author set one, and the image is

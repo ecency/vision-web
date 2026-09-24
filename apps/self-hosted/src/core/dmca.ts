@@ -91,6 +91,9 @@ export function loadDmcaLists(queryClient?: QueryClient): Promise<void> {
       lists.accounts.length + lists.tags.length + lists.posts.length;
     if (listed > 0 && queryClient) {
       queryClient.resetQueries({ queryKey: ['posts'] });
+      // Search rows are masked when parsed, so a search that resolved before
+      // the lists landed is cached unmasked until it is refetched.
+      queryClient.resetQueries({ queryKey: ['search'] });
     }
   });
   return pending;

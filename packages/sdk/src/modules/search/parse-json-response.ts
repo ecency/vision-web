@@ -1,3 +1,6 @@
+import { maskDmcaSearchResponse } from "./dmca";
+import type { SearchResponse } from "./types/search-response";
+
 export type RequestError = Error & { status?: number; data?: unknown };
 
 /**
@@ -78,4 +81,12 @@ export function isSearchResponse(data: unknown): boolean {
     data !== null &&
     Array.isArray((data as { results?: unknown }).results)
   );
+}
+
+/**
+ * Every /search-api endpoint that returns post rows goes through here, so a
+ * taken-down post is masked once for all of them (see ./dmca).
+ */
+export async function parseSearchResponse(response: Response): Promise<SearchResponse> {
+  return maskDmcaSearchResponse(await parseJsonResponse<SearchResponse>(response, isSearchResponse));
 }
