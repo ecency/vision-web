@@ -182,6 +182,22 @@ describe("ssr-degraded preload", () => {
     expect(await state(port)).toEqual({ sent: {}, late: {}, abandoned: { "prefetch-timeout": 1 } });
   });
 
+  it("counts a client that left while the prefetch was still pending as abandoned, once", async () => {
+    const { port } = await boot();
+    // The client goes at 50ms, close fires with nothing marked yet; the
+    // prefetch gives up at 150ms and the page still ends at 250ms.
+    await new Promise<void>((resolve) => {
+      const req = http.get({ host: "127.0.0.1", port, path: "/@left/posts?mark=150&end=100" });
+      req.on("error", () => resolve());
+      setTimeout(() => {
+        req.destroy();
+        resolve();
+      }, 50);
+    });
+    await new Promise((r) => setTimeout(r, 450));
+    expect(await state(port)).toEqual({ sent: {}, late: {}, abandoned: { "prefetch-timeout": 1 } });
+  });
+
   it("logs one line per window with each outcome by reason and its own sample paths", async () => {
     const { port, stderr } = await boot();
     await get(port, "/@a/posts?mark=10");

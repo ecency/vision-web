@@ -90,7 +90,9 @@ fragmenting on every cookie (analytics, locale, theme, experiments).
 The tier is chosen in middleware, before the page renders. When a server
 prefetch then times out or fails (`core/react-query/query-helpers.ts`; a node's
 not-found answer, such as a missing post, is not a failure and keeps the tier,
-see `utils/hive-not-found-error.ts`), the page renders without that data and the client fetches it after hydration. The
+see `utils/hive-not-found-error.ts`; a source with a fallback, such as condenser
+`get_content` before `bridge.get_post`, passes `degradeOnFailure: false` so only
+the fallback failing too counts), the page renders without that data and the client fetches it after hydration. The
 `apps/web/ssr-degraded.js` preload (loaded by the image CMD) rewrites that
 response to `private, no-store` as its head is written and appends `-degraded`
 to `x-cache-tier`, so neither nginx nor the edge stores it and an expired good

@@ -34,7 +34,11 @@ export async function generateEntryMetadata(
     // fetch-count-neutral — bridge is the fallback, already trusted here.
     let entry = null;
     try {
-      entry = await prefetchQuery(getContentQueryOptions(cleanAuthor, cleanPermlink));
+      // Not marked on its own: the bridge prefetch below marks the response
+      // only if it fails too.
+      entry = await prefetchQuery(getContentQueryOptions(cleanAuthor, cleanPermlink), {
+        degradeOnFailure: false
+      });
     } catch (e) {
       console.warn("generateEntryMetadata: get_content failed, trying bridge", e);
     }

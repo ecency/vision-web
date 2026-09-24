@@ -74,6 +74,9 @@ function mark(reason) {
     ctx.late = true;
   } else if (!ctx.reason) {
     ctx.reason = why;
+    // The client left while this prefetch was still pending: close has fired
+    // already and no head will ever be written.
+    if (ctx.closed) record("abandoned", why, ctx.req);
   }
 }
 
@@ -98,7 +101,7 @@ http.Server.prototype.emit = function emit(event, req, res) {
   if (event !== "request" || !req || !res) {
     return originalEmit.apply(this, arguments);
   }
-  const ctx = { req, res, reason: null, late: false };
+  const ctx = { req, res, reason: null, late: false, closed: false };
   // Every path to the wire goes through writeHead: an explicit call, or
   // _implicitHeader() on the first write()/end()/flushHeaders().
   const originalWriteHead = res.writeHead;
@@ -112,6 +115,7 @@ http.Server.prototype.emit = function emit(event, req, res) {
     return originalWriteHead.apply(this, arguments);
   };
   res.once("close", () => {
+    ctx.closed = true;
     if (ctx.reason && !res.headersSent) record("abandoned", ctx.reason, req);
   });
   return storage.run(ctx, () => originalEmit.apply(this, arguments));

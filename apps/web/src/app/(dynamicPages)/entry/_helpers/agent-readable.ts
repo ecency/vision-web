@@ -176,7 +176,11 @@ export async function loadEntry(
   let source: EntrySource = "hive_condenser";
 
   try {
-    entry = (await prefetchQuery(getContentQueryOptions(author, permlink))) as Entry | null;
+    // bridge.get_post below is the fallback, so this source alone failing does
+    // not make the response degraded (the bridge prefetch marks it if both do).
+    entry = (await prefetchQuery(getContentQueryOptions(author, permlink), {
+      degradeOnFailure: false
+    })) as Entry | null;
   } catch {
     entry = null;
   }

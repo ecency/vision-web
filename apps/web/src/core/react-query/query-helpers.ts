@@ -46,11 +46,12 @@ function markSsrDegraded(reason: "prefetch-timeout" | "prefetch-error") {
  *
  * Resolves to undefined on timeout or rejection so SSR renders gracefully
  * degrade, and marks the response degraded (markSsrDegraded) unless the
- * rejection is a node's not-found answer.
+ * rejection is a node's not-found answer or the caller opted out (`mark`).
  */
 function withSsrTimeout<T>(
   promise: Promise<T>,
-  queryKey?: QueryKey
+  queryKey?: QueryKey,
+  mark = true
 ): Promise<T | undefined> {
   if (!isServer) return promise;
 
@@ -60,7 +61,7 @@ function withSsrTimeout<T>(
       if (queryKey) {
         getQueryClient().cancelQueries({ queryKey });
       }
-      markSsrDegraded("prefetch-timeout");
+      if (mark) markSsrDegraded("prefetch-timeout");
       resolve(undefined);
     }, SSR_PREFETCH_TIMEOUT_MS);
 
@@ -68,7 +69,7 @@ function withSsrTimeout<T>(
       .then((result) => { clearTimeout(timer); resolve(result); })
       .catch((error) => {
         clearTimeout(timer);
-        if (!isHiveNotFoundError(error)) markSsrDegraded("prefetch-error");
+        if (mark && !isHiveNotFoundError(error)) markSsrDegraded("prefetch-error");
         resolve(undefined);
       });
   });
@@ -93,6 +94,17 @@ function markIfPrefetchFailed(qc: QueryClient, queryKey: QueryKey) {
   }
 }
 
+export interface SsrPrefetchOptions {
+  /**
+   * Default true. Pass false only for a source the caller falls back from
+   * (condenser get_content, then bridge.get_post): a failure or timeout here
+   * then leaves the response cacheable, and the fallback's own prefetch marks
+   * it if the data is still missing. Scoped to this one call, so it can never
+   * clear a mark another query set.
+   */
+  degradeOnFailure?: boolean;
+}
+
 /**
  * Prefetch a query on the server and return cached data.
  * Replaces the old `.prefetch()` method from EcencyQueriesManager.
@@ -109,10 +121,13 @@ function markIfPrefetchFailed(qc: QueryClient, queryKey: QueryKey) {
 export async function prefetchQuery<
   T,
   TKey extends QueryKey = QueryKey
->(options: FetchQueryOptions<T, Error, T, TKey>) {
+>(
+  options: FetchQueryOptions<T, Error, T, TKey>,
+  { degradeOnFailure = true }: SsrPrefetchOptions = {}
+) {
   const qc = getQueryClient();
-  await withSsrTimeout(qc.prefetchQuery(options), options.queryKey);
-  markIfPrefetchFailed(qc, options.queryKey);
+  await withSsrTimeout(qc.prefetchQuery(options), options.queryKey, degradeOnFailure);
+  if (degradeOnFailure) markIfPrefetchFailed(qc, options.queryKey);
   return qc.getQueryData<T>(options.queryKey);
 }
 
