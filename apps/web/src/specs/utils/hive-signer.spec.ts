@@ -1,6 +1,6 @@
 import { buildHotSignUrl } from "../../utils/hive-signer";
 
-describe("hotSign", () => {
+describe("buildHotSignUrl", () => {
   it("should build hot signing url", () => {
     const params = {
       required_auths: `["foo"]`,
