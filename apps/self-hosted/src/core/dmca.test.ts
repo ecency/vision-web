@@ -169,6 +169,7 @@ describe('loadDmcaLists', () => {
     await loadDmcaLists({ resetQueries } as never);
 
     expect(resetQueries).toHaveBeenCalledWith({ queryKey: ['posts'] });
+    expect(resetQueries).toHaveBeenCalledWith({ queryKey: ['search'] });
   });
 
   it('does not refetch when the lists came back empty', async () => {
