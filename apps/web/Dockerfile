@@ -121,6 +121,7 @@ COPY --from=base /var/app/apps/web/package.json ./apps/web/package.json
 COPY --from=base /var/app/apps/web/healthCheck.js ./apps/web/healthCheck.js
 COPY --from=base /var/app/apps/web/next-runtime-config.js ./apps/web/next-runtime-config.js
 COPY --from=base /var/app/apps/web/ssr-admission.js ./apps/web/ssr-admission.js
+COPY --from=base /var/app/apps/web/ssr-degraded.js ./apps/web/ssr-degraded.js
 COPY --from=base /var/app/apps/web/public ./apps/web/public
 COPY --from=base /var/app/apps/web/.next ./apps/web/.next
 # Previous builds' static assets, merged in and bounded by retain-static.js.
@@ -156,5 +157,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 CMD node
 # ssr-admission.js caps in-flight page renders per process (SSR_MAX_INFLIGHT,
 # set in the stack file) and answers 503 above the cap before Next sees the
 # request, so the edge fails over instead of queueing behind a stuck loop.
+#
+# ssr-degraded.js sends a render whose SSR prefetch timed out as
+# `private, no-store`, so no cache layer stores the entry-less page (#1558).
 WORKDIR /var/app/apps/web
-CMD ["node", "--require", "./next-runtime-config.js", "--require", "./ssr-admission.js", "./node_modules/next/dist/bin/next", "start"]
+CMD ["node", "--require", "./next-runtime-config.js", "--require", "./ssr-admission.js", "--require", "./ssr-degraded.js", "./node_modules/next/dist/bin/next", "start"]

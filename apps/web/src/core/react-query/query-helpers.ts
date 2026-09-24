@@ -43,6 +43,11 @@ function withSsrTimeout<T>(
       if (queryKey) {
         getQueryClient().cancelQueries({ queryKey });
       }
+      // The page now renders without this data: keep that response out of
+      // shared caches (the ssr-degraded.js preload, absent outside the image).
+      (
+        globalThis as { __ecencySsrDegraded?: { mark(reason: string): void } }
+      ).__ecencySsrDegraded?.mark("prefetch-timeout");
       resolve(undefined);
     }, SSR_PREFETCH_TIMEOUT_MS);
 

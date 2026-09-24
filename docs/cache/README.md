@@ -85,6 +85,19 @@ key, which encodes auth-class (`anon` or `loggedin`) as a synthetic URL
 prefix. Two cache entries per URL — one per auth class — without
 fragmenting on every cookie (analytics, locale, theme, experiments).
 
+## Degraded renders are never stored
+
+The tier is chosen in middleware, before the page renders. When a server
+prefetch then outlives its SSR timeout (`core/react-query/query-helpers.ts`),
+the page renders without that data and the client fetches it after hydration.
+The `apps/web/ssr-degraded.js` preload (loaded by the image CMD) rewrites that
+response to `private, no-store` as its head is written and appends `-degraded`
+to `x-cache-tier`, so neither nginx nor the edge stores it and an expired good
+copy stays available to be served stale (#1558). A render that already flushed
+its head (a streamed Suspense boundary) cannot be changed; the preload counts
+those as `late`. Both counts reach the container log as one `[ssr-degraded]`
+line per minute, only when non-zero.
+
 ## Layer-specific configuration
 
 - [Nginx](./nginx.md) — proxy cache (32G LRU, 2h inactive)
