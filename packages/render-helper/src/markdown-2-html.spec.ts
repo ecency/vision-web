@@ -998,6 +998,17 @@ describe('Markdown2Html', () => {
 
       expect(out).toContain('<iframe src="https://www.youtube.com/embed/IaehbZnsi4w" class="portrait-embed">')
     })
+
+    it('70c- Should play a pasted non-www youtube shorts iframe', () => {
+      const input = {
+        author: 'foo370c',
+        permlink: 'bar370c',
+        last_update: '2019-05-10T09:15:21',
+        body: '<iframe src="https://youtube.com/shorts/IaehbZnsi4w"></iframe>'
+      }
+
+      expect(markdown2Html(input)).toContain('<iframe src="https://www.youtube.com/embed/IaehbZnsi4w" class="portrait-embed">')
+    })
   })
 
   describe("Rumble support", () => {

@@ -230,6 +230,52 @@ describe('iframe() method - Iframe Sanitization', () => {
       expect(el.getAttribute('class')).toBe('portrait-embed')
     })
 
+    it.each([
+      'https://youtube.com/shorts/IaehbZnsi4w?feature=share',
+      'https://m.youtube.com/shorts/IaehbZnsi4w'
+    ])('should rewrite a non-www shorts iframe %s', (src) => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', src)
+      parent.appendChild(el)
+
+      iframe(el)
+
+      expect(hasChildWithTag(parent, 'iframe')).toBe(true)
+      expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/IaehbZnsi4w')
+      expect(el.getAttribute('class')).toBe('portrait-embed')
+    })
+
+    it.each([
+      'https://youtube.com/embed/dQw4w9WgXcQ?autoplay=1',
+      'https://m.youtube.com/embed/dQw4w9WgXcQ',
+      '//youtube.com/embed/dQw4w9WgXcQ'
+    ])('should keep a non-www YouTube embed iframe %s on the www host', (src) => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', src)
+      parent.appendChild(el)
+
+      iframe(el)
+
+      expect(hasChildWithTag(parent, 'iframe')).toBe(true)
+      expect(hasChildWithClass(parent, 'unsupported-iframe')).toBeFalsy()
+      expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ')
+      expect(isAllowedEmbedSrc(el.getAttribute('src'))).toBe(true)
+      expect(el.hasAttribute('class')).toBe(false)
+    })
+
+    it('should not treat a lookalike youtube host as YouTube', () => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', 'https://evilyoutube.com/embed/dQw4w9WgXcQ')
+      parent.appendChild(el)
+
+      iframe(el)
+
+      expect(hasChildWithTag(parent, 'iframe')).toBe(false)
+    })
+
     it('should not rewrite a shorts iframe whose id is not a video id', () => {
       const parent = doc.createElement('div')
       const el = doc.createElement('iframe')

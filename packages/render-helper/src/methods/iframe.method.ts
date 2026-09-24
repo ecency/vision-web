@@ -16,7 +16,12 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
   const ytMatch = src.match(YOUTUBE_EMBED_REGEX);
   if (ytMatch) {
     // strip query string (yt: autoplay=1,controls=0,showinfo=0, etc)
-    const stripped = stripQueryString(src);
+    let stripped = stripQueryString(src);
+    // youtube.com and m.youtube.com serve the same player; pin the host the
+    // renderer emits everywhere else (m. is not on the embed allowlist).
+    if (!/^(https?:)?\/\/www\./i.test(stripped)) {
+      stripped = stripped.replace(/^(https?:)?\/\/(?:m\.)?youtube\.com/i, 'https://www.youtube.com');
+    }
     el.setAttribute('src', stripped);
     if (ytMatch[2].toLowerCase() === 'shorts') {
       // youtube.com/shorts/<id> refuses to be framed (X-Frame-Options), so
