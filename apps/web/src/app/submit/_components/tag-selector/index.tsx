@@ -67,7 +67,7 @@ export function TagSelector({ tags, onChange, maxItem }: Props) {
     () =>
       value
         ? trendingTags
-            .filter((x: string) => x.length <= SUBMIT_TAG_MAX_LENGTH)
+            .filter((x: string) => !getTagsWarning([x]))
             .filter((x: string) => x.toLowerCase().indexOf(value.toLowerCase()) === 0)
             .filter((x: string) => !tags.includes(x))
             .slice(0, 40)
@@ -100,6 +100,14 @@ export function TagSelector({ tags, onChange, maxItem }: Props) {
         return false;
       }
 
+      // Every add path lands here (Enter, blur, a typed space or comma, a
+      // suggestion), so the rules are enforced here and not only advised.
+      const tagWarning = getTagsWarning([trimmedValue]);
+      if (tagWarning) {
+        setWarning(i18next.t(tagWarning));
+        return false;
+      }
+
       if (tags.length >= maxItem) {
         error(i18next.t("tag-selector.error-max", { n: maxItem }));
         return false;
@@ -118,9 +126,11 @@ export function TagSelector({ tags, onChange, maxItem }: Props) {
       const pastedText = sanitizeInput(e.clipboardData.getData("Text"));
 
       // Normalize delimiters to space, then split
-      const rawTags = pastedText.trim().split(/\s+/);
-      const newTags = rawTags
-        .map((tag) => tag.slice(0, SUBMIT_TAG_MAX_LENGTH))
+      // Not truncated: a token cut to the length limit would be a different tag
+      // from the one pasted, so an over-long one is refused like any other rule.
+      const newTags = pastedText
+        .trim()
+        .split(/\s+/)
         .filter((tag) => !!tag);
 
       const finalTags = [...tags];

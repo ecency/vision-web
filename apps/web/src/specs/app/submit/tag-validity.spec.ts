@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { getTagsWarning, validateTags } from "@/app/submit/_utils/tags";
-import type { Draft, Entry } from "@/entities";
+import type { Entry } from "@/entities";
 
 const entryWith = (tags: unknown) => ({ json_metadata: { tags } }) as unknown as Entry;
-const draftWith = (tags: string) => ({ tags }) as unknown as Draft;
 
 describe("getTagsWarning", () => {
   it("accepts well-formed tags", () => {
@@ -32,7 +31,7 @@ describe("getTagsWarning", () => {
 describe("validateTags", () => {
   it("rejects an invalid tag on a new post", () => {
     expect(validateTags(["hive", "my-first-post"], {})).toBe("tag-selector.limited_dash");
-    expect(validateTags(["hive", "travel"], { editingEntry: null, editingDraft: null })).toBe("");
+    expect(validateTags(["hive", "travel"], { editingEntry: null, draftTags: [] })).toBe("");
   });
 
   // Tags published elsewhere (3speak, a year) must not block saving an edit.
@@ -46,9 +45,9 @@ describe("validateTags", () => {
 
   // Drafts are shared with mobile, whose tag input has no first-character rule.
   it("exempts the loaded draft's tags", () => {
-    const editingDraft = draftWith("hive, 3speak 2024");
-    expect(validateTags(["hive", "3speak", "2024"], { editingDraft })).toBe("");
-    expect(validateTags(["hive", "3speak", "2026recap"], { editingDraft })).toBe(
+    const draftTags = ["hive", "3speak", "2024"];
+    expect(validateTags(["hive", "3speak", "2024"], { draftTags })).toBe("");
+    expect(validateTags(["hive", "3speak", "2026recap"], { draftTags })).toBe(
       "tag-selector.limited_firstchar"
     );
   });

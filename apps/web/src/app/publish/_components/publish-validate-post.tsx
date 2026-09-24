@@ -2,7 +2,7 @@
 
 import { SUBMIT_TAG_MAX_LENGTH } from "@/app/submit/_consts";
 import { TagSelector, sanitizeTagInput } from "@/app/submit/_components";
-import { getTagsWarning } from "@/app/submit/_utils/tags";
+import { getTagsWarning, validateTags } from "@/app/submit/_utils/tags";
 import { Alert, Button, FormControl } from "@/features/ui";
 import { formatError } from "@/api/format-error";
 import { isShortfallStillRelevant, resolveRcShortfall, type RcShortfall } from "../_utils/rc-shortfall";
@@ -52,6 +52,7 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
   const {
     tags,
     setTags,
+    loadedDraftTags,
     schedule,
     clearAll,
     content,
@@ -198,6 +199,12 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
       return;
     }
 
+    const tagWarning = validateTags(tags ?? [], { draftTags: loadedDraftTags });
+    if (tagWarning) {
+      feedbackError(i18next.t(tagWarning));
+      return;
+    }
+
     setRcShortfall(null);
 
     try {
@@ -255,10 +262,12 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
     account,
     clearAll,
     content,
+    loadedDraftTags,
     onSuccess,
     publishNow,
     schedule,
     scheduleNow,
+    tags,
     title
   ]);
 
@@ -267,9 +276,10 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
     // by this project's ES5 compilation target. The pattern itself is unchanged.
     const hashtagRegex = new RegExp("#([\\p{L}\\p{N}\\p{M}_-]+)", "gu");
     const computedTags = Array.from(content ? content.matchAll(hashtagRegex) : [])
-      .map(([, tag]) => sanitizeTagInput(tag).slice(0, SUBMIT_TAG_MAX_LENGTH).trim())
+      .map(([, tag]) => sanitizeTagInput(tag).trim())
       // A hashtag in the body is not a tag the author vetted, so one the tag rules
-      // refuse (#my-first-post, #2026recap) is left out rather than published.
+      // refuse (#my-first-post, #2026recap, one over the length limit) is left out
+      // rather than published, or published cut short as a different tag.
       .filter((tag) => !!tag && !getTagsWarning([tag]));
 
     const normalizedExistingTags = (tags ?? [])

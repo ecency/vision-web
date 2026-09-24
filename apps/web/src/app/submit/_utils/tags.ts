@@ -1,5 +1,5 @@
 import { SUBMIT_TAG_MAX_LENGTH } from "@/app/submit/_consts";
-import type { Draft, Entry } from "@/entities";
+import type { Entry } from "@/entities";
 import { metaStringList } from "@/utils/json-metadata";
 
 /**
@@ -36,18 +36,20 @@ export function draftTagList(tags: string | undefined): string[] {
 }
 
 /**
- * The publish-time check. Tags the edited post or the loaded draft already carry are
- * exempt: other clients (mobile among them, which shares drafts) accept tags such as
- * `3speak` that these rules refuse. They are compared in the form the editor loads
- * them, so a legacy tag trimmed on load still counts as kept.
+ * The publish-time check. Tags the edited post carries, and the tags a draft had when it
+ * was loaded, are exempt: other clients (mobile among them, which shares drafts) accept
+ * tags such as `3speak` that these rules refuse. The draft's tags are a snapshot taken on
+ * load, not the draft being saved, so tags added in this session are still checked. They
+ * are compared in the form the editor loads them, so a legacy tag trimmed on load still
+ * counts as kept.
  */
 export function validateTags(
   tags: string[],
-  { editingEntry, editingDraft }: { editingEntry?: Entry | null; editingDraft?: Draft | null }
+  { editingEntry, draftTags }: { editingEntry?: Entry | null; draftTags?: string[] }
 ): string {
   const kept = normalizeTagList([
     ...(editingEntry ? metaStringList(editingEntry.json_metadata?.tags) : []),
-    ...(editingDraft ? draftTagList(editingDraft.tags) : [])
+    ...(draftTags ?? [])
   ]);
   return getTagsWarning(tags, kept);
 }

@@ -93,6 +93,9 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
   // Misc
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [editingDraft, setEditingDraft] = useState<Draft | null>(null);
+  // The tags a draft had when it was opened, which publish lets through as they are.
+  // Kept apart from editingDraft, which a first Save draft replaces with the new draft.
+  const [loadedDraftTags, setLoadedDraftTags] = useState<string[]>([]);
 
   const postPoll = useEntryPollExtractor(editingEntry);
 
@@ -205,6 +208,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     (draft) => {
       applyTitle(draft.title);
       applyTags(draftTagList(draft.tags));
+      setLoadedDraftTags(draftTagList(draft.tags));
       setBody(draft.body);
       setEditingDraft(draft);
       setBeneficiaries(draft.meta?.beneficiaries ?? []);
@@ -305,6 +309,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
   const clear = () => {
     setTitle("");
     setTags([]);
+    setLoadedDraftTags([]);
     setBody("");
 
     // clear advanced
@@ -396,7 +401,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
       return false;
     }
 
-    const tagWarning = validateTags(tags, { editingEntry, editingDraft });
+    const tagWarning = validateTags(tags, { editingEntry, draftTags: loadedDraftTags });
     if (tagWarning) {
       focusInput(".tag-input");
       error(i18next.t(tagWarning));

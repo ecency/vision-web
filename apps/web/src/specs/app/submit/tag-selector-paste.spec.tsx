@@ -57,4 +57,35 @@ describe("TagSelector paste", () => {
     expect(onChange).toHaveBeenLastCalledWith(["travel", "photo-walk", "web3"]);
     expect(document.querySelector(".tag-selector .warning")).toBeNull();
   });
+
+  // Cutting it to the limit would add a different tag from the one pasted.
+  it("refuses an over-long token rather than adding it truncated", () => {
+    const { input, onChange } = renderSelector();
+
+    paste(input, "travel cryptocurrencytradinganalysis");
+
+    expect(onChange).toHaveBeenLastCalledWith(["travel"]);
+    expect(screen.getByText("tag-selector.limited_length")).toBeTruthy();
+  });
+});
+
+describe("TagSelector typed delimiter", () => {
+  // A trailing space or comma commits the tag through add(), which did not check
+  // the rules the warning shows.
+  it("does not commit an invalid tag on a typed space", () => {
+    const { input, onChange } = renderSelector();
+
+    fireEvent.change(input, { target: { value: "2026recap " } });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText("tag-selector.limited_firstchar")).toBeTruthy();
+  });
+
+  it("still commits a valid tag on a typed space", () => {
+    const { input, onChange } = renderSelector();
+
+    fireEvent.change(input, { target: { value: "travel " } });
+
+    expect(onChange).toHaveBeenLastCalledWith(["travel"]);
+  });
 });
