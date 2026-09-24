@@ -10,15 +10,33 @@ import {
 import type {
   FetchQueryOptions,
   FetchInfiniteQueryOptions,
+  QueryClient,
   QueryKey
 } from "@tanstack/query-core";
 import { EcencyConfigManager } from "@/config";
+import { isHiveNotFoundError } from "@/utils/hive-not-found-error";
 
 // Hard ceiling on any single SSR prefetch. Must be under nginx's
-// proxy_read_timeout (typically 15s) so the render completes before
+// proxy_read_timeout for SSR (20s in infra/origin) so the render completes before
 // nginx closes the connection. When this fires, the prefetch is skipped
 // and client-side React Query will refetch on hydration.
 const SSR_PREFETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Flag the current server response as rendered without some of its data, so
+ * the ssr-degraded.js preload sends it `private, no-store` and no shared cache
+ * keeps it. A no-op in the browser and wherever the preload is not loaded
+ * (dev, tests). Exported for a caller whose fallback answered but lost data
+ * the page needs (`fallback-incomplete`).
+ */
+export function markSsrDegraded(
+  reason: "prefetch-timeout" | "prefetch-error" | "fallback-incomplete"
+) {
+  if (!isServer) return;
+  (
+    globalThis as { __ecencySsrDegraded?: { mark(reason: string): void } }
+  ).__ecencySsrDegraded?.mark(reason);
+}
 
 /**
  * Race a promise against a timeout with real cancellation.
@@ -29,11 +47,14 @@ const SSR_PREFETCH_TIMEOUT_MS = 10_000;
  * `fetch()`, the underlying TCP connection is torn down immediately
  * instead of running as a zombie until it naturally completes.
  *
- * Resolves to undefined on timeout so SSR renders gracefully degrade.
+ * Resolves to undefined on timeout or rejection so SSR renders gracefully
+ * degrade, and marks the response degraded (markSsrDegraded) unless the
+ * rejection is a node's not-found answer or the caller opted out (`mark`).
  */
 function withSsrTimeout<T>(
   promise: Promise<T>,
-  queryKey?: QueryKey
+  queryKey?: QueryKey,
+  mark = true
 ): Promise<T | undefined> {
   if (!isServer) return promise;
 
@@ -43,13 +64,48 @@ function withSsrTimeout<T>(
       if (queryKey) {
         getQueryClient().cancelQueries({ queryKey });
       }
+      if (mark) markSsrDegraded("prefetch-timeout");
       resolve(undefined);
     }, SSR_PREFETCH_TIMEOUT_MS);
 
     promise
       .then((result) => { clearTimeout(timer); resolve(result); })
-      .catch(() => { clearTimeout(timer); resolve(undefined); });
+      .catch((error) => {
+        clearTimeout(timer);
+        if (mark && !isHiveNotFoundError(error)) markSsrDegraded("prefetch-error");
+        resolve(undefined);
+      });
   });
+}
+
+/**
+ * `qc.prefetchQuery` never rejects: a failed fetch (RPC 5xx, every node
+ * exhausted) resolves with the query in error state, so withSsrTimeout's catch
+ * never sees it. A node's not-found answer (bridge.get_post asserts on a missing
+ * post) is an error too, but a real one: those pages keep their normal caching
+ * (isHiveNotFoundError). Only Cache-Control changes; a page that answers
+ * notFound() after a failed lookup still sends its 404.
+ */
+// Takes the client the prefetch ran on: outside a Flight request (route
+// handlers) React cache() does not memoise, so resolving it again would give
+// a fresh client that never saw the error.
+function markIfPrefetchFailed(qc: QueryClient, queryKey: QueryKey) {
+  if (!isServer) return;
+  const state = qc.getQueryState(queryKey);
+  if (state?.status === "error" && !isHiveNotFoundError(state.error)) {
+    markSsrDegraded("prefetch-error");
+  }
+}
+
+export interface SsrPrefetchOptions {
+  /**
+   * Default true. Pass false only for a source the caller falls back from
+   * (condenser get_content, then bridge.get_post): a failure or timeout here
+   * then leaves the response cacheable, and the fallback's own prefetch marks
+   * it if the data is still missing. Scoped to this one call, so it can never
+   * clear a mark another query set.
+   */
+  degradeOnFailure?: boolean;
 }
 
 /**
@@ -68,9 +124,13 @@ function withSsrTimeout<T>(
 export async function prefetchQuery<
   T,
   TKey extends QueryKey = QueryKey
->(options: FetchQueryOptions<T, Error, T, TKey>) {
+>(
+  options: FetchQueryOptions<T, Error, T, TKey>,
+  { degradeOnFailure = true }: SsrPrefetchOptions = {}
+) {
   const qc = getQueryClient();
-  await withSsrTimeout(qc.prefetchQuery(options), options.queryKey);
+  await withSsrTimeout(qc.prefetchQuery(options), options.queryKey, degradeOnFailure);
+  if (degradeOnFailure) markIfPrefetchFailed(qc, options.queryKey);
   return qc.getQueryData<T>(options.queryKey);
 }
 
@@ -89,6 +149,7 @@ export async function prefetchInfiniteQuery<
 >(options: FetchInfiniteQueryOptions<TPage, Error, TPage, TKey, TCursor>) {
   const qc = getQueryClient();
   await withSsrTimeout(qc.prefetchInfiniteQuery(options), options.queryKey);
+  markIfPrefetchFailed(qc, options.queryKey);
   return qc.getQueryData<InfiniteData<TPage, TCursor>>(options.queryKey);
 }
 

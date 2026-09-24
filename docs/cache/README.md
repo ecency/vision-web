@@ -85,6 +85,33 @@ key, which encodes auth-class (`anon` or `loggedin`) as a synthetic URL
 prefix. Two cache entries per URL — one per auth class — without
 fragmenting on every cookie (analytics, locale, theme, experiments).
 
+## Degraded renders are never stored
+
+The tier is chosen in middleware, before the page renders. When a server
+prefetch then times out or fails (`core/react-query/query-helpers.ts`; a node's
+not-found answer, such as a missing post, is not a failure and keeps the tier,
+see `utils/hive-not-found-error.ts`; a source with a fallback, such as condenser
+`get_content` before `bridge.get_post`, passes `degradeOnFailure: false` so only
+the fallback failing too counts), the page renders without that data and the client fetches it after hydration. The
+`apps/web/ssr-degraded.js` preload (loaded by the image CMD) rewrites that
+response to `private, no-store` as its head is written and appends `-degraded`
+to `x-cache-tier`, so neither nginx nor the edge stores it and an expired good
+copy stays available to be served stale (#1558). The status is untouched: a page
+that answers `notFound()` after a failed lookup still sends its 404, uncached.
+
+A render that already flushed its head (a streamed Suspense boundary, an RSC
+navigation past its first chunk) cannot be changed and is still cached; the
+preload counts those as `late`, with their paths, so the affected routes are
+visible. Once a minute, only when something happened, the container log gets
+one line such as:
+
+```
+[ssr-degraded] last 60s: sent prefetch-timeout=3,prefetch-error=1 [/@a/posts ...]; late prefetch-timeout=2 [/@b/followers ...]; abandoned prefetch-timeout=1 [/@c]
+```
+
+`abandoned` means the client went away before any head was written, so nothing
+was sent.
+
 ## Layer-specific configuration
 
 - [Nginx](./nginx.md) — proxy cache (32G LRU, 2h inactive)
