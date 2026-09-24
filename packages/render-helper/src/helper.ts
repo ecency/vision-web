@@ -260,8 +260,28 @@ function hashBody(body: unknown): string {
 // (filterDmcaEntry) without touching last_update, so a post rendered before the
 // lists were in force, or from a surface that does not filter, kept serving its
 // original HTML, cover and summary to later filtered requests.
+// A memo hit would otherwise cost a full hash, and one entry object goes
+// through several memo calls per render (card, og and preload sizes, summary).
+// The stored hash is reused only while the body is the same string, so a body
+// replaced in place on the same object is hashed again.
+const bodyHashes = new WeakMap<object, { body: string; hash: string }>()
+
+function entryBodyHash(entry: any): string {
+  const body = entry.body
+  if (typeof body !== 'string' || typeof entry !== 'object' || entry === null) {
+    return hashBody(body)
+  }
+  const stored = bodyHashes.get(entry)
+  if (stored && stored.body === body) {
+    return stored.hash
+  }
+  const hash = hashBody(body)
+  bodyHashes.set(entry, { body, hash })
+  return hash
+}
+
 export function makeEntryCacheKey(entry: any): string {
-  return `${entry.author}-${entry.permlink}-${entry.last_update}-${entry.updated}-${hashBody(entry.body)}`
+  return `${entry.author}-${entry.permlink}-${entry.last_update}-${entry.updated}-${entryBodyHash(entry)}`
 }
 
 /**

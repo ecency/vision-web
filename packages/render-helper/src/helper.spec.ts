@@ -588,6 +588,26 @@ describe('Helper Functions', () => {
       expect(makeEntryCacheKey({ ...base, body: 'abc' })).toBe(makeEntryCacheKey({ ...base, body: 'abc' }))
     })
 
+    it('should hash the body of one entry object once across memo calls', () => {
+      const entry = { author: 'author', permlink: 'hash-once', last_update: '2024-01-15T12:00:00', body: 'x'.repeat(1000) }
+      const spy = vi.spyOn(String.prototype, 'charCodeAt')
+      try {
+        const first = makeEntryCacheKey(entry)
+        expect(makeEntryCacheKey(entry)).toBe(first)
+        expect(makeEntryCacheKey(entry)).toBe(first)
+        expect(spy).toHaveBeenCalledTimes(entry.body.length)
+      } finally {
+        spy.mockRestore()
+      }
+    })
+
+    it('should give a new key when the body is replaced in place on the same object', () => {
+      const entry = { author: 'author', permlink: 'in-place', last_update: '2024-01-15T12:00:00', body: 'original' }
+      const before = makeEntryCacheKey(entry)
+      entry.body = 'replaced'
+      expect(makeEntryCacheKey(entry)).not.toBe(before)
+    })
+
     it('should differentiate entries with different last_update', () => {
       const entry1 = {
         author: 'author',
