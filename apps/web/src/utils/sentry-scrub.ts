@@ -79,8 +79,12 @@ const NORMALIZE_MAX_BREADTH = 1000;
 // `contexts.flags` is normalized from its own root. The raw trace and the
 // never-normalized `request` are sent as they are, so they are walked with
 // NO depth or breadth bound. A memo of visited containers keeps that linear:
-// a shared container is scrubbed once and its result reused, and a cycle
-// (which JSON serialization cannot send anyway) ends at the revisit.
+// a shared container is scrubbed once and its result reused, and a cycle ends
+// at the revisit as "[Circular ~]". The marker matters: Sentry does not drop a
+// cyclic payload, it re-serializes it through normalize, so a back-reference
+// to the unscrubbed original would ship that original's strings.
+
+const CIRCULAR = "[Circular ~]";
 
 function isPlainContainer(v: unknown): v is Record<string, unknown> | unknown[] {
   if (Array.isArray(v)) return true;
@@ -159,9 +163,9 @@ function scrubValue(
   }
   if (memo) {
     if (memo.has(value)) return memo.get(value);
-    // In progress: a cycle back to here gets the original (not serializable
-    // anyway); the finished result replaces it below.
-    memo.set(value, value);
+    // In progress: a cycle back to here gets the marker Sentry's normalize
+    // would print, never the original; the finished result replaces it below.
+    memo.set(value, CIRCULAR);
   }
   const result = scrubContainer(value, level, key, opts, memo);
   memo?.set(value, result);

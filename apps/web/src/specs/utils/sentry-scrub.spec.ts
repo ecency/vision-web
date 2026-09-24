@@ -205,6 +205,18 @@ describe("beforeSend - secret-bearing URLs are redacted in every location (#1651
     expect(root.url).toBe(SCRUBBED);
   });
 
+  // Sentry re-serializes a cyclic payload through normalize instead of dropping
+  // it, so the scrubbed clone must not reach back into the unscrubbed original.
+  it("ends a raw cycle at a marker, never at the original", () => {
+    const cyc: Record<string, unknown> = { url: UPLOAD_URL };
+    cyc.self = cyc;
+    const out = scrubSentryEvent({ contexts: { trace: { cyc } } })!;
+    const sent = JSON.stringify(out);
+    expect(sent).not.toContain(TOKEN);
+    expect(sent).toContain('"self":"[Circular ~]"');
+    expect(cyc.self).toBe(cyc);
+  });
+
   it("a shared (non-cyclic) container is scrubbed at every place it appears", () => {
     const shared = { url: UPLOAD_URL };
     const out = scrubSentryEvent({ request: { data: { a: shared, b: shared } } })!;
