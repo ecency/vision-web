@@ -17,7 +17,7 @@ import {
 import { postBodySummary, proxifyImageSrc } from "@ecency/render-helper";
 import { usableDescription } from "@/app/publish/_utils/content";
 import { descriptionToEdit } from "@/app/submit/_utils/description";
-import { getTagsWarning } from "@/app/submit/_utils/tags";
+import { draftTagList, normalizeTagList, validateTags } from "@/app/submit/_utils/tags";
 import useLocalStorage from "react-use/lib/useLocalStorage";
 import usePrevious from "react-use/lib/usePrevious";
 import dayjs from "@/utils/dayjs";
@@ -52,11 +52,7 @@ import { useSupportEcencyBeneficiaryInjection } from "@/features/support-ecency"
 import { PREFIX } from "@/utils/local-storage";
 import { useRouter } from "next/navigation";
 import { EcencyConfigManager } from "@/config";
-import {
-  SUBMIT_DESCRIPTION_MAX_LENGTH,
-  SUBMIT_TAG_MAX_LENGTH,
-  SUBMIT_TITLE_MAX_LENGTH
-} from "@/app/submit/_consts";
+import { SUBMIT_DESCRIPTION_MAX_LENGTH, SUBMIT_TITLE_MAX_LENGTH } from "@/app/submit/_consts";
 import { checkSvg } from "@ui/svg";
 
 interface Props {
@@ -107,10 +103,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     [setTitle]
   );
 
-  const sanitizeTags = useCallback((tagList: string[]) => {
-    const trimmed = tagList.map((tag) => tag.slice(0, SUBMIT_TAG_MAX_LENGTH)).filter((tag) => tag);
-    return trimmed.filter((tag, index) => trimmed.indexOf(tag) === index);
-  }, []);
+  const sanitizeTags = useCallback(normalizeTagList, []);
 
   const applyTags = useCallback(
     (nextTags: string[]) => {
@@ -211,12 +204,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     draftId,
     (draft) => {
       applyTitle(draft.title);
-      applyTags(
-        draft.tags
-          .trim()
-          .split(/[ ,]+/)
-          .filter((t) => !!t)
-      );
+      applyTags(draftTagList(draft.tags));
       setBody(draft.body);
       setEditingDraft(draft);
       setBeneficiaries(draft.meta?.beneficiaries ?? []);
@@ -408,10 +396,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
       return false;
     }
 
-    // Tags the post being edited already carries are kept as they are: other
-    // frontends publish tags these rules refuse, and they are not ours to reject.
-    const existingTags = editingEntry ? metaStringList(editingEntry.json_metadata?.tags) : [];
-    const tagWarning = getTagsWarning(tags, existingTags);
+    const tagWarning = validateTags(tags, { editingEntry, editingDraft });
     if (tagWarning) {
       focusInput(".tag-input");
       error(i18next.t(tagWarning));

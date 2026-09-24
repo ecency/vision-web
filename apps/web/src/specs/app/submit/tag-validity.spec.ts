@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getTagsWarning } from "@/app/submit/_utils/tags";
+import { getTagsWarning, validateTags } from "@/app/submit/_utils/tags";
+import type { Draft, Entry } from "@/entities";
+
+const entryWith = (tags: unknown) => ({ json_metadata: { tags } }) as unknown as Entry;
+const draftWith = (tags: string) => ({ tags }) as unknown as Draft;
 
 describe("getTagsWarning", () => {
   it("accepts well-formed tags", () => {
@@ -17,12 +21,49 @@ describe("getTagsWarning", () => {
     expect(getTagsWarning(["hive", tag])).toBe(key);
   });
 
-  // The classic editor's validate() passes the edited post's own tags here, so
-  // a legacy tag published elsewhere does not block saving an edit.
   it("exempts tags the post already carries, and only those", () => {
     expect(getTagsWarning(["hive", "3speak"], ["3speak"])).toBe("");
     expect(getTagsWarning(["hive", "3speak", "2026recap"], ["3speak"])).toBe(
       "tag-selector.limited_firstchar"
+    );
+  });
+});
+
+describe("validateTags", () => {
+  it("rejects an invalid tag on a new post", () => {
+    expect(validateTags(["hive", "my-first-post"], {})).toBe("tag-selector.limited_dash");
+    expect(validateTags(["hive", "travel"], { editingEntry: null, editingDraft: null })).toBe("");
+  });
+
+  // Tags published elsewhere (3speak, a year) must not block saving an edit.
+  it("exempts the edited post's own tags", () => {
+    const editingEntry = entryWith(["3speak", "hive"]);
+    expect(validateTags(["hive", "3speak"], { editingEntry })).toBe("");
+    expect(validateTags(["hive", "3speak", "2026recap"], { editingEntry })).toBe(
+      "tag-selector.limited_firstchar"
+    );
+  });
+
+  // Drafts are shared with mobile, whose tag input has no first-character rule.
+  it("exempts the loaded draft's tags", () => {
+    const editingDraft = draftWith("hive, 3speak 2024");
+    expect(validateTags(["hive", "3speak", "2024"], { editingDraft })).toBe("");
+    expect(validateTags(["hive", "3speak", "2026recap"], { editingDraft })).toBe(
+      "tag-selector.limited_firstchar"
+    );
+  });
+
+  // The editor trims loaded tags to 24 characters; the exemption must match that form.
+  it("keeps a legacy over-long tag after the editor trimmed it on load", () => {
+    const legacy = "a-b-" + "c".repeat(30);
+    const editingEntry = entryWith(["hive", legacy]);
+    expect(validateTags(["hive", legacy.slice(0, 24)], { editingEntry })).toBe("");
+  });
+
+  it("counts kept tags toward the tag limit", () => {
+    const eleven = Array.from({ length: 11 }, (_, i) => `tag${String.fromCharCode(97 + i)}`);
+    expect(validateTags(eleven, { editingEntry: entryWith(eleven.slice(0, 2)) })).toBe(
+      "tag-selector.limited_tags"
     );
   });
 });
