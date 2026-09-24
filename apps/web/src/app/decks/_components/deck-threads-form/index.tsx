@@ -20,6 +20,7 @@ import { AvailableCredits, UserAvatar } from "@/features/shared";
 import { arrowLeftSvg } from "@ui/svg";
 import { classNameObject } from "@ui/util";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { openInNewTab } from "@/utils/open-in-new-tab";
 
 export * from "./deck-threads-form-manager";
 
@@ -112,7 +113,7 @@ export const DeckThreadsForm = ({
       // to the publish composer instead.
       if (text!!.length > 250) {
         stageForPublish(content);
-        window.open("/publish", "_blank");
+        openInNewTab("/publish");
         return;
       }
 

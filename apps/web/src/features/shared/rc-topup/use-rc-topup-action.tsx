@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Modal, ModalBody, ModalHeader } from "@ui/modal";
 
 import { EcencyConfigManager } from "@/config";
+import { openInNewTab } from "@/utils/open-in-new-tab";
 
 // Lazy-loaded so its mutation/SDK import chain is not pulled into every
 // comment, editor and vote render until someone actually opens it. The
@@ -60,13 +61,7 @@ export function useRcTopupAction(username: string | undefined) {
     if (rcTopupEnabled) {
       setShowTopup(true);
     } else if (username) {
-      // noreferrer as well as noopener: without it the purchase page receives
-      // the editor URL, which can carry draft identifiers in the path.
-      window.open(
-        `/purchase?username=${encodeURIComponent(username)}&type=boost`,
-        "_blank",
-        "noopener,noreferrer"
-      );
+      openInNewTab(`/purchase?username=${encodeURIComponent(username)}&type=boost`);
     }
   }, [rcTopupEnabled, username]);
 

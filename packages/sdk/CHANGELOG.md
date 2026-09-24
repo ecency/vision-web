@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.17
+
+### Patch Changes
+
+- fix: redact URL secrets from Sentry, open new tabs with noopener, exact-match DMCA posts validator (#1879)
+
 ## 2.4.16
 
 ### Patch Changes

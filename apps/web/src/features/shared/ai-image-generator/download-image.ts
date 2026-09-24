@@ -1,3 +1,5 @@
+import { openInNewTab } from "@/utils/open-in-new-tab";
+
 /**
  * Downloads an image to a file. Cross-origin `download` attributes are ignored by
  * browsers, so the bytes are fetched as a blob first; when even that fails (CORS,
@@ -20,6 +22,6 @@ export async function downloadImage(url: string, filename = "ai-generated"): Pro
     anchor.remove();
     URL.revokeObjectURL(objectUrl);
   } catch {
-    window.open(url, "_blank");
+    openInNewTab(url);
   }
 }

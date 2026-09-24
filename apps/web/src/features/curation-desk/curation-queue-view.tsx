@@ -43,6 +43,7 @@ import {
   useViewerRole,
 } from "./hooks";
 import type { DeskRow } from "./types";
+import { openInNewTab } from "@/utils/open-in-new-tab";
 
 // Client-only: the virtual list measures the window.
 const CurationQueueList = dynamic(() => import("./curation-queue-list").then((m) => m.CurationQueueList), {
@@ -526,7 +527,7 @@ export function CurationQueueView() {
       },
       openExternal: () => {
         if (!activeRow) return;
-        window.open(`/@${activeRow.author}/${activeRow.permlink}`, "_blank", "noopener");
+        openInNewTab(`/@${activeRow.author}/${activeRow.permlink}`);
       },
       help: () => setDialog({ kind: "help" }),
     },

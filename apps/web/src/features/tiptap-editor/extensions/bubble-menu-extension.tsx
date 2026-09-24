@@ -16,6 +16,7 @@ import i18next from "i18next";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PublishEditorToolbarLinkForm } from "./link-form";
+import { openInNewTab } from "@/utils/open-in-new-tab";
 
 interface Props {
   editor: any | null;
@@ -190,7 +191,7 @@ export function BubbleMenu({ editor }: Props) {
 
   const openLinkInNewTab = useCallback(() => {
     if (linkHref) {
-      window.open(linkHref, "_blank", "noopener,noreferrer");
+      openInNewTab(linkHref);
     }
   }, [linkHref]);
 

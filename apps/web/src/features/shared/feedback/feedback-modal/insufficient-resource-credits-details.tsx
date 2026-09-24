@@ -2,6 +2,7 @@ import React from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import i18next from "i18next";
 import { externalLink } from "@ui/svg";
+import { openInNewTab } from "@/utils/open-in-new-tab";
 
 export const InsufficientResourceCreditsDetails = () => {
   const { activeUser } = useActiveAccount();
@@ -14,13 +15,11 @@ export const InsufficientResourceCreditsDetails = () => {
           className="border-b border-[--border-color] px-4 py-3 cursor-pointer"
           role="link"
           tabIndex={0}
-          onClick={() =>
-            window.open(`/purchase?username=${activeUser?.username}&type=boost`, "_blank")
-          }
+          onClick={() => openInNewTab(`/purchase?username=${activeUser?.username}&type=boost`)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
-              window.open(`/purchase?username=${activeUser?.username}&type=boost`, "_blank");
+              openInNewTab(`/purchase?username=${activeUser?.username}&type=boost`);
             }
           }}
         >
@@ -30,11 +29,11 @@ export const InsufficientResourceCreditsDetails = () => {
           className="border-b border-[--border-color] px-4 py-3 cursor-pointer"
           role="link"
           tabIndex={0}
-          onClick={() => window.open("/faq#what-powering-up", "_blank")}
+          onClick={() => openInNewTab("/faq#what-powering-up")}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
-              window.open("/faq#what-powering-up", "_blank");
+              openInNewTab("/faq#what-powering-up");
             }
           }}
         >
@@ -44,11 +43,11 @@ export const InsufficientResourceCreditsDetails = () => {
           className="border-b border-[--border-color] px-4 py-3 cursor-pointer"
           role="link"
           tabIndex={0}
-          onClick={() => window.open("/faq#what-are-rc", "_blank")}
+          onClick={() => openInNewTab("/faq#what-are-rc")}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
-              window.open("/faq#what-are-rc", "_blank");
+              openInNewTab("/faq#what-are-rc");
             }
           }}
         >

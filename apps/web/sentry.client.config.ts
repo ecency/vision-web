@@ -9,6 +9,7 @@
 import type * as Sentry from "@sentry/nextjs";
 import appPackage from "./package.json";
 import { beforeSend } from "./src/utils/sentry-before-send";
+import { scrubBreadcrumb } from "./src/utils/sentry-scrub";
 import { configureLazySentry } from "./src/core/sentry/lazy-sentry";
 
 const SENTRY_CONFIG: Sentry.BrowserOptions = {
@@ -34,6 +35,10 @@ const SENTRY_CONFIG: Sentry.BrowserOptions = {
   environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || "production",
 
   tracesSampleRate: 0,
+  // Default integrations only. Do NOT add extraErrorDataIntegration without
+  // extending src/utils/sentry-scrub first: it serializes an error's own
+  // properties, so an Axios error would ship `config.url`, which for an image
+  // upload is `/hs/<access token>` (issue #1651).
   integrations: (defaults) => defaults.filter((i) => i.name !== "BrowserTracing"),
 
   debug: false,
@@ -57,7 +62,18 @@ const SENTRY_CONFIG: Sentry.BrowserOptions = {
   // The single source of truth for client-side event filtering and
   // reclassification (deploy-skew, RC exhaustion, extension noise, timeouts).
   // Extracted to src/utils/sentry-before-send so it stays unit-testable.
-  beforeSend
+  beforeSend,
+
+  // beforeSend only sees ERROR events. Breadcrumbs also ride on feedback
+  // events (captureFeedback), so redact secret-bearing URLs when each crumb
+  // is recorded, too. Never throws: a crumb that cannot be scrubbed is dropped.
+  beforeBreadcrumb(crumb) {
+    try {
+      return scrubBreadcrumb(crumb);
+    } catch {
+      return null;
+    }
+  }
 };
 
 // Defer Sentry initialization (and now its bytes) until after first interaction
