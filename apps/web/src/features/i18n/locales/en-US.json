@@ -4258,6 +4258,7 @@
     "hide-translation": "Hide translation",
     "success": "AI assist completed!",
     "error-insufficient-points": "Insufficient points. You need {{required}} but have {{available}}.",
+    "error-insufficient-points-generic": "Insufficient points for this AI action.",
     "error-content-policy": "Content violates policy. Points were not refunded.",
     "error-rate-limit": "Too many requests. Please wait a moment and try again.",
     "error-auth": "Authentication expired. Please refresh the page and try again.",

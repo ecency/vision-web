@@ -8,6 +8,8 @@ import { usePostEdit } from "../_hooks";
 import { useCallback } from "react";
 import { PublishValidatePostThumbnailPicker } from "@/app/publish/_components/publish-validate-post-thumbnail-picker";
 import { Entry } from "@/entities";
+import { validateTags } from "@/app/submit/_utils/tags";
+import { error } from "@/features/shared";
 
 interface Props {
   entry: Entry | undefined;
@@ -21,6 +23,13 @@ export function PublishEntryValidateEdit({ onClose, onSuccess, entry }: Props) {
   const { mutateAsync: editPost, isPending: isEditPending } = usePostEdit(entry);
 
   const submit = useCallback(async () => {
+    // The post's own tags are exempt: it may carry tags another client accepted.
+    const tagWarning = validateTags(tags ?? [], { editingEntry: entry });
+    if (tagWarning) {
+      error(i18next.t(tagWarning));
+      return;
+    }
+
     try {
       await editPost({
         title: title!,
@@ -42,7 +51,7 @@ export function PublishEntryValidateEdit({ onClose, onSuccess, entry }: Props) {
     // Runs only on a successful edit, outside the try so its own errors are
     // not mistaken for an already-handled mutation error.
     onSuccess("updated");
-  }, [content, editPost, metaDescription, onSuccess, selectedThumbnail, tags, title]);
+  }, [content, editPost, entry, metaDescription, onSuccess, selectedThumbnail, tags, title]);
 
   return (
     <div className="animate-fade-in-up publish-page max-w-[1024px] mx-auto">

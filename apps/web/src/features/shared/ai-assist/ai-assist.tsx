@@ -4,6 +4,7 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { withFeatureFlag } from "@/core/react-query";
 import { error, success } from "@/features/shared";
 import { PointsTopupCta } from "@/features/shared/points-topup-cta";
+import { getAiAssistErrorMessage } from "./ai-assist-error-message";
 import { Button, FormControl } from "@/features/ui";
 import { getAccessToken, ensureValidToken } from "@/utils";
 import {
@@ -110,7 +111,6 @@ export function AiAssist({ onApply, initialText = "" }: Props) {
   const charsRemaining = Math.max(0, maxInput - text.length);
 
   const isFree = selectedPrice ? (selectedPrice.free_remaining ?? 0) > 0 : false;
-  const cost = isFree ? 0 : (selectedPrice?.cost ?? 0);
 
   const isInsufficientBalance = useMemo(() => {
     if (isFree) return false;
@@ -149,26 +149,10 @@ export function AiAssist({ onApply, initialText = "" }: Props) {
         : selectedAction!;
       setResult({ output: res.output, action: resAction });
       success(i18next.t("ai-assist.success"));
-    } catch (err: any) {
-      const status = err?.status;
-      const data = err?.data;
-
-      if (status === 402) {
-        error(
-          i18next.t("ai-assist.error-insufficient-points", {
-            required: data?.required ?? cost,
-            available: data?.available ?? "0",
-          })
-        );
-      } else if (status === 422) {
-        error(i18next.t("ai-assist.error-content-policy"));
-      } else if (status === 429) {
-        error(i18next.t("ai-assist.error-rate-limit"));
-      } else {
-        error(i18next.t("ai-assist.error-generic"));
-      }
+    } catch (err) {
+      error(getAiAssistErrorMessage(err));
     }
-  }, [selectedAction, text, username, runAssist, cost, minInput]);
+  }, [selectedAction, text, username, runAssist, minInput]);
 
   const handleTryAgain = useCallback(() => {
     setResult(null);

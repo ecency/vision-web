@@ -1,6 +1,16 @@
 {
   "faqPaths": [
     {
+      "path": "/.*",
+      "suggestions": [
+        "what-my-blog",
+        "what-information-profile",
+        "what-reputation",
+        "improve-reputation-score",
+        "why-score-going-down"
+      ]
+    },
+    {
       "path": "/discover",
       "suggestions": ["find-friends", "accounts-included-leaderboard"]
     },
@@ -48,7 +58,7 @@
         "what-can-post",
         "how-see-rewards",
         "when-claim-rewards",
-        "what-curation",
+        "what-curation-reward",
         "who-are-curators"
       ]
     },
@@ -152,24 +162,14 @@
       "suggestions": [
         "what-information-available",
         "how-to-search",
-        "what-appears",
+        "what-appears-search",
         "how-to-follow",
         "how-find-information-followers"
       ]
     },
     {
       "path": "/market",
-      "suggestions": ["how-market-works", "how-to-swap-header"]
-    },
-    {
-      "path": "/.*",
-      "suggestions": [
-        "what-my-blog",
-        "what-information-profile",
-        "what-reputation",
-        "improve-reputation-score",
-        "why-score-going-down"
-      ]
+      "suggestions": ["how-market-works", "how-to-swap"]
     }
   ]
 }

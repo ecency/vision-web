@@ -2,6 +2,7 @@
 
 import { SUBMIT_TAG_MAX_LENGTH } from "@/app/submit/_consts";
 import { TagSelector, sanitizeTagInput } from "@/app/submit/_components";
+import { getTagsWarning, validateTags } from "@/app/submit/_utils/tags";
 import { Alert, Button, FormControl } from "@/features/ui";
 import { formatError } from "@/api/format-error";
 import { isShortfallStillRelevant, resolveRcShortfall, type RcShortfall } from "../_utils/rc-shortfall";
@@ -37,6 +38,11 @@ import {
 
 const TEMPLATE_SIMILARITY_THRESHOLD = 0.9;
 
+// The form a tag takes once this step has mounted. The draft snapshot goes
+// through it too, so a loaded tag it rewrites stays exempt at publish.
+const normalizeExistingTag = (tag: string) =>
+  sanitizeTagInput(tag).slice(0, SUBMIT_TAG_MAX_LENGTH).trim();
+
 interface Props {
   onClose: () => void;
   onSuccess: (
@@ -51,6 +57,7 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
   const {
     tags,
     setTags,
+    loadedDraftTags,
     schedule,
     clearAll,
     content,
@@ -197,6 +204,14 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
       return;
     }
 
+    const tagWarning = validateTags(tags ?? [], {
+      draftTags: loadedDraftTags?.map(normalizeExistingTag)
+    });
+    if (tagWarning) {
+      feedbackError(i18next.t(tagWarning));
+      return;
+    }
+
     setRcShortfall(null);
 
     try {
@@ -254,10 +269,12 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
     account,
     clearAll,
     content,
+    loadedDraftTags,
     onSuccess,
     publishNow,
     schedule,
     scheduleNow,
+    tags,
     title
   ]);
 
@@ -266,11 +283,14 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
     // by this project's ES5 compilation target. The pattern itself is unchanged.
     const hashtagRegex = new RegExp("#([\\p{L}\\p{N}\\p{M}_-]+)", "gu");
     const computedTags = Array.from(content ? content.matchAll(hashtagRegex) : [])
-      .map(([, tag]) => sanitizeTagInput(tag).slice(0, SUBMIT_TAG_MAX_LENGTH).trim())
-      .filter((tag) => !!tag);
+      .map(([, tag]) => sanitizeTagInput(tag).trim())
+      // A hashtag in the body is not a tag the author vetted, so one the tag rules
+      // refuse (#my-first-post, #2026recap, one over the length limit) is left out
+      // rather than published, or published cut short as a different tag.
+      .filter((tag) => !!tag && !getTagsWarning([tag]));
 
     const normalizedExistingTags = (tags ?? [])
-      .map((tag) => sanitizeTagInput(tag).slice(0, SUBMIT_TAG_MAX_LENGTH).trim())
+      .map(normalizeExistingTag)
       .filter((tag) => !!tag);
 
     const uniqueTagsSet = new Set([...normalizedExistingTags, ...computedTags]);

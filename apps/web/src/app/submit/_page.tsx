@@ -17,6 +17,7 @@ import {
 import { postBodySummary, proxifyImageSrc } from "@ecency/render-helper";
 import { usableDescription } from "@/app/publish/_utils/content";
 import { descriptionToEdit } from "@/app/submit/_utils/description";
+import { draftTagList, normalizeTagList, validateTags } from "@/app/submit/_utils/tags";
 import useLocalStorage from "react-use/lib/useLocalStorage";
 import usePrevious from "react-use/lib/usePrevious";
 import dayjs from "@/utils/dayjs";
@@ -51,11 +52,7 @@ import { useSupportEcencyBeneficiaryInjection } from "@/features/support-ecency"
 import { PREFIX } from "@/utils/local-storage";
 import { useRouter } from "next/navigation";
 import { EcencyConfigManager } from "@/config";
-import {
-  SUBMIT_DESCRIPTION_MAX_LENGTH,
-  SUBMIT_TAG_MAX_LENGTH,
-  SUBMIT_TITLE_MAX_LENGTH
-} from "@/app/submit/_consts";
+import { SUBMIT_DESCRIPTION_MAX_LENGTH, SUBMIT_TITLE_MAX_LENGTH } from "@/app/submit/_consts";
 import { checkSvg } from "@ui/svg";
 
 interface Props {
@@ -96,6 +93,9 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
   // Misc
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [editingDraft, setEditingDraft] = useState<Draft | null>(null);
+  // The tags a draft had when it was opened, which publish lets through as they are.
+  // Kept apart from editingDraft, which a first Save draft replaces with the new draft.
+  const [loadedDraftTags, setLoadedDraftTags] = useState<string[]>([]);
 
   const postPoll = useEntryPollExtractor(editingEntry);
 
@@ -106,10 +106,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     [setTitle]
   );
 
-  const sanitizeTags = useCallback((tagList: string[]) => {
-    const trimmed = tagList.map((tag) => tag.slice(0, SUBMIT_TAG_MAX_LENGTH)).filter((tag) => tag);
-    return trimmed.filter((tag, index) => trimmed.indexOf(tag) === index);
-  }, []);
+  const sanitizeTags = useCallback(normalizeTagList, []);
 
   const applyTags = useCallback(
     (nextTags: string[]) => {
@@ -210,12 +207,8 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
     draftId,
     (draft) => {
       applyTitle(draft.title);
-      applyTags(
-        draft.tags
-          .trim()
-          .split(/[ ,]+/)
-          .filter((t) => !!t)
-      );
+      applyTags(draftTagList(draft.tags));
+      setLoadedDraftTags(draftTagList(draft.tags));
       setBody(draft.body);
       setEditingDraft(draft);
       setBeneficiaries(draft.meta?.beneficiaries ?? []);
@@ -316,6 +309,7 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
   const clear = () => {
     setTitle("");
     setTags([]);
+    setLoadedDraftTags([]);
     setBody("");
 
     // clear advanced
@@ -404,6 +398,13 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
 
     if (tags.length > 10) {
       error(i18next.t("tag-selector.error-max", { n: 10 }));
+      return false;
+    }
+
+    const tagWarning = validateTags(tags, { editingEntry, draftTags: loadedDraftTags });
+    if (tagWarning) {
+      focusInput(".tag-input");
+      error(i18next.t(tagWarning));
       return false;
     }
 

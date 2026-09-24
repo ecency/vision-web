@@ -41,6 +41,7 @@ export default function PublishPage() {
     setTitle,
     setContent,
     setTags,
+    setLoadedDraftTags,
     setLocation,
     setReward,
     setBeneficiaries,
@@ -64,6 +65,7 @@ export default function PublishPage() {
       setTitle(draft.title);
       setContent(draft.body);
       setTags(draft.tags_arr);
+      setLoadedDraftTags(draft.tags_arr ?? []);
 
       setEditorContent(draft.body);
       setLocation(draft.meta?.location);

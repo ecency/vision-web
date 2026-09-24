@@ -1,4 +1,5 @@
 import { SUBMIT_TAG_MAX_LENGTH } from "@/app/submit/_consts";
+import { getTagsWarning } from "@/app/submit/_utils/tags";
 import { error, SuggestionList } from "@/features/shared";
 import { getTrendingTagsQueryOptions } from "@ecency/sdk";
 import { useInfiniteQuery } from "@tanstack/react-query";
@@ -66,7 +67,7 @@ export function TagSelector({ tags, onChange, maxItem }: Props) {
     () =>
       value
         ? trendingTags
-            .filter((x: string) => x.length <= SUBMIT_TAG_MAX_LENGTH)
+            .filter((x: string) => !getTagsWarning([x]))
             .filter((x: string) => x.toLowerCase().indexOf(value.toLowerCase()) === 0)
             .filter((x: string) => !tags.includes(x))
             .slice(0, 40)
@@ -80,23 +81,8 @@ export function TagSelector({ tags, onChange, maxItem }: Props) {
   }, []);
   const onFocus = useCallback(() => setHasFocus(true), []);
   const filter = useCallback((cats: string[]) => {
-    cats.length > 10
-      ? setWarning(i18next.t("tag-selector.limited_tags"))
-      : cats.find((c) => c.length > SUBMIT_TAG_MAX_LENGTH)
-        ? setWarning(i18next.t("tag-selector.limited_length"))
-        : cats.find((c) => c.split("-").length > 2)
-          ? setWarning(i18next.t("tag-selector.limited_dash"))
-          : cats.find((c) => c.indexOf(",") >= 0)
-            ? setWarning(i18next.t("tag-selector.limited_space"))
-            : cats.find((c) => /[A-Z]/.test(c))
-              ? setWarning(i18next.t("tag-selector.limited_lowercase"))
-              : cats.find((c) => !/^[a-z0-9-#]+$/.test(c))
-                ? setWarning(i18next.t("tag-selector.limited_characters"))
-                : cats.find((c) => !/^[a-z-#]/.test(c))
-                  ? setWarning(i18next.t("tag-selector.limited_firstchar"))
-                  : cats.find((c) => !/[a-z0-9]$/.test(c))
-                    ? setWarning(i18next.t("tag-selector.limited_lastchar"))
-                    : setWarning("");
+    const key = getTagsWarning(cats);
+    setWarning(key ? i18next.t(key) : "");
   }, []);
   const add = useCallback(
     (value: string): boolean => {
@@ -111,6 +97,14 @@ export function TagSelector({ tags, onChange, maxItem }: Props) {
       }
 
       if (tags.includes(trimmedValue)) {
+        return false;
+      }
+
+      // Every add path lands here (Enter, blur, a typed space or comma, a
+      // suggestion), so the rules are enforced here and not only advised.
+      const tagWarning = getTagsWarning([trimmedValue]);
+      if (tagWarning) {
+        setWarning(i18next.t(tagWarning));
         return false;
       }
 
@@ -132,12 +126,17 @@ export function TagSelector({ tags, onChange, maxItem }: Props) {
       const pastedText = sanitizeInput(e.clipboardData.getData("Text"));
 
       // Normalize delimiters to space, then split
-      const rawTags = pastedText.trim().split(/\s+/);
-      const newTags = rawTags
-        .map((tag) => tag.slice(0, SUBMIT_TAG_MAX_LENGTH))
+      // Not truncated: a token cut to the length limit would be a different tag
+      // from the one pasted, so an over-long one is refused like any other rule.
+      const newTags = pastedText
+        .trim()
+        .split(/\s+/)
         .filter((tag) => !!tag);
 
       const finalTags = [...tags];
+      // Typed tags are held back by the warning; pasted ones skipped it, so a
+      // token that breaks a rule is dropped here and the rest still land.
+      let rejected = "";
 
       for (const tag of newTags) {
         if (finalTags.length >= maxItem) {
@@ -148,11 +147,18 @@ export function TagSelector({ tags, onChange, maxItem }: Props) {
           continue;
         }
 
+        const tagWarning = getTagsWarning([tag]);
+        if (tagWarning) {
+          rejected = rejected || tagWarning;
+          continue;
+        }
+
         finalTags.push(tag);
       }
 
       onChange(finalTags.slice(0, maxItem));
       setValue(""); // clear input
+      setWarning(rejected ? i18next.t(rejected) : "");
     },
     [tags, maxItem, onChange, sanitizeInput]
   );

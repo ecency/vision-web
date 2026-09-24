@@ -93,6 +93,12 @@ interface PublishStateContextValue {
   appliedTemplateBody: string | null;
   setAppliedTemplateBody: (value: string | null) => void;
   /**
+   * The tags of the draft as it was opened. Publish lets these through even where
+   * the tag rules refuse them, since other clients (mobile) accept such tags.
+   */
+  loadedDraftTags: string[];
+  setLoadedDraftTags: (value: string[]) => void;
+  /**
    * Bumped by clearAll. Anything holding state derived from "the post that was
    * being written" - the autosave engine's draft binding above all - has to
    * drop it when this changes, or it stays bound to the previous post and
@@ -128,6 +134,7 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
   const [decentMemes, setDecentMemes] = useState<DecentMemesEntry[]>([]);
   const [aiTools, setAiTools] = useState<AiToolsMeta>({});
   const [appliedTemplateBody, setAppliedTemplateBody] = useState<string | null>(null);
+  const [loadedDraftTags, setLoadedDraftTags] = useState<string[]>([]);
   const [clearGeneration, setClearGeneration] = useState(0);
 
   const clearDecentMemes = useCallback(() => setDecentMemes([]), []);
@@ -335,6 +342,7 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
     clearDecentMemes();
     clearAiTools();
     setAppliedTemplateBody(null);
+    setLoadedDraftTags([]);
     setIsReblogToCommunity(false);
     setClearGeneration((generation) => generation + 1);
   }, [
@@ -405,6 +413,8 @@ export function PublishStateProvider({ children }: { children: React.ReactNode }
         clearAiTools,
         appliedTemplateBody,
         setAppliedTemplateBody,
+        loadedDraftTags,
+        setLoadedDraftTags,
         clearGeneration
       }}
     >
