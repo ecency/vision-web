@@ -24,6 +24,7 @@ describe("validate-dmca-patterns: posts are exact match only", () => {
   it("accepts a real listed path", () => {
     expect(validatePostPath("@jundi1443/--r0jhik").valid).toBe(true);
     expect(validatePostPath("@abc.def/some-post_1.2").valid).toBe(true);
+    expect(validatePostPath("@abcdefghijklmnop/x").valid).toBe(true);
   });
 
   it.each([
@@ -42,6 +43,7 @@ describe("validate-dmca-patterns: posts are exact match only", () => {
     ["@author-/post"],
     ["@ab.cde/post"],
     ["@toolongaccountname/post"],
+    ["@abcdefghijklmnopq/x"],
     [`@author/${"a".repeat(256)}`],
   ])("rejects %s", (entry) => {
     const result = validatePostPath(entry);

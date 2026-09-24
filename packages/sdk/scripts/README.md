@@ -79,13 +79,13 @@ This ensures all DMCA patterns are validated before merging to prevent deploymen
 ✅ All 1 tag patterns are valid
 
 📋 Validating post paths (exact match, not regex) from: apps/web/public/dmca/dmca-posts.json
-✅ All 377 post patterns are valid
+✅ All 15 post patterns are valid
 
 ============================================================
 📊 VALIDATION SUMMARY
 ============================================================
 Tag patterns:  1/1 valid
-Post patterns: 377/377 valid
+Post patterns: 15/15 valid
 ============================================================
 
 ✅ Validation PASSED - all patterns are safe
@@ -102,7 +102,7 @@ Post patterns: 377/377 valid
 📊 VALIDATION SUMMARY
 ============================================================
 Tag patterns:  1/1 valid
-Post patterns: 375/377 valid
+Post patterns: 13/15 valid
 ============================================================
 
 ❌ Validation FAILED - unsafe patterns detected
