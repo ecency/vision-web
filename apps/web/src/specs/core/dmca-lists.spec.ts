@@ -2,10 +2,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import ts from "typescript";
 import dmcaAccounts from "../../../public/dmca/dmca-accounts.json";
 import dmcaTags from "../../../public/dmca/dmca-tags.json";
 import dmcaPosts from "../../../public/dmca/dmca-posts.json";
+
+const { validatePostPath } = createRequire(import.meta.url)(
+  "../../../../../packages/sdk/scripts/validate-dmca-patterns.cjs"
+) as { validatePostPath: (entry: unknown) => { valid: boolean; errors: string[] } };
 
 const { setDmcaLists } = vi.hoisted(() => ({ setDmcaLists: vi.fn() }));
 
@@ -50,14 +55,14 @@ describe("takedown lists", () => {
     // A takedown list that silently emptied would make every filter a no-op
     // and nothing else would notice.
     expect(dmcaPosts.posts.length).toBeGreaterThan(0);
-    // Exact `@author/permlink`, the shape applyFilter compares with
-    // Array.includes. `"@/"` satisfies a startsWith/includes pair and matches
-    // nothing on chain, so spell the shape out. A permlink may open with a
-    // hyphen (`@jundi1443/--r0jhik` on this list does) and older permlinks
-    // may carry a dot, which `pnpm validate:dmca` also accepts.
+    // Exact `@author/permlink`, the shape the SDK filter compares with
+    // Array.includes. The rule lives in the CI validator (#1873) so the list
+    // has one definition of a valid entry; this pins the shipped list to it.
     for (const path of dmcaPosts.posts) {
-      expect(path).toMatch(/^@[a-z0-9][a-z0-9.-]*\/[a-z0-9._-]+$/);
+      expect(validatePostPath(path)).toEqual({ valid: true, errors: [] });
     }
+    // And the rule is not vacuous: a regex-shaped entry is refused.
+    expect(validatePostPath("@author/.*").valid).toBe(false);
   });
 
   describe("the SDK-free leaf", () => {

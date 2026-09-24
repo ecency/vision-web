@@ -8,9 +8,14 @@ This directory contains build-time and CI/CD scripts for the SDK package.
 
 The `validate-dmca-patterns.cjs` script performs **defense-in-depth ReDoS (Regular Expression Denial of Service) protection** for DMCA filtering patterns. It validates regex patterns through multiple security layers before they can be deployed.
 
+It checks two lists, and they are matched differently:
+
+- `dmca-tags.json` is a list of **regex patterns**, screened by the layers below.
+- `dmca-posts.json` is **exact match only**. Each entry is compared with plain string equality against `@author/permlink` (the SDK's `filterDmcaEntry` uses `Array.includes`, the web app's `isTakenDownPost` uses a `Set`); nothing compiles it as a regex. So `@author/.*` would match no post at all, a takedown that looks applied but is not. The validator rejects any post entry that is not a lowercase `@author/permlink` path: the author must be a valid Hive account name (3 to 16 characters, dot separated segments of at least 3, each starting with a letter and ending with a letter or digit) and the permlink up to 255 characters of `a-z`, `0-9`, `-`, `.` and `_`. To take down several posts, list each path.
+
 ### Security Layers
 
-The validator implements 4 layers of protection:
+The validator implements 4 layers of protection for the tag patterns:
 
 #### Layer 1: Basic Validation
 - Empty pattern detection
@@ -44,7 +49,7 @@ Detects known ReDoS-vulnerable patterns:
 
 ```bash
 # Validate DMCA patterns from JSON files
-node packages/sdk/scripts/validate-dmca-patterns.cjs <dmca-tags.json> <dmca.json>
+node packages/sdk/scripts/validate-dmca-patterns.cjs <dmca-tags.json> <dmca-posts.json>
 
 # Using pnpm script (recommended)
 pnpm validate:dmca
@@ -70,10 +75,10 @@ This ensures all DMCA patterns are validated before merging to prevent deploymen
 
 **Success:**
 ```
-📋 Validating tag patterns from: apps/web/src/dmca-tags.json
+📋 Validating tag patterns (regex) from: apps/web/public/dmca/dmca-tags.json
 ✅ All 1 tag patterns are valid
 
-📋 Validating post patterns from: apps/web/src/dmca.json
+📋 Validating post paths (exact match, not regex) from: apps/web/public/dmca/dmca-posts.json
 ✅ All 377 post patterns are valid
 
 ============================================================
@@ -88,13 +93,10 @@ Post patterns: 377/377 valid
 
 **Failure:**
 ```
-📋 Validating post patterns from: apps/web/src/dmca.json
+📋 Validating post paths (exact match, not regex) from: apps/web/public/dmca/dmca-posts.json
 
-❌ Post pattern #42 FAILED: "(a+)+@hive/malicious"
-   ↳ static analysis failed: nested quantifiers detected
-
-❌ Post pattern #128 FAILED: ".*.*@user/post"
-   ↳ static analysis failed: multiple greedy quantifiers on wildcards
+❌ Post pattern #42 FAILED: "@user/.*"
+   ↳ not an exact @author/permlink path. The posts list is matched by exact string equality, never as a regex, so wildcards, whitespace, uppercase, a missing @ or a trailing slash make the entry match nothing. List each post by its lowercase chain path, e.g. @author/some-permlink
 
 ============================================================
 📊 VALIDATION SUMMARY

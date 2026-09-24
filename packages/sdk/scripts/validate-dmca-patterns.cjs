@@ -7,7 +7,7 @@
  * It should be run as part of the CI/CD pipeline to catch unsafe patterns early.
  *
  * Usage:
- *   node packages/sdk/scripts/validate-dmca-patterns.js <dmca-tags.json> <dmca.json>
+ *   node packages/sdk/scripts/validate-dmca-patterns.js <dmca-tags.json> <dmca-posts.json>
  *
  * Exit codes:
  *   0 - All patterns are safe
@@ -133,28 +133,46 @@ function validatePattern(pattern, maxLength = 200) {
 }
 
 /**
- * Validate a plain string pattern (not regex)
+ * The one shape a post entry may take. The posts list is EXACT MATCH ONLY:
+ * the SDK filter compares `"@" + author + "/" + permlink` with
+ * `Array.includes`, and the web helper compares a lowercased path against a
+ * Set, so an entry is never compiled as a regex. `@author/.*` would pass a
+ * regex screen and then match nothing on chain, a takedown that looks applied
+ * but is not.
+ *
+ * Author follows hived's account name rule: 3 to 16 characters, dot separated
+ * segments of at least 3, each starting with a letter and ending with a letter
+ * or digit, with only a-z, 0-9 and hyphen in between.
+ * Permlink: hived only requires UTF-8 under 256 bytes, but every entry here is
+ * compared lowercased, so it is held to lowercase a-z, 0-9, hyphen, dot and
+ * underscore, up to 255 characters. That keeps out whitespace, uppercase and
+ * every regex quantifier, class or group character; a dot on its own is
+ * compared literally, which is what a permlink carrying one needs.
  */
-function validatePlainString(pattern) {
-  const errors = [];
+const POST_PATH_RE =
+  /^@(?=[a-z0-9.-]{3,16}\/)[a-z][a-z0-9-]+[a-z0-9](?:\.[a-z][a-z0-9-]+[a-z0-9])*\/[a-z0-9._-]{1,255}$/;
 
-  if (!pattern || typeof pattern !== 'string') {
-    errors.push("invalid or empty string");
-    return { valid: false, errors };
+/**
+ * Validate one posts list entry against the exact-match shape
+ */
+function validatePostPath(entry) {
+  if (typeof entry !== 'string' || !entry) {
+    return { valid: false, errors: ["invalid or empty string"] };
   }
 
-  if (pattern.length > 200) {
-    errors.push(`length ${pattern.length} exceeds max 200`);
-    return { valid: false, errors };
-  }
-
-  // Check for basic validity (should look like @author/permlink)
-  if (pattern.startsWith('@') && !pattern.includes('/../') && !pattern.includes('\\')) {
+  if (POST_PATH_RE.test(entry)) {
     return { valid: true, errors: [] };
   }
 
-  errors.push("pattern should start with @ and follow format @author/permlink");
-  return { valid: false, errors };
+  return {
+    valid: false,
+    errors: [
+      "not an exact @author/permlink path. The posts list is matched by exact string " +
+        "equality, never as a regex, so wildcards, whitespace, uppercase, a missing @ " +
+        "or a trailing slash make the entry match nothing. List each post by its " +
+        "lowercase chain path, e.g. @author/some-permlink"
+    ]
+  };
 }
 
 /**
@@ -211,9 +229,9 @@ function validateDmcaFiles(tagFilePath, patternFilePath) {
     hasErrors = true;
   }
 
-  // Validate post patterns (plain strings, not regex)
+  // Validate post paths (exact match, not regex)
   if (patternFilePath && fs.existsSync(patternFilePath)) {
-    console.log(`\n📋 Validating post patterns (plain strings) from: ${patternFilePath}`);
+    console.log(`\n📋 Validating post paths (exact match, not regex) from: ${patternFilePath}`);
     let patterns;
     try {
       const raw = JSON.parse(fs.readFileSync(patternFilePath, 'utf8'));
@@ -232,14 +250,14 @@ function validateDmcaFiles(tagFilePath, patternFilePath) {
     results.patterns.total = patterns.length;
 
     patterns.forEach((pattern, index) => {
-      // Post patterns are plain strings, not regex - use different validation
-      const result = validatePlainString(pattern);
+      const result = validatePostPath(pattern);
       if (result.valid) {
         results.patterns.valid++;
       } else {
         results.patterns.invalid++;
         hasErrors = true;
-        console.error(`\n❌ Post pattern #${index + 1} FAILED: "${pattern.substring(0, 50)}${pattern.length > 50 ? '...' : ''}"`);
+        const shown = String(pattern);
+        console.error(`\n❌ Post pattern #${index + 1} FAILED: "${shown.substring(0, 50)}${shown.length > 50 ? '...' : ''}"`);
         result.errors.forEach(error => console.error(`   ↳ ${error}`));
       }
     });
@@ -279,7 +297,7 @@ if (require.main === module) {
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
-    console.error('Usage: validate-dmca-patterns.js <dmca-tags.json> <dmca.json>');
+    console.error('Usage: validate-dmca-patterns.js <dmca-tags.json> <dmca-posts.json>');
     process.exit(1);
   }
 
@@ -289,4 +307,4 @@ if (require.main === module) {
   validateDmcaFiles(tagFilePath, patternFilePath);
 }
 
-module.exports = { validatePattern, analyzeRedosRisk, testRegexPerformance };
+module.exports = { validatePattern, analyzeRedosRisk, testRegexPerformance, validatePostPath, POST_PATH_RE };
