@@ -1,9 +1,9 @@
-import { prefetchQuery } from "@/core/react-query";
+import { markSsrDegraded, prefetchQuery } from "@/core/react-query";
 import { loadDmcaLists } from "@/core/dmca-lists";
 import { isTakenDownPost } from "@/core/dmca-posts";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { getContentQueryOptions, getProfilesQueryOptions } from "@ecency/sdk";
-import { isIndexable, ReputationSource } from "@/utils/entry-indexability";
+import { isIndexable, ReputationSource, threadRoot } from "@/utils/entry-indexability";
 import { safeDecodeURIComponent } from "@/utils";
 import { parseJsonMetadata, withinMetadataLimits } from "@/utils/json-metadata";
 import type { Entry, JsonMetadata } from "@/entities";
@@ -197,6 +197,10 @@ export async function loadEntry(
   }
 
   if (!entry || !entry.body || !entry.created) return null;
+
+  // bridge omits root_*: a deeper reply served from it cannot name its thread,
+  // so the discussion route would answer a subtree. Not a render to cache.
+  if (source === "hive_bridge" && !threadRoot(entry)) markSsrDegraded("fallback-incomplete");
 
   return { entry, source };
 }

@@ -93,6 +93,23 @@ type ThreadShape = Pick<
   | "root_permlink"
 >;
 
+/**
+ * The depth-0 post of a thread, when the entry carries enough to name it: a
+ * post is its own root, a reply names it in root_*, and a depth-1 reply's
+ * parent IS the root. bridge.get_post omits root_*, so a deeper reply served
+ * from it has no recoverable root (null).
+ */
+export function threadRoot(entry: ThreadShape): { author: string; permlink: string } | null {
+  if ((entry.depth ?? 0) === 0) return { author: entry.author, permlink: entry.permlink };
+  if (entry.root_author && entry.root_permlink) {
+    return { author: entry.root_author, permlink: entry.root_permlink };
+  }
+  if (entry.depth === 1 && entry.parent_author && entry.parent_permlink) {
+    return { author: entry.parent_author, permlink: entry.parent_permlink };
+  }
+  return null;
+}
+
 /** depth-0 author of the thread (a post is its own root). */
 const rootAuthorOf = (entry: ThreadShape): string =>
   entry.root_author || entry.author;
@@ -211,15 +228,10 @@ export function canonicalTarget(
 
   if (depth === 0) return self; // normal top-level post → self
 
-  // normal reply → the depth-0 root post
-  if (entry.root_author && entry.root_permlink) {
-    return `${baseUrl}/@${entry.root_author}/${entry.root_permlink}`;
-  }
-  if (depth === 1 && entry.parent_author && entry.parent_permlink) {
-    // depth-1 reply: parent IS the root (covers bridge-fed entries lacking root_*)
-    return `${baseUrl}/@${entry.parent_author}/${entry.parent_permlink}`;
-  }
-  return null; // deep reply with no resolvable root — noindex
+  // normal reply → the depth-0 root post; a deep reply with no resolvable
+  // root (bridge-fed, no root_*) → null, noindex
+  const root = threadRoot(entry);
+  return root ? `${baseUrl}/@${root.author}/${root.permlink}` : null;
 }
 
 const parsePayout = (v: unknown): number => {

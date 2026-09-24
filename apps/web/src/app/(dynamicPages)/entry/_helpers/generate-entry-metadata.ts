@@ -1,13 +1,13 @@
 import { parseDate, safeDecodeURIComponent } from "@/utils";
 import { entryCanonical } from "@/utils/entry-canonical";
-import { isIndexable, ReputationSource } from "@/utils/entry-indexability";
+import { isIndexable, ReputationSource, threadRoot } from "@/utils/entry-indexability";
 import { isTakenDownPost } from "@/core/dmca-posts";
 import { isValidPermlink } from "@ecency/render-helper";
 import { buildEntryCardFields } from "./entry-card-fields";
 import type { Entry } from "@/entities";
 import { Metadata } from "next";
 import { getContentQueryOptions, getProfilesQueryOptions } from "@ecency/sdk";
-import { prefetchQuery } from "@/core/react-query";
+import { markSsrDegraded, prefetchQuery } from "@/core/react-query";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { getServerAppBase } from "@/utils/server-app-base";
 import defaults from "@/defaults.json";
@@ -54,6 +54,9 @@ export async function generateEntryMetadata(
         });
         return {};
       }
+      // bridge omits root_*: a deeper reply served from it has no canonical
+      // and would be noindexed, which must not be cached for the entry tier.
+      if (!threadRoot(entry as Entry)) markSsrDegraded("fallback-incomplete");
     }
 
     // Shared with the oEmbed provider so the meta-tag card and the oEmbed

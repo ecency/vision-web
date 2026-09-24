@@ -26,9 +26,12 @@ const SSR_PREFETCH_TIMEOUT_MS = 10_000;
  * Flag the current server response as rendered without some of its data, so
  * the ssr-degraded.js preload sends it `private, no-store` and no shared cache
  * keeps it. A no-op in the browser and wherever the preload is not loaded
- * (dev, tests).
+ * (dev, tests). Exported for a caller whose fallback answered but lost data
+ * the page needs (`fallback-incomplete`).
  */
-function markSsrDegraded(reason: "prefetch-timeout" | "prefetch-error") {
+export function markSsrDegraded(
+  reason: "prefetch-timeout" | "prefetch-error" | "fallback-incomplete"
+) {
   if (!isServer) return;
   (
     globalThis as { __ecencySsrDegraded?: { mark(reason: string): void } }
