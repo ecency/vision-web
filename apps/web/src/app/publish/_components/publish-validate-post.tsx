@@ -2,6 +2,7 @@
 
 import { SUBMIT_TAG_MAX_LENGTH } from "@/app/submit/_consts";
 import { TagSelector, sanitizeTagInput } from "@/app/submit/_components";
+import { getTagsWarning } from "@/app/submit/_utils/tags";
 import { Alert, Button, FormControl } from "@/features/ui";
 import { formatError } from "@/api/format-error";
 import { isShortfallStillRelevant, resolveRcShortfall, type RcShortfall } from "../_utils/rc-shortfall";
@@ -267,7 +268,9 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
     const hashtagRegex = new RegExp("#([\\p{L}\\p{N}\\p{M}_-]+)", "gu");
     const computedTags = Array.from(content ? content.matchAll(hashtagRegex) : [])
       .map(([, tag]) => sanitizeTagInput(tag).slice(0, SUBMIT_TAG_MAX_LENGTH).trim())
-      .filter((tag) => !!tag);
+      // A hashtag in the body is not a tag the author vetted, so one the tag rules
+      // refuse (#my-first-post, #2026recap) is left out rather than published.
+      .filter((tag) => !!tag && !getTagsWarning([tag]));
 
     const normalizedExistingTags = (tags ?? [])
       .map((tag) => sanitizeTagInput(tag).slice(0, SUBMIT_TAG_MAX_LENGTH).trim())

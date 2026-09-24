@@ -17,6 +17,7 @@ import {
 import { postBodySummary, proxifyImageSrc } from "@ecency/render-helper";
 import { usableDescription } from "@/app/publish/_utils/content";
 import { descriptionToEdit } from "@/app/submit/_utils/description";
+import { getTagsWarning } from "@/app/submit/_utils/tags";
 import useLocalStorage from "react-use/lib/useLocalStorage";
 import usePrevious from "react-use/lib/usePrevious";
 import dayjs from "@/utils/dayjs";
@@ -404,6 +405,16 @@ function Submit({ path, draftId, username, permlink, searchParams }: Props) {
 
     if (tags.length > 10) {
       error(i18next.t("tag-selector.error-max", { n: 10 }));
+      return false;
+    }
+
+    // Tags the post being edited already carries are kept as they are: other
+    // frontends publish tags these rules refuse, and they are not ours to reject.
+    const existingTags = editingEntry ? metaStringList(editingEntry.json_metadata?.tags) : [];
+    const tagWarning = getTagsWarning(tags, existingTags);
+    if (tagWarning) {
+      focusInput(".tag-input");
+      error(i18next.t(tagWarning));
       return false;
     }
 

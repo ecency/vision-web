@@ -117,4 +117,30 @@ describe("publish validation step description", () => {
 
     expect(state.current!.metaDescription).toBe(summaryOf(REWRITTEN));
   });
+
+  // Hashtags lifted from the body skipped the tag rules the selector applies.
+  it("adds only the body hashtags the tag rules accept", () => {
+    const state: { current: ReturnType<typeof usePublishState> | null } = { current: null };
+    function Harness({ step }: { step: "edit" | "validation" }) {
+      state.current = usePublishState();
+      return step === "validation" ? (
+        <PublishValidatePost onClose={() => {}} onSuccess={() => {}} />
+      ) : null;
+    }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (step: "edit" | "validation") => (
+      <QueryClientProvider client={queryClient}>
+        <PublishStateProvider>
+          <Harness step={step} />
+        </PublishStateProvider>
+      </QueryClientProvider>
+    );
+
+    const { rerender } = render(tree("edit"));
+    act(() => state.current!.setTags([]));
+    act(() => state.current!.setContent("Trip #travel #my-first-post #2026recap #photo-walk"));
+    rerender(tree("validation"));
+
+    expect(state.current!.tags).toEqual(["travel", "photo-walk"]);
+  });
 });
