@@ -169,6 +169,9 @@ describe("the call sites that keep the raw export", () => {
  * a body that breaks that scan is caught by catchPostImageSafely and then
  * thrown again by this call, with no boundary above the profile tabs (#1805),
  * the feed or the community routes to contain it.
+ *
+ * No allowlist on purpose: the guard returns the raw value whenever nothing
+ * throws, so no file in apps/web has a reason to import the raw export.
  */
 describe("getEntryCardImageRawUrl goes through its guard", () => {
   const THUMBNAIL = "features/shared/entry-list-item/entry-list-item-thumbnail.tsx";
