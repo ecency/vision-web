@@ -48,7 +48,7 @@
         "what-can-post",
         "how-see-rewards",
         "when-claim-rewards",
-        "what-curation",
+        "what-curation-reward",
         "who-are-curators"
       ]
     },
@@ -152,14 +152,14 @@
       "suggestions": [
         "what-information-available",
         "how-to-search",
-        "what-appears",
+        "what-appears-search",
         "how-to-follow",
         "how-find-information-followers"
       ]
     },
     {
       "path": "/market",
-      "suggestions": ["how-market-works", "how-to-swap-header"]
+      "suggestions": ["how-market-works", "how-to-swap"]
     },
     {
       "path": "/.*",
