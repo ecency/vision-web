@@ -7,6 +7,7 @@ import { arrowLeftSvg } from "@ui/svg";
 import { useMounted } from "@/utils/use-mounted";
 import { makeEntryPath } from "@/utils";
 import { Entry } from "@/entities";
+import { openInNewTab } from "@/utils/open-in-new-tab";
 
 interface Props {
   topic: string;
@@ -58,7 +59,7 @@ export const DeckTopicsContentViewer = ({ onClose, backTitle, topic }: Props) =>
               {...item}
               onMounted={() => {}}
               onEntryView={() =>
-                window.open(makeEntryPath(item.category, item.author, item.permlink), "_blank")
+                openInNewTab(makeEntryPath(item.category, item.author, item.permlink))
               }
             ></SearchListItem>
           </div>

@@ -20,6 +20,7 @@ import {
   wavesSvg
 } from "@ui/svg";
 import { chatSvg } from "@/assets/img/svg";
+import { openInNewTab } from "@/utils/open-in-new-tab";
 
 interface Props {
   entry: Entry;
@@ -28,37 +29,37 @@ interface Props {
 
 export const shareReddit = (entry: Entry) => {
   const u = makeShareUrlReddit(entry.category, entry.author, entry.permlink, entry.title);
-  window.open(u, "_blank");
+  openInNewTab(u);
 };
 
 export const shareTwitter = (entry: Entry) => {
   const u = makeShareUrlTwitter(entry.category, entry.author, entry.permlink, entry.title);
-  window.open(u, "_blank");
+  openInNewTab(u);
 };
 
 export const shareFacebook = (entry: Entry) => {
   const u = makeShareUrlFacebook(entry.category, entry.author, entry.permlink);
-  window.open(u, "_blank");
+  openInNewTab(u);
 };
 
 export const shareLinkedin = (entry: Entry) => {
   const u = makeShareUrlLinkedin(entry.category, entry.author, entry.permlink);
-  window.open(u, "_blank");
+  openInNewTab(u);
 };
 
 export const shareDiscord = (entry: Entry) => {
   const u = makeShareUrlDiscord(entry.category, entry.author, entry.permlink, entry.title);
-  window.open(u, "_blank");
+  openInNewTab(u);
 };
 
 export const shareChats = (entry: Entry) => {
   const u = makeShareUrlChats(entry.category, entry.author, entry.permlink, entry.title);
-  window.open(u, "_blank");
+  openInNewTab(u);
 };
 
 export const shareWaves = (entry: Entry) => {
   const u = makeShareUrlWaves(entry.category, entry.author, entry.permlink, entry.title);
-  window.open(u, "_blank");
+  openInNewTab(u);
 };
 
 export function EntryShare({ entry, onHide }: Props) {

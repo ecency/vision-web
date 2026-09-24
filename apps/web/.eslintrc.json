@@ -57,6 +57,14 @@
       {
         "selector": "JSXOpeningElement[name.name=/^Uil/] > JSXAttribute[name.name='className'] Literal[value=/(^|\\s)([a-z-]+:)*!?[wh]-(3(\\.5)?|4|5|6)(\\s|$)/]",
         "message": "Spell glyph sizes as size-N (or !size-N inside a sanctioned slot), one token. w-/h-/!w-/!h- glyph sizes are banned. See docs/icons.md."
+      },
+      {
+        "selector": "CallExpression[callee.object.name=/^(window|globalThis|self)$/]:matches([callee.property.name='open'], [callee.property.value='open'])",
+        "message": "Use openInNewTab from @/utils/open-in-new-tab: a bare window.open leaves the new tab an opener handle and a copy of sessionStorage. A caller that needs the returned window disables this line and says why."
+      },
+      {
+        "selector": "CallExpression[callee.type='Identifier'][callee.name='open'][arguments.1.value='_blank']",
+        "message": "Use openInNewTab from @/utils/open-in-new-tab: a bare window.open leaves the new tab an opener handle and a copy of sessionStorage. A caller that needs the returned window disables this line and says why."
       }
     ]
   }

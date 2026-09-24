@@ -14,6 +14,7 @@ import { getQueryClient } from "@/core/react-query";
 import { getAccountFullQueryOptions } from "@ecency/sdk";
 import { scheduleQuestsRefresh } from "@/utils/refresh-quests";
 import { latchWavesOnboardingItem } from "@/features/waves/components/waves-onboarding-checklist/derive-waves-onboarding-state";
+import { openInNewTab } from "@/utils/open-in-new-tab";
 
 interface Body {
   text: string;
@@ -87,7 +88,7 @@ export function useWaveSubmit(
       // the publish composer instead.
       if (!isReply && textLength > characterLimit) {
         stageForPublish(content);
-        window.open("/publish", "_blank");
+        openInNewTab("/publish");
         return;
       }
 

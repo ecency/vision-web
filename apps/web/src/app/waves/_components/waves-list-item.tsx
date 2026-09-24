@@ -26,6 +26,7 @@ import {
   WavesFeedType
 } from "@/app/waves/_constants";
 import { useOptionalWavesTagFilter } from "@/app/waves/_context";
+import { openInNewTab } from "@/utils/open-in-new-tab";
 
 const INTERACTIVE_SELECTOR =
   "a,button,input,textarea,select,img,[role='button'],[role='link'],[role='menuitem'],[contenteditable='true']";
@@ -138,13 +139,13 @@ export const WavesListItem = React.memo(function WavesListItem({
   );
 
   const openWave = useCallback(
-    (openInNewTab: boolean) => {
+    (inNewTab: boolean) => {
       if (!interactable) {
         return;
       }
 
-      if (openInNewTab) {
-        window.open(wavePath, "_blank", "noopener,noreferrer");
+      if (inNewTab) {
+        openInNewTab(wavePath);
       } else {
         if (typeof window !== "undefined") {
           const scrollState: WavesFeedScrollState = {

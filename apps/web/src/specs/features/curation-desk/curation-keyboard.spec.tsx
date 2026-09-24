@@ -237,7 +237,7 @@ describe("keyboard on the queue", () => {
       await screen.findAllByRole("article");
       await act(async () => press("j"));
       await act(async () => press("O", { shiftKey: true }));
-      expect(open).toHaveBeenCalledWith("/@author1/post-1", "_blank", "noopener");
+      expect(open).toHaveBeenCalledWith("/@author1/post-1", "_blank", "noopener,noreferrer");
     } finally {
       open.mockRestore();
     }

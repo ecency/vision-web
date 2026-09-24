@@ -30,6 +30,7 @@ import { useDownloadSelfHostBundle } from "./use-download-self-host-bundle";
 import { getAccountFullQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
+import { openInNewTab } from "@/utils/open-in-new-tab";
 
 // Lazy-load the card checkout so /hosting doesn't pull @stripe/stripe-js (which injects the
 // js.stripe.com script on import) into its bundle until the user actually picks "card".
@@ -1226,10 +1227,8 @@ export function HostingSignup() {
                   activeUser && getLoginType(activeUser.username) === "hivesigner"
                     ? "&login=hivesigner"
                     : "";
-                window.open(
-                  `${safeBlogUrl}?setup=1${loginParam}#hc=${encodeURIComponent(handoff.code)}`,
-                  "_blank",
-                  "noopener,noreferrer"
+                openInNewTab(
+                  `${safeBlogUrl}?setup=1${loginParam}#hc=${encodeURIComponent(handoff.code)}`
                 );
                 setHandoff(null);
                 setMintNonce((n) => n + 1);

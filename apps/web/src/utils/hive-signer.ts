@@ -92,15 +92,3 @@ export function buildHotSignUrl(
   const queryString = new URLSearchParams(_params).toString();
   return `https://hivesigner.com/sign/${endpoint}?${queryString}`;
 }
-
-export function hotSign(
-  endpoint: string,
-  params: {
-    [key: string]: any;
-  },
-  redirect: string
-) {
-  const webUrl = buildHotSignUrl(endpoint, params, redirect);
-  const win = window.open(webUrl, "_blank");
-  return win!.focus();
-}

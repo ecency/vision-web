@@ -1,6 +1,7 @@
 import { getMessaging, getToken, MessagePayload, Messaging, onMessage } from "@firebase/messaging";
 import { FirebaseApp, initializeApp } from "@firebase/app";
 import { buildPushNotificationUrl } from "./push-notification-link";
+import { openInNewTab } from "@/utils/open-in-new-tab";
 
 let app: FirebaseApp;
 export let FCM: Messaging;
@@ -36,7 +37,7 @@ export const handleMessage = (payload: MessagePayload) => {
   notification.onclick = () => {
     // Same payload and same routing table as the background service worker;
     // see api/push-notification-link.
-    window.open(buildPushNotificationUrl(payload.data), "_blank");
+    openInNewTab(buildPushNotificationUrl(payload.data));
   };
 };
 
