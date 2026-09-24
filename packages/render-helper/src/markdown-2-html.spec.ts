@@ -996,7 +996,7 @@ describe('Markdown2Html', () => {
       }
       const out = markdown2Html(input)
 
-      expect(out).toContain('<iframe src="https://www.youtube.com/shorts/IaehbZnsi4w" class="portrait-embed">')
+      expect(out).toContain('<iframe src="https://www.youtube.com/embed/IaehbZnsi4w" class="portrait-embed">')
     })
   })
 

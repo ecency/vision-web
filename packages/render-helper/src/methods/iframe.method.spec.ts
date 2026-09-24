@@ -1,5 +1,6 @@
 import { iframe } from './iframe.method'
 import { DOMParser } from '../consts'
+import { isAllowedEmbedSrc } from '../consts'
 
 // Helper to check if an element with class exists in childNodes
 function hasChildWithClass(parent: any, className: string): boolean {
@@ -192,15 +193,41 @@ describe('iframe() method - Iframe Sanitization', () => {
     it('should handle YouTube shorts embeds', () => {
       const parent = doc.createElement('div')
       const el = doc.createElement('iframe')
-      el.setAttribute('src', 'https://www.youtube.com/shorts/abc123?param=value')
+      el.setAttribute('src', 'https://www.youtube.com/shorts/IaehbZnsi4w?param=value')
       parent.appendChild(el)
 
       iframe(el)
 
       expect(hasChildWithTag(parent, 'iframe')).toBe(true)
-      expect(el.getAttribute('src')).toBe('https://www.youtube.com/shorts/abc123')
-      // #1271: no wrapper anchor, so the iframe itself carries the 9:16 marker
+      // #1271: /shorts/ is not frameable, so it is pointed at the embed route
+      expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/IaehbZnsi4w')
+      expect(isAllowedEmbedSrc(el.getAttribute('src'))).toBe(true)
+      // no wrapper anchor, so the iframe itself carries the 9:16 marker
       expect(el.getAttribute('class')).toBe('portrait-embed')
+    })
+
+    it('should rewrite a protocol-relative YouTube shorts iframe', () => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', '//www.youtube.com/shorts/IaehbZnsi4w/')
+      parent.appendChild(el)
+
+      iframe(el)
+
+      expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/IaehbZnsi4w')
+      expect(el.getAttribute('class')).toBe('portrait-embed')
+    })
+
+    it('should not rewrite a shorts iframe whose id is not a video id', () => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', 'https://www.youtube.com/shorts/abc123/../../redirect')
+      parent.appendChild(el)
+
+      iframe(el)
+
+      expect(el.getAttribute('src')).not.toContain('/embed/')
+      expect(el.hasAttribute('class')).toBe(false)
     })
 
     it('should not mark a regular YouTube embed portrait', () => {

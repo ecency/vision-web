@@ -20,6 +20,7 @@ const scss = readFileSync(
   resolve(here, "../../../features/post-renderer/ecency-renderer.scss"),
   "utf8"
 );
+const markdownScss = readFileSync(resolve(here, "../../../styles/_markdown.scss"), "utf8");
 
 function Harness({ html }: { html: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -42,6 +43,27 @@ describe("YouTube Shorts portrait sizing", () => {
     expect(body).toMatch(/aspect-ratio:\s*9\s*\/\s*16/);
     expect(body).toMatch(/height:\s*auto/);
     expect(body).toMatch(/max-width:\s*360px/);
+  });
+
+  it("crops the 4:3 thumbnail to the portrait frame", () => {
+    const match = scss.match(
+      /\.markdown-video-link-youtube\.markdown-video-link-youtube-portrait\s*\{[^}]*\.video-thumbnail\s*\{([^}]*)\}/
+    );
+    expect(match).not.toBeNull();
+    expect(match![1]).toMatch(/object-fit:\s*cover/);
+  });
+
+  // The direct-embed iframe (embedVideosDirectly, waves) carries .youtube-player
+  // and is sized by its wrapper. The global iframe rules outrank the wrapper's
+  // `iframe` rule, so without the exclusion a Short rendered as a small player
+  // at the top of a tall black box.
+  it("keeps the direct-embed YouTube iframe out of the global iframe sizing", () => {
+    expect(markdownScss).toContain(
+      "iframe:not(.youtube-shorts-iframe):not(.speak-iframe):not(.portrait-embed):not(.youtube-player) {"
+    );
+    expect(scss).toContain(
+      "iframe:where(:not(.youtube-shorts-iframe, .youtube-player, .speak-iframe, .portrait-embed)) {"
+    );
   });
 
   it("keeps the portrait modifier after click-to-play swaps in the player", async () => {

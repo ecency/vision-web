@@ -428,7 +428,10 @@
 
 
   // Exclude video iframes from global iframe styling
-  iframe:not(.youtube-shorts-iframe):not(.speak-iframe):not(.portrait-embed) {
+  // .youtube-player is the direct-embed YouTube iframe (embedVideosDirectly),
+  // which its .markdown-video-link-youtube wrapper sizes; the fixed sizes here
+  // would otherwise win and shrink it inside the box.
+  iframe:not(.youtube-shorts-iframe):not(.speak-iframe):not(.portrait-embed):not(.youtube-player) {
     max-width: 100% !important;
     max-height: 500px;
     display: block;

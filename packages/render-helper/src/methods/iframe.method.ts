@@ -16,11 +16,18 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
   const ytMatch = src.match(YOUTUBE_EMBED_REGEX);
   if (ytMatch) {
     // strip query string (yt: autoplay=1,controls=0,showinfo=0, etc)
-    el.setAttribute('src', stripQueryString(src));
-    // A pasted iframe has no wrapper anchor to carry the Shorts modifier, so
-    // mark the iframe itself with the class Truvvl's 9:16 embeds already use.
+    const stripped = stripQueryString(src);
+    el.setAttribute('src', stripped);
     if (ytMatch[2].toLowerCase() === 'shorts') {
-      el.setAttribute('class', 'portrait-embed');
+      // youtube.com/shorts/<id> refuses to be framed (X-Frame-Options), so
+      // point the player at the embed route for the same id. A pasted iframe
+      // has no wrapper anchor to carry the Shorts modifier, so mark the iframe
+      // itself with the class Truvvl's 9:16 embeds already use.
+      const shortId = stripped.match(/\/shorts\/([A-Za-z0-9_-]{11})\/?$/i);
+      if (shortId) {
+        el.setAttribute('src', `https://www.youtube.com/embed/${shortId[1]}`);
+        el.setAttribute('class', 'portrait-embed');
+      }
     }
     return;
   }
