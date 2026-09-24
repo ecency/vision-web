@@ -1,6 +1,7 @@
 import type * as Sentry from "@sentry/nextjs";
 import { isEmptyCaptureEvent } from "./sentry-empty-capture";
 import { isDeploySkewError } from "./deploy-skew";
+import { scrubSentryEvent } from "./sentry-scrub";
 
 // Derive the exact event type Sentry's `beforeSend` hook receives, so this stays
 // in lockstep with the SDK without a runtime import of @sentry/nextjs here.
@@ -45,6 +46,12 @@ function isFrameworkInlineFrame(frame: { function?: string }): boolean {
  * Returns the (possibly mutated) event to send, or `null` to drop it.
  */
 export function beforeSend(event: SentryErrorEvent): SentryErrorEvent | null {
+  // Redact secrets carried in URLs (the imagehoster upload token in
+  // `/hs/<token>`, OAuth codes, newsletter tokens; issue #1651) FIRST, so every
+  // return path below, including the timeoutUrl tag derived from breadcrumbs,
+  // only ever sees the scrubbed values. Never throws (see sentry-scrub).
+  scrubSentryEvent(event);
+
   // Drop value-less captures — captureException(null/undefined/"") produces a
   // synthetic exception with no message and no stack frames (zero actionable
   // info, all grouped as the "<unknown>" issue). Only empty + frame-less

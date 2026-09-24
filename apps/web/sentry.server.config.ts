@@ -5,6 +5,7 @@
 import * as Sentry from "@sentry/nextjs";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
 import appPackage from "./package.json";
+import { scrubBreadcrumb, scrubSentryEvent } from "./src/utils/sentry-scrub";
 
 Sentry.init({
   dsn: "https://8a5c1659d1c2ba3385be28dc7235ce56@o4507985141956608.ingest.de.sentry.io/4507985146609744",
@@ -51,7 +52,19 @@ Sentry.init({
         return null;
       }
     }
-    return event;
+    // Page URLs such as /auth?code=... and /newsletter/confirm/<token> reach
+    // request.url and the Referer header here (issue #1651).
+    return scrubSentryEvent(event);
+  },
+
+  // Outgoing fetch breadcrumbs include the HiveSigner token exchange, whose
+  // URL carries `code` and `client_secret`.
+  beforeBreadcrumb(crumb) {
+    try {
+      return scrubBreadcrumb(crumb);
+    } catch {
+      return null;
+    }
   }
 });
 Sentry.setTag("source", "server");
