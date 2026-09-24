@@ -1,6 +1,5 @@
 import { iframe } from './iframe.method'
-import { DOMParser } from '../consts'
-import { isAllowedEmbedSrc } from '../consts'
+import { DOMParser, isAllowedEmbedSrc } from '../consts'
 
 // Helper to check if an element with class exists in childNodes
 function hasChildWithClass(parent: any, className: string): boolean {
@@ -214,6 +213,19 @@ describe('iframe() method - Iframe Sanitization', () => {
 
       iframe(el)
 
+      expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/IaehbZnsi4w')
+      expect(el.getAttribute('class')).toBe('portrait-embed')
+    })
+
+    it.each([
+      'https://www.youtube.com/shorts/IaehbZnsi4w#t=3',
+      'https://www.youtube.com/shorts/IaehbZnsi4w?'
+    ])('should rewrite a shorts iframe with a trailing fragment or bare ? (%s)', (src) => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', src)
+      parent.appendChild(el)
+      iframe(el)
       expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/IaehbZnsi4w')
       expect(el.getAttribute('class')).toBe('portrait-embed')
     })
