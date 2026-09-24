@@ -199,6 +199,19 @@ describe('iframe() method - Iframe Sanitization', () => {
 
       expect(hasChildWithTag(parent, 'iframe')).toBe(true)
       expect(el.getAttribute('src')).toBe('https://www.youtube.com/shorts/abc123')
+      // #1271: no wrapper anchor, so the iframe itself carries the 9:16 marker
+      expect(el.getAttribute('class')).toBe('portrait-embed')
+    })
+
+    it('should not mark a regular YouTube embed portrait', () => {
+      const parent = doc.createElement('div')
+      const el = doc.createElement('iframe')
+      el.setAttribute('src', 'https://www.youtube.com/embed/dQw4w9WgXcQ')
+      parent.appendChild(el)
+
+      iframe(el)
+
+      expect(el.hasAttribute('class')).toBe(false)
     })
 
     it('should handle YouTube embed with protocol-relative URL', () => {

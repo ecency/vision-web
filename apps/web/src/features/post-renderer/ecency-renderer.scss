@@ -466,6 +466,18 @@ $xxxl-break: "1600px";
     max-width: 600px;
   }
 
+  // YouTube Shorts (9:16). render-helper adds the modifier when the posted URL
+  // is a /shorts/ link; the embed URL alone cannot tell a Short from a normal
+  // video. Same ratio and max width as iframe.portrait-embed below. The
+  // click-to-play extension only adds classes, so this survives the swap to
+  // the iframe.
+  .markdown-video-link-youtube.markdown-video-link-youtube-portrait {
+    padding-bottom: 0;
+    aspect-ratio: 9 / 16;
+    height: auto;
+    max-width: 360px;
+  }
+
   // Portrait embeds (9:16 aspect ratio)
   // Target iframe.portrait-embed since the class is applied to iframe elements, not anchors
   iframe.portrait-embed {

@@ -32,7 +32,7 @@ import {
 import { getSerializedInnerHTML } from './get-inner-html.method'
 import { proxifyImageSrc } from '../proxify-image-src'
 import { removeChildNodes } from './remove-child-nodes.method'
-import { extractYtStartTime, isValidPermlink, isValidUsername, sanitizePermlink, stripHtmlTags, trimTrailingSlash } from '../helper'
+import { extractYtStartTime, youtubeVideoLinkClass, isValidPermlink, isValidUsername, sanitizePermlink, stripHtmlTags, trimTrailingSlash } from '../helper'
 import { createImageHTML } from "./img.method";
 import { RenderOptions, SeoContext } from '../types'
 
@@ -647,7 +647,8 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
   // If a youtube video
   let match = href.match(YOUTUBE_REGEX)
   if (match && match[1] && el.textContent.trim() === href) {
-    el.setAttribute('class', 'markdown-video-link markdown-video-link-youtube')
+    const videoClass = youtubeVideoLinkClass(match[0])
+    el.setAttribute('class', videoClass)
     el.removeAttribute('href')
 
     const vid = match[1]
@@ -682,7 +683,7 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
       iframe.setAttribute('allowfullscreen', '')
       wrapper.appendChild(iframe)
       el.appendChild(wrapper)
-      el.setAttribute('class', 'markdown-video-link markdown-video-link-youtube er-youtube')
+      el.setAttribute('class', `${videoClass} er-youtube`)
     } else {
       const thumbImg = el.ownerDocument.createElement('img')
       thumbImg.setAttribute('class', 'no-replace video-thumbnail')

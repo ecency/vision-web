@@ -418,6 +418,20 @@ export function extractYtStartTime(url:string):string {
     return '';
   }
 }
+/**
+ * Class list for a YouTube video wrapper. A Short is vertical (9:16) but its
+ * embed URL is the same `/embed/<id>` as a landscape video, so the `/shorts/`
+ * path of the posted URL is the only orientation signal. Pass the segment
+ * YOUTUBE_REGEX matched, before the source URL is discarded, and the extra
+ * `markdown-video-link-youtube-portrait` modifier lets the stylesheets size the
+ * player 9:16. Links posted as `watch?v=` or `youtu.be/` carry no such hint and
+ * stay 16:9.
+ */
+export function youtubeVideoLinkClass(matchedUrl: string): string {
+  const base = 'markdown-video-link markdown-video-link-youtube'
+  return /youtube\.com\/shorts\//i.test(matchedUrl) ? `${base} markdown-video-link-youtube-portrait` : base
+}
+
 export function sanitizePermlink(permlink: string): string {
   if (!permlink || typeof permlink !== 'string') {
     return ''
