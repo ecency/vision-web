@@ -44,6 +44,13 @@ function scrubQueryString(value: string): string {
   return scrubUrlSecrets(`?${value}`).slice(1);
 }
 
+// One parsed query parameter: a secret name hides the value, and any other
+// value still gets the URL rule (`redirect_uri=https://x/cb?code=...`).
+function scrubParamValue(name: string, value: unknown): unknown {
+  if (SECRET_PARAM_NAME_RE.test(name)) return FILTERED;
+  return typeof value === "string" ? scrubUrlSecrets(value) : value;
+}
+
 // A JSON member whose name is a secret parameter: `"code": "..."`.
 const SECRET_JSON_MEMBER_RE = new RegExp(
   `("(?:${SECRET_PARAM_NAMES})"\\s*:\\s*)"(?:[^"\\\\]|\\\\.)*"`,
@@ -62,17 +69,18 @@ function scrubBody(value: string): string {
 // utils/prepareEvent.js normalizeEvent). In utils-hoist/normalize.js visit(),
 // a container past the depth becomes the string "[Object]"/"[Array]" and
 // entries past the breadth are cut at "[MaxProperties ~]", so nothing beyond
-// these bounds is sent, raw or otherwise, and walking it would only cost
+// these bounds is sent from those locations, and walking it would only cost
 // main-thread time. Strings are kept at ANY depth by visit(), so a string one
 // level past the last walked container is still scrubbed below.
 const NORMALIZE_DEPTH = 3;
 const NORMALIZE_MAX_BREADTH = 1000;
 // Two contexts escape the bound above (same normalizeEvent): `contexts.trace`
 // is put back RAW after normalizing (only its `.data` is re-normalized), and
-// `contexts.flags` is normalized from its own root. The raw trace, like the
-// never-normalized `request`, is walked from its own root to this deeper
-// bound instead (still finite, so a cycle cannot recurse forever).
-const RAW_DEPTH = 10;
+// `contexts.flags` is normalized from its own root. The raw trace and the
+// never-normalized `request` are sent as they are, so they are walked with
+// NO depth or breadth bound. A memo of visited containers keeps that linear:
+// a shared container is scrubbed once and its result reused, and a cycle
+// (which JSON serialization cannot send anyway) ends at the revisit.
 
 function isPlainContainer(v: unknown): v is Record<string, unknown> | unknown[] {
   if (Array.isArray(v)) return true;
@@ -87,6 +95,43 @@ function errorToPlain(err: Error): Record<string, unknown> {
   return { ...err, name: err.name, message: err.message, stack: err.stack };
 }
 
+interface ScrubOptions {
+  // Sent raw: walk everything, memoized (see above). Otherwise the walk stops
+  // at Sentry's normalize bounds.
+  raw: boolean;
+  // Also redact any string whose property NAME is a secret parameter
+  // (`{ code: "..." }`). Only for request bodies: elsewhere a `code` or `key`
+  // field is far more often an error code or an id than a credential.
+  secretKeys?: boolean;
+}
+
+const NORMALIZED: ScrubOptions = { raw: false };
+const RAW: ScrubOptions = { raw: true };
+const RAW_BODY: ScrubOptions = { raw: true, secretKeys: true };
+
+// Read every own enumerable property ONCE. An accessor is invoked here and
+// its result used from then on, so a getter cannot hand the scrub one value
+// and the serializer another; `hasAccessor` forces a plain-data clone.
+function readOnce(
+  value: Record<string, unknown> | unknown[],
+  limit: number
+): { entries: [string, unknown][]; hasAccessor: boolean } {
+  const entries: [string, unknown][] = [];
+  let hasAccessor = false;
+  for (const k of Object.keys(value)) {
+    if (entries.length >= limit) break;
+    const desc = Object.getOwnPropertyDescriptor(value, k);
+    if (!desc) continue;
+    if (desc.get || desc.set) {
+      hasAccessor = true;
+      entries.push([k, desc.get ? desc.get.call(value) : undefined]);
+    } else {
+      entries.push([k, desc.value]);
+    }
+  }
+  return { entries, hasAccessor };
+}
+
 /**
  * Return `value` with every secret-bearing string scrubbed, COPY-ON-WRITE:
  * a container is never written to. When something inside it changes, a
@@ -98,30 +143,41 @@ function errorToPlain(err: Error): Record<string, unknown> {
  * `key` is the property name, so a bare query string (`code=X&y=1`, as OTel
  * stores `url.query`) is matched without its leading `?`.
  */
-interface ScrubOptions {
-  maxDepth: number;
-  // Also redact any string whose property NAME is a secret parameter
-  // (`{ code: "..." }`). Only for request bodies: elsewhere a `code` or `key`
-  // field is far more often an error code or an id than a credential.
-  secretKeys?: boolean;
-}
-
-const NORMALIZED: ScrubOptions = { maxDepth: NORMALIZE_DEPTH };
-// Sent RAW (no normalize bound), so walked further.
-const RAW: ScrubOptions = { maxDepth: RAW_DEPTH };
-const RAW_BODY: ScrubOptions = { maxDepth: RAW_DEPTH, secretKeys: true };
-
-function scrubValue(value: unknown, level = 0, key = "", opts = NORMALIZED): unknown {
+function scrubValue(
+  value: unknown,
+  level = 0,
+  key = "",
+  opts = NORMALIZED,
+  memo: WeakMap<object, unknown> | null = opts.raw ? new WeakMap() : null
+): unknown {
   if (typeof value === "string") {
     if (opts.secretKeys && SECRET_PARAM_NAME_RE.test(key)) return FILTERED;
     return /query/i.test(key) ? scrubQueryString(value) : scrubUrlSecrets(value);
   }
-  if (!value || typeof value !== "object" || level >= opts.maxDepth) {
+  if (!value || typeof value !== "object" || (!opts.raw && level >= NORMALIZE_DEPTH)) {
     return value;
   }
+  if (memo) {
+    if (memo.has(value)) return memo.get(value);
+    // In progress: a cycle back to here gets the original (not serializable
+    // anyway); the finished result replaces it below.
+    memo.set(value, value);
+  }
+  const result = scrubContainer(value, level, key, opts, memo);
+  memo?.set(value, result);
+  return result;
+}
+
+function scrubContainer(
+  value: object,
+  level: number,
+  key: string,
+  opts: ScrubOptions,
+  memo: WeakMap<object, unknown> | null
+): unknown {
   if (value instanceof Error) {
     const plain = errorToPlain(value);
-    const scrubbed = scrubValue(plain, level, key, opts);
+    const scrubbed = scrubValue(plain, level, key, opts, memo);
     return scrubbed === plain ? value : scrubbed;
   }
   if (!isPlainContainer(value)) {
@@ -141,17 +197,24 @@ function scrubValue(value: unknown, level = 0, key = "", opts = NORMALIZED): unk
     return value;
   }
 
-  let clone: Record<string, unknown> | unknown[] | null = null;
-  const keys = Object.keys(value).slice(0, NORMALIZE_MAX_BREADTH);
-  for (const k of keys) {
-    const v = (value as Record<string, unknown>)[k];
-    const scrubbed = scrubValue(v, level + 1, k, opts);
-    if (scrubbed !== v) {
-      clone ??= Array.isArray(value) ? value.slice() : { ...value };
-      (clone as Record<string, unknown>)[k] = scrubbed;
-    }
-  }
-  return clone ?? value;
+  const { entries, hasAccessor } = readOnce(value, opts.raw ? Infinity : NORMALIZE_MAX_BREADTH);
+  let changed = hasAccessor;
+  const scrubbed = entries.map(([k, v]) => {
+    const next = scrubValue(v, level + 1, k, opts, memo);
+    if (next !== v) changed = true;
+    return next;
+  });
+  if (!changed) return value;
+  // Built ONLY from the values read once, never by re-reading `value`. In the
+  // bounded walk this leaves out entries past the breadth, which Sentry cuts
+  // before sending anyway.
+  const clone: Record<string, unknown> = Array.isArray(value)
+    ? (new Array(value.length) as unknown as Record<string, unknown>)
+    : {};
+  entries.forEach(([k], i) => {
+    clone[k] = scrubbed[i];
+  });
+  return clone;
 }
 
 interface ScrubbableBreadcrumb {
@@ -273,16 +336,11 @@ export function scrubSentryEvent<T extends ScrubbableEvent>(event: T): T | null 
       } else if (Array.isArray(qs)) {
         // [[name, value], ...]
         next.query_string = qs.map((pair) =>
-          Array.isArray(pair) && SECRET_PARAM_NAME_RE.test(String(pair[0]))
-            ? [pair[0], FILTERED]
-            : pair
+          Array.isArray(pair) ? [pair[0], scrubParamValue(String(pair[0]), pair[1])] : pair
         );
       } else if (qs && typeof qs === "object") {
         next.query_string = Object.fromEntries(
-          Object.entries(qs).map(([name, v]) => [
-            name,
-            SECRET_PARAM_NAME_RE.test(name) ? FILTERED : v
-          ])
+          Object.entries(qs).map(([name, v]) => [name, scrubParamValue(name, v)])
         );
       }
       // Referer carries the previous page URL, e.g. /auth?code=...
@@ -332,7 +390,7 @@ export function scrubSentryEvent<T extends ScrubbableEvent>(event: T): T | null 
     scrubOrRemove(event, "contexts", () => {
       let contexts = scrubValue(event.contexts) as Record<string, unknown> | undefined;
       if (contexts) {
-        // See RAW_DEPTH: each walked from its own root.
+        // Each walked from its own root; see RAW above.
         const trace = scrubValue(contexts.trace, 0, "", RAW);
         const flags = scrubValue(contexts.flags);
         if (trace !== contexts.trace || flags !== contexts.flags) {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { beforeSend } from "@/utils/sentry-before-send";
 import { scrubBreadcrumb, scrubSentryEvent, scrubUrlSecrets } from "@/utils/sentry-scrub";
 
@@ -174,6 +174,65 @@ describe("beforeSend - secret-bearing URLs are redacted in every location (#1651
     expect(body.nested.access_token).toBe("A1");
   });
 
+  it("raw locations are walked without Sentry's bounds (sent unnormalized)", () => {
+    // Index 1001 of a raw request body array.
+    const arr: string[] = Array.from({ length: 1002 }, () => "x");
+    arr[1001] = UPLOAD_URL;
+    const body = scrubSentryEvent({ request: { data: { list: arr } } })!;
+    expect((body.request!.data as { list: string[] }).list[1001]).toBe(SCRUBBED);
+    expect(arr[1001]).toBe(UPLOAD_URL);
+    // Depth 12 of contexts.trace.
+    let deep: Record<string, unknown> = { url: UPLOAD_URL };
+    for (let i = 0; i < 11; i++) deep = { d: deep };
+    const out = scrubSentryEvent({ contexts: { trace: deep } })!;
+    let node = (out.contexts as { trace: Record<string, unknown> }).trace;
+    for (let i = 0; i < 11; i++) node = node.d as Record<string, unknown>;
+    expect(node.url).toBe(SCRUBBED);
+  });
+
+  it("raw walks are linear on shared and cyclic references", () => {
+    // Six keys, each pointing back at the same object: a depth-bounded walk
+    // would visit 6^depth nodes. Every property read goes through
+    // getOwnPropertyDescriptor, so its call count measures the work.
+    const node: Record<string, unknown> = { url: UPLOAD_URL };
+    for (let i = 0; i < 6; i++) node[`k${i}`] = node;
+    const spy = vi.spyOn(Object, "getOwnPropertyDescriptor");
+    const out = scrubSentryEvent({ contexts: { trace: { root: node } } })!;
+    const reads = spy.mock.calls.length;
+    spy.mockRestore();
+    expect(reads).toBeLessThan(100);
+    const root = (out.contexts as { trace: { root: Record<string, unknown> } }).trace.root;
+    expect(root.url).toBe(SCRUBBED);
+  });
+
+  it("a shared (non-cyclic) container is scrubbed at every place it appears", () => {
+    const shared = { url: UPLOAD_URL };
+    const out = scrubSentryEvent({ request: { data: { a: shared, b: shared } } })!;
+    const data = out.request!.data as Record<string, { url: string }>;
+    expect(data.a.url).toBe(SCRUBBED);
+    expect(data.b.url).toBe(SCRUBBED);
+  });
+
+  it("reads each property once: a getter cannot swap in a secret after the scrub", () => {
+    let reads = 0;
+    const tricky = {} as Record<string, unknown>;
+    Object.defineProperty(tricky, "url", {
+      enumerable: true,
+      get: () => (reads++ === 0 ? "https://ecency.com/" : UPLOAD_URL)
+    });
+    const crumb = scrubBreadcrumb({ category: "console", data: { tricky } });
+    // Taken before any assertion: matchers may read the original's getter.
+    const readsDuringScrub = reads;
+    const data = crumb.data as { tricky: Record<string, unknown> };
+    // The clone holds the value read once, as plain data: reading it again
+    // (as Sentry's serializer will) cannot reach the getter.
+    expect(data.tricky).not.toBe(tricky);
+    expect(Object.getOwnPropertyDescriptor(data.tricky, "url")!.get).toBeUndefined();
+    expect(data.tricky.url).toBe("https://ecency.com/");
+    expect(data.tricky.url).toBe("https://ecency.com/");
+    expect(readsDuringScrub).toBe(1);
+  });
+
   it("request.data without secrets is left as is", () => {
     const body = { username: "alice", page_token: "P" };
     const out = scrubSentryEvent({ request: { data: body } })!;
@@ -201,19 +260,28 @@ describe("beforeSend - secret-bearing URLs are redacted in every location (#1651
   });
 
   it("request.query_string in object and pair forms", () => {
-    const obj = scrubSentryEvent({ request: { query_string: { code: "C1", x: "1" } } });
-    expect(obj.request!.query_string).toEqual({ code: "[Filtered]", x: "1" });
+    const cb = "https://x.example/cb?code=SECRET";
+    const obj = scrubSentryEvent({
+      request: { query_string: { code: "C1", x: "1", redirect_uri: cb } }
+    })!;
+    expect(obj.request!.query_string).toEqual({
+      code: "[Filtered]",
+      x: "1",
+      redirect_uri: "https://x.example/cb?code=[Filtered]"
+    });
     const pairs = scrubSentryEvent({
       request: {
         query_string: [
           ["token", "T1"],
-          ["x", "1"]
+          ["x", "1"],
+          ["redirect_uri", cb]
         ]
       }
-    });
+    })!;
     expect(pairs.request!.query_string).toEqual([
       ["token", "[Filtered]"],
-      ["x", "1"]
+      ["x", "1"],
+      ["redirect_uri", "https://x.example/cb?code=[Filtered]"]
     ]);
   });
 
@@ -408,7 +476,8 @@ describe("beforeSend - secret-bearing URLs are redacted in every location (#1651
     const crumb = scrubBreadcrumb({ category: "console", data: { arguments: big } });
     const args = (crumb.data as { arguments: string[] }).arguments;
     expect(args[999]).toBe(SCRUBBED);
-    expect(args[1000]).toBe(UPLOAD_URL);
+    // Not walked, and not copied into the clone either (never re-read).
+    expect(1000 in args).toBe(false);
     expect(big[0]).toBe(UPLOAD_URL);
   });
 
