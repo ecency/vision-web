@@ -24,9 +24,11 @@ const SECRET_PATH_RE = /(\/(?:hs|newsletter\/(?:confirm|unsubscribe))\/)(?!@)[^?
 // the Mattermost websocket `token`, `client_secret` on the server-side token
 // exchange, and the generic names a future endpoint is likely to use. Any
 // name ENDING in `_secret` or `_token` matches too, e.g. Stripe's
-// `payment_intent_client_secret` on the points-gift return URL.
+// `payment_intent_client_secret` on the points-gift return URL. Pagination
+// cursors (`page_token`, `next_token`, `continuation_token`) are not
+// credentials and are what makes a paging bug debuggable, so they are kept.
 const SECRET_PARAM_NAMES =
-  "access_token|refresh_token|id_token|token|code|secret|password|api_key|apikey|key|signature|sig|[a-z0-9_.-]*_(?:secret|token)";
+  "access_token|refresh_token|id_token|token|code|secret|password|api_key|apikey|key|signature|sig|(?!(?:page|next|continuation)_token\\b)[a-z0-9_.-]*_(?:secret|token)";
 const SECRET_PARAM_RE = new RegExp(`([?&#](?:${SECRET_PARAM_NAMES})=)[^&#\\s"'<>]*`, "gi");
 const SECRET_PARAM_NAME_RE = new RegExp(`^(?:${SECRET_PARAM_NAMES})$`, "i");
 
@@ -42,7 +44,18 @@ function scrubQueryString(value: string): string {
   return scrubUrlSecrets(`?${value}`).slice(1);
 }
 
-const MAX_DEPTH = 5;
+// Sentry's own serialization limits (`normalizeDepth` 3 and
+// `normalizeMaxBreadth` 1000; none of our configs override them). Sentry
+// normalizes breadcrumb data, extra, contexts, contexts.trace.data and
+// span data with these before the event is sent (@sentry/core
+// utils/prepareEvent.js normalizeEvent). In utils-hoist/normalize.js visit(),
+// a container past the depth becomes the string "[Object]"/"[Array]" and
+// entries past the breadth are cut at "[MaxProperties ~]", so nothing beyond
+// these bounds is sent, raw or otherwise, and walking it would only cost
+// main-thread time. Strings are kept at ANY depth by visit(), so a string one
+// level past the last walked container is still scrubbed below.
+const NORMALIZE_DEPTH = 3;
+const NORMALIZE_MAX_BREADTH = 1000;
 
 function isPlainContainer(v: unknown): v is Record<string, unknown> | unknown[] {
   if (Array.isArray(v)) return true;
@@ -51,23 +64,63 @@ function isPlainContainer(v: unknown): v is Record<string, unknown> | unknown[] 
   return proto === Object.prototype || proto === null;
 }
 
-// Scrub every string inside arrays and plain objects, in place, down to
-// MAX_DEPTH levels. Console breadcrumbs keep their args in `data.arguments`
-// and CaptureConsole-style extras nest `{ args: [...] }` in an array, so one
-// level is not enough. The depth bound is also what makes a cycle safe: a
-// self-referencing object is walked at most MAX_DEPTH levels and then left.
-function scrubDeep(container: unknown, depth = 0): void {
-  if (depth >= MAX_DEPTH || !isPlainContainer(container)) return;
-  const obj = container as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
-    const v = obj[key];
-    if (typeof v === "string") {
-      const scrubbed = /query/i.test(key) ? scrubQueryString(v) : scrubUrlSecrets(v);
-      if (scrubbed !== v) obj[key] = scrubbed;
-    } else if (v && typeof v === "object") {
-      scrubDeep(v, depth + 1);
+// The plain shape Sentry's normalize gives an Error (convertToPlainObject):
+// name, message and stack, which are not enumerable, plus own properties.
+function errorToPlain(err: Error): Record<string, unknown> {
+  return { ...err, name: err.name, message: err.message, stack: err.stack };
+}
+
+/**
+ * Return `value` with every secret-bearing string scrubbed, COPY-ON-WRITE:
+ * a container is never written to. When something inside it changes, a
+ * scrubbed clone is returned instead, and an unchanged value comes back as
+ * the same reference. This matters because these objects are often still
+ * the app's: console breadcrumb `data.arguments` are the exact values passed
+ * to console.* (the handler runs BEFORE the real console call), consoleHistory
+ * entries are a live buffer, and a server request's headers are `req.headers`.
+ * `key` is the property name, so a bare query string (`code=X&y=1`, as OTel
+ * stores `url.query`) is matched without its leading `?`.
+ */
+function scrubValue(value: unknown, level = 0, key = ""): unknown {
+  if (typeof value === "string") {
+    return /query/i.test(key) ? scrubQueryString(value) : scrubUrlSecrets(value);
+  }
+  if (!value || typeof value !== "object" || level >= NORMALIZE_DEPTH) {
+    return value;
+  }
+  if (value instanceof Error) {
+    const plain = errorToPlain(value);
+    const scrubbed = scrubValue(plain, level, key);
+    return scrubbed === plain ? value : scrubbed;
+  }
+  if (!isPlainContainer(value)) {
+    // URL (and anything else Sentry serializes through toJSON to a string).
+    const toJSON = (value as { toJSON?: unknown }).toJSON;
+    if (typeof toJSON === "function") {
+      try {
+        const json = toJSON.call(value);
+        if (typeof json === "string") {
+          const scrubbed = scrubUrlSecrets(json);
+          return scrubbed === json ? value : scrubbed;
+        }
+      } catch {
+        // Sentry falls back to its own walk; so does the return below.
+      }
+    }
+    return value;
+  }
+
+  let clone: Record<string, unknown> | unknown[] | null = null;
+  const keys = Object.keys(value).slice(0, NORMALIZE_MAX_BREADTH);
+  for (const k of keys) {
+    const v = (value as Record<string, unknown>)[k];
+    const scrubbed = scrubValue(v, level + 1, k);
+    if (scrubbed !== v) {
+      clone ??= Array.isArray(value) ? value.slice() : { ...value };
+      (clone as Record<string, unknown>)[k] = scrubbed;
     }
   }
+  return clone ?? value;
 }
 
 interface ScrubbableBreadcrumb {
@@ -76,15 +129,18 @@ interface ScrubbableBreadcrumb {
 }
 
 /**
- * Scrub one breadcrumb in place: its message and every string in `data`
- * (`url` for fetch/xhr, `from`/`to` for navigation, `arguments` for console).
- * Returns the breadcrumb.
+ * Scrub one breadcrumb: its message and every string in `data` (`url` for
+ * fetch/xhr, `from`/`to` for navigation, `arguments` for console). Only the
+ * breadcrumb object itself, which Sentry owns, is assigned to. Returns it.
  */
 export function scrubBreadcrumb<T extends ScrubbableBreadcrumb>(crumb: T): T {
   if (typeof crumb.message === "string") {
     crumb.message = scrubUrlSecrets(crumb.message);
   }
-  scrubDeep(crumb.data);
+  if (crumb.data !== undefined) {
+    const data = scrubValue(crumb.data);
+    if (data !== crumb.data) crumb.data = data;
+  }
   return crumb;
 }
 
@@ -110,23 +166,59 @@ interface ScrubbableFrame {
   module?: string;
 }
 
+interface ScrubbableException {
+  value?: string;
+  stacktrace?: { frames?: ScrubbableFrame[] };
+}
+
 interface ScrubbableEvent {
   message?: unknown;
   transaction?: unknown;
   breadcrumbs?: ScrubbableBreadcrumb[];
   request?: { url?: string; query_string?: unknown; headers?: unknown };
-  exception?: { values?: { value?: string; stacktrace?: { frames?: ScrubbableFrame[] } }[] };
+  exception?: { values?: ScrubbableException[] };
   extra?: unknown;
   contexts?: unknown;
   tags?: unknown;
   spans?: { description?: string; data?: unknown }[];
 }
 
+function scrubFrame(f: ScrubbableFrame): ScrubbableFrame {
+  const next = { ...f };
+  let changed = false;
+  for (const k of ["filename", "abs_path", "module"] as const) {
+    const v = f[k];
+    if (typeof v === "string") {
+      const scrubbed = scrubUrlSecrets(v);
+      if (scrubbed !== v) {
+        next[k] = scrubbed;
+        changed = true;
+      }
+    }
+  }
+  return changed ? next : f;
+}
+
+function scrubException(ex: ScrubbableException): ScrubbableException {
+  const value = typeof ex.value === "string" ? scrubUrlSecrets(ex.value) : ex.value;
+  const frames = ex.stacktrace?.frames;
+  const nextFrames = frames?.map(scrubFrame);
+  const framesChanged = !!frames && nextFrames!.some((f, i) => f !== frames[i]);
+  if (value === ex.value && !framesChanged) return ex;
+  return {
+    ...ex,
+    value,
+    ...(framesChanged ? { stacktrace: { ...ex.stacktrace, frames: nextFrames } } : {})
+  };
+}
+
 /**
- * Scrub every place a URL can reach in a Sentry event, in place, and return it.
- * Never throws. A location that cannot be scrubbed is removed instead, and if
- * it cannot be removed either this returns `null`, so the caller drops the
- * event: a failure sends less, never the secret.
+ * Scrub every place a URL can reach in a Sentry event and return it. Only
+ * the event object itself (and the breadcrumb/span objects, which Sentry
+ * owns) is assigned to; everything below is replaced by scrubbed clones,
+ * never written into. Never throws. A location that cannot be scrubbed is
+ * removed instead, and if it cannot be removed either this returns `null`,
+ * so the caller drops the event: a failure sends less, never the secret.
  */
 export function scrubSentryEvent<T extends ScrubbableEvent>(event: T): T | null {
   const results = [
@@ -141,41 +233,44 @@ export function scrubSentryEvent<T extends ScrubbableEvent>(event: T): T | null 
     scrubOrRemove(event, "request", () => {
       const req = event.request;
       if (!req) return;
-      if (typeof req.url === "string") req.url = scrubUrlSecrets(req.url);
+      const next = { ...req };
+      if (typeof req.url === "string") next.url = scrubUrlSecrets(req.url);
       const qs = req.query_string;
       if (typeof qs === "string") {
         // Sentry stores the query WITHOUT its leading `?`.
-        req.query_string = scrubQueryString(qs);
+        next.query_string = scrubQueryString(qs);
       } else if (Array.isArray(qs)) {
         // [[name, value], ...]
-        req.query_string = qs.map((pair) =>
+        next.query_string = qs.map((pair) =>
           Array.isArray(pair) && SECRET_PARAM_NAME_RE.test(String(pair[0]))
             ? [pair[0], FILTERED]
             : pair
         );
       } else if (qs && typeof qs === "object") {
-        const rec = qs as Record<string, unknown>;
-        for (const name of Object.keys(rec)) {
-          if (SECRET_PARAM_NAME_RE.test(name)) rec[name] = FILTERED;
-        }
+        next.query_string = Object.fromEntries(
+          Object.entries(qs).map(([name, v]) => [
+            name,
+            SECRET_PARAM_NAME_RE.test(name) ? FILTERED : v
+          ])
+        );
       }
       // Referer carries the previous page URL, e.g. /auth?code=...
-      scrubDeep(req.headers);
+      next.headers = scrubValue(req.headers);
+      event.request = next;
     }),
 
     // Removing the exception would send a different event, so a failure here
     // is reported as unscrubbable and the event is dropped instead.
+    // A page-attributed frame (inline or injected script) carries the page
+    // URL, query included. Chunk `?dpl=` queries are not secrets and pass
+    // through, which the deploy-skew matcher relies on.
     (() => {
       try {
-        for (const ex of event.exception?.values ?? []) {
-          if (typeof ex.value === "string") ex.value = scrubUrlSecrets(ex.value);
-          // A page-attributed frame (inline or injected script) carries the
-          // page URL, query included. Chunk `?dpl=` queries are not secrets
-          // and pass through, which the deploy-skew matcher relies on.
-          for (const f of ex.stacktrace?.frames ?? []) {
-            if (typeof f.filename === "string") f.filename = scrubUrlSecrets(f.filename);
-            if (typeof f.abs_path === "string") f.abs_path = scrubUrlSecrets(f.abs_path);
-            if (typeof f.module === "string") f.module = scrubUrlSecrets(f.module);
+        const values = event.exception?.values;
+        if (values) {
+          const next = values.map(scrubException);
+          if (next.some((ex, i) => ex !== values[i])) {
+            event.exception = { ...event.exception, values: next };
           }
         }
         return true;
@@ -186,11 +281,24 @@ export function scrubSentryEvent<T extends ScrubbableEvent>(event: T): T | null 
 
     // `extra` is populated by the lazy-sentry early-error replay (earlySource,
     // earlyMessage); contexts and tags are covered for anything that copies a
-    // URL into them (the timeoutUrl tag is derived AFTER this scrub, and a
-    // transaction's root span data lives in contexts.trace.data).
-    scrubOrRemove(event, "extra", () => scrubDeep(event.extra)),
-    scrubOrRemove(event, "tags", () => scrubDeep(event.tags)),
-    scrubOrRemove(event, "contexts", () => scrubDeep(event.contexts)),
+    // URL into them (the timeoutUrl tag is derived AFTER this scrub).
+    scrubOrRemove(event, "extra", () => {
+      event.extra = scrubValue(event.extra);
+    }),
+    scrubOrRemove(event, "tags", () => {
+      event.tags = scrubValue(event.tags);
+    }),
+    scrubOrRemove(event, "contexts", () => {
+      let contexts = scrubValue(event.contexts) as Record<string, unknown> | undefined;
+      // Sentry normalizes a transaction's root span data from its OWN root
+      // (contexts.trace.data), so walk it with the full depth too.
+      const trace = contexts?.trace as { data?: unknown } | undefined;
+      if (trace && trace.data !== undefined) {
+        const data = scrubValue(trace.data);
+        if (data !== trace.data) contexts = { ...contexts, trace: { ...trace, data } };
+      }
+      event.contexts = contexts;
+    }),
 
     // Transactions only (server/edge beforeSendTransaction): the name can be
     // an unparameterized URL, and child spans carry `url.full`, `http.url`,
@@ -205,7 +313,10 @@ export function scrubSentryEvent<T extends ScrubbableEvent>(event: T): T | null 
         if (typeof span.description === "string") {
           span.description = scrubUrlSecrets(span.description);
         }
-        scrubDeep(span.data);
+        if (span.data !== undefined) {
+          const data = scrubValue(span.data);
+          if (data !== span.data) span.data = data;
+        }
       }
     })
   ];

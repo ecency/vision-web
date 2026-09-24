@@ -65,6 +65,10 @@ describe("scrubUrlSecrets", () => {
       "https://ecency.com/points/gift?payment_intent=pi_1&payment_intent_client_secret=[Filtered]&redirect_status=succeeded"
     );
     expect(scrubUrlSecrets("/x?csrf_token=C&page=2")).toBe("/x?csrf_token=[Filtered]&page=2");
+    // Pagination cursors are not credentials.
+    for (const name of ["page_token", "next_token", "continuation_token"]) {
+      expect(scrubUrlSecrets(`/list?${name}=CURSOR`)).toBe(`/list?${name}=CURSOR`);
+    }
   });
 
   it("leaves the /hs/@author/permlink tag route alone but redacts /hs/<token>", () => {
@@ -234,6 +238,7 @@ describe("beforeSend - secret-bearing URLs are redacted in every location (#1651
 
   it("stack frame filename, abs_path and module (page-attributed frames)", () => {
     const page = "app:///auth?code=C1";
+    const frame = { filename: page, abs_path: page, module: page };
     const out = beforeSend(
       baseEvent({
         exception: {
@@ -241,12 +246,14 @@ describe("beforeSend - secret-bearing URLs are redacted in every location (#1651
             {
               type: "Error",
               value: "x",
-              stacktrace: { frames: [{ filename: page, abs_path: page, module: page }] }
+              stacktrace: { frames: [frame] }
             }
           ]
         }
       })
     );
+    // Clones, not writes: the original frame object is left as it was.
+    expect(frame.filename).toBe(page);
     expect(out!.exception!.values![0].stacktrace!.frames![0]).toEqual({
       filename: "app:///auth?code=[Filtered]",
       abs_path: "app:///auth?code=[Filtered]",
@@ -264,7 +271,7 @@ describe("beforeSend - secret-bearing URLs are redacted in every location (#1651
           }
         ],
         extra: {
-          consoleHistory: [{ level: "error", args: ["failed", UPLOAD_URL], timestamp: 1 }]
+          consoleHistory: [{ level: "error", message: `failed ${UPLOAD_URL}`, timestamp: 1 }]
         }
       })
     );
@@ -273,20 +280,88 @@ describe("beforeSend - secret-bearing URLs are redacted in every location (#1651
       logger: "console"
     });
     expect(out!.extra).toEqual({
-      consoleHistory: [{ level: "error", args: ["failed", SCRUBBED], timestamp: 1 }]
+      consoleHistory: [{ level: "error", message: `failed ${SCRUBBED}`, timestamp: 1 }]
     });
   });
 
-  it("survives cycles and stops at the depth bound", () => {
+  it("is copy-on-write: app-owned objects are never mutated", () => {
+    // The exact object passed to console.error (the breadcrumb handler runs
+    // BEFORE the real console call), a live console-history buffer entry and a
+    // server request's live `req.headers`.
+    const consoleArg = { url: UPLOAD_URL, headers: { Referer: UPLOAD_URL } };
+    const historyEntry = { level: "error", message: UPLOAD_URL };
+    const reqHeaders = { Referer: "https://ecency.com/auth?code=C1" };
+    const out = beforeSend(
+      baseEvent({
+        breadcrumbs: [{ category: "console", data: { arguments: ["x", consoleArg] } }],
+        extra: { consoleHistory: [historyEntry] },
+        request: { url: "https://ecency.com/", headers: reqHeaders }
+      })
+    );
+    expect(consoleArg).toEqual({ url: UPLOAD_URL, headers: { Referer: UPLOAD_URL } });
+    expect(historyEntry).toEqual({ level: "error", message: UPLOAD_URL });
+    expect(reqHeaders).toEqual({ Referer: "https://ecency.com/auth?code=C1" });
+    expect(out!.breadcrumbs![0].data).toEqual({
+      // `headers` is a 4th container level: Sentry sends it as "[Object]".
+      arguments: ["x", { url: SCRUBBED, headers: consoleArg.headers }]
+    });
+    expect(out!.extra).toEqual({ consoleHistory: [{ level: "error", message: SCRUBBED }] });
+    expect(out!.request!.headers).toEqual({ Referer: "https://ecency.com/auth?code=[Filtered]" });
+  });
+
+  it("keeps an unchanged value as the same reference", () => {
+    const data = { url: "https://ecency.com/", nested: { a: "b" } };
+    const out = beforeSend(baseEvent({ breadcrumbs: [{ category: "fetch", data }] }));
+    expect(out!.breadcrumbs![0].data).toBe(data);
+  });
+
+  it("scrubs an Error's message and stack into a plain clone, leaving the Error alone", () => {
+    const err = new Error(`upload to ${UPLOAD_URL} failed`);
+    err.stack = `Error: upload to ${UPLOAD_URL} failed\n    at x (app:///p.js:1:1)`;
+    const crumb = scrubBreadcrumb({ category: "console", data: { arguments: [err] } });
+    const clone = (crumb.data as { arguments: Record<string, string>[] }).arguments[0];
+    expect(clone).not.toBe(err);
+    expect(clone.name).toBe("Error");
+    expect(clone.message).toBe(`upload to ${SCRUBBED} failed`);
+    expect(clone.stack).toContain(`upload to ${SCRUBBED} failed`);
+    expect(err.message).toBe(`upload to ${UPLOAD_URL} failed`);
+    // An Error with nothing to scrub is passed through for Sentry to normalize.
+    const plain = new Error("nothing here");
+    const kept = scrubBreadcrumb({ category: "console", data: { arguments: [plain] } });
+    expect((kept.data as { arguments: unknown[] }).arguments[0]).toBe(plain);
+  });
+
+  it("scrubs a URL instance (serialized by Sentry through toJSON)", () => {
+    const crumb = scrubBreadcrumb({
+      category: "console",
+      data: { arguments: [new URL(UPLOAD_URL)] }
+    });
+    expect((crumb.data as { arguments: unknown[] }).arguments[0]).toBe(SCRUBBED);
+  });
+
+  it("stops at Sentry's normalize bounds (depth 3, breadth 1000)", () => {
+    // Four container levels below `extra`: Sentry sends "[Object]" there, so
+    // it is left alone rather than walked.
+    const deep = { a: { b: { url: UPLOAD_URL } } };
+    const out = scrubSentryEvent({ extra: { deep, shallow: { url: UPLOAD_URL } } })!;
+    expect((out.extra as { deep: unknown }).deep).toBe(deep);
+    expect((out.extra as { shallow: { url: string } }).shallow.url).toBe(SCRUBBED);
+    // Entries past 1000 are cut by Sentry ("[MaxProperties ~]"), never sent.
+    const big = Array.from({ length: 1500 }, () => UPLOAD_URL);
+    const crumb = scrubBreadcrumb({ category: "console", data: { arguments: big } });
+    const args = (crumb.data as { arguments: string[] }).arguments;
+    expect(args[999]).toBe(SCRUBBED);
+    expect(args[1000]).toBe(UPLOAD_URL);
+    expect(big[0]).toBe(UPLOAD_URL);
+  });
+
+  it("survives cycles", () => {
     const cyclic: Record<string, unknown> = { url: UPLOAD_URL };
     cyclic.self = cyclic;
-    const deep = { a: { b: { c: { d: { e: { url: UPLOAD_URL } } } } } };
-    const out = scrubSentryEvent({ extra: { cyclic, deep } })!;
-    expect(cyclic.url).toBe(SCRUBBED);
-    // Six levels below `extra`: past the bound, left as is rather than walked forever.
-    expect(deep.a.b.c.d.e.url).toBe(UPLOAD_URL);
-    // Walked without overflowing the stack, so `extra` is kept, not removed.
-    expect(out.extra).toEqual({ cyclic, deep });
+    const out = scrubSentryEvent({ extra: { cyclic } })!;
+    const scrubbed = (out.extra as { cyclic: Record<string, unknown> }).cyclic;
+    expect(scrubbed.url).toBe(SCRUBBED);
+    expect(cyclic.url).toBe(UPLOAD_URL);
   });
 
   it("drops the event instead of throwing when a location can be neither scrubbed nor removed", () => {
@@ -298,6 +373,25 @@ describe("beforeSend - secret-bearing URLs are redacted in every location (#1651
       out = beforeSend(ev);
     }).not.toThrow();
     expect(out).toBeNull();
+  });
+
+  it("clones a frozen or read-only child instead of removing the location", () => {
+    const hostile = {} as Record<string, unknown>;
+    Object.defineProperty(hostile, "url", {
+      enumerable: true,
+      get: () => UPLOAD_URL,
+      set: () => {
+        throw new Error("read-only");
+      }
+    });
+    const out = beforeSend(
+      baseEvent({
+        breadcrumbs: [{ category: "fetch", data: hostile }],
+        request: Object.freeze({ url: "https://ecency.com/auth?code=C1" })
+      })
+    );
+    expect((out!.breadcrumbs![0].data as { url: string }).url).toBe(SCRUBBED);
+    expect(out!.request!.url).toBe("https://ecency.com/auth?code=[Filtered]");
   });
 
   it("leaves non-matching URLs untouched everywhere", () => {
@@ -313,19 +407,11 @@ describe("beforeSend - secret-bearing URLs are redacted in every location (#1651
     expect(out!.request!.url).toBe(url);
   });
 
-  it("never throws: an unscrubbable location is removed, not sent", () => {
-    const hostile = {} as Record<string, unknown>;
-    Object.defineProperty(hostile, "url", {
-      enumerable: true,
-      get: () => UPLOAD_URL,
-      set: () => {
-        throw new Error("frozen");
-      }
-    });
-    const ev = baseEvent({ breadcrumbs: [{ category: "fetch", data: hostile }] });
+  it("never throws: a crumb that cannot be written is removed, not sent", () => {
+    const crumb = Object.freeze({ category: "console", message: UPLOAD_URL });
     let out: Ev | null = null;
     expect(() => {
-      out = beforeSend(ev);
+      out = beforeSend(baseEvent({ breadcrumbs: [crumb] }));
     }).not.toThrow();
     expect(out!.breadcrumbs).toBeUndefined();
   });
@@ -349,7 +435,16 @@ describe("scrubSentryEvent on transactions (server/edge beforeSendTransaction)",
       type: "transaction",
       transaction: "GET /newsletter/confirm/N1",
       request: { url: "https://ecency.com/auth?code=C1", query_string: "code=C1" },
-      contexts: { trace: { data: { "http.url": "https://ecency.com/auth?code=C1" } } },
+      contexts: {
+        trace: {
+          data: {
+            "http.url": "https://ecency.com/auth?code=C1",
+            // Sentry normalizes trace.data from its own root, so this nested
+            // value is sent and must be walked too.
+            "http.request.header": { referer: "https://ecency.com/auth?code=C1" }
+          }
+        }
+      },
       spans: [
         {
           description: "GET https://hivesigner.com/api/oauth2/token?code=C1&client_secret=S1",
@@ -371,6 +466,11 @@ describe("scrubSentryEvent on transactions (server/edge beforeSendTransaction)",
     expect(tx.request!.query_string).toBe("code=[Filtered]");
     expect(
       (tx.contexts as { trace: { data: Record<string, string> } }).trace.data["http.url"]
+    ).toBe("https://ecency.com/auth?code=[Filtered]");
+    expect(
+      (tx.contexts as { trace: { data: Record<string, Record<string, string>> } }).trace.data[
+        "http.request.header"
+      ].referer
     ).toBe("https://ecency.com/auth?code=[Filtered]");
     expect(tx.spans![0].description).toBe(
       `GET https://hivesigner.com/api/oauth2/token?${filteredQs}`
