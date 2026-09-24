@@ -38,6 +38,11 @@ import {
 
 const TEMPLATE_SIMILARITY_THRESHOLD = 0.9;
 
+// The form a tag takes once this step has mounted. The draft snapshot goes
+// through it too, so a loaded tag it rewrites stays exempt at publish.
+const normalizeExistingTag = (tag: string) =>
+  sanitizeTagInput(tag).slice(0, SUBMIT_TAG_MAX_LENGTH).trim();
+
 interface Props {
   onClose: () => void;
   onSuccess: (
@@ -199,7 +204,9 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
       return;
     }
 
-    const tagWarning = validateTags(tags ?? [], { draftTags: loadedDraftTags });
+    const tagWarning = validateTags(tags ?? [], {
+      draftTags: loadedDraftTags?.map(normalizeExistingTag)
+    });
     if (tagWarning) {
       feedbackError(i18next.t(tagWarning));
       return;
@@ -283,7 +290,7 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
       .filter((tag) => !!tag && !getTagsWarning([tag]));
 
     const normalizedExistingTags = (tags ?? [])
-      .map((tag) => sanitizeTagInput(tag).slice(0, SUBMIT_TAG_MAX_LENGTH).trim())
+      .map(normalizeExistingTag)
       .filter((tag) => !!tag);
 
     const uniqueTagsSet = new Set([...normalizedExistingTags, ...computedTags]);

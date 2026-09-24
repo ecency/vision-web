@@ -194,6 +194,17 @@ describe("publish validation step tag check", () => {
     expect(publishApi.publish).toHaveBeenCalled();
   });
 
+  // The step rewrites loaded tags on mount (lowercase, charset, length), so the
+  // snapshot has to be compared in that form or the tag loses its exemption.
+  it("keeps a draft tag exempt after the step normalises it", async () => {
+    openWithTags(["travel", "Photo-"], ["travel", "Photo-"]);
+
+    await act(async () => fireEvent.click(screen.getByText("publish.publish-now")));
+
+    expect(feedbackError).not.toHaveBeenCalled();
+    expect(publishApi.publish).toHaveBeenCalled();
+  });
+
   it("drops the draft exemption when the composer is cleared", () => {
     const { state } = openWithTags(["travel"], ["3speak"]);
 
