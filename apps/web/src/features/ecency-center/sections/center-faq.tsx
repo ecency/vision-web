@@ -3,7 +3,7 @@ import { articleSvg } from "@/assets/img/svg";
 import { FormControl } from "@ui/input";
 import React, { useEffect, useState } from "react";
 import { faqKeysGeneral } from "@/consts";
-import data from "@/features/ecency-center/data/path.json";
+import { getFaqSuggestions } from "@/features/ecency-center/data/faq-suggestions";
 import useMount from "react-use/lib/useMount";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
@@ -43,12 +43,9 @@ export function CenterFaq() {
   useMount(() => {
     const faqKeys = [...faqKeysGeneral];
     setFaqKeys(faqKeys);
-    for (const p of data.faqPaths) {
-      if (pathname?.match(p.path)) {
-        setDefaultFaqKeys(p.suggestions);
-        setDatatoShow(p.suggestions);
-      }
-    }
+    const suggestions = getFaqSuggestions(pathname);
+    setDefaultFaqKeys(suggestions);
+    setDatatoShow(suggestions);
   });
 
   return (
