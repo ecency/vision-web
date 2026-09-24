@@ -1,7 +1,7 @@
 import { proxifyImageSrc } from './proxify-image-src'
 import { markdown2Html } from './markdown-2-html'
 import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeEntities, stripHtmlTags } from './helper'
-import { cacheGet, cacheSet } from './cache'
+import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 
 // No gif branch below, deliberately. Every proxify here used to ask for the
@@ -807,6 +807,30 @@ function firstMetaUrl(value: unknown): string | undefined {
   return undefined
 }
 
+// The memo key does not cover json_metadata, and a takedown can change only the
+// metadata (a body that already reads as the notice), so a hit also has to
+// match the two fields getImage reads. Parsed the way getImage parses it, so
+// the string and object forms of one metadata fingerprint alike. Fields that do
+// not serialise get a fresh object, which never matches, so that entry is
+// simply not served from memo.
+function metaFingerprint(jsonMetadata: unknown): unknown {
+  let meta: any
+  if (typeof jsonMetadata === 'object') {
+    meta = jsonMetadata
+  } else {
+    try {
+      meta = JSON.parse(jsonMetadata as string)
+    } catch {
+      meta = null
+    }
+  }
+  try {
+    return JSON.stringify([meta?.thumbnails, meta?.image])
+  } catch {
+    return {}
+  }
+}
+
 function proxifyFound(src: string, width: number, height: number, format: string): string {
   return proxifyImageSrc(decodeEntities(src), width, height, format)
 }
@@ -1021,13 +1045,14 @@ export function catchPostImage(
 
   // A null result is memoized too. Recomputing it is the expensive case: the
   // markdown tier ran, found nothing, and would run again on the next request.
-  const item = cacheGet<string | null | undefined>(key)
-  if (item !== undefined) {
+  const meta = metaFingerprint(obj.json_metadata)
+  const item = entryMemoGet<string | null>(key, obj.body, meta)
+  if (item !== MEMO_MISS) {
     return item
   }
 
   const res = getImage(obj, width, height, format, fastMode)
-  cacheSet(key, res)
+  entryMemoSet(key, obj.body, meta, res)
 
   return res
 }
