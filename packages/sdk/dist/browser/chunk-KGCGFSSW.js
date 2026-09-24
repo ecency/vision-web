@@ -1,0 +1,2 @@
+import {c}from'./chunk-PS3MSD25.js';var a="This post is not available due to a copyright/fraudulent claim.";function l(n){return Array.isArray(n)?n.map(t=>e(t)):e(n)}function e(n){if(!n)return n;let t=`@${n.author}/${n.permlink}`;return c.dmcaPatterns.includes(t)||c.dmcaPatternRegexes.some(i=>i.test(t))?{...n,body:a,title:"",json_metadata:{},original_entry:void 0}:n}export{a,l as b};//# sourceMappingURL=chunk-KGCGFSSW.js.map
+//# sourceMappingURL=chunk-KGCGFSSW.js.map

@@ -65,7 +65,7 @@ var INTERNAL_POST_TAG_REGEX = /^(.+?)\/(@[\w.\d-]+)\/(.*)$/i;
 var INTERNAL_POST_REGEX = /^\/(@[\w.\d-]+)\/(.*)$/i;
 var CUSTOM_COMMUNITY_REGEX = /^https?:\/\/(.*)\/c\/(hive-\d+)(.*)/i;
 var YOUTUBE_REGEX = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|shorts\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
-var YOUTUBE_EMBED_REGEX = /^(https?:)?\/\/www\.youtube\.com\/(embed|shorts)\/.*/i;
+var YOUTUBE_EMBED_REGEX = /^(https?:)?\/\/(?:www\.|m\.)?youtube\.com\/(embed|shorts)\/.*/i;
 var VIMEO_REGEX = /(https?:\/\/)?(www\.)?(?:vimeo)\.com.*(?:videos|video|channels|)\/([\d]+)/i;
 var VIMEO_EMBED_REGEX = /https:\/\/player\.vimeo\.com\/video\/([0-9]+)(?:$|[?#])/;
 var BITCHUTE_REGEX = /^(?:https?:\/\/)?(?:www\.)?bitchute\.com\/(?:video|embed)\/([a-z0-9]+)/i;
@@ -419,8 +419,31 @@ function createDoc(html) {
     return null;
   }
 }
+function hashBody(body) {
+  const s = typeof body === "string" ? body : "";
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `${s.length}.${(h >>> 0).toString(36)}`;
+}
+var bodyHashes = /* @__PURE__ */ new WeakMap();
+function entryBodyHash(entry) {
+  const body = entry.body;
+  if (typeof body !== "string" || typeof entry !== "object" || entry === null) {
+    return hashBody(body);
+  }
+  const stored = bodyHashes.get(entry);
+  if (stored && stored.body === body) {
+    return stored.hash;
+  }
+  const hash = hashBody(body);
+  bodyHashes.set(entry, { body, hash });
+  return hash;
+}
 function makeEntryCacheKey(entry) {
-  return `${entry.author}-${entry.permlink}-${entry.last_update}-${entry.updated}`;
+  return `${entry.author}-${entry.permlink}-${entry.last_update}-${entry.updated}-${entryBodyHash(entry)}`;
 }
 function stripHtmlTags(s) {
   const n = s.length;
@@ -511,6 +534,10 @@ function extractYtStartTime(url) {
   } catch (error) {
     return "";
   }
+}
+function youtubeVideoLinkClass(matchedUrl) {
+  const base = "markdown-video-link markdown-video-link-youtube";
+  return /youtube\.com\/shorts\//i.test(matchedUrl) ? `${base} markdown-video-link-youtube-portrait` : base;
 }
 function sanitizePermlink(permlink) {
   if (!permlink || typeof permlink !== "string") {
@@ -1313,7 +1340,8 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   }
   let match = href.match(YOUTUBE_REGEX);
   if (match && match[1] && el.textContent.trim() === href) {
-    el.setAttribute("class", "markdown-video-link markdown-video-link-youtube");
+    const videoClass = youtubeVideoLinkClass(match[0]);
+    el.setAttribute("class", videoClass);
     el.removeAttribute("href");
     const vid = match[1];
     const thumbnail = proxifyImageSrc(`https://img.youtube.com/vi/${vid.split("?")[0]}/hqdefault.jpg`, 0, 0, "match");
@@ -1338,7 +1366,7 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
       iframe2.setAttribute("allowfullscreen", "");
       wrapper.appendChild(iframe2);
       el.appendChild(wrapper);
-      el.setAttribute("class", "markdown-video-link markdown-video-link-youtube er-youtube");
+      el.setAttribute("class", `${videoClass} er-youtube`);
     } else {
       const thumbImg = el.ownerDocument.createElement("img");
       thumbImg.setAttribute("class", "no-replace video-thumbnail");
@@ -1610,8 +1638,20 @@ function iframe(el, parentDomain = "ecency.com", forApp = false, renderOptions) 
     el.parentNode.removeChild(el);
     return;
   }
-  if (src.match(YOUTUBE_EMBED_REGEX)) {
-    el.setAttribute("src", stripQueryString(src));
+  const ytMatch = src.match(YOUTUBE_EMBED_REGEX);
+  if (ytMatch) {
+    let stripped = stripQueryString(src);
+    if (!/^(https?:)?\/\/www\./i.test(stripped)) {
+      stripped = stripped.replace(/^(https?:)?\/\/(?:m\.)?youtube\.com/i, "https://www.youtube.com");
+    }
+    el.setAttribute("src", stripped);
+    if (ytMatch[2].toLowerCase() === "shorts") {
+      const shortId = stripped.match(/\/shorts\/([A-Za-z0-9_-]{11})\/?(?=[?#]|$)/i);
+      if (shortId) {
+        el.setAttribute("src", `https://www.youtube.com/embed/${shortId[1]}`);
+        el.setAttribute("class", "portrait-embed");
+      }
+    }
     return;
   }
   if (src.match(BITCHUTE_REGEX)) {
@@ -1935,7 +1975,7 @@ function text(node, forApp, renderOptions) {
       const startTime = extractYtStartTime(nodeValue);
       const container = node.ownerDocument.createElement("p");
       const anchor = node.ownerDocument.createElement("a");
-      anchor.setAttribute("class", "markdown-video-link markdown-video-link-youtube");
+      anchor.setAttribute("class", youtubeVideoLinkClass(e[0]));
       anchor.setAttribute("data-embed-src", embedSrc);
       anchor.setAttribute("data-youtube", vid);
       if (startTime) {
@@ -2171,11 +2211,16 @@ var cache = new LRUCache({ max: 500 });
 function setCacheSize(size) {
   cache = new LRUCache({ max: size });
 }
-function cacheGet(key) {
-  return cache.get(key);
+var MEMO_MISS = /* @__PURE__ */ Symbol("memo-miss");
+function entryMemoGet(key, body, meta) {
+  const slot = cache.get(key);
+  if (slot === void 0 || slot.body !== body || slot.meta !== meta) {
+    return MEMO_MISS;
+  }
+  return slot.value;
 }
-function cacheSet(key, value) {
-  cache.set(key, value);
+function entryMemoSet(key, body, meta, value) {
+  cache.set(key, { body, meta, value });
 }
 
 // src/markdown-2-html.ts
@@ -2200,8 +2245,8 @@ function markdown2Html(obj, forApp = true, _webp = false, parentDomain = "ecency
     return res2;
   }
   const key = `${makeEntryCacheKey(obj)}-md-${forApp ? "app" : "site"}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ""}-${seoContext.postPayout ?? ""}` : ""}${renderOptions?.embedVideosDirectly ? "-embed" : ""}${renderOptions?.inertAuthorAndTagChips ? "-inert" : ""}${renderOptions?.externalProfileBase ? "-ext" + renderOptions.externalProfileBase : ""}`;
-  const item = cacheGet(key);
-  if (item) {
+  const item = entryMemoGet(key, obj.body);
+  if (item !== MEMO_MISS) {
     return item;
   }
   const cleanBody = cleanReply(obj.body);
@@ -2211,7 +2256,7 @@ function markdown2Html(obj, forApp = true, _webp = false, parentDomain = "ecency
     performance.now() - t0,
     `author=@${obj.author} permlink=${obj.permlink} body_len=${obj.body?.length ?? 0}`
   );
-  cacheSet(key, res);
+  entryMemoSet(key, obj.body, void 0, res);
   return res;
 }
 
@@ -2719,6 +2764,23 @@ function firstMetaUrl(value) {
   }
   return void 0;
 }
+function metaFingerprint(jsonMetadata) {
+  let meta;
+  if (typeof jsonMetadata === "object") {
+    meta = jsonMetadata;
+  } else {
+    try {
+      meta = JSON.parse(jsonMetadata);
+    } catch {
+      meta = null;
+    }
+  }
+  try {
+    return JSON.stringify([meta?.thumbnails, meta?.image]);
+  } catch {
+    return {};
+  }
+}
 function proxifyFound(src, width, height, format) {
   return proxifyImageSrc(decodeEntities(src), width, height, format);
 }
@@ -2841,12 +2903,13 @@ function catchPostImage(obj, width = 0, height = 0, format = "match", options = 
     return null;
   }
   const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}${fastMode ? "-fast" : ""}`;
-  const item = cacheGet(key);
-  if (item !== void 0) {
+  const meta = metaFingerprint(obj.json_metadata);
+  const item = entryMemoGet(key, obj.body, meta);
+  if (item !== MEMO_MISS) {
     return item;
   }
   const res = getImage(obj, width, height, format, fastMode);
-  cacheSet(key, res);
+  entryMemoSet(key, obj.body, meta, res);
   return res;
 }
 var summaryRenderer = new Remarkable({
@@ -2931,12 +2994,12 @@ function getPostBodySummary(obj, length, platform) {
     return postBodySummary(obj, normalizedLength, normalizedPlatform);
   }
   const key = `${makeEntryCacheKey(obj)}-sum-${normalizedLength}-${normalizedPlatform}`;
-  const item = cacheGet(key);
-  if (item) {
+  const item = entryMemoGet(key, obj.body);
+  if (item !== MEMO_MISS) {
     return item;
   }
   const res = postBodySummary(obj.body, normalizedLength, normalizedPlatform);
-  cacheSet(key, res);
+  entryMemoSet(key, obj.body, void 0, res);
   return res;
 }
 
