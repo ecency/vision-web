@@ -10,6 +10,7 @@ import {
 import type {
   FetchQueryOptions,
   FetchInfiniteQueryOptions,
+  QueryClient,
   QueryKey
 } from "@tanstack/query-core";
 import { EcencyConfigManager } from "@/config";
@@ -81,9 +82,12 @@ function withSsrTimeout<T>(
  * (isHiveNotFoundError). Only Cache-Control changes; a page that answers
  * notFound() after a failed lookup still sends its 404.
  */
-function markIfPrefetchFailed(queryKey: QueryKey) {
+// Takes the client the prefetch ran on: outside a Flight request (route
+// handlers) React cache() does not memoise, so resolving it again would give
+// a fresh client that never saw the error.
+function markIfPrefetchFailed(qc: QueryClient, queryKey: QueryKey) {
   if (!isServer) return;
-  const state = getQueryClient().getQueryState(queryKey);
+  const state = qc.getQueryState(queryKey);
   if (state?.status === "error" && !isHiveNotFoundError(state.error)) {
     markSsrDegraded("prefetch-error");
   }
@@ -108,7 +112,7 @@ export async function prefetchQuery<
 >(options: FetchQueryOptions<T, Error, T, TKey>) {
   const qc = getQueryClient();
   await withSsrTimeout(qc.prefetchQuery(options), options.queryKey);
-  markIfPrefetchFailed(options.queryKey);
+  markIfPrefetchFailed(qc, options.queryKey);
   return qc.getQueryData<T>(options.queryKey);
 }
 
@@ -127,7 +131,7 @@ export async function prefetchInfiniteQuery<
 >(options: FetchInfiniteQueryOptions<TPage, Error, TPage, TKey, TCursor>) {
   const qc = getQueryClient();
   await withSsrTimeout(qc.prefetchInfiniteQuery(options), options.queryKey);
-  markIfPrefetchFailed(options.queryKey);
+  markIfPrefetchFailed(qc, options.queryKey);
   return qc.getQueryData<InfiniteData<TPage, TCursor>>(options.queryKey);
 }
 

@@ -68,8 +68,9 @@ function mark(reason) {
   if (!ctx) return;
   const why = String(reason || "degraded");
   if (ctx.res.headersSent) {
-    // Once per request: the head is gone and nothing can be changed.
-    if (!ctx.late) record("late", why, ctx.req);
+    // Once per request: the head is gone and nothing can be changed. A request
+    // marked before its head already went out uncacheable, so it is not late.
+    if (!ctx.reason && !ctx.late) record("late", why, ctx.req);
     ctx.late = true;
   } else if (!ctx.reason) {
     ctx.reason = why;

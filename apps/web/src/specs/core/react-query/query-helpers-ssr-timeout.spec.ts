@@ -72,6 +72,8 @@ describe("SSR prefetch timeout and failure", () => {
       prefetchQuery({ queryKey: ["account", "someone"], queryFn: vi.fn() })
     ).resolves.toBeUndefined();
     expect(client.getQueryState).toHaveBeenCalledWith(["account", "someone"]);
+    // The state is read from the client the prefetch ran on, not a second lookup.
+    expect(getQueryClient).toHaveBeenCalledTimes(1);
     expect(mark).toHaveBeenCalledTimes(1);
     expect(mark).toHaveBeenCalledWith("prefetch-error");
   });

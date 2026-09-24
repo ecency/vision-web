@@ -42,6 +42,7 @@ const CHILD_SERVER = `
     if (url.searchParams.get("status")) res.statusCode = Number(url.searchParams.get("status"));
     res.setHeader("Cache-Control", "public, max-age=0, s-maxage=300, stale-while-revalidate=3600");
     res.setHeader("x-cache-tier", "profile");
+    if (url.searchParams.get("premark")) globalThis.__ecencySsrDegraded.mark("prefetch-error");
     if (url.searchParams.get("early")) res.write("<html>");
     const markAt = url.searchParams.get("mark");
     const marked = markAt === null ? Promise.resolve() : new Promise((done) => {
@@ -149,6 +150,13 @@ describe("ssr-degraded preload", () => {
     expect(reply.body).toBe("<html>body");
     expect(reply.headers["cache-control"]).toContain("s-maxage=300");
     expect(await state(port)).toEqual({ sent: {}, late: { "prefetch-timeout": 1 }, abandoned: {} });
+  });
+
+  it("does not also count a response marked before its head as late", async () => {
+    const { port } = await boot();
+    const reply = await get(port, "/@someone/posts?premark=1&early=1&mark=20");
+    expect(reply.headers["cache-control"]).toBe("private, no-store");
+    expect(await state(port)).toEqual({ sent: { "prefetch-error": 1 }, late: {}, abandoned: {} });
   });
 
   it("marks a failed prefetch the same way and keeps the page's own status", async () => {
