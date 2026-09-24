@@ -143,6 +143,63 @@ describe("beforeSend - secret-bearing URLs are redacted in every location (#1651
     });
   });
 
+  it("request.data: a captured body as form string, JSON string or object", () => {
+    const form = scrubSentryEvent({
+      request: { data: "code=C1&client_secret=S1&grant_type=authorization_code" }
+    })!;
+    expect(form.request!.data).toBe(
+      "code=[Filtered]&client_secret=[Filtered]&grant_type=authorization_code"
+    );
+    const json = scrubSentryEvent({
+      request: { data: '{"code": "C\\"1", "username":"alice","refresh_token":"R1"}' }
+    })!;
+    expect(json.request!.data).toBe(
+      '{"code": "[Filtered]", "username":"alice","refresh_token":"[Filtered]"}'
+    );
+    const body = {
+      code: "C1",
+      username: "alice",
+      nested: { access_token: "A1" },
+      next: UPLOAD_URL
+    };
+    const obj = scrubSentryEvent({ request: { data: body } })!;
+    expect(obj.request!.data).toEqual({
+      code: "[Filtered]",
+      username: "alice",
+      nested: { access_token: "[Filtered]" },
+      next: SCRUBBED
+    });
+    // Copy-on-write: the parsed body the route still holds is untouched.
+    expect(body.code).toBe("C1");
+    expect(body.nested.access_token).toBe("A1");
+  });
+
+  it("request.data without secrets is left as is", () => {
+    const body = { username: "alice", page_token: "P" };
+    const out = scrubSentryEvent({ request: { data: body } })!;
+    expect(out.request!.data).toBe(body);
+    const str = scrubSentryEvent({ request: { data: '{"username":"alice"}' } })!;
+    expect(str.request!.data).toBe('{"username":"alice"}');
+  });
+
+  it("contexts.trace is walked from its own root (Sentry sends it raw) and flags too", () => {
+    const trace = {
+      trace_id: "t",
+      // d3 is past the normalize depth, but a raw trace is sent as is.
+      custom: { d1: { d2: `x ${UPLOAD_URL}`, d3: { d4: UPLOAD_URL } } }
+    };
+    const flags = { values: [{ flag: "f", result: UPLOAD_URL }] };
+    const out = scrubSentryEvent({ contexts: { trace, flags } })!;
+    const ctx = out.contexts as {
+      trace: { custom: { d1: { d2: string; d3: { d4: string } } } };
+      flags: { values: { result: string }[] };
+    };
+    expect(ctx.trace.custom.d1.d2).toBe(`x ${SCRUBBED}`);
+    expect(ctx.trace.custom.d1.d3.d4).toBe(SCRUBBED);
+    expect(ctx.flags.values[0].result).toBe(SCRUBBED);
+    expect(trace.custom.d1.d2).toBe(`x ${UPLOAD_URL}`);
+  });
+
   it("request.query_string in object and pair forms", () => {
     const obj = scrubSentryEvent({ request: { query_string: { code: "C1", x: "1" } } });
     expect(obj.request!.query_string).toEqual({ code: "[Filtered]", x: "1" });

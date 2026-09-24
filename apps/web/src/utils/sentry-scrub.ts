@@ -44,6 +44,17 @@ function scrubQueryString(value: string): string {
   return scrubUrlSecrets(`?${value}`).slice(1);
 }
 
+// A JSON member whose name is a secret parameter: `"code": "..."`.
+const SECRET_JSON_MEMBER_RE = new RegExp(
+  `("(?:${SECRET_PARAM_NAMES})"\\s*:\\s*)"(?:[^"\\\\]|\\\\.)*"`,
+  "gi"
+);
+
+// A request body captured as a string: form-encoded (`code=X&y=1`) or JSON.
+function scrubBody(value: string): string {
+  return scrubQueryString(value).replace(SECRET_JSON_MEMBER_RE, `$1"${FILTERED}"`);
+}
+
 // Sentry's own serialization limits (`normalizeDepth` 3 and
 // `normalizeMaxBreadth` 1000; none of our configs override them). Sentry
 // normalizes breadcrumb data, extra, contexts, contexts.trace.data and
@@ -56,6 +67,12 @@ function scrubQueryString(value: string): string {
 // level past the last walked container is still scrubbed below.
 const NORMALIZE_DEPTH = 3;
 const NORMALIZE_MAX_BREADTH = 1000;
+// Two contexts escape the bound above (same normalizeEvent): `contexts.trace`
+// is put back RAW after normalizing (only its `.data` is re-normalized), and
+// `contexts.flags` is normalized from its own root. The raw trace, like the
+// never-normalized `request`, is walked from its own root to this deeper
+// bound instead (still finite, so a cycle cannot recurse forever).
+const RAW_DEPTH = 10;
 
 function isPlainContainer(v: unknown): v is Record<string, unknown> | unknown[] {
   if (Array.isArray(v)) return true;
@@ -81,16 +98,30 @@ function errorToPlain(err: Error): Record<string, unknown> {
  * `key` is the property name, so a bare query string (`code=X&y=1`, as OTel
  * stores `url.query`) is matched without its leading `?`.
  */
-function scrubValue(value: unknown, level = 0, key = ""): unknown {
+interface ScrubOptions {
+  maxDepth: number;
+  // Also redact any string whose property NAME is a secret parameter
+  // (`{ code: "..." }`). Only for request bodies: elsewhere a `code` or `key`
+  // field is far more often an error code or an id than a credential.
+  secretKeys?: boolean;
+}
+
+const NORMALIZED: ScrubOptions = { maxDepth: NORMALIZE_DEPTH };
+// Sent RAW (no normalize bound), so walked further.
+const RAW: ScrubOptions = { maxDepth: RAW_DEPTH };
+const RAW_BODY: ScrubOptions = { maxDepth: RAW_DEPTH, secretKeys: true };
+
+function scrubValue(value: unknown, level = 0, key = "", opts = NORMALIZED): unknown {
   if (typeof value === "string") {
+    if (opts.secretKeys && SECRET_PARAM_NAME_RE.test(key)) return FILTERED;
     return /query/i.test(key) ? scrubQueryString(value) : scrubUrlSecrets(value);
   }
-  if (!value || typeof value !== "object" || level >= NORMALIZE_DEPTH) {
+  if (!value || typeof value !== "object" || level >= opts.maxDepth) {
     return value;
   }
   if (value instanceof Error) {
     const plain = errorToPlain(value);
-    const scrubbed = scrubValue(plain, level, key);
+    const scrubbed = scrubValue(plain, level, key, opts);
     return scrubbed === plain ? value : scrubbed;
   }
   if (!isPlainContainer(value)) {
@@ -114,7 +145,7 @@ function scrubValue(value: unknown, level = 0, key = ""): unknown {
   const keys = Object.keys(value).slice(0, NORMALIZE_MAX_BREADTH);
   for (const k of keys) {
     const v = (value as Record<string, unknown>)[k];
-    const scrubbed = scrubValue(v, level + 1, k);
+    const scrubbed = scrubValue(v, level + 1, k, opts);
     if (scrubbed !== v) {
       clone ??= Array.isArray(value) ? value.slice() : { ...value };
       (clone as Record<string, unknown>)[k] = scrubbed;
@@ -175,7 +206,7 @@ interface ScrubbableEvent {
   message?: unknown;
   transaction?: unknown;
   breadcrumbs?: ScrubbableBreadcrumb[];
-  request?: { url?: string; query_string?: unknown; headers?: unknown };
+  request?: { url?: string; query_string?: unknown; headers?: unknown; data?: unknown };
   exception?: { values?: ScrubbableException[] };
   extra?: unknown;
   contexts?: unknown;
@@ -255,7 +286,17 @@ export function scrubSentryEvent<T extends ScrubbableEvent>(event: T): T | null 
         );
       }
       // Referer carries the previous page URL, e.g. /auth?code=...
-      next.headers = scrubValue(req.headers);
+      next.headers = scrubValue(req.headers, 0, "", RAW);
+      // @sentry/node 8.55 captures incoming request bodies (non GET/HEAD, up to
+      // 1 MB) and Sentry never normalizes `request`, so an error in POST
+      // /api/auth-api/hs-token-refresh would ship the HiveSigner `code` in it.
+      // 8.55 has no per-route body opt-out (ignoreIncomingRequestBody is v9).
+      if (req.data !== undefined) {
+        next.data =
+          typeof req.data === "string"
+            ? scrubBody(req.data)
+            : scrubValue(req.data, 0, "", RAW_BODY);
+      }
       event.request = next;
     }),
 
@@ -290,12 +331,17 @@ export function scrubSentryEvent<T extends ScrubbableEvent>(event: T): T | null 
     }),
     scrubOrRemove(event, "contexts", () => {
       let contexts = scrubValue(event.contexts) as Record<string, unknown> | undefined;
-      // Sentry normalizes a transaction's root span data from its OWN root
-      // (contexts.trace.data), so walk it with the full depth too.
-      const trace = contexts?.trace as { data?: unknown } | undefined;
-      if (trace && trace.data !== undefined) {
-        const data = scrubValue(trace.data);
-        if (data !== trace.data) contexts = { ...contexts, trace: { ...trace, data } };
+      if (contexts) {
+        // See RAW_DEPTH: each walked from its own root.
+        const trace = scrubValue(contexts.trace, 0, "", RAW);
+        const flags = scrubValue(contexts.flags);
+        if (trace !== contexts.trace || flags !== contexts.flags) {
+          contexts = {
+            ...contexts,
+            ...(trace !== undefined ? { trace } : {}),
+            ...(flags !== undefined ? { flags } : {})
+          };
+        }
       }
       event.contexts = contexts;
     }),
