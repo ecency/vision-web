@@ -240,8 +240,28 @@ export function createDoc(html: string): Document | null {
   }
 }
 
+/**
+ * FNV-1a over the UTF-16 code units. Not cryptographic: it only has to tell two
+ * bodies of the same entry apart, and it is linear with no allocation, so it
+ * costs a small fraction of the markdown render a cache miss would run.
+ */
+function hashBody(body: unknown): string {
+  const s = typeof body === 'string' ? body : ''
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return `${s.length}.${(h >>> 0).toString(36)}`
+}
+
+// The body is part of the key because the same author/permlink/last_update can
+// reach the renderer with different bodies: a takedown replaces the body
+// (filterDmcaEntry) without touching last_update, so a post rendered before the
+// lists were in force, or from a surface that does not filter, kept serving its
+// original HTML, cover and summary to later filtered requests.
 export function makeEntryCacheKey(entry: any): string {
-  return `${entry.author}-${entry.permlink}-${entry.last_update}-${entry.updated}`
+  return `${entry.author}-${entry.permlink}-${entry.last_update}-${entry.updated}-${hashBody(entry.body)}`
 }
 
 /**
