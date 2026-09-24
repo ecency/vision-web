@@ -15,7 +15,7 @@ import type {
 import { EcencyConfigManager } from "@/config";
 
 // Hard ceiling on any single SSR prefetch. Must be under nginx's
-// proxy_read_timeout (typically 15s) so the render completes before
+// proxy_read_timeout for SSR (20s in infra/origin) so the render completes before
 // nginx closes the connection. When this fires, the prefetch is skipped
 // and client-side React Query will refetch on hydration.
 const SSR_PREFETCH_TIMEOUT_MS = 10_000;
