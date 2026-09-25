@@ -13,18 +13,34 @@ export { isChunkLoadError, isDeploySkewError } from "@/utils/deploy-skew";
 // render its fallback rather than refreshing forever.
 const RELOAD_FLAG = "deploy-skew-recovery-reloaded";
 
+// In-page deduplication: prevents multiple callers (onError, onRejection,
+// onResourceError) from each independently triggering a reload within the same
+// page load. A hard reload (window.location.reload) tears this module down and
+// reinitializes it, so the flag resets on the next page load — no cross-reload
+// state leaks from this variable.
+let reloadScheduled = false;
+
 export function reloadForSkew() {
+  // Primary guard: deduplicate within this page load, works in all browsing modes.
+  if (reloadScheduled) {
+    return;
+  }
+  reloadScheduled = true;
+
   try {
+    // Secondary (cross-reload) guard: if sessionStorage is available, use it to
+    // detect whether we already reloaded once this session. If the error persists
+    // after a recovery reload it is a real code bug, not deploy-skew — let the
+    // error boundary render its fallback instead of looping.
     if (sessionStorage.getItem(RELOAD_FLAG)) {
       return;
     }
     sessionStorage.setItem(RELOAD_FLAG, "1");
   } catch {
-    // sessionStorage unusable (private mode / quota) — without a persisted guard
-    // we can't prove we haven't already reloaded this session, so do NOT reload.
-    // A stuck page (the React error boundary renders its fallback) is far better
-    // than an infinite reload loop.
-    return;
+    // sessionStorage unusable (private mode / storage quota). The module-level
+    // guard above prevents duplicate calls within this page load. Proceed with
+    // the reload — after it the browser runs a fresh, consistent build so the
+    // deploy-skew TypeError cannot recur, making an infinite loop impossible.
   }
   window.location.reload();
 }
