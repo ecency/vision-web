@@ -11,7 +11,14 @@ import { isProMember } from "@/features/pro";
 import { getProMembersQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import i18next from "i18next";
-import { UilGift, UilGlobe, UilHeart, UilImages, UilStar } from "@tooni/iconscout-unicons-react";
+import {
+  UilBug,
+  UilGift,
+  UilGlobe,
+  UilHeart,
+  UilImages,
+  UilStar
+} from "@tooni/iconscout-unicons-react";
 import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -177,6 +184,24 @@ export function PerksPage() {
                   </div>
                 </div>
                 <UilGlobe className="absolute -bottom-5 -right-3 size-28 text-blue-dark-sky opacity-10 pointer-events-none" />
+              </PerksBasicCard>
+            </Link>
+          </div>
+        )}
+
+        {EcencyConfigManager.CONFIG.visionFeatures.raidstead.enabled && (
+          <div className="col-span-6 row-span-2 md:col-span-3">
+            <Link href="/raidstead">
+              <PerksBasicCard className="min-h-[13rem] cursor-pointer p-4">
+                <div className="relative z-10">
+                  <div className="md:text-lg font-bold text-blue-dark-sky">
+                    {i18next.t("raidstead.perk-card-title")}
+                  </div>
+                  <div className="text-sm md:text-base text-gray-600 dark:text-gray-400">
+                    {i18next.t("raidstead.perk-card-description")}
+                  </div>
+                </div>
+                <UilBug className="absolute -bottom-5 -right-3 size-28 text-blue-dark-sky opacity-10 pointer-events-none" />
               </PerksBasicCard>
             </Link>
           </div>

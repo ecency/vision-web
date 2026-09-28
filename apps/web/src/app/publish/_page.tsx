@@ -62,17 +62,18 @@ export default function Publish() {
   );
   const appliedCommunityRef = useRef<string | null>(null);
 
-  // A wave or deck thread that outgrew its character limit stages its content
-  // here and opens this page. setContent alone is not enough: the editor
+  // A wave or deck thread that outgrew its character limit, or a Raidstead
+  // raid report, stages its content here and opens this page. setContent alone is not enough: the editor
   // prefills itself from publish state only if it initialises after this runs,
   // so seed both and let whichever lands second win with the same value.
   usePublishHandoff(
     useCallback(
-      (body: string) => {
+      (body: string, title?: string) => {
         setContent(body);
         setEditorContent(body);
+        if (title) setTitle(title);
       },
-      [setContent, setEditorContent]
+      [setContent, setEditorContent, setTitle]
     )
   );
 

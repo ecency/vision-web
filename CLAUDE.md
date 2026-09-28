@@ -117,6 +117,7 @@ pnpm publish:ui
 - **packages/wallets** - Multi-chain wallet management (`@ecency/wallets`)
 - **packages/render-helper** - Markdown rendering utilities (`@ecency/render-helper`)
 - **packages/ui** - Shared UI component library (`@ecency/ui`)
+- **packages/raidstead** - Raidstead game (`@ecency/raidstead`, private, not published): the dot renderer and scene, art as shape data, and a typed games-api client. Consumed from source (`main` is `src/index.ts`, listed in `transpilePackages`), so it has no build step and no committed `dist`. The route is `apps/web/src/app/raidstead`.
 - **infra/origin** - The web origin nginx vhosts (`eu`/`us.ecency.com.conf`), tracked since
   2026-08-20. ⛔ **This repo is public**: structure is committed, thresholds and addresses are
   not — they live in host-only includes. Enforced by `scripts/origin-config-audit.mjs` in CI.

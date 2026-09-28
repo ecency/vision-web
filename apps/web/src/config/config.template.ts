@@ -43,6 +43,9 @@ const CONFIG = {
       decks: {
         enabled: true
       },
+      raidstead: {
+        enabled: true
+      },
       notifications: {
         enabled: true,
         push: {

@@ -41,6 +41,26 @@ describe("publish handoff", () => {
     expect(onReceive).toHaveBeenCalledWith("an overflowing wave");
   });
 
+  it("carries a title when one is staged (a Raidstead raid report)", () => {
+    const writer = renderHook(() => usePublishHandoffWriter());
+    act(() => writer.result.current("report body", "Week 1 raid report"));
+    expect(JSON.parse(localStorage.getItem(PUBLISH_HANDOFF_KEY)!)).toEqual({
+      body: "report body",
+      title: "Week 1 raid report"
+    });
+
+    const onReceive = vi.fn();
+    renderHook(() => usePublishHandoff(onReceive));
+    expect(onReceive).toHaveBeenCalledWith("report body", "Week 1 raid report");
+  });
+
+  it("ignores a title that is not text", () => {
+    localStorage.setItem(PUBLISH_HANDOFF_KEY, JSON.stringify({ body: "a body", title: { x: 1 } }));
+    const onReceive = vi.fn();
+    renderHook(() => usePublishHandoff(onReceive));
+    expect(onReceive).toHaveBeenCalledWith("a body");
+  });
+
   it("delivers once, so a later visit opens an empty composer", () => {
     localStorage.setItem(PUBLISH_HANDOFF_KEY, JSON.stringify({ body: "an overflowing wave" }));
 

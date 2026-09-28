@@ -222,7 +222,7 @@ const config = {
     : undefined,
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
-  transpilePackages: ["@ecency/sdk", "@ecency/wallets", "@ecency/render-helper"],
+  transpilePackages: ["@ecency/sdk", "@ecency/wallets", "@ecency/render-helper", "@ecency/raidstead"],
   experimental: {
     externalDir: true,
     optimizePackageImports: [

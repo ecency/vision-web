@@ -5,3 +5,9 @@ declare module "*.json?faq" {
   const value: unknown;
   export default value;
 }
+
+// `./locales/en-US.json?raidstead`: the Raidstead game's strings only.
+declare module "*.json?raidstead" {
+  const value: unknown;
+  export default value;
+}
