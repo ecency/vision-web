@@ -8,22 +8,38 @@ import { isChunkLoadError, isDeploySkewError } from "@/utils/deploy-skew";
 // React-free @/utils/deploy-skew so the Sentry client config can share them too.
 export { isChunkLoadError, isDeploySkewError } from "@/utils/deploy-skew";
 
-// Guards against reload loops: at most one recovery reload per tab session. If
-// the page still errors after the reload, we stop and let the error boundary
-// render its fallback rather than refreshing forever.
+// Guards against reload loops: storage remembers a reload for this tab, and a
+// URL marker does the same when storage is unavailable.
 const RELOAD_FLAG = "deploy-skew-recovery-reloaded";
+const RELOAD_PARAM = "_skew_reloaded";
+
+// Prevent repeated location.replace calls while a storage-free page unloads.
+// The URL marker below guards the next page load.
+let fallbackReloadScheduled = false;
 
 export function reloadForSkew() {
   try {
+    // If sessionStorage is available, use it to detect whether we already
+    // reloaded once this session. If the error persists
+    // after a recovery reload it is a real code bug, not deploy-skew — let the
+    // error boundary render its fallback instead of looping.
     if (sessionStorage.getItem(RELOAD_FLAG)) {
       return;
     }
     sessionStorage.setItem(RELOAD_FLAG, "1");
   } catch {
-    // sessionStorage unusable (private mode / quota) — without a persisted guard
-    // we can't prove we haven't already reloaded this session, so do NOT reload.
-    // A stuck page (the React error boundary renders its fallback) is far better
-    // than an infinite reload loop.
+    if (fallbackReloadScheduled) {
+      return;
+    }
+    // A module variable resets on reload, so use the URL as a cross-reload guard.
+    // Keep the existing query and fragment intact.
+    const url = new URL(window.location.href);
+    if (url.searchParams.has(RELOAD_PARAM)) {
+      return;
+    }
+    fallbackReloadScheduled = true;
+    url.searchParams.set(RELOAD_PARAM, "1");
+    window.location.replace(url.href);
     return;
   }
   window.location.reload();

@@ -164,6 +164,7 @@ describe("isDeploySkewError", () => {
 
 describe("ServiceWorkerRecovery", () => {
   let reloadMock: ReturnType<typeof vi.fn>;
+  let replaceMock: ReturnType<typeof vi.fn>;
   const realLocation = window.location;
   let Recovery: (typeof import("@/features/pwa-install/service-worker-recovery"))["ServiceWorkerRecovery"];
 
@@ -176,9 +177,10 @@ describe("ServiceWorkerRecovery", () => {
   beforeEach(async () => {
     sessionStorage.clear();
     reloadMock = vi.fn();
+    replaceMock = vi.fn();
     Object.defineProperty(window, "location", {
       configurable: true,
-      value: { ...realLocation, reload: reloadMock }
+      value: { ...realLocation, reload: reloadMock, replace: replaceMock }
     });
     // Re-import per test so the module-level reload guards (controllerReloadStarted)
     // reset and can't leak between tests.
@@ -345,14 +347,51 @@ describe("ServiceWorkerRecovery", () => {
     expect(reloadMock).toHaveBeenCalledTimes(1);
   });
 
-  it("does not reload when sessionStorage is unusable (no reload loop)", () => {
+  it("uses a URL guard when sessionStorage is unusable", () => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...realLocation,
+        href: `${realLocation.origin}/discover?ref=feed#comments`,
+        reload: reloadMock,
+        replace: replaceMock
+      }
+    });
     render(<Recovery />);
 
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("storage denied");
     });
     window.dispatchEvent(new ErrorEvent("error", { message: "ChunkLoadError: x" }));
+    window.dispatchEvent(new ErrorEvent("error", { message: "ChunkLoadError: x" }));
 
+    expect(reloadMock).not.toHaveBeenCalled();
+    expect(replaceMock).toHaveBeenCalledTimes(1);
+    const url = new URL(replaceMock.mock.calls[0][0]);
+    expect(url.searchParams.get("_skew_reloaded")).toBe("1");
+    expect(url.pathname).toBe("/discover");
+    expect(url.searchParams.get("ref")).toBe("feed");
+    expect(url.hash).toBe("#comments");
+  });
+
+  it("does not reload again when the URL already carries the storage fallback guard", () => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...realLocation,
+        href: `${realLocation.origin}/discover?ref=feed&_skew_reloaded=1#comments`,
+        reload: reloadMock,
+        replace: replaceMock
+      }
+    });
+    render(<Recovery />);
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage denied");
+    });
+
+    window.dispatchEvent(new ErrorEvent("error", { message: "ChunkLoadError: x" }));
+
+    expect(replaceMock).not.toHaveBeenCalled();
     expect(reloadMock).not.toHaveBeenCalled();
   });
 
