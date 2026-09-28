@@ -73,16 +73,16 @@ function signer(
   };
 }
 
-/// Signs in to the game as `username` and stores the session.
+/// Signs in to the game as `username`. The caller stores the session, and
+/// only if the page still wants it: the Ecency user may have changed while
+/// the wallet was asking.
 export async function signIn(
   username: string,
   kind: Exclude<SignerKind, null>
 ): Promise<RaidsteadSession> {
   const proof = await makeProof(username, signer(kind, username));
   const s = await raidsteadApi.session(proof);
-  const session = { account: s.account, token: s.token, expiresAt: s.expiresAt };
-  saveSession(session);
-  return session;
+  return { account: s.account, token: s.token, expiresAt: s.expiresAt };
 }
 
 export async function signOut() {

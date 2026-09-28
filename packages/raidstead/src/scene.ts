@@ -104,7 +104,9 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     phase: rnd() * 6.283, blink: 1, blinkAt: 1 + rnd() * 3, act: null, walk: 0.5, look: [0, 0], morph: 0, ...extra,
   });
   function setModel(inst: Inst, s: number, first: boolean) {
-    const S = s < 0.6 ? 2.7 : 3.3; // target dot spacing on screen, in CSS px; small sprites get finer dots
+    // target dot spacing on screen, in CSS px; small sprites get finer dots,
+    // and the Canvas 2D fallback (one drawImage per dot) gets coarser ones
+    const S = (s < 0.6 ? 2.7 : 3.3) * (which === "2d" ? 1.5 : 1);
     const m = getModel(inst.kind, S / s);
     inst.s = s;
     if (inst.model === m) return;
@@ -309,6 +311,7 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   let view: View = "raid", ts = 0.5, townX0 = 0, townY0 = 0, camX = 0, camV = 0, camMax = 0;
   const walkers = FOLK.map((k, i) => ({ k, x: 360 + i * 190, dir: i % 2 ? -1 : 1, speed: 34 + i * 5, until: 2 + i, walking: true }));
   let world: SceneWorld | null = null, first = true;
+  let gnatShots = 0; // shots at gnats still in the air
 
   const inEllipses = (list: Ellipse[] | undefined, lx: number, ly: number) => (list ?? []).some(([cx, cy, rx, ry]) => ((lx - cx) / rx) ** 2 + ((ly - cy) / ry) ** 2 <= 1);
 
@@ -369,11 +372,19 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   const aliveGnats = () => gnats.filter(shown);
   function syncGnats(n: number) {
     const live = aliveGnats();
-    if (live.length > n) { live.slice(n).forEach((g) => dissolve(g, 0)); return; }
+    if (live.length > n) {
+      // the server counted a hit whose shot is still flying: that gnat goes when it lands
+      const extra = Math.max(0, live.length - n - gnatShots);
+      live.slice(live.length - extra).forEach((g) => dissolve(g, 0));
+      return;
+    }
     if (live.length === n) return;
-    for (const g of live) dissolve(g, 0);
-    gnats = gnats.filter((g) => g.state !== "gone");
-    for (let i = 0; i < n; i++) { const g = makeInst("gnat", { ang: i / n * 6.283 }); setModel(g, gnatS, true); orbit(g); assemble(g, i * 0.12); gnats.push(g); }
+    if (live.length === 0) {
+      // a new shield: spread evenly around the boss
+      for (let i = 0; i < n; i++) { const g = makeInst("gnat", { ang: i / n * 6.283 }); setModel(g, gnatS, true); orbit(g); assemble(g, i * 0.12); gnats.push(g); }
+      return;
+    }
+    for (let i = live.length; i < n; i++) { const g = makeInst("gnat", { ang: rnd() * 6.283 }); setModel(g, gnatS, true); orbit(g); assemble(g, 0); gnats.push(g); }
   }
   function aimPoint(side: 0 | 1): Pt {
     const aims = SPECIES[boss.kind].aim ?? [], [cx, cy, rx, ry] = aims[Math.min(side, aims.length - 1)] ?? [200, 170, 40, 40];
@@ -431,6 +442,7 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   function attack(type: AttackType, aimAt: "boss" | "gnat" | "wasp", side: 0 | 1 = 0): Shot {
     const hero = folk[ATTACK[type].hero];
     const flight: Flight = { from: [0, 0], to: [0, 0], t0: 0, dur: 0.42, ink: ATTACK[type].ink, target: aimAt, side, impact: null, landed: false };
+    if (aimAt === "gnat") gnatShots++;
     hero.act = {
       type: "attack", t0: t, onFire: () => {
         const armR = parts(hero).findIndex((p) => p.group === "armR");
@@ -451,12 +463,14 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   function land(f: Flight) {
     const impact = f.impact;
     if (!impact) return; // still waiting for the server; lands when it answers
+    if (f.target === "gnat") gnatShots = Math.max(0, gnatShots - 1);
     const [px, py] = f.to;
     switch (impact.kind) {
       case "gnat": {
         burst(px, py, f.ink, false);
         const g = aliveGnats().sort((a, b) => Math.hypot(a.ox - px, a.oy - py) - Math.hypot(b.ox - px, b.oy - py))[0];
-        if (g) { impulse(g, px, py, 60 * g.s, 5); }
+        // the hit gnat goes now; the next sync removes a second one a Shieldbreaker cleared
+        if (g) { impulse(g, px, py, 60 * g.s, 5); dissolve(g, 0.05); }
         break;
       }
       case "wasp":
@@ -849,7 +863,11 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   raf = requestAnimationFrame(frame);
 
   return {
-    setSlot(rect) { slot = rect; layout(); },
+    setSlot(rect) {
+      if (rect.left === slot.left && rect.top === slot.top && rect.width === slot.width && rect.height === slot.height) return;
+      slot = rect;
+      layout();
+    },
     sync,
     attack,
     cheer,

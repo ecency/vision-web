@@ -27,9 +27,13 @@ export function Sheet({
   label: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // set while we close the dialog ourselves (on unmount), so that close is
+  // not mistaken for the browser closing it
+  const unmounting = useRef(false);
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
+    unmounting.current = false;
     if (!d.open) {
       try {
         d.showModal();
@@ -38,7 +42,9 @@ export function Sheet({
       }
     }
     return () => {
-      if (d.open) d.close();
+      unmounting.current = true;
+      // a browser without <dialog> support has no close(): drop the attribute
+      if (d.open) typeof d.close === "function" ? d.close() : d.removeAttribute("open");
     };
   }, []);
   return (
@@ -49,6 +55,20 @@ export function Sheet({
       onCancel={(e) => {
         e.preventDefault();
         if (closable) onClose();
+      }}
+      // The browser may close a dialog on its own (repeated Escape): keep the
+      // page's state in step, and put a sheet that must stay back up.
+      onClose={() => {
+        // the close event is queued: by the time it runs the sheet may be
+        // unmounting, or open again (an effect run twice closes and reopens)
+        if (unmounting.current || ref.current?.open) return;
+        if (closable) onClose();
+        else
+          try {
+            ref.current?.showModal();
+          } catch {
+            /* already open */
+          }
       }}
     >
       <div className="rs-sheet">

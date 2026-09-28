@@ -26,9 +26,10 @@ function Loading() {
 // Its strings load with it (they are split out of the eager locale bundle).
 const RaidsteadGame = dynamic(
   () =>
-    Promise.all([import("@/app/raidstead/_components/raidstead-game"), ensureRaidsteadLoaded()]).then(
-      ([m]) => ({ default: m.RaidsteadGame })
-    ),
+    Promise.all([
+      import("@/app/raidstead/_components/raidstead-game"),
+      ensureRaidsteadLoaded()
+    ]).then(([m]) => ({ default: m.RaidsteadGame })),
   { ssr: false, loading: Loading }
 );
 
