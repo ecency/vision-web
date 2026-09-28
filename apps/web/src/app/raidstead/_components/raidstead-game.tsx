@@ -185,8 +185,8 @@ export function RaidsteadGame() {
       // someone else than the Ecency user on this page is not used
       const loggedOut = !!prev && !username;
       if (session && (loggedOut || (username && session.account !== username))) {
-        // signOut reads the token before clearSession removes it
-        if (loggedOut) raidsteadApi.signOut().catch(() => undefined);
+        // revoke it on games-api too (signOut reads the token before clearSession removes it)
+        raidsteadApi.signOut().catch(() => undefined);
         clearSession();
         session = null;
         setData(null);
@@ -466,6 +466,7 @@ export function RaidsteadGame() {
       <SignInSheet
         username={username}
         canSign={!!username && signerFor(username) !== null}
+        silent={!!username && signerFor(username) === "key"}
         hasWallet={hasAnyHiveExtension()}
         signing={signing}
         onSign={onSign}

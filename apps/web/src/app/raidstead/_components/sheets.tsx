@@ -86,6 +86,8 @@ export function Sheet({
 export function SignInSheet(props: {
   username: string | null;
   canSign: boolean;
+  /// signs with the stored posting key, no wallet prompt
+  silent?: boolean;
   hasWallet: boolean;
   signing: boolean;
   onSign: (account: string) => void;
@@ -109,7 +111,7 @@ export function SignInSheet(props: {
               {props.signing ? t("signin.signing") : t("signin.play-as", { name: props.username })}
             </button>
           </div>
-          <p className="rs-muted">{t("signin.extension-note")}</p>
+          {!props.silent && <p className="rs-muted">{t("signin.extension-note")}</p>}
         </>
       ) : props.hasWallet ? (
         <form

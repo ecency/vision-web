@@ -403,7 +403,11 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     cheer();
   }
   function cheer(who?: FolkClass) {
-    for (const k of who ? [who] : FOLK) folk[k].act = { type: "cheer", t0: t + (who ? 0 : FOLK.indexOf(k) * 0.12 + rnd() * 0.2), dur: who ? 1.2 : 2.2 };
+    for (const k of who ? [who] : FOLK) {
+      // never cut into an attack that has not thrown yet: its shot would be lost
+      if (folk[k].act?.type === "attack" && !folk[k].act!.fired) continue;
+      folk[k].act = { type: "cheer", t0: t + (who ? 0 : FOLK.indexOf(k) * 0.12 + rnd() * 0.2), dur: who ? 1.2 : 2.2 };
+    }
   }
 
   // ---------- applying the server's world ----------

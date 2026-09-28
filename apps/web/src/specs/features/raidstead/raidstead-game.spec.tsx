@@ -171,5 +171,13 @@ describe("Raidstead page", () => {
     });
     await waitFor(() => expect(api.rally).toHaveBeenCalledTimes(3));
     expect(api.rally.mock.calls[2][0]).not.toBe(api.rally.mock.calls[1][0]);
+    // an answer (here a refusal) drops the key: the next try is a new spend
+    api.rally.mockRejectedValueOnce({ status: 409, code: "rallied", message: "x" });
+    await waitFor(() => expect((rally as HTMLButtonElement).disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(rally);
+    });
+    await waitFor(() => expect(api.rally).toHaveBeenCalledTimes(4));
+    expect(api.rally.mock.calls[3][0]).not.toBe(api.rally.mock.calls[2][0]);
   });
 });
