@@ -8,28 +8,19 @@ import { isChunkLoadError, isDeploySkewError } from "@/utils/deploy-skew";
 // React-free @/utils/deploy-skew so the Sentry client config can share them too.
 export { isChunkLoadError, isDeploySkewError } from "@/utils/deploy-skew";
 
-// Guards against reload loops: at most one recovery reload per tab session. If
-// the page still errors after the reload, we stop and let the error boundary
-// render its fallback rather than refreshing forever.
+// Guards against reload loops: storage remembers a reload for this tab, and a
+// URL marker does the same when storage is unavailable.
 const RELOAD_FLAG = "deploy-skew-recovery-reloaded";
+const RELOAD_PARAM = "_skew_reloaded";
 
-// In-page deduplication: prevents multiple callers (onError, onRejection,
-// onResourceError) from each independently triggering a reload within the same
-// page load. A hard reload (window.location.reload) tears this module down and
-// reinitializes it, so the flag resets on the next page load — no cross-reload
-// state leaks from this variable.
-let reloadScheduled = false;
+// Prevent repeated location.replace calls while a storage-free page unloads.
+// The URL marker below guards the next page load.
+let fallbackReloadScheduled = false;
 
 export function reloadForSkew() {
-  // Primary guard: deduplicate within this page load, works in all browsing modes.
-  if (reloadScheduled) {
-    return;
-  }
-  reloadScheduled = true;
-
   try {
-    // Secondary (cross-reload) guard: if sessionStorage is available, use it to
-    // detect whether we already reloaded once this session. If the error persists
+    // If sessionStorage is available, use it to detect whether we already
+    // reloaded once this session. If the error persists
     // after a recovery reload it is a real code bug, not deploy-skew — let the
     // error boundary render its fallback instead of looping.
     if (sessionStorage.getItem(RELOAD_FLAG)) {
@@ -37,10 +28,19 @@ export function reloadForSkew() {
     }
     sessionStorage.setItem(RELOAD_FLAG, "1");
   } catch {
-    // sessionStorage unusable (private mode / storage quota). The module-level
-    // guard above prevents duplicate calls within this page load. Proceed with
-    // the reload — after it the browser runs a fresh, consistent build so the
-    // deploy-skew TypeError cannot recur, making an infinite loop impossible.
+    if (fallbackReloadScheduled) {
+      return;
+    }
+    // A module variable resets on reload, so use the URL as a cross-reload guard.
+    // Keep the existing query and fragment intact.
+    const url = new URL(window.location.href);
+    if (url.searchParams.has(RELOAD_PARAM)) {
+      return;
+    }
+    fallbackReloadScheduled = true;
+    url.searchParams.set(RELOAD_PARAM, "1");
+    window.location.replace(url.href);
+    return;
   }
   window.location.reload();
 }

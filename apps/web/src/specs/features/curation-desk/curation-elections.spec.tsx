@@ -405,7 +405,7 @@ describe("curation elections", () => {
             added_at: iso(-86_400_000),
             removed_at: null,
             note: "guest curator 2026-09",
-            term_ends: iso(20 * 86_400_000)
+            term_ends: iso(20 * 86_400_000, Date.now())
           },
           {
             username: "boss",
