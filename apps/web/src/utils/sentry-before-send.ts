@@ -334,7 +334,7 @@ export function beforeSend(event: SentryErrorEvent): SentryErrorEvent | null {
   // and blind that spike. Replayed early captures additionally carry the
   // failing script URL in extra.earlySource (lazy-sentry.ts) for attribution.
   const isScriptParseGrammar =
-    /Unexpected (?:end of (?:input|script)|token|identifier|string|number|keyword|private name)|Invalid or unexpected token|Cannot parse (?:class method|function)|missing .+ (?:after|before)|expected expression|unterminated (?:string|regexp)/i.test(
+    /Unexpected (?:end of (?:input|script)|token|identifier|string|number|keyword|private name)|Invalid (?:or unexpected token|character)|Cannot parse (?:class method|function)|missing .+ (?:after|before)|expected expression|unterminated (?:string|regexp)/i.test(
       message
     );
   const hasNoRealFrames =
