@@ -17,13 +17,21 @@ import { sleep } from './helpers/sleep'
 
 const chainId = hexToBytes(config.chain_id)
 
+/** hived rejects a signed transaction larger than `maximum_block_size - 256` (database.cpp). */
+const BLOCK_SIZE_RESERVE = 256
+
 /**
- * Largest signed transaction, in serialized bytes, that hived accepts. hived
- * checks it against `maximum_block_size - 256`; maximum_block_size is voted by
- * witnesses and has been 65536 for years. A change in that vote needs this
- * constant updated.
+ * Consensus bounds on the witness-voted maximum_block_size
+ * (HIVE_MIN_BLOCK_SIZE_LIMIT and HIVE_MAX_BLOCK_SIZE in hived's config.hpp).
  */
-export const MAX_TRANSACTION_SIZE = 65536 - 256
+const MIN_BLOCK_SIZE_LIMIT = 64 * 1024
+const MAX_BLOCK_SIZE = 2 * 1024 * 1024
+
+/**
+ * Size every transaction may have whatever witnesses vote. Only a larger one
+ * needs the live maximum_block_size to be judged.
+ */
+export const MIN_TRANSACTION_SIZE_LIMIT = MIN_BLOCK_SIZE_LIMIT - BLOCK_SIZE_RESERVE
 
 /** Serialized bytes one signature adds (compact secp256k1 signature). */
 const SIGNATURE_SIZE = 65
@@ -32,11 +40,11 @@ const SIGNATURE_SIZE = 65
 export class TransactionTooLargeError extends Error {
   size: number
   limit: number
-  constructor(size: number) {
-    super(`Transaction too large: ${size} bytes. Hive allows up to ${MAX_TRANSACTION_SIZE} bytes.`)
+  constructor(size: number, limit: number) {
+    super(`Transaction too large: ${size} bytes. Hive allows up to ${limit} bytes.`)
     this.name = 'TransactionTooLargeError'
     this.size = size
-    this.limit = MAX_TRANSACTION_SIZE
+    this.limit = limit
   }
 }
 
@@ -53,6 +61,14 @@ export class Transaction {
   transaction?: TransactionType
 
   expiration: number = 60_000
+
+  /**
+   * The chain's witness-voted maximum_block_size, which sets the largest
+   * transaction hived accepts. Recorded from the dynamic global properties
+   * fetched when the transaction is created; set it yourself for a
+   * transaction built elsewhere, or only the protocol ceiling is enforced.
+   */
+  maximumBlockSize?: number
 
   private txId?: string
 
@@ -201,7 +217,7 @@ export class Transaction {
   /**
    * Serialized size of the transaction once it carries its current signatures
    * plus `extraSignatures` more. This is the size hived checks against
-   * MAX_TRANSACTION_SIZE.
+   * `maximum_block_size - 256`.
    */
   size(extraSignatures = 0): number {
     const signatures = (this.transaction?.signatures.length ?? 0) + extraSignatures
@@ -211,13 +227,16 @@ export class Transaction {
 
   /**
    * Throws TransactionTooLargeError when the transaction, signed with
-   * `extraSignatures` more signatures, would exceed MAX_TRANSACTION_SIZE.
-   * Such a transaction is rejected by every node, so it must never be signed.
+   * `extraSignatures` more signatures, would exceed what hived accepts under
+   * `maximumBlockSize`, or under the largest block size the protocol allows
+   * when it is unknown. Such a transaction is rejected by every node, so it
+   * must never be signed.
    */
   assertSize(extraSignatures = 0): void {
     const size = this.size(extraSignatures)
-    if (size > MAX_TRANSACTION_SIZE) {
-      throw new TransactionTooLargeError(size)
+    const limit = (this.maximumBlockSize ?? MAX_BLOCK_SIZE) - BLOCK_SIZE_RESERVE
+    if (size > limit) {
+      throw new TransactionTooLargeError(size, limit)
     }
   }
 
@@ -279,6 +298,7 @@ export class Transaction {
     const bytes = hexToBytes(props.head_block_id)
     const refBlockPrefix = Number(new Uint32Array(bytes.buffer, bytes.byteOffset + 4, 1)[0])
     const expirationIso = new Date(Date.now() + expiration).toISOString().slice(0, -5)
+    this.maximumBlockSize = props.maximum_block_size
     this.transaction = {
       expiration: expirationIso,
       extensions: [],

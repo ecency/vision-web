@@ -1,5 +1,12 @@
-import { describe, it, expect } from "vitest";
-import { Transaction, TransactionTooLargeError, MAX_TRANSACTION_SIZE } from "./Transaction";
+import { describe, it, expect, vi } from "vitest";
+
+const callRPC = vi.hoisted(() => vi.fn());
+vi.mock("./helpers/call", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./helpers/call")>()),
+  callRPC,
+}));
+
+import { Transaction, TransactionTooLargeError } from "./Transaction";
 import { PrivateKey } from "./helpers/PrivateKey";
 
 // Minimal serializable transaction, as produced externally (e.g. by hive-uri's
@@ -37,27 +44,28 @@ describe("Transaction constructor – signatures normalization", () => {
 
 describe("Transaction size limit", () => {
   const key = PrivateKey.fromSeed("size-limit-spec");
-  const commentTx = (bodyLength: number) =>
-    new Transaction({
-      transaction: {
-        ...baseTx,
-        signatures: [],
-        operations: [
-          [
-            "comment",
-            {
-              parent_author: "",
-              parent_permlink: "test",
-              author: "alice",
-              permlink: "a-post",
-              title: "t",
-              body: "x".repeat(bodyLength),
-              json_metadata: "{}",
-            },
-          ],
-        ],
-      },
+  const comment = (bodyLength: number) => [
+    "comment",
+    {
+      parent_author: "",
+      parent_permlink: "test",
+      author: "alice",
+      permlink: "a-post",
+      title: "t",
+      body: "x".repeat(bodyLength),
+      json_metadata: "{}",
+    },
+  ];
+  const commentTx = (bodyLength: number, maximumBlockSize: number | null = 65536) => {
+    const t = new Transaction({
+      transaction: { ...baseTx, signatures: [], operations: [comment(bodyLength)] },
     });
+    t.maximumBlockSize = maximumBlockSize ?? undefined;
+    return t;
+  };
+  // Body length that makes the unsigned transaction exactly `size` bytes; body
+  // lengths here share one 3-byte varint range, so each char adds one byte.
+  const bodyFor = (size: number) => 60_000 + (size - commentTx(60_000).size());
 
   it("counts each signature and the signature count", () => {
     const t = commentTx(10);
@@ -67,23 +75,43 @@ describe("Transaction size limit", () => {
     expect(t.size()).toBe(unsigned + 65);
   });
 
-  it("signs a transaction that fits", () => {
-    const t = commentTx(60_000);
+  it("signs a transaction at exactly maximum_block_size - 256", () => {
+    const t = commentTx(bodyFor(65536 - 256 - 65));
+    expect(t.size(1)).toBe(65280);
     expect(() => t.sign(key)).not.toThrow();
-    expect(t.size()).toBeLessThanOrEqual(MAX_TRANSACTION_SIZE);
   });
 
-  it("refuses to sign a transaction over the limit and adds no signature", () => {
-    const t = commentTx(MAX_TRANSACTION_SIZE);
+  it("refuses one byte over and adds no signature", () => {
+    const t = commentTx(bodyFor(65536 - 256 - 65 + 1));
     expect(() => t.sign(key)).toThrow(TransactionTooLargeError);
     expect(t.transaction?.signatures).toEqual([]);
   });
 
-  it("refuses when only the signature pushes it over the limit", () => {
-    const base = commentTx(60_000).size();
-    // Body length stays in the same 3-byte varint range, so each extra char adds one byte.
-    const t = commentTx(60_000 + (MAX_TRANSACTION_SIZE - base) - 1);
-    expect(t.size()).toBe(MAX_TRANSACTION_SIZE - 1);
+  it("refuses when only the signature pushes it over", () => {
+    const t = commentTx(bodyFor(65279));
+    expect(t.size()).toBeLessThanOrEqual(65280);
     expect(() => t.sign(key)).toThrow(TransactionTooLargeError);
+  });
+
+  it("follows a larger witness-voted block size", () => {
+    expect(() => commentTx(100_000, 131072).sign(key)).not.toThrow();
+    expect(() => commentTx(140_000, 131072).sign(key)).toThrow(TransactionTooLargeError);
+  });
+
+  it("only enforces the protocol ceiling when the block size is unknown", () => {
+    expect(() => commentTx(100_000, null).sign(key)).not.toThrow();
+    expect(() => commentTx(2 * 1024 * 1024, null).sign(key)).toThrow(TransactionTooLargeError);
+  });
+
+  it("records maximum_block_size from the properties it builds on", async () => {
+    callRPC.mockResolvedValueOnce({
+      head_block_number: 100,
+      head_block_id: "00000064" + "ab".repeat(16),
+      maximum_block_size: 131072,
+    });
+    const t = new Transaction();
+    await t.addOperation("comment", comment(100_000)[1] as any);
+    expect(t.maximumBlockSize).toBe(131072);
+    expect(() => t.sign(key)).not.toThrow();
   });
 });
