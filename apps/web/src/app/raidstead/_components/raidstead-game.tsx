@@ -8,6 +8,7 @@ import {
   FOLK,
   type AttackType,
   type BuildingId,
+  type Calendar,
   type Community,
   type FolkClass,
   type PowerId,
@@ -61,6 +62,7 @@ import {
   SignInSheet,
   type MenuItem
 } from "./sheets";
+import { SeasonCountdown } from "./season-countdown";
 
 /// The Ecency login as every tab sees it (this tab's store copy only
 /// follows it on a reload, or through the storage listener below).
@@ -109,6 +111,9 @@ export function RaidsteadGame() {
   const lastAttackRef = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [boot, setBoot] = useState(0);
+  // before the first season: the public calendar, so everyone sees the countdown without signing in
+  const [preseason, setPreseason] = useState<Calendar | null>(null);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [dayTick, setDayTick] = useState(0);
   const rebootAt = useRef(0);
   // the Ecency user right now, for callbacks that awaited a wallet or a request
@@ -240,6 +245,43 @@ export function RaidsteadGame() {
   useEffect(() => {
     sceneRef.current?.sync({ ...worldOf(data, view), neighbors });
   }, [data, view, neighbors]);
+
+  // ---------- before the season ----------
+  useEffect(() => {
+    let cancelled = false;
+    raidsteadApi
+      .calendar()
+      .then((c) => {
+        if (!cancelled && c.season < 1) setPreseason(c);
+      })
+      // unreachable: the usual flow still says when the season starts, after sign-in
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      clearTimeout(openTimer.current);
+    };
+  }, []);
+
+  // the countdown reached zero: the season opens once the server agrees (a
+  // clock running ahead asks again every few seconds), then boots as usual
+  const openSeason = useCallback(() => {
+    const check = () =>
+      raidsteadApi
+        .calendar()
+        .then((c) => {
+          if (c.season < 1) {
+            openTimer.current = setTimeout(check, 5000);
+            return;
+          }
+          setPreseason(null);
+          setPhase("loading");
+          setBoot((n) => n + 1);
+        })
+        .catch(() => {
+          openTimer.current = setTimeout(check, 5000);
+        });
+    check();
+  }, []);
 
   // ---------- signing in ----------
   useEffect(() => {
@@ -629,7 +671,9 @@ export function RaidsteadGame() {
   let gate: ReactElement | null = null;
   // While Ecency's login dialog is open the sign-in sheet steps aside: an open
   // modal <dialog> makes the rest of the page inert, that dialog included.
-  if (phase === "signin" && !loginOpen) {
+  if (preseason) {
+    // counting down: nothing to sign in for yet
+  } else if (phase === "signin" && !loginOpen) {
     gate = (
       <SignInSheet
         username={username}
@@ -811,6 +855,7 @@ export function RaidsteadGame() {
           </div>
         </header>
 
+        {preseason && <SeasonCountdown startsAt={preseason.startsAt} onOpen={openSeason} />}
         {playing && view === "raid" && boss && (
           <section className="rs-card rs-plate" aria-label={t(`bosses.${boss.kind}.name`)}>
             <div className="rs-row">

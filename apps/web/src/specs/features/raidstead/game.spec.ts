@@ -4,6 +4,7 @@ import {
   aimOf,
   attackMessage,
   buildReport,
+  countdown,
   errorMessage,
   impactOf,
   pickNeighbors,
@@ -239,5 +240,18 @@ describe("raidstead game helpers", () => {
 
   it("karma tiers", () => {
     expect([0, 49, 50, 150, 399, 400, 1000, 5000].map(tierOf)).toEqual([0, 0, 1, 2, 2, 3, 4, 4]);
+  });
+});
+
+describe("countdown", () => {
+  const at = Date.parse("2026-10-10T00:00:00Z");
+  it("splits the time left into days, hours, minutes and seconds", () => {
+    expect(countdown(at, at - (2 * 86_400 + 3 * 3_600 + 4 * 60 + 5) * 1000)).toEqual({ days: 2, hours: 3, minutes: 4, seconds: 5, done: false });
+  });
+  it("rounds a part second up, so it never shows zero early", () => {
+    expect(countdown(at, at - 200)).toMatchObject({ seconds: 1, done: false });
+  });
+  it("stops at zero", () => {
+    expect(countdown(at, at + 5000)).toEqual({ days: 0, hours: 0, minutes: 0, seconds: 0, done: true });
   });
 });

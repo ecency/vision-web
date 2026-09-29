@@ -26,6 +26,7 @@ const { scene, api, box } = vi.hoisted(() => ({
     join: vi.fn(),
     communities: vi.fn(async () => ({ communities: [] })),
     leaderboard: vi.fn(async () => ({ season: 1, alliances: [] })),
+    calendar: vi.fn(),
     session: vi.fn()
   },
   box: {
@@ -137,6 +138,8 @@ describe("Raidstead page", () => {
       expiresAt: new Date(Date.now() + 86_400_000).toISOString()
     };
     api.state.mockResolvedValue(state());
+    // a full reset: one-time answers a failed test left unused must not reach the next one
+    api.calendar.mockReset().mockResolvedValue(state().calendar);
   });
 
   afterEach(() => {
@@ -591,5 +594,43 @@ describe("Raidstead page", () => {
     });
     await waitFor(() => expect(api.rally).toHaveBeenCalledTimes(4));
     expect(api.rally.mock.calls[3][0]).not.toBe(api.rally.mock.calls[2][0]);
+  });
+
+  describe("before the first season", () => {
+    const soon = (ms: number) => ({ season: 0, day: 0, week: 0, resting: true, startsAt: new Date(Date.now() + ms).toISOString(), nextDayAt: "" });
+
+    it("counts down without asking anyone to sign in", async () => {
+      box.stored = null;
+      asUser("ann");
+      api.calendar.mockResolvedValue(soon(3 * 86_400_000 + 5 * 3_600_000));
+      render(<RaidsteadGame />);
+
+      const banner = await screen.findByRole("region", { name: "raidstead.season.countdown-title" });
+      expect(within(banner).getByRole("timer").textContent).toMatch(/^03raidstead.season.countdown-days(04|05)raidstead.season.countdown-hours/);
+      expect(screen.queryByRole("button", { name: /raidstead.signin.play-as/ })).toBeNull();
+    });
+
+    it("opens the season when the countdown ends and the server agrees", async () => {
+      box.stored = null;
+      asUser("ann");
+      api.calendar.mockResolvedValueOnce(soon(1200)).mockResolvedValueOnce(soon(-1)).mockResolvedValue(state().calendar);
+      render(<RaidsteadGame />);
+
+      await screen.findByRole("region", { name: "raidstead.season.countdown-title" });
+      // the clock hit zero while the server still said "not yet": it asks again and opens
+      expect(await screen.findByRole("button", { name: /raidstead.signin.play-as/ }, { timeout: 9000 })).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "raidstead.season.countdown-title" })).toBeNull();
+      expect(api.calendar.mock.calls.length).toBeGreaterThanOrEqual(3);
+    }, 12_000);
+
+    it("falls back to the usual flow when the calendar cannot be reached", async () => {
+      box.stored = null;
+      asUser("ann");
+      api.calendar.mockRejectedValue(new Error("offline"));
+      render(<RaidsteadGame />);
+
+      expect(await screen.findByRole("button", { name: /raidstead.signin.play-as/ })).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "raidstead.season.countdown-title" })).toBeNull();
+    });
   });
 });
