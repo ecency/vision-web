@@ -321,11 +321,10 @@ export function folkParts(cls: FolkClass) {
     add({ name: "vein", kind: "line", pts: path("M292 296 Q330 210 378 104"), w: 2.6, color: COL.blue, group: "armR" });
   } else if (cls === "scout") {
     // a short, fat spyglass: reads as a telescope even at town size
-    // a telescope that widens toward its lens, with a brass eyepiece at the hand;
+    // a telescope that widens toward its lens (its narrow end sits in the hand);
     // drawn along the x axis around its centre, then turned 50 degrees up
     const tube = (pts: Pt[]) => rotate(pts, 324, 250, -50);
     add({ name: "spyglass", kind: "fill", poly: tube([[276, 262], [276, 238], [372, 226], [372, 274]]), color: COL.tan, shade: 1, sw: 3, group: "armR" });
-    add({ name: "eyepiece", kind: "fill", poly: tube(rrect(262, 236, 18, 28, 5)), color: COL.gold, shade: 0.6, sw: 2.6, group: "armR" });
     add({ name: "ring", kind: "fill", poly: tube(rrect(326, 230, 10, 42, 3)), color: COL.gold, shade: 0.6, sw: 2.2, group: "armR" });
     add({ name: "lens", kind: "fill", poly: tube(ellipse(374, 250, 10, 26)), color: COL.lens, shade: 0.4, sw: 3, group: "armR" });
   } else if (cls === "smith") {
@@ -348,8 +347,8 @@ export function folkParts(cls: FolkClass) {
     add({ name: "plume", kind: "fill", poly: path("M196 64 Q176 20 196 -18 Q214 -40 238 -34 Q218 -8 222 22 Q226 46 208 66 Z"), color: COL.rose, shade: 0.8, sw: 3, group: "head" });
     add({ name: "plume-rib", kind: "line", pts: path("M204 62 Q196 18 226 -30"), w: 3, color: COL.gold, group: "head" });
   }
-  if (cls === "scribe" || cls === "scout") add({ name: "tuft", kind: "fill", poly: path("M200 66 Q170 40 186 14 Q214 30 200 66 Z"), color: COL.leaf, shade: 0.8, sw: 2.8, group: "head" });
-  if (cls === "scribe" || cls === "scout") add({ name: "tuft", kind: "fill", poly: path("M204 66 Q222 34 250 38 Q240 66 204 66 Z"), color: COL.leaf, shade: 0.8, sw: 2.8, group: "head" });
+  if (cls === "scribe") add({ name: "tuft", kind: "fill", poly: path("M200 66 Q170 40 186 14 Q214 30 200 66 Z"), color: COL.leaf, shade: 0.8, sw: 2.8, group: "head" });
+  if (cls === "scribe") add({ name: "tuft", kind: "fill", poly: path("M204 66 Q222 34 250 38 Q240 66 204 66 Z"), color: COL.leaf, shade: 0.8, sw: 2.8, group: "head" });
   add({ name: "face", kind: "fill", poly: circle(200, 132, 76), color: COL.skin, shade: 0.9, group: "head" });
   for (const [ex, g] of <any[]>[[172, "eyeL"], [228, "eyeR"]]) {
     add({ name: "eye", kind: "fill", poly: ellipse(ex, 138, 9, 12), color: COL.ink, fine: 0.5, sw: 0, group: g, ec: [ex, 138] });

@@ -51,7 +51,8 @@ export function heroAt(x: number, y: number, spots: HeroSpot[]): FolkClass | nul
 /// (from the slot's left edge), kept inside the slot even with their props.
 export function raidRow(width: number, rowH: number): { fs: number; xs: number[] } {
   const gap = width / 4;
-  // 332 = a hero's width with its prop, so the row fits the slot with no hero pushed into a neighbour
+  // 332 = a hero's width with its prop, so the row fits the slot without nudging anyone in
+  // (the Herald's flag still reaches a little into the Smith's column, as it always has)
   const fs = Math.min(rowH / 400, gap / 332);
   const xs = FOLK.map((k, i) => {
     const [x0, , x1] = SPECIES[k].box, ax = SPECIES[k].anchor[0];
