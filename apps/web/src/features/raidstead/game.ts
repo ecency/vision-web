@@ -92,7 +92,15 @@ export function errorMessage(e: unknown, t: T): string {
   const code = typeof err?.code === "string" ? err.code : "";
   if (err?.status === 429 && code !== "daily_cap") return t("raidstead.errors.rate");
   if (
-    ["offline", "insufficient_points", "daily_cap", "points_unavailable", "too_fast"].includes(code)
+    [
+      "offline",
+      "insufficient_points",
+      "daily_cap",
+      "points_unavailable",
+      "too_fast",
+      "already_applied",
+      "key_used"
+    ].includes(code)
   ) {
     return t(`raidstead.errors.${code}`);
   }

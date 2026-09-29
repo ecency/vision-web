@@ -182,6 +182,10 @@ describe("raidstead game helpers", () => {
     expect(
       errorMessage({ status: 409, code: "no_scouts", message: "No scouts left today." }, t)
     ).toBe("No scouts left today.");
+    expect(errorMessage({ status: 409, code: "already_applied", message: "x" }, t)).toBe(
+      "already_applied"
+    );
+    expect(errorMessage({ status: 409, code: "key_used", message: "x" }, t)).toBe("key_used");
     expect(errorMessage(new Error("boom"), t)).toBe("generic");
   });
 

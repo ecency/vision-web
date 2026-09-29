@@ -5184,7 +5184,9 @@
       "points_unavailable": "Points could not be reached. Try again soon.",
       "too_fast": "Slow down a little.",
       "rate": "Too many actions at once. Wait a moment.",
-      "load-failed": "The game could not load. Check your connection and try again."
+      "load-failed": "The game could not load. Check your connection and try again.",
+      "already_applied": "Your last try went through, so it was not charged again. Tap again for a new one.",
+      "key_used": "Your last try was refunded. Tap again to try once more."
     },
     "town": {
       "plate": "Town of {{name}}",

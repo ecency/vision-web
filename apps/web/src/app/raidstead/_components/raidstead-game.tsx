@@ -56,6 +56,12 @@ import {
   type MenuItem
 } from "./sheets";
 
+/// The Ecency login as every tab sees it (this tab's store copy only
+/// follows it on a reload, or through the storage listener below).
+const liveEcencyUser = (): string | null => {
+  const u = ls.get("active_user");
+  return typeof u === "string" && u ? u : null;
+};
 const t = (key: string, values?: Record<string, unknown>) => i18next.t(`raidstead.${key}`, values);
 const TYPES: { type: AttackType; hero: string; color: string }[] = [
   { type: "ink", hero: "scribe", color: "var(--rs-scribe)" },
@@ -105,6 +111,8 @@ export function RaidsteadGame() {
   const refreshSeq = useRef(0);
   const appliedSeq = useRef(0);
   const dataRef = useRef<State | null>(null);
+  // set when refresh met a 401 and has already decided what comes next
+  const unauthorized = useRef(false);
   dataRef.current = data;
   const loginOpen = useGlobalStore((s) => s.login);
 
@@ -117,6 +125,7 @@ export function RaidsteadGame() {
   const refresh = useCallback(async (): Promise<State | null> => {
     const seq = ++refreshSeq.current;
     const token = loadSession()?.token;
+    unauthorized.current = false;
     try {
       const s = await raidsteadApi.state();
       // another account signed in meanwhile: not its state
@@ -130,6 +139,7 @@ export function RaidsteadGame() {
     } catch (e) {
       if (loadSession()?.token !== token) return null;
       if ((e as { status?: number }).status === 401) {
+        unauthorized.current = true;
         clearSession();
         setData(null);
         // the game session ended (expired or revoked): boot again, which signs
@@ -215,6 +225,11 @@ export function RaidsteadGame() {
           try {
             const signed = await signIn(username, "key", true);
             if (cancelled) return;
+            // Ecency logged out or switched in another tab meanwhile
+            if (liveEcencyUser() !== username) {
+              setPhase("signin");
+              return;
+            }
             saveSession(signed);
           } catch {
             if (!cancelled) setPhase("signin");
@@ -229,16 +244,51 @@ export function RaidsteadGame() {
       const token = loadSession()?.token;
       const s = await refresh();
       if (cancelled) return;
+      const now = loadSession();
       if (s) setPhase("ready");
+      // a 401: refresh has signed in again or shown the sign-in, at most once a minute
+      else if (unauthorized.current) return;
       // the session changed meanwhile (another tab): start over with the new one
-      else if (loadSession()?.token !== token) setBoot((n) => n + 1);
-      // not a 401 (that signs in again): the server could not be reached
-      else if (loadSession()) setPhase("failed");
+      else if (now?.token !== token) setBoot((n) => n + 1);
+      // the server could not be reached
+      else setPhase("failed");
     })();
     return () => {
       cancelled = true;
     };
   }, [hydrated, username, refresh, boot]);
+
+  // Ecency's login is shared by every tab, but this tab's copy of it only
+  // changes on a reload. A logout or account switch in another tab ends the
+  // game session made for the old login here too, and so does a game session
+  // ended in another tab.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (
+        e.key !== null &&
+        e.key !== `${ls.PREFIX}_active_user` &&
+        !e.key.startsWith(`${ls.PREFIX}_raidstead_session`)
+      )
+        return;
+      // bring this tab's Ecency login in line; the account change is then
+      // handled like any other (session revoked, sign-in offered for the new one)
+      const live = liveEcencyUser();
+      if (live !== userRef.current) useGlobalStore.getState().setActiveUser(live);
+      const session = loadSession();
+      if (session?.ecency && live !== session.account) {
+        raidsteadApi.signOut().catch(() => undefined);
+        clearSession();
+      }
+      if (!loadSession() && dataRef.current) {
+        dataRef.current = null;
+        setData(null);
+        setSheet(null);
+        setPhase("signin");
+      }
+    };
+    addEventListener("storage", onStorage);
+    return () => removeEventListener("storage", onStorage);
+  }, []);
 
   const onSign = useCallback(
     async (account: string) => {
@@ -249,6 +299,7 @@ export function RaidsteadGame() {
         // the Ecency user may have logged in, out or switched while the wallet
         // was asking: that answer is not for this page any more
         if (userRef.current !== asUser) return;
+        if (asUser && liveEcencyUser() !== asUser) return;
         if (asUser && session.account !== asUser) return;
         saveSession(session);
         const s = await refresh();
@@ -398,13 +449,16 @@ export function RaidsteadGame() {
     <R,>(which: "rally" | "chest", fn: (key: string) => Promise<R>) =>
     async () => {
       const account = loadSession()?.account ?? "";
-      const key = pendingSpendKey(account, which);
+      const key = pendingSpendKey(account, which, dataRef.current?.calendar.season ?? 0);
       try {
         const r = await fn(key);
         settleSpend(account, which);
         return r;
       } catch (e) {
-        if ((e as { status?: number }).status !== 0) settleSpend(account, which);
+        // no answer (offline), or a gateway's instead of games-api's (5xx): the
+        // spend may have gone through, so the retry keeps the key
+        const status = (e as { status?: number }).status ?? 0;
+        if (status !== 0 && status < 500) settleSpend(account, which);
         throw e;
       }
     };
