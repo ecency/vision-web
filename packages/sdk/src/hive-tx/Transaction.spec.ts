@@ -75,6 +75,14 @@ describe("Transaction size limit", () => {
     expect(t.size()).toBe(unsigned + 65);
   });
 
+  it("sizes the signature count varint", () => {
+    const t = commentTx(10);
+    const unsigned = t.size() - 1;
+    expect(t.size(127)).toBe(unsigned + 1 + 127 * 65);
+    expect(t.size(128)).toBe(unsigned + 2 + 128 * 65);
+    expect(t.size(16_384)).toBe(unsigned + 3 + 16_384 * 65);
+  });
+
   it("signs a transaction at exactly maximum_block_size - 256", () => {
     const t = commentTx(bodyFor(65536 - 256 - 65));
     expect(t.size(1)).toBe(65280);

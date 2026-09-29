@@ -221,8 +221,10 @@ export class Transaction {
    */
   size(extraSignatures = 0): number {
     const signatures = (this.transaction?.signatures.length ?? 0) + extraSignatures
-    // The signature count is a varint: one byte below 128 signatures.
-    return this.serialize().length + (signatures < 128 ? 1 : 2) + signatures * SIGNATURE_SIZE
+    // The signature count is a varint: one byte per 7 bits.
+    let countBytes = 1
+    for (let n = signatures; n >= 128; n >>>= 7) countBytes++
+    return this.serialize().length + countBytes + signatures * SIGNATURE_SIZE
   }
 
   /**
