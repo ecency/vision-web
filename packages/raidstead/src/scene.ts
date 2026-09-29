@@ -119,7 +119,7 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   function target(inst: Inst, d: DotState): Pt {
     let hx = d.hx, hy = d.hy;
     const p = inst.model!.parts[d.p];
-    if (p.kind === "ring") { const u = d.u! + t * 0.25; hx = p.cx + Math.cos(u) * p.rx; hy = p.cy + Math.sin(u) * p.ry; }
+    if (p.kind === "ring") { const u = d.u! + (reduced ? 0 : t * 0.25); hx = p.cx + Math.cos(u) * p.rx; hy = p.cy + Math.sin(u) * p.ry; }
     else if (d.spiral) { hx += (d.ax! - hx) * inst.morph; hy += (d.ay! - hy) * inst.morph; }
     const m = inst.mats[d.p];
     return toScreen(inst, m[0] * hx + m[2] * hy + m[4], m[1] * hx + m[3] * hy + m[5]);
@@ -128,10 +128,11 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     if (!inst.model) return;
     inst.state = "assemble"; inst.stateT = 0; inst.morph = 0;
     const order = inst.model.parts.length;
+    if (reduced) poseInst(inst);
     for (const d of inst.dots) {
       d.free = false; d.flash = 0; d.vx = d.vy = 0; d.a = 0;
       d.delay = d.p / order * 0.6 + rnd() * 0.35 + from;
-      if (reduced) { poseInst(inst); const [x, y] = target(inst, d); d.x = x; d.y = y; }
+      if (reduced) { const [x, y] = target(inst, d); d.x = x; d.y = y; }
       else { const a = rnd() * 6.283, r = Math.max(W, H) * (0.5 + rnd() * 0.4); d.x = W / 2 + Math.cos(a) * r; d.y = H / 2 + Math.sin(a) * r; }
     }
   }
@@ -550,6 +551,8 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
       if (!drag) { camX += camV * s; camV *= Math.pow(0.9, s); if (camX < -camMax || camX > camMax) { camX = clamp(camX, -camMax, camMax); camV = 0; } }
       for (const w of walkers) {
         const f = folk[w.k];
+        // reduced motion: the town's folk stand still
+        if (reduced) { f.walking = false; f.wave = false; continue; }
         if (t > w.until) {
           w.walking = !w.walking;
           w.until = t + (w.walking ? 3 + rnd() * 5 : 1.2 + rnd() * 2.2);
@@ -857,11 +860,16 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   let last = performance.now(), raf = 0, alive = true;
   function frame(now: number) {
     if (!alive) return;
+    // a hidden page draws nothing (some webviews keep sending frames); onVisible restarts
+    if (document.hidden) { raf = 0; return; }
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     if (world) { step(dt); collect(); R.draw(); }
     raf = requestAnimationFrame(frame);
   }
-  const onVisible = () => { last = performance.now(); };
+  const onVisible = () => {
+    last = performance.now();
+    if (alive && !document.hidden && !raf) raf = requestAnimationFrame(frame);
+  };
   document.addEventListener("visibilitychange", onVisible);
   useRenderer("webgl");
   raf = requestAnimationFrame(frame);

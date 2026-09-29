@@ -163,12 +163,14 @@ export function InfoSheet({
   title,
   lines,
   onClose,
-  closable = true
+  closable = true,
+  action
 }: {
   title: string;
   lines: string[];
   onClose: () => void;
   closable?: boolean;
+  action?: { label: string; onClick: () => void };
 }) {
   return (
     <Sheet onClose={onClose} closable={closable} label={title}>
@@ -178,6 +180,13 @@ export function InfoSheet({
           {l}
         </p>
       ))}
+      {action && (
+        <div className="rs-btns">
+          <button type="button" className="rs-btn rs-primary" onClick={action.onClick}>
+            {action.label}
+          </button>
+        </div>
+      )}
     </Sheet>
   );
 }

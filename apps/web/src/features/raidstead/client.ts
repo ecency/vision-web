@@ -10,12 +10,17 @@ import { hasAnyHiveExtension, signBufferWithExtension } from "@/utils/hive-exten
 // tokens or keys anywhere.
 export const RAIDSTEAD_API = "https://games-api.ecency.com";
 
-const SESSION_KEY = "raidstead_session";
+// v2: sessions carry `ecency`; earlier ones (previews only) are not trusted as guests
+const SESSION_KEY = "raidstead_session_v2";
 
 export interface RaidsteadSession {
   account: string;
   token: string;
   expiresAt: string;
+  /// Made for the Ecency user of the page, so an Ecency logout ends it too,
+  /// even one done on another page or tab. A guest sign-in (no Ecency login,
+  /// signed with a wallet) is not tied to one.
+  ecency?: boolean;
 }
 
 export function loadSession(): RaidsteadSession | null {
@@ -78,11 +83,12 @@ function signer(
 /// the wallet was asking.
 export async function signIn(
   username: string,
-  kind: Exclude<SignerKind, null>
+  kind: Exclude<SignerKind, null>,
+  ecency: boolean
 ): Promise<RaidsteadSession> {
   const proof = await makeProof(username, signer(kind, username));
   const s = await raidsteadApi.session(proof);
-  return { account: s.account, token: s.token, expiresAt: s.expiresAt };
+  return { account: s.account, token: s.token, expiresAt: s.expiresAt, ecency };
 }
 
 export async function signOut() {

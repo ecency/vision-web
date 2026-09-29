@@ -26,8 +26,8 @@ describe("login proof", () => {
   });
 
   it("keeps non-ASCII intact through base64", () => {
-    const m = loginMessage("ab", 0);
-    expect(decode(encodeProof(m, "sig"))).toEqual({ ...m, signatures: ["sig"] });
+    const m = { ...loginMessage("ab", 0), authors: ["añb✓"] as [string] };
+    expect(decode(encodeProof(m, "sïg✓"))).toEqual({ ...m, signatures: ["sïg✓"] });
     expect(messageText(m)).toBe(JSON.stringify(m));
   });
 });

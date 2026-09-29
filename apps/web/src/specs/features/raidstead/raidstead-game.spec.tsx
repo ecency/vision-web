@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The page around the scene: the scene itself (WebGL) is stubbed, the games
 // API is mocked, and the Ecency user is switched under the page.
@@ -28,7 +28,9 @@ const { scene, api, box } = vi.hoisted(() => ({
     leaderboard: vi.fn(async () => ({ season: 1, alliances: [] })),
     session: vi.fn()
   },
-  box: { stored: null as { account: string; token: string; expiresAt: string } | null }
+  box: {
+    stored: null as { account: string; token: string; expiresAt: string; ecency?: boolean } | null
+  }
 }));
 vi.mock("@ecency/raidstead", async (orig) => ({
   ...(await orig<typeof import("@ecency/raidstead")>()),
@@ -55,8 +57,10 @@ vi.mock("@/app/publish/_hooks", () => ({ usePublishHandoffWriter: () => vi.fn() 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { clearSession } from "@/features/raidstead/client";
+import { clearSession, signIn } from "@/features/raidstead/client";
 import { RaidsteadGame } from "@/app/raidstead/_components/raidstead-game";
+
+const expiry = () => new Date(Date.now() + 86_400_000).toISOString();
 
 const asUser = (username: string | null) =>
   vi
@@ -129,6 +133,10 @@ describe("Raidstead page", () => {
     api.state.mockResolvedValue(state());
   });
 
+  afterEach(() => {
+    localStorage.clear();
+  });
+
   it("ends the game session when the Ecency user logs out", async () => {
     asUser("ann");
     const view = render(<RaidsteadGame />);
@@ -139,6 +147,98 @@ describe("Raidstead page", () => {
     await waitFor(() => expect(clearSession).toHaveBeenCalled());
     expect(api.signOut).toHaveBeenCalled();
     expect(box.stored).toBeNull();
+  });
+
+  it("ends a game session made for an Ecency login that logged out on another page", async () => {
+    box.stored = { ...box.stored!, ecency: true };
+    asUser(null);
+    render(<RaidsteadGame />);
+    await waitFor(() => expect(clearSession).toHaveBeenCalled());
+    expect(api.signOut).toHaveBeenCalled();
+    expect(api.state).not.toHaveBeenCalled();
+  });
+
+  it("drops a wallet answer that comes back after the Ecency user switched", async () => {
+    box.stored = null;
+    asUser("ann");
+    let finish!: (s: unknown) => void;
+    vi.mocked(signIn).mockReturnValueOnce(new Promise((r) => (finish = r)) as any);
+    const view = render(<RaidsteadGame />);
+    fireEvent.click(await screen.findByRole("button", { name: /raidstead.signin.play-as/ }));
+    asUser("bob");
+    view.rerender(<RaidsteadGame />);
+    await act(async () => {
+      finish({ account: "ann", token: "rs1_ann", expiresAt: expiry(), ecency: true });
+    });
+    expect(box.stored).toBeNull();
+    expect(api.state).not.toHaveBeenCalled();
+  });
+
+  it("ignores a state answer that belongs to an earlier game session", async () => {
+    asUser("ann");
+    let late!: (s: unknown) => void;
+    api.state.mockReturnValueOnce(new Promise((r) => (late = r)));
+    render(<RaidsteadGame />);
+    await waitFor(() => expect(api.state).toHaveBeenCalledTimes(1));
+    box.stored = { account: "bob", token: "rs1_bob", expiresAt: expiry() };
+    await act(async () => {
+      late(state());
+    });
+    expect(screen.queryByRole("button", { name: /raidstead.actions.rally/ })).toBeNull();
+  });
+
+  it("offers a retry when the game server cannot be reached", async () => {
+    asUser("ann");
+    api.state.mockRejectedValueOnce({ status: 0, code: "offline", message: "x" });
+    render(<RaidsteadGame />);
+    fireEvent.click(await screen.findByRole("button", { name: "g.try-again" }));
+    await screen.findByText("raidstead.alliance.label");
+  });
+
+  it("retries a spend with the same key after a reload", async () => {
+    asUser("ann");
+    const first = render(<RaidsteadGame />);
+    api.rally.mockRejectedValueOnce({ status: 0, code: "offline", message: "x" });
+    const rally = await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    await act(async () => {
+      fireEvent.click(rally);
+    });
+    await waitFor(() => expect(api.rally).toHaveBeenCalledTimes(1));
+    first.unmount();
+    render(<RaidsteadGame />);
+    api.rally.mockResolvedValueOnce({ applied: { energy: 10 }, balance: 400 });
+    const again = await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    await act(async () => {
+      fireEvent.click(again);
+    });
+    await waitFor(() => expect(api.rally).toHaveBeenCalledTimes(2));
+    expect(api.rally.mock.calls[1][0]).toBe(api.rally.mock.calls[0][0]);
+  });
+
+  it("asks for the new game day again when the first ask after midnight fails", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      asUser("ann");
+      const past = {
+        ...state(),
+        calendar: { ...state().calendar, nextDayAt: new Date(Date.now() - 1000).toISOString() }
+      };
+      api.state.mockResolvedValue(past);
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      const before = api.state.mock.calls.length;
+      api.state.mockRejectedValueOnce({ status: 0, code: "offline", message: "x" });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31_000);
+      });
+      expect(api.state.mock.calls.length).toBe(before + 1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31_000);
+      });
+      expect(api.state.mock.calls.length).toBe(before + 2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps a guest's own session when no Ecency user was ever logged in", async () => {

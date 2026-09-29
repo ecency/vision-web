@@ -194,6 +194,15 @@ describe("raidstead game helpers", () => {
     expect(buildReport({ ...state(), alliance: null }, t)).toBeNull();
   });
 
+  it("keeps a community title as text in the report body", () => {
+    const s = state();
+    s.alliance!.title = "[Win](https://x.test) ![i](y) # *b*";
+    const r = buildReport(s, t)!;
+    expect(r.body).toContain("name=\\[Win\\]\\(https://x.test\\) \\!\\[i\\]\\(y\\) \\# \\*b\\*");
+    // the post title is plain text: unchanged
+    expect(r.title).toContain("name=[Win](https://x.test) ![i](y) # *b*");
+  });
+
   it("karma tiers", () => {
     expect([0, 49, 50, 150, 399, 400, 1000, 5000].map(tierOf)).toEqual([0, 0, 1, 2, 2, 3, 4, 4]);
   });

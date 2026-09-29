@@ -5183,7 +5183,8 @@
       "daily_cap": "You reached today's Points limit for the game.",
       "points_unavailable": "Points could not be reached. Try again soon.",
       "too_fast": "Slow down a little.",
-      "rate": "Too many actions at once. Wait a moment."
+      "rate": "Too many actions at once. Wait a moment.",
+      "load-failed": "The game could not load. Check your connection and try again."
     },
     "town": {
       "plate": "Town of {{name}}",

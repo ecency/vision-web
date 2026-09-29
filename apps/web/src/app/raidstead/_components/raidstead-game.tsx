@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import i18next from "i18next";
 import {
   createScene,
-  spendKey,
   type AttackType,
   type BuildingId,
   type Community,
@@ -31,6 +30,7 @@ import {
   signerFor,
   signOut
 } from "@/features/raidstead/client";
+import { pendingSpendKey, settleSpend } from "@/features/raidstead/spends";
 import {
   aimOf,
   attackMessage,
@@ -83,7 +83,7 @@ export function RaidsteadGame() {
   const slotRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<Scene | null>(null);
   const [data, setData] = useState<State | null>(null);
-  const [phase, setPhase] = useState<"loading" | "signin" | "ready">("loading");
+  const [phase, setPhase] = useState<"loading" | "signin" | "ready" | "failed">("loading");
   const [view, setView] = useState<View>("raid");
   const [selected, setSelected] = useState<AttackType>("ink");
   const [toast, setToast] = useState("");
@@ -95,11 +95,17 @@ export function RaidsteadGame() {
   const lastAttackRef = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [boot, setBoot] = useState(0);
+  const [dayTick, setDayTick] = useState(0);
   const rebootAt = useRef(0);
-  const prevUser = useRef<string | null>(null);
-  // one key per intended spend: kept across a retry after a network failure,
-  // so a lost answer is not paid twice (games-api answers "already applied")
-  const spendKeys = useRef<{ rally?: string; chest?: string }>({});
+  // the Ecency user right now, for callbacks that awaited a wallet or a request
+  const userRef = useRef(username);
+  userRef.current = username;
+  // state answers apply in the order they were asked, and only for the
+  // session that asked
+  const refreshSeq = useRef(0);
+  const appliedSeq = useRef(0);
+  const dataRef = useRef<State | null>(null);
+  dataRef.current = data;
   const loginOpen = useGlobalStore((s) => s.login);
 
   const say = useCallback((msg: string) => {
@@ -109,11 +115,20 @@ export function RaidsteadGame() {
   }, []);
 
   const refresh = useCallback(async (): Promise<State | null> => {
+    const seq = ++refreshSeq.current;
+    const token = loadSession()?.token;
     try {
       const s = await raidsteadApi.state();
+      // another account signed in meanwhile: not its state
+      if (loadSession()?.token !== token) return null;
+      // a newer answer already came back (answers can overtake each other)
+      if (seq < appliedSeq.current) return dataRef.current;
+      appliedSeq.current = seq;
+      dataRef.current = s;
       setData(s);
       return s;
     } catch (e) {
+      if (loadSession()?.token !== token) return null;
       if ((e as { status?: number }).status === 401) {
         clearSession();
         setData(null);
@@ -177,13 +192,12 @@ export function RaidsteadGame() {
   useEffect(() => {
     if (!hydrated) return;
     let cancelled = false;
-    const prev = prevUser.current;
-    prevUser.current = username;
     (async () => {
       let session = loadSession();
-      // logging out of Ecency ends the game session too, and a session for
-      // someone else than the Ecency user on this page is not used
-      const loggedOut = !!prev && !username;
+      // logging out of Ecency (here or on any other page) ends the game
+      // session made for that login, and a session for someone else than the
+      // Ecency user on this page is not used
+      const loggedOut = !username && !!session?.ecency;
       if (session && (loggedOut || (username && session.account !== username))) {
         // revoke it on games-api too (signOut reads the token before clearSession removes it)
         raidsteadApi.signOut().catch(() => undefined);
@@ -191,10 +205,15 @@ export function RaidsteadGame() {
         session = null;
         setData(null);
       }
+      // a guest session whose account has now logged in to Ecency ends with that login
+      if (session && username && !session.ecency) {
+        session = { ...session, ecency: true };
+        saveSession(session);
+      }
       if (!session) {
         if (username && signerFor(username) === "key") {
           try {
-            const signed = await signIn(username, "key");
+            const signed = await signIn(username, "key", true);
             if (cancelled) return;
             saveSession(signed);
           } catch {
@@ -207,8 +226,14 @@ export function RaidsteadGame() {
         }
       }
       if (cancelled) return;
+      const token = loadSession()?.token;
       const s = await refresh();
-      if (!cancelled && s) setPhase("ready");
+      if (cancelled) return;
+      if (s) setPhase("ready");
+      // the session changed meanwhile (another tab): start over with the new one
+      else if (loadSession()?.token !== token) setBoot((n) => n + 1);
+      // not a 401 (that signs in again): the server could not be reached
+      else if (loadSession()) setPhase("failed");
     })();
     return () => {
       cancelled = true;
@@ -217,11 +242,14 @@ export function RaidsteadGame() {
 
   const onSign = useCallback(
     async (account: string) => {
+      const asUser = userRef.current;
       setSigning(true);
       try {
-        const session = await signIn(account, signerFor(account) ?? "extension");
-        // the Ecency user may have changed while the wallet was asking
-        if (username && session.account !== username) return;
+        const session = await signIn(account, signerFor(account) ?? "extension", !!asUser);
+        // the Ecency user may have logged in, out or switched while the wallet
+        // was asking: that answer is not for this page any more
+        if (userRef.current !== asUser) return;
+        if (asUser && session.account !== asUser) return;
         saveSession(session);
         const s = await refresh();
         if (s) setPhase("ready");
@@ -231,7 +259,7 @@ export function RaidsteadGame() {
         setSigning(false);
       }
     },
-    [refresh, say, username]
+    [refresh, say]
   );
 
   // ---------- the week's card, once per week ----------
@@ -265,6 +293,28 @@ export function RaidsteadGame() {
     }, 500);
     return () => clearInterval(id);
   }, [boss?.reshuffleAt, refresh, say]);
+
+  // a new game day (energy, quests, the boss) starts at 00:00 UTC: ask for it
+  // then, a little spread out, and again every 30s while the server still
+  // answers with the old day (a client clock ahead of the server)
+  const nextDayAt = data?.calendar.nextDayAt;
+  useEffect(() => {
+    if (phase !== "ready" || !nextDayAt) return;
+    const due = Date.parse(nextDayAt);
+    const wait = Math.max(due - Date.now() + 2000 + Math.random() * 20_000, 30_000);
+    // re-armed after every try, answered or not, so a failed request at
+    // midnight is asked again 30s later
+    const id = setTimeout(() => refresh().finally(() => setDayTick((n) => n + 1)), wait);
+    // a background tab's timers are held back: catch up when it shows again
+    const onVisible = () => {
+      if (!document.hidden && Date.now() > due) refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearTimeout(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [phase, nextDayAt, data, dayTick, refresh]);
 
   // ---------- actions ----------
   const act = useCallback(
@@ -341,18 +391,20 @@ export function RaidsteadGame() {
         sceneRef.current?.cheer("scout");
       }
     );
-  // A spend keeps its key until the server has answered; only a request that
-  // never got an answer (offline) retries with the same key.
+  // A spend keeps its key until the server has answered, across a reload
+  // too; only a request that never got an answer (offline) retries with the
+  // same key, which games-api answers "already applied" if it went through.
   const spend =
     <R,>(which: "rally" | "chest", fn: (key: string) => Promise<R>) =>
     async () => {
-      const key = (spendKeys.current[which] ??= spendKey());
+      const account = loadSession()?.account ?? "";
+      const key = pendingSpendKey(account, which);
       try {
         const r = await fn(key);
-        spendKeys.current[which] = undefined;
+        settleSpend(account, which);
         return r;
       } catch (e) {
-        if ((e as { status?: number }).status !== 0) spendKeys.current[which] = undefined;
+        if ((e as { status?: number }).status !== 0) settleSpend(account, which);
         throw e;
       }
     };
@@ -471,6 +523,22 @@ export function RaidsteadGame() {
         signing={signing}
         onSign={onSign}
         onLogin={() => toggleUiProp("login")}
+      />
+    );
+  } else if (phase === "failed") {
+    gate = (
+      <InfoSheet
+        closable={false}
+        onClose={() => undefined}
+        title={t("title")}
+        lines={[t("errors.load-failed")]}
+        action={{
+          label: i18next.t("g.try-again"),
+          onClick: () => {
+            setPhase("loading");
+            setBoot((n) => n + 1);
+          }
+        }}
       />
     );
   } else if (phase === "ready" && data && cal && cal.season < 1) {

@@ -105,6 +105,11 @@ export const TIERS = [0, 50, 150, 400, 1000];
 export const tierOf = (karma: number) =>
   TIERS.reduce((best, min, i) => (karma >= min ? i : best), 0);
 
+/// Community titles are set by the community: in the report's Markdown body
+/// their Markdown syntax stays text (no link, image or heading markup). A bare
+/// URL or @name in one is still linked by the renderer, as anywhere in a post.
+export const escapeMarkdown = (text: string) => text.replace(/[\\`*_{}[\]()#+!|<>~]/g, "\\$&");
+
 /// A raid report the player can edit and post in their community.
 export function buildReport(state: State, t: T): { title: string; body: string } | null {
   const a = state.alliance;
@@ -113,7 +118,7 @@ export function buildReport(state: State, t: T): { title: string; body: string }
   const title = t("raidstead.report.post-title", { name: a.title, boss, week: a.week });
   const lines = [
     t(a.boss.alive ? "raidstead.report.intro-fighting" : "raidstead.report.intro-won", {
-      name: a.title,
+      name: escapeMarkdown(a.title),
       boss
     }),
     ""
@@ -123,7 +128,9 @@ export function buildReport(state: State, t: T): { title: string; body: string }
     a.raiders
       .slice(0, 5)
       .forEach((r, i) =>
-        lines.push(t("raidstead.report.line", { i: i + 1, name: r.account, dmg: r.damage }))
+        lines.push(
+          t("raidstead.report.line", { i: i + 1, name: escapeMarkdown(r.account), dmg: r.damage })
+        )
       );
     lines.push("");
   }
