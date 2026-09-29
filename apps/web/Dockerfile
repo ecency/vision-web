@@ -22,6 +22,7 @@ COPY packages/sdk/package.json packages/sdk/package.json
 COPY packages/wallets/package.json packages/wallets/package.json
 COPY packages/render-helper/package.json packages/render-helper/package.json
 COPY packages/ui/package.json packages/ui/package.json
+COPY packages/raidstead/package.json packages/raidstead/package.json
 # patchedDependencies resolves these at install time, before the source COPY below
 COPY patches patches
 

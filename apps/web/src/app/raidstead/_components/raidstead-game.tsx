@@ -111,6 +111,8 @@ export function RaidsteadGame() {
   const refreshSeq = useRef(0);
   const appliedSeq = useRef(0);
   const dataRef = useRef<State | null>(null);
+  // the game session the shown state belongs to
+  const dataToken = useRef<string | undefined>(undefined);
   // set when refresh met a 401 and has already decided what comes next
   const unauthorized = useRef(false);
   dataRef.current = data;
@@ -134,6 +136,7 @@ export function RaidsteadGame() {
       if (seq < appliedSeq.current) return dataRef.current;
       appliedSeq.current = seq;
       dataRef.current = s;
+      dataToken.current = token;
       setData(s);
       return s;
     } catch (e) {
@@ -279,11 +282,21 @@ export function RaidsteadGame() {
         raidsteadApi.signOut().catch(() => undefined);
         clearSession();
       }
-      if (!loadSession() && dataRef.current) {
+      // The game session was ended or replaced (another tab signed in as
+      // someone else): what this tab shows is not that session's, and its
+      // requests would already go out with the new token. Drop it and load
+      // again for the new session, or offer the sign-in when there is none.
+      const now = loadSession();
+      if (dataRef.current && now?.token !== dataToken.current) {
         dataRef.current = null;
         setData(null);
         setSheet(null);
-        setPhase("signin");
+        if (now) {
+          setPhase("loading");
+          setBoot((n) => n + 1);
+        } else {
+          setPhase("signin");
+        }
       }
     };
     addEventListener("storage", onStorage);

@@ -333,6 +333,39 @@ describe("Raidstead page", () => {
     }
   });
 
+  it("reloads for the new game session when another tab signs in as someone else", async () => {
+    asUser(null);
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    const calls = api.state.mock.calls.length;
+    let late!: (s: unknown) => void;
+    api.state.mockReturnValueOnce(new Promise((r) => (late = r)));
+    box.stored = { account: "bob", token: "rs1_bob", expiresAt: expiry() };
+    await act(async () => {
+      dispatchEvent(new StorageEvent("storage", { key: "ecency_raidstead_session_v2" }));
+    });
+    // ann's state is gone at once, before bob's arrives
+    expect(screen.queryByRole("button", { name: /raidstead.actions.rally/ })).toBeNull();
+    expect(api.state.mock.calls.length).toBe(calls + 1);
+    await act(async () => {
+      late(state());
+    });
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+  });
+
+  it("keeps playing when another tab rewrites the same game session", async () => {
+    asUser(null);
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    const calls = api.state.mock.calls.length;
+    box.stored = { ...box.stored!, expiresAt: new Date(Date.now() + 2 * 86_400_000).toISOString() };
+    await act(async () => {
+      dispatchEvent(new StorageEvent("storage", { key: "ecency_raidstead_session_v2" }));
+    });
+    expect(screen.getByRole("button", { name: /raidstead.actions.rally/ })).toBeTruthy();
+    expect(api.state.mock.calls.length).toBe(calls);
+  });
+
   it("keeps a guest's own session when no Ecency user was ever logged in", async () => {
     asUser(null);
     render(<RaidsteadGame />);
