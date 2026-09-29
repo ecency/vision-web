@@ -565,6 +565,34 @@
     }
   }
 
+  // a far town's facts: three equal tiles
+  .rs-facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+
+    div {
+      border: 2px solid var(--rs-ink);
+      border-radius: 12px;
+      padding: 8px 10px;
+      min-width: 0;
+    }
+
+    dt {
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--rs-muted);
+    }
+
+    dd {
+      margin: 2px 0 0;
+      font: 600 20px var(--rs-head);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
   .rs-hero-links {
     display: flex;
     flex-wrap: wrap;

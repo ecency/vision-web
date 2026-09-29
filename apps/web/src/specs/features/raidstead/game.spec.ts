@@ -6,6 +6,7 @@ import {
   buildReport,
   errorMessage,
   impactOf,
+  pickNeighbors,
   tierOf,
   worldOf
 } from "@/features/raidstead/game";
@@ -205,6 +206,35 @@ describe("raidstead game helpers", () => {
     expect(r.body).toContain("name=\\[Win\\]\\(https://x.test\\) \\!\\[i\\]\\(y\\) \\# \\*b\\*");
     // the post title is plain text: unchanged
     expect(r.title).toContain("name=[Win](https://x.test) ![i](y) # *b*");
+  });
+
+  it("picks the alliances shown in the sky", () => {
+    const r = (community: string, league: string) => ({
+      community,
+      title: community,
+      members: 10,
+      kills: 0,
+      damage: 0,
+      league
+    });
+    // best first, as the leaderboard answers
+    const rows = [
+      r("s1", "small"),
+      r("m1", "medium"),
+      r("s2", "small"),
+      r("s3", "small"),
+      r("me", "small"),
+      r("s5", "small"),
+      r("l1", "large"),
+      r("m2", "medium")
+    ];
+    const got = pickNeighbors(rows, "me", 6);
+    // own league nearest in rank first (me is 4th small), then the rest by rank
+    expect(got.map((x) => x.community)).toEqual(["s3", "s5", "s2", "s1", "m1", "l1"]);
+    expect(got.find((x) => x.community === "m1")!.rank).toBe(1);
+    expect(got.some((x) => x.community === "me")).toBe(false);
+    // not on the board yet: the leaders
+    expect(pickNeighbors(rows, "hive-new", 3).map((x) => x.community)).toEqual(["s1", "m1", "l1"]);
   });
 
   it("karma tiers", () => {

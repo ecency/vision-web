@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import Link from "next/link";
 import i18next from "i18next";
 import {
   POWERS,
@@ -12,7 +13,7 @@ import {
   type PowerId,
   type State
 } from "@ecency/raidstead";
-import { tierOf } from "@/features/raidstead/game";
+import { tierOf, type Neighbor } from "@/features/raidstead/game";
 
 const t = (key: string, values?: Record<string, unknown>) => i18next.t(`raidstead.${key}`, values);
 
@@ -352,6 +353,38 @@ export function HeroSheet({
             {t("actions.rally")} · {t("actions.rally-cost")}
           </button>
         )}
+      </div>
+    </Sheet>
+  );
+}
+
+/// Another alliance, from its town in the sky: who they are and a way to
+/// their community on Ecency.
+export function TownSheet({ town, onClose }: { town: Neighbor; onClose: () => void }) {
+  const name = town.title || town.community;
+  return (
+    <Sheet onClose={onClose} label={name}>
+      <small>{t("sky.eyebrow", { league: t(`profile.leagues.${town.league}`) })}</small>
+      <h2>{name}</h2>
+      <dl className="rs-facts">
+        <div>
+          <dt>{t("sky.members")}</dt>
+          <dd>{town.members}</dd>
+        </div>
+        <div>
+          <dt>{t("sky.kills")}</dt>
+          <dd>{town.kills}</dd>
+        </div>
+        <div>
+          <dt>{t("sky.rank")}</dt>
+          <dd>{t("sky.rank-value", { n: town.rank })}</dd>
+        </div>
+      </dl>
+      <p className="rs-muted">{t("sky.desc")}</p>
+      <div className="rs-btns">
+        <Link className="rs-btn rs-primary" href={`/created/${town.community}`}>
+          {t("sky.visit")}
+        </Link>
       </div>
     </Sheet>
   );
