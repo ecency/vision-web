@@ -6,7 +6,8 @@ import { vi } from "vitest";
 // the real instance to prove the merge-back.
 vi.unmock("i18next");
 import i18n from "i18next";
-import loader, { splitFaq, isFaqQuery } from "@/features/i18n/faq-split";
+import loader, { splitFaq, isFaqQuery, splitRaidstead, isRaidsteadQuery, RAIDSTEAD_CORE_KEYS } from "@/features/i18n/faq-split";
+import { ensureRaidsteadLoaded, isRaidsteadLoaded } from "@/features/i18n/raidstead";
 import { initI18next, loadLocale } from "@/features/i18n";
 import { ensureFaqLoaded, getEnglishFaqResources, isFaqLoaded, primeEnglishFaq } from "@/features/i18n/faq";
 
@@ -44,9 +45,11 @@ describe("faq-split loader", () => {
     expect({ ...core.static.faq, ...faq.static.faq }).toEqual(enUs.static.faq);
   });
 
-  it("is worth doing: the articles are a large share of the file", () => {
+  it("is worth doing: the articles are a large share of what would ship eagerly", () => {
     const size = (o: unknown) => JSON.stringify(o).length;
-    expect(size(faq)).toBeGreaterThan(size(enUs) * 0.2);
+    // the Raidstead game's strings leave the eager bundle too (below)
+    const eager = size(enUs) - size(splitRaidstead(enUs).game);
+    expect(size(faq)).toBeGreaterThan(eager * 0.2);
   });
 
   it("serves the core for the plain import and the articles for ?faq", () => {
@@ -126,5 +129,48 @@ describe("FAQ articles on demand", () => {
     await loadLocale("es-ES");
     expect(i18n.getResourceBundle("es-ES", "translation").g).toBeDefined();
     expect(i18n.getResourceBundle("es-ES", "translation").static.faq["what-is-ecency-body"]).toBeTruthy();
+  });
+});
+
+describe("raidstead split", () => {
+  const { core, game } = splitRaidstead(enUs);
+
+  it("keeps only the keys other pages use in the core", () => {
+    expect(Object.keys(core.raidstead).sort()).toEqual([...RAIDSTEAD_CORE_KEYS].sort());
+    expect({ ...core.raidstead, ...game.raidstead }).toEqual(enUs.raidstead);
+    const { raidstead: _r, ...restCore } = core;
+    const { raidstead: _o, ...restOrig } = enUs;
+    expect(restCore).toEqual(restOrig);
+  });
+
+  it("serves the game strings for ?raidstead and neither split leaks into the other", () => {
+    const source = JSON.stringify(enUs);
+    const evalModule = (code: string) => {
+      const mod = { exports: {} as Record<string, any> };
+      // eslint-disable-next-line no-new-func
+      new Function("module", code)(mod);
+      return mod.exports;
+    };
+    const plain = evalModule(loader.call({ resourceQuery: "" }, source));
+    const query = evalModule(loader.call({ resourceQuery: "?raidstead" }, source));
+    expect(plain.raidstead.intro).toBeUndefined();
+    expect(plain.raidstead["page-title"]).toBe(enUs.raidstead["page-title"]);
+    expect(plain.static.faq["what-is-ecency-header"]).toBeUndefined();
+    expect(query.raidstead.intro).toBe(enUs.raidstead.intro);
+    expect(query.g).toBeUndefined();
+    expect(isRaidsteadQuery("?raidstead")).toBe(true);
+    expect(isRaidsteadQuery("?faq")).toBe(false);
+  });
+
+  it("merges the game strings back when the game loads", async () => {
+    await initI18next();
+    i18n.removeResourceBundle("en-US", "translation");
+    i18n.addResourceBundle("en-US", "translation", splitRaidstead(splitFaq(enUs).core).core);
+    expect(isRaidsteadLoaded("en-US")).toBe(false);
+    await ensureRaidsteadLoaded("en-US");
+    expect(isRaidsteadLoaded("en-US")).toBe(true);
+    expect(i18n.t("raidstead.intro")).toBe(enUs.raidstead.intro);
+    expect(i18n.t("raidstead.page-title")).toBe(enUs.raidstead["page-title"]);
+    expect(i18n.t("g.copy")).toBe(enUs.g.copy);
   });
 });

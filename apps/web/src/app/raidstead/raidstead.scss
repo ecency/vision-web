@@ -1,0 +1,723 @@
+// Raidstead: one printed world in every theme (cream stock, four inks), so
+// this page does not follow the site's dark mode. Everything is scoped under
+// .raidstead; the sheet dialog renders in the top layer and carries its own
+// class.
+
+.raidstead,
+.raidstead-sheet {
+  --rs-paper: #f5f0e6;
+  --rs-card: #fbf7ee;
+  --rs-ink: #2b2336;
+  --rs-muted: #625a70;
+  --rs-violet: #7a4bb4;
+  --rs-lime: #a6d23a;
+  --rs-coral: #ef7b5c;
+  --rs-scribe: #4b3f8f;
+  --rs-scout: #4e7a33;
+  --rs-smith: #d8663d;
+  --rs-herald: #b8456e;
+  --rs-head: var(--rs-display-font, "Trebuchet MS"), system-ui, sans-serif;
+  color-scheme: light;
+  color: var(--rs-ink);
+  font:
+    14px/1.35 system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  -webkit-tap-highlight-color: transparent;
+
+  [hidden] {
+    display: none !important;
+  }
+
+  small {
+    color: var(--rs-muted);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+
+  b {
+    font-weight: 700;
+  }
+
+  button {
+    font: inherit;
+    color: var(--rs-ink);
+    cursor: pointer;
+    border: 2px solid var(--rs-ink);
+    border-radius: 12px;
+    background: var(--rs-card);
+
+    &:focus-visible {
+      outline: 3px solid var(--rs-violet);
+      outline-offset: 2px;
+    }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.55;
+    }
+  }
+
+  .rs-card {
+    background: var(--rs-card);
+    border: 2px solid var(--rs-ink);
+    border-radius: 12px;
+    box-shadow: 3px 3px 0 rgba(122, 75, 180, 0.35);
+  }
+
+  .rs-banner {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 2px solid var(--rs-ink);
+    background:
+      radial-gradient(circle, var(--rs-coral) 42%, transparent 46%) 0 0 / 5px 5px,
+      var(--rs-card);
+    flex: none;
+  }
+
+  .rs-muted {
+    color: var(--rs-muted);
+  }
+}
+
+.raidstead {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  background: var(--rs-paper);
+
+  .rs-world {
+    position: absolute;
+    inset: 0;
+  }
+
+  &.is-town .rs-world {
+    cursor: grab;
+  }
+
+  // HUD: fixed zones around the world. The empty slot is where the world
+  // lays out its characters.
+  .rs-hud {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: grid;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "top" "boss" "slot" "actions";
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) calc(env(safe-area-inset-right, 0px) + 12px)
+      calc(env(safe-area-inset-bottom, 0px) + 10px) calc(env(safe-area-inset-left, 0px) + 12px);
+
+    > * {
+      pointer-events: auto;
+      min-width: 0;
+    }
+
+    > .rs-slot {
+      pointer-events: none;
+      grid-area: slot;
+    }
+  }
+
+  .rs-top {
+    grid-area: top;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .rs-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    text-align: left;
+
+    > span {
+      display: grid;
+      line-height: 1.15;
+    }
+  }
+
+  .rs-top-right {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .rs-pips {
+    display: grid;
+    grid-template-columns: repeat(8, 7px);
+    gap: 3px;
+
+    i {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: rgba(43, 35, 54, 0.18);
+
+      &.on {
+        background: var(--rs-lime);
+        box-shadow: inset 0 0 0 1.5px var(--rs-ink);
+      }
+    }
+  }
+
+  .rs-plate {
+    grid-area: boss;
+    justify-self: center;
+    width: min(440px, 100%);
+    padding: 8px 12px;
+    display: grid;
+    gap: 5px;
+  }
+
+  .rs-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .rs-plate-name {
+    font: 600 19px/1.1 var(--rs-head);
+    border: 0;
+    background: none;
+    padding: 0;
+    text-align: left;
+  }
+
+  button.rs-plate-name {
+    text-decoration: underline dotted 2px;
+    text-underline-offset: 3px;
+  }
+
+  .rs-hpbar {
+    height: 14px;
+    border-radius: 999px;
+    border: 2px solid var(--rs-ink);
+    overflow: hidden;
+    background:
+      radial-gradient(circle, rgba(43, 35, 54, 0.22) 30%, transparent 34%) 0 0 / 5px 5px,
+      var(--rs-card);
+
+    span {
+      display: block;
+      height: 100%;
+      transition: width 0.35s ease;
+      background:
+        radial-gradient(circle, var(--rs-ink) 22%, transparent 26%) 0 0 / 4px 4px,
+        var(--rs-violet);
+    }
+  }
+
+  .rs-weak {
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1.5px dashed var(--rs-ink);
+
+    &.known {
+      border-style: solid;
+      background: var(--rs-smith);
+      color: #fff;
+    }
+  }
+
+  .rs-actions {
+    grid-area: actions;
+    justify-self: center;
+    width: min(560px, 100%);
+    display: grid;
+    gap: 8px;
+    position: relative;
+  }
+
+  .rs-toast {
+    margin: 0 auto;
+    max-width: 100%;
+    justify-self: center;
+    padding: 4px 12px;
+    border-radius: 999px;
+    text-align: center;
+    font-weight: 700;
+    text-wrap: balance;
+    background: var(--rs-card);
+    border: 2px solid var(--rs-ink);
+
+    &:empty {
+      visibility: hidden;
+    }
+  }
+
+  .rs-attacks {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .rs-secondary {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .rs-atk {
+    min-height: 58px;
+    display: grid;
+    place-items: center;
+    padding: 6px 4px;
+    color: #fff;
+    background: var(--c);
+    box-shadow: 3px 3px 0 var(--rs-ink);
+    transition: transform 0.08s;
+
+    &:active:not(:disabled) {
+      transform: translate(2px, 2px);
+      box-shadow: 1px 1px 0 var(--rs-ink);
+    }
+
+    b {
+      font: 600 18px/1 var(--rs-head);
+    }
+
+    small {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 10px;
+    }
+
+    &[aria-pressed="true"] {
+      outline: 3px solid var(--rs-ink);
+      outline-offset: 2px;
+    }
+
+    &:disabled {
+      opacity: 1;
+      background: var(--rs-card);
+      color: var(--rs-muted);
+      border-style: dashed;
+      box-shadow: none;
+      outline: 0;
+
+      small {
+        color: var(--rs-muted);
+      }
+    }
+  }
+
+  .rs-sec {
+    padding: 7px 12px;
+    display: inline-grid;
+    line-height: 1.1;
+    text-align: center;
+
+    small {
+      font-size: 10px;
+    }
+  }
+
+  .rs-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+
+    button {
+      min-height: 40px;
+      font: 600 16px/1 var(--rs-head);
+
+      &[aria-pressed="true"] {
+        background: var(--rs-ink);
+        color: #fff;
+      }
+    }
+  }
+
+  .rs-board {
+    grid-area: slot;
+    display: none;
+    padding: 10px 12px;
+    align-self: end;
+
+    h2 {
+      margin: 0 0 6px;
+      font: 600 16px/1.2 var(--rs-head);
+    }
+  }
+
+  .rs-exit {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 10px;
+    font-size: 12px;
+    z-index: 1;
+  }
+
+  // Wide screens: the board docks on the right and the world gets the rest.
+  @media (min-width: 900px) and (min-aspect-ratio: 1/1) {
+    .rs-hud {
+      grid-template-columns: minmax(0, 1fr) 260px;
+      grid-template-areas: "top top" "boss board" "slot board" "actions board";
+    }
+
+    .rs-board {
+      display: block;
+      grid-area: board;
+      align-self: start;
+    }
+  }
+
+  // Short landscape (phones on their side): one top row, one bottom row,
+  // the world gets the middle.
+  @media (max-height: 520px) and (orientation: landscape) {
+    .rs-hud {
+      gap: 6px;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      grid-template-areas: "ally boss meta" "slot slot slot" "actions actions actions";
+    }
+
+    .rs-top {
+      display: contents;
+    }
+
+    .rs-ally {
+      grid-area: ally;
+      align-self: start;
+    }
+
+    .rs-top-right {
+      grid-area: meta;
+      flex-wrap: nowrap;
+      align-self: start;
+    }
+
+    .rs-plate {
+      width: min(380px, 100%);
+      padding: 5px 10px;
+      gap: 3px;
+    }
+
+    .rs-plate-name {
+      font-size: 16px;
+    }
+
+    .rs-hpbar {
+      height: 11px;
+    }
+
+    .rs-actions {
+      width: 100%;
+      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto;
+      align-items: end;
+    }
+
+    .rs-toast {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      width: max-content;
+      max-width: 90%;
+      bottom: calc(100% + 6px);
+    }
+
+    .rs-atk {
+      min-height: 44px;
+
+      small {
+        display: none;
+      }
+    }
+
+    .rs-secondary {
+      flex-wrap: nowrap;
+      justify-content: flex-end;
+    }
+
+    .rs-sec {
+      padding: 6px 10px;
+
+      small {
+        display: none;
+      }
+    }
+
+    .rs-tabs {
+      grid-template-columns: auto auto;
+
+      button {
+        padding: 0 12px;
+      }
+    }
+  }
+}
+
+// Sheets: every menu, reward and form is one dialog styled like a printed card.
+.raidstead-sheet {
+  border: 2px solid var(--rs-ink);
+  border-radius: 14px;
+  background: var(--rs-card);
+  padding: 18px;
+  width: min(460px, calc(100vw - 24px));
+  max-height: min(86vh, 760px);
+  overflow: auto;
+  box-shadow: 4px 4px 0 rgba(122, 75, 180, 0.4);
+
+  &::backdrop {
+    background: rgba(245, 240, 230, 0.65);
+  }
+
+  .rs-sheet {
+    display: grid;
+    gap: 12px;
+    position: relative;
+  }
+
+  h1 {
+    margin: 0;
+    font: 600 44px/1 var(--rs-head);
+  }
+
+  h2 {
+    margin: 0;
+    padding-right: 36px;
+    font: 600 24px/1.1 var(--rs-head);
+    text-wrap: balance;
+  }
+
+  h3 {
+    margin: 4px 0 0;
+    font: 600 16px/1.2 var(--rs-head);
+  }
+
+  p,
+  ul {
+    margin: 0;
+  }
+
+  ul {
+    padding-left: 20px;
+    display: grid;
+    gap: 6px;
+  }
+
+  .rs-x {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .rs-btns {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .rs-btn {
+    padding: 9px 14px;
+    font-weight: 700;
+  }
+
+  .rs-primary {
+    background: var(--rs-violet);
+    color: #fff;
+    box-shadow: 3px 3px 0 var(--rs-ink);
+  }
+
+  .rs-list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .rs-opt {
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+
+    small {
+      text-transform: none;
+      letter-spacing: 0;
+      font-weight: 400;
+      font-size: 13px;
+    }
+  }
+
+  .rs-pipline {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+
+    i {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid var(--rs-ink);
+
+      &.on {
+        background:
+          radial-gradient(circle, var(--rs-ink) 22%, transparent 26%) 0 0 / 4px 4px,
+          var(--rs-lime);
+      }
+    }
+  }
+
+  .rs-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    border: 2px solid var(--rs-ink);
+    border-radius: 10px;
+    padding: 8px 10px;
+
+    &.on {
+      background: #efe6fa;
+    }
+
+    &.done {
+      background: #f3f8e4;
+    }
+  }
+
+  .rs-web-note {
+    border: 2px dashed var(--rs-herald);
+    border-radius: 10px;
+    padding: 10px;
+    display: grid;
+    gap: 8px;
+  }
+
+  .rs-bar {
+    height: 12px;
+    border: 2px solid var(--rs-ink);
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--rs-card);
+
+    span {
+      display: block;
+      height: 100%;
+      background:
+        radial-gradient(circle, var(--rs-ink) 22%, transparent 26%) 0 0 / 4px 4px,
+        var(--rs-lime);
+    }
+  }
+
+  .rs-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 8px;
+  }
+
+  .rs-stat {
+    border: 2px solid var(--rs-ink);
+    border-radius: 10px;
+    padding: 8px;
+
+    b {
+      display: block;
+      font: 600 22px/1.1 var(--rs-head);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  .rs-badges {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+    gap: 8px;
+  }
+
+  .rs-badge {
+    border: 2px dashed rgba(43, 35, 54, 0.35);
+    border-radius: 10px;
+    padding: 8px;
+    display: grid;
+    gap: 2px;
+    font-size: 13px;
+    color: var(--rs-muted);
+
+    &.on {
+      border: 2px solid var(--rs-ink);
+      background: #f3f8e4;
+      color: var(--rs-ink);
+    }
+  }
+
+  label.rs-field {
+    display: grid;
+    gap: 4px;
+    font-weight: 700;
+  }
+
+  input.rs-text {
+    font: inherit;
+    width: 100%;
+    box-sizing: border-box;
+    border: 2px solid var(--rs-ink);
+    border-radius: 10px;
+    padding: 8px;
+    background: #fff;
+    color: var(--rs-ink);
+  }
+}
+
+// The raiders list, in the docked board and in the menu sheet.
+.raidstead .rs-rank,
+.raidstead-sheet .rs-rank {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+
+  li {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    gap: 6px;
+    font-variant-numeric: tabular-nums;
+
+    span:nth-child(2) {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    &.me {
+      font-weight: 700;
+      color: var(--rs-violet);
+    }
+  }
+}
+
+.raidstead .rs-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--rs-muted);
+  font-weight: 700;
+}

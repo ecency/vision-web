@@ -48,6 +48,13 @@ export namespace PagesMetadataGenerator {
     };
   }
 
+  function buildForRaidstead(): Metadata {
+    return {
+      title: i18next.t("raidstead.page-title"),
+      description: i18next.t("raidstead.page-description")
+    };
+  }
+
   function buildForDiscover(): Metadata {
     return {
       title: i18next.t("discover.title"),
@@ -172,6 +179,7 @@ export namespace PagesMetadataGenerator {
     if (name === "contributors") return buildForContributors();
     if (name === "creator-economy") return buildForCreatorEconomy();
     if (name === "decks") return buildForDecks();
+    if (name === "raidstead") return buildForRaidstead();
     if (name === "discover") return buildForDiscover();
     if (name === "curation") return buildForCuration();
     if (name === "curation-guide") return buildForCurationGuide();

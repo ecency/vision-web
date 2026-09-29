@@ -5021,5 +5021,375 @@
         "step-12": "After two weeks compare your reviewed-per-hour and flag precision with the team medians with your mentor."
       }
     }
+  },
+  "raidstead": {
+    "page-title": "Raidstead: communities against the swarm",
+    "page-description": "Team up with your Hive community, chase off the weekly pest and build your town together.",
+    "title": "Raidstead",
+    "tagline": "Communities against the swarm",
+    "intro": "Your Hive community is your alliance. Every week a pest drifts into town: scout its weakness, hit it together, and build your town between raids.",
+    "loading": "Printing the world…",
+    "signin": {
+      "play-as": "Play as @{{name}}",
+      "extension-note": "Your wallet asks you to sign once. After that you are signed in on this device.",
+      "signing": "Signing in…",
+      "need-extension": "Raidstead signs you in with Hive Keychain, Hive Keeper or Peak Vault. Install one, or log in to Ecency with your posting key.",
+      "login": "Log in to Ecency",
+      "username": "Hive username",
+      "with-wallet": "Sign in with your wallet",
+      "failed": "Signing in did not work. Try again.",
+      "sign-out": "Sign out of Raidstead"
+    },
+    "season": {
+      "label": "Season {{n}}",
+      "day": "Day {{day}} of {{total}}",
+      "day-short": "Day {{day}}",
+      "not-started": "Season 1 starts on {{date}}.",
+      "not-started-hint": "Come back then to pick your alliance. Everyone starts level.",
+      "resting": "Season {{n}} is over. The next one starts on {{date}}.",
+      "resting-short": "Resting"
+    },
+    "alliance": {
+      "label": "Alliance",
+      "pick": "Pick one",
+      "pick-title": "Pick your alliance",
+      "pick-desc": "Your alliance is one of the Hive communities you have joined. It stays the same until the season ends.",
+      "none": "You have not joined any communities yet. Join one on Ecency, then come back.",
+      "join": "Join",
+      "locked": "Your alliance is set until the season ends on day {{day}}.",
+      "browse": "Browse communities"
+    },
+    "energy": {
+      "label": "Energy",
+      "value": "{{n}} / {{max}}"
+    },
+    "bosses": {
+      "beetle": {
+        "name": "Spam Beetle",
+        "trick": "Copies itself overnight if nobody attacks all day (+45 health).",
+        "tip": "Hit it at least once every day."
+      },
+      "slug": {
+        "name": "Doomscroll Slug",
+        "trick": "Heals overnight if nobody keeps it busy (+60 health).",
+        "tip": "Show up a little every day."
+      },
+      "twins": {
+        "name": "Echo Twins",
+        "trick": "Two bodies. A hit only counts when the other twin is hit within 6 seconds.",
+        "tip": "Alternate: one twin, then the other. Anyone in your alliance can finish the pair."
+      },
+      "queen": {
+        "name": "Copycat Queen",
+        "trick": "Changes her weakness 20 seconds after every scout.",
+        "tip": "Scout, then hit hard with the right type before she copies you."
+      },
+      "wasp": {
+        "name": "Clickbait Wasp"
+      }
+    },
+    "boss": {
+      "about": "About this boss",
+      "phase": "Week {{week}} · Phase {{phase}} of 4",
+      "gnats": "{{n}} gnats",
+      "wasp": "wasp",
+      "hp": "{{hp}} / {{max}} health",
+      "weak-unknown": "Weakness: ?",
+      "weak-known": "Weak to {{type}}",
+      "reshuffle": "{{s}}s",
+      "chased": "Week {{week}} · chased off",
+      "next": "The next pest arrives next week",
+      "week-card": "Week {{week}} of 4",
+      "finale": "season finale",
+      "trick-label": "Its trick:",
+      "tip-label": "How to beat it:",
+      "shield-note": "At half health a shield of gnats forms; clear them first.",
+      "wasp-note": "At 75% a Clickbait Wasp joins and dodges every attack until you scout the weakness.",
+      "go": "Let's go"
+    },
+    "types": {
+      "ink": "Ink",
+      "signal": "Signal",
+      "forge": "Forge"
+    },
+    "heroes": {
+      "scribe": "Scribe",
+      "scout": "Scout",
+      "smith": "Smith",
+      "herald": "Herald"
+    },
+    "actions": {
+      "cost": "{{hero}} · 1 energy",
+      "no-energy": "no energy",
+      "resting": "resting",
+      "scout": "Scout",
+      "scout-free": "free today",
+      "scout-left": "{{n}} left today",
+      "scout-used": "used today",
+      "scout-any": "any time",
+      "scout-found": "found",
+      "rally": "Rally +5",
+      "rally-cost": "50 Points",
+      "rally-used": "used today",
+      "quests": "Quests",
+      "quests-left": "{{n}} to do",
+      "quests-done": "all done",
+      "menu": "Menu",
+      "raid": "Raid",
+      "town": "Town",
+      "views": "Views"
+    },
+    "board": {
+      "title": "This week's raiders",
+      "you": "You",
+      "empty": "Nobody has attacked yet this week."
+    },
+    "toast": {
+      "day": "Day {{day}}. Tap the boss or pick an attack.",
+      "resting": "The pest is gone. Build up your town until the next one arrives.",
+      "no-energy": "Out of energy. Rally, finish a quest, or come back tomorrow.",
+      "no-energy-rallied": "Out of energy. Finish a quest or come back tomorrow.",
+      "hit": "{{type}} hit · {{dmg}} damage",
+      "hit-weak": "{{type}} hit · {{dmg}} damage · weakness x2",
+      "paired": "Both twins hit! {{dmg}} damage, shared with @{{by}}.",
+      "echo": "Twin hit. Now hit the other twin within 6 seconds.",
+      "gnat": "Gnat cleared. {{n}} to go.",
+      "gnat-last": "Gnat cleared. The shield is down!",
+      "wasp-dodged": "The Clickbait Wasp dodged! Scout the weakness to see through it.",
+      "wasp-hit": "Wasp hit. {{n}} more.",
+      "wasp-gone": "Clickbait Wasp chased off!",
+      "shift": "It shifts! The weakness changed. Scout it again.",
+      "gnats-spawn": "Gnat shield! Clear the {{n}} gnats first.",
+      "wasp-arrives": "A Clickbait Wasp swoops in! It dodges everything until the weakness is scouted.",
+      "killed": "Chased off! Everyone who raided this week shares the win.",
+      "scouted": "Weakness found: {{type}}.",
+      "scouted-queen": "Weakness found: {{type}}. The Queen copies you in 20 seconds!",
+      "tomorrow": "Tomorrow: {{type}}.",
+      "queen-shuffled": "The Copycat Queen copied your scout: her weakness changed.",
+      "rally": "Rally! +5 energy. 50 Points burned.",
+      "built": "{{name}}: {{stage}}.",
+      "finished": "{{name}} finished!",
+      "talked": "You reached out. One more member needs to talk it out.",
+      "cleared": "The Drama Spider left. Peace in town!",
+      "quests": "+{{n}} energy from today's quests.",
+      "quests-none": "No new quests finished yet today.",
+      "donated": "Donated 50 Points to the war chest. They are burned.",
+      "chest-full": "War chest full! +1 damage for the whole alliance today."
+    },
+    "errors": {
+      "generic": "Something went wrong. Try again.",
+      "offline": "Could not reach the game server.",
+      "insufficient_points": "Not enough Points.",
+      "daily_cap": "You reached today's Points limit for the game.",
+      "points_unavailable": "Points could not be reached. Try again soon.",
+      "too_fast": "Slow down a little.",
+      "rate": "Too many actions at once. Wait a moment.",
+      "load-failed": "The game could not load. Check your connection and try again.",
+      "already_applied": "Your last try went through, so it was not charged again. Tap again for a new one.",
+      "key_used": "Your last try was refunded. Tap again to try once more."
+    },
+    "town": {
+      "plate": "Town of {{name}}",
+      "hall": "Hall stage {{n}} of 3",
+      "materials": "{{n}} materials",
+      "hint": "Tap a building",
+      "hint-drag": "Drag to look around",
+      "spider": "Drama Spider in town!",
+      "stages": {
+        "0": "Blueprint",
+        "1": "Foundation",
+        "2": "Half built",
+        "3": "Finished"
+      },
+      "to-go": "{{n}} stages to go",
+      "done": "finished",
+      "works-when-finished": "Works once finished.",
+      "build": "Build",
+      "cost": "{{stage}} · {{cost}} materials",
+      "have": "(you have {{n}})",
+      "hall-first": "Build the Hall to stage {{n}} first.",
+      "short": "Not enough materials yet. Your alliance adds 25 a day, and each win adds 60.",
+      "raid-first": "Raid at least once this season to help build.",
+      "web-title": "The Drama Spider has webbed the {{name}}.",
+      "web-desc": "Its effect is off until two members talk it out.",
+      "talk": "Talk it out",
+      "talk-wait": "Waiting for a second member…",
+      "buildings": {
+        "tower": {
+          "name": "Watchtower",
+          "does": "One extra free scout a day."
+        },
+        "workshop": {
+          "name": "Workshop",
+          "does": "Crafts season powers. Stage 1 opens one power slot, a finished Workshop opens two."
+        },
+        "trophy": {
+          "name": "Trophy Hall",
+          "does": "Shows your badges and every season trophy."
+        },
+        "hall": {
+          "name": "Hall",
+          "does": "Your town's level. No building can be built higher than the Hall."
+        },
+        "library": {
+          "name": "Library",
+          "does": "Keeps the season chronicle. Draft a raid report from the menu."
+        },
+        "beacon": {
+          "name": "Beacon",
+          "does": "+1 energy for everyone, every day."
+        },
+        "walls": {
+          "name": "Walls",
+          "does": "Smaller gnat shields: 3 gnats instead of 5."
+        },
+        "homes": {
+          "name": "Member homes",
+          "does": "Every member gets a small home here. They are purely for looks."
+        }
+      },
+      "powers-title": "Season powers · {{n}} of {{slots}} slots",
+      "powers-desc": "Crafting costs 2 shards. Powers last until the season ends.",
+      "powers-closed": "Build the Workshop to open a slot.",
+      "shards": "You have {{n}} shards.",
+      "craft": "Craft",
+      "equip": "Equip",
+      "unequip": "Unequip",
+      "powers": {
+        "double": {
+          "name": "Double Tap",
+          "desc": "Your first attack each day does double damage."
+        },
+        "keen": {
+          "name": "Keen Eye",
+          "desc": "Scouting also shows tomorrow's weakness."
+        },
+        "breaker": {
+          "name": "Shieldbreaker",
+          "desc": "Each hit on a gnat clears two."
+        },
+        "wind": {
+          "name": "Second Wind",
+          "desc": "+2 energy at the start of every week."
+        }
+      }
+    },
+    "quests": {
+      "title": "Energy and war chest",
+      "ecency": "Today's Ecency quests",
+      "ecency-desc": "Each finished quest gives 1 energy, once a day.",
+      "list": {
+        "checkin": "Check in on Ecency",
+        "post": "Publish a post",
+        "comments": "Leave 3 comments"
+      },
+      "done": "done · +1 energy",
+      "todo": "+1 energy",
+      "claim": "Check my quests",
+      "chest": "War chest",
+      "chest-desc": "When it reaches 1,000 Points, everyone in {{name}} gets +1 damage for a day.",
+      "chest-active": "Active today: +1 damage for everyone in {{name}}.",
+      "chest-bar": "{{n}} / 1,000 Points pooled · every Point spent is burned",
+      "donate": "Donate 50 Points"
+    },
+    "menu": {
+      "profile": "Profile and badges",
+      "profile-desc": "Karma, badges, shards, trophies",
+      "board": "This week's raiders",
+      "board-desc": "Who hit the pest hardest",
+      "report": "Draft a raid report",
+      "report-desc": "Something to post about",
+      "leaderboard": "Alliance leaderboard",
+      "leaderboard-desc": "How alliances rank this season",
+      "help": "How to play",
+      "help-desc": "The rules in one minute",
+      "days": "Days change at 00:00 UTC."
+    },
+    "profile": {
+      "karma": "Karma",
+      "tier": "Tier",
+      "kills": "Pests chased off",
+      "shards": "Shards",
+      "badges": "Badges",
+      "trophies": "Trophies",
+      "no-trophies": "Finish a season to place your first trophy.",
+      "trophy": "Season {{season}}: {{name}}, #{{rank}} in the {{league}} league",
+      "keeps": "Karma, badges, shards and trophies stay with you across seasons.",
+      "tiers": {
+        "0": "Seedling",
+        "1": "Sprout",
+        "2": "Sapling",
+        "3": "Oak",
+        "4": "Elder"
+      },
+      "leagues": {
+        "small": "Small",
+        "medium": "Medium",
+        "large": "Large"
+      },
+      "badge-list": {
+        "first-kill": {
+          "name": "First kill",
+          "desc": "Help chase off a pest"
+        },
+        "pest-control": {
+          "name": "Pest control",
+          "desc": "Chase off 3 pests"
+        },
+        "scouts-eye": {
+          "name": "Scout's eye",
+          "desc": "Find the weakness 3 times"
+        },
+        "rally-caller": {
+          "name": "Rally caller",
+          "desc": "Call your first rally"
+        },
+        "loyal": {
+          "name": "Loyal raider",
+          "desc": "Attack on 5 different days"
+        },
+        "season": {
+          "name": "Season finisher",
+          "desc": "Play to the end of a season"
+        },
+        "builder": {
+          "name": "Town builder",
+          "desc": "Finish a building"
+        },
+        "peacemaker": {
+          "name": "Peacemaker",
+          "desc": "Talk the Drama Spider down"
+        }
+      }
+    },
+    "leaderboard": {
+      "title": "Season {{n}} alliances",
+      "kills": "{{n}} chased off",
+      "empty": "No alliances yet this season."
+    },
+    "help": {
+      "title": "How to play",
+      "line-1": "Your Hive community is your alliance for the season.",
+      "line-2": "Each week a pest arrives. Tap it or pick Ink, Signal or Forge: each attack costs 1 energy.",
+      "line-3": "Scout to find its weakness: the right type does double damage.",
+      "line-4": "At half health gnats shield it; clear them first. Some weeks a wasp joins.",
+      "line-5": "You get 5 energy a day, plus 1 for each Ecency quest you finish. A rally gives 5 more for 50 Points.",
+      "line-6": "Wins give your town materials. Build it up together between raids.",
+      "line-7": "Karma, badges and trophies stay with you. Everything else starts fresh each season."
+    },
+    "report": {
+      "title": "Raid report",
+      "desc": "A draft to post in your community. You can edit everything before publishing.",
+      "open": "Open in the editor",
+      "post-title": "{{name}} vs the {{boss}}: week {{week}} raid report",
+      "intro-won": "This week **{{name}}** chased off the {{boss}} in Raidstead.",
+      "intro-fighting": "This week **{{name}}** is still fighting the {{boss}} in Raidstead.",
+      "raiders": "Top raiders this week:",
+      "line": "{{i}}. @{{name}}: {{dmg}} damage",
+      "town": "Our town: Hall stage {{hall}}, {{mats}} materials in store.",
+      "outro": "Raidstead is played with your community on Ecency: [ecency.com/raidstead](https://ecency.com/raidstead)"
+    },
+    "perk-card-title": "Raidstead",
+    "perk-card-description": "Raid the weekly pest with your community and build your town."
   }
 }

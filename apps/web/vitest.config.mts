@@ -18,16 +18,18 @@ const stubStyles = {
   }
 };
 
-// `./locales/en-US.json?faq` is served by a webpack loader in the app build
-// (features/i18n/faq-split.js: only the FAQ articles). Vite has no such loader
+// `./locales/en-US.json?faq` and `?raidstead` are served by a webpack loader in
+// the app build (features/i18n/faq-split.js: only the FAQ articles, or only
+// the Raidstead game's strings). Vite has no such loader
 // and chokes on the query, so resolve it to the plain file; faq.ts reduces the
 // whole locale to the same shape.
 const faqQuery: Plugin = {
   name: 'faq-locale-query',
   enforce: 'pre',
   resolveId(id, importer) {
-    if (!id.endsWith('en-US.json?faq')) return null;
-    return this.resolve(id.replace('?faq', ''), importer, { skipSelf: true });
+    const m = /en-US\.json\?(faq|raidstead)$/.exec(id);
+    if (!m) return null;
+    return this.resolve(id.slice(0, -m[1].length - 1), importer, { skipSelf: true });
   }
 };
 

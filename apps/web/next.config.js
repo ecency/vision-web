@@ -222,7 +222,7 @@ const config = {
     : undefined,
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
-  transpilePackages: ["@ecency/sdk", "@ecency/wallets", "@ecency/render-helper"],
+  transpilePackages: ["@ecency/sdk", "@ecency/wallets", "@ecency/render-helper", "@ecency/raidstead"],
   experimental: {
     externalDir: true,
     optimizePackageImports: [
@@ -452,6 +452,8 @@ const config = {
                 "https://ecency.com https://i.ecency.com https://img.ecency.com https://images.ecency.com",
                 // Managed blog-hosting API (/hosting signup: methods/tenant/status):
                 "https://api.blogs.ecency.com",
+                // Games API (Honeyback share cards, the Raidstead game at /raidstead):
+                "https://games-api.ecency.com",
                 "https://api.hive.blog https://api.deathwing.me https://api.openhive.network https://techcoderx.com https://rpc.mahdiyari.info https://api.c0ff33a.uk https://api.syncad.com https://hive.atexoras.com:2096",
                 "https://hivesigner.com https://hivesearcher.com https://api.hivesearcher.com",
                 "https://pl.ecency.com https://chat.ecency.com",

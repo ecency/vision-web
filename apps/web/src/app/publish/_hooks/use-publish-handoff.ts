@@ -5,8 +5,8 @@ import useMount from "react-use/lib/useMount";
 
 /**
  * One-shot channel for handing content to the publish composer from another
- * surface, currently a wave or a deck thread that outgrew its character limit
- * and has to become a post instead.
+ * surface: a wave or a deck thread that outgrew its character limit and has
+ * to become a post instead, or a Raidstead raid report (which brings a title).
  *
  * It deliberately does not reuse the submit page's local draft key. That key
  * holds a full PostBase which the submit page rewrites on every keystroke, so
@@ -16,6 +16,7 @@ import useMount from "react-use/lib/useMount";
  */
 export interface PublishHandoff {
   body: string;
+  title?: string;
 }
 
 export const PUBLISH_HANDOFF_KEY = PREFIX + "_pub_handoff";
@@ -27,7 +28,10 @@ export const PUBLISH_HANDOFF_KEY = PREFIX + "_pub_handoff";
 export function usePublishHandoffWriter() {
   const [, setHandoff] = useLocalStorage<PublishHandoff>(PUBLISH_HANDOFF_KEY);
 
-  return useCallback((body: string) => setHandoff({ body }), [setHandoff]);
+  return useCallback(
+    (body: string, title?: string) => setHandoff(title ? { body, title } : { body }),
+    [setHandoff]
+  );
 }
 
 /**
@@ -35,11 +39,12 @@ export function usePublishHandoffWriter() {
  * before it is handed over so that content which the editor cannot swallow
  * fails a single time rather than on every subsequent visit.
  */
-export function usePublishHandoff(onReceive: (body: string) => void) {
+export function usePublishHandoff(onReceive: (body: string, title?: string) => void) {
   const [handoff, , removeHandoff] = useLocalStorage<PublishHandoff>(PUBLISH_HANDOFF_KEY);
 
   useMount(() => {
     const body = handoff?.body;
+    const title = typeof handoff?.title === "string" ? handoff.title : undefined;
 
     // Dropped before anything else, so that an entry the composer cannot use,
     // whether malformed or simply empty, is cleared rather than re-examined on
@@ -51,6 +56,7 @@ export function usePublishHandoff(onReceive: (body: string) => void) {
       return;
     }
 
-    onReceive(body);
+    if (title) onReceive(body, title);
+    else onReceive(body);
   });
 }
