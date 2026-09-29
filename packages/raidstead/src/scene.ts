@@ -392,7 +392,9 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     sky.forEach((inst, i) => {
       const [u, v] = SKY[i], s = inst.s, bob = reduced ? 0 : Math.sin(t * 0.5 + inst.phase) * 4;
       // the whole islet stays in the band: its flag is 158 above the anchor, its roots 106 below
-      place(inst, r.left + u * r.width + camX * 0.5, skyTop + 158 * s + v * Math.max(0, skyH - 264 * s) + bob);
+      // kept on screen when the town is dragged: an islet reaches 176 either side of its anchor
+      const half = 176 * s, x = clamp(r.left + u * r.width + camX * 0.5, r.left + half, r.left + r.width - half);
+      place(inst, x, skyTop + 158 * s + v * Math.max(0, skyH - 264 * s) + bob);
     });
     at(island, 700, 470);
     for (const b of TOWN) at(bld[b.id], b.x, b.y);
@@ -903,7 +905,12 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     if (moved > 8) return;
     camV = 0;
     const [x, y] = local(e);
-    // a far town first: building boxes reach well into the sky above their roofs
+    // Built buildings stand in front of the far towns; an unbuilt one is a faint
+    // outline they show through. So: a built building, then a far town, then
+    // an outline.
+    const inBox = (b: (typeof TOWN)[number]) => { const inst = bld[b.id], [x0, y0, x1, y1] = SPECIES[b.id].box, lx = (x - inst.ox) / inst.s, ly = (y - inst.oy) / inst.s; return lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1; };
+    const built = [...TOWN].reverse().find((b) => (bld[b.id].stage ?? 0) > 0 && inBox(b));
+    if (built) return opts.onTap?.({ kind: "building", id: built.id });
     const far = isletAt(x, y, sky.map((i) => ({ community: i.community!, ox: i.ox, oy: i.oy, s: i.s, shown: shown(i) })));
     if (far) return opts.onTap?.({ kind: "town", community: far });
     // front buildings win ties: test back to front and keep the last hit

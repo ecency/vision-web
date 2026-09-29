@@ -209,29 +209,33 @@ export function RaidsteadGame() {
   // asked for when the town is opened, at most every 10 minutes
   const [neighbors, setNeighbors] = useState<Neighbor[]>([]);
   const neighborsAt = useRef(0);
+  // the sky belongs to one alliance in one season
   const ownCommunity = data?.alliance?.community;
-  const ownRef = useRef(ownCommunity);
-  ownRef.current = ownCommunity;
+  const seasonNo = data?.calendar.season ?? 0;
+  const skyKey = ownCommunity ? `${seasonNo}:${ownCommunity}` : "";
+  const ownRef = useRef(skyKey);
+  ownRef.current = skyKey;
   // another alliance of one's own (new account, new season): a new sky
   useEffect(() => {
     neighborsAt.current = 0;
     setNeighbors([]);
-  }, [ownCommunity]);
+  }, [skyKey]);
   useEffect(() => {
     if (view !== "town" || phase !== "ready" || !ownCommunity) return;
     if (Date.now() - neighborsAt.current < 600_000) return;
     neighborsAt.current = Date.now();
-    // an answer counts only while the alliance it was asked for is still ours
-    const current = () => ownRef.current === ownCommunity;
+    // an answer counts only while the alliance and season it was asked for are still ours
+    const asked = skyKey;
+    const current = () => ownRef.current === asked;
     raidsteadApi
-      .leaderboard()
+      .leaderboard(seasonNo || undefined)
       .then((r) => {
         if (current()) setNeighbors(pickNeighbors(r.alliances, ownCommunity));
       })
       .catch(() => {
         if (current()) neighborsAt.current = 0; // not now: ask again next time the town opens
       });
-  }, [view, phase, ownCommunity]);
+  }, [view, phase, ownCommunity, skyKey, seasonNo]);
 
   useEffect(() => {
     sceneRef.current?.sync({ ...worldOf(data, view), neighbors });
