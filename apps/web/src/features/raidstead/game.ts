@@ -172,3 +172,15 @@ export function pickNeighbors(rows: LeaderRow[], own: string, n = 6): Neighbor[]
   const rest = others.filter((r) => !mine.includes(r)).sort((a, b) => a.rank - b.rank);
   return [...mine, ...rest].slice(0, n);
 }
+
+/// Time left until `at` (ms), split for a countdown: whole days, hours, minutes, seconds.
+export function countdown(at: number, now: number): { days: number; hours: number; minutes: number; seconds: number; done: boolean } {
+  const left = Math.max(0, Math.ceil((at - now) / 1000));
+  return {
+    days: Math.floor(left / 86_400),
+    hours: Math.floor(left / 3_600) % 24,
+    minutes: Math.floor(left / 60) % 60,
+    seconds: left % 60,
+    done: left === 0
+  };
+}

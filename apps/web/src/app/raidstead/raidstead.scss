@@ -188,6 +188,47 @@
     gap: 8px;
   }
 
+  // before the first season: a clock over the live scene
+  .rs-countdown {
+    text-align: center;
+    justify-items: center;
+    padding: 12px 14px 14px;
+    gap: 8px;
+
+    h2 {
+      margin: 0;
+    }
+
+    p {
+      margin: 0;
+    }
+  }
+
+  .rs-clock {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rs-clock-unit {
+    display: grid;
+    justify-items: center;
+    min-width: 58px;
+    padding: 6px 4px 5px;
+    border-radius: 10px;
+    background: var(--rs-paper);
+    border: 1.5px solid var(--rs-ink);
+
+    b {
+      font: 700 28px/1 var(--rs-head);
+    }
+
+    small {
+      margin-top: 3px;
+    }
+  }
+
   .rs-plate-name {
     font: 600 19px/1.1 var(--rs-head);
     border: 0;

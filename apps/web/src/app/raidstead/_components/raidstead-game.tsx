@@ -8,6 +8,7 @@ import {
   FOLK,
   type AttackType,
   type BuildingId,
+  type Calendar,
   type Community,
   type FolkClass,
   type PowerId,
@@ -61,6 +62,7 @@ import {
   SignInSheet,
   type MenuItem
 } from "./sheets";
+import { SeasonCountdown } from "./season-countdown";
 
 /// The Ecency login as every tab sees it (this tab's store copy only
 /// follows it on a reload, or through the storage listener below).
@@ -109,6 +111,18 @@ export function RaidsteadGame() {
   const lastAttackRef = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [boot, setBoot] = useState(0);
+  // before the first season: the public calendar, so everyone sees the countdown without signing
+  // in; the boot waits until it has answered (or a few seconds passed), so no sign-in flashes first
+  const [preseason, setPreseason] = useState<Calendar | null>(null);
+  const [calendarKnown, setCalendarKnown] = useState(false);
+  // the server's clock minus this device's, so a wrong device clock still opens on time
+  const [skew, setSkew] = useState(0);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const mounted = useRef(true);
+  // at most one chain of checks at zero at a time
+  const opening = useRef(false);
+  // bumped whenever the page counts down again, so the countdown starts afresh
+  const [countRound, setCountRound] = useState(0);
   const [dayTick, setDayTick] = useState(0);
   const rebootAt = useRef(0);
   // the Ecency user right now, for callbacks that awaited a wallet or a request
@@ -241,9 +255,81 @@ export function RaidsteadGame() {
     sceneRef.current?.sync({ ...worldOf(data, view), neighbors });
   }, [data, view, neighbors]);
 
+  // ---------- before the season ----------
+  useEffect(() => {
+    mounted.current = true;
+    // past the deadline the usual flow has begun: a late answer must not pull it back
+    let late = false;
+    const giveUp = setTimeout(() => {
+      late = true;
+      setCalendarKnown(true);
+    }, 4000);
+    raidsteadApi
+      .calendar()
+      .then((c) => {
+        if (!mounted.current || late || c.season >= 1) return;
+        // this answer may be a cached copy up to a minute old, so its clock only
+        // corrects a device that is off by more than that
+        if (c.now && Math.abs(c.now - Date.now()) > 60_000) setSkew(c.now - Date.now());
+        setPreseason(c);
+      })
+      // unreachable: the usual flow still says when the season starts, after sign-in
+      .catch(() => undefined)
+      .finally(() => {
+        clearTimeout(giveUp);
+        if (mounted.current) setCalendarKnown(true);
+      });
+    return () => {
+      mounted.current = false;
+      opening.current = false;
+      clearTimeout(giveUp);
+      clearTimeout(openTimer.current);
+    };
+  }, []);
+
+  // the countdown reached zero: the season opens once the server agrees (a clock
+  // running ahead asks again every few seconds), and clearing `preseason` boots as usual
+  // Pages spread their asks over a few seconds so they do not all arrive at once; if the
+  // server keeps failing, the page falls back to the usual flow rather than wait forever.
+  const openSeason = useCallback(() => {
+    if (opening.current) return;
+    opening.current = true;
+    let failures = 0;
+    const again = () => {
+      openTimer.current = setTimeout(check, 5000 + Math.random() * 3000);
+    };
+    const open = () => {
+      opening.current = false;
+      setPreseason(null);
+      setPhase("loading");
+    };
+    const check = () =>
+      raidsteadApi
+        .calendar(true)
+        .then((c) => {
+          if (!mounted.current) return;
+          if (c.now) setSkew(c.now - Date.now());
+          if (c.season >= 1) return open();
+          // still more than a second to go by the server's clock (the start was moved
+          // later, or this device runs fast): count down again; zero asks anew
+          if (Date.parse(c.startsAt) > (c.now ?? Date.now()) + 1000) {
+            opening.current = false;
+            setCountRound((n) => n + 1);
+            setPreseason(c);
+          } else again();
+        })
+        .catch(() => {
+          if (!mounted.current) return;
+          if (++failures >= 3) open();
+          else again();
+        });
+    openTimer.current = setTimeout(check, Math.random() * 2000);
+  }, []);
+
   // ---------- signing in ----------
   useEffect(() => {
-    if (!hydrated) return;
+    // before the season there is nothing to sign in for; the countdown shows instead
+    if (!hydrated || !calendarKnown || preseason) return;
     let cancelled = false;
     (async () => {
       let session = loadSession();
@@ -299,7 +385,7 @@ export function RaidsteadGame() {
     return () => {
       cancelled = true;
     };
-  }, [hydrated, username, refresh, boot]);
+  }, [hydrated, username, refresh, boot, calendarKnown, preseason]);
 
   // Ecency's login is shared by every tab, but this tab's copy of it only
   // changes on a reload. A logout or account switch in another tab ends the
@@ -629,7 +715,9 @@ export function RaidsteadGame() {
   let gate: ReactElement | null = null;
   // While Ecency's login dialog is open the sign-in sheet steps aside: an open
   // modal <dialog> makes the rest of the page inert, that dialog included.
-  if (phase === "signin" && !loginOpen) {
+  if (preseason) {
+    // counting down: nothing to sign in for yet
+  } else if (phase === "signin" && !loginOpen) {
     gate = (
       <SignInSheet
         username={username}
@@ -811,6 +899,9 @@ export function RaidsteadGame() {
           </div>
         </header>
 
+        {preseason && (
+          <SeasonCountdown key={countRound} startsAt={preseason.startsAt} skew={skew} onOpen={openSeason} />
+        )}
         {playing && view === "raid" && boss && (
           <section className="rs-card rs-plate" aria-label={t(`bosses.${boss.kind}.name`)}>
             <div className="rs-row">

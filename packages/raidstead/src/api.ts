@@ -8,6 +8,8 @@ export type PowerId = "double" | "keen" | "breaker" | "wind";
 export const POWERS: PowerId[] = ["double", "keen", "breaker", "wind"];
 
 export interface Calendar { season: number; day: number; week: number; resting: boolean; startsAt: string; nextDayAt: string }
+/// The public calendar also carries the server's clock (ms), when the server sends it.
+export type SeasonCalendar = Calendar & { now?: number };
 export interface Account { name: string; karma: number; shards: number; kills: number; scouts: number; badges: string[] }
 export interface Trophy { season: number; community: string; title: string; kills: number; rank: number; league: "small" | "medium" | "large" }
 export interface Raider { account: string; damage: number; attacks: number }
@@ -88,6 +90,8 @@ export function createApi(opts: ApiOptions) {
     build: (building: BuildingId) => call<{ stage: number; cost: number; finished: boolean; mats: number }>("POST", "/v1/raidstead/build", { building }),
     talk: () => call<{ cleared: boolean; talkers: string[] }>("POST", "/v1/raidstead/talk"),
     powers: (power: PowerId, action: "craft" | "equip" | "unequip") => call<{ powers: PowerId[]; equipped: PowerId[]; slots: number }>("POST", "/v1/raidstead/powers", { power, action }),
+    // `fresh`: past any cached copy (the answer may be cached for a minute)
+    calendar: (fresh = false) => call<SeasonCalendar>("GET", `/v1/raidstead/calendar${fresh ? `?at=${Date.now()}` : ""}`, undefined, false),
     leaderboard: (season?: number) => call<{ season: number; alliances: LeaderRow[] }>("GET", `/v1/raidstead/leaderboard${season ? `?season=${season}` : ""}`, undefined, false),
   };
 }
