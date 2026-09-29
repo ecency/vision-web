@@ -173,7 +173,7 @@ export function buildModel(parts: Part[], sp: number, seed: number, cover = fals
       const [x0, y0, x1, y1] = p.bb!, dy = sp * 0.866;
       for (let y = y0 + dy / 2, row = 0; y <= y1; y += dy, row++) for (let x = x0 + (row % 2 ? sp : sp / 2); x <= x1; x += sp) {
         if (!pip(x, y, p.poly!)) continue;
-        if (fills.some((f) => f.id > p.id && f.group === p.group && pip(x, y, f.poly!))) continue;
+        if (fills.some((f) => f.id > p.id && f.group === p.group && x >= f.bb![0] && x <= f.bb![2] && y >= f.bb![1] && y <= f.bb![3] && pip(x, y, f.poly!))) continue;
         push(p, x, y, sp * 0.62, NIGHT, { knock: true });
       }
     }
