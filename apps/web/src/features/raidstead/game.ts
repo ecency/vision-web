@@ -2,6 +2,7 @@ import type {
   AttackResult,
   AttackType,
   Impact,
+  LeaderRow,
   RaidsteadError,
   SceneWorld,
   State,
@@ -148,4 +149,26 @@ export function buildReport(state: State, t: T): { title: string; body: string }
     t("raidstead.report.outro")
   );
   return { title, body: lines.join("\n") };
+}
+
+/// Another alliance shown as a town in the sky, with its rank in its league.
+export type Neighbor = LeaderRow & { rank: number };
+
+/// The alliances shown as towns in the sky: from the season's leaderboard
+/// (sorted best first), those nearest in rank within the player's own league,
+/// then the leaders of the other leagues. Never the player's own.
+export function pickNeighbors(rows: LeaderRow[], own: string, n = 6): Neighbor[] {
+  const seen = new Map<string, number>();
+  const ranked = rows.map((r) => {
+    const rank = (seen.get(r.league) ?? 0) + 1;
+    seen.set(r.league, rank);
+    return { ...r, rank };
+  });
+  const me = ranked.find((r) => r.community === own);
+  const others = ranked.filter((r) => r.community !== own);
+  const mine = me ? others.filter((r) => r.league === me.league) : [];
+  // own league: closest rank first, the better one on a tie
+  mine.sort((a, b) => Math.abs(a.rank - me!.rank) - Math.abs(b.rank - me!.rank) || a.rank - b.rank);
+  const rest = others.filter((r) => !mine.includes(r)).sort((a, b) => a.rank - b.rank);
+  return [...mine, ...rest].slice(0, n);
 }

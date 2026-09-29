@@ -19,6 +19,8 @@ export interface SceneWorld {
   wasp: boolean;
   town: Record<BuildingId, number>;
   web: BuildingId | null;
+  /// Other alliances, shown as small towns in the sky of the town view.
+  neighbors?: { community: string }[];
 }
 
 export type TapTarget =
@@ -26,7 +28,8 @@ export type TapTarget =
   | { kind: "gnat" }
   | { kind: "wasp" }
   | { kind: "building"; id: BuildingId | "homes" }
-  | { kind: "hero"; hero: FolkClass };
+  | { kind: "hero"; hero: FolkClass }
+  | { kind: "town"; community: string };
 
 /// Where a hero stands on screen: model origin and scale.
 export interface HeroSpot { hero: FolkClass; ox: number; oy: number; s: number; shown: boolean }
@@ -42,6 +45,20 @@ export function heroAt(x: number, y: number, spots: HeroSpot[]): FolkClass | nul
     if (lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1 && d < best) { hero = k; best = d; }
   }
   return hero;
+}
+
+/// Where another alliance's town floats: model origin and scale.
+export interface IsletSpot { community: string; ox: number; oy: number; s: number; shown: boolean }
+
+/// The far town under a tap, if any: an oval around the islet itself (its
+/// box is mostly sky). Spots come nearest first, so the one in front wins.
+export function isletAt(x: number, y: number, spots: IsletSpot[]): string | null {
+  for (const { community, ox, oy, s, shown } of spots) {
+    if (!shown) continue;
+    const lx = (x - ox) / s, ly = (y - oy) / s;
+    if (((lx - 200) / 180) ** 2 + ((ly - 124) / 136) ** 2 <= 1) return community;
+  }
+  return null;
 }
 
 /// What an attack did, known once the server answers.
@@ -86,6 +103,8 @@ interface Inst {
   blink: number; blinkAt: number; act: Act | null; walk: number; look: Pt; morph: number;
   // town and folk extras
   stage?: number; stageShown?: number; walking?: boolean; wave?: boolean; flip?: number; stepT?: number; lift?: number; ang?: number;
+  // another alliance's town in the sky
+  community?: string;
 }
 interface Spark { x: number; y: number; vx: number; vy: number; r: number; ink: number; life: number; age: number }
 interface Flight { from: Pt; to: Pt; t0: number; dur: number; ink: number; target: "boss" | "gnat" | "wasp"; side: 0 | 1; impact: Impact | null; landed: boolean }
@@ -311,7 +330,8 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   }
   function poseInst(i: Inst) {
     if (!i.model) return;
-    if (POSE[i.kind]) POSE[i.kind](i);
+    if (i.community !== undefined) { for (const p of parts(i)) i.mats[p.id] = p.group === "flag" ? rotAbout(200, 3, reduced ? 0 : Math.sin(t * 2.2 + i.phase) * 0.12) : I; }
+    else if (POSE[i.kind]) POSE[i.kind](i);
     else if (SPECIES[i.kind].building) poseBuilding(i);
     else poseFolk(i);
   }
@@ -329,6 +349,15 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   let view: View = "raid", ts = 0.5, townX0 = 0, townY0 = 0, camX = 0, camV = 0, camMax = 0;
   const walkers = FOLK.map((k, i) => ({ k, x: 360 + i * 190, dir: i % 2 ? -1 : 1, speed: 34 + i * 5, until: 2 + i, walking: true }));
   let world: SceneWorld | null = null, first = true;
+  // other alliances' towns in the sky, in the band between the HUD and the
+  // island's grass: spots as (across, down) fractions of that band and a size
+  // (far ones smaller and higher)
+  let sky: Inst[] = [];
+  let skyW = 100, skyTop = 0, skyH = 1, skyNew = false;
+  // an islet's scale: its share of skyW, and never taller than the band (flag to roots: 264)
+  const skyScale = (i: number) => Math.min((skyW * SKY[i][2]) / 352, skyH / 264);
+  const SKY: [number, number, number][] = [[0.07, 0.9, 1], [0.93, 0.82, 1], [0.27, 0.42, 0.84], [0.74, 0.36, 0.84], [0.44, 0.04, 0.7], [0.58, 0.1, 0.7]];
+  const isletKind = (community: string) => { let h = 0; for (const ch of community) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return `islet${h % 6}`; };
   let gnatShots = 0; // shots at gnats still in the air
 
   const inEllipses = (list: Ellipse[] | undefined, lx: number, ly: number) => (list ?? []).some(([cx, cy, rx, ry]) => ((lx - cx) / rx) ** 2 + ((ly - cy) / ry) ** 2 <= 1);
@@ -345,6 +374,11 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     for (const b of TOWN) setModel(bld[b.id], ts, false);
     setModel(spider, ts * 0.62, false);
     for (const k of FOLK) setModel(folk[k], ts * 0.28, false);
+    // the sky band: from the top of the world's slot down to just above the grass
+    skyTop = r.top + 4;
+    skyH = Math.max(40, r.top + (r.height - 600 * ts) / 2 - 110 * ts + 380 * ts - skyTop);
+    skyW = clamp(Math.max(r.width * 0.12, 76), 76, 150);
+    sky.forEach((inst, i) => setModel(inst, skyScale(i), false));
     placeTown();
     horizon = -1;
     buildBackground();
@@ -354,6 +388,12 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     townX0 = r.left + r.width / 2 - 700 * ts + camX;
     townY0 = r.top + (r.height - 600 * ts) / 2 - 110 * ts;
     const at = (inst: Inst, x: number, y: number) => { const a = SPECIES[inst.kind].anchor; inst.ox = townX0 + x * ts - a[0] * inst.s; inst.oy = townY0 + y * ts - a[1] * inst.s; };
+    // far towns drift at half the camera's pace and bob a little
+    sky.forEach((inst, i) => {
+      const [u, v] = SKY[i], s = inst.s, bob = reduced ? 0 : Math.sin(t * 0.5 + inst.phase) * 4;
+      // the whole islet stays in the band: its flag is 158 above the anchor, its roots 106 below
+      place(inst, r.left + u * r.width + camX * 0.5, skyTop + 158 * s + v * Math.max(0, skyH - 264 * s) + bob);
+    });
     at(island, 700, 470);
     for (const b of TOWN) at(bld[b.id], b.x, b.y);
     const web = world?.web;
@@ -436,6 +476,8 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
       view = next.view;
       if (view === "raid") for (const k of FOLK) Object.assign(folk[k], { act: null, walking: false, wave: false, flip: 1 });
       layout();
+      // towns that arrived while the raid was on screen fly in now
+      if (view === "town" && skyNew) { skyNew = false; for (const inst of sky) assemble(inst, 0.3 + rnd() * 0.6); }
     }
     if (boss.kind !== next.boss.kind) {
       boss.kind = next.boss.kind; boss.model = null; boss.dots = []; boss.mats = [];
@@ -451,6 +493,15 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
       if (prev && !first && stage > (inst.stage ?? 0) && view === "town") upgradeFx(inst, inst.stage ?? 0, stage);
       inst.stage = stage;
       if (!prev) inst.stageShown = stage;
+    }
+    const nb = (next.neighbors ?? []).slice(0, SKY.length).map((n) => n.community);
+    if (nb.join() !== sky.map((i) => i.community).join()) {
+      sky = nb.map((community) => makeInst(isletKind(community), { community }));
+      if (view === "town") {
+        sky.forEach((inst, i) => setModel(inst, skyScale(i), false));
+        placeTown();
+        for (const inst of sky) assemble(inst, 0.4 + rnd() * 0.6);
+      } else skyNew = sky.length > 0;
     }
     if (next.web && !shown(spider)) { placeTown(); assemble(spider, 0.2); }
     else if (!next.web && shown(spider)) dissolve(spider, 0);
@@ -590,7 +641,7 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
       for (const g of gnats) if (g.state !== "dying" && g.state !== "gone") orbit(g);
       if (shown(wasp)) placeWasp();
     }
-    const all = view === "town" ? [island, ...TOWN.map((b) => bld[b.id]), spider, ...FOLK.map((k) => folk[k])] : [boss, wasp, ...FOLK.map((k) => folk[k]), ...gnats];
+    const all = view === "town" ? [...sky, island, ...TOWN.map((b) => bld[b.id]), spider, ...FOLK.map((k) => folk[k])] : [boss, wasp, ...FOLK.map((k) => folk[k]), ...gnats];
     for (const inst of all) {
       if (!inst.model) continue;
       inst.stateT += dt;
@@ -636,7 +687,8 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   let segs: { start: number; mode: "paper" | "ink"; count: number }[] = [];
   function collect() {
     let n = 0;
-    const drawList = view === "town" ? [island, ...TOWN.map((b) => bld[b.id]), ...FOLK.map((k) => folk[k]), spider] : [boss, wasp, ...gnats, ...FOLK.map((k) => folk[k])];
+    // far towns first, the smallest (farthest) at the back
+    const drawList = view === "town" ? [...[...sky].reverse(), island, ...TOWN.map((b) => bld[b.id]), ...FOLK.map((k) => folk[k]), spider] : [boss, wasp, ...gnats, ...FOLK.map((k) => folk[k])];
     for (const inst of drawList) n += inst.dots.length * 2; // ink dots plus knockout dots
     n += sparks.length + flights.length * 16;
     if (frameDots.length < n * 6) frameDots = new Float32Array(n * 6 + 6000);
@@ -650,7 +702,8 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     for (const inst of drawList) {
       if (!inst.model || inst.state === "gone") continue;
       const s = inst.s, building = inst.stage !== undefined, lvl = building ? inst.stageShown! / 3 : 0, ps = inst.model.parts;
-      if (!building && inst !== island) {
+      const far = inst.community !== undefined;
+      if (!building && inst !== island && !far) {
         mark("paper");
         const kr = inst.model.sp * 0.62;
         for (const d of inst.dots) { const a = d.a * d.ba; if (a > 0.02 && !d.line && ps[d.p].kind === "fill") put(d.x, d.y, Math.max(d.r, kr) * 1.25 * s, KNOCK, Math.min(1, a * 1.2), 0); }
@@ -665,6 +718,7 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
           const v = clamp((lvl - d.h!) * 14 + 0.6, 0, 1);
           a *= d.line ? Math.max(v, 0.13) : v;
         }
+        if (far) a *= 0.75; // far off: printed lighter
         if (a <= 0.01) continue;
         const reg = INKS[d.ink].reg, bj = d.line ? 1 : 0.4;
         put(d.x + d.boil[f * 2] * bj + reg[0], d.y + d.boil[f * 2 + 1] * bj + reg[1], d.r * s, d.ink, a, d.flash > 0.3 ? 1 : 0);
@@ -849,6 +903,9 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     if (moved > 8) return;
     camV = 0;
     const [x, y] = local(e);
+    // a far town first: building boxes reach well into the sky above their roofs
+    const far = isletAt(x, y, sky.map((i) => ({ community: i.community!, ox: i.ox, oy: i.oy, s: i.s, shown: shown(i) })));
+    if (far) return opts.onTap?.({ kind: "town", community: far });
     // front buildings win ties: test back to front and keep the last hit
     let hit: (typeof TOWN)[number] | null = null;
     for (const b of TOWN) { const inst = bld[b.id], [x0, y0, x1, y1] = SPECIES[b.id].box, lx = (x - inst.ox) / inst.s, ly = (y - inst.oy) / inst.s; if (lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1) hit = b; }

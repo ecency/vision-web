@@ -37,6 +37,8 @@ import {
   aimOf,
   attackMessage,
   buildReport,
+  pickNeighbors,
+  type Neighbor,
   errorMessage,
   impactOf,
   worldOf
@@ -47,6 +49,7 @@ import {
   BuildingSheet,
   HelpSheet,
   HeroSheet,
+  TownSheet,
   InfoSheet,
   LeaderboardSheet,
   MenuSheet,
@@ -77,6 +80,7 @@ type SheetState =
   | { kind: "boss" }
   | { kind: "building"; id: BuildingId | "homes" }
   | { kind: "hero"; hero: FolkClass }
+  | { kind: "town"; town: Neighbor }
   | { kind: "quests" }
   | { kind: "menu" }
   | { kind: MenuItem };
@@ -201,9 +205,31 @@ export function RaidsteadGame() {
     return () => ro.disconnect();
   }, []);
 
+  // other alliances, drawn as towns in the sky of the town view; the list is
+  // asked for when the town is opened, at most every 10 minutes
+  const [neighbors, setNeighbors] = useState<Neighbor[]>([]);
+  const neighborsAt = useRef(0);
+  const ownCommunity = data?.alliance?.community;
+  // another alliance of one's own (new account, new season): a new sky
   useEffect(() => {
-    sceneRef.current?.sync(worldOf(data, view));
-  }, [data, view]);
+    neighborsAt.current = 0;
+    setNeighbors([]);
+  }, [ownCommunity]);
+  useEffect(() => {
+    if (view !== "town" || phase !== "ready" || !ownCommunity) return;
+    if (Date.now() - neighborsAt.current < 600_000) return;
+    neighborsAt.current = Date.now();
+    raidsteadApi
+      .leaderboard()
+      .then((r) => setNeighbors(pickNeighbors(r.alliances, ownCommunity)))
+      .catch(() => {
+        neighborsAt.current = 0; // not now: ask again next time the town opens
+      });
+  }, [view, phase, ownCommunity]);
+
+  useEffect(() => {
+    sceneRef.current?.sync({ ...worldOf(data, view), neighbors });
+  }, [data, view, neighbors]);
 
   // ---------- signing in ----------
   useEffect(() => {
@@ -446,6 +472,11 @@ export function RaidsteadGame() {
       if (alliance && phase === "ready" && !sheet) setSheet({ kind: "hero", hero: target.hero });
       return;
     }
+    if (target.kind === "town") {
+      const town = neighbors.find((n) => n.community === target.community);
+      if (town && !sheet) setSheet({ kind: "town", town });
+      return;
+    }
     if (phase !== "ready" || sheet) return;
     attack(selected, target.kind === "boss" ? target.side : undefined);
   };
@@ -662,6 +693,9 @@ export function RaidsteadGame() {
           />
         ) : null;
         break;
+      case "town":
+        open = <TownSheet town={sheet.town} onClose={close} />;
+        break;
       case "hero":
         open = alliance ? (
           <HeroSheet
@@ -844,6 +878,21 @@ export function RaidsteadGame() {
             <p className="rs-toast" aria-live="polite">
               {toast}
             </p>
+            {view === "town" && neighbors.length > 0 && (
+              // the far towns live on the canvas; these open their cards from
+              // the keyboard and for screen readers, shown once focused
+              <div className="rs-hero-links" role="group" aria-label={t("sky.group")}>
+                {neighbors.map((n) => (
+                  <button
+                    key={n.community}
+                    className="rs-btn sr-only focus:not-sr-only"
+                    onClick={() => setSheet({ kind: "town", town: n })}
+                  >
+                    {t("sky.about", { name: n.title || n.community })}
+                  </button>
+                ))}
+              </div>
+            )}
             {view === "raid" && (
               // the heroes live on the canvas; these open their cards from the
               // keyboard and for screen readers, shown once focused

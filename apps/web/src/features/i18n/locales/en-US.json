@@ -5404,6 +5404,17 @@
       "group": "Heroes",
       "about": "About the {{name}}"
     },
+    "sky": {
+      "group": "Towns in the sky",
+      "about": "About {{name}}",
+      "eyebrow": "Alliance · {{league}} league",
+      "members": "Members",
+      "kills": "Pests chased",
+      "rank": "League rank",
+      "rank-value": "#{{n}}",
+      "desc": "A town far off in the sky. Their community is on Ecency: drop by, read their posts, say hello.",
+      "visit": "Visit the community"
+    },
     "perk-card-title": "Raidstead",
     "perk-card-description": "Raid the weekly pest with your community and build your town."
   }

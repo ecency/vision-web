@@ -166,6 +166,26 @@ function islandParts() {
   }
   return P;
 }
+/// Another alliance's town, far off in the sky: a small island with a hall
+/// under its flag. `flag` is the alliance's colour.
+function isletParts(flag: string) {
+  const P: Part[] = [], add: Add = (o) => { o.id = P.length; P.push(o); return o; };
+  add({ name: "underside", kind: "fill", poly: path("M24 150 Q64 236 200 256 Q336 236 376 150 Z"), color: "#B07B53", shade: 1, group: "body" });
+  add({ name: "root", kind: "line", pts: path("M150 238 Q158 262 146 284 M252 236 Q262 258 256 276"), w: 5, taper: 0.6, color: COL.brown, group: "body" });
+  add({ name: "grass", kind: "fill", poly: ellipse(200, 150, 180, 30), color: "#86B86E", shade: 0.5, group: "body" });
+  add({ name: "trunk", kind: "line", pts: [[86, 140], [86, 118]], w: 8, color: COL.brown, group: "body" });
+  add({ name: "tree", kind: "fill", poly: circle(86, 108, 24), color: "#6FA35C", shade: 0.9, group: "body" });
+  add({ name: "home", kind: "fill", poly: rrect(270, 108, 50, 42, 6), color: "#E9D8BC", shade: 0.8, group: "body" });
+  add({ name: "home-roof", kind: "fill", poly: path("M262 112 L295 84 L328 112 Z"), color: flag, shade: 0.8, group: "body" });
+  add({ name: "wall", kind: "fill", poly: rrect(150, 80, 100, 70, 8), color: "#E9D8BC", shade: 0.8, group: "body" });
+  add({ name: "roof", kind: "fill", poly: path("M138 86 L200 34 L262 86 Z"), color: flag, shade: 0.9, group: "body" });
+  add({ name: "door", kind: "fill", poly: path("M184 150 L184 118 Q200 102 216 118 L216 150 Z"), color: flag, shade: 0.7, group: "body" });
+  add({ name: "pole", kind: "line", pts: [[200, 36], [200, -8]], w: 5, color: COL.ink, group: "body" });
+  add({ name: "flag", kind: "fill", poly: path("M200 -8 L246 2 L200 14 Z"), color: flag, shade: 0.6, sw: 3, group: "flag" });
+  return P;
+}
+export const ISLET_FLAGS = [COL.blue, COL.teal, COL.orange, COL.rose, COL.pur, COL.lime];
+
 function hallParts() {
   const P: Part[] = [], add: Add = (o) => { o.id = P.length; P.push(o); return o; };
   add({ name: "pole", kind: "line", pts: [[100, 22], [100, -48]], w: 4, color: COL.ink, group: "body", stageMin: 3 });
@@ -381,6 +401,7 @@ export const SPECIES: Record<string, Species> = {
   library: { parts: libraryParts, building: true, anchor: [100, 300], box: [13, 94, 187, 300], seed: 57 },
   beacon: { parts: beaconParts, building: true, anchor: [100, 300], box: [24, 28, 176, 300], seed: 58 },
   homes: { parts: homesParts, building: true, anchor: [126, 300], box: [-12, 188, 264, 300], seed: 59 },
+  ...Object.fromEntries(ISLET_FLAGS.map((c, i) => [`islet${i}`, { parts: () => isletParts(c), anchor: [200, 150], box: [24, -8, 376, 256], seed: 60 + i } satisfies Species])),
   spider: { parts: spiderParts, anchor: [200, 150], box: [20, 0, 380, 290], seed: 60 },
   gnat: { parts: gnatParts, anchor: [50, 55], box: [8, 18, 92, 84], seed: 31 },
   scribe: { parts: () => folkParts("scribe"), anchor: [200, 398], box: [60, 10, 392, 412], seed: 41 },

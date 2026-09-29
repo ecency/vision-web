@@ -418,6 +418,61 @@ describe("Raidstead page", () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  it("shows other alliances as towns in the sky, with a card for each", async () => {
+    asUser("ann");
+    api.leaderboard.mockResolvedValueOnce({
+      season: 1,
+      alliances: [
+        {
+          community: "hive-111",
+          title: "Photo Club",
+          members: 40,
+          kills: 3,
+          damage: 900,
+          league: "medium"
+        },
+        {
+          community: "hive-123456",
+          title: "Ink & Oak",
+          members: 30,
+          kills: 2,
+          damage: 500,
+          league: "medium"
+        }
+      ]
+    });
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    expect(api.leaderboard).not.toHaveBeenCalled(); // only once the town opens
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "raidstead.actions.town" }));
+    });
+    await waitFor(() =>
+      expect(scene.sync.mock.calls.at(-1)![0].neighbors).toEqual([
+        expect.objectContaining({ community: "hive-111", rank: 1 })
+      ])
+    );
+    const onTap = vi.mocked(createScene).mock.calls.at(-1)![1]!.onTap!;
+    await act(async () => {
+      onTap({ kind: "town", community: "hive-111" });
+    });
+    expect(screen.getByRole("heading", { name: "Photo Club" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "raidstead.sky.visit" }).getAttribute("href")).toBe(
+      "/created/hive-111"
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+    });
+    // and from the keyboard
+    const group = screen.getByRole("group", { name: "raidstead.sky.group" });
+    const buttons = within(group).getAllByRole("button", { name: "raidstead.sky.about" });
+    expect(buttons).toHaveLength(1);
+    await act(async () => {
+      fireEvent.click(buttons[0]);
+    });
+    expect(screen.getByRole("heading", { name: "Photo Club" })).toBeTruthy();
+  });
+
   it("keeps a guest's own session when no Ecency user was ever logged in", async () => {
     asUser(null);
     render(<RaidsteadGame />);
