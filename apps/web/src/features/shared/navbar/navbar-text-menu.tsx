@@ -41,7 +41,12 @@ export function NavbarTextMenu() {
           link: "/communities",
           label: i18next.t("navbar.communities"),
           show: true
-        }
+        },
+    {
+      link: "/raidstead",
+      label: i18next.t("navbar.raidstead"),
+      show: EcencyConfigManager.selector(({ visionFeatures }) => visionFeatures.raidstead.enabled)
+    }
   ];
 
   const visibleItems = ITEMS.filter((item) => item.show);

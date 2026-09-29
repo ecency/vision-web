@@ -123,7 +123,9 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     const q = Math.max(1, Math.round(sp * 4) / 4), key = kind + ":" + q;
     let m = modelCache.get(key);
     if (!m) {
-      const spec = SPECIES[kind], parts = spec.parts(), dots = buildModel(parts, q, spec.seed);
+      // characters print over the town, so they carry a paper cover; buildings and islands do not
+      const spec = SPECIES[kind], parts = spec.parts(), cover = !spec.building && kind !== "island" && !kind.startsWith("islet");
+      const dots = buildModel(parts, q, spec.seed, cover);
       if (spec.boss) addSpirals(parts, dots);
       // buildings rise from the ground: each dot knows its height, 0 at the base and 1 at the top
       if (spec.building) { const [, y0, , y1] = spec.box; for (const d of dots) d.h = clamp((y1 - d.hy) / (y1 - y0), 0, 1); }
@@ -691,7 +693,7 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     let n = 0;
     // far towns first, the smallest (farthest) at the back
     const drawList = view === "town" ? [...[...sky].reverse(), island, ...TOWN.map((b) => bld[b.id]), ...FOLK.map((k) => folk[k]), spider] : [boss, wasp, ...gnats, ...FOLK.map((k) => folk[k])];
-    for (const inst of drawList) n += inst.dots.length * 2; // ink dots plus knockout dots
+    for (const inst of drawList) n += inst.dots.length; // each dot is ink or paper, drawn once
     n += sparks.length + flights.length * 16;
     if (frameDots.length < n * 6) frameDots = new Float32Array(n * 6 + 6000);
     const f = reduced ? 0 : Math.floor(t * 3) % 3;
@@ -707,11 +709,11 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
       const far = inst.community !== undefined;
       if (!building && inst !== island && !far) {
         mark("paper");
-        const kr = inst.model.sp * 0.62;
-        for (const d of inst.dots) { const a = d.a * d.ba; if (a > 0.02 && !d.line && ps[d.p].kind === "fill") put(d.x, d.y, Math.max(d.r, kr) * 1.25 * s, KNOCK, Math.min(1, a * 1.2), 0); }
+        for (const d of inst.dots) { const a = d.a * d.ba; if (a > 0.02 && d.knock) put(d.x, d.y, d.r * 1.25 * s, KNOCK, Math.min(1, a * 1.2), 0); }
       }
       mark("ink");
       for (const d of inst.dots) {
+        if (d.knock) continue;
         let a = d.a * d.ba;
         if (building) {
           // unbuilt parts show as a faint dotted blueprint; built stages fill in from the ground up

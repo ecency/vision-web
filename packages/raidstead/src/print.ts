@@ -124,7 +124,7 @@ export interface Part {
 
 export interface Dot {
   p: number; hx: number; hy: number; r: number; ink: number; ph: number; boil: number[];
-  u?: number; ba?: number; line?: boolean; outline?: boolean; h?: number;
+  u?: number; ba?: number; line?: boolean; outline?: boolean; h?: number; knock?: boolean;
   ax?: number; ay?: number; spiral?: boolean;
 }
 
@@ -136,7 +136,10 @@ function shadeLevel(p: Part, x: number, y: number) {
 
 /// Turns parts into dots: halftone screens per ink (dot size = tone), later
 /// fills knock out earlier dots, tapered linework, about 5% ink dropout.
-export function buildModel(parts: Part[], sp: number, seed: number): Dot[] {
+/// With `cover`, every fill also gets a screen of paper dots over its whole
+/// silhouette, so pale fills (skin, cream, white) knock out what is behind
+/// them even where they print little or no ink.
+export function buildModel(parts: Part[], sp: number, seed: number, cover = false): Dot[] {
   const rng = mulberry(seed), dots: Dot[] = [];
   const g = clamp(Math.pow(sp / 4, 0.6), 0.7, 2.6); // lines stay readable on small sprites
   for (const p of parts) if (p.poly) p.bb = bbox(p.poly);
@@ -165,6 +168,15 @@ export function buildModel(parts: Part[], sp: number, seed: number): Dot[] {
     }
   };
   for (const p of parts) {
+    if (cover && p.kind === "fill") {
+      // a hex grid of paper dots; skipped only under a later fill that moves with this one
+      const [x0, y0, x1, y1] = p.bb!, dy = sp * 0.866;
+      for (let y = y0 + dy / 2, row = 0; y <= y1; y += dy, row++) for (let x = x0 + (row % 2 ? sp : sp / 2); x <= x1; x += sp) {
+        if (!pip(x, y, p.poly!)) continue;
+        if (fills.some((f) => f.id > p.id && f.group === p.group && pip(x, y, f.poly!))) continue;
+        push(p, x, y, sp * 0.62, NIGHT, { knock: true });
+      }
+    }
     if (p.kind === "ring") {
       const n = Math.round(2 * Math.PI * Math.sqrt((p.rx * p.rx + p.ry * p.ry) / 2) / 7);
       for (let i = 0; i < n; i++) push(p, p.cx, p.cy, 1.5 * g, VIOLET, { u: i / n * 6.283, ba: 0.55 });
@@ -206,7 +218,7 @@ export function buildModel(parts: Part[], sp: number, seed: number): Dot[] {
 export function addSpirals(parts: Part[], dots: Dot[]) {
   for (const white of parts.filter((p) => p.eye === "white")) {
     const [ex, ey] = white.ec as Pt, key = white.eyeKey, side = white.side;
-    const set = dots.filter((d) => { const p = parts[d.p]; return p.eyeKey === key && (p.eye === "pupil" || (p === white && d.outline)); });
+    const set = dots.filter((d) => { const p = parts[d.p]; return !d.knock && p.eyeKey === key && (p.eye === "pupil" || (p === white && d.outline)); });
     const n = set.length;
     set.sort((a, b) => Math.atan2(a.hy - ey, a.hx - ex) - Math.atan2(b.hy - ey, b.hx - ex));
     set.forEach((d, k) => { const u = n > 1 ? k / (n - 1) : 0, ang = side * u * 4.2 * Math.PI, r = 0.5 + u * (white.r - 1); d.ax = ex + Math.cos(ang) * r; d.ay = ey + Math.sin(ang) * r; d.spiral = true; d.ink = NIGHT; d.r = Math.min(d.r, 1.2); });

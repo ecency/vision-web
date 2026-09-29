@@ -18,6 +18,18 @@ describe("art", () => {
     expect(a.map((d) => [d.hx, d.hy, d.r])).toEqual(b.map((d) => [d.hx, d.hy, d.r]));
   });
 
+  it("a cover knocks out the whole silhouette, pale fills included", () => {
+    const sp = 4;
+    for (const cls of ["scribe", "scout", "smith", "herald"]) {
+      const parts = SPECIES[cls].parts(), dots = buildModel(parts, sp, SPECIES[cls].seed, true);
+      const knock = dots.filter((d) => d.knock), near = (x: number, y: number) => knock.some((d) => Math.hypot(d.hx - x, d.hy - y) < d.r * 1.25);
+      // the lit top left of the face prints almost no ink, yet must still hide the grass behind it
+      for (const [x, y] of [[160, 100], [170, 80], [200, 70], [150, 130], [200, 132]]) expect(near(x, y), `${cls} ${x},${y}`).toBe(true);
+      expect(knock.every((d) => parts[d.p].kind === "fill"), cls).toBe(true);
+    }
+    expect(buildModel(SPECIES.scribe.parts(), sp, 41).some((d) => d.knock)).toBe(false);
+  });
+
   it("bosses can be hit and aimed at; every building is in the town", () => {
     for (const k of BOSS_KINDS) {
       expect(SPECIES[k].hit?.length, k).toBeGreaterThan(0);

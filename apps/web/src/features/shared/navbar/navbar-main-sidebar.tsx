@@ -9,6 +9,7 @@ import {
   UilEditAlt,
   UilHome,
   UilListUl,
+  UilShield,
   UilTag,
   UilUsersAlt,
   UilUserSquare
@@ -176,6 +177,16 @@ export function NavbarMainSidebar({ show, setShow, setStepOne }: Props) {
             />
           </EcencyConfigManager.Conditional>
         )}
+        <EcencyConfigManager.Conditional
+          condition={({ visionFeatures }) => visionFeatures.raidstead.enabled}
+        >
+          <NavbarSideMainMenuItem
+            label={i18next.t("navbar.raidstead")}
+            to="/raidstead"
+            onClick={() => setShow(false)}
+            icon={<UilShield className="size-4" />}
+          />
+        </EcencyConfigManager.Conditional>
 
         <NavbarSideMainMenuItem
           label={i18next.t("proposals.page-title")}
