@@ -210,6 +210,8 @@ export function RaidsteadGame() {
   const [neighbors, setNeighbors] = useState<Neighbor[]>([]);
   const neighborsAt = useRef(0);
   const ownCommunity = data?.alliance?.community;
+  const ownRef = useRef(ownCommunity);
+  ownRef.current = ownCommunity;
   // another alliance of one's own (new account, new season): a new sky
   useEffect(() => {
     neighborsAt.current = 0;
@@ -219,11 +221,15 @@ export function RaidsteadGame() {
     if (view !== "town" || phase !== "ready" || !ownCommunity) return;
     if (Date.now() - neighborsAt.current < 600_000) return;
     neighborsAt.current = Date.now();
+    // an answer counts only while the alliance it was asked for is still ours
+    const current = () => ownRef.current === ownCommunity;
     raidsteadApi
       .leaderboard()
-      .then((r) => setNeighbors(pickNeighbors(r.alliances, ownCommunity)))
+      .then((r) => {
+        if (current()) setNeighbors(pickNeighbors(r.alliances, ownCommunity));
+      })
       .catch(() => {
-        neighborsAt.current = 0; // not now: ask again next time the town opens
+        if (current()) neighborsAt.current = 0; // not now: ask again next time the town opens
       });
   }, [view, phase, ownCommunity]);
 

@@ -473,6 +473,50 @@ describe("Raidstead page", () => {
     expect(screen.getByRole("heading", { name: "Photo Club" })).toBeTruthy();
   });
 
+  it("drops a sky list that was asked for an alliance the player has left", async () => {
+    asUser("ann");
+    let late!: (r: unknown) => void;
+    api.leaderboard.mockReturnValueOnce(new Promise((r) => (late = r)));
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "raidstead.actions.town" }));
+    });
+    await waitFor(() => expect(api.leaderboard).toHaveBeenCalledTimes(1));
+    // the player's alliance changes (new season, new account) before it answers
+    const moved = state();
+    moved.alliance!.community = "hive-999";
+    api.state.mockResolvedValue(moved);
+    api.rally.mockResolvedValueOnce({ applied: { energy: 10 }, balance: 400 });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "raidstead.actions.raid" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.rally/ }));
+    });
+    await waitFor(() => expect(api.rally).toHaveBeenCalled());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "raidstead.actions.town" }));
+    });
+    await waitFor(() => expect(api.leaderboard).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      late({
+        season: 1,
+        alliances: [
+          {
+            community: "hive-111",
+            title: "Photo Club",
+            members: 40,
+            kills: 3,
+            damage: 9,
+            league: "medium"
+          }
+        ]
+      });
+    });
+    expect(scene.sync.mock.calls.at(-1)![0].neighbors).toEqual([]);
+  });
+
   it("keeps a guest's own session when no Ecency user was ever logged in", async () => {
     asUser(null);
     render(<RaidsteadGame />);
