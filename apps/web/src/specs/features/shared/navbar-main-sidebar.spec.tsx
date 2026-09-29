@@ -17,13 +17,15 @@ import { EcencyConfigManager } from "@/config";
 import { NavbarMainSidebar } from "@/features/shared/navbar/navbar-main-sidebar";
 
 const raidstead = EcencyConfigManager.CONFIG.visionFeatures.raidstead as { enabled: boolean };
+const enabled = raidstead.enabled;
 
 describe("NavbarMainSidebar Raidstead entry", () => {
   afterEach(() => {
-    raidstead.enabled = true;
+    raidstead.enabled = enabled;
   });
 
   it("links to Raidstead when the feature is enabled", () => {
+    raidstead.enabled = true;
     render(<NavbarMainSidebar show={true} setShow={vi.fn()} />);
 
     expect(screen.getByRole("link", { name: "navbar.raidstead" }).getAttribute("href")).toBe(

@@ -27,6 +27,9 @@ describe("art", () => {
       const near = (x: number, y: number) => knock.some((d) => Math.hypot(d.hx - x, d.hy - y) < Math.max(d.r, kr) * 1.25);
       // the lit top left of the face prints almost no ink, yet must still hide the grass behind it
       for (const [x, y] of [[160, 100], [170, 80], [200, 70], [150, 130], [200, 132]]) expect(near(x, y), `${cls} ${x},${y}`).toBe(true);
+      // eyes blink and move on their own, so the face keeps its paper under them
+      const face = parts.find((q) => q.name === "face")!;
+      for (const [x, y] of [[172, 138], [228, 138], [172, 146], [228, 130]]) expect(dots.some((d) => d.p === face.id && d.knock && Math.hypot(d.hx - x, d.hy - y) < sp), `${cls} eye ${x},${y}`).toBe(true);
     }
     expect(buildModel(SPECIES.scribe.parts(), sp, 41).some((d) => d.knock)).toBe(false);
   });

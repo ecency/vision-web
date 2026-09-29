@@ -144,9 +144,10 @@ export function buildModel(parts: Part[], sp: number, seed: number, cover = fals
   const g = clamp(Math.pow(sp / 4, 0.6), 0.7, 2.6); // lines stay readable on small sprites
   for (const p of parts) if (p.poly) p.bb = bbox(p.poly);
   const fills = parts.filter((p) => p.kind === "fill");
-  const hiddenBy = (p: Part, x: number, y: number) => {
+  // `sameGroup`: only count later fills that move with this part (an eye or arm does not)
+  const hiddenBy = (p: Part, x: number, y: number, sameGroup = false) => {
     for (const f of fills) {
-      if (f.id <= p.id) continue;
+      if (f.id <= p.id || (sameGroup && f.group !== p.group)) continue;
       const b = f.bb!;
       if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) continue;
       if (pip(x, y, f.poly!)) return true;
@@ -160,7 +161,9 @@ export function buildModel(parts: Part[], sp: number, seed: number, cover = fals
     const [x0, y0, x1, y1] = p.bb!, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R = Math.hypot(x1 - x0, y1 - y0) / 2 + spp;
     for (let v = -R; v <= R; v += spp) for (let u = -R; u <= R; u += spp) {
       const x = cx + u * c - v * s, y = cy + u * s + v * c;
-      if (x < x0 || x > x1 || y < y0 || y > y1 || !pip(x, y, p.poly!) || hiddenBy(p, x, y)) continue;
+      if (x < x0 || x > x1 || y < y0 || y > y1 || !pip(x, y, p.poly!)) continue;
+      // under a part that moves on its own (a blinking eye, a swinging arm) keep the paper
+      if (hiddenBy(p, x, y)) { if (paper && !hiddenBy(p, x, y, true)) push(p, x, y, spp * 0.12, ink, { knock: true }); continue; }
       const tone = toneAt(x, y);
       if (tone < 0.06 || (tone < 0.95 && rng() < 0.05)) { if (paper) push(p, x, y, spp * 0.12, ink, { knock: true }); continue; } // ink dropout
       const j = spp * 0.08;
