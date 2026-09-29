@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { heroAt, isletAt, type HeroSpot } from "./scene";
+import { FOLK, SPECIES } from "./art";
+import { heroAt, isletAt, raidRow, walkRange, type HeroSpot } from "./scene";
 
 // Four heroes at scale 0.5, their models' anchors 150px apart: boxes are
 // 166px wide, so neighbours overlap by a few pixels at the weapon side.
@@ -39,5 +40,38 @@ describe("isletAt", () => {
   it("gives an overlap to the nearer town, and skips hidden ones", () => {
     expect(isletAt(60, 31, spots)).toBe("near");
     expect(isletAt(60, 31, [{ ...spots[0], shown: false }, spots[1]])).toBe("far");
+  });
+});
+
+describe("raidRow", () => {
+  it("keeps every hero, props included, inside the slot", () => {
+    for (const width of [320, 390, 430, 768, 1280]) {
+      for (const rowH of [80, 165, 200]) {
+        const { fs, xs } = raidRow(width, rowH);
+        FOLK.forEach((k, i) => {
+          const [x0, , x1] = SPECIES[k].box, ax = SPECIES[k].anchor[0];
+          expect(xs[i] - (ax - x0) * fs, `${k} left at ${width}`).toBeGreaterThanOrEqual(0);
+          expect(xs[i] + (x1 - ax) * fs, `${k} right at ${width}`).toBeLessThanOrEqual(width);
+        });
+        expect(xs).toEqual([...xs].sort((a, b) => a - b));
+      }
+    }
+  });
+});
+
+describe("walkRange", () => {
+  it("keeps the folk in view on a phone, facing either way", () => {
+    for (const width of [320, 390, 430]) {
+      const ts = width / 620, [lo, hi] = walkRange(width, ts), half = width / 2 / ts;
+      for (const k of FOLK) {
+        const [x0, , x1] = SPECIES[k].box, ax = SPECIES[k].anchor[0], reach = Math.max(ax - x0, x1 - ax) * 0.28;
+        expect(lo - reach, `${k} at ${width}`).toBeGreaterThanOrEqual(700 - half);
+        expect(hi + reach, `${k} at ${width}`).toBeLessThanOrEqual(700 + half);
+      }
+    }
+  });
+
+  it("uses the whole street when the screen shows it", () => {
+    expect(walkRange(1400, 1)).toEqual([300, 1120]);
   });
 });

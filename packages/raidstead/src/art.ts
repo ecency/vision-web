@@ -305,8 +305,9 @@ export function folkParts(cls: FolkClass) {
   add({ name: "body", kind: "fill", poly: path("M118 262 Q118 186 200 186 Q282 186 282 262 L282 330 Q282 382 200 382 Q118 382 118 330 Z"), color: C, shade: 1, group: "body" });
   if (cls === "scribe") add({ name: "collar", kind: "fill", poly: path("M176 196 L200 238 L224 196 Z"), color: COL.cream, shade: 0.3, sw: 2.6, group: "body" });
   if (cls === "scout") {
-    add({ name: "strap", kind: "fill", poly: path("M132 238 L140 226 L276 318 L268 330 Z"), color: COL.brown, shade: 0.6, sw: 2.4, group: "body" });
-    add({ name: "pouch", kind: "fill", poly: rrect(216, 286, 34, 28, 6, 34), color: COL.tan, shade: 0.7, sw: 2.4, group: "body" });
+    // the strap runs from the right shoulder to the left hip, away from the spyglass hand
+    add({ name: "strap", kind: "fill", poly: path("M268 238 L260 226 L124 318 L132 330 Z"), color: COL.brown, shade: 0.6, sw: 2.4, group: "body" });
+    add({ name: "pouch", kind: "fill", poly: rrect(150, 286, 34, 28, 6, -34), color: COL.tan, shade: 0.7, sw: 2.4, group: "body" });
   }
   if (cls === "smith") {
     add({ name: "apron", kind: "fill", poly: path("M150 228 L250 228 L250 348 Q200 368 150 348 Z"), color: COL.brown, shade: 0.8, group: "body" });
@@ -319,8 +320,14 @@ export function folkParts(cls: FolkClass) {
     add({ name: "quill", kind: "fill", poly: path("M292 296 Q296 232 318 180 Q340 124 380 96 Q392 146 372 196 Q350 254 292 296 Z"), color: COL.cream, shade: 0.8, group: "armR" });
     add({ name: "vein", kind: "line", pts: path("M292 296 Q330 210 378 104"), w: 2.6, color: COL.blue, group: "armR" });
   } else if (cls === "scout") {
-    add({ name: "spyglass", kind: "fill", poly: rrect(270, 217, 100, 26, 11, -60), color: COL.tan, shade: 1, group: "armR" });
-    add({ name: "lens", kind: "fill", poly: circle(345, 187, 13), color: COL.lens, shade: 0.4, sw: 2.6, group: "armR" });
+    // a short, fat spyglass: reads as a telescope even at town size
+    // a telescope that widens toward its lens, with a brass eyepiece at the hand;
+    // drawn along the x axis around its centre, then turned 50 degrees up
+    const tube = (pts: Pt[]) => rotate(pts, 324, 250, -50);
+    add({ name: "spyglass", kind: "fill", poly: tube([[276, 262], [276, 238], [372, 226], [372, 274]]), color: COL.tan, shade: 1, sw: 3, group: "armR" });
+    add({ name: "eyepiece", kind: "fill", poly: tube(rrect(262, 236, 18, 28, 5)), color: COL.gold, shade: 0.6, sw: 2.6, group: "armR" });
+    add({ name: "ring", kind: "fill", poly: tube(rrect(326, 230, 10, 42, 3)), color: COL.gold, shade: 0.6, sw: 2.2, group: "armR" });
+    add({ name: "lens", kind: "fill", poly: tube(ellipse(374, 250, 10, 26)), color: COL.lens, shade: 0.4, sw: 3, group: "armR" });
   } else if (cls === "smith") {
     add({ name: "handle", kind: "fill", poly: rrect(262, 150, 18, 170, 8, 28), color: COL.brown, shade: 0.8, group: "armR" });
     add({ name: "hammer", kind: "fill", poly: rrect(282, 118, 86, 44, 8, 28), color: COL.steel, shade: 1, group: "armR" });
@@ -330,8 +337,19 @@ export function folkParts(cls: FolkClass) {
   }
   add({ name: "arm", kind: "fill", poly: ellipse(282, 284, 20, 32, -26), color: C, shade: 0.9, group: "armR" });
   // head
-  if (cls !== "smith") add({ name: "tuft", kind: "fill", poly: path("M200 66 Q170 40 186 14 Q214 30 200 66 Z"), color: COL.leaf, shade: 0.8, sw: 2.8, group: "head" });
-  if (cls !== "smith") add({ name: "tuft", kind: "fill", poly: path("M204 66 Q222 34 250 38 Q240 66 204 66 Z"), color: COL.leaf, shade: 0.8, sw: 2.8, group: "head" });
+  // each hero has one bold head shape that still reads when the face is a few dots:
+  // the Scribe's quill behind the ear, the Scout's goggles, the Smith's helmet, the Herald's plume
+  if (cls === "scribe") {
+    // tucked behind the right ear and leaning out, a dark feather against the pale head
+    add({ name: "ear-quill", kind: "fill", poly: path("M262 118 Q282 70 322 36 Q340 24 346 34 Q336 78 276 128 Z"), color: COL.pur, shade: 0.8, sw: 3, group: "head" });
+    add({ name: "ear-quill-vein", kind: "line", pts: path("M258 136 Q290 84 342 32"), w: 3.4, color: COL.ink, group: "head" });
+  }
+  if (cls === "herald") {
+    add({ name: "plume", kind: "fill", poly: path("M196 64 Q176 20 196 -18 Q214 -40 238 -34 Q218 -8 222 22 Q226 46 208 66 Z"), color: COL.rose, shade: 0.8, sw: 3, group: "head" });
+    add({ name: "plume-rib", kind: "line", pts: path("M204 62 Q196 18 226 -30"), w: 3, color: COL.gold, group: "head" });
+  }
+  if (cls === "scribe" || cls === "scout") add({ name: "tuft", kind: "fill", poly: path("M200 66 Q170 40 186 14 Q214 30 200 66 Z"), color: COL.leaf, shade: 0.8, sw: 2.8, group: "head" });
+  if (cls === "scribe" || cls === "scout") add({ name: "tuft", kind: "fill", poly: path("M204 66 Q222 34 250 38 Q240 66 204 66 Z"), color: COL.leaf, shade: 0.8, sw: 2.8, group: "head" });
   add({ name: "face", kind: "fill", poly: circle(200, 132, 76), color: COL.skin, shade: 0.9, group: "head" });
   for (const [ex, g] of <any[]>[[172, "eyeL"], [228, "eyeR"]]) {
     add({ name: "eye", kind: "fill", poly: ellipse(ex, 138, 9, 12), color: COL.ink, fine: 0.5, sw: 0, group: g, ec: [ex, 138] });
@@ -341,10 +359,11 @@ export function folkParts(cls: FolkClass) {
   add({ name: "cheek", kind: "fill", poly: ellipse(252, 162, 13, 8), color: COL.cheek, sw: 0, group: "head" });
   add({ name: "mouth", kind: "line", pts: path("M185 166 Q200 179 215 166"), w: 4.2, taper: 0, color: COL.ink, group: "head" });
   if (cls === "scout") {
-    add({ name: "band", kind: "fill", poly: path("M126 104 Q200 80 274 104 L274 116 Q200 94 126 116 Z"), color: COL.plum, shade: 0.4, sw: 2.4, group: "head" });
-    for (const gx of <any[]>[172, 228]) {
-      add({ name: "goggle", kind: "fill", poly: circle(gx, 96, 19), color: COL.steel, shade: 0.9, group: "head" });
-      add({ name: "goggle-lens", kind: "fill", poly: circle(gx, 96, 12), color: COL.lens, shade: 0.35, sw: 2.4, group: "head" });
+    add({ name: "band", kind: "fill", poly: path("M126 96 Q200 70 274 96 L274 110 Q200 86 126 110 Z"), color: COL.plum, shade: 0.4, sw: 2.4, group: "head" });
+    // pushed up on the forehead and big enough to break the round outline of the head
+    for (const gx of <any[]>[168, 232]) {
+      add({ name: "goggle", kind: "fill", poly: circle(gx, 70, 27), color: COL.steel, shade: 0.9, sw: 3, group: "head" });
+      add({ name: "goggle-lens", kind: "fill", poly: circle(gx, 70, 17), color: COL.lens, shade: 0.35, sw: 2.6, group: "head" });
     }
   }
   if (cls === "scribe") {
@@ -407,7 +426,7 @@ export const SPECIES: Record<string, Species> = {
   scribe: { parts: () => folkParts("scribe"), anchor: [200, 398], box: [60, 10, 392, 412], seed: 41 },
   scout: { parts: () => folkParts("scout"), anchor: [200, 398], box: [60, 10, 392, 412], seed: 42 },
   smith: { parts: () => folkParts("smith"), anchor: [200, 398], box: [60, 10, 392, 412], seed: 43 },
-  herald: { parts: () => folkParts("herald"), anchor: [200, 398], box: [20, 10, 392, 412], seed: 44 },
+  herald: { parts: () => folkParts("herald"), anchor: [200, 398], box: [20, -44, 392, 412], seed: 44 },
 };
 
 /// The town in scene units (1400 wide), back to front.
