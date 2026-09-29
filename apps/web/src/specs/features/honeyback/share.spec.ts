@@ -3,6 +3,8 @@ import {
   fetchHoneybackShare,
   honeybackShareHeadline,
   RETRY_DELAY_MS,
+  WAVE_CHARACTER_LIMIT,
+  honeybackShareCardUrl,
   honeybackWaveComposeUrl,
   isHoneybackShareId,
   parseHoneybackShare,
@@ -52,11 +54,41 @@ describe("honeyback share", () => {
     );
   });
 
-  it("prefills the wave with the headline and the share link", () => {
+  it("prefills the wave with the headline, the card image and the share link", () => {
     const url = honeybackWaveComposeUrl(share, t);
     expect(url.startsWith("/waves?text=")).toBe(true);
     expect(decodeURIComponent(url.slice("/waves?text=".length))).toBe(
-      "score|name=@alice,value=1,280 https://ecency.com/honeyback-share/abc234defg"
+      [
+        "score|name=@alice,value=1,280",
+        "![Honeyback](https://ecency.com/honeyback-share/abc234defg/card.png)",
+        "https://ecency.com/honeyback-share/abc234defg"
+      ].join("\n")
+    );
+  });
+
+  it("shortens an overlong headline so the wave stays a wave", () => {
+    const long = { ...share, name: "@" + "a".repeat(300) };
+    const text = decodeURIComponent(honeybackWaveComposeUrl(long, t).slice("/waves?text=".length));
+    expect(text.length).toBe(WAVE_CHARACTER_LIMIT);
+    const [headline, card, link] = text.split("\n");
+    expect(headline.endsWith("…")).toBe(true);
+    expect(card).toBe("![Honeyback](https://ecency.com/honeyback-share/abc234defg/card.png)");
+    expect(link).toBe("https://ecency.com/honeyback-share/abc234defg");
+  });
+
+  it("never cuts an emoji in half when shortening", () => {
+    for (let pad = 0; pad < 4; pad++) {
+      const long = { ...share, name: "@" + "a".repeat(pad) + "🐝".repeat(150) };
+      const url = honeybackWaveComposeUrl(long, t);
+      expect(decodeURIComponent(url.slice("/waves?text=".length)).length).toBeLessThanOrEqual(
+        WAVE_CHARACTER_LIMIT
+      );
+    }
+  });
+
+  it("points the card image at a fixed address", () => {
+    expect(honeybackShareCardUrl("abc234defg")).toBe(
+      "https://ecency.com/honeyback-share/abc234defg/card.png"
     );
   });
 

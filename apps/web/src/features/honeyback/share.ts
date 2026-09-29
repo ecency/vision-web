@@ -112,8 +112,30 @@ export function honeybackShareUrl(id: string): string {
   return `${HONEYBACK_SHARE_BASE}/${id}`;
 }
 
-// The compose link the web and app composers open with the text filled in.
+// The card image a wave embeds, so the score shows in the feed of every
+// Hive frontend without opening the link (none of them unfurl links).
+export function honeybackShareCardUrl(id: string): string {
+  return `${honeybackShareUrl(id)}/card.png`;
+}
+
+// A new wave allows this many characters; past it the composer turns the
+// text into a full post instead (features/waves/components/wave-form).
+export const WAVE_CHARACTER_LIMIT = 250;
+
+// The compose link the web and app composers open with the text filled in:
+// the headline, the card, then the link for the details. The card and the
+// link come to about 120 characters, so only a very long name or
+// translation can push it over; the headline is the part that gives way.
 export function honeybackWaveComposeUrl(share: HoneybackShare, t: Translate): string {
-  const text = `${honeybackShareHeadline(share, t)} ${honeybackShareUrl(share.id)}`;
-  return `/waves?text=${encodeURIComponent(text)}`;
+  const tail = `\n![Honeyback](${honeybackShareCardUrl(share.id)})\n${honeybackShareUrl(share.id)}`;
+  const headline = honeybackShareHeadline(share, t);
+  const room = WAVE_CHARACTER_LIMIT - tail.length;
+  // Never cut between the two halves of an emoji: encodeURIComponent
+  // throws on a lone surrogate.
+  const cut = headline
+    .slice(0, room - 1)
+    .replace(/[\uD800-\uDBFF]$/, "")
+    .trimEnd();
+  const fitted = headline.length <= room ? headline : `${cut}…`;
+  return `/waves?text=${encodeURIComponent(fitted + tail)}`;
 }
