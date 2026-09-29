@@ -1109,8 +1109,26 @@ const jsonRPCCall = async (
     if (res.status >= 500 && res.status < 600) {
       throw new NodeError(url, `HTTP ${res.status} from ${url}`)
     }
-
-    const result = (await res.json()) as CallResponse
+    let result: CallResponse
+    if (res.ok) {
+      result = (await res.json()) as CallResponse
+    } else {
+      // Any other non-OK status is either a JSON-RPC reply to this request
+      // (handled below like any other) or a proxy in front of the node
+      // refusing it (a 403/413 with a text or non-RPC body). The latter is not
+      // a chain verdict: fail over with the status in the message instead of a
+      // JSON parse error or "JSONRPC id mismatch".
+      let parsed: any
+      try {
+        parsed = JSON.parse(await res.text())
+      } catch {
+        parsed = undefined
+      }
+      if (parsed?.jsonrpc !== '2.0' || parsed?.id !== id) {
+        throw new NodeError(url, `HTTP ${res.status} from ${url}`)
+      }
+      result = parsed
+    }
     if (
       !result ||
       typeof result.id === 'undefined' ||
