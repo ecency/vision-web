@@ -111,6 +111,28 @@ describe("Transaction size limit", () => {
     expect(() => commentTx(2 * 1024 * 1024, null).sign(key)).toThrow(TransactionTooLargeError);
   });
 
+  it("counts every key when signing with several at once", () => {
+    const other = PrivateKey.fromSeed("size-limit-spec-2");
+    // Fits with one signature, not with two.
+    const t = commentTx(bodyFor(65280 - 65 - 30));
+    expect(() => t.sign([key, other])).toThrow(TransactionTooLargeError);
+    expect(t.transaction?.signatures).toEqual([]);
+  });
+
+  it("keeps the block size when copied from another Transaction", () => {
+    const copy = new Transaction({ transaction: commentTx(100_000, 65536) });
+    expect(copy.maximumBlockSize).toBe(65536);
+    expect(() => copy.sign(key)).toThrow(TransactionTooLargeError);
+  });
+
+  it("ignores a block size outside the consensus bounds", () => {
+    expect(() => commentTx(100_000, 0).sign(key)).not.toThrow();
+    expect(() => commentTx(100_000, 4 * 1024 * 1024).sign(key)).not.toThrow();
+    expect(() => commentTx(100_000, "65536" as unknown as number).sign(key)).toThrow(
+      TransactionTooLargeError
+    );
+  });
+
   it("records maximum_block_size from the properties it builds on", async () => {
     callRPC.mockResolvedValueOnce({
       head_block_number: 100,

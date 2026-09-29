@@ -567,7 +567,9 @@ export async function assertOperationsFitTransaction(ops: Operation[]): Promise<
     return;
   }
   try {
-    const props = await callRPC("condenser_api.get_dynamic_global_properties", []);
+    // Short budget: this only delays an already oversized broadcast, and the
+    // protocol ceiling still applies if the nodes are slow.
+    const props = await callRPC("condenser_api.get_dynamic_global_properties", [], 3000, 1);
     tx.maximumBlockSize = props?.maximum_block_size;
   } catch {
     // Unknown limit: assertSize falls back to the protocol ceiling.

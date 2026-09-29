@@ -77,6 +77,7 @@ export class Transaction {
       if (options.transaction instanceof Transaction) {
         this.transaction = options.transaction.transaction
         this.expiration = options.transaction.expiration
+        this.maximumBlockSize = options.transaction.maximumBlockSize
       } else {
         this.transaction = options.transaction
       }
@@ -236,7 +237,11 @@ export class Transaction {
    */
   assertSize(extraSignatures = 0): void {
     const size = this.size(extraSignatures)
-    const limit = (this.maximumBlockSize ?? MAX_BLOCK_SIZE) - BLOCK_SIZE_RESERVE
+    // A value outside the consensus bounds cannot be the chain's; ignore it.
+    const voted = Number(this.maximumBlockSize)
+    const blockSize =
+      voted >= MIN_BLOCK_SIZE_LIMIT && voted <= MAX_BLOCK_SIZE ? voted : MAX_BLOCK_SIZE
+    const limit = blockSize - BLOCK_SIZE_RESERVE
     if (size > limit) {
       throw new TransactionTooLargeError(size, limit)
     }

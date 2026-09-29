@@ -45,7 +45,7 @@ describe("assertOperationsFitTransaction", () => {
     await expect(assertOperationsFitTransaction([comment("x".repeat(70_000))])).rejects.toBeInstanceOf(
       TransactionTooLargeError
     );
-    expect(callRPC).toHaveBeenCalledWith("condenser_api.get_dynamic_global_properties", []);
+    expect(callRPC).toHaveBeenCalledWith("condenser_api.get_dynamic_global_properties", [], 3000, 1);
   });
 
   it("accepts a larger transaction when witnesses voted a larger block size", async () => {
