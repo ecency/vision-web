@@ -10,7 +10,7 @@ import { ImageResponse } from "next/og";
 // embeds, since the preview's own address carries a hash Next may change
 // between builds. An unknown id gets the plain game card rather than a
 // broken image.
-export const HONEYBACK_CARD_SIZE = { width: 1200, height: 630 };
+export const HONEYBACK_CARD_SIZE: { width: number; height: number } = { width: 1200, height: 630 };
 // No `revalidate` on either route on purpose: it would make them ISR routes,
 // and Next stores an ISR route's response whatever its status (app-route.js),
 // so one 503 would be replayed from the origin cache for a day. The fetch
