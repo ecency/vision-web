@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The page around the scene: the scene itself (WebGL) is stubbed, the games
@@ -56,6 +56,7 @@ vi.mock("@/features/shared/login", () => ({ LoginDialog: () => null }));
 vi.mock("@/app/publish/_hooks", () => ({ usePublishHandoffWriter: () => vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
+import { createScene } from "@ecency/raidstead";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { clearSession, signerFor, signIn } from "@/features/raidstead/client";
 import { RaidsteadGame } from "@/app/raidstead/_components/raidstead-game";
@@ -364,6 +365,57 @@ describe("Raidstead page", () => {
     });
     expect(screen.getByRole("button", { name: /raidstead.actions.rally/ })).toBeTruthy();
     expect(api.state.mock.calls.length).toBe(calls);
+  });
+
+  it("tells who a tapped hero is, and attacks with their type from the card", async () => {
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    const onTap = vi.mocked(createScene).mock.calls.at(-1)![1]!.onTap!;
+    api.attack.mockResolvedValueOnce({ damage: 10, weak: false, killed: false });
+    await act(async () => {
+      onTap({ kind: "hero", hero: "smith" });
+    });
+    expect(screen.getByText("raidstead.hero-card.smith")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "raidstead.hero-card.attack" }));
+    });
+    await waitFor(() => expect(api.attack).toHaveBeenCalledWith("forge", 0));
+    expect(screen.queryByText("raidstead.hero-card.smith")).toBeNull();
+  });
+
+  it("opens a hero's card from a button, without the canvas", async () => {
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    const group = screen.getByRole("group", { name: "raidstead.hero-card.group" });
+    const buttons = within(group).getAllByRole("button", { name: "raidstead.hero-card.about" });
+    expect(buttons).toHaveLength(4);
+    await act(async () => {
+      fireEvent.click(buttons[3]);
+    });
+    expect(screen.getByText("raidstead.hero-card.herald")).toBeTruthy();
+  });
+
+  it("gives focus back to the hero button when the card closes", async () => {
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    const group = screen.getByRole("group", { name: "raidstead.hero-card.group" });
+    const opener = within(group).getAllByRole("button", { name: "raidstead.hero-card.about" })[1];
+    opener.focus();
+    await act(async () => {
+      fireEvent.click(opener);
+    });
+    // as in a browser, focus is inside the open dialog when it closes
+    const close = screen.getByRole("button", { name: "g.close" });
+    close.focus();
+    expect(document.activeElement).toBe(close);
+    await act(async () => {
+      fireEvent.click(close);
+    });
+    expect(screen.queryByText("raidstead.hero-card.scout")).toBeNull();
+    expect(document.activeElement).toBe(opener);
   });
 
   it("keeps a guest's own session when no Ecency user was ever logged in", async () => {

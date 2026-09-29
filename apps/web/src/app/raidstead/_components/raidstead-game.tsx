@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import i18next from "i18next";
 import {
   createScene,
+  FOLK,
   type AttackType,
   type BuildingId,
   type Community,
+  type FolkClass,
   type PowerId,
   type Scene,
   type State,
@@ -44,6 +46,7 @@ import {
   BossSheet,
   BuildingSheet,
   HelpSheet,
+  HeroSheet,
   InfoSheet,
   LeaderboardSheet,
   MenuSheet,
@@ -73,6 +76,7 @@ const SEEN_KEY = "raidstead_seen_week";
 type SheetState =
   | { kind: "boss" }
   | { kind: "building"; id: BuildingId | "homes" }
+  | { kind: "hero"; hero: FolkClass }
   | { kind: "quests" }
   | { kind: "menu" }
   | { kind: MenuItem };
@@ -438,6 +442,10 @@ export function RaidsteadGame() {
       if (alliance) setSheet({ kind: "building", id: target.id });
       return;
     }
+    if (target.kind === "hero") {
+      if (alliance && phase === "ready" && !sheet) setSheet({ kind: "hero", hero: target.hero });
+      return;
+    }
     if (phase !== "ready" || sheet) return;
     attack(selected, target.kind === "boss" ? target.side : undefined);
   };
@@ -654,6 +662,24 @@ export function RaidsteadGame() {
           />
         ) : null;
         break;
+      case "hero":
+        open = alliance ? (
+          <HeroSheet
+            hero={sheet.hero}
+            state={data}
+            busy={busy}
+            onClose={close}
+            onAttack={(type) => {
+              close();
+              attack(type);
+            }}
+            onRally={() => {
+              close();
+              rally();
+            }}
+          />
+        ) : null;
+        break;
       case "quests":
         open = alliance ? (
           <QuestsSheet
@@ -818,6 +844,21 @@ export function RaidsteadGame() {
             <p className="rs-toast" aria-live="polite">
               {toast}
             </p>
+            {view === "raid" && (
+              // the heroes live on the canvas; these open their cards from the
+              // keyboard and for screen readers, shown once focused
+              <div className="rs-hero-links" role="group" aria-label={t("hero-card.group")}>
+                {FOLK.map((h) => (
+                  <button
+                    key={h}
+                    className="rs-btn sr-only focus:not-sr-only"
+                    onClick={() => setSheet({ kind: "hero", hero: h })}
+                  >
+                    {t("hero-card.about", { name: t(`heroes.${h}`) })}
+                  </button>
+                ))}
+              </div>
+            )}
             {view === "raid" && (
               <div className="rs-attacks">
                 {TYPES.map(({ type, hero, color }) => (
