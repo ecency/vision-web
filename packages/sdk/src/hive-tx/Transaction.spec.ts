@@ -123,3 +123,23 @@ describe("Transaction size limit", () => {
     expect(() => t.sign(key)).not.toThrow();
   });
 });
+
+describe("optional fields", () => {
+  const update = (extra: Record<string, unknown>) =>
+    new Transaction({
+      transaction: {
+        ...baseTx,
+        signatures: [],
+        operations: [
+          [
+            "account_update2",
+            { account: "alice", json_metadata: "", posting_json_metadata: "{}", extensions: [], ...extra },
+          ],
+        ],
+      },
+    }).digest().txId;
+
+  it("serializes a null optional like an absent one, as hived reads it", () => {
+    expect(update({ memo_key: null, posting: null })).toBe(update({}));
+  });
+});
