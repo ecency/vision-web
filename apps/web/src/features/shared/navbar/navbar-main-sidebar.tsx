@@ -184,7 +184,7 @@ export function NavbarMainSidebar({ show, setShow, setStepOne }: Props) {
             label={i18next.t("navbar.raidstead")}
             to="/raidstead"
             onClick={() => setShow(false)}
-            icon={<UilShield className="size-4" />}
+            icon={<UilShield className="size-4" aria-hidden />}
           />
         </EcencyConfigManager.Conditional>
 

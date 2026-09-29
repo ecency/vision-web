@@ -136,9 +136,9 @@ function shadeLevel(p: Part, x: number, y: number) {
 
 /// Turns parts into dots: halftone screens per ink (dot size = tone), later
 /// fills knock out earlier dots, tapered linework, about 5% ink dropout.
-/// With `cover`, every fill also gets a screen of paper dots over its whole
-/// silhouette, so pale fills (skin, cream, white) knock out what is behind
-/// them even where they print little or no ink.
+/// With `cover`, a fill's first screen leaves an ink-less paper dot wherever it
+/// prints no ink, so pale fills (skin, cream, white) still knock out what is
+/// behind them; the paper dots move with the fill like any other dot.
 export function buildModel(parts: Part[], sp: number, seed: number, cover = false): Dot[] {
   const rng = mulberry(seed), dots: Dot[] = [];
   const g = clamp(Math.pow(sp / 4, 0.6), 0.7, 2.6); // lines stay readable on small sprites
@@ -155,28 +155,19 @@ export function buildModel(parts: Part[], sp: number, seed: number, cover = fals
   };
   const push = (p: Part, x: number, y: number, r: number, ink: number, extra?: Partial<Dot>) =>
     dots.push({ p: p.id, hx: x, hy: y, r, ink, ph: rng() * 6.283, boil: [rng(), rng(), rng(), rng(), rng(), rng()].map((v) => (v - 0.5) * 1.1), ...extra });
-  const screen = (p: Part, spp: number, ink: number, toneAt: (x: number, y: number) => number) => {
+  const screen = (p: Part, spp: number, ink: number, toneAt: (x: number, y: number) => number, paper = false) => {
     const a = INKS[ink].a * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
     const [x0, y0, x1, y1] = p.bb!, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R = Math.hypot(x1 - x0, y1 - y0) / 2 + spp;
     for (let v = -R; v <= R; v += spp) for (let u = -R; u <= R; u += spp) {
       const x = cx + u * c - v * s, y = cy + u * s + v * c;
       if (x < x0 || x > x1 || y < y0 || y > y1 || !pip(x, y, p.poly!) || hiddenBy(p, x, y)) continue;
       const tone = toneAt(x, y);
-      if (tone < 0.06 || (tone < 0.95 && rng() < 0.05)) continue; // ink dropout
+      if (tone < 0.06 || (tone < 0.95 && rng() < 0.05)) { if (paper) push(p, x, y, spp * 0.12, ink, { knock: true }); continue; } // ink dropout
       const j = spp * 0.08;
       push(p, x + (rng() - 0.5) * j, y + (rng() - 0.5) * j, spp * (0.12 + 0.46 * Math.min(1, tone)), ink);
     }
   };
   for (const p of parts) {
-    if (cover && p.kind === "fill") {
-      // a hex grid of paper dots; skipped only under a later fill that moves with this one
-      const [x0, y0, x1, y1] = p.bb!, dy = sp * 0.866;
-      for (let y = y0 + dy / 2, row = 0; y <= y1; y += dy, row++) for (let x = x0 + (row % 2 ? sp : sp / 2); x <= x1; x += sp) {
-        if (!pip(x, y, p.poly!)) continue;
-        if (fills.some((f) => f.id > p.id && f.group === p.group && x >= f.bb![0] && x <= f.bb![2] && y >= f.bb![1] && y <= f.bb![3] && pip(x, y, f.poly!))) continue;
-        push(p, x, y, sp * 0.62, NIGHT, { knock: true });
-      }
-    }
     if (p.kind === "ring") {
       const n = Math.round(2 * Math.PI * Math.sqrt((p.rx * p.rx + p.ry * p.ry) / 2) / 7);
       for (let i = 0; i < n; i++) push(p, p.cx, p.cy, 1.5 * g, VIOLET, { u: i / n * 6.283, ba: 0.55 });
@@ -202,7 +193,14 @@ export function buildModel(parts: Part[], sp: number, seed: number, cover = fals
       });
     } else if (p.kind === "fill") {
       const spp = sp * Math.max(0.45, p.fine || 1), layers = PRINT[p.color!] || [[NIGHT, 0.5]];
-      layers.forEach(([ink, tone], li) => screen(p, spp, ink, (x, y) => tone + (li === 0 && p.shade ? (shadeLevel(p, x, y) - 0.5) * 0.5 * p.shade : 0)));
+      const n0 = dots.length;
+      layers.forEach(([ink, tone], li) => screen(p, spp, ink, (x, y) => tone + (li === 0 && p.shade ? (shadeLevel(p, x, y) - 0.5) * 0.5 * p.shade : 0), cover && li === 0));
+      if (cover && !layers.length) screen(p, spp, NIGHT, () => 0, true);
+      if (cover && dots.length === n0) {
+        // too small to catch a screen point: one paper dot over its whole box
+        const [x0, y0, x1, y1] = p.bb!;
+        push(p, (x0 + x1) / 2, (y0 + y1) / 2, Math.hypot(x1 - x0, y1 - y0) / 2 / 1.25, NIGHT, { knock: true });
+      }
       if (p.shade && layers.length) screen(p, spp, NIGHT, (x, y) => Math.max(0, shadeLevel(p, x, y) - 0.55) * 0.9 * p.shade);
       const sw = (p.sw ?? 3.2) * g;
       if (sw > 0) {

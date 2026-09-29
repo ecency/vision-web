@@ -693,7 +693,7 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     let n = 0;
     // far towns first, the smallest (farthest) at the back
     const drawList = view === "town" ? [...[...sky].reverse(), island, ...TOWN.map((b) => bld[b.id]), ...FOLK.map((k) => folk[k]), spider] : [boss, wasp, ...gnats, ...FOLK.map((k) => folk[k])];
-    for (const inst of drawList) n += inst.dots.length; // each dot is ink or paper, drawn once
+    for (const inst of drawList) n += inst.dots.length * 2; // ink dots plus knockout dots
     n += sparks.length + flights.length * 16;
     if (frameDots.length < n * 6) frameDots = new Float32Array(n * 6 + 6000);
     const f = reduced ? 0 : Math.floor(t * 3) % 3;
@@ -709,7 +709,8 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
       const far = inst.community !== undefined;
       if (!building && inst !== island && !far) {
         mark("paper");
-        for (const d of inst.dots) { const a = d.a * d.ba; if (a > 0.02 && d.knock) put(d.x, d.y, d.r * 1.25 * s, KNOCK, Math.min(1, a * 1.2), 0); }
+        const kr = inst.model.sp * 0.62;
+        for (const d of inst.dots) { const a = d.a * d.ba; if (a > 0.02 && !d.line && ps[d.p].kind === "fill") put(d.x, d.y, Math.max(d.r, kr) * 1.25 * s, KNOCK, Math.min(1, a * 1.2), 0); }
       }
       mark("ink");
       for (const d of inst.dots) {
