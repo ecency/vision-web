@@ -63,8 +63,9 @@ export function raidRow(width: number, rowH: number): { fs: number; xs: number[]
 }
 
 /// The stretch of street (in town units, 0..1400) the folk walk on a slot `width`
-/// wide at town scale `ts`, with the town panned by `camX` screen pixels: the part
-/// of the street in view, so every hero stays on screen.
+/// wide at town scale `ts`, with the town panned by `camX` screen pixels (positive moves
+/// the town right, so the view shows streets further left): the part of the street in
+/// view, so every hero stays on screen.
 export function walkRange(width: number, ts: number, camX = 0): [number, number] {
   // a hero reaches about 55 street units either side of its feet, whichever way it faces
   const half = width / 2 / ts, mid = 700 - camX / ts;
@@ -655,7 +656,9 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
         // reduced motion: the town's folk stand still, just inside the view
         if (reduced) { f.walking = false; f.wave = false; w.x = clamp(w.x, lo, hi); continue; }
         // each one picks its own spot in view, so they spread out instead of piling up at the edge
-        if ((w.x < lo || w.x > hi) && (w.to === null || w.to < lo || w.to > hi)) w.to = lo + rnd() * (hi - lo);
+        // a spot the still-gliding camera has carried out of view is dropped, never chased
+        if (w.to !== null && (w.to < lo || w.to > hi)) w.to = null;
+        if ((w.x < lo || w.x > hi) && w.to === null) w.to = lo + rnd() * (hi - lo);
         const away = w.to === null ? 0 : Math.sign(w.to - w.x);
         if (away) { w.dir = away; w.walking = true; w.until = Math.max(w.until, t + 1); f.wave = false; }
         if (t > w.until) {
