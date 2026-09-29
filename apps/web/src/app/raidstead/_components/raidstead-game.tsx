@@ -119,6 +119,8 @@ export function RaidsteadGame() {
   const [skew, setSkew] = useState(0);
   const openTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mounted = useRef(true);
+  // at most one chain of checks at zero at a time
+  const opening = useRef(false);
   const [dayTick, setDayTick] = useState(0);
   const rebootAt = useRef(0);
   // the Ecency user right now, for callbacks that awaited a wallet or a request
@@ -287,11 +289,14 @@ export function RaidsteadGame() {
   // Pages spread their asks over a few seconds so they do not all arrive at once; if the
   // server keeps failing, the page falls back to the usual flow rather than wait forever.
   const openSeason = useCallback(() => {
+    if (opening.current) return;
+    opening.current = true;
     let failures = 0;
     const again = () => {
       openTimer.current = setTimeout(check, 5000 + Math.random() * 3000);
     };
     const open = () => {
+      opening.current = false;
       setPreseason(null);
       setPhase("loading");
     };
@@ -302,9 +307,12 @@ export function RaidsteadGame() {
           if (!mounted.current) return;
           if (c.now) setSkew(c.now - Date.now());
           if (c.season >= 1) return open();
-          // the start was moved later: count down to the new one
-          if (Date.parse(c.startsAt) > (c.now ?? Date.now()) + 1000) setPreseason(c);
-          else again();
+          // still more than a second to go by the server's clock (the start was moved
+          // later, or this device runs fast): count down again; zero asks anew
+          if (Date.parse(c.startsAt) > (c.now ?? Date.now()) + 1000) {
+            opening.current = false;
+            setPreseason(c);
+          } else again();
         })
         .catch(() => {
           if (!mounted.current) return;

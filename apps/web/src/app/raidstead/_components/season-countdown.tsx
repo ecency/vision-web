@@ -13,20 +13,25 @@ export function SeasonCountdown({ startsAt, skew = 0, onOpen }: { startsAt: stri
   const at = Date.parse(startsAt);
   const [now, setNow] = useState(() => Date.now() + skew);
   const left = countdown(at, now);
-  // once per start: a clock correction while it waits must not call it again
-  const openedFor = useRef<number | null>(null);
+  // once each time it reaches zero: a clock correction while it waits there must not
+  // call it again, but one that sends it back to counting lets it call again at zero
+  const calledAtZero = useRef(false);
+
+  // a new clock correction applies at once, even while stopped at zero
+  useEffect(() => setNow(Date.now() + skew), [skew]);
 
   useEffect(() => {
     if (left.done) {
-      if (openedFor.current !== at) {
-        openedFor.current = at;
+      if (!calledAtZero.current) {
+        calledAtZero.current = true;
         onOpen();
       }
       return;
     }
+    calledAtZero.current = false;
     const id = setInterval(() => setNow(Date.now() + skew), 1000);
     return () => clearInterval(id);
-  }, [left.done, onOpen, skew, at]);
+  }, [left.done, onOpen, skew]);
 
   const when = new Date(at).toLocaleString(i18next.language || undefined, {
     weekday: "long",

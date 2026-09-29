@@ -728,6 +728,43 @@ describe("Raidstead page", () => {
       expect(within(region()!).getByRole("timer").textContent).toMatch(/^00 raidstead.season.countdown-days00 raidstead.season.countdown-hours01 raidstead.season.countdown-minutes2\d/);
     });
 
+    it("counts the last seconds again when this device runs a few seconds fast", async () => {
+      const startsAt = new Date(Date.now() + 1200).toISOString();
+      api.calendar
+        .mockResolvedValueOnce({ ...soon(0), startsAt })
+        // at this device's zero the server is 3s behind it: same start, not yet
+        .mockImplementationOnce(async () => ({ ...soon(0), startsAt, now: Date.now() - 3000 }))
+        .mockResolvedValue(state().calendar);
+      render(<RaidsteadGame />);
+      await tick(2100);
+      await tick(10);
+      expect(api.calendar).toHaveBeenCalledTimes(2);
+      expect(region()).not.toBeNull();
+      // it counts down the server's remaining seconds, then asks again and opens
+      await tick(4000);
+      await tick(10);
+      expect(api.calendar).toHaveBeenCalledTimes(3);
+      expect(region()).toBeNull();
+      expect(signInButton()).not.toBeNull();
+    });
+
+    it("keeps a single chain of checks when a small correction restarts the last second", async () => {
+      const startsAt = new Date(Date.now() + 1200).toISOString();
+      api.calendar
+        .mockResolvedValueOnce({ ...soon(0), startsAt })
+        // the server is 1.5s behind: under a second to go by its clock, so the check retries in 5s
+        .mockImplementation(async () => ({ ...soon(0), startsAt, now: Date.now() - 1500 }));
+      render(<RaidsteadGame />);
+      await tick(2100);
+      await tick(10);
+      expect(api.calendar).toHaveBeenCalledTimes(2);
+      // the corrected countdown reaches zero again before the retry: no second chain
+      await tick(1500);
+      expect(api.calendar).toHaveBeenCalledTimes(2);
+      await tick(4000);
+      expect(api.calendar).toHaveBeenCalledTimes(3);
+    });
+
     it("falls back when the calendar never answers", async () => {
       api.calendar.mockReturnValue(new Promise(() => undefined));
       render(<RaidsteadGame />);
