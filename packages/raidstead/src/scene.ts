@@ -47,6 +47,32 @@ export function heroAt(x: number, y: number, spots: HeroSpot[]): FolkClass | nul
   return hero;
 }
 
+/// The raid row on a slot `width` wide: the heroes' scale and each one's anchor x
+/// (from the slot's left edge), kept inside the slot even with their props.
+export function raidRow(width: number, rowH: number): { fs: number; xs: number[] } {
+  const gap = width / 4;
+  // the first hero's reach to the left plus the last one's to the right (props included) fit one
+  // column, so the row fits the slot; the Herald's flag still reaches a little into the Smith's column
+  const first = SPECIES[FOLK[0]], last = SPECIES[FOLK[FOLK.length - 1]];
+  const fs = Math.min(rowH / 400, gap / (first.anchor[0] - first.box[0] + last.box[2] - last.anchor[0]));
+  const xs = FOLK.map((k, i) => {
+    const [x0, , x1] = SPECIES[k].box, ax = SPECIES[k].anchor[0];
+    return clamp(gap * (i + 0.5), (ax - x0) * fs + 2, width - (x1 - ax) * fs - 2);
+  });
+  return { fs, xs };
+}
+
+/// The stretch of street (in town units, 0..1400) the folk walk on a slot `width`
+/// wide at town scale `ts`, with the town panned by `camX` screen pixels (positive moves
+/// the town right, so the view shows streets further left): the part of the street in
+/// view, so every hero stays on screen.
+export function walkRange(width: number, ts: number, camX = 0): [number, number] {
+  // a hero reaches about 55 street units either side of its feet, whichever way it faces
+  const half = width / 2 / ts, mid = 700 - camX / ts;
+  const lo = Math.max(300, mid - half + 60), hi = Math.min(1120, mid + half - 60);
+  return lo > hi ? [clamp(mid, 300, 1120), clamp(mid, 300, 1120)] : [lo, hi];
+}
+
 /// Where another alliance's town floats: model origin and scale.
 export interface IsletSpot { community: string; ox: number; oy: number; s: number; shown: boolean }
 
@@ -110,7 +136,7 @@ interface Spark { x: number; y: number; vx: number; vy: number; r: number; ink: 
 interface Flight { from: Pt; to: Pt; t0: number; dur: number; ink: number; target: "boss" | "gnat" | "wasp"; side: 0 | 1; impact: Impact | null; landed: boolean }
 
 const ATTACK: Record<AttackType, { ink: number; hero: FolkClass }> = { ink: { ink: VIOLET, hero: "scribe" }, signal: { ink: LIME, hero: "scout" }, forge: { ink: CORAL, hero: "smith" } };
-const TIP: Record<FolkClass, Pt> = { scribe: [380, 100], scout: [350, 182], smith: [330, 130], herald: [360, 240] };
+const TIP: Record<FolkClass, Pt> = { scribe: [380, 100], scout: [356, 212], smith: [330, 130], herald: [360, 240] };
 
 export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   const reduced = opts.reducedMotion ?? (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -349,7 +375,8 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   const island = makeInst("island"), spider = makeInst("spider", { state: "gone" });
   const bld = Object.fromEntries(TOWN.map((b) => [b.id, makeInst(b.id, { stage: b.id === "homes" ? 3 : 0, stageShown: b.id === "homes" ? 3 : 0 })])) as Record<string, Inst>;
   let view: View = "raid", ts = 0.5, townX0 = 0, townY0 = 0, camX = 0, camV = 0, camMax = 0;
-  const walkers = FOLK.map((k, i) => ({ k, x: 360 + i * 190, dir: i % 2 ? -1 : 1, speed: 34 + i * 5, until: 2 + i, walking: true }));
+  // `to`: a spot in view a walker hurries to after a pan left it outside
+  const walkers = FOLK.map((k, i) => ({ k, x: 360 + i * 190, dir: i % 2 ? -1 : 1, speed: 34 + i * 5, until: 2 + i, walking: true, to: null as number | null }));
   let world: SceneWorld | null = null, first = true;
   // other alliances' towns in the sky, in the band between the HUD and the
   // island's grass: spots as (across, down) fractions of that band and a size
@@ -376,6 +403,8 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     for (const b of TOWN) setModel(bld[b.id], ts, false);
     setModel(spider, ts * 0.62, false);
     for (const k of FOLK) setModel(folk[k], ts * 0.28, false);
+    const [lo, hi] = walkRange(r.width, ts, camX);
+    for (const w of walkers) w.x = clamp(w.x, lo, hi);
     // the sky band: from the top of the world's slot down to just above the grass
     skyTop = r.top + 4;
     skyH = Math.max(40, r.top + (r.height - 600 * ts) / 2 - 110 * ts + 380 * ts - skyTop);
@@ -406,9 +435,8 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   }
   function layoutRaid() {
     const r = slot, bottom = r.top + r.height;
-    const rowH = clamp(r.height * 0.3, 80, 200), gap = r.width / 4;
-    const fs = Math.min(rowH / 400, gap / 300);
-    FOLK.forEach((k, i) => { const f = folk[k]; setModel(f, fs, first); place(f, r.left + gap * (i + 0.5), bottom - 2); });
+    const rowH = clamp(r.height * 0.3, 80, 200), { fs, xs } = raidRow(r.width, rowH);
+    FOLK.forEach((k, i) => { const f = folk[k]; setModel(f, fs, first); place(f, r.left + xs[i], bottom - 2); });
     const areaTop = r.top + 4, areaBottom = bottom - rowH * 0.8, areaH = Math.max(60, areaBottom - areaTop);
     const sp = SPECIES[boss.kind], [bx0, by0, bx1, by1] = sp.box, bw = bx1 - bx0, bh = by1 - by0;
     const bs = Math.min(r.width * 0.92 / bw, areaH / bh, 2.4);
@@ -621,10 +649,18 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     boss.morph += ((boss.state === "dying" || boss.state === "gone" ? 1 : 0) - boss.morph) * Math.min(1, dt * 5);
     if (view === "town") {
       if (!drag) { camX += camV * s; camV *= Math.pow(0.9, s); if (camX < -camMax || camX > camMax) { camX = clamp(camX, -camMax, camMax); camV = 0; } }
+      // the street in view follows the camera; anyone left outside after a pan hurries back
+      const [lo, hi] = walkRange(slot.width, ts, camX);
       for (const w of walkers) {
         const f = folk[w.k];
-        // reduced motion: the town's folk stand still
-        if (reduced) { f.walking = false; f.wave = false; continue; }
+        // reduced motion: the town's folk stand still, just inside the view
+        if (reduced) { f.walking = false; f.wave = false; w.x = clamp(w.x, lo, hi); continue; }
+        // each one picks its own spot in view, so they spread out instead of piling up at the edge
+        // a spot the still-gliding camera has carried out of view is dropped, never chased
+        if (w.to !== null && (w.to < lo || w.to > hi)) w.to = null;
+        if ((w.x < lo || w.x > hi) && w.to === null) w.to = lo + rnd() * (hi - lo);
+        const away = w.to === null ? 0 : Math.sign(w.to - w.x);
+        if (away) { w.dir = away; w.walking = true; w.until = Math.max(w.until, t + 1); f.wave = false; }
         if (t > w.until) {
           w.walking = !w.walking;
           w.until = t + (w.walking ? 3 + rnd() * 5 : 1.2 + rnd() * 2.2);
@@ -633,9 +669,11 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
         }
         f.walking = w.walking && !f.act;
         if (f.walking) {
-          w.x += w.dir * w.speed * dt;
-          if (w.x < 300 || w.x > 1120) { w.dir *= -1; w.x = clamp(w.x, 300, 1120); }
-          f.stepT = (f.stepT || 0) + w.speed * dt / 58 * Math.PI * 2;
+          const pace = w.speed * (away ? 4 : 1);
+          w.x += w.dir * pace * dt;
+          if (away && Math.sign(w.to! - w.x) !== away) { w.x = w.to!; w.to = null; }
+          else if (!away && (w.x < lo || w.x > hi)) { w.dir *= -1; w.x = clamp(w.x, lo, hi); }
+          f.stepT = (f.stepT || 0) + pace * dt / 58 * Math.PI * 2;
         }
         f.flip = w.dir;
       }
