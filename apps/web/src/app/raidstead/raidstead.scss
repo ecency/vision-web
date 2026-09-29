@@ -565,6 +565,13 @@
     }
   }
 
+  .rs-hero-links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+
   .rs-opt-icon {
     grid-template-columns: 42px minmax(0, 1fr) auto;
     gap: 14px;

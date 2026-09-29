@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The page around the scene: the scene itself (WebGL) is stubbed, the games
@@ -382,6 +382,19 @@ describe("Raidstead page", () => {
     });
     await waitFor(() => expect(api.attack).toHaveBeenCalledWith("forge", 0));
     expect(screen.queryByText("raidstead.hero-card.smith")).toBeNull();
+  });
+
+  it("opens a hero's card from a button, without the canvas", async () => {
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    const group = screen.getByRole("group", { name: "raidstead.hero-card.group" });
+    const buttons = within(group).getAllByRole("button", { name: "raidstead.hero-card.about" });
+    expect(buttons).toHaveLength(4);
+    await act(async () => {
+      fireEvent.click(buttons[3]);
+    });
+    expect(screen.getByText("raidstead.hero-card.herald")).toBeTruthy();
   });
 
   it("keeps a guest's own session when no Ecency user was ever logged in", async () => {

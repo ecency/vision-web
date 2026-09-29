@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import i18next from "i18next";
 import {
   createScene,
+  FOLK,
   type AttackType,
   type BuildingId,
   type Community,
@@ -843,6 +844,22 @@ export function RaidsteadGame() {
             <p className="rs-toast" aria-live="polite">
               {toast}
             </p>
+            {view === "raid" && (
+              // the heroes live on the canvas; these open their cards from the
+              // keyboard and for screen readers, shown once focused
+              <div className="rs-hero-links" role="group" aria-label={t("hero-card.group")}>
+                {FOLK.map((h) => (
+                  <button
+                    key={h}
+                    className="rs-btn sr-only focus:not-sr-only"
+                    disabled={!!sheet}
+                    onClick={() => setSheet({ kind: "hero", hero: h })}
+                  >
+                    {t("hero-card.about", { name: t(`heroes.${h}`) })}
+                  </button>
+                ))}
+              </div>
+            )}
             {view === "raid" && (
               <div className="rs-attacks">
                 {TYPES.map(({ type, hero, color }) => (

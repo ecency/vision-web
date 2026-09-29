@@ -28,6 +28,22 @@ export type TapTarget =
   | { kind: "building"; id: BuildingId | "homes" }
   | { kind: "hero"; hero: FolkClass };
 
+/// Where a hero stands on screen: model origin and scale.
+export interface HeroSpot { hero: FolkClass; ox: number; oy: number; s: number; shown: boolean }
+
+/// The hero under a tap at (x, y), if any. Their boxes overlap a little
+/// (weapons reach out): the one standing nearest the tap wins.
+export function heroAt(x: number, y: number, spots: HeroSpot[]): FolkClass | null {
+  let hero: FolkClass | null = null, best = Infinity;
+  for (const { hero: k, ox, oy, s, shown } of spots) {
+    if (!shown) continue;
+    const [x0, y0, x1, y1] = SPECIES[k].box, lx = (x - ox) / s, ly = (y - oy) / s;
+    const d = Math.abs(lx - SPECIES[k].anchor[0]);
+    if (lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1 && d < best) { hero = k; best = d; }
+  }
+  return hero;
+}
+
 /// What an attack did, known once the server answers.
 export type Impact =
   | { kind: "boss"; weak: boolean; killed: boolean }
@@ -844,14 +860,8 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     if (aliveGnats().some((g) => Math.hypot(x - (g.ox + 50 * g.s), y - (g.oy + 55 * g.s)) < 40 * g.s + 12)) return opts.onTap?.({ kind: "gnat" });
     if (shown(wasp) && inEllipses(SPECIES.wasp.hit, (x - wasp.ox) / wasp.s, (y - wasp.oy) / wasp.s)) return opts.onTap?.({ kind: "wasp" });
     if (shown(boss) && inEllipses(SPECIES[boss.kind].hit, (x - boss.ox) / boss.s, (y - boss.oy) / boss.s)) return opts.onTap?.({ kind: "boss", side: x < bossCenter[0] ? 0 : 1 });
-    // a hero: the page tells who they are. Their boxes overlap a little
-    // (weapons): the one standing nearest the tap wins.
-    let hero: FolkClass | null = null, best = Infinity;
-    for (const k of FOLK) {
-      const inst = folk[k], [x0, y0, x1, y1] = SPECIES[k].box, lx = (x - inst.ox) / inst.s, ly = (y - inst.oy) / inst.s;
-      const d = Math.abs(lx - SPECIES[k].anchor[0]);
-      if (shown(inst) && lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1 && d < best) { hero = k; best = d; }
-    }
+    // a hero: the page tells who they are
+    const hero = heroAt(x, y, FOLK.map((k) => ({ hero: k, ox: folk[k].ox, oy: folk[k].oy, s: folk[k].s, shown: shown(folk[k]) })));
     if (hero) opts.onTap?.({ kind: "hero", hero });
   };
   const onCancel = () => { drag = null; };
