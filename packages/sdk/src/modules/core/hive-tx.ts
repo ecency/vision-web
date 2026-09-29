@@ -16,6 +16,8 @@ import { sha256 as nobleSha256 } from "@noble/hashes/sha2.js";
 
 export {
   Transaction as HiveTxTransaction,
+  TransactionTooLargeError,
+  MAX_TRANSACTION_SIZE,
   PrivateKey,
   PublicKey,
   Signature,

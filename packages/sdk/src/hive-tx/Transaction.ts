@@ -17,6 +17,29 @@ import { sleep } from './helpers/sleep'
 
 const chainId = hexToBytes(config.chain_id)
 
+/**
+ * Largest signed transaction, in serialized bytes, that hived accepts. hived
+ * checks it against `maximum_block_size - 256`; maximum_block_size is voted by
+ * witnesses and has been 65536 for years. A change in that vote needs this
+ * constant updated.
+ */
+export const MAX_TRANSACTION_SIZE = 65536 - 256
+
+/** Serialized bytes one signature adds (compact secp256k1 signature). */
+const SIGNATURE_SIZE = 65
+
+/** Thrown before signing when a transaction can never be accepted by the chain. */
+export class TransactionTooLargeError extends Error {
+  size: number
+  limit: number
+  constructor(size: number) {
+    super(`Transaction too large: ${size} bytes. Hive allows up to ${MAX_TRANSACTION_SIZE} bytes.`)
+    this.name = 'TransactionTooLargeError'
+    this.size = size
+    this.limit = MAX_TRANSACTION_SIZE
+  }
+}
+
 interface TransactionOptions {
   transaction?: TransactionType | Transaction
   /**
@@ -89,6 +112,7 @@ export class Transaction {
       if (!Array.isArray(keys)) {
         keys = [keys]
       }
+      this.assertSize(keys.length)
       for (const key of keys) {
         const signature = key.sign(digest)
         this.transaction.signatures.push(signature.customToString())
@@ -168,6 +192,39 @@ export class Transaction {
     if (!this.transaction) {
       throw new Error('First create a transaction by .addOperation()')
     }
+    const transactionData = this.serialize()
+    const txId = bytesToHex(sha256(transactionData)).slice(0, 40)
+    const digest = sha256(new Uint8Array([...chainId, ...transactionData]))
+    return { digest, txId }
+  }
+
+  /**
+   * Serialized size of the transaction once it carries its current signatures
+   * plus `extraSignatures` more. This is the size hived checks against
+   * MAX_TRANSACTION_SIZE.
+   */
+  size(extraSignatures = 0): number {
+    const signatures = (this.transaction?.signatures.length ?? 0) + extraSignatures
+    // The signature count is a varint: one byte below 128 signatures.
+    return this.serialize().length + (signatures < 128 ? 1 : 2) + signatures * SIGNATURE_SIZE
+  }
+
+  /**
+   * Throws TransactionTooLargeError when the transaction, signed with
+   * `extraSignatures` more signatures, would exceed MAX_TRANSACTION_SIZE.
+   * Such a transaction is rejected by every node, so it must never be signed.
+   */
+  assertSize(extraSignatures = 0): void {
+    const size = this.size(extraSignatures)
+    if (size > MAX_TRANSACTION_SIZE) {
+      throw new TransactionTooLargeError(size)
+    }
+  }
+
+  private serialize(): Uint8Array {
+    if (!this.transaction) {
+      throw new Error('First create a transaction by .addOperation()')
+    }
     const buffer = new ByteBuffer(ByteBuffer.DEFAULT_CAPACITY, ByteBuffer.LITTLE_ENDIAN)
     const temp = { ...this.transaction }
     try {
@@ -176,10 +233,7 @@ export class Transaction {
       throw new Error('Unable to serialize transaction: ' + cause)
     }
     buffer.flip()
-    const transactionData = new Uint8Array(buffer.toBuffer())
-    const txId = bytesToHex(sha256(transactionData)).slice(0, 40)
-    const digest = sha256(new Uint8Array([...chainId, ...transactionData]))
-    return { digest, txId }
+    return new Uint8Array(buffer.toBuffer())
   }
 
   /**

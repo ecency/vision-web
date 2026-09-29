@@ -1,4 +1,4 @@
-export { Transaction } from './Transaction'
+export { Transaction, TransactionTooLargeError, MAX_TRANSACTION_SIZE } from './Transaction'
 export { PrivateKey } from './helpers/PrivateKey'
 export { callRPC, callRPCBroadcast, callREST, callWithQuorum, RPCError, rpcProxyStats, resetRpcProxyBreaker } from './helpers/call'
 export {

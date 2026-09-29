@@ -3,8 +3,8 @@ import {
   type MutationKey,
   type UseMutationOptions,
 } from "@tanstack/react-query";
-import { PrivateKey, RPCError } from "../../../hive-tx";
-import type { Operation } from "../../../hive-tx";
+import { PrivateKey, RPCError, Transaction, TransactionTooLargeError } from "../../../hive-tx";
+import type { Operation, TransactionType } from "../../../hive-tx";
 import { broadcastOperations, broadcastOperationsAsync, type TransactionConfirmation } from "@/modules/core/hive-tx";
 import type { BroadcastResult } from "../../../hive-tx";
 import type { AuthContextV2 } from "@/modules/core/types";
@@ -538,6 +538,31 @@ async function broadcastWithFallback(
  * );
  * ```
  */
+/**
+ * Refuse operations that can never fit in one Hive transaction before any
+ * signer (key, Keychain, HiveSigner, HiveAuth, MetaMask) sees them, so the
+ * user gets a clear error instead of a broadcast that every node rejects.
+ * Only the size verdict is enforced: an operation this serializer cannot
+ * encode is left to the signer, which serializes it on its own.
+ */
+export function assertOperationsFitTransaction(ops: Operation[]): void {
+  try {
+    const transaction = {
+      ref_block_num: 0,
+      ref_block_prefix: 0,
+      expiration: "1970-01-01T00:00:00",
+      operations: ops,
+      extensions: [],
+      signatures: [],
+    } as unknown as TransactionType;
+    new Transaction({ transaction }).assertSize(1);
+  } catch (e) {
+    if (e instanceof TransactionTooLargeError) {
+      throw e;
+    }
+  }
+}
+
 export function useBroadcastMutation<T>(
   mutationKey: MutationKey = [],
   username: string | undefined,
@@ -577,6 +602,7 @@ export function useBroadcastMutation<T>(
       }
 
       const ops = operations(payload);
+      assertOperationsFitTransaction(ops);
 
       try {
         // New: Try auth methods in fallback chain (if enabled)
