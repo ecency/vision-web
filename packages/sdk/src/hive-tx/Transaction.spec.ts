@@ -128,6 +128,8 @@ describe("Transaction size limit", () => {
   it("ignores a block size outside the consensus bounds", () => {
     expect(() => commentTx(100_000, 0).sign(key)).not.toThrow();
     expect(() => commentTx(100_000, 4 * 1024 * 1024).sign(key)).not.toThrow();
+    // An out-of-range vote above the ceiling must not lift the ceiling.
+    expect(() => commentTx(2 * 1024 * 1024, 4 * 1024 * 1024).sign(key)).toThrow(TransactionTooLargeError);
     expect(() => commentTx(100_000, "65536" as unknown as number).sign(key)).toThrow(
       TransactionTooLargeError
     );

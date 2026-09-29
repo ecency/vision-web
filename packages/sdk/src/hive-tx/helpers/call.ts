@@ -184,15 +184,20 @@ class NodeError extends Error {
    *  a header-less rate limit is still cooled down (with escalating backoff) rather than
    *  mis-recorded as a plain transport failure. */
   isRateLimit: boolean
+  /** True when the node's front end refused the request (a non-RPC 4xx): counted
+   *  against the node as a whole, like the parse errors these used to surface as,
+   *  rather than starting a per-API cooldown. */
+  nodeWide: boolean
   constructor(
     node: string,
     message: string,
-    opts: { rateLimitMs?: number; isRateLimit?: boolean } = {}
+    opts: { rateLimitMs?: number; isRateLimit?: boolean; nodeWide?: boolean } = {}
   ) {
     super(message)
     this.node = node
     this.rateLimitMs = opts.rateLimitMs ?? 0
     this.isRateLimit = opts.isRateLimit ?? false
+    this.nodeWide = opts.nodeWide ?? false
   }
 }
 
@@ -951,6 +956,8 @@ function recordError(tracker: NodeHealthTracker, node: string, e: any, api?: str
     if (e.isRateLimit) {
       // 0 → no usable Retry-After → let recordRateLimit apply escalating backoff.
       tracker.recordRateLimit(node, e.rateLimitMs || undefined)
+    } else if (e.nodeWide) {
+      tracker.recordFailure(node)
     } else {
       tracker.recordFailure(node, api)
     }
@@ -1125,7 +1132,7 @@ const jsonRPCCall = async (
         parsed = undefined
       }
       if (parsed?.jsonrpc !== '2.0' || parsed?.id !== id) {
-        throw new NodeError(url, `HTTP ${res.status} from ${url}`)
+        throw new NodeError(url, `HTTP ${res.status} from ${url}`, { nodeWide: true })
       }
       result = parsed
     }

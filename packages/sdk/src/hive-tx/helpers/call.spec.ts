@@ -122,6 +122,14 @@ describe("callRPCBroadcast — browser-style failover", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
+  it("counts a proxy 4xx against the node as a whole, not as a per-API cooldown", async () => {
+    const recordFailure = vi.spyOn(NodeHealthTracker.prototype, "recordFailure");
+    spyFetch(["text-413", "ok"]);
+    await callRPCBroadcast("condenser_api.broadcast_transaction_synchronous", [{}]);
+    // One failure, recorded without an api (node-wide), for whichever node refused.
+    expect(recordFailure.mock.calls).toEqual([[expect.stringMatching(/^https:\/\/node-[abc]\.test$/)]]);
+  });
+
   it("treats a JSON-RPC error sent with a 4xx status as the chain's verdict", async () => {
     const fetchSpy = spyFetch(["rpc-error-400", "ok"]);
     await expect(
