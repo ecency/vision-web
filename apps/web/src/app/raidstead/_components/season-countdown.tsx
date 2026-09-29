@@ -7,10 +7,11 @@ import { countdown } from "@/features/raidstead/game";
 const t = (key: string, opts?: Record<string, unknown>) => i18next.t(`raidstead.${key}`, opts);
 
 /// Before the first season: the start, ticking down each second over the live
-/// scene. Calls `onOpen` once the moment has come.
-export function SeasonCountdown({ startsAt, onOpen }: { startsAt: string; onOpen: () => void }) {
+/// scene. Calls `onOpen` once the moment has come. `skew` (ms) is the server's
+/// clock minus this device's.
+export function SeasonCountdown({ startsAt, skew = 0, onOpen }: { startsAt: string; skew?: number; onOpen: () => void }) {
   const at = Date.parse(startsAt);
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now() + skew);
   const left = countdown(at, now);
 
   useEffect(() => {
@@ -18,9 +19,9 @@ export function SeasonCountdown({ startsAt, onOpen }: { startsAt: string; onOpen
       onOpen();
       return;
     }
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    const id = setInterval(() => setNow(Date.now() + skew), 1000);
     return () => clearInterval(id);
-  }, [left.done, onOpen]);
+  }, [left.done, onOpen, skew]);
 
   const when = new Date(at).toLocaleString(i18next.language || undefined, {
     weekday: "long",

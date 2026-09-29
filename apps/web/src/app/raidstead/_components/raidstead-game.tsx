@@ -115,6 +115,8 @@ export function RaidsteadGame() {
   // in; the boot waits until it has answered (or a few seconds passed), so no sign-in flashes first
   const [preseason, setPreseason] = useState<Calendar | null>(null);
   const [calendarKnown, setCalendarKnown] = useState(false);
+  // the server's clock minus this device's, so a wrong device clock still opens on time
+  const [skew, setSkew] = useState(0);
   const openTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mounted = useRef(true);
   const [dayTick, setDayTick] = useState(0);
@@ -252,11 +254,18 @@ export function RaidsteadGame() {
   // ---------- before the season ----------
   useEffect(() => {
     mounted.current = true;
-    const giveUp = setTimeout(() => setCalendarKnown(true), 4000);
+    // past the deadline the usual flow has begun: a late answer must not pull it back
+    let late = false;
+    const giveUp = setTimeout(() => {
+      late = true;
+      setCalendarKnown(true);
+    }, 4000);
     raidsteadApi
       .calendar()
       .then((c) => {
-        if (mounted.current && c.season < 1) setPreseason(c);
+        if (!mounted.current || late || c.season >= 1) return;
+        if (c.now) setSkew(c.now - Date.now());
+        setPreseason(c);
       })
       // unreachable: the usual flow still says when the season starts, after sign-in
       .catch(() => undefined)
@@ -273,25 +282,34 @@ export function RaidsteadGame() {
 
   // the countdown reached zero: the season opens once the server agrees (a clock
   // running ahead asks again every few seconds), and clearing `preseason` boots as usual
+  // Pages spread their asks over a few seconds so they do not all arrive at once; if the
+  // server keeps failing, the page falls back to the usual flow rather than wait forever.
   const openSeason = useCallback(() => {
+    let failures = 0;
+    const again = () => {
+      openTimer.current = setTimeout(check, 5000 + Math.random() * 3000);
+    };
+    const open = () => {
+      setPreseason(null);
+      setPhase("loading");
+    };
     const check = () =>
       raidsteadApi
         .calendar(true)
         .then((c) => {
           if (!mounted.current) return;
-          if (c.season < 1) {
-            // the start was moved later: count down to the new one
-            if (Date.parse(c.startsAt) > Date.now() + 1000) setPreseason(c);
-            else openTimer.current = setTimeout(check, 5000);
-            return;
-          }
-          setPreseason(null);
-          setPhase("loading");
+          if (c.now) setSkew(c.now - Date.now());
+          if (c.season >= 1) return open();
+          // the start was moved later: count down to the new one
+          if (Date.parse(c.startsAt) > (c.now ?? Date.now()) + 1000) setPreseason(c);
+          else again();
         })
         .catch(() => {
-          if (mounted.current) openTimer.current = setTimeout(check, 5000);
+          if (!mounted.current) return;
+          if (++failures >= 3) open();
+          else again();
         });
-    check();
+    openTimer.current = setTimeout(check, Math.random() * 2000);
   }, []);
 
   // ---------- signing in ----------
@@ -867,7 +885,7 @@ export function RaidsteadGame() {
           </div>
         </header>
 
-        {preseason && <SeasonCountdown startsAt={preseason.startsAt} onOpen={openSeason} />}
+        {preseason && <SeasonCountdown startsAt={preseason.startsAt} skew={skew} onOpen={openSeason} />}
         {playing && view === "raid" && boss && (
           <section className="rs-card rs-plate" aria-label={t(`bosses.${boss.kind}.name`)}>
             <div className="rs-row">

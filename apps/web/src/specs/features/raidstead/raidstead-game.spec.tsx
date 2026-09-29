@@ -604,10 +604,15 @@ describe("Raidstead page", () => {
 
     beforeEach(() => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
+      // no spread: the ask at zero goes out at once, retries every 5s
+      vi.spyOn(Math, "random").mockReturnValue(0);
       box.stored = null;
       asUser("ann");
     });
-    afterEach(() => vi.useRealTimers());
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.mocked(Math.random).mockRestore();
+    });
 
     it("counts down without asking anyone to sign in, and never flashes the sign-in first", async () => {
       let answer!: (c: unknown) => void;
@@ -653,7 +658,8 @@ describe("Raidstead page", () => {
       let late!: (c: unknown) => void;
       api.calendar.mockResolvedValueOnce(soon(1200)).mockReturnValueOnce(new Promise((r) => (late = r))).mockResolvedValue(soon(-1));
       const { unmount } = render(<RaidsteadGame />);
-      await tick(2100); // zero: the re-check is in flight
+      await tick(2100); // zero
+      await tick(10); // the re-check goes out and is in flight
       expect(api.calendar).toHaveBeenCalledTimes(2);
       unmount();
       await act(async () => late(soon(-1))); // "not yet" arrives after the page closed
@@ -667,6 +673,38 @@ describe("Raidstead page", () => {
       await tick(50);
       expect(signInButton()).not.toBeNull();
       expect(region()).toBeNull();
+    });
+
+    it("ignores a calendar that answers after the page has moved on", async () => {
+      let late!: (c: unknown) => void;
+      api.calendar.mockReturnValue(new Promise((r) => (late = r)));
+      render(<RaidsteadGame />);
+      await tick(4100); // the deadline passed: the usual sign-in shows
+      expect(signInButton()).not.toBeNull();
+      await act(async () => late(soon(3 * 86_400_000)));
+      await tick(50);
+      expect(region()).toBeNull();
+      expect(signInButton()).not.toBeNull();
+    });
+
+    it("falls back to the usual flow when the server keeps failing at zero", async () => {
+      api.calendar.mockResolvedValueOnce(soon(1200)).mockRejectedValue(new Error("offline"));
+      render(<RaidsteadGame />);
+      await tick(2100); // zero: the first ask fails
+      await tick(5100); // the second
+      expect(region()).not.toBeNull();
+      await tick(5100); // the third: stop waiting
+      expect(region()).toBeNull();
+      expect(signInButton()).not.toBeNull();
+    });
+
+    it("counts down by the server's clock when the device clock is off", async () => {
+      // this device runs a day behind the server
+      const serverNow = Date.now() + 86_400_000;
+      api.calendar.mockResolvedValue({ ...soon(0), startsAt: new Date(serverNow + 2 * 3_600_000).toISOString(), now: serverNow });
+      render(<RaidsteadGame />);
+      await tick(1100);
+      expect(within(region()!).getByRole("timer").textContent).toMatch(/^00 raidstead.season.countdown-days(01|02) raidstead.season.countdown-hours/);
     });
 
     it("falls back when the calendar never answers", async () => {
