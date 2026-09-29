@@ -22,7 +22,7 @@ export function SeasonCountdown({ startsAt, onOpen }: { startsAt: string; onOpen
     return () => clearInterval(id);
   }, [left.done, onOpen]);
 
-  const when = new Date(at).toLocaleString(undefined, {
+  const when = new Date(at).toLocaleString(i18next.language || undefined, {
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -45,12 +45,13 @@ export function SeasonCountdown({ startsAt, onOpen }: { startsAt: string; onOpen
       <div className="rs-clock" role="timer" aria-live="off">
         {units.map(([n, label]) => (
           <span key={label} className="rs-clock-unit">
-            <b>{String(n).padStart(2, "0")}</b>
-            <small>{label}</small>
+            <b>{String(n).padStart(2, "0")}</b> <small>{label}</small>
           </span>
         ))}
       </div>
-      <p className="rs-muted">{t("season.countdown-when", { date: when })}</p>
+      <p className="rs-muted">
+        {left.done ? t("season.countdown-opening") : t("season.countdown-when", { date: when })}
+      </p>
       <p className="rs-muted">{t("season.not-started-hint")}</p>
     </section>
   );

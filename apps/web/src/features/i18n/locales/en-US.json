@@ -5049,6 +5049,7 @@
       "not-started-hint": "Come back then to pick your alliance. Everyone starts level.",
       "countdown-title": "Season {{n}} opens in",
       "countdown-when": "Opens {{date}}, your time.",
+      "countdown-opening": "Opening…",
       "countdown-days": "days",
       "countdown-hours": "hours",
       "countdown-minutes": "min",
