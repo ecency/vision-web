@@ -852,7 +852,6 @@ export function RaidsteadGame() {
                   <button
                     key={h}
                     className="rs-btn sr-only focus:not-sr-only"
-                    disabled={!!sheet}
                     onClick={() => setSheet({ kind: "hero", hero: h })}
                   >
                     {t("hero-card.about", { name: t(`heroes.${h}`) })}

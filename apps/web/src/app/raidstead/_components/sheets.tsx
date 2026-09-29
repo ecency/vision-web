@@ -36,6 +36,9 @@ export function Sheet({
     const d = ref.current;
     if (!d) return;
     unmounting.current = false;
+    // focus goes back where it was when the sheet opened (the dialog is
+    // removed with the sheet, so the browser cannot do it on close)
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!d.open) {
       try {
         d.showModal();
@@ -47,6 +50,9 @@ export function Sheet({
       unmounting.current = true;
       // a browser without <dialog> support has no close(): drop the attribute
       if (d.open) typeof d.close === "function" ? d.close() : d.removeAttribute("open");
+      const active = document.activeElement;
+      if (opener?.isConnected && (!active || active === document.body || !active.isConnected))
+        opener.focus();
     };
   }, []);
   return (

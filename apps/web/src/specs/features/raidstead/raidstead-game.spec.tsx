@@ -397,6 +397,27 @@ describe("Raidstead page", () => {
     expect(screen.getByText("raidstead.hero-card.herald")).toBeTruthy();
   });
 
+  it("gives focus back to the hero button when the card closes", async () => {
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    const group = screen.getByRole("group", { name: "raidstead.hero-card.group" });
+    const opener = within(group).getAllByRole("button", { name: "raidstead.hero-card.about" })[1];
+    opener.focus();
+    await act(async () => {
+      fireEvent.click(opener);
+    });
+    // as in a browser, focus is inside the open dialog when it closes
+    const close = screen.getByRole("button", { name: "g.close" });
+    close.focus();
+    expect(document.activeElement).toBe(close);
+    await act(async () => {
+      fireEvent.click(close);
+    });
+    expect(screen.queryByText("raidstead.hero-card.scout")).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
   it("keeps a guest's own session when no Ecency user was ever logged in", async () => {
     asUser(null);
     render(<RaidsteadGame />);
