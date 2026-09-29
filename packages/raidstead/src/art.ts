@@ -360,7 +360,7 @@ export function folkParts(cls: FolkClass) {
   if (cls === "scout") {
     add({ name: "band", kind: "fill", poly: path("M126 96 Q200 70 274 96 L274 110 Q200 86 126 110 Z"), color: COL.plum, shade: 0.4, sw: 2.4, group: "head" });
     // pushed up on the forehead and big enough to break the round outline of the head
-    for (const gx of <any[]>[168, 232]) {
+    for (const gx of [168, 232]) {
       add({ name: "goggle", kind: "fill", poly: circle(gx, 70, 27), color: COL.steel, shade: 0.9, sw: 3, group: "head" });
       add({ name: "goggle-lens", kind: "fill", poly: circle(gx, 70, 17), color: COL.lens, shade: 0.35, sw: 2.6, group: "head" });
     }

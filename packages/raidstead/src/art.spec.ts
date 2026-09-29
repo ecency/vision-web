@@ -43,6 +43,16 @@ describe("art", () => {
     }
   });
 
+  it("each hero has its own head shape, moving with the head", () => {
+    const mark = { scribe: "ear-quill", scout: "goggle", smith: "helmet", herald: "plume" } as const;
+    for (const [cls, name] of Object.entries(mark)) {
+      const parts = SPECIES[cls].parts(), p = parts.find((q) => q.name === name);
+      expect(p?.group, cls).toBe("head");
+      // no other hero borrows it
+      for (const other of Object.keys(mark).filter((k) => k !== cls)) expect(SPECIES[other].parts().some((q) => q.name === name), `${other} ${name}`).toBe(false);
+    }
+  });
+
   it("bosses can be hit and aimed at; every building is in the town", () => {
     for (const k of BOSS_KINDS) {
       expect(SPECIES[k].hit?.length, k).toBeGreaterThan(0);

@@ -71,6 +71,19 @@ describe("walkRange", () => {
     }
   });
 
+  it("follows the camera when the town is panned", () => {
+    const width = 390, ts = width / 620, half = width / 2 / ts, camMax = (1400 * ts - width) / 2 + 12;
+    for (const camX of [-camMax, -100, 0, 100, camMax]) {
+      const [lo, hi] = walkRange(width, ts, camX), mid = 700 - camX / ts;
+      expect(lo, `camX ${camX}`).toBeLessThanOrEqual(hi);
+      // the stretch walked is on screen, inside the street
+      expect(lo - 55, `camX ${camX}`).toBeGreaterThanOrEqual(Math.min(mid - half, 1120 - 55));
+      expect(hi + 55, `camX ${camX}`).toBeLessThanOrEqual(Math.max(mid + half, 300 + 55));
+      expect(lo).toBeGreaterThanOrEqual(300);
+      expect(hi).toBeLessThanOrEqual(1120);
+    }
+  });
+
   it("uses the whole street when the screen shows it", () => {
     expect(walkRange(1400, 1)).toEqual([300, 1120]);
   });
