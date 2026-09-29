@@ -3,6 +3,7 @@ import {
   fetchHoneybackShare,
   honeybackShareHeadline,
   RETRY_DELAY_MS,
+  honeybackShareCardUrl,
   honeybackWaveComposeUrl,
   isHoneybackShareId,
   parseHoneybackShare,
@@ -52,11 +53,21 @@ describe("honeyback share", () => {
     );
   });
 
-  it("prefills the wave with the headline and the share link", () => {
+  it("prefills the wave with the headline, the card image and the share link", () => {
     const url = honeybackWaveComposeUrl(share, t);
     expect(url.startsWith("/waves?text=")).toBe(true);
     expect(decodeURIComponent(url.slice("/waves?text=".length))).toBe(
-      "score|name=@alice,value=1,280 https://ecency.com/honeyback-share/abc234defg"
+      [
+        "score|name=@alice,value=1,280",
+        "![Honeyback](https://ecency.com/honeyback-share/abc234defg/card.png)",
+        "https://ecency.com/honeyback-share/abc234defg"
+      ].join("\n")
+    );
+  });
+
+  it("points the card image at a fixed address", () => {
+    expect(honeybackShareCardUrl("abc234defg")).toBe(
+      "https://ecency.com/honeyback-share/abc234defg/card.png"
     );
   });
 

@@ -112,8 +112,20 @@ export function honeybackShareUrl(id: string): string {
   return `${HONEYBACK_SHARE_BASE}/${id}`;
 }
 
-// The compose link the web and app composers open with the text filled in.
+// The card image a wave embeds, so the score shows in the feed of every
+// Hive frontend without opening the link (none of them unfurl links).
+export function honeybackShareCardUrl(id: string): string {
+  return `${honeybackShareUrl(id)}/card.png`;
+}
+
+// The compose link the web and app composers open with the text filled in:
+// the headline, the card, then the link for the details. About 150
+// characters, well inside the 250 a new wave allows.
 export function honeybackWaveComposeUrl(share: HoneybackShare, t: Translate): string {
-  const text = `${honeybackShareHeadline(share, t)} ${honeybackShareUrl(share.id)}`;
+  const text = [
+    honeybackShareHeadline(share, t),
+    `![Honeyback](${honeybackShareCardUrl(share.id)})`,
+    honeybackShareUrl(share.id)
+  ].join("\n");
   return `/waves?text=${encodeURIComponent(text)}`;
 }
