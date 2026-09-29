@@ -565,6 +565,33 @@
     }
   }
 
+  .rs-opt-icon {
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    gap: 14px;
+  }
+
+  // A menu picture: ink glyph on a halftone tile in the item's colour
+  .rs-tile {
+    width: 42px;
+    height: 42px;
+    padding: 4px;
+    border: 2px solid var(--rs-ink);
+    border-radius: 12px;
+    color: var(--rs-ink);
+    background:
+      radial-gradient(
+          circle,
+          color-mix(in srgb, var(--rs-tile) 70%, transparent) 30%,
+          transparent 34%
+        )
+        0 0 / 6px 6px,
+      color-mix(in srgb, var(--rs-tile) 30%, var(--rs-card));
+
+    .rs-solid {
+      fill: var(--rs-card);
+    }
+  }
+
   .rs-pipline {
     display: flex;
     gap: 6px;

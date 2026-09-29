@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import i18next from "i18next";
 import {
   POWERS,
+  type AttackType,
   type BuildingId,
   type Community,
+  type FolkClass,
   type LeaderRow,
   type PowerId,
   type State
@@ -272,6 +274,83 @@ export function BossSheet({ state, onClose }: { state: State; onClose: () => voi
   );
 }
 
+const HERO_TYPE: Record<FolkClass, AttackType | null> = {
+  scribe: "ink",
+  scout: "signal",
+  smith: "forge",
+  herald: null
+};
+
+/// Who a hero on the raid field is, and one thing to do with them.
+export function HeroSheet({
+  hero,
+  state,
+  busy,
+  onClose,
+  onAttack,
+  onRally
+}: {
+  hero: FolkClass;
+  state: State;
+  busy: boolean;
+  onClose: () => void;
+  onAttack: (type: AttackType) => void;
+  onRally: () => void;
+}) {
+  const type = HERO_TYPE[hero];
+  const boss = state.alliance?.boss;
+  const member = state.member;
+  const name = t(`heroes.${hero}`);
+  const lines = [t(`hero-card.${hero}`)];
+  if (type) {
+    lines.push(t("hero-card.cost"));
+    if (boss?.alive) {
+      if (!boss.weakness) lines.push(t("hero-card.unknown"));
+      else if (boss.weakness === type)
+        lines.push(t("hero-card.weak", { type: t(`types.${type}`) }));
+      else
+        lines.push(
+          t("hero-card.not-weak", {
+            type: t(`types.${boss.weakness}`),
+            mine: t(`types.${type}`)
+          })
+        );
+    }
+  } else if (member?.rallied) {
+    lines.push(t("hero-card.rallied"));
+  }
+  // the same rules as the page's own buttons
+  const resting = state.calendar.resting;
+  const canAttack = !!type && !resting && !!boss?.alive && (member?.energy ?? 0) > 0;
+  const canRally = !type && !resting && !!member && !member.rallied && !busy;
+  return (
+    <Sheet onClose={onClose} label={name}>
+      <small>{type ? t(`types.${type}`) : t("hero-card.herald-role")}</small>
+      <h2>{name}</h2>
+      {lines.map((l, i) => (
+        <p key={i} className={i ? "rs-muted" : undefined}>
+          {l}
+        </p>
+      ))}
+      <div className="rs-btns">
+        {type ? (
+          <button
+            className="rs-btn rs-primary"
+            disabled={!canAttack}
+            onClick={() => onAttack(type)}
+          >
+            {t("hero-card.attack", { type: t(`types.${type}`) })}
+          </button>
+        ) : (
+          <button className="rs-btn rs-primary" disabled={!canRally} onClick={onRally}>
+            {t("actions.rally")} · {t("actions.rally-cost")}
+          </button>
+        )}
+      </div>
+    </Sheet>
+  );
+}
+
 const COSTS: Record<BuildingId, number[]> = {
   tower: [30, 60, 90],
   workshop: [30, 60, 90],
@@ -517,6 +596,83 @@ export function QuestsSheet(props: {
 
 export type MenuItem = "profile" | "board" | "report" | "leaderboard" | "help";
 
+// The menu's small pictures, drawn like the game: ink lines on a halftone
+// tile in the item's colour.
+const MENU_ICONS: Record<MenuItem, { color: string; glyph: ReactNode }> = {
+  profile: {
+    color: "var(--rs-violet)",
+    glyph: (
+      <>
+        <path className="rs-solid" d="M8 3l4 5 4-5" />
+        <circle className="rs-solid" cx="12" cy="14.5" r="5.5" />
+        <path
+          d="M12 12.2l.8 1.6 1.7.2-1.3 1.2.4 1.7-1.6-.9-1.6.9.4-1.7-1.3-1.2 1.7-.2z"
+          fill="currentColor"
+          strokeWidth="0.8"
+        />
+      </>
+    )
+  },
+  board: {
+    color: "var(--rs-coral)",
+    glyph: (
+      <>
+        <path className="rs-solid" d="M19 4l-1 4-8.5 8.5-3-3L15 5z" />
+        <path d="M5.5 12.5l6 6M8 17l-3.5 3.5" />
+      </>
+    )
+  },
+  report: {
+    color: "var(--rs-scribe)",
+    glyph: (
+      <>
+        <path className="rs-solid" d="M19.5 4.5C13 5 8.5 9.5 7.5 16.5c4-.5 9-3.5 12-12z" />
+        <path d="M4.5 19.5l5-5" />
+      </>
+    )
+  },
+  leaderboard: {
+    color: "var(--rs-lime)",
+    glyph: (
+      <>
+        <path className="rs-solid" d="M7.5 4h9v5a4.5 4.5 0 01-9 0z" />
+        <path d="M7.5 6H5a3 3 0 002.8 3.2M16.5 6H19a3 3 0 01-2.8 3.2M12 13.5V17M8.5 20h7" />
+      </>
+    )
+  },
+  help: {
+    color: "var(--rs-scout)",
+    glyph: (
+      <>
+        <path d="M8.8 8.6a3.3 3.3 0 016.4 1c0 2.3-3.2 2.6-3.2 4.9" />
+        <circle cx="12" cy="18.6" r="1.1" fill="currentColor" stroke="none" />
+      </>
+    )
+  }
+};
+
+function MenuIcon({ item }: { item: MenuItem }) {
+  const { color, glyph } = MENU_ICONS[item];
+  return (
+    <span
+      className="rs-tile inline-flex shrink-0 [&>svg]:size-full"
+      style={{ "--rs-tile": color } as CSSProperties}
+      aria-hidden="true"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {glyph}
+      </svg>
+    </span>
+  );
+}
+
 export function MenuSheet({
   state,
   onClose,
@@ -538,8 +694,8 @@ export function MenuSheet({
           .filter((i) => i !== "report" || state.alliance)
           .map((i) => (
             <li key={i}>
-              <button className="rs-opt" onClick={() => onPick(i)}>
-                <span />
+              <button className="rs-opt rs-opt-icon" onClick={() => onPick(i)}>
+                <MenuIcon item={i} />
                 <span>
                   <b>{t(`menu.${i}`)}</b>
                   <br />

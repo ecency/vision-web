@@ -8,6 +8,7 @@ import {
   type AttackType,
   type BuildingId,
   type Community,
+  type FolkClass,
   type PowerId,
   type Scene,
   type State,
@@ -44,6 +45,7 @@ import {
   BossSheet,
   BuildingSheet,
   HelpSheet,
+  HeroSheet,
   InfoSheet,
   LeaderboardSheet,
   MenuSheet,
@@ -73,6 +75,7 @@ const SEEN_KEY = "raidstead_seen_week";
 type SheetState =
   | { kind: "boss" }
   | { kind: "building"; id: BuildingId | "homes" }
+  | { kind: "hero"; hero: FolkClass }
   | { kind: "quests" }
   | { kind: "menu" }
   | { kind: MenuItem };
@@ -438,6 +441,10 @@ export function RaidsteadGame() {
       if (alliance) setSheet({ kind: "building", id: target.id });
       return;
     }
+    if (target.kind === "hero") {
+      if (alliance && phase === "ready" && !sheet) setSheet({ kind: "hero", hero: target.hero });
+      return;
+    }
     if (phase !== "ready" || sheet) return;
     attack(selected, target.kind === "boss" ? target.side : undefined);
   };
@@ -651,6 +658,24 @@ export function RaidsteadGame() {
             onBuild={build}
             onTalk={talk}
             onPower={power}
+          />
+        ) : null;
+        break;
+      case "hero":
+        open = alliance ? (
+          <HeroSheet
+            hero={sheet.hero}
+            state={data}
+            busy={busy}
+            onClose={close}
+            onAttack={(type) => {
+              close();
+              attack(type);
+            }}
+            onRally={() => {
+              close();
+              rally();
+            }}
           />
         ) : null;
         break;

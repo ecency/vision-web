@@ -5389,6 +5389,19 @@
       "town": "Our town: Hall stage {{hall}}, {{mats}} materials in store.",
       "outro": "Raidstead is played with your community on Ecency: [ecency.com/raidstead](https://ecency.com/raidstead)"
     },
+    "hero-card": {
+      "scribe": "Writes the town's story, one post at a time. In a raid the Scribe throws Ink.",
+      "scout": "Keeps watch and spreads the word. In a raid the Scout throws Signal.",
+      "smith": "Builds and mends the town. In a raid the Smith throws Forge.",
+      "herald": "Rallies you before a fight: once a day, 5 more energy for 50 Points.",
+      "cost": "Each attack costs 1 energy.",
+      "weak": "This pest is weak to {{type}}: double damage.",
+      "not-weak": "This pest is weak to {{type}}, not {{mine}}.",
+      "unknown": "Scout first to learn what this pest is weak to.",
+      "rallied": "You already rallied today.",
+      "attack": "Attack with {{type}}",
+      "herald-role": "Rally"
+    },
     "perk-card-title": "Raidstead",
     "perk-card-description": "Raid the weekly pest with your community and build your town."
   }

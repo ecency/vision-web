@@ -56,6 +56,7 @@ vi.mock("@/features/shared/login", () => ({ LoginDialog: () => null }));
 vi.mock("@/app/publish/_hooks", () => ({ usePublishHandoffWriter: () => vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
+import { createScene } from "@ecency/raidstead";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { clearSession, signerFor, signIn } from "@/features/raidstead/client";
 import { RaidsteadGame } from "@/app/raidstead/_components/raidstead-game";
@@ -364,6 +365,23 @@ describe("Raidstead page", () => {
     });
     expect(screen.getByRole("button", { name: /raidstead.actions.rally/ })).toBeTruthy();
     expect(api.state.mock.calls.length).toBe(calls);
+  });
+
+  it("tells who a tapped hero is, and attacks with their type from the card", async () => {
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    const onTap = vi.mocked(createScene).mock.calls.at(-1)![1]!.onTap!;
+    api.attack.mockResolvedValueOnce({ damage: 10, weak: false, killed: false });
+    await act(async () => {
+      onTap({ kind: "hero", hero: "smith" });
+    });
+    expect(screen.getByText("raidstead.hero-card.smith")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "raidstead.hero-card.attack" }));
+    });
+    await waitFor(() => expect(api.attack).toHaveBeenCalledWith("forge", 0));
+    expect(screen.queryByText("raidstead.hero-card.smith")).toBeNull();
   });
 
   it("keeps a guest's own session when no Ecency user was ever logged in", async () => {

@@ -25,7 +25,8 @@ export type TapTarget =
   | { kind: "boss"; side: 0 | 1 }
   | { kind: "gnat" }
   | { kind: "wasp" }
-  | { kind: "building"; id: BuildingId | "homes" };
+  | { kind: "building"; id: BuildingId | "homes" }
+  | { kind: "hero"; hero: FolkClass };
 
 /// What an attack did, known once the server answers.
 export type Impact =
@@ -842,7 +843,16 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     if (view === "town") { drag = { x, cam: camX, moved: 0, lastX: x, lastT: performance.now() }; camV = 0; try { (e.target as Element).setPointerCapture(e.pointerId); } catch { /* not capturable */ } return; }
     if (aliveGnats().some((g) => Math.hypot(x - (g.ox + 50 * g.s), y - (g.oy + 55 * g.s)) < 40 * g.s + 12)) return opts.onTap?.({ kind: "gnat" });
     if (shown(wasp) && inEllipses(SPECIES.wasp.hit, (x - wasp.ox) / wasp.s, (y - wasp.oy) / wasp.s)) return opts.onTap?.({ kind: "wasp" });
-    if (shown(boss) && inEllipses(SPECIES[boss.kind].hit, (x - boss.ox) / boss.s, (y - boss.oy) / boss.s)) opts.onTap?.({ kind: "boss", side: x < bossCenter[0] ? 0 : 1 });
+    if (shown(boss) && inEllipses(SPECIES[boss.kind].hit, (x - boss.ox) / boss.s, (y - boss.oy) / boss.s)) return opts.onTap?.({ kind: "boss", side: x < bossCenter[0] ? 0 : 1 });
+    // a hero: the page tells who they are. Their boxes overlap a little
+    // (weapons): the one standing nearest the tap wins.
+    let hero: FolkClass | null = null, best = Infinity;
+    for (const k of FOLK) {
+      const inst = folk[k], [x0, y0, x1, y1] = SPECIES[k].box, lx = (x - inst.ox) / inst.s, ly = (y - inst.oy) / inst.s;
+      const d = Math.abs(lx - SPECIES[k].anchor[0]);
+      if (shown(inst) && lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1 && d < best) { hero = k; best = d; }
+    }
+    if (hero) opts.onTap?.({ kind: "hero", hero });
   };
   const onCancel = () => { drag = null; };
   const onLeave = () => { pointer = null; };
