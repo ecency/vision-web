@@ -121,6 +121,8 @@ export function RaidsteadGame() {
   const mounted = useRef(true);
   // at most one chain of checks at zero at a time
   const opening = useRef(false);
+  // bumped whenever the page counts down again, so the countdown starts afresh
+  const [countRound, setCountRound] = useState(0);
   const [dayTick, setDayTick] = useState(0);
   const rebootAt = useRef(0);
   // the Ecency user right now, for callbacks that awaited a wallet or a request
@@ -279,6 +281,7 @@ export function RaidsteadGame() {
       });
     return () => {
       mounted.current = false;
+      opening.current = false;
       clearTimeout(giveUp);
       clearTimeout(openTimer.current);
     };
@@ -311,6 +314,7 @@ export function RaidsteadGame() {
           // later, or this device runs fast): count down again; zero asks anew
           if (Date.parse(c.startsAt) > (c.now ?? Date.now()) + 1000) {
             opening.current = false;
+            setCountRound((n) => n + 1);
             setPreseason(c);
           } else again();
         })
@@ -895,7 +899,9 @@ export function RaidsteadGame() {
           </div>
         </header>
 
-        {preseason && <SeasonCountdown startsAt={preseason.startsAt} skew={skew} onOpen={openSeason} />}
+        {preseason && (
+          <SeasonCountdown key={countRound} startsAt={preseason.startsAt} skew={skew} onOpen={openSeason} />
+        )}
         {playing && view === "raid" && boss && (
           <section className="rs-card rs-plate" aria-label={t(`bosses.${boss.kind}.name`)}>
             <div className="rs-row">

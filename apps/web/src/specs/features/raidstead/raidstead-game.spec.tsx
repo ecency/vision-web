@@ -765,6 +765,23 @@ describe("Raidstead page", () => {
       expect(api.calendar).toHaveBeenCalledTimes(3);
     });
 
+    it("counts again even when the server leaves out its clock", async () => {
+      const startsAt = new Date(Date.now() + 1200).toISOString();
+      // an older server: no clock in the answer, and this device's clock is the only one
+      api.calendar.mockResolvedValueOnce({ ...soon(0), startsAt }).mockImplementationOnce(async () => {
+        vi.setSystemTime(Date.now() - 3000); // the device clock is set back meanwhile
+        return { ...soon(0), startsAt };
+      }).mockResolvedValue(state().calendar);
+      render(<RaidsteadGame />);
+      await tick(2100);
+      await tick(10);
+      expect(api.calendar).toHaveBeenCalledTimes(2);
+      await tick(4000);
+      await tick(10);
+      expect(api.calendar).toHaveBeenCalledTimes(3);
+      expect(region()).toBeNull();
+    });
+
     it("falls back when the calendar never answers", async () => {
       api.calendar.mockReturnValue(new Promise(() => undefined));
       render(<RaidsteadGame />);
