@@ -368,6 +368,7 @@
   "navbar": {
     "discover": "Discover",
     "decks": "Decks",
+    "raidstead": "Raidstead",
     "post": "Create Post",
     "write": "Write",
     "perks-streak": "{{label}}: {{streak}}",

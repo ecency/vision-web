@@ -123,7 +123,9 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     const q = Math.max(1, Math.round(sp * 4) / 4), key = kind + ":" + q;
     let m = modelCache.get(key);
     if (!m) {
-      const spec = SPECIES[kind], parts = spec.parts(), dots = buildModel(parts, q, spec.seed);
+      // characters print over the town, so they carry a paper cover; buildings and islands do not
+      const spec = SPECIES[kind], parts = spec.parts(), cover = !spec.building && kind !== "island" && !kind.startsWith("islet");
+      const dots = buildModel(parts, q, spec.seed, cover);
       if (spec.boss) addSpirals(parts, dots);
       // buildings rise from the ground: each dot knows its height, 0 at the base and 1 at the top
       if (spec.building) { const [, y0, , y1] = spec.box; for (const d of dots) d.h = clamp((y1 - d.hy) / (y1 - y0), 0, 1); }
@@ -712,6 +714,7 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
       }
       mark("ink");
       for (const d of inst.dots) {
+        if (d.knock) continue;
         let a = d.a * d.ba;
         if (building) {
           // unbuilt parts show as a faint dotted blueprint; built stages fill in from the ground up

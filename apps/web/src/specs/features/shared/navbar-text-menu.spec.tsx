@@ -56,4 +56,13 @@ describe("NavbarTextMenu — auth-aware Decks/Communities slot", () => {
     );
     expect(screen.getByRole("link", { name: "navbar.waves" }).getAttribute("href")).toBe("/waves");
   });
+
+  it.each([false, true])("ends with Raidstead, logged in: %s", (loggedIn) => {
+    setLoggedIn(loggedIn);
+    render(<NavbarTextMenu />);
+
+    const links = screen.getAllByRole("link");
+    expect(links[links.length - 1].getAttribute("href")).toBe("/raidstead");
+    expect(links[links.length - 1].textContent).toBe("navbar.raidstead");
+  });
 });
