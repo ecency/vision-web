@@ -707,6 +707,27 @@ describe("Raidstead page", () => {
       expect(within(region()!).getByRole("timer").textContent).toMatch(/^00 raidstead.season.countdown-days(01|02) raidstead.season.countdown-hours/);
     });
 
+    it("asks once per round at zero, even while the server clock keeps correcting it", async () => {
+      api.calendar.mockResolvedValueOnce(soon(1200));
+      // "not yet", each answer with a slightly different server clock
+      api.calendar.mockImplementation(async () => ({ ...soon(-1), now: Date.now() - 400 }));
+      render(<RaidsteadGame />);
+      await tick(2100);
+      await tick(10);
+      for (let i = 0; i < 6; i++) await tick(5000);
+      // the first answer, the ask at zero, then one ask per 5s round
+      expect(api.calendar.mock.calls.length).toBeLessThanOrEqual(8);
+      expect(region()).not.toBeNull();
+    });
+
+    it("trusts a first answer's clock only when the device is off by more than a minute", async () => {
+      // the cached answer's clock is 50s old: this device is right, so it opens on its own time
+      api.calendar.mockResolvedValueOnce({ ...soon(90_000), now: Date.now() - 50_000 });
+      render(<RaidsteadGame />);
+      await tick(1100);
+      expect(within(region()!).getByRole("timer").textContent).toMatch(/^00 raidstead.season.countdown-days00 raidstead.season.countdown-hours01 raidstead.season.countdown-minutes2\d/);
+    });
+
     it("falls back when the calendar never answers", async () => {
       api.calendar.mockReturnValue(new Promise(() => undefined));
       render(<RaidsteadGame />);

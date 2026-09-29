@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import i18next from "i18next";
 import { countdown } from "@/features/raidstead/game";
 
@@ -13,15 +13,20 @@ export function SeasonCountdown({ startsAt, skew = 0, onOpen }: { startsAt: stri
   const at = Date.parse(startsAt);
   const [now, setNow] = useState(() => Date.now() + skew);
   const left = countdown(at, now);
+  // once per start: a clock correction while it waits must not call it again
+  const openedFor = useRef<number | null>(null);
 
   useEffect(() => {
     if (left.done) {
-      onOpen();
+      if (openedFor.current !== at) {
+        openedFor.current = at;
+        onOpen();
+      }
       return;
     }
     const id = setInterval(() => setNow(Date.now() + skew), 1000);
     return () => clearInterval(id);
-  }, [left.done, onOpen, skew]);
+  }, [left.done, onOpen, skew, at]);
 
   const when = new Date(at).toLocaleString(i18next.language || undefined, {
     weekday: "long",

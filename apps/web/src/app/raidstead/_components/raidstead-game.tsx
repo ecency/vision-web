@@ -264,7 +264,9 @@ export function RaidsteadGame() {
       .calendar()
       .then((c) => {
         if (!mounted.current || late || c.season >= 1) return;
-        if (c.now) setSkew(c.now - Date.now());
+        // this answer may be a cached copy up to a minute old, so its clock only
+        // corrects a device that is off by more than that
+        if (c.now && Math.abs(c.now - Date.now()) > 60_000) setSkew(c.now - Date.now());
         setPreseason(c);
       })
       // unreachable: the usual flow still says when the season starts, after sign-in
