@@ -231,6 +231,18 @@ describe("callRPCBroadcast — browser-style failover", () => {
     ).rejects.toThrow(/timeout/i);
   });
 
+  it("reports the timeout when a later node fails in a way that cannot be retried", async () => {
+    let calls = 0;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      calls += 1;
+      throw (calls === 1 ? named("TimeoutError", "aborted due to timeout") : named("Error", "weird"))();
+    });
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction", [{}], undefined, undefined, until(60_000))
+    ).rejects.toThrow(/timeout/i);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("stops at once when the caller aborts, even inside the window", async () => {
     const controller = new AbortController();
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
