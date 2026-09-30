@@ -203,8 +203,8 @@ describe("Transaction.broadcast", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
       throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
     });
-    // Expires in 3 s, inside the 5 s margin.
-    const expiration = new Date(Date.now() + 3_000).toISOString().slice(0, -5);
+    // Expires before another full broadcast timeout plus the 5 s margin could finish.
+    const expiration = new Date(Date.now() + config.broadcastTimeout).toISOString().slice(0, -5);
     const t = new Transaction({ transaction: { ...baseTx, expiration, signatures: [] } });
     t.sign(PrivateKey.fromSeed("broadcast-spec"));
     await expect(t.broadcast()).rejects.toThrow(/timeout/i);
