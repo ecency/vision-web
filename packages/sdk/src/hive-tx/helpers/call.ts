@@ -1676,8 +1676,14 @@ export const callRPCBroadcast = async <T = any>(
   // Track which nodes we've already tried - broadcasts must never retry the same node
   const triedNodes = new Set<string>()
   let lastError: any
+  // Set once a node has timed out: the transaction may be in, so from then on the
+  // failover window bounds every attempt, and the timeout is what gets reported.
+  let timeoutError: any
 
   for (let attempt = 0; attempt < config.nodes.length; attempt++) {
+    if (timeoutError && !(Date.now() < (options.failoverOnTimeoutUntil ?? 0))) {
+      throw timeoutError
+    }
     // Re-evaluate order each attempt so health changes are respected
     const orderedNodes = rpcHealthTracker.getOrderedNodes(config.nodes, api)
     const node = orderedNodes.find((n) => !triedNodes.has(n))
@@ -1715,12 +1721,13 @@ export const callRPCBroadcast = async <T = any>(
       const timeoutFailover =
         timedOut && options.failoverOnTimeoutUntil !== undefined && Date.now() < options.failoverOnTimeoutUntil
       if (!isBroadcastSafeToRetry(e) && !timeoutFailover) {
-        throw e
+        throw timeoutError ?? e
       }
+      if (timedOut) timeoutError ??= e
     }
   }
 
-  throw lastError
+  throw timeoutError ?? lastError
 }
 
 // ── Public API: callREST ────────────────────────────────────────────────────

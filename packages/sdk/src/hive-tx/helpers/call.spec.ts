@@ -202,6 +202,47 @@ describe("callRPCBroadcast — browser-style failover", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("after a timeout, stops at the window's end and reports the timeout, not a later node's error", async () => {
+    const timeout = named("TimeoutError", "aborted due to timeout");
+    let calls = 0;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      calls += 1;
+      if (calls === 1) throw timeout();
+      // A slow 504 that outlives the failover window.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      return new Response("<html>504</html>", { status: 504, headers: { "Content-Type": "text/html" } });
+    });
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction", [{}], undefined, undefined, until(30))
+    ).rejects.toThrow(/timeout/i);
+    // Node A timed out, node B answered 504 after the window closed, node C was never tried.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports the timeout when every node after it failed too", async () => {
+    let calls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      calls += 1;
+      if (calls === 1) throw named("TimeoutError", "aborted due to timeout")();
+      return new Response("<html>502</html>", { status: 502, headers: { "Content-Type": "text/html" } });
+    });
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction", [{}], undefined, undefined, until(60_000))
+    ).rejects.toThrow(/timeout/i);
+  });
+
+  it("stops at once when the caller aborts, even inside the window", async () => {
+    const controller = new AbortController();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      controller.abort();
+      throw named("AbortError", "The operation was aborted")();
+    });
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction", [{}], undefined, controller.signal, until(60_000))
+    ).rejects.toThrow(/aborted/i);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("still throws other ambiguous errors at once inside the window", async () => {
     const fetchSpy = failFirstThenOk(named("Error", "weird"));
     await expect(
