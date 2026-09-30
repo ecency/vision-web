@@ -48,6 +48,55 @@ export class TransactionTooLargeError extends Error {
   }
 }
 
+/**
+ * How many blocks behind head a transaction references (TaPoS). The node a
+ * broadcast lands on is often not the one that reported the head, and one a
+ * block or two behind rejects a reference to a block it has not seen with
+ * "transaction tapos exception". Three back is a block every live node has.
+ */
+const TAPOS_DEPTH = 3
+
+export interface TransactionReference {
+  ref_block_num: number
+  ref_block_prefix: number
+  /** The witness-voted block size from the same properties, see Transaction.maximumBlockSize. */
+  maximum_block_size?: number
+}
+
+/**
+ * The block reference (ref_block_num / ref_block_prefix) for a new transaction:
+ * a block TAPOS_DEPTH behind head, whose id comes from the header of the block
+ * after it (`previous`). If that header is missing or does not name the
+ * expected block, it falls back to the head block, as before.
+ */
+export const getTransactionReference = async (): Promise<TransactionReference> => {
+  const props = await callRPC('condenser_api.get_dynamic_global_properties', [])
+  let refNum: number = props.head_block_number
+  let refId: string = props.head_block_id
+  try {
+    // Short budget: a slow answer here only delays the broadcast it is for.
+    const header = await callRPC('condenser_api.get_block_header', [refNum - TAPOS_DEPTH + 1], 3000, 1)
+    const previous = header?.previous
+    // A block id starts with its block number, big-endian.
+    if (
+      typeof previous === 'string' &&
+      /^[0-9a-f]{40}$/.test(previous) &&
+      parseInt(previous.slice(0, 8), 16) === refNum - TAPOS_DEPTH
+    ) {
+      refNum -= TAPOS_DEPTH
+      refId = previous
+    }
+  } catch {
+    // Keep the head block; the transaction is only more likely to hit a lagging node.
+  }
+  const bytes = hexToBytes(refId)
+  return {
+    ref_block_num: refNum & 0xffff,
+    ref_block_prefix: Number(new Uint32Array(bytes.buffer, bytes.byteOffset + 4, 1)[0]),
+    maximum_block_size: props.maximum_block_size
+  }
+}
+
 interface TransactionOptions {
   transaction?: TransactionType | Transaction
   /**
@@ -308,17 +357,15 @@ export class Transaction {
    * @param expiration Transaction expiration in milliseconds
    */
   private createTransaction = async (expiration: number) => {
-    const props = await callRPC('condenser_api.get_dynamic_global_properties', [])
-    const bytes = hexToBytes(props.head_block_id)
-    const refBlockPrefix = Number(new Uint32Array(bytes.buffer, bytes.byteOffset + 4, 1)[0])
+    const reference = await getTransactionReference()
     const expirationIso = new Date(Date.now() + expiration).toISOString().slice(0, -5)
-    this.maximumBlockSize = props.maximum_block_size
+    this.maximumBlockSize = reference.maximum_block_size
     this.transaction = {
       expiration: expirationIso,
       extensions: [],
       operations: [],
-      ref_block_num: props.head_block_number & 0xffff,
-      ref_block_prefix: refBlockPrefix,
+      ref_block_num: reference.ref_block_num,
+      ref_block_prefix: reference.ref_block_prefix,
       signatures: []
     }
   }

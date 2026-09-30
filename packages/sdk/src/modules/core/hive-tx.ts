@@ -18,6 +18,7 @@ export {
   Transaction as HiveTxTransaction,
   TransactionTooLargeError,
   MIN_TRANSACTION_SIZE_LIMIT,
+  getTransactionReference,
   PrivateKey,
   PublicKey,
   Signature,

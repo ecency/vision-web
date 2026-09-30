@@ -5,8 +5,8 @@ import {
   getQueryClient,
   getAccountFullQueryOptions,
   broadcastOperations,
-  callRPC,
   callRPCBroadcast,
+  getTransactionReference,
   buildGrantPostingPermissionOp,
   usrActivity,
 } from '@ecency/sdk';
@@ -133,10 +133,8 @@ async function broadcastWithMetaMaskSnap(
     throw new Error('MetaMask not found');
   }
 
-  // Fetch dynamic global properties
-  const props = await callRPC("condenser_api.get_dynamic_global_properties", []) as any;
-  const refBlockNum = props.head_block_number & 0xFFFF;
-  const refBlockPrefix = Buffer.from(props.head_block_id, 'hex').readUInt32LE(4);
+  // A block a few behind head, so a node that is a block behind still accepts it.
+  const { ref_block_num: refBlockNum, ref_block_prefix: refBlockPrefix } = await getTransactionReference();
   const expiration = new Date(Date.now() + 60000).toISOString().slice(0, 19);
 
   // dhive operations in tuple format for broadcasting

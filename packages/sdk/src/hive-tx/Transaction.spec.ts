@@ -6,7 +6,7 @@ vi.mock("./helpers/call", async (importOriginal) => ({
   callRPC,
 }));
 
-import { Transaction, TransactionTooLargeError } from "./Transaction";
+import { Transaction, TransactionTooLargeError, getTransactionReference } from "./Transaction";
 import { config } from "./config";
 import { PrivateKey } from "./helpers/PrivateKey";
 
@@ -209,5 +209,55 @@ describe("Transaction.broadcast", () => {
     t.sign(PrivateKey.fromSeed("broadcast-spec"));
     await expect(t.broadcast()).rejects.toThrow(/timeout/i);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("getTransactionReference", () => {
+  // head 110360300; block 110360297 has this id (first 4 bytes = its number).
+  const head = 110360300;
+  const headId = "0693f6ec" + "11".repeat(16);
+  const refId = "0693f6e9" + "a1b2c3d4" + "22".repeat(12);
+  const props = { head_block_number: head, head_block_id: headId, maximum_block_size: 65536 };
+  const prefixOf = (id: string) => {
+    const b = id.slice(8, 16).match(/../g)!.reverse().join("");
+    return parseInt(b, 16);
+  };
+  const answer = (header: unknown) =>
+    callRPC.mockImplementation(async (method: string, params: unknown[]) => {
+      if (method === "condenser_api.get_dynamic_global_properties") return props;
+      if (method === "condenser_api.get_block_header") {
+        expect(params).toEqual([head - 2]);
+        if (header instanceof Error) throw header;
+        return header;
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+  afterEach(() => callRPC.mockReset());
+
+  it("references the block three behind head, by the next block's `previous`", async () => {
+    answer({ previous: refId });
+    const ref = await getTransactionReference();
+    expect(ref.ref_block_num).toBe((head - 3) & 0xffff);
+    expect(ref.ref_block_prefix).toBe(prefixOf(refId));
+    expect(ref.maximum_block_size).toBe(65536);
+  });
+
+  it("falls back to the head block when the header is missing, wrong or unavailable", async () => {
+    const wrongBlock = "0693f6e8" + "33".repeat(16);
+    for (const header of [null, {}, { previous: wrongBlock }, { previous: "zz" }, new Error("node down")]) {
+      answer(header);
+      const ref = await getTransactionReference();
+      expect(ref.ref_block_num).toBe(head & 0xffff);
+      expect(ref.ref_block_prefix).toBe(prefixOf(headId));
+    }
+  });
+
+  it("is what a new Transaction is built on", async () => {
+    answer({ previous: refId });
+    const t = new Transaction();
+    await t.addOperation("vote", { voter: "alice", author: "bob", permlink: "a-post", weight: 10000 } as any);
+    expect(t.transaction?.ref_block_num).toBe((head - 3) & 0xffff);
+    expect(t.transaction?.ref_block_prefix).toBe(prefixOf(refId));
+    expect(t.maximumBlockSize).toBe(65536);
   });
 });
