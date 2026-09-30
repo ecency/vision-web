@@ -1654,7 +1654,15 @@ export const callRPCBroadcast = async <T = any>(
   method: string,
   params: any[] | object = [],
   timeout = config.broadcastTimeout,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options: {
+    /**
+     * Also fail over when a node times out. Only for callers that treat the next
+     * node's "Duplicate transaction" answer as success (Transaction.broadcast):
+     * the node that timed out may have accepted the transaction.
+     */
+    failoverOnTimeout?: boolean
+  } = {}
 ): Promise<T> => {
   if (!Array.isArray(config.nodes)) {
     throw new Error('config.nodes is not an array')
@@ -1701,7 +1709,8 @@ export const callRPCBroadcast = async <T = any>(
       // reuses that signed payload across nodes, so any case where the next
       // node would dedupe by trx_id is fine. RPCErrors (real blockchain
       // rejections) propagate immediately — see isBroadcastSafeToRetry.
-      if (!isBroadcastSafeToRetry(e)) {
+      const timedOut = e?.name === 'TimeoutError' || e?.name === 'AbortError'
+      if (!isBroadcastSafeToRetry(e) && !(options.failoverOnTimeout && timedOut)) {
         throw e
       }
     }

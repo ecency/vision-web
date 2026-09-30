@@ -163,7 +163,12 @@ export class Transaction {
       )
     }
     try {
-      await callRPCBroadcast('condenser_api.broadcast_transaction', [this.transaction])
+      // A node that timed out may have taken the transaction; the next one then
+      // answers "Duplicate transaction", which is ignored below, so failing over
+      // on a timeout is safe here.
+      await callRPCBroadcast('condenser_api.broadcast_transaction', [this.transaction], undefined, undefined, {
+        failoverOnTimeout: true
+      })
     } catch (e) {
       if (e instanceof RPCError && e.message.includes('Duplicate transaction check failed')) {
         // ignore duplicate transaction error as this can happen when we retry the broadcast

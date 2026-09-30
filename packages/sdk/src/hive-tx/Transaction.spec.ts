@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 const callRPC = vi.hoisted(() => vi.fn());
 vi.mock("./helpers/call", async (importOriginal) => ({
@@ -7,6 +7,7 @@ vi.mock("./helpers/call", async (importOriginal) => ({
 }));
 
 import { Transaction, TransactionTooLargeError } from "./Transaction";
+import { config } from "./config";
 import { PrivateKey } from "./helpers/PrivateKey";
 
 // Minimal serializable transaction, as produced externally (e.g. by hive-uri's
@@ -165,5 +166,34 @@ describe("optional fields", () => {
 
   it("serializes a null optional like an absent one, as hived reads it", () => {
     expect(update({ memo_key: null, posting: null })).toBe(update({}));
+  });
+});
+
+describe("Transaction.broadcast", () => {
+  const nodes = [...config.nodes];
+  afterEach(() => {
+    config.nodes = [...nodes];
+    vi.restoreAllMocks();
+  });
+
+  it("sends the transaction on after a node times out, and takes its duplicate answer as success", async () => {
+    config.nodes = ["https://slow.test", "https://fast.test"];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      if (String(input).includes("slow")) {
+        const err = new Error("The operation was aborted due to timeout") as Error & { name: string };
+        err.name = "TimeoutError";
+        throw err;
+      }
+      const { id } = JSON.parse(String(init.body));
+      // The slow node took it after all, so the next one refuses a duplicate.
+      return new Response(
+        JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32003, message: "Duplicate transaction check failed" } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+    const t = new Transaction({ transaction: { ...baseTx, signatures: [] } });
+    t.sign(PrivateKey.fromSeed("broadcast-spec"));
+    await expect(t.broadcast()).resolves.toMatchObject({ status: "unknown" });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 });

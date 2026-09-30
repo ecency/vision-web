@@ -164,6 +164,31 @@ describe("callRPCBroadcast — browser-style failover", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
 
+  it("fails over on a timeout only when the caller opts in", async () => {
+    const timeoutThenOk = () => {
+      let first = true;
+      return vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+        if (first) {
+          first = false;
+          const err = new Error("The operation was aborted due to timeout") as Error & { name: string };
+          err.name = "TimeoutError";
+          throw err;
+        }
+        return jsonOk(readJsonRpcId(init), {});
+      });
+    };
+    let fetchSpy = timeoutThenOk();
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction", [{}], undefined, undefined, { failoverOnTimeout: true })
+    ).resolves.toEqual({});
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    fetchSpy.mockRestore();
+
+    fetchSpy = timeoutThenOk();
+    await expect(callRPCBroadcast("condenser_api.broadcast_transaction", [{}])).rejects.toThrow(/timeout/i);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   // Timeouts are the genuinely ambiguous case: the node may have received the
   // tx and started processing it. Failing over a timed-out broadcast risks a
   // second node accepting the dup and surfacing an RPCError that masks the
