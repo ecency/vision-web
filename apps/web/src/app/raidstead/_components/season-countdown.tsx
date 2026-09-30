@@ -7,9 +7,19 @@ import { countdown } from "@/features/raidstead/game";
 const t = (key: string, opts?: Record<string, unknown>) => i18next.t(`raidstead.${key}`, opts);
 
 /// Before the first season: the start, ticking down each second over the live
-/// scene. Calls `onOpen` once the moment has come. `skew` (ms) is the server's
-/// clock minus this device's.
-export function SeasonCountdown({ startsAt, skew = 0, onOpen }: { startsAt: string; skew?: number; onOpen: () => void }) {
+/// scene, and the way into the field guide. Calls `onOpen` once the moment has
+/// come. `skew` (ms) is the server's clock minus this device's.
+export function SeasonCountdown({
+  startsAt,
+  skew = 0,
+  onOpen,
+  onGuide
+}: {
+  startsAt: string;
+  skew?: number;
+  onOpen: () => void;
+  onGuide: () => void;
+}) {
   const at = Date.parse(startsAt);
   const [now, setNow] = useState(() => Date.now() + skew);
   const left = countdown(at, now);
@@ -64,6 +74,9 @@ export function SeasonCountdown({ startsAt, skew = 0, onOpen }: { startsAt: stri
         {left.done ? t("season.countdown-opening") : t("season.countdown-when", { date: when })}
       </p>
       <p className="rs-muted">{t("season.not-started-hint")}</p>
+      <button className="rs-guide" onClick={onGuide}>
+        {t("guide.open")}
+      </button>
     </section>
   );
 }

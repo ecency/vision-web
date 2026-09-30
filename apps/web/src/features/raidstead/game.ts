@@ -1,8 +1,10 @@
+import { BOSS_KINDS, type BossKind } from "@ecency/raidstead";
 import type {
   AttackResult,
   AttackType,
   Impact,
   LeaderRow,
+  Calendar,
   RaidsteadError,
   SceneWorld,
   State,
@@ -183,4 +185,27 @@ export function countdown(at: number, now: number): { days: number; hours: numbe
     seconds: left % 60,
     done: left === 0
   };
+}
+
+export interface PestWeek {
+  week: number;
+  kind: BossKind;
+  /// when the week's pest arrives (ms)
+  at: number;
+  /// its picture may show: it has arrived, or it is the opening pest everyone already sees
+  revealed: boolean;
+}
+
+/// The season's four raid weeks, one pest each, in the server's order. Names and
+/// tricks are public; a pest's picture stays hidden until its week begins, so each
+/// week brings something new to see. Before the first season only week 1 shows.
+export function pestCalendar(cal: Pick<Calendar, "season" | "week" | "resting" | "startsAt">): PestWeek[] {
+  const start = Date.parse(cal.startsAt);
+  const shown = cal.season < 1 ? 1 : cal.resting ? BOSS_KINDS.length : Math.max(1, cal.week);
+  return BOSS_KINDS.map((kind, i) => ({
+    week: i + 1,
+    kind,
+    at: start + i * 7 * 86_400_000,
+    revealed: i < shown
+  }));
 }

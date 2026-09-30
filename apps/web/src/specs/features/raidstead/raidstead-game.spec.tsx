@@ -629,6 +629,18 @@ describe("Raidstead page", () => {
       expect(api.state).not.toHaveBeenCalled();
     });
 
+    it("opens the field guide from the countdown, with no game state yet", async () => {
+      api.calendar.mockResolvedValue(soon(3 * 86_400_000));
+      render(<RaidsteadGame />);
+      await tick(50);
+      fireEvent.click(within(region()!).getByRole("button", { name: "raidstead.guide.open" }));
+      const guide = screen.getByRole("dialog", { name: "raidstead.guide.title" });
+      expect(within(guide).getByText("raidstead.guide.ready-title")).toBeTruthy();
+      expect(api.state).not.toHaveBeenCalled();
+      fireEvent.click(within(guide).getByRole("button", { name: "raidstead.guide.close-preseason" }));
+      expect(screen.queryByRole("dialog", { name: "raidstead.guide.title" })).toBeNull();
+    });
+
     it("opens the season when the countdown ends and the server agrees", async () => {
       api.calendar.mockResolvedValueOnce(soon(1200)).mockResolvedValueOnce(soon(-1)).mockResolvedValue(state().calendar);
       render(<RaidsteadGame />);
