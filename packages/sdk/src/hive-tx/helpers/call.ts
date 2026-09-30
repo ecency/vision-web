@@ -184,15 +184,20 @@ class NodeError extends Error {
    *  a header-less rate limit is still cooled down (with escalating backoff) rather than
    *  mis-recorded as a plain transport failure. */
   isRateLimit: boolean
+  /** True when the node's front end refused the request (a non-RPC 4xx): counted
+   *  against the node as a whole, like the parse errors these used to surface as,
+   *  rather than starting a per-API cooldown. */
+  nodeWide: boolean
   constructor(
     node: string,
     message: string,
-    opts: { rateLimitMs?: number; isRateLimit?: boolean } = {}
+    opts: { rateLimitMs?: number; isRateLimit?: boolean; nodeWide?: boolean } = {}
   ) {
     super(message)
     this.node = node
     this.rateLimitMs = opts.rateLimitMs ?? 0
     this.isRateLimit = opts.isRateLimit ?? false
+    this.nodeWide = opts.nodeWide ?? false
   }
 }
 
@@ -951,6 +956,8 @@ function recordError(tracker: NodeHealthTracker, node: string, e: any, api?: str
     if (e.isRateLimit) {
       // 0 → no usable Retry-After → let recordRateLimit apply escalating backoff.
       tracker.recordRateLimit(node, e.rateLimitMs || undefined)
+    } else if (e.nodeWide) {
+      tracker.recordFailure(node)
     } else {
       tracker.recordFailure(node, api)
     }
@@ -1109,8 +1116,26 @@ const jsonRPCCall = async (
     if (res.status >= 500 && res.status < 600) {
       throw new NodeError(url, `HTTP ${res.status} from ${url}`)
     }
-
-    const result = (await res.json()) as CallResponse
+    let result: CallResponse
+    if (res.ok) {
+      result = (await res.json()) as CallResponse
+    } else {
+      // Any other non-OK status is either a JSON-RPC reply to this request
+      // (handled below like any other) or a proxy in front of the node
+      // refusing it (a 403/413 with a text or non-RPC body). The latter is not
+      // a chain verdict: fail over with the status in the message instead of a
+      // JSON parse error or "JSONRPC id mismatch".
+      let parsed: any
+      try {
+        parsed = JSON.parse(await res.text())
+      } catch {
+        parsed = undefined
+      }
+      if (parsed?.jsonrpc !== '2.0' || parsed?.id !== id) {
+        throw new NodeError(url, `HTTP ${res.status} from ${url}`, { nodeWide: true })
+      }
+      result = parsed
+    }
     if (
       !result ||
       typeof result.id === 'undefined' ||

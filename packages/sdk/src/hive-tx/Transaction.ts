@@ -17,6 +17,37 @@ import { sleep } from './helpers/sleep'
 
 const chainId = hexToBytes(config.chain_id)
 
+/** hived rejects a signed transaction larger than `maximum_block_size - 256` (database.cpp). */
+const BLOCK_SIZE_RESERVE = 256
+
+/**
+ * Consensus bounds on the witness-voted maximum_block_size
+ * (HIVE_MIN_BLOCK_SIZE_LIMIT and HIVE_MAX_BLOCK_SIZE in hived's config.hpp).
+ */
+const MIN_BLOCK_SIZE_LIMIT = 64 * 1024
+const MAX_BLOCK_SIZE = 2 * 1024 * 1024
+
+/**
+ * Size every transaction may have whatever witnesses vote. Only a larger one
+ * needs the live maximum_block_size to be judged.
+ */
+export const MIN_TRANSACTION_SIZE_LIMIT = MIN_BLOCK_SIZE_LIMIT - BLOCK_SIZE_RESERVE
+
+/** Serialized bytes one signature adds (compact secp256k1 signature). */
+const SIGNATURE_SIZE = 65
+
+/** Thrown before signing when a transaction can never be accepted by the chain. */
+export class TransactionTooLargeError extends Error {
+  size: number
+  limit: number
+  constructor(size: number, limit: number) {
+    super(`Transaction too large: ${size} bytes. Hive allows up to ${limit} bytes.`)
+    this.name = 'TransactionTooLargeError'
+    this.size = size
+    this.limit = limit
+  }
+}
+
 interface TransactionOptions {
   transaction?: TransactionType | Transaction
   /**
@@ -31,6 +62,14 @@ export class Transaction {
 
   expiration: number = 60_000
 
+  /**
+   * The chain's witness-voted maximum_block_size, which sets the largest
+   * transaction hived accepts. Recorded from the dynamic global properties
+   * fetched when the transaction is created; set it yourself for a
+   * transaction built elsewhere, or only the protocol ceiling is enforced.
+   */
+  maximumBlockSize?: number
+
   private txId?: string
 
   constructor(options?: TransactionOptions) {
@@ -38,6 +77,7 @@ export class Transaction {
       if (options.transaction instanceof Transaction) {
         this.transaction = options.transaction.transaction
         this.expiration = options.transaction.expiration
+        this.maximumBlockSize = options.transaction.maximumBlockSize
       } else {
         this.transaction = options.transaction
       }
@@ -89,6 +129,7 @@ export class Transaction {
       if (!Array.isArray(keys)) {
         keys = [keys]
       }
+      this.assertSize(keys.length)
       for (const key of keys) {
         const signature = key.sign(digest)
         this.transaction.signatures.push(signature.customToString())
@@ -168,6 +209,48 @@ export class Transaction {
     if (!this.transaction) {
       throw new Error('First create a transaction by .addOperation()')
     }
+    const transactionData = this.serialize()
+    const txId = bytesToHex(sha256(transactionData)).slice(0, 40)
+    const digest = sha256(new Uint8Array([...chainId, ...transactionData]))
+    return { digest, txId }
+  }
+
+  /**
+   * Serialized size of the transaction once it carries its current signatures
+   * plus `extraSignatures` more. This is the size hived checks against
+   * `maximum_block_size - 256`.
+   */
+  size(extraSignatures = 0): number {
+    const signatures = (this.transaction?.signatures.length ?? 0) + extraSignatures
+    // The signature count is a varint: one byte per 7 bits.
+    let countBytes = 1
+    for (let n = signatures; n >= 128; n >>>= 7) countBytes++
+    return this.serialize().length + countBytes + signatures * SIGNATURE_SIZE
+  }
+
+  /**
+   * Throws TransactionTooLargeError when the transaction, signed with
+   * `extraSignatures` more signatures, would exceed what hived accepts under
+   * `maximumBlockSize`, or under the largest block size the protocol allows
+   * when it is unknown. Such a transaction is rejected by every node, so it
+   * must never be signed.
+   */
+  assertSize(extraSignatures = 0): void {
+    const size = this.size(extraSignatures)
+    // A value outside the consensus bounds cannot be the chain's; ignore it.
+    const voted = Number(this.maximumBlockSize)
+    const blockSize =
+      voted >= MIN_BLOCK_SIZE_LIMIT && voted <= MAX_BLOCK_SIZE ? voted : MAX_BLOCK_SIZE
+    const limit = blockSize - BLOCK_SIZE_RESERVE
+    if (size > limit) {
+      throw new TransactionTooLargeError(size, limit)
+    }
+  }
+
+  private serialize(): Uint8Array {
+    if (!this.transaction) {
+      throw new Error('First create a transaction by .addOperation()')
+    }
     const buffer = new ByteBuffer(ByteBuffer.DEFAULT_CAPACITY, ByteBuffer.LITTLE_ENDIAN)
     const temp = { ...this.transaction }
     try {
@@ -176,10 +259,7 @@ export class Transaction {
       throw new Error('Unable to serialize transaction: ' + cause)
     }
     buffer.flip()
-    const transactionData = new Uint8Array(buffer.toBuffer())
-    const txId = bytesToHex(sha256(transactionData)).slice(0, 40)
-    const digest = sha256(new Uint8Array([...chainId, ...transactionData]))
-    return { digest, txId }
+    return new Uint8Array(buffer.toBuffer())
   }
 
   /**
@@ -225,6 +305,7 @@ export class Transaction {
     const bytes = hexToBytes(props.head_block_id)
     const refBlockPrefix = Number(new Uint32Array(bytes.buffer, bytes.byteOffset + 4, 1)[0])
     const expirationIso = new Date(Date.now() + expiration).toISOString().slice(0, -5)
+    this.maximumBlockSize = props.maximum_block_size
     this.transaction = {
       expiration: expirationIso,
       extensions: [],

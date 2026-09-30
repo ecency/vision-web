@@ -47,7 +47,7 @@ function readJsonRpcId(init?: RequestInit | any): number {
 
 describe("callRPCBroadcast — browser-style failover", () => {
   function spyFetch(
-    steps: Array<"network-error" | "html-530" | "html-502" | "rpc-error" | "ok">
+    steps: Array<"network-error" | "html-530" | "html-502" | "text-413" | "json-403" | "rpc-error-400" | "rpc-error" | "ok">
   ) {
     return vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
       const id = readJsonRpcId(init);
@@ -68,6 +68,21 @@ describe("callRPCBroadcast — browser-style failover", () => {
             status: 502,
             headers: { "Content-Type": "text/html" },
           });
+        case "text-413":
+          return new Response("JSON payload is larger than allowed", {
+            status: 413,
+            headers: { "Content-Type": "text/plain" },
+          });
+        case "json-403":
+          return new Response(JSON.stringify({ error: "forbidden" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          });
+        case "rpc-error-400":
+          return new Response(
+            JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32602, message: "Missing Posting Authority for alice" } }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
         case "rpc-error":
           return jsonRpcError(id, -32602, "Missing Posting Authority for alice");
         case "ok":
@@ -98,6 +113,37 @@ describe("callRPCBroadcast — browser-style failover", () => {
     const res = await callRPCBroadcast("condenser_api.broadcast_transaction_synchronous", [{}]);
     expect((res as any).block_num).toBe(1);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails over from a proxy's JSON 4xx that is not a JSON-RPC reply", async () => {
+    const fetchSpy = spyFetch(["json-403", "ok"]);
+    const res = await callRPCBroadcast("condenser_api.broadcast_transaction_synchronous", [{}]);
+    expect((res as any).block_num).toBe(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("counts a proxy 4xx against the node as a whole, not as a per-API cooldown", async () => {
+    const recordFailure = vi.spyOn(NodeHealthTracker.prototype, "recordFailure");
+    spyFetch(["text-413", "ok"]);
+    await callRPCBroadcast("condenser_api.broadcast_transaction_synchronous", [{}]);
+    // One failure, recorded without an api (node-wide), for whichever node refused.
+    expect(recordFailure.mock.calls).toEqual([[expect.stringMatching(/^https:\/\/node-[abc]\.test$/)]]);
+  });
+
+  it("treats a JSON-RPC error sent with a 4xx status as the chain's verdict", async () => {
+    const fetchSpy = spyFetch(["rpc-error-400", "ok"]);
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction_synchronous", [{}])
+    ).rejects.toBeInstanceOf(RPCError);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("tries each node once and reports the status when every node answers text 413", async () => {
+    const fetchSpy = spyFetch(["text-413", "text-413", "text-413", "ok"]);
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction_synchronous", [{}])
+    ).rejects.toThrow(/HTTP 413/);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
 
   it("does NOT fail over on a blockchain RPCError (real rejection)", async () => {

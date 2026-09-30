@@ -3,8 +3,8 @@ import {
   type MutationKey,
   type UseMutationOptions,
 } from "@tanstack/react-query";
-import { PrivateKey, RPCError } from "../../../hive-tx";
-import type { Operation } from "../../../hive-tx";
+import { callRPC, MIN_TRANSACTION_SIZE_LIMIT, PrivateKey, RPCError, Transaction } from "../../../hive-tx";
+import type { Operation, TransactionType } from "../../../hive-tx";
 import { broadcastOperations, broadcastOperationsAsync, type TransactionConfirmation } from "@/modules/core/hive-tx";
 import type { BroadcastResult } from "../../../hive-tx";
 import type { AuthContextV2 } from "@/modules/core/types";
@@ -538,6 +538,45 @@ async function broadcastWithFallback(
  * );
  * ```
  */
+/**
+ * Refuse operations that can never fit in one Hive transaction before any
+ * signer (key, Keychain, HiveSigner, HiveAuth, MetaMask) sees them, so the
+ * user gets a clear error instead of a broadcast that every node rejects.
+ * Anything within the smallest limit witnesses can vote passes without a
+ * network call; a larger transaction is judged against the live
+ * maximum_block_size, or against the protocol ceiling if that cannot be read.
+ * Only the size verdict is enforced: an operation this serializer cannot
+ * encode is left to the signer, which serializes it on its own.
+ */
+export async function assertOperationsFitTransaction(ops: Operation[]): Promise<void> {
+  let tx: Transaction;
+  try {
+    const transaction = {
+      ref_block_num: 0,
+      ref_block_prefix: 0,
+      expiration: "1970-01-01T00:00:00",
+      operations: ops,
+      extensions: [],
+      signatures: [],
+    } as unknown as TransactionType;
+    tx = new Transaction({ transaction });
+    if (tx.size(1) <= MIN_TRANSACTION_SIZE_LIMIT) {
+      return;
+    }
+  } catch {
+    return;
+  }
+  try {
+    // Short budget: this only delays an already oversized broadcast, and the
+    // protocol ceiling still applies if the nodes are slow.
+    const props = await callRPC("condenser_api.get_dynamic_global_properties", [], 3000, 1);
+    tx.maximumBlockSize = props?.maximum_block_size;
+  } catch {
+    // Unknown limit: assertSize falls back to the protocol ceiling.
+  }
+  tx.assertSize(1);
+}
+
 export function useBroadcastMutation<T>(
   mutationKey: MutationKey = [],
   username: string | undefined,
@@ -577,6 +616,7 @@ export function useBroadcastMutation<T>(
       }
 
       const ops = operations(payload);
+      await assertOperationsFitTransaction(ops);
 
       try {
         // New: Try auth methods in fallback chain (if enabled)

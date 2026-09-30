@@ -1,0 +1,2 @@
+import {j}from'./chunk-H7PIOBZV.js';import {queryOptions}from'@tanstack/react-query';function a(e){return queryOptions({queryKey:["wallet","collateralized-conversion-requests",e],queryFn:()=>j("condenser_api.get_collateralized_conversion_requests",[e]),select:o=>o.sort((t,s)=>t.requestid-s.requestid)})}export{a};//# sourceMappingURL=chunk-TAUG2BTY.js.map
+//# sourceMappingURL=chunk-TAUG2BTY.js.map

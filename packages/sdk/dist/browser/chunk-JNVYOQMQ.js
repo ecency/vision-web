@@ -1,0 +1,3 @@
+import {a}from'./chunk-QZD2HG4T.js';import {a as a$1}from'./chunk-SEACJS36.js';import {b}from'./chunk-RMBJHWE7.js';import {queryOptions}from'@tanstack/react-query';function f(e,t){return queryOptions({queryKey:["integrations","3speak","videos",e],enabled:!!e&&!!t,queryFn:async()=>{if(!e||!t)throw new Error("[SDK][Integrations][3Speak] \u2013\xA0anon user");let n=a(e,t);await b().prefetchQuery(n);let r=b().getQueryData(n.queryKey);if(!r)throw new Error("[SDK][Integrations][3Speak] \u2013 missing account token");return await(await a$1()("https://studio.3speak.tv/mobile/api/my-videos",{headers:{"Content-Type":"application/json",Authorization:`Bearer ${r}`}})).json()}})}
+export{f as a};//# sourceMappingURL=chunk-JNVYOQMQ.js.map
+//# sourceMappingURL=chunk-JNVYOQMQ.js.map

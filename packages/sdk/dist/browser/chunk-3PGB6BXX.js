@@ -1,3 +1,0 @@
-import {a as a$1}from'./chunk-AAEXP2VH.js';import {a}from'./chunk-SEACJS36.js';import {b}from'./chunk-VZPJHJWH.js';import {queryOptions}from'@tanstack/react-query';function d(e,t){return queryOptions({queryKey:["integrations","3speak","authenticate",e],enabled:!!e&&!!t,queryFn:async()=>{if(!e||!t)throw new Error("[SDK][Integrations][3Speak] \u2013\xA0anon user");let p=await a()(`https://studio.3speak.tv/mobile/login?username=${e}&hivesigner=true`,{headers:{"Content-Type":"application/json"}}),o=a$1.queries.getDecodeMemoQueryOptions(e,(await p.json()).memo,t);await b().prefetchQuery(o);let{memoDecoded:u}=b().getQueryData(o.queryKey);return u.replace("#","")}})}
-export{d as a};//# sourceMappingURL=chunk-3PGB6BXX.js.map
-//# sourceMappingURL=chunk-3PGB6BXX.js.map

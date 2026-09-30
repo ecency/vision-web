@@ -1,2 +1,0 @@
-import {j}from'./chunk-UB5YHSMC.js';import {queryOptions}from'@tanstack/react-query';function n(){return queryOptions({queryKey:["proposals","list"],queryFn:async()=>{let o=(await j("database_api.list_proposals",{start:[-1],limit:500,order:"by_total_votes",order_direction:"descending",status:"all"})).proposals,t=o.filter(s=>s.status==="expired");return [...o.filter(s=>s.status!=="expired"),...t]}})}export{n as a};//# sourceMappingURL=chunk-HWPZW7HE.js.map
-//# sourceMappingURL=chunk-HWPZW7HE.js.map

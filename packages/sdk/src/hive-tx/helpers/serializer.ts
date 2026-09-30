@@ -215,7 +215,8 @@ const ObjectSerializer = (keySerializers: any) => {
 
 const OptionalSerializer = (valueSerializer: any) => {
   return (buffer: ByteBuffer, data: any | undefined) => {
-    if (data !== undefined) {
+    // hived reads a JSON null optional as unset, so it must serialize as unset.
+    if (data !== undefined && data !== null) {
       buffer.writeByte(1)
       valueSerializer(buffer, data)
     } else {

@@ -1,0 +1,2 @@
+import {m}from'./chunk-H7PIOBZV.js';async function i(r,n,e){try{let t=await m("bridge.get_post",{author:r,permlink:n,observer:e},1);if(t&&typeof t=="object"&&t.author===r&&t.permlink===n)return t}catch{}return null}export{i as a};//# sourceMappingURL=chunk-X5YMIRQM.js.map
+//# sourceMappingURL=chunk-X5YMIRQM.js.map

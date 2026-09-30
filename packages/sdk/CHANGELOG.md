@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.19
+
+### Patch Changes
+
+- SDK: refuse to sign transactions over Hive's size limit (#1895)
+
 ## 2.4.18
 
 ### Patch Changes
