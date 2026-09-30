@@ -19,8 +19,23 @@ export const decrypt = (
   message: Uint8Array,
   checksum: number
 ): Uint8Array => {
-  const d = crypt(privateKey, publicKey, nonce, message, checksum)
-  return d.message
+  try {
+    return crypt(privateKey, publicKey, nonce, message, checksum).message
+  } catch (e) {
+    // dhive, hive-js and steem-js (so Keychain) hash the shared x-coordinate
+    // without its leading zero bytes: bigi's toBuffer ignores the { size: 32 }
+    // they pass. About 1 in 256 of their memos only open with that secret; the
+    // memo's checksum still has to match, so this cannot accept a wrong key.
+    const x = secp256k1.getSharedSecret(privateKey.key, publicKey.key).subarray(1)
+    let zeros = 0
+    while (zeros < x.length && x[zeros] === 0) zeros++
+    if (zeros === 0) throw e
+    try {
+      return crypt(privateKey, publicKey, nonce, message, checksum, sha512(x.subarray(zeros))).message
+    } catch {
+      throw e
+    }
+  }
 }
 
 /**
@@ -32,10 +47,11 @@ const crypt = (
   publicKey: PublicKey,
   nonce: bigint,
   message: Uint8Array,
-  checksum?: number
+  checksum?: number,
+  sharedSecret: Uint8Array = privateKey.getSharedSecret(publicKey)
 ): { nonce: bigint; message: Uint8Array; checksum: number } => {
   const nonceL = nonce
-  const S = privateKey.getSharedSecret(publicKey)
+  const S = sharedSecret
   let ebuf = new ByteBuffer(ByteBuffer.DEFAULT_CAPACITY, ByteBuffer.LITTLE_ENDIAN)
   ebuf.writeUint64(nonceL)
   ebuf.append(S)
