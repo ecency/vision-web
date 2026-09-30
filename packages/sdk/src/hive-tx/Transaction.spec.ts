@@ -223,10 +223,12 @@ describe("getTransactionReference", () => {
     return parseInt(b, 16);
   };
   const answer = (header: unknown) =>
-    callRPC.mockImplementation(async (method: string, params: unknown[]) => {
+    callRPC.mockImplementation(async (method: string, params: unknown[], timeout?: number, retry?: number) => {
       if (method === "condenser_api.get_dynamic_global_properties") return props;
       if (method === "condenser_api.get_block_header") {
         expect(params).toEqual([head - 2]);
+        // A slow header answer only delays the broadcast, so its budget stays short.
+        expect([timeout, retry]).toEqual([3000, 1]);
         if (header instanceof Error) throw header;
         return header;
       }
@@ -242,14 +244,17 @@ describe("getTransactionReference", () => {
     expect(ref.maximum_block_size).toBe(65536);
   });
 
-  it("falls back to the head block when the header is missing, wrong or unavailable", async () => {
-    const wrongBlock = "0693f6e8" + "33".repeat(16);
-    for (const header of [null, {}, { previous: wrongBlock }, { previous: "zz" }, new Error("node down")]) {
-      answer(header);
-      const ref = await getTransactionReference();
-      expect(ref.ref_block_num).toBe(head & 0xffff);
-      expect(ref.ref_block_prefix).toBe(prefixOf(headId));
-    }
+  it.each([
+    ["no header", null],
+    ["a header without previous", {}],
+    ["the id of another block", { previous: "0693f6e8" + "33".repeat(16) }],
+    ["an id that is not 40 hex characters", { previous: refId.slice(0, 38) }],
+    ["a node error", new Error("node down")],
+  ])("falls back to the head block on %s", async (_label, header) => {
+    answer(header);
+    const ref = await getTransactionReference();
+    expect(ref.ref_block_num).toBe(head & 0xffff);
+    expect(ref.ref_block_prefix).toBe(prefixOf(headId));
   });
 
   it("is what a new Transaction is built on", async () => {
