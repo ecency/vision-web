@@ -42,6 +42,13 @@ describe("portrait", () => {
     expect(svg.match(/<circle /g)!.length).toBeGreaterThan(100);
   });
 
+  it("draws nothing when the padding leaves no room", () => {
+    expect(portrait("beetle", { width: 12, height: 40, pad: 6 }).dots).toEqual([]);
+    expect(portrait("beetle", { width: 10, height: 40, pad: 6 }).dots).toEqual([]);
+    expect(portrait("beetle", { width: 40, height: 12, pad: 6 }).dots).toEqual([]);
+    expect(portrait("beetle", { width: 13, height: 13, pad: 6 }).dots.every((d) => d.r > 0)).toBe(true);
+  });
+
   it("refuses an unknown model", () => {
     expect(() => portrait("dragon", { width: 10, height: 10 })).toThrow("unknown model dragon");
   });

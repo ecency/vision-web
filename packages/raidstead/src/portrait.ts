@@ -63,6 +63,8 @@ function silhouette(parts: Part[], sp: number): Raw[] {
 export function portrait(kind: string, { width, height, pad = 6, spacing = 2.4, silhouette: hidden = false }: PortraitOptions): Portrait {
   const spec = SPECIES[kind];
   if (!spec) throw new Error(`unknown model ${kind}`);
+  // no room left inside the padding: nothing to draw (a negative scale would give negative radii)
+  if (width <= pad * 2 || height <= pad * 2) return { width, height, dots: [] };
   // a first guess at the scale from the model's box sets the dot pitch in model units
   const [bx0, by0, bx1, by1] = spec.box;
   const guess = Math.min((width - pad * 2) / (bx1 - bx0), (height - pad * 2) / (by1 - by0));

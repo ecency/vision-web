@@ -276,7 +276,7 @@ describe("pestCalendar", () => {
     expect(shown({ season: 1, week: 3, resting: false, startsAt: start })).toEqual([true, true, true, false]);
     expect(shown({ season: 1, week: 4, resting: false, startsAt: start })).toEqual([true, true, true, true]);
     expect(shown({ season: 1, week: 4, resting: true, startsAt: start })).toEqual([true, true, true, true]);
-    // every week brings the same pest each season: from season 2 on they have all been seen
-    expect(shown({ season: 2, week: 1, resting: false, startsAt: start })).toEqual([true, true, true, true]);
+    // a new season reveals week by week again
+    expect(shown({ season: 2, week: 1, resting: false, startsAt: start })).toEqual([true, false, false, false]);
   });
 });

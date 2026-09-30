@@ -5430,7 +5430,7 @@
       "pests-title": "Season {{n}} pests",
       "pest-week": "Week {{week}} \u00b7 {{date}}",
       "pest-hidden": "Shows itself on {{date}}",
-      "pests-note": "Every alliance faces the same pest each week. Nobody knows what the next one looks like until it arrives.",
+      "pests-note": "Every alliance faces the same pest each week. Each one shows what it looks like on the day it arrives.",
       "folk-title": "The townsfolk",
       "energy-title": "Energy and Points",
       "energy": "You get 5 energy a day, plus 1 for each Ecency quest you finish. A rally gives 5 more for 50 Points.",

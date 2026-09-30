@@ -198,12 +198,12 @@ export interface PestWeek {
 
 /// The season's four raid weeks, one pest each, in the server's order. Names and
 /// tricks are public; a pest's picture stays hidden until its week begins, so each
-/// week brings something new to see. Before the first season only week 1 shows;
-/// from season 2 on every pest has been seen, since each week always brings the same one.
+/// week brings something new to see. Before the first season only week 1 shows.
+/// Every season reveals its pests week by week again, so a new pest added to a
+/// later season is never given away early.
 export function pestCalendar(cal: Pick<Calendar, "season" | "week" | "resting" | "startsAt">): PestWeek[] {
   const start = Date.parse(cal.startsAt);
-  const shown =
-    cal.season < 1 ? 1 : cal.season > 1 || cal.resting ? BOSS_KINDS.length : Math.max(1, cal.week);
+  const shown = cal.season < 1 ? 1 : cal.resting ? BOSS_KINDS.length : Math.max(1, cal.week);
   return BOSS_KINDS.map((kind, i) => ({
     week: i + 1,
     kind,
