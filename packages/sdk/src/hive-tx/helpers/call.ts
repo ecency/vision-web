@@ -1641,10 +1641,9 @@ export const callRPC = async <T = any>(
 // ── Public API: callRPC for broadcasts ──────────────────────────────────────
 
 /**
- * Broadcast-safe RPC call. Only retries on pre-connection errors where the
- * request definitively never reached the server (ECONNREFUSED, ENOTFOUND, etc.).
- * On timeouts, HTTP errors, or any ambiguous failure, throws immediately to
- * prevent double-broadcasting transactions.
+ * Broadcast-safe RPC call. Fails over only when re-sending the same signed
+ * transaction is safe (see isBroadcastSafeToRetry). A timeout throws at once,
+ * unless the caller passes `failoverOnTimeoutUntil`: see that option.
  *
  * Tries each node once (no wrap-around) since broadcast retries are dangerous.
  *
@@ -1654,7 +1653,18 @@ export const callRPCBroadcast = async <T = any>(
   method: string,
   params: any[] | object = [],
   timeout = config.broadcastTimeout,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options: {
+    /**
+     * Epoch ms until which a node's timeout fails over to the next node instead
+     * of throwing. Only for callers that treat the next node's "Duplicate
+     * transaction" answer as success (Transaction.broadcast), since the node
+     * that timed out may have accepted the transaction. Set it short of the
+     * transaction's expiration: a later node would answer "expired" for a
+     * transaction the slow node may have included, which reads as definitive.
+     */
+    failoverOnTimeoutUntil?: number
+  } = {}
 ): Promise<T> => {
   if (!Array.isArray(config.nodes)) {
     throw new Error('config.nodes is not an array')
@@ -1666,8 +1676,14 @@ export const callRPCBroadcast = async <T = any>(
   // Track which nodes we've already tried - broadcasts must never retry the same node
   const triedNodes = new Set<string>()
   let lastError: any
+  // Set once a node has timed out: the transaction may be in, so from then on the
+  // failover window bounds every attempt, and the timeout is what gets reported.
+  let timeoutError: any
 
   for (let attempt = 0; attempt < config.nodes.length; attempt++) {
+    if (timeoutError && !(Date.now() < (options.failoverOnTimeoutUntil ?? 0))) {
+      throw timeoutError
+    }
     // Re-evaluate order each attempt so health changes are respected
     const orderedNodes = rpcHealthTracker.getOrderedNodes(config.nodes, api)
     const node = orderedNodes.find((n) => !triedNodes.has(n))
@@ -1701,13 +1717,17 @@ export const callRPCBroadcast = async <T = any>(
       // reuses that signed payload across nodes, so any case where the next
       // node would dedupe by trx_id is fine. RPCErrors (real blockchain
       // rejections) propagate immediately — see isBroadcastSafeToRetry.
-      if (!isBroadcastSafeToRetry(e)) {
-        throw e
+      const timedOut = e?.name === 'TimeoutError' || e?.name === 'AbortError'
+      const timeoutFailover =
+        timedOut && options.failoverOnTimeoutUntil !== undefined && Date.now() < options.failoverOnTimeoutUntil
+      if (!isBroadcastSafeToRetry(e) && !timeoutFailover) {
+        throw timeoutError ?? e
       }
+      if (timedOut) timeoutError ??= e
     }
   }
 
-  throw lastError
+  throw timeoutError ?? lastError
 }
 
 // ── Public API: callREST ────────────────────────────────────────────────────

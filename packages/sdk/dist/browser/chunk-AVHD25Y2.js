@@ -1,0 +1,2 @@
+import {h}from'./chunk-VUPKGX6G.js';import {infiniteQueryOptions}from'@tanstack/react-query';function f(n,e,i=20){return infiniteQueryOptions({queryKey:["assets","hive-engine",e,"transactions",n],enabled:!!e&&!!n,initialPageParam:0,queryFn:async({pageParam:r})=>{if(!e||!n)throw new Error("[SDK][HiveEngine] \u2013 token or username missed");return h(n,e,i,r)},getNextPageParam:(r,s,a)=>(r?.length??0)===i?a+i:void 0,getPreviousPageParam:(r,s,a)=>a>0?a-i:void 0})}export{f as a};//# sourceMappingURL=chunk-AVHD25Y2.js.map
+//# sourceMappingURL=chunk-AVHD25Y2.js.map

@@ -1,0 +1,2 @@
+import {a}from'./chunk-SEACJS36.js';import {c}from'./chunk-TOARVQT4.js';import {queryOptions}from'@tanstack/react-query';function p(n){return queryOptions({queryKey:["wallet","incoming-rc",n],enabled:!!n,queryFn:async()=>{if(!n)throw new Error("[SDK][Wallet] - Missing username for incoming RC");let o=await a()(`${c.privateApiHost}/private-api/received-rc/${n}`);if(!o.ok)throw new Error(`Failed to fetch incoming RC: ${o.status}`);return o.json()}})}export{p as a};//# sourceMappingURL=chunk-SWGSPF3J.js.map
+//# sourceMappingURL=chunk-SWGSPF3J.js.map

@@ -1,0 +1,2 @@
+import {j}from'./chunk-RAWKN3XW.js';import {queryOptions}from'@tanstack/react-query';function n(r=500){return queryOptions({queryKey:["market","order-book",r],queryFn:()=>j("condenser_api.get_order_book",[r])})}export{n as a};//# sourceMappingURL=chunk-KYJBT2B7.js.map
+//# sourceMappingURL=chunk-KYJBT2B7.js.map

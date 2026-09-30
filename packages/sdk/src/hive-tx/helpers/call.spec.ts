@@ -164,12 +164,110 @@ describe("callRPCBroadcast — browser-style failover", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
 
+  // First call fails with `firstError`, every later one succeeds.
+  const failFirstThenOk = (firstError: () => Error) => {
+    let first = true;
+    return vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+      if (first) {
+        first = false;
+        throw firstError();
+      }
+      return jsonOk(readJsonRpcId(init), {});
+    });
+  };
+  const named = (name: string, message: string) => () => Object.assign(new Error(message), { name });
+  const until = (ms: number) => ({ failoverOnTimeoutUntil: Date.now() + ms });
+
+  it("fails over on a timeout while the caller's failover window is open", async () => {
+    for (const shape of [named("TimeoutError", "aborted due to timeout"), named("AbortError", "The operation was aborted")]) {
+      const fetchSpy = failFirstThenOk(shape);
+      await expect(
+        callRPCBroadcast("condenser_api.broadcast_transaction", [{}], undefined, undefined, until(60_000))
+      ).resolves.toEqual({});
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("does not fail over on a timeout once the window has closed, or without one", async () => {
+    let fetchSpy = failFirstThenOk(named("TimeoutError", "aborted due to timeout"));
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction", [{}], undefined, undefined, until(-1))
+    ).rejects.toThrow(/timeout/i);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    fetchSpy.mockRestore();
+
+    fetchSpy = failFirstThenOk(named("TimeoutError", "aborted due to timeout"));
+    await expect(callRPCBroadcast("condenser_api.broadcast_transaction", [{}])).rejects.toThrow(/timeout/i);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("after a timeout, stops at the window's end and reports the timeout, not a later node's error", async () => {
+    const timeout = named("TimeoutError", "aborted due to timeout");
+    let calls = 0;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      calls += 1;
+      if (calls === 1) throw timeout();
+      // A slow 504 that outlives the failover window.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      return new Response("<html>504</html>", { status: 504, headers: { "Content-Type": "text/html" } });
+    });
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction", [{}], undefined, undefined, until(30))
+    ).rejects.toThrow(/timeout/i);
+    // Node A timed out, node B answered 504 after the window closed, node C was never tried.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports the timeout when every node after it failed too", async () => {
+    let calls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      calls += 1;
+      if (calls === 1) throw named("TimeoutError", "aborted due to timeout")();
+      return new Response("<html>502</html>", { status: 502, headers: { "Content-Type": "text/html" } });
+    });
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction", [{}], undefined, undefined, until(60_000))
+    ).rejects.toThrow(/timeout/i);
+  });
+
+  it("reports the timeout when a later node fails in a way that cannot be retried", async () => {
+    let calls = 0;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      calls += 1;
+      throw (calls === 1 ? named("TimeoutError", "aborted due to timeout") : named("Error", "weird"))();
+    });
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction", [{}], undefined, undefined, until(60_000))
+    ).rejects.toThrow(/timeout/i);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops at once when the caller aborts, even inside the window", async () => {
+    const controller = new AbortController();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      controller.abort();
+      throw named("AbortError", "The operation was aborted")();
+    });
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction", [{}], undefined, controller.signal, until(60_000))
+    ).rejects.toThrow(/aborted/i);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("still throws other ambiguous errors at once inside the window", async () => {
+    const fetchSpy = failFirstThenOk(named("Error", "weird"));
+    await expect(
+      callRPCBroadcast("condenser_api.broadcast_transaction", [{}], undefined, undefined, until(60_000))
+    ).rejects.toThrow("weird");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   // Timeouts are the genuinely ambiguous case: the node may have received the
   // tx and started processing it. Failing over a timed-out broadcast risks a
   // second node accepting the dup and surfacing an RPCError that masks the
-  // original success. So timeouts must NOT trigger failover — only RPCErrors
-  // from the *next* attempt are ever the duplicate-rejection problem; if we
-  // never make a next attempt, we can never produce that false negative.
+  // original success. So by default timeouts do NOT fail over; only a caller
+  // that takes the duplicate answer as success opts in (Transaction.broadcast).
   it("does NOT fail over on an AbortError/TimeoutError (broadcast may have been processed)", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
       const err = new Error("The operation was aborted") as Error & { name: string };

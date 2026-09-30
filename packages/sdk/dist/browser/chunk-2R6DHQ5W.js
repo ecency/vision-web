@@ -1,0 +1,2 @@
+import {j}from'./chunk-RAWKN3XW.js';import {queryOptions}from'@tanstack/react-query';function o(){return queryOptions({queryKey:["market","feed-history"],queryFn:async()=>{try{return await j("condenser_api.get_feed_history",[])}catch(r){throw r}}})}export{o as a};//# sourceMappingURL=chunk-2R6DHQ5W.js.map
+//# sourceMappingURL=chunk-2R6DHQ5W.js.map

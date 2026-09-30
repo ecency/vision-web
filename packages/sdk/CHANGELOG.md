@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.21
+
+### Patch Changes
+
+- SDK: Transaction.broadcast fails over when a node times out (#1899)
+
 ## 2.4.20
 
 ### Patch Changes

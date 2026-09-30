@@ -1,0 +1,2 @@
+import {f}from'./chunk-VUPKGX6G.js';import {queryOptions}from'@tanstack/react-query';function o(e){return queryOptions({queryKey:["assets","hive-engine","balances",e],staleTime:6e4,refetchInterval:9e4,queryFn:async()=>f(e)})}export{o as a};//# sourceMappingURL=chunk-MRVBL6NV.js.map
+//# sourceMappingURL=chunk-MRVBL6NV.js.map
