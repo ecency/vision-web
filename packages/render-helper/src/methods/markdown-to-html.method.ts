@@ -200,7 +200,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
       // Reuse the markdown output already produced before the failing
       // DOMParser pass — `md.render(input)` is the expensive step and
       // re-running it costs ~100 ms per fallback hit on a 60 KB body.
-      const preSanitized = sanitizeHtml(output)
+      const preSanitized = sanitizeHtml(output, renderOptions)
 
       // Use htmlparser2 to parse malformed HTML leniently
       const dom = htmlparser2.parseDocument(preSanitized, {
@@ -222,7 +222,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
       // If DOM parsing fails, sanitize the Remarkable HTML output directly.
       // This skips the traverse() image proxy/link rewriting but preserves
       // readable HTML content instead of showing escaped tags.
-      output = sanitizeHtml(output || md.render(input))
+      output = sanitizeHtml(output || md.render(input), renderOptions)
     }
   }
 
@@ -246,5 +246,5 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     .replace('</body>', '')
     .trim()
 
-  return sanitizeHtml(output)
+  return sanitizeHtml(output, renderOptions)
 }

@@ -1,5 +1,7 @@
 import { proxifyImageSrc, buildSrcSet, getProxyBase, buildPictureSources } from "../proxify-image-src";
 import { trimTrailingSlash, decodeImageSrc } from "../helper";
+import { authorPixelSize } from "./image-dimensions";
+import type { RenderOptions } from "../types";
 
 /**
  * The `sizes` value the renderer applies to in-body post images (see `img()`
@@ -43,12 +45,18 @@ function wrapInPicture(el: HTMLElement, rawUrl: string): void {
   picture.appendChild(el);
 }
 
-export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCount?: number }, forApp = true): void {
+export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCount?: number }, forApp = true, renderOptions?: RenderOptions): void {
   const src = el.getAttribute("src") || "";
 
   // Normalize encoded characters (shared with getEntryImageRawUrl so the LCP
   // preload's proxy hash byte-matches this rendered <img>/<picture>).
   const decodedSrc = decodeImageSrc(src);
+
+  // Read before the strip. The default still removes width and height; the
+  // option puts a validated pair back so the browser can reserve the box.
+  const reserved = renderOptions?.preserveImageDimensions
+    ? authorPixelSize(el.getAttribute("width"), el.getAttribute("height"))
+    : null;
 
   // Sanitize dangerous attributes regardless of validity
   ["onerror", "dynsrc", "lowsrc", "width", "height"].forEach(attr => el.removeAttribute(attr));
@@ -70,6 +78,11 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCo
     el.removeAttribute("srcset");
     el.removeAttribute("sizes");
     return;
+  }
+
+  if (reserved) {
+    el.setAttribute("width", reserved.width);
+    el.setAttribute("height", reserved.height);
   }
 
   el.setAttribute("itemprop", "image");

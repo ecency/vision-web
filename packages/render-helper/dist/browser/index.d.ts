@@ -38,6 +38,19 @@ interface RenderOptions {
      * internal is the point of a self-hosted blog.
      */
     externalProfileBase?: string;
+    /**
+     * When true, author-supplied pixel `width` and `height` on a body `<img>`
+     * are kept. Browsers map that pair to an aspect ratio, so a consumer whose
+     * images are `max-width: 100%; height: auto` reserves the box before the
+     * file loads. The default strips both attributes, which is what every
+     * current consumer renders, so opting in is a layout change: the author's
+     * pixel size becomes the reserved box (still capped by `max-width`).
+     *
+     * Only a unitless pair inside a sane range is kept. Percentages, a single
+     * side, and `style` are not: `style` stays blocked outright, because it is
+     * the attribute an author would use to inject CSS.
+     */
+    preserveImageDimensions?: boolean;
 }
 
 /**
