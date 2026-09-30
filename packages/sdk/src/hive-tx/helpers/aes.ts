@@ -26,6 +26,9 @@ export const decrypt = (
     // without its leading zero bytes: bigi's toBuffer ignores the { size: 32 }
     // they pass. About 1 in 256 of their memos only open with that secret; the
     // memo's checksum still has to match, so this cannot accept a wrong key.
+    // Only a checksum mismatch means the secret may be the legacy one; a
+    // decryption error after a matching checksum is a damaged memo.
+    if (!(e instanceof Error) || e.message !== 'Invalid key') throw e
     const x = secp256k1.getSharedSecret(privateKey.key, publicKey.key).subarray(1)
     let zeros = 0
     while (zeros < x.length && x[zeros] === 0) zeros++
