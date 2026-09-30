@@ -68,10 +68,12 @@ export function portrait(kind: string, { width, height, pad = 6, spacing = 2.4, 
   const guess = Math.min((width - pad * 2) / (bx1 - bx0), (height - pad * 2) / (by1 - by0));
   const sp = Math.max(1, Math.round((spacing / guess) * 4) / 4);
   const parts = spec.parts();
-  const raw = hidden ? silhouette(parts, sp) : printed(parts, sp, spec.seed, !spec.building);
-  // then fit what was actually drawn (the box leaves out parts like the beetle's copies)
+  const full = printed(parts, sp, spec.seed, !spec.building);
+  const raw = hidden ? silhouette(parts, sp) : full;
+  // then fit what the full picture draws (the box leaves out parts like the beetle's
+  // copies), so a silhouette sits at the size its reveal will have
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const d of raw) {
+  for (const d of full) {
     x0 = Math.min(x0, d.x - d.r); y0 = Math.min(y0, d.y - d.r); x1 = Math.max(x1, d.x + d.r); y1 = Math.max(y1, d.y + d.r);
   }
   const s = Math.min((width - pad * 2) / (x1 - x0 || 1), (height - pad * 2) / (y1 - y0 || 1));

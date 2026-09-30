@@ -62,9 +62,11 @@ export function FieldGuideSheet({
   const preseason = calendar.season < 1;
   const weeks = pestCalendar(calendar);
   const date = (at: number) =>
+    // the day a pest arrives is a UTC day, like every day in the game
     new Date(at).toLocaleDateString(i18next.language || undefined, {
       month: "short",
-      day: "numeric"
+      day: "numeric",
+      timeZone: "UTC"
     });
 
   return (
@@ -102,7 +104,7 @@ export function FieldGuideSheet({
           </li>
         ))}
       </ul>
-      <p className="rs-muted">{t("guide.pests-note")}</p>
+      {weeks.some((w) => !w.revealed) && <p className="rs-muted">{t("guide.pests-note")}</p>}
 
       <h3>{t("guide.folk-title")}</h3>
       <ul className="rs-folk">
@@ -132,13 +134,13 @@ export function FieldGuideSheet({
           <ul>
             <li>
               {t("guide.ready-community")}{" "}
-              <Link href="/communities" onClick={onClose}>
+              <Link className="rs-guide-link" href="/communities" onClick={onClose}>
                 {t("alliance.browse")}
               </Link>
             </li>
             <li>
               {t("guide.ready-quests")}{" "}
-              <Link href="/perks" onClick={onClose}>
+              <Link className="rs-guide-link" href="/perks" onClick={onClose}>
                 {t("guide.ready-quests-link")}
               </Link>
             </li>

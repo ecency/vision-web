@@ -300,6 +300,8 @@ export function RaidsteadGame() {
     };
     const open = () => {
       opening.current = false;
+      // a guide opened from the countdown closes with it, or it would come back once the game loads
+      setSheet(null);
       setPreseason(null);
       setPhase("loading");
     };

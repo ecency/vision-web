@@ -656,6 +656,21 @@ describe("Raidstead page", () => {
       expect(api.calendar.mock.calls.slice(1).every(([fresh]) => fresh === true)).toBe(true);
     });
 
+    it("a guide open when the season opens closes with the countdown, and stays closed once the game loads", async () => {
+      box.stored = { account: "ann", token: "rs1_ann", expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+      api.calendar.mockResolvedValueOnce(soon(1200)).mockResolvedValue(state().calendar);
+      render(<RaidsteadGame />);
+      await tick(50);
+      fireEvent.click(within(region()!).getByRole("button", { name: "raidstead.guide.open" }));
+      expect(screen.queryByRole("dialog", { name: "raidstead.guide.title" })).not.toBeNull();
+
+      await tick(2100); // zero, and the server agrees: the game boots with the stored session
+      await waitFor(() => expect(api.state).toHaveBeenCalled());
+      await tick(50);
+      expect(region()).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "raidstead.guide.title" })).toBeNull();
+    });
+
     it("counts down to a new start when the season was moved later", async () => {
       api.calendar.mockResolvedValueOnce(soon(1200)).mockResolvedValueOnce(soon(2 * 86_400_000 + 3_600_000));
       render(<RaidsteadGame />);
