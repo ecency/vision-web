@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.20
+
+### Patch Changes
+
+- SDK: open memos encrypted by dhive/hive-js with a leading-zero shared secret (#1897)
+
 ## 2.4.19
 
 ### Patch Changes
