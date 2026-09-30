@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.22
+
+### Patch Changes
+
+- SDK: reference a block three behind head so lagging nodes accept transactions (#1901)
+
 ## 2.4.21
 
 ### Patch Changes
