@@ -61,7 +61,12 @@ import { getAiAssistErrorMessage } from "@/features/shared/ai-assist/ai-assist-e
 import { AiAssist } from "@/features/shared/ai-assist";
 import { EntryPageListen } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-listen";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { mockActiveUser, mockEntry, renderWithQueryClient } from "@/specs/test-utils";
+import {
+  createTestQueryClient,
+  mockActiveUser,
+  mockEntry,
+  renderWithQueryClient
+} from "@/specs/test-utils";
 
 const KEY_402 = "ai-assist.error-insufficient-points";
 const KEY_402_GENERIC = "ai-assist.error-insufficient-points-generic";
@@ -137,6 +142,12 @@ describe("getAiAssistErrorMessage", () => {
   it("maps the other statuses", () => {
     expect(getAiAssistErrorMessage(httpError(422))).toBe("ai-assist.error-content-policy");
     expect(getAiAssistErrorMessage(httpError(429))).toBe("ai-assist.error-rate-limit");
+    expect(getAiAssistErrorMessage(httpError(409, { error: "in_progress", retry_after: 5 }))).toBe(
+      "ai-assist.error-in-progress"
+    );
+    expect(getAiAssistErrorMessage(httpError(409, { error: "other" }))).toBe(
+      "ai-assist.error-generic"
+    );
     expect(getAiAssistErrorMessage(httpError(500))).toBe("ai-assist.error-generic");
     expect(getAiAssistErrorMessage(new Error("network"))).toBe("ai-assist.error-generic");
     expect(getAiAssistErrorMessage(undefined)).toBe("ai-assist.error-generic");
@@ -188,5 +199,29 @@ describe("AiAssist dialog 402", () => {
   it("does not invent a balance when the payload lacks one", async () => {
     // The old fallback rendered the action cost and a made-up "0" here.
     expect(await submitWith(httpError(402))).toBe(KEY_402_GENERIC);
+  });
+});
+
+describe("AiAssist dialog while an earlier assist is still running", () => {
+  it("keeps submit disabled after a close and reopen", async () => {
+    const queryClient = createTestQueryClient();
+    // The first dialog's request, still retrying after that dialog unmounted.
+    void queryClient
+      .getMutationCache()
+      .build(queryClient, {
+        mutationKey: ["ai", "assist"],
+        mutationFn: () => new Promise(() => {})
+      })
+      .execute(undefined);
+
+    renderWithQueryClient(<AiAssist initialText={"x".repeat(200)} />, { queryClient });
+    fireEvent.click(await screen.findByRole("button", { name: /^ai-assist\.action-summarize/ }));
+    // This instance's own isPending is false (useAiAssist is mocked), so the busy
+    // label can only come from the other in-flight assist.
+    const submit = await screen.findByRole<HTMLButtonElement>("button", {
+      name: /ai-assist\.submitting/
+    });
+    expect(submit.disabled).toBe(true);
+    expect(runAssist).not.toHaveBeenCalled();
   });
 });

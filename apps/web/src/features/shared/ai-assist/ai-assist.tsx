@@ -12,7 +12,7 @@ import {
   getPointsQueryOptions,
   useAiAssist,
 } from "@ecency/sdk";
-import { useQuery } from "@tanstack/react-query";
+import { useIsMutating, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import i18next from "i18next";
 import { useCallback, useMemo, useState } from "react";
@@ -88,7 +88,12 @@ export function AiAssist({ onApply, initialText = "" }: Props) {
     getAiAssistPriceQueryOptions(username, accessToken ?? "")
   );
 
-  const { mutateAsync: runAssist, isPending: isProcessing } = useAiAssist(username, accessToken);
+  // Any AI assist still running, not only this instance's: closing and reopening
+  // mounts a fresh hook with isPending false while the first request is still being
+  // processed, and a second submit then pays again under a new key.
+  const assistInFlight = useIsMutating({ mutationKey: ["ai", "assist"] }) > 0;
+  const { mutateAsync: runAssist, isPending } = useAiAssist(username, accessToken);
+  const isProcessing = isPending || assistInFlight;
 
   const maxInput = 10000;
 

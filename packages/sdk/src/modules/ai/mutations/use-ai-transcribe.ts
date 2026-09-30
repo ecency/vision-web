@@ -1,24 +1,7 @@
 import { CONFIG, getBoundFetch, getQueryClient, QueryKeys } from "@/modules/core";
 import { useMutation } from "@tanstack/react-query";
+import { makeIdempotencyKey } from "./make-idempotency-key";
 import type { AiTranscribeParams, AiTranscribeResponse } from "../types";
-
-// Matches the eepoints validator [A-Za-z0-9_-]{8,64}. Dedupes duplicate POSTs caused
-// by edge/proxy retries -- the same key returns the cached transcript without
-// re-charging or re-calling the vendor.
-function makeIdempotencyKey(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  const arr = new Uint8Array(16);
-  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
-    crypto.getRandomValues(arr);
-  } else {
-    for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256);
-  }
-  return Array.from(arr)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 /**
  * Transcribe an audio clip to text, charged per 30 seconds.
