@@ -1,2 +1,0 @@
-import {a}from'./chunk-SEACJS36.js';import {c}from'./chunk-PS3MSD25.js';import {queryOptions}from'@tanstack/react-query';function m(t,e,n){return queryOptions({queryKey:["games","status-check",n,t],enabled:!!t&&!!e,queryFn:async()=>{if(!t||!e)throw new Error("[SDK][Games] \u2013 missing auth");return await(await a()(c.privateApiHost+"/private-api/get-game",{method:"POST",body:JSON.stringify({game_type:n,code:e}),headers:{"Content-Type":"application/json"}})).json()}})}export{m as a};//# sourceMappingURL=chunk-KYO6AQZO.js.map
-//# sourceMappingURL=chunk-KYO6AQZO.js.map

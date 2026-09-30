@@ -1,2 +1,0 @@
-import {a as a$1}from'./chunk-WVIS6GI2.js';import {a as a$2}from'./chunk-3PGB6BXX.js';import {a}from'./chunk-OS3FCYZY.js';var f={};a(f,{getAccountTokenQueryOptions:()=>a$2,getAccountVideosQueryOptions:()=>a$1});export{f as a};//# sourceMappingURL=chunk-JR773DIW.js.map
-//# sourceMappingURL=chunk-JR773DIW.js.map

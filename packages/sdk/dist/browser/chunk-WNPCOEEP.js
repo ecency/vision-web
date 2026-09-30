@@ -1,2 +1,0 @@
-import {e}from'./chunk-B2ML2BDO.js';var o=e.operations,a=o,p=Object.entries(o).reduce((e,[t,i])=>(e[i]=t,e),{});export{a,p as b};//# sourceMappingURL=chunk-WNPCOEEP.js.map
-//# sourceMappingURL=chunk-WNPCOEEP.js.map
