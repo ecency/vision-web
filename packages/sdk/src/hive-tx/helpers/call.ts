@@ -1641,10 +1641,9 @@ export const callRPC = async <T = any>(
 // ── Public API: callRPC for broadcasts ──────────────────────────────────────
 
 /**
- * Broadcast-safe RPC call. Only retries on pre-connection errors where the
- * request definitively never reached the server (ECONNREFUSED, ENOTFOUND, etc.).
- * On timeouts, HTTP errors, or any ambiguous failure, throws immediately to
- * prevent double-broadcasting transactions.
+ * Broadcast-safe RPC call. Fails over only when re-sending the same signed
+ * transaction is safe (see isBroadcastSafeToRetry). A timeout throws at once,
+ * unless the caller passes `failoverOnTimeoutUntil`: see that option.
  *
  * Tries each node once (no wrap-around) since broadcast retries are dangerous.
  *
@@ -1657,11 +1656,14 @@ export const callRPCBroadcast = async <T = any>(
   signal?: AbortSignal,
   options: {
     /**
-     * Also fail over when a node times out. Only for callers that treat the next
-     * node's "Duplicate transaction" answer as success (Transaction.broadcast):
-     * the node that timed out may have accepted the transaction.
+     * Epoch ms until which a node's timeout fails over to the next node instead
+     * of throwing. Only for callers that treat the next node's "Duplicate
+     * transaction" answer as success (Transaction.broadcast), since the node
+     * that timed out may have accepted the transaction. Set it short of the
+     * transaction's expiration: a later node would answer "expired" for a
+     * transaction the slow node may have included, which reads as definitive.
      */
-    failoverOnTimeout?: boolean
+    failoverOnTimeoutUntil?: number
   } = {}
 ): Promise<T> => {
   if (!Array.isArray(config.nodes)) {
@@ -1710,7 +1712,9 @@ export const callRPCBroadcast = async <T = any>(
       // node would dedupe by trx_id is fine. RPCErrors (real blockchain
       // rejections) propagate immediately — see isBroadcastSafeToRetry.
       const timedOut = e?.name === 'TimeoutError' || e?.name === 'AbortError'
-      if (!isBroadcastSafeToRetry(e) && !(options.failoverOnTimeout && timedOut)) {
+      const timeoutFailover =
+        timedOut && options.failoverOnTimeoutUntil !== undefined && Date.now() < options.failoverOnTimeoutUntil
+      if (!isBroadcastSafeToRetry(e) && !timeoutFailover) {
         throw e
       }
     }

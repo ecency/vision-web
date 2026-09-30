@@ -191,9 +191,23 @@ describe("Transaction.broadcast", () => {
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     });
-    const t = new Transaction({ transaction: { ...baseTx, signatures: [] } });
+    const expiration = new Date(Date.now() + 60_000).toISOString().slice(0, -5);
+    const t = new Transaction({ transaction: { ...baseTx, expiration, signatures: [] } });
     t.sign(PrivateKey.fromSeed("broadcast-spec"));
     await expect(t.broadcast()).resolves.toMatchObject({ status: "unknown" });
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops failing over near the transaction's expiration and reports the timeout", async () => {
+    config.nodes = ["https://slow.test", "https://fast.test"];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+    });
+    // Expires in 3 s, inside the 5 s margin.
+    const expiration = new Date(Date.now() + 3_000).toISOString().slice(0, -5);
+    const t = new Transaction({ transaction: { ...baseTx, expiration, signatures: [] } });
+    t.sign(PrivateKey.fromSeed("broadcast-spec"));
+    await expect(t.broadcast()).rejects.toThrow(/timeout/i);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
