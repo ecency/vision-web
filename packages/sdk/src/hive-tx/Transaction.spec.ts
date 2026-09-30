@@ -260,7 +260,7 @@ describe("getTransactionReference", () => {
   it("is what a new Transaction is built on", async () => {
     answer({ previous: refId });
     const t = new Transaction();
-    await t.addOperation("vote", { voter: "alice", author: "bob", permlink: "a-post", weight: 10000 } as any);
+    await t.addOperation("vote", { voter: "alice", author: "bob", permlink: "a-post", weight: 10000 });
     expect(t.transaction?.ref_block_num).toBe((head - 3) & 0xffff);
     expect(t.transaction?.ref_block_prefix).toBe(prefixOf(refId));
     expect(t.maximumBlockSize).toBe(65536);
