@@ -1,0 +1,2 @@
+import {j}from'./chunk-RAWKN3XW.js';import {infiniteQueryOptions}from'@tanstack/react-query';function R(i,t=100){return infiniteQueryOptions({queryKey:["wallet","outgoing-rc-delegations",i,t],initialPageParam:null,queryFn:async({pageParam:e})=>{let r=(await j("rc_api.list_rc_direct_delegations",{start:[i,e??""],limit:t}).then(n=>n)).rc_direct_delegations||[];return e&&(r=r.filter(n=>n.to!==e)),r},getNextPageParam:e=>e.length===t?e[e.length-1].to:null})}export{R as a};//# sourceMappingURL=chunk-VKHEDCJP.js.map
+//# sourceMappingURL=chunk-VKHEDCJP.js.map

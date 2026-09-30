@@ -1,2 +1,0 @@
-import {a}from'./chunk-SEACJS36.js';import {c}from'./chunk-EBDU6LUZ.js';async function u(r){let e=await a()(c.privateApiHost+"/auth-api/hs-token-refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:r})});if(!e.ok){let t;try{t=await e.json();}catch{t=void 0;}let n=new Error(`Failed to refresh token: ${e.status}`);throw n.status=e.status,n.data=t,n}return await e.json()}export{u as a};//# sourceMappingURL=chunk-JWITWSKS.js.map
-//# sourceMappingURL=chunk-JWITWSKS.js.map

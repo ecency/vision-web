@@ -1,2 +1,0 @@
-import {a as a$1}from'./chunk-SLNWLFEI.js';import {a}from'./chunk-GBJWZRFD.js';function m(e){return !e||!a$1(e.author,e.permlink)?e:{...e,title:"",title_marked:null,body:a,body_marked:null,img_url:""}}function i(e){let t=false,u=e.results.map(r=>{let a=m(r);return a!==r&&(t=true),a});return t?{...e,results:u}:e}export{m as a,i as b};//# sourceMappingURL=chunk-LU5XPU5O.js.map
-//# sourceMappingURL=chunk-LU5XPU5O.js.map

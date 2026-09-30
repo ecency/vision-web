@@ -1,0 +1,2 @@
+import {g}from'./chunk-VUPKGX6G.js';import {queryOptions}from'@tanstack/react-query';function r(e){return queryOptions({queryKey:["assets","hive-engine","metadata-list",e],staleTime:6e4,refetchInterval:9e4,queryFn:async()=>g(e)})}export{r as a};//# sourceMappingURL=chunk-QYFR3G73.js.map
+//# sourceMappingURL=chunk-QYFR3G73.js.map

@@ -1,0 +1,2 @@
+import {c}from'./chunk-TOARVQT4.js';import {queryOptions}from'@tanstack/react-query';function s(e){return queryOptions({queryKey:["analytics","discover-leaderboard",e],queryFn:async({signal:a})=>{let r=await fetch(c.privateApiHost+`/private-api/leaderboard/${e}`,{signal:a});if(!r.ok)throw new Error(`Failed to fetch leaderboard: ${r.status}`);return r.json()}})}export{s as a};//# sourceMappingURL=chunk-FOFADC7A.js.map
+//# sourceMappingURL=chunk-FOFADC7A.js.map
