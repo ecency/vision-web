@@ -48,7 +48,6 @@ import {
   BoardSheet,
   BossSheet,
   BuildingSheet,
-  HelpSheet,
   HeroSheet,
   TownSheet,
   InfoSheet,
@@ -63,6 +62,7 @@ import {
   type MenuItem
 } from "./sheets";
 import { SeasonCountdown } from "./season-countdown";
+import { FieldGuideSheet } from "./field-guide";
 
 /// The Ecency login as every tab sees it (this tab's store copy only
 /// follows it on a reload, or through the storage listener below).
@@ -300,6 +300,8 @@ export function RaidsteadGame() {
     };
     const open = () => {
       opening.current = false;
+      // a guide opened from the countdown closes with it, or it would come back once the game loads
+      setSheet(null);
       setPreseason(null);
       setPhase("loading");
     };
@@ -773,6 +775,9 @@ export function RaidsteadGame() {
 
   const close = () => setSheet(null);
   let open: ReactElement | null = null;
+  // counting down there is no game state yet, only the public calendar
+  if (!gate && sheet?.kind === "help" && preseason)
+    open = <FieldGuideSheet calendar={preseason} onClose={close} />;
   if (!gate && sheet && data) {
     switch (sheet.kind) {
       case "boss":
@@ -849,7 +854,7 @@ export function RaidsteadGame() {
         );
         break;
       case "help":
-        open = <HelpSheet onClose={close} />;
+        open = <FieldGuideSheet calendar={data.calendar} onClose={close} />;
         break;
       case "report": {
         const report = buildReport(data, i18next.t);
@@ -900,7 +905,13 @@ export function RaidsteadGame() {
         </header>
 
         {preseason && (
-          <SeasonCountdown key={countRound} startsAt={preseason.startsAt} skew={skew} onOpen={openSeason} />
+          <SeasonCountdown
+            key={countRound}
+            startsAt={preseason.startsAt}
+            skew={skew}
+            onOpen={openSeason}
+            onGuide={() => setSheet({ kind: "help" })}
+          />
         )}
         {playing && view === "raid" && boss && (
           <section className="rs-card rs-plate" aria-label={t(`bosses.${boss.kind}.name`)}>

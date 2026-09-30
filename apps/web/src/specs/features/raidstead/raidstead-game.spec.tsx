@@ -629,6 +629,18 @@ describe("Raidstead page", () => {
       expect(api.state).not.toHaveBeenCalled();
     });
 
+    it("opens the field guide from the countdown, with no game state yet", async () => {
+      api.calendar.mockResolvedValue(soon(3 * 86_400_000));
+      render(<RaidsteadGame />);
+      await tick(50);
+      fireEvent.click(within(region()!).getByRole("button", { name: "raidstead.guide.open" }));
+      const guide = screen.getByRole("dialog", { name: "raidstead.guide.title" });
+      expect(within(guide).getByText("raidstead.guide.ready-title")).toBeTruthy();
+      expect(api.state).not.toHaveBeenCalled();
+      fireEvent.click(within(guide).getByRole("button", { name: "raidstead.guide.close-preseason" }));
+      expect(screen.queryByRole("dialog", { name: "raidstead.guide.title" })).toBeNull();
+    });
+
     it("opens the season when the countdown ends and the server agrees", async () => {
       api.calendar.mockResolvedValueOnce(soon(1200)).mockResolvedValueOnce(soon(-1)).mockResolvedValue(state().calendar);
       render(<RaidsteadGame />);
@@ -642,6 +654,21 @@ describe("Raidstead page", () => {
       expect(signInButton()).not.toBeNull();
       // the re-checks ask past any cached copy
       expect(api.calendar.mock.calls.slice(1).every(([fresh]) => fresh === true)).toBe(true);
+    });
+
+    it("a guide open when the season opens closes with the countdown, and stays closed once the game loads", async () => {
+      box.stored = { account: "ann", token: "rs1_ann", expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+      api.calendar.mockResolvedValueOnce(soon(1200)).mockResolvedValue(state().calendar);
+      render(<RaidsteadGame />);
+      await tick(50);
+      fireEvent.click(within(region()!).getByRole("button", { name: "raidstead.guide.open" }));
+      expect(screen.queryByRole("dialog", { name: "raidstead.guide.title" })).not.toBeNull();
+
+      await tick(2100); // zero, and the server agrees: the game boots with the stored session
+      await waitFor(() => expect(api.state).toHaveBeenCalled());
+      await tick(50);
+      expect(region()).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "raidstead.guide.title" })).toBeNull();
     });
 
     it("counts down to a new start when the season was moved later", async () => {

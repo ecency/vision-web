@@ -845,19 +845,6 @@ export function LeaderboardSheet({
   );
 }
 
-export function HelpSheet({ onClose }: { onClose: () => void }) {
-  return (
-    <Sheet onClose={onClose} label={t("help.title")}>
-      <h2>{t("help.title")}</h2>
-      <ul>
-        {[1, 2, 3, 4, 5, 6, 7].map((i) => (
-          <li key={i}>{t(`help.line-${i}`)}</li>
-        ))}
-      </ul>
-    </Sheet>
-  );
-}
-
 export function ReportSheet({
   report,
   onClose,

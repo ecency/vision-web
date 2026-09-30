@@ -204,6 +204,21 @@
     }
   }
 
+  // the way into the field guide while the season has not opened
+  .rs-guide {
+    margin-top: 2px;
+    padding: 8px 16px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--rs-violet);
+    box-shadow: 3px 3px 0 var(--rs-ink);
+
+    &:active {
+      transform: translate(2px, 2px);
+      box-shadow: 1px 1px 0 var(--rs-ink);
+    }
+  }
+
   .rs-clock {
     display: flex;
     gap: 8px;
@@ -579,6 +594,85 @@
     background: var(--rs-violet);
     color: #fff;
     box-shadow: 3px 3px 0 var(--rs-ink);
+  }
+
+  // field guide: steps and townsfolk as picture + text rows, the season's pests as tiles
+  .rs-steps,
+  .rs-folk {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    li {
+      display: grid;
+      grid-template-columns: 52px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+
+      > span {
+        display: grid;
+        gap: 2px;
+      }
+    }
+  }
+
+  .rs-steps-art,
+  .rs-folk-art {
+    width: 52px;
+    height: 56px;
+    border-radius: 10px;
+    border: 1.5px solid var(--rs-ink);
+  }
+
+  .rs-pests {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    li {
+      display: grid;
+      align-content: start;
+      gap: 3px;
+      padding: 8px;
+      border: 2px solid var(--rs-ink);
+      border-radius: 12px;
+      min-width: 0;
+    }
+
+    b {
+      font: 600 16px/1.15 var(--rs-head);
+    }
+
+    .rs-muted {
+      font-size: 13px;
+    }
+
+    .is-hidden b {
+      color: var(--rs-muted);
+    }
+  }
+
+  .rs-pests-art {
+    width: 100%;
+    height: 96px;
+    border-radius: 8px;
+  }
+
+  .rs-guide-link {
+    color: var(--rs-violet);
+    font-weight: 700;
+    text-decoration: underline;
+  }
+
+  .rs-pests-soon {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--rs-violet);
   }
 
   .rs-list {

@@ -5309,8 +5309,8 @@
       "report-desc": "Something to post about",
       "leaderboard": "Alliance leaderboard",
       "leaderboard-desc": "How alliances rank this season",
-      "help": "How to play",
-      "help-desc": "The rules in one minute",
+      "help": "Field guide",
+      "help-desc": "Rules, pests and townsfolk",
       "days": "Days change at 00:00 UTC."
     },
     "profile": {
@@ -5375,16 +5375,6 @@
       "kills": "{{n}} chased off",
       "empty": "No alliances yet this season."
     },
-    "help": {
-      "title": "How to play",
-      "line-1": "Your Hive community is your alliance for the season.",
-      "line-2": "Each week a pest arrives. Tap it or pick Ink, Signal or Forge: each attack costs 1 energy.",
-      "line-3": "Scout to find its weakness: the right type does double damage.",
-      "line-4": "At half health gnats shield it; clear them first. Some weeks a wasp joins.",
-      "line-5": "You get 5 energy a day, plus 1 for each Ecency quest you finish. A rally gives 5 more for 50 Points.",
-      "line-6": "Wins give your town materials. Build it up together between raids.",
-      "line-7": "Karma, badges and trophies stay with you. Everything else starts fresh each season."
-    },
     "report": {
       "title": "Raid report",
       "desc": "A draft to post in your community. You can edit everything before publishing.",
@@ -5424,6 +5414,36 @@
       "visit": "Visit the community"
     },
     "perk-card-title": "Raidstead",
-    "perk-card-description": "Raid the weekly pest with your community and build your town."
+    "perk-card-description": "Raid the weekly pest with your community and build your town.",
+    "guide": {
+      "title": "Field guide",
+      "open": "Field guide",
+      "steps-title": "How a week works",
+      "step-pick": "Pick your alliance",
+      "step-pick-desc": "One of the Hive communities you have joined. It is your team for the whole season.",
+      "step-scout": "Scout the pest",
+      "step-scout-desc": "Each pest is weak to Ink, Signal or Forge. The right type does double damage.",
+      "step-attack": "Attack together",
+      "step-attack-desc": "Every attack costs 1 energy. At half health gnats shield the pest: clear them first.",
+      "step-build": "Build your town",
+      "step-build-desc": "Wins bring materials. Build together, and each building helps the next raid.",
+      "pests-title": "Season {{n}} pests",
+      "pest-week": "Week {{week}} \u00b7 {{date}}",
+      "pest-hidden": "Shows itself on {{date}}",
+      "pests-note": "Every alliance faces the same pest each week. Each one shows what it looks like on the day it arrives.",
+      "folk-title": "The townsfolk",
+      "energy-title": "Energy and Points",
+      "energy": "You get 5 energy a day, plus 1 for each Ecency quest you finish. A rally gives 5 more for 50 Points.",
+      "chest": "Donate to your alliance's war chest: at 1,000 Points everyone in it gets +1 damage for a day. Every Point spent is burned.",
+      "keep-title": "What you keep",
+      "keep": "Karma, badges and trophies stay with you. Everything else starts fresh each season.",
+      "ready-title": "Get ready",
+      "ready-community": "Your alliance must be a community you have joined, so join yours before the season opens.",
+      "ready-quests": "Get used to the daily quests: each one you finish is 1 more energy in a raid.",
+      "ready-quests-link": "See quests",
+      "ready-friends": "Tell your community. More raiders means a faster win.",
+      "close": "Back to town",
+      "close-preseason": "See you there"
+    }
   }
 }
