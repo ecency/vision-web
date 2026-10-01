@@ -147,6 +147,9 @@ describe("getAiAssistErrorMessage", () => {
     expect(getAiAssistErrorMessage(httpError(409, { error: "in_progress", retry_after: 5 }))).toBe(
       "ai-assist.error-in-progress"
     );
+    expect(
+      getAiAssistErrorMessage(Object.assign(new Error("aborted"), { name: "AbortError" }))
+    ).toBe("ai-assist.error-in-progress");
     expect(getAiAssistErrorMessage(httpError(409, { error: "other" }))).toBe(
       "ai-assist.error-generic"
     );

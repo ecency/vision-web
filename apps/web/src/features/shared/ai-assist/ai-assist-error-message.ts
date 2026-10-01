@@ -23,7 +23,11 @@ export function getAiAssistErrorMessage(err: unknown): string {
   }
   // The SDK already waited and re-asked with the same key. The first request is
   // still running and may be charged, so a new click must not look like a free retry.
-  if (status === 409 && data?.error === "in_progress") {
+  // An attempt cut off at the SDK's deadline (AbortError) is just as unresolved.
+  if (
+    (status === 409 && data?.error === "in_progress") ||
+    (err as { name?: unknown } | null)?.name === "AbortError"
+  ) {
     return i18next.t("ai-assist.error-in-progress");
   }
   if (status === 422) {
