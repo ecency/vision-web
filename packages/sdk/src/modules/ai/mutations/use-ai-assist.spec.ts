@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { aiAssistRequest } from "./use-ai-assist";
+import { QueryClient } from "@tanstack/react-query";
+import { aiAssistRequest, invalidateAiAssistCaches } from "./use-ai-assist";
+import type { AiAssistResponse } from "../types";
+import { ConfigManager, QueryKeys } from "../../core";
 
 const OK = {
   action: "summarize",
@@ -9,7 +12,14 @@ const OK = {
   request_id: "1",
 };
 
-function jsonResponse(status: number, body: unknown) {
+interface FakeResponse {
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+  text: () => Promise<string>;
+}
+
+function jsonResponse(status: number, body: unknown): FakeResponse {
   const text = JSON.stringify(body);
   return {
     ok: status >= 200 && status < 300,
@@ -23,17 +33,19 @@ function sentKey(call: unknown[]): string {
   return JSON.parse((call[1] as RequestInit).body as string).idempotency_key;
 }
 
+// getBoundFetch() caches the bound fetch on first call, so every describe shares one
+// stable mock, reset per test (a fresh mock wouldn't be picked up).
+const fetchMock = vi.fn();
+
 describe("aiAssistRequest", () => {
-  // getBoundFetch() caches the bound fetch on first call, so reuse one stable mock
-  // and reset it per test (a fresh mock each test wouldn't be picked up).
-  const fetchMock = vi.fn();
   // A fake clock that only moves when the retry loop sleeps, so the deadline is exact.
   let clock = 0;
   const sleep = vi.fn(async (ms: number) => {
     clock += ms;
   });
   const deps = { sleep, now: () => clock };
-  const run = () => aiAssistRequest("alice", "code", { action: "summarize", text: "t" }, deps);
+  const run = (): Promise<AiAssistResponse> =>
+    aiAssistRequest("alice", "code", { action: "summarize", text: "t" }, deps);
 
   beforeEach(() => {
     fetchMock.mockReset();
@@ -130,15 +142,55 @@ describe("aiAssistRequest", () => {
     expect(err.status).toBe(502);
   });
 
-  it("retries a transport failure at most twice, and never an abort", async () => {
+  it("retries a transport failure at most twice", async () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
     await expect(run()).rejects.toThrow("Failed to fetch");
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
 
-    fetchMock.mockReset();
-    fetchMock.mockRejectedValue(Object.assign(new Error("aborted"), { name: "AbortError" }));
-    await expect(run()).rejects.toThrow("aborted");
+  it("retries with the same key when the body is lost after the headers", async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new TypeError("network error");
+        },
+        text: async () => "",
+      })
+      .mockResolvedValueOnce(jsonResponse(200, { ...OK, idempotent_replay: true }));
+
+    const result = await run();
+
+    expect(result.idempotent_replay).toBe(true);
+    expect(sentKey(fetchMock.mock.calls[1])).toBe(sentKey(fetchMock.mock.calls[0]));
+  });
+
+  it("does not send again when a late timer wakes past the deadline", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(409, { error: "in_progress", retry_after: 5 }));
+    // The tab slept through the whole budget during the first wait.
+    sleep.mockImplementationOnce(async () => {
+      clock += 200_000;
+    });
+
+    const err = await run().catch((e) => e);
+
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(err.status).toBe(409);
+  });
+
+  it("sends the caller's key when one is given", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, OK));
+
+    await aiAssistRequest(
+      "alice",
+      "code",
+      { action: "summarize", text: "t", idempotency_key: "kept-from-an-earlier-dialog" },
+      deps
+    );
+
+    expect(sentKey(fetchMock.mock.calls[0])).toBe("kept-from-an-earlier-dialog");
   });
 
   it.each([
@@ -168,5 +220,53 @@ describe("aiAssistRequest", () => {
     await run();
 
     expect(sentKey(fetchMock.mock.calls[0])).not.toBe(sentKey(fetchMock.mock.calls[1]));
+  });
+});
+
+describe("aiAssistRequest attempt timeout", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("aborts a stalled request at the overall deadline instead of hanging", async () => {
+    // Never answers; only the abort signal ends it.
+    fetchMock.mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }))
+          );
+        })
+    );
+
+    const outcome = aiAssistRequest("alice", "code", { action: "summarize", text: "t" }).catch(
+      (e) => e
+    );
+    await vi.advanceTimersByTimeAsync(150_000);
+    const err = await outcome;
+
+    expect(err.name).toBe("AbortError");
+    // The stall used the whole budget, so nothing is left to retry in.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("invalidateAiAssistCaches", () => {
+  it("invalidates the points balance and the assist free counts for the user", () => {
+    const client = new QueryClient();
+    const spy = vi.spyOn(client, "invalidateQueries");
+    ConfigManager.setQueryClient(client);
+
+    invalidateAiAssistCaches("alice");
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: QueryKeys.points._prefix("alice") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: QueryKeys.ai.assistPrices("alice") });
   });
 });

@@ -7,6 +7,11 @@ export interface AiAssistParams {
   action: string;
   text: string;
   code?: string;
+  // Pass the same key when asking again for a request whose result was never shown
+  // (e.g. a dialog closed mid-request): the backend replays it instead of charging a
+  // second time. If omitted a fresh key is generated per request. Same contract as
+  // GenerateImageParams.
+  idempotency_key?: string;
 }
 
 // Answers that leave the outcome unknown: the assist may have run, and been charged,
@@ -37,17 +42,22 @@ export interface AiAssistRequestOptions {
   now?: () => number;
 }
 
+type Attempt =
+  | { ok: true; data: AiAssistResponse }
+  | { ok: false; status: number; text: string };
+
 /**
- * POST one AI assist request. The idempotency key is generated once and reused on
- * every retry of an ambiguous answer: a transport failure or gateway error (at most
- * MAX_GATEWAY_RETRIES), or 409 in_progress (polled until DEADLINE_MS). Every other
- * failure, and the last ambiguous one, is thrown with `status` and the parsed body
- * as `data`.
+ * POST one AI assist request. The idempotency key is reused on every retry of an
+ * ambiguous outcome: 409 in_progress (polled until DEADLINE_MS), or a transport
+ * failure, a body that could not be read, or a gateway error (at most
+ * MAX_GATEWAY_RETRIES). Each attempt is aborted when the deadline expires, so the
+ * whole call is bounded by it. Every other failure, and the last ambiguous one, is
+ * thrown with `status` and the parsed body as `data` (transport errors as is).
  */
 export async function aiAssistRequest(
   username: string,
   code: string,
-  params: Pick<AiAssistParams, "action" | "text">,
+  params: Pick<AiAssistParams, "action" | "text" | "idempotency_key">,
   { sleep = wait, now = Date.now }: AiAssistRequestOptions = {}
 ): Promise<AiAssistResponse> {
   const fetchApi = getBoundFetch();
@@ -56,7 +66,7 @@ export async function aiAssistRequest(
     us: username,
     action: params.action,
     text: params.text,
-    idempotency_key: makeIdempotencyKey(),
+    idempotency_key: params.idempotency_key || makeIdempotencyKey(),
   });
   const deadline = now() + DEADLINE_MS;
   let gatewayRetries = 0;
@@ -64,21 +74,40 @@ export async function aiAssistRequest(
   const retryWithin = async (delayMs: number): Promise<boolean> => {
     if (now() + delayMs >= deadline) return false;
     await sleep(delayMs);
-    return true;
+    // A background tab's timers can fire late; never send past the deadline.
+    return now() < deadline;
   };
 
-  for (;;) {
-    let response: Response;
+  // Reading the body is part of the attempt: a connection lost after the headers
+  // leaves the outcome as unknown as one lost before them.
+  const attempt = async (): Promise<Attempt> => {
+    const controller = typeof AbortController === "function" ? new AbortController() : undefined;
+    const timer = controller
+      ? setTimeout(() => controller.abort(), Math.max(0, deadline - now()))
+      : undefined;
     try {
-      response = await fetchApi(CONFIG.privateApiHost + "/private-api/ai-assist", {
+      const response = await fetchApi(CONFIG.privateApiHost + "/private-api/ai-assist", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body,
+        signal: controller?.signal,
       });
+      if (response.ok) {
+        return { ok: true, data: (await response.json()) as AiAssistResponse };
+      }
+      return { ok: false, status: response.status, text: await response.text() };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  for (;;) {
+    let result: Attempt;
+    try {
+      result = await attempt();
     } catch (e) {
-      if ((e as { name?: string } | null)?.name === "AbortError") throw e;
       if (gatewayRetries < MAX_GATEWAY_RETRIES && (await retryWithin(DEFAULT_RETRY_DELAY_MS))) {
         gatewayRetries++;
         continue;
@@ -86,22 +115,22 @@ export async function aiAssistRequest(
       throw e;
     }
 
-    if (response.ok) {
-      return (await response.json()) as AiAssistResponse;
+    if (result.ok) {
+      return result.data;
     }
 
-    const text = await response.text();
-    let parsed: Record<string, unknown> = {};
+    const { status, text } = result;
+    let data: Record<string, unknown> = {};
     try {
-      parsed = JSON.parse(text);
+      data = JSON.parse(text);
     } catch {
       // not JSON
     }
 
-    if (response.status === 409 && parsed.error === "in_progress") {
-      if (await retryWithin(retryDelayMs(parsed.retry_after))) continue;
+    if (status === 409 && data.error === "in_progress") {
+      if (await retryWithin(retryDelayMs(data.retry_after))) continue;
     } else if (
-      GATEWAY_STATUSES.has(response.status) &&
+      GATEWAY_STATUSES.has(status) &&
       gatewayRetries < MAX_GATEWAY_RETRIES &&
       (await retryWithin(DEFAULT_RETRY_DELAY_MS))
     ) {
@@ -109,13 +138,22 @@ export async function aiAssistRequest(
       continue;
     }
 
-    const err = new Error(
-      `[SDK][AI][Assist] – failed with status ${response.status}${text ? `: ${text}` : ""}`
+    throw Object.assign(
+      new Error(`[SDK][AI][Assist] – failed with status ${status}${text ? `: ${text}` : ""}`),
+      { status, data }
     );
-    (err as any).status = response.status;
-    (err as any).data = parsed;
-    throw err;
   }
+}
+
+// What an assist touches: the Points balance and the per-action free counts. Run on
+// failure too, since a request that failed after retries may still have been charged.
+export function invalidateAiAssistCaches(username: string) {
+  getQueryClient().invalidateQueries({
+    queryKey: QueryKeys.points._prefix(username),
+  });
+  getQueryClient().invalidateQueries({
+    queryKey: QueryKeys.ai.assistPrices(username),
+  });
 }
 
 export function useAiAssist(
@@ -123,7 +161,7 @@ export function useAiAssist(
   accessToken: string | undefined,
 ) {
   return useMutation({
-    mutationKey: ["ai", "assist"],
+    mutationKey: QueryKeys.ai.assist(username),
     mutationFn: async (params: AiAssistParams): Promise<AiAssistResponse> => {
       if (!username) {
         throw new Error(
@@ -139,31 +177,11 @@ export function useAiAssist(
 
       return aiAssistRequest(username, params.code ?? accessToken, params);
     },
-    onSuccess: (data) => {
-      if (username) {
-        // Invalidate points cache if cost was charged
-        if (data.cost > 0) {
-          getQueryClient().invalidateQueries({
-            queryKey: QueryKeys.points._prefix(username),
-          });
-        }
-        // Invalidate assist prices to refresh free_remaining counts
-        getQueryClient().invalidateQueries({
-          queryKey: QueryKeys.ai.assistPrices(username),
-        });
-      }
+    onSuccess: () => {
+      if (username) invalidateAiAssistCaches(username);
     },
-    // A failure after retries may still have been charged (a lost response, or a
-    // request still in progress), so refresh the balance and free counts anyway.
     onError: () => {
-      if (username) {
-        getQueryClient().invalidateQueries({
-          queryKey: QueryKeys.points._prefix(username),
-        });
-        getQueryClient().invalidateQueries({
-          queryKey: QueryKeys.ai.assistPrices(username),
-        });
-      }
+      if (username) invalidateAiAssistCaches(username);
     },
   });
 }

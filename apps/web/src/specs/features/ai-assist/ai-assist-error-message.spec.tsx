@@ -2,6 +2,8 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import i18next from "i18next";
+import { QueryKeys } from "@ecency/sdk";
+import type { QueryClient } from "@tanstack/react-query";
 import enUS from "@/features/i18n/locales/en-US.json";
 
 /*
@@ -202,20 +204,38 @@ describe("AiAssist dialog 402", () => {
   });
 });
 
+function startHangingAssist(queryClient: QueryClient, username: string) {
+  void queryClient
+    .getMutationCache()
+    .build(queryClient, {
+      mutationKey: QueryKeys.ai.assist(username),
+      mutationFn: () => new Promise(() => {})
+    })
+    .execute(undefined);
+}
+
+async function openAndSelectSummarize(queryClient = createTestQueryClient()) {
+  const view = renderWithQueryClient(<AiAssist initialText={"x".repeat(200)} />, { queryClient });
+  fireEvent.click(await screen.findByRole("button", { name: /^ai-assist\.action-summarize/ }));
+  return view;
+}
+
+async function submitWhenReady() {
+  await waitFor(() =>
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: /ai-assist\.submit-button/ }).disabled
+    ).toBe(false)
+  );
+  fireEvent.click(screen.getByRole("button", { name: /ai-assist\.submit-button/ }));
+}
+
 describe("AiAssist dialog while an earlier assist is still running", () => {
   it("keeps submit disabled after a close and reopen", async () => {
     const queryClient = createTestQueryClient();
     // The first dialog's request, still retrying after that dialog unmounted.
-    void queryClient
-      .getMutationCache()
-      .build(queryClient, {
-        mutationKey: ["ai", "assist"],
-        mutationFn: () => new Promise(() => {})
-      })
-      .execute(undefined);
+    startHangingAssist(queryClient, "alice");
 
-    renderWithQueryClient(<AiAssist initialText={"x".repeat(200)} />, { queryClient });
-    fireEvent.click(await screen.findByRole("button", { name: /^ai-assist\.action-summarize/ }));
+    await openAndSelectSummarize(queryClient);
     // This instance's own isPending is false (useAiAssist is mocked), so the busy
     // label can only come from the other in-flight assist.
     const submit = await screen.findByRole<HTMLButtonElement>("button", {
@@ -223,5 +243,54 @@ describe("AiAssist dialog while an earlier assist is still running", () => {
     });
     expect(submit.disabled).toBe(true);
     expect(runAssist).not.toHaveBeenCalled();
+  });
+
+  it("is not blocked by another account's assist", async () => {
+    const queryClient = createTestQueryClient();
+    startHangingAssist(queryClient, "bob");
+
+    await openAndSelectSummarize(queryClient);
+    await submitWhenReady();
+
+    await waitFor(() => expect(runAssist).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("AiAssist dialog idempotency key", () => {
+  const OUTPUT = { action: "summarize", output: "short", cost: 5, is_free: false, request_id: "1" };
+  const sentKey = (call: number) => runAssist.mock.calls[call][0].idempotency_key;
+
+  it("reuses the key when the dialog closed before the result arrived", async () => {
+    let finish: (v: typeof OUTPUT) => void = () => {};
+    runAssist.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+    const first = await openAndSelectSummarize();
+    await submitWhenReady();
+    await waitFor(() => expect(runAssist).toHaveBeenCalledTimes(1));
+
+    first.unmount();
+    finish(OUTPUT);
+    await Promise.resolve();
+
+    runAssist.mockResolvedValueOnce({ ...OUTPUT, cost: 0, idempotent_replay: true });
+    await openAndSelectSummarize();
+    await submitWhenReady();
+    await waitFor(() => expect(runAssist).toHaveBeenCalledTimes(2));
+
+    expect(sentKey(1)).toBe(sentKey(0));
+  });
+
+  it("uses a new key once the result was shown", async () => {
+    runAssist.mockResolvedValue(OUTPUT);
+    await openAndSelectSummarize();
+    await submitWhenReady();
+    await waitFor(() => expect(runAssist).toHaveBeenCalledTimes(1));
+    await screen.findByText("short");
+
+    fireEvent.click(screen.getByRole("button", { name: /ai-assist\.try-another/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^ai-assist\.action-summarize/ }));
+    await submitWhenReady();
+    await waitFor(() => expect(runAssist).toHaveBeenCalledTimes(2));
+
+    expect(sentKey(1)).not.toBe(sentKey(0));
   });
 });
