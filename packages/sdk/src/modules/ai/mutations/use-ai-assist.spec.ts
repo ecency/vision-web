@@ -167,6 +167,23 @@ describe("aiAssistRequest", () => {
     expect(sentKey(fetchMock.mock.calls[1])).toBe(sentKey(fetchMock.mock.calls[0]));
   });
 
+  it("keeps a definite status when its error body cannot be read", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 402,
+      json: async () => ({}),
+      text: async () => {
+        throw new TypeError("network error");
+      },
+    });
+
+    const err = await run().catch((e) => e);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(err.status).toBe(402);
+    expect(err.data).toEqual({});
+  });
+
   it("does not send again when a late timer wakes past the deadline", async () => {
     fetchMock.mockResolvedValue(jsonResponse(409, { error: "in_progress", retry_after: 5 }));
     // The tab slept through the whole budget during the first wait.

@@ -97,7 +97,14 @@ export async function aiAssistRequest(
       if (response.ok) {
         return { ok: true, data: (await response.json()) as AiAssistResponse };
       }
-      return { ok: false, status: response.status, text: await response.text() };
+      // A definite status stays definite even if its error body cannot be read.
+      let text = "";
+      try {
+        text = await response.text();
+      } catch {
+        // body unavailable
+      }
+      return { ok: false, status: response.status, text };
     } finally {
       clearTimeout(timer);
     }
