@@ -2699,6 +2699,114 @@
         "hp": 2801871
       },
       "hiveUsd": 0.0579
+    },
+    {
+      "label": "q3-2026",
+      "display": "Q3 2026",
+      "window": {
+        "start": "2026-07-01",
+        "end": "2026-10-01"
+      },
+      "rewards": {
+        "hbd": 0,
+        "hive": 849457,
+        "hp": 1025160,
+        "usd": 87920,
+        "events": 139454,
+        "authors": 4578
+      },
+      "perAuthorHp": {
+        "median": 22.166,
+        "p90": 608.052,
+        "p99": 2655.502,
+        "max": 22310.809
+      },
+      "content": {
+        "posts": 119166,
+        "postingAuthors": 5363,
+        "comments": 670789,
+        "commentingAuthors": 5218
+      },
+      "topCommunities": [
+        {
+          "id": "hive-193552",
+          "title": "Actifit",
+          "posts": 11950,
+          "authors": 359
+        },
+        {
+          "id": "hive-125125",
+          "title": "Town Square",
+          "posts": 1829,
+          "authors": 318
+        },
+        {
+          "id": "hive-163772",
+          "title": "Worldmappin",
+          "posts": 1574,
+          "authors": 271
+        },
+        {
+          "id": "hive-194913",
+          "title": "Photography Lovers",
+          "posts": 1395,
+          "authors": 269
+        },
+        {
+          "id": "hive-167922",
+          "title": "LeoFinance",
+          "posts": 2487,
+          "authors": 260
+        },
+        {
+          "id": "hive-148441",
+          "title": "GEMS",
+          "posts": 1608,
+          "authors": 260
+        },
+        {
+          "id": "hive-110713",
+          "title": "Scrobble.life",
+          "posts": 2529,
+          "authors": 249
+        },
+        {
+          "id": "hive-124452",
+          "title": "Ladies of Hive",
+          "posts": 1216,
+          "authors": 215
+        },
+        {
+          "id": "hive-147010",
+          "title": "Liketu",
+          "posts": 1942,
+          "authors": 210
+        },
+        {
+          "id": "hive-181335",
+          "title": "Threespeak",
+          "posts": 952,
+          "authors": 202
+        },
+        {
+          "id": "hive-140217",
+          "title": "Hive Gaming",
+          "posts": 1727,
+          "authors": 188
+        },
+        {
+          "id": "hive-161155",
+          "title": "Freewriters",
+          "posts": 1400,
+          "authors": 186
+        }
+      ],
+      "curation": {
+        "events": 9800294,
+        "curators": 11129,
+        "hp": 3103773
+      },
+      "hiveUsd": 0.0469
     }
   ],
   "generated": null
