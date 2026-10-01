@@ -5,17 +5,19 @@ import { withFeatureFlag } from "@/core/react-query";
 import { error, success } from "@/features/shared";
 import { PointsTopupCta } from "@/features/shared/points-topup-cta";
 import { getAiAssistErrorMessage } from "./ai-assist-error-message";
+import { assistRequestKey, forgetAssistRequestKey } from "./assist-request-key";
 import { Button, FormControl } from "@/features/ui";
 import { getAccessToken, ensureValidToken } from "@/utils";
 import {
   getAiAssistPriceQueryOptions,
   getPointsQueryOptions,
+  QueryKeys,
   useAiAssist,
 } from "@ecency/sdk";
-import { useQuery } from "@tanstack/react-query";
+import { useIsMutating, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import i18next from "i18next";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const ACTIONS = ["improve", "suggest_tags", "generate_title", "summarize", "check_grammar"] as const;
 export type AiAssistAction = (typeof ACTIONS)[number];
@@ -88,7 +90,19 @@ export function AiAssist({ onApply, initialText = "" }: Props) {
     getAiAssistPriceQueryOptions(username, accessToken ?? "")
   );
 
-  const { mutateAsync: runAssist, isPending: isProcessing } = useAiAssist(username, accessToken);
+  // Any AI assist of this user still running, not only this instance's: closing and
+  // reopening mounts a fresh hook with isPending false while the first request is
+  // still being processed.
+  const assistInFlight = useIsMutating({ mutationKey: QueryKeys.ai.assist(username) }) > 0;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const { mutateAsync: runAssist, isPending } = useAiAssist(username, accessToken);
+  const isProcessing = isPending || assistInFlight;
 
   const maxInput = 10000;
 
@@ -138,11 +152,17 @@ export function AiAssist({ onApply, initialText = "" }: Props) {
         return;
       }
 
+      const input = text.trim().slice(0, maxInput);
       const res = await runAssist({
         action: selectedAction,
-        text: text.trim().slice(0, maxInput),
+        text: input,
         code: token,
+        idempotency_key: assistRequestKey(username!, selectedAction, input),
       });
+      // Closed before the result arrived: nobody saw it, so keep the key and let the
+      // same request, asked again, replay it for free.
+      if (!mountedRef.current) return;
+      forgetAssistRequestKey(username!, selectedAction, input);
 
       const resAction = ACTIONS.includes(res.action as AiAssistAction)
         ? (res.action as AiAssistAction)

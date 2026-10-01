@@ -11,7 +11,7 @@ import i18next from "i18next";
 export function getAiAssistErrorMessage(err: unknown): string {
   const { status, data } = (err ?? {}) as {
     status?: number;
-    data?: { required?: unknown; available?: unknown };
+    data?: { required?: unknown; available?: unknown; error?: unknown };
   };
 
   if (status === 402) {
@@ -20,6 +20,15 @@ export function getAiAssistErrorMessage(err: unknown): string {
     return typeof required === "number" && typeof available === "number"
       ? i18next.t("ai-assist.error-insufficient-points", { required, available })
       : i18next.t("ai-assist.error-insufficient-points-generic");
+  }
+  // The SDK already waited and re-asked with the same key. The first request is
+  // still running and may be charged, so a new click must not look like a free retry.
+  // An attempt cut off at the SDK's deadline (AbortError) is just as unresolved.
+  if (
+    (status === 409 && data?.error === "in_progress") ||
+    (err as { name?: unknown } | null)?.name === "AbortError"
+  ) {
+    return i18next.t("ai-assist.error-in-progress");
   }
   if (status === 422) {
     return i18next.t("ai-assist.error-content-policy");

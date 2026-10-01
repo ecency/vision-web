@@ -2,6 +2,8 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import i18next from "i18next";
+import { QueryKeys } from "@ecency/sdk";
+import type { QueryClient } from "@tanstack/react-query";
 import enUS from "@/features/i18n/locales/en-US.json";
 
 /*
@@ -61,7 +63,12 @@ import { getAiAssistErrorMessage } from "@/features/shared/ai-assist/ai-assist-e
 import { AiAssist } from "@/features/shared/ai-assist";
 import { EntryPageListen } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-listen";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { mockActiveUser, mockEntry, renderWithQueryClient } from "@/specs/test-utils";
+import {
+  createTestQueryClient,
+  mockActiveUser,
+  mockEntry,
+  renderWithQueryClient
+} from "@/specs/test-utils";
 
 const KEY_402 = "ai-assist.error-insufficient-points";
 const KEY_402_GENERIC = "ai-assist.error-insufficient-points-generic";
@@ -137,6 +144,15 @@ describe("getAiAssistErrorMessage", () => {
   it("maps the other statuses", () => {
     expect(getAiAssistErrorMessage(httpError(422))).toBe("ai-assist.error-content-policy");
     expect(getAiAssistErrorMessage(httpError(429))).toBe("ai-assist.error-rate-limit");
+    expect(getAiAssistErrorMessage(httpError(409, { error: "in_progress", retry_after: 5 }))).toBe(
+      "ai-assist.error-in-progress"
+    );
+    expect(
+      getAiAssistErrorMessage(Object.assign(new Error("aborted"), { name: "AbortError" }))
+    ).toBe("ai-assist.error-in-progress");
+    expect(getAiAssistErrorMessage(httpError(409, { error: "other" }))).toBe(
+      "ai-assist.error-generic"
+    );
     expect(getAiAssistErrorMessage(httpError(500))).toBe("ai-assist.error-generic");
     expect(getAiAssistErrorMessage(new Error("network"))).toBe("ai-assist.error-generic");
     expect(getAiAssistErrorMessage(undefined)).toBe("ai-assist.error-generic");
@@ -188,5 +204,96 @@ describe("AiAssist dialog 402", () => {
   it("does not invent a balance when the payload lacks one", async () => {
     // The old fallback rendered the action cost and a made-up "0" here.
     expect(await submitWith(httpError(402))).toBe(KEY_402_GENERIC);
+  });
+});
+
+function startHangingAssist(queryClient: QueryClient, username: string) {
+  void queryClient
+    .getMutationCache()
+    .build(queryClient, {
+      mutationKey: QueryKeys.ai.assist(username),
+      mutationFn: () => new Promise(() => {})
+    })
+    .execute(undefined);
+}
+
+async function openAndSelectSummarize(queryClient = createTestQueryClient()) {
+  const view = renderWithQueryClient(<AiAssist initialText={"x".repeat(200)} />, { queryClient });
+  fireEvent.click(await screen.findByRole("button", { name: /^ai-assist\.action-summarize/ }));
+  return view;
+}
+
+async function submitWhenReady() {
+  await waitFor(() =>
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: /ai-assist\.submit-button/ }).disabled
+    ).toBe(false)
+  );
+  fireEvent.click(screen.getByRole("button", { name: /ai-assist\.submit-button/ }));
+}
+
+describe("AiAssist dialog while an earlier assist is still running", () => {
+  it("keeps submit disabled after a close and reopen", async () => {
+    const queryClient = createTestQueryClient();
+    // The first dialog's request, still retrying after that dialog unmounted.
+    startHangingAssist(queryClient, "alice");
+
+    await openAndSelectSummarize(queryClient);
+    // This instance's own isPending is false (useAiAssist is mocked), so the busy
+    // label can only come from the other in-flight assist.
+    const submit = await screen.findByRole<HTMLButtonElement>("button", {
+      name: /ai-assist\.submitting/
+    });
+    expect(submit.disabled).toBe(true);
+    expect(runAssist).not.toHaveBeenCalled();
+  });
+
+  it("is not blocked by another account's assist", async () => {
+    const queryClient = createTestQueryClient();
+    startHangingAssist(queryClient, "bob");
+
+    await openAndSelectSummarize(queryClient);
+    await submitWhenReady();
+
+    await waitFor(() => expect(runAssist).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("AiAssist dialog idempotency key", () => {
+  const OUTPUT = { action: "summarize", output: "short", cost: 5, is_free: false, request_id: "1" };
+  const sentKey = (call: number) => runAssist.mock.calls[call][0].idempotency_key;
+
+  it("reuses the key when the dialog closed before the result arrived", async () => {
+    let finish: (v: typeof OUTPUT) => void = () => {};
+    runAssist.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+    const first = await openAndSelectSummarize();
+    await submitWhenReady();
+    await waitFor(() => expect(runAssist).toHaveBeenCalledTimes(1));
+
+    first.unmount();
+    finish(OUTPUT);
+    await Promise.resolve();
+
+    runAssist.mockResolvedValueOnce({ ...OUTPUT, cost: 0, idempotent_replay: true });
+    await openAndSelectSummarize();
+    await submitWhenReady();
+    await waitFor(() => expect(runAssist).toHaveBeenCalledTimes(2));
+
+    expect(sentKey(1)).toBe(sentKey(0));
+  });
+
+  it("uses a new key once the result was shown", async () => {
+    runAssist.mockResolvedValue(OUTPUT);
+    await openAndSelectSummarize();
+    await submitWhenReady();
+    await waitFor(() => expect(runAssist).toHaveBeenCalledTimes(1));
+    await screen.findByText("short");
+
+    fireEvent.click(screen.getByRole("button", { name: /ai-assist\.try-another/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^ai-assist\.action-summarize/ }));
+    await submitWhenReady();
+    await waitFor(() => expect(runAssist).toHaveBeenCalledTimes(2));
+
+    expect(sentKey(1)).not.toBe(sentKey(0));
   });
 });

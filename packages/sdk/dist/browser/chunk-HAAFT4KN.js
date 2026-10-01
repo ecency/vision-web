@@ -1,2 +1,0 @@
-import {a}from'./chunk-HEILHNSR.js';import {j}from'./chunk-RAWKN3XW.js';import {queryOptions}from'@tanstack/react-query';function l(t,e,o){return queryOptions({queryKey:a.posts.userPostVote(t,e,o),queryFn:async()=>(await j("database_api.list_votes",{start:[t,e,o],limit:1,order:"by_voter_comment"}))?.votes?.[0]||null,enabled:!!t&&!!e&&!!o})}export{l as a};//# sourceMappingURL=chunk-HAAFT4KN.js.map
-//# sourceMappingURL=chunk-HAAFT4KN.js.map

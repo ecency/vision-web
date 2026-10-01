@@ -1,0 +1,2 @@
+import {a}from'./chunk-RZVMZQO7.js';import {b}from'./chunk-J2HM6MWA.js';import {a as a$1}from'./chunk-WTHEQ3M5.js';function p(e,t,a$2){return b(["witnesses","vote"],e,({witness:o,approve:n})=>[a(e,o,n)],async()=>{try{t?.adapter?.invalidateQueries&&await t.adapter.invalidateQueries([a$1.accounts.full(e),a$1.witnesses.votes(e)]);}catch(o){console.warn("[useWitnessVote] Post-broadcast side-effect failed:",o);}},t,"active",{broadcastMode:a$2})}export{p as a};//# sourceMappingURL=chunk-C6K4OJC4.js.map
+//# sourceMappingURL=chunk-C6K4OJC4.js.map

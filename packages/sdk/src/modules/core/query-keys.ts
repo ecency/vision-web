@@ -694,6 +694,9 @@ export const QueryKeys = {
   // ===========================================================================
   ai: {
     prices: () => ["ai", "prices"] as const,
+    // Mutation key of an AI assist request, per user. The web dialog watches it to stay
+    // busy while that user's earlier request is still running.
+    assist: (username?: string) => ["ai", "assist", username] as const,
     assistPrices: (username?: string) => ["ai", "assist-prices", username] as const,
     transcribePrice: (username?: string) => ["ai", "transcribe-price", username] as const,
     images: (username?: string) => ["ai", "images", username] as const,

@@ -1,2 +1,0 @@
-import {a}from'./chunk-HEILHNSR.js';import {j}from'./chunk-RAWKN3XW.js';import {queryOptions}from'@tanstack/react-query';function m(e,o){return queryOptions({queryKey:a.communities.context(e,o),enabled:!!e&&!!o,queryFn:async()=>{let t=await j("bridge.get_community_context",{account:e,name:o});return {role:t?.role??"guest",subscribed:t?.subscribed??false}}})}export{m as a};//# sourceMappingURL=chunk-54IRWFMB.js.map
-//# sourceMappingURL=chunk-54IRWFMB.js.map

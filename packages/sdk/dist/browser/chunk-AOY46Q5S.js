@@ -1,2 +1,0 @@
-import {c}from'./chunk-4COFIDSX.js';import {b}from'./chunk-J2HM6MWA.js';import {a}from'./chunk-HEILHNSR.js';function u(e,r,p){return b(["ecency","promote"],e,({author:i,permlink:t,duration:d})=>[c(e,i,t,d)],async(i,t)=>{r?.adapter?.invalidateQueries&&await r.adapter.invalidateQueries([[...a.posts._promotedPrefix],[...a.points._prefix(e)],a.posts.entry(`/@${t.author}/${t.permlink}`)]);},r,"active",{broadcastMode:p})}export{u as a};//# sourceMappingURL=chunk-AOY46Q5S.js.map
-//# sourceMappingURL=chunk-AOY46Q5S.js.map

@@ -1,5 +1,6 @@
 import { CONFIG, getBoundFetch, getQueryClient, QueryKeys } from "@/modules/core";
 import { useMutation } from "@tanstack/react-query";
+import { makeIdempotencyKey } from "./make-idempotency-key";
 import type { AiGenerationResponse } from "../types";
 
 export interface GenerateImageParams {
@@ -9,22 +10,6 @@ export interface GenerateImageParams {
   // Pass a stable key to make a retry recover the same paid generation. If omitted a
   // fresh key is generated per call (only dedupes edge/proxy retries, not user retries).
   idempotency_key?: string;
-}
-
-// Generates a key matching the eepoints validator [A-Za-z0-9_-]{8,64}.
-function makeIdempotencyKey(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  const arr = new Uint8Array(16);
-  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
-    crypto.getRandomValues(arr);
-  } else {
-    for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256);
-  }
-  return Array.from(arr)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 // What a completed generation invalidates: the Points balance (it changed) and the

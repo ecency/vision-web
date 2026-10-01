@@ -1,0 +1,2 @@
+function r(){if(typeof crypto<"u"&&typeof crypto.randomUUID=="function")return crypto.randomUUID();let o=new Uint8Array(16);if(typeof crypto<"u"&&typeof crypto.getRandomValues=="function")crypto.getRandomValues(o);else for(let t=0;t<o.length;t++)o[t]=Math.floor(Math.random()*256);return Array.from(o).map(t=>t.toString(16).padStart(2,"0")).join("")}export{r as a};//# sourceMappingURL=chunk-NLN57OO3.js.map
+//# sourceMappingURL=chunk-NLN57OO3.js.map

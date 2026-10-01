@@ -4,6 +4,10 @@ import { EcencyConfigManager } from "@/config";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { Entry } from "@/entities";
 import { error, success } from "@/features/shared";
+import {
+  assistRequestKey,
+  forgetAssistRequestKey
+} from "@/features/shared/ai-assist/assist-request-key";
 import { getAiAssistErrorMessage } from "@/features/shared/ai-assist/ai-assist-error-message";
 import { TextToSpeechSettingsDialog, useTts } from "@/features/text-to-speech";
 import { Button } from "@/features/ui";
@@ -15,7 +19,7 @@ import { getTranslation, getLanguages, type Language } from "@/api/translation";
 import { useAiAssist } from "@ecency/sdk";
 import { UilPause, UilPlay, UilSetting } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface Props {
   entry: Entry;
@@ -32,6 +36,13 @@ export function EntryPageListen({ entry }: Props) {
   const { speechRef, hasPaused, hasStarted } = useTts(text);
 
   const { mutateAsync: runAssist, isPending: isSummarizing } = useAiAssist(username, accessToken);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Pure derivations of entry.body, computed during SSR so the server HTML
   // carries the final values instead of "0" placeholders that flip after
@@ -64,11 +75,17 @@ export function EntryPageListen({ entry }: Props) {
         return;
       }
 
+      const input = text.slice(0, 10000);
       const res = await runAssist({
         action: "summarize",
-        text: text.slice(0, 10000),
+        text: input,
         code: token,
+        idempotency_key: assistRequestKey(username, "summarize", input),
       });
+      // Left the page before the summary arrived: keep the key so summarizing the
+      // same post again replays it for free.
+      if (!mountedRef.current) return;
+      forgetAssistRequestKey(username, "summarize", input);
 
       setSummary(res.output);
       success(i18next.t("ai-assist.success"));

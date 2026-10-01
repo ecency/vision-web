@@ -1,2 +1,0 @@
-import {d,c}from'./chunk-QYY3VHLJ.js';import {b as b$1}from'./chunk-CNB64U7U.js';import {b}from'./chunk-J2HM6MWA.js';import {a}from'./chunk-HEILHNSR.js';function A(t,c$1,o){return b(["accounts","create"],t,e=>[e.useClaimed?d(t,e.newAccountName,e.keys):c(t,e.newAccountName,e.keys,e.fee)],async()=>{await b$1(c$1?.adapter,o,[a.accounts.full(t)]);},c$1,"active",{broadcastMode:o})}export{A as a};//# sourceMappingURL=chunk-QXYS66KZ.js.map
-//# sourceMappingURL=chunk-QXYS66KZ.js.map

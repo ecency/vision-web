@@ -1,0 +1,2 @@
+import {c}from'./chunk-TOARVQT4.js';import {a}from'./chunk-WTHEQ3M5.js';import {queryOptions}from'@tanstack/react-query';function i(){return queryOptions({queryKey:a.accounts.bots(),queryFn:async()=>{let t=await fetch(c.privateApiHost+"/private-api/public/bots",{method:"GET",headers:{"Content-Type":"application/json"}});if(!t.ok)throw new Error(`Failed to fetch bots: ${t.status}`);return t.json()},refetchOnMount:true,staleTime:1/0})}export{i as a};//# sourceMappingURL=chunk-37ADCT6Y.js.map
+//# sourceMappingURL=chunk-37ADCT6Y.js.map
