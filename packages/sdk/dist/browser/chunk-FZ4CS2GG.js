@@ -1,2 +1,0 @@
-import {c}from'./chunk-RZVMZQO7.js';import {b}from'./chunk-J2HM6MWA.js';import {a}from'./chunk-HEILHNSR.js';function d(o,e,p){return b(["proposals","create"],o,s=>[c(o,s)],async()=>{e?.adapter?.invalidateQueries&&await e.adapter.invalidateQueries([a.accounts.full(o),a.proposals.list()]);},e,"active",{broadcastMode:p})}export{d as a};//# sourceMappingURL=chunk-FZ4CS2GG.js.map
-//# sourceMappingURL=chunk-FZ4CS2GG.js.map

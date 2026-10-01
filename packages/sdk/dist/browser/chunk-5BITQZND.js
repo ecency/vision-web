@@ -1,2 +1,0 @@
-import {h}from'./chunk-UKK6NLAT.js';import {b as b$1}from'./chunk-CNB64U7U.js';import {b}from'./chunk-J2HM6MWA.js';import {a}from'./chunk-HEILHNSR.js';function d(t,r,a$1){return b(["wallet","transfer-to-vesting"],t,o=>[h(t,o.to,o.amount)],async(o,f)=>{await b$1(r?.adapter,a$1,[a.accounts.full(t),a.accounts.full(f.to),["ecency-wallets","asset-info",t],["wallet","portfolio","v2",t]]);},r,"active",{broadcastMode:a$1})}export{d as a};//# sourceMappingURL=chunk-5BITQZND.js.map
-//# sourceMappingURL=chunk-5BITQZND.js.map

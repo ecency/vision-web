@@ -1,0 +1,2 @@
+import {a}from'./chunk-WTHEQ3M5.js';import {j}from'./chunk-RAWKN3XW.js';import {queryOptions}from'@tanstack/react-query';function p(n){return queryOptions({queryKey:a.accounts.subscriptions(n),enabled:!!n,queryFn:async({signal:s})=>await j("bridge.list_all_subscriptions",{account:n},void 0,void 0,s)??[]})}export{p as a};//# sourceMappingURL=chunk-PL3T74ID.js.map
+//# sourceMappingURL=chunk-PL3T74ID.js.map

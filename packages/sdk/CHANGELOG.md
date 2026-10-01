@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.23
+
+### Patch Changes
+
+- fix(sdk): retry ambiguous AI assist failures with the same idempotency key (#1906)
+
 ## 2.4.22
 
 ### Patch Changes

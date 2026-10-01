@@ -1,2 +1,0 @@
-import {h}from'./chunk-7EE2XE5J.js';import {b}from'./chunk-TWUN6ILA.js';import {a}from'./chunk-HEILHNSR.js';import {useMutation}from'@tanstack/react-query';function y(e,n,s,d){return useMutation({mutationKey:["posts","images","add",e],mutationFn:async({url:u,code:a})=>{let t=a??n;if(!e||!t)throw new Error("[SDK][Posts] \u2013 missing auth for addImage");return h(t,u)},onSuccess:()=>{s?.(),b().invalidateQueries({queryKey:a.posts.images(e)});},onError:d})}export{y as a};//# sourceMappingURL=chunk-LTUTMDEE.js.map
-//# sourceMappingURL=chunk-LTUTMDEE.js.map
