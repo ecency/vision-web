@@ -3,9 +3,9 @@
  *
  * Both sides have to be present. A lone width, a percentage, or `auto` does
  * not give the browser an aspect ratio, so it cannot reserve the box and is
- * left stripped. The cap on each side and on the ratio keeps a hostile
- * `1`×`8192` from reserving a multi-screen empty column when a consumer opts
- * in.
+ * left stripped. Each side is at most 8192px, and a side more than 40× the
+ * other is rejected. That rules out a 1×8192 pair. A 40:1 pair such as
+ * 200×8000 is still inside the cap.
  */
 export const MAX_IMAGE_DIMENSION_PX = 8192;
 /** A side more than this many times the other is not a usable picture ratio. */

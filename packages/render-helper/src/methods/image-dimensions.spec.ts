@@ -1,19 +1,35 @@
+import { vi } from 'vitest'
 import { markdown2Html } from '../markdown-2-html'
 import { DOMParser } from '../consts/dom-parser.const'
 import { authorPixelSize, parsePixelDimension } from './image-dimensions'
 import { img } from './img.method'
+import { markdownToHTML } from './markdown-to-html.method'
 import { sanitizeHtml } from './sanitize-html.method'
 import { simpleMarkdownToHTML } from './simple-markdown-to-html.method'
+
+const htmlparser2Calls = vi.hoisted(() => ({ n: 0 }))
+
+vi.mock('htmlparser2', async () => {
+  const actual = await vi.importActual<typeof import('htmlparser2')>('htmlparser2')
+  return {
+    ...actual,
+    parseDocument: (...args: Parameters<typeof actual.parseDocument>) => {
+      htmlparser2Calls.n++
+      return actual.parseDocument(...args)
+    },
+  }
+})
 
 describe('authorPixelSize', () => {
   it('accepts a unitless pair and canonicalizes leading zeros', () => {
     expect(authorPixelSize(' 0800 ', '600')).toEqual({ width: '800', height: '600' })
   })
 
-  it('accepts the largest square and a 40:1 pair', () => {
+  it('accepts the largest square and a 40:1 pair, including a tall 200×8000', () => {
     expect(parsePixelDimension('8192')).toBe(8192)
     expect(authorPixelSize('8192', '8192')).toEqual({ width: '8192', height: '8192' })
     expect(authorPixelSize('800', '20')).toEqual({ width: '800', height: '20' })
+    expect(authorPixelSize('200', '8000')).toEqual({ width: '200', height: '8000' })
   })
 
   it('rejects a missing side, a unit, zero, over the cap, and an extreme ratio', () => {
@@ -163,6 +179,49 @@ describe('preserveImageDimensions', () => {
 
     expect(kept).toContain('width="320"')
     expect(plain).not.toMatch(/\bwidth="/)
+  })
+
+  it('does not treat width= inside another attribute value as the width attribute', () => {
+    const body = '<img alt="Set width=" src="https://example.com/a.jpg" width="640" height="480">'
+    const out = markdown2Html(body, true, false, 'ecency.com', undefined, opts)
+    expect(out).toContain('alt="Set width="')
+    expect(out).toContain('width="640"')
+    expect(out).toContain('height="480"')
+    expect(out).toContain('src="https://')
+    expect(out).not.toContain('Sethttps')
+  })
+
+  it('drops the pair when sanitize removed the src', () => {
+    const cases = [
+      '<img src="data:image/png;base64,AAAA" width="640" height="480">',
+      '<img src="photo.jpg" width="640" height="480">',
+      '<img width="640" height="480">',
+    ]
+    for (const input of cases) {
+      const out = sanitizeHtml(input, opts)
+      expect(out).not.toMatch(/\swidth="/)
+      expect(out).not.toMatch(/\sheight="/)
+    }
+  })
+
+  it('keeps a real pair and drops a sourceless one when xmldom falls back to htmlparser2', () => {
+    htmlparser2Calls.n = 0
+    const body = [
+      '<div><p>text</div>',
+      '<img alt="Set width=" src="https://example.com/a.jpg" width="640" height="480">',
+      '<img src="data:image/png;base64,AAAA" width="640" height="480">',
+    ].join('\n')
+    const out = markdownToHTML(body, true, 'ecency.com', undefined, opts)
+    expect(htmlparser2Calls.n).toBeGreaterThan(0)
+
+    const imgs = out.match(/<img\b[^>]*>/gi) ?? []
+    const kept = imgs.find((tag) => tag.includes('Set width='))
+    expect(kept).toBeTruthy()
+    expect(kept).toContain('width="640"')
+    expect(kept).toContain('height="480"')
+    expect(kept).toMatch(/\ssrc="https?:/)
+    expect(kept).not.toContain('Sethttps')
+    expect(imgs.some((tag) => /\swidth="/.test(tag) && !/\ssrc="/.test(tag))).toBe(false)
   })
 
   it('leaves the lightweight editor renderer stripping dimensions', () => {

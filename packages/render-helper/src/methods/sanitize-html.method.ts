@@ -47,34 +47,37 @@ export interface SanitizeHtmlOptions {
 }
 
 /**
- * An img tag xss has already emitted. Width and height are kept only as a
- * pair that `authorPixelSize` accepts; a lone side or an extreme ratio is
- * removed here because `onTagAttr` sees one attribute at a time and cannot
- * make that decision. Runs only when the option is on, so the default pass
- * never walks image tags a second time.
+ * An img tag xss has already emitted, always as `name="value"`. Width and
+ * height are kept only as a pair that `authorPixelSize` accepts, and only
+ * when the tag still has a src. `onTagAttr` sees one attribute at a time, so
+ * the pair and the "src was dropped" decision happen here.
+ *
+ * Attributes are walked in order. A search for `width=` would also match
+ * inside another value (`alt="Set width="`) and the following replace would
+ * fold src into that value. Runs only when the option is on, so the default
+ * pass never walks image tags a second time.
  */
-// Hoisted: this pass runs once per <img> when a consumer opts in, and a fresh
-// RegExp per attribute would recompile on every image of every post.
-const WIDTH_ATTR = /(?:^|\s)width\s*=\s*"([^"]*)"/i
-const HEIGHT_ATTR = /(?:^|\s)height\s*=\s*"([^"]*)"/i
-const DIMENSION_ATTR = /(?:^|\s)(?:width|height)\s*=\s*"[^"]*"/gi
+const QUOTED_ATTR = /\s([^\s"'>\/=]+)="([^"]*)"/g
 
 function enforceImageDimensionPair(html: string): string {
   return html.replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (tag) => {
-    const width = quotedAttr(tag, WIDTH_ATTR)
-    const height = quotedAttr(tag, HEIGHT_ATTR)
-    if (authorPixelSize(width, height)) return tag
-    // Reset: the literal is /g, and a failed pair on one tag must not start
-    // the next tag mid-string.
-    DIMENSION_ATTR.lastIndex = 0
-    return tag.replace(DIMENSION_ATTR, '')
+    QUOTED_ATTR.lastIndex = 0
+    const attrs: { name: string; value: string }[] = []
+    let match: RegExpExecArray | null
+    while ((match = QUOTED_ATTR.exec(tag))) {
+      attrs.push({ name: match[1].toLowerCase(), value: decodeEntities(match[2]) })
+    }
+    const width = attrs.find((attr) => attr.name === 'width')?.value
+    const height = attrs.find((attr) => attr.name === 'height')?.value
+    const src = (attrs.find((attr) => attr.name === 'src')?.value ?? '').trim()
+    if (src && authorPixelSize(width, height)) return tag
+    // replace() resets lastIndex, but a prior exec on this tag has already
+    // moved it, and a later tag must not start mid-string either.
+    QUOTED_ATTR.lastIndex = 0
+    return tag.replace(QUOTED_ATTR, (full, name: string) =>
+      name.toLowerCase() === 'width' || name.toLowerCase() === 'height' ? '' : full
+    )
   })
-}
-
-function quotedAttr(tag: string, pattern: RegExp): string | undefined {
-  const match = pattern.exec(tag)
-  if (!match) return undefined
-  return decodeEntities(match[1])
 }
 
 export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): string {

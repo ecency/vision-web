@@ -808,22 +808,25 @@ var isProxyPSrcset = (srcset) => {
   const candidates = srcset.split(",").map((c) => c.trim().split(/\s+/)[0]).filter(Boolean);
   return candidates.length > 0 && candidates.every((url) => url.startsWith(`${base}/p/`));
 };
-var WIDTH_ATTR = /(?:^|\s)width\s*=\s*"([^"]*)"/i;
-var HEIGHT_ATTR = /(?:^|\s)height\s*=\s*"([^"]*)"/i;
-var DIMENSION_ATTR = /(?:^|\s)(?:width|height)\s*=\s*"[^"]*"/gi;
+var QUOTED_ATTR = /\s([^\s"'>\/=]+)="([^"]*)"/g;
 function enforceImageDimensionPair(html) {
   return html.replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (tag) => {
-    const width = quotedAttr(tag, WIDTH_ATTR);
-    const height = quotedAttr(tag, HEIGHT_ATTR);
-    if (authorPixelSize(width, height)) return tag;
-    DIMENSION_ATTR.lastIndex = 0;
-    return tag.replace(DIMENSION_ATTR, "");
+    QUOTED_ATTR.lastIndex = 0;
+    const attrs = [];
+    let match;
+    while (match = QUOTED_ATTR.exec(tag)) {
+      attrs.push({ name: match[1].toLowerCase(), value: decodeEntities(match[2]) });
+    }
+    const width = attrs.find((attr) => attr.name === "width")?.value;
+    const height = attrs.find((attr) => attr.name === "height")?.value;
+    const src = (attrs.find((attr) => attr.name === "src")?.value ?? "").trim();
+    if (src && authorPixelSize(width, height)) return tag;
+    QUOTED_ATTR.lastIndex = 0;
+    return tag.replace(
+      QUOTED_ATTR,
+      (full, name) => name.toLowerCase() === "width" || name.toLowerCase() === "height" ? "" : full
+    );
   });
-}
-function quotedAttr(tag, pattern) {
-  const match = pattern.exec(tag);
-  if (!match) return void 0;
-  return decodeEntities(match[1]);
 }
 function sanitizeHtml(html, options) {
   const preserveImageDimensions = !!options?.preserveImageDimensions;
