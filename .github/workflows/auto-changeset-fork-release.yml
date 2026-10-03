@@ -105,6 +105,11 @@ jobs:
             echo "$bad"
             exit 1
           fi
+          # Regular files only: no symlinks or submodules smuggled in under dist
+          if git diff --cached --summary | grep -qE 'mode (120000|160000)'; then
+            echo "::error::patch adds a symlink or submodule"
+            exit 1
+          fi
           # package.json: only the version and internal @ecency/* ranges may move
           bad=$(git diff --cached -U0 -- 'packages/*/package.json' \
             | grep -E '^[+-][^+-]' \
