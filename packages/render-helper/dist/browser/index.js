@@ -773,6 +773,27 @@ function buildPictureSources(rawUrl) {
   return { avif, webp };
 }
 
+// src/methods/image-dimensions.ts
+var MAX_IMAGE_DIMENSION_PX = 8192;
+var MAX_IMAGE_DIMENSION_RATIO = 40;
+function parsePixelDimension(value) {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (!/^\d{1,4}$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  if (n < 1 || n > MAX_IMAGE_DIMENSION_PX) return null;
+  return n;
+}
+function authorPixelSize(width, height) {
+  const w = parsePixelDimension(width);
+  const h = parsePixelDimension(height);
+  if (w == null || h == null) return null;
+  const larger = Math.max(w, h);
+  const smaller = Math.min(w, h);
+  if (larger / smaller > MAX_IMAGE_DIMENSION_RATIO) return null;
+  return { width: String(w), height: String(h) };
+}
+
 // src/methods/sanitize-html.method.ts
 var EMBED_SRC_DATA_ATTRS = /* @__PURE__ */ new Set(["data-embed-src", "data-video-href"]);
 var isSafeNavValue = (value) => {
@@ -787,9 +808,34 @@ var isProxyPSrcset = (srcset) => {
   const candidates = srcset.split(",").map((c) => c.trim().split(/\s+/)[0]).filter(Boolean);
   return candidates.length > 0 && candidates.every((url) => url.startsWith(`${base}/p/`));
 };
-function sanitizeHtml(html) {
+var QUOTED_ATTR = /\s([^\s"'>\/=]+)="([^"]*)"/g;
+function enforceImageDimensionPair(html) {
+  return html.replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (tag) => {
+    QUOTED_ATTR.lastIndex = 0;
+    const attrs = [];
+    let match;
+    while (match = QUOTED_ATTR.exec(tag)) {
+      attrs.push({ name: match[1].toLowerCase(), value: decodeEntities(match[2]) });
+    }
+    const width = attrs.find((attr) => attr.name === "width")?.value;
+    const height = attrs.find((attr) => attr.name === "height")?.value;
+    const src = (attrs.find((attr) => attr.name === "src")?.value ?? "").trim();
+    if (src && authorPixelSize(width, height)) return tag;
+    QUOTED_ATTR.lastIndex = 0;
+    return tag.replace(
+      QUOTED_ATTR,
+      (full, name) => name.toLowerCase() === "width" || name.toLowerCase() === "height" ? "" : full
+    );
+  });
+}
+function sanitizeHtml(html, options) {
+  const preserveImageDimensions = !!options?.preserveImageDimensions;
+  const whiteList = preserveImageDimensions ? {
+    ...ALLOWED_ATTRIBUTES,
+    img: [...ALLOWED_ATTRIBUTES.img ?? [], "width", "height"]
+  } : ALLOWED_ATTRIBUTES;
   const cleaned = xss(html, {
-    whiteList: ALLOWED_ATTRIBUTES,
+    whiteList,
     stripIgnoreTag: true,
     stripIgnoreTagBody: ["style"],
     css: false,
@@ -808,6 +854,9 @@ function sanitizeHtml(html) {
       if ((tag === "video" || tag === "audio") && ["src", "poster"].includes(name) && !/^https?:\/\//.test(decodedLower)) return "";
       if (tag === "audio" && name === "preload" && decodedLower !== "metadata" && decodedLower !== "none") return "";
       if (tag === "img" && ["dynsrc", "lowsrc"].includes(name)) return "";
+      if (tag === "img" && (name === "width" || name === "height")) {
+        if (!preserveImageDimensions || parsePixelDimension(decoded) == null) return "";
+      }
       if (tag === "span" && name === "class" && decoded.toLowerCase().trim() === "wr") return "";
       if (EMBED_SRC_DATA_ATTRS.has(name) && !isAllowedEmbedSrc(decoded)) return "";
       if (name === "data-href" && !isSafeNavValue(decoded)) return "";
@@ -817,10 +866,11 @@ function sanitizeHtml(html) {
       return void 0;
     }
   });
-  return cleaned.replace(
+  const withoutBareSource = cleaned.replace(
     /<source\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi,
     (t) => /\btype\s*=\s*["'](?:image\/avif|image\/webp)["']/i.test(t) ? t : ""
   );
+  return preserveImageDimensions ? enforceImageDimensionPair(withoutBareSource) : withoutBareSource;
 }
 
 // src/methods/img.method.ts
@@ -848,9 +898,10 @@ function wrapInPicture(el, rawUrl) {
   picture.appendChild(webp);
   picture.appendChild(el);
 }
-function img(el, state, forApp = true) {
+function img(el, state, forApp = true, renderOptions) {
   const src = el.getAttribute("src") || "";
   const decodedSrc = decodeImageSrc(src);
+  const reserved = renderOptions?.preserveImageDimensions ? authorPixelSize(el.getAttribute("width"), el.getAttribute("height")) : null;
   ["onerror", "dynsrc", "lowsrc", "width", "height"].forEach((attr) => el.removeAttribute(attr));
   const isInvalid = !src || decodedSrc.startsWith("javascript") || decodedSrc.startsWith("vbscript") || decodedSrc === "x";
   if (isInvalid) {
@@ -865,6 +916,10 @@ function img(el, state, forApp = true) {
     el.removeAttribute("srcset");
     el.removeAttribute("sizes");
     return;
+  }
+  if (reserved) {
+    el.setAttribute("width", reserved.width);
+    el.setAttribute("height", reserved.height);
   }
   el.setAttribute("itemprop", "image");
   const avatarRoute = new RegExp(`^${trimTrailingSlash(getProxyBase()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/u/[^/]+/avatar(?:/[a-z]+)?$`);
@@ -2034,7 +2089,7 @@ function traverse(node, forApp, depth = 0, state = { firstImageFound: false }, p
       text(child, forApp, renderOptions);
     }
     if (child.nodeName.toLowerCase() === "img") {
-      img(child, state, forApp);
+      img(child, state, forApp, renderOptions);
     }
     if (child.nodeName.toLowerCase() === "p") {
       p(child);
@@ -2168,7 +2223,7 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
     output = serializer.serializeToString(doc);
   } catch (error) {
     try {
-      const preSanitized = sanitizeHtml(output);
+      const preSanitized = sanitizeHtml(output, renderOptions);
       const dom = htmlparser2.parseDocument(preSanitized, {
         // lenient options - don't throw on malformed HTML
         lowerCaseTags: false,
@@ -2179,7 +2234,7 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
       traverse(doc, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions);
       output = serializer.serializeToString(doc);
     } catch (fallbackError) {
-      output = sanitizeHtml(output || md.render(input));
+      output = sanitizeHtml(output || md.render(input), renderOptions);
     }
   }
   if (forApp && output && entityPlaceholders.length > 0) {
@@ -2189,7 +2244,7 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
     });
   }
   output = output.replace(/ xmlns="http:\/\/www.w3.org\/1999\/xhtml"/g, "").replace(/^<\?xml[^?]*\?>/, "").replace(/^<!DOCTYPE[^>]*>/i, "").replace(/<\/?html[^>]*>/g, "").replace(/<head[^>]*>[\s\S]*?<\/head>/g, "").replace('<body id="root">', "").replace("</body>", "").trim();
-  return sanitizeHtml(output);
+  return sanitizeHtml(output, renderOptions);
 }
 var mdInstance = null;
 function getMd() {
@@ -2244,7 +2299,7 @@ function markdown2Html(obj, forApp = true, _webp = false, parentDomain = "ecency
     logIfSlow(performance.now() - t02, `body_len=${obj.length}`);
     return res2;
   }
-  const key = `${makeEntryCacheKey(obj)}-md-${forApp ? "app" : "site"}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ""}-${seoContext.postPayout ?? ""}` : ""}${renderOptions?.embedVideosDirectly ? "-embed" : ""}${renderOptions?.inertAuthorAndTagChips ? "-inert" : ""}${renderOptions?.externalProfileBase ? "-ext" + renderOptions.externalProfileBase : ""}`;
+  const key = `${makeEntryCacheKey(obj)}-md-${forApp ? "app" : "site"}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ""}-${seoContext.postPayout ?? ""}` : ""}${renderOptions?.embedVideosDirectly ? "-embed" : ""}${renderOptions?.inertAuthorAndTagChips ? "-inert" : ""}${renderOptions?.externalProfileBase ? "-ext" + renderOptions.externalProfileBase : ""}${renderOptions?.preserveImageDimensions ? "-imgdim" : ""}`;
   const item = entryMemoGet(key, obj.body);
   if (item !== MEMO_MISS) {
     return item;

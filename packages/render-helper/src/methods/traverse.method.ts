@@ -30,7 +30,7 @@ export function traverse(node: Node, forApp: boolean, depth = 0, state = { first
       text(<HTMLElement>child, forApp, renderOptions)
     }
     if (child.nodeName.toLowerCase() === 'img') {
-      img(<HTMLElement>child, state, forApp)
+      img(<HTMLElement>child, state, forApp, renderOptions)
     }
     if (child.nodeName.toLowerCase() === 'p') {
       p(<HTMLElement>child)

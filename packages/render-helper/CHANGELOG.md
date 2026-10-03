@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.40
+
+### Patch Changes
+
+- Add `RenderOptions.preserveImageDimensions` so a consumer can keep author-supplied pixel width and height on body images. Browsers use that pair to reserve the box before the image loads. The default still strips both attributes. (#1904)
+
 ## 2.5.39
 
 ### Patch Changes

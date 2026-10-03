@@ -2,6 +2,8 @@ import xss from 'xss'
 import {ALLOWED_ATTRIBUTES, ID_WHITELIST, isAllowedEmbedSrc} from '../consts'
 import { getProxyBase } from '../proxify-image-src'
 import { decodeEntities, trimTrailingSlash } from '../helper'
+import { authorPixelSize, parsePixelDimension } from './image-dimensions'
+import type { XSSWhiteList } from '../types'
 
 // data-* attributes whose value is later consumed as an <iframe> src by the
 // client video extensions (dataset.embedSrc / dataset.videoHref). They MUST be
@@ -35,9 +37,60 @@ const isProxyPSrcset = (srcset: string): boolean => {
   return candidates.length > 0 && candidates.every(url => url.startsWith(`${base}/p/`));
 };
 
-export function sanitizeHtml(html: string): string {
+export interface SanitizeHtmlOptions {
+  /**
+   * Keep a validated pixel width/height pair on `<img>`. Off by default: the
+   * attributes stay off the whitelist, which is what every existing caller
+   * depends on. See `RenderOptions.preserveImageDimensions`.
+   */
+  preserveImageDimensions?: boolean
+}
+
+/**
+ * An img tag xss has already emitted, always as `name="value"`. Width and
+ * height are kept only as a pair that `authorPixelSize` accepts, and only
+ * when the tag still has a src. `onTagAttr` sees one attribute at a time, so
+ * the pair and the "src was dropped" decision happen here.
+ *
+ * Attributes are walked in order. A search for `width=` would also match
+ * inside another value (`alt="Set width="`) and the following replace would
+ * fold src into that value. Runs only when the option is on, so the default
+ * pass never walks image tags a second time.
+ */
+const QUOTED_ATTR = /\s([^\s"'>\/=]+)="([^"]*)"/g
+
+function enforceImageDimensionPair(html: string): string {
+  return html.replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (tag) => {
+    QUOTED_ATTR.lastIndex = 0
+    const attrs: { name: string; value: string }[] = []
+    let match: RegExpExecArray | null
+    while ((match = QUOTED_ATTR.exec(tag))) {
+      attrs.push({ name: match[1].toLowerCase(), value: decodeEntities(match[2]) })
+    }
+    const width = attrs.find((attr) => attr.name === 'width')?.value
+    const height = attrs.find((attr) => attr.name === 'height')?.value
+    const src = (attrs.find((attr) => attr.name === 'src')?.value ?? '').trim()
+    if (src && authorPixelSize(width, height)) return tag
+    // replace() resets lastIndex, but a prior exec on this tag has already
+    // moved it, and a later tag must not start mid-string either.
+    QUOTED_ATTR.lastIndex = 0
+    return tag.replace(QUOTED_ATTR, (full, name: string) =>
+      name.toLowerCase() === 'width' || name.toLowerCase() === 'height' ? '' : full
+    )
+  })
+}
+
+export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): string {
+  const preserveImageDimensions = !!options?.preserveImageDimensions
+  const whiteList: XSSWhiteList = preserveImageDimensions
+    ? {
+        ...ALLOWED_ATTRIBUTES,
+        img: [...(ALLOWED_ATTRIBUTES.img ?? []), 'width', 'height'],
+      }
+    : ALLOWED_ATTRIBUTES
+
   const cleaned = xss(html, {
-    whiteList: ALLOWED_ATTRIBUTES,
+    whiteList,
     stripIgnoreTag: true,
     stripIgnoreTagBody: ['style'],
     css: false, // block style attrs entirely for safety
@@ -79,6 +132,13 @@ export function sanitizeHtml(html: string): string {
       if (tag === 'audio' && name === 'preload' &&
         decodedLower !== 'metadata' && decodedLower !== 'none') return '';
       if (tag === 'img' && ['dynsrc', 'lowsrc'].includes(name)) return '';
+      // Pixel length only. A percentage or a `px` suffix is not an aspect
+      // ratio, and returning '' strips it even though the option added the
+      // name to the whitelist. The pair and the ratio are checked afterwards,
+      // once both attributes are visible.
+      if (tag === 'img' && (name === 'width' || name === 'height')) {
+        if (!preserveImageDimensions || parsePixelDimension(decoded) == null) return '';
+      }
       if (tag === 'span' && name === 'class' && decoded.toLowerCase().trim() === 'wr') return '';
       // iframe-src data-* attrs: must resolve to an https:// allowed-embed-host
       // URL or they are blanked (stored HTML/iframe injection — CVE class).
@@ -99,7 +159,8 @@ export function sanitizeHtml(html: string): string {
   // The tag matcher tolerates a literal '>' inside a quoted attribute value
   // (xss escapes '>' to '&gt;' in output, so this is belt-and-suspenders) by
   // consuming quoted spans whole rather than stopping at the first '>'.
-  return cleaned.replace(/<source\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (t) =>
+  const withoutBareSource = cleaned.replace(/<source\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (t) =>
     /\btype\s*=\s*["'](?:image\/avif|image\/webp)["']/i.test(t) ? t : ''
   );
+  return preserveImageDimensions ? enforceImageDimensionPair(withoutBareSource) : withoutBareSource;
 }
