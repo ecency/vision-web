@@ -1,5 +1,6 @@
 import { Entry } from "@/entities";
 import { renderPostBody, setProxyBase } from "@ecency/render-helper";
+import { enableBitchuteThumbnails } from "@/core/enable-bitchute-thumbnails";
 import type { SeoContext } from "@ecency/render-helper";
 import { accountReputation } from "@/utils";
 import defaults from "@/defaults";
@@ -10,6 +11,7 @@ import { EntryPageRawBody } from "./entry-page-raw-body";
 interface Props {
   entry: Entry;
 }
+enableBitchuteThumbnails();
 setProxyBase(defaults.imageServer);
 export function EntryPageStaticBody({ entry }: Props) {
   const seoContext: SeoContext = {

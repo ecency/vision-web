@@ -2,6 +2,7 @@ import { makeEntryCacheKey } from './helper'
 import { cleanReply, markdownToHTML } from './methods'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry, RenderOptions, SeoContext } from './types'
+import { getBitchuteThumbnailOrigin } from './bitchute-thumbnail'
 
 // Warn when a single markdown render exceeds this threshold. Surfaces both
 // pathological inputs (e.g. ReDoS-prone tag attributes) and merely-slow ones
@@ -62,7 +63,12 @@ export function markdown2Html(obj: Entry | string, forApp = true, _webp = false,
   // Every RenderOptions flag that changes the output must appear in the key, or
   // two callers rendering the same entry with different options serve each
   // other's HTML from cache.
-  const key = `${makeEntryCacheKey(obj)}-md-${forApp ? 'app' : 'site'}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ''}-${seoContext.postPayout ?? ''}` : ''}${renderOptions?.embedVideosDirectly ? '-embed' : ''}${renderOptions?.inertAuthorAndTagChips ? '-inert' : ''}${renderOptions?.externalProfileBase ? '-ext' + renderOptions.externalProfileBase : ''}${renderOptions?.preserveImageDimensions ? '-imgdim' : ''}`
+  // The BitChute poster is part of the rendered HTML only when an origin is
+  // configured, so that setting has to be in the key or a render from before
+  // it was set would be served forever. preserveImageDimensions changes the
+  // HTML too, so it stays in the key alongside it.
+  const bitchuteOrigin = getBitchuteThumbnailOrigin()
+  const key = `${makeEntryCacheKey(obj)}-md-${forApp ? 'app' : 'site'}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ''}-${seoContext.postPayout ?? ''}` : ''}${renderOptions?.embedVideosDirectly ? '-embed' : ''}${renderOptions?.inertAuthorAndTagChips ? '-inert' : ''}${renderOptions?.externalProfileBase ? '-ext' + renderOptions.externalProfileBase : ''}${renderOptions?.preserveImageDimensions ? '-imgdim' : ''}${bitchuteOrigin ? `-bcthumb${bitchuteOrigin}` : ''}`
 
   const item = entryMemoGet<string>(key, obj.body)
   if (item !== MEMO_MISS) {

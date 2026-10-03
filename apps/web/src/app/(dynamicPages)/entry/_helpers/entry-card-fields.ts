@@ -4,7 +4,10 @@ import { metaStringList, parseJsonMetadata } from "@/utils/json-metadata";
 import { summarizeText } from "@/core/entries/entry-summary";
 import { postBodySummarySafely } from "@/core/entries/post-body-summary-safely";
 import { catchPostImage, postBodySummary } from "@ecency/render-helper";
+import { enableBitchuteThumbnails } from "@/core/enable-bitchute-thumbnails";
 import type { Entry } from "@/entities";
+
+enableBitchuteThumbnails();
 
 export interface EntryCardFields {
   /** ≤67-char title; for a comment, "@author: <body summary>". */

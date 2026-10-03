@@ -5,8 +5,10 @@ import { createRoot } from "react-dom/client";
 import { isAllowedEmbedSrc } from "@ecency/render-helper";
 
 /**
- * Click-to-play for the video providers that have no thumbnail we can derive
- * without a network call (Odysee, BitChute, Rumble, Brighteon).
+ * Click-to-play for Odysee, BitChute, Rumble and Brighteon.
+ *
+ * BitChute can carry a poster image (the cover endpoint the renderer inserts).
+ * The others still have no thumbnail we can name without a network call.
  *
  * YouTube and 3Speak each get a dedicated extension because both carry
  * provider-specific work (start-time parsing, portrait detection, thumbnail
@@ -48,8 +50,12 @@ export function EmbedVideoRenderer({
       return;
     }
     const playBtn = container.querySelector(".markdown-video-play");
+    const thumb = container.querySelector(".video-thumbnail");
     if (playBtn) {
       (playBtn as HTMLElement).style.display = "none";
+    }
+    if (thumb) {
+      (thumb as HTMLElement).style.display = "none";
     }
   }, [show, container]);
 

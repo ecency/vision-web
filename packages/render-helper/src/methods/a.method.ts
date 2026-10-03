@@ -31,6 +31,7 @@ import {
 } from '../consts'
 import { getSerializedInnerHTML } from './get-inner-html.method'
 import { proxifyImageSrc } from '../proxify-image-src'
+import { bitchuteThumbnailUrl } from '../bitchute-thumbnail'
 import { removeChildNodes } from './remove-child-nodes.method'
 import { extractYtStartTime, youtubeVideoLinkClass, isValidPermlink, isValidUsername, sanitizePermlink, stripHtmlTags, trimTrailingSlash } from '../helper'
 import { createImageHTML } from "./img.method";
@@ -58,10 +59,12 @@ function getExternalLinkRel(seoContext?: SeoContext): string {
 }
 
 /**
- * Turns a video link into a player for the providers we cannot derive a
- * thumbnail for synchronously (BitChute, Rumble, Brighteon, Odysee). YouTube and
- * 3Speak stay hand-written because each carries provider-specific work (start
- * time, portrait detection, thumbnail from post metadata).
+ * Turns a video link into a player for the providers that have no poster we
+ * can name up front (Rumble, Brighteon, Odysee). BitChute is the same player,
+ * plus a poster when the host app has configured a cover endpoint — the video
+ * id alone does not identify a thumbnail file. YouTube and 3Speak stay
+ * hand-written because each carries provider-specific work (start time,
+ * portrait detection, thumbnail from post metadata).
  *
  * The per-provider modifier class matters: both the stylesheet and the
  * click-to-play extension select on it, so an anchor carrying only the base
@@ -77,7 +80,8 @@ function renderPlainVideoLink(
   el: HTMLElement,
   provider: string,
   embedSrc: string,
-  renderOptions?: RenderOptions
+  renderOptions?: RenderOptions,
+  thumbnailSrc?: string
 ): void {
   const baseClass = `markdown-video-link markdown-video-link-${provider}`
   // Attribute order below matches what these branches emitted before they were
@@ -107,6 +111,16 @@ function renderPlainVideoLink(
     // skips it if both paths ever run over the same document.
     el.setAttribute('class', `${baseClass} er-embed`)
     return
+  }
+
+  // Same poster the YouTube branch emits: already proxied, so img() leaves the
+  // src alone (`no-replace`) and the cover lookup can read it back.
+  if (thumbnailSrc) {
+    const thumbImg = el.ownerDocument.createElement('img')
+    thumbImg.setAttribute('class', 'no-replace video-thumbnail')
+    thumbImg.setAttribute('itemprop', 'thumbnailUrl')
+    thumbImg.setAttribute('src', thumbnailSrc)
+    el.appendChild(thumbImg)
   }
 
   const play = el.ownerDocument.createElement('span')
@@ -620,7 +634,15 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
 
   const BCmatch = href.match(BITCHUTE_REGEX)
   if (BCmatch && BCmatch[1] && el.textContent.trim() === href) {
-    renderPlainVideoLink(el, 'bitchute', `https://www.bitchute.com/embed/${BCmatch[1]}/`, renderOptions)
+    const thumbRaw = bitchuteThumbnailUrl(BCmatch[1])
+    const thumb = thumbRaw ? proxifyImageSrc(thumbRaw, 0, 0, 'match') : ''
+    renderPlainVideoLink(
+      el,
+      'bitchute',
+      `https://www.bitchute.com/embed/${BCmatch[1]}/`,
+      renderOptions,
+      thumb || undefined
+    )
     return
   }
 

@@ -898,6 +898,26 @@ function sanitizeHtml(html, options) {
   return preserveImageDimensions ? enforceImageDimensionPair(withoutBareSource) : withoutBareSource;
 }
 
+// src/bitchute-thumbnail.ts
+var origin = "";
+var ORIGIN_RE = /^https:\/\/[a-z0-9.-]+(?::\d+)?$/i;
+var ID_RE = /^[A-Za-z0-9]{1,64}$/;
+function setBitchuteThumbnailOrigin(next) {
+  if (typeof next !== "string") {
+    origin = "";
+    return;
+  }
+  const trimmed = next.trim().replace(/\/+$/, "");
+  origin = ORIGIN_RE.test(trimmed) ? trimmed : "";
+}
+function getBitchuteThumbnailOrigin() {
+  return origin;
+}
+function bitchuteThumbnailUrl(id) {
+  if (!origin || !ID_RE.test(id)) return null;
+  return `${origin}/api/bitchute-thumbnail/${id}`;
+}
+
 // src/methods/img.method.ts
 var IMAGE_SIZES = "(max-width: 768px) 100vw, 700px";
 function wrapInPicture(el, rawUrl) {
@@ -1035,7 +1055,7 @@ function getExternalLinkRel(seoContext) {
   }
   return "nofollow ugc noopener";
 }
-function renderPlainVideoLink(el, provider, embedSrc, renderOptions) {
+function renderPlainVideoLink(el, provider, embedSrc, renderOptions, thumbnailSrc) {
   const baseClass = `markdown-video-link markdown-video-link-${provider}`;
   el.setAttribute("class", baseClass);
   el.removeAttribute("href");
@@ -1057,6 +1077,13 @@ function renderPlainVideoLink(el, provider, embedSrc, renderOptions) {
     el.appendChild(wrapper);
     el.setAttribute("class", `${baseClass} er-embed`);
     return;
+  }
+  if (thumbnailSrc) {
+    const thumbImg = el.ownerDocument.createElement("img");
+    thumbImg.setAttribute("class", "no-replace video-thumbnail");
+    thumbImg.setAttribute("itemprop", "thumbnailUrl");
+    thumbImg.setAttribute("src", thumbnailSrc);
+    el.appendChild(thumbImg);
   }
   const play = el.ownerDocument.createElement("span");
   play.setAttribute("class", "markdown-video-play");
@@ -1400,7 +1427,15 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   }
   const BCmatch = href.match(BITCHUTE_REGEX);
   if (BCmatch && BCmatch[1] && el.textContent.trim() === href) {
-    renderPlainVideoLink(el, "bitchute", `https://www.bitchute.com/embed/${BCmatch[1]}/`, renderOptions);
+    const thumbRaw = bitchuteThumbnailUrl(BCmatch[1]);
+    const thumb = thumbRaw ? proxifyImageSrc(thumbRaw, 0, 0, "match") : "";
+    renderPlainVideoLink(
+      el,
+      "bitchute",
+      `https://www.bitchute.com/embed/${BCmatch[1]}/`,
+      renderOptions,
+      thumb || void 0
+    );
     return;
   }
   const RBmatch = href.match(RUMBLE_REGEX);
@@ -10371,7 +10406,8 @@ function markdown2Html(obj, forApp = true, _webp = false, parentDomain = "ecency
     logIfSlow(performance.now() - t02, `body_len=${obj.length}`);
     return res2;
   }
-  const key = `${makeEntryCacheKey(obj)}-md-${forApp ? "app" : "site"}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ""}-${seoContext.postPayout ?? ""}` : ""}${renderOptions?.embedVideosDirectly ? "-embed" : ""}${renderOptions?.inertAuthorAndTagChips ? "-inert" : ""}${renderOptions?.externalProfileBase ? "-ext" + renderOptions.externalProfileBase : ""}${renderOptions?.preserveImageDimensions ? "-imgdim" : ""}`;
+  const bitchuteOrigin = getBitchuteThumbnailOrigin();
+  const key = `${makeEntryCacheKey(obj)}-md-${forApp ? "app" : "site"}-${parentDomain}${seoContext ? `-seo${seoContext.authorReputation ?? ""}-${seoContext.postPayout ?? ""}` : ""}${renderOptions?.embedVideosDirectly ? "-embed" : ""}${renderOptions?.inertAuthorAndTagChips ? "-inert" : ""}${renderOptions?.externalProfileBase ? "-ext" + renderOptions.externalProfileBase : ""}${renderOptions?.preserveImageDimensions ? "-imgdim" : ""}${bitchuteOrigin ? `-bcthumb${bitchuteOrigin}` : ""}`;
   const item = entryMemoGet(key, obj.body);
   if (item !== MEMO_MISS) {
     return item;
@@ -10628,6 +10664,7 @@ var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
 var URL_TOKEN_RE = /https?:\/\/[^\s<>"'()[\]]+/gi;
 var IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi;
 var YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/;
+var BITCHUTE_ID_RE = /^[A-Za-z0-9]{1,64}$/;
 function imageToken(token) {
   let end = -1;
   for (const m of token.matchAll(IMAGE_EXT_G)) {
@@ -10670,6 +10707,23 @@ function youtubeIdOf(url) {
   }
   if (segments.length >= 3) return candidate(segments[segments.length - 1]);
   return null;
+}
+function bitchuteIdOf(url) {
+  const m = /^https?:\/\/([^/?#]+)/i.exec(url);
+  if (!m) return null;
+  const host = m[1].toLowerCase();
+  if (host !== "bitchute.com" && host !== "www.bitchute.com") return null;
+  const rest = url.slice(m[0].length);
+  const hashAt = rest.indexOf("#");
+  const beforeHash = hashAt === -1 ? rest : rest.slice(0, hashAt);
+  const qAt = beforeHash.indexOf("?");
+  const path = qAt === -1 ? beforeHash : beforeHash.slice(0, qAt);
+  const segments = path.split("/").filter((seg) => seg.length > 0);
+  if (segments.length < 2) return null;
+  const kind = segments[0].toLowerCase();
+  if (kind !== "video" && kind !== "embed") return null;
+  const id = segments[1];
+  return BITCHUTE_ID_RE.test(id) ? id : null;
 }
 function isAutolinkAt(text3, idx) {
   return /^https?:\/\//i.test(text3.slice(idx, idx + 8));
@@ -10801,6 +10855,12 @@ function prepareBody(body) {
   };
 }
 function findFirstVideoPoster(prepared) {
+  const yt = findFirstYoutubePoster(prepared);
+  const bc = findFirstBitchutePoster(prepared);
+  if (yt && bc) return yt.pos <= bc.pos ? yt : bc;
+  return yt ?? bc;
+}
+function findFirstYoutubePoster(prepared) {
   const { cleaned } = prepared;
   if (!cleaned) return null;
   let best = null;
@@ -10823,6 +10883,32 @@ function findFirstVideoPoster(prepared) {
   }
   if (!best) return null;
   return { url: `https://img.youtube.com/vi/${best.url.split("?")[0]}/hqdefault.jpg`, pos: best.pos };
+}
+function findFirstBitchutePoster(prepared) {
+  if (!getBitchuteThumbnailOrigin()) return null;
+  const { cleaned } = prepared;
+  if (!cleaned || cleaned.toLowerCase().indexOf("bitchute.com") === -1) return null;
+  let best = null;
+  for (const hit of standaloneMatches(prepared.video, bitchuteIdOf)) {
+    best = { id: hit.url, pos: hit.pos };
+    break;
+  }
+  for (const m of cleaned.matchAll(MD_LINK_RE)) {
+    const idx = m.index ?? 0;
+    if (idx > 0 && cleaned[idx - 1] === "!") continue;
+    if (best && idx >= best.pos) break;
+    const href = m[2];
+    if (href && m[1].trim() === href) {
+      const id = bitchuteIdOf(href);
+      if (id) {
+        best = { id, pos: idx };
+        break;
+      }
+    }
+  }
+  if (!best) return null;
+  const url = bitchuteThumbnailUrl(best.id);
+  return url ? { url, pos: best.pos } : null;
 }
 var NONE = { candidate: null, ambiguous: false };
 var AMBIGUOUS = { candidate: null, ambiguous: true };
@@ -11029,7 +11115,8 @@ function catchPostImage(obj, width = 0, height = 0, format = "match", options = 
     }
     return null;
   }
-  const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}${fastMode ? "-fast" : ""}`;
+  const bitchuteOrigin = getBitchuteThumbnailOrigin();
+  const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}${fastMode ? "-fast" : ""}${bitchuteOrigin ? `-bcthumb${bitchuteOrigin}` : ""}`;
   const meta = metaFingerprint(obj.json_metadata);
   const item = entryMemoGet(key, obj.body, meta);
   if (item !== MEMO_MISS) {
@@ -11147,6 +11234,7 @@ exports.isValidPermlink = isValidPermlink;
 exports.postBodySummary = getPostBodySummary;
 exports.proxifyImageSrc = proxifyImageSrc;
 exports.renderPostBody = markdown2Html;
+exports.setBitchuteThumbnailOrigin = setBitchuteThumbnailOrigin;
 exports.setCacheSize = setCacheSize;
 exports.setProxyBase = setProxyBase;
 exports.setSlowRenderThresholdMs = setSlowRenderThresholdMs;

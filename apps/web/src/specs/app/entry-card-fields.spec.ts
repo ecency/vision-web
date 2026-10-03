@@ -88,6 +88,26 @@ describe("buildEntryCardFields", () => {
     );
   });
 
+  // onlyjob/why-hate-on-health-insurance: image: [] and a bare BitChute URL.
+  // The cover has to come from that URL the same way a YouTube URL does.
+  it("builds a cover from a BitChute video when metadata has no image", () => {
+    const e = entry({
+      author: "onlyjob",
+      permlink: "why-hate-on-health-insurance",
+      json_metadata: { image: [] },
+      body:
+        "> With the recent fatal shooting of a big health insurance CEO.\n\n" +
+        "https://www.bitchute.com/video/1abYMl7gW68\n" +
+        "[bitchute](https://www.bitchute.com/video/1abYMl7gW68) " +
+        "[youtube](https://www.youtube.com/watch?v=1abYMl7gW68)\n\n" +
+        "#LarkenRose"
+    });
+    const image = buildEntryCardFields(e as any).image;
+    expect(image).toBeTruthy();
+    expect(image).toBe(catchPostImage(e as any, 1200, 630, "match"));
+    expect(image).toContain("/p/");
+  });
+
   // Media-only posts summarize to "": `summary` (the SERP meta description)
   // stays EMPTY so Google auto-snippets from page content, while `cardSummary`
   // (og/twitter/oEmbed, which have no auto-snippet) gets a descriptive fallback.

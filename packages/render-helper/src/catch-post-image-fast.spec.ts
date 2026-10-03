@@ -1,6 +1,7 @@
 import { catchPostImage, getEntryImageRawUrl } from './catch-post-image'
 import { markdown2Html } from './markdown-2-html'
 import { buildPictureSources, proxifyImageSrc } from './proxify-image-src'
+import { setBitchuteThumbnailOrigin } from './bitchute-thumbnail'
 import type { Entry } from './types'
 
 // Distinct author/permlink per fixture: catchPostImage memoizes per post and
@@ -641,5 +642,64 @@ describe('getEntryImageRawUrl and the LCP preload for a <center>-wrapped bare UR
     const full = catchPostImage(entry(body), 0, 0, 'match')
     expect(catchPostImage(entry(body), 0, 0, 'match', FAST)).toBe(full)
     expect(getEntryImageRawUrl(entry(body))).toBe(markdown2Html(entry(body), false).includes('<img') ? u : null)
+  })
+})
+
+describe('BitChute cover', () => {
+  afterEach(() => setBitchuteThumbnailOrigin(''))
+
+  const pair = (body: string) => ({
+    full: catchPostImage(entry(body), 600, 500, 'match'),
+    fast: catchPostImage(entry(body), 600, 500, 'match', FAST)
+  })
+
+  const EXAMPLE =
+    '> With the recent fatal shooting of a big health insurance CEO.\n\n' +
+    'https://www.bitchute.com/video/1abYMl7gW68\n' +
+    '[bitchute](https://www.bitchute.com/video/1abYMl7gW68) ' +
+    '[youtube](https://www.youtube.com/watch?v=1abYMl7gW68)\n\n' +
+    '#LarkenRose'
+
+  it('has no poster until a cover endpoint is configured', () => {
+    const r = pair(EXAMPLE)
+    expect(r.fast).toBeNull()
+    expect(r.full).toBeNull()
+  })
+
+  it('uses the cover endpoint for a bare BitChute link, the same way a YouTube link uses img.youtube.com', () => {
+    setBitchuteThumbnailOrigin('https://ecency.com')
+    const raw = 'https://ecency.com/api/bitchute-thumbnail/1abYMl7gW68'
+    const r = pair(EXAMPLE)
+    expect(r.full).toBeTruthy()
+    expect(r.fast).toBe(r.full)
+    expect(r.fast).toBe(proxifyImageSrc(proxifyImageSrc(raw, 0, 0, 'match'), 600, 500, 'match'))
+    // The labeled YouTube link in the example is not a video embed. Its id is
+    // also not 11 characters, so it must not become the cover.
+    expect(r.fast).not.toBe(
+      proxifyImageSrc('https://img.youtube.com/vi/1abYMl7gW68/hqdefault.jpg', 600, 500, 'match')
+    )
+  })
+
+  it('keeps a YouTube poster when that link comes first', () => {
+    setBitchuteThumbnailOrigin('https://ecency.com')
+    const r = pair(
+      'https://www.youtube.com/watch?v=dQw4w9WgXcQ\n\nhttps://www.bitchute.com/video/1abYMl7gW68'
+    )
+    expect(r.fast).toBe(r.full)
+    expect(r.fast).toBe(
+      proxifyImageSrc(
+        proxifyImageSrc('https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg', 0, 0, 'match'),
+        600,
+        500,
+        'match'
+      )
+    )
+  })
+
+  it('does not treat a BitChute link whose label differs from its href as a poster', () => {
+    setBitchuteThumbnailOrigin('https://ecency.com')
+    const r = pair('watch [this](https://www.bitchute.com/video/1abYMl7gW68) later')
+    expect(r.fast).toBeNull()
+    expect(r.full).toBeNull()
   })
 })
