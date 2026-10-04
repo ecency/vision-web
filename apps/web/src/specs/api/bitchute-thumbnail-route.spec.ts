@@ -39,6 +39,7 @@ describe("GET /api/bitchute-thumbnail/[id]", () => {
     const res = await call("1abYMl7gW68")
     expect(res.status).toBe(200)
     expect(res.headers.get("content-type")).toBe("image/jpeg")
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff")
     expect(res.headers.get("cache-control")).toContain("public")
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(JPEG)
   })
@@ -56,6 +57,30 @@ describe("GET /api/bitchute-thumbnail/[id]", () => {
     expect(res.status).toBe(404)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(String(fetchMock.mock.calls[0][0])).toContain("api.bitchute.com/oembed/")
+  })
+
+  it("does not serve SVG bytes from this origin, even when labeled as a jpeg", async () => {
+    const svg = new TextEncoder().encode(
+      "<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>"
+    )
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.startsWith("https://api.bitchute.com/oembed/")) {
+          return new Response(
+            JSON.stringify({
+              thumbnail_url: "https://static-3.bitchute.com/live/cover_images/ch/evil.svg"
+            }),
+            { status: 200, headers: { "content-type": "application/json" } }
+          )
+        }
+        return new Response(svg, { status: 200, headers: { "content-type": "image/jpeg" } })
+      })
+    )
+
+    const res = await call("svgcover1")
+    expect(res.status).toBe(404)
   })
 
   it("rejects an id that is not a BitChute video id", async () => {

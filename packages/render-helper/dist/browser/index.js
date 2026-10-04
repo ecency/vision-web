@@ -882,11 +882,16 @@ function setBitchuteThumbnailOrigin(next) {
     origin = "";
     return;
   }
-  const trimmed = next.trim().replace(/\/+$/, "");
+  const trimmed = stripTrailingSlashes(next.trim());
   origin = ORIGIN_RE.test(trimmed) ? trimmed : "";
 }
 function getBitchuteThumbnailOrigin() {
   return origin;
+}
+function stripTrailingSlashes(value) {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end--;
+  return end === value.length ? value : value.slice(0, end);
 }
 function bitchuteThumbnailUrl(id) {
   if (!origin || !ID_RE.test(id)) return null;

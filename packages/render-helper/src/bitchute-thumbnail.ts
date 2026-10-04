@@ -21,12 +21,19 @@ export function setBitchuteThumbnailOrigin(next: string): void {
     origin = ''
     return
   }
-  const trimmed = next.trim().replace(/\/+$/, '')
+  const trimmed = stripTrailingSlashes(next.trim())
   origin = ORIGIN_RE.test(trimmed) ? trimmed : ''
 }
 
 export function getBitchuteThumbnailOrigin(): string {
   return origin
+}
+
+/** `/\/+$/` is quadratic on a long run of slashes, which this input can be. */
+function stripTrailingSlashes(value: string): string {
+  let end = value.length
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) end--
+  return end === value.length ? value : value.slice(0, end)
 }
 
 /** Absolute cover URL for a BitChute video id, or null when no origin is configured. */

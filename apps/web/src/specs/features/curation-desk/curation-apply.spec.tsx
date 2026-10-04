@@ -257,12 +257,17 @@ describe("CurationApplyView", () => {
   });
 
   it("keeps the form away while the wait after a decline is still running", async () => {
+    // The page compares the decision with Date.now(), not the fixture clock
+    // (2026-09-05). A decline dated from that clock plus 30 days fell in the
+    // past on 2026-10-03 and the form came back while the wait was still the
+    // case this test is about.
+    const stillWaiting = new Date(Date.now() - 2 * DAY).toISOString()
     router.on(/curation-desk\/application-mine$/, () =>
       jsonResponse({
         application: sentApplication({
           state: "declined",
-          decided_at: iso(-2 * DAY),
-          updated_at: iso(-2 * DAY)
+          decided_at: stillWaiting,
+          updated_at: stillWaiting
         }),
         window: { open: true, message: null },
         role: null
