@@ -415,6 +415,11 @@ describe("town news", () => {
     expect(newsAfter(numbered.slice(0, 2), 10)).toEqual([]);
     // lines that rolled off the list are not missed: what is left is still after the mark
     expect(newsAfter(numbered.slice(2), 7)).toEqual(numbered.slice(2));
+    // a line from before the news was numbered, still on the list: older than any mark
+    const mixed = [{ day: 1, text: "From before." }, ...numbered];
+    expect(newsAfter(mixed, 8)).toEqual(numbered.slice(2));
+    expect(newsAfter(mixed, 10)).toEqual([]);
+    expect(markOf(mixed)).toBe(10);
   });
 
   it("falls back to the lines themselves with a server that does not number them", () => {

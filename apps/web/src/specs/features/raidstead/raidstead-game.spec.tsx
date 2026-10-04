@@ -764,7 +764,8 @@ describe("Raidstead page", () => {
     };
     // every answer is a fresh object, as from the network
     const answer = (s: unknown) => api.state.mockImplementation(async () => structuredClone(s));
-    const newsCard = () => screen.queryByRole("dialog", { name: "raidstead.news.away" });
+    // "While you were away" on coming back, "Town news" for what waited while the player was here
+    const newsCard = () => screen.queryByRole("dialog", { name: /^raidstead\.news\.(away|title)$/ });
     const toast = () => document.querySelector(".rs-toast")!.textContent;
     const copied = { seq: 1, day: 1, kind: "copied", n: 45, text: "x" };
     const killedByBob = { seq: 2, day: 2, kind: "killed", what: "beetle", who: "bob", text: "x" };
@@ -831,8 +832,47 @@ describe("Raidstead page", () => {
       await ready();
       answer(withNotes([copied, killedByBob]));
       await tick(20_500);
-      const card = await screen.findByRole("dialog", { name: "raidstead.news.away" });
+      // the player was here all along: the card does not say they were away
+      const card = await screen.findByRole("dialog", { name: "raidstead.news.title" });
       expect(within(card).getAllByRole("listitem")).toHaveLength(2);
+    });
+
+    it("keeps a line of news up next to an attack's own message", async () => {
+      answer(withNotes([]));
+      render(<RaidsteadGame />);
+      await ready();
+      answer(withNotes([{ seq: 1, day: 3, kind: "chest", who: "bob", text: "x" }]));
+      await tick(20_500);
+      expect(toast()).toBe("raidstead.news.chest");
+      api.attack.mockResolvedValueOnce({ hit: "boss", damage: 6, weak: false, paired: null, killed: false, phaseShift: false, gnatsSpawned: 0, waspArrived: false, energy: 4, hp: 594, maxHp: 600 });
+      await act(async () => {
+        fireEvent.click(attackButton("ink"));
+      });
+      // the hit's message does not wipe the news the player has had half a second to read
+      expect(toast()).toBe("raidstead.toast.hit raidstead.news.chest");
+      await tick(8000);
+      expect(toast()).toBe("");
+    });
+
+    it("holds a single line that arrives with a new week until the week's card is closed", async () => {
+      readUpTo(0);
+      answer(withNotes([]));
+      render(<RaidsteadGame />);
+      await ready();
+      const next = withNotes([{ seq: 1, day: 8, kind: "escaped", what: "beetle", text: "x" }]);
+      Object.assign(next.alliance, { week: 2 });
+      Object.assign(next.alliance.boss, { kind: "slug" });
+      Object.assign(next.calendar, { week: 2, day: 8 });
+      answer(next);
+      await tick(20_500);
+      const week = await screen.findByRole("dialog", { name: "raidstead.bosses.slug.name" });
+      expect(toast()).toBe("");                // not said behind the card
+      expect(marks()["1:hive-123456:ann"]).toBe(0);
+      await act(async () => {
+        fireEvent.click(within(week).getByRole("button", { name: "raidstead.boss.go" }));
+      });
+      const card = await screen.findByRole("dialog", { name: "raidstead.news.title" });
+      expect(within(card).getByText(/raidstead.news.escaped/)).toBeTruthy();
     });
 
     it("keeps news that arrives in a background tab for when the tab shows again", async () => {
@@ -857,9 +897,57 @@ describe("Raidstead page", () => {
       await act(async () => {
         document.dispatchEvent(new Event("visibilitychange"));
       });
-      const card = await screen.findByRole("dialog", { name: "raidstead.news.away" });
+      const card = await screen.findByRole("dialog", { name: "raidstead.news.title" });
       expect(within(card).getByText(/raidstead.news.webbed/)).toBeTruthy();
       expect(marks()["1:hive-123456:ann"]).toBe(1);
+    });
+
+    it("does not show news kept in a background tab when another tab has shown it meanwhile", async () => {
+      const midnight = withNotes([]);
+      midnight.calendar.nextDayAt = new Date(Date.now() + 1000).toISOString();
+      answer(midnight);
+      render(<RaidsteadGame />);
+      await ready();
+      tabHidden(true);
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      const morning = withNotes([copied, killedByBob]);
+      morning.calendar.nextDayAt = new Date(Date.now() + 86_400_000).toISOString();
+      answer(morning);
+      await tick(31_000);
+      // the player reads both lines in another tab, then comes back to this one
+      readUpTo(2);
+      tabHidden(false);
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await tick(50);
+      expect(newsCard()).toBeNull();
+      expect(marks()["1:hive-123456:ann"]).toBe(2);
+    });
+
+    it("shows only what another tab has not, when it has shown part of what waited here", async () => {
+      const midnight = withNotes([]);
+      midnight.calendar.nextDayAt = new Date(Date.now() + 1000).toISOString();
+      answer(midnight);
+      render(<RaidsteadGame />);
+      await ready();
+      tabHidden(true);
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      const morning = withNotes([copied, killedByBob]);
+      morning.calendar.nextDayAt = new Date(Date.now() + 86_400_000).toISOString();
+      answer(morning);
+      await tick(31_000);
+      readUpTo(1);
+      tabHidden(false);
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      const card = await screen.findByRole("dialog", { name: "raidstead.news.title" });
+      expect(within(card).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["raidstead.news.day raidstead.news.killed"]);
     });
 
     it("holds news that arrives while another card is open until it is closed", async () => {
@@ -873,10 +961,109 @@ describe("Raidstead page", () => {
       await tick(20_500);
       expect(toast()).toBe("");                // a toast would sit behind the open card
       expect(newsCard()).toBeNull();
+      // the next answer repeats that line and adds one: each is told once
+      answer(withNotes([killedByBob, chestByCat]));
+      await tick(20_500);
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "g.close" }));
       });
-      expect(await screen.findByRole("dialog", { name: "raidstead.news.away" })).toBeTruthy();
+      const card = await screen.findByRole("dialog", { name: "raidstead.news.title" });
+      expect(within(card).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+        "raidstead.news.day raidstead.news.chest",
+        "raidstead.news.day raidstead.news.killed"
+      ]);
+      expect(marks()["1:hive-123456:ann"]).toBe(3);
+    });
+
+    it("does not open waiting news on the way out when the player signs out", async () => {
+      readUpTo(0);
+      answer(withNotes([]));
+      render(<RaidsteadGame />);
+      await ready();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.menu/ }));
+      });
+      answer(withNotes([killedByBob]));
+      await tick(20_500);                      // news waits behind the menu
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "raidstead.signin.sign-out" }));
+      });
+      await tick(50);
+      expect(newsCard()).toBeNull();
+      expect(marks()["1:hive-123456:ann"]).toBe(0);   // not read: it is told at the next visit
+    });
+
+    it("closes a card that was open for a session that is no longer the Ecency user's", async () => {
+      readUpTo(0);
+      answer(withNotes([copied]));
+      const view = render(<RaidsteadGame />);
+      await screen.findByRole("dialog", { name: "raidstead.news.away" });
+      // another Ecency user on this tab: ann's game session ends, and bob signs in for his own
+      asUser("bob");
+      view.rerender(<RaidsteadGame />);
+      await waitFor(() => expect(clearSession).toHaveBeenCalled());
+      box.stored = { account: "bob", token: "rs1_bob", expiresAt: expiry(), ecency: true };
+      const bobs = withNotes([]);
+      bobs.account.name = "bob";
+      answer(bobs);
+      vi.mocked(signIn).mockResolvedValueOnce(box.stored as never);
+      await act(async () => {
+        fireEvent.click(await screen.findByRole("button", { name: /raidstead.signin.play-as/ }));
+      });
+      await ready();
+      await tick(50);
+      expect(newsCard()).toBeNull();           // ann's town news is not shown to bob
+    });
+
+    it("keeps lines an older server sent once, behind an open card, through its next empty answers", async () => {
+      const line = (day: number, text: string) => ({ day, text });
+      answer(withNotes([line(1, "Yesterday's line.")]));
+      render(<RaidsteadGame />);
+      await ready();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.quests/ }));
+      });
+      // that server sends news only on the request that rolled the day
+      answer(withNotes([line(2, "The beetle copied itself.")]));
+      await tick(20_500);
+      answer(withNotes([]));
+      await tick(20_500);
+      await tick(20_500);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+      });
+      const card = await screen.findByRole("dialog", { name: "raidstead.news.title" });
+      expect(within(card).getByText(/The beetle copied itself\./)).toBeTruthy();
+    });
+
+    it("never moves the mark back when another tab reads further between its look and its write", async () => {
+      readUpTo(0);
+      answer(withNotes([]));
+      render(<RaidsteadGame />);
+      await ready();
+      await tick(50);                          // the first state has been looked at
+      // from now on the shared mark reads 5 (another tab), except for this page's next look
+      const real = Storage.prototype.getItem;
+      let looks = 0;
+      const written: string[] = [];
+      const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, k: string) {
+        if (k !== NEWS) return real.call(this, k);
+        return JSON.stringify({ "1:hive-123456:ann": looks++ === 0 ? 0 : 5 });
+      });
+      const realSet = Storage.prototype.setItem;
+      const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, k: string, v: string) {
+        if (k === NEWS) written.push(v);
+        return realSet.call(this, k, v);
+      });
+      try {
+        answer(withNotes([{ seq: 1, day: 3, kind: "chest", who: "bob", text: "x" }]));
+        await tick(20_500);
+        expect(toast()).toBe("raidstead.news.chest");
+        expect(written.map((w) => JSON.parse(w)["1:hive-123456:ann"])).toEqual([5]);
+      } finally {
+        get.mockRestore();
+        set.mockRestore();
+      }
     });
 
     it("shows the week's card first, then the news", async () => {
@@ -1006,12 +1193,20 @@ describe("Raidstead page", () => {
       await tick(20_500);
       await tick(20_500);
       expect(toast()).toBe("");
-      // a failure after the player's own action is told
+      // an action that went through keeps its own message when the ask after it fails:
+      // "something went wrong, try again" would invite a second rally
       api.rally.mockResolvedValueOnce({ applied: { energy: 10 }, balance: 400 });
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.rally/ }));
       });
-      await waitFor(() => expect(toast()).toBe("raidstead.errors.generic"));
+      await waitFor(() => expect(toast()).toBe("raidstead.toast.rally"));
+      // an action that fails is told
+      api.rally.mockRejectedValueOnce({ status: 409, code: "rallied", message: "You already rallied today." });
+      await waitFor(() => expect((screen.getByRole("button", { name: /raidstead.actions.rally/ }) as HTMLButtonElement).disabled).toBe(false));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.rally/ }));
+      });
+      await waitFor(() => expect(toast()).toBe("You already rallied today."));
     });
 
     it("does not ask again when the tab shows right after an ask", async () => {
@@ -1133,6 +1328,31 @@ describe("Raidstead page", () => {
       api.state.mockReturnValueOnce(new Promise(() => undefined));   // the ask after the scout is still on its way
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.scout raidstead.actions.scout-wasp/ }));
+      });
+      api.attack.mockResolvedValueOnce({ hit: "wasp", dodged: false, waspHp: 2, energy: 4, hp: 600, maxHp: 600 });
+      await act(async () => {
+        fireEvent.click(attackButton("ink"));
+      });
+      expect(api.attack).toHaveBeenCalledWith("ink", 0);
+    });
+
+    it("does not forget a scout when an ask from before it answers afterwards", async () => {
+      const wasp = state();
+      wasp.alliance.boss.waspHp = 3;
+      Object.assign(wasp.member, { scoutFree: true });
+      api.state.mockResolvedValue(wasp);
+      render(<RaidsteadGame />);
+      await ready();
+      let late!: (s: unknown) => void;
+      api.state.mockReturnValueOnce(new Promise((r) => (late = r)));
+      await tick(20_500);                      // a regular ask is on its way
+      api.scout.mockResolvedValueOnce({ weakness: "ink", scoutsLeft: 0 });
+      api.state.mockReturnValueOnce(new Promise(() => undefined));   // so is the ask after the scout
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.scout raidstead.actions.scout-wasp/ }));
+      });
+      await act(async () => {
+        late(structuredClone(wasp));           // from before the scout: it still says "not scouted"
       });
       api.attack.mockResolvedValueOnce({ hit: "wasp", dodged: false, waspHp: 2, energy: 4, hp: 600, maxHp: 600 });
       await act(async () => {

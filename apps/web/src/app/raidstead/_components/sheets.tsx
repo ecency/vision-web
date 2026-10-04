@@ -563,11 +563,21 @@ export function NewsList({ notes }: { notes: Note[] }) {
   );
 }
 
-/// What happened in town since the player was last here.
-export function NewsSheet({ notes, onClose }: { notes: Note[]; onClose: () => void }) {
+/// Town news as a card: what happened since the player was last here (`away`),
+/// or what came in while they were busy with something else.
+export function NewsSheet({
+  notes,
+  away,
+  onClose
+}: {
+  notes: Note[];
+  away: boolean;
+  onClose: () => void;
+}) {
+  const title = t(away ? "news.away" : "news.title");
   return (
-    <Sheet onClose={onClose} label={t("news.away")}>
-      <h2>{t("news.away")}</h2>
+    <Sheet onClose={onClose} label={title}>
+      <h2>{title}</h2>
       <NewsList notes={notes} />
       <div className="rs-btns">
         <button className="rs-btn rs-primary" onClick={onClose}>

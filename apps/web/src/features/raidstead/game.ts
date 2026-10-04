@@ -145,11 +145,13 @@ export function markOf(notes: Note[]): NewsMark | null {
 }
 
 /// The news after the player's mark. Numbered lines are told apart for good: an
-/// answer older than the mark holds nothing new. With a noteId, a line that has
-/// rolled off the list makes all of it new.
+/// answer older than the mark holds nothing new, and a line without a number
+/// among numbered ones was written before numbering began, so it is older than
+/// any numbered mark. With a noteId (no numbers at all), a line that has rolled
+/// off the list makes all of it new.
 export function newsAfter(notes: Note[], mark: NewsMark): Note[] {
-  if (typeof mark === "number" && notes.every((n) => typeof n.seq === "number")) {
-    return notes.filter((n) => n.seq! > mark);
+  if (typeof mark === "number" && notes.some((n) => typeof n.seq === "number")) {
+    return notes.filter((n) => typeof n.seq === "number" && n.seq > mark);
   }
   return notes.slice(notes.map(noteId).lastIndexOf(String(mark)) + 1);
 }

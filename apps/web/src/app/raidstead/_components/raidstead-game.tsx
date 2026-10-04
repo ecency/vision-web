@@ -42,6 +42,7 @@ import {
   laterMark,
   markOf,
   newsAfter,
+  noteId,
   noteText,
   pickNeighbors,
   type NewsMark,
@@ -100,7 +101,7 @@ type SheetState =
   | { kind: "town"; town: Neighbor }
   | { kind: "quests" }
   | { kind: "menu" }
-  | { kind: "news"; notes: Note[] }
+  | { kind: "news"; notes: Note[]; away: boolean }
   | { kind: MenuItem };
 
 export function RaidsteadGame() {
@@ -119,7 +120,13 @@ export function RaidsteadGame() {
   const [view, setView] = useState<View>("raid");
   const [selected, setSelected] = useState<AttackType>("ink");
   const [toast, setToast] = useState("");
+  // a line of town news, told next to the toast: an attack's own message does not replace it
+  const [flash, setFlash] = useState("");
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [sheet, setSheet] = useState<SheetState | null>(null);
+  // the sheet as effects of the same commit see it (one of them may just have opened it)
+  const sheetRef = useRef(sheet);
+  sheetRef.current = sheet;
   const [busy, setBusy] = useState(false);
   const [signing, setSigning] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -164,6 +171,11 @@ export function RaidsteadGame() {
     setToast(msg);
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(""), 3600);
+  }, []);
+  const tell = useCallback((msg: string) => {
+    setFlash(msg);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(""), 7000);
   }, []);
 
   // `quiet`: the page's own regular asks say nothing when they fail (the next
@@ -371,6 +383,9 @@ export function RaidsteadGame() {
         clearSession();
         session = null;
         setData(null);
+        // nor a card that was open for it, or news waiting for one
+        setSheet(null);
+        setAwayNews(null);
       }
       // a guest session whose account has now logged in to Ecency ends with that login
       if (session && username && !session.ecency) {
@@ -490,15 +505,17 @@ export function RaidsteadGame() {
     if (ls.get(SEEN_KEY) === key) return;
     ls.set(SEEN_KEY, key);
     setSheet({ kind: "boss" });
+    sheetRef.current = { kind: "boss" };
     // only when the week changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, data?.calendar.season, alliance?.week]);
 
   // Town news. What happened while the player was away opens as a card, after the
   // week's card if that is due too. One line that arrives while they play, with
-  // nothing else open, is a toast. Their own doing (the last hit, the last gift)
-  // was told when it happened. News counts as read once it has been shown, and
-  // the mark never moves back.
+  // nothing else open, is told next to the toast; more than one, or a line that
+  // arrives behind another card or in a background tab, waits for a card. Their
+  // own doing (the last hit, the last gift) was told when it happened. News
+  // counts as read once it has been shown, and the mark never moves back.
   const notes = alliance?.notes;
   const me = data?.account.name;
   const newsScope = data && alliance ? `${data.calendar.season}:${alliance.community}:${me}` : "";
@@ -515,6 +532,7 @@ export function RaidsteadGame() {
   }, []);
   const writeMark = useCallback(
     (scope: string, mark: NewsMark) => {
+      // another tab may have read further between this page's look and now
       const next = laterMark(readMark(scope), mark);
       marks.current[scope] = next;
       // one season's marks are kept: scopes begin with the season
@@ -530,11 +548,14 @@ export function RaidsteadGame() {
     [readMark]
   );
   const booted = useRef(false);
-  const [awayNews, setAwayNews] = useState<{ notes: Note[]; upTo: NewsMark } | null>(null);
+  // news waiting for its card: the lines, how far they read, and whether the player was away
+  const [awayNews, setAwayNews] = useState<{
+    notes: Note[];
+    upTo: NewsMark;
+    away: boolean;
+  } | null>(null);
   const awayRef = useRef(awayNews);
   awayRef.current = awayNews;
-  const sheetRef = useRef(sheet);
-  sheetRef.current = sheet;
   const [tabShown, setTabShown] = useState(() => !document.hidden);
   useEffect(() => {
     const onVisible = () => setTabShown(!document.hidden);
@@ -550,41 +571,54 @@ export function RaidsteadGame() {
   useEffect(() => {
     if (phase !== "ready" || !newsScope || !notes) return;
     const mark = readMark(newsScope);
+    const first = !booted.current;
+    booted.current = true;
     if (mark === null) {
       // The first time this account sees this alliance here (it has just joined,
       // or this is a new device): what is on the list happened before, so the
       // news starts from now.
       writeMark(newsScope, markOf(notes) ?? 0);
-      booted.current = true;
       return;
     }
+    // lines already waiting for their card, unless another tab has shown them since
+    const waiting = awayRef.current ? newsAfter(awayRef.current.notes, mark) : [];
     const fresh = newsAfter(notes, mark);
     const news = fresh.filter((n) => !n.who || n.who !== me);
     const upTo = markOf(notes);
     if (!news.length) {
-      // nothing new, or only the player's own doing; another tab may have shown the rest
+      // Nothing new in this answer, or only the player's own doing. What is
+      // waiting for its card stays: the opener looks at the mark again.
       if (fresh.length && upTo !== null) writeMark(newsScope, upTo);
-      booted.current = true;
-      if (awayRef.current) setAwayNews(null);
       return;
     }
-    if (upTo === null) return;
-    const nothingElse = !sheetRef.current && !awayRef.current && !document.hidden;
-    if (booted.current && news.length === 1 && nothingElse) {
+    // An answer need not repeat what an earlier one brought (a server that sends
+    // news only once): what is waiting stays, the new lines join it.
+    const key = (n: Note) => n.seq ?? noteId(n);
+    const told = new Set(waiting.map(key));
+    const all = [...waiting, ...news.filter((n) => !told.has(key(n)))];
+    const nothingElse = !sheetRef.current && !waiting.length && !document.hidden;
+    if (!first && all.length === 1 && nothingElse && upTo !== null) {
       writeMark(newsScope, upTo);
-      say(noteText(news[0], i18next.t));
+      tell(noteText(all[0], i18next.t));
       return;
     }
-    setAwayNews({ notes: news, upTo });
-  }, [phase, newsScope, notes, me, say, readMark, writeMark]);
+    setAwayNews({
+      notes: all,
+      upTo: upTo ?? awayRef.current?.upTo ?? mark,
+      away: awayRef.current?.away ?? first
+    });
+  }, [phase, newsScope, notes, me, tell, readMark, writeMark]);
   // the card: once nothing else is open and the tab is in front
   useEffect(() => {
     if (!awayNews || sheet || phase !== "ready" || !tabShown || !newsScope) return;
-    booted.current = true;
-    writeMark(newsScope, awayNews.upTo);
-    setSheet({ kind: "news", notes: awayNews.notes });
+    // another tab may have shown some of it while it waited here
+    const mark = readMark(newsScope);
+    const left = mark === null ? awayNews.notes : newsAfter(awayNews.notes, mark);
     setAwayNews(null);
-  }, [awayNews, sheet, phase, tabShown, newsScope, writeMark]);
+    if (!left.length) return;
+    writeMark(newsScope, awayNews.upTo);
+    setSheet({ kind: "news", notes: left, away: awayNews.away });
+  }, [awayNews, sheet, phase, tabShown, newsScope, readMark, writeMark]);
 
   // Allies raid at the same time: ask for the state again while the page shows.
   // The server answers these without a lock or a write when nothing is due.
@@ -677,12 +711,14 @@ export function RaidsteadGame() {
       try {
         const r = await fn();
         after?.(r);
-        await refresh();
+        // quiet: "something went wrong" after an action that went through would
+        // invite doing it again (a second rally, a second gift)
+        await refresh({ quiet: true });
         return r;
       } catch (e) {
         say(errorMessage(e, i18next.t));
         // the action may have happened even though the answer was lost
-        refresh();
+        refresh({ quiet: true });
         return null;
       } finally {
         setBusy(false);
@@ -733,7 +769,7 @@ export function RaidsteadGame() {
         shot?.resolve({ kind: "miss" });
         say(errorMessage(e, i18next.t));
       }
-      refresh();
+      refresh({ quiet: true });
     },
     [alliance, member, boss, data, refresh, say]
   );
@@ -768,7 +804,9 @@ export function RaidsteadGame() {
         say(lines.join(" "));
         sceneRef.current?.cheer("scout");
         // known from this answer on, not only once the state has been asked again:
-        // an attack tapped right away must not be held back as unscouted
+        // an attack tapped right away must not be held back as unscouted (nor by
+        // an answer that was asked before the scout)
+        appliedSeq.current = ++refreshSeq.current;
         setData((d) =>
           d?.alliance
             ? {
@@ -864,6 +902,8 @@ export function RaidsteadGame() {
   };
 
   const doSignOut = async () => {
+    // news waiting behind the menu must not open (and count as read) on the way out
+    setAwayNews(null);
     setSheet(null);
     await signOut().catch(() => undefined);
     setData(null);
@@ -1030,7 +1070,7 @@ export function RaidsteadGame() {
         ) : null;
         break;
       case "news":
-        open = <NewsSheet notes={sheet.notes} onClose={close} />;
+        open = <NewsSheet notes={sheet.notes} away={sheet.away} onClose={close} />;
         break;
       case "menu":
         open = (
@@ -1194,7 +1234,7 @@ export function RaidsteadGame() {
         {playing && (
           <footer className="rs-actions">
             <p className="rs-toast" aria-live="polite">
-              {toast}
+              {[toast, flash].filter(Boolean).join(" ")}
             </p>
             {view === "town" && neighbors.length > 0 && (
               // the far towns live on the canvas; these open their cards from
