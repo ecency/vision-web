@@ -168,6 +168,8 @@ export function RaidsteadGame() {
   const loginOpen = useGlobalStore((s) => s.login);
 
   const say = useCallback((msg: string) => {
+    // an answer can come back after the page has closed: nothing to say it to
+    if (!mounted.current) return;
     setToast(msg);
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(""), 3600);
@@ -177,6 +179,14 @@ export function RaidsteadGame() {
     clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(""), 7000);
   }, []);
+  // neither message outlives the page
+  useEffect(
+    () => () => {
+      clearTimeout(toastTimer.current);
+      clearTimeout(flashTimer.current);
+    },
+    []
+  );
 
   // `quiet`: the page's own regular asks say nothing when they fail (the next
   // one tries again); a failure after the player's action is told.
@@ -199,7 +209,11 @@ export function RaidsteadGame() {
         return s;
       } catch (e) {
         if (loadSession()?.token !== token) return null;
-        if ((e as { status?: number }).status === 401) {
+        const status = (e as { status?: number }).status;
+        // Like an answer, a refusal that is older than what has been applied since
+        // is not acted on: if the session has really ended, the next ask says so.
+        if (status === 401 && seq < appliedSeq.current) return dataRef.current;
+        if (status === 401) {
           unauthorized.current = true;
           clearSession();
           setData(null);
@@ -548,8 +562,10 @@ export function RaidsteadGame() {
     [readMark]
   );
   const booted = useRef(false);
-  // news waiting for its card: the lines, how far they read, and whether the player was away
+  // news waiting for its card: whose it is, the lines, how far they read, and
+  // whether the player was away
   const [awayNews, setAwayNews] = useState<{
+    scope: string;
     notes: Note[];
     upTo: NewsMark;
     away: boolean;
@@ -580,15 +596,19 @@ export function RaidsteadGame() {
       writeMark(newsScope, markOf(notes) ?? 0);
       return;
     }
-    // lines already waiting for their card, unless another tab has shown them since
-    const waiting = awayRef.current ? newsAfter(awayRef.current.notes, mark) : [];
+    // Lines already waiting for their card, unless another tab has shown them
+    // since. Only this scope's: right after a change of account or alliance the
+    // ref still holds the last one's queue (the reset above lands with the next render).
+    const queued = awayRef.current?.scope === newsScope ? awayRef.current : null;
+    const waiting = queued ? newsAfter(queued.notes, mark) : [];
     const fresh = newsAfter(notes, mark);
     const news = fresh.filter((n) => !n.who || n.who !== me);
     const upTo = markOf(notes);
     if (!news.length) {
-      // Nothing new in this answer, or only the player's own doing. What is
-      // waiting for its card stays: the opener looks at the mark again.
-      if (fresh.length && upTo !== null) writeMark(newsScope, upTo);
+      // Nothing new in this answer, or only the player's own doing: that counts
+      // as read. Not while lines wait for their card, though: an answer need not
+      // repeat them, and a mark moved past them would drop them unread.
+      if (fresh.length && upTo !== null && !waiting.length) writeMark(newsScope, upTo);
       return;
     }
     // An answer need not repeat what an earlier one brought (a server that sends
@@ -603,14 +623,20 @@ export function RaidsteadGame() {
       return;
     }
     setAwayNews({
+      scope: newsScope,
       notes: all,
-      upTo: upTo ?? awayRef.current?.upTo ?? mark,
-      away: awayRef.current?.away ?? first
+      upTo: upTo ?? queued?.upTo ?? mark,
+      away: queued?.away ?? first
     });
   }, [phase, newsScope, notes, me, tell, readMark, writeMark]);
   // the card: once nothing else is open and the tab is in front
   useEffect(() => {
     if (!awayNews || sheet || phase !== "ready" || !tabShown || !newsScope) return;
+    // A queue put aside for another account or alliance: this effect still sees it
+    // in the render that changes the scope (the reset above lands with the next
+    // one). It is left alone, not cleared here: the same commit may have queued
+    // this scope's own news.
+    if (awayNews.scope !== newsScope) return;
     // another tab may have shown some of it while it waited here
     const mark = readMark(newsScope);
     const left = mark === null ? awayNews.notes : newsAfter(awayNews.notes, mark);

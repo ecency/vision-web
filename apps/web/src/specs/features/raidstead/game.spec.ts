@@ -444,6 +444,14 @@ describe("town news", () => {
     expect(laterMark("2|webbed|tower||", 5)).toBe(5);
     expect(laterMark(5, "2|webbed|tower||")).toBe("2|webbed|tower||");
   });
+
+  it("does not move an unnumbered mark back to an earlier day", () => {
+    const day3 = "3|killed|beetle|bob|";
+    expect(laterMark(day3, "2|webbed|tower||")).toBe(day3);
+    expect(laterMark("2|webbed|tower||", day3)).toBe(day3);
+    // the same day: the lines cannot be put in order, so the one just shown counts
+    expect(laterMark(day3, "3|chest||cat|")).toBe("3|chest||cat|");
+  });
 });
 
 describe("countdown", () => {

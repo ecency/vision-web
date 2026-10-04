@@ -157,9 +157,12 @@ export function newsAfter(notes: Note[], mark: NewsMark): Note[] {
 }
 
 /// The later of two marks: a mark never moves back (two tabs share one, and an
-/// answer can be older than what another tab has already shown).
+/// answer can be older than what another tab has already shown). Numbers say
+/// which is later; noteIds only by their day, so within a day the new one counts.
 export function laterMark(a: NewsMark | null | undefined, b: NewsMark): NewsMark {
-  return typeof a === "number" && typeof b === "number" ? Math.max(a, b) : b;
+  if (typeof a === "number" && typeof b === "number") return Math.max(a, b);
+  const day = (m: string) => Number(m.split("|")[0]) || 0;
+  return typeof a === "string" && typeof b === "string" && day(a) > day(b) ? a : b;
 }
 
 /// The toast after an attack; follow-ups (a shift, a shield, the wasp) are
