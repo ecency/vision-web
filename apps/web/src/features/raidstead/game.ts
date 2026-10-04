@@ -1,4 +1,4 @@
-import { BOSS_KINDS, type BossKind } from "@ecency/raidstead";
+import { BOSS_KINDS, BUILDING_IDS, type BossKind } from "@ecency/raidstead";
 import type {
   AttackResult,
   AttackType,
@@ -98,38 +98,66 @@ export function chestBlock(state: State | null): "active" | "kept" | "resting" |
   return !a.boss.alive && a.week >= 4 ? "no-boss" : null;
 }
 
-/// A line of town news in the reader's language. A kind this page does not know
-/// (a newer server) falls back to the server's own plain line.
+/// A line of town news in the reader's language. Anything this page has no words
+/// for (a kind, a pest or a building from a newer server) falls back to the
+/// server's own plain line.
 export function noteText(n: Note, t: T): string {
   const what = n.what ?? "";
+  const building = (BUILDING_IDS as readonly string[]).includes(what);
+  const pest = (BOSS_KINDS as readonly string[]).includes(what);
   switch (n.kind) {
     case "copied":
     case "healed":
       return t(`raidstead.news.${n.kind}`, { n: n.n ?? 0 });
     case "webbed":
     case "web_gone":
+      if (!building) return n.text;
       return t(`raidstead.news.${n.kind}`, { name: t(`raidstead.town.buildings.${what}.name`) });
     case "escaped":
+      if (!pest) return n.text;
       return t("raidstead.news.escaped", { name: t(`raidstead.bosses.${what}.name`) });
     case "killed":
+      if (!pest) return n.text;
       return t("raidstead.news.killed", { name: t(`raidstead.bosses.${what}.name`), who: n.who ?? "" });
     case "chest":
     case "chest_kept":
       return t(`raidstead.news.${n.kind}`, { who: n.who ?? "" });
+    case "chest_open":
+      return t("raidstead.news.chest_open");
     default:
       return n.text;
   }
 }
 
-/// What tells one line of news from another: the news is a short rolling list
-/// with no ids of its own.
+/// What tells one line of news from another when the server does not number
+/// them: the news is a short rolling list.
 export const noteId = (n: Note) => [n.day, n.kind ?? n.text, n.what ?? "", n.who ?? "", n.n ?? ""].join("|");
 
-/// The news after the last line the player has seen (`seen` is its noteId). A
-/// line that has rolled off the list, or none seen yet, makes all of it new.
-export function newNotes(notes: Note[], seen: string | null): Note[] {
-  const at = seen === null ? -1 : notes.map(noteId).lastIndexOf(seen);
-  return notes.slice(at + 1);
+/// How far a player has read the news: the number of the last line seen (the
+/// server numbers them), or that line's noteId from a server that does not.
+export type NewsMark = number | string;
+
+/// The mark of a list read to its end; null for an empty list from a server
+/// that does not number its news.
+export function markOf(notes: Note[]): NewsMark | null {
+  const last = notes[notes.length - 1];
+  return last ? (last.seq ?? noteId(last)) : null;
+}
+
+/// The news after the player's mark. Numbered lines are told apart for good: an
+/// answer older than the mark holds nothing new. With a noteId, a line that has
+/// rolled off the list makes all of it new.
+export function newsAfter(notes: Note[], mark: NewsMark): Note[] {
+  if (typeof mark === "number" && notes.every((n) => typeof n.seq === "number")) {
+    return notes.filter((n) => n.seq! > mark);
+  }
+  return notes.slice(notes.map(noteId).lastIndexOf(String(mark)) + 1);
+}
+
+/// The later of two marks: a mark never moves back (two tabs share one, and an
+/// answer can be older than what another tab has already shown).
+export function laterMark(a: NewsMark | null | undefined, b: NewsMark): NewsMark {
+  return typeof a === "number" && typeof b === "number" ? Math.max(a, b) : b;
 }
 
 /// The toast after an attack; follow-ups (a shift, a shield, the wasp) are
@@ -151,16 +179,20 @@ export function attackMessage(r: AttackResult, type: AttackType, t: T, me?: stri
   if (r.killed) return t("raidstead.toast.killed");
   const parts = [
     r.paired
-      ? // paired with the player's own waiting hit: nobody to share it with
-        r.paired.by === me
-        ? t("raidstead.toast.paired-self", { dmg: r.damage })
-        : t("raidstead.toast.paired", { dmg: r.damage, by: r.paired.by })
+      ? // several waiting hits landed with this one; or only the player's own, with
+        // nobody to share it with; or one ally's
+        (r.paired.hits ?? 1) > 1
+        ? t("raidstead.toast.paired-many", { dmg: r.damage, n: r.paired.hits })
+        : r.paired.by === me
+          ? t("raidstead.toast.paired-self", { dmg: r.damage })
+          : t("raidstead.toast.paired", { dmg: r.damage, by: r.paired.by })
       : t(r.weak ? "raidstead.toast.hit-weak" : "raidstead.toast.hit", {
           type: t(`raidstead.types.${type}`),
           dmg: r.damage
         })
   ];
-  if (r.phaseShift) parts.push(t("raidstead.toast.shift"));
+  // the wasp's own line says how to scout again (for free), so the shift's is left out
+  if (r.phaseShift && !r.waspArrived) parts.push(t("raidstead.toast.shift"));
   if (r.gnatsSpawned) parts.push(t("raidstead.toast.gnats-spawn", { n: r.gnatsSpawned }));
   if (r.waspArrived) parts.push(t("raidstead.toast.wasp-arrives"));
   return parts.join(" ");
@@ -205,7 +237,7 @@ export function buildReport(state: State, t: T): { title: string; body: string }
   const boss = t(`raidstead.bosses.${a.boss.kind}.name`);
   const title = t("raidstead.report.post-title", { name: a.title, boss, week: a.week });
   const lines = [
-    t(a.boss.alive ? "raidstead.report.intro-fighting" : "raidstead.report.intro-won", {
+    t(a.boss.alive ? "raidstead.report.intro-fighting" : a.boss.killed === false ? "raidstead.report.intro-escaped" : "raidstead.report.intro-won", {
       name: escapeMarkdown(a.title),
       boss
     }),

@@ -9,7 +9,9 @@ import {
   errorMessage,
   GNATS_SHOWN,
   impactOf,
-  newNotes,
+  laterMark,
+  markOf,
+  newsAfter,
   noteId,
   noteText,
   pestCalendar,
@@ -283,6 +285,43 @@ describe("what the page decides before asking the server", () => {
     expect(attackMessage(pair("bob"), "ink", t, "ann")).toBe("paired|dmg=24,by=bob");
     expect(attackMessage(pair("ann"), "ink", t, "ann")).toBe("paired-self|dmg=24");
     expect(attackMessage(pair("ann"), "ink", t)).toBe("paired|dmg=24,by=ann");
+    // several waiting hits landed with this one: no single name is the whole story
+    const many = hit({
+      hit: "boss",
+      damage: 36,
+      weak: true,
+      paired: { by: "bob", damage: 24, hits: 2 },
+      killed: false,
+      phaseShift: false,
+      gnatsSpawned: 0,
+      waspArrived: false
+    });
+    expect(attackMessage(many, "ink", t, "ann")).toBe("paired-many|dmg=36,n=2");
+  });
+
+  it("leaves the shift's own line out when the wasp arrives with it", () => {
+    const shift = (waspArrived: boolean) =>
+      hit({
+        hit: "boss",
+        damage: 12,
+        weak: true,
+        paired: null,
+        killed: false,
+        phaseShift: true,
+        gnatsSpawned: 0,
+        waspArrived
+      });
+    expect(attackMessage(shift(false), "ink", t)).toBe("hit-weak|type=ink,dmg=12 shift");
+    // "scout again if you have a scout left" next to "scouting is free" would contradict itself
+    expect(attackMessage(shift(true), "ink", t)).toBe("hit-weak|type=ink,dmg=12 wasp-arrives");
+  });
+
+  it("says a pest that is gone without being chased off got away", () => {
+    const s = state({ alive: false, killed: false });
+    expect(buildReport(s, t)!.body).toContain("intro-escaped");
+    expect(buildReport(state({ alive: false, killed: true }), t)!.body).toContain("intro-won");
+    // a server that does not say: as before
+    expect(buildReport(state({ alive: false }), t)!.body).toContain("intro-won");
   });
 
   it("knows when a rally would be for nothing", () => {
@@ -330,6 +369,10 @@ describe("town news", () => {
     { day: 4, kind: "killed", what: "beetle", who: "bob", text: "server line" }
   ];
 
+  // the whole key and its values, so the test sees WHICH name was looked up
+  const full = (key: string, values?: Record<string, unknown>) =>
+    values ? `${key} ${JSON.stringify(values)}` : key;
+
   it("puts each kind in the reader's words, and keeps the server's line for a kind it does not know", () => {
     expect(notes.map((n) => noteText(n, t))).toEqual([
       "copied|n=45",
@@ -337,23 +380,64 @@ describe("town news", () => {
       "webbed|name=name",
       "killed|name=name,who=bob"
     ]);
+    expect(noteText(notes[2], full)).toBe('raidstead.news.webbed {"name":"raidstead.town.buildings.tower.name"}');
+    expect(noteText(notes[3], full)).toBe('raidstead.news.killed {"name":"raidstead.bosses.beetle.name","who":"bob"}');
+    expect(noteText({ day: 5, kind: "web_gone", what: "hall", text: "x" }, full)).toBe(
+      'raidstead.news.web_gone {"name":"raidstead.town.buildings.hall.name"}'
+    );
+    expect(noteText({ day: 5, kind: "escaped", what: "slug", text: "x" }, full)).toBe(
+      'raidstead.news.escaped {"name":"raidstead.bosses.slug.name"}'
+    );
     expect(noteText({ day: 5, kind: "chest_kept", who: "ann", text: "x" }, t)).toBe("chest_kept|who=ann");
-    expect(noteText({ day: 5, kind: "web_gone", what: "hall", text: "x" }, t)).toBe("web_gone|name=name");
-    expect(noteText({ day: 5, kind: "escaped", what: "slug", text: "x" }, t)).toBe("escaped|name=name");
+    expect(noteText({ day: 5, kind: "chest_open", text: "x" }, t)).toBe("chest_open");
     expect(noteText({ day: 5, kind: "healed", n: 60, text: "x" }, t)).toBe("healed|n=60");
     expect(noteText({ day: 5, kind: "something-new", text: "The server's own line." }, t)).toBe("The server's own line.");
     expect(noteText({ day: 5, text: "From an older server." }, t)).toBe("From an older server.");
   });
 
-  it("finds what came after the last line seen", () => {
-    expect(newNotes(notes, null)).toEqual(notes);
-    expect(newNotes(notes, noteId(notes[1]))).toEqual(notes.slice(2));
-    expect(newNotes(notes, noteId(notes[3]))).toEqual([]);
+  it("keeps the server's line for a building or a pest it has no name for", () => {
+    const line = "The server's own line.";
+    expect(noteText({ day: 5, kind: "webbed", what: "market", text: line }, t)).toBe(line);
+    expect(noteText({ day: 5, kind: "web_gone", what: "beetle", text: line }, t)).toBe(line);
+    expect(noteText({ day: 5, kind: "escaped", what: "hornet", text: line }, t)).toBe(line);
+    expect(noteText({ day: 5, kind: "killed", what: "tower", who: "bob", text: line }, t)).toBe(line);
+    expect(noteText({ day: 5, kind: "killed", who: "bob", text: line }, t)).toBe(line);
+  });
+
+  const numbered = notes.map((n, i) => ({ ...n, seq: i + 7 }));
+
+  it("finds what came after the player's mark in numbered news", () => {
+    expect(markOf(numbered)).toBe(10);
+    expect(newsAfter(numbered, 0)).toEqual(numbered);
+    expect(newsAfter(numbered, 8)).toEqual(numbered.slice(2));
+    expect(newsAfter(numbered, 10)).toEqual([]);
+    // an answer older than the mark (another tab has shown more): nothing new
+    expect(newsAfter(numbered.slice(0, 2), 10)).toEqual([]);
+    // lines that rolled off the list are not missed: what is left is still after the mark
+    expect(newsAfter(numbered.slice(2), 7)).toEqual(numbered.slice(2));
+  });
+
+  it("falls back to the lines themselves with a server that does not number them", () => {
+    expect(markOf(notes)).toBe(noteId(notes[3]));
+    expect(markOf([])).toBeNull();
+    expect(newsAfter(notes, noteId(notes[1]))).toEqual(notes.slice(2));
+    expect(newsAfter(notes, noteId(notes[3]))).toEqual([]);
     // the same thing two days running is two lines
     expect(noteId(notes[0])).not.toBe(noteId(notes[1]));
     // the line seen has rolled off the list: all of it is new
-    expect(newNotes(notes.slice(2), noteId(notes[0]))).toEqual(notes.slice(2));
-    expect(newNotes([], "anything")).toEqual([]);
+    expect(newsAfter(notes.slice(2), noteId(notes[0]))).toEqual(notes.slice(2));
+    // a numbered mark (0: nothing seen yet) against lines without numbers
+    expect(newsAfter(notes, 0)).toEqual(notes);
+    expect(newsAfter([], "anything")).toEqual([]);
+  });
+
+  it("never moves a numbered mark back", () => {
+    expect(laterMark(9, 4)).toBe(9);
+    expect(laterMark(4, 9)).toBe(9);
+    expect(laterMark(undefined, 3)).toBe(3);
+    expect(laterMark(null, 3)).toBe(3);
+    expect(laterMark("2|webbed|tower||", 5)).toBe(5);
+    expect(laterMark(5, "2|webbed|tower||")).toBe("2|webbed|tower||");
   });
 });
 

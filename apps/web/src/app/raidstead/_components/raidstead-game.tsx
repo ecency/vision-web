@@ -39,10 +39,12 @@ import {
   aimOf,
   attackMessage,
   buildReport,
-  newNotes,
-  noteId,
+  laterMark,
+  markOf,
+  newsAfter,
   noteText,
   pickNeighbors,
+  type NewsMark,
   rallyBlock,
   twinSide,
   type Neighbor,
@@ -84,7 +86,7 @@ const TYPES: { type: AttackType; hero: string; color: string }[] = [
   { type: "forge", hero: "smith", color: "var(--rs-smith)" }
 ];
 const SEEN_KEY = "raidstead_seen_week";
-// the last line of town news the player has seen, per season and alliance
+// how far each account has read its alliance's town news this season
 const NEWS_KEY = "raidstead_news";
 // How often the page asks again while it shows: allies' hits, a kill, the town's
 // news. Slower once the week's pest is gone and only the town changes.
@@ -164,44 +166,49 @@ export function RaidsteadGame() {
     toastTimer.current = setTimeout(() => setToast(""), 3600);
   }, []);
 
-  const refresh = useCallback(async (): Promise<State | null> => {
-    const seq = ++refreshSeq.current;
-    const token = loadSession()?.token;
-    unauthorized.current = false;
-    try {
-      const s = await raidsteadApi.state();
-      // another account signed in meanwhile: not its state
-      if (loadSession()?.token !== token) return null;
-      // a newer answer already came back (answers can overtake each other)
-      if (seq < appliedSeq.current) return dataRef.current;
-      appliedSeq.current = seq;
-      dataRef.current = s;
-      dataToken.current = token;
-      if (typeof s.now === "number") stateSkew.current = s.now - Date.now();
-      setData(s);
-      return s;
-    } catch (e) {
-      if (loadSession()?.token !== token) return null;
-      if ((e as { status?: number }).status === 401) {
-        unauthorized.current = true;
-        clearSession();
-        setData(null);
-        // the game session ended (expired or revoked): boot again, which signs
-        // key users back in silently; at most once a minute, so a server that
-        // keeps refusing cannot loop
-        if (Date.now() - rebootAt.current > 60_000) {
-          rebootAt.current = Date.now();
-          setPhase("loading");
-          setBoot((n) => n + 1);
-        } else {
-          setPhase("signin");
+  // `quiet`: the page's own regular asks say nothing when they fail (the next
+  // one tries again); a failure after the player's action is told.
+  const refresh = useCallback(
+    async (opts?: { quiet?: boolean }): Promise<State | null> => {
+      const seq = ++refreshSeq.current;
+      const token = loadSession()?.token;
+      unauthorized.current = false;
+      try {
+        const s = await raidsteadApi.state();
+        // another account signed in meanwhile: not its state
+        if (loadSession()?.token !== token) return null;
+        // a newer answer already came back (answers can overtake each other)
+        if (seq < appliedSeq.current) return dataRef.current;
+        appliedSeq.current = seq;
+        dataRef.current = s;
+        dataToken.current = token;
+        if (typeof s.now === "number") stateSkew.current = s.now - Date.now();
+        setData(s);
+        return s;
+      } catch (e) {
+        if (loadSession()?.token !== token) return null;
+        if ((e as { status?: number }).status === 401) {
+          unauthorized.current = true;
+          clearSession();
+          setData(null);
+          // the game session ended (expired or revoked): boot again, which signs
+          // key users back in silently; at most once a minute, so a server that
+          // keeps refusing cannot loop
+          if (Date.now() - rebootAt.current > 60_000) {
+            rebootAt.current = Date.now();
+            setPhase("loading");
+            setBoot((n) => n + 1);
+          } else {
+            setPhase("signin");
+          }
+        } else if (opts?.quiet !== true) {
+          say(errorMessage(e, i18next.t));
         }
-      } else {
-        say(errorMessage(e, i18next.t));
+        return null;
       }
-      return null;
-    }
-  }, [say]);
+    },
+    [say]
+  );
 
   // ---------- the scene ----------
   const tapRef = useRef<(target: TapTarget) => void>(() => undefined);
@@ -487,14 +494,53 @@ export function RaidsteadGame() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, data?.calendar.season, alliance?.week]);
 
-  // Town news. What happened while the player was away opens once as a card, after
-  // the week's card if that is due too; what arrives while they play is a toast.
-  // Their own doing (the last hit, the last gift) was told when it happened.
+  // Town news. What happened while the player was away opens as a card, after the
+  // week's card if that is due too. One line that arrives while they play, with
+  // nothing else open, is a toast. Their own doing (the last hit, the last gift)
+  // was told when it happened. News counts as read once it has been shown, and
+  // the mark never moves back.
   const notes = alliance?.notes;
-  const newsScope = data && alliance ? `${data.calendar.season}:${alliance.community}` : "";
   const me = data?.account.name;
+  const newsScope = data && alliance ? `${data.calendar.season}:${alliance.community}:${me}` : "";
+  // this page's own copy of the marks: storage shares them between tabs, and may refuse
+  const marks = useRef<Record<string, NewsMark>>({});
+  const readMark = useCallback((scope: string): NewsMark | null => {
+    const mine = marks.current[scope];
+    const stored = (ls.get(NEWS_KEY) ?? {})[scope] as unknown;
+    const shared = typeof stored === "number" || typeof stored === "string" ? stored : undefined;
+    if (shared === undefined) return mine ?? null;
+    // numbered marks: the later one, so a tab whose storage refused the write still
+    // knows what it has shown; otherwise the shared one, as far as any tab has read
+    return typeof mine === "number" && typeof shared === "number" ? Math.max(mine, shared) : shared;
+  }, []);
+  const writeMark = useCallback(
+    (scope: string, mark: NewsMark) => {
+      const next = laterMark(readMark(scope), mark);
+      marks.current[scope] = next;
+      // one season's marks are kept: scopes begin with the season
+      const season = scope.split(":")[0];
+      const stored = (ls.get(NEWS_KEY) ?? {}) as Record<string, unknown>;
+      const kept = Object.fromEntries(
+        Object.entries(stored).filter(
+          ([k, v]) => k.startsWith(`${season}:`) && (typeof v === "number" || typeof v === "string")
+        )
+      );
+      ls.set(NEWS_KEY, { ...kept, [scope]: next });
+    },
+    [readMark]
+  );
   const booted = useRef(false);
-  const [awayNews, setAwayNews] = useState<Note[] | null>(null);
+  const [awayNews, setAwayNews] = useState<{ notes: Note[]; upTo: NewsMark } | null>(null);
+  const awayRef = useRef(awayNews);
+  awayRef.current = awayNews;
+  const sheetRef = useRef(sheet);
+  sheetRef.current = sheet;
+  const [tabShown, setTabShown] = useState(() => !document.hidden);
+  useEffect(() => {
+    const onVisible = () => setTabShown(!document.hidden);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
   // Another account, alliance or season: its first state is a return, not news
   // while playing. Declared first, so it runs before the effect below reads it.
   useEffect(() => {
@@ -503,43 +549,64 @@ export function RaidsteadGame() {
   }, [newsScope]);
   useEffect(() => {
     if (phase !== "ready" || !newsScope || !notes) return;
-    const first = !booted.current;
-    booted.current = true;
-    const stored = ls.get(NEWS_KEY) as { scope?: string; seen?: string } | null;
-    const seen =
-      stored?.scope === newsScope && typeof stored.seen === "string" ? stored.seen : null;
-    const fresh = newNotes(notes, seen);
-    if (!fresh.length) return;
-    ls.set(NEWS_KEY, { scope: newsScope, seen: noteId(notes[notes.length - 1]) });
+    const mark = readMark(newsScope);
+    if (mark === null) {
+      // The first time this account sees this alliance here (it has just joined,
+      // or this is a new device): what is on the list happened before, so the
+      // news starts from now.
+      writeMark(newsScope, markOf(notes) ?? 0);
+      booted.current = true;
+      return;
+    }
+    const fresh = newsAfter(notes, mark);
     const news = fresh.filter((n) => !n.who || n.who !== me);
-    if (!news.length) return;
-    if (first) setAwayNews(news);
-    else say(noteText(news[news.length - 1], i18next.t));
-  }, [phase, newsScope, notes, me, say]);
+    const upTo = markOf(notes);
+    if (!news.length) {
+      // nothing new, or only the player's own doing; another tab may have shown the rest
+      if (fresh.length && upTo !== null) writeMark(newsScope, upTo);
+      booted.current = true;
+      if (awayRef.current) setAwayNews(null);
+      return;
+    }
+    if (upTo === null) return;
+    const nothingElse = !sheetRef.current && !awayRef.current && !document.hidden;
+    if (booted.current && news.length === 1 && nothingElse) {
+      writeMark(newsScope, upTo);
+      say(noteText(news[0], i18next.t));
+      return;
+    }
+    setAwayNews({ notes: news, upTo });
+  }, [phase, newsScope, notes, me, say, readMark, writeMark]);
+  // the card: once nothing else is open and the tab is in front
   useEffect(() => {
-    if (!awayNews || sheet || phase !== "ready") return;
-    setSheet({ kind: "news", notes: awayNews });
+    if (!awayNews || sheet || phase !== "ready" || !tabShown || !newsScope) return;
+    booted.current = true;
+    writeMark(newsScope, awayNews.upTo);
+    setSheet({ kind: "news", notes: awayNews.notes });
     setAwayNews(null);
-  }, [awayNews, sheet, phase]);
+  }, [awayNews, sheet, phase, tabShown, newsScope, writeMark]);
 
   // Allies raid at the same time: ask for the state again while the page shows.
   // The server answers these without a lock or a write when nothing is due.
   const inAlliance = !!alliance;
   const bossInTown = !!boss?.alive;
+  const dayDue = useRef(0);
   useEffect(() => {
     if (phase !== "ready" || !inAlliance) return;
     const every = bossInTown ? POLL_MS : POLL_IDLE_MS;
     let last = Date.now();
     const ask = () => {
       last = Date.now();
-      refresh();
+      refresh({ quiet: true });
     };
     const id = setInterval(() => {
       if (!document.hidden) ask();
     }, every);
-    // a background tab is not asked for; it catches up when it shows again
+    // A background tab is not asked for; it catches up when it shows again,
+    // unless the new day is due: the day's own ask below goes out then.
     const onVisible = () => {
-      if (!document.hidden && Date.now() - last >= every) ask();
+      const newDay = dayDue.current > 0 && Date.now() > dayDue.current;
+      if (!document.hidden && Date.now() - last >= every && !newDay) ask();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
@@ -559,12 +626,23 @@ export function RaidsteadGame() {
       setNow(n);
       if (n < boss.reshuffleAt! || n - lastPoll < 2000) return;
       lastPoll = n;
-      refresh().then((s) => {
-        if (s?.alliance && !s.alliance.boss.reshuffleAt) say(t("toast.queen-shuffled"));
-      });
+      refresh({ quiet: true });
     }, 500);
     return () => clearInterval(id);
-  }, [boss?.reshuffleAt, refresh, say]);
+  }, [boss?.reshuffleAt, refresh]);
+  // She has reshuffled when her countdown is gone while she is still in town on
+  // the same day, whichever ask brought the news (this one or the regular one).
+  const queenWas = useRef<{ day: number; counting: boolean } | null>(null);
+  const queenDay = data?.calendar.day ?? 0;
+  const queenCounting = !!boss?.reshuffleAt;
+  const queenInTown = !!boss?.alive && boss.kind === "queen";
+  useEffect(() => {
+    const was = queenWas.current;
+    queenWas.current = queenInTown ? { day: queenDay, counting: queenCounting } : null;
+    if (queenInTown && was?.counting && was.day === queenDay && !queenCounting) {
+      say(t("toast.queen-shuffled"));
+    }
+  }, [queenInTown, queenDay, queenCounting, say]);
 
   // a new game day (energy, quests, the boss) starts at 00:00 UTC: ask for it
   // then, a little spread out, and again every 30s while the server still
@@ -573,13 +651,17 @@ export function RaidsteadGame() {
   useEffect(() => {
     if (phase !== "ready" || !nextDayAt) return;
     const due = Date.parse(nextDayAt);
+    dayDue.current = due;
     const wait = Math.max(due - Date.now() + 2000 + Math.random() * 20_000, 30_000);
     // re-armed after every try, answered or not, so a failed request at
     // midnight is asked again 30s later
-    const id = setTimeout(() => refresh().finally(() => setDayTick((n) => n + 1)), wait);
+    const id = setTimeout(
+      () => refresh({ quiet: true }).finally(() => setDayTick((n) => n + 1)),
+      wait
+    );
     // a background tab's timers are held back: catch up when it shows again
     const onVisible = () => {
-      if (!document.hidden && Date.now() > due) refresh();
+      if (!document.hidden && Date.now() > due) refresh({ quiet: true });
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
@@ -637,6 +719,9 @@ export function RaidsteadGame() {
         sideRef.current = s ? 0 : 1;
       }
       const shot = sceneRef.current?.attack(type, aim, s);
+      // an answer asked before this tap (a regular ask still on its way) would put
+      // the spent energy back for a moment: it no longer counts
+      appliedSeq.current = ++refreshSeq.current;
       setData((d) =>
         d?.member ? { ...d, member: { ...d.member, energy: d.member.energy - 1 } } : d
       );
@@ -682,6 +767,16 @@ export function RaidsteadGame() {
         if (r.tomorrow) lines.push(t("toast.tomorrow", { type: t(`types.${r.tomorrow}`) }));
         say(lines.join(" "));
         sceneRef.current?.cheer("scout");
+        // known from this answer on, not only once the state has been asked again:
+        // an attack tapped right away must not be held back as unscouted
+        setData((d) =>
+          d?.alliance
+            ? {
+                ...d,
+                alliance: { ...d.alliance, boss: { ...d.alliance.boss, weakness: r.weakness } }
+              }
+            : d
+        );
       }
     );
   // A spend keeps its key until the server has answered, across a reload
@@ -1041,7 +1136,9 @@ export function RaidsteadGame() {
                     ]
                       .filter(Boolean)
                       .join(" · ")
-                  : t("boss.chased", { week: alliance!.week })}
+                  : boss.killed === false
+                    ? t("boss.escaped", { week: alliance!.week })
+                    : t("boss.chased", { week: alliance!.week })}
               </small>
             </div>
             <div

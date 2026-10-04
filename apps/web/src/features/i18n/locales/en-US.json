@@ -5107,6 +5107,7 @@
       "weak-known": "Weak to {{type}}",
       "reshuffle": "{{s}}s",
       "chased": "Week {{week}} · chased off",
+      "escaped": "Week {{week}} · got away",
       "next": "The next pest arrives next week",
       "week-card": "Week {{week}} of 4",
       "finale": "season finale",
@@ -5165,6 +5166,7 @@
       "hit-weak": "{{type}} hit · {{dmg}} damage · weakness x2",
       "paired": "Both twins hit! {{dmg}} damage, shared with @{{by}}.",
       "paired-self": "Both twins hit! {{dmg}} damage.",
+      "paired-many": "Both twins hit! {{dmg}} damage: {{n}} waiting hits landed with yours.",
       "echo": "Twin hit. Now hit the other twin within 6 seconds.",
       "gnat": "Gnat cleared. {{n}} to go.",
       "gnat-last": "Gnat cleared. The shield is down!",
@@ -5190,7 +5192,7 @@
       "quests-none": "No new quests finished yet today.",
       "donated": "Donated 50 Points to the war chest. They are burned.",
       "chest-full": "War chest full! +1 damage for the whole alliance for 24 hours.",
-      "chest-kept": "War chest full! It pays out on the day the next pest arrives."
+      "chest-kept": "War chest full! It opens for 24 hours once the next pest arrives."
     },
     "errors": {
       "generic": "Something went wrong. Try again.",
@@ -5202,7 +5204,7 @@
       "rate": "Too many actions at once. Wait a moment.",
       "load-failed": "The game could not load. Check your connection and try again.",
       "already_applied": "Your last try went through, so it was not charged again. Tap again for a new one.",
-      "key_used": "Your last try was refunded. Tap again to try once more."
+      "key_used": "Your last try did not go through and its Points are given back. Tap again to try once more."
     },
     "town": {
       "plate": "Town of {{name}}",
@@ -5249,7 +5251,7 @@
         },
         "library": {
           "name": "Library",
-          "does": "Keeps the season chronicle. Draft a raid report from the menu."
+          "does": "Keeps the town's latest news. Draft a raid report from the menu."
         },
         "beacon": {
           "name": "Beacon",
@@ -5306,7 +5308,9 @@
       "chest-desc": "When it reaches 1,000 Points, everyone in {{name}} gets +1 damage for 24 hours.",
       "chest-active": "Active today: +1 damage for everyone in {{name}}.",
       "chest-active-until": "Active until {{time}}: +1 damage for everyone in {{name}}.",
-      "chest-kept": "Full. Everyone in {{name}} gets +1 damage on the day the next pest arrives.",
+      "chest-kept": "Full and kept for the next pest: everyone in {{name}} gets +1 damage for 24 hours once it arrives.",
+      "chest-desc-kept": "No pest is in town. When the chest reaches 1,000 Points it is kept: everyone in {{name}} gets +1 damage for 24 hours once the next pest arrives.",
+      "chest-resting": "The season is resting. The war chest opens again next season.",
       "chest-closed": "The season's last pest is gone, so the war chest is closed.",
       "chest-bar": "{{n}} / 1,000 Points pooled · every Point spent is burned",
       "donate": "Donate 50 Points"
@@ -5392,6 +5396,7 @@
       "open": "Open in the editor",
       "post-title": "{{name}} vs the {{boss}}: week {{week}} raid report",
       "intro-won": "This week **{{name}}** chased off the {{boss}} in Raidstead.",
+      "intro-escaped": "This week the {{boss}} got away from **{{name}}** in Raidstead.",
       "intro-fighting": "This week **{{name}}** is still fighting the {{boss}} in Raidstead.",
       "raiders": "Top raiders this week:",
       "line": "{{i}}. @{{name}}: {{dmg}} damage",
@@ -5441,7 +5446,8 @@
       "escaped": "The {{name}} escaped.",
       "killed": "The {{name}} was chased off. @{{who}} landed the last hit.",
       "chest": "The war chest filled up: +1 damage for 24 hours. @{{who}} gave the last Points.",
-      "chest_kept": "The war chest filled up: +1 damage on the day the next pest arrives. @{{who}} gave the last Points."
+      "chest_kept": "The war chest filled up: +1 damage for 24 hours once the next pest arrives. @{{who}} gave the last Points.",
+      "chest_open": "The war chest kept for this pest is open: +1 damage for 24 hours."
     },
     "guide": {
       "title": "Field guide",
@@ -5462,10 +5468,10 @@
       "folk-title": "The townsfolk",
       "energy-title": "Energy and Points",
       "energy": "You get 5 energy a day, plus 1 for each Ecency quest you finish. A rally gives 5 more for 50 Points.",
-      "size": "The pest is as big as your raid party: 100 health for every raider who shows up, at least 600. Its tricks grow with it.",
+      "size": "The pest is sized for your raid party: 100 health for every raider who showed up last week, a share of that for each one who joins in during the week, at least 600. Its tricks grow with it.",
       "chest": "Donate to your alliance's war chest: at 1,000 Points everyone in it gets +1 damage for a day. Every Point spent is burned.",
       "keep-title": "What you keep",
-      "keep": "Karma, badges and trophies stay with you. Everything else starts fresh each season.",
+      "keep": "Karma, badges, trophies and your count of pests chased off stay with you. Shards, powers and the town start fresh each season.",
       "ready-title": "Get ready",
       "ready-community": "Your alliance must be a community you have joined, so join yours before the season opens.",
       "ready-quests": "Get used to the daily quests: each one you finish is 1 more energy in a raid.",

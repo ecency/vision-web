@@ -450,7 +450,9 @@ export function BuildingSheet(props: {
       </div>
       <p>
         {t(`town.buildings.${id}.does`)}
-        {stage < 3 && id !== "workshop" && id !== "hall" ? ` ${t("town.works-when-finished")}` : ""}
+        {stage < 3 && id !== "workshop" && id !== "hall" && id !== "library"
+          ? ` ${t("town.works-when-finished")}`
+          : ""}
       </p>
       {webbed && (
         <div className="rs-web-note">
@@ -648,7 +650,14 @@ export function QuestsSheet(props: {
         ? t("quests.chest-kept", { name: a.title })
         : chestWhy === "no-boss"
           ? t("quests.chest-closed")
-          : t("quests.chest-desc", { name: a.title });
+          : chestWhy === "resting"
+            ? t("quests.chest-resting")
+            : // with no pest in town a chest that fills is kept for the next one
+              a.boss.alive
+              ? t("quests.chest-desc", { name: a.title })
+              : t("quests.chest-desc-kept", { name: a.title });
+  // a kept chest is a full one: the server has already put its Points aside
+  const pooled = chestWhy === "kept" ? a.chestGoal : a.chest;
   return (
     <Sheet onClose={props.onClose} label={t("quests.title")}>
       <h2>{t("quests.title")}</h2>
@@ -680,9 +689,9 @@ export function QuestsSheet(props: {
       <h3>{t("quests.chest")}</h3>
       <p>{chestLine}</p>
       <div className="rs-bar" aria-hidden="true">
-        <span style={{ width: `${Math.min(100, (a.chest / a.chestGoal) * 100)}%` }} />
+        <span style={{ width: `${Math.min(100, (pooled / a.chestGoal) * 100)}%` }} />
       </div>
-      <p className="rs-muted">{t("quests.chest-bar", { n: a.chest.toLocaleString() })}</p>
+      <p className="rs-muted">{t("quests.chest-bar", { n: pooled.toLocaleString() })}</p>
       <div className="rs-btns">
         <button
           className="rs-btn rs-primary"

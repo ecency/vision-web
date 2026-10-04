@@ -15,9 +15,12 @@ export interface Trophy { season: number; community: string; title: string; kill
 export interface Raider { account: string; damage: number; attacks: number }
 /// A line of town news: an overnight trick, a kill, the war chest. `kind` names what
 /// happened (`text` is the same in plain English, for a kind the page does not know).
-export interface Note { day: number; text: string; kind?: string; n?: number; what?: string; who?: string }
+/// `seq` numbers an alliance's lines in the order they were written.
+export interface Note { day: number; text: string; seq?: number; kind?: string; n?: number; what?: string; who?: string }
 export interface Boss {
   kind: BossKind; hp: number; maxHp: number; alive: boolean; phase: number; gnats: number; waspHp: number;
+  /// Chased off this week. A boss that is neither alive nor killed got away.
+  killed?: boolean;
   weakness: AttackType | null;
   /// Hits waiting on one twin for the other to be hit, until `until` on the server's clock.
   echo: { side: 0 | 1; by: string; until: number; hits?: number } | null;
@@ -30,7 +33,7 @@ export interface Alliance {
   notes: Note[];
   /// When the war chest's +1 damage ends, on the server's clock.
   buffUntil?: number | null;
-  /// The chest filled with no pest in town: it pays out the day the next one arrives.
+  /// The chest filled with no pest in town: it is kept and opens for the next one.
   buffKept?: boolean;
 }
 export interface Member {
