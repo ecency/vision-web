@@ -10,8 +10,8 @@
 #   GITHUB_TOKEN                    read access is enough (changelog-github lookups)
 #   REBUILD_TOUCHED_DIST            "true" on fork PRs: also rebuild every package the
 #                                   PR touches, starting from DIFF_BASE's dist, so the
-#                                   committed dist is our build of the source and never
-#                                   a file the contributor supplied
+  #                                   committed dist is reset before the fork job builds.
+  #                                   Review the result: fork build code still runs.
 set -eo pipefail
 
 PACKAGES=(sdk wallets render-helper ui)

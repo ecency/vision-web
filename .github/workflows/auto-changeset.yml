@@ -11,7 +11,8 @@ jobs:
   # Same-repo PRs are versioned and rebuilt on their own branch. A fork's branch
   # cannot be pushed with GITHUB_TOKEN, and its committed dist is the contributor's
   # build, not ours, so fork PRs go through fork-build here and then
-  # auto-changeset-fork-release.yml, which pushes OUR build to release/pr-<N>.
+  # auto-changeset-fork-release.yml, which pushes the fork job's rebuilt dist to
+  # release/pr-<N> for maintainer review.
   gate:
     runs-on: ubuntu-latest
     permissions: {}
@@ -44,9 +45,16 @@ jobs:
       - id: mode
         env:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
           REPO: ${{ github.repository }}
         run: |
-          if [ "$HEAD_REPO" = "$REPO" ]; then echo "mode=same-repo"; else echo "mode=fork"; fi >> "$GITHUB_OUTPUT"
+          if [[ "$HEAD_REF" == release/pr-* ]]; then
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+          elif [ "$HEAD_REPO" = "$REPO" ]; then
+            echo "mode=same-repo" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=fork" >> "$GITHUB_OUTPUT"
+          fi
 
   auto-changeset:
     needs: gate
@@ -127,14 +135,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # The versioning script comes from the base branch, not from the fork.
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: .trusted
-          sparse-checkout: .github/scripts
-          persist-credentials: false
-
       - uses: pnpm/action-setup@v3
         with:
           version: 11.5.0
@@ -143,9 +143,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Fetch base commit
         env:
@@ -163,23 +160,38 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REBUILD_TOUCHED_DIST: "true"
         run: |
-          mv .trusted/.github/scripts/auto-changeset.sh "$RUNNER_TEMP/"
-          rm -rf .trusted
-          "$RUNNER_TEMP/auto-changeset.sh"
+          set -euo pipefail
+          # Capture the whole trusted script in this shell before pnpm reads
+          # any fork-controlled install config or runs a package build.
+          trusted_script=$(git show "$DIFF_BASE:.github/scripts/auto-changeset.sh")
+          # A fork can add lifecycle hooks or a pnpmfile that executes even
+          # with lifecycle scripts disabled.
+          pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile
+          bash -c "$trusted_script"
 
       - name: Export patch
+        id: patch
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          mkdir -p "$RUNNER_TEMP/fork-release"
           git add -A
+          if git diff --cached --quiet; then
+            echo "No version or build changes to release"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/fork-release"
           git diff --cached --binary > "$RUNNER_TEMP/fork-release/release.patch"
           echo "$PR_NUMBER" > "$RUNNER_TEMP/fork-release/pr-number"
           echo "$HEAD_SHA" > "$RUNNER_TEMP/fork-release/head-sha"
+          echo "$BASE_SHA" > "$RUNNER_TEMP/fork-release/base-sha"
           git diff --cached --stat
 
       - uses: actions/upload-artifact@v4
+        if: steps.patch.outputs.changed == 'true'
         with:
           name: fork-release
           path: ${{ runner.temp }}/fork-release
