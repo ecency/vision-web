@@ -181,6 +181,209 @@ describe("Raidstead page", () => {
     expect(api.state).not.toHaveBeenCalled();
   });
 
+  it("signs in by itself for an Ecency login ecency.com can vouch for", async () => {
+    box.stored = null;
+    asUser("ann");
+    vi.mocked(signerFor).mockReturnValue("ecency");
+    vi.mocked(signIn).mockResolvedValueOnce({ account: "ann", token: "rs1_ann", expiresAt: expiry(), ecency: true });
+    try {
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      // by itself: ecency.com only, no wallet
+      expect(vi.mocked(signIn).mock.calls).toEqual([["ann", "ecency", true]]);
+      expect(box.stored).toMatchObject({ account: "ann", token: "rs1_ann" });
+    } finally {
+      vi.mocked(signerFor).mockReturnValue("extension");
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it("offers the sign-in button when ecency.com could not vouch; only the player's tap may ask a wallet", async () => {
+    box.stored = null;
+    asUser("ann");
+    vi.mocked(signerFor).mockReturnValue("ecency");
+    // ecency.com's route is down: its failure, as the client reports it
+    vi.mocked(signIn).mockRejectedValueOnce(Object.assign(new Error("session: 502"), { status: 502, code: "", vouching: true }));
+    try {
+      render(<RaidsteadGame />);
+      const button = await screen.findByRole("button", { name: /raidstead.signin.play-as/ });
+      expect(vi.mocked(signIn).mock.calls).toEqual([["ann", "ecency", true]]);
+      // the sheet says that it did not work: no toast is drawn behind it
+      expect(screen.getByRole("alert").textContent).toBe("raidstead.signin.failed");
+      // no wallet in this browser: none will ask
+      expect(screen.queryByText("raidstead.signin.extension-note")).toBeNull();
+      // a tap that fails too keeps saying so
+      vi.mocked(signIn).mockRejectedValueOnce(new Error("session: 502"));
+      fireEvent.click(button);
+      await waitFor(() => expect(signIn).toHaveBeenCalledTimes(2));
+      expect(screen.getByRole("alert").textContent).toBe("raidstead.signin.failed");
+      vi.mocked(signIn).mockResolvedValueOnce({ account: "ann", token: "rs1_ann", expiresAt: expiry(), ecency: true });
+      fireEvent.click(screen.getByRole("button", { name: /raidstead.signin.play-as/ }));
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(vi.mocked(signIn).mock.calls[2]).toEqual(["ann", "ecency", true, true]);
+    } finally {
+      vi.mocked(signerFor).mockReturnValue("extension");
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it("says a wallet will ask once the page's own try has failed and there is one", async () => {
+    box.stored = null;
+    asUser("ann");
+    (window as any).hive_keychain = {};
+    vi.mocked(signerFor).mockReturnValue("ecency");
+    vi.mocked(signIn).mockRejectedValueOnce(new Error("session: 502"));
+    try {
+      render(<RaidsteadGame />);
+      await screen.findByRole("alert");
+      expect(screen.getByText("raidstead.signin.extension-note")).toBeTruthy();
+    } finally {
+      delete (window as any).hive_keychain;
+      vi.mocked(signerFor).mockReturnValue("extension");
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it("does not call it a failure when ecency.com is not set up to vouch", async () => {
+    box.stored = null;
+    asUser("ann");
+    vi.mocked(signerFor).mockReturnValueOnce("ecency").mockReturnValue(null);
+    vi.mocked(signIn).mockRejectedValueOnce(Object.assign(new Error("session: 404"), { status: 404, code: "not_configured" }));
+    try {
+      render(<RaidsteadGame />);
+      // what the sheet offered before there was such a route
+      await screen.findByText("raidstead.signin.need-extension");
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByRole("button", { name: /raidstead.signin.play-as/ })).toBeNull();
+    } finally {
+      vi.mocked(signerFor).mockReturnValue("extension");
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it("says a login that ecency.com no longer takes needs renewing, not that trying again helps", async () => {
+    box.stored = null;
+    asUser("ann");
+    vi.mocked(signerFor).mockReturnValue("ecency");
+    vi.mocked(signIn).mockRejectedValueOnce(Object.assign(new Error("session: 401"), { status: 401, code: "unauthorized", vouching: true }));
+    try {
+      render(<RaidsteadGame />);
+      expect((await screen.findByRole("alert")).textContent).toBe("raidstead.signin.expired");
+    } finally {
+      vi.mocked(signerFor).mockReturnValue("extension");
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it.each([
+    ["the games API refuses a signed proof", { status: 401, code: "bad_proof" }, false],
+    ["ecency.com refuses but a wallet can sign instead", { status: 401, code: "unauthorized", vouching: true }, true]
+  ])("does not tell the player to renew the Ecency login when %s", async (_what, error, wallet) => {
+    box.stored = null;
+    asUser("ann");
+    if (wallet) (window as any).hive_keychain = {};
+    vi.mocked(signerFor).mockReturnValue(wallet ? "ecency" : "key");
+    vi.mocked(signIn).mockRejectedValueOnce(Object.assign(new Error("refused"), error));
+    try {
+      render(<RaidsteadGame />);
+      expect((await screen.findByRole("alert")).textContent).toBe("raidstead.signin.failed");
+    } finally {
+      delete (window as any).hive_keychain;
+      vi.mocked(signerFor).mockReturnValue("extension");
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it("does not tell one user what a try for another said", async () => {
+    box.stored = null;
+    asUser("ann");
+    vi.mocked(signerFor).mockReturnValue("ecency");
+    vi.mocked(signIn).mockRejectedValueOnce(new Error("session: 502"));
+    try {
+      const view = render(<RaidsteadGame />);
+      await screen.findByRole("alert");
+      // ann logs out of Ecency: the guest has tried nothing
+      vi.mocked(signerFor).mockReturnValue(null);
+      asUser(null);
+      view.rerender(<RaidsteadGame />);
+      await screen.findByText("raidstead.signin.need-extension");
+      expect(screen.queryByRole("alert")).toBeNull();
+    } finally {
+      vi.mocked(signerFor).mockReturnValue("extension");
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it("says the game could not be loaded when the tap signed in but the game does not answer", async () => {
+    box.stored = null;
+    asUser("ann");
+    vi.mocked(signIn).mockResolvedValueOnce({ account: "ann", token: "rs1_ann", expiresAt: expiry(), ecency: true });
+    api.state.mockRejectedValueOnce({ status: 500, code: "internal", message: "x" });
+    try {
+      render(<RaidsteadGame />);
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.signin.play-as/ }));
+      await screen.findByText("raidstead.errors.load-failed");
+      // the session is kept: "try again" loads the game with it
+      expect(box.stored).toMatchObject({ token: "rs1_ann" });
+      fireEvent.click(screen.getByRole("button", { name: "g.try-again" }));
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(signIn).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it("says on the sheet that the player's tap did not work; not again after one that did", async () => {
+    box.stored = null;
+    asUser("ann");
+    vi.mocked(signIn).mockRejectedValueOnce(new Error("not signed"));
+    try {
+      render(<RaidsteadGame />);
+      const button = await screen.findByRole("button", { name: /raidstead.signin.play-as/ });
+      expect(screen.queryByRole("alert")).toBeNull();
+      fireEvent.click(button);
+      expect((await screen.findByRole("alert")).textContent).toBe("raidstead.signin.failed");
+      vi.mocked(signIn).mockResolvedValueOnce({ account: "ann", token: "rs1_ann", expiresAt: expiry(), ecency: true });
+      fireEvent.click(screen.getByRole("button", { name: /raidstead.signin.play-as/ }));
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      fireEvent.click(await screen.findByRole("button", { name: "raidstead.signin.sign-out" }));
+      // back on the sign-in sheet: the old failure is not told again
+      await screen.findByRole("button", { name: /raidstead.signin.play-as/ });
+      expect(screen.queryByRole("alert")).toBeNull();
+    } finally {
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it("sends a typed name to the wallet, whatever this browser holds for that account", async () => {
+    box.stored = null;
+    asUser(null);
+    (window as any).hive_keychain = {};
+    // the account was logged in to Ecency here once: its token is still stored
+    vi.mocked(signerFor).mockReturnValue("ecency");
+    vi.mocked(signIn).mockResolvedValueOnce({ account: "alice", token: "rs1_alice", expiresAt: expiry(), ecency: false });
+    try {
+      render(<RaidsteadGame />);
+      fireEvent.change(await screen.findByLabelText("raidstead.signin.username"), { target: { value: "alice" } });
+      fireEvent.click(screen.getByRole("button", { name: "raidstead.signin.with-wallet" }));
+      await waitFor(() => expect(signIn).toHaveBeenCalled());
+      expect(vi.mocked(signIn).mock.calls).toEqual([["alice", "extension", false, true]]);
+    } finally {
+      delete (window as any).hive_keychain;
+      vi.mocked(signerFor).mockReturnValue("extension");
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it("does not sign in by itself with a wallet: the player taps first", async () => {
+    box.stored = null;
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.signin.play-as/ });
+    expect(signIn).not.toHaveBeenCalled();
+    expect(screen.getByText("raidstead.signin.extension-note")).toBeTruthy();
+  });
+
   it("drops a wallet answer that comes back after the Ecency user switched", async () => {
     box.stored = null;
     asUser("ann");
@@ -1624,7 +1827,32 @@ describe("Raidstead page", () => {
       expect(screen.getByText("raidstead.quests.chest-desc-kept")).toBeTruthy();
       expect(screen.queryByText("raidstead.quests.chest-desc")).toBeNull();
       expect(shown("raidstead.quests.chest-bar")).toEqual({ n: (250).toLocaleString() });
+      // hours an earlier chest had left are told on the card, only when there are some
+      expect(screen.queryByText("raidstead.quests.chest-saved")).toBeNull();
       first.unmount();
+
+      const saved = state();
+      Object.assign(saved.alliance, { buffLeft: 10 * 3_600_000 - 1 });
+      saved.alliance.boss.alive = false;
+      api.state.mockResolvedValue(saved);
+      const withHours = render(<RaidsteadGame />);
+      expect((await openChest()).disabled).toBe(false);       // a gift is still taken
+      expect(screen.getByText("raidstead.quests.chest-saved")).toBeTruthy();
+      expect(shown("raidstead.quests.chest-saved")).toEqual({ n: 10 });
+      withHours.unmount();
+
+      // no pest is left this season for the hours to wait for: nothing is promised
+      const over = state();
+      Object.assign(over.alliance, { buffLeft: 10 * 3_600_000, week: 4 });
+      over.alliance.boss.alive = false;
+      localStorage.setItem("ecency_raidstead_seen_week", JSON.stringify("1-4"));
+      api.state.mockResolvedValue(over);
+      const afterLast = render(<RaidsteadGame />);
+      await openChest();
+      expect(screen.getByText("raidstead.quests.chest-closed")).toBeTruthy();
+      expect(screen.queryByText("raidstead.quests.chest-saved")).toBeNull();
+      afterLast.unmount();
+      localStorage.setItem("ecency_raidstead_seen_week", JSON.stringify("1-1"));
 
       const kept = state();
       Object.assign(kept.alliance, { buffKept: true, chest: 0 });
@@ -1638,10 +1866,12 @@ describe("Raidstead page", () => {
       const resting = state();
       resting.calendar = { ...resting.calendar, resting: true, day: 29 };
       resting.alliance.boss.alive = false;
+      resting.alliance.buffLeft = 3_600_000;
       api.state.mockResolvedValue(resting);
       render(<RaidsteadGame />);
       expect((await openChest()).disabled).toBe(true);
       expect(screen.getByText("raidstead.quests.chest-resting")).toBeTruthy();
+      expect(screen.queryByText("raidstead.quests.chest-saved")).toBeNull();
     });
 
     it.each(["points_unavailable", "unavailable"])(

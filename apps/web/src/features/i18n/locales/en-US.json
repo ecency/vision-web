@@ -5040,6 +5040,7 @@
       "username": "Hive username",
       "with-wallet": "Sign in with your wallet",
       "failed": "Signing in did not work. Try again.",
+      "expired": "Your Ecency login could not be confirmed. Log out of Ecency and in again, then come back.",
       "sign-out": "Sign out of Raidstead"
     },
     "season": {
@@ -5312,6 +5313,7 @@
       "chest-desc-kept": "No pest is in town. When the chest reaches 1,000 Points it is kept: everyone in {{name}} gets +1 damage for 24 hours once the next pest arrives.",
       "chest-resting": "The season is resting. The war chest opens again next season.",
       "chest-closed": "The season's last pest is gone, so the war chest is closed.",
+      "chest-saved": "{{n}}h of +1 damage are left from the last chest. They run on once the next pest is in town.",
       "chest-bar": "{{n}} / 1,000 Points pooled · every Point spent is burned",
       "donate": "Donate 50 Points"
     },
@@ -5447,7 +5449,10 @@
       "killed": "The {{name}} was chased off. @{{who}} landed the last hit.",
       "chest": "The war chest filled up: +1 damage for 24 hours. @{{who}} gave the last Points.",
       "chest_kept": "The war chest filled up: +1 damage for 24 hours once the next pest arrives. @{{who}} gave the last Points.",
-      "chest_open": "The war chest kept for this pest is open: +1 damage for 24 hours."
+      "chest_open": "The war chest kept for this pest is open: +1 damage for 24 hours.",
+      "chest_open_hours": "The war chest kept for this pest is open: +1 damage for {{n}}h.",
+      "chest_saved": "The war chest still had {{n}}h to run. They are kept for the next pest.",
+      "chest_back": "The war chest is open again: +1 damage for {{n}}h more."
     },
     "guide": {
       "title": "Field guide",

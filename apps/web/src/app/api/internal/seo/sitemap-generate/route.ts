@@ -26,6 +26,7 @@ import { isIndexable, canonicalTarget, isBelowReputationGate } from "@/utils/ent
 import { isNsfwCommunity } from "@/utils/nsfw-detection";
 import { Entry } from "@/entities";
 import defaults from "@/defaults";
+import { EcencyConfigManager } from "@/config";
 // Hive-only entry: this is a server route handler — avoid pulling the
 // React/react-query surface of the main SDK entry into it. `setNodes` is the
 // same validated setter `ConfigManager.setHiveNodes` delegates to.
@@ -381,7 +382,9 @@ export async function POST(req: Request): Promise<Response> {
     "terms-of-service",
     "child-safety",
     "honeyback-about",
-    "honeyback-privacy"
+    "honeyback-privacy",
+    // the game's page answers 404 where the game is switched off
+    ...(EcencyConfigManager.CONFIG.visionFeatures.raidstead.enabled ? ["raidstead"] : [])
   ];
   const staticUrls: SitemapUrl[] = [
     ...hubPaths.map((p) => ({ loc: p ? `${BASE}/${p}` : `${BASE}/`, lastmod: nowDay })),

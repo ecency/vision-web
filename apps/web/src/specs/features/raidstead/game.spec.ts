@@ -5,6 +5,7 @@ import {
   attackMessage,
   buildReport,
   chestBlock,
+  chestHoursLeft,
   countdown,
   errorMessage,
   GNATS_SHOWN,
@@ -359,6 +360,20 @@ describe("what the page decides before asking the server", () => {
     s.calendar.resting = true;
     expect(chestBlock(s)).toBe("resting");
   });
+
+  it("tells war chest time put aside in whole hours, rounded up; gifts are taken meanwhile", () => {
+    const H = 3_600_000;
+    const s = state();
+    expect(chestHoursLeft(s)).toBe(0);
+    expect(chestHoursLeft(null)).toBe(0);
+    for (const [ms, hours] of [[null, 0], [0, 0], [-5, 0], [1, 1], [H, 1], [H + 1, 2], [10 * H, 10]] as [number | null, number][]) {
+      s.alliance!.buffLeft = ms;
+      expect(chestHoursLeft(s), String(ms)).toBe(hours);
+    }
+    // hours put aside do not make the chest full
+    s.alliance!.boss.alive = false;
+    expect(chestBlock(s)).toBeNull();
+  });
 });
 
 describe("town news", () => {
@@ -390,6 +405,13 @@ describe("town news", () => {
     );
     expect(noteText({ day: 5, kind: "chest_kept", who: "ann", text: "x" }, t)).toBe("chest_kept|who=ann");
     expect(noteText({ day: 5, kind: "chest_open", text: "x" }, t)).toBe("chest_open");
+    // with hours an earlier chest had left on top, the line says how long
+    expect(noteText({ day: 5, kind: "chest_open", n: 26, text: "x" }, t)).toBe("chest_open_hours|n=26");
+    expect(noteText({ day: 5, kind: "chest_saved", n: 10, text: "x" }, t)).toBe("chest_saved|n=10");
+    expect(noteText({ day: 5, kind: "chest_back", n: 10, text: "x" }, t)).toBe("chest_back|n=10");
+    // no hours to tell: the server's own line
+    expect(noteText({ day: 5, kind: "chest_saved", text: "Hours wait." }, t)).toBe("Hours wait.");
+    expect(noteText({ day: 5, kind: "chest_back", text: "Open again." }, t)).toBe("Open again.");
     expect(noteText({ day: 5, kind: "healed", n: 60, text: "x" }, t)).toBe("healed|n=60");
     expect(noteText({ day: 5, kind: "something-new", text: "The server's own line." }, t)).toBe("The server's own line.");
     expect(noteText({ day: 5, text: "From an older server." }, t)).toBe("From an older server.");

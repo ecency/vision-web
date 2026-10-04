@@ -129,6 +129,23 @@ export function RaidsteadGame() {
   sheetRef.current = sheet;
   const [busy, setBusy] = useState(false);
   const [signing, setSigning] = useState(false);
+  // The last try to sign in did not work: said on the sign-in sheet.
+  // "expired": ecency.com no longer takes this login, so trying again is no use.
+  const [signFailed, setSignFailed] = useState<"failed" | "expired" | null>(null);
+  const whyFailed = (e: unknown) => {
+    const { status, code, vouching } = (e ?? {}) as {
+      status?: number;
+      code?: string;
+      vouching?: boolean;
+    };
+    // ecency.com not set up to vouch is nobody's failure: the sheet then
+    // offers what it offered before
+    if (code === "not_configured") return null;
+    // Only ecency.com's own refusal means the login needs renewing (the games
+    // API refuses a signed proof with a 401 too). With a wallet in the
+    // browser the next tap asks that instead, so nothing needs renewing.
+    return vouching && status === 401 && !hasAnyHiveExtension() ? "expired" : "failed";
+  };
   const [now, setNow] = useState(() => Date.now());
   const sideRef = useRef<0 | 1>(0);
   const lastAttackRef = useRef(0);
@@ -385,6 +402,8 @@ export function RaidsteadGame() {
     // before the season there is nothing to sign in for; the countdown shows instead
     if (!hydrated || !calendarKnown || preseason) return;
     let cancelled = false;
+    // what an earlier try said was said for another user or another visit
+    setSignFailed(null);
     (async () => {
       let session = loadSession();
       // logging out of Ecency (here or on any other page) ends the game
@@ -407,9 +426,11 @@ export function RaidsteadGame() {
         saveSession(session);
       }
       if (!session) {
-        if (username && signerFor(username) === "key") {
+        // a login that needs no wallet prompt signs in by itself
+        const kind = username ? signerFor(username) : null;
+        if (username && (kind === "key" || kind === "ecency")) {
           try {
-            const signed = await signIn(username, "key", true);
+            const signed = await signIn(username, kind, true);
             if (cancelled) return;
             // Ecency logged out or switched in another tab meanwhile
             if (liveEcencyUser() !== username) {
@@ -417,8 +438,11 @@ export function RaidsteadGame() {
               return;
             }
             saveSession(signed);
-          } catch {
-            if (!cancelled) setPhase("signin");
+          } catch (e) {
+            if (!cancelled) {
+              setSignFailed(whyFailed(e));
+              setPhase("signin");
+            }
             return;
           }
         } else {
@@ -490,17 +514,26 @@ export function RaidsteadGame() {
     async (account: string) => {
       const asUser = userRef.current;
       setSigning(true);
+      // Only the Ecency user of this page signs in with what the browser holds
+      // for them. A typed name always goes to the wallet, as its button says:
+      // an account that was once logged in here is not there for the taking.
+      const kind = asUser && account === asUser ? (signerFor(account) ?? "extension") : "extension";
       try {
-        const session = await signIn(account, signerFor(account) ?? "extension", !!asUser);
+        const session = await signIn(account, kind, !!asUser, true);
         // the Ecency user may have logged in, out or switched while the wallet
         // was asking: that answer is not for this page any more
         if (userRef.current !== asUser) return;
         if (asUser && liveEcencyUser() !== asUser) return;
         if (asUser && session.account !== asUser) return;
         saveSession(session);
+        setSignFailed(null);
         const s = await refresh();
         if (s) setPhase("ready");
-      } catch {
+        // signed in, but the game could not be loaded: say so, with a way to try again
+        else if (!unauthorized.current) setPhase("failed");
+      } catch (e) {
+        // the toast is not drawn behind the sign-in sheet: the sheet says it
+        setSignFailed(whyFailed(e) ?? "failed");
         say(t("signin.failed"));
       } finally {
         setSigning(false);
@@ -991,7 +1024,13 @@ export function RaidsteadGame() {
       <SignInSheet
         username={username}
         canSign={!!username && signerFor(username) !== null}
-        silent={!!username && signerFor(username) === "key"}
+        // after a try that failed, the tap may ask a wallet instead: say so
+        silent={
+          !!username &&
+          (signerFor(username) === "key" ||
+            (signerFor(username) === "ecency" && !(signFailed && hasAnyHiveExtension())))
+        }
+        failed={signFailed}
         hasWallet={hasAnyHiveExtension()}
         signing={signing}
         onSign={onSign}

@@ -96,6 +96,10 @@ services:
       - MATTERMOST_WS_ALLOWED_ORIGINS
       - THREESPEAK_EMBED_API_KEY
       - SEO_CRON_SECRET
+      # Shared with the games API: lets this server open a Raidstead session for
+      # a login it has checked itself (api/raidstead/session). Unset, that route
+      # answers 404 and only logins that can sign for themselves play.
+      - RAIDSTEAD_VOUCH_SECRET
       # Server-side read-through RPC proxy (core/sdk-init.ts): reads go to
       # vapi's /private-api/ssr/rpc over the overlay, with fallback to the node
       # pool on any failure. The secret is the switch for both services: set in

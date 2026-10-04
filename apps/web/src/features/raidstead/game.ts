@@ -98,6 +98,11 @@ export function chestBlock(state: State | null): "active" | "kept" | "resting" |
   return !a.boss.alive && a.week >= 4 ? "no-boss" : null;
 }
 
+/// War chest time put aside for the next pest, in whole hours as the news
+/// tells it (rounded up); 0 when there is none.
+export const chestHoursLeft = (state: State | null) =>
+  Math.ceil(Math.max(0, state?.alliance?.buffLeft ?? 0) / 3_600_000);
+
 /// A line of town news in the reader's language. Anything this page has no words
 /// for (a kind, a pest or a building from a newer server) falls back to the
 /// server's own plain line.
@@ -123,7 +128,14 @@ export function noteText(n: Note, t: T): string {
     case "chest_kept":
       return t(`raidstead.news.${n.kind}`, { who: n.who ?? "" });
     case "chest_open":
-      return t("raidstead.news.chest_open");
+      // with hours an earlier chest had left on top, the server says how long
+      return typeof n.n === "number"
+        ? t("raidstead.news.chest_open_hours", { n: n.n })
+        : t("raidstead.news.chest_open");
+    case "chest_saved":
+    case "chest_back":
+      if (typeof n.n !== "number") return n.text;
+      return t(`raidstead.news.${n.kind}`, { n: n.n });
     default:
       return n.text;
   }
