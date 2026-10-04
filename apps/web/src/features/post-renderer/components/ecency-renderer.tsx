@@ -2,6 +2,7 @@
 
 import React, { HTMLProps, useEffect, useRef } from "react";
 import { renderPostBody } from "@ecency/render-helper";
+import { enableBitchuteThumbnails } from "@/core/enable-bitchute-thumbnails";
 import * as Sentry from "@sentry/nextjs";
 import type { RenderOptions, SeoContext } from "@ecency/render-helper";
 import { clsx } from "clsx";
@@ -16,6 +17,8 @@ import {
 } from "./extensions";
 import { ThreeSpeakVideoExtension } from "./extensions/three-speak-video-extension";
 import { TwitterExtension } from "./extensions/twitter-extension";
+
+enableBitchuteThumbnails();
 
 interface Props {
   value: string;

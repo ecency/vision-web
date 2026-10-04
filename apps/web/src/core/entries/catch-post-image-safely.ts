@@ -1,5 +1,8 @@
 import { catchPostImage, getEntryCardImageRawUrl } from "@ecency/render-helper";
+import { enableBitchuteThumbnails } from "@/core/enable-bitchute-thumbnails";
 import { reportRenderHelperFailureOnce } from "./report-render-helper-failure";
+
+enableBitchuteThumbnails();
 
 /**
  * `catchPostImage`, degraded to "this post has no thumbnail" when it throws.

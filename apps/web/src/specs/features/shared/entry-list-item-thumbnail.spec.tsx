@@ -19,6 +19,7 @@ vi.mock("next/image", () => ({
   )
 }));
 vi.mock("@ecency/render-helper", () => ({
+  setBitchuteThumbnailOrigin: vi.fn(),
   catchPostImage: vi.fn((entry: any, w?: number) =>
     entry?.__noimg
       ? null

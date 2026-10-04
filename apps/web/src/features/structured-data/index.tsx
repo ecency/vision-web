@@ -1,7 +1,10 @@
 import { catchPostImage, postBodySummary } from "@ecency/render-helper";
+import { enableBitchuteThumbnails } from "@/core/enable-bitchute-thumbnails";
 import defaults from "@/defaults.json";
 import { entryDisplayTitle } from "@/utils/entry-display-title";
 import { Entry, FullAccount, Community } from "@/entities";
+
+enableBitchuteThumbnails();
 
 /**
  * Single source of truth for schema.org JSON-LD across the app.

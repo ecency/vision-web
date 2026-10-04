@@ -1,4 +1,5 @@
 import { proxifyImageSrc } from './proxify-image-src'
+import { bitchuteThumbnailUrl, getBitchuteThumbnailOrigin } from './bitchute-thumbnail'
 import { markdown2Html } from './markdown-2-html'
 import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeEntities, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
@@ -347,6 +348,10 @@ const URL_TOKEN_RE = /https?:\/\/[^\s<>"'()[\]]+/gi
 const IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi
 // A YouTube video id as the renderer's YOUTUBE_REGEX captures it.
 const YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/
+// BitChute video ids are the path segment after /video/ or /embed/. Mixed case
+// is significant (`1abYMl7gW68`); the class is alphanumeric only, so the test
+// is linear. Capped to match bitchuteThumbnailUrl.
+const BITCHUTE_ID_RE = /^[A-Za-z0-9]{1,64}$/
 
 /**
  * The image URL a bare token denotes, or null: the token up to its last image
@@ -405,6 +410,29 @@ function youtubeIdOf(url: string): string | null {
   }
   if (segments.length >= 3) return candidate(segments[segments.length - 1])
   return null
+}
+
+/**
+ * The video id of a BitChute /video/ or /embed/ URL, or null. Plain string
+ * operations, same as youtubeIdOf, so a crafted token cannot blow the scan up.
+ * The id is returned unchanged: BitChute treats it as case-sensitive.
+ */
+function bitchuteIdOf(url: string): string | null {
+  const m = /^https?:\/\/([^/?#]+)/i.exec(url)
+  if (!m) return null
+  const host = m[1].toLowerCase()
+  if (host !== 'bitchute.com' && host !== 'www.bitchute.com') return null
+  const rest = url.slice(m[0].length)
+  const hashAt = rest.indexOf('#')
+  const beforeHash = hashAt === -1 ? rest : rest.slice(0, hashAt)
+  const qAt = beforeHash.indexOf('?')
+  const path = qAt === -1 ? beforeHash : beforeHash.slice(0, qAt)
+  const segments = path.split('/').filter((seg) => seg.length > 0)
+  if (segments.length < 2) return null
+  const kind = segments[0].toLowerCase()
+  if (kind !== 'video' && kind !== 'embed') return null
+  const id = segments[1]
+  return BITCHUTE_ID_RE.test(id) ? id : null
 }
 
 // One linear pass marking every offset that sits inside an HTML tag (between
@@ -654,11 +682,22 @@ interface ImageCandidate {
 }
 
 /**
- * The poster image the renderer would produce for the first standalone YouTube
+ * The poster image the renderer would produce for the first standalone video
  * URL in the body, with its position, or null. Fast-mode only: the full render
  * discovers these itself through text.method / a.method.
+ *
+ * YouTube's poster is `img.youtube.com`. BitChute's is the cover endpoint the
+ * host app configured; with none configured there is no poster, and this
+ * returns only the YouTube one — the same result as before that endpoint existed.
  */
 function findFirstVideoPoster(prepared: PreparedBody): ImageCandidate | null {
+  const yt = findFirstYoutubePoster(prepared)
+  const bc = findFirstBitchutePoster(prepared)
+  if (yt && bc) return yt.pos <= bc.pos ? yt : bc
+  return yt ?? bc
+}
+
+function findFirstYoutubePoster(prepared: PreparedBody): ImageCandidate | null {
   const { cleaned } = prepared
   if (!cleaned) return null
   let best: ImageCandidate | null = null
@@ -686,6 +725,33 @@ function findFirstVideoPoster(prepared: PreparedBody): ImageCandidate | null {
   if (!best) return null
   // Byte-identical to text.method / a.method: id without a trailing query.
   return { url: `https://img.youtube.com/vi/${best.url.split('?')[0]}/hqdefault.jpg`, pos: best.pos }
+}
+
+function findFirstBitchutePoster(prepared: PreparedBody): ImageCandidate | null {
+  if (!getBitchuteThumbnailOrigin()) return null
+  const { cleaned } = prepared
+  if (!cleaned || cleaned.toLowerCase().indexOf('bitchute.com') === -1) return null
+  let best: { id: string; pos: number } | null = null
+  for (const hit of standaloneMatches(prepared.video, bitchuteIdOf)) {
+    best = { id: hit.url, pos: hit.pos }
+    break
+  }
+  for (const m of cleaned.matchAll(MD_LINK_RE)) {
+    const idx = m.index ?? 0
+    if (idx > 0 && cleaned[idx - 1] === '!') continue
+    if (best && idx >= best.pos) break
+    const href = m[2]
+    if (href && m[1].trim() === href) {
+      const id = bitchuteIdOf(href)
+      if (id) {
+        best = { id, pos: idx }
+        break
+      }
+    }
+  }
+  if (!best) return null
+  const url = bitchuteThumbnailUrl(best.id)
+  return url ? { url, pos: best.pos } : null
 }
 
 interface CandidateResult {
@@ -764,7 +830,7 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
 
 /**
  * Everything fast mode can find without rendering markdown: the regex tiers
- * including standalone bare image URLs, plus the YouTube poster the full render
+ * including standalone bare image URLs, plus the video poster the full render
  * would have produced, whichever comes first in the source. Returns the same
  * proxied URL the full render's first <img> would have carried, or null.
  */
@@ -1041,7 +1107,8 @@ export function catchPostImage(
   // Fast and full lookups can legitimately disagree (null vs a markdown-only
   // find), so they get separate slots rather than the first caller deciding for
   // both.
-  const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}${fastMode ? '-fast' : ''}`
+  const bitchuteOrigin = getBitchuteThumbnailOrigin()
+  const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}${fastMode ? '-fast' : ''}${bitchuteOrigin ? `-bcthumb${bitchuteOrigin}` : ''}`
 
   // A null result is memoized too. Recomputing it is the expensive case: the
   // markdown tier ran, found nothing, and would run again on the next request.

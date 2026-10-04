@@ -1,9 +1,12 @@
 import { catchPostImage, getEntryImageRawUrl } from "@ecency/render-helper";
+import { enableBitchuteThumbnails } from "@/core/enable-bitchute-thumbnails";
 import { hasExternalLink } from "@ecency/sdk";
 import { Entry } from "@/entities";
 import { parseEntryLocationFromBody } from "./entry-location";
 import { annotateLanguageHints } from "./language-hint";
 import { ENTRY_SUMMARY_LENGTH, entrySummary } from "./entry-summary";
+
+enableBitchuteThumbnails();
 
 /**
  * Feed cards render a ~200 character summary and a thumbnail, but the bridge
@@ -69,7 +72,7 @@ function pickThumbnail(entry: Entry): string | undefined {
   //
   // Two steps, because they find different things. getEntryImageRawUrl is the
   // regex fast path over raw markdown. catchPostImage in fast mode adds the
-  // cases the regex alone missed, a YouTube poster and a <center>-wrapped bare
+  // cases the regex alone missed, a YouTube or BitChute poster and a <center>-wrapped bare
   // URL, still without rendering markdown. Measured on live posts, those two
   // were 4 of 29 rows that carry no metadata image, concentrated in the video
   // communities, and stopping at the regex dropped them to /assets/noimage.png.

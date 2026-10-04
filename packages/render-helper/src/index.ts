@@ -7,6 +7,7 @@ import { IMAGE_SIZES } from './methods/img.method'
 import { setCacheSize } from './cache'
 import { SECTION_LIST, isAllowedEmbedSrc } from './consts'
 import { isValidPermlink } from "./helper";
+import { setBitchuteThumbnailOrigin } from './bitchute-thumbnail'
 import { simpleMarkdownToHTML } from './methods/simple-markdown-to-html.method'
 import type { Entry } from './types/entry.interface'
 import type { RenderOptions } from './types/render-options.interface'
@@ -26,6 +27,7 @@ export {
   isPictureEligibleRawUrl,
   IMAGE_SIZES,
   setProxyBase,
+  setBitchuteThumbnailOrigin,
   setCacheSize,
   setSlowRenderThresholdMs,
   SECTION_LIST,

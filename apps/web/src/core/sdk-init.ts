@@ -7,12 +7,15 @@
  */
 
 import { ConfigManager } from "@ecency/sdk";
+import { enableBitchuteThumbnails } from "@/core/enable-bitchute-thumbnails";
 import defaults from "@/defaults";
 // One loader for the takedown lists, which route handlers call on their own
 // because they never execute the root layout (#1862). A call and not a bare
 // side-effect import, because webpack prunes those here: see core/dmca-lists.
 import { loadDmcaLists } from "@/core/dmca-lists";
 import publicNodes from "../../public/public-nodes.json";
+
+enableBitchuteThumbnails();
 
 // Configure SDK API host based on environment.
 //

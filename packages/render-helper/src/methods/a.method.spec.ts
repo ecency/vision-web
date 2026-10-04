@@ -1,6 +1,8 @@
 import { a } from './a.method'
 import { DOMParser } from '../consts'
 import { renderPostBody } from '../index'
+import { setBitchuteThumbnailOrigin } from '../bitchute-thumbnail'
+import { proxifyImageSrc } from '../proxify-image-src'
 
 describe('a() method - Link Processing', () => {
   let doc: Document
@@ -1407,6 +1409,8 @@ describe('a() method - Link Processing', () => {
     })
 
     describe('Bitchute', () => {
+      afterEach(() => setBitchuteThumbnailOrigin(''))
+
       it('should create Bitchute embed', () => {
         const parent = doc.createElement('div')
         const el = doc.createElement('a')
@@ -1419,6 +1423,45 @@ describe('a() method - Link Processing', () => {
 
         expect(el.getAttribute('class')).toContain('markdown-video-link')
         expect(el.getAttribute('data-embed-src')).toBe('https://www.bitchute.com/embed/abc123def/')
+        expect(el.getElementsByTagName('img').length).toBe(0)
+      })
+
+      it('adds a poster image from the configured cover endpoint', () => {
+        setBitchuteThumbnailOrigin('https://ecency.com')
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://www.bitchute.com/video/1abYMl7gW68'
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false)
+
+        expect(el.getAttribute('data-embed-src')).toBe('https://www.bitchute.com/embed/1abYMl7gW68/')
+        expect(el.getAttribute('class')).toContain('markdown-video-link-bitchute')
+        const img = el.getElementsByTagName('img')[0]
+        expect(img?.getAttribute('class')).toContain('video-thumbnail')
+        expect(img?.getAttribute('src')).toBe(
+          proxifyImageSrc('https://ecency.com/api/bitchute-thumbnail/1abYMl7gW68', 0, 0, 'match')
+        )
+        expect(el.getElementsByTagName('span')[0]?.getAttribute('class')).toBe('markdown-video-play')
+      })
+
+      it('does not add a poster when the player is embedded directly', () => {
+        setBitchuteThumbnailOrigin('https://ecency.com')
+        const parent = doc.createElement('div')
+        const el = doc.createElement('a')
+        const href = 'https://www.bitchute.com/video/1abYMl7gW68'
+        el.setAttribute('href', href)
+        el.textContent = href
+        parent.appendChild(el)
+
+        a(el, false, 'ecency.com', undefined, { embedVideosDirectly: true })
+
+        expect(el.getElementsByTagName('img').length).toBe(0)
+        expect(el.getElementsByTagName('iframe')[0]?.getAttribute('src')).toBe(
+          'https://www.bitchute.com/embed/1abYMl7gW68/'
+        )
       })
     })
 

@@ -214,6 +214,8 @@ declare function isAllowedEmbedSrc(value?: string | null): boolean;
 
 declare function isValidPermlink(permlink: string): boolean;
 
+declare function setBitchuteThumbnailOrigin(next: string): void;
+
 /**
  * Lightweight markdown-to-HTML conversion with sanitization.
  * Unlike the full `markdownToHTML`, this skips Hive-specific transforms
@@ -224,4 +226,4 @@ declare function isValidPermlink(permlink: string): boolean;
  */
 declare function simpleMarkdownToHTML(input: string): string;
 
-export { type Entry, IMAGE_SIZES, type ProxifyOptions, type RenderOptions, SECTION_LIST, type SeoContext, buildPictureSources, buildSrcSet, buildSrcSetForFormat, catchPostImage, getEntryCardImageRawUrl, getEntryImageRawUrl, isAllowedEmbedSrc, isLegacySizedProxyUrl, isPictureEligibleRawUrl, isValidPermlink, getPostBodySummary as postBodySummary, proxifyImageSrc, markdown2Html as renderPostBody, setCacheSize, setProxyBase, setSlowRenderThresholdMs, simpleMarkdownToHTML };
+export { type Entry, IMAGE_SIZES, type ProxifyOptions, type RenderOptions, SECTION_LIST, type SeoContext, buildPictureSources, buildSrcSet, buildSrcSetForFormat, catchPostImage, getEntryCardImageRawUrl, getEntryImageRawUrl, isAllowedEmbedSrc, isLegacySizedProxyUrl, isPictureEligibleRawUrl, isValidPermlink, getPostBodySummary as postBodySummary, proxifyImageSrc, markdown2Html as renderPostBody, setBitchuteThumbnailOrigin, setCacheSize, setProxyBase, setSlowRenderThresholdMs, simpleMarkdownToHTML };
