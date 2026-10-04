@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.41
+
+### Patch Changes
+
+- Keep hyphens and underscores in BitChute video ids (#1913)
+
 ## 2.5.40
 
 ### Patch Changes
