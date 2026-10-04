@@ -79,6 +79,14 @@ const tabHidden = (hidden: boolean) =>
 const undoTabHidden = () => delete (document as unknown as { hidden?: boolean }).hidden;
 
 // the Ecency login: this tab's store copy and the one every tab shares
+// A wallet extension in the browser, as the page looks for one: Keychain's
+// global. Only its presence matters here.
+const walletInBrowser = (there: boolean) => {
+  const w = window as Window & { hive_keychain?: Record<string, never> };
+  if (there) w.hive_keychain = {};
+  else delete w.hive_keychain;
+};
+
 const asUser = (username: string | null) => {
   if (username) localStorage.setItem("ecency_active_user", JSON.stringify(username));
   else localStorage.removeItem("ecency_active_user");
@@ -230,7 +238,7 @@ describe("Raidstead page", () => {
   it("says a wallet will ask once the page's own try has failed and there is one", async () => {
     box.stored = null;
     asUser("ann");
-    (window as any).hive_keychain = {};
+    walletInBrowser(true);
     vi.mocked(signerFor).mockReturnValue("ecency");
     vi.mocked(signIn).mockRejectedValueOnce(new Error("session: 502"));
     try {
@@ -238,7 +246,7 @@ describe("Raidstead page", () => {
       await screen.findByRole("alert");
       expect(screen.getByText("raidstead.signin.extension-note")).toBeTruthy();
     } finally {
-      delete (window as any).hive_keychain;
+      walletInBrowser(false);
       vi.mocked(signerFor).mockReturnValue("extension");
       vi.mocked(signIn).mockReset();
     }
@@ -281,14 +289,14 @@ describe("Raidstead page", () => {
   ])("does not tell the player to renew the Ecency login when %s", async (_what, error, wallet) => {
     box.stored = null;
     asUser("ann");
-    if (wallet) (window as any).hive_keychain = {};
+    if (wallet) walletInBrowser(true);
     vi.mocked(signerFor).mockReturnValue(wallet ? "ecency" : "key");
     vi.mocked(signIn).mockRejectedValueOnce(Object.assign(new Error("refused"), error));
     try {
       render(<RaidsteadGame />);
       expect((await screen.findByRole("alert")).textContent).toBe("raidstead.signin.failed");
     } finally {
-      delete (window as any).hive_keychain;
+      walletInBrowser(false);
       vi.mocked(signerFor).mockReturnValue("extension");
       vi.mocked(signIn).mockReset();
     }
@@ -358,7 +366,7 @@ describe("Raidstead page", () => {
   it("sends a typed name to the wallet, whatever this browser holds for that account", async () => {
     box.stored = null;
     asUser(null);
-    (window as any).hive_keychain = {};
+    walletInBrowser(true);
     // the account was logged in to Ecency here once: its token is still stored
     vi.mocked(signerFor).mockReturnValue("ecency");
     vi.mocked(signIn).mockResolvedValueOnce({ account: "alice", token: "rs1_alice", expiresAt: expiry(), ecency: false });
@@ -369,7 +377,7 @@ describe("Raidstead page", () => {
       await waitFor(() => expect(signIn).toHaveBeenCalled());
       expect(vi.mocked(signIn).mock.calls).toEqual([["alice", "extension", false, true]]);
     } finally {
-      delete (window as any).hive_keychain;
+      walletInBrowser(false);
       vi.mocked(signerFor).mockReturnValue("extension");
       vi.mocked(signIn).mockReset();
     }

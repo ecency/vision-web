@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/utils/user-token", () => ({
   getLoginType: vi.fn(),
@@ -22,6 +22,11 @@ import {
 } from "@/features/raidstead/client";
 
 describe("raidstead client", () => {
+  // a stubbed fetch never outlives its test
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
     localStorage.clear();
     vi.mocked(getLoginType).mockReset();

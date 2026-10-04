@@ -1,8 +1,11 @@
 import hs from "hivesigner";
 
 import { b64uEnc } from "./b64";
+import { decodeToken } from "./hs-token";
 import { getAccessToken } from "./user-token";
 import { HiveSignerMessage } from "@/types";
+
+export { decodeToken };
 
 export function getAuthUrl(app: string, redir: string = `${window.location.origin}/auth`) {
   const scope =
@@ -27,17 +30,6 @@ export function getDecodedMemo(username: string, memo: string): Promise<any> {
         .decode(memo)
         .then((r: any) => r)
     : Promise.resolve(0);
-}
-
-export function decodeToken(code: string): HiveSignerMessage | null {
-  const normalizedCode = code.replace(/-/g, "+").replace(/_/g, "/").replace(/\./g, "=");
-
-  try {
-    const decoded = Buffer.from(normalizedCode, "base64").toString("utf-8");
-    return JSON.parse(decoded);
-  } catch (e) {
-    return null;
-  }
 }
 
 export function validateToken(code: string | null): boolean {

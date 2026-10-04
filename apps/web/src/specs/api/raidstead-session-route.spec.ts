@@ -227,6 +227,52 @@ describe("POST /api/raidstead/session", () => {
     expect(text).not.toContain(SECRET);
   });
 
+  it("stops reading a body that is too long to be a name and a token", async () => {
+    gameAnswers(200, session);
+    // sent in pieces with no length declared: only reading it shows its size
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        sent++;
+        if (sent > 1000) return controller.close();
+        controller.enqueue(new TextEncoder().encode("x".repeat(1024)));
+      }
+    });
+    const res = await POST(
+      new Request("https://ecency.com/api/raidstead/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: stream,
+        duplex: "half"
+      } as RequestInit)
+    );
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "too_large" });
+    // given up after the first few pieces, not after all thousand
+    expect(sent).toBeLessThan(20);
+    expect(verifyHsAccessToken).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    // a body of the usual size, just under the limit, is still read
+    const padded = { username: "ann", code: access, pad: "p".repeat(7000) };
+    expect((await ask(padded)).status).toBe(200);
+  });
+
+  it("says in the log what kind of failure it was", async () => {
+    vi.mocked(fetch).mockRejectedValue(
+      Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } })
+    );
+    expect((await ask({ username: "ann", code: access })).status).toBe(502);
+    vi.mocked(fetch).mockRejectedValue(
+      new DOMException("The operation timed out.", "TimeoutError")
+    );
+    expect((await ask({ username: "ann", code: access })).status).toBe(502);
+    const logged = vi.mocked(console.error).mock.calls.map((c) => c.map(String).join(" "));
+    expect(logged).toEqual([
+      "[Raidstead] vouched session failed TypeError ECONNREFUSED",
+      "[Raidstead] vouched session failed TimeoutError "
+    ]);
+  });
+
   it("keeps the secret out of the log when the request to the games API fails", async () => {
     // a failed request may quote its own headers in the error
     vi.mocked(fetch).mockRejectedValue(

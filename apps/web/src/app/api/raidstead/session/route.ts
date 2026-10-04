@@ -1,7 +1,7 @@
 import { EcencyConfigManager } from "@/config";
 import { RAIDSTEAD_API } from "@/features/raidstead/api-base";
 import { verifyHsAccessToken } from "@/server/hivesigner-verify";
-import type { HiveSignerMessage } from "@/types";
+import { decodeToken } from "@/utils/hs-token";
 
 // A game session for an Ecency login that cannot sign the game's own login
 // message (HiveSigner, or any login whose key is not in this browser). The
@@ -22,14 +22,29 @@ const TOKEN_MAX_SKEW_S = 300;
 const answer = (body: unknown, status: number) =>
   Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
-/// The message inside a HiveSigner token (base64url of its JSON), or null.
-function decodeToken(code: string): HiveSignerMessage | null {
-  try {
-    const base64 = code.replace(/-/g, "+").replace(/_/g, "/").replace(/\./g, "=");
-    return JSON.parse(Buffer.from(base64, "base64").toString("utf-8"));
-  } catch {
-    return null;
+// a name and a token: nothing this route is sent needs more room
+const BODY_MAX_BYTES = 8 * 1024;
+
+/// The request's body as text, or null once it is longer than `max` bytes.
+/// Read in pieces and stopped there: anyone may call this route. The length
+/// a caller declares proves nothing.
+async function readBody(req: Request, max: number): Promise<string | null> {
+  const reader = req.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      // not waited for: the answer does not depend on it
+      void reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
   }
+  return Buffer.concat(chunks).toString("utf-8");
 }
 
 export async function POST(req: Request) {
@@ -41,7 +56,9 @@ export async function POST(req: Request) {
 
   let body: { username?: unknown; code?: unknown } | null;
   try {
-    body = await req.json();
+    const text = await readBody(req, BODY_MAX_BYTES);
+    if (text === null) return answer({ error: "too_large" }, 413);
+    body = JSON.parse(text);
   } catch {
     return answer({ error: "bad_request" }, 400);
   }
@@ -111,8 +128,15 @@ export async function POST(req: Request) {
     }
     console.error(`[Raidstead] vouched session answered ${res.status}`);
   } catch (e) {
-    // the name only: the message of a failed request may quote its headers
-    console.error("[Raidstead] vouched session failed", (e as Error)?.name);
+    // What kind of failure, never its message: that may quote the request's
+    // headers. The name tells a timeout apart, the cause's code a refused or
+    // unresolved connection.
+    const { name, cause } = (e ?? {}) as { name?: unknown; cause?: { code?: unknown } };
+    console.error(
+      "[Raidstead] vouched session failed",
+      typeof name === "string" ? name : "",
+      typeof cause?.code === "string" ? cause.code : ""
+    );
   }
   return answer({ error: "game_unavailable" }, 502);
 }
