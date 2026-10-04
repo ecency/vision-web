@@ -13,34 +13,45 @@ export type SeasonCalendar = Calendar & { now?: number };
 export interface Account { name: string; karma: number; shards: number; kills: number; scouts: number; badges: string[] }
 export interface Trophy { season: number; community: string; title: string; kills: number; rank: number; league: "small" | "medium" | "large" }
 export interface Raider { account: string; damage: number; attacks: number }
+/// A line of town news: an overnight trick, a kill, the war chest. `kind` names what
+/// happened (`text` is the same in plain English, for a kind the page does not know).
+export interface Note { day: number; text: string; kind?: string; n?: number; what?: string; who?: string }
 export interface Boss {
   kind: BossKind; hp: number; maxHp: number; alive: boolean; phase: number; gnats: number; waspHp: number;
   weakness: AttackType | null;
-  echo: { side: 0 | 1; by: string; until: number } | null;
+  /// Hits waiting on one twin for the other to be hit, until `until` on the server's clock.
+  echo: { side: 0 | 1; by: string; until: number; hits?: number } | null;
   reshuffleAt: number | null;
 }
 export interface Alliance {
   community: string; title: string; week: number; boss: Boss;
   town: Record<BuildingId, number>; mats: number; web: BuildingId | null; webTalk: string[];
   chest: number; chestGoal: number; buffToday: boolean; kills: number; raiders: Raider[];
-  notes: { day: number; text: string }[];
+  notes: Note[];
+  /// When the war chest's +1 damage ends, on the server's clock.
+  buffUntil?: number | null;
+  /// The chest filled with no pest in town: it pays out the day the next one arrives.
+  buffKept?: boolean;
 }
 export interface Member {
   energy: number; maxEnergy: number; scoutsLeft: number; rallied: boolean; quests: string[];
   powers: PowerId[]; equipped: PowerId[]; slots: number; attackDays: number;
+  /// A scout costs nothing right now (the wasp is in town).
+  scoutFree?: boolean;
 }
-export interface State { calendar: Calendar; account: Account; trophies: Trophy[]; alliance: Alliance | null; member: Member | null }
+/// `now` is the server's clock (ms) when it answered: the times in a state are read by it.
+export interface State { calendar: Calendar; now?: number; account: Account; trophies: Trophy[]; alliance: Alliance | null; member: Member | null }
 
 export type AttackResult = { energy: number; hp: number; maxHp: number } & (
   | { hit: "gnat"; cleared: number; gnatsLeft: number }
   | { hit: "wasp"; dodged: boolean; waspHp: number }
   | { hit: "echo"; side: 0 | 1 }
-  | { hit: "boss"; damage: number; weak: boolean; paired: { by: string; damage: number } | null; killed: boolean; phaseShift: boolean; gnatsSpawned: number; waspArrived: boolean }
+  | { hit: "boss"; damage: number; weak: boolean; paired: { by: string; damage: number; hits?: number } | null; killed: boolean; phaseShift: boolean; gnatsSpawned: number; waspArrived: boolean }
 );
 export interface ScoutResult { weakness: AttackType; tomorrow?: AttackType; scoutsLeft: number }
 export interface Session { token: string; account: string; expiresAt: string }
 export interface Community { name: string; title: string }
-export interface LeaderRow { community: string; title: string; members: number; kills: number; damage: number; league: string }
+export interface LeaderRow { community: string; title: string; members: number; kills: number; damage: number; league: string; score?: number; killSecs?: number }
 
 export class RaidsteadError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string, public readonly extra: Record<string, unknown> = {}) {
@@ -85,7 +96,7 @@ export function createApi(opts: ApiOptions) {
     scout: () => call<ScoutResult>("POST", "/v1/raidstead/scout"),
     attack: (type: AttackType, side: 0 | 1 = 0) => call<AttackResult>("POST", "/v1/raidstead/attack", { type, side }),
     rally: (key: string) => call<{ applied: { energy: number }; balance: number }>("POST", "/v1/raidstead/rally", { key }),
-    chest: (key: string) => call<{ applied: { chest: number; filled: boolean }; balance: number }>("POST", "/v1/raidstead/chest", { key }),
+    chest: (key: string) => call<{ applied: { chest: number; filled: boolean; buffUntil?: number | null; kept?: boolean }; balance: number }>("POST", "/v1/raidstead/chest", { key }),
     quests: () => call<{ claimed: string[]; quests: string[]; energy: number }>("POST", "/v1/raidstead/quests"),
     build: (building: BuildingId) => call<{ stage: number; cost: number; finished: boolean; mats: number }>("POST", "/v1/raidstead/build", { building }),
     talk: () => call<{ cleared: boolean; talkers: string[] }>("POST", "/v1/raidstead/talk"),

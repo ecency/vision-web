@@ -1,15 +1,22 @@
 import { describe, expect, it } from "vitest";
-import type { AttackResult, State } from "@ecency/raidstead";
+import type { AttackResult, Note, State } from "@ecency/raidstead";
 import {
   aimOf,
   attackMessage,
   buildReport,
+  chestBlock,
   countdown,
   errorMessage,
+  GNATS_SHOWN,
   impactOf,
+  newNotes,
+  noteId,
+  noteText,
   pestCalendar,
   pickNeighbors,
+  rallyBlock,
   tierOf,
+  twinSide,
   worldOf
 } from "@/features/raidstead/game";
 
@@ -241,6 +248,112 @@ describe("raidstead game helpers", () => {
 
   it("karma tiers", () => {
     expect([0, 49, 50, 150, 399, 400, 1000, 5000].map(tierOf)).toEqual([0, 0, 1, 2, 2, 3, 4, 4]);
+  });
+});
+
+describe("what the page decides before asking the server", () => {
+  it("draws a swarm of gnats at most, however big the shield is", () => {
+    expect(worldOf(state({ gnats: 3 }), "raid").gnats).toBe(3);
+    expect(worldOf(state({ gnats: 83 }), "raid").gnats).toBe(GNATS_SHOWN);
+  });
+
+  it("goes for the other twin while hits wait on one, and takes its turn otherwise", () => {
+    const now = 1_000_000;
+    const waiting = (side: 0 | 1, until: number) => ({ echo: { side, by: "bob", until, hits: 1 } });
+    expect(twinSide(waiting(0, now + 2000), now, 0)).toBe(1);
+    expect(twinSide(waiting(1, now + 2000), now, 1)).toBe(0);
+    // the wait is over (by the server's clock): the player's own turn
+    expect(twinSide(waiting(0, now), now, 0)).toBe(0);
+    expect(twinSide(waiting(1, now - 1), now, 1)).toBe(1);
+    expect(twinSide({ echo: null }, now, 1)).toBe(1);
+  });
+
+  it("says a twins hit paired with the player's own waiting hit is theirs alone", () => {
+    const pair = (by: string) =>
+      hit({
+        hit: "boss",
+        damage: 24,
+        weak: true,
+        paired: { by, damage: 12, hits: 1 },
+        killed: false,
+        phaseShift: false,
+        gnatsSpawned: 0,
+        waspArrived: false
+      });
+    expect(attackMessage(pair("bob"), "ink", t, "ann")).toBe("paired|dmg=24,by=bob");
+    expect(attackMessage(pair("ann"), "ink", t, "ann")).toBe("paired-self|dmg=24");
+    expect(attackMessage(pair("ann"), "ink", t)).toBe("paired|dmg=24,by=ann");
+  });
+
+  it("knows when a rally would be for nothing", () => {
+    const s = state();
+    s.member!.energy = 10;
+    expect(rallyBlock(s)).toBeNull();
+    s.member!.energy = 11;
+    expect(rallyBlock(s)).toBe("full");
+    s.member!.energy = 0;
+    s.alliance!.boss.alive = false;
+    expect(rallyBlock(s)).toBe("no-boss");
+    s.alliance!.boss.alive = true;
+    s.calendar.resting = true;
+    expect(rallyBlock(s)).toBe("resting");
+    s.member!.rallied = true;
+    expect(rallyBlock(s)).toBe("rallied");
+    expect(rallyBlock(null)).toBe("no-boss");
+  });
+
+  it("knows when the war chest takes no gift", () => {
+    const s = state();
+    expect(chestBlock(s)).toBeNull();
+    s.alliance!.boss.alive = false;
+    expect(chestBlock(s)).toBeNull(); // kept for the next pest
+    s.alliance!.week = 4;
+    expect(chestBlock(s)).toBe("no-boss"); // no next pest this season
+    s.alliance!.boss.alive = true;
+    expect(chestBlock(s)).toBeNull();
+    s.alliance!.buffKept = true;
+    expect(chestBlock(s)).toBe("kept");
+    s.alliance!.buffToday = true;
+    expect(chestBlock(s)).toBe("active");
+    s.alliance!.buffToday = false;
+    s.alliance!.buffKept = false;
+    s.calendar.resting = true;
+    expect(chestBlock(s)).toBe("resting");
+  });
+});
+
+describe("town news", () => {
+  const notes: Note[] = [
+    { day: 1, kind: "copied", n: 45, text: "server line" },
+    { day: 2, kind: "copied", n: 45, text: "server line" },
+    { day: 3, kind: "webbed", what: "tower", text: "server line" },
+    { day: 4, kind: "killed", what: "beetle", who: "bob", text: "server line" }
+  ];
+
+  it("puts each kind in the reader's words, and keeps the server's line for a kind it does not know", () => {
+    expect(notes.map((n) => noteText(n, t))).toEqual([
+      "copied|n=45",
+      "copied|n=45",
+      "webbed|name=name",
+      "killed|name=name,who=bob"
+    ]);
+    expect(noteText({ day: 5, kind: "chest_kept", who: "ann", text: "x" }, t)).toBe("chest_kept|who=ann");
+    expect(noteText({ day: 5, kind: "web_gone", what: "hall", text: "x" }, t)).toBe("web_gone|name=name");
+    expect(noteText({ day: 5, kind: "escaped", what: "slug", text: "x" }, t)).toBe("escaped|name=name");
+    expect(noteText({ day: 5, kind: "healed", n: 60, text: "x" }, t)).toBe("healed|n=60");
+    expect(noteText({ day: 5, kind: "something-new", text: "The server's own line." }, t)).toBe("The server's own line.");
+    expect(noteText({ day: 5, text: "From an older server." }, t)).toBe("From an older server.");
+  });
+
+  it("finds what came after the last line seen", () => {
+    expect(newNotes(notes, null)).toEqual(notes);
+    expect(newNotes(notes, noteId(notes[1]))).toEqual(notes.slice(2));
+    expect(newNotes(notes, noteId(notes[3]))).toEqual([]);
+    // the same thing two days running is two lines
+    expect(noteId(notes[0])).not.toBe(noteId(notes[1]));
+    // the line seen has rolled off the list: all of it is new
+    expect(newNotes(notes.slice(2), noteId(notes[0]))).toEqual(notes.slice(2));
+    expect(newNotes([], "anything")).toEqual([]);
   });
 });
 

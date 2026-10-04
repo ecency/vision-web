@@ -11,6 +11,7 @@ import {
   type Calendar,
   type Community,
   type FolkClass,
+  type Note,
   type PowerId,
   type Scene,
   type State,
@@ -38,7 +39,12 @@ import {
   aimOf,
   attackMessage,
   buildReport,
+  newNotes,
+  noteId,
+  noteText,
   pickNeighbors,
+  rallyBlock,
+  twinSide,
   type Neighbor,
   errorMessage,
   impactOf,
@@ -53,6 +59,7 @@ import {
   InfoSheet,
   LeaderboardSheet,
   MenuSheet,
+  NewsSheet,
   PickSheet,
   ProfileSheet,
   QuestsSheet,
@@ -77,6 +84,12 @@ const TYPES: { type: AttackType; hero: string; color: string }[] = [
   { type: "forge", hero: "smith", color: "var(--rs-smith)" }
 ];
 const SEEN_KEY = "raidstead_seen_week";
+// the last line of town news the player has seen, per season and alliance
+const NEWS_KEY = "raidstead_news";
+// How often the page asks again while it shows: allies' hits, a kill, the town's
+// news. Slower once the week's pest is gone and only the town changes.
+const POLL_MS = 20_000;
+const POLL_IDLE_MS = 60_000;
 
 type SheetState =
   | { kind: "boss" }
@@ -85,6 +98,7 @@ type SheetState =
   | { kind: "town"; town: Neighbor }
   | { kind: "quests" }
   | { kind: "menu" }
+  | { kind: "news"; notes: Note[] }
   | { kind: MenuItem };
 
 export function RaidsteadGame() {
@@ -109,6 +123,7 @@ export function RaidsteadGame() {
   const [now, setNow] = useState(() => Date.now());
   const sideRef = useRef<0 | 1>(0);
   const lastAttackRef = useRef(0);
+  const waspAskRef = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [boot, setBoot] = useState(0);
   // before the first season: the public calendar, so everyone sees the countdown without signing
@@ -137,6 +152,9 @@ export function RaidsteadGame() {
   const dataToken = useRef<string | undefined>(undefined);
   // set when refresh met a 401 and has already decided what comes next
   const unauthorized = useRef(false);
+  // the server's clock minus this device's, as of the last state: a twin's waiting
+  // hit is timed by the server
+  const stateSkew = useRef(0);
   dataRef.current = data;
   const loginOpen = useGlobalStore((s) => s.login);
 
@@ -159,6 +177,7 @@ export function RaidsteadGame() {
       appliedSeq.current = seq;
       dataRef.current = s;
       dataToken.current = token;
+      if (typeof s.now === "number") stateSkew.current = s.now - Date.now();
       setData(s);
       return s;
     } catch (e) {
@@ -468,6 +487,67 @@ export function RaidsteadGame() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, data?.calendar.season, alliance?.week]);
 
+  // Town news. What happened while the player was away opens once as a card, after
+  // the week's card if that is due too; what arrives while they play is a toast.
+  // Their own doing (the last hit, the last gift) was told when it happened.
+  const notes = alliance?.notes;
+  const newsScope = data && alliance ? `${data.calendar.season}:${alliance.community}` : "";
+  const me = data?.account.name;
+  const booted = useRef(false);
+  const [awayNews, setAwayNews] = useState<Note[] | null>(null);
+  // Another account, alliance or season: its first state is a return, not news
+  // while playing. Declared first, so it runs before the effect below reads it.
+  useEffect(() => {
+    booted.current = false;
+    setAwayNews(null);
+  }, [newsScope]);
+  useEffect(() => {
+    if (phase !== "ready" || !newsScope || !notes) return;
+    const first = !booted.current;
+    booted.current = true;
+    const stored = ls.get(NEWS_KEY) as { scope?: string; seen?: string } | null;
+    const seen =
+      stored?.scope === newsScope && typeof stored.seen === "string" ? stored.seen : null;
+    const fresh = newNotes(notes, seen);
+    if (!fresh.length) return;
+    ls.set(NEWS_KEY, { scope: newsScope, seen: noteId(notes[notes.length - 1]) });
+    const news = fresh.filter((n) => !n.who || n.who !== me);
+    if (!news.length) return;
+    if (first) setAwayNews(news);
+    else say(noteText(news[news.length - 1], i18next.t));
+  }, [phase, newsScope, notes, me, say]);
+  useEffect(() => {
+    if (!awayNews || sheet || phase !== "ready") return;
+    setSheet({ kind: "news", notes: awayNews });
+    setAwayNews(null);
+  }, [awayNews, sheet, phase]);
+
+  // Allies raid at the same time: ask for the state again while the page shows.
+  // The server answers these without a lock or a write when nothing is due.
+  const inAlliance = !!alliance;
+  const bossInTown = !!boss?.alive;
+  useEffect(() => {
+    if (phase !== "ready" || !inAlliance) return;
+    const every = bossInTown ? POLL_MS : POLL_IDLE_MS;
+    let last = Date.now();
+    const ask = () => {
+      last = Date.now();
+      refresh();
+    };
+    const id = setInterval(() => {
+      if (!document.hidden) ask();
+    }, every);
+    // a background tab is not asked for; it catches up when it shows again
+    const onVisible = () => {
+      if (!document.hidden && Date.now() - last >= every) ask();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [phase, inAlliance, bossInTown, refresh]);
+
   // the Copycat Queen's reshuffle countdown: once it runs out, ask the server
   // every 2s until it has reshuffled (a client clock ahead of the server
   // would otherwise ask too early and never ask again)
@@ -539,19 +619,31 @@ export function RaidsteadGame() {
       if (n - lastAttackRef.current < 450) return;
       lastAttackRef.current = n;
       setSelected(type);
+      const aim = aimOf(data);
+      // The wasp dodges everyone who has not scouted since it came: say so rather
+      // than spend energy on a sure miss. It may be gone by now, so ask (not on
+      // every tap of a player who keeps tapping).
+      if (aim === "wasp" && !boss.weakness) {
+        if (n - waspAskRef.current > 3000) {
+          waspAskRef.current = n;
+          refresh();
+        }
+        return say(t(member.scoutFree ? "toast.wasp-scout-free" : "toast.wasp-scout-first"));
+      }
       let s: 0 | 1 = side ?? 0;
       if (side === undefined && boss.kind === "twins") {
-        s = sideRef.current;
+        // the other twin while hits wait on one (the player's own, or an ally's)
+        s = twinSide(boss, Date.now() + stateSkew.current, sideRef.current);
         sideRef.current = s ? 0 : 1;
       }
-      const shot = sceneRef.current?.attack(type, aimOf(data), s);
+      const shot = sceneRef.current?.attack(type, aim, s);
       setData((d) =>
         d?.member ? { ...d, member: { ...d.member, energy: d.member.energy - 1 } } : d
       );
       try {
         const r = await raidsteadApi.attack(type, s);
         shot?.resolve(impactOf(r));
-        say(attackMessage(r, type, i18next.t));
+        say(attackMessage(r, type, i18next.t, data?.account.name));
       } catch (e) {
         shot?.resolve({ kind: "miss" });
         say(errorMessage(e, i18next.t));
@@ -606,9 +698,13 @@ export function RaidsteadGame() {
         return r;
       } catch (e) {
         // no answer (offline), or a gateway's instead of games-api's (5xx): the
-        // spend may have gone through, so the retry keeps the key
+        // spend may have gone through, so the retry keeps the key. games-api's own
+        // "Points could not be reached" is an answer: it gave the spend back (or
+        // never made it), and that key is used up.
         const status = (e as { status?: number }).status ?? 0;
-        if (status !== 0 && status < 500) settleSpend(account, which);
+        const code = (e as { code?: string }).code;
+        const answered = code === "points_unavailable" || code === "unavailable";
+        if ((status !== 0 && status < 500) || answered) settleSpend(account, which);
         throw e;
       }
     };
@@ -623,7 +719,14 @@ export function RaidsteadGame() {
   const donate = () =>
     act(
       spend("chest", (k) => raidsteadApi.chest(k)),
-      (r) => say(r.applied.filled ? t("toast.chest-full") : t("toast.donated"))
+      (r) =>
+        say(
+          !r.applied.filled
+            ? t("toast.donated")
+            : r.applied.kept
+              ? t("toast.chest-kept")
+              : t("toast.chest-full")
+        )
     );
   const claimQuests = () =>
     act(
@@ -702,16 +805,19 @@ export function RaidsteadGame() {
     ? ""
     : boss?.weakness
       ? t("actions.scout-found")
-      : member?.scoutsLeft === -1
-        ? t("actions.scout-any")
-        : (member?.scoutsLeft ?? 0) <= 0
-          ? t("actions.scout-used")
-          : (member?.scoutsLeft ?? 0) > 1
-            ? t("actions.scout-left", { n: member?.scoutsLeft })
-            : t("actions.scout-free");
+      : member?.scoutFree
+        ? t("actions.scout-wasp")
+        : member?.scoutsLeft === -1
+          ? t("actions.scout-any")
+          : (member?.scoutsLeft ?? 0) <= 0
+            ? t("actions.scout-used")
+            : (member?.scoutsLeft ?? 0) > 1
+              ? t("actions.scout-left", { n: member?.scoutsLeft })
+              : t("actions.scout-free");
   const questsLeft = 3 - (member?.quests.length ?? 0);
   const playing = phase === "ready" && !!alliance && !!member;
   const resting = !!cal?.resting;
+  const rallyWhy = rallyBlock(data);
 
   // which blocking sheet, if any, comes before the game
   let gate: ReactElement | null = null;
@@ -828,6 +934,9 @@ export function RaidsteadGame() {
           />
         ) : null;
         break;
+      case "news":
+        open = <NewsSheet notes={sheet.notes} onClose={close} />;
+        break;
       case "menu":
         open = (
           <MenuSheet
@@ -928,7 +1037,7 @@ export function RaidsteadGame() {
                   ? [
                       t("boss.phase", { week: alliance!.week, phase: boss.phase }),
                       boss.gnats ? t("boss.gnats", { n: boss.gnats }) : "",
-                      boss.waspHp ? t("boss.wasp") : ""
+                      boss.waspHp ? t("boss.wasp", { n: boss.waspHp }) : ""
                     ]
                       .filter(Boolean)
                       .join(" · ")
@@ -1055,14 +1164,16 @@ export function RaidsteadGame() {
                 </button>
               )}
               {view === "raid" && (
-                <button
-                  className="rs-sec"
-                  disabled={busy || member!.rallied || resting}
-                  onClick={rally}
-                >
+                <button className="rs-sec" disabled={busy || rallyWhy !== null} onClick={rally}>
                   {t("actions.rally")}
                   <small>
-                    {member!.rallied ? t("actions.rally-used") : t("actions.rally-cost")}
+                    {rallyWhy === "rallied"
+                      ? t("actions.rally-used")
+                      : rallyWhy === "no-boss"
+                        ? t("actions.rally-no-boss")
+                        : rallyWhy === "full"
+                          ? t("actions.rally-full")
+                          : t("actions.rally-cost")}
                   </small>
                 </button>
               )}
