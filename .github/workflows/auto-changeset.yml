@@ -48,7 +48,7 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           REPO: ${{ github.repository }}
         run: |
-          if [[ "$HEAD_REF" == release/pr-* ]]; then
+          if [ "$HEAD_REPO" = "$REPO" ] && [[ "$HEAD_REF" == release/pr-* ]]; then
             echo "mode=release" >> "$GITHUB_OUTPUT"
           elif [ "$HEAD_REPO" = "$REPO" ]; then
             echo "mode=same-repo" >> "$GITHUB_OUTPUT"
@@ -98,7 +98,17 @@ jobs:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           DIFF_BASE: origin/${{ github.event.pull_request.base.ref }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: .github/scripts/auto-changeset.sh
+        run: |
+          # Older same-repository branches may predate this script; run the
+          # trusted copy from the fetched base branch.
+          if git cat-file -e "$DIFF_BASE:.github/scripts/auto-changeset.sh" 2>/dev/null; then
+            trusted_script=$(git show "$DIFF_BASE:.github/scripts/auto-changeset.sh")
+          else
+            # While this workflow itself is being introduced, the head has
+            # the script but develop does not yet have it.
+            trusted_script=$(cat .github/scripts/auto-changeset.sh)
+          fi
+          bash -c "$trusted_script"
 
       - name: Commit & push changes (same PR)
         if: github.event.pull_request.head.repo.full_name == github.repository
@@ -128,6 +138,9 @@ jobs:
     needs: gate
     if: needs.gate.outputs.mode == 'fork'
     runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-fork-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
         with:
