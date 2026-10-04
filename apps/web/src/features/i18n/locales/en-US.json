@@ -5075,12 +5075,12 @@
     "bosses": {
       "beetle": {
         "name": "Spam Beetle",
-        "trick": "Copies itself overnight if nobody attacks all day (+45 health).",
+        "trick": "Copies itself overnight if nobody attacks all day: it gets part of its health back.",
         "tip": "Hit it at least once every day."
       },
       "slug": {
         "name": "Doomscroll Slug",
-        "trick": "Heals overnight if nobody keeps it busy (+60 health).",
+        "trick": "Heals overnight if nobody keeps it busy.",
         "tip": "Show up a little every day."
       },
       "twins": {
@@ -5101,19 +5101,20 @@
       "about": "About this boss",
       "phase": "Week {{week}} · Phase {{phase}} of 4",
       "gnats": "{{n}} gnats",
-      "wasp": "wasp",
+      "wasp": "wasp ({{n}})",
       "hp": "{{hp}} / {{max}} health",
       "weak-unknown": "Weakness: ?",
       "weak-known": "Weak to {{type}}",
       "reshuffle": "{{s}}s",
       "chased": "Week {{week}} · chased off",
+      "escaped": "Week {{week}} · got away",
       "next": "The next pest arrives next week",
       "week-card": "Week {{week}} of 4",
       "finale": "season finale",
       "trick-label": "Its trick:",
       "tip-label": "How to beat it:",
       "shield-note": "At half health a shield of gnats forms; clear them first.",
-      "wasp-note": "At 75% a Clickbait Wasp joins and dodges every attack until you scout the weakness.",
+      "wasp-note": "At 75% a Clickbait Wasp joins and dodges you until you scout the weakness again. Scouting is free while it is in town.",
       "go": "Let's go"
     },
     "types": {
@@ -5137,9 +5138,12 @@
       "scout-used": "used today",
       "scout-any": "any time",
       "scout-found": "found",
+      "scout-wasp": "free while the wasp is here",
       "rally": "Rally +5",
       "rally-cost": "50 Points",
       "rally-used": "used today",
+      "rally-no-boss": "no pest in town",
+      "rally-full": "use some energy first",
       "quests": "Quests",
       "quests-left": "{{n}} to do",
       "quests-done": "all done",
@@ -5161,15 +5165,19 @@
       "hit": "{{type}} hit · {{dmg}} damage",
       "hit-weak": "{{type}} hit · {{dmg}} damage · weakness x2",
       "paired": "Both twins hit! {{dmg}} damage, shared with @{{by}}.",
+      "paired-self": "Both twins hit! {{dmg}} damage.",
+      "paired-many": "Both twins hit! {{dmg}} damage: {{n}} waiting hits landed with yours.",
       "echo": "Twin hit. Now hit the other twin within 6 seconds.",
       "gnat": "Gnat cleared. {{n}} to go.",
       "gnat-last": "Gnat cleared. The shield is down!",
       "wasp-dodged": "The Clickbait Wasp dodged! Scout the weakness to see through it.",
+      "wasp-scout-first": "The Clickbait Wasp dodges you until you scout the weakness.",
+      "wasp-scout-free": "The Clickbait Wasp dodges you until you scout the weakness. Scouting is free while it is here.",
       "wasp-hit": "Wasp hit. {{n}} more.",
       "wasp-gone": "Clickbait Wasp chased off!",
-      "shift": "It shifts! The weakness changed. Scout it again.",
+      "shift": "It shifts! The weakness changed. Scout it again if you have a scout left.",
       "gnats-spawn": "Gnat shield! Clear the {{n}} gnats first.",
-      "wasp-arrives": "A Clickbait Wasp swoops in! It dodges everything until the weakness is scouted.",
+      "wasp-arrives": "A Clickbait Wasp swoops in! It dodges you until you scout again, which is free while it is here.",
       "killed": "Chased off! Everyone who raided this week shares the win.",
       "scouted": "Weakness found: {{type}}.",
       "scouted-queen": "Weakness found: {{type}}. The Queen copies you in 20 seconds!",
@@ -5183,7 +5191,8 @@
       "quests": "+{{n}} energy from today's quests.",
       "quests-none": "No new quests finished yet today.",
       "donated": "Donated 50 Points to the war chest. They are burned.",
-      "chest-full": "War chest full! +1 damage for the whole alliance today."
+      "chest-full": "War chest full! +1 damage for the whole alliance for 24 hours.",
+      "chest-kept": "War chest full! It opens for 24 hours once the next pest arrives."
     },
     "errors": {
       "generic": "Something went wrong. Try again.",
@@ -5195,7 +5204,7 @@
       "rate": "Too many actions at once. Wait a moment.",
       "load-failed": "The game could not load. Check your connection and try again.",
       "already_applied": "Your last try went through, so it was not charged again. Tap again for a new one.",
-      "key_used": "Your last try was refunded. Tap again to try once more."
+      "key_used": "Your last try did not go through and its Points are given back. Tap again to try once more."
     },
     "town": {
       "plate": "Town of {{name}}",
@@ -5220,7 +5229,7 @@
       "short": "Not enough materials yet. Your alliance adds 25 a day, and each win adds 60.",
       "raid-first": "Raid at least once this season to help build.",
       "web-title": "The Drama Spider has webbed the {{name}}.",
-      "web-desc": "Its effect is off until two members talk it out.",
+      "web-desc": "Its effect is off until two members talk it out. Left alone, the spider gets bored after 3 days.",
       "talk": "Talk it out",
       "talk-wait": "Waiting for a second member…",
       "buildings": {
@@ -5242,7 +5251,7 @@
         },
         "library": {
           "name": "Library",
-          "does": "Keeps the season chronicle. Draft a raid report from the menu."
+          "does": "Keeps the town's latest news. Draft a raid report from the menu."
         },
         "beacon": {
           "name": "Beacon",
@@ -5250,7 +5259,7 @@
         },
         "walls": {
           "name": "Walls",
-          "does": "Smaller gnat shields: 3 gnats instead of 5."
+          "does": "A smaller gnat shield: about 40% fewer gnats."
         },
         "homes": {
           "name": "Member homes",
@@ -5258,7 +5267,7 @@
         }
       },
       "powers-title": "Season powers · {{n}} of {{slots}} slots",
-      "powers-desc": "Crafting costs 2 shards. Powers last until the season ends.",
+      "powers-desc": "Crafting costs 2 shards. Powers and shards you have not spent go when the season ends.",
       "powers-closed": "Build the Workshop to open a slot.",
       "shards": "You have {{n}} shards.",
       "craft": "Craft",
@@ -5296,8 +5305,13 @@
       "todo": "+1 energy",
       "claim": "Check my quests",
       "chest": "War chest",
-      "chest-desc": "When it reaches 1,000 Points, everyone in {{name}} gets +1 damage for a day.",
+      "chest-desc": "When it reaches 1,000 Points, everyone in {{name}} gets +1 damage for 24 hours.",
       "chest-active": "Active today: +1 damage for everyone in {{name}}.",
+      "chest-active-until": "Active until {{time}}: +1 damage for everyone in {{name}}.",
+      "chest-kept": "Full and kept for the next pest: everyone in {{name}} gets +1 damage for 24 hours once it arrives.",
+      "chest-desc-kept": "No pest is in town. When the chest reaches 1,000 Points it is kept: everyone in {{name}} gets +1 damage for 24 hours once the next pest arrives.",
+      "chest-resting": "The season is resting. The war chest opens again next season.",
+      "chest-closed": "The season's last pest is gone, so the war chest is closed.",
       "chest-bar": "{{n}} / 1,000 Points pooled · every Point spent is burned",
       "donate": "Donate 50 Points"
     },
@@ -5323,7 +5337,7 @@
       "trophies": "Trophies",
       "no-trophies": "Finish a season to place your first trophy.",
       "trophy": "Season {{season}}: {{name}}, #{{rank}} in the {{league}} league",
-      "keeps": "Karma, badges, shards and trophies stay with you across seasons.",
+      "keeps": "Karma, badges and trophies stay with you across seasons. Shards and powers start fresh.",
       "tiers": {
         "0": "Seedling",
         "1": "Sprout",
@@ -5382,6 +5396,7 @@
       "open": "Open in the editor",
       "post-title": "{{name}} vs the {{boss}}: week {{week}} raid report",
       "intro-won": "This week **{{name}}** chased off the {{boss}} in Raidstead.",
+      "intro-escaped": "This week the {{boss}} got away from **{{name}}** in Raidstead.",
       "intro-fighting": "This week **{{name}}** is still fighting the {{boss}} in Raidstead.",
       "raiders": "Top raiders this week:",
       "line": "{{i}}. @{{name}}: {{dmg}} damage",
@@ -5398,6 +5413,8 @@
       "not-weak": "This pest is weak to {{type}}, not {{mine}}.",
       "unknown": "Scout first to learn what this pest is weak to.",
       "rallied": "You already rallied today.",
+      "rally-no-boss": "No pest in town. Save your rally for the next one.",
+      "rally-full": "Use some energy first: a rally adds 5 and you can hold {{max}}.",
       "attack": "Attack with {{type}}",
       "herald-role": "Rally",
       "group": "Heroes",
@@ -5416,6 +5433,22 @@
     },
     "perk-card-title": "Raidstead",
     "perk-card-description": "Raid the weekly pest with your community and build your town.",
+    "news": {
+      "title": "Town news",
+      "away": "While you were away",
+      "empty": "Nothing to report yet.",
+      "day": "Day {{day}}:",
+      "ok": "Got it",
+      "copied": "Nobody attacked, so the Spam Beetle copied itself (+{{n}} health).",
+      "healed": "Nobody kept the Doomscroll Slug busy, so it healed (+{{n}} health).",
+      "webbed": "The Drama Spider webbed the {{name}}.",
+      "web_gone": "The Drama Spider got bored and left the {{name}}.",
+      "escaped": "The {{name}} escaped.",
+      "killed": "The {{name}} was chased off. @{{who}} landed the last hit.",
+      "chest": "The war chest filled up: +1 damage for 24 hours. @{{who}} gave the last Points.",
+      "chest_kept": "The war chest filled up: +1 damage for 24 hours once the next pest arrives. @{{who}} gave the last Points.",
+      "chest_open": "The war chest kept for this pest is open: +1 damage for 24 hours."
+    },
     "guide": {
       "title": "Field guide",
       "open": "Field guide",
@@ -5435,14 +5468,15 @@
       "folk-title": "The townsfolk",
       "energy-title": "Energy and Points",
       "energy": "You get 5 energy a day, plus 1 for each Ecency quest you finish. A rally gives 5 more for 50 Points.",
+      "size": "The pest is sized for your raid party: 100 health for every raider who showed up last week, a share of that for each one who joins in during the week, at least 600. Its tricks grow with it.",
       "chest": "Donate to your alliance's war chest: at 1,000 Points everyone in it gets +1 damage for a day. Every Point spent is burned.",
       "keep-title": "What you keep",
-      "keep": "Karma, badges and trophies stay with you. Everything else starts fresh each season.",
+      "keep": "Karma, badges, trophies and your count of pests chased off stay with you. Shards, powers and the town start fresh each season.",
       "ready-title": "Get ready",
       "ready-community": "Your alliance must be a community you have joined, so join yours before the season opens.",
       "ready-quests": "Get used to the daily quests: each one you finish is 1 more energy in a raid.",
       "ready-quests-link": "See quests",
-      "ready-friends": "Tell your community. More raiders means a faster win.",
+      "ready-friends": "Tell your community. The pest is sized for the raiders who show up, so every one of them counts.",
       "close": "Back to town",
       "close-preseason": "See you there"
     }

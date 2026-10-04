@@ -10,10 +10,18 @@ import {
   type Community,
   type FolkClass,
   type LeaderRow,
+  type Note,
   type PowerId,
   type State
 } from "@ecency/raidstead";
-import { tierOf, type Neighbor } from "@/features/raidstead/game";
+import {
+  chestBlock,
+  noteId,
+  noteText,
+  rallyBlock,
+  tierOf,
+  type Neighbor
+} from "@/features/raidstead/game";
 
 const t = (key: string, values?: Record<string, unknown>) => i18next.t(`raidstead.${key}`, values);
 
@@ -323,13 +331,18 @@ export function HeroSheet({
           })
         );
     }
-  } else if (member?.rallied) {
-    lines.push(t("hero-card.rallied"));
   }
   // the same rules as the page's own buttons
   const resting = state.calendar.resting;
   const canAttack = !!type && !resting && !!boss?.alive && (member?.energy ?? 0) > 0;
-  const canRally = !type && !resting && !!member && !member.rallied && !busy;
+  const rallyWhy = rallyBlock(state);
+  if (!type) {
+    if (rallyWhy === "rallied") lines.push(t("hero-card.rallied"));
+    else if (rallyWhy === "no-boss") lines.push(t("hero-card.rally-no-boss"));
+    else if (rallyWhy === "full")
+      lines.push(t("hero-card.rally-full", { max: member?.maxEnergy ?? 15 }));
+  }
+  const canRally = !type && rallyWhy === null && !busy;
   return (
     <Sheet onClose={onClose} label={name}>
       <small>{type ? t(`types.${type}`) : t("hero-card.herald-role")}</small>
@@ -437,7 +450,9 @@ export function BuildingSheet(props: {
       </div>
       <p>
         {t(`town.buildings.${id}.does`)}
-        {stage < 3 && id !== "workshop" && id !== "hall" ? ` ${t("town.works-when-finished")}` : ""}
+        {stage < 3 && id !== "workshop" && id !== "hall" && id !== "library"
+          ? ` ${t("town.works-when-finished")}`
+          : ""}
       </p>
       {webbed && (
         <div className="rs-web-note">
@@ -524,6 +539,51 @@ export function BuildingSheet(props: {
         </>
       )}
       {id === "trophy" && <Trophies state={state} />}
+      {id === "library" && (
+        <>
+          <h3>{t("news.title")}</h3>
+          <NewsList notes={a.notes ?? []} />
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+/// The town's news, newest first: overnight tricks, kills, the war chest.
+export function NewsList({ notes }: { notes: Note[] }) {
+  if (!notes.length) return <p className="rs-muted">{t("news.empty")}</p>;
+  return (
+    <ul>
+      {[...notes].reverse().map((n, i) => (
+        <li key={`${noteId(n)}#${i}`}>
+          <b>{t("news.day", { day: n.day })}</b> {noteText(n, i18next.t)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/// Town news as a card: what happened since the player was last here (`away`),
+/// or what came in while they were busy with something else.
+export function NewsSheet({
+  notes,
+  away,
+  onClose
+}: {
+  notes: Note[];
+  away: boolean;
+  onClose: () => void;
+}) {
+  const title = t(away ? "news.away" : "news.title");
+  return (
+    <Sheet onClose={onClose} label={title}>
+      <h2>{title}</h2>
+      <NewsList notes={notes} />
+      <div className="rs-btns">
+        <button className="rs-btn rs-primary" onClick={onClose}>
+          {t("news.ok")}
+        </button>
+      </div>
     </Sheet>
   );
 }
@@ -582,6 +642,32 @@ export function QuestsSheet(props: {
 }) {
   const a = props.state.alliance!;
   const m = props.state.member!;
+  const chestWhy = chestBlock(props.state);
+  const chestLine =
+    chestWhy === "active"
+      ? a.buffUntil
+        ? t("quests.chest-active-until", {
+            name: a.title,
+            // an instant on the server's clock, shown in the reader's own time
+            time: new Date(a.buffUntil).toLocaleString(i18next.language || undefined, {
+              weekday: "short",
+              hour: "2-digit",
+              minute: "2-digit"
+            })
+          })
+        : t("quests.chest-active", { name: a.title })
+      : chestWhy === "kept"
+        ? t("quests.chest-kept", { name: a.title })
+        : chestWhy === "no-boss"
+          ? t("quests.chest-closed")
+          : chestWhy === "resting"
+            ? t("quests.chest-resting")
+            : // with no pest in town a chest that fills is kept for the next one
+              a.boss.alive
+              ? t("quests.chest-desc", { name: a.title })
+              : t("quests.chest-desc-kept", { name: a.title });
+  // a kept chest is a full one: the server has already put its Points aside
+  const pooled = chestWhy === "kept" ? a.chestGoal : a.chest;
   return (
     <Sheet onClose={props.onClose} label={t("quests.title")}>
       <h2>{t("quests.title")}</h2>
@@ -611,19 +697,15 @@ export function QuestsSheet(props: {
         </button>
       </div>
       <h3>{t("quests.chest")}</h3>
-      <p>
-        {a.buffToday
-          ? t("quests.chest-active", { name: a.title })
-          : t("quests.chest-desc", { name: a.title })}
-      </p>
+      <p>{chestLine}</p>
       <div className="rs-bar" aria-hidden="true">
-        <span style={{ width: `${Math.min(100, (a.chest / a.chestGoal) * 100)}%` }} />
+        <span style={{ width: `${Math.min(100, (pooled / a.chestGoal) * 100)}%` }} />
       </div>
-      <p className="rs-muted">{t("quests.chest-bar", { n: a.chest.toLocaleString() })}</p>
+      <p className="rs-muted">{t("quests.chest-bar", { n: pooled.toLocaleString() })}</p>
       <div className="rs-btns">
         <button
           className="rs-btn rs-primary"
-          disabled={props.busy || a.buffToday || props.state.calendar.resting}
+          disabled={props.busy || chestWhy !== null}
           onClick={props.onDonate}
         >
           {t("quests.donate")}

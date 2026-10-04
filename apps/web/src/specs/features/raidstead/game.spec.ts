@@ -1,15 +1,24 @@
 import { describe, expect, it } from "vitest";
-import type { AttackResult, State } from "@ecency/raidstead";
+import type { AttackResult, Note, State } from "@ecency/raidstead";
 import {
   aimOf,
   attackMessage,
   buildReport,
+  chestBlock,
   countdown,
   errorMessage,
+  GNATS_SHOWN,
   impactOf,
+  laterMark,
+  markOf,
+  newsAfter,
+  noteId,
+  noteText,
   pestCalendar,
   pickNeighbors,
+  rallyBlock,
   tierOf,
+  twinSide,
   worldOf
 } from "@/features/raidstead/game";
 
@@ -241,6 +250,207 @@ describe("raidstead game helpers", () => {
 
   it("karma tiers", () => {
     expect([0, 49, 50, 150, 399, 400, 1000, 5000].map(tierOf)).toEqual([0, 0, 1, 2, 2, 3, 4, 4]);
+  });
+});
+
+describe("what the page decides before asking the server", () => {
+  it("draws a swarm of gnats at most, however big the shield is", () => {
+    expect(worldOf(state({ gnats: 3 }), "raid").gnats).toBe(3);
+    expect(worldOf(state({ gnats: 83 }), "raid").gnats).toBe(GNATS_SHOWN);
+  });
+
+  it("goes for the other twin while hits wait on one, and takes its turn otherwise", () => {
+    const now = 1_000_000;
+    const waiting = (side: 0 | 1, until: number) => ({ echo: { side, by: "bob", until, hits: 1 } });
+    expect(twinSide(waiting(0, now + 2000), now, 0)).toBe(1);
+    expect(twinSide(waiting(1, now + 2000), now, 1)).toBe(0);
+    // the wait is over (by the server's clock): the player's own turn
+    expect(twinSide(waiting(0, now), now, 0)).toBe(0);
+    expect(twinSide(waiting(1, now - 1), now, 1)).toBe(1);
+    expect(twinSide({ echo: null }, now, 1)).toBe(1);
+  });
+
+  it("says a twins hit paired with the player's own waiting hit is theirs alone", () => {
+    const pair = (by: string) =>
+      hit({
+        hit: "boss",
+        damage: 24,
+        weak: true,
+        paired: { by, damage: 12, hits: 1 },
+        killed: false,
+        phaseShift: false,
+        gnatsSpawned: 0,
+        waspArrived: false
+      });
+    expect(attackMessage(pair("bob"), "ink", t, "ann")).toBe("paired|dmg=24,by=bob");
+    expect(attackMessage(pair("ann"), "ink", t, "ann")).toBe("paired-self|dmg=24");
+    expect(attackMessage(pair("ann"), "ink", t)).toBe("paired|dmg=24,by=ann");
+    // several waiting hits landed with this one: no single name is the whole story
+    const many = hit({
+      hit: "boss",
+      damage: 36,
+      weak: true,
+      paired: { by: "bob", damage: 24, hits: 2 },
+      killed: false,
+      phaseShift: false,
+      gnatsSpawned: 0,
+      waspArrived: false
+    });
+    expect(attackMessage(many, "ink", t, "ann")).toBe("paired-many|dmg=36,n=2");
+  });
+
+  it("leaves the shift's own line out when the wasp arrives with it", () => {
+    const shift = (waspArrived: boolean) =>
+      hit({
+        hit: "boss",
+        damage: 12,
+        weak: true,
+        paired: null,
+        killed: false,
+        phaseShift: true,
+        gnatsSpawned: 0,
+        waspArrived
+      });
+    expect(attackMessage(shift(false), "ink", t)).toBe("hit-weak|type=ink,dmg=12 shift");
+    // "scout again if you have a scout left" next to "scouting is free" would contradict itself
+    expect(attackMessage(shift(true), "ink", t)).toBe("hit-weak|type=ink,dmg=12 wasp-arrives");
+  });
+
+  it("says a pest that is gone without being chased off got away", () => {
+    const s = state({ alive: false, killed: false });
+    expect(buildReport(s, t)!.body).toContain("intro-escaped");
+    expect(buildReport(state({ alive: false, killed: true }), t)!.body).toContain("intro-won");
+    // a server that does not say: as before
+    expect(buildReport(state({ alive: false }), t)!.body).toContain("intro-won");
+  });
+
+  it("knows when a rally would be for nothing", () => {
+    const s = state();
+    s.member!.energy = 10;
+    expect(rallyBlock(s)).toBeNull();
+    s.member!.energy = 11;
+    expect(rallyBlock(s)).toBe("full");
+    s.member!.energy = 0;
+    s.alliance!.boss.alive = false;
+    expect(rallyBlock(s)).toBe("no-boss");
+    s.alliance!.boss.alive = true;
+    s.calendar.resting = true;
+    expect(rallyBlock(s)).toBe("resting");
+    s.member!.rallied = true;
+    expect(rallyBlock(s)).toBe("rallied");
+    expect(rallyBlock(null)).toBe("no-boss");
+  });
+
+  it("knows when the war chest takes no gift", () => {
+    const s = state();
+    expect(chestBlock(s)).toBeNull();
+    s.alliance!.boss.alive = false;
+    expect(chestBlock(s)).toBeNull(); // kept for the next pest
+    s.alliance!.week = 4;
+    expect(chestBlock(s)).toBe("no-boss"); // no next pest this season
+    s.alliance!.boss.alive = true;
+    expect(chestBlock(s)).toBeNull();
+    s.alliance!.buffKept = true;
+    expect(chestBlock(s)).toBe("kept");
+    s.alliance!.buffToday = true;
+    expect(chestBlock(s)).toBe("active");
+    s.alliance!.buffToday = false;
+    s.alliance!.buffKept = false;
+    s.calendar.resting = true;
+    expect(chestBlock(s)).toBe("resting");
+  });
+});
+
+describe("town news", () => {
+  const notes: Note[] = [
+    { day: 1, kind: "copied", n: 45, text: "server line" },
+    { day: 2, kind: "copied", n: 45, text: "server line" },
+    { day: 3, kind: "webbed", what: "tower", text: "server line" },
+    { day: 4, kind: "killed", what: "beetle", who: "bob", text: "server line" }
+  ];
+
+  // the whole key and its values, so the test sees WHICH name was looked up
+  const full = (key: string, values?: Record<string, unknown>) =>
+    values ? `${key} ${JSON.stringify(values)}` : key;
+
+  it("puts each kind in the reader's words, and keeps the server's line for a kind it does not know", () => {
+    expect(notes.map((n) => noteText(n, t))).toEqual([
+      "copied|n=45",
+      "copied|n=45",
+      "webbed|name=name",
+      "killed|name=name,who=bob"
+    ]);
+    expect(noteText(notes[2], full)).toBe('raidstead.news.webbed {"name":"raidstead.town.buildings.tower.name"}');
+    expect(noteText(notes[3], full)).toBe('raidstead.news.killed {"name":"raidstead.bosses.beetle.name","who":"bob"}');
+    expect(noteText({ day: 5, kind: "web_gone", what: "hall", text: "x" }, full)).toBe(
+      'raidstead.news.web_gone {"name":"raidstead.town.buildings.hall.name"}'
+    );
+    expect(noteText({ day: 5, kind: "escaped", what: "slug", text: "x" }, full)).toBe(
+      'raidstead.news.escaped {"name":"raidstead.bosses.slug.name"}'
+    );
+    expect(noteText({ day: 5, kind: "chest_kept", who: "ann", text: "x" }, t)).toBe("chest_kept|who=ann");
+    expect(noteText({ day: 5, kind: "chest_open", text: "x" }, t)).toBe("chest_open");
+    expect(noteText({ day: 5, kind: "healed", n: 60, text: "x" }, t)).toBe("healed|n=60");
+    expect(noteText({ day: 5, kind: "something-new", text: "The server's own line." }, t)).toBe("The server's own line.");
+    expect(noteText({ day: 5, text: "From an older server." }, t)).toBe("From an older server.");
+  });
+
+  it("keeps the server's line for a building or a pest it has no name for", () => {
+    const line = "The server's own line.";
+    expect(noteText({ day: 5, kind: "webbed", what: "market", text: line }, t)).toBe(line);
+    expect(noteText({ day: 5, kind: "web_gone", what: "beetle", text: line }, t)).toBe(line);
+    expect(noteText({ day: 5, kind: "escaped", what: "hornet", text: line }, t)).toBe(line);
+    expect(noteText({ day: 5, kind: "killed", what: "tower", who: "bob", text: line }, t)).toBe(line);
+    expect(noteText({ day: 5, kind: "killed", who: "bob", text: line }, t)).toBe(line);
+  });
+
+  const numbered = notes.map((n, i) => ({ ...n, seq: i + 7 }));
+
+  it("finds what came after the player's mark in numbered news", () => {
+    expect(markOf(numbered)).toBe(10);
+    expect(newsAfter(numbered, 0)).toEqual(numbered);
+    expect(newsAfter(numbered, 8)).toEqual(numbered.slice(2));
+    expect(newsAfter(numbered, 10)).toEqual([]);
+    // an answer older than the mark (another tab has shown more): nothing new
+    expect(newsAfter(numbered.slice(0, 2), 10)).toEqual([]);
+    // lines that rolled off the list are not missed: what is left is still after the mark
+    expect(newsAfter(numbered.slice(2), 7)).toEqual(numbered.slice(2));
+    // a line from before the news was numbered, still on the list: older than any mark
+    const mixed = [{ day: 1, text: "From before." }, ...numbered];
+    expect(newsAfter(mixed, 8)).toEqual(numbered.slice(2));
+    expect(newsAfter(mixed, 10)).toEqual([]);
+    expect(markOf(mixed)).toBe(10);
+  });
+
+  it("falls back to the lines themselves with a server that does not number them", () => {
+    expect(markOf(notes)).toBe(noteId(notes[3]));
+    expect(markOf([])).toBeNull();
+    expect(newsAfter(notes, noteId(notes[1]))).toEqual(notes.slice(2));
+    expect(newsAfter(notes, noteId(notes[3]))).toEqual([]);
+    // the same thing two days running is two lines
+    expect(noteId(notes[0])).not.toBe(noteId(notes[1]));
+    // the line seen has rolled off the list: all of it is new
+    expect(newsAfter(notes.slice(2), noteId(notes[0]))).toEqual(notes.slice(2));
+    // a numbered mark (0: nothing seen yet) against lines without numbers
+    expect(newsAfter(notes, 0)).toEqual(notes);
+    expect(newsAfter([], "anything")).toEqual([]);
+  });
+
+  it("never moves a numbered mark back", () => {
+    expect(laterMark(9, 4)).toBe(9);
+    expect(laterMark(4, 9)).toBe(9);
+    expect(laterMark(undefined, 3)).toBe(3);
+    expect(laterMark(null, 3)).toBe(3);
+    expect(laterMark("2|webbed|tower||", 5)).toBe(5);
+    expect(laterMark(5, "2|webbed|tower||")).toBe("2|webbed|tower||");
+  });
+
+  it("does not move an unnumbered mark back to an earlier day", () => {
+    const day3 = "3|killed|beetle|bob|";
+    expect(laterMark(day3, "2|webbed|tower||")).toBe(day3);
+    expect(laterMark("2|webbed|tower||", day3)).toBe(day3);
+    // the same day: the lines cannot be put in order, so the one just shown counts
+    expect(laterMark(day3, "3|chest||cat|")).toBe("3|chest||cat|");
   });
 });
 

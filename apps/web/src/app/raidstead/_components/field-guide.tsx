@@ -89,6 +89,7 @@ export function FieldGuideSheet({
           </li>
         ))}
       </ol>
+      <p className="rs-muted">{t("guide.size")}</p>
 
       <h3>{t("guide.pests-title", { n: Math.max(1, calendar.season) })}</h3>
       <ul className="rs-pests">

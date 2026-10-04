@@ -3,7 +3,7 @@ import "@testing-library/jest-dom";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQueryClient } from "@/specs/test-utils";
-import { installFetchRouter, iso, jsonResponse, makeStatus } from "./curation-test-utils";
+import { installFetchRouter, iso, jsonResponse, makeStatus, NOW } from "./curation-test-utils";
 
 const state = vi.hoisted(() => ({ username: "newbie" as string | undefined }));
 
@@ -69,6 +69,9 @@ describe("CurationApplyView", () => {
   let router: ReturnType<typeof installFetchRouter>;
 
   beforeEach(() => {
+    // the fixtures are offsets from NOW, and the view compares them with today
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["Date"] });
+    vi.setSystemTime(NOW);
     state.username = "newbie";
     router = installFetchRouter();
     router.on(/curation-desk\/roster$/, () =>
@@ -83,7 +86,10 @@ describe("CurationApplyView", () => {
     );
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
 
   it("sends the three answers and nothing else", async () => {
     const writes: Record<string, unknown>[] = [];

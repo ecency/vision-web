@@ -1,10 +1,12 @@
-import { BOSS_KINDS, type BossKind } from "@ecency/raidstead";
+import { BOSS_KINDS, BUILDING_IDS, type BossKind } from "@ecency/raidstead";
 import type {
   AttackResult,
   AttackType,
+  Boss,
   Impact,
   LeaderRow,
   Calendar,
+  Note,
   RaidsteadError,
   SceneWorld,
   State,
@@ -12,6 +14,10 @@ import type {
 } from "@ecency/raidstead";
 
 type T = (key: string, values?: Record<string, unknown>) => string;
+
+/// A big alliance's gnat shield runs to dozens: the scene draws a swarm of this many
+/// at most, and the boss plate says how many there really are.
+export const GNATS_SHOWN = 8;
 
 /// What the scene should show for a server state.
 export function worldOf(state: State | null, view: View): SceneWorld {
@@ -30,7 +36,7 @@ export function worldOf(state: State | null, view: View): SceneWorld {
   return {
     view,
     boss: { kind: a.boss.kind, alive: a.boss.alive },
-    gnats: a.boss.gnats,
+    gnats: Math.min(a.boss.gnats, GNATS_SHOWN),
     wasp: a.boss.waspHp > 0,
     town: a.town,
     web: a.web
@@ -58,9 +64,110 @@ export function impactOf(r: AttackResult): Impact {
   }
 }
 
+/// Which twin an untargeted attack goes for. A hit only lands once the other twin is
+/// hit too, so while hits wait on one twin (the player's own, or an ally's) the
+/// attack goes for the other and lands them all; with none waiting it takes `turn`.
+/// `now` is the server's clock, which the wait is timed by.
+export function twinSide(boss: Pick<Boss, "echo">, now: number, turn: 0 | 1): 0 | 1 {
+  const e = boss.echo;
+  return e && e.until > now ? (e.side === 0 ? 1 : 0) : turn;
+}
+
+/// Why a rally cannot be called right now, or null when it can. The server refuses
+/// the same cases before any Points are taken; the page says so up front.
+export function rallyBlock(state: State | null): "rallied" | "resting" | "no-boss" | "full" | null {
+  const m = state?.member;
+  const boss = state?.alliance?.boss;
+  if (!state || !m || !boss) return "no-boss";
+  if (m.rallied) return "rallied";
+  if (state.calendar.resting) return "resting";
+  if (!boss.alive) return "no-boss";
+  // a rally adds 5: with less room than that some of it would be lost
+  return m.energy + 5 > m.maxEnergy ? "full" : null;
+}
+
+/// Why the war chest takes no gift right now, or null when it does.
+export function chestBlock(state: State | null): "active" | "kept" | "resting" | "no-boss" | null {
+  const a = state?.alliance;
+  if (!state || !a) return "no-boss";
+  if (a.buffToday) return "active";
+  if (a.buffKept) return "kept";
+  if (state.calendar.resting) return "resting";
+  // a chest that fills with no pest in town is kept for the next one: after the
+  // season's last pest there is no next one
+  return !a.boss.alive && a.week >= 4 ? "no-boss" : null;
+}
+
+/// A line of town news in the reader's language. Anything this page has no words
+/// for (a kind, a pest or a building from a newer server) falls back to the
+/// server's own plain line.
+export function noteText(n: Note, t: T): string {
+  const what = n.what ?? "";
+  const building = (BUILDING_IDS as readonly string[]).includes(what);
+  const pest = (BOSS_KINDS as readonly string[]).includes(what);
+  switch (n.kind) {
+    case "copied":
+    case "healed":
+      return t(`raidstead.news.${n.kind}`, { n: n.n ?? 0 });
+    case "webbed":
+    case "web_gone":
+      if (!building) return n.text;
+      return t(`raidstead.news.${n.kind}`, { name: t(`raidstead.town.buildings.${what}.name`) });
+    case "escaped":
+      if (!pest) return n.text;
+      return t("raidstead.news.escaped", { name: t(`raidstead.bosses.${what}.name`) });
+    case "killed":
+      if (!pest) return n.text;
+      return t("raidstead.news.killed", { name: t(`raidstead.bosses.${what}.name`), who: n.who ?? "" });
+    case "chest":
+    case "chest_kept":
+      return t(`raidstead.news.${n.kind}`, { who: n.who ?? "" });
+    case "chest_open":
+      return t("raidstead.news.chest_open");
+    default:
+      return n.text;
+  }
+}
+
+/// What tells one line of news from another when the server does not number
+/// them: the news is a short rolling list.
+export const noteId = (n: Note) => [n.day, n.kind ?? n.text, n.what ?? "", n.who ?? "", n.n ?? ""].join("|");
+
+/// How far a player has read the news: the number of the last line seen (the
+/// server numbers them), or that line's noteId from a server that does not.
+export type NewsMark = number | string;
+
+/// The mark of a list read to its end; null for an empty list from a server
+/// that does not number its news.
+export function markOf(notes: Note[]): NewsMark | null {
+  const last = notes[notes.length - 1];
+  return last ? (last.seq ?? noteId(last)) : null;
+}
+
+/// The news after the player's mark. Numbered lines are told apart for good: an
+/// answer older than the mark holds nothing new, and a line without a number
+/// among numbered ones was written before numbering began, so it is older than
+/// any numbered mark. With a noteId (no numbers at all), a line that has rolled
+/// off the list makes all of it new.
+export function newsAfter(notes: Note[], mark: NewsMark): Note[] {
+  if (typeof mark === "number" && notes.some((n) => typeof n.seq === "number")) {
+    return notes.filter((n) => typeof n.seq === "number" && n.seq > mark);
+  }
+  return notes.slice(notes.map(noteId).lastIndexOf(String(mark)) + 1);
+}
+
+/// The later of two marks: a mark never moves back (two tabs share one, and an
+/// answer can be older than what another tab has already shown). Numbers say
+/// which is later; noteIds only by their day, so within a day the new one counts.
+export function laterMark(a: NewsMark | null | undefined, b: NewsMark): NewsMark {
+  if (typeof a === "number" && typeof b === "number") return Math.max(a, b);
+  const day = (m: string) => Number(m.split("|")[0]) || 0;
+  return typeof a === "string" && typeof b === "string" && day(a) > day(b) ? a : b;
+}
+
 /// The toast after an attack; follow-ups (a shift, a shield, the wasp) are
-/// appended so one line tells the whole story.
-export function attackMessage(r: AttackResult, type: AttackType, t: T): string {
+/// appended so one line tells the whole story. `me` is the player's account.
+export function attackMessage(r: AttackResult, type: AttackType, t: T, me?: string): string {
   switch (r.hit) {
     case "gnat":
       return r.gnatsLeft > 0
@@ -77,13 +184,20 @@ export function attackMessage(r: AttackResult, type: AttackType, t: T): string {
   if (r.killed) return t("raidstead.toast.killed");
   const parts = [
     r.paired
-      ? t("raidstead.toast.paired", { dmg: r.damage, by: r.paired.by })
+      ? // several waiting hits landed with this one; or only the player's own, with
+        // nobody to share it with; or one ally's
+        (r.paired.hits ?? 1) > 1
+        ? t("raidstead.toast.paired-many", { dmg: r.damage, n: r.paired.hits })
+        : r.paired.by === me
+          ? t("raidstead.toast.paired-self", { dmg: r.damage })
+          : t("raidstead.toast.paired", { dmg: r.damage, by: r.paired.by })
       : t(r.weak ? "raidstead.toast.hit-weak" : "raidstead.toast.hit", {
           type: t(`raidstead.types.${type}`),
           dmg: r.damage
         })
   ];
-  if (r.phaseShift) parts.push(t("raidstead.toast.shift"));
+  // the wasp's own line says how to scout again (for free), so the shift's is left out
+  if (r.phaseShift && !r.waspArrived) parts.push(t("raidstead.toast.shift"));
   if (r.gnatsSpawned) parts.push(t("raidstead.toast.gnats-spawn", { n: r.gnatsSpawned }));
   if (r.waspArrived) parts.push(t("raidstead.toast.wasp-arrives"));
   return parts.join(" ");
@@ -128,7 +242,7 @@ export function buildReport(state: State, t: T): { title: string; body: string }
   const boss = t(`raidstead.bosses.${a.boss.kind}.name`);
   const title = t("raidstead.report.post-title", { name: a.title, boss, week: a.week });
   const lines = [
-    t(a.boss.alive ? "raidstead.report.intro-fighting" : "raidstead.report.intro-won", {
+    t(a.boss.alive ? "raidstead.report.intro-fighting" : a.boss.killed === false ? "raidstead.report.intro-escaped" : "raidstead.report.intro-won", {
       name: escapeMarkdown(a.title),
       boss
     }),
