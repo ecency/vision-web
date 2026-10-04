@@ -66,7 +66,9 @@ jobs:
           # Absent on a pull request from a fork, where secrets are not exposed:
           # the rest of the rules still run, that one check is simply inert, and
           # the same job on the base branch catches it after merge.
-          AUDIT_FORBIDDEN_MARKERS: ${{ secrets.AUDIT_FORBIDDEN_MARKERS }}
+          # release/pr-* contains fork source despite being a same-repository
+          # branch, so its PR checks must not receive repository secrets.
+          AUDIT_FORBIDDEN_MARKERS: ${{ !startsWith(github.event.pull_request.head.ref, 'release/pr-') && secrets.AUDIT_FORBIDDEN_MARKERS || '' }}
         run: |
           node scripts/origin-config-audit.mjs --self-test
           node scripts/origin-config-audit.mjs --fail

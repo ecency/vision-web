@@ -132,6 +132,10 @@ pnpm typecheck && pnpm lint
 your commit buries the real diff in generated output and causes merge conflicts. CI
 rebuilds it: `.github/workflows/auto-changeset.yml` fires when a version label is put
 on the PR, then pushes the version bump plus the rebuilt dist back to the PR branch.
+On a PR from a fork it cannot push there, so it builds the fork's source and
+`auto-changeset-fork-release.yml` pushes the bump plus the fork CI job's rebuilt dist
+to `release/pr-<N>`. Review both source and dist: the job resets contributor-committed
+dist, but its build still executes code from the fork.
 Do not add those labels yourself; the maintainer applies them. Building it locally is
 expected; just keep `dist` out of what you stage.
 

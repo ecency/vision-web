@@ -5,12 +5,17 @@ on:
     types: [labeled]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
-  auto-changeset:
+  # Same-repo PRs are versioned and rebuilt on their own branch. A fork's branch
+  # cannot be pushed with GITHUB_TOKEN, and its committed dist is the contributor's
+  # build, not ours, so fork PRs go through fork-build here and then
+  # auto-changeset-fork-release.yml, which pushes the fork job's rebuilt dist to
+  # release/pr-<N> for maintainer review.
+  gate:
     runs-on: ubuntu-latest
+    permissions: {}
     # A <bump>:<package> label names OUR package explicitly, so it always counts.
     # A bare major/minor/patch label only counts on a human-opened PR: Dependabot
     # applies labels by those exact names to describe the DEPENDENCY's semver step,
@@ -18,8 +23,7 @@ jobs:
     # 3.0.0 off a patch @xmldom/xmldom bump on #1771. To release a Dependabot PR,
     # label it patch:<package>.
     if: |
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      (contains(github.event.pull_request.labels.*.name, 'patch:sdk') ||
+      contains(github.event.pull_request.labels.*.name, 'patch:sdk') ||
       contains(github.event.pull_request.labels.*.name, 'patch:wallets') ||
       contains(github.event.pull_request.labels.*.name, 'patch:render-helper') ||
       contains(github.event.pull_request.labels.*.name, 'patch:ui') ||
@@ -34,7 +38,31 @@ jobs:
       (github.event.pull_request.user.login != 'dependabot[bot]' &&
       (contains(github.event.pull_request.labels.*.name, 'patch') ||
       contains(github.event.pull_request.labels.*.name, 'minor') ||
-      contains(github.event.pull_request.labels.*.name, 'major'))))
+      contains(github.event.pull_request.labels.*.name, 'major')))
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - id: mode
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REPO" = "$REPO" ] && [[ "$HEAD_REF" == release/pr-* ]]; then
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+          elif [ "$HEAD_REPO" = "$REPO" ]; then
+            echo "mode=same-repo" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=fork" >> "$GITHUB_OUTPUT"
+          fi
+
+  auto-changeset:
+    needs: gate
+    if: needs.gate.outputs.mode == 'same-repo'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -57,148 +85,30 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Generate changeset
+      - name: Fetch base branch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: git fetch origin "$BASE_REF"
+
+      - name: Generate changeset, version and rebuild
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: |
-          set -e
-
-          LABELS=$(echo "$PR_LABELS" | jq -r '.[]')
-
-          # Use associative array to track per-package bump types
-          declare -A PACKAGE_BUMPS
-          DEFAULT_BUMP="patch"
-
-          # Helper function to set bump type with conflict detection
-          # Uses precedence: major > minor > patch
-          set_bump() {
-            local package=$1
-            local new_bump=$2
-            local current_bump="${PACKAGE_BUMPS[$package]}"
-
-            if [ -n "$current_bump" ] && [ "$current_bump" != "$new_bump" ]; then
-              echo "⚠️  Conflicting labels for $package: $current_bump and $new_bump"
-              # Use precedence: major > minor > patch
-              if [ "$new_bump" = "major" ] || [ "$current_bump" = "patch" -a "$new_bump" = "minor" ]; then
-                echo "   → Using higher severity: $new_bump"
-                PACKAGE_BUMPS[$package]=$new_bump
-              else
-                echo "   → Keeping higher severity: $current_bump"
-              fi
-            else
-              PACKAGE_BUMPS[$package]=$new_bump
-            fi
-          }
-
-          # Check package-specific labels
-          if echo "$LABELS" | grep -qx "patch:sdk"; then set_bump "@ecency/sdk" "patch"; fi
-          if echo "$LABELS" | grep -qx "minor:sdk"; then set_bump "@ecency/sdk" "minor"; fi
-          if echo "$LABELS" | grep -qx "major:sdk"; then set_bump "@ecency/sdk" "major"; fi
-
-          if echo "$LABELS" | grep -qx "patch:wallets"; then set_bump "@ecency/wallets" "patch"; fi
-          if echo "$LABELS" | grep -qx "minor:wallets"; then set_bump "@ecency/wallets" "minor"; fi
-          if echo "$LABELS" | grep -qx "major:wallets"; then set_bump "@ecency/wallets" "major"; fi
-
-          if echo "$LABELS" | grep -qx "patch:render-helper"; then set_bump "@ecency/render-helper" "patch"; fi
-          if echo "$LABELS" | grep -qx "minor:render-helper"; then set_bump "@ecency/render-helper" "minor"; fi
-          if echo "$LABELS" | grep -qx "major:render-helper"; then set_bump "@ecency/render-helper" "major"; fi
-
-          if echo "$LABELS" | grep -qx "patch:ui"; then set_bump "@ecency/ui" "patch"; fi
-          if echo "$LABELS" | grep -qx "minor:ui"; then set_bump "@ecency/ui" "minor"; fi
-          if echo "$LABELS" | grep -qx "major:ui"; then set_bump "@ecency/ui" "major"; fi
-
-          # If no package-specific labels, check generic labels and detect changed packages.
-          # Dependabot labels its own PRs major/minor/patch to describe the DEPENDENCY's
-          # semver step, so those labels say nothing about how OUR package should be
-          # released and are ignored here. Mirrors the job-level `if:` above; kept in the
-          # script too so the rule survives someone loosening that condition.
-          if [ ${#PACKAGE_BUMPS[@]} -eq 0 ] && [ "$PR_AUTHOR" != "dependabot[bot]" ]; then
-            if echo "$LABELS" | grep -qx "major"; then
-              DEFAULT_BUMP="major"
-            elif echo "$LABELS" | grep -qx "minor"; then
-              DEFAULT_BUMP="minor"
-            fi
-
-            git fetch origin ${{ github.event.pull_request.base.ref }}
-            CHANGED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD)
-
-            if echo "$CHANGED_FILES" | grep -q "^packages/sdk/"; then set_bump "@ecency/sdk" "$DEFAULT_BUMP"; fi
-            if echo "$CHANGED_FILES" | grep -q "^packages/wallets/"; then set_bump "@ecency/wallets" "$DEFAULT_BUMP"; fi
-            if echo "$CHANGED_FILES" | grep -q "^packages/render-helper/"; then set_bump "@ecency/render-helper" "$DEFAULT_BUMP"; fi
-            if echo "$CHANGED_FILES" | grep -q "^packages/ui/"; then set_bump "@ecency/ui" "$DEFAULT_BUMP"; fi
-          fi
-
-          if [ ${#PACKAGE_BUMPS[@]} -eq 0 ]; then
-            echo "No publishable packages changed, skipping changeset generation"
-            exit 0
-          fi
-
-          CHANGESET_FILE=".changeset/pr-${PR_NUMBER}.md"
-          rm -f "$CHANGESET_FILE"
-
-          echo "---" > "$CHANGESET_FILE"
-          for pkg in "${!PACKAGE_BUMPS[@]}"; do
-            echo "\"$pkg\": ${PACKAGE_BUMPS[$pkg]}" >> "$CHANGESET_FILE"
-          done
-          echo "---" >> "$CHANGESET_FILE"
-          echo "" >> "$CHANGESET_FILE"
-
-          if [[ "$PR_TITLE" == *"(#${PR_NUMBER})"* ]]; then
-            echo "$PR_TITLE" >> "$CHANGESET_FILE"
-          else
-            echo "$PR_TITLE (#${PR_NUMBER})" >> "$CHANGESET_FILE"
-          fi
-
-          cat "$CHANGESET_FILE"
-
-      - name: Apply version bumps
-        env:
+          DIFF_BASE: origin/${{ github.event.pull_request.base.ref }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm changeset version
-
-      - name: Rebuild affected packages
         run: |
-          set -e
-
-          CHANGED_PACKAGES=""
-
-          # Detect which packages were version-bumped by checking git diff on package.json versions
-          if git diff --name-only | grep -q "^packages/sdk/"; then CHANGED_PACKAGES="$CHANGED_PACKAGES sdk"; fi
-          if git diff --name-only | grep -q "^packages/wallets/"; then CHANGED_PACKAGES="$CHANGED_PACKAGES wallets"; fi
-          if git diff --name-only | grep -q "^packages/render-helper/"; then CHANGED_PACKAGES="$CHANGED_PACKAGES render-helper"; fi
-          if git diff --name-only | grep -q "^packages/ui/"; then CHANGED_PACKAGES="$CHANGED_PACKAGES ui"; fi
-
-          if [ -z "$CHANGED_PACKAGES" ]; then
-            echo "No packages to rebuild"
-            exit 0
+          # Older same-repository branches may predate this script; run the
+          # trusted copy from the fetched base branch.
+          if git cat-file -e "$DIFF_BASE:.github/scripts/auto-changeset.sh" 2>/dev/null; then
+            trusted_script=$(git show "$DIFF_BASE:.github/scripts/auto-changeset.sh")
+          else
+            # While this workflow itself is being introduced, the head has
+            # the script but develop does not yet have it.
+            trusted_script=$(cat .github/scripts/auto-changeset.sh)
           fi
-
-          echo "Rebuilding packages:$CHANGED_PACKAGES"
-
-          # Build SDK first since wallets depends on it
-          if echo "$CHANGED_PACKAGES" | grep -q "sdk"; then
-            echo "Building @ecency/sdk..."
-            pnpm --filter @ecency/sdk build
-          fi
-
-          # Build wallets and render-helper (can be parallel but sequential is safer in CI)
-          if echo "$CHANGED_PACKAGES" | grep -q "wallets"; then
-            echo "Building @ecency/wallets..."
-            pnpm --filter @ecency/wallets build
-          fi
-
-          if echo "$CHANGED_PACKAGES" | grep -q "render-helper"; then
-            echo "Building @ecency/render-helper..."
-            pnpm --filter @ecency/render-helper build
-          fi
-
-          if echo "$CHANGED_PACKAGES" | grep -q "ui"; then
-            echo "Building @ecency/ui..."
-            pnpm --filter @ecency/ui build
-          fi
+          bash -c "$trusted_script"
 
       - name: Commit & push changes (same PR)
         if: github.event.pull_request.head.repo.full_name == github.repository
@@ -218,3 +128,84 @@ jobs:
 
           git commit -m "chore: apply changeset versioning for PR #${PR_NUMBER}"
           git push origin "HEAD:${BRANCH_REF}"
+
+  # Untrusted: the fork's code is installed and built here, so this job runs on
+  # pull_request (read-only token, no secrets, PR-scoped cache) and only hands a
+  # patch to auto-changeset-fork-release.yml. Never move it to
+  # pull_request_target: install scripts there could write the base branch's
+  # Actions cache that the deploy workflows restore.
+  fork-build:
+    needs: gate
+    if: needs.gate.outputs.mode == 'fork'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-fork-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 11.5.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Fetch base commit
+        env:
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git fetch --no-tags "https://github.com/${REPO}.git" "$BASE_SHA"
+
+      - name: Generate changeset, version and rebuild from source
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          DIFF_BASE: ${{ github.event.pull_request.base.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REBUILD_TOUCHED_DIST: "true"
+        run: |
+          set -euo pipefail
+          # Capture the whole trusted script in this shell before pnpm reads
+          # any fork-controlled install config or runs a package build.
+          trusted_script=$(git show "$DIFF_BASE:.github/scripts/auto-changeset.sh")
+          # A fork can add lifecycle hooks or a pnpmfile that executes even
+          # with lifecycle scripts disabled.
+          pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile
+          bash -c "$trusted_script"
+
+      - name: Export patch
+        id: patch
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No version or build changes to release"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/fork-release"
+          git diff --cached --binary > "$RUNNER_TEMP/fork-release/release.patch"
+          echo "$PR_NUMBER" > "$RUNNER_TEMP/fork-release/pr-number"
+          echo "$HEAD_SHA" > "$RUNNER_TEMP/fork-release/head-sha"
+          echo "$BASE_SHA" > "$RUNNER_TEMP/fork-release/base-sha"
+          git diff --cached --stat
+
+      - uses: actions/upload-artifact@v4
+        if: steps.patch.outputs.changed == 'true'
+        with:
+          name: fork-release
+          path: ${{ runner.temp }}/fork-release
+          retention-days: 7

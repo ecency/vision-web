@@ -1,0 +1,188 @@
+name: Auto Changeset Fork Release
+
+# Second half of auto-changeset.yml for PRs from forks. That run built the
+# fork's source on an unprivileged pull_request job and uploaded the result as
+# a patch. This run has write access, so it executes nothing from the fork: it
+# applies the patch as data, refuses anything outside version/changelog/dist
+# paths, and pushes the fork's commits plus the fork job's build to release/pr-<N>.
+# A maintainer opens and reviews the PR from that branch. Merging it also marks
+# the fork PR as merged.
+
+on:
+  workflow_run:
+    workflows: [Auto Generate Changeset]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  # All runs can update release/pr-<N>; serializing them also covers runs whose
+  # workflow_run payload omits a PR number.
+  group: ${{ github.workflow }}-release
+  cancel-in-progress: false
+
+jobs:
+  release-branch:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name != github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    steps:
+      - name: Find the fork-release artifact
+        id: artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          count=$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
+            --jq '[.artifacts[] | select(.name == "fork-release" and (.expired | not))] | length')
+          echo "found=$([ "$count" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        if: steps.artifact.outputs.found == 'true'
+        with:
+          name: fork-release
+          path: ${{ runner.temp }}/fork-release
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      # The artifact is written by fork code. Its PR number and head SHA are only
+      # accepted when they match the open PR GitHub reports for this run.
+      - name: Resolve the PR
+        id: pr
+        if: steps.artifact.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          DIR: ${{ runner.temp }}/fork-release
+        run: |
+          set -euo pipefail
+          claimed_pr=$(tr -cd '0-9' < "$DIR/pr-number")
+          claimed_sha=$(tr -cd '0-9a-f' < "$DIR/head-sha")
+          claimed_base_sha=$(tr -cd '0-9a-f' < "$DIR/base-sha")
+          if [ "$claimed_sha" != "$RUN_HEAD_SHA" ]; then
+            echo "::error::artifact head SHA does not match the workflow run"
+            exit 1
+          fi
+          pr=$(gh api "repos/$REPO/pulls/$claimed_pr")
+          if [ "$(jq -r .state <<<"$pr")" != "open" ] \
+            || [ "$(jq -r .head.sha <<<"$pr")" != "$RUN_HEAD_SHA" ] \
+            || [ "$(jq -r .base.sha <<<"$pr")" != "$claimed_base_sha" ] \
+            || [ "$(jq -r .head.repo.full_name <<<"$pr")" = "$REPO" ]; then
+            echo "::error::PR #$claimed_pr no longer matches this fork build (relabel to rerun)"
+            exit 1
+          fi
+          {
+            echo "number=$claimed_pr"
+            echo "base=$(jq -r .base.ref <<<"$pr")"
+            echo "base_sha=$(jq -r .base.sha <<<"$pr")"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.artifact.outputs.found == 'true'
+        with:
+          fetch-depth: 0
+
+      - name: Save trusted patch validator
+        if: steps.artifact.outputs.found == 'true'
+        run: cp .github/scripts/validate-fork-release-patch.sh "$RUNNER_TEMP/validate-fork-release-patch.sh"
+
+      - name: Apply the fork build patch on top of the PR head
+        id: apply
+        if: steps.artifact.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          BASE: ${{ steps.pr.outputs.base }}
+          BASE_SHA: ${{ steps.pr.outputs.base_sha }}
+          DIR: ${{ runner.temp }}/fork-release
+        run: |
+          set -euo pipefail
+          if [ ! -s "$DIR/release.patch" ]; then
+            echo "Nothing to release"
+            exit 0
+          fi
+          git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head"
+          # A base-repository release PR receives same-repository Actions trust.
+          # Never promote workflow definitions supplied by a fork into that role.
+          if [ -n "$(git diff --name-only "$BASE_SHA...$HEAD_SHA" -- .github/workflows)" ]; then
+            echo "::error::fork PR changes Actions workflows; review and merge it through a separate trusted path"
+            exit 1
+          fi
+          branch="release/pr-${PR_NUMBER}"
+          git checkout -B "$branch" "$HEAD_SHA"
+
+          git apply --index --binary "$DIR/release.patch"
+          bash "$RUNNER_TEMP/validate-fork-release-patch.sh"
+          if git diff --cached --quiet; then
+            echo "Nothing to release"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: apply changeset versioning for PR #${PR_NUMBER}"
+
+          # The fork PR may have moved while this run was preparing its patch.
+          pr=$(gh api "repos/$REPO/pulls/$PR_NUMBER")
+          if [ "$(jq -r .state <<<"$pr")" != open ] \
+            || [ "$(jq -r .head.sha <<<"$pr")" != "$HEAD_SHA" ] \
+            || [ "$(jq -r .base.ref <<<"$pr")" != "$BASE" ] \
+            || [ "$(jq -r .base.sha <<<"$pr")" != "$BASE_SHA" ]; then
+            echo "::error::fork PR changed before release branch publication"
+            exit 1
+          fi
+
+          remote_tip=$(git ls-remote origin "refs/heads/$branch" | awk '{print $1}')
+          if [ -n "$remote_tip" ]; then
+            git fetch --no-tags origin "+refs/heads/$branch:refs/remotes/origin/$branch"
+            if [ "$(git show -s --format=%ae "$remote_tip")" != "41898282+github-actions[bot]@users.noreply.github.com" ] \
+              || [ "$(git show -s --format=%s "$remote_tip")" != "chore: apply changeset versioning for PR #${PR_NUMBER}" ]; then
+              echo "::error::release branch has reviewer changes; refusing to overwrite it"
+              exit 1
+            fi
+          fi
+          git push --force-with-lease="refs/heads/$branch:$remote_tip" origin "HEAD:refs/heads/$branch"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Point the PR at the release branch
+        if: steps.apply.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          BASE: ${{ steps.pr.outputs.base }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          branch="release/pr-${PR_NUMBER}"
+          existing=$(gh pr list -R "$REPO" --head "$branch" --state open --json number --jq '.[0].number // empty')
+          # The fork job runs PR-controlled build inputs; flag them for review.
+          build_inputs=$(git diff --name-only "origin/$BASE...$HEAD_SHA" \
+            | grep -E '(^|/)(tsup\.config\.[a-z]+|tsconfig(\.[^/]+)?\.json|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$|^packages/[^/]+/scripts/|^\.changeset/config\.json$|^patches/' || true)
+          {
+            echo "Versioned fork source at \`${HEAD_SHA:0:10}\` on \`$branch\`. The fork PR job reset committed dist and rebuilt it, but ran PR-controlled build inputs. Review the source and dist diff before merging."
+            echo
+            if [ -n "$build_inputs" ]; then
+              echo "⚠️ This PR changes build inputs. Review them before merging:"
+              echo "$build_inputs" | sed 's/^/- `/; s/$/`/'
+              echo
+            fi
+            if [ -n "$existing" ]; then
+              echo "Release PR: #$existing. It was force-pushed, and pushes by Actions do not start checks, so close and reopen it to rerun them."
+            else
+              echo "Open the release PR (checks only start when a person opens it): https://github.com/$REPO/compare/$BASE...$branch?expand=1"
+            fi
+            echo
+            echo "Merging the release PR also marks this PR as merged."
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR_NUMBER" -R "$REPO" --body-file "$RUNNER_TEMP/comment.md"

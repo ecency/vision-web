@@ -20,12 +20,12 @@ jobs:
     strategy:
       matrix:
         node-version: [24.x]
-    env:
-      NEXT_PUBLIC_GMAPS_API_KEY: ${{ secrets.GMAPS_API_KEY }}
-      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUB_KEY }}
-      NEXT_PUBLIC_GMAPS_MAP_ID: ${{ secrets.GMAPS_MAP_ID }}
     steps:
       - uses: actions/checkout@v4
+      - name: Test fork changeset generation
+        run: bash .github/scripts/test-auto-changeset.sh
+      - name: Test fork release patch validation
+        run: bash .github/scripts/test-fork-release-patch.sh
       - uses: pnpm/action-setup@v3
         with:
           version: 11.5.0

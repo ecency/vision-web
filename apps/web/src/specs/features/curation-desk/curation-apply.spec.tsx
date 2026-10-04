@@ -238,12 +238,13 @@ describe("CurationApplyView", () => {
   it("offers the form again once a declined applicant has waited", async () => {
     // The desk takes a new application 30 days after a decline, so a page that
     // kept showing the decision and no form would refuse on the desk's behalf.
+    const decidedAt = iso(-31 * DAY, Date.now());
     router.on(/curation-desk\/application-mine$/, () =>
       jsonResponse({
         application: sentApplication({
           state: "declined",
-          decided_at: iso(-31 * DAY),
-          updated_at: iso(-31 * DAY)
+          decided_at: decidedAt,
+          updated_at: decidedAt
         }),
         window: { open: true, message: null },
         role: null
@@ -257,12 +258,13 @@ describe("CurationApplyView", () => {
   });
 
   it("keeps the form away while the wait after a decline is still running", async () => {
+    const decidedAt = iso(-2 * DAY, Date.now());
     router.on(/curation-desk\/application-mine$/, () =>
       jsonResponse({
         application: sentApplication({
           state: "declined",
-          decided_at: iso(-2 * DAY),
-          updated_at: iso(-2 * DAY)
+          decided_at: decidedAt,
+          updated_at: decidedAt
         }),
         window: { open: true, message: null },
         role: null
