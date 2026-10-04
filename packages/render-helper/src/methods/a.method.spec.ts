@@ -1420,6 +1420,21 @@ describe('a() method - Link Processing', () => {
         expect(el.getAttribute('class')).toContain('markdown-video-link')
         expect(el.getAttribute('data-embed-src')).toBe('https://www.bitchute.com/embed/abc123def/')
       })
+
+      it('keeps a hyphen or underscore in the video id', () => {
+        for (const id of ['Ws-mhts2KlA', 'a_b-C1dEf2g']) {
+          const parent = doc.createElement('div')
+          const el = doc.createElement('a')
+          const href = `https://www.bitchute.com/video/${id}/`
+          el.setAttribute('href', href)
+          el.textContent = href
+          parent.appendChild(el)
+
+          a(el, false)
+
+          expect(el.getAttribute('data-embed-src')).toBe(`https://www.bitchute.com/embed/${id}/`)
+        }
+      })
     })
 
     // The stylesheet and the click-to-play extension both select on the
