@@ -39,6 +39,7 @@ vi.mock("@/features/seo/seo-redis", () => ({
 
 import { callRPC } from "@ecency/sdk/hive";
 import { POST } from "@/app/api/internal/seo/sitemap-generate/route";
+import { EcencyConfigManager } from "@/config";
 import { mockEntry } from "../test-utils";
 
 const HOUR = 3_600_000;
@@ -228,6 +229,27 @@ describe("sitemap-generate route", () => {
     expect(indexEntry("authors.xml")).toBe(later);
     expect(indexEntry("tags.xml")).toBe(first["tags.xml"]);
     expect(indexEntry("communities.xml")).toBe(first["communities.xml"]);
+  });
+
+  it("lists the game's page among the pages that rarely change", async () => {
+    await run();
+    const pages = shard("static.xml");
+    expect(pages).toContain("<loc>https://ecency.com/raidstead</loc>");
+    // an info page, not a daily hub: it claims no change it did not make
+    expect(pages).not.toMatch(/<loc>https:\/\/ecency\.com\/raidstead<\/loc>\s*<lastmod>/);
+  });
+
+  it("does not list the game's page where the game is switched off", async () => {
+    const feature = EcencyConfigManager.CONFIG.visionFeatures.raidstead;
+    feature.enabled = false;
+    try {
+      await run();
+      expect(shard("static.xml")).not.toContain("/raidstead");
+      // the other info pages are still there
+      expect(shard("static.xml")).toContain("<loc>https://ecency.com/faq</loc>");
+    } finally {
+      feature.enabled = true;
+    }
   });
 
   it("moves static.xml's lastmod across a UTC day rollover, and nothing else's", async () => {

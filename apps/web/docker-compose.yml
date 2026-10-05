@@ -97,6 +97,10 @@ services:
       - MATTERMOST_WS_ALLOWED_ORIGINS
       - THREESPEAK_EMBED_API_KEY
       - SEO_CRON_SECRET
+      # Shared with the games API: lets this server open a Raidstead session for
+      # a login it has checked itself (api/raidstead/session). Unset, that route
+      # answers 404 and only logins that can sign for themselves play.
+      - RAIDSTEAD_VOUCH_SECRET
       # Same runtime knobs as production, so alpha exercises them first:
       # semi-space size (fewer scavenges on allocation-heavy renders) and the
       # per-process render cap (ssr-admission.js, loaded by the image CMD).

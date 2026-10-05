@@ -35,6 +35,9 @@ export interface Alliance {
   buffUntil?: number | null;
   /// The chest filled with no pest in town: it is kept and opens for the next one.
   buffKept?: boolean;
+  /// What was left of a paying chest when its pest was chased off (ms): it runs
+  /// on once the next pest is in town.
+  buffLeft?: number | null;
 }
 export interface Member {
   energy: number; maxEnergy: number; scoutsLeft: number; rallied: boolean; quests: string[];

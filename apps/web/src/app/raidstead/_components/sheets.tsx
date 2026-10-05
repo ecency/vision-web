@@ -16,6 +16,7 @@ import {
 } from "@ecency/raidstead";
 import {
   chestBlock,
+  chestHoursLeft,
   noteId,
   noteText,
   rallyBlock,
@@ -103,8 +104,10 @@ export function Sheet({
 export function SignInSheet(props: {
   username: string | null;
   canSign: boolean;
-  /// signs with the stored posting key, no wallet prompt
+  /// signs in without a wallet prompt
   silent?: boolean;
+  /// the last try did not work; "expired": Ecency no longer takes this login
+  failed?: "failed" | "expired" | null;
   hasWallet: boolean;
   signing: boolean;
   onSign: (account: string) => void;
@@ -117,6 +120,9 @@ export function SignInSheet(props: {
       <small>{t("tagline")}</small>
       <h1>{t("title")}</h1>
       <p>{t("intro")}</p>
+      {props.failed && (
+        <p role="alert">{t(props.failed === "expired" ? "signin.expired" : "signin.failed")}</p>
+      )}
       {props.username && props.canSign ? (
         <>
           <div className="rs-btns">
@@ -668,6 +674,7 @@ export function QuestsSheet(props: {
               : t("quests.chest-desc-kept", { name: a.title });
   // a kept chest is a full one: the server has already put its Points aside
   const pooled = chestWhy === "kept" ? a.chestGoal : a.chest;
+  const hoursLeft = chestHoursLeft(props.state);
   return (
     <Sheet onClose={props.onClose} label={t("quests.title")}>
       <h2>{t("quests.title")}</h2>
@@ -698,6 +705,10 @@ export function QuestsSheet(props: {
       </div>
       <h3>{t("quests.chest")}</h3>
       <p>{chestLine}</p>
+      {/* not once no pest is left this season for the hours to wait for */}
+      {hoursLeft > 0 && chestWhy !== "no-boss" && chestWhy !== "resting" && (
+        <p>{t("quests.chest-saved", { n: hoursLeft })}</p>
+      )}
       <div className="rs-bar" aria-hidden="true">
         <span style={{ width: `${Math.min(100, (pooled / a.chestGoal) * 100)}%` }} />
       </div>
