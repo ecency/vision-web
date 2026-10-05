@@ -1,8 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/server/hivesigner-verify", () => ({ verifyHsAccessToken: vi.fn() }));
+// Both have specs of their own: whose signature a token carries; the limit
+// of asks a minute. Here they answer as each case needs.
+vi.mock("@/server/hivesigner-signature", () => ({ signedByHivesigner: vi.fn() }));
+const limit = vi.hoisted(() => ({
+  made: [] as number[],
+  mayAsk: vi.fn<(account: string) => boolean>()
+}));
+vi.mock("@/server/minute-limit", () => ({
+  minuteLimit: (max: number) => {
+    limit.made.push(max);
+    return limit.mayAsk;
+  }
+}));
+const { mayAsk } = limit;
 
 import { POST } from "@/app/api/raidstead/session/route";
+import { signedByHivesigner } from "@/server/hivesigner-signature";
 import { verifyHsAccessToken } from "@/server/hivesigner-verify";
 
 // ecency.com vouching for a login to the games API: the route that hands a
@@ -45,6 +60,10 @@ describe("POST /api/raidstead/session", () => {
     vi.stubGlobal("fetch", vi.fn());
     vi.mocked(verifyHsAccessToken).mockReset();
     vi.mocked(verifyHsAccessToken).mockResolvedValue({ ok: true, username: "ann" });
+    vi.mocked(signedByHivesigner).mockReset();
+    vi.mocked(signedByHivesigner).mockResolvedValue(true);
+    mayAsk.mockReset();
+    mayAsk.mockReturnValue(true);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
   afterEach(() => {
@@ -86,6 +105,67 @@ describe("POST /api/raidstead/session", () => {
     expect(deadline).toHaveBeenCalledWith(8_000);
     const init = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
     expect(init.signal).toBe(deadline.mock.results[0].value);
+  });
+
+  // Anyone can write a token that reads well. None of it may make this server
+  // ask HiveSigner, or use up the asks of the account it names.
+  it("asks HiveSigner about no token that HiveSigner did not sign", async () => {
+    gameAnswers(200, session);
+    vi.mocked(signedByHivesigner).mockResolvedValue(false);
+    const res = await ask({ username: "ann", code: access });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "unauthorized" });
+    // the signature was looked at, on the decoded token
+    expect(vi.mocked(signedByHivesigner).mock.calls[0][0]).toMatchObject({
+      signed_message: { type: "posting", app: "ecency.app" },
+      authors: ["ann"],
+      signatures: ["sig"]
+    });
+    expect(mayAsk).not.toHaveBeenCalled();
+    expect(verifyHsAccessToken).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("asks nobody when HiveSigner's key could not be learned", async () => {
+    gameAnswers(200, session);
+    vi.mocked(signedByHivesigner).mockResolvedValue(null);
+    const res = await ask({ username: "ann", code: access });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "hivesigner_unavailable" });
+    expect(mayAsk).not.toHaveBeenCalled();
+    expect(verifyHsAccessToken).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("lets one account ask HiveSigner only so often", async () => {
+    gameAnswers(200, session);
+    mayAsk.mockReturnValue(false);
+    const res = await ask({ username: "ann", code: access });
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "too_many_requests" });
+    // counted for the account the signature proved; nothing went out
+    expect(mayAsk).toHaveBeenCalledWith("ann");
+    expect(verifyHsAccessToken).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    mayAsk.mockReturnValue(true);
+    expect((await ask({ username: "ann", code: access })).status).toBe(200);
+  });
+
+  it("keeps one limit for all its requests: six asks a minute for an account", async () => {
+    gameAnswers(200, session);
+    await ask({ username: "ann", code: access });
+    await ask({ username: "ann", code: access });
+    expect(limit.made).toEqual([6]);
+  });
+
+  it("looks at the signature of no token it already refuses for what it says", async () => {
+    await ask({ username: "ann", code: token({ type: "login", app: "ecency.app" }) });
+    await ask({ username: "ann", code: token({ type: "posting", app: "ecency.app" }, ["bob"]) });
+    await ask({
+      username: "ann",
+      code: token({ type: "posting", app: "ecency.app" }, ["ann"], 1_500_000_000)
+    });
+    expect(signedByHivesigner).not.toHaveBeenCalled();
   });
 
   const posting = { type: "posting", app: "ecency.app" };

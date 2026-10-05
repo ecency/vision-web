@@ -1,6 +1,8 @@
 import { EcencyConfigManager } from "@/config";
 import { RAIDSTEAD_API } from "@/features/raidstead/api-base";
+import { signedByHivesigner } from "@/server/hivesigner-signature";
 import { verifyHsAccessToken } from "@/server/hivesigner-verify";
+import { minuteLimit } from "@/server/minute-limit";
 import { decodeToken } from "@/utils/hs-token";
 
 // A game session for an Ecency login that cannot sign the game's own login
@@ -24,6 +26,11 @@ const answer = (body: unknown, status: number) =>
 
 // a name and a token: nothing this route is sent needs more room
 const BODY_MAX_BYTES = 8 * 1024;
+// how often one account may ask HiveSigner through here; a visit asks once
+const askedTooOften = (() => {
+  const mayAsk = minuteLimit(6);
+  return (account: string) => !mayAsk(account);
+})();
 
 /// The request's body as text, or null once it is longer than `max` bytes.
 /// Read in pieces and stopped there: anyone may call this route. The length
@@ -96,6 +103,16 @@ export async function POST(req: Request) {
   ) {
     return answer({ error: "unauthorized" }, 401);
   }
+
+  // Anyone may call this route. Anyone can write a token that reads well so
+  // far. Before a request leaves this server on its account, the token's
+  // signature must be HiveSigner's own: checked here, against its key on the
+  // chain. What is left is a real token of a real account, which gets a few
+  // asks a minute.
+  const signed = await signedByHivesigner(message);
+  if (signed === null) return answer({ error: "hivesigner_unavailable" }, 503);
+  if (!signed) return answer({ error: "unauthorized" }, 401);
+  if (askedTooOften(username)) return answer({ error: "too_many_requests" }, 429);
 
   const checked = await verifyHsAccessToken(code, req.signal);
   if (!checked.ok) {
