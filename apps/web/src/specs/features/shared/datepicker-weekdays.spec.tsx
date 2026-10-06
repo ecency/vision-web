@@ -6,7 +6,7 @@ import { Datepicker } from "@/features/ui";
 
 // Header labels and grid columns must start on the same weekday, whatever
 // weekday the active dayjs locale starts its week on.
-function renderedColumns() {
+function renderedColumns(): { header: (string | null)[]; firstDay: number } {
   const { container } = render(
     <Datepicker value={undefined} minDate={undefined} onChange={() => {}} />
   );
@@ -43,8 +43,10 @@ describe("Datepicker weekday alignment", () => {
     dayjs.locale("ru");
     const { header, firstDay } = renderedColumns();
     expect(firstDay).toBe(28); // Mon Sep 28, 2026
-    expect(header[0]).toBe(format(new Date(2026, 8, 28)));
-    expect(header[6]).toBe(format(new Date(2026, 9, 4)));
+    // Every column label matches its column: Mon Sep 28 .. Sun Oct 4
+    expect(header).toEqual(
+      Array.from({ length: 7 }, (_, i) => format(new Date(2026, 8, 28 + i)))
+    );
   });
 
   it("opens on the selected month even when its first days fall before Monday", () => {
