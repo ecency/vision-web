@@ -17,7 +17,7 @@ interface Props {
 
 export function Datepicker(props: Props) {
   const [calendarValue, setCalendarValue] = useState<Date>(
-    dayjs(props.value ?? new Date()).day(1).toDate()
+    dayjs(props.value ?? new Date()).date(1).toDate()
   );
 
   const monthFormat = useMemo(
@@ -44,19 +44,11 @@ export function Datepicker(props: Props) {
           },
     []
   );
-  const weekdays = useMemo(
-    () =>
-      Array.from(new Array(7).keys()).map((day) =>
-        // Start from Sunday: Jan 3, 2021 is a Sunday (use local date to avoid timezone shift)
-        weekdaysFormat.format(new Date(2021, 0, day + 3))
-      ),
-    [weekdaysFormat]
-  );
   const monthDays = useMemo(() => {
     const monthStartDate = dayjs(calendarValue).startOf("month");
     const monthEndDate = dayjs(calendarValue).endOf("month");
 
-    // Start from Sunday (no offset needed)
+    // The first weekday follows the active dayjs locale (Monday for most)
     const weekStartDate = monthStartDate.startOf("week");
     const endWeekDate = monthEndDate.endOf("week");
 
@@ -71,6 +63,12 @@ export function Datepicker(props: Props) {
     allDates.push(temp.toDate());
     return allDates;
   }, [calendarValue]);
+  // Label the header from the grid's own first week so columns always match
+  // whichever weekday the locale starts on.
+  const weekdays = useMemo(
+    () => monthDays.slice(0, 7).map((day) => weekdaysFormat.format(day)),
+    [monthDays, weekdaysFormat]
+  );
 
   const hours = useMemo(() => new Array(24).fill(1).map((_, i) => i), []);
   const minutes = useMemo(() => new Array(60).fill(1).map((_, i) => i), []);
