@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BOSS_KINDS, BUILDING_IDS, SPECIES, TOWN } from "./art";
-import { buildModel } from "./print";
+import { COL, buildModel, pip } from "./print";
 
 describe("art", () => {
   it("every species prints into dots", () => {
@@ -11,6 +11,23 @@ describe("art", () => {
       expect(dots.length, kind).toBeGreaterThan(50);
       for (const d of dots) expect(Number.isFinite(d.hx) && Number.isFinite(d.hy) && Number.isFinite(d.r), kind).toBe(true);
     }
+  });
+
+  it("shots aimed at a boss land on its body", () => {
+    for (const kind of BOSS_KINDS) {
+      const spec = SPECIES[kind];
+      const body = spec.parts().filter((p) => p.kind === "fill" && p.poly && !["ground", "shadow", "foot", "phone"].includes(p.group!) && !p.limb);
+      // the scene aims within 0.8 of each aim ellipse's radii
+      for (const [cx, cy, rx, ry] of spec.aim!) for (let a = 0; a < 6.283; a += 0.2) for (const k of [0, 0.4, 0.8]) {
+        const x = cx + Math.cos(a) * rx * k, y = cy + Math.sin(a) * ry * k;
+        expect(body.some((p) => pip(x, y, p.poly!)), `${kind} ${x.toFixed(0)},${y.toFixed(0)}`).toBe(true);
+      }
+    }
+  });
+
+  it("pale highlights are fills: a line prints one solid ink", () => {
+    for (const [kind, spec] of Object.entries(SPECIES))
+      for (const p of spec.parts()) if (p.kind === "line") expect(p.color, `${kind} ${p.name}`).not.toBe(COL.wing);
   });
 
   it("is deterministic for a seed", () => {

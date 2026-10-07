@@ -6,6 +6,18 @@ import { COL, circle, clipHalf, ellipse, path, rotate, rrect, type Part, type Pt
 type Add = (o: any) => Part;
 export type FolkClass = "scribe" | "scout" | "smith" | "herald";
 
+// A highlight stroke as a thin filled band: lines print one solid ink, so a pale
+// tone only reads as a fill. Tapers to a point at both ends.
+function band(pts: Pt[], w: number): Pt[] {
+  const side = (k: number): Pt[] => pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+    const h = (w / 2) * Math.sin((Math.PI * (i + 0.5)) / pts.length) * k;
+    return [p[0] - (dy / l) * h, p[1] + (dx / l) * h];
+  });
+  return [...side(1), ...side(-1).reverse()];
+}
+
 // Two rigid segments share a knee; the scene poses their endpoints together.
 // A step reaches toward `dir` (+1 right, -1 left): outward unless the pest faces one way.
 function legAdd(add: Add, hip: Pt, knee: Pt, foot: Pt, i: number, group = "leg", w = 6, dir = Math.sign(foot[0] - hip[0]) || 1) {
@@ -65,8 +77,8 @@ function slugParts() {
   add({ name: "foot", kind: "fill", poly: path("M40 250 Q148 244 270 229 Q295 231 298 250 Q198 276 40 260 Z"), color: "#C4E57A", shade: 0.5, sw: 2, group: "foot" });
   add({ name: "body", kind: "fill", poly: path("M40 251 Q70 235 109 207 Q147 184 203 187 Q246 188 263 165 Q282 145 297 173 Q313 208 290 237 Q167 262 40 251 Z"), color: COL.pur, shade: 1, group: "body" });
   add({ name: "mantle", kind: "fill", poly: path("M166 205 Q192 178 242 183 Q261 183 273 172 Q290 180 287 208 Q276 235 242 237 Q185 243 166 224 Z"), color: "#8B5CC6", shade: 0.7, sw: 2.2, group: "body" });
-  add({ name: "moist-highlight", kind: "line", pts: path("M110 220 Q155 191 185 198"), w: 4, taper: 0.5, color: COL.wing, group: "body" });
-  add({ name: "moist-highlight", kind: "line", pts: path("M202 196 Q230 190 246 196"), w: 4, taper: 0.5, color: COL.wing, group: "body" });
+  for (const d of ["M110 220 Q155 191 185 198", "M202 196 Q230 190 246 196"])
+    add({ name: "moist-highlight", kind: "fill", poly: band(path(d), 6), color: COL.wing, sw: 0, group: "body" });
   for (const x of [100, 127, 154]) add({ name: "fold", kind: "line", pts: path(`M${x} 231 Q${x + 8} 240 ${x + 5} 248`), w: 2, color: COL.head, group: "body" });
   add({ name: "breathing-pore", kind: "fill", poly: ellipse(269, 215, 5, 3, -20), color: COL.head, sw: 0, group: "body" });
   add({ name: "stalk", kind: "line", pts: path("M276 172 Q279 147 299 119"), w: 5.5, taper: 0.4, color: COL.head, group: "stalkL" });
@@ -94,7 +106,7 @@ function twinsParts() {
     }
     add({ name: "body", kind: "fill", poly: rotate(ellipse(cx - dir * 14, 193, 48, 28), cx, 193, dir * -20), color: COL.pur, shade: 1, group: g });
     add({ name: "wing-case", kind: "fill", poly: [pt(-57, 210), pt(-29, 159), pt(14, 171), pt(-7, 205)], color: g === "L" ? COL.head : "#8B5CC6", shade: 0.7, sw: 2, group: g });
-    add({ name: "wing-light", kind: "line", pts: [pt(-47, 203), pt(-24, 172), pt(1, 177)], w: 3, color: COL.wing, group: g });
+    add({ name: "wing-light", kind: "fill", poly: band(path(`M${pt(-47, 203).join(" ")} L${pt(-24, 172).join(" ")} L${pt(1, 177).join(" ")}`), 5), color: COL.wing, sw: 0, group: g });
     add({ name: "mark", kind: "line", pts: ellipse(cx - dir * 17, 187, 9, 10), closed: true, w: 3.5, color: COL.lime, group: g });
     add({ name: "thorax", kind: "fill", poly: ellipse(cx + dir * 15, 177, 22, 26, dir * 20), color: COL.head, shade: 0.7, group: g });
     add({ name: "head", kind: "fill", poly: ellipse(cx + dir * 29, 145, 23, 27, dir * 18), color: COL.pur, shade: 1, group: g });
@@ -165,7 +177,7 @@ function waspParts() {
   }
   add({ name: "waist", kind: "fill", poly: ellipse(232, 168, 10, 7), color: COL.head, sw: 2.2, group: "body" });
   add({ name: "thorax", kind: "fill", poly: ellipse(206, 158, 32, 28), color: COL.head, shade: 1, group: "body" });
-  add({ name: "shell-light", kind: "line", pts: path("M262 141 Q287 129 303 138"), w: 4, taper: 0.5, color: COL.wing, group: "body" });
+  add({ name: "shell-light", kind: "fill", poly: band(path("M262 141 Q287 129 303 138"), 6), color: COL.wing, sw: 0, group: "body" });
   // the head, with a smug grin
   add({ name: "head", kind: "fill", poly: ellipse(150, 152, 36, 33), color: COL.pur, shade: 1, group: "body" });
   eyesAdd(add, [[129, 146], [164, 143]], 7, "body", "w");
@@ -450,9 +462,9 @@ export const SPECIES: Record<string, Species> = {
   beetle: { parts: beetleParts, boss: true, seed: 22, anchor: [200, 262], box: [68, 36, 332, 280], center: [200, 165], look: [200, 101],
     hit: [[200, 190, 92, 70], [200, 102, 42, 42]], aim: [[200, 170, 66, 52]] },
   slug: { parts: slugParts, boss: true, seed: 23, anchor: [190, 262], box: [16, 104, 400, 280], center: [200, 205], look: [312, 127],
-    hit: [[170, 215, 135, 45], [320, 140, 40, 40], [351, 226, 38, 44]], aim: [[165, 218, 100, 24]] },
+    hit: [[170, 215, 135, 45], [320, 140, 40, 40], [351, 226, 38, 44]], aim: [[180, 218, 90, 20]] },
   twins: { parts: twinsParts, boss: true, seed: 24, anchor: [200, 262], box: [18, 60, 382, 278], center: [200, 176], look: [200, 141],
-    hit: [[104, 181, 71, 72], [296, 181, 71, 72]], aim: [[104, 178, 42, 36], [296, 178, 42, 36]] },
+    hit: [[104, 181, 71, 72], [296, 181, 71, 72]], aim: [[96, 186, 34, 22], [304, 186, 34, 22]] },
   queen: { parts: queenParts, boss: true, seed: 27, anchor: [200, 272], box: [42, 36, 358, 286], center: [200, 165], look: [200, 105],
     hit: [[200, 192, 100, 70], [200, 106, 42, 42], [200, 58, 42, 30]], aim: [[200, 190, 72, 48]] },
   wasp: { parts: waspParts, seed: 26, anchor: [240, 160], box: [0, 28, 428, 252], center: [240, 160], hit: [[306, 170, 90, 48], [178, 154, 64, 40], [59, 76, 56, 45]] },
