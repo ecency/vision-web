@@ -8,14 +8,14 @@ const inside = (p: ReturnType<typeof portrait>) =>
 
 describe("portrait", () => {
   it("fits every pest and townsfolk into its frame, the parts outside the model's box included", () => {
-    for (const kind of [...BOSS_KINDS, ...FOLK]) {
+    for (const kind of [...BOSS_KINDS, "wasp", "spider", "gnat", ...FOLK]) {
       for (const silhouette of [false, true]) {
         const p = portrait(kind, { width: 200, height: 150, pad: 4, silhouette });
         expect(p.dots.length, kind).toBeGreaterThan(100);
         expect(inside(p), `${kind} ${silhouette}`).toBe(true);
       }
     }
-    // the beetle's copies reach past its box: still in the frame
+    // All appendages still fit a compact card.
     expect(inside(portrait("beetle", { width: 120, height: 90, pad: 0 }))).toBe(true);
   });
 

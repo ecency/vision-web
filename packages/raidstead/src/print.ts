@@ -62,6 +62,8 @@ export function rrect(x: number, y: number, w: number, h: number, r: number, rot
 /// A small SVG path subset (M, L, Q, Z; absolute) as points.
 export function path(d: string, steps = 14): Pt[] {
   const tk = d.match(/[MLQZ]|-?\d*\.?\d+/g) ?? [], pts: Pt[] = [];
+  // one part is one stroke: a second M would be joined to the first by a stray line
+  if (tk.filter((x) => x === "M").length > 1) throw new Error(`path with more than one M: ${d}`);
   let i = 0, cur: Pt = [0, 0], cmd: string | null = null;
   const num = () => parseFloat(tk[i++]);
   while (i < tk.length) {
