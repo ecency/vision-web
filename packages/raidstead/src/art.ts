@@ -125,6 +125,7 @@ function queenParts() {
   add({ name: "thorax", kind: "fill", poly: path("M167 117 Q200 104 233 117 L249 147 Q200 170 151 147 Z"), color: COL.head, shade: 1, group: "body" });
   add({ name: "head", kind: "fill", poly: path("M171 86 Q200 73 229 86 L235 108 Q227 134 200 139 Q173 134 165 108 Z"), color: COL.pur, shade: 1, group: "head" });
   eyesAdd(add, [[179, 105], [221, 105]], 7, "head", "q");
+  add({ name: "smile", kind: "line", pts: path("M188 120 Q200 128 212 120"), w: 3, color: COL.ink, group: "head" });
   for (const side of [-1, 1]) add({ name: "mandible", kind: "line", pts: [[200 + side * 12, 129], [200 + side * 15, 142], [200 + side * 4, 138]], w: 4, color: COL.head, group: "head" });
   add({ name: "crown", kind: "fill", poly: path("M176 85 L173 58 L189 71 L200 47 L211 71 L227 58 L224 85 Z"), color: COL.lime, shade: 0.4, sw: 2.6, group: "crown" });
   for (const [x, y] of [[173, 58], [200, 47], [227, 58]]) add({ name: "jewel", kind: "fill", poly: circle(x, y, 3.5), color: COL.gold, sw: 1.5, group: "crown" });
@@ -161,10 +162,10 @@ function waspParts() {
   add({ name: "waist", kind: "fill", poly: ellipse(232, 168, 10, 7), color: COL.head, sw: 2.2, group: "body" });
   add({ name: "thorax", kind: "fill", poly: ellipse(206, 158, 32, 28), color: COL.head, shade: 1, group: "body" });
   add({ name: "shell-light", kind: "line", pts: path("M262 141 Q287 129 303 138"), w: 4, taper: 0.5, color: COL.wing, group: "body" });
-  // Compact head and mandibles retain expression at small sizes.
+  // the head, with a smug grin
   add({ name: "head", kind: "fill", poly: ellipse(150, 152, 36, 33), color: COL.pur, shade: 1, group: "body" });
   eyesAdd(add, [[129, 146], [164, 143]], 7, "body", "w");
-
+  add({ name: "grin", kind: "line", pts: path("M132 170 Q150 184 170 168"), w: 3.2, color: COL.ink, group: "body" });
   add({ name: "mandible", kind: "line", pts: path("M140 180 Q136 188 142 192"), w: 2.6, color: COL.ink, group: "body" });
   add({ name: "mandible", kind: "line", pts: path("M162 180 Q166 188 160 192"), w: 2.6, color: COL.ink, group: "body" });
   antenna(add, [138, 122], [128, 82], "body", -1);
@@ -312,6 +313,8 @@ function spiderParts() {
   add({ name: "head", kind: "fill", poly: path("M174 151 Q200 139 226 151 Q244 176 224 202 Q200 215 176 202 Q156 176 174 151 Z"), color: COL.head, shade: 1, group: "body" });
   eyesAdd(add, [[189, 184], [211, 184]], 6, "body", "sp");
   for (const x of [177, 190, 210, 223]) add({ name: "small-eye", kind: "fill", poly: circle(x, x === 177 || x === 223 ? 173 : 167, 3), color: COL.lime, sw: 1, group: "body" });
+  for (const side of [-1, 1]) add({ name: "brow", kind: "line", pts: [[200 + side * 20, 174], [200 + side * 8, 177]], w: 3.4, color: COL.ink, group: "body" });
+  add({ name: "mouth", kind: "line", pts: path("M193 198 Q200 193 207 198"), w: 2.8, color: COL.ink, group: "body" });
   for (const side of [-1, 1]) add({ name: "palp", kind: "line", pts: [[200 + side * 12, 201], [200 + side * 17, 213], [200 + side * 8, 217]], w: 4, taper: 0.6, color: COL.head, group: "body" });
   return P;
 }
@@ -326,6 +329,7 @@ function gnatParts() {
   add({ name: "thorax", kind: "fill", poly: ellipse(50, 47, 12, 13), color: COL.head, shade: 1, group: "body" });
   add({ name: "head", kind: "fill", poly: ellipse(50, 33, 15, 12), color: COL.pur, shade: 1, group: "body" });
   eyesAdd(add, [[42, 32], [58, 32]], 4.2, "body", "g");
+  add({ name: "mouth", kind: "line", pts: path("M46 39 Q50 42 54 39"), w: 2, color: COL.ink, group: "body" });
   return P;
 }
 
