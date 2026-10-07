@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BOSS_KINDS, BUILDING_IDS, SPECIES, TOWN } from "./art";
-import { COL, buildModel, pip } from "./print";
+import { COL, PRINT, buildModel, pip } from "./print";
 
 describe("art", () => {
   it("every species prints into dots", () => {
@@ -25,9 +25,12 @@ describe("art", () => {
     }
   });
 
-  it("pale highlights are fills: a line prints one solid ink", () => {
+  it("pale highlights are fills: a line prints its first ink solid", () => {
+    // ghost hairlines (wing veins, webs) and the herald's coral plume ribs are solid on purpose
+    const solidOnPurpose = [COL.ghost, COL.gold];
     for (const [kind, spec] of Object.entries(SPECIES))
-      for (const p of spec.parts()) if (p.kind === "line") expect(p.color, `${kind} ${p.name}`).not.toBe(COL.wing);
+      for (const p of spec.parts()) if (p.kind === "line" && p.color && !solidOnPurpose.includes(p.color))
+        expect(PRINT[p.color]?.[0]?.[1] ?? 1, `${kind} ${p.name}`).toBeGreaterThanOrEqual(0.5);
   });
 
   it("is deterministic for a seed", () => {

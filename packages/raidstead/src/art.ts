@@ -7,7 +7,7 @@ type Add = (o: any) => Part;
 export type FolkClass = "scribe" | "scout" | "smith" | "herald";
 
 // A highlight stroke as a thin filled band: lines print one solid ink, so a pale
-// tone only reads as a fill. Tapers to a point at both ends.
+// tone only reads as a fill. Narrows toward both ends.
 function band(pts: Pt[], w: number): Pt[] {
   const side = (k: number): Pt[] => pts.map((p, i) => {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
@@ -171,13 +171,14 @@ function waspParts() {
   const abd = path("M234 160 Q244 124 300 124 Q362 128 394 186 Q352 216 298 212 Q246 206 234 178 Z");
   add({ name: "stinger", kind: "fill", poly: path("M384 178 L416 198 L380 194 Z"), color: COL.dark, sw: 2, group: "body" });
   add({ name: "abdomen", kind: "fill", poly: abd, color: COL.pur, shade: 1, group: "body" });
+  // the shine goes under the stripes, so it never knocks a gap into one
+  add({ name: "shell-light", kind: "fill", poly: band(path("M262 141 Q287 129 303 138"), 6), color: COL.wing, sw: 0, group: "body" });
   for (const x of <any[]>[268, 310, 350]) {
-    const band = clipHalf(clipHalf(abd, 1, 0.22, -(x - 11) - 0.22 * 168), -1, -0.22, (x + 11) + 0.22 * 168);
-    if (band.length > 2) add({ name: "stripe", kind: "fill", poly: band, color: COL.lime, shade: 0.35, sw: 2.2, group: "body" });
+    const stripe = clipHalf(clipHalf(abd, 1, 0.22, -(x - 11) - 0.22 * 168), -1, -0.22, (x + 11) + 0.22 * 168);
+    if (stripe.length > 2) add({ name: "stripe", kind: "fill", poly: stripe, color: COL.lime, shade: 0.35, sw: 2.2, group: "body" });
   }
   add({ name: "waist", kind: "fill", poly: ellipse(232, 168, 10, 7), color: COL.head, sw: 2.2, group: "body" });
   add({ name: "thorax", kind: "fill", poly: ellipse(206, 158, 32, 28), color: COL.head, shade: 1, group: "body" });
-  add({ name: "shell-light", kind: "fill", poly: band(path("M262 141 Q287 129 303 138"), 6), color: COL.wing, sw: 0, group: "body" });
   // the head, with a smug grin
   add({ name: "head", kind: "fill", poly: ellipse(150, 152, 36, 33), color: COL.pur, shade: 1, group: "body" });
   eyesAdd(add, [[129, 146], [164, 143]], 7, "body", "w");
