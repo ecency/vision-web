@@ -1,5 +1,7 @@
 import i18next from "i18next";
+import { uploadImage } from "@ecency/sdk";
 import { dismissFeedback, error } from "@/features/shared/feedback";
+import { ensureValidToken } from "@/utils";
 
 /** Statuses the image server answers when a retry can succeed (slow storage, slow account lookup). */
 const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
@@ -28,9 +30,16 @@ function isAbort(e: unknown): boolean {
 }
 
 /**
+ * fetch's network-failure TypeError, by message: "Failed to fetch" (Chromium),
+ * "NetworkError when attempting to fetch resource." (Firefox), "Load failed"
+ * (Safari), "Network request failed" (polyfills). Any other TypeError is a bug,
+ * which a retry cannot fix.
+ */
+const NETWORK_FAILURE = /failed to fetch|networkerror|load failed|network request failed/i;
+
+/**
  * True for a failure that may succeed on retry: a 5xx from the image server or
- * a network error (fetch rejects with a TypeError). Never for 4xx or a
- * cancellation by the caller.
+ * a network error. Never for 4xx, a cancellation by the caller, or a code bug.
  */
 export function isTransientUploadError(e: unknown): boolean {
   if (isAbort(e)) {
@@ -40,7 +49,7 @@ export function isTransientUploadError(e: unknown): boolean {
   if (status !== undefined) {
     return TRANSIENT_STATUSES.has(status);
   }
-  return e instanceof TypeError;
+  return e instanceof TypeError && NETWORK_FAILURE.test(e.message);
 }
 
 function abortError(): Error {
@@ -70,7 +79,8 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 /**
  * Runs an upload, and once more after a short pause if it failed in a way a
  * retry can fix. Uploads are content-addressed on the server, so sending the
- * same file twice cannot create a duplicate.
+ * same file twice cannot create a duplicate. `run` is called afresh for the
+ * retry, so it should read the access token itself rather than close over one.
  */
 export async function withUploadRetry<T>(run: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   try {
@@ -134,4 +144,42 @@ export function reportUploadError(e: unknown, signal?: AbortSignal): Promise<boo
     };
     signal?.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+/**
+ * Uploads `file` as `username` for callers that use the SDK directly (waves,
+ * decks): automatic retry, then the Retry toast, looping in place so a caller
+ * that uploads several files in sequence keeps their order, and the account
+ * is the one that started the upload. Shows its own error toasts; resolves the
+ * image URL, or undefined when the upload failed or the user gave up.
+ */
+export async function uploadImageWithRetryPrompt(
+  file: File,
+  username: string,
+  signal?: AbortSignal
+): Promise<string | undefined> {
+  const attempt = async () => {
+    const token = await ensureValidToken(username);
+    if (!token) {
+      throw new Error("Token missed");
+    }
+    return uploadImage(file, token, signal);
+  };
+  for (;;) {
+    try {
+      const { url } = await withUploadRetry(attempt, signal);
+      return url;
+    } catch (e) {
+      if (signal?.aborted) {
+        return undefined;
+      }
+      if (e instanceof Error && e.message === "Token missed") {
+        error(i18next.t("editor-toolbar.image-error-cache"));
+        return undefined;
+      }
+      if (!(await reportUploadError(e, signal))) {
+        return undefined;
+      }
+    }
+  }
 }

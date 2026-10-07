@@ -15,7 +15,8 @@ vi.mock("@ecency/sdk", async (importOriginal) => ({
 vi.mock("@/core/hooks/use-active-username", () => ({ useActiveUsername: () => "alice" }));
 
 let nextId = 0;
-vi.mock("@/utils", () => ({
+vi.mock("@/utils", async () => ({
+  ...(await vi.importActual<Record<string, unknown>>("@/utils")),
   random: vi.fn(() => `toast-${++nextId}`),
   ensureValidToken: vi.fn(async () => "token")
 }));

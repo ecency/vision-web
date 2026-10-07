@@ -4,6 +4,7 @@ import { ErrorTypes } from "@/enums";
 import {
   clearErrorFeedbackContext,
   consumeErrorFeedbackContext,
+  settleFeedback,
   ErrorFeedbackObject,
   FeedbackObject
 } from "./feedback-events";
@@ -37,29 +38,23 @@ export function FeedbackMessage({ feedback, onClose }: Props) {
   const link = feedback.link;
 
   const action = feedback.action;
-  // the toast's own outcome is settled once: either its action ran or it was dismissed
-  const settledRef = useRef(false);
 
   const handleClose = useCallback(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
     clearErrorFeedbackContext(feedback.id);
-    if (!settledRef.current) {
-      settledRef.current = true;
-      feedback.onDismiss?.();
-    }
+    settleFeedback(feedback, false);
     onClose();
   }, [feedback, onClose]);
 
   const handleAction = useCallback(() => {
-    if (!action || settledRef.current) {
+    if (!action || !settleFeedback(feedback, true)) {
       return;
     }
-    settledRef.current = true;
     action.onClick();
     handleClose();
-  }, [action, handleClose]);
+  }, [action, feedback, handleClose]);
 
   const initTimeout = useCallback(() => {
     if (timeoutRef.current) {
@@ -73,14 +68,7 @@ export function FeedbackMessage({ feedback, onClose }: Props) {
   }, [action, feedback.type, handleClose]);
 
   useMount(() => initTimeout());
-  useUnmount(() => {
-    clearErrorFeedbackContext(feedback.id);
-    // closed from outside (dismissFeedback) never passes through handleClose
-    if (!settledRef.current) {
-      settledRef.current = true;
-      feedback.onDismiss?.();
-    }
-  });
+  useUnmount(() => clearErrorFeedbackContext(feedback.id));
 
   return (
     <div

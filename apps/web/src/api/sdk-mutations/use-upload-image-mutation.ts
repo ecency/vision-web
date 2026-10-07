@@ -92,17 +92,17 @@ export function useUploadImageMutation() {
       // Retry toast keeps this upload pending until the user retries (and the
       // caller gets the image as if the first try worked) or closes it.
       let response: Awaited<ReturnType<typeof sdkUpload.mutateAsync>>;
-      for (;;) {
-        // read per attempt: a Retry can come long after the first try
+      // read per attempt: the token can expire during a failed request or a pause
+      const attempt = async () => {
         const token = await ensureValidToken(username);
         if (!token) {
           throw new Error("Token missed");
         }
+        return sdkUpload.mutateAsync({ file, token, signal });
+      };
+      for (;;) {
         try {
-          response = await withUploadRetry(
-            () => sdkUpload.mutateAsync({ file, token, signal }),
-            signal
-          );
+          response = await withUploadRetry(attempt, signal);
           break;
         } catch (e) {
           if (!isTransientUploadError(e) || signal?.aborted) {

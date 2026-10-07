@@ -1,7 +1,7 @@
 "use client";
 
 import { FeedbackMessage } from "./feedback-message";
-import { FeedbackObject } from "./feedback-events";
+import { FeedbackObject, settleFeedback } from "./feedback-events";
 import { useMountTransition } from "@/core/hooks";
 import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -63,8 +63,19 @@ export function Feedback() {
     [add]
   );
 
+  // the listener is registered once on mount, so it reads the live set through a ref
+  const setRef = useRef(set);
+  setRef.current = set;
   const onDismissRequest = useCallback(
-    (e: Event) => markClosing((e as CustomEvent).detail as string),
+    (e: Event) => {
+      const id = (e as CustomEvent).detail as string;
+      // closed from code: report the dismissal here, it never passes through the close button
+      const item = Array.from(setRef.current).find((f) => f.id === id);
+      if (item) {
+        settleFeedback(item, false);
+      }
+      markClosing(id);
+    },
     [markClosing]
   );
 

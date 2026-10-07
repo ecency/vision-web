@@ -1,9 +1,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import { Button } from "@ui/button";
 import { UilImage, UilLink, UilUpload } from "@tooni/iconscout-unicons-react";
-import { ensureValidToken } from "@/utils";
-import { uploadImage } from "@ecency/sdk";
-import { reportUploadError, withUploadRetry } from "@/api/sdk-mutations/upload-image-retry";
+import { uploadImageWithRetryPrompt } from "@/api/sdk-mutations/upload-image-retry";
 import { error } from "@/features/shared";
 import i18next from "i18next";
 import { AddImage } from "@/features/shared/editor-toolbar/add-image";
@@ -38,30 +36,23 @@ export const WaveFormToolbarImagePicker = ({ onAddImage, disabled }: Props) => {
 
   const upload = useCallback(
     async (file: File) => {
+      // captured now: a Retry later still uploads as the account that picked the file
       const username = activeUser?.username!;
-      let imageUrl: string;
+      let convertedFile: File;
       try {
-        const convertedFile = await convertHeicToJpeg(file);
-        let token = await ensureValidToken(username);
-        if (token) {
-          const resp = await withUploadRetry(() => uploadImage(convertedFile, token));
-          imageUrl = resp.url;
-          onAddImage(imageUrl, file.name);
-        } else {
-          error(i18next.t("editor-toolbar.image-error-cache"));
-        }
+        convertedFile = await convertHeicToJpeg(file);
       } catch (e) {
-        // a temporary failure offers Retry, which runs this upload again
-        if (await reportUploadError(e)) {
-          void uploadRef.current(file);
-        }
+        error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
         return;
+      }
+      // a Retry is awaited here, so the next picked file waits and order holds
+      const url = await uploadImageWithRetryPrompt(convertedFile, username);
+      if (url) {
+        onAddImage(url, file.name);
       }
     },
     [activeUser?.username, onAddImage]
   );
-  const uploadRef = useRef(upload);
-  uploadRef.current = upload;
 
   const fileInputChanged = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {

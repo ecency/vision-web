@@ -51,6 +51,25 @@ export const error = (
   return id;
 };
 
+const settledFeedback = new WeakSet<FeedbackObject>();
+
+/**
+ * Settles a toast's outcome exactly once: its action was used, or it went away
+ * without it (then `onDismiss` runs). Returns false when already settled.
+ * Kept off the component lifecycle so a StrictMode effect replay is not
+ * mistaken for a dismissal.
+ */
+export const settleFeedback = (feedback: FeedbackObject, actionUsed: boolean): boolean => {
+  if (settledFeedback.has(feedback)) {
+    return false;
+  }
+  settledFeedback.add(feedback);
+  if (!actionUsed) {
+    feedback.onDismiss?.();
+  }
+  return true;
+};
+
 /** Closes a toast from code, e.g. when the operation it offers to retry was cancelled. */
 export const dismissFeedback = (id: string) => {
   window.dispatchEvent(new CustomEvent("ecency-feedback-dismiss", { detail: id }));

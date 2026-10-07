@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 import {
   isTransientUploadError,
+  uploadImageWithRetryPrompt,
   reportUploadError,
   uploadErrorMessage,
   uploadErrorStatus,
@@ -11,9 +12,18 @@ import { FeedbackObject } from "@/features/shared/feedback/feedback-events";
 
 // toast ids come from random(), which the global @/utils mock leaves returning undefined
 let nextId = 0;
-vi.mock("@/utils", () => ({
+const ensureValidToken = vi.fn(async () => "token");
+vi.mock("@/utils", async () => ({
+  ...(await vi.importActual<Record<string, unknown>>("@/utils")),
   random: vi.fn(() => `toast-${++nextId}`),
-  getAccessToken: vi.fn(() => "mock-token")
+  getAccessToken: vi.fn(() => "mock-token"),
+  ensureValidToken: (...args: unknown[]) => ensureValidToken(...(args as []))
+}));
+
+const sdkUploadImage = vi.fn();
+vi.mock("@ecency/sdk", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  uploadImage: (...args: unknown[]) => sdkUploadImage(...args)
 }));
 
 const httpError = (status: number) => Object.assign(new Error(`Request failed with status ${status}`), { status });
@@ -32,6 +42,10 @@ describe("upload-image-retry", () => {
         expect(isTransientUploadError(httpError(status))).toBe(true);
       }
       expect(isTransientUploadError(new TypeError("Failed to fetch"))).toBe(true);
+      expect(isTransientUploadError(new TypeError("NetworkError when attempting to fetch resource."))).toBe(true);
+      expect(isTransientUploadError(new TypeError("Load failed"))).toBe(true);
+      // a code bug is not a network failure
+      expect(isTransientUploadError(new TypeError("onAddImage is not a function"))).toBe(false);
       for (const status of [400, 401, 403, 413, 429]) {
         expect(isTransientUploadError(httpError(status))).toBe(false);
       }
@@ -138,6 +152,67 @@ describe("upload-image-retry", () => {
       // a late click on the closed toast changes nothing
       toasts[0].action!.onClick();
       await expect(decision).resolves.toBe(false);
+    });
+  });
+
+  describe("uploadImageWithRetryPrompt", () => {
+    let toasts: FeedbackObject[];
+    const onFeedback = (e: Event) => toasts.push((e as CustomEvent).detail);
+    const file = (name: string) => new File(["x"], name, { type: "image/png" });
+
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      toasts = [];
+      sdkUploadImage.mockReset();
+      ensureValidToken.mockClear();
+      window.addEventListener("ecency-feedback", onFeedback);
+    });
+    afterEach(() => {
+      window.removeEventListener("ecency-feedback", onFeedback);
+      vi.useRealTimers();
+    });
+
+    it("waits for Retry in place, so files uploaded in sequence keep their order", async () => {
+      sdkUploadImage.mockImplementation(async (f: File) => {
+        if (f.name === "a.png" && sdkUploadImage.mock.calls.filter(([x]) => x.name === "a.png").length <= 2) {
+          throw Object.assign(new Error("Request failed with status 504"), { status: 504 });
+        }
+        return { url: `https://img/${f.name}` };
+      });
+      const inserted: string[] = [];
+      const sequence = (async () => {
+        for (const f of [file("a.png"), file("b.png")]) {
+          const url = await uploadImageWithRetryPrompt(f, "alice");
+          if (url) inserted.push(url);
+        }
+      })();
+
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(toasts.filter((t) => t.type === "error")).toHaveLength(1);
+      // b has not started while a waits for the user
+      expect(sdkUploadImage.mock.calls.map(([f]) => f.name)).toEqual(["a.png", "a.png"]);
+
+      toasts[0].action!.onClick();
+      await sequence;
+      expect(inserted).toEqual(["https://img/a.png", "https://img/b.png"]);
+      // a fresh token for every attempt: two failed, the retried one, then b
+      expect(ensureValidToken).toHaveBeenCalledTimes(4);
+      expect(ensureValidToken).toHaveBeenCalledWith("alice");
+    });
+
+    it("resolves undefined when the user closes the Retry toast", async () => {
+      sdkUploadImage.mockRejectedValue(Object.assign(new Error("x"), { status: 503 }));
+      const result = uploadImageWithRetryPrompt(file("a.png"), "alice");
+      await vi.advanceTimersByTimeAsync(2000);
+      toasts[0].onDismiss!();
+      await expect(result).resolves.toBeUndefined();
+    });
+
+    it("shows the signed-out message when there is no token", async () => {
+      ensureValidToken.mockResolvedValueOnce(undefined as unknown as string);
+      await expect(uploadImageWithRetryPrompt(file("a.png"), "alice")).resolves.toBeUndefined();
+      expect(toasts[0].message).toBe("editor-toolbar.image-error-cache");
+      expect(sdkUploadImage).not.toHaveBeenCalled();
     });
   });
 });

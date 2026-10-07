@@ -167,4 +167,19 @@ describe("Feedback", () => {
     expect(screen.queryByText("upload failed")).not.toBeInTheDocument();
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
+  it("keeps Retry working under StrictMode's mount-unmount-mount replay", () => {
+    const onClick = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <React.StrictMode>
+        <Feedback />
+      </React.StrictMode>
+    );
+    emit({ type: "error", message: "upload failed", action: { label: "Retry", onClick }, onDismiss });
+
+    expect(onDismiss).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
 });
