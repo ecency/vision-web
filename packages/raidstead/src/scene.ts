@@ -296,7 +296,7 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     island(i) { for (const p of parts(i)) i.mats[p.id] = I; },
     spider(sp) {
       const body = tr(wob(0.8) * 1.5, wob(1.3) * 2);
-      for (const p of parts(sp)) sp.mats[p.id] = eyeMat(sp, p, p.limb ? limbPose(p.limb, p.segment, body, t * 1.2, 0) : p.group === "web" ? I : body);
+      for (const p of parts(sp)) sp.mats[p.id] = eyeMat(sp, p, p.limb ? limbPose(p.limb, p.segment, body, t * 1.2, reduced ? 0 : 0.5) : p.group === "web" ? I : body);
     },
     gnat(g) {
       const flap = reduced ? 0.8 : 0.35 + 0.65 * Math.abs(Math.sin(t * 26 + g.phase)), bob = reduced ? 0 : Math.sin(t * 3 + g.phase) * 3;

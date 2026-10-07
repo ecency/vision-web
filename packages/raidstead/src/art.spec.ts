@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BOSS_KINDS, BUILDING_IDS, SPECIES, TOWN } from "./art";
-import { COL, PRINT, buildModel, pip } from "./print";
+import { COL, PRINT, buildModel, path, pip } from "./print";
 
 describe("art", () => {
   it("every species prints into dots", () => {
@@ -49,6 +49,11 @@ describe("art", () => {
         }
       }
     }
+  });
+
+  it("a path is one stroke: a second M is refused, not joined by a stray line", () => {
+    expect(() => path("M150 238 Q158 262 146 284 M252 236 Q262 258 256 276")).toThrow(/more than one M/);
+    expect(path("M150 238 Q158 262 146 284").length).toBe(15);
   });
 
   it("is deterministic for a seed", () => {

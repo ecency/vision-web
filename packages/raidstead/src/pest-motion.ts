@@ -12,7 +12,7 @@ export function segmentPose(a: Pt, b: Pt, toA: Pt, toB: Pt): Mat {
   return [c, s, -s, c, toA[0] - c * a[0] + s * a[1], toA[1] - s * a[0] - c * a[1]];
 }
 
-export function limbPose(limb: Limb, segment: "upper" | "lower" | "joint", body: Mat, time: number, amount = 1): Mat {
+export function limbPose(limb: Limb, segment: "upper" | "lower" | "joint", body: Mat, time: number, amount: number = 1): Mat {
   const hip = apply(body, ...limb.hip);
   // Alternating short steps, with the foot planted for most of each cycle. A hit or a
   // death raises the walk past 1; capped, so the lower leg never visibly shrinks.
