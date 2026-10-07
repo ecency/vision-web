@@ -14,8 +14,8 @@ import { sendSvg } from "@ui/svg";
 import { useIsMobile } from "@/features/ui/util/use-is-mobile";
 import { WaveFormToolbar } from "@/features/waves/components/wave-form/wave-form-toolbar";
 import { useWaveSubmit } from "@/features/waves";
-import axios from "axios";
 import { QUEST_MIN_CONTENT_LENGTH, uploadImage } from "@ecency/sdk";
+import { reportUploadError, withUploadRetry } from "@/api/sdk-mutations/upload-image-retry";
 import { shouldShowShortContentHint } from "@/utils/short-content-hint";
 import { ensureValidToken, isBlankBody } from "@/utils";
 import { error } from "@/features/shared";
@@ -289,28 +289,27 @@ const WaveFormComponent = ({
       event.stopPropagation();
 
       void (async () => {
-        const token = await ensureValidToken(activeUsername);
-
-        if (!token) {
-          error(i18next.t("editor-toolbar.image-error-cache"));
-          return;
-        }
-
-        for (const file of files) {
+        // only the first pasted image is used
+        const [file] = files;
+        const uploadPasted = async (): Promise<void> => {
+          // read per attempt: a Retry can come long after the paste
+          const token = await ensureValidToken(activeUsername);
+          if (!token) {
+            error(i18next.t("editor-toolbar.image-error-cache"));
+            return;
+          }
           try {
-            const { url } = await uploadImage(file, token);
+            const { url } = await withUploadRetry(() => uploadImage(file, token));
             setImage(url);
             setImageName(file.name);
-            break;
           } catch (err) {
-            if (axios.isAxiosError(err) && err.response?.status === 413) {
-              error(i18next.t("editor-toolbar.image-error-size"), undefined, { error: err });
-            } else {
-              error(i18next.t("editor-toolbar.image-error"), undefined, { error: err });
+            // a temporary failure offers Retry, which runs this upload again
+            if (await reportUploadError(err)) {
+              await uploadPasted();
             }
-            break;
           }
-        }
+        };
+        await uploadPasted();
       })();
     },
     [activeUsername, setImage, setImageName]

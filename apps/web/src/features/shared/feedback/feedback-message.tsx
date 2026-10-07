@@ -36,23 +36,51 @@ export function FeedbackMessage({ feedback, onClose }: Props) {
   const errorType = (feedback as ErrorFeedbackObject).errorType;
   const link = feedback.link;
 
+  const action = feedback.action;
+  // the toast's own outcome is settled once: either its action ran or it was dismissed
+  const settledRef = useRef(false);
+
   const handleClose = useCallback(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
     clearErrorFeedbackContext(feedback.id);
+    if (!settledRef.current) {
+      settledRef.current = true;
+      feedback.onDismiss?.();
+    }
     onClose();
-  }, [feedback.id, onClose]);
+  }, [feedback, onClose]);
+
+  const handleAction = useCallback(() => {
+    if (!action || settledRef.current) {
+      return;
+    }
+    settledRef.current = true;
+    action.onClick();
+    handleClose();
+  }, [action, handleClose]);
 
   const initTimeout = useCallback(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
-    timeoutRef.current = setTimeout(handleClose, 5000);
-  }, [handleClose]);
+    // a toast that offers an action waits for the user; errors get longer to read than notices
+    if (action) {
+      return;
+    }
+    timeoutRef.current = setTimeout(handleClose, feedback.type === "error" ? 10000 : 5000);
+  }, [action, feedback.type, handleClose]);
 
   useMount(() => initTimeout());
-  useUnmount(() => clearErrorFeedbackContext(feedback.id));
+  useUnmount(() => {
+    clearErrorFeedbackContext(feedback.id);
+    // closed from outside (dismissFeedback) never passes through handleClose
+    if (!settledRef.current) {
+      settledRef.current = true;
+      feedback.onDismiss?.();
+    }
+  });
 
   return (
     <div
@@ -120,8 +148,21 @@ export function FeedbackMessage({ feedback, onClose }: Props) {
         </div>
       </div>
 
+      {action && !errorType && (
+        <div className="flex justify-end px-3 border-t border-[--border-color] pt-2 items-center gap-2 mt-2">
+          <Button size="xs" onClick={handleAction}>
+            {action.label}
+          </Button>
+        </div>
+      )}
+
       {errorType && (
         <div className="flex justify-end px-3 border-t border-[--border-color] pt-2 items-center gap-2 mt-2">
+          {action && (
+            <Button size="xs" onClick={handleAction}>
+              {action.label}
+            </Button>
+          )}
           {errorType !== ErrorTypes.COMMON && errorType !== ErrorTypes.INFO && (
             <Button size="xs" appearance="gray-link" onClick={() => setShowDialog(true)}>
               {i18next.t("feedback-modal.question")}

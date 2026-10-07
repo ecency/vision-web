@@ -1997,7 +1997,10 @@
     "fragments": "Snippets",
     "link-image": "Link",
     "polls": "Polls",
-    "image-error-network": "Can't upload image due to API error"
+    "image-error-network": "Can't upload image due to API error",
+    "image-error-temporary": "Image upload is temporarily unavailable. Please try again.",
+    "image-error-quota": "Too many uploads. Please wait a moment and try again.",
+    "image-error-auth": "Your session expired. Please refresh the page and try again."
   },
   "emoji-picker": {
     "filter-placeholder": "Filter",

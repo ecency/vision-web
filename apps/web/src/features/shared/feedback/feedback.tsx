@@ -63,8 +63,19 @@ export function Feedback() {
     [add]
   );
 
-  useMount(() => window.addEventListener("ecency-feedback", onFeedback));
-  useUnmount(() => window.removeEventListener("ecency-feedback", onFeedback));
+  const onDismissRequest = useCallback(
+    (e: Event) => markClosing((e as CustomEvent).detail as string),
+    [markClosing]
+  );
+
+  useMount(() => {
+    window.addEventListener("ecency-feedback", onFeedback);
+    window.addEventListener("ecency-feedback-dismiss", onDismissRequest);
+  });
+  useUnmount(() => {
+    window.removeEventListener("ecency-feedback", onFeedback);
+    window.removeEventListener("ecency-feedback-dismiss", onDismissRequest);
+  });
   return (
     <div className="feedback-container">
       {queue.map((item) => (

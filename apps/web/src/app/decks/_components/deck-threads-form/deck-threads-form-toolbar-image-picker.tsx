@@ -1,9 +1,9 @@
 import React, { useRef, useState } from "react";
-import axios from "axios";
 import { Button } from "@ui/button";
 import { UilImage, UilLink, UilUpload } from "@tooni/iconscout-unicons-react";
 import { ensureValidToken } from "@/utils";
 import { uploadImage } from "@ecency/sdk";
+import { reportUploadError, withUploadRetry } from "@/api/sdk-mutations/upload-image-retry";
 import { error } from "@/features/shared";
 import i18next from "i18next";
 import { Tooltip } from "@ui/tooltip";
@@ -63,17 +63,17 @@ export const DeckThreadsFormToolbarImagePicker = ({ onAddImage }: Props) => {
     try {
       let token = await ensureValidToken(username);
       if (token) {
-        const resp = await uploadImage(await convertHeicToJpeg(file), token);
+        const converted = await convertHeicToJpeg(file);
+        const resp = await withUploadRetry(() => uploadImage(converted, token));
         imageUrl = resp.url;
         onAddImage(imageUrl, file.name);
       } else {
         error(i18next.t("editor-toolbar.image-error-cache"));
       }
     } catch (e) {
-      if (axios.isAxiosError(e) && e.response?.status === 413) {
-        error(i18next.t("editor-toolbar.image-error-size"), undefined, { error: e });
-      } else {
-        error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
+      // a temporary failure offers Retry, which runs this upload again
+      if (await reportUploadError(e)) {
+        void upload(file);
       }
       return;
     }
