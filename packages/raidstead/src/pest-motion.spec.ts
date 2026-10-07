@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SPECIES } from "./art";
 import { limbPose, segmentPose, type Limb } from "./pest-motion";
-import { apply, mul, rotAbout, tr, type Pt } from "./print";
+import { I, apply, mul, rotAbout, tr, type Pt } from "./print";
 
 const near = (a: Pt, b: Pt) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i], 8));
 
@@ -31,6 +31,29 @@ describe("pest limbs", () => {
         if (Math.sin(time + limb.phase) <= 0.55) near(foot, limb.foot);
       }
     }
+  });
+
+  it("keeps every segment near its drawn length, even at a hit's or a death's walk", () => {
+    const len = (a: Pt, b: Pt) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+    for (const kind of ["beetle", "queen", "twins", "spider"]) {
+      for (const limb of SPECIES[kind].parts().filter(p => p.segment === "upper").map(p => p.limb as Limb)) {
+        for (let time = 0; time < 7; time += 0.25) for (const amount of [1, 2.2, 3]) {
+          const upper = limbPose(limb, "upper", I, time, amount), lower = limbPose(limb, "lower", I, time, amount);
+          const su = len(apply(upper, ...limb.hip), apply(upper, ...limb.knee)) / len(limb.hip, limb.knee);
+          const sl = len(apply(lower, ...limb.knee), apply(lower, ...limb.foot)) / len(limb.knee, limb.foot);
+          for (const s of [su, sl]) { expect(s).toBeGreaterThan(0.9); expect(s).toBeLessThan(1.1); }
+        }
+      }
+    }
+  });
+
+  it("steps toward the pest's facing: outward on symmetric pests, forward on each twin", () => {
+    const step = (limb: Limb) => apply(limbPose(limb, "lower", I, Math.PI / 2 - limb.phase, 1), ...limb.foot)[0] - limb.foot[0];
+    for (const kind of ["beetle", "queen", "spider"])
+      for (const limb of SPECIES[kind].parts().filter(p => p.segment === "upper").map(p => p.limb as Limb))
+        expect(Math.sign(step(limb))).toBe(Math.sign(limb.foot[0] - limb.hip[0]));
+    for (const p of SPECIES.twins.parts().filter(p => p.segment === "upper"))
+      expect(Math.sign(step(p.limb))).toBe(p.group === "Lleg" ? 1 : -1);
   });
 
   it("plants feet independent of time when stepping is disabled", () => {

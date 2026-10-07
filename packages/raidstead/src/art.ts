@@ -7,8 +7,9 @@ type Add = (o: any) => Part;
 export type FolkClass = "scribe" | "scout" | "smith" | "herald";
 
 // Two rigid segments share a knee; the scene poses their endpoints together.
-function legAdd(add: Add, hip: Pt, knee: Pt, foot: Pt, i: number, group = "leg", w = 6) {
-  const limb = { hip, knee, foot, phase: i % 2 ? Math.PI : 0 };
+// A step reaches toward `dir` (+1 right, -1 left): outward unless the pest faces one way.
+function legAdd(add: Add, hip: Pt, knee: Pt, foot: Pt, i: number, group = "leg", w = 6, dir = Math.sign(foot[0] - hip[0]) || 1) {
+  const limb = { hip, knee, foot, phase: i % 2 ? Math.PI : 0, dir };
   add({ name: "leg-upper", kind: "line", pts: [hip, knee], w, taper: 0.12, color: COL.head, group, limb, segment: "upper" });
   add({ name: "leg-lower", kind: "line", pts: [knee, foot], w: w * 0.7, taper: 0.6, color: COL.ink, group, limb, segment: "lower" });
   add({ name: "joint", kind: "fill", poly: circle(knee[0], knee[1], w * 0.5), color: COL.head, sw: 1.5, group, limb, segment: "joint" });
@@ -64,14 +65,16 @@ function slugParts() {
   add({ name: "foot", kind: "fill", poly: path("M40 250 Q148 244 270 229 Q295 231 298 250 Q198 276 40 260 Z"), color: "#C4E57A", shade: 0.5, sw: 2, group: "foot" });
   add({ name: "body", kind: "fill", poly: path("M40 251 Q70 235 109 207 Q147 184 203 187 Q246 188 263 165 Q282 145 297 173 Q313 208 290 237 Q167 262 40 251 Z"), color: COL.pur, shade: 1, group: "body" });
   add({ name: "mantle", kind: "fill", poly: path("M166 205 Q192 178 242 183 Q261 183 273 172 Q290 180 287 208 Q276 235 242 237 Q185 243 166 224 Z"), color: "#8B5CC6", shade: 0.7, sw: 2.2, group: "body" });
-  add({ name: "moist-highlight", kind: "line", pts: path("M110 220 Q155 191 185 198 M202 196 Q230 190 246 196"), w: 4, taper: 0.5, color: COL.wing, group: "body" });
+  add({ name: "moist-highlight", kind: "line", pts: path("M110 220 Q155 191 185 198"), w: 4, taper: 0.5, color: COL.wing, group: "body" });
+  add({ name: "moist-highlight", kind: "line", pts: path("M202 196 Q230 190 246 196"), w: 4, taper: 0.5, color: COL.wing, group: "body" });
   for (const x of [100, 127, 154]) add({ name: "fold", kind: "line", pts: path(`M${x} 231 Q${x + 8} 240 ${x + 5} 248`), w: 2, color: COL.head, group: "body" });
   add({ name: "breathing-pore", kind: "fill", poly: ellipse(269, 215, 5, 3, -20), color: COL.head, sw: 0, group: "body" });
   add({ name: "stalk", kind: "line", pts: path("M276 172 Q279 147 299 119"), w: 5.5, taper: 0.4, color: COL.head, group: "stalkL" });
   add({ name: "stalk", kind: "line", pts: path("M290 174 Q313 158 323 140"), w: 5, taper: 0.4, color: COL.head, group: "stalkR" });
   eyesAdd(add, [[300, 117]], 6, "stalkL", "sL");
   eyesAdd(add, [[324, 138]], 6, "stalkR", "sR");
-  add({ name: "feeler", kind: "line", pts: path("M296 196 Q313 191 322 199 M295 209 Q308 214 313 224"), w: 3.4, taper: 0.6, color: COL.head, group: "body" });
+  for (const d of ["M296 196 Q313 191 322 199", "M295 209 Q308 214 313 224"])
+    add({ name: "feeler", kind: "line", pts: path(d), w: 3.4, taper: 0.6, color: COL.head, group: "body" });
   add({ name: "phone-shadow", kind: "shadow", cx: 352, cy: 263, rx: 26, ry: 5, group: "ground" });
   add({ name: "phone", kind: "fill", poly: rrect(332, 192, 38, 69, 6), color: "#C4E57A", shade: 0.2, sw: 3, group: "phone" });
   add({ name: "screen", kind: "fill", poly: rrect(338, 201, 26, 46, 2), color: COL.cream, sw: 1.5, group: "phone" });
@@ -87,7 +90,7 @@ function twinsParts() {
     const pt = (x: number, y: number): Pt => [cx + dir * x, y];
     for (const [i, coords] of [[0, [-2, 180, -62, 146, -74, 258]], [1, [8, 184, -24, 212, -35, 258]], [2, [20, 179, 43, 221, 53, 259]]] as [number, number[]][]) {
       const [hx, hy, kx, ky, fx, fy] = coords;
-      legAdd(add, pt(hx, hy), pt(kx, ky), pt(fx, fy), i, g + "leg", i === 0 ? 10 : 5);
+      legAdd(add, pt(hx, hy), pt(kx, ky), pt(fx, fy), i, g + "leg", i === 0 ? 10 : 5, dir);
     }
     add({ name: "body", kind: "fill", poly: rotate(ellipse(cx - dir * 14, 193, 48, 28), cx, 193, dir * -20), color: COL.pur, shade: 1, group: g });
     add({ name: "wing-case", kind: "fill", poly: [pt(-57, 210), pt(-29, 159), pt(14, 171), pt(-7, 205)], color: g === "L" ? COL.head : "#8B5CC6", shade: 0.7, sw: 2, group: g });
@@ -98,8 +101,9 @@ function twinsParts() {
     eyesAdd(add, [pt(36, 141)], 7, g, "t" + g);
     const [mx, my] = pt(40, 165);
     add({ name: "mouth", kind: "fill", poly: ellipse(mx, my, 5, 3), color: COL.dark, sw: 0, group: g + "m", mc: [mx, my] });
-    antenna(add, pt(19, 123), pt(-3, 72), g + "a", -1, 2.4);
-    antenna(add, pt(36, 122), pt(62, 81), g + "a", 1, 2.4);
+    // mirrored twins mirror the droop too
+    antenna(add, pt(19, 123), pt(-3, 72), g + "a", -dir, 2.4);
+    antenna(add, pt(36, 122), pt(62, 81), g + "a", dir, 2.4);
   }
   for (const r of [12, 23]) {
     add({ name: "echo", kind: "line", pts: path(`M171 ${164 - r} Q${171 + r * 0.7} 164 171 ${164 + r}`), w: 3, color: COL.lime, group: "arcs" });
@@ -443,7 +447,7 @@ export const FOLK: FolkClass[] = ["scribe", "scout", "smith", "herald"];
 
 export const SPECIES: Record<string, Species> = {
   beetle: { parts: beetleParts, boss: true, seed: 22, anchor: [200, 262], box: [68, 36, 332, 280], center: [200, 165], look: [200, 101],
-    hit: [[200, 176, 90, 74], [200, 102, 42, 42]], aim: [[200, 170, 66, 52]] },
+    hit: [[200, 190, 92, 70], [200, 102, 42, 42]], aim: [[200, 170, 66, 52]] },
   slug: { parts: slugParts, boss: true, seed: 23, anchor: [190, 262], box: [16, 104, 400, 280], center: [200, 205], look: [312, 127],
     hit: [[170, 215, 135, 45], [320, 140, 40, 40], [351, 226, 38, 44]], aim: [[165, 218, 100, 24]] },
   twins: { parts: twinsParts, boss: true, seed: 24, anchor: [200, 262], box: [18, 60, 382, 278], center: [200, 176], look: [200, 141],
