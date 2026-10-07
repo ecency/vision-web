@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
@@ -73,6 +73,9 @@ describe("NavbarTextMenu — auth-aware Decks/Communities slot", () => {
 
 describe("NavbarTextMenu — current section", () => {
   beforeEach(() => setLoggedIn(false));
+  afterEach(() => {
+    pathname.current = "/";
+  });
 
   it("highlights Raidstead on the game page", () => {
     pathname.current = "/raidstead";
