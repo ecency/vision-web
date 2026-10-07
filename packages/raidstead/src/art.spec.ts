@@ -9,7 +9,7 @@ describe("art", () => {
       parts.forEach((p, i) => expect(p.id, kind).toBe(i));
       const dots = buildModel(parts, 4, spec.seed);
       expect(dots.length, kind).toBeGreaterThan(50);
-      for (const d of dots.slice(0, 50)) expect(Number.isFinite(d.hx) && Number.isFinite(d.r), kind).toBe(true);
+      for (const d of dots) expect(Number.isFinite(d.hx) && Number.isFinite(d.hy) && Number.isFinite(d.r), kind).toBe(true);
     }
   });
 

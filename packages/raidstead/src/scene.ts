@@ -3,6 +3,7 @@
 // It holds no game rules. The page tells it what the world looks like
 // (sync) and what just happened (attack, cheer); the server decides both.
 
+import { limbPose } from "./pest-motion";
 import { BUILDING_IDS, FOLK, SPECIES, TOWN, type BossKind, type BuildingId, type Ellipse, type FolkClass } from "./art";
 import {
   CORAL, I, INKS, KNOCK, LIME, NIGHT, PAPER, VIOLET, addSpirals, apply, buildModel, clamp, ease, hex, mul, mulberry,
@@ -185,6 +186,10 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
     const p = inst.model!.parts[d.p];
     if (p.kind === "ring") { const u = d.u! + (reduced ? 0 : t * 0.25); hx = p.cx + Math.cos(u) * p.rx; hy = p.cy + Math.sin(u) * p.ry; }
     else if (d.spiral) { hx += (d.ax! - hx) * inst.morph; hy += (d.ay! - hy) * inst.morph; }
+    if (inst.kind === "slug" && !reduced && (p.group === "body" || p.group === "foot")) {
+      const envelope = Math.sin(Math.PI * clamp((hx - 40) / 265, 0, 1));
+      hy += Math.sin(hx * 0.045 - t * 2.2) * envelope * (p.group === "foot" ? 1.5 : 0.65);
+    }
     const m = inst.mats[d.p];
     return toScreen(inst, m[0] * hx + m[2] * hy + m[4], m[1] * hx + m[3] * hy + m[5]);
   }
@@ -223,7 +228,7 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   function eyeMat(inst: Inst, p: Part, m: Mat): Mat {
     if (!p.eye) return m;
     m = mul(m, scaleAbout(p.ec[0], p.ec[1], 1, inst.blink));
-    if (p.eye === "pupil") { const k = 1 - inst.morph; m = mul(m, tr(inst.look[0] * k, inst.look[1] * k)); }
+    if (p.eye === "pupil") { const k = 1 - inst.morph; m = mul(m, tr(inst.look[0] * k * (p.lookScale ?? 1), inst.look[1] * k * (p.lookScale ?? 1))); }
     return m;
   }
   const dying = (b: Inst) => (b.state === "dying" || b.state === "gone" ? Math.min(1, b.stateT) : 0);
@@ -232,35 +237,37 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
   const POSE: Record<string, (i: Inst) => void> = {
     beetle(b) {
       const breathe = wob(2.2) * 0.02, droop = dying(b) * 0.5;
-      const body = scaleAbout(200, 236, 1 + breathe, 1 - breathe * 0.7);
+      const body = tr(wob(1.1) * 1.3, wob(2.2) * 0.8);
       const head = mul(tr(0, wob(2.2, 0.7) * 1.3), rotAbout(200, 128, wob(1.1) * 0.035));
       for (const p of parts(b)) {
         let m = I;
         if (p.group === "shadow") m = scaleAbout(200, 262, 1 + breathe * 2 - b.hop * 0.004 / b.s, 1);
         else if (p.group === "body") m = body;
-        else if (p.group === "leg") m = mul(body, rotAbout(p.pivot[0], p.pivot[1], Math.sin(t * 9 + p.i * 1.9) * 0.1 * b.walk));
+        else if (p.limb) m = limbPose(p.limb, p.segment, body, t * 2.8, reduced ? 0 : b.walk);
         else if (p.group === "head") m = head;
         else if (p.group === "ant") m = mul(head, rotAbout(p.pivot[0], p.pivot[1], p.side * (wob(1.8, p.side) * 0.14 + droop)));
         b.mats[p.id] = eyeMat(b, p, m);
       }
     },
     slug(b) {
-      const w = wob(2.2), droop = dying(b) * 0.45;
-      const body = scaleAbout(40, 252, 1 + w * 0.035, 1 - w * 0.03);
+      const droop = dying(b) * 0.45;
+      const body = tr(wob(1.25) * 1.4, 0);
       const G: Record<string, Mat> = {
-        ground: I, shadow: scaleAbout(190, 262, 1 + w * 0.03, 1), glow: scaleAbout(350, 196, 1 + wob(3) * 0.04, 1 + wob(3) * 0.04), body,
-        stalkL: mul(body, rotAbout(276, 156, wob(1.6) * 0.12 - droop)), stalkR: mul(body, rotAbout(290, 152, wob(1.6, 1.3) * 0.12 + droop)),
-        phone: mul(body, tr(0, wob(1.3) * 2)),
+        ground: I, shadow: I, foot: I, body,
+        stalkL: mul(body, rotAbout(276, 172, wob(1.3) * 0.07 - droop)),
+        stalkR: mul(body, rotAbout(290, 174, wob(1.3, 1.1) * 0.07 + droop)),
+        phone: I,
+        feed: tr(0, reduced ? 0 : -((t * 5) % 7)),
       };
-      G.feed = mul(G.phone, tr(0, reduced ? 0 : -((t * 14) % 12)));
       for (const p of parts(b)) b.mats[p.id] = eyeMat(b, p, G[p.group!] || I);
     },
     twins(b) {
-      const droop = dying(b) * 0.4, G: Record<string, Mat | ((p: Part) => Mat)> = { shadow: I, arcs: scaleAbout(200, 196, 1 + wob(5) * 0.14, 1 + wob(5) * 0.05) };
+      const droop = dying(b) * 0.4, G: Record<string, Mat | ((p: Part) => Mat)> = { shadow: I, arcs: scaleAbout(200, 164, 1 + wob(5) * 0.1, 1 + wob(5) * 0.05) };
       for (const [g, cx, ph] of [["L", 104, 0], ["R", 296, Math.PI]] as [string, number, number][]) {
-        const bob = wob(2.6, ph) * 4, sq = wob(2.6, ph) * 0.02;
+        const bob = wob(2.6, ph) * 1.5, sq = wob(2.6, ph) * 0.006;
         const base = mul(tr(0, bob), scaleAbout(cx, 256, 1 + sq, 1 - sq));
         G[g] = base;
+        G[g + "leg"] = (p) => limbPose(p.limb, p.segment, base, t * 2 + ph, reduced ? 0 : 0.5);
         // the right twin repeats the left twin's mouth a beat later: the echo
         G[g + "m"] = (p) => mul(base, scaleAbout(p.mc[0], p.mc[1], 1, 0.55 + 0.45 * Math.abs(wob(5, g === "L" ? 0 : -1.2))));
         G[g + "a"] = (p) => mul(base, rotAbout(p.pivot[0], p.pivot[1], p.side * (wob(1.8, ph + p.side) * 0.12 + droop)));
@@ -274,25 +281,26 @@ export function createScene(host: HTMLElement, opts: SceneOptions = {}): Scene {
       for (const p of parts(b)) {
         let m = I;
         if (p.group === "body") m = body;
-        else if (p.group === "leg") m = mul(body, rotAbout(p.pivot[0], p.pivot[1], Math.sin(t * 4 + p.i * 1.7) * 0.06 * b.walk));
+        else if (p.limb) m = limbPose(p.limb, p.segment, body, t * 1.4, reduced ? 0 : b.walk * 0.65);
         else if (p.group === "head") m = head;
         else if (p.group === "crown") m = crown;
         b.mats[p.id] = eyeMat(b, p, m);
       }
     },
     wasp(w) {
-      const body = mul(tr(0, wob(3) * 4), rotAbout(282, 166, wob(2) * 0.04));
+      const dart = wob(1.1);
+      const body = mul(tr(dart * dart * dart * 5, wob(3) * 2), rotAbout(214, 160, wob(2) * 0.025));
       const G: Record<string, Mat> = { body, wings: mul(body, scaleAbout(214, 126, 1, reduced ? 0.8 : 0.3 + 0.7 * Math.abs(Math.sin(t * 30)))), sign: mul(body, rotAbout(112, 198, wob(1.7) * 0.08)) };
-      for (const p of parts(w)) w.mats[p.id] = eyeMat(w, p, p.group === "legs" ? mul(body, rotAbout(p.pivot[0], p.pivot[1], wob(2.4, p.id) * 0.12)) : G[p.group!] || I);
+      for (const p of parts(w)) w.mats[p.id] = eyeMat(w, p, p.limb ? mul(body, rotAbout(p.limb.hip[0], p.limb.hip[1], wob(2.4, p.limb.phase) * 0.06)) : G[p.group!] || I);
     },
     island(i) { for (const p of parts(i)) i.mats[p.id] = I; },
     spider(sp) {
-      const body = tr(0, wob(2) * 3);
-      for (const p of parts(sp)) sp.mats[p.id] = eyeMat(sp, p, p.group === "leg" ? mul(body, rotAbout(p.pivot[0], p.pivot[1], wob(7, p.k) * 0.08 * p.side)) : p.group === "web" ? I : body);
+      const body = tr(wob(0.8) * 1.5, wob(1.3) * 2);
+      for (const p of parts(sp)) sp.mats[p.id] = eyeMat(sp, p, p.limb ? limbPose(p.limb, p.segment, body, t * 1.2, 0) : p.group === "web" ? I : body);
     },
     gnat(g) {
       const flap = reduced ? 0.8 : 0.35 + 0.65 * Math.abs(Math.sin(t * 26 + g.phase)), bob = reduced ? 0 : Math.sin(t * 3 + g.phase) * 3;
-      const body = tr(0, bob);
+      const body = tr(wob(5.3, g.phase) * 1.5, bob);
       for (const p of parts(g)) g.mats[p.id] = p.group === "wingL" || p.group === "wingR" ? mul(body, scaleAbout(p.pivot[0], p.pivot[1], 1, flap)) : body;
     },
   };
