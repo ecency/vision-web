@@ -7,6 +7,7 @@ import i18next from "i18next";
 import { UilSignout } from "@tooni/iconscout-unicons-react";
 import { useClickAway } from "react-use";
 import { usePathname, useRouter } from "next/navigation";
+import { isPathInSection } from "@/utils/path-section";
 
 export function NavbarSideMainLogout() {
   const ref = useRef<HTMLDivElement>(null);
@@ -23,7 +24,7 @@ export function NavbarSideMainLogout() {
 
   const handleLogout = (clearData: boolean) => {
     const username = activeUser?.username;
-    const isOnOwnProfile = username && pathname?.includes(`@${username}`);
+    const isOnOwnProfile = !!username && isPathInSection(pathname, `/@${username}`);
 
     setActiveUser(null);
     if (clearData && username) {
