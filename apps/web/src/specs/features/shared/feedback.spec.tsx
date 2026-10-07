@@ -3,7 +3,8 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { vi } from "vitest";
 import { Feedback } from "@/features/shared/feedback/feedback";
-import { FeedbackObject } from "@/features/shared/feedback/feedback-events";
+import { ErrorTypes } from "@/enums";
+import { dismissFeedback, FeedbackObject } from "@/features/shared/feedback/feedback-events";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() })
@@ -110,5 +111,75 @@ describe("Feedback", () => {
 
     expect(screen.queryByText("first")).not.toBeInTheDocument();
     expect(screen.getByText("second")).toBeInTheDocument();
+  });
+  it("keeps an error toast for 10s instead of 5s", () => {
+    render(<Feedback />);
+    emit({ type: "error", message: "failed" });
+
+    act(() => vi.advanceTimersByTime(6000));
+    expect(screen.getByText("failed")).toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(4100));
+    act(() => vi.advanceTimersByTime(200));
+    expect(screen.queryByText("failed")).not.toBeInTheDocument();
+  });
+
+  it("keeps a toast with an action until it is used, and does not report a dismissal then", () => {
+    const onClick = vi.fn();
+    const onDismiss = vi.fn();
+    render(<Feedback />);
+    // errorType set, as error() always does: Retry sits next to the Report button
+    emit({ type: "error", errorType: ErrorTypes.COMMON, message: "upload failed", action: { label: "Retry", onClick }, onDismiss } as Partial<FeedbackObject>);
+    expect(screen.getByRole("button", { name: "feedback-modal.report" })).toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(60000));
+    expect(screen.getByText("upload failed")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    act(() => vi.advanceTimersByTime(200));
+
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(screen.queryByText("upload failed")).not.toBeInTheDocument();
+  });
+
+  it("reports a dismissal once when a toast with an action is closed", () => {
+    const onClick = vi.fn();
+    const onDismiss = vi.fn();
+    render(<Feedback />);
+    emit({ type: "error", message: "upload failed", action: { label: "Retry", onClick }, onDismiss });
+
+    fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+    act(() => vi.advanceTimersByTime(200));
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("closes a toast from code with dismissFeedback, reporting the dismissal", () => {
+    const onDismiss = vi.fn();
+    render(<Feedback />);
+    emit({ id: "toast-9", type: "error", message: "upload failed", action: { label: "Retry", onClick: vi.fn() }, onDismiss });
+
+    act(() => dismissFeedback("toast-9"));
+    act(() => vi.advanceTimersByTime(200));
+
+    expect(screen.queryByText("upload failed")).not.toBeInTheDocument();
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+  it("keeps Retry working under StrictMode's mount-unmount-mount replay", () => {
+    const onClick = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <React.StrictMode>
+        <Feedback />
+      </React.StrictMode>
+    );
+    emit({ type: "error", message: "upload failed", action: { label: "Retry", onClick }, onDismiss });
+
+    expect(onDismiss).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onDismiss).not.toHaveBeenCalled();
   });
 });

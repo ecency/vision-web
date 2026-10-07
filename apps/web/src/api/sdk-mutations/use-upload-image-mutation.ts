@@ -7,6 +7,21 @@ import { useMutation } from "@tanstack/react-query";
 import { error, success } from "@/features/shared/feedback";
 import i18next from "i18next";
 import { EcencyConfigManager } from "@/config";
+import {
+  isTransientUploadError,
+  reportUploadError,
+  uploadErrorMessage,
+  withUploadRetry
+} from "./upload-image-retry";
+
+/** Errors already shown by the Retry toast, so onError does not toast them twice. */
+const reportedErrors = new WeakSet<object>();
+
+function abortedError(): Error {
+  const e = new Error("Aborted");
+  e.name = "AbortError";
+  return e;
+}
 
 /**
  * Web wrapper that combines SDK useUploadImage + useAddImage hooks.
@@ -73,13 +88,36 @@ export function useUploadImageMutation() {
         throw new Error("Cannot upload image without an active user");
       }
 
-      const token = await ensureValidToken(username);
-      if (!token) {
-        throw new Error("Token missed");
+      // One automatic retry for a temporary failure; if that fails too, the
+      // Retry toast keeps this upload pending until the user retries (and the
+      // caller gets the image as if the first try worked) or closes it.
+      let response: Awaited<ReturnType<typeof sdkUpload.mutateAsync>>;
+      // read per attempt: the token can expire during a failed request or a pause
+      const attempt = async () => {
+        const token = await ensureValidToken(username);
+        if (!token) {
+          throw new Error("Token missed");
+        }
+        return sdkUpload.mutateAsync({ file, token, signal });
+      };
+      for (;;) {
+        try {
+          response = await withUploadRetry(attempt, signal);
+          break;
+        } catch (e) {
+          if (!isTransientUploadError(e) || signal?.aborted) {
+            throw e;
+          }
+          const retry = await reportUploadError(e, signal);
+          if (signal?.aborted) {
+            throw abortedError();
+          }
+          if (!retry) {
+            reportedErrors.add(e as object);
+            throw e;
+          }
+        }
       }
-
-      // Use SDK upload mutation
-      const response = await sdkUpload.mutateAsync({ file, token, signal });
 
       // Try to add to gallery (non-blocking)
       try {
@@ -100,34 +138,15 @@ export function useUploadImageMutation() {
         return;
       }
 
-      // Web-specific error handling for upload
-      if ("status" in e) {
-        const status = (e as { status?: number }).status;
-        if (status === 413) {
-          error(i18next.t("editor-toolbar.image-error-size"), undefined, { error: e });
-        } else if (status === 429) {
-          error("Too many upload requests. Please wait a moment and try again.", undefined, {
-            error: e
-          });
-        } else if (status === 503) {
-          error(
-            "Image upload service is temporarily unavailable. Please try again later.",
-            undefined,
-            {
-              error: e
-            }
-          );
-        } else if (status === 401 || status === 403) {
-          error("Authentication expired. Please refresh the page and try again.", undefined, {
-            error: e
-          });
-        } else {
-          error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
-        }
-      } else if (e.message === "Token missed") {
+      // already shown with a Retry action the user closed
+      if (reportedErrors.has(e)) {
+        return;
+      }
+
+      if (e.message === "Token missed") {
         error(i18next.t("g.image-error-cache"), undefined, { error: e });
       } else {
-        error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
+        error(uploadErrorMessage(e), undefined, { error: e });
       }
     }
   });

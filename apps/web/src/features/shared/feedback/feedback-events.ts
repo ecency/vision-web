@@ -9,6 +9,10 @@ interface ErrorFeedbackExtras {
   error?: unknown;
   contextTag?: string;
   consoleHistory?: ConsoleHistoryEntry[];
+  /** A button on the toast (e.g. Retry). A toast with an action stays until it is used or closed. */
+  action?: FeedbackAction;
+  /** Called when the toast goes away without its action being used. */
+  onDismiss?: () => void;
 }
 
 const errorContextMap = new Map<string, ErrorFeedbackExtras>();
@@ -24,7 +28,9 @@ export const error = (
     type: "error",
     message,
     errorType,
-    contextTag: extras?.contextTag
+    contextTag: extras?.contextTag,
+    action: extras?.action,
+    onDismiss: extras?.onDismiss
   };
 
   const consoleHistory = extras?.consoleHistory ?? getConsoleHistory();
@@ -42,6 +48,31 @@ export const error = (
 
   const ev = new CustomEvent("ecency-feedback", { detail });
   window.dispatchEvent(ev);
+  return id;
+};
+
+const settledFeedback = new WeakSet<FeedbackObject>();
+
+/**
+ * Settles a toast's outcome exactly once: its action was used, or it went away
+ * without it (then `onDismiss` runs). Returns false when already settled.
+ * Kept off the component lifecycle so a StrictMode effect replay is not
+ * mistaken for a dismissal.
+ */
+export const settleFeedback = (feedback: FeedbackObject, actionUsed: boolean): boolean => {
+  if (settledFeedback.has(feedback)) {
+    return false;
+  }
+  settledFeedback.add(feedback);
+  if (!actionUsed) {
+    feedback.onDismiss?.();
+  }
+  return true;
+};
+
+/** Closes a toast from code, e.g. when the operation it offers to retry was cancelled. */
+export const dismissFeedback = (id: string) => {
+  window.dispatchEvent(new CustomEvent("ecency-feedback-dismiss", { detail: id }));
 };
 
 export const success = (message: string) => {
@@ -67,12 +98,21 @@ export const info = (message: string, link?: string) => {
 
 type FeedbackType = "error" | "success" | "info";
 
+export interface FeedbackAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface FeedbackObject {
   id: string;
   type: FeedbackType;
   message: string;
   /** Optional in-app destination; when set, the toast message is clickable. */
   link?: string;
+  /** Optional button; the toast does not auto-close while it is offered. */
+  action?: FeedbackAction;
+  /** Called when the toast closes without its action being used. */
+  onDismiss?: () => void;
 }
 
 export interface ErrorFeedbackObject extends FeedbackObject {

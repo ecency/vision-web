@@ -14,11 +14,10 @@ import { sendSvg } from "@ui/svg";
 import { useIsMobile } from "@/features/ui/util/use-is-mobile";
 import { WaveFormToolbar } from "@/features/waves/components/wave-form/wave-form-toolbar";
 import { useWaveSubmit } from "@/features/waves";
-import axios from "axios";
-import { QUEST_MIN_CONTENT_LENGTH, uploadImage } from "@ecency/sdk";
+import { QUEST_MIN_CONTENT_LENGTH } from "@ecency/sdk";
+import { uploadImageWithRetryPrompt } from "@/api/sdk-mutations/upload-image-retry";
 import { shouldShowShortContentHint } from "@/utils/short-content-hint";
-import { ensureValidToken, isBlankBody } from "@/utils";
-import { error } from "@/features/shared";
+import { isBlankBody } from "@/utils";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useActiveAccount } from "@/core/hooks";
 import { useGlobalStore } from "@/core/global-store";
@@ -45,6 +44,14 @@ const WaveFormComponent = ({
   const isMobile = useIsMobile();
 
   const rootRef = useRef<HTMLDivElement>(null);
+  // set in an effect so a StrictMode replay re-arms it
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { clearActivePoll, setActivePoll } = useContext(PollsContext);
 
@@ -289,27 +296,13 @@ const WaveFormComponent = ({
       event.stopPropagation();
 
       void (async () => {
-        const token = await ensureValidToken(activeUsername);
-
-        if (!token) {
-          error(i18next.t("editor-toolbar.image-error-cache"));
-          return;
-        }
-
-        for (const file of files) {
-          try {
-            const { url } = await uploadImage(file, token);
-            setImage(url);
-            setImageName(file.name);
-            break;
-          } catch (err) {
-            if (axios.isAxiosError(err) && err.response?.status === 413) {
-              error(i18next.t("editor-toolbar.image-error-size"), undefined, { error: err });
-            } else {
-              error(i18next.t("editor-toolbar.image-error"), undefined, { error: err });
-            }
-            break;
-          }
+        // only the first pasted image is used; the account is the one that pasted
+        const [file] = files;
+        const url = await uploadImageWithRetryPrompt(file, activeUsername);
+        // a Retry can finish after the composer is gone; do not write its draft then
+        if (url && mountedRef.current) {
+          setImage(url);
+          setImageName(file.name);
         }
       })();
     },

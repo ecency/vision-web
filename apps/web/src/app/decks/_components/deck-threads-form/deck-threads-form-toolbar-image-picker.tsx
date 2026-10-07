@@ -1,9 +1,7 @@
 import React, { useRef, useState } from "react";
-import axios from "axios";
 import { Button } from "@ui/button";
 import { UilImage, UilLink, UilUpload } from "@tooni/iconscout-unicons-react";
-import { ensureValidToken } from "@/utils";
-import { uploadImage } from "@ecency/sdk";
+import { uploadImageWithRetryPrompt } from "@/api/sdk-mutations/upload-image-retry";
 import { error } from "@/features/shared";
 import i18next from "i18next";
 import { Tooltip } from "@ui/tooltip";
@@ -58,24 +56,19 @@ export const DeckThreadsFormToolbarImagePicker = ({ onAddImage }: Props) => {
   };
 
   const upload = async (file: File) => {
+    // captured now: a Retry later still uploads as the account that picked the file
     const username = activeUser?.username!;
-    let imageUrl: string;
+    let converted: File;
     try {
-      let token = await ensureValidToken(username);
-      if (token) {
-        const resp = await uploadImage(await convertHeicToJpeg(file), token);
-        imageUrl = resp.url;
-        onAddImage(imageUrl, file.name);
-      } else {
-        error(i18next.t("editor-toolbar.image-error-cache"));
-      }
+      converted = await convertHeicToJpeg(file);
     } catch (e) {
-      if (axios.isAxiosError(e) && e.response?.status === 413) {
-        error(i18next.t("editor-toolbar.image-error-size"), undefined, { error: e });
-      } else {
-        error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
-      }
+      error(i18next.t("editor-toolbar.image-error"), undefined, { error: e });
       return;
+    }
+    // a Retry is awaited here, so the next picked file waits and order holds
+    const url = await uploadImageWithRetryPrompt(converted, username);
+    if (url) {
+      onAddImage(url, file.name);
     }
   };
 
