@@ -39,7 +39,9 @@ describe("art", () => {
     // fine for a pupil's shine, a blot in the town for a wing or a highlight band
     for (const kind of [...BOSS_KINDS, "wasp", "spider", "gnat"]) {
       const spec = SPECIES[kind];
-      for (let sp = 3; sp <= 11; sp += 0.25) {
+      // the coarsest pitch each one gets on a phone, Canvas 2D fallback included
+      const max = ({ spider: 14, gnat: 11.5 } as Record<string, number>)[kind] ?? 11;
+      for (let sp = 3; sp <= max; sp += 0.25) {
         const parts = spec.parts();
         for (const d of buildModel(parts, sp, spec.seed, true)) if (d.knock && d.r > 6) {
           const [x0, y0, x1, y1] = parts[d.p].bb!;
