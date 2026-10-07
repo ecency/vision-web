@@ -41,7 +41,7 @@ describe("pest limbs", () => {
           const upper = limbPose(limb, "upper", I, time, amount), lower = limbPose(limb, "lower", I, time, amount);
           const su = len(apply(upper, ...limb.hip), apply(upper, ...limb.knee)) / len(limb.hip, limb.knee);
           const sl = len(apply(lower, ...limb.knee), apply(lower, ...limb.foot)) / len(limb.knee, limb.foot);
-          for (const s of [su, sl]) { expect(s).toBeGreaterThan(0.9); expect(s).toBeLessThan(1.1); }
+          for (const s of [su, sl]) { expect(s).toBeGreaterThan(0.93); expect(s).toBeLessThan(1.04); }
         }
       }
     }

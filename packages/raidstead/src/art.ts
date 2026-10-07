@@ -196,7 +196,8 @@ function islandParts() {
   const P: Part[] = [], add: Add = (o) => { o.id = P.length; P.push(o); return o; };
   add({ name: "underside", kind: "fill", poly: path("M60 470 Q90 610 380 660 Q700 700 1020 660 Q1310 610 1340 470 Z"), color: "#B07B53", shade: 1, group: "body" });
   for (const [x, l] of <any[]>[[300, 70], [520, 96], [760, 84], [980, 60], [1160, 44]]) add({ name: "root", kind: "line", pts: path(`M${x} ${600 + (x % 3) * 12} Q${x + 12} ${640 + l * 0.4} ${x - 6} ${650 + l * 0.7}`), w: 3.4, taper: 0.6, color: COL.brown, group: "body" });
-  add({ name: "strata", kind: "line", pts: path("M240 540 Q420 580 600 560 M650 570 Q840 592 1000 540"), w: 3.6, color: COL.brown, group: "body" });
+  // path() draws one stroke: a second M would join the two with a stray line
+  for (const d of ["M240 540 Q420 580 600 560", "M650 570 Q840 592 1000 540"]) add({ name: "strata", kind: "line", pts: path(d), w: 3.6, color: COL.brown, group: "body" });
   add({ name: "grass", kind: "fill", poly: ellipse(700, 470, 650, 72), color: "#86B86E", shade: 0.5, group: "body" });
   add({ name: "path", kind: "fill", poly: ellipse(700, 506, 430, 18), color: COL.tan, sw: 0, group: "body" });
   for (const [x, y, r] of <any[]>[[110, 452, 34], [1300, 450, 30], [620, 520, 16], [790, 522, 14]]) {
@@ -210,7 +211,7 @@ function islandParts() {
 function isletParts(flag: string) {
   const P: Part[] = [], add: Add = (o) => { o.id = P.length; P.push(o); return o; };
   add({ name: "underside", kind: "fill", poly: path("M24 150 Q64 236 200 256 Q336 236 376 150 Z"), color: "#B07B53", shade: 1, group: "body" });
-  add({ name: "root", kind: "line", pts: path("M150 238 Q158 262 146 284 M252 236 Q262 258 256 276"), w: 5, taper: 0.6, color: COL.brown, group: "body" });
+  for (const d of ["M150 238 Q158 262 146 284", "M252 236 Q262 258 256 276"]) add({ name: "root", kind: "line", pts: path(d), w: 5, taper: 0.6, color: COL.brown, group: "body" });
   add({ name: "grass", kind: "fill", poly: ellipse(200, 150, 180, 30), color: "#86B86E", shade: 0.5, group: "body" });
   add({ name: "trunk", kind: "line", pts: [[86, 140], [86, 118]], w: 8, color: COL.brown, group: "body" });
   add({ name: "tree", kind: "fill", poly: circle(86, 108, 24), color: "#6FA35C", shade: 0.9, group: "body" });
@@ -317,7 +318,7 @@ function spiderParts() {
   add({ name: "head", kind: "fill", poly: path("M174 151 Q200 139 226 151 Q244 176 224 202 Q200 215 176 202 Q156 176 174 151 Z"), color: COL.head, shade: 1, group: "body" });
   eyesAdd(add, [[189, 184], [211, 184]], 6, "body", "sp");
   for (const x of [177, 190, 210, 223]) add({ name: "small-eye", kind: "fill", poly: circle(x, x === 177 || x === 223 ? 173 : 167, 3), color: COL.lime, sw: 1, group: "body" });
-  for (const side of [-1, 1]) add({ name: "brow", kind: "line", pts: [[200 + side * 20, 174], [200 + side * 8, 177]], w: 3.4, color: COL.ink, group: "body" });
+  for (const side of [-1, 1]) add({ name: "brow", kind: "line", pts: [[200 + side * 18, 170], [200 + side * 8, 174]], w: 3.4, color: COL.ink, group: "body" });
   add({ name: "mouth", kind: "line", pts: path("M193 198 Q200 193 207 198"), w: 2.8, color: COL.ink, group: "body" });
   for (const side of [-1, 1]) add({ name: "palp", kind: "line", pts: [[200 + side * 12, 201], [200 + side * 17, 213], [200 + side * 8, 217]], w: 4, taper: 0.6, color: COL.head, group: "body" });
   return P;
