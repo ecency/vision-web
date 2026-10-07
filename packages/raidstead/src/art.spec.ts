@@ -30,7 +30,23 @@ describe("art", () => {
     const solidOnPurpose = [COL.ghost, COL.gold];
     for (const [kind, spec] of Object.entries(SPECIES))
       for (const p of spec.parts()) if (p.kind === "line" && p.color && !solidOnPurpose.includes(p.color))
-        expect(PRINT[p.color]?.[0]?.[1] ?? 1, `${kind} ${p.name}`).toBeGreaterThanOrEqual(0.5);
+        // a colour missing from PRINT prints solid night; one with no inks (white) prints nothing
+        expect(p.color in PRINT ? PRINT[p.color][0]?.[1] ?? 0 : 1, `${kind} ${p.name}`).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it("no pest part shrinks to one big paper dot at phone dot pitches", () => {
+    // a fill that catches no screen point prints one paper dot over its whole box;
+    // fine for a pupil's shine, a blot in the town for a wing or a highlight band
+    for (const kind of [...BOSS_KINDS, "wasp", "spider", "gnat"]) {
+      const spec = SPECIES[kind];
+      for (let sp = 3; sp <= 11; sp += 0.25) {
+        const parts = spec.parts();
+        for (const d of buildModel(parts, sp, spec.seed, true)) if (d.knock && d.r > 6) {
+          const [x0, y0, x1, y1] = parts[d.p].bb!;
+          expect(Math.abs(d.r - Math.hypot(x1 - x0, y1 - y0) / 2 / 1.25) > 1e-9, `${kind} ${parts[d.p].name} at ${sp}`).toBe(true);
+        }
+      }
+    }
   });
 
   it("is deterministic for a seed", () => {
