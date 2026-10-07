@@ -10,6 +10,12 @@ import { classNameObject } from "@ui/util";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useHydrated } from "@/api/queries";
 
+// A section is active on its own page and the pages under it, never on a path that
+// merely contains it: a post permlink like /@ecency/raidstead-... is not Raidstead.
+export function isNavLinkActive(pathname: string | null, link: string): boolean {
+  return !!pathname && (pathname === link || pathname.startsWith(`${link}/`));
+}
+
 export function NavbarTextMenu() {
   const pathname = usePathname();
   const { activeUser } = useActiveAccount();
@@ -53,22 +59,23 @@ export function NavbarTextMenu() {
 
   return (
     <div className="hidden sm:flex md:hidden xl:flex text-menu items-center gap-4 justify-center h-full md:mr-2">
-      {visibleItems.map((item) => (
-        <IntentLink
-          key={item.link}
-          className={classNameObject({
-            "text-sm font-semibold duration-300 hover:opacity-75 mt-0 px-2 py-0.5 rounded-2xl": true,
-            "text-gunmetal dark:text-white": !pathname?.includes(item.link),
-            "bg-blue-duck-egg text-blue-dark-sky dark:bg-dark-default": pathname?.includes(
-              item.link
-            )
-          })}
-          href={item.link}
-          aria-current={pathname?.includes(item.link) ? "page" : undefined}
-        >
-          {item.label}
-        </IntentLink>
-      ))}
+      {visibleItems.map((item) => {
+        const active = isNavLinkActive(pathname, item.link);
+        return (
+          <IntentLink
+            key={item.link}
+            className={classNameObject({
+              "text-sm font-semibold duration-300 hover:opacity-75 mt-0 px-2 py-0.5 rounded-2xl": true,
+              "text-gunmetal dark:text-white": !active,
+              "bg-blue-duck-egg text-blue-dark-sky dark:bg-dark-default": active
+            })}
+            href={item.link}
+            aria-current={active ? "page" : undefined}
+          >
+            {item.label}
+          </IntentLink>
+        );
+      })}
     </div>
   );
 }

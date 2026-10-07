@@ -6,11 +6,12 @@ vi.mock("@/api/queries", () => ({
   useHydrated: () => true
 }));
 
+const pathname = vi.hoisted(() => ({ current: "/" }));
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/"
+  usePathname: () => pathname.current
 }));
 
-import { NavbarTextMenu } from "@/features/shared/navbar/navbar-text-menu";
+import { isNavLinkActive, NavbarTextMenu } from "@/features/shared/navbar/navbar-text-menu";
 
 const mockedUseActiveAccount = vi.mocked(useActiveAccount);
 
@@ -64,5 +65,46 @@ describe("NavbarTextMenu — auth-aware Decks/Communities slot", () => {
     const links = screen.getAllByRole("link");
     expect(links[links.length - 1].getAttribute("href")).toBe("/raidstead");
     expect(links[links.length - 1].textContent).toBe("navbar.raidstead");
+  });
+});
+
+describe("NavbarTextMenu — current section", () => {
+  beforeEach(() => setLoggedIn(false));
+
+  it("highlights Raidstead on the game page", () => {
+    pathname.current = "/raidstead";
+    render(<NavbarTextMenu />);
+    expect(
+      screen.getByRole("link", { name: "navbar.raidstead" }).getAttribute("aria-current")
+    ).toBe("page");
+  });
+
+  it("highlights nothing on a post whose permlink starts with a section name", () => {
+    pathname.current = "/@ecency/raidstead-your-community-against-the";
+    render(<NavbarTextMenu />);
+    for (const link of screen.getAllByRole("link"))
+      expect(link.getAttribute("aria-current")).toBeNull();
+  });
+});
+
+describe("isNavLinkActive", () => {
+  it.each([
+    ["/raidstead", "/raidstead"],
+    ["/waves/@alice/re-wave-1", "/waves"],
+    ["/discover/communities", "/discover"],
+    ["/communities/create", "/communities"]
+  ])("marks %s as inside %s", (pathname, link) => {
+    expect(isNavLinkActive(pathname, link)).toBe(true);
+  });
+
+  it.each([
+    ["/@ecency/raidstead-your-community-against-the", "/raidstead"],
+    ["/hive-125125/@alice/waves-of-change", "/waves"],
+    ["/@alice/communities", "/communities"],
+    ["/raidsteadx", "/raidstead"],
+    ["/", "/discover"],
+    [null, "/decks"]
+  ])("does not mark %s as inside %s", (pathname, link) => {
+    expect(isNavLinkActive(pathname, link)).toBe(false);
   });
 });
