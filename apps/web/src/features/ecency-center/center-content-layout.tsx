@@ -7,7 +7,6 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useMountTransition } from "@/core/hooks";
 import { closeSvg } from "@ui/svg";
-import { isPathInSection } from "@/utils/path-section";
 
 interface Props {
   show: boolean;
@@ -17,18 +16,18 @@ interface Props {
 export function CenterContentLayout({ show, setShow, children }: PropsWithChildren<Props>) {
   const pathname = usePathname();
   const { mounted, open } = useMountTransition(show, 150);
-  const onDecks = isPathInSection(pathname, "/decks");
 
   return (
     <>
       {mounted && (
         <div
           className={classNameObject({
-            "fixed bg-white dark:bg-dark-200 bottom-4 rounded-2xl overflow-hidden origin-bottom-left w-full max-w-[320px] sm:max-w-[400px] transition-[opacity,transform] duration-150": true,
+            "fixed bg-white dark:bg-dark-200 bottom-4 rounded-2xl overflow-hidden origin-bottom-left w-full max-w-[320px] sm:max-w-[400px] transition-[opacity,transform] duration-150":
+              true,
             "opacity-100 scale-100": open,
             "opacity-0 scale-95": !open,
-            "left-4": !onDecks,
-            "right-4": onDecks
+            "left-4": !pathname?.includes("decks"),
+            "right-4": pathname?.includes("decks")
           })}
         >
           <div className="bg-gradient-primary-day dark:bg-gradient-primary-night text-white p-4 min-h-[100px] w-full rounded-t-2xl">
