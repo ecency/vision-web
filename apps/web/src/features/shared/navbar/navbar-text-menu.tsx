@@ -9,12 +9,7 @@ import { usePathname } from "next/navigation";
 import { classNameObject } from "@ui/util";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useHydrated } from "@/api/queries";
-
-// A section is active on its own page and the pages under it, never on a path that
-// merely contains it: a post permlink like /@ecency/raidstead-... is not Raidstead.
-export function isNavLinkActive(pathname: string | null, link: string): boolean {
-  return !!pathname && (pathname === link || pathname.startsWith(`${link}/`));
-}
+import { isPathInSection } from "@/utils/path-section";
 
 export function NavbarTextMenu() {
   const pathname = usePathname();
@@ -60,7 +55,7 @@ export function NavbarTextMenu() {
   return (
     <div className="hidden sm:flex md:hidden xl:flex text-menu items-center gap-4 justify-center h-full md:mr-2">
       {visibleItems.map((item) => {
-        const active = isNavLinkActive(pathname, item.link);
+        const active = isPathInSection(pathname, item.link);
         return (
           <IntentLink
             key={item.link}

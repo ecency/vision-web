@@ -11,7 +11,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => pathname.current
 }));
 
-import { isNavLinkActive, NavbarTextMenu } from "@/features/shared/navbar/navbar-text-menu";
+import { NavbarTextMenu } from "@/features/shared/navbar/navbar-text-menu";
 
 const mockedUseActiveAccount = vi.mocked(useActiveAccount);
 
@@ -30,7 +30,10 @@ function setLoggedIn(loggedIn: boolean) {
 }
 
 describe("NavbarTextMenu — auth-aware Decks/Communities slot", () => {
-  beforeEach(() => setLoggedIn(false));
+  beforeEach(() => {
+    setLoggedIn(false);
+    pathname.current = "/";
+  });
 
   it("shows Communities (and hides Decks) for logged-out visitors", () => {
     render(<NavbarTextMenu />);
@@ -84,27 +87,5 @@ describe("NavbarTextMenu — current section", () => {
     render(<NavbarTextMenu />);
     for (const link of screen.getAllByRole("link"))
       expect(link.getAttribute("aria-current")).toBeNull();
-  });
-});
-
-describe("isNavLinkActive", () => {
-  it.each([
-    ["/raidstead", "/raidstead"],
-    ["/waves/@alice/re-wave-1", "/waves"],
-    ["/discover/communities", "/discover"],
-    ["/communities/create", "/communities"]
-  ])("marks %s as inside %s", (pathname, link) => {
-    expect(isNavLinkActive(pathname, link)).toBe(true);
-  });
-
-  it.each([
-    ["/@ecency/raidstead-your-community-against-the", "/raidstead"],
-    ["/hive-125125/@alice/waves-of-change", "/waves"],
-    ["/@alice/communities", "/communities"],
-    ["/raidsteadx", "/raidstead"],
-    ["/", "/discover"],
-    [null, "/decks"]
-  ])("does not mark %s as inside %s", (pathname, link) => {
-    expect(isNavLinkActive(pathname, link)).toBe(false);
   });
 });

@@ -5,20 +5,15 @@ import { useMemo, useRef, useState } from "react";
 import useClickAway from "react-use/lib/useClickAway";
 import { usePathname } from "next/navigation";
 import { classNameObject } from "@ui/util";
+import { isEditorPath, isPathInSection } from "@/utils/path-section";
 
 export function EcencyCenter() {
   const rootRef = useRef<HTMLDivElement>(null);
   const [show, setShow] = useState(false);
 
   const pathname = usePathname();
-  const isSubmitPage = useMemo(
-    () =>
-      pathname?.includes("submit") ||
-      pathname?.includes("edit") ||
-      pathname?.includes("draft") ||
-      pathname?.includes("publish"),
-    [pathname]
-  );
+  const isSubmitPage = useMemo(() => isEditorPath(pathname), [pathname]);
+  const onDecks = isPathInSection(pathname, "/decks");
   useClickAway(rootRef, () => show && setShow(false));
 
   return isSubmitPage ? (
@@ -28,8 +23,8 @@ export function EcencyCenter() {
       ref={rootRef}
       className={classNameObject({
         "fixed z-[202] bottom-4 ecency-center": true,
-        "left-4": !pathname?.includes("decks"),
-        "right-4": pathname?.includes("decks")
+        "left-4": !onDecks,
+        "right-4": onDecks
       })}
     >
       <CenterButton onClick={() => setShow(!show)} />
