@@ -4,7 +4,9 @@ import { NextResponse } from "next/server";
 import { bridgeApiCall, getProfiles } from "@ecency/sdk";
 import { CommunityRole, ROLES } from "@ecency/sdk";
 import { toPublicChatUser } from "@/server/chat-public-user";
-import { withChatUserLock } from "@/server/chat-user-lock";
+import { ChatUserBusyError, withChatUserLock } from "@/server/chat-user-lock";
+
+export { ChatUserBusyError };
 
 export { toPublicChatUser };
 
@@ -587,7 +589,7 @@ export async function retirePlaintextSessionToken(
   userId: string,
   signal?: AbortSignal
 ): Promise<boolean> {
-  return withChatUserLock(userId, () => retirePlaintextSessionTokenUnlocked(userId, signal), {
+  return withChatUserLock(userId, (held) => retirePlaintextSessionTokenUnlocked(userId, held), {
     signal
   });
 }
@@ -662,7 +664,8 @@ export async function ensurePersonalToken(
   // read, so a token another request just stored is reused, not revoked.
   // The user.props returned predates createToken's PUT, but the only consumer
   // (left-channels) doesn't care.
-  return withChatUserLock(userId, async () => {
+  // `signal` inside is the lock's: it also aborts if the lock is lost.
+  return withChatUserLock(userId, async (signal) => {
     const fresh = await getMattermostUserWithProps(userId, signal);
 
     if (hasPlaintextSessionToken(fresh)) {
@@ -837,6 +840,13 @@ export function handleMattermostError(error: unknown) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  if (error instanceof ChatUserBusyError) {
+    return NextResponse.json(
+      { error: error.message },
+      { status: error.status, headers: { "Retry-After": "2" } }
+    );
+  }
+
   const message = error instanceof Error ? error.message : "unknown error";
 
   if (error instanceof MattermostError) {
@@ -863,6 +873,7 @@ export function handleMattermostError(error: unknown) {
  * so mapping it to 401 would wrongly force the user to re-authenticate.
  */
 export function getMattermostOutageStatus(error: unknown): 502 | 503 | 504 {
+  if (error instanceof ChatUserBusyError) return 503;
   if (error instanceof MattermostError) {
     if (error.status === 504) return 504;
     if (error.status === 429 || error.status >= 500) return 503;
@@ -975,17 +986,17 @@ export function getUserLeftChannels(user: Pick<MattermostUserWithProps, "props">
 // interleave with a token being stored or retired.
 
 export async function addUserLeftChannel(userId: string, channelName: string) {
-  await withChatUserLock(userId, async () => {
-    const user = await getMattermostUserWithProps(userId);
+  await withChatUserLock(userId, async (signal) => {
+    const user = await getMattermostUserWithProps(userId, signal);
     const leftChannels = getUserLeftChannels(user);
     leftChannels.add(channelName);
     const props = { ...(user.props || {}), [CHAT_LEFT_CHANNELS_PROP]: JSON.stringify(Array.from(leftChannels)) };
-    await writeUserProps(userId, props);
+    await writeUserProps(userId, props, signal);
   });
 }
 
 export async function removeUserLeftChannel(userId: string, channelName: string, signal?: AbortSignal) {
-  await withChatUserLock(userId, async () => {
+  await withChatUserLock(userId, async (signal) => {
     const user = await getMattermostUserWithProps(userId, signal);
     const leftChannels = getUserLeftChannels(user);
     if (!leftChannels.delete(channelName)) return;
@@ -1154,8 +1165,8 @@ export async function banMattermostUserForHoursAsAdmin(username: string, hours: 
 
   const expiration = hours > 0 ? Date.now() + hours * 60 * 60 * 1000 : null;
 
-  await withChatUserLock(targetUser.id, async () => {
-    const adminUser = await getMattermostUserWithProps(targetUser.id);
+  await withChatUserLock(targetUser.id, async (signal) => {
+    const adminUser = await getMattermostUserWithProps(targetUser.id, signal);
     const props = { ...(adminUser.props || {}) };
 
     if (expiration) {
@@ -1164,15 +1175,15 @@ export async function banMattermostUserForHoursAsAdmin(username: string, hours: 
       delete props[CHAT_BAN_PROP];
     }
 
-    await writeUserProps(adminUser.id, props);
+    await writeUserProps(adminUser.id, props, signal);
   });
 
   return { user: targetUser, bannedUntil: expiration } as const;
 }
 
 export async function setUserDmPrivacy(userId: string, privacy: DmPrivacyLevel) {
-  await withChatUserLock(userId, async () => {
-    const user = await getMattermostUserWithProps(userId);
+  await withChatUserLock(userId, async (signal) => {
+    const user = await getMattermostUserWithProps(userId, signal);
     const props = { ...(user.props || {}) };
 
     if (privacy === "all") {
@@ -1181,7 +1192,7 @@ export async function setUserDmPrivacy(userId: string, privacy: DmPrivacyLevel) 
       props[CHAT_DM_PRIVACY_PROP] = privacy;
     }
 
-    await writeUserProps(userId, props);
+    await writeUserProps(userId, props, signal);
   });
 
   return privacy;

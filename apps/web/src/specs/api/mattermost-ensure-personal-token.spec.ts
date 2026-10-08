@@ -226,6 +226,56 @@ describe("ensurePersonalToken", () => {
   });
 });
 
+describe("ensurePersonalToken across app instances", () => {
+  afterEach(() => {
+    vi.doUnmock("@/server/chat-dm-fanout");
+    delete process.env.CHAT_TOKEN_LOCK_WAIT_MS;
+  });
+
+  // Two instances share Redis and Mattermost but not memory. While one is
+  // slowly migrating a user, the other must not proceed unlocked and revoke
+  // the token the first is about to return.
+  it("never hands out a token another instance has revoked", async () => {
+    const { FakeLockRedis } = await import("./helpers/fake-lock-redis");
+    const redis = new FakeLockRedis();
+    vi.doMock("@/server/chat-dm-fanout", () => ({ getChatRedis: () => redis }));
+    process.env.CHAT_TOKEN_LOCK_WAIT_MS = "200";
+
+    const instanceA = await loadModule();
+    const instanceB = await loadModule(); // fresh module graph: own memory
+
+    const old = mm.issue("u-20");
+    mm.addUser("u-20", { ecency_pat: old.secret });
+
+    // Instance A's token creation is slow (still inside each call's timeout).
+    let releaseA!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseA = resolve));
+    const realHandle = mm.handle;
+    let slowed = false;
+    mm.handle = async (url, init) => {
+      if (!slowed && init?.method === "POST" && String(url).endsWith("/users/u-20/tokens")) {
+        slowed = true;
+        await gate;
+      }
+      return realHandle(url, init);
+    };
+    vi.stubGlobal("fetch", vi.fn(mm.handle));
+
+    const a = instanceA.ensurePersonalToken("u-20");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const b = instanceB.ensurePersonalToken("u-20");
+
+    await expect(b).rejects.toBeInstanceOf(instanceB.ChatUserBusyError);
+    releaseA();
+    const tokenA = (await a).token;
+
+    expect(mm.active("u-20")).toEqual([tokenA]);
+    // B's retry reuses A's token instead of revoking it.
+    expect((await instanceB.ensurePersonalToken("u-20")).token).toBe(tokenA);
+    expect(mm.active("u-20")).toEqual([tokenA]);
+  });
+});
+
 describe("retirePlaintextSessionToken", () => {
   it("pages through every issued token", async () => {
     const { retirePlaintextSessionToken } = await loadModule();

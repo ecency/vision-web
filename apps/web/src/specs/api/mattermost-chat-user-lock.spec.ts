@@ -1,110 +1,149 @@
-import { describe, it, expect } from "vitest";
-import { withChatUserLock } from "@/server/chat-user-lock";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { FakeLockRedis } from "./helpers/fake-lock-redis";
 
-/** SET NX PX plus the compare-and-delete release, as the lock uses them. */
-class FakeRedis {
-  store = new Map<string, string>();
-  failSet = false;
+const KEY = (userId: string) => `chat:tokenlock:${userId}`;
+const tick = (ms = 5) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  async set(key: string, value: string, _px: string, _ttl: number, _nx: string) {
-    if (this.failSet) throw new Error("redis down");
-    if (this.store.has(key)) return null;
-    this.store.set(key, value);
-    return "OK";
-  }
-
-  async eval(_script: string, _keys: number, key: string, owner: string) {
-    if (this.store.get(key) === owner) {
-      this.store.delete(key);
-      return 1;
-    }
-    return 0;
-  }
+async function loadLock(env: { ttl?: number; wait?: number } = {}) {
+  process.env.CHAT_TOKEN_LOCK_TTL_MS = String(env.ttl ?? 20_000);
+  process.env.CHAT_TOKEN_LOCK_WAIT_MS = String(env.wait ?? 10_000);
+  vi.resetModules();
+  return await import("@/server/chat-user-lock");
 }
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+afterEach(() => {
+  delete process.env.CHAT_TOKEN_LOCK_TTL_MS;
+  delete process.env.CHAT_TOKEN_LOCK_WAIT_MS;
+});
 
 describe("withChatUserLock", () => {
-  // Two app instances share Redis but not memory: model that by giving each
-  // call its own module-level chain is not possible here, so the Redis path is
-  // exercised by holding the key from outside.
+  let redis: FakeLockRedis;
+
+  beforeEach(() => {
+    redis = new FakeLockRedis();
+  });
+
   it("waits for a lock held elsewhere and runs once it is released", async () => {
-    const redis = new FakeRedis();
-    redis.store.set("chat:tokenlock:u-1", "other-instance");
+    const { withChatUserLock } = await loadLock();
+    redis.put(KEY("u-1"), "other-instance");
     const order: string[] = [];
 
     const pending = withChatUserLock("u-1", async () => order.push("ran"), { redis: redis as never });
     await tick();
     expect(order).toEqual([]);
 
-    redis.store.delete("chat:tokenlock:u-1");
+    redis.delete(KEY("u-1"));
     await pending;
     expect(order).toEqual(["ran"]);
-    expect(redis.store.size).toBe(0);
+    expect(redis.size).toBe(0);
+  });
+
+  // Running unlocked would let this request revoke a token the holder is
+  // about to hand out, so contention ends in a retryable error instead.
+  it("gives up with a retryable error, without running, when the lock stays held", async () => {
+    const { withChatUserLock, ChatUserBusyError } = await loadLock({ wait: 150 });
+    redis.put(KEY("u-2"), "other-instance");
+    let ran = false;
+
+    await expect(
+      withChatUserLock("u-2", async () => {
+        ran = true;
+      }, { redis: redis as never })
+    ).rejects.toBeInstanceOf(ChatUserBusyError);
+    expect(ran).toBe(false);
+  });
+
+  it("keeps the lock for as long as the work runs", async () => {
+    const { withChatUserLock } = await loadLock({ ttl: 120 });
+    let ownedThroughout = true;
+
+    await withChatUserLock("u-3", async () => {
+      for (let i = 0; i < 6; i++) {
+        await tick(60); // well past the TTL in total
+        if (redis.get(KEY("u-3")) === undefined) ownedThroughout = false;
+      }
+    }, { redis: redis as never });
+
+    expect(ownedThroughout).toBe(true);
+    expect(redis.size).toBe(0);
+  });
+
+  it("aborts the work and reports busy when ownership is lost", async () => {
+    const { withChatUserLock, ChatUserBusyError } = await loadLock({ ttl: 120 });
+    let aborted = false;
+
+    await expect(
+      withChatUserLock("u-4", async (signal) => {
+        redis.put(KEY("u-4"), "someone-else"); // our lock was taken over
+        await new Promise<void>((resolve, reject) => {
+          signal!.addEventListener("abort", () => {
+            aborted = true;
+            reject(signal!.reason);
+          });
+          setTimeout(resolve, 1_000);
+        });
+      }, { redis: redis as never })
+    ).rejects.toBeInstanceOf(ChatUserBusyError);
+
+    expect(aborted).toBe(true);
+    expect(redis.get(KEY("u-4"))).toBe("someone-else"); // not ours to release
   });
 
   it("serialises calls for the same user within an instance", async () => {
+    const { withChatUserLock } = await loadLock();
     const order: string[] = [];
-    const slow = withChatUserLock("u-2", async () => {
+    const slow = withChatUserLock("u-5", async () => {
       order.push("a-start");
       await tick();
       order.push("a-end");
     }, { redis: null });
-    const fast = withChatUserLock("u-2", async () => order.push("b"), { redis: null });
+    const fast = withChatUserLock("u-5", async () => order.push("b"), { redis: null });
 
     await Promise.all([slow, fast]);
     expect(order).toEqual(["a-start", "a-end", "b"]);
   });
 
   it("does not hold other users up", async () => {
+    const { withChatUserLock } = await loadLock();
     const order: string[] = [];
-    const slow = withChatUserLock("u-3", async () => {
+    const slow = withChatUserLock("u-6", async () => {
       await tick();
-      order.push("u-3");
+      order.push("u-6");
     }, { redis: null });
-    await withChatUserLock("u-4", async () => order.push("u-4"), { redis: null });
+    await withChatUserLock("u-7", async () => order.push("u-7"), { redis: null });
     await slow;
 
-    expect(order).toEqual(["u-4", "u-3"]);
+    expect(order).toEqual(["u-7", "u-6"]);
   });
 
   it("releases after a failure and keeps working for the next caller", async () => {
-    const redis = new FakeRedis();
+    const { withChatUserLock } = await loadLock();
 
     await expect(
-      withChatUserLock("u-5", async () => {
+      withChatUserLock("u-8", async () => {
         throw new Error("boom");
       }, { redis: redis as never })
     ).rejects.toThrow("boom");
 
-    expect(redis.store.size).toBe(0);
-    expect(await withChatUserLock("u-5", async () => "ok", { redis: redis as never })).toBe("ok");
+    expect(redis.size).toBe(0);
+    expect(await withChatUserLock("u-8", async () => "ok", { redis: redis as never })).toBe("ok");
   });
 
-  it("never releases a lock it does not own", async () => {
-    const redis = new FakeRedis();
-    await withChatUserLock("u-6", async () => {
-      // Our lock expired and another instance took it.
-      redis.store.set("chat:tokenlock:u-6", "someone-else");
-    }, { redis: redis as never });
+  // A Redis outage must never block chat.
+  it("runs on the in-memory chain alone when Redis is unreachable", async () => {
+    const { withChatUserLock } = await loadLock();
+    redis.failAll = true;
 
-    expect(redis.store.get("chat:tokenlock:u-6")).toBe("someone-else");
-  });
-
-  it("runs anyway when Redis fails", async () => {
-    const redis = new FakeRedis();
-    redis.failSet = true;
-
-    expect(await withChatUserLock("u-7", async () => "ran", { redis: redis as never })).toBe("ran");
+    expect(await withChatUserLock("u-9", async () => "ran", { redis: redis as never })).toBe("ran");
   });
 
   it("stops waiting when the request is cancelled", async () => {
-    const redis = new FakeRedis();
-    redis.store.set("chat:tokenlock:u-8", "other-instance");
+    const { withChatUserLock } = await loadLock();
+    redis.put(KEY("u-10"), "other-instance");
     const controller = new AbortController();
     let ran = false;
 
-    const pending = withChatUserLock("u-8", async () => {
+    const pending = withChatUserLock("u-10", async () => {
       ran = true;
     }, { redis: redis as never, signal: controller.signal });
     await tick();
