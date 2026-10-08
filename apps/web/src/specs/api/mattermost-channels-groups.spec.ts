@@ -109,6 +109,7 @@ describe("channels route — group members", () => {
     body = await (await GET()).json();
     expect(body.channels.map((channel: { id: string }) => channel.id)).toContain("g-1");
     // Reopened for good, so it stays listed once read.
+    expect(prefWrites()).toHaveLength(1);
     expect(JSON.parse((prefWrites()[0][2] as { body: string }).body)).toEqual([
       { user_id: "me", category: "group_channel_show", name: "g-1", value: "true" }
     ]);
@@ -125,5 +126,21 @@ describe("channels route — group members", () => {
     // A failed lookup is not cached, so it is tried again.
     const g2Lookups = mockMmUserFetch.mock.calls.filter(([path]) => String(path).includes("in_channel=g-2"));
     expect(g2Lookups).toHaveLength(2);
+  });
+
+  it("still lists channels when reopening a group fails", async () => {
+    preferences = [{ category: "group_channel_show", name: "g-1", value: "false" }];
+    unreadIds = new Set(["g-1"]);
+    const base = mockMmUserFetch.getMockImplementation()!;
+    mockMmUserFetch.mockImplementation((path: string, token: string, init?: { method?: string }) =>
+      path === "/users/me/preferences" && init?.method === "PUT"
+        ? Promise.reject(new Error("upstream 500"))
+        : base(path, token, init)
+    );
+    const { GET } = await import("@/app/api/mattermost/channels/route");
+
+    const body = await (await GET()).json();
+
+    expect(body.channels.map((channel: { id: string }) => channel.id)).toContain("g-1");
   });
 });

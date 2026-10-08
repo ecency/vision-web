@@ -222,8 +222,8 @@ export async function GET() {
       !phantomDmIds.has(channel.id) &&
       dmContributesToUnreadBadge(channel, channelMembersById[channel.id]);
 
-    const closedGroupHasNews = (channel: MattermostChannel) =>
-      dmContributesToBadge(channel) || (channelMembersById[channel.id]?.mention_count ?? 0) > 0;
+    // The same rule that keeps a DM listed: unread, not muted, not emptied.
+    const closedGroupHasNews = dmContributesToBadge;
     const reopenedGroupIds: string[] = [];
 
     const hasCategories = (categoriesResponse.categories || []).length > 0;

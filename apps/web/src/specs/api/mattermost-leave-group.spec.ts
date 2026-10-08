@@ -36,11 +36,17 @@ describe("POST /api/mattermost/channels/[id]/leave", () => {
     const res = await POST(new Request("http://x"), params("g-1"));
 
     expect(res.status).toBe(200);
+    const paths = mockMmUserFetch.mock.calls.map(([path]) => path);
+    // Read first, so existing messages do not reopen it straight away.
+    expect(paths.indexOf("/channels/members/me/view")).toBeGreaterThan(-1);
+    expect(paths.indexOf("/channels/members/me/view")).toBeLessThan(paths.indexOf("/users/me/preferences"));
     const pref = mockMmUserFetch.mock.calls.find(([path]) => path === "/users/me/preferences");
     expect(JSON.parse(pref![2].body)).toEqual([
       { user_id: "me", category: "group_channel_show", name: "g-1", value: "false" }
     ]);
-    expect(mockMmUserFetch.mock.calls.some(([path]) => String(path).includes("/members/me"))).toBe(false);
+    expect(
+      mockMmUserFetch.mock.calls.some(([, , init]) => (init as { method?: string })?.method === "DELETE")
+    ).toBe(false);
   });
 
   it("still leaves a community channel as a member", async () => {
