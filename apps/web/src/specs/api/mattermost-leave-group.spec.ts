@@ -40,6 +40,8 @@ describe("POST /api/mattermost/channels/[id]/leave", () => {
     // Read first, so existing messages do not reopen it straight away.
     expect(paths.indexOf("/channels/members/me/view")).toBeGreaterThan(-1);
     expect(paths.indexOf("/channels/members/me/view")).toBeLessThan(paths.indexOf("/users/me/preferences"));
+    const view = mockMmUserFetch.mock.calls.find(([path]) => path === "/channels/members/me/view");
+    expect(JSON.parse(view![2].body).channel_id).toBe("g-1");
     const pref = mockMmUserFetch.mock.calls.find(([path]) => path === "/users/me/preferences");
     expect(JSON.parse(pref![2].body)).toEqual([
       { user_id: "me", category: "group_channel_show", name: "g-1", value: "false" }
@@ -58,5 +60,19 @@ describe("POST /api/mattermost/channels/[id]/leave", () => {
     expect(mockMmUserFetch).toHaveBeenCalledWith("/channels/o-1/members/me", "test-token", {
       method: "DELETE"
     });
+  });
+
+  it("leaves a group open when it cannot be marked read", async () => {
+    mockMmUserFetch.mockImplementation((path: string) => {
+      if (path === "/users/me") return Promise.resolve({ id: "me", username: "me" });
+      if (path === "/channels/g-1") return Promise.resolve({ id: "g-1", name: "hash", type: "G" });
+      if (path === "/channels/members/me/view") return Promise.reject(new Error("upstream 500"));
+      return Promise.resolve({});
+    });
+    const { POST } = await import("@/app/api/mattermost/channels/[channelId]/leave/route");
+
+    // Closing anyway would let its unread messages reopen it on the next fetch.
+    await expect(POST(new Request("http://x"), params("g-1"))).rejects.toThrow("upstream 500");
+    expect(mockMmUserFetch.mock.calls.some(([path]) => path === "/users/me/preferences")).toBe(false);
   });
 });

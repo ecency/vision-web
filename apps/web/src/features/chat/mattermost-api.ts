@@ -326,11 +326,12 @@ export function useMattermostLeaveChannel() {
       return (await safeJson(res)) as { ok: boolean };
     },
     onSuccess: async () => {
-      // Invalidate all mattermost-channels queries (matches ["mattermost-channels", username])
-      await queryClient.invalidateQueries({
-        queryKey: ["mattermost-channels"],
-        exact: false
-      });
+      // Closing a group also marks it read server-side, so the unread summary
+      // changes too; refetch both or the badge counts a row that is gone.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["mattermost-channels"], exact: false }),
+        queryClient.invalidateQueries({ queryKey: ["mattermost-unread"], exact: false })
+      ]);
     }
   });
 }
