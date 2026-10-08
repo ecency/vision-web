@@ -99,10 +99,19 @@ describe("channels route — group members", () => {
 
     let body = await (await GET()).json();
     expect(body.channels.map((channel: { id: string }) => channel.id)).not.toContain("g-1");
+    const prefWrites = () =>
+      mockMmUserFetch.mock.calls.filter(
+        ([path, , init]) => path === "/users/me/preferences" && (init as { method?: string })?.method === "PUT"
+      );
+    expect(prefWrites()).toHaveLength(0);
 
     unreadIds = new Set(["g-1"]);
     body = await (await GET()).json();
     expect(body.channels.map((channel: { id: string }) => channel.id)).toContain("g-1");
+    // Reopened for good, so it stays listed once read.
+    expect(JSON.parse((prefWrites()[0][2] as { body: string }).body)).toEqual([
+      { user_id: "me", category: "group_channel_show", name: "g-1", value: "true" }
+    ]);
   });
 
   it("reuses a group's member list across requests", async () => {

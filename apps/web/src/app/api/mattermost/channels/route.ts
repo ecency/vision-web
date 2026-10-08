@@ -50,8 +50,9 @@ const MAX_GROUPS_RESOLVED = 50;
 
 /**
  * Mattermost groups have fixed membership, so a group's member list only goes
- * stale when someone is deactivated. Kept briefly per process so that the
- * channel list, which is refetched often, does not look every group up again.
+ * stale when someone is deactivated or changes their name or picture, and a
+ * few minutes of that is fine. Kept per process so that the channel list,
+ * which is refetched often, does not look every group up again.
  */
 const GROUP_MEMBERS_TTL_MS = 10 * 60_000;
 const GROUP_MEMBERS_CACHE_MAX = 5_000;
@@ -67,12 +68,12 @@ async function getGroupMembers(channelId: string, token: string): Promise<Matter
   );
   const users = members.map((user) => ({ ...toPublicGroupUser(user), delete_at: user.delete_at }));
 
+  groupMembersCache.delete(channelId);
   if (groupMembersCache.size >= GROUP_MEMBERS_CACHE_MAX) {
     // Maps iterate in insertion order: drop the oldest entry.
     const oldest = groupMembersCache.keys().next().value;
     if (oldest !== undefined) groupMembersCache.delete(oldest);
   }
-  groupMembersCache.delete(channelId);
   groupMembersCache.set(channelId, { users, at: Date.now() });
   return users;
 }
@@ -221,6 +222,10 @@ export async function GET() {
       !phantomDmIds.has(channel.id) &&
       dmContributesToUnreadBadge(channel, channelMembersById[channel.id]);
 
+    const closedGroupHasNews = (channel: MattermostChannel) =>
+      dmContributesToBadge(channel) || (channelMembersById[channel.id]?.mention_count ?? 0) > 0;
+    const reopenedGroupIds: string[] = [];
+
     const hasCategories = (categoriesResponse.categories || []).length > 0;
     const filteredChannels = channels.filter((channel) => {
       // Filter out Mattermost team default channels
@@ -228,7 +233,10 @@ export async function GET() {
 
       // A closed group stays hidden until it has something unread, as a DM does.
       if (channel.type === "G") {
-        return !closedGroupIds.has(channel.id) || dmContributesToBadge(channel);
+        if (!closedGroupIds.has(channel.id)) return true;
+        if (!closedGroupHasNews(channel)) return false;
+        reopenedGroupIds.push(channel.id);
+        return true;
       }
 
       if (channel.type !== "D") return true;
@@ -262,6 +270,23 @@ export async function GET() {
 
       return true;
     });
+
+    // A closed group with news is open again, for good: once read it must not
+    // drop out of the list while the viewer is in it. Mattermost's own web app
+    // makes the same flip client-side when a post arrives. Best effort.
+    if (reopenedGroupIds.length) {
+      await mmUserFetch(`/users/${encodeURIComponent(currentUser.id)}/preferences`, token, {
+        method: "PUT",
+        body: JSON.stringify(
+          reopenedGroupIds.map((id) => ({
+            user_id: currentUser.id,
+            category: "group_channel_show",
+            name: id,
+            value: "true"
+          }))
+        )
+      }).catch((error) => console.warn("MM channels: unable to reopen groups", { error }));
+    }
 
     // DM partners were already resolved above (one batched lookup covering every
     // DM channel, so it is a superset of what the filtered list needs).
