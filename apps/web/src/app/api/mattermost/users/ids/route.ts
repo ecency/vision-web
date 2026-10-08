@@ -30,7 +30,17 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const raw: unknown = body?.ids;
 
-  if (!Array.isArray(raw) || raw.some((id) => typeof id !== "string")) {
+  if (!Array.isArray(raw)) {
+    return NextResponse.json({ error: "ids must be an array of strings" }, { status: 400 });
+  }
+
+  // Bound the work before touching the elements; duplicates are tolerated
+  // up to twice the cap, the deduplicated list is checked again below.
+  if (raw.length > MAX_IDS * 2) {
+    return NextResponse.json({ error: `at most ${MAX_IDS} ids per request` }, { status: 400 });
+  }
+
+  if (raw.some((id) => typeof id !== "string")) {
     return NextResponse.json({ error: "ids must be an array of strings" }, { status: 400 });
   }
 

@@ -6,6 +6,9 @@ function resp(status: number, body: unknown) {
   return { ok: status >= 200 && status < 300, status, text: async () => text };
 }
 
+const ENV_KEYS = ["MATTERMOST_BASE_URL", "MATTERMOST_ADMIN_TOKEN", "MATTERMOST_TEAM_ID"] as const;
+const savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+
 async function loadModule() {
   process.env.MATTERMOST_BASE_URL = "https://chat.test/api/v4";
   process.env.MATTERMOST_ADMIN_TOKEN = "admin-token";
@@ -24,6 +27,10 @@ describe("getPrivateChannelRecipientIds", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    for (const key of ENV_KEYS) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
   });
 
   it("reads the other member of a direct channel from its name", async () => {
@@ -70,6 +77,33 @@ describe("getPrivateChannelRecipientIds", () => {
     await expect(
       getPrivateChannelRecipientIds({ id: "g1", name: "hash", type: "G" }, "me", "tok")
     ).rejects.toThrow();
+  });
+});
+
+describe("lookupMattermostUser", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("resolves an unknown username to null", async () => {
+    const { lookupMattermostUser } = await loadModule();
+    fetchMock.mockResolvedValue(resp(404, { id: "app.user.missing_account.const" }));
+
+    expect(await lookupMattermostUser("ghost")).toBeNull();
+  });
+
+  it("throws on an upstream failure instead of reporting the user missing", async () => {
+    const { lookupMattermostUser } = await loadModule();
+    fetchMock.mockResolvedValue(resp(502, { message: "bad gateway" }));
+
+    await expect(lookupMattermostUser("bob")).rejects.toThrow();
   });
 });
 

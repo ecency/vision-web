@@ -38,6 +38,15 @@ function request(message: string) {
 
 const params = { params: Promise.resolve({ channelId: CHANNEL_ID }) };
 
+function asGroupChannel() {
+  const base = mockMmUserFetch.getMockImplementation()!;
+  mockMmUserFetch.mockImplementation((path: string, ...rest: unknown[]) =>
+    path === `/channels/${CHANNEL_ID}`
+      ? Promise.resolve({ id: CHANNEL_ID, name: "group-hash", display_name: "a, b, c", type: "G" })
+      : base(path, ...rest)
+  );
+}
+
 function allowFanout() {
   mockCheckDmFanout.mockResolvedValue({
     allowed: true,
@@ -125,12 +134,14 @@ describe("posts route — DM fan-out runs last", () => {
 
   it("counts every other member of a group as a recipient", async () => {
     const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    asGroupChannel();
     mockRecipientIds.mockResolvedValue(["u-2", "u-3", "u-4"]);
     allowFanout();
 
     const res = await POST(request("hello group"), params);
 
     expect(res.status).toBe(200);
+    expect(mockRecipientIds.mock.calls[0][0]).toMatchObject({ type: "G" });
     expect(mockCheckDmFanout.mock.calls[0][0]).toMatchObject({
       recipients: ["u-2", "u-3", "u-4"]
     });
@@ -138,6 +149,7 @@ describe("posts route — DM fan-out runs last", () => {
 
   it("explains a group larger than the cap instead of asking to retry later", async () => {
     const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    asGroupChannel();
     mockRecipientIds.mockResolvedValue(["u-2", "u-3", "u-4", "u-5", "u-6", "u-7"]);
     mockCheckDmFanout.mockResolvedValue({
       allowed: false,
@@ -154,6 +166,7 @@ describe("posts route — DM fan-out runs last", () => {
 
   it("asks to retry later when a group exactly at the cap is blocked", async () => {
     const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    asGroupChannel();
     mockRecipientIds.mockResolvedValue(["u-2", "u-3", "u-4", "u-5", "u-6"]);
     mockCheckDmFanout.mockResolvedValue({
       allowed: false,
@@ -169,6 +182,7 @@ describe("posts route — DM fan-out runs last", () => {
 
   it("sends nothing when a group's members cannot be read", async () => {
     const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    asGroupChannel();
     mockRecipientIds.mockRejectedValue(new Error("upstream down"));
     allowFanout();
 

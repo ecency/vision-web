@@ -448,11 +448,27 @@ export async function getUserChannels(userId: string): Promise<MattermostChannel
 
 export async function findMattermostUser(username: string): Promise<MattermostUser | null> {
   try {
+    return await lookupMattermostUser(username);
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Like findMattermostUser, but only "no such user" (404) resolves to null.
+ * Timeouts and other upstream failures throw, so a caller that tells users
+ * someone "is not on chat" does not say so during an outage.
+ */
+export async function lookupMattermostUser(username: string): Promise<MattermostUser | null> {
+  try {
     return await mmFetch<MattermostUser>(`/users/username/${encodeURIComponent(username)}`, {
       headers: getAdminHeaders()
     });
   } catch (error) {
-    return null;
+    if (error instanceof MattermostError && error.status === 404) {
+      return null;
+    }
+    throw error;
   }
 }
 

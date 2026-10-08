@@ -50,8 +50,10 @@ class FakeRedis {
     const fresh = members.filter((m) => !list.some((e) => e.member === m)).length;
 
     if (fresh > 0 && count + fresh > limit) {
-      const sorted = [...list].sort((a, b) => a.score - b.score);
-      const freeing = sorted[count + fresh - limit - 1];
+      const outside = [...list]
+        .sort((a, b) => a.score - b.score)
+        .filter((e) => !members.includes(e.member));
+      const freeing = outside[count + fresh - limit - 1];
       return [0, count, freeing ? freeing.score : -1];
     }
 
@@ -137,7 +139,7 @@ describe("checkDmFanout", () => {
 
     // A blocked attempt must not consume a slot or extend the window, or a
     // spammer would push their own earlier recipients out and reset the cap.
-    expect(redis.sets.get("chat:dmfanout:u-1")).toHaveLength(DM_FANOUT_MAX_NEW);
+    expect(redis.sets.get("chat:dmfanout:v2:u-1")).toHaveLength(DM_FANOUT_MAX_NEW);
   });
 
   // The cap is on how many people you reach, not how much you say to them.
@@ -210,7 +212,7 @@ describe("checkDmFanout", () => {
     );
 
     expect(results.filter((r) => r.allowed)).toHaveLength(DM_FANOUT_MAX_NEW);
-    expect(redis.sets.get("chat:dmfanout:u-1")).toHaveLength(DM_FANOUT_MAX_NEW);
+    expect(redis.sets.get("chat:dmfanout:v2:u-1")).toHaveLength(DM_FANOUT_MAX_NEW);
   });
 
   // A group reaches every member, so it costs one slot per member.
@@ -219,7 +221,7 @@ describe("checkDmFanout", () => {
 
     expect(res.allowed).toBe(true);
     expect(res.recipients).toBe(3);
-    expect(redis.sets.get("chat:dmfanout:u-1")).toHaveLength(3);
+    expect(redis.sets.get("chat:dmfanout:v2:u-1")).toHaveLength(3);
   });
 
   it("rejects a group that does not fit and records none of its members", async () => {
@@ -230,7 +232,7 @@ describe("checkDmFanout", () => {
     const blocked = await send(redis, ["x", "y", "z"], { createdAt: NEW_ACCOUNT });
 
     expect(blocked.allowed).toBe(false);
-    expect(redis.sets.get("chat:dmfanout:u-1")).toHaveLength(DM_FANOUT_MAX_NEW - 2);
+    expect(redis.sets.get("chat:dmfanout:v2:u-1")).toHaveLength(DM_FANOUT_MAX_NEW - 2);
   });
 
   it("only charges a group for the members not already messaged", async () => {
@@ -254,7 +256,7 @@ describe("checkDmFanout", () => {
     const res = await send(redis, [], { createdAt: NEW_ACCOUNT });
 
     expect(res.allowed).toBe(true);
-    expect(redis.sets.get("chat:dmfanout:u-1")).toBeUndefined();
+    expect(redis.sets.get("chat:dmfanout:v2:u-1")).toBeUndefined();
   });
 
   // Freeing the oldest slot is not enough when a group needs several.
@@ -269,6 +271,22 @@ describe("checkDmFanout", () => {
     // Three slots are needed, so the third oldest entry (written at NOW + 2s) decides.
     expect(blocked.retryAfterSeconds).toBe(
       Math.ceil((NOW + 2000 + DM_FANOUT_WINDOW_MS - at) / 1000)
+    );
+  });
+
+  // Retrying when an entry that belongs to the send expires would fail again,
+  // because that member then has to be re-added alongside the new one.
+  it("ignores the send's own members when reporting when it fits", async () => {
+    for (let i = 0; i < DM_FANOUT_MAX_NEW; i++) {
+      await send(redis, `dm-${i}`, { createdAt: NEW_ACCOUNT, at: NOW + i * 1000 });
+    }
+
+    const at = NOW + 10_000;
+    const blocked = await send(redis, ["dm-0", "x"], { createdAt: NEW_ACCOUNT, at });
+
+    // dm-0 (written at NOW) is part of the send, so dm-1 (NOW + 1s) decides.
+    expect(blocked.retryAfterSeconds).toBe(
+      Math.ceil((NOW + 1000 + DM_FANOUT_WINDOW_MS - at) / 1000)
     );
   });
 });

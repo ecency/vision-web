@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  findMattermostUser,
+  lookupMattermostUser,
   getMattermostTokenFromCookies,
   handleMattermostError,
   mmUserFetch
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const found = await Promise.all(usernames.map((name) => findMattermostUser(name)));
+    const found = await Promise.all(usernames.map((name) => lookupMattermostUser(name)));
     const missing = usernames.filter((_, i) => !found[i]);
     if (missing.length) {
       return NextResponse.json(

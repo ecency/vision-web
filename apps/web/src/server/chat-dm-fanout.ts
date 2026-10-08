@@ -24,7 +24,8 @@ const REDIS_URL = process.env.REDIS_URL || "redis://redis:6379";
 // which then serialises within each instance only.
 const DISABLED = !!process.env.VITEST || process.env.CHAT_DM_FANOUT_DISABLE === "1";
 
-const KEY_PREFIX = "chat:dmfanout:";
+// v2 records recipient user ids; v1 recorded channel ids and is left to expire.
+const KEY_PREFIX = "chat:dmfanout:v2:";
 
 function envInt(name: string, fallback: number) {
   const parsed = Number(process.env[name]);
@@ -77,13 +78,24 @@ for i = 4, #ARGV do
 end
 
 if fresh > 0 and count + fresh > limit then
-  -- The send fits once enough entries age out to make room for all of it,
-  -- so report the entry whose expiry frees the last slot needed.
+  -- The send fits once enough entries age out to make room for all of it.
+  -- An expiring entry that belongs to this send frees nothing, because it
+  -- becomes fresh again, so only entries outside the send are counted.
+  local requested = {}
+  for i = 4, #ARGV do requested[ARGV[i]] = true end
   local need = count + fresh - limit
-  local oldest = redis.call('ZRANGE', key, need - 1, need - 1, 'WITHSCORES')
-  local oldestScore = -1
-  if oldest[2] then oldestScore = tonumber(oldest[2]) end
-  return {0, count, oldestScore}
+  local entries = redis.call('ZRANGE', key, 0, -1, 'WITHSCORES')
+  local freesAt = -1
+  for i = 1, #entries, 2 do
+    if not requested[entries[i]] then
+      need = need - 1
+      if need == 0 then
+        freesAt = tonumber(entries[i + 1])
+        break
+      end
+    end
+  end
+  return {0, count, freesAt}
 end
 
 for i = 4, #ARGV do
@@ -174,7 +186,7 @@ export async function checkDmFanout(
   if (!redis || !members.length) return { ...ALLOW_UNMEASURED, limit };
 
   try {
-    const [allowed, recipients, oldestScore] = (await redis.eval(
+    const [allowed, recipients, freesAtScore] = (await redis.eval(
       RESERVE_SCRIPT,
       1,
       `${KEY_PREFIX}${userId}`,
@@ -189,7 +201,7 @@ export async function checkDmFanout(
     }
 
     const freesAt =
-      oldestScore >= 0 ? oldestScore + DM_FANOUT_WINDOW_MS : now + DM_FANOUT_WINDOW_MS;
+      freesAtScore >= 0 ? freesAtScore + DM_FANOUT_WINDOW_MS : now + DM_FANOUT_WINDOW_MS;
 
     return {
       allowed: false,

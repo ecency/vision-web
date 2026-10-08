@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  findMattermostUser,
+  lookupMattermostUser,
   getMattermostTokenFromCookies,
   handleMattermostError,
   mmUserFetch,
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
     // Fetch both users in parallel - they don't depend on each other
     const [targetUser, currentUser] = await Promise.all([
-      findMattermostUser(username),
+      lookupMattermostUser(username),
       mmUserFetch<MattermostUser>(`/users/me`, token)
     ]);
 

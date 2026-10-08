@@ -6,7 +6,7 @@ const mockPrivacy = vi.fn();
 const mockCheckDmFanout = vi.fn();
 
 vi.mock("@/server/mattermost", () => ({
-  findMattermostUser: (...args: unknown[]) => mockFindUser(...args),
+  lookupMattermostUser: (...args: unknown[]) => mockFindUser(...args),
   getMattermostTokenFromCookies: () => Promise.resolve("test-token"),
   handleMattermostError: () => ({ status: 500 }),
   mmUserFetch: (...args: unknown[]) => mockMmUserFetch(...args)
@@ -175,5 +175,15 @@ describe("POST /api/mattermost/group", () => {
       ["bob", ["alice", "carol"]],
       ["carol", ["alice", "bob"]]
     ]);
+  });
+
+  it("reports an upstream failure instead of calling members missing", async () => {
+    const { POST } = await import("@/app/api/mattermost/group/route");
+    mockFindUser.mockRejectedValue(new Error("timeout"));
+
+    const res = await POST(request({ usernames: ["bob", "carol"] }));
+
+    expect(res.status).toBe(500);
+    expect(createCalls()).toHaveLength(0);
   });
 });
