@@ -26,7 +26,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       token
     );
 
-    return NextResponse.json({ members });
+    // Per-member notification settings are the member's own business.
+    return NextResponse.json({
+      members: members.map(({ notify_props: _notifyProps, ...member }) => member)
+    });
   } catch (error) {
     return handleMattermostError(error);
   }

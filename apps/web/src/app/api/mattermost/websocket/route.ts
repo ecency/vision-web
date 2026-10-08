@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { WebSocket } from "ws";
 import type { WebSocketServer } from "ws";
+import { scrubChatSocketFrame } from "@/server/chat-public-user";
 
 const MATTERMOST_TOKEN_COOKIE = "mm_pat" as const;
 const TOKEN_QUERY_PARAM = "token" as const;
@@ -257,7 +258,13 @@ export function UPGRADE(
       }
 
       if (client.readyState === WebSocket.OPEN) {
-        client.send(data, { binary: isBinary });
+        if (isBinary) {
+          client.send(data, { binary: true });
+        } else {
+          const text = data.toString();
+          const scrubbed = scrubChatSocketFrame(text);
+          client.send(scrubbed === text ? data : scrubbed, { binary: false });
+        }
       }
     } catch (error) {
       console.error("Chat WebSocket: message forward failed", error);

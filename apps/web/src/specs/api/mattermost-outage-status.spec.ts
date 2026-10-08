@@ -45,6 +45,18 @@ describe("getMattermostOutageStatus — bootstrap error classification", () => {
     vi.stubGlobal("fetch", fetchMock);
   });
 
+  // Another request is updating the user's session: retry, not "chat is down".
+  it("maps a busy session lock to 503 and answers it with Retry-After", async () => {
+    const { getMattermostOutageStatus, handleMattermostError, ChatUserBusyError } =
+      await loadModule();
+    const busy = new ChatUserBusyError();
+
+    expect(getMattermostOutageStatus(busy)).toBe(503);
+    const res = handleMattermostError(busy);
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBe("2");
+  });
+
   it("maps an upstream 5xx to 503 (transient, retryable)", async () => {
     fetchMock.mockResolvedValueOnce(resp(500, "mm exploded"));
     const err = await captureProvisioningError();

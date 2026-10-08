@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import {
   getMattermostTokenFromCookies,
   handleMattermostError,
-  mmUserFetch
+  mmUserFetch,
+  toPublicChatUserMap
 } from "@/server/mattermost";
 
 interface MattermostUser {
@@ -66,7 +67,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ channel
 
     return NextResponse.json({
       posts: orderedPosts,
-      users
+      users: toPublicChatUserMap(users)
     });
   } catch (error) {
     return handleMattermostError(error);
