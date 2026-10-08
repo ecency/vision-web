@@ -24,7 +24,7 @@ export const MAX_MENTION_JOINS = 10;
 
 export interface MentionJoinResult {
   added: string[];
-  /** Set when the fan-out limit refused the whole batch. */
+  /** Set when nobody was added because of the limit, or because it could not be checked. */
   limited?: boolean;
 }
 
@@ -66,6 +66,10 @@ export async function addMentionedUsersToChannel({
   // checked (Redis down or disabled) nobody is added. The post itself is
   // unaffected.
   if (!fanout.measured) {
+    console.warn("MM posts: mention auto-join skipped, limit could not be checked", {
+      senderId,
+      joiners: joiners.length
+    });
     return { added: [], limited: true };
   }
 
