@@ -43,7 +43,8 @@ describe("addMentionedUsersToChannel", () => {
     expect(mockCheckDmFanout).toHaveBeenCalledWith({
       userId: "id-sender",
       recipients: ["id-alice"],
-      accountCreatedAt: 1
+      accountCreatedAt: 1,
+      scope: "mention"
     });
     expect(mockEnsureChannel).toHaveBeenCalledWith("id-alice", "chan");
     expect(result).toEqual({ added: ["id-alice"] });

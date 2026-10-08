@@ -11,6 +11,9 @@ vi.mock("@/server/mattermost", () => ({
   mmUserFetch: (...args: unknown[]) => mockMmUserFetch(...args)
 }));
 
+let unreadIds = new Set<string>();
+let preferences: Array<{ category: string; name: string; value: string }> = [];
+
 const CHANNELS = [
   { id: "g-1", name: "hash1", display_name: "alice, bob, me", type: "G" },
   { id: "g-2", name: "hash2", display_name: "carol, dave, me", type: "G" },
@@ -21,7 +24,7 @@ vi.mock("@/app/api/mattermost/channels/helpers", () => ({
   fetchAllChannelPages: () => Promise.resolve(CHANNELS),
   fetchAllChannelMemberPages: () => Promise.resolve([]),
   channelUnreadMessageCount: () => 0,
-  dmContributesToUnreadBadge: () => false,
+  dmContributesToUnreadBadge: (channel: { id: string }) => unreadIds.has(channel.id),
   fetchDeactivatedDmPartners: () => Promise.resolve({ usersById: {}, excludedChannelIds: new Set() }),
   findPhantomUnreadDmChannelIds: () => Promise.resolve(new Set()),
   isChannelUnreadSuppressed: () => false,
@@ -42,6 +45,10 @@ const member = (id: string, extra: Record<string, unknown> = {}) => ({
 describe("channels route — group members", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The route caches group members per process.
+    vi.resetModules();
+    unreadIds = new Set();
+    preferences = [];
     mockMmUserFetch.mockImplementation((path: string) => {
       if (path === "/users/me") return Promise.resolve({ id: "me", username: "me" });
       if (path.includes("in_channel=g-1")) {
@@ -49,6 +56,7 @@ describe("channels route — group members", () => {
       }
       if (path.includes("in_channel=g-2")) return Promise.reject(new Error("upstream 500"));
       if (path.includes("/channels/categories")) return Promise.resolve({ categories: [], order: [] });
+      if (path === "/users/me/preferences") return Promise.resolve(preferences);
       return Promise.resolve([]);
     });
   });
@@ -83,5 +91,30 @@ describe("channels route — group members", () => {
       .filter((path) => path.startsWith("/users?in_channel="));
     expect(memberLookups).toHaveLength(2);
     expect(memberLookups.some((path) => path.includes("o-1"))).toBe(false);
+  });
+
+  it("hides a group the viewer closed, until it has something unread", async () => {
+    preferences = [{ category: "group_channel_show", name: "g-1", value: "false" }];
+    const { GET } = await import("@/app/api/mattermost/channels/route");
+
+    let body = await (await GET()).json();
+    expect(body.channels.map((channel: { id: string }) => channel.id)).not.toContain("g-1");
+
+    unreadIds = new Set(["g-1"]);
+    body = await (await GET()).json();
+    expect(body.channels.map((channel: { id: string }) => channel.id)).toContain("g-1");
+  });
+
+  it("reuses a group's member list across requests", async () => {
+    const { GET } = await import("@/app/api/mattermost/channels/route");
+
+    await GET();
+    await GET();
+
+    const g1Lookups = mockMmUserFetch.mock.calls.filter(([path]) => String(path).includes("in_channel=g-1"));
+    expect(g1Lookups).toHaveLength(1);
+    // A failed lookup is not cached, so it is tried again.
+    const g2Lookups = mockMmUserFetch.mock.calls.filter(([path]) => String(path).includes("in_channel=g-2"));
+    expect(g2Lookups).toHaveLength(2);
   });
 });

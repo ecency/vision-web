@@ -138,6 +138,15 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify([currentUser.id, ...recipients])
     });
 
+    // Mattermost returns the existing group for the same members, which the
+    // creator may have closed. Starting it again shows it again.
+    await mmUserFetch(`/users/${encodeURIComponent(currentUser.id)}/preferences`, token, {
+      method: "PUT",
+      body: JSON.stringify([
+        { user_id: currentUser.id, category: "group_channel_show", name: channel.id, value: "true" }
+      ])
+    }).catch((error) => console.warn("MM group: unable to reopen group", { error }));
+
     return NextResponse.json({ channelId: channel.id });
   } catch (error) {
     return handleMattermostError(error);

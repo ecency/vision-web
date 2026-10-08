@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import i18next from "i18next";
 import type { MattermostPostsResponse, MattermostUser } from "../mattermost-api";
 import { getUserDisplayName } from "../format-utils";
 import { getGroupTitle } from "../group-utils";
@@ -94,7 +95,9 @@ export function useChannelMetadata({
 
     if (isGroup) {
       const count = channelData?.memberCount ?? (groupUsers?.length ? groupUsers.length + 1 : undefined);
-      return count !== undefined ? `Group • ${count} people` : "Group";
+      return count !== undefined
+        ? i18next.t("chat.channel-type-group", { count })
+        : i18next.t("chat.new-group-members");
     }
 
     const baseName = channelData?.community ? `${channelData.community} channel` : "Channel";

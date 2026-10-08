@@ -172,11 +172,18 @@ export async function checkDmFanout(
     userId,
     recipients,
     accountCreatedAt,
+    scope,
     now = Date.now()
   }: {
     userId: string;
     recipients: string[];
     accountCreatedAt?: number;
+    /**
+     * A separate budget with the same limits, for reach that is not a private
+     * conversation (people pulled into a public channel by a mention), so it
+     * never uses up the sender's direct messages.
+     */
+    scope?: "mention";
     now?: number;
   },
   redis: RedisClient | null = getChatRedis()
@@ -189,7 +196,7 @@ export async function checkDmFanout(
     const [allowed, recipients, freesAtScore] = (await redis.eval(
       RESERVE_SCRIPT,
       1,
-      `${KEY_PREFIX}${userId}`,
+      `${KEY_PREFIX}${scope ? `${scope}:` : ""}${userId}`,
       String(now),
       String(DM_FANOUT_WINDOW_MS),
       String(limit),

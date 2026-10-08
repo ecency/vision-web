@@ -68,6 +68,35 @@ describe("POST /api/mattermost/group", () => {
     expect(JSON.parse(createCalls()[0][2].body)).toEqual(["me", "id-bob", "id-carol"]);
   });
 
+  it("shows the group again for its creator, who may have closed it", async () => {
+    mockMmUserFetch.mockImplementation((path: string) => {
+      if (path === "/users/me") {
+        return Promise.resolve({ id: "me", username: "alice", create_at: ESTABLISHED });
+      }
+      if (path === "/channels/group") return Promise.resolve({ id: "group-1" });
+      if (path === "/users/me/preferences") return Promise.resolve([]);
+      return Promise.reject(new Error(`unexpected ${path}`));
+    });
+    const { POST } = await import("@/app/api/mattermost/group/route");
+
+    await POST(request({ usernames: ["bob", "carol"] }));
+
+    const pref = mockMmUserFetch.mock.calls.find(([path]) => path === "/users/me/preferences");
+    expect(JSON.parse(pref![2].body)).toEqual([
+      { user_id: "me", category: "group_channel_show", name: "group-1", value: "true" }
+    ]);
+  });
+
+  it("still answers with the group when reopening it fails", async () => {
+    // The default mock rejects the preference write.
+    const { POST } = await import("@/app/api/mattermost/group/route");
+
+    const res = await POST(request({ usernames: ["bob", "carol"] }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ channelId: "group-1" });
+  });
+
   it("counts every member against the fan-out limit", async () => {
     const { POST } = await import("@/app/api/mattermost/group/route");
 

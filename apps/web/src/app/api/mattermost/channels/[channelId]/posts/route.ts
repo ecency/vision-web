@@ -461,8 +461,8 @@ export async function POST(
     // --- Background tasks (non-blocking) ---
 
     // Pull @mentioned people who are not yet members into a public channel, so
-    // the mention reaches them (async). Bounded in ./server/chat-mentions.
-    // Mattermost's native @mention system handles the notification itself.
+    // the conversation shows up for them (async, bounded in
+    // server/chat-mentions). Mattermost notifies the members it already had.
     if (mentionedUsers.length && channel.type === "O") {
       addMentionedUsersToChannel({
         channelId: channel.id,

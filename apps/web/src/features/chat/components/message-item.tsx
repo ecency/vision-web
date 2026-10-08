@@ -17,6 +17,7 @@ import { MessageTranslate } from "./message-translate";
 import { PeopleListModal } from "./people-list-modal";
 import { formatReactorNames, getReactorName, groupReactions } from "../group-utils";
 import clsx from "clsx";
+import i18next from "i18next";
 import React, { memo, useEffect, useState } from "react";
 import type { MattermostPost, MattermostUser } from "../mattermost-api";
 
@@ -488,7 +489,7 @@ function MessageItemInner({
                 {groupedReactions.length > 0 && (
                   <DropdownItemWithIcon
                     icon={emojiIconSvg}
-                    label="Reactions"
+                    label={i18next.t("chat.reactions")}
                     onClick={() => setShowReactions(true)}
                   />
                 )}
@@ -519,7 +520,7 @@ function MessageItemInner({
         <PeopleListModal
           show={showReactions}
           onHide={() => setShowReactions(false)}
-          title="Reactions"
+          title={i18next.t("chat.reactions")}
           sections={groupedReactions.map((reaction) => ({
             key: reaction.emojiName,
             heading: (

@@ -48,6 +48,35 @@ interface MattermostUser {
 const GROUP_MEMBERS_PAGE = 10;
 const MAX_GROUPS_RESOLVED = 50;
 
+/**
+ * Mattermost groups have fixed membership, so a group's member list only goes
+ * stale when someone is deactivated. Kept briefly per process so that the
+ * channel list, which is refetched often, does not look every group up again.
+ */
+const GROUP_MEMBERS_TTL_MS = 10 * 60_000;
+const GROUP_MEMBERS_CACHE_MAX = 5_000;
+const groupMembersCache = new Map<string, { users: MattermostUser[]; at: number }>();
+
+async function getGroupMembers(channelId: string, token: string): Promise<MattermostUser[]> {
+  const cached = groupMembersCache.get(channelId);
+  if (cached && Date.now() - cached.at < GROUP_MEMBERS_TTL_MS) return cached.users;
+
+  const members = await mmUserFetch<MattermostUser[]>(
+    `/users?in_channel=${encodeURIComponent(channelId)}&page=0&per_page=${GROUP_MEMBERS_PAGE}`,
+    token
+  );
+  const users = members.map((user) => ({ ...toPublicGroupUser(user), delete_at: user.delete_at }));
+
+  if (groupMembersCache.size >= GROUP_MEMBERS_CACHE_MAX) {
+    // Maps iterate in insertion order: drop the oldest entry.
+    const oldest = groupMembersCache.keys().next().value;
+    if (oldest !== undefined) groupMembersCache.delete(oldest);
+  }
+  groupMembersCache.delete(channelId);
+  groupMembersCache.set(channelId, { users, at: Date.now() });
+  return users;
+}
+
 function toPublicGroupUser(user: MattermostUser): MattermostUser {
   return {
     id: user.id,
@@ -129,6 +158,11 @@ export async function GET() {
         .filter((pref) => pref.category === "direct_channel_show")
         .map((pref) => [pref.name, pref.value])
     );
+    const closedGroupIds = new Set(
+      (preferences || [])
+        .filter((pref) => pref.category === "group_channel_show" && pref.value === "false")
+        .map((pref) => pref.name)
+    );
     const directMessageCategoryIds = new Set(
       (categoriesResponse.categories || [])
         .find((category) => category.type === "direct_messages")
@@ -191,6 +225,11 @@ export async function GET() {
     const filteredChannels = channels.filter((channel) => {
       // Filter out Mattermost team default channels
       if (isMattermostDefaultChannel(channel)) return false;
+
+      // A closed group stays hidden until it has something unread, as a DM does.
+      if (channel.type === "G") {
+        return !closedGroupIds.has(channel.id) || dmContributesToBadge(channel);
+      }
 
       if (channel.type !== "D") return true;
 
@@ -322,10 +361,7 @@ export async function GET() {
           .slice(0, MAX_GROUPS_RESOLVED)
           .map(async (channel) => {
             try {
-              const members = await mmUserFetch<MattermostUser[]>(
-                `/users?in_channel=${encodeURIComponent(channel.id)}&page=0&per_page=${GROUP_MEMBERS_PAGE}`,
-                token
-              );
+              const members = await getGroupMembers(channel.id, token);
               const others = members
                 .filter((user) => user.id !== currentUser.id && !user.delete_at)
                 .map(toPublicGroupUser);

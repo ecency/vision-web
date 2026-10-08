@@ -289,4 +289,21 @@ describe("checkDmFanout", () => {
       Math.ceil((NOW + 1000 + DM_FANOUT_WINDOW_MS - at) / 1000)
     );
   });
+
+  it("keeps mention joins on their own budget, apart from direct messages", async () => {
+    const mention = (i: number) =>
+      checkDmFanout(
+        { userId: "u-1", recipients: [`m-${i}`], accountCreatedAt: NEW_ACCOUNT, now: NOW, scope: "mention" },
+        redis as never
+      );
+    for (let i = 0; i < DM_FANOUT_MAX_NEW; i++) {
+      expect((await mention(i)).allowed).toBe(true);
+    }
+    expect((await mention(99)).allowed).toBe(false);
+
+    // The DM budget is untouched by the mentions above.
+    const dm = await send(redis, "dm-0", { createdAt: NEW_ACCOUNT });
+    expect(dm.allowed).toBe(true);
+    expect(dm.recipients).toBe(1);
+  });
 });

@@ -1,13 +1,16 @@
 /**
- * Adding @mentioned people to a public channel, so the mention reaches them.
+ * Adding @mentioned people who are not members to a public channel, so the
+ * conversation shows up for them. It runs after the post, so the mention that
+ * pulled them in is not itself notified; they find it in the channel.
  *
  * Bounded on three sides, since every added person is pulled into a channel
- * and notified on someone else's say-so:
+ * on someone else's say-so:
  * - only the first MAX_MENTION_JOINS distinct mentions of a message are looked at
  * - only people who already have an active chat account are added; nobody is
  *   provisioned or reactivated by being mentioned
- * - the people added count as recipients in the sender's DM fan-out limit,
- *   all or nothing, the same as if each had been messaged directly
+ * - the people added count against a per-sender limit, all or nothing, with
+ *   the same thresholds as direct messages but its own budget, so mentioning
+ *   people in a channel never stops the sender from messaging anyone
  */
 import { checkDmFanout } from "./chat-dm-fanout";
 import {
@@ -55,7 +58,8 @@ export async function addMentionedUsersToChannel({
   const fanout = await checkDmFanout({
     userId: senderId,
     recipients: joiners.map((user) => user.id),
-    accountCreatedAt: senderCreatedAt
+    accountCreatedAt: senderCreatedAt,
+    scope: "mention"
   });
 
   if (!fanout.allowed) {
