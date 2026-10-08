@@ -968,6 +968,39 @@ export function toPublicChatUserMap<T extends object>(users: Record<string, T>) 
   );
 }
 
+/**
+ * The people other than the sender that a post into a direct or group channel
+ * reaches, as user ids. A direct channel is named `<id>__<id>`, so its other
+ * member needs no lookup. A group (3 to 8 members) lists its members.
+ *
+ * Falls back to the channel id when the members cannot be read, which counts
+ * the conversation as a single recipient, as the limiter did before groups.
+ */
+export async function getPrivateChannelRecipientIds(
+  channel: Pick<MattermostChannel, "id" | "name" | "type">,
+  senderId: string,
+  token: string
+): Promise<string[]> {
+  if (channel.type === "D") {
+    const ids = channel.name.split("__");
+    if (ids.length === 2 && ids.every(Boolean)) {
+      return ids.filter((id) => id !== senderId);
+    }
+    return [channel.id];
+  }
+
+  try {
+    const members = await mmUserFetch<{ user_id: string }[]>(
+      `/channels/${encodeURIComponent(channel.id)}/members?page=0&per_page=50`,
+      token
+    );
+    const ids = members.map((member) => member.user_id).filter((id) => id && id !== senderId);
+    return ids.length ? Array.from(new Set(ids)) : [channel.id];
+  } catch {
+    return [channel.id];
+  }
+}
+
 export function getUserLeftChannels(user: Pick<MattermostUserWithProps, "props">): Set<string> {
   const raw = user.props?.[CHAT_LEFT_CHANNELS_PROP];
   if (!raw) return new Set();

@@ -8,10 +8,11 @@
  * one account can open a conversation with in a rolling window: the signal
  * every observed spray shares, and one an ordinary conversation never trips.
  *
- * State is a Redis sorted set per sender, holding the channel ids they have
+ * State is a Redis sorted set per sender, holding the user ids they have
  * messaged, scored by send time. Re-messaging someone already inside the
  * window is always allowed, because the cap is on distinct recipients rather
- * than on message volume.
+ * than on message volume. A group conversation records every other member,
+ * so a group of seven costs seven slots, not one.
  *
  * Fails open: a Redis outage must never stop people from talking, and the
  * monitor remains the backstop.
@@ -64,26 +65,30 @@ local key = KEYS[1]
 local now = tonumber(ARGV[1])
 local windowMs = tonumber(ARGV[2])
 local limit = tonumber(ARGV[3])
-local member = ARGV[4]
 
 redis.call('ZREMRANGEBYSCORE', key, 0, now - windowMs)
-local known = redis.call('ZSCORE', key, member)
 local count = redis.call('ZCARD', key)
 
-if not known and count >= limit then
+local fresh = 0
+for i = 4, #ARGV do
+  if not redis.call('ZSCORE', key, ARGV[i]) then
+    fresh = fresh + 1
+  end
+end
+
+if fresh > 0 and count + fresh > limit then
   local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
   local oldestScore = -1
   if oldest[2] then oldestScore = tonumber(oldest[2]) end
   return {0, count, oldestScore}
 end
 
-redis.call('ZADD', key, now, member)
+for i = 4, #ARGV do
+  redis.call('ZADD', key, now, ARGV[i])
+end
 redis.call('PEXPIRE', key, windowMs)
 
-if known then
-  return {1, count, -1}
-end
-return {1, count + 1, -1}
+return {1, count + fresh, -1}
 `;
 
 /**
@@ -136,9 +141,10 @@ const ALLOW_UNMEASURED: Omit<DmFanoutDecision, "limit"> = {
 };
 
 /**
- * Records `channelId` as a recipient of `userId` and reports whether the send
- * may proceed. Nothing is recorded when the send is blocked, so a rejected
- * attempt neither consumes a slot nor extends the window.
+ * Records every id in `recipients` as a recipient of `userId` and reports
+ * whether the send may proceed. All or nothing: when the recipients not yet
+ * in the window would push the count past the cap, none of them is recorded,
+ * so a rejected attempt neither consumes a slot nor extends the window.
  *
  * Recording is final. There is no compensating release, because a release
  * cannot distinguish its own record from one a concurrent request is relying
@@ -149,19 +155,20 @@ const ALLOW_UNMEASURED: Omit<DmFanoutDecision, "limit"> = {
 export async function checkDmFanout(
   {
     userId,
-    channelId,
+    recipients,
     accountCreatedAt,
     now = Date.now()
   }: {
     userId: string;
-    channelId: string;
+    recipients: string[];
     accountCreatedAt?: number;
     now?: number;
   },
   redis: RedisClient | null = getChatRedis()
 ): Promise<DmFanoutDecision> {
   const limit = dmFanoutLimitFor(accountCreatedAt, now);
-  if (!redis) return { ...ALLOW_UNMEASURED, limit };
+  const members = Array.from(new Set(recipients.filter(Boolean)));
+  if (!redis || !members.length) return { ...ALLOW_UNMEASURED, limit };
 
   try {
     const [allowed, recipients, oldestScore] = (await redis.eval(
@@ -171,7 +178,7 @@ export async function checkDmFanout(
       String(now),
       String(DM_FANOUT_WINDOW_MS),
       String(limit),
-      channelId
+      ...members
     )) as [number, number, number];
 
     if (allowed) {

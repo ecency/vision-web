@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockMmUserFetch = vi.fn();
 const mockCheckDmFanout = vi.fn();
 const mockModerationContext = vi.fn();
+const mockRecipientIds = vi.fn();
 
 vi.mock("@/server/mattermost", () => ({
   CHAT_BAN_PROP: "ecency_chat_banned_until",
@@ -17,6 +18,7 @@ vi.mock("@/server/mattermost", () => ({
   followMattermostThreadForUser: vi.fn(),
   getMattermostCommunityModerationContext: (...args: unknown[]) => mockModerationContext(...args),
   getMattermostTokenFromCookies: () => Promise.resolve("test-token"),
+  getPrivateChannelRecipientIds: (...args: unknown[]) => mockRecipientIds(...args),
   handleMattermostError: () => ({ status: 500 }),
   isUserChatBanned: () => null,
   mmUserFetch: (...args: unknown[]) => mockMmUserFetch(...args)
@@ -48,6 +50,7 @@ function allowFanout() {
 describe("posts route — DM fan-out runs last", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRecipientIds.mockResolvedValue(["u-2"]);
     // /users/me then /channels/:id, both resolved in parallel by the route.
     mockMmUserFetch.mockImplementation((path: string) => {
       if (path === "/users/me") {
@@ -82,6 +85,7 @@ describe("posts route — DM fan-out runs last", () => {
 
     expect(res.status).toBe(200);
     expect(mockCheckDmFanout).toHaveBeenCalledOnce();
+    expect(mockCheckDmFanout.mock.calls[0][0]).toMatchObject({ userId: "u-1", recipients: ["u-2"] });
     expect(mockMmUserFetch).toHaveBeenCalledWith("/posts", "test-token", expect.anything());
   });
 
@@ -117,5 +121,34 @@ describe("posts route — DM fan-out runs last", () => {
 
     expect(res.status).toBe(200);
     expect(mockCheckDmFanout).not.toHaveBeenCalled();
+  });
+
+  it("counts every other member of a group as a recipient", async () => {
+    const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    mockRecipientIds.mockResolvedValue(["u-2", "u-3", "u-4"]);
+    allowFanout();
+
+    const res = await POST(request("hello group"), params);
+
+    expect(res.status).toBe(200);
+    expect(mockCheckDmFanout.mock.calls[0][0]).toMatchObject({
+      recipients: ["u-2", "u-3", "u-4"]
+    });
+  });
+
+  it("explains a group larger than the cap instead of asking to retry later", async () => {
+    const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    mockRecipientIds.mockResolvedValue(["u-2", "u-3", "u-4", "u-5", "u-6", "u-7"]);
+    mockCheckDmFanout.mockResolvedValue({
+      allowed: false,
+      recipients: 0,
+      limit: 5,
+      retryAfterSeconds: 3600
+    });
+
+    const res = await POST(request("hello group"), params);
+
+    expect(res.status).toBe(403);
+    expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts", expect.anything(), expect.anything());
   });
 });
