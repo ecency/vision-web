@@ -448,11 +448,28 @@ export async function getUserChannels(userId: string): Promise<MattermostChannel
 
 export async function findMattermostUser(username: string): Promise<MattermostUser | null> {
   try {
+    return await lookupMattermostUser(username);
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Like findMattermostUser, but only "no such user" resolves to null: a 404, or
+ * the 400 Mattermost answers for a name that cannot exist (e.g. uppercase).
+ * Timeouts and other upstream failures throw, so a caller that tells users
+ * someone "is not on chat" does not say so during an outage.
+ */
+export async function lookupMattermostUser(username: string): Promise<MattermostUser | null> {
+  try {
     return await mmFetch<MattermostUser>(`/users/username/${encodeURIComponent(username)}`, {
       headers: getAdminHeaders()
     });
   } catch (error) {
-    return null;
+    if (error instanceof MattermostError && (error.status === 404 || error.status === 400)) {
+      return null;
+    }
+    throw error;
   }
 }
 
@@ -966,6 +983,35 @@ export function toPublicChatUserMap<T extends object>(users: Record<string, T>) 
   return Object.fromEntries(
     Object.entries(users).map(([id, user]) => [id, toPublicChatUser(user)])
   );
+}
+
+/**
+ * The people other than the sender that a post into a direct or group channel
+ * reaches, as user ids. A direct channel is named `<id>__<id>`, so its other
+ * member needs no lookup. A group (3 to 8 members) lists its members.
+ *
+ * A group whose members cannot be read throws rather than being counted as a
+ * single recipient, so an upstream hiccup cannot turn seven slots into one.
+ */
+export async function getPrivateChannelRecipientIds(
+  channel: Pick<MattermostChannel, "id" | "name" | "type">,
+  senderId: string,
+  token: string
+): Promise<string[]> {
+  if (channel.type === "D") {
+    const ids = channel.name.split("__");
+    if (ids.length === 2 && ids.every(Boolean)) {
+      return ids.filter((id) => id !== senderId);
+    }
+    return [channel.id];
+  }
+
+  const members = await mmUserFetch<{ user_id: string }[]>(
+    `/channels/${encodeURIComponent(channel.id)}/members?page=0&per_page=50`,
+    token
+  );
+  const ids = members.map((member) => member.user_id).filter((id) => id && id !== senderId);
+  return Array.from(new Set(ids));
 }
 
 export function getUserLeftChannels(user: Pick<MattermostUserWithProps, "props">): Set<string> {

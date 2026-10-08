@@ -8,10 +8,11 @@
  * one account can open a conversation with in a rolling window: the signal
  * every observed spray shares, and one an ordinary conversation never trips.
  *
- * State is a Redis sorted set per sender, holding the channel ids they have
+ * State is a Redis sorted set per sender, holding the user ids they have
  * messaged, scored by send time. Re-messaging someone already inside the
  * window is always allowed, because the cap is on distinct recipients rather
- * than on message volume.
+ * than on message volume. A group conversation records every other member,
+ * so a group of seven costs seven slots, not one.
  *
  * Fails open: a Redis outage must never stop people from talking, and the
  * monitor remains the backstop.
@@ -23,7 +24,8 @@ const REDIS_URL = process.env.REDIS_URL || "redis://redis:6379";
 // which then serialises within each instance only.
 const DISABLED = !!process.env.VITEST || process.env.CHAT_DM_FANOUT_DISABLE === "1";
 
-const KEY_PREFIX = "chat:dmfanout:";
+// v2 records recipient user ids; v1 recorded channel ids and is left to expire.
+const KEY_PREFIX = "chat:dmfanout:v2:";
 
 function envInt(name: string, fallback: number) {
   const parsed = Number(process.env[name]);
@@ -48,7 +50,7 @@ export interface DmFanoutDecision {
   /** Distinct recipients already recorded in the window. */
   recipients: number;
   limit: number;
-  /** Seconds until the oldest recipient ages out. Only meaningful when blocked. */
+  /** Seconds until enough recipients outside this send age out for it to fit. Only meaningful when blocked. */
   retryAfterSeconds: number;
 }
 
@@ -64,26 +66,44 @@ local key = KEYS[1]
 local now = tonumber(ARGV[1])
 local windowMs = tonumber(ARGV[2])
 local limit = tonumber(ARGV[3])
-local member = ARGV[4]
 
 redis.call('ZREMRANGEBYSCORE', key, 0, now - windowMs)
-local known = redis.call('ZSCORE', key, member)
 local count = redis.call('ZCARD', key)
 
-if not known and count >= limit then
-  local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
-  local oldestScore = -1
-  if oldest[2] then oldestScore = tonumber(oldest[2]) end
-  return {0, count, oldestScore}
+local fresh = 0
+for i = 4, #ARGV do
+  if not redis.call('ZSCORE', key, ARGV[i]) then
+    fresh = fresh + 1
+  end
 end
 
-redis.call('ZADD', key, now, member)
+if fresh > 0 and count + fresh > limit then
+  -- The send fits once enough entries age out to make room for all of it.
+  -- An expiring entry that belongs to this send frees nothing, because it
+  -- becomes fresh again, so only entries outside the send are counted.
+  local requested = {}
+  for i = 4, #ARGV do requested[ARGV[i]] = true end
+  local need = count + fresh - limit
+  local entries = redis.call('ZRANGE', key, 0, -1, 'WITHSCORES')
+  local freesAt = -1
+  for i = 1, #entries, 2 do
+    if not requested[entries[i]] then
+      need = need - 1
+      if need == 0 then
+        freesAt = tonumber(entries[i + 1])
+        break
+      end
+    end
+  end
+  return {0, count, freesAt}
+end
+
+for i = 4, #ARGV do
+  redis.call('ZADD', key, now, ARGV[i])
+end
 redis.call('PEXPIRE', key, windowMs)
 
-if known then
-  return {1, count, -1}
-end
-return {1, count + 1, -1}
+return {1, count + fresh, -1}
 `;
 
 /**
@@ -136,9 +156,10 @@ const ALLOW_UNMEASURED: Omit<DmFanoutDecision, "limit"> = {
 };
 
 /**
- * Records `channelId` as a recipient of `userId` and reports whether the send
- * may proceed. Nothing is recorded when the send is blocked, so a rejected
- * attempt neither consumes a slot nor extends the window.
+ * Records every id in `recipients` as a recipient of `userId` and reports
+ * whether the send may proceed. All or nothing: when the recipients not yet
+ * in the window would push the count past the cap, none of them is recorded,
+ * so a rejected attempt neither consumes a slot nor extends the window.
  *
  * Recording is final. There is no compensating release, because a release
  * cannot distinguish its own record from one a concurrent request is relying
@@ -149,29 +170,30 @@ const ALLOW_UNMEASURED: Omit<DmFanoutDecision, "limit"> = {
 export async function checkDmFanout(
   {
     userId,
-    channelId,
+    recipients,
     accountCreatedAt,
     now = Date.now()
   }: {
     userId: string;
-    channelId: string;
+    recipients: string[];
     accountCreatedAt?: number;
     now?: number;
   },
   redis: RedisClient | null = getChatRedis()
 ): Promise<DmFanoutDecision> {
   const limit = dmFanoutLimitFor(accountCreatedAt, now);
-  if (!redis) return { ...ALLOW_UNMEASURED, limit };
+  const members = Array.from(new Set(recipients.filter(Boolean)));
+  if (!redis || !members.length) return { ...ALLOW_UNMEASURED, limit };
 
   try {
-    const [allowed, recipients, oldestScore] = (await redis.eval(
+    const [allowed, recipients, freesAtScore] = (await redis.eval(
       RESERVE_SCRIPT,
       1,
       `${KEY_PREFIX}${userId}`,
       String(now),
       String(DM_FANOUT_WINDOW_MS),
       String(limit),
-      channelId
+      ...members
     )) as [number, number, number];
 
     if (allowed) {
@@ -179,7 +201,7 @@ export async function checkDmFanout(
     }
 
     const freesAt =
-      oldestScore >= 0 ? oldestScore + DM_FANOUT_WINDOW_MS : now + DM_FANOUT_WINDOW_MS;
+      freesAtScore >= 0 ? freesAtScore + DM_FANOUT_WINDOW_MS : now + DM_FANOUT_WINDOW_MS;
 
     return {
       allowed: false,

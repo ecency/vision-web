@@ -8,6 +8,7 @@ import {
   handleMattermostError,
   MattermostChannel,
   getMattermostTokenFromCookies,
+  getPrivateChannelRecipientIds,
   mmUserFetch,
   toPublicChatUserMap,
   getUserChatBanReason,
@@ -15,6 +16,7 @@ import {
   CHAT_BAN_PROP
 } from "@/server/mattermost";
 import { checkDmFanout } from "@/server/chat-dm-fanout";
+import { collectPostUserIds } from "@/server/chat-post-users";
 
 // Prevent artificial timeout - this route should be fast now
 export const maxDuration = 60; // 60 seconds max
@@ -81,9 +83,7 @@ export async function GET(
         .filter(Boolean)
         .sort((a, b) => Number(a.create_at) - Number(b.create_at));
 
-      const threadUserIds = Array.from(
-        new Set(threadPosts.map((post) => post.user_id).filter(Boolean))
-      );
+      const threadUserIds = collectPostUserIds(threadPosts);
 
       const threadUsers: Record<string, MattermostUser> = {};
       if (threadUserIds.length) {
@@ -249,9 +249,7 @@ export async function GET(
       );
     }
 
-    const userIds = Array.from(
-      new Set(orderedPosts.map((post) => post.user_id).filter(Boolean))
-    );
+    const userIds = collectPostUserIds(orderedPosts);
 
     const missingUserIds = userIds.filter((id) => !users[id]);
 
@@ -411,17 +409,25 @@ export async function POST(
     // without delivering is an upstream post failure, which is rare, transient,
     // ages out with the window, and errs on the safe side.
     //
-    // A group channel consumes one slot even though a post there reaches every
-    // member. That is not a way around the cap: /api/mattermost/direct is the
-    // only channel-creation path we expose and it is strictly one-to-one, so an
-    // account cannot assemble groups to spray. Someone else has to have added
-    // them to each group first.
+    // A post into a group reaches every member, so every other member is
+    // counted as a recipient, the same as if each had been messaged directly.
     if (channel.type === "D" || channel.type === "G") {
+      const recipients = await getPrivateChannelRecipientIds(channel, currentUser.id, token);
       const fanout = await checkDmFanout({
         userId: currentUser.id,
-        channelId,
+        recipients,
         accountCreatedAt: currentUser.create_at
       });
+
+      if (!fanout.allowed && recipients.length > fanout.limit) {
+        return NextResponse.json(
+          {
+            error: `You can message groups of up to ${fanout.limit} other people for now.`,
+            limit: fanout.limit
+          },
+          { status: 403 }
+        );
+      }
 
       if (!fanout.allowed) {
         console.warn("MM posts: DM fan-out limit reached", {

@@ -37,12 +37,8 @@ class FakeRedis {
 
   async eval(_script: string, _numKeys: number, key: string, ...args: string[]) {
     if (this.failOn === "eval") throw new Error("redis down");
-    const [now, windowMs, limit, member] = [
-      Number(args[0]),
-      Number(args[1]),
-      Number(args[2]),
-      args[3]
-    ];
+    const [now, windowMs, limit] = [Number(args[0]), Number(args[1]), Number(args[2])];
+    const members = args.slice(3);
 
     this.sets.set(
       key,
@@ -50,33 +46,43 @@ class FakeRedis {
     );
 
     const list = this.entries(key);
-    const known = list.find((e) => e.member === member);
     const count = list.length;
+    const fresh = members.filter((m) => !list.some((e) => e.member === m)).length;
 
-    if (!known && count >= limit) {
-      const sorted = [...list].sort((a, b) => a.score - b.score);
-      return [0, count, sorted.length ? sorted[0].score : -1];
+    if (fresh > 0 && count + fresh > limit) {
+      const outside = [...list]
+        .sort((a, b) => a.score - b.score)
+        .filter((e) => !members.includes(e.member));
+      const freeing = outside[count + fresh - limit - 1];
+      return [0, count, freeing ? freeing.score : -1];
     }
 
-    if (known) {
-      known.score = now;
-    } else {
-      list.push({ member, score: now });
+    for (const member of members) {
+      const known = list.find((e) => e.member === member);
+      if (known) {
+        known.score = now;
+      } else {
+        list.push({ member, score: now });
+      }
     }
     this.ttls.set(key, windowMs);
 
-    return known ? [1, count, -1] : [1, count + 1, -1];
+    return [1, count + fresh, -1];
   }
 
 }
 
 const NOW = 1_800_000_000_000;
 
-function send(redis: FakeRedis, channelId: string, opts: { at?: number; createdAt?: number } = {}) {
+function send(
+  redis: FakeRedis,
+  recipient: string | string[],
+  opts: { at?: number; createdAt?: number } = {}
+) {
   return checkDmFanout(
     {
       userId: "u-1",
-      channelId,
+      recipients: Array.isArray(recipient) ? recipient : [recipient],
       accountCreatedAt: opts.createdAt ?? NOW - DM_FANOUT_NEW_ACCOUNT_MS - 1, // established
       now: opts.at ?? NOW
     },
@@ -133,7 +139,7 @@ describe("checkDmFanout", () => {
 
     // A blocked attempt must not consume a slot or extend the window, or a
     // spammer would push their own earlier recipients out and reset the cap.
-    expect(redis.sets.get("chat:dmfanout:u-1")).toHaveLength(DM_FANOUT_MAX_NEW);
+    expect(redis.sets.get("chat:dmfanout:v2:u-1")).toHaveLength(DM_FANOUT_MAX_NEW);
   });
 
   // The cap is on how many people you reach, not how much you say to them.
@@ -184,7 +190,7 @@ describe("checkDmFanout", () => {
   // never stop people from talking; the out-of-band monitor is the backstop.
   it("allows the send when redis is unavailable", async () => {
     const res = await checkDmFanout(
-      { userId: "u-1", channelId: "dm-1", accountCreatedAt: NEW_ACCOUNT, now: NOW },
+      { userId: "u-1", recipients: ["dm-1"], accountCreatedAt: NEW_ACCOUNT, now: NOW },
       null
     );
     expect(res.allowed).toBe(true);
@@ -202,10 +208,85 @@ describe("checkDmFanout", () => {
     const targets = Array.from({ length: DM_FANOUT_MAX_NEW * 3 }, (_, i) => `dm-${i}`);
 
     const results = await Promise.all(
-      targets.map((channelId) => send(redis, channelId, { createdAt: NEW_ACCOUNT }))
+      targets.map((recipient) => send(redis, recipient, { createdAt: NEW_ACCOUNT }))
     );
 
     expect(results.filter((r) => r.allowed)).toHaveLength(DM_FANOUT_MAX_NEW);
-    expect(redis.sets.get("chat:dmfanout:u-1")).toHaveLength(DM_FANOUT_MAX_NEW);
+    expect(redis.sets.get("chat:dmfanout:v2:u-1")).toHaveLength(DM_FANOUT_MAX_NEW);
+  });
+
+  // A group reaches every member, so it costs one slot per member.
+  it("counts every member of a group as a recipient", async () => {
+    const res = await send(redis, ["a", "b", "c"], { createdAt: NEW_ACCOUNT });
+
+    expect(res.allowed).toBe(true);
+    expect(res.recipients).toBe(3);
+    expect(redis.sets.get("chat:dmfanout:v2:u-1")).toHaveLength(3);
+  });
+
+  it("rejects a group that does not fit and records none of its members", async () => {
+    for (let i = 0; i < DM_FANOUT_MAX_NEW - 2; i++) {
+      await send(redis, `dm-${i}`, { createdAt: NEW_ACCOUNT });
+    }
+
+    const blocked = await send(redis, ["x", "y", "z"], { createdAt: NEW_ACCOUNT });
+
+    expect(blocked.allowed).toBe(false);
+    expect(redis.sets.get("chat:dmfanout:v2:u-1")).toHaveLength(DM_FANOUT_MAX_NEW - 2);
+  });
+
+  it("only charges a group for the members not already messaged", async () => {
+    for (let i = 0; i < DM_FANOUT_MAX_NEW - 1; i++) {
+      await send(redis, `dm-${i}`, { createdAt: NEW_ACCOUNT });
+    }
+
+    const res = await send(redis, ["dm-0", "dm-1", "fresh"], { createdAt: NEW_ACCOUNT });
+
+    expect(res.allowed).toBe(true);
+    expect(res.recipients).toBe(DM_FANOUT_MAX_NEW);
+  });
+
+  it("does not count duplicates or empty ids", async () => {
+    const res = await send(redis, ["a", "a", ""], { createdAt: NEW_ACCOUNT });
+
+    expect(res.recipients).toBe(1);
+  });
+
+  it("has nothing to measure for a conversation with no other member", async () => {
+    const res = await send(redis, [], { createdAt: NEW_ACCOUNT });
+
+    expect(res.allowed).toBe(true);
+    expect(redis.sets.get("chat:dmfanout:v2:u-1")).toBeUndefined();
+  });
+
+  // Freeing the oldest slot is not enough when a group needs several.
+  it("reports when enough slots free up for the whole group", async () => {
+    for (let i = 0; i < DM_FANOUT_MAX_NEW; i++) {
+      await send(redis, `dm-${i}`, { createdAt: NEW_ACCOUNT, at: NOW + i * 1000 });
+    }
+
+    const at = NOW + 10_000;
+    const blocked = await send(redis, ["x", "y", "z"], { createdAt: NEW_ACCOUNT, at });
+
+    // Three slots are needed, so the third oldest entry (written at NOW + 2s) decides.
+    expect(blocked.retryAfterSeconds).toBe(
+      Math.ceil((NOW + 2000 + DM_FANOUT_WINDOW_MS - at) / 1000)
+    );
+  });
+
+  // Retrying when an entry that belongs to the send expires would fail again,
+  // because that member then has to be re-added alongside the new one.
+  it("ignores the send's own members when reporting when it fits", async () => {
+    for (let i = 0; i < DM_FANOUT_MAX_NEW; i++) {
+      await send(redis, `dm-${i}`, { createdAt: NEW_ACCOUNT, at: NOW + i * 1000 });
+    }
+
+    const at = NOW + 10_000;
+    const blocked = await send(redis, ["dm-0", "x"], { createdAt: NEW_ACCOUNT, at });
+
+    // dm-0 (written at NOW) is part of the send, so dm-1 (NOW + 1s) decides.
+    expect(blocked.retryAfterSeconds).toBe(
+      Math.ceil((NOW + 1000 + DM_FANOUT_WINDOW_MS - at) / 1000)
+    );
   });
 });
