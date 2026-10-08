@@ -3,6 +3,9 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "crypto"
 import { NextResponse } from "next/server";
 import { bridgeApiCall, getProfiles } from "@ecency/sdk";
 import { CommunityRole, ROLES } from "@ecency/sdk";
+import { toPublicChatUser } from "@/server/chat-public-user";
+
+export { toPublicChatUser };
 
 const MATTERMOST_BASE_URL = process.env.MATTERMOST_BASE_URL;
 const MATTERMOST_ADMIN_TOKEN = process.env.MATTERMOST_ADMIN_TOKEN;
@@ -467,19 +470,23 @@ function sessionTokenKey(): Buffer {
   return Buffer.from(hkdfSync("sha256", secret, "ecency-chat", "session-token-v1", 32));
 }
 
-export function sealSessionToken(token: string): string {
+// The owner's id is authenticated data: a sealed value opens only for the user
+// it was sealed for, so copying it into another account's props yields nothing.
+export function sealSessionToken(token: string, userId: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", sessionTokenKey(), iv);
+  cipher.setAAD(Buffer.from(userId, "utf8"));
   const body = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
   return `v1.${Buffer.concat([iv, cipher.getAuthTag(), body]).toString("base64url")}`;
 }
 
-export function openSessionToken(sealed: string | undefined): string | null {
+export function openSessionToken(sealed: string | undefined, userId: string): string | null {
   if (!sealed?.startsWith("v1.")) return null;
   try {
     const raw = Buffer.from(sealed.slice(3), "base64url");
     if (raw.length <= 28) return null;
     const decipher = createDecipheriv("aes-256-gcm", sessionTokenKey(), raw.subarray(0, 12));
+    decipher.setAAD(Buffer.from(userId, "utf8"));
     decipher.setAuthTag(raw.subarray(12, 28));
     return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
   } catch {
@@ -489,22 +496,49 @@ export function openSessionToken(sealed: string | undefined): string | null {
 
 /** Revokes every session token this server has issued for the user. */
 async function revokeIssuedTokens(userId: string, signal?: AbortSignal): Promise<number> {
-  const tokens = await mmFetch<Array<{ id: string; description?: string; is_active?: boolean }>>(
-    `/users/${encodeURIComponent(userId)}/tokens?page=0&per_page=200`,
-    { headers: getAdminHeaders(), signal }
-  );
-  const issued = tokens.filter(
-    (token) => token.description === CHAT_PAT_DESCRIPTION && token.is_active !== false
-  );
-  for (const token of issued) {
+  const perPage = 200;
+  const issued: string[] = [];
+  for (let page = 0; ; page++) {
+    const tokens = await mmFetch<Array<{ id: string; description?: string; is_active?: boolean }>>(
+      `/users/${encodeURIComponent(userId)}/tokens?page=${page}&per_page=${perPage}`,
+      { headers: getAdminHeaders(), signal }
+    );
+    for (const token of tokens) {
+      if (token.description === CHAT_PAT_DESCRIPTION && token.is_active !== false) {
+        issued.push(token.id);
+      }
+    }
+    if (tokens.length < perPage) break;
+  }
+  for (const tokenId of issued) {
     await mmFetch(`/users/tokens/revoke`, {
       method: "POST",
       headers: getAdminHeaders(),
-      body: JSON.stringify({ token_id: token.id }),
+      body: JSON.stringify({ token_id: tokenId }),
       signal
     });
   }
   return issued.length;
+}
+
+/**
+ * Writes a user's whole props map (Mattermost replaces props on patch). Every
+ * writer goes through here so a stale read can never bring back the retired
+ * plaintext token prop.
+ */
+async function writeUserProps(
+  userId: string,
+  props: Record<string, string>,
+  signal?: AbortSignal
+) {
+  const next = { ...props };
+  delete next[CHAT_PAT_PROP];
+  await mmFetch(`/users/${encodeURIComponent(userId)}/patch`, {
+    method: "PUT",
+    headers: getAdminHeaders(),
+    body: JSON.stringify({ props: next }),
+    signal
+  });
 }
 
 export function hasPlaintextSessionToken(user: Pick<MattermostUserWithProps, "props">) {
@@ -535,36 +569,30 @@ export async function retirePlaintextSessionToken(
   // Re-read right before writing so a concurrent props update is not lost.
   const fresh = await getMattermostUserWithProps(userId, signal);
   const props = { ...(fresh.props || {}) };
-  delete props[CHAT_PAT_PROP];
   delete props[CHAT_PAT_SEALED_PROP];
-  await mmFetch(`/users/${encodeURIComponent(userId)}/patch`, {
-    method: "PUT",
-    headers: getAdminHeaders(),
-    body: JSON.stringify({ props }),
-    signal
-  });
+  await writeUserProps(userId, props, signal);
   return true;
 }
 
 /**
- * Validate a PAT by making a lightweight /users/me call.
- * Returns true if the token is still active and valid.
- * Only treats 401/403 as "invalid token". Rethrows other
- * errors (5xx, network) so they surface as 502 upstream.
+ * Resolve the user a PAT belongs to with a lightweight /users/me call.
+ * Returns null when the token is no longer valid. Only treats 401/403 as
+ * "invalid token". Rethrows other errors (5xx, network) so they surface as
+ * 502 upstream.
  */
-async function isTokenValid(token: string, signal?: AbortSignal): Promise<boolean> {
+async function getTokenOwnerId(token: string, signal?: AbortSignal): Promise<string | null> {
   try {
-    await mmFetch<{ id: string }>(`/users/me`, {
+    const me = await mmFetch<{ id: string }>(`/users/me`, {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json"
       },
       signal
     });
-    return true;
+    return me.id;
   } catch (err) {
     if (err instanceof MattermostError && (err.status === 401 || err.status === 403)) {
-      return false;
+      return null;
     }
     throw err;
   }
@@ -581,17 +609,11 @@ async function createToken(userId: string, signal?: AbortSignal): Promise<string
   // in user props to reuse across sessions and devices. Merge with existing
   // props to avoid clobbering other fields (left_channels, DM privacy, bans).
   const user = await getMattermostUserWithProps(userId, signal);
-  const mergedProps: Record<string, string> = {
-    ...(user.props || {}),
-    [CHAT_PAT_SEALED_PROP]: sealSessionToken(result.token)
-  };
-  delete mergedProps[CHAT_PAT_PROP];
-  await mmFetch(`/users/${encodeURIComponent(userId)}/patch`, {
-    method: "PUT",
-    headers: getAdminHeaders(),
-    body: JSON.stringify({ props: mergedProps }),
+  await writeUserProps(
+    userId,
+    { ...(user.props || {}), [CHAT_PAT_SEALED_PROP]: sealSessionToken(result.token, userId) },
     signal
-  });
+  );
   return result.token;
 }
 
@@ -614,15 +636,28 @@ export async function ensurePersonalToken(
     return { token, user };
   }
 
-  const storedToken = openSessionToken(user.props?.[CHAT_PAT_SEALED_PROP]);
+  const sealed = user.props?.[CHAT_PAT_SEALED_PROP];
+  const storedToken = openSessionToken(sealed, userId);
   if (storedToken) {
-    // isTokenValid rethrows non-auth errors
-    if (await isTokenValid(storedToken, signal)) {
+    // getTokenOwnerId rethrows non-auth errors
+    const ownerId = await getTokenOwnerId(storedToken, signal);
+    if (ownerId === userId) {
       return { token: storedToken, user };
+    }
+    if (ownerId) {
+      // A working token that belongs to someone else: never hand it out, and
+      // revoke it since it has evidently been copied.
+      await revokeIssuedTokens(ownerId, signal);
+      await revokeIssuedTokens(userId, signal);
     }
     // Token exists but is invalid (revoked/expired) — fall through to create.
     // The user.props we return here predates createToken's PUT to merge in
     // the new PAT, but the only consumer (left-channels) doesn't care.
+  } else if (sealed) {
+    // A stored value that cannot be opened (different key, tampered or not
+    // ours): the token behind it is unrecoverable, so retire what was issued
+    // instead of leaving it valid alongside the new one.
+    await revokeIssuedTokens(userId, signal);
   }
   const token = await createToken(userId, signal);
   return { token, user };
@@ -887,28 +922,6 @@ export function getUserDmPrivacy(user: Pick<MattermostUserWithProps, "props">): 
   return "all"; // default: allow all DMs
 }
 
-const PRIVATE_USER_FIELDS = [
-  "props",
-  "notify_props",
-  "email",
-  "auth_data",
-  "auth_service",
-  "timezone"
-] as const;
-
-/**
- * A Mattermost user as other chat users get to see it: everything except
- * account settings and private fields. Apply before returning any user record
- * that is not the caller's own.
- */
-export function toPublicChatUser<T extends object>(
-  user: T
-): Omit<T, (typeof PRIVATE_USER_FIELDS)[number]> {
-  const copy = { ...user } as Record<string, unknown>;
-  for (const field of PRIVATE_USER_FIELDS) delete copy[field];
-  return copy as Omit<T, (typeof PRIVATE_USER_FIELDS)[number]>;
-}
-
 export function toPublicChatUserMap<T extends object>(users: Record<string, T>) {
   return Object.fromEntries(
     Object.entries(users).map(([id, user]) => [id, toPublicChatUser(user)])
@@ -931,11 +944,7 @@ export async function addUserLeftChannel(userId: string, channelName: string) {
   const leftChannels = getUserLeftChannels(user);
   leftChannels.add(channelName);
   const props = { ...(user.props || {}), [CHAT_LEFT_CHANNELS_PROP]: JSON.stringify(Array.from(leftChannels)) };
-  await mmFetch(`/users/${encodeURIComponent(userId)}/patch`, {
-    method: "PUT",
-    headers: getAdminHeaders(),
-    body: JSON.stringify({ props })
-  });
+  await writeUserProps(userId, props);
 }
 
 export async function removeUserLeftChannel(userId: string, channelName: string, signal?: AbortSignal) {
@@ -943,12 +952,7 @@ export async function removeUserLeftChannel(userId: string, channelName: string,
   const leftChannels = getUserLeftChannels(user);
   if (!leftChannels.delete(channelName)) return;
   const props = { ...(user.props || {}), [CHAT_LEFT_CHANNELS_PROP]: JSON.stringify(Array.from(leftChannels)) };
-  await mmFetch(`/users/${encodeURIComponent(userId)}/patch`, {
-    method: "PUT",
-    headers: getAdminHeaders(),
-    body: JSON.stringify({ props }),
-    signal
-  });
+  await writeUserProps(userId, props, signal);
 }
 
 async function searchMattermostPostsByUserAsAdmin(username: string, page: number, perPage: number) {
@@ -1120,11 +1124,7 @@ export async function banMattermostUserForHoursAsAdmin(username: string, hours: 
     delete props[CHAT_BAN_PROP];
   }
 
-  await mmFetch(`/users/${encodeURIComponent(adminUser.id)}/patch`, {
-    method: "PUT",
-    headers: getAdminHeaders(),
-    body: JSON.stringify({ props })
-  });
+  await writeUserProps(adminUser.id, props);
 
   return { user: targetUser, bannedUntil: expiration } as const;
 }
@@ -1139,11 +1139,7 @@ export async function setUserDmPrivacy(userId: string, privacy: DmPrivacyLevel) 
     props[CHAT_DM_PRIVACY_PROP] = privacy;
   }
 
-  await mmFetch(`/users/${encodeURIComponent(userId)}/patch`, {
-    method: "PUT",
-    headers: getAdminHeaders(),
-    body: JSON.stringify({ props })
-  });
+  await writeUserProps(userId, props);
 
   return privacy;
 }
