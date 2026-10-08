@@ -191,6 +191,42 @@ const FlatMapSerializer = (keySerializer: any, valueSerializer: any) => {
   }
 }
 
+// hived keeps an authority's key_auths and account_auths in fc::flat_maps
+// ordered by the raw key bytes (33-byte public key, account name) and re-sorts
+// them when it parses the JSON transaction, then hashes that order. A base58
+// string sort, or plain caller order, disagrees as soon as an authority holds
+// two entries, so the signature recovers to a stranger and the node answers
+// "missing required owner authority". Serialize in the node's order.
+const compareBytes = (a: Uint8Array, b: Uint8Array) => {
+  const n = Math.min(a.length, b.length)
+  for (let i = 0; i < n; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i]
+  }
+  return a.length - b.length
+}
+
+const publicKeyBytes = (key: string | PublicKey) => {
+  const buffer = new ByteBuffer(33, ByteBuffer.LITTLE_ENDIAN)
+  PublicKeySerializer(buffer, key)
+  buffer.flip()
+  return new Uint8Array(buffer.toBuffer())
+}
+
+const SortedFlatMapSerializer = (
+  keySerializer: any,
+  valueSerializer: any,
+  sortBytes: (key: any) => Uint8Array
+) => {
+  const serialize = FlatMapSerializer(keySerializer, valueSerializer)
+  return (buffer: ByteBuffer, data: [any, any][]) => {
+    const sorted = data
+      .map((entry) => ({ entry, bytes: sortBytes(entry[0]) }))
+      .sort((a, b) => compareBytes(a.bytes, b.bytes))
+      .map(({ entry }) => entry)
+    serialize(buffer, sorted)
+  }
+}
+
 const ArraySerializer = (itemSerializer: any) => {
   return (buffer: ByteBuffer, data: any[]) => {
     buffer.writeVarint32(data.length)
@@ -227,8 +263,8 @@ const OptionalSerializer = (valueSerializer: any) => {
 
 const AuthoritySerializer = ObjectSerializer([
   ['weight_threshold', UInt32Serializer],
-  ['account_auths', FlatMapSerializer(StringSerializer, UInt16Serializer)],
-  ['key_auths', FlatMapSerializer(PublicKeySerializer, UInt16Serializer)]
+  ['account_auths', SortedFlatMapSerializer(StringSerializer, UInt16Serializer, (name: string) => Uint8Array.from(name, (c) => c.charCodeAt(0)))],
+  ['key_auths', SortedFlatMapSerializer(PublicKeySerializer, UInt16Serializer, publicKeyBytes)]
 ])
 
 const BeneficiarySerializer = ObjectSerializer([
@@ -632,7 +668,7 @@ OperationSerializers.witness_set_properties = OperationDataSerializer(
   OPERATION_IDS.witness_set_properties,
   [
     ['owner', StringSerializer],
-    ['props', FlatMapSerializer(StringSerializer, VariableBinarySerializer)],
+    ['props', SortedFlatMapSerializer(StringSerializer, VariableBinarySerializer, (name: string) => Uint8Array.from(name, (c) => c.charCodeAt(0)))],
     ['extensions', ArraySerializer(VoidSerializer)]
   ]
 )

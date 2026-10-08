@@ -169,6 +169,80 @@ describe("optional fields", () => {
   });
 });
 
+describe("key_auths order", () => {
+  const pub = (seed: string) => PrivateKey.fromLogin("alice", seed, "owner").createPublic();
+  const authority = (keys: ReturnType<typeof pub>[], names: string[] = []) => ({
+    weight_threshold: 1,
+    account_auths: names.map((name) => [name, 1]),
+    key_auths: keys.map((k) => [k.toString(), 1]),
+  });
+  const update = (keys: ReturnType<typeof pub>[], names: string[] = []) =>
+    new Transaction({
+      transaction: {
+        ...baseTx,
+        signatures: [],
+        operations: [
+          [
+            "account_update",
+            {
+              account: "alice",
+              owner: authority(keys),
+              active: authority(keys),
+              posting: authority(keys, names),
+              memo_key: keys[0].toString(),
+              json_metadata: "",
+            },
+          ],
+        ],
+      },
+    }).digest().txId;
+
+  // hived re-sorts key_auths by key bytes before hashing, so the signed digest
+  // must not depend on the order the caller listed them in. Found on a key
+  // rotation where a base58 sort made the node reject the owner signature.
+  it("signs the same digest whatever order the keys arrive in", () => {
+    const keys = ["a", "b", "c", "d", "e"].map(pub);
+    const byBytes = [...keys].sort((x, y) => {
+      for (let i = 0; i < 33; i++) if (x.key[i] !== y.key[i]) return x.key[i] - y.key[i];
+      return 0;
+    });
+    const byString = [...keys].sort((x, y) => x.toString().localeCompare(y.toString()));
+    expect(byString.map(String)).not.toEqual(byBytes.map(String));
+    expect(update(byString)).toBe(update(byBytes));
+    expect(update([...keys].reverse())).toBe(update(byBytes));
+  });
+
+  it("matches the txid hived computes for the same transaction", () => {
+    // Expected value from condenser_api.get_transaction_hex on a live node, so
+    // this pins hived's order rather than only order independence.
+    const keys = ["a", "b", "c", "d", "e"].map(pub);
+    const auth = {
+      weight_threshold: 1,
+      account_auths: [["peakd.app", 1], ["ecency", 1]],
+      key_auths: keys.map((k) => [k.toString(), 1]),
+    };
+    const txId = new Transaction({
+      transaction: {
+        ...baseTx,
+        signatures: [],
+        operations: [
+          [
+            "account_update",
+            { account: "alice", owner: auth, active: auth, posting: auth, memo_key: keys[0].toString(), json_metadata: "" },
+          ],
+        ],
+      },
+    }).digest().txId;
+    expect(txId).toBe("b9117a2bf9c740d3da58abee44704a66dd19c925");
+  });
+
+  it("sorts account_auths by name bytes, shorter prefix first", () => {
+    const keys = [pub("a")];
+    const sorted = ["demo", "ecency", "ecency.app", "peakd.app"];
+    expect(update(keys, ["peakd.app", "ecency.app", "demo", "ecency"])).toBe(update(keys, sorted));
+  });
+});
+
 describe("Transaction.broadcast", () => {
   const nodes = [...config.nodes];
   afterEach(() => {
