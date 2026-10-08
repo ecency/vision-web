@@ -3,6 +3,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { setupModalContainers } from "@/specs/test-utils";
 
+vi.mock("i18next", () => {
+  const en: Record<string, string> = {
+    "chat.reactor-you": "You",
+    "chat.reactor-unknown": "someone",
+    "chat.reactors-more": "{{names}} and {{count}} more",
+    "chat.reacted-with": "{{names}} reacted with {{emoji}}",
+    "chat.see-who-reacted": "See who reacted"
+  };
+  const t = (key: string, opts: Record<string, unknown> = {}) =>
+    (en[key] ?? key).replace(/\{\{(\w+)\}\}/g, (_, name) => String(opts[name]));
+  return { __esModule: true, default: { t, language: "en" } };
+});
+
+
 vi.mock("@/features/shared", () => ({
   UserAvatar: ({ username }: { username: string }) => <span data-testid={`avatar-${username}`} />,
   ProfileLink: ({ children, username }: { children: React.ReactNode; username: string }) => (

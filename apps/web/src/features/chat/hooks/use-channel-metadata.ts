@@ -66,7 +66,7 @@ export function useChannelMetadata({
     }
 
     if (groupUsers?.length) {
-      return getGroupTitle(groupUsers, "Group");
+      return getGroupTitle(groupUsers, i18next.t("chat.group"));
     }
 
     return (

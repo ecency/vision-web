@@ -47,6 +47,12 @@ export const DM_FANOUT_MAX = envInt("CHAT_DM_FANOUT_MAX", 20);
 
 export interface DmFanoutDecision {
   allowed: boolean;
+  /**
+   * False when nothing was checked or recorded (Redis disabled, down or
+   * failing). Direct messages go ahead regardless; optional extras such as
+   * mention joins should not.
+   */
+  measured: boolean;
   /** Distinct recipients already recorded in the window. */
   recipients: number;
   limit: number;
@@ -151,6 +157,7 @@ export function getChatRedis(): RedisClient | null {
 
 const ALLOW_UNMEASURED: Omit<DmFanoutDecision, "limit"> = {
   allowed: true,
+  measured: false,
   recipients: 0,
   retryAfterSeconds: 0
 };
@@ -204,7 +211,7 @@ export async function checkDmFanout(
     )) as [number, number, number];
 
     if (allowed) {
-      return { allowed: true, recipients, limit, retryAfterSeconds: 0 };
+      return { allowed: true, measured: true, recipients, limit, retryAfterSeconds: 0 };
     }
 
     const freesAt =
@@ -212,6 +219,7 @@ export async function checkDmFanout(
 
     return {
       allowed: false,
+      measured: true,
       recipients,
       limit,
       retryAfterSeconds: Math.max(1, Math.ceil((freesAt - now) / 1000))

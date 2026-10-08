@@ -1,4 +1,18 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("i18next", () => {
+  const en: Record<string, string> = {
+    "chat.reactor-you": "You",
+    "chat.reactor-unknown": "someone",
+    "chat.reactors-more": "{{names}} and {{count}} more",
+    "chat.reacted-with": "{{names}} reacted with {{emoji}}",
+    "chat.see-who-reacted": "See who reacted"
+  };
+  const t = (key: string, opts: Record<string, unknown> = {}) =>
+    (en[key] ?? key).replace(/\{\{(\w+)\}\}/g, (_, name) => String(opts[name]));
+  return { __esModule: true, default: { t, language: "en" } };
+});
+
 import {
   findMissingReactorIds,
   formatReactorNames,
@@ -18,7 +32,7 @@ const user = (id: string, extra: Partial<MattermostUser> = {}): MattermostUser =
 describe("getGroupTitle", () => {
   it("joins up to three names", () => {
     expect(getGroupTitle([user("alice"), user("bob")], "x")).toBe("@alice and @bob");
-    expect(getGroupTitle([user("a1"), user("b1"), user("c1")], "x")).toBe("@a1, @b1 and @c1");
+    expect(getGroupTitle([user("a1"), user("b1"), user("c1")], "x")).toBe("@a1, @b1, and @c1");
   });
 
   it("prefers a person's display name", () => {
@@ -80,7 +94,7 @@ describe("reactor names", () => {
 
   it("counts the people past the limit", () => {
     expect(formatReactorNames(["u1", "u2", "u3"], usersById, undefined, 2)).toBe(
-      "@alice, @bob and 1 other"
+      "@alice, @bob and 1 more"
     );
   });
 });

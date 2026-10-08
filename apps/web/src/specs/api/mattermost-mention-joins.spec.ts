@@ -34,7 +34,7 @@ describe("addMentionedUsersToChannel", () => {
     vi.clearAllMocks();
     mockLookup.mockImplementation(async (username: string) => user(username));
     mockIsMember.mockResolvedValue(false);
-    mockCheckDmFanout.mockResolvedValue({ allowed: true, recipients: 1, limit: 20, retryAfterSeconds: 0 });
+    mockCheckDmFanout.mockResolvedValue({ allowed: true, measured: true, recipients: 1, limit: 20, retryAfterSeconds: 0 });
   });
 
   it("adds a mentioned non-member and counts them as a recipient", async () => {
@@ -83,12 +83,21 @@ describe("addMentionedUsersToChannel", () => {
   });
 
   it("adds nobody when the batch is over the fan-out limit", async () => {
-    mockCheckDmFanout.mockResolvedValue({ allowed: false, recipients: 20, limit: 20, retryAfterSeconds: 60 });
+    mockCheckDmFanout.mockResolvedValue({ allowed: false, measured: true, recipients: 20, limit: 20, retryAfterSeconds: 60 });
 
     const result = await addMentionedUsersToChannel({ ...base, usernames: ["a1a", "b2b"] });
 
     expect(result).toEqual({ added: [], limited: true });
     expect(mockEnsureTeam).not.toHaveBeenCalled();
+    expect(mockEnsureChannel).not.toHaveBeenCalled();
+  });
+
+  it("adds nobody when the limit cannot be checked", async () => {
+    mockCheckDmFanout.mockResolvedValue({ allowed: true, measured: false, recipients: 0, limit: 20, retryAfterSeconds: 0 });
+
+    const result = await addMentionedUsersToChannel({ ...base, usernames: ["alice"] });
+
+    expect(result).toEqual({ added: [], limited: true });
     expect(mockEnsureChannel).not.toHaveBeenCalled();
   });
 

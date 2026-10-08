@@ -365,7 +365,7 @@ function MessageItemInner({
                         key={`${post.id}-${reaction.emojiName}`}
                         type="button"
                         onClick={() => toggleReaction(post, reaction.emojiName)}
-                        title={`${names} reacted with ${emoji}`}
+                        title={i18next.t("chat.reacted-with", { names, emoji })}
                         aria-label={`${emoji} ${reaction.userIds.length}: ${names}`}
                         aria-pressed={reaction.reacted}
                         className={clsx(
@@ -384,8 +384,8 @@ function MessageItemInner({
                     type="button"
                     onClick={() => setShowReactions(true)}
                     className="rounded-full px-1.5 py-1 text-[11px] text-[--text-muted] hover:text-[--text-color]"
-                    aria-label="See who reacted"
-                    title="See who reacted"
+                    aria-label={i18next.t("chat.see-who-reacted")}
+                    title={i18next.t("chat.see-who-reacted")}
                   >
                     ⋯
                   </button>

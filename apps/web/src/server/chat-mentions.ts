@@ -62,6 +62,13 @@ export async function addMentionedUsersToChannel({
     scope: "mention"
   });
 
+  // Fail closed: joining people is an extra, so when the limit cannot be
+  // checked (Redis down or disabled) nobody is added. The post itself is
+  // unaffected.
+  if (!fanout.measured) {
+    return { added: [], limited: true };
+  }
+
   if (!fanout.allowed) {
     console.warn("MM posts: mention auto-join over the fan-out limit", {
       senderId,

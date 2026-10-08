@@ -1113,6 +1113,7 @@ export function MattermostChannelView({ channelId }: Props) {
           setShowKeyboardShortcuts={setShowKeyboardShortcuts}
           onClose={() => router.push("/chats")}
           groupMembers={groupUsers}
+          viewerUsername={activeUser?.username}
         />
 
         {showDmWarning && (

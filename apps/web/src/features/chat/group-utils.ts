@@ -1,3 +1,4 @@
+import i18next from "i18next";
 import type { MattermostReaction, MattermostUser } from "./mattermost-api";
 import { getUserDisplayName } from "./format-utils";
 
@@ -14,6 +15,17 @@ export function isConversationChannel(channel?: { type?: string } | null) {
   return channel?.type === "D" || channel?.type === "G";
 }
 
+/** "a, b and c" in the reader's language. */
+function joinNames(names: string[]) {
+  try {
+    return new Intl.ListFormat(i18next.language || "en", { style: "long", type: "conjunction" }).format(
+      names
+    );
+  } catch {
+    return names.join(", ");
+  }
+}
+
 function shortName(user: MattermostUser) {
   return getUserDisplayName(user) || user.username;
 }
@@ -26,11 +38,7 @@ function shortName(user: MattermostUser) {
 export function getGroupTitle(users: MattermostUser[] | undefined, fallback: string, maxNames = 3) {
   const names = (users ?? []).map(shortName).filter(Boolean);
   if (!names.length) return fallback;
-  if (names.length <= maxNames) {
-    return names.length === 1
-      ? names[0]
-      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  }
+  if (names.length <= maxNames) return joinNames(names);
   return `${names.slice(0, maxNames).join(", ")} +${names.length - maxNames}`;
 }
 
@@ -72,13 +80,13 @@ export function getReactorName(
   usersById: Record<string, MattermostUser>,
   currentUserId?: string
 ) {
-  if (currentUserId && userId === currentUserId) return "You";
+  if (currentUserId && userId === currentUserId) return i18next.t("chat.reactor-you");
   const user = usersById[userId];
-  if (!user) return "someone";
+  if (!user) return i18next.t("chat.reactor-unknown");
   return user.username ? `@${user.username}` : shortName(user);
 }
 
-/** "You, @alice and 3 others". Used for the reaction pill tooltip. */
+/** "You, @alice and 3 more". Used for the reaction pill tooltip. */
 export function formatReactorNames(
   userIds: string[],
   usersById: Record<string, MattermostUser>,
@@ -90,13 +98,11 @@ export function formatReactorNames(
     a === currentUserId ? -1 : b === currentUserId ? 1 : 0
   );
   const names = ordered.map((id) => getReactorName(id, usersById, currentUserId));
-  if (names.length <= maxNames) {
-    return names.length === 1
-      ? names[0]
-      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  }
-  const rest = names.length - maxNames;
-  return `${names.slice(0, maxNames).join(", ")} and ${rest} other${rest === 1 ? "" : "s"}`;
+  if (names.length <= maxNames) return joinNames(names);
+  return i18next.t("chat.reactors-more", {
+    names: names.slice(0, maxNames).join(", "),
+    count: names.length - maxNames
+  });
 }
 
 /** Reactor ids that are not in the users map yet, for a batched lookup. */

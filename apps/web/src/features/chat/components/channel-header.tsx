@@ -3,6 +3,7 @@ import { formatTimestamp, getUserDisplayName } from "../format-utils";
 import { Modal, ModalBody } from "@ui/modal";
 import { ProfileLink, UserAvatar } from "@/features/shared";
 import { useState } from "react";
+import i18next from "i18next";
 import { PeopleListModal } from "./people-list-modal";
 
 interface ChannelHeaderProps {
@@ -27,6 +28,8 @@ interface ChannelHeaderProps {
   onClose: () => void;
   /** Group channels: the other members, listed from the header. */
   groupMembers?: MattermostUser[];
+  /** The viewer, listed first among a group's members. */
+  viewerUsername?: string;
 }
 
 export function ChannelHeader({
@@ -49,7 +52,8 @@ export function ChannelHeader({
   showKeyboardShortcuts,
   setShowKeyboardShortcuts,
   onClose,
-  groupMembers
+  groupMembers,
+  viewerUsername
 }: ChannelHeaderProps) {
   const [showMembers, setShowMembers] = useState(false);
 
@@ -79,7 +83,7 @@ export function ChannelHeader({
                 className="flex items-center gap-1 rounded-full border border-[--border-color] px-2 py-1 text-[11px] text-[--text-muted] transition hover:border-blue-dark-sky hover:text-[--text-color]"
               >
                 <span className="text-sm leading-none" aria-hidden>👥</span>
-                <span>Members</span>
+                <span>{i18next.t("chat.members")}</span>
               </button>
             )}
 
@@ -87,15 +91,20 @@ export function ChannelHeader({
               <PeopleListModal
                 show={showMembers}
                 onHide={() => setShowMembers(false)}
-                title="Members"
+                title={i18next.t("chat.members")}
                 sections={[
                   {
                     key: "members",
-                    people: groupMembers.map((user) => ({
-                      id: user.id,
-                      username: user.username,
-                      displayName: getUserDisplayName(user) || user.username
-                    }))
+                    people: [
+                      ...(viewerUsername
+                        ? [{ id: "viewer", username: viewerUsername, displayName: i18next.t("chat.reactor-you") }]
+                        : []),
+                      ...groupMembers.map((user) => ({
+                        id: user.id,
+                        username: user.username,
+                        displayName: getUserDisplayName(user) || user.username
+                      }))
+                    ]
                   }
                 ]}
               />

@@ -122,6 +122,7 @@ describe("checkDmFanout", () => {
     for (let i = 0; i < DM_FANOUT_MAX_NEW; i++) {
       const ok = await send(redis, `dm-${i}`, { createdAt: NEW_ACCOUNT });
       expect(ok.allowed).toBe(true);
+      expect(ok.measured).toBe(true);
     }
 
     const blocked = await send(redis, "dm-overflow", { createdAt: NEW_ACCOUNT });
@@ -194,12 +195,14 @@ describe("checkDmFanout", () => {
       null
     );
     expect(res.allowed).toBe(true);
+    expect(res.measured).toBe(false);
   });
 
   it("allows the send when a redis command fails", async () => {
     redis.failOn = "eval";
     const res = await send(redis, "dm-1", { createdAt: NEW_ACCOUNT });
     expect(res.allowed).toBe(true);
+    expect(res.measured).toBe(false);
   });
 
   // A read-then-write pipeline loses to exactly this: fire the spray in

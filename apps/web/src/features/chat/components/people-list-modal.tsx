@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import i18next from "i18next";
 import { Modal, ModalBody } from "@ui/modal";
 import { ProfileLink, UserAvatar } from "@/features/shared";
 
@@ -33,7 +34,7 @@ export function PeopleListModal({ show, onHide, title, sections }: PeopleListMod
             type="button"
             onClick={onHide}
             className="text-[--text-muted] hover:text-[--text-color]"
-            aria-label="Close"
+            aria-label={i18next.t("g.close")}
           >
             ×
           </button>
