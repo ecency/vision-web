@@ -15,7 +15,8 @@ const GROUP_MAX_OTHERS = 7;
 /**
  * Opens (or returns the existing) group conversation between the current user
  * and 2 to 7 others. Every member must accept DMs from every other participant,
- * since a group lets them all write to each other. Every member also counts as
+ * since a group lets them all write to each other. The creator's own setting
+ * is not checked: choosing the members is their consent. Every member also counts as
  * a distinct recipient against the DM fan-out limit, so a group cannot be used
  * to reach more people than one-to-one messages would.
  */

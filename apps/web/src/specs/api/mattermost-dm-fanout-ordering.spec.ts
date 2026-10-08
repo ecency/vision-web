@@ -166,4 +166,16 @@ describe("posts route — DM fan-out runs last", () => {
 
     expect(res.status).toBe(429);
   });
+
+  it("sends nothing when a group's members cannot be read", async () => {
+    const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    mockRecipientIds.mockRejectedValue(new Error("upstream down"));
+    allowFanout();
+
+    const res = await POST(request("hello group"), params);
+
+    expect(res.status).toBe(500);
+    expect(mockCheckDmFanout).not.toHaveBeenCalled();
+    expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts", expect.anything(), expect.anything());
+  });
 });
