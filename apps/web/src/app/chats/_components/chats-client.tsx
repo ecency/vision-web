@@ -26,6 +26,7 @@ import { FormControl } from "@ui/input";
 import { Button } from "@ui/button";
 import { Dropdown, DropdownItemWithIcon, DropdownMenu, DropdownToggle } from "@ui/dropdown";
 import { checkSvg, dotsHorizontal, volumeOffSvg } from "@ui/svg";
+import { UilPlus } from "@tooni/iconscout-unicons-react";
 import { ChangeEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -456,15 +457,24 @@ export function ChatsClient() {
       />
       <div className="flex flex-col gap-3 border-b border-[--border-color] p-4">
         <div className="flex items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold">{i18next.t("chat.title")}</h2>
             <p className="text-xs text-[--text-muted]">{i18next.t("chat.page-title")}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {(isLoading || channelsLoading) && (
               <div className="text-xs text-[--text-muted]">{i18next.t("chat.loading")}</div>
             )}
-            <Button type="button" size="sm" appearance="secondary" onClick={() => setShowNewGroup(true)}>
+            <Button
+              type="button"
+              size="sm"
+              appearance="secondary"
+              outline={true}
+              icon={<UilPlus />}
+              iconPlacement="left"
+              className="whitespace-nowrap"
+              onClick={() => setShowNewGroup(true)}
+            >
               {i18next.t("chat.new-group")}
             </Button>
           </div>
