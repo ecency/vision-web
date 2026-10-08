@@ -5,6 +5,16 @@
 export class FakeLockRedis {
   private entries = new Map<string, { value: string; expiresAt: number }>();
   failAll = false;
+  /** Fail this many upcoming commands, as a slow or reconnecting client does. */
+  failNext = 0;
+
+  private maybeFail() {
+    if (this.failAll) throw new Error("redis down");
+    if (this.failNext > 0) {
+      this.failNext -= 1;
+      throw new Error("Command timed out");
+    }
+  }
 
   get(key: string) {
     const entry = this.entries.get(key);
@@ -29,14 +39,14 @@ export class FakeLockRedis {
   }
 
   async set(key: string, value: string, _px: string, ttl: number, _nx: string) {
-    if (this.failAll) throw new Error("redis down");
+    this.maybeFail();
     if (this.get(key) !== undefined) return null;
     this.put(key, value, ttl);
     return "OK";
   }
 
   async eval(script: string, _keys: number, key: string, owner: string, ttl?: string) {
-    if (this.failAll) throw new Error("redis down");
+    this.maybeFail();
     if (this.get(key) !== owner) return 0;
     if (script.includes("PEXPIRE")) {
       this.put(key, owner, Number(ttl));

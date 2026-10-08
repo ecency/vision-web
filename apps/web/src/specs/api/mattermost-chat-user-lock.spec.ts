@@ -54,11 +54,11 @@ describe("withChatUserLock", () => {
   });
 
   it("keeps the lock for as long as the work runs", async () => {
-    const { withChatUserLock } = await loadLock({ ttl: 120 });
+    const { withChatUserLock } = await loadLock({ ttl: 300 });
     let ownedThroughout = true;
 
     await withChatUserLock("u-3", async () => {
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 10; i++) {
         await tick(60); // well past the TTL in total
         if (redis.get(KEY("u-3")) === undefined) ownedThroughout = false;
       }
@@ -151,5 +151,55 @@ describe("withChatUserLock", () => {
 
     await expect(pending).rejects.toThrow("client went away");
     expect(ran).toBe(false);
+  });
+
+  // One slow reply must not be read as "Redis is down" while the key is held.
+  it("does not run unlocked after a transient error while the lock is held elsewhere", async () => {
+    const { withChatUserLock, ChatUserBusyError } = await loadLock({ wait: 300 });
+    redis.put(KEY("u-11"), "other-instance");
+    let ran = false;
+
+    const pending = withChatUserLock("u-11", async () => {
+      ran = true;
+    }, { redis: redis as never });
+    await tick(150);
+    redis.failNext = 1;
+
+    await expect(pending).rejects.toBeInstanceOf(ChatUserBusyError);
+    expect(ran).toBe(false);
+  });
+
+  it("acquires normally after a transient error when the lock is free", async () => {
+    const { withChatUserLock } = await loadLock();
+    redis.failNext = 1;
+
+    expect(await withChatUserLock("u-12", async () => "ran", { redis: redis as never })).toBe("ran");
+    expect(redis.size).toBe(0);
+  });
+
+  it("stops the work once renewals keep failing and the lease cannot be proven", async () => {
+    const { withChatUserLock, ChatUserBusyError } = await loadLock({ ttl: 150 });
+
+    await expect(
+      withChatUserLock("u-13", async (signal) => {
+        redis.failAll = true; // renewals start failing
+        await new Promise<void>((resolve, reject) => {
+          signal!.addEventListener("abort", () => reject(signal!.reason));
+          setTimeout(resolve, 1_000);
+        });
+      }, { redis: redis as never })
+    ).rejects.toBeInstanceOf(ChatUserBusyError);
+  });
+
+  it("reports busy when ownership was lost even if the work then finished", async () => {
+    const { withChatUserLock, ChatUserBusyError } = await loadLock({ ttl: 150 });
+
+    await expect(
+      withChatUserLock("u-14", async () => {
+        redis.put(KEY("u-14"), "someone-else");
+        await tick(120); // ignores its signal and completes
+        return "token";
+      }, { redis: redis as never })
+    ).rejects.toBeInstanceOf(ChatUserBusyError);
   });
 });

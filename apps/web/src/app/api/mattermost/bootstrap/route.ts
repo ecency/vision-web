@@ -5,6 +5,7 @@ import { Subscription } from "@/entities";
 import {
   CHAT_BAN_PROP,
   ChatBannedError,
+  ChatUserBusyError,
   ensureCommunityChannelMembership,
   ensureMattermostUser,
   ensurePersonalToken,
@@ -207,7 +208,10 @@ async function handleBootstrap(req: Request, signal: AbortSignal): Promise<NextR
                 ? "chat service timed out"
                 : "chat service unavailable"
           },
-          { status }
+          // Another request is updating this user's session: retry shortly.
+          e instanceof ChatUserBusyError
+            ? { status, headers: { "Retry-After": "2" } }
+            : { status }
         );
     }
 

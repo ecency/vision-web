@@ -7,9 +7,10 @@
  * lock is taken and renewed for as long as the work runs. If another instance
  * holds it past the wait, the call fails with ChatUserBusyError (retryable)
  * instead of running unlocked; if ownership is lost midway, the work's signal
- * is aborted and the same error is raised. Only when Redis itself is
- * unreachable does the work run with the in-memory chain alone, so a Redis
- * outage never blocks chat.
+ * is aborted and the same error is raised. A holder that cannot prove its
+ * lease (renewals failing) stops the same way. Only when Redis gives no reply
+ * at all does the work run with the in-memory chain alone, so a Redis outage
+ * never blocks chat; a lock seen held is never ignored.
  */
 import { randomUUID } from "crypto";
 import type { Redis as RedisClient } from "ioredis";
@@ -25,6 +26,8 @@ function envMs(name: string, fallback: number) {
 const LOCK_TTL_MS = envMs("CHAT_TOKEN_LOCK_TTL_MS", 20_000);
 const WAIT_MS = envMs("CHAT_TOKEN_LOCK_WAIT_MS", 10_000);
 const POLL_MS = 100;
+// Consecutive failed SETs, with no reply at all, before Redis counts as down.
+const OUTAGE_ATTEMPTS = 3;
 
 const RELEASE_SCRIPT = `
 if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -56,7 +59,11 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** "held" once ours; "unavailable" when Redis cannot be used at all. */
+/**
+ * "held" once ours; "unavailable" only when Redis has not answered at all.
+ * A transient error is retried like contention, and once the key has been
+ * seen held the wait can only end in ownership or ChatUserBusyError.
+ */
 async function acquire(
   redis: RedisClient,
   key: string,
@@ -64,14 +71,22 @@ async function acquire(
   signal?: AbortSignal
 ): Promise<"held" | "unavailable"> {
   const deadline = Date.now() + WAIT_MS;
+  let answered = false;
+  let failures = 0;
   for (;;) {
     signal?.throwIfAborted();
     try {
-      if (await redis.set(key, owner, "PX", LOCK_TTL_MS, "NX")) return "held";
+      const result = await redis.set(key, owner, "PX", LOCK_TTL_MS, "NX");
+      if (result) return "held";
+      answered = true;
     } catch {
-      return "unavailable";
+      failures += 1;
+      if (!answered && failures >= OUTAGE_ATTEMPTS) return "unavailable";
     }
-    if (Date.now() >= deadline) throw new ChatUserBusyError();
+    if (Date.now() >= deadline) {
+      if (!answered) return "unavailable";
+      throw new ChatUserBusyError();
+    }
     await sleep(POLL_MS);
   }
 }
@@ -85,19 +100,29 @@ async function runHeld<T>(
 ): Promise<T> {
   const lost = new AbortController();
   const workSignal = signal ? AbortSignal.any([signal, lost.signal]) : lost.signal;
+  const interval = Math.max(50, Math.floor(LOCK_TTL_MS / 3));
+  // The lease we can prove: extended by every successful renewal. When a
+  // renewal fails and the lease would lapse before the next one, stop.
+  let confirmedUntil = Date.now() + LOCK_TTL_MS;
   const renew = setInterval(() => {
+    const sentAt = Date.now();
     redis
       .eval(RENEW_SCRIPT, 1, key, owner, String(LOCK_TTL_MS))
       .then((renewed) => {
-        if (!renewed) lost.abort(new ChatUserBusyError());
+        if (renewed) confirmedUntil = sentAt + LOCK_TTL_MS;
+        else lost.abort(new ChatUserBusyError());
       })
-      // Redis unreachable: other instances fall back the same way.
-      .catch(() => {});
-  }, Math.max(50, Math.floor(LOCK_TTL_MS / 3)));
+      .catch(() => {
+        if (Date.now() + interval >= confirmedUntil) lost.abort(new ChatUserBusyError());
+      });
+  }, interval);
   renew.unref?.();
 
   try {
-    return await fn(workSignal);
+    const result = await fn(workSignal);
+    // Lost right after the last step: the result may already be undone.
+    if (lost.signal.aborted && !signal?.aborted) throw new ChatUserBusyError();
+    return result;
   } catch (error) {
     if (lost.signal.aborted && !signal?.aborted) throw new ChatUserBusyError();
     throw error;
