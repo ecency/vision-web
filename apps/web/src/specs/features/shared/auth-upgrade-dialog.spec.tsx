@@ -35,6 +35,7 @@ vi.mock("@/utils/client", async (importOriginal) => ({
 }));
 
 vi.mock("@/utils/hive-extensions", () => ({
+  extensionSupportsAuthority: (keyType: string) => keyType !== "owner",
   getDetectedExtensions: () => h.detected,
   hasAnyHiveExtension: () => h.detected.length > 0,
   setPreferredExtensionId: (username: string, id: string | null) =>

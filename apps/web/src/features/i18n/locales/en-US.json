@@ -4127,7 +4127,8 @@
         "derivation-unknown": "Unknown",
         "derivation-bip44": "BIP44 Seed",
         "derivation-master-password": "Master Password",
-        "derivation-private-key": "Private Key"
+        "derivation-private-key": "Private Key",
+        "cannot-revoke-threshold": "Cannot revoke - this authority would fall below its signing threshold"
       },
       "step4": {
         "title": "Ready to Apply Changes",

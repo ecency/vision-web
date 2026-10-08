@@ -16,6 +16,7 @@ import { shouldUseKeychainMobile } from "@/utils/client";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { getLoginType } from "@/utils/user-token";
 import {
+  extensionSupportsAuthority,
   getDetectedExtensions,
   hasAnyHiveExtension,
   setPreferredExtensionId,
@@ -89,17 +90,15 @@ export function AuthUpgradeDialog() {
   const authority = (request.authority || "active") as "posting" | "active" | "owner";
   const isMetaMaskUser = activeUser && getLoginType(activeUser.username) === "metamask";
   const useKcMobile = shouldUseKeychainMobile(activeUser?.username);
-  // Peak Vault can't sign owner-authority operations, so don't offer it for
-  // owner flows (e.g. change_recovery_account) where its broadcast would be
-  // rejected even though a compatible extension is available.
-  const detectedExtensions = getDetectedExtensions().filter(
-    (e) => authority !== "owner" || e.id !== "peakvault"
-  );
+  const detectedExtensions = getDetectedExtensions();
   // The unified "Sign with Extension" button shows when an extension is
   // installed, or there's a Keychain Mobile / in-app deep-link path. On desktop
   // with no extension we show install links instead (below) — never a dead-end.
+  // Owner requests (e.g. change_recovery_account) never get it: no extension
+  // nor the deep link can sign owner authority.
   const canUseExtensionFallback = useKcMobile || isInAppBrowser();
   const showExtensionBtn =
+    extensionSupportsAuthority(authority) &&
     !isMetaMaskUser &&
     (detectedExtensions.length > 0 || hasAnyHiveExtension() || canUseExtensionFallback);
   const extensionLabel = useKcMobile
@@ -228,7 +227,7 @@ export function AuthUpgradeDialog() {
                       </Button>
                     )}
                   </div>
-                  {!showExtensionBtn && showInstall && (
+                  {!showExtensionBtn && showInstall && extensionSupportsAuthority(authority) && (
                     // Desktop with no extension and no mobile deep-link path:
                     // instead of a dead-end, point the user at the install
                     // options (browser-appropriate, hidden on mobile). Key entry

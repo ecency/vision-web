@@ -6,14 +6,13 @@ import { KeyOrHot } from "@/features/shared/key-or-hot";
 import { Button, Modal, ModalBody, ModalHeader } from "@/features/ui";
 import {
   getAccountFullQueryOptions,
-  useAccountRevokeKey,
-  buildRevokeKeysOp,
+  broadcastOperations,
   canRevokeFromAuthority
 } from "@ecency/sdk";
-import { PrivateKey, PublicKey } from "@ecency/sdk";
-import type { Operation } from "@ecency/sdk";
+import { PrivateKey } from "@ecency/sdk";
 import { getWebBroadcastAdapter } from "@/providers/sdk/web-broadcast-adapter";
-import { findKeyAuthority, keySatisfiesAuthority } from "@/utils/key-authority";
+import { canKeySignAuthority } from "@/utils/key-authority";
+import { buildRevokeKeysByAuthorityOp, revokeRequiredAuthority } from "./revoke-keys-op";
 import {
   UilArrowLeft,
   UilCheckCircle,
@@ -382,38 +381,24 @@ function RevokeConfirmStep({
   onSignError: () => void;
   onSuccess: () => void;
 }) {
-  // Collect all unique public keys to revoke across all authorities
-  const allRevokingKeys: PublicKey[] = [];
-  const seen = new Set<string>();
-  for (const keys of [keysToRevoke.owner, keysToRevoke.active, keysToRevoke.posting]) {
-    for (const k of keys) {
-      if (!seen.has(k)) {
-        seen.add(k);
-        allRevokingKeys.push(PublicKey.from(k));
-      }
-    }
-  }
-
-  // Determine the minimum authority level needed for signing.
-  // Hive requires owner authority only when the owner field is included
-  // in the account_update operation; otherwise active authority suffices.
-  const requiredAuthority: "owner" | "active" =
-    keysToRevoke.owner.length > 0 ? "owner" : "active";
+  // The operation removes each key only from the authorities it was ticked
+  // in; it needs owner authority only when an owner key goes.
+  const requiredAuthority = revokeRequiredAuthority(keysToRevoke);
 
   const queryClient = useQueryClient();
-  const { data: accountData } = useQuery(getAccountFullQueryOptions(username));
-  const { mutateAsync: revokeKeys } = useAccountRevokeKey(username);
+  const freshAccount = () =>
+    queryClient.fetchQuery({ ...getAccountFullQueryOptions(username), staleTime: 0 });
 
-  // Direct key signing - delegates to SDK mutation. Check the typed key holds
-  // the required authority first, so a posting/active key pasted for an
-  // owner-level revoke gets a precise message instead of a chain rejection.
+  // Direct key signing. Check the typed key against the account first, so a
+  // posting/active key pasted for an owner-level revoke gets a precise
+  // message instead of a chain rejection.
   const handleSignByKey = async (privateKey: PrivateKey) => {
-    if (!accountData) {
+    const account = await freshAccount().catch(() => null);
+    if (!account) {
       error(i18next.t("permissions.add-keys.step1.error-account-not-loaded"));
       return;
     }
-    const found = findKeyAuthority(accountData, privateKey.createPublic().toString());
-    if (!keySatisfiesAuthority(found, requiredAuthority)) {
+    if (!canKeySignAuthority(account, privateKey.createPublic().toString(), requiredAuthority)) {
       error(
         i18next.t("permissions.keys.error-key-authority", {
           authority: i18next.t(`manage-authorities.${requiredAuthority}`),
@@ -424,7 +409,7 @@ function RevokeConfirmStep({
     }
     onSignStart();
     try {
-      await revokeKeys({ currentKey: privateKey, revokingKey: allRevokingKeys });
+      await broadcastOperations([buildRevokeKeysByAuthorityOp(account, keysToRevoke)], privateKey);
       onSuccess();
     } catch (err: any) {
       onSignError();
@@ -432,18 +417,14 @@ function RevokeConfirmStep({
     }
   };
 
-  // Keychain/MetaMask signing - uses shared SDK op builder, broadcasts via adapter
+  // Keychain/MetaMask signing - broadcasts via adapter
   const handleSignByKeychain = async () => {
     onSignStart();
     try {
-      const account = await queryClient.fetchQuery(
-        getAccountFullQueryOptions(username)
-      );
+      const account = await freshAccount();
       if (!account) throw new Error("Account data not loaded");
 
-      const opPayload = buildRevokeKeysOp(account, allRevokingKeys);
-      const op = ["account_update", opPayload] as unknown as Operation;
-
+      const op = buildRevokeKeysByAuthorityOp(account, keysToRevoke);
       const adapter = getWebBroadcastAdapter();
       await adapter.broadcastWithKeychain!(username, [op], requiredAuthority);
       onSuccess();

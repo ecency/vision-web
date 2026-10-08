@@ -5,6 +5,7 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 const state = vi.hoisted(() => ({
   signerPub: "STM_ACTIVE",
+  account: null as any,
   errors: [] as string[],
   broadcast: vi.fn(async () => ({ id: "tx" }))
 }));
@@ -14,8 +15,11 @@ vi.mock("@tanstack/react-query", async () => {
   const actual = await vi.importActual("@tanstack/react-query");
   return {
     ...actual,
-    useQuery: vi.fn(),
-    useQueryClient: vi.fn(() => ({ setQueryData: vi.fn(), invalidateQueries: vi.fn() }))
+    useQueryClient: vi.fn(() => ({
+      fetchQuery: vi.fn(async () => state.account),
+      setQueryData: vi.fn(),
+      invalidateQueries: vi.fn()
+    }))
   };
 });
 vi.mock("@/features/shared", () => ({
@@ -64,7 +68,6 @@ vi.mock("@/api/mutations/update-account-keys-cache", () => ({
   updateAccountKeysCache: vi.fn()
 }));
 
-import { useQuery } from "@tanstack/react-query";
 import { Step4Confirm } from "@/app/(dynamicPages)/profile/[username]/permissions/_components/add-keys-steps/step-4-confirm";
 
 const account = {
@@ -83,7 +86,7 @@ describe("Step4Confirm - key preflight", () => {
     state.errors = [];
     state.broadcast.mockClear();
     (useActiveAccount as any).mockReturnValue({ activeUser: { username: "alice" } });
-    (useQuery as any).mockReturnValue({ data: account });
+    state.account = JSON.parse(JSON.stringify(account));
   });
 
   it("refuses to broadcast with a key that is not the owner key", async () => {
@@ -133,5 +136,17 @@ describe("Step4Confirm - key preflight", () => {
     const body = (state.broadcast.mock.calls[0] as any[])[0][0][1];
     expect(body.owner.key_auths).toEqual([["PUB(5Jowner)", 1]]);
     expect(body.active.key_auths).toEqual([["STM_ACTIVE", 1], ["PUB(5Jactive)", 1]]);
+  });
+
+  it("lets an unknown key through when owner is delegated to an account", async () => {
+    state.account.owner.account_auths = [["recovery-helper", 1]];
+    state.signerPub = "STM_HELPER";
+    render(
+      <Step4Confirm masterPassword="P5new" keysToRevokeByAuthority={noRevoke} onBack={vi.fn()} onSuccess={vi.fn()} />
+    );
+    fireEvent.click(screen.getByText("sign-with-key"));
+
+    await waitFor(() => expect(state.broadcast).toHaveBeenCalledTimes(1));
+    expect(state.errors).toEqual([]);
   });
 });

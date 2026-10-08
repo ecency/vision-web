@@ -5,6 +5,7 @@ import { error, success } from "@/features/shared";
 import { KeyOrHot } from "@/features/shared/key-or-hot";
 import { Button } from "@/features/ui";
 import { getAccountFullQueryOptions, dedupeAndSortKeyAuths } from "@ecency/sdk";
+import type { FullAccount } from "@ecency/sdk";
 import { deriveHiveMasterPasswordKeys } from "@ecency/wallets";
 import { PrivateKey } from "@ecency/sdk";
 import type { Operation } from "@ecency/sdk";
@@ -13,10 +14,10 @@ import { UilArrowLeft, UilCheckCircle, UilSpinner } from "@tooni/iconscout-unico
 import i18next from "i18next";
 import { useMemo, useState } from "react";
 import { useKeyDerivationStore } from "../../_hooks";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { getWebBroadcastAdapter } from "@/providers/sdk/web-broadcast-adapter";
 import { broadcastOperations } from "@ecency/sdk";
-import { findKeyAuthority, keySatisfiesAuthority } from "@/utils/key-authority";
+import { canKeySignAuthority } from "@/utils/key-authority";
 
 type KeyAuthority = "owner" | "active" | "posting" | "memo";
 
@@ -45,12 +46,12 @@ export function Step4Confirm({ masterPassword, keysToRevokeByAuthority, onBack, 
   const [isComplete, setIsComplete] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: accountData } = useQuery(getAccountFullQueryOptions(username));
+  // Build from a fresh read, so keys rotated elsewhere since the page loaded
+  // are neither re-added nor missed by the preflight.
+  const freshAccount = () =>
+    queryClient.fetchQuery({ ...getAccountFullQueryOptions(username), staleTime: 0 });
 
-  const buildAccountUpdateOp = (): Operation => {
-    if (!accountData) {
-      throw new Error("Account data not loaded");
-    }
+  const buildAccountUpdateOp = (account: FullAccount): Operation => {
 
     const newKeys = {
       owner: PrivateKey.fromString(keys.owner),
@@ -60,7 +61,7 @@ export function Step4Confirm({ masterPassword, keysToRevokeByAuthority, onBack, 
     };
 
     const prepareAuth = (keyName: "owner" | "active" | "posting") => {
-      const auth: Authority = JSON.parse(JSON.stringify(accountData[keyName]));
+      const auth: Authority = JSON.parse(JSON.stringify(account[keyName]));
       const keysToRevoke = keysToRevokeByAuthority[keyName] || [];
       const existingKeys = auth.key_auths.filter(
         ([key]) => !keysToRevoke.includes(key.toString())
@@ -76,7 +77,7 @@ export function Step4Confirm({ masterPassword, keysToRevokeByAuthority, onBack, 
       "account_update",
       {
         account: username,
-        json_metadata: accountData.json_metadata,
+        json_metadata: account.json_metadata,
         owner: prepareAuth("owner"),
         active: prepareAuth("active"),
         posting: prepareAuth("posting"),
@@ -111,15 +112,17 @@ export function Step4Confirm({ masterPassword, keysToRevokeByAuthority, onBack, 
 
   // Sign with private key (entered directly). account_update with an owner
   // field needs owner authority; check the typed key against the account
-  // before broadcasting, so a pasted active key (or the NEW master password)
-  // gets a precise message instead of a chain rejection.
+  // before broadcasting, so a pasted WIF of a weaker key (active, or the new
+  // owner key from the downloaded file) gets a precise message instead of a
+  // chain rejection. A master password or seed that matches nothing never
+  // gets here: KeyInput already rejects it.
   const handleSignByKey = async (privateKey: PrivateKey) => {
-    if (!accountData) {
+    const account = await freshAccount().catch(() => null);
+    if (!account) {
       error(i18next.t("permissions.add-keys.step1.error-account-not-loaded"));
       return;
     }
-    const found = findKeyAuthority(accountData, privateKey.createPublic().toString());
-    if (!keySatisfiesAuthority(found, "owner")) {
+    if (!canKeySignAuthority(account, privateKey.createPublic().toString(), "owner")) {
       error(
         i18next.t("permissions.keys.error-key-authority", {
           authority: i18next.t("manage-authorities.owner"),
@@ -130,7 +133,7 @@ export function Step4Confirm({ masterPassword, keysToRevokeByAuthority, onBack, 
     }
     setIsApplying(true);
     try {
-      const op = buildAccountUpdateOp();
+      const op = buildAccountUpdateOp(account);
       await broadcastOperations([op], privateKey);
       await handleSuccess();
     } catch (err: any) {
@@ -143,7 +146,9 @@ export function Step4Confirm({ masterPassword, keysToRevokeByAuthority, onBack, 
   const handleSignByKeychain = async () => {
     setIsApplying(true);
     try {
-      const op = buildAccountUpdateOp();
+      const account = await freshAccount();
+      if (!account) throw new Error("Account data not loaded");
+      const op = buildAccountUpdateOp(account);
       const adapter = getWebBroadcastAdapter();
       await adapter.broadcastWithKeychain!(username, [op], "owner");
       await handleSuccess();

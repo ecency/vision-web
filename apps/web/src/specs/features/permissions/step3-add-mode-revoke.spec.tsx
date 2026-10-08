@@ -22,9 +22,9 @@ vi.mock("@/app/(dynamicPages)/profile/[username]/permissions/_hooks", () => ({
 import { useQuery } from "@tanstack/react-query";
 import { Step3ReviewKeys } from "@/app/(dynamicPages)/profile/[username]/permissions/_components/add-keys-steps/step-3-review-keys";
 
-const auth = (keys: string[], threshold = 1) => ({
+const auth = (keys: string[], threshold = 1, accountAuths: [string, number][] = []) => ({
   weight_threshold: threshold,
-  account_auths: [],
+  account_auths: accountAuths,
   key_auths: keys.map((k) => [k, 1])
 });
 
@@ -78,10 +78,46 @@ describe("Step3ReviewKeys - which keys can be ticked", () => {
     expect(a).toBeEnabled();
     expect(b).toBeEnabled();
     fireEvent.click(a);
-    // A + new key = 2 meets the threshold; removing B as well would leave 1.
+    // B + new key = 2 meets the threshold; removing B as well would leave 1.
     expect(a).toBeEnabled();
     expect(b).toBeDisabled();
     fireEvent.click(a);
     expect(b).toBeEnabled();
+  });
+
+  it("revoke mode: the last key stays locked even when app accounts carry the weight", () => {
+    // posting held by one key plus app account_auths is the common Ecency
+    // layout; removing the key would leave an authority no key can sign in with.
+    mockAccount({ ...singleKeyAccount, posting: auth(["STM_POSTING"], 1, [["ecency.app", 1]]) });
+    render(<Step3ReviewKeys mode="revoke" onNext={vi.fn()} onBack={vi.fn()} />);
+    screen.getAllByRole("checkbox").forEach((b) => expect(b).toBeDisabled());
+  });
+
+  it("revoke mode: a pre-selected key is only ticked where removing it keeps the threshold", () => {
+    mockAccount({
+      ...singleKeyAccount,
+      active: auth(["STM_X", "STM_Y"], 2),
+      posting: auth(["STM_X", "STM_P2"], 1)
+    });
+    const onNext = vi.fn();
+    render(<Step3ReviewKeys mode="revoke" initialSelectedKey="STM_X" onNext={onNext} onBack={vi.fn()} />);
+    const [owner, activeX, activeY, postingX, postingP2] = screen.getAllByRole("checkbox");
+    expect(owner).toBeDisabled();
+    // active is 2-of-2: X cannot be pre-ticked there.
+    expect(activeX).not.toBeChecked();
+    expect(activeY).toBeDisabled();
+    // posting has a spare key: X is pre-ticked there.
+    expect(postingX).toBeChecked();
+    expect(postingP2).toBeDisabled();
+    fireEvent.click(screen.getByText("g.continue"));
+    expect(onNext).toHaveBeenCalledWith({ owner: [], active: [], posting: ["STM_X"], memo: [] });
+  });
+
+  it("add mode: a locked multisig row explains the threshold, not 'only key'", () => {
+    mockAccount({ ...singleKeyAccount, owner: auth(["STM_OWNER_A", "STM_OWNER_B"], 2) });
+    render(<Step3ReviewKeys mode="add" onNext={vi.fn()} onBack={vi.fn()} />);
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    expect(screen.getByText("permissions.add-keys.step3.cannot-revoke-threshold")).toBeInTheDocument();
+    expect(screen.queryByText("permissions.add-keys.step3.cannot-revoke-last")).not.toBeInTheDocument();
   });
 });
