@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.24
+
+### Patch Changes
+
+- fix(sdk): serialize authority maps in the order hived hashes them (#1931)
+
 ## 2.4.23
 
 ### Patch Changes
