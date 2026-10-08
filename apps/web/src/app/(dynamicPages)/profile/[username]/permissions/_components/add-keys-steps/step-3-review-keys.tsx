@@ -1,6 +1,7 @@
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { Button, StyledTooltip } from "@/features/ui";
-import { getAccountFullQueryOptions } from "@ecency/sdk";
+import { getAccountFullQueryOptions, canRevokeFromAuthority } from "@ecency/sdk";
+import type { Authority } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import { UilArrowLeft, UilArrowRight } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
@@ -11,6 +12,7 @@ import { resolveExtensionAwareLoginType } from "@/utils/login-extension";
 
 type Keys = Record<string, [string, number][]>;
 type KeyAuthority = "owner" | "active" | "posting" | "memo";
+type SigningAuthority = Exclude<KeyAuthority, "memo">;
 type SelectedKeysMap = Map<string, Set<KeyAuthority>>; // publicKey -> Set of authorities
 
 interface Props {
@@ -43,19 +45,62 @@ export function Step3ReviewKeys({ mode = "add", initialSelectedKey, onNext, onBa
           }) as Keys)
         : null
   });
+  const { data: authorities } = useQuery({
+    ...getAccountFullQueryOptions(username!),
+    enabled: Boolean(username),
+    select: (resp) =>
+      resp
+        ? ({ owner: resp.owner, active: resp.active, posting: resp.posting } as Record<
+            SigningAuthority,
+            Authority
+          >)
+        : null
+  });
 
-  // Pre-select initialSelectedKey across all authorities where it appears.
-  // Only seed once per initialSelectedKey to avoid overwriting user selections on refetch.
+  const isRevokeMode = mode === "revoke";
+
+  // Whether `publicKey` can be ticked under `authority` on top of `selected`.
+  // The authority must still meet its weight_threshold without the removed
+  // keys. In "add" mode the new key, weight 1, joins the authority in the
+  // same operation, so the only existing key CAN be replaced; that is the
+  // normal rotation for the common single-key account. In "revoke" mode
+  // nothing is added, so the last key stays locked, and at least one key must
+  // remain even when app accounts in account_auths would carry the weight:
+  // an authority held only by apps can no longer sign in with a key.
+  const canRevokeKey = (
+    authority: SigningAuthority,
+    publicKey: string,
+    selected: SelectedKeysMap
+  ) => {
+    const auth = authorities?.[authority];
+    if (!auth) return false;
+    const removing = new Set<string>([publicKey]);
+    selected.forEach((auths, key) => {
+      if (auths.has(authority)) removing.add(key);
+    });
+    if (isRevokeMode) {
+      const keysLeft = auth.key_auths.filter(([k]) => !removing.has(String(k))).length;
+      return keysLeft > 0 && canRevokeFromAuthority(auth, removing);
+    }
+    return canRevokeFromAuthority({ ...auth, weight_threshold: auth.weight_threshold - 1 }, removing);
+  };
+
+  // Pre-select initialSelectedKey across all authorities where it can be
+  // revoked on its own. Only seed once per initialSelectedKey to avoid
+  // overwriting user selections on refetch.
   useEffect(() => {
-    if (!initialSelectedKey || !accountData) return;
+    if (!initialSelectedKey || !authorities) return;
     if (seededKeyRef.current === initialSelectedKey) return;
 
     const initial = new Map<string, Set<KeyAuthority>>();
-    const authorities: KeyAuthority[] = ["owner", "active", "posting"];
+    const signing: SigningAuthority[] = ["owner", "active", "posting"];
 
-    for (const auth of authorities) {
-      const keys = accountData[auth] ?? [];
-      if (keys.length > 1 && keys.some(([k]) => k === initialSelectedKey)) {
+    for (const auth of signing) {
+      const keys = authorities[auth].key_auths;
+      if (
+        keys.some(([k]) => String(k) === initialSelectedKey) &&
+        canRevokeKey(auth, initialSelectedKey, new Map())
+      ) {
         const set = initial.get(initialSelectedKey) || new Set<KeyAuthority>();
         set.add(auth);
         initial.set(initialSelectedKey, set);
@@ -66,7 +111,9 @@ export function Step3ReviewKeys({ mode = "add", initialSelectedKey, onNext, onBa
       setSelectedKeys(initial);
     }
     seededKeyRef.current = initialSelectedKey;
-  }, [initialSelectedKey, accountData]);
+    // canRevokeKey is a render-scoped closure over `authorities` and `mode`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSelectedKey, authorities]);
 
   const toggleKey = (publicKey: string, authority: KeyAuthority) => {
     setSelectedKeys((prev) => {
@@ -151,15 +198,12 @@ export function Step3ReviewKeys({ mode = "add", initialSelectedKey, onNext, onBa
     );
   };
 
-  const isRevokeMode = mode === "revoke";
-
   const renderKeyType = (keyName: string) => {
     const keys = accountData?.[keyName] ?? [];
     if (keys.length === 0) return null;
 
     const isMemo = keyName === "memo";
     const authority = keyName as KeyAuthority;
-    const canRevoke = !isMemo && keys.length > 1;
 
     // In revoke mode, hide memo entirely since it can't be revoked standalone
     if (isRevokeMode && isMemo) return null;
@@ -174,7 +218,13 @@ export function Step3ReviewKeys({ mode = "add", initialSelectedKey, onNext, onBa
             </span>
           )}
         </div>
-        {keys.map((key) => (
+        {keys.map((key) => {
+          // A ticked key stays enabled so it can be unticked.
+          const canRevoke =
+            !isMemo &&
+            (isKeySelected(key[0], authority) ||
+              canRevokeKey(authority as SigningAuthority, key[0], selectedKeys));
+          return (
           <div
             key={key[0]}
             className="bg-gray-100 dark:bg-dark-200 border border-[--border-color] rounded-lg p-3 mb-2"
@@ -197,7 +247,12 @@ export function Step3ReviewKeys({ mode = "add", initialSelectedKey, onNext, onBa
                 </StyledTooltip>
                 {!canRevoke && !isMemo && (
                   <div className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-                    {i18next.t("permissions.add-keys.step3.cannot-revoke-last")}
+                    {keys.length === 1
+                      ? i18next.t("permissions.add-keys.step3.cannot-revoke-last")
+                      : i18next.t("permissions.add-keys.step3.cannot-revoke-threshold", {
+                          defaultValue:
+                            "Cannot revoke - this authority would fall below its signing threshold"
+                        })}
                   </div>
                 )}
                 {!isRevokeMode && isMemo && (
@@ -208,7 +263,8 @@ export function Step3ReviewKeys({ mode = "add", initialSelectedKey, onNext, onBa
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     );
   };
