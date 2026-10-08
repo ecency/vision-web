@@ -202,4 +202,48 @@ describe("withChatUserLock", () => {
       }, { redis: redis as never })
     ).rejects.toBeInstanceOf(ChatUserBusyError);
   });
+
+  // Once the key has been seen held, no number of later errors may turn the
+  // wait into "Redis is down" and let the work run.
+  it("stays strict through repeated errors after seeing the lock held", async () => {
+    const { withChatUserLock, ChatUserBusyError } = await loadLock({ wait: 2_500 });
+    redis.put(KEY("u-15"), "other-instance");
+    let ran = false;
+
+    const pending = withChatUserLock("u-15", async () => {
+      ran = true;
+    }, { redis: redis as never });
+    await tick(50);
+    redis.failNext = 4;
+
+    await expect(pending).rejects.toBeInstanceOf(ChatUserBusyError);
+    expect(ran).toBe(false);
+  });
+
+  // A reconnect takes ~500ms; three quick failures must not count as an outage.
+  it("rides out a short disconnect instead of running unlocked", async () => {
+    const { withChatUserLock, ChatUserBusyError } = await loadLock({ wait: 3_000 });
+    redis.put(KEY("u-16"), "other-instance");
+    redis.failAll = true;
+    let ran = false;
+
+    const pending = withChatUserLock("u-16", async () => {
+      ran = true;
+    }, { redis: redis as never });
+    await tick(1_200); // three failures by now, but under the outage span
+    redis.failAll = false; // reconnected; the key is still held elsewhere
+
+    await expect(pending).rejects.toBeInstanceOf(ChatUserBusyError);
+    expect(ran).toBe(false);
+  });
+
+  it("recognises its own lock when the SET reply was lost", async () => {
+    const { withChatUserLock } = await loadLock({ wait: 2_000 });
+    redis.loseReplyNext = true;
+    const startedAt = Date.now();
+
+    expect(await withChatUserLock("u-17", async () => "ran", { redis: redis as never })).toBe("ran");
+    expect(Date.now() - startedAt).toBeLessThan(1_500);
+    expect(redis.size).toBe(0);
+  });
 });

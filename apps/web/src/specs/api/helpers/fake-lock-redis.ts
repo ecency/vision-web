@@ -7,6 +7,8 @@ export class FakeLockRedis {
   failAll = false;
   /** Fail this many upcoming commands, as a slow or reconnecting client does. */
   failNext = 0;
+  /** Apply the next SET but lose its reply, as a timed-out command can. */
+  loseReplyNext = false;
 
   private maybeFail() {
     if (this.failAll) throw new Error("redis down");
@@ -42,6 +44,10 @@ export class FakeLockRedis {
     this.maybeFail();
     if (this.get(key) !== undefined) return null;
     this.put(key, value, ttl);
+    if (this.loseReplyNext) {
+      this.loseReplyNext = false;
+      throw new Error("Command timed out");
+    }
     return "OK";
   }
 

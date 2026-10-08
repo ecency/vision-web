@@ -682,15 +682,12 @@ export async function ensurePersonalToken(
           // A working token that belongs to someone else: never hand it out,
           // and revoke it since it has evidently been copied.
           await revokeIssuedTokens(ownerId, signal);
-          await revokeIssuedTokens(userId, signal);
         }
-        // Otherwise revoked or expired: fall through to create.
-      } else if (sealed) {
-        // A stored value that cannot be opened (different key, tampered or
-        // not ours): retire what was issued instead of leaving it valid
-        // alongside the new one.
-        await revokeIssuedTokens(userId, signal);
       }
+      // No usable stored token, so nothing issued earlier is in use: revoke
+      // it (an unopenable value, or a token created by an attempt that was
+      // cut off before sealing it) rather than leave it valid beside the new one.
+      await revokeIssuedTokens(userId, signal);
     }
 
     const token = await createToken(userId, signal);

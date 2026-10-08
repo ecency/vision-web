@@ -26,8 +26,12 @@ function envMs(name: string, fallback: number) {
 const LOCK_TTL_MS = envMs("CHAT_TOKEN_LOCK_TTL_MS", 20_000);
 const WAIT_MS = envMs("CHAT_TOKEN_LOCK_WAIT_MS", 10_000);
 const POLL_MS = 100;
-// Consecutive failed SETs, with no reply at all, before Redis counts as down.
+// Redis counts as down only after this many failed SETs, spread over at
+// least OUTAGE_SPAN_MS with no reply at all, so a reconnect (first retry after
+// 500ms) gets its chance first.
 const OUTAGE_ATTEMPTS = 3;
+const OUTAGE_SPAN_MS = 1_500;
+const FAILURE_BACKOFF_MS = 500;
 
 const RELEASE_SCRIPT = `
 if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -70,24 +74,37 @@ async function acquire(
   owner: string,
   signal?: AbortSignal
 ): Promise<"held" | "unavailable"> {
-  const deadline = Date.now() + WAIT_MS;
+  const startedAt = Date.now();
+  const deadline = startedAt + WAIT_MS;
   let answered = false;
   let failures = 0;
+  let failedBefore = false;
   for (;;) {
     signal?.throwIfAborted();
+    let failed = false;
     try {
       const result = await redis.set(key, owner, "PX", LOCK_TTL_MS, "NX");
       if (result) return "held";
       answered = true;
+      // A SET that succeeded but whose reply was lost leaves the key ours.
+      if (failedBefore && (await redis.get(key)) === owner) return "held";
     } catch {
+      failed = true;
+      failedBefore = true;
       failures += 1;
-      if (!answered && failures >= OUTAGE_ATTEMPTS) return "unavailable";
+      if (
+        !answered &&
+        failures >= OUTAGE_ATTEMPTS &&
+        Date.now() - startedAt >= OUTAGE_SPAN_MS
+      ) {
+        return "unavailable";
+      }
     }
     if (Date.now() >= deadline) {
       if (!answered) return "unavailable";
       throw new ChatUserBusyError();
     }
-    await sleep(POLL_MS);
+    await sleep(failed ? FAILURE_BACKOFF_MS : POLL_MS);
   }
 }
 

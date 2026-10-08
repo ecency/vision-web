@@ -213,6 +213,19 @@ describe("ensurePersonalToken", () => {
     expect(mm.active("u-9")).toEqual([result.token]);
   });
 
+  // An attempt cut off after Mattermost created its token but before sealing
+  // it must not leave that token valid.
+  it("revokes tokens left unsealed by an interrupted attempt", async () => {
+    const { ensurePersonalToken } = await loadModule();
+    const orphan = mm.issue("u-16");
+    mm.addUser("u-16", {});
+
+    const result = await ensurePersonalToken("u-16");
+
+    expect(result.token).not.toBe(orphan.secret);
+    expect(mm.active("u-16")).toEqual([result.token]);
+  });
+
   // Two bootstraps for one user at once must not revoke each other's token.
   it("serialises concurrent bootstraps so both end up with the same live token", async () => {
     const { ensurePersonalToken } = await loadModule();
