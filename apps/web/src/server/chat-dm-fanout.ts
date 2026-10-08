@@ -77,7 +77,10 @@ for i = 4, #ARGV do
 end
 
 if fresh > 0 and count + fresh > limit then
-  local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+  -- The send fits once enough entries age out to make room for all of it,
+  -- so report the entry whose expiry frees the last slot needed.
+  local need = count + fresh - limit
+  local oldest = redis.call('ZRANGE', key, need - 1, need - 1, 'WITHSCORES')
   local oldestScore = -1
   if oldest[2] then oldestScore = tonumber(oldest[2]) end
   return {0, count, oldestScore}

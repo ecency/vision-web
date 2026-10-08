@@ -18,7 +18,8 @@ const MAX_IDS = 200;
 /**
  * Resolves chat user ids to public user records, for ids a client meets
  * outside a posts page (e.g. a reaction arriving over the websocket).
- * Body: `{ ids: string[] }`. Unknown ids are simply absent from the result.
+ * Body: `{ ids: string[] }`, answer `{ users: [] }` in the shape the mobile
+ * client already reads. Unknown ids are simply absent from the result.
  */
 export async function POST(req: NextRequest) {
   const token = await getMattermostTokenFromCookies();
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!ids.length) {
-    return NextResponse.json({ users: {} });
+    return NextResponse.json({ users: [] });
   }
 
   try {
@@ -50,19 +51,14 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({
-      users: Object.fromEntries(
-        users.map((user) => [
-          user.id,
-          {
-            id: user.id,
-            username: user.username,
-            first_name: user.first_name,
-            last_name: user.last_name,
-            nickname: user.nickname,
-            last_picture_update: user.last_picture_update
-          }
-        ])
-      )
+      users: users.map((user) => ({
+        id: user.id,
+        username: user.username,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        nickname: user.nickname,
+        last_picture_update: user.last_picture_update
+      }))
     });
   } catch (error) {
     return handleMattermostError(error);

@@ -9,13 +9,15 @@ export interface DmPrivacyRejection {
 }
 
 /**
- * Whether `sender` may open a conversation with `target` under the target's DM
+ * Whether every one of `senders` may reach `target` under the target's DM
  * privacy setting. Returns the rejection to send back, or null when allowed.
- * Shared by one-to-one and group creation so both apply the same rules.
+ * One-to-one creation passes the creator alone. A group passes every other
+ * participant, because in a group they can all message the target, so a
+ * "followers only" member must follow each of them, not just the creator.
  */
 export async function getDmPrivacyRejection(
   target: Pick<MattermostUser, "id" | "username">,
-  senderUsername: string
+  senderUsernames: string[]
 ): Promise<DmPrivacyRejection | null> {
   const targetWithProps = await getMattermostUserWithProps(target.id);
   const dmPrivacy = getUserDmPrivacy(targetWithProps);
@@ -29,13 +31,23 @@ export async function getDmPrivacyRejection(
   }
 
   if (dmPrivacy === "followers") {
-    const relationship = await getQueryClient().fetchQuery(
-      getRelationshipBetweenAccountsQueryOptions(target.username, senderUsername)
+    const relationships = await Promise.all(
+      senderUsernames.map((sender) =>
+        getQueryClient().fetchQuery(
+          getRelationshipBetweenAccountsQueryOptions(target.username, sender)
+        )
+      )
     );
+    const unfollowed = senderUsernames.filter((_, i) => !relationships[i]?.follows);
 
-    if (!relationship?.follows) {
+    if (unfollowed.length) {
       return {
-        error: `@${target.username} only accepts messages from accounts they follow.`,
+        error:
+          senderUsernames.length === 1
+            ? `@${target.username} only accepts messages from accounts they follow.`
+            : `@${target.username} only accepts messages from accounts they follow, which excludes ${unfollowed
+                .map((name) => `@${name}`)
+                .join(", ")}.`,
         privacy_level: "followers",
         target_username: target.username
       };

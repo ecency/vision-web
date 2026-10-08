@@ -14,9 +14,10 @@ const GROUP_MAX_OTHERS = 7;
 
 /**
  * Opens (or returns the existing) group conversation between the current user
- * and 2 to 7 others. Every member must accept DMs from the sender, and every
- * member counts as a distinct recipient against the DM fan-out limit, so a
- * group cannot be used to reach more people than one-to-one messages would.
+ * and 2 to 7 others. Every member must accept DMs from every other participant,
+ * since a group lets them all write to each other. Every member also counts as
+ * a distinct recipient against the DM fan-out limit, so a group cannot be used
+ * to reach more people than one-to-one messages would.
  */
 export async function POST(req: NextRequest) {
   const token = await getMattermostTokenFromCookies();
@@ -76,7 +77,12 @@ export async function POST(req: NextRequest) {
 
     const rejections = (
       await Promise.all(
-        members.map((member) => getDmPrivacyRejection(member, currentUser.username))
+        members.map((member) =>
+          getDmPrivacyRejection(member, [
+            currentUser.username,
+            ...members.filter((other) => other.id !== member.id).map((other) => other.username)
+          ])
+        )
       )
     ).filter((rejection): rejection is NonNullable<typeof rejection> => !!rejection);
 

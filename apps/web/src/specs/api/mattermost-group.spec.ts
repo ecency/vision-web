@@ -162,4 +162,18 @@ describe("POST /api/mattermost/group", () => {
     expect(res.headers.get("Retry-After")).toBe("600");
     expect(createCalls()).toHaveLength(0);
   });
+
+  // In a group every member can write to every other, so a followers-only
+  // member must follow all of them, not just the creator.
+  it("checks each member's privacy against every other participant", async () => {
+    const { POST } = await import("@/app/api/mattermost/group/route");
+
+    await POST(request({ usernames: ["bob", "carol"] }));
+
+    const calls = mockPrivacy.mock.calls.map(([user, senders]) => [user.username, senders]);
+    expect(calls).toEqual([
+      ["bob", ["alice", "carol"]],
+      ["carol", ["alice", "bob"]]
+    ]);
+  });
 });

@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rejection = await getDmPrivacyRejection(targetUser, currentUser.username);
+    const rejection = await getDmPrivacyRejection(targetUser, [currentUser.username]);
     if (rejection) {
       return NextResponse.json(rejection, { status: 403 });
     }

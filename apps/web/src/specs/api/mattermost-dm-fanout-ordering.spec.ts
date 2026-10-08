@@ -151,4 +151,19 @@ describe("posts route — DM fan-out runs last", () => {
     expect(res.status).toBe(403);
     expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts", expect.anything(), expect.anything());
   });
+
+  it("asks to retry later when a group exactly at the cap is blocked", async () => {
+    const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    mockRecipientIds.mockResolvedValue(["u-2", "u-3", "u-4", "u-5", "u-6"]);
+    mockCheckDmFanout.mockResolvedValue({
+      allowed: false,
+      recipients: 3,
+      limit: 5,
+      retryAfterSeconds: 900
+    });
+
+    const res = await POST(request("hello group"), params);
+
+    expect(res.status).toBe(429);
+  });
 });

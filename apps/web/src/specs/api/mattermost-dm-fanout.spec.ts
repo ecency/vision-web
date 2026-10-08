@@ -51,7 +51,8 @@ class FakeRedis {
 
     if (fresh > 0 && count + fresh > limit) {
       const sorted = [...list].sort((a, b) => a.score - b.score);
-      return [0, count, sorted.length ? sorted[0].score : -1];
+      const freeing = sorted[count + fresh - limit - 1];
+      return [0, count, freeing ? freeing.score : -1];
     }
 
     for (const member of members) {
@@ -254,5 +255,20 @@ describe("checkDmFanout", () => {
 
     expect(res.allowed).toBe(true);
     expect(redis.sets.get("chat:dmfanout:u-1")).toBeUndefined();
+  });
+
+  // Freeing the oldest slot is not enough when a group needs several.
+  it("reports when enough slots free up for the whole group", async () => {
+    for (let i = 0; i < DM_FANOUT_MAX_NEW; i++) {
+      await send(redis, `dm-${i}`, { createdAt: NEW_ACCOUNT, at: NOW + i * 1000 });
+    }
+
+    const at = NOW + 10_000;
+    const blocked = await send(redis, ["x", "y", "z"], { createdAt: NEW_ACCOUNT, at });
+
+    // Three slots are needed, so the third oldest entry (written at NOW + 2s) decides.
+    expect(blocked.retryAfterSeconds).toBe(
+      Math.ceil((NOW + 2000 + DM_FANOUT_WINDOW_MS - at) / 1000)
+    );
   });
 });

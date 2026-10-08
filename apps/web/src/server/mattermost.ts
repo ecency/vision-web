@@ -973,8 +973,8 @@ export function toPublicChatUserMap<T extends object>(users: Record<string, T>) 
  * reaches, as user ids. A direct channel is named `<id>__<id>`, so its other
  * member needs no lookup. A group (3 to 8 members) lists its members.
  *
- * Falls back to the channel id when the members cannot be read, which counts
- * the conversation as a single recipient, as the limiter did before groups.
+ * A group whose members cannot be read throws rather than being counted as a
+ * single recipient, so an upstream hiccup cannot turn seven slots into one.
  */
 export async function getPrivateChannelRecipientIds(
   channel: Pick<MattermostChannel, "id" | "name" | "type">,
@@ -989,16 +989,12 @@ export async function getPrivateChannelRecipientIds(
     return [channel.id];
   }
 
-  try {
-    const members = await mmUserFetch<{ user_id: string }[]>(
-      `/channels/${encodeURIComponent(channel.id)}/members?page=0&per_page=50`,
-      token
-    );
-    const ids = members.map((member) => member.user_id).filter((id) => id && id !== senderId);
-    return ids.length ? Array.from(new Set(ids)) : [channel.id];
-  } catch {
-    return [channel.id];
-  }
+  const members = await mmUserFetch<{ user_id: string }[]>(
+    `/channels/${encodeURIComponent(channel.id)}/members?page=0&per_page=50`,
+    token
+  );
+  const ids = members.map((member) => member.user_id).filter((id) => id && id !== senderId);
+  return Array.from(new Set(ids));
 }
 
 export function getUserLeftChannels(user: Pick<MattermostUserWithProps, "props">): Set<string> {

@@ -63,13 +63,13 @@ describe("getPrivateChannelRecipientIds", () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain("/channels/g1/members");
   });
 
-  it("falls back to one recipient when the members cannot be read", async () => {
+  it("refuses to guess when a group's members cannot be read", async () => {
     const { getPrivateChannelRecipientIds } = await loadModule();
     fetchMock.mockResolvedValue(resp(500, { message: "boom" }));
 
-    expect(
-      await getPrivateChannelRecipientIds({ id: "g1", name: "hash", type: "G" }, "me", "tok")
-    ).toEqual(["g1"]);
+    await expect(
+      getPrivateChannelRecipientIds({ id: "g1", name: "hash", type: "G" }, "me", "tok")
+    ).rejects.toThrow();
   });
 });
 
