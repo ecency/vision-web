@@ -1,4 +1,4 @@
-import { mmUserFetch, mmUserFetchNdjson } from "@/server/mattermost";
+import { mmUserFetch, mmUserFetchNdjson, toPublicChatUser } from "@/server/mattermost";
 
 interface MattermostChannel {
   id: string;
@@ -116,7 +116,7 @@ export async function fetchDeactivatedDmPartners<TUser extends MattermostDmUser>
       method: "POST",
       body: JSON.stringify(Array.from(new Set(partnerIdByChannelId.values())))
     });
-    for (const user of users) usersById[user.id] = user;
+    for (const user of users) usersById[user.id] = toPublicChatUser(user) as TUser;
   } catch {
     return { usersById, excludedChannelIds };
   }

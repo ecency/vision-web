@@ -13,6 +13,7 @@ const mockFetchAllChannelPages = vi.fn();
 const mockFetchAllChannelMemberPages = vi.fn();
 
 vi.mock("@/server/mattermost", () => ({
+  toPublicChatUser: (user: unknown) => user,
   getMattermostTeamId: () => "team-123",
   getMattermostTokenFromCookies: () => Promise.resolve("test-token"),
   handleMattermostError: (err: unknown) => ({ error: String(err) }),

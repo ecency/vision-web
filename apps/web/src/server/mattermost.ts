@@ -1,5 +1,5 @@
 import { cookies, headers } from "next/headers";
-import { randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 import { bridgeApiCall, getProfiles } from "@ecency/sdk";
 import { CommunityRole, ROLES } from "@ecency/sdk";
@@ -20,7 +20,10 @@ export const CHAT_BAN_REASON_PROP = "ecency_chat_ban_reason";
 
 export const CHAT_DM_PRIVACY_PROP = "ecency_dm_privacy";
 export const CHAT_LEFT_CHANNELS_PROP = "ecency_left_channels";
+// Older builds kept the session token here as plaintext. It is retired on sight.
 const CHAT_PAT_PROP = "ecency_pat";
+const CHAT_PAT_SEALED_PROP = "ecency_pat_sealed";
+const CHAT_PAT_DESCRIPTION = "ecency-auto";
 
 export type DmPrivacyLevel = "all" | "followers" | "none";
 
@@ -455,6 +458,95 @@ export async function getMattermostUserWithProps(userId: string, signal?: AbortS
 }
 
 /**
+ * The stored session token is sealed with AES-256-GCM under a key derived from
+ * server-side configuration, so only this server can read it back. If that
+ * configuration changes, opening fails and a fresh token is issued.
+ */
+function sessionTokenKey(): Buffer {
+  const secret = requireEnv(MATTERMOST_ADMIN_TOKEN, "MATTERMOST_ADMIN_TOKEN");
+  return Buffer.from(hkdfSync("sha256", secret, "ecency-chat", "session-token-v1", 32));
+}
+
+export function sealSessionToken(token: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", sessionTokenKey(), iv);
+  const body = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  return `v1.${Buffer.concat([iv, cipher.getAuthTag(), body]).toString("base64url")}`;
+}
+
+export function openSessionToken(sealed: string | undefined): string | null {
+  if (!sealed?.startsWith("v1.")) return null;
+  try {
+    const raw = Buffer.from(sealed.slice(3), "base64url");
+    if (raw.length <= 28) return null;
+    const decipher = createDecipheriv("aes-256-gcm", sessionTokenKey(), raw.subarray(0, 12));
+    decipher.setAuthTag(raw.subarray(12, 28));
+    return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** Revokes every session token this server has issued for the user. */
+async function revokeIssuedTokens(userId: string, signal?: AbortSignal): Promise<number> {
+  const tokens = await mmFetch<Array<{ id: string; description?: string; is_active?: boolean }>>(
+    `/users/${encodeURIComponent(userId)}/tokens?page=0&per_page=200`,
+    { headers: getAdminHeaders(), signal }
+  );
+  const issued = tokens.filter(
+    (token) => token.description === CHAT_PAT_DESCRIPTION && token.is_active !== false
+  );
+  for (const token of issued) {
+    await mmFetch(`/users/tokens/revoke`, {
+      method: "POST",
+      headers: getAdminHeaders(),
+      body: JSON.stringify({ token_id: token.id }),
+      signal
+    });
+  }
+  return issued.length;
+}
+
+export function hasPlaintextSessionToken(user: Pick<MattermostUserWithProps, "props">) {
+  return Boolean(user.props?.[CHAT_PAT_PROP]);
+}
+
+/** One page of all chat users, including props (admin view). */
+export async function listMattermostUsersWithPropsAsAdmin(page: number, perPage: number) {
+  return await mmFetch<MattermostUserWithProps[]>(
+    `/users?page=${encodeURIComponent(page)}&per_page=${encodeURIComponent(perPage)}`,
+    { headers: getAdminHeaders() }
+  );
+}
+
+/**
+ * Replaces a plaintext token left by an older build: revokes the user's issued
+ * tokens and drops the plaintext prop. Returns false when there was none.
+ */
+export async function retirePlaintextSessionToken(
+  userId: string,
+  signal?: AbortSignal
+): Promise<boolean> {
+  const user = await getMattermostUserWithProps(userId, signal);
+  if (!hasPlaintextSessionToken(user)) return false;
+
+  await revokeIssuedTokens(userId, signal);
+
+  // Re-read right before writing so a concurrent props update is not lost.
+  const fresh = await getMattermostUserWithProps(userId, signal);
+  const props = { ...(fresh.props || {}) };
+  delete props[CHAT_PAT_PROP];
+  delete props[CHAT_PAT_SEALED_PROP];
+  await mmFetch(`/users/${encodeURIComponent(userId)}/patch`, {
+    method: "PUT",
+    headers: getAdminHeaders(),
+    body: JSON.stringify({ props }),
+    signal
+  });
+  return true;
+}
+
+/**
  * Validate a PAT by making a lightweight /users/me call.
  * Returns true if the token is still active and valid.
  * Only treats 401/403 as "invalid token". Rethrows other
@@ -482,16 +574,18 @@ async function createToken(userId: string, signal?: AbortSignal): Promise<string
   const result = await mmFetch<{ token: string }>(`/users/${encodeURIComponent(userId)}/tokens`, {
     method: "POST",
     headers: getAdminHeaders(),
-    body: JSON.stringify({ description: "ecency-auto" }),
+    body: JSON.stringify({ description: CHAT_PAT_DESCRIPTION }),
     signal
   });
-  // Store the token secret in user props so we can retrieve it later.
-  // Mattermost's GET /users/{id}/tokens does NOT return the secret —
-  // it's only available at creation time.
-  // Merge with existing props to avoid clobbering other fields
-  // (left_channels, DM privacy, bans, etc.)
+  // Mattermost only reveals the secret at creation time, so keep it (sealed)
+  // in user props to reuse across sessions and devices. Merge with existing
+  // props to avoid clobbering other fields (left_channels, DM privacy, bans).
   const user = await getMattermostUserWithProps(userId, signal);
-  const mergedProps = { ...(user.props || {}), [CHAT_PAT_PROP]: result.token };
+  const mergedProps: Record<string, string> = {
+    ...(user.props || {}),
+    [CHAT_PAT_SEALED_PROP]: sealSessionToken(result.token)
+  };
+  delete mergedProps[CHAT_PAT_PROP];
   await mmFetch(`/users/${encodeURIComponent(userId)}/patch`, {
     method: "PUT",
     headers: getAdminHeaders(),
@@ -514,7 +608,13 @@ export async function ensurePersonalToken(
   // saves one extra GET /users/{id} on the hot path that used to run
   // sequentially after this call.
   const user = await getMattermostUserWithProps(userId, signal);
-  const storedToken = user.props?.[CHAT_PAT_PROP];
+  if (hasPlaintextSessionToken(user)) {
+    await retirePlaintextSessionToken(userId, signal);
+    const token = await createToken(userId, signal);
+    return { token, user };
+  }
+
+  const storedToken = openSessionToken(user.props?.[CHAT_PAT_SEALED_PROP]);
   if (storedToken) {
     // isTokenValid rethrows non-auth errors
     if (await isTokenValid(storedToken, signal)) {
@@ -785,6 +885,34 @@ export function getUserDmPrivacy(user: Pick<MattermostUserWithProps, "props">): 
     return dmPrivacy;
   }
   return "all"; // default: allow all DMs
+}
+
+const PRIVATE_USER_FIELDS = [
+  "props",
+  "notify_props",
+  "email",
+  "auth_data",
+  "auth_service",
+  "timezone"
+] as const;
+
+/**
+ * A Mattermost user as other chat users get to see it: everything except
+ * account settings and private fields. Apply before returning any user record
+ * that is not the caller's own.
+ */
+export function toPublicChatUser<T extends object>(
+  user: T
+): Omit<T, (typeof PRIVATE_USER_FIELDS)[number]> {
+  const copy = { ...user } as Record<string, unknown>;
+  for (const field of PRIVATE_USER_FIELDS) delete copy[field];
+  return copy as Omit<T, (typeof PRIVATE_USER_FIELDS)[number]>;
+}
+
+export function toPublicChatUserMap<T extends object>(users: Record<string, T>) {
+  return Object.fromEntries(
+    Object.entries(users).map(([id, user]) => [id, toPublicChatUser(user)])
+  );
 }
 
 export function getUserLeftChannels(user: Pick<MattermostUserWithProps, "props">): Set<string> {

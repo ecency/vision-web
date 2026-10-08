@@ -28,14 +28,14 @@ describe("ensurePersonalToken — returns token + user (parallelization contract
   });
 
   it("returns the stored token alongside the user when the PAT is still valid", async () => {
-    const { ensurePersonalToken } = await loadModule();
+    const { ensurePersonalToken, sealSessionToken } = await loadModule();
     const userWithPat = {
       id: "u-1",
       username: "alice",
       email: "a",
       delete_at: 0,
       props: {
-        ecency_pat: "stored-pat",
+        ecency_pat_sealed: sealSessionToken("stored-pat"),
         ecency_left_channels: JSON.stringify(["hive-old"])
       }
     };
@@ -78,13 +78,13 @@ describe("ensurePersonalToken — returns token + user (parallelization contract
   });
 
   it("creates a new token when the stored PAT is rejected as 401", async () => {
-    const { ensurePersonalToken } = await loadModule();
+    const { ensurePersonalToken, sealSessionToken } = await loadModule();
     const userWithStalePat = {
       id: "u-3",
       username: "carol",
       email: "c",
       delete_at: 0,
-      props: { ecency_pat: "stale" }
+      props: { ecency_pat_sealed: sealSessionToken("stale") }
     };
     fetchMock
       .mockResolvedValueOnce(resp(200, userWithStalePat)) // GET /users/u-3
@@ -100,14 +100,14 @@ describe("ensurePersonalToken — returns token + user (parallelization contract
   });
 
   it("surfaces non-auth errors from token validation (5xx must not silently re-create)", async () => {
-    const { ensurePersonalToken } = await loadModule();
+    const { ensurePersonalToken, sealSessionToken } = await loadModule();
     fetchMock
       .mockResolvedValueOnce(resp(200, {
         id: "u-4",
         username: "dave",
         email: "d",
         delete_at: 0,
-        props: { ecency_pat: "some-pat" }
+        props: { ecency_pat_sealed: sealSessionToken("some-pat") }
       }))
       .mockResolvedValueOnce(resp(500, "mm exploded"));
 
@@ -115,5 +115,139 @@ describe("ensurePersonalToken — returns token + user (parallelization contract
     // No POST /users/u-4/tokens should fire — a 5xx on isTokenValid is NOT
     // grounds to mint a duplicate token.
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("session token storage", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  function patchedProps() {
+    const patch = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/patch"));
+    return JSON.parse(patch![1].body).props as Record<string, string>;
+  }
+
+  it("round-trips a sealed token and never stores it as plaintext", async () => {
+    const { sealSessionToken, openSessionToken } = await loadModule();
+    const sealed = sealSessionToken("secret-pat");
+
+    expect(sealed).not.toContain("secret-pat");
+    expect(openSessionToken(sealed)).toBe("secret-pat");
+    expect(sealSessionToken("secret-pat")).not.toBe(sealed); // fresh IV each time
+  });
+
+  it("refuses tampered, foreign or missing values", async () => {
+    const { sealSessionToken, openSessionToken } = await loadModule();
+    const sealed = sealSessionToken("secret-pat");
+    const flipped = sealed.slice(0, -2) + (sealed.endsWith("A") ? "BA" : "AA");
+
+    expect(openSessionToken(flipped)).toBeNull();
+    expect(openSessionToken("plain-token")).toBeNull();
+    expect(openSessionToken(undefined)).toBeNull();
+
+    process.env.MATTERMOST_ADMIN_TOKEN = "rotated-admin-token";
+    vi.resetModules();
+    const other = await import("@/server/mattermost");
+    expect(other.openSessionToken(sealed)).toBeNull();
+  });
+
+  it("stores a new token sealed", async () => {
+    const { ensurePersonalToken, openSessionToken } = await loadModule();
+    const user = { id: "u-5", username: "erin", email: "e", delete_at: 0, props: {} };
+    fetchMock
+      .mockResolvedValueOnce(resp(200, user))
+      .mockResolvedValueOnce(resp(200, { token: "new-pat" }))
+      .mockResolvedValueOnce(resp(200, user))
+      .mockResolvedValueOnce(resp(200, ""));
+
+    await ensurePersonalToken("u-5");
+
+    const props = patchedProps();
+    expect(JSON.stringify(props)).not.toContain("new-pat");
+    expect(openSessionToken(props.ecency_pat_sealed)).toBe("new-pat");
+  });
+
+  it("retires a plaintext token: revokes issued tokens, drops it and issues a sealed one", async () => {
+    const { ensurePersonalToken, openSessionToken } = await loadModule();
+    const legacy = {
+      id: "u-6",
+      username: "finn",
+      email: "f",
+      delete_at: 0,
+      props: { ecency_pat: "old-pat", ecency_dm_privacy: "followers" }
+    };
+    const cleaned = { ...legacy, props: { ecency_dm_privacy: "followers" } };
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = String(url).replace("https://chat.test/api/v4", "");
+      if (path === "/users/u-6") {
+        const patched = fetchMock.mock.calls.some(([u]) => String(u).endsWith("/patch"));
+        return Promise.resolve(resp(200, patched ? cleaned : legacy));
+      }
+      if (path.startsWith("/users/u-6/tokens?")) {
+        return Promise.resolve(
+          resp(200, [
+            { id: "t1", description: "ecency-auto", is_active: true },
+            { id: "t2", description: "ecency-auto", is_active: false },
+            { id: "t3", description: "someone-else", is_active: true }
+          ])
+        );
+      }
+      if (path === "/users/tokens/revoke") return Promise.resolve(resp(200, { status: "OK" }));
+      if (path === "/users/u-6/tokens" && init?.method === "POST") {
+        return Promise.resolve(resp(200, { token: "fresh-pat" }));
+      }
+      if (path === "/users/u-6/patch") return Promise.resolve(resp(200, ""));
+      return Promise.reject(new Error(`unexpected ${path}`));
+    });
+
+    const result = await ensurePersonalToken("u-6");
+
+    expect(result.token).toBe("fresh-pat");
+    const revoked = fetchMock.mock.calls
+      .filter(([u]) => String(u).endsWith("/users/tokens/revoke"))
+      .map(([, init]) => JSON.parse(init.body).token_id);
+    expect(revoked).toEqual(["t1"]);
+
+    const patches = fetchMock.mock.calls
+      .filter(([u]) => String(u).endsWith("/patch"))
+      .map(([, init]) => JSON.parse(init.body).props);
+    for (const props of patches) expect(props.ecency_pat).toBeUndefined();
+    const last = patches[patches.length - 1];
+    expect(openSessionToken(last.ecency_pat_sealed)).toBe("fresh-pat");
+    expect(last.ecency_dm_privacy).toBe("followers");
+    // The old plaintext token is never validated or reused.
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/users/me"))).toBe(false);
+  });
+});
+
+describe("toPublicChatUser", () => {
+  it("drops private fields and keeps the profile", async () => {
+    const { toPublicChatUser, toPublicChatUserMap } = await loadModule();
+    const user = {
+      id: "u",
+      username: "gina",
+      nickname: "G",
+      last_picture_update: 1,
+      delete_at: 0,
+      email: "g@x",
+      props: { anything: "x" },
+      notify_props: { email: "true" },
+      auth_data: "",
+      auth_service: "",
+      timezone: {}
+    };
+
+    expect(toPublicChatUser(user)).toEqual({
+      id: "u",
+      username: "gina",
+      nickname: "G",
+      last_picture_update: 1,
+      delete_at: 0
+    });
+    expect(toPublicChatUserMap({ u: user }).u).not.toHaveProperty("props");
   });
 });

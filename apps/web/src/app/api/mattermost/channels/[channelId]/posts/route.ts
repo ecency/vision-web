@@ -9,6 +9,7 @@ import {
   MattermostChannel,
   getMattermostTokenFromCookies,
   mmUserFetch,
+  toPublicChatUserMap,
   getUserChatBanReason,
   isUserChatBanned,
   CHAT_BAN_PROP
@@ -95,7 +96,11 @@ export async function GET(
         }
       }
 
-      return NextResponse.json({ posts: threadPosts, users: threadUsers, hasMore: false });
+      return NextResponse.json({
+        posts: threadPosts,
+        users: toPublicChatUserMap(threadUsers),
+        hasMore: false
+      });
     }
 
     // Reduced from 60 to 40 for better performance on invalidation
@@ -292,7 +297,7 @@ export async function GET(
 
     return NextResponse.json({
       posts: orderedPosts,
-      users,
+      users: toPublicChatUserMap(users),
       channel: moderation.channel,
       member,
       community: moderation.community,
