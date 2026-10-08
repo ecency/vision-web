@@ -22,22 +22,45 @@ export function toPublicChatUser<T extends object>(user: T): Omit<T, PrivateUser
   return copy as Omit<T, PrivateUserField>;
 }
 
+function scrubEncoded<T>(value: unknown, scrub: (decoded: T) => T): unknown {
+  if (typeof value === "string") return JSON.stringify(scrub(JSON.parse(value) as T));
+  return value && typeof value === "object" ? scrub(value as T) : value;
+}
+
+type ThreadPayload = { participants?: unknown[] } & Record<string, unknown>;
+
 /**
  * Rewrites an upstream websocket text frame before it reaches a client.
- * Mattermost broadcasts `user_updated` to every connected client with the
- * full user record; the clients only need the public profile. Every other
- * frame passes through untouched (the same string instance is returned).
+ * Mattermost sends full user records in `user_updated` (data.user) and in
+ * `thread_updated` (data.thread.participants); clients only need the public
+ * profile. Every other frame passes through untouched (the same string
+ * instance is returned). Payloads may be objects or JSON strings, and keep
+ * whichever form they arrived in.
  */
 export function scrubChatSocketFrame(text: string): string {
-  if (!text.includes('"user_updated"')) return text;
+  const isUserUpdate = text.includes('"user_updated"');
+  const isThreadUpdate = text.includes('"thread_updated"');
+  if (!isUserUpdate && !isThreadUpdate) return text;
   try {
     const message = JSON.parse(text);
-    if (message?.event !== "user_updated" || !message.data?.user) return text;
-    const encoded = typeof message.data.user === "string";
-    const user = encoded ? JSON.parse(message.data.user) : message.data.user;
-    const scrubbed = toPublicChatUser(user);
-    message.data.user = encoded ? JSON.stringify(scrubbed) : scrubbed;
-    return JSON.stringify(message);
+    if (message?.event === "user_updated" && message.data?.user) {
+      message.data.user = scrubEncoded<object>(message.data.user, toPublicChatUser);
+      return JSON.stringify(message);
+    }
+    if (message?.event === "thread_updated" && message.data?.thread) {
+      message.data.thread = scrubEncoded<ThreadPayload>(message.data.thread, (thread) =>
+        Array.isArray(thread.participants)
+          ? {
+              ...thread,
+              participants: thread.participants.map((user) =>
+                user && typeof user === "object" ? toPublicChatUser(user) : user
+              )
+            }
+          : thread
+      );
+      return JSON.stringify(message);
+    }
+    return text;
   } catch {
     return text;
   }
