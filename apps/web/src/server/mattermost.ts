@@ -381,6 +381,26 @@ export async function ensureCommunityChannelMembership(
   return channelId;
 }
 
+/**
+ * Whether the user is a member of the channel. A 404 means not a member;
+ * any other failure is rethrown so a caller never mistakes an outage for an
+ * answer.
+ */
+export async function isUserInChannel(userId: string, channelId: string): Promise<boolean> {
+  try {
+    await mmFetch(
+      `/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}`,
+      { headers: getAdminHeaders() }
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof MattermostError && error.status === 404) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 export async function ensureUserInChannel(userId: string, channelId: string, signal?: AbortSignal) {
   try {
     // Check if user is currently a member

@@ -12,7 +12,6 @@ const mockRecipientIds = vi.fn();
 
 vi.mock("@/server/mattermost", () => ({
   CHAT_BAN_PROP: "ecency_chat_banned_until",
-  ensureMattermostUser: vi.fn(),
   ensureUserInChannel: vi.fn(),
   ensureUserInTeam: vi.fn(),
   followMattermostThreadForUser: vi.fn(),
@@ -26,6 +25,11 @@ vi.mock("@/server/mattermost", () => ({
 
 vi.mock("@/server/chat-dm-fanout", () => ({
   checkDmFanout: (...args: unknown[]) => mockCheckDmFanout(...args)
+}));
+
+const mockAddMentioned = vi.fn();
+vi.mock("@/server/chat-mentions", () => ({
+  addMentionedUsersToChannel: (...args: unknown[]) => mockAddMentioned(...args)
 }));
 
 const CHANNEL_ID = "dm-channel";
@@ -191,5 +195,54 @@ describe("posts route — DM fan-out runs last", () => {
     expect(res.status).toBe(500);
     expect(mockCheckDmFanout).not.toHaveBeenCalled();
     expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts", expect.anything(), expect.anything());
+  });
+});
+
+describe("posts route — @mention auto-join", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAddMentioned.mockResolvedValue({ added: [] });
+    mockMmUserFetch.mockImplementation((path: string) => {
+      if (path === "/users/me") {
+        return Promise.resolve({ id: "u-1", username: "poster", create_at: 42 });
+      }
+      if (path === `/channels/${CHANNEL_ID}`) {
+        return Promise.resolve({ id: CHANNEL_ID, name: "town", display_name: "Town", type: "O" });
+      }
+      return Promise.resolve({ id: "post-1" });
+    });
+  });
+
+  it("hands public-channel mentions to the bounded helper after posting", async () => {
+    const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+
+    await POST(request("hi @Alice and @bob.smith, also @alice"), params);
+
+    expect(mockAddMentioned).toHaveBeenCalledTimes(1);
+    expect(mockAddMentioned).toHaveBeenCalledWith({
+      channelId: CHANNEL_ID,
+      senderId: "u-1",
+      senderCreatedAt: 42,
+      usernames: ["alice", "bob.smith"]
+    });
+    // A public channel is not a private conversation: no fan-out on the post itself.
+    expect(mockCheckDmFanout).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-join anyone from a direct message", async () => {
+    mockRecipientIds.mockResolvedValue(["u-2"]);
+    allowFanout();
+    mockMmUserFetch.mockImplementation((path: string) => {
+      if (path === "/users/me") return Promise.resolve({ id: "u-1", username: "poster" });
+      if (path === `/channels/${CHANNEL_ID}`) {
+        return Promise.resolve({ id: CHANNEL_ID, name: "u-1__u-2", display_name: "dm", type: "D" });
+      }
+      return Promise.resolve({ id: "post-1" });
+    });
+    const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+
+    await POST(request("hey @carol"), params);
+
+    expect(mockAddMentioned).not.toHaveBeenCalled();
   });
 });
