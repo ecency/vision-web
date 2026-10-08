@@ -14,6 +14,8 @@ import { formatRelativeTime, getAvatarUrl } from "../format-utils";
 import { getNativeEmojiFromShortcode } from "../emoji-utils";
 import { resolveReplyPreview } from "./reply-preview";
 import { MessageTranslate } from "./message-translate";
+import { PeopleListModal } from "./people-list-modal";
+import { formatReactorNames, getReactorName, groupReactions } from "../group-utils";
 import clsx from "clsx";
 import React, { memo, useEffect, useState } from "react";
 import type { MattermostPost, MattermostUser } from "../mattermost-api";
@@ -132,6 +134,14 @@ function messageItemPropsAreEqual(prev: MessageItemProps, next: MessageItemProps
 
   // User data — only compare this post's author
   if (prev.usersById[prev.post.user_id] !== next.usersById[next.post.user_id]) return false;
+  // ...and its reactors, whose names show in the reaction tooltips
+  const reactions = next.post.metadata?.reactions;
+  if (
+    reactions?.length &&
+    reactions.some((reaction) => prev.usersById[reaction.user_id] !== next.usersById[reaction.user_id])
+  ) {
+    return false;
+  }
 
   // Parent post (for threaded replies)
   if (prev.post.root_id) {
@@ -189,6 +199,9 @@ function MessageItemInner({
   pinMutationPending
 }: MessageItemProps) {
   const [showTranslateModal, setShowTranslateModal] = useState(false);
+  const [showReactions, setShowReactions] = useState(false);
+  const currentUserId = channelData?.member?.user_id;
+  const groupedReactions = groupReactions(post.metadata?.reactions, currentUserId);
 
   // Close reaction picker when this item unmounts (e.g., due to virtualization)
   useEffect(() => {
@@ -340,53 +353,43 @@ function MessageItemInner({
               >
                 {renderMessageContent(getDecodedDisplayMessage(post))}
               </div>
-              {(() => {
-                const reactions = post.metadata?.reactions ?? [];
-                if (!reactions.length) return null;
-
-                const grouped = reactions.reduce<
-                  Record<string, { count: number; reacted: boolean }>
-                >((acc, reaction) => {
-                  const existing = acc[reaction.emoji_name] || {
-                    count: 0,
-                    reacted: false
-                  };
-                  return {
-                    ...acc,
-                    [reaction.emoji_name]: {
-                      count: existing.count + 1,
-                      reacted:
-                        existing.reacted ||
-                        (channelData?.member?.user_id
-                          ? reaction.user_id === channelData.member.user_id
-                          : false)
-                    }
-                  };
-                }, {});
-
-                return (
-                  <div className="flex flex-wrap gap-1 -mt-0.5">
-                    {Object.entries(grouped).map(([emojiName, info]) => (
+              {groupedReactions.length > 0 && (
+                <div className="flex flex-wrap gap-1 -mt-0.5">
+                  {groupedReactions.map((reaction) => {
+                    const emoji =
+                      getNativeEmojiFromShortcode(reaction.emojiName) || `:${reaction.emojiName}:`;
+                    const names = formatReactorNames(reaction.userIds, usersById, currentUserId);
+                    return (
                       <button
-                        key={`${post.id}-${emojiName}`}
+                        key={`${post.id}-${reaction.emojiName}`}
                         type="button"
-                        onClick={() => toggleReaction(post, emojiName)}
+                        onClick={() => toggleReaction(post, reaction.emojiName)}
+                        title={`${names} reacted with ${emoji}`}
+                        aria-label={`${emoji} ${reaction.userIds.length}: ${names}`}
+                        aria-pressed={reaction.reacted}
                         className={clsx(
                           "flex items-center gap-1 rounded-full border px-2 py-1 text-xs",
-                          info.reacted
+                          reaction.reacted
                             ? "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-900/40"
                             : "border-[--border-color] bg-[--background-color]"
                         )}
                       >
-                        <span>
-                          {getNativeEmojiFromShortcode(emojiName) || `:${emojiName}:`}
-                        </span>
-                        <span className="text-[--text-muted]">{info.count}</span>
+                        <span>{emoji}</span>
+                        <span className="text-[--text-muted]">{reaction.userIds.length}</span>
                       </button>
-                    ))}
-                  </div>
-                );
-              })()}
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => setShowReactions(true)}
+                    className="rounded-full px-1.5 py-1 text-[11px] text-[--text-muted] hover:text-[--text-color]"
+                    aria-label="See who reacted"
+                    title="See who reacted"
+                  >
+                    ⋯
+                  </button>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -482,6 +485,13 @@ function MessageItemInner({
                   label="Translate"
                   onClick={() => setShowTranslateModal(true)}
                 />
+                {groupedReactions.length > 0 && (
+                  <DropdownItemWithIcon
+                    icon={emojiIconSvg}
+                    label="Reactions"
+                    onClick={() => setShowReactions(true)}
+                  />
+                )}
                 {canPin && (
                   <DropdownItemWithIcon
                     icon={pinSvg}
@@ -505,6 +515,32 @@ function MessageItemInner({
           </div>
         )}
       </div>
+      {showReactions && (
+        <PeopleListModal
+          show={showReactions}
+          onHide={() => setShowReactions(false)}
+          title="Reactions"
+          sections={groupedReactions.map((reaction) => ({
+            key: reaction.emojiName,
+            heading: (
+              <>
+                <span className="text-base leading-none">
+                  {getNativeEmojiFromShortcode(reaction.emojiName) || `:${reaction.emojiName}:`}
+                </span>
+                <span>{reaction.userIds.length}</span>
+              </>
+            ),
+            people: reaction.userIds.map((userId) => {
+              const user = usersById[userId];
+              return {
+                id: userId,
+                username: user?.username,
+                displayName: getReactorName(userId, usersById, currentUserId)
+              };
+            })
+          }))}
+        />
+      )}
       {showTranslateModal && (
         <MessageTranslate
           messageText={getDecodedDisplayMessage(post)}

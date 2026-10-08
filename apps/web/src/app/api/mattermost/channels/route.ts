@@ -28,6 +28,7 @@ interface MattermostChannel {
   mention_count?: number;
   message_count?: number;
   directUser?: MattermostUser | null;
+  groupUsers?: MattermostUser[];
   order?: number;
   last_post_at?: number;
   last_viewed_at?: number;
@@ -41,6 +42,21 @@ interface MattermostUser {
   nickname?: string;
   last_picture_update?: number;
   delete_at?: number;
+}
+
+/** Groups have at most 8 members, so one page covers any of them. */
+const GROUP_MEMBERS_PAGE = 10;
+const MAX_GROUPS_RESOLVED = 50;
+
+function toPublicGroupUser(user: MattermostUser): MattermostUser {
+  return {
+    id: user.id,
+    username: user.username,
+    first_name: user.first_name,
+    last_name: user.last_name,
+    nickname: user.nickname,
+    last_picture_update: user.last_picture_update
+  };
 }
 
 interface MattermostChannelMemberCounts {
@@ -295,7 +311,38 @@ export async function GET() {
       return orderA - orderB;
     });
 
-    return NextResponse.json({ channels: orderedChannels });
+    // A group's Mattermost display name is its members' usernames cut at 64
+    // characters, viewer included, so attach the other members for clients to
+    // name and draw it. One small lookup per group, best effort: a group whose
+    // members cannot be read keeps its display name.
+    const groupUsersById = new Map(
+      await Promise.all(
+        orderedChannels
+          .filter((channel) => channel.type === "G")
+          .slice(0, MAX_GROUPS_RESOLVED)
+          .map(async (channel) => {
+            try {
+              const members = await mmUserFetch<MattermostUser[]>(
+                `/users?in_channel=${encodeURIComponent(channel.id)}&page=0&per_page=${GROUP_MEMBERS_PAGE}`,
+                token
+              );
+              const others = members
+                .filter((user) => user.id !== currentUser.id && !user.delete_at)
+                .map(toPublicGroupUser);
+              return [channel.id, others] as const;
+            } catch {
+              return [channel.id, undefined] as const;
+            }
+          })
+      )
+    );
+
+    return NextResponse.json({
+      channels: orderedChannels.map((channel) => {
+        const groupUsers = groupUsersById.get(channel.id);
+        return groupUsers ? { ...channel, groupUsers } : channel;
+      })
+    });
   } catch (error) {
     return handleMattermostError(error);
   }
