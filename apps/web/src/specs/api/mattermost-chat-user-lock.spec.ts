@@ -33,7 +33,7 @@ describe("withChatUserLock", () => {
     redis.store.set("chat:tokenlock:u-1", "other-instance");
     const order: string[] = [];
 
-    const pending = withChatUserLock("u-1", async () => order.push("ran"), redis as never);
+    const pending = withChatUserLock("u-1", async () => order.push("ran"), { redis: redis as never });
     await tick();
     expect(order).toEqual([]);
 
@@ -49,8 +49,8 @@ describe("withChatUserLock", () => {
       order.push("a-start");
       await tick();
       order.push("a-end");
-    }, null);
-    const fast = withChatUserLock("u-2", async () => order.push("b"), null);
+    }, { redis: null });
+    const fast = withChatUserLock("u-2", async () => order.push("b"), { redis: null });
 
     await Promise.all([slow, fast]);
     expect(order).toEqual(["a-start", "a-end", "b"]);
@@ -61,8 +61,8 @@ describe("withChatUserLock", () => {
     const slow = withChatUserLock("u-3", async () => {
       await tick();
       order.push("u-3");
-    }, null);
-    await withChatUserLock("u-4", async () => order.push("u-4"), null);
+    }, { redis: null });
+    await withChatUserLock("u-4", async () => order.push("u-4"), { redis: null });
     await slow;
 
     expect(order).toEqual(["u-4", "u-3"]);
@@ -74,11 +74,11 @@ describe("withChatUserLock", () => {
     await expect(
       withChatUserLock("u-5", async () => {
         throw new Error("boom");
-      }, redis as never)
+      }, { redis: redis as never })
     ).rejects.toThrow("boom");
 
     expect(redis.store.size).toBe(0);
-    expect(await withChatUserLock("u-5", async () => "ok", redis as never)).toBe("ok");
+    expect(await withChatUserLock("u-5", async () => "ok", { redis: redis as never })).toBe("ok");
   });
 
   it("never releases a lock it does not own", async () => {
@@ -86,7 +86,7 @@ describe("withChatUserLock", () => {
     await withChatUserLock("u-6", async () => {
       // Our lock expired and another instance took it.
       redis.store.set("chat:tokenlock:u-6", "someone-else");
-    }, redis as never);
+    }, { redis: redis as never });
 
     expect(redis.store.get("chat:tokenlock:u-6")).toBe("someone-else");
   });
@@ -95,6 +95,22 @@ describe("withChatUserLock", () => {
     const redis = new FakeRedis();
     redis.failSet = true;
 
-    expect(await withChatUserLock("u-7", async () => "ran", redis as never)).toBe("ran");
+    expect(await withChatUserLock("u-7", async () => "ran", { redis: redis as never })).toBe("ran");
+  });
+
+  it("stops waiting when the request is cancelled", async () => {
+    const redis = new FakeRedis();
+    redis.store.set("chat:tokenlock:u-8", "other-instance");
+    const controller = new AbortController();
+    let ran = false;
+
+    const pending = withChatUserLock("u-8", async () => {
+      ran = true;
+    }, { redis: redis as never, signal: controller.signal });
+    await tick();
+    controller.abort(new Error("client went away"));
+
+    await expect(pending).rejects.toThrow("client went away");
+    expect(ran).toBe(false);
   });
 });

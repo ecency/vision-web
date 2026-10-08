@@ -31,9 +31,15 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function acquire(redis: RedisClient, key: string, owner: string): Promise<boolean> {
+async function acquire(
+  redis: RedisClient,
+  key: string,
+  owner: string,
+  signal?: AbortSignal
+): Promise<boolean> {
   const deadline = Date.now() + WAIT_MS;
   for (;;) {
+    signal?.throwIfAborted();
     try {
       if (await redis.set(key, owner, "PX", LOCK_TTL_MS, "NX")) return true;
     } catch {
@@ -47,7 +53,7 @@ async function acquire(redis: RedisClient, key: string, owner: string): Promise<
 export async function withChatUserLock<T>(
   userId: string,
   fn: () => Promise<T>,
-  redis: RedisClient | null = getChatRedis()
+  { redis = getChatRedis(), signal }: { redis?: RedisClient | null; signal?: AbortSignal } = {}
 ): Promise<T> {
   const previous = localTails.get(userId) ?? Promise.resolve();
   const run = previous
@@ -56,7 +62,7 @@ export async function withChatUserLock<T>(
       if (!redis) return fn();
       const key = `${KEY_PREFIX}${userId}`;
       const owner = randomUUID();
-      const held = await acquire(redis, key, owner);
+      const held = await acquire(redis, key, owner, signal);
       try {
         return await fn();
       } finally {

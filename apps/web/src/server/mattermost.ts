@@ -587,7 +587,9 @@ export async function retirePlaintextSessionToken(
   userId: string,
   signal?: AbortSignal
 ): Promise<boolean> {
-  return withChatUserLock(userId, () => retirePlaintextSessionTokenUnlocked(userId, signal));
+  return withChatUserLock(userId, () => retirePlaintextSessionTokenUnlocked(userId, signal), {
+    signal
+  });
 }
 
 /**
@@ -690,7 +692,7 @@ export async function ensurePersonalToken(
 
     const token = await createToken(userId, signal);
     return { token, user };
-  });
+  }, { signal });
 }
 
 export function withMattermostTokenCookie(response: NextResponse, token: string) {
@@ -969,20 +971,27 @@ export function getUserLeftChannels(user: Pick<MattermostUserWithProps, "props">
   }
 }
 
+// Props writers take the per-user token lock so their read-then-replace cannot
+// interleave with a token being stored or retired.
+
 export async function addUserLeftChannel(userId: string, channelName: string) {
-  const user = await getMattermostUserWithProps(userId);
-  const leftChannels = getUserLeftChannels(user);
-  leftChannels.add(channelName);
-  const props = { ...(user.props || {}), [CHAT_LEFT_CHANNELS_PROP]: JSON.stringify(Array.from(leftChannels)) };
-  await writeUserProps(userId, props);
+  await withChatUserLock(userId, async () => {
+    const user = await getMattermostUserWithProps(userId);
+    const leftChannels = getUserLeftChannels(user);
+    leftChannels.add(channelName);
+    const props = { ...(user.props || {}), [CHAT_LEFT_CHANNELS_PROP]: JSON.stringify(Array.from(leftChannels)) };
+    await writeUserProps(userId, props);
+  });
 }
 
 export async function removeUserLeftChannel(userId: string, channelName: string, signal?: AbortSignal) {
-  const user = await getMattermostUserWithProps(userId, signal);
-  const leftChannels = getUserLeftChannels(user);
-  if (!leftChannels.delete(channelName)) return;
-  const props = { ...(user.props || {}), [CHAT_LEFT_CHANNELS_PROP]: JSON.stringify(Array.from(leftChannels)) };
-  await writeUserProps(userId, props, signal);
+  await withChatUserLock(userId, async () => {
+    const user = await getMattermostUserWithProps(userId, signal);
+    const leftChannels = getUserLeftChannels(user);
+    if (!leftChannels.delete(channelName)) return;
+    const props = { ...(user.props || {}), [CHAT_LEFT_CHANNELS_PROP]: JSON.stringify(Array.from(leftChannels)) };
+    await writeUserProps(userId, props, signal);
+  }, { signal });
 }
 
 async function searchMattermostPostsByUserAsAdmin(username: string, page: number, perPage: number) {
@@ -1143,33 +1152,37 @@ export async function banMattermostUserForHoursAsAdmin(username: string, hours: 
     throw new MattermostError(`User @${normalizedUsername} not found`, 404);
   }
 
-  const adminUser = await getMattermostUserWithProps(targetUser.id);
-  const props = { ...(adminUser.props || {}) };
-
   const expiration = hours > 0 ? Date.now() + hours * 60 * 60 * 1000 : null;
 
-  if (expiration) {
-    props[CHAT_BAN_PROP] = String(expiration);
-  } else {
-    delete props[CHAT_BAN_PROP];
-  }
+  await withChatUserLock(targetUser.id, async () => {
+    const adminUser = await getMattermostUserWithProps(targetUser.id);
+    const props = { ...(adminUser.props || {}) };
 
-  await writeUserProps(adminUser.id, props);
+    if (expiration) {
+      props[CHAT_BAN_PROP] = String(expiration);
+    } else {
+      delete props[CHAT_BAN_PROP];
+    }
+
+    await writeUserProps(adminUser.id, props);
+  });
 
   return { user: targetUser, bannedUntil: expiration } as const;
 }
 
 export async function setUserDmPrivacy(userId: string, privacy: DmPrivacyLevel) {
-  const user = await getMattermostUserWithProps(userId);
-  const props = { ...(user.props || {}) };
+  await withChatUserLock(userId, async () => {
+    const user = await getMattermostUserWithProps(userId);
+    const props = { ...(user.props || {}) };
 
-  if (privacy === "all") {
-    delete props[CHAT_DM_PRIVACY_PROP];
-  } else {
-    props[CHAT_DM_PRIVACY_PROP] = privacy;
-  }
+    if (privacy === "all") {
+      delete props[CHAT_DM_PRIVACY_PROP];
+    } else {
+      props[CHAT_DM_PRIVACY_PROP] = privacy;
+    }
 
-  await writeUserProps(userId, props);
+    await writeUserProps(userId, props);
+  });
 
   return privacy;
 }

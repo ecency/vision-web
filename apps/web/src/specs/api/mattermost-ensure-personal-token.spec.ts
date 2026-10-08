@@ -71,9 +71,10 @@ class FakeMattermost {
     }
     if (path === "/users/tokens/revoke") {
       const { token_id } = JSON.parse(String(init?.body));
-      const token = this.tokens.find((t) => t.id === token_id && t.active);
-      if (!token) return resp(400, { id: "app.user_access_token.get_by_token.app_error" });
-      token.active = false;
+      // Mattermost deletes the row on revoke; a second revoke is a 404.
+      const index = this.tokens.findIndex((t) => t.id === token_id);
+      if (index < 0) return resp(404, { id: "app.user_access_token.get_by_user.app_error" });
+      this.tokens.splice(index, 1);
       return resp(200, { status: "OK" });
     }
 
@@ -151,7 +152,7 @@ describe("ensurePersonalToken", () => {
   it("issues a new token when the stored one was revoked", async () => {
     const { ensurePersonalToken, sealSessionToken } = await loadModule();
     const stale = mm.issue("u-3");
-    stale.active = false;
+    mm.tokens = mm.tokens.filter((t) => t !== stale); // revoked = deleted
     mm.addUser("u-3", { ecency_pat_sealed: sealSessionToken(stale.secret, "u-3") });
 
     const result = await ensurePersonalToken("u-3");
@@ -243,7 +244,9 @@ describe("retirePlaintextSessionToken", () => {
     const realHandle = mm.handle;
     // Another request revokes it between our listing and our revoke call.
     mm.handle = async (url, init) => {
-      if (String(url).endsWith("/users/tokens/revoke")) token.active = false;
+      if (String(url).endsWith("/users/tokens/revoke")) {
+        mm.tokens = mm.tokens.filter((t) => t !== token);
+      }
       return realHandle(url, init);
     };
     vi.stubGlobal("fetch", vi.fn(mm.handle));

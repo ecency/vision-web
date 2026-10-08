@@ -19,6 +19,8 @@
 import Redis, { type Redis as RedisClient } from "ioredis";
 
 const REDIS_URL = process.env.REDIS_URL || "redis://redis:6379";
+// Also turns off the cross-instance session-token lock (chat-user-lock.ts),
+// which then serialises within each instance only.
 const DISABLED = !!process.env.VITEST || process.env.CHAT_DM_FANOUT_DISABLE === "1";
 
 const KEY_PREFIX = "chat:dmfanout:";
