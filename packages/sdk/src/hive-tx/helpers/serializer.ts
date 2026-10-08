@@ -212,13 +212,15 @@ const publicKeyBytes = (key: string | PublicKey) => {
   return new Uint8Array(buffer.toBuffer())
 }
 
-const SortedFlatMapSerializer = (
-  keySerializer: any,
-  valueSerializer: any,
-  sortBytes: (key: any) => Uint8Array
+const nameBytes = (name: string) => Uint8Array.from(name, (c) => c.charCodeAt(0))
+
+const SortedFlatMapSerializer = <K, V>(
+  keySerializer: (buffer: ByteBuffer, key: K) => void,
+  valueSerializer: (buffer: ByteBuffer, value: V) => void,
+  sortBytes: (key: K) => Uint8Array
 ) => {
   const serialize = FlatMapSerializer(keySerializer, valueSerializer)
-  return (buffer: ByteBuffer, data: [any, any][]) => {
+  return (buffer: ByteBuffer, data: [K, V][]) => {
     const sorted = data
       .map((entry) => ({ entry, bytes: sortBytes(entry[0]) }))
       .sort((a, b) => compareBytes(a.bytes, b.bytes))
@@ -263,7 +265,7 @@ const OptionalSerializer = (valueSerializer: any) => {
 
 const AuthoritySerializer = ObjectSerializer([
   ['weight_threshold', UInt32Serializer],
-  ['account_auths', SortedFlatMapSerializer(StringSerializer, UInt16Serializer, (name: string) => Uint8Array.from(name, (c) => c.charCodeAt(0)))],
+  ['account_auths', SortedFlatMapSerializer(StringSerializer, UInt16Serializer, nameBytes)],
   ['key_auths', SortedFlatMapSerializer(PublicKeySerializer, UInt16Serializer, publicKeyBytes)]
 ])
 
@@ -668,7 +670,7 @@ OperationSerializers.witness_set_properties = OperationDataSerializer(
   OPERATION_IDS.witness_set_properties,
   [
     ['owner', StringSerializer],
-    ['props', SortedFlatMapSerializer(StringSerializer, VariableBinarySerializer, (name: string) => Uint8Array.from(name, (c) => c.charCodeAt(0)))],
+    ['props', SortedFlatMapSerializer(StringSerializer, VariableBinarySerializer, nameBytes)],
     ['extensions', ArraySerializer(VoidSerializer)]
   ]
 )

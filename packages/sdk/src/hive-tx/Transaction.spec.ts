@@ -189,7 +189,7 @@ describe("key_auths order", () => {
               owner: authority(keys),
               active: authority(keys),
               posting: authority(keys, names),
-              memo_key: keys[0].toString(),
+              memo_key: pub("memo").toString(),
               json_metadata: "",
             },
           ],
@@ -240,6 +240,26 @@ describe("key_auths order", () => {
     const keys = [pub("a")];
     const sorted = ["demo", "ecency", "ecency.app", "peakd.app"];
     expect(update(keys, ["peakd.app", "ecency.app", "demo", "ecency"])).toBe(update(keys, sorted));
+  });
+});
+
+describe("witness_set_properties props order", () => {
+  it("matches the txid hived computes for out-of-order props", () => {
+    // Expected value from condenser_api.get_transaction_hex on a live node.
+    const props = [
+      ["url", "0568747470733a2f2f"],
+      ["key", "00".repeat(35)],
+      ["hbd_interest_rate", "e803"],
+      ["account_creation_fee", "010000000000000003535445454d0000"],
+    ];
+    const txId = new Transaction({
+      transaction: {
+        ...baseTx,
+        signatures: [],
+        operations: [["witness_set_properties", { owner: "alice", props, extensions: [] }]],
+      },
+    }).digest().txId;
+    expect(txId).toBe("de410eb4203f4db584eb85a2596b776c5c705798");
   });
 });
 
