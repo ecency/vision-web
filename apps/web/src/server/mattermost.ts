@@ -455,7 +455,8 @@ export async function findMattermostUser(username: string): Promise<MattermostUs
 }
 
 /**
- * Like findMattermostUser, but only "no such user" (404) resolves to null.
+ * Like findMattermostUser, but only "no such user" resolves to null: a 404, or
+ * the 400 Mattermost answers for a name that cannot exist (e.g. uppercase).
  * Timeouts and other upstream failures throw, so a caller that tells users
  * someone "is not on chat" does not say so during an outage.
  */
@@ -465,7 +466,7 @@ export async function lookupMattermostUser(username: string): Promise<Mattermost
       headers: getAdminHeaders()
     });
   } catch (error) {
-    if (error instanceof MattermostError && error.status === 404) {
+    if (error instanceof MattermostError && (error.status === 404 || error.status === 400)) {
       return null;
     }
     throw error;

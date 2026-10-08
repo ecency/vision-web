@@ -9,6 +9,13 @@ function resp(status: number, body: unknown) {
 const ENV_KEYS = ["MATTERMOST_BASE_URL", "MATTERMOST_ADMIN_TOKEN", "MATTERMOST_TEAM_ID"] as const;
 const savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
+afterEach(() => {
+  for (const key of ENV_KEYS) {
+    if (savedEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = savedEnv[key];
+  }
+});
+
 async function loadModule() {
   process.env.MATTERMOST_BASE_URL = "https://chat.test/api/v4";
   process.env.MATTERMOST_ADMIN_TOKEN = "admin-token";
@@ -27,10 +34,6 @@ describe("getPrivateChannelRecipientIds", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    for (const key of ENV_KEYS) {
-      if (savedEnv[key] === undefined) delete process.env[key];
-      else process.env[key] = savedEnv[key];
-    }
   });
 
   it("reads the other member of a direct channel from its name", async () => {
@@ -97,6 +100,15 @@ describe("lookupMattermostUser", () => {
     fetchMock.mockResolvedValue(resp(404, { id: "app.user.missing_account.const" }));
 
     expect(await lookupMattermostUser("ghost")).toBeNull();
+  });
+
+  // Mattermost answers 400 for a name that cannot exist, such as one with
+  // uppercase letters; that is still "not on chat", not a failure.
+  it("resolves a name Mattermost rejects as invalid to null", async () => {
+    const { lookupMattermostUser } = await loadModule();
+    fetchMock.mockResolvedValue(resp(400, { id: "api.context.invalid_body_param.app_error" }));
+
+    expect(await lookupMattermostUser("Alice")).toBeNull();
   });
 
   it("throws on an upstream failure instead of reporting the user missing", async () => {

@@ -50,7 +50,7 @@ export interface DmFanoutDecision {
   /** Distinct recipients already recorded in the window. */
   recipients: number;
   limit: number;
-  /** Seconds until the oldest recipient ages out. Only meaningful when blocked. */
+  /** Seconds until enough recipients outside this send age out for it to fit. Only meaningful when blocked. */
   retryAfterSeconds: number;
 }
 
