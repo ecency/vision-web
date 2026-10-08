@@ -86,8 +86,14 @@ async function acquire(
       const result = await redis.set(key, owner, "PX", LOCK_TTL_MS, "NX");
       if (result) return "held";
       answered = true;
-      // A SET that succeeded but whose reply was lost leaves the key ours.
-      if (failedBefore && (await redis.get(key)) === owner) return "held";
+      // A SET that succeeded but whose reply was lost leaves the key ours;
+      // confirm and refresh it in one step so the lease starts now.
+      if (
+        failedBefore &&
+        (await redis.eval(RENEW_SCRIPT, 1, key, owner, String(LOCK_TTL_MS)))
+      ) {
+        return "held";
+      }
     } catch {
       failed = true;
       failedBefore = true;
