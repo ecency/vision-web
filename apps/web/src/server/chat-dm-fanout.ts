@@ -47,6 +47,12 @@ export const DM_FANOUT_MAX = envInt("CHAT_DM_FANOUT_MAX", 20);
 
 export interface DmFanoutDecision {
   allowed: boolean;
+  /**
+   * False when nothing was checked or recorded (Redis disabled, down or
+   * failing). Direct messages go ahead regardless; optional extras such as
+   * mention joins should not.
+   */
+  measured: boolean;
   /** Distinct recipients already recorded in the window. */
   recipients: number;
   limit: number;
@@ -151,6 +157,7 @@ export function getChatRedis(): RedisClient | null {
 
 const ALLOW_UNMEASURED: Omit<DmFanoutDecision, "limit"> = {
   allowed: true,
+  measured: false,
   recipients: 0,
   retryAfterSeconds: 0
 };
@@ -172,11 +179,18 @@ export async function checkDmFanout(
     userId,
     recipients,
     accountCreatedAt,
+    scope,
     now = Date.now()
   }: {
     userId: string;
     recipients: string[];
     accountCreatedAt?: number;
+    /**
+     * A separate budget with the same limits, for reach that is not a private
+     * conversation (people pulled into a public channel by a mention), so it
+     * never uses up the sender's direct messages.
+     */
+    scope?: "mention";
     now?: number;
   },
   redis: RedisClient | null = getChatRedis()
@@ -189,7 +203,7 @@ export async function checkDmFanout(
     const [allowed, recipients, freesAtScore] = (await redis.eval(
       RESERVE_SCRIPT,
       1,
-      `${KEY_PREFIX}${userId}`,
+      `${KEY_PREFIX}${scope ? `${scope}:` : ""}${userId}`,
       String(now),
       String(DM_FANOUT_WINDOW_MS),
       String(limit),
@@ -197,7 +211,7 @@ export async function checkDmFanout(
     )) as [number, number, number];
 
     if (allowed) {
-      return { allowed: true, recipients, limit, retryAfterSeconds: 0 };
+      return { allowed: true, measured: true, recipients, limit, retryAfterSeconds: 0 };
     }
 
     const freesAt =
@@ -205,6 +219,7 @@ export async function checkDmFanout(
 
     return {
       allowed: false,
+      measured: true,
       recipients,
       limit,
       retryAfterSeconds: Math.max(1, Math.ceil((freesAt - now) / 1000))

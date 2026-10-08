@@ -122,6 +122,7 @@ describe("checkDmFanout", () => {
     for (let i = 0; i < DM_FANOUT_MAX_NEW; i++) {
       const ok = await send(redis, `dm-${i}`, { createdAt: NEW_ACCOUNT });
       expect(ok.allowed).toBe(true);
+      expect(ok.measured).toBe(true);
     }
 
     const blocked = await send(redis, "dm-overflow", { createdAt: NEW_ACCOUNT });
@@ -194,12 +195,14 @@ describe("checkDmFanout", () => {
       null
     );
     expect(res.allowed).toBe(true);
+    expect(res.measured).toBe(false);
   });
 
   it("allows the send when a redis command fails", async () => {
     redis.failOn = "eval";
     const res = await send(redis, "dm-1", { createdAt: NEW_ACCOUNT });
     expect(res.allowed).toBe(true);
+    expect(res.measured).toBe(false);
   });
 
   // A read-then-write pipeline loses to exactly this: fire the spray in
@@ -288,5 +291,22 @@ describe("checkDmFanout", () => {
     expect(blocked.retryAfterSeconds).toBe(
       Math.ceil((NOW + 1000 + DM_FANOUT_WINDOW_MS - at) / 1000)
     );
+  });
+
+  it("keeps mention joins on their own budget, apart from direct messages", async () => {
+    const mention = (i: number) =>
+      checkDmFanout(
+        { userId: "u-1", recipients: [`m-${i}`], accountCreatedAt: NEW_ACCOUNT, now: NOW, scope: "mention" },
+        redis as never
+      );
+    for (let i = 0; i < DM_FANOUT_MAX_NEW; i++) {
+      expect((await mention(i)).allowed).toBe(true);
+    }
+    expect((await mention(99)).allowed).toBe(false);
+
+    // The DM budget is untouched by the mentions above.
+    const dm = await send(redis, "dm-0", { createdAt: NEW_ACCOUNT });
+    expect(dm.allowed).toBe(true);
+    expect(dm.recipients).toBe(1);
   });
 });

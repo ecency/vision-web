@@ -31,6 +31,13 @@ import clsx from "clsx";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { getChatBanInfo } from "@/features/chat/chat-ban-notice";
 import { ChatBanScreen } from "@/features/chat/components/chat-ban-screen";
+import { ChannelAvatar } from "@/features/chat/components/channel-avatar";
+import { NewGroupModal } from "@/features/chat/components/new-group-modal";
+import {
+  getGroupTitle,
+  isConversationChannel,
+  isGroupChannel
+} from "@/features/chat/group-utils";
 
 const TOWN_HALL_CHANNEL_NAME = "town-hall";
 
@@ -47,6 +54,7 @@ export function ChatsClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState("");
+  const [showNewGroup, setShowNewGroup] = useState(false);
   const shareText = searchParams?.get("text")?.trim();
   const dmTarget = searchParams?.get("dm")?.trim();
   const isShareMode = Boolean(shareText);
@@ -112,12 +120,16 @@ export function ChatsClient() {
       const displayName = channel.display_name || channel.name;
       const directUsername = channel.directUser?.username || "";
       const directDisplayName = getDirectUserDisplayName(channel.directUser) || "";
+      const groupNames = (channel.groupUsers ?? [])
+        .map((user) => `${user.username} ${getDirectUserDisplayName(user) || ""}`)
+        .join(" ");
 
       return (
         displayName.toLowerCase().includes(query) ||
         channel.name.toLowerCase().includes(query) ||
         directUsername.toLowerCase().includes(query) ||
-        directDisplayName.toLowerCase().includes(query)
+        directDisplayName.toLowerCase().includes(query) ||
+        groupNames.toLowerCase().includes(query)
       );
     });
   }, [channels?.channels, getDirectUserDisplayName, searchTerm]);
@@ -189,7 +201,7 @@ export function ChatsClient() {
     sortedChannels.forEach((channel) => {
       if (channel.is_favorite) {
         favorites.push(channel);
-      } else if (channel.type === "D") {
+      } else if (isConversationChannel(channel)) {
         directMessages.push(channel);
       } else {
         regularChannels.push(channel);
@@ -276,6 +288,10 @@ export function ChatsClient() {
         if (displayName) return displayName;
       }
 
+      if (isGroupChannel(channel)) {
+        return getGroupTitle(channel.groupUsers, channel.display_name || channel.name);
+      }
+
       return channel.display_name || channel.name;
     },
     [getDirectUserDisplayName]
@@ -287,6 +303,14 @@ export function ChatsClient() {
         if (channel.directUser?.username) return `@${channel.directUser.username}`;
 
         return i18next.t("chat.channel-type-dm");
+      }
+
+      if (isGroupChannel(channel)) {
+        // The other members plus the viewer.
+        const count = channel.groupUsers?.length ? channel.groupUsers.length + 1 : undefined;
+        return count
+          ? i18next.t("chat.channel-type-group", { count })
+          : i18next.t("chat.new-group-members");
       }
 
       return i18next.t("chat.channel-type");
@@ -421,6 +445,15 @@ export function ChatsClient() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <NewGroupModal
+        show={showNewGroup}
+        onHide={() => setShowNewGroup(false)}
+        currentUsername={activeUser?.username}
+        onCreated={(channelId) => {
+          setShowNewGroup(false);
+          router.push(buildChannelUrl(channelId));
+        }}
+      />
       <div className="flex flex-col gap-3 border-b border-[--border-color] p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -431,6 +464,9 @@ export function ChatsClient() {
             {(isLoading || channelsLoading) && (
               <div className="text-xs text-[--text-muted]">{i18next.t("chat.loading")}</div>
             )}
+            <Button type="button" size="sm" appearance="secondary" onClick={() => setShowNewGroup(true)}>
+              {i18next.t("chat.new-group")}
+            </Button>
           </div>
         </div>
         <form className="flex gap-2" onSubmit={(e) => e.preventDefault()}>
@@ -529,11 +565,7 @@ export function ChatsClient() {
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <div className="relative flex-shrink-0">
-                              {channel.type === "D" && channel.directUser ? (
-                                <UserAvatar username={channel.directUser.username} size="medium" className="size-10" />
-                              ) : (
-                                <UserAvatar username={channel.name} size="medium" className="size-10" />
-                              )}
+                              <ChannelAvatar channel={channel} />
                               {unread > 0 && (
                                 <span
                                   className="absolute -right-1 -top-1 size-2.5 rounded-full bg-[--primary-color] ring-2 ring-[--surface-color]"
@@ -694,9 +726,7 @@ export function ChatsClient() {
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <div className="relative flex-shrink-0">
-                              {channel.directUser && (
-                                <UserAvatar username={channel.directUser.username} size="medium" className="size-10" />
-                              )}
+                              <ChannelAvatar channel={channel} />
                               {unread > 0 && (
                                 <span
                                   className="absolute -right-1 -top-1 size-2.5 rounded-full bg-[--primary-color] ring-2 ring-[--surface-color]"
@@ -913,11 +943,7 @@ export function ChatsClient() {
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="relative flex-shrink-0">
-                        {channel.type === "D" && channel.directUser ? (
-                          <UserAvatar username={channel.directUser.username} size="medium" className="size-10" />
-                        ) : (
-                          <UserAvatar username={channel.name} size="medium" className="size-10" />
-                        )}
+                        <ChannelAvatar channel={channel} />
                         {unread > 0 && (
                           <span
                             className="absolute -right-1 -top-1 size-2.5 rounded-full bg-[--primary-color] ring-2 ring-[--surface-color]"

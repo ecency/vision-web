@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import React from "react";
 import { renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useMattermostMuteChannel } from "@/features/chat/mattermost-api";
+import { useMattermostLeaveChannel, useMattermostMuteChannel } from "@/features/chat/mattermost-api";
 
 /**
  * Regression: toggling a channel's mute state must refresh the unread summary,
@@ -37,6 +37,21 @@ describe("useMattermostMuteChannel", () => {
 
     const { result } = renderHook(() => useMattermostMuteChannel(), { wrapper });
     await result.current.mutateAsync({ channelId: "c1", mute: true });
+
+    const invalidatedKeys = invalidateSpy.mock.calls.map((call) => (call[0] as any)?.queryKey?.[0]);
+    expect(invalidatedKeys).toContain("mattermost-channels");
+    expect(invalidatedKeys).toContain("mattermost-unread");
+  });
+
+  // Closing a group marks it read server-side, so the summary changes as well.
+  it("invalidates the unread summary after leaving or closing a conversation", async () => {
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useMattermostLeaveChannel(), { wrapper });
+    await result.current.mutateAsync("g1");
 
     const invalidatedKeys = invalidateSpy.mock.calls.map((call) => (call[0] as any)?.queryKey?.[0]);
     expect(invalidatedKeys).toContain("mattermost-channels");

@@ -20,6 +20,7 @@ import {
   useMattermostUpdatePost,
   useMattermostPostsAround,
   useMattermostThread,
+  useMattermostUsersByIds,
   useMattermostJoinChannel
 } from "./mattermost-api";
 import { usePendingPosts } from "./hooks/use-pending-posts";
@@ -43,6 +44,7 @@ import {
 import { saveDraft, loadDraft, clearDraft } from "./draft-utils";
 import { ThreadPanel } from "./components/thread-panel";
 import { mergeThreadPosts } from "./components/thread-merge";
+import { findMissingReactorIds } from "./group-utils";
 import { MessageInput } from "./components/message-input";
 import { type PostItem } from "./components/message-list";
 import { VirtualizedMessageList } from "./components/virtualized-message-list";
@@ -284,6 +286,7 @@ export function MattermostChannelView({ channelId }: Props) {
     Boolean(threadRootId)
   );
 
+  const [extraUsers, setExtraUsers] = useState<Record<string, MattermostUser>>({});
   const usersById = useMemo(() => {
     const acc: Record<string, MattermostUser> = {};
     const fold = (users: Record<string, MattermostUser> | undefined) => {
@@ -298,8 +301,29 @@ export function MattermostChannelView({ channelId }: Props) {
     data?.pages?.forEach((page) => fold(page.users));
     // Authors of thread-only posts may not appear in the channel buffer.
     fold(threadData?.users);
+    // Reactors whose reaction arrived live, after the page was loaded.
+    fold(extraUsers);
     return acc;
-  }, [data?.pages, threadData?.users, normalizeUsername]);
+  }, [data?.pages, threadData?.users, extraUsers, normalizeUsername]);
+
+  // A reaction that arrives over the websocket can come from someone the
+  // loaded pages never mentioned. Look those people up in one batch and keep
+  // them, so their names show in the reaction tooltips and list.
+  const missingReactorIds = useMemo(
+    () => findMissingReactorIds([...posts, ...(threadData?.posts ?? [])], usersById),
+    [posts, threadData?.posts, usersById]
+  );
+  const { data: resolvedReactors } = useMattermostUsersByIds(missingReactorIds);
+  useEffect(() => {
+    if (!resolvedReactors?.length) return;
+    setExtraUsers((current) => {
+      const next = { ...current };
+      resolvedReactors.forEach((user) => {
+        next[user.id] = user;
+      });
+      return next;
+    });
+  }, [resolvedReactors]);
 
   const channelData = useMemo(() => data?.pages?.[0], [data?.pages]);
 
@@ -450,7 +474,8 @@ export function MattermostChannelView({ channelId }: Props) {
     channelTitle,
     channelSubtitle,
     onlineUsers,
-    onlineCount
+    onlineCount,
+    groupUsers
   } = useChannelMetadata({
     channelId,
     channelData,
@@ -1087,6 +1112,8 @@ export function MattermostChannelView({ channelId }: Props) {
           showKeyboardShortcuts={showKeyboardShortcuts}
           setShowKeyboardShortcuts={setShowKeyboardShortcuts}
           onClose={() => router.push("/chats")}
+          groupMembers={groupUsers}
+          viewerUsername={activeUser?.username}
         />
 
         {showDmWarning && (

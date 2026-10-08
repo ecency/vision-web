@@ -1,13 +1,15 @@
 import { useEffect, useMemo } from "react";
+import i18next from "i18next";
 import type { MattermostPostsResponse, MattermostUser } from "../mattermost-api";
 import { getUserDisplayName } from "../format-utils";
+import { getGroupTitle } from "../group-utils";
 
 interface UseChannelMetadataParams {
   channelId: string;
   channelData: MattermostPostsResponse | undefined;
   usersById: Record<string, MattermostUser>;
   activeUsername: string | undefined;
-  channels: { channels: Array<{ id: string; type: string; name: string; display_name: string; directUser?: MattermostUser | null; [key: string]: any }> } | undefined;
+  channels: { channels: Array<{ id: string; type: string; name: string; display_name: string; directUser?: MattermostUser | null; groupUsers?: MattermostUser[]; [key: string]: any }> } | undefined;
   showOnlineUsers: boolean;
   setShowOnlineUsers: (show: boolean) => void;
 }
@@ -54,10 +56,17 @@ export function useChannelMetadata({
     usersById
   ]);
 
+  const isGroup = channelData?.channel?.type === "G" || directChannelFromList?.type === "G";
+  const groupUsers = isGroup ? directChannelFromList?.groupUsers : undefined;
+
   const channelTitle = useMemo(() => {
     if (directChannelUser) {
       const displayName = getUserDisplayName(directChannelUser);
       if (displayName) return displayName;
+    }
+
+    if (groupUsers?.length) {
+      return getGroupTitle(groupUsers, i18next.t("chat.group"));
     }
 
     return (
@@ -72,7 +81,8 @@ export function useChannelMetadata({
     channelData?.channel?.name,
     directChannelFromList?.display_name,
     directChannelFromList?.name,
-    directChannelUser
+    directChannelUser,
+    groupUsers
   ]);
 
   const channelSubtitle = useMemo(() => {
@@ -81,6 +91,13 @@ export function useChannelMetadata({
     if (isDirectChannel) {
       if (directChannelUser?.username) return `@${directChannelUser.username}`;
       return "Direct message";
+    }
+
+    if (isGroup) {
+      const count = channelData?.memberCount ?? (groupUsers?.length ? groupUsers.length + 1 : undefined);
+      return count !== undefined
+        ? i18next.t("chat.channel-type-group", { count })
+        : i18next.t("chat.new-group-members");
     }
 
     const baseName = channelData?.community ? `${channelData.community} channel` : "Channel";
@@ -96,7 +113,9 @@ export function useChannelMetadata({
     channelData?.community,
     channelData?.memberCount,
     directChannelFromList?.type,
-    directChannelUser?.username
+    directChannelUser?.username,
+    groupUsers,
+    isGroup
   ]);
 
   const onlineUsers = useMemo(() => {
@@ -124,6 +143,7 @@ export function useChannelMetadata({
     directChannelUser,
     channelTitle,
     channelSubtitle,
+    groupUsers,
     onlineUsers,
     onlineCount
   };

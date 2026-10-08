@@ -47,6 +47,8 @@ interface MattermostChannel {
   is_favorite?: boolean;
   is_muted?: boolean;
   directUser?: MattermostUser | null;
+  /** Group channels only: the other members, for the name and avatars. */
+  groupUsers?: MattermostUser[];
   mention_count?: number;
   message_count?: number;
   last_post_at?: number;
@@ -324,11 +326,12 @@ export function useMattermostLeaveChannel() {
       return (await safeJson(res)) as { ok: boolean };
     },
     onSuccess: async () => {
-      // Invalidate all mattermost-channels queries (matches ["mattermost-channels", username])
-      await queryClient.invalidateQueries({
-        queryKey: ["mattermost-channels"],
-        exact: false
-      });
+      // Closing a group also marks it read server-side, so the unread summary
+      // changes too; refetch both or the badge counts a row that is gone.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["mattermost-channels"], exact: false }),
+        queryClient.invalidateQueries({ queryKey: ["mattermost-unread"], exact: false })
+      ]);
     }
   });
 }
@@ -810,6 +813,63 @@ export interface MattermostPost {
     reactions?: MattermostReaction[];
   };
   props?: MattermostPostProps;
+}
+
+export function useMattermostGroupChannel() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (usernames: string[]) => {
+      const res = await fetch(`/api/mattermost/group`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usernames })
+      });
+
+      if (!res.ok) {
+        const data = await safeJson<{ error?: string }>(res);
+        throw new Error(data?.error || "Unable to start group conversation");
+      }
+
+      const group = (await safeJson(res)) as { channelId?: unknown };
+      const channelId = asChannelId(group.channelId);
+      if (!channelId) {
+        throw new Error("Unable to start group conversation");
+      }
+      return { channelId };
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["mattermost-channels"], exact: false });
+    }
+  });
+}
+
+/**
+ * Public records for user ids the client has no record for yet, such as a
+ * reactor whose reaction arrived over the websocket. `ids` should be sorted so
+ * the same set shares one cache entry.
+ */
+export function useMattermostUsersByIds(ids: string[]) {
+  return useQuery({
+    queryKey: ["mattermost-users-by-ids", ids],
+    enabled: ids.length > 0,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const res = await fetch(`/api/mattermost/users/ids`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: ids.slice(0, 200) })
+      });
+
+      if (!res.ok) {
+        const data = await safeJson<{ error?: string }>(res);
+        throw new Error(data?.error || "Unable to load users");
+      }
+
+      const data = (await safeJson(res)) as { users?: MattermostUser[] };
+      return data.users ?? [];
+    }
+  });
 }
 
 export function useMattermostReactToPost(channelId: string | undefined) {

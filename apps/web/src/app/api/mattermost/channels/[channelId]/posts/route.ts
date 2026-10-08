@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  ensureMattermostUser,
   ensureUserInChannel,
   ensureUserInTeam,
   followMattermostThreadForUser,
@@ -16,6 +15,7 @@ import {
   CHAT_BAN_PROP
 } from "@/server/mattermost";
 import { checkDmFanout } from "@/server/chat-dm-fanout";
+import { addMentionedUsersToChannel } from "@/server/chat-mentions";
 import { collectPostUserIds } from "@/server/chat-post-users";
 
 // Prevent artificial timeout - this route should be fast now
@@ -460,31 +460,18 @@ export async function POST(
 
     // --- Background tasks (non-blocking) ---
 
-    // Ensure @mentioned users are members of the public channel (async)
-    // Mattermost's native @mention system will handle notifications
-    if (mentionedUsers.length) {
-      mmUserFetch<MattermostChannel>(`/channels/${channelIdPath}`, token)
-        .then((channel) => {
-          if (channel.type === "O") {
-            return Promise.all(
-              mentionedUsers.map(async (username) => {
-                try {
-                  const user = await ensureMattermostUser(username);
-                  await ensureUserInTeam(user.id);
-                  await ensureUserInChannel(user.id, channel.id);
-                } catch (error) {
-                  console.error(
-                    "Unable to ensure mentioned user in channel",
-                    { username, error }
-                  );
-                }
-              })
-            );
-          }
-        })
-        .catch((error) => {
-          console.error("Unable to process mentioned users", error);
-        });
+    // Pull @mentioned people who are not yet members into a public channel, so
+    // the conversation shows up for them (async, bounded in
+    // server/chat-mentions). Mattermost notifies the members it already had.
+    if (mentionedUsers.length && channel.type === "O") {
+      addMentionedUsersToChannel({
+        channelId: channel.id,
+        senderId: currentUser.id,
+        senderCreatedAt: currentUser.create_at,
+        usernames: mentionedUsers
+      }).catch((error) => {
+        console.error("Unable to process mentioned users", error);
+      });
     }
 
     // Follow thread for parent author only in public channels (async)

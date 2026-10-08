@@ -28,6 +28,7 @@ interface MattermostChannel {
   mention_count?: number;
   message_count?: number;
   directUser?: MattermostUser | null;
+  groupUsers?: MattermostUser[];
   order?: number;
   last_post_at?: number;
   last_viewed_at?: number;
@@ -41,6 +42,51 @@ interface MattermostUser {
   nickname?: string;
   last_picture_update?: number;
   delete_at?: number;
+}
+
+/** Groups have at most 8 members, so one page covers any of them. */
+const GROUP_MEMBERS_PAGE = 10;
+const MAX_GROUPS_RESOLVED = 50;
+
+/**
+ * Mattermost groups have fixed membership, so a group's member list only goes
+ * stale when someone is deactivated or changes their name or picture, and a
+ * few minutes of that is fine. Kept per process so that the channel list,
+ * which is refetched often, does not look every group up again.
+ */
+const GROUP_MEMBERS_TTL_MS = 10 * 60_000;
+const GROUP_MEMBERS_CACHE_MAX = 5_000;
+const groupMembersCache = new Map<string, { users: MattermostUser[]; at: number }>();
+
+async function getGroupMembers(channelId: string, token: string): Promise<MattermostUser[]> {
+  const cached = groupMembersCache.get(channelId);
+  if (cached && Date.now() - cached.at < GROUP_MEMBERS_TTL_MS) return cached.users;
+
+  const members = await mmUserFetch<MattermostUser[]>(
+    `/users?in_channel=${encodeURIComponent(channelId)}&page=0&per_page=${GROUP_MEMBERS_PAGE}`,
+    token
+  );
+  const users = members.map((user) => ({ ...toPublicGroupUser(user), delete_at: user.delete_at }));
+
+  groupMembersCache.delete(channelId);
+  if (groupMembersCache.size >= GROUP_MEMBERS_CACHE_MAX) {
+    // Maps iterate in insertion order: drop the oldest entry.
+    const oldest = groupMembersCache.keys().next().value;
+    if (oldest !== undefined) groupMembersCache.delete(oldest);
+  }
+  groupMembersCache.set(channelId, { users, at: Date.now() });
+  return users;
+}
+
+function toPublicGroupUser(user: MattermostUser): MattermostUser {
+  return {
+    id: user.id,
+    username: user.username,
+    first_name: user.first_name,
+    last_name: user.last_name,
+    nickname: user.nickname,
+    last_picture_update: user.last_picture_update
+  };
 }
 
 interface MattermostChannelMemberCounts {
@@ -113,6 +159,11 @@ export async function GET() {
         .filter((pref) => pref.category === "direct_channel_show")
         .map((pref) => [pref.name, pref.value])
     );
+    const closedGroupIds = new Set(
+      (preferences || [])
+        .filter((pref) => pref.category === "group_channel_show" && pref.value === "false")
+        .map((pref) => pref.name)
+    );
     const directMessageCategoryIds = new Set(
       (categoriesResponse.categories || [])
         .find((category) => category.type === "direct_messages")
@@ -171,10 +222,22 @@ export async function GET() {
       !phantomDmIds.has(channel.id) &&
       dmContributesToUnreadBadge(channel, channelMembersById[channel.id]);
 
+    // The same rule that keeps a DM listed: unread, not muted, not emptied.
+    const closedGroupHasNews = dmContributesToBadge;
+    const reopenedGroupIds: string[] = [];
+
     const hasCategories = (categoriesResponse.categories || []).length > 0;
     const filteredChannels = channels.filter((channel) => {
       // Filter out Mattermost team default channels
       if (isMattermostDefaultChannel(channel)) return false;
+
+      // A closed group stays hidden until it has something unread, as a DM does.
+      if (channel.type === "G") {
+        if (!closedGroupIds.has(channel.id)) return true;
+        if (!closedGroupHasNews(channel)) return false;
+        reopenedGroupIds.push(channel.id);
+        return true;
+      }
 
       if (channel.type !== "D") return true;
 
@@ -207,6 +270,23 @@ export async function GET() {
 
       return true;
     });
+
+    // A closed group with news is open again, for good: once read it must not
+    // drop out of the list while the viewer is in it. Mattermost's own web app
+    // makes the same flip client-side when a post arrives. Best effort.
+    if (reopenedGroupIds.length) {
+      await mmUserFetch(`/users/${encodeURIComponent(currentUser.id)}/preferences`, token, {
+        method: "PUT",
+        body: JSON.stringify(
+          reopenedGroupIds.map((id) => ({
+            user_id: currentUser.id,
+            category: "group_channel_show",
+            name: id,
+            value: "true"
+          }))
+        )
+      }).catch((error) => console.warn("MM channels: unable to reopen groups", { error }));
+    }
 
     // DM partners were already resolved above (one batched lookup covering every
     // DM channel, so it is a superset of what the filtered list needs).
@@ -295,7 +375,35 @@ export async function GET() {
       return orderA - orderB;
     });
 
-    return NextResponse.json({ channels: orderedChannels });
+    // A group's Mattermost display name is its members' usernames cut at 64
+    // characters, viewer included, so attach the other members for clients to
+    // name and draw it. One small lookup per group, best effort: a group whose
+    // members cannot be read keeps its display name.
+    const groupUsersById = new Map(
+      await Promise.all(
+        orderedChannels
+          .filter((channel) => channel.type === "G")
+          .slice(0, MAX_GROUPS_RESOLVED)
+          .map(async (channel) => {
+            try {
+              const members = await getGroupMembers(channel.id, token);
+              const others = members
+                .filter((user) => user.id !== currentUser.id && !user.delete_at)
+                .map(toPublicGroupUser);
+              return [channel.id, others] as const;
+            } catch {
+              return [channel.id, undefined] as const;
+            }
+          })
+      )
+    );
+
+    return NextResponse.json({
+      channels: orderedChannels.map((channel) => {
+        const groupUsers = groupUsersById.get(channel.id);
+        return groupUsers ? { ...channel, groupUsers } : channel;
+      })
+    });
   } catch (error) {
     return handleMattermostError(error);
   }

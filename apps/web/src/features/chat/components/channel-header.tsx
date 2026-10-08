@@ -2,6 +2,9 @@ import type { MattermostPost, MattermostUser } from "../mattermost-api";
 import { formatTimestamp, getUserDisplayName } from "../format-utils";
 import { Modal, ModalBody } from "@ui/modal";
 import { ProfileLink, UserAvatar } from "@/features/shared";
+import { useState } from "react";
+import i18next from "i18next";
+import { PeopleListModal } from "./people-list-modal";
 
 interface ChannelHeaderProps {
   channelTitle: string;
@@ -23,6 +26,10 @@ interface ChannelHeaderProps {
   showKeyboardShortcuts: boolean;
   setShowKeyboardShortcuts: (show: boolean) => void;
   onClose: () => void;
+  /** Group channels: the other members, listed from the header. */
+  groupMembers?: MattermostUser[];
+  /** The viewer, listed first among a group's members. */
+  viewerUsername?: string;
 }
 
 export function ChannelHeader({
@@ -44,8 +51,12 @@ export function ChannelHeader({
   getDecodedDisplayMessage,
   showKeyboardShortcuts,
   setShowKeyboardShortcuts,
-  onClose
+  onClose,
+  groupMembers,
+  viewerUsername
 }: ChannelHeaderProps) {
+  const [showMembers, setShowMembers] = useState(false);
+
   return (
     <div className="border-b border-[--border-color] px-4 py-2.5">
       <div className="flex items-center justify-between gap-3">
@@ -63,6 +74,40 @@ export function ChannelHeader({
                 <span className="text-sm leading-none" aria-hidden>📌</span>
                 <span>{pinnedPosts.length} pinned</span>
               </button>
+            )}
+
+            {groupMembers && groupMembers.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowMembers(true)}
+                className="flex items-center gap-1 rounded-full border border-[--border-color] px-2 py-1 text-[11px] text-[--text-muted] transition hover:border-blue-dark-sky hover:text-[--text-color]"
+              >
+                <span className="text-sm leading-none" aria-hidden>👥</span>
+                <span>{i18next.t("chat.members")}</span>
+              </button>
+            )}
+
+            {groupMembers && (
+              <PeopleListModal
+                show={showMembers}
+                onHide={() => setShowMembers(false)}
+                title={i18next.t("chat.members")}
+                sections={[
+                  {
+                    key: "members",
+                    people: [
+                      ...(viewerUsername
+                        ? [{ id: "viewer", username: viewerUsername, displayName: i18next.t("chat.reactor-you") }]
+                        : []),
+                      ...groupMembers.map((user) => ({
+                        id: user.id,
+                        username: user.username,
+                        displayName: getUserDisplayName(user) || user.username
+                      }))
+                    ]
+                  }
+                ]}
+              />
             )}
 
             {onlineCount > 0 && (

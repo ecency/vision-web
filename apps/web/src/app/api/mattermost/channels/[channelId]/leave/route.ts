@@ -42,6 +42,25 @@ export async function POST(_: Request, { params }: { params: Promise<{ channelId
           }
         ])
       });
+    } else if (channel.type === "G") {
+      // Mattermost does not remove members from a group; closing one hides it
+      // for this user, like a DM, until something new arrives. Mark it read
+      // first, so what was already there does not count as new and reopen it.
+      await mmUserFetch(`/channels/members/me/view`, token, {
+        method: "POST",
+        body: JSON.stringify({ channel_id: channel.id, prev_channel_id: "" })
+      });
+      await mmUserFetch(`/users/${currentUser.id}/preferences`, token, {
+        method: "PUT",
+        body: JSON.stringify([
+          {
+            user_id: currentUser.id,
+            category: "group_channel_show",
+            name: channel.id,
+            value: "false"
+          }
+        ])
+      });
     } else {
       await mmUserFetch(`/channels/${encodeURIComponent(channelId)}/members/me`, token, { method: "DELETE" });
 
