@@ -76,6 +76,46 @@ describe("chat routes return public user records only", () => {
     expectPublic((await res.json()).users["u-2"]);
   });
 
+  it("posts route, channel page", async () => {
+    const { GET } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    const { getMattermostCommunityModerationContext } = await import("@/server/mattermost");
+    vi.mocked(getMattermostCommunityModerationContext).mockResolvedValue({
+      channel: { id: "c-1" },
+      community: null,
+      canModerate: false
+    } as never);
+    mockMmUserFetch.mockImplementation((path: string) => {
+      if (path.startsWith("/channels/c-1/posts?")) {
+        return Promise.resolve({
+          posts: { p1: { id: "p1", channel_id: "c-1", user_id: "u-2", create_at: 1 } },
+          order: ["p1"]
+        });
+      }
+      if (path === "/users/ids") return Promise.resolve([PRIVATE_USER]);
+      return Promise.resolve({});
+    });
+
+    const res = await GET(
+      { nextUrl: new URL("https://x.test/") } as never,
+      { params: Promise.resolve({ channelId: "c-1" }) }
+    );
+
+    expectPublic((await res.json()).users["u-2"]);
+  });
+
+  it("deactivated DM partner lookup", async () => {
+    const { fetchDeactivatedDmPartners } = await import("@/app/api/mattermost/channels/helpers");
+    mockMmUserFetch.mockResolvedValue([{ ...PRIVATE_USER, delete_at: 0 }]);
+
+    const { usersById } = await fetchDeactivatedDmPartners(
+      "test-token",
+      [{ id: "dm-1", name: "u-1__u-2", type: "D" }],
+      "u-1"
+    );
+
+    expectPublic(usersById["u-2"] as never);
+  });
+
   it("pinned route", async () => {
     const { GET } = await import("@/app/api/mattermost/channels/[channelId]/pinned/route");
     mockMmUserFetch.mockImplementation((path: string) => {

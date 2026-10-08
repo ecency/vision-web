@@ -51,6 +51,8 @@ describe("POST /api/mattermost/admin/session-tokens", () => {
     expect((await POST(request({ page: -1 }))).status).toBe(400);
     expect((await POST(request({ perPage: 500 }))).status).toBe(400);
     expect((await POST(request({ page: "1" }))).status).toBe(400);
+    expect((await POST(request(null))).status).toBe(400);
+    expect((await POST(request([1]))).status).toBe(400);
     expect(mockList).not.toHaveBeenCalled();
   });
 
@@ -81,5 +83,18 @@ describe("POST /api/mattermost/admin/session-tokens", () => {
 
     expect(body.done).toBe(true);
     expect(mockRetire).not.toHaveBeenCalled();
+  });
+
+  // Revoking the caller's own token would end the session running the loop.
+  it("leaves the admin running it to their own next bootstrap", async () => {
+    const { POST } = await import("@/app/api/mattermost/admin/session-tokens/route");
+    mockList.mockResolvedValue([
+      { id: "admin", username: "admin", props: { ecency_pat: "x" } },
+      { id: "a", username: "a", props: { ecency_pat: "y" } }
+    ]);
+
+    await POST(request({ page: 0, perPage: 2 }));
+
+    expect(mockRetire.mock.calls.map(([id]) => id)).toEqual(["a"]);
   });
 });

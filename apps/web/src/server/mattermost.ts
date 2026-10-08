@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { bridgeApiCall, getProfiles } from "@ecency/sdk";
 import { CommunityRole, ROLES } from "@ecency/sdk";
 import { toPublicChatUser } from "@/server/chat-public-user";
+import { withChatUserLock } from "@/server/chat-user-lock";
 
 export { toPublicChatUser };
 
@@ -511,32 +512,38 @@ async function revokeIssuedTokens(userId: string, signal?: AbortSignal): Promise
     if (tokens.length < perPage) break;
   }
   for (const tokenId of issued) {
-    await mmFetch(`/users/tokens/revoke`, {
-      method: "POST",
-      headers: getAdminHeaders(),
-      body: JSON.stringify({ token_id: tokenId }),
-      signal
-    });
+    try {
+      await mmFetch(`/users/tokens/revoke`, {
+        method: "POST",
+        headers: getAdminHeaders(),
+        body: JSON.stringify({ token_id: tokenId }),
+        signal
+      });
+    } catch (error) {
+      // Already revoked by a concurrent request: the goal is met.
+      if (!(error instanceof MattermostError && (error.status === 400 || error.status === 404))) {
+        throw error;
+      }
+    }
   }
   return issued.length;
 }
 
 /**
- * Writes a user's whole props map (Mattermost replaces props on patch). Every
- * writer goes through here so a stale read can never bring back the retired
- * plaintext token prop.
+ * Writes a user's whole props map (Mattermost replaces props on patch, so
+ * callers pass what they read plus their change). The old token prop is left
+ * as found: only retirement removes it, and only after revoking, so it keeps
+ * marking a user whose old token is still to be revoked.
  */
 async function writeUserProps(
   userId: string,
   props: Record<string, string>,
   signal?: AbortSignal
 ) {
-  const next = { ...props };
-  delete next[CHAT_PAT_PROP];
   await mmFetch(`/users/${encodeURIComponent(userId)}/patch`, {
     method: "PUT",
     headers: getAdminHeaders(),
-    body: JSON.stringify({ props: next }),
+    body: JSON.stringify({ props }),
     signal
   });
 }
@@ -553,11 +560,7 @@ export async function listMattermostUsersWithPropsAsAdmin(page: number, perPage:
   );
 }
 
-/**
- * Replaces a plaintext token left by an older build: revokes the user's issued
- * tokens and drops the plaintext prop. Returns false when there was none.
- */
-export async function retirePlaintextSessionToken(
+async function retirePlaintextSessionTokenUnlocked(
   userId: string,
   signal?: AbortSignal
 ): Promise<boolean> {
@@ -567,11 +570,24 @@ export async function retirePlaintextSessionToken(
   await revokeIssuedTokens(userId, signal);
 
   // Re-read right before writing so a concurrent props update is not lost.
+  // A sealed token stored meanwhile is kept: if it was issued before the
+  // revocation above it fails validation and is replaced on next bootstrap.
   const fresh = await getMattermostUserWithProps(userId, signal);
   const props = { ...(fresh.props || {}) };
-  delete props[CHAT_PAT_SEALED_PROP];
+  delete props[CHAT_PAT_PROP];
   await writeUserProps(userId, props, signal);
   return true;
+}
+
+/**
+ * Replaces a plaintext token left by an older build: revokes the user's issued
+ * tokens, then drops the plaintext prop. Returns false when there was none.
+ */
+export async function retirePlaintextSessionToken(
+  userId: string,
+  signal?: AbortSignal
+): Promise<boolean> {
+  return withChatUserLock(userId, () => retirePlaintextSessionTokenUnlocked(userId, signal));
 }
 
 /**
@@ -630,37 +646,51 @@ export async function ensurePersonalToken(
   // saves one extra GET /users/{id} on the hot path that used to run
   // sequentially after this call.
   const user = await getMattermostUserWithProps(userId, signal);
-  if (hasPlaintextSessionToken(user)) {
-    await retirePlaintextSessionToken(userId, signal);
-    const token = await createToken(userId, signal);
-    return { token, user };
+
+  // Hot path, no lock: a stored token that opens for this user and resolves
+  // to this user. getTokenOwnerId rethrows non-auth errors.
+  if (!hasPlaintextSessionToken(user)) {
+    const stored = openSessionToken(user.props?.[CHAT_PAT_SEALED_PROP], userId);
+    if (stored && (await getTokenOwnerId(stored, signal)) === userId) {
+      return { token: stored, user };
+    }
   }
 
-  const sealed = user.props?.[CHAT_PAT_SEALED_PROP];
-  const storedToken = openSessionToken(sealed, userId);
-  if (storedToken) {
-    // getTokenOwnerId rethrows non-auth errors
-    const ownerId = await getTokenOwnerId(storedToken, signal);
-    if (ownerId === userId) {
-      return { token: storedToken, user };
+  // Anything that revokes or issues runs under the per-user lock, on a fresh
+  // read, so a token another request just stored is reused, not revoked.
+  // The user.props returned predates createToken's PUT, but the only consumer
+  // (left-channels) doesn't care.
+  return withChatUserLock(userId, async () => {
+    const fresh = await getMattermostUserWithProps(userId, signal);
+
+    if (hasPlaintextSessionToken(fresh)) {
+      await retirePlaintextSessionTokenUnlocked(userId, signal);
+    } else {
+      const sealed = fresh.props?.[CHAT_PAT_SEALED_PROP];
+      const stored = openSessionToken(sealed, userId);
+      if (stored) {
+        const ownerId = await getTokenOwnerId(stored, signal);
+        if (ownerId === userId) {
+          return { token: stored, user };
+        }
+        if (ownerId) {
+          // A working token that belongs to someone else: never hand it out,
+          // and revoke it since it has evidently been copied.
+          await revokeIssuedTokens(ownerId, signal);
+          await revokeIssuedTokens(userId, signal);
+        }
+        // Otherwise revoked or expired: fall through to create.
+      } else if (sealed) {
+        // A stored value that cannot be opened (different key, tampered or
+        // not ours): retire what was issued instead of leaving it valid
+        // alongside the new one.
+        await revokeIssuedTokens(userId, signal);
+      }
     }
-    if (ownerId) {
-      // A working token that belongs to someone else: never hand it out, and
-      // revoke it since it has evidently been copied.
-      await revokeIssuedTokens(ownerId, signal);
-      await revokeIssuedTokens(userId, signal);
-    }
-    // Token exists but is invalid (revoked/expired) — fall through to create.
-    // The user.props we return here predates createToken's PUT to merge in
-    // the new PAT, but the only consumer (left-channels) doesn't care.
-  } else if (sealed) {
-    // A stored value that cannot be opened (different key, tampered or not
-    // ours): the token behind it is unrecoverable, so retire what was issued
-    // instead of leaving it valid alongside the new one.
-    await revokeIssuedTokens(userId, signal);
-  }
-  const token = await createToken(userId, signal);
-  return { token, user };
+
+    const token = await createToken(userId, signal);
+    return { token, user };
+  });
 }
 
 export function withMattermostTokenCookie(response: NextResponse, token: string) {

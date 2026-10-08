@@ -19,7 +19,8 @@ const CONCURRENCY = 8;
  * revoked; a new token is issued on their next chat bootstrap.
  *
  * Body: `{ page?: number, perPage?: number }`. Call with increasing pages
- * until `done` is true. Safe to re-run.
+ * until `done` (the last page was reached); users listed in `failed` are
+ * picked up by running it again. Safe to re-run.
  */
 export async function POST(req: Request) {
   const token = await getMattermostTokenFromCookies();
@@ -36,11 +37,16 @@ export async function POST(req: Request) {
     let body: { page?: unknown; perPage?: unknown } = {};
     const raw = await req.text();
     if (raw) {
+      let parsed: unknown;
       try {
-        body = JSON.parse(raw);
+        parsed = JSON.parse(raw);
       } catch {
         return NextResponse.json({ error: "malformed JSON body" }, { status: 400 });
       }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return NextResponse.json({ error: "body must be a JSON object" }, { status: 400 });
+      }
+      body = parsed as typeof body;
     }
 
     const page = body.page ?? 0;
@@ -56,7 +62,11 @@ export async function POST(req: Request) {
     }
 
     const users = await listMattermostUsersWithPropsAsAdmin(page as number, perPage as number);
-    const pending = users.filter(hasPlaintextSessionToken);
+    // The caller's own token is migrated by their own next bootstrap, never
+    // here: revoking it would end the session running this migration.
+    const pending = users.filter(
+      (user) => hasPlaintextSessionToken(user) && user.id !== guard.user.id
+    );
 
     let migrated = 0;
     const failed: string[] = [];
