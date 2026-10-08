@@ -1,0 +1,2 @@
+import {e}from'./chunk-XX32ZFT4.js';var o=e.operations,a=o,p=Object.entries(o).reduce((e,[t,i])=>(e[i]=t,e),{});export{a,p as b};//# sourceMappingURL=chunk-HWUXXAKE.js.map
+//# sourceMappingURL=chunk-HWUXXAKE.js.map
