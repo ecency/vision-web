@@ -23,6 +23,7 @@ import { AuthorityTypes, KeyChainImpl, TxResponse } from "@/types";
 import type { PeakVaultApi } from "@/types/app-window";
 import { extensionErrorMessage, isUserCancellation, isRetryableNodeError } from "./extension-error";
 import publicNodes from "../../public/public-nodes.json";
+import i18next from "i18next";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -272,6 +273,26 @@ export function signBufferWithExtension(
 // ---------------------------------------------------------------------------
 
 /**
+ * No browser extension can sign owner-authority operations. Keychain and Hive
+ * Keeper validate requestBroadcast's method against [Posting, Active] (Joi
+ * schema in their content script), and Peak Vault rejects "owner" too. Offering
+ * the extension for an owner op (key rotation) only yields a ValidationError
+ * toast, so callers gate the button and the broadcast on this.
+ */
+export function extensionSupportsAuthority(
+  keyType: "posting" | "active" | "owner" | "memo"
+): boolean {
+  return keyType !== "owner";
+}
+
+export function ownerAuthorityUnsupportedMessage(): string {
+  return i18next.t("key-or-hot.owner-key-only", {
+    defaultValue:
+      "Browser extensions cannot sign owner-level changes. Enter your owner private key or master password instead."
+  });
+}
+
+/**
  * Broadcast operations using the preferred or best available extension.
  * Reads user preference from localStorage if no explicit preferredId is given.
  */
@@ -282,6 +303,9 @@ export function broadcastWithExtension(
   rpc: string | null = null,
   preferredId?: HiveExtensionId
 ): Promise<any> {
+  if (!extensionSupportsAuthority(keyType)) {
+    return Promise.reject(new Error(ownerAuthorityUnsupportedMessage()));
+  }
   const extId = preferredId ?? getPreferredExtensionId(account);
   if (extId) {
     const resolved =
@@ -291,7 +315,6 @@ export function broadcastWithExtension(
     const pv = extId === "peakvault" ? getPeakVaultInstance() : null;
 
     if (pv) {
-      if (keyType === "owner") return Promise.reject(new Error("Peak Vault does not support owner authority operations."));
       return broadcastViaPeakVault(pv, account, operations, keyType as "posting" | "active" | "memo");
     }
     if (resolved) return broadcastViaKeychain(resolved, account, operations, keyType, rpc);
@@ -308,9 +331,6 @@ export function broadcastWithExtension(
 
   const peakvault = getPeakVaultInstance();
   if (peakvault) {
-    if (keyType === "owner") {
-      return Promise.reject(new Error("Peak Vault does not support owner authority operations."));
-    }
     return broadcastViaPeakVault(peakvault, account, operations, keyType as "posting" | "active" | "memo");
   }
 

@@ -104,6 +104,21 @@ describe("broadcastWithExtension (Keychain liveness ping)", () => {
     delete (window as any).hive_keychain;
   });
 
+  it("rejects an owner-authority broadcast before reaching any extension", async () => {
+    // Keychain/Keeper validate `method` against [Posting, Active]; the old
+    // behaviour forwarded "Owner" and surfaced their Joi ValidationError.
+    const requestBroadcast = vi.fn();
+    (window as any).hive_keychain = {
+      requestHandshake: (cb: () => void) => cb(),
+      requestBroadcast
+    };
+
+    await expect(
+      broadcastWithExtension("alice", [["account_update", {}]], "owner")
+    ).rejects.toThrow(/owner/i);
+    expect(requestBroadcast).not.toHaveBeenCalled();
+  });
+
   it("handshakes before broadcasting", async () => {
     const order: string[] = [];
     (window as any).hive_keychain = {

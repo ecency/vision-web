@@ -1898,7 +1898,8 @@
     "with-hiveauth": "Sign with HiveAuth",
     "invalid-key": "Invalid key format. Please check for invalid characters.",
     "key-error": "Failed to process the key. Please verify it is correct.",
-    "sign-with-metamask": "Sign with MetaMask"
+    "sign-with-metamask": "Sign with MetaMask",
+    "owner-key-only": "Browser extensions cannot sign owner-level changes. Enter your owner private key or master password instead."
   },
   "hive-auth": {
     "pending-request": "HiveAuth request pending. Match ID {{id}} in your wallet."
@@ -4058,7 +4059,8 @@
       "hint": "A Hive account can hold multiple keys simultaneously, all of which are listed below",
       "add-key": "Add/Manage keys",
       "key-created": "Keys have created and assigned successfully.",
-      "error-private-key-reveal": "Private key can be revealed only with master password or seed phrase"
+      "error-private-key-reveal": "Private key can be revealed only with master password or seed phrase",
+      "error-key-authority": "The key you entered does not have {{authority}} authority on this account."
     },
     "recovery": {
       "title": "Account recovery",
@@ -4107,7 +4109,11 @@
         "warning-title": "Important: Save Your New Seed Phrase",
         "warning1": "This is a NEW master password, different from your original credentials",
         "warning2": "Save it separately - you'll need it to login with these keys",
-        "warning3": "Download the keys file and store it securely before continuing"
+        "warning3": "Download the keys file and store it securely before continuing",
+        "master-password-title": "Your new master password",
+        "master-password-description": "Save this master password securely. It derives all your account keys.",
+        "master-password-hint": "Clicking continue will download a file with your master password and all derived keys.",
+        "regenerate": "Regenerate"
       },
       "step3": {
         "title": "Review Existing Keys",
@@ -4120,7 +4126,8 @@
         "memo-will-replace": "New memo key will replace this one",
         "derivation-unknown": "Unknown",
         "derivation-bip44": "BIP44 Seed",
-        "derivation-master-password": "Master Password"
+        "derivation-master-password": "Master Password",
+        "derivation-private-key": "Private Key"
       },
       "step4": {
         "title": "Ready to Apply Changes",
@@ -4133,7 +4140,9 @@
         "please-wait": "Please wait while we update your account",
         "success": "Keys Updated Successfully!",
         "success-description": "Your new keys have been added and selected old keys have been revoked.",
-        "error-no-keys": "No keys available to add"
+        "error-no-keys": "No keys available to add",
+        "new-master-password-keys": "4 new keys (owner, active, posting, memo) from master password",
+        "sign-hint": "Sign with your CURRENT owner private key or master password, not the new one generated in the previous step."
       },
       "import": {
         "title": "Import Existing Seed Phrase",

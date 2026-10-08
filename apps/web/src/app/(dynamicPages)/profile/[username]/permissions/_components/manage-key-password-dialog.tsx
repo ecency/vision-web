@@ -33,12 +33,10 @@ export function ManageKeyPasswordDialog({ show, setShow }: Props) {
     select: (resp) =>
       resp
         ? {
-            publicKeys: {
-              owner: resp.owner.key_auths[0],
-              active: resp.active.key_auths[0],
-              posting: resp.posting.key_auths[0],
-              memo: resp.memo_key
-            }
+            // Every owner key: after a key rotation the account holds the old
+            // and the new owner key, and key_auths is sorted by key, so the
+            // master password being checked may derive either of them.
+            ownerKeys: resp.owner.key_auths.map(([key]) => String(key))
           }
         : null
   });
@@ -65,7 +63,7 @@ export function ManageKeyPasswordDialog({ show, setShow }: Props) {
     } else {
       const keys = deriveHiveMasterPasswordKeys(activeUser!.username, raw);
 
-      if (!data?.publicKeys.owner.includes(keys.ownerPubkey)) {
+      if (!data?.ownerKeys.includes(keys.ownerPubkey)) {
         error(i18next.t("login.error-authenticate")); // enter master or active key
         return;
       }
@@ -79,7 +77,7 @@ export function ManageKeyPasswordDialog({ show, setShow }: Props) {
     }
 
     setShow(false);
-  }, [activeUser, data?.publicKeys, setShow, updateKeys]);
+  }, [activeUser, data?.ownerKeys, setShow, updateKeys]);
 
   return (
     <Modal show={show} onHide={() => setShow(false)} centered={true}>

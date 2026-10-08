@@ -12,6 +12,7 @@ const ext = vi.hoisted(() => ({
 vi.mock("@/utils/hive-extensions", () => ({
   getDetectedExtensions: () => ext.detected,
   hasAnyHiveExtension: () => ext.detected.length > 0,
+  extensionSupportsAuthority: (keyType: string) => keyType !== "owner",
   setPreferredExtensionId: (username: string, id: string | null) => {
     ext.calls.push("persist");
     ext.setPreferredExtensionId(username, id);
@@ -149,7 +150,7 @@ describe("KeyOrHot - extension picker (respects the user's chosen extension)", (
     expect(props.onKc).toHaveBeenCalledTimes(1);
   });
 
-  it("excludes Peak Vault for owner-authority flows (it can't sign owner ops)", () => {
+  it("owner-authority flows never offer an extension (none can sign owner ops)", () => {
     ext.detected = [
       { id: "hive-keeper", name: "Hive Keeper", icon: "/assets/keeper.svg" },
       { id: "keychain", name: "Keychain", icon: "/assets/keychain.png" },
@@ -157,29 +158,14 @@ describe("KeyOrHot - extension picker (respects the user's chosen extension)", (
     ];
     render(<KeyOrHot {...props} authority="owner" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /key-or-hot\.with-extension/i }));
-
-    // Chooser shows Keeper and Keychain, but never Peak Vault for owner ops.
-    expect(screen.getByText("login.extensions-select-description")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /hive keeper/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /keychain/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /peak vault/i })).not.toBeInTheDocument();
-  });
-
-  it("owner flow with Keychain + Peak Vault signs Keychain directly (Peak Vault excluded, no chooser)", () => {
-    ext.detected = [
-      { id: "keychain", name: "Keychain", icon: "/assets/keychain.png" },
-      { id: "peakvault", name: "Peak Vault", icon: "/assets/peakvault.svg" }
-    ];
-    render(<KeyOrHot {...props} authority="owner" />);
-
-    fireEvent.click(screen.getByRole("button", { name: /key-or-hot\.with-extension/i }));
-
-    // After excluding Peak Vault only Keychain remains => signs directly, no
-    // chooser, and never persists/sign with peakvault for an owner op.
-    expect(screen.queryByText("login.extensions-select-description")).not.toBeInTheDocument();
-    expect(ext.setPreferredExtensionId).toHaveBeenCalledWith("alice", "keychain");
-    expect(ext.setPreferredExtensionId).not.toHaveBeenCalledWith("alice", "peakvault");
-    expect(props.onKc).toHaveBeenCalledTimes(1);
+    // Keychain and Keeper validate the broadcast method against
+    // [Posting, Active] and Peak Vault rejects owner too, so the button that
+    // used to produce their ValidationError toast is gone; the key input stays.
+    expect(
+      screen.queryByRole("button", { name: /key-or-hot\.with-extension/i })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("key-or-hot.owner-key-only")).toBeInTheDocument();
+    expect(ext.setPreferredExtensionId).not.toHaveBeenCalled();
+    expect(props.onKc).not.toHaveBeenCalled();
   });
 });

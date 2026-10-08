@@ -13,6 +13,7 @@ import {
 import { PrivateKey, PublicKey } from "@ecency/sdk";
 import type { Operation } from "@ecency/sdk";
 import { getWebBroadcastAdapter } from "@/providers/sdk/web-broadcast-adapter";
+import { findKeyAuthority, keySatisfiesAuthority } from "@/utils/key-authority";
 import {
   UilArrowLeft,
   UilCheckCircle,
@@ -400,10 +401,27 @@ function RevokeConfirmStep({
     keysToRevoke.owner.length > 0 ? "owner" : "active";
 
   const queryClient = useQueryClient();
+  const { data: accountData } = useQuery(getAccountFullQueryOptions(username));
   const { mutateAsync: revokeKeys } = useAccountRevokeKey(username);
 
-  // Direct key signing - delegates to SDK mutation
+  // Direct key signing - delegates to SDK mutation. Check the typed key holds
+  // the required authority first, so a posting/active key pasted for an
+  // owner-level revoke gets a precise message instead of a chain rejection.
   const handleSignByKey = async (privateKey: PrivateKey) => {
+    if (!accountData) {
+      error(i18next.t("permissions.add-keys.step1.error-account-not-loaded"));
+      return;
+    }
+    const found = findKeyAuthority(accountData, privateKey.createPublic().toString());
+    if (!keySatisfiesAuthority(found, requiredAuthority)) {
+      error(
+        i18next.t("permissions.keys.error-key-authority", {
+          authority: i18next.t(`manage-authorities.${requiredAuthority}`),
+          defaultValue: "The key you entered does not have {{authority}} authority on this account."
+        })
+      );
+      return;
+    }
     onSignStart();
     try {
       await revokeKeys({ currentKey: privateKey, revokingKey: allRevokingKeys });

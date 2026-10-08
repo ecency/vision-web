@@ -16,6 +16,7 @@ import { useKeyDerivationStore } from "../../_hooks";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getWebBroadcastAdapter } from "@/providers/sdk/web-broadcast-adapter";
 import { broadcastOperations } from "@ecency/sdk";
+import { findKeyAuthority, keySatisfiesAuthority } from "@/utils/key-authority";
 
 type KeyAuthority = "owner" | "active" | "posting" | "memo";
 
@@ -108,8 +109,25 @@ export function Step4Confirm({ masterPassword, keysToRevokeByAuthority, onBack, 
     setTimeout(() => onSuccess(), 1500);
   };
 
-  // Sign with private key (entered directly)
+  // Sign with private key (entered directly). account_update with an owner
+  // field needs owner authority; check the typed key against the account
+  // before broadcasting, so a pasted active key (or the NEW master password)
+  // gets a precise message instead of a chain rejection.
   const handleSignByKey = async (privateKey: PrivateKey) => {
+    if (!accountData) {
+      error(i18next.t("permissions.add-keys.step1.error-account-not-loaded"));
+      return;
+    }
+    const found = findKeyAuthority(accountData, privateKey.createPublic().toString());
+    if (!keySatisfiesAuthority(found, "owner")) {
+      error(
+        i18next.t("permissions.keys.error-key-authority", {
+          authority: i18next.t("manage-authorities.owner"),
+          defaultValue: "The key you entered does not have {{authority}} authority on this account."
+        })
+      );
+      return;
+    }
     setIsApplying(true);
     try {
       const op = buildAccountUpdateOp();
@@ -204,6 +222,13 @@ export function Step4Confirm({ masterPassword, keysToRevokeByAuthority, onBack, 
             </div>
           )}
         </div>
+      </div>
+
+      <div className="text-sm opacity-75">
+        {i18next.t("permissions.add-keys.step4.sign-hint", {
+          defaultValue:
+            "Sign with your CURRENT owner private key or master password, not the new one generated in the previous step."
+        })}
       </div>
 
       <KeyOrHot
