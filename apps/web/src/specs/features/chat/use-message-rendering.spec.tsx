@@ -19,7 +19,9 @@ vi.mock("@/features/post-renderer", async (importOriginal) => {
 
   return {
     ...actual,
-    HivePostLinkRenderer: ({ link }: { link: string }) => <span>{link}</span>,
+    HivePostLinkRenderer: ({ link }: { link: string }) => (
+      <span data-testid="post-link-card">{link}</span>
+    ),
   };
 });
 
@@ -85,6 +87,40 @@ describe("useMessageRendering", () => {
     render(<div>{result.current.renderMessageContent(`see ${url} here`)}</div>);
 
     expect(screen.queryByTestId("mention-token")).toBeNull();
+  });
+
+  // A pasted post link is auto-linked before the text path runs, so the
+  // preview has to come from the anchor itself.
+  it.each([
+    "https://ecency.com/hive-125125/@alice/my-post",
+    "https://peakd.com/@alice/my-post",
+    "https://hive.blog/@alice/my-post"
+  ])("shows a preview card for a pasted %s link", (url) => {
+    const { result } = renderHook(() => useMessageRendering(hookProps));
+
+    render(<div>{result.current.renderMessageContent(`look at this ${url}`)}</div>);
+
+    expect(screen.getByTestId("post-link-card").textContent).toBe(url);
+  });
+
+  it("keeps a post link with its own wording as a link that opens in a new tab", () => {
+    const { result } = renderHook(() => useMessageRendering(hookProps));
+
+    render(
+      <div>{result.current.renderMessageContent("[read this](https://ecency.com/@alice/my-post)")}</div>
+    );
+
+    expect(screen.queryByTestId("post-link-card")).toBeNull();
+    const link = screen.getByText("read this").closest("a");
+    expect(link?.getAttribute("target")).toBe("_blank");
+  });
+
+  it("does not preview a profile link", () => {
+    const { result } = renderHook(() => useMessageRendering(hookProps));
+
+    render(<div>{result.current.renderMessageContent("https://ecency.com/@alice")}</div>);
+
+    expect(screen.queryByTestId("post-link-card")).toBeNull();
   });
 
   it("still renders a standalone @mention as a chat mention", () => {

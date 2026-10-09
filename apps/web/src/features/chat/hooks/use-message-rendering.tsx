@@ -359,6 +359,25 @@ export function useMessageRendering({
                   return <>{children}</>;
                 }
 
+                // A pasted post link arrives here already auto-linked, so it
+                // never reaches the text path that previews post links. When
+                // the link's text is just its own address, show the same
+                // preview card as on post pages. A link with its own wording
+                // stays a plain link.
+                const postLink = trimTrailingLinkPunctuation(href);
+                const isBareLink =
+                  !!childText &&
+                  (childText === href || childText === href.replace(/^https?:\/\//, ""));
+                if (!inLink && isBareLink && isEnhanceableEcencyPostLink(postLink)) {
+                  const trailing = href.slice(postLink.length);
+                  return (
+                    <>
+                      <HivePostLinkRenderer link={postLink} />
+                      {trailing}
+                    </>
+                  );
+                }
+
                 return (
                   <a
                     href={href}
