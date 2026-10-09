@@ -16,12 +16,26 @@ import { describe, it, expect } from "vitest";
 const here = dirname(fileURLToPath(import.meta.url));
 const src = resolve(here, "../../..");
 
-function compiledSelectors(file: string): string[] {
+function compiledRules(file: string): { selectors: string[]; body: string }[] {
   const { css } = compile(resolve(src, file), { logger: Logger.silent });
-  return Array.from(css.matchAll(/([^{}]+)\{/g))
-    .map((m) => m[1].trim())
-    .filter((sel) => !sel.startsWith("@"))
-    .flatMap((sel) => sel.split(/,(?![^(]*\))/).map((s) => s.trim()));
+  return Array.from(css.matchAll(/([^{}]+)\{([^{}]*)\}/g))
+    .filter((m) => !m[1].trim().startsWith("@"))
+    .map((m) => ({
+      selectors: m[1].split(/,(?![^(]*\))/).map((s) => s.trim()),
+      body: m[2]
+    }));
+}
+
+function compiledSelectors(file: string): string[] {
+  return compiledRules(file).flatMap((rule) => rule.selectors);
+}
+
+// Every declaration the compiled sheet applies to one exact selector.
+function declarationsFor(file: string, selector: string): string {
+  return compiledRules(file)
+    .filter((rule) => rule.selectors.includes(selector))
+    .map((rule) => rule.body)
+    .join(";");
 }
 
 describe("classic editor preview video styles", () => {
@@ -37,6 +51,24 @@ describe("classic editor preview video styles", () => {
     const selectors = compiledSelectors("features/post-renderer/video-embeds.scss");
     expect(selectors).toContain(".markdown-view .markdown-video-link-speak");
     expect(selectors).toContain(".markdown-view .markdown-video-link-youtube");
+  });
+
+  // The original failure was an anchor with no height, so assert the
+  // declarations that give the placeholder its box and its play button.
+  it("gives the 3Speak placeholder a visible 16:9 box and a play button", () => {
+    const file = "features/post-renderer/video-embeds.scss";
+    const box = declarationsFor(file, ".markdown-view .markdown-video-link-speak");
+    expect(box).toMatch(/display:\s*block/);
+    expect(box).toMatch(/width:\s*100%/);
+    expect(box).toMatch(/padding-bottom:\s*56\.25%/);
+    expect(box).toMatch(/background-color:\s*#000/);
+
+    const play = declarationsFor(
+      file,
+      ".markdown-view .markdown-video-link-speak .markdown-video-play"
+    );
+    expect(play).toMatch(/position:\s*absolute/);
+    expect(play).toMatch(/background:\s*url\(play-icon\.svg\)/);
   });
 
   it("styles nothing but video embeds inside .markdown-view", () => {
