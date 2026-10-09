@@ -1,0 +1,5 @@
+@use "video-embed-rules" as *;
+
+.markdown-view {
+  @include video-embeds;
+}

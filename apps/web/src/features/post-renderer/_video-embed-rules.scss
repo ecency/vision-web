@@ -1,0 +1,156 @@
+// Video embed rules (link placeholders, YouTube Shorts, portrait and pasted
+// 3Speak iframes). Shared by ecency-renderer.scss and the editor preview,
+// which renders markdown without EcencyRenderer and only needs these.
+@mixin video-embeds {
+  // ============================================
+  // ALL VIDEO PLATFORMS - Unified Styling
+  // ============================================
+  .markdown-video-link-youtube,
+  .markdown-video-link-speak,
+  .markdown-video-link-vimeo,
+  .markdown-video-link-twitch,
+  .markdown-video-link-loom,
+  .markdown-video-link-bitchute,
+  .markdown-video-link-rumble,
+  .markdown-video-link-brighteon,
+  .markdown-video-link-odysee,
+  .markdown-video-link-dtube {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding-bottom: 56.25%; // 16:9 aspect ratio
+    height: 0;
+    overflow: hidden;
+    margin: 1rem auto 0.5rem; // Center the video with reduced bottom margin
+    background-color: #000;
+    cursor: pointer;
+    line-height: 0; // Eliminate text-based spacing
+    font-size: 0; // Eliminate font-based spacing
+    vertical-align: top;
+
+    // All child elements absolutely positioned within container
+    .video-thumbnail,
+    .markdown-video-play,
+    .er-youtube-frame,
+    .er-speak-frame,
+    .er-embed-frame {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .video-thumbnail {
+      z-index: 1;
+      object-fit: contain;
+      background-color: #000;
+      margin: 0;
+      padding: 0;
+    }
+
+    .markdown-video-play {
+      z-index: 2;
+      background: url(play-icon.svg) center center no-repeat;
+      background-size: 64px;
+      pointer-events: none;
+    }
+
+    .er-youtube-frame,
+    .er-speak-frame,
+    .er-embed-frame {
+      z-index: 3; // On top when video plays
+      display: block;
+      margin: 0;
+      padding: 0;
+      line-height: 0;
+    }
+
+    // Embedded iframes
+    .youtube-shorts-iframe,
+    .speak-iframe,
+    iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+      margin: 0;
+      padding: 0;
+      display: block; // Remove inline element descender space
+      vertical-align: top;
+    }
+  }
+
+  // 3Speak auto-detected portrait videos (3:4 aspect ratio)
+  .markdown-video-link-speak.speak-portrait {
+    padding-bottom: 0;
+    aspect-ratio: 3 / 5;
+    height: auto;
+    max-width: 450px;
+  }
+
+  // 3Speak auto-detected square videos (1:1 aspect ratio)
+  .markdown-video-link-speak.speak-square {
+    padding-bottom: 0;
+    aspect-ratio: 1 / 1;
+    height: auto;
+    max-width: 600px;
+  }
+
+  // YouTube Shorts (9:16). render-helper adds the modifier when the posted URL
+  // is a /shorts/ link; the embed URL alone cannot tell a Short from a normal
+  // video. Same ratio and max width as iframe.portrait-embed below. The
+  // click-to-play extension only adds classes, so this survives the swap to
+  // the iframe.
+  .markdown-video-link-youtube.markdown-video-link-youtube-portrait {
+    padding-bottom: 0;
+    aspect-ratio: 9 / 16;
+    height: auto;
+    max-width: 360px;
+
+    // hqdefault is 4:3 with the vertical frame pillarboxed inside it; cover
+    // crops it to the 9:16 box instead of letterboxing a letterbox.
+    .video-thumbnail {
+      object-fit: cover;
+    }
+  }
+
+  // Portrait embeds (9:16 aspect ratio)
+  // Target iframe.portrait-embed since the class is applied to iframe elements, not anchors
+  iframe.portrait-embed {
+    max-width: 360px;
+    width: 100%;
+    aspect-ratio: 9 / 16; // Modern CSS approach for 9:16 portrait
+    height: auto;
+    margin-left: auto;
+    margin-right: auto;
+    display: block;
+  }
+
+  // A 3Speak <iframe> the author pasted has no .markdown-video-link-speak
+  // wrapper to size it, and .speak-iframe is excluded from both the fallback
+  // below and the one in _markdown.scss, so without this it renders at the
+  // 300x150 browser default (the sanitizer drops width/height). Orientation
+  // classes come from the listener in EcencyRenderer.
+  iframe.speak-iframe:where(:not(.markdown-video-link-speak *)) {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 16 / 9;
+    height: auto;
+    border: none;
+    margin: 1rem auto 0.5rem;
+
+    &.speak-portrait {
+      aspect-ratio: 3 / 5;
+      max-width: 450px;
+    }
+
+    &.speak-square {
+      aspect-ratio: 1 / 1;
+      max-width: 600px;
+    }
+  }
+}

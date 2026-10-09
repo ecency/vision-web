@@ -20,6 +20,10 @@ const scss = readFileSync(
   resolve(here, "../../../features/post-renderer/ecency-renderer.scss"),
   "utf8"
 );
+const videoScss = readFileSync(
+  resolve(here, "../../../features/post-renderer/_video-embed-rules.scss"),
+  "utf8"
+);
 const markdownScss = readFileSync(resolve(here, "../../../styles/_markdown.scss"), "utf8");
 
 function Harness({ html }: { html: string }) {
@@ -34,7 +38,7 @@ function Harness({ html }: { html: string }) {
 
 describe("YouTube Shorts portrait sizing", () => {
   it("styles the portrait modifier 9:16 with the shared portrait max width", () => {
-    const match = scss.match(
+    const match = videoScss.match(
       /\.markdown-video-link-youtube\.markdown-video-link-youtube-portrait\s*\{([^}]*)\}/
     );
     expect(match).not.toBeNull();
@@ -46,7 +50,7 @@ describe("YouTube Shorts portrait sizing", () => {
   });
 
   it("crops the 4:3 thumbnail to the portrait frame", () => {
-    const match = scss.match(
+    const match = videoScss.match(
       /\.markdown-video-link-youtube\.markdown-video-link-youtube-portrait\s*\{[^}]*\.video-thumbnail\s*\{([^}]*)\}/
     );
     expect(match).not.toBeNull();
