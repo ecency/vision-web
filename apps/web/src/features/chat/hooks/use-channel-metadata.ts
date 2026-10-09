@@ -58,12 +58,16 @@ export function useChannelMetadata({
 
   const isGroup = channelData?.channel?.type === "G" || directChannelFromList?.type === "G";
   const groupUsers = isGroup ? directChannelFromList?.groupUsers : undefined;
+  const groupName: string | undefined = isGroup ? directChannelFromList?.group_name : undefined;
+  const canRenameGroup = Boolean(isGroup && directChannelFromList?.group_owner);
 
   const channelTitle = useMemo(() => {
     if (directChannelUser) {
       const displayName = getUserDisplayName(directChannelUser);
       if (displayName) return displayName;
     }
+
+    if (groupName) return groupName;
 
     if (groupUsers?.length) {
       return getGroupTitle(groupUsers, i18next.t("chat.group"));
@@ -82,6 +86,7 @@ export function useChannelMetadata({
     directChannelFromList?.display_name,
     directChannelFromList?.name,
     directChannelUser,
+    groupName,
     groupUsers
   ]);
 
@@ -144,6 +149,8 @@ export function useChannelMetadata({
     channelTitle,
     channelSubtitle,
     groupUsers,
+    groupName,
+    canRenameGroup,
     onlineUsers,
     onlineCount
   };

@@ -246,7 +246,9 @@ export function ChatsClient() {
       }
 
       if (isGroupChannel(channel)) {
-        return getGroupTitle(channel.groupUsers, channel.display_name || channel.name);
+        return (
+          channel.group_name || getGroupTitle(channel.groupUsers, channel.display_name || channel.name)
+        );
       }
 
       return channel.display_name || channel.name;
@@ -263,6 +265,10 @@ export function ChatsClient() {
       }
 
       if (isGroupChannel(channel)) {
+        // A named group lists who is in it under the name.
+        if (channel.group_name && channel.groupUsers?.length) {
+          return getGroupTitle(channel.groupUsers, "");
+        }
         // The other members plus the viewer.
         const count = channel.groupUsers?.length ? channel.groupUsers.length + 1 : undefined;
         return count

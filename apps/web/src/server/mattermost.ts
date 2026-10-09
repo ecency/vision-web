@@ -448,6 +448,33 @@ interface MattermostChannelBasic {
   type: string;
 }
 
+/**
+ * Whether any of these users holds the preference category/name. Read with the
+ * admin token, since a user may only read their own preferences. A missing
+ * preference is a 404, which reads as "no".
+ */
+export async function anyUserHasPreference(
+  userIds: string[],
+  category: string,
+  name: string
+): Promise<boolean> {
+  const results = await Promise.all(
+    userIds.map(async (userId) => {
+      try {
+        await mmFetch(
+          `/users/${encodeURIComponent(userId)}/preferences/${encodeURIComponent(category)}/name/${encodeURIComponent(name)}`,
+          { headers: getAdminHeaders() }
+        );
+        return true;
+      } catch (error) {
+        if (error instanceof MattermostError && error.status === 404) return false;
+        throw error;
+      }
+    })
+  );
+  return results.some(Boolean);
+}
+
 export async function getUserChannels(userId: string): Promise<MattermostChannelBasic[]> {
   const teamId = getMattermostTeamId();
   const PAGE_SIZE = 200;
@@ -804,6 +831,10 @@ export async function mmUserFetchNdjson<T>(path: string, token: string, init?: R
 
 export function isMattermostUnauthorizedError(error: unknown) {
   return error instanceof MattermostError && (error.status === 401 || error.status === 403);
+}
+
+export function isMattermostNotFoundError(error: unknown) {
+  return error instanceof MattermostError && error.status === 404;
 }
 
 // Env-pinned super-admin username (default "ecency"), shared by every admin

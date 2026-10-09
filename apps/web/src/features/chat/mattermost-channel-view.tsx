@@ -57,6 +57,7 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useQueryClient } from "@tanstack/react-query";
 import defaults from "@/defaults";
 import { useRouter, useSearchParams } from "next/navigation";
+import { isChannelNoticePost } from "./format-utils";
 
 const CHANNEL_WIDE_MENTIONS = [
   {
@@ -250,8 +251,8 @@ export function MattermostChannelView({ channelId }: Props) {
           lastItem &&
           lastItem.type === 'message' &&
           lastItem.post.user_id === post.user_id &&
-          lastItem.post.type !== "system_add_to_channel" &&
-          post.type !== "system_add_to_channel" &&
+          !isChannelNoticePost(lastItem.post) &&
+          !isChannelNoticePost(post) &&
           !post.root_id &&
           !lastItem.post.root_id &&
           (post.create_at - lastItem.post.create_at) < MESSAGE_GROUP_TIME_WINDOW
@@ -476,7 +477,9 @@ export function MattermostChannelView({ channelId }: Props) {
     channelSubtitle,
     onlineUsers,
     onlineCount,
-    groupUsers
+    groupUsers,
+    groupName,
+    canRenameGroup
   } = useChannelMetadata({
     channelId,
     channelData,
@@ -1115,6 +1118,7 @@ export function MattermostChannelView({ channelId }: Props) {
           onClose={() => router.push("/chats")}
           groupMembers={groupUsers}
           viewerUsername={activeUser?.username}
+          renameGroup={canRenameGroup ? { channelId, currentName: groupName } : undefined}
         />
 
         {showDmWarning && (

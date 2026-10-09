@@ -160,11 +160,13 @@ export function useMessageRendering({
       const baseMessage =
         post.type === "system_add_to_channel"
           ? `${getAddedUserDisplayName(post, usersById)} joined the channel`
-          : getDisplayMessage(post);
+          : post.type === "system_header_change"
+            ? `${getPostDisplayName(post, usersById, normalizeUsername)} ${getDisplayMessage(post)}`
+            : getDisplayMessage(post);
 
       return decodeMessageEmojis(baseMessage);
     },
-    [usersById]
+    [usersById, normalizeUsername]
   );
 
   const markdownParser = useCallback(

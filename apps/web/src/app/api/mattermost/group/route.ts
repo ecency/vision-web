@@ -7,6 +7,7 @@ import {
 } from "@/server/mattermost";
 import { getDmPrivacyRejection } from "@/server/chat-dm-privacy";
 import { checkDmFanout, dmFanoutLimitFor } from "@/server/chat-dm-fanout";
+import { GROUP_OWNER_PREF_CATEGORY, wasCreatedNow } from "@/server/chat-group-name";
 
 // Mattermost group channels hold 3 to 8 members, the creator included.
 const GROUP_MIN_OTHERS = 2;
@@ -133,19 +134,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const channel = await mmUserFetch<{ id: string }>(`/channels/group`, token, {
+    const requestedAt = Date.now();
+    const channel = await mmUserFetch<{ id: string; create_at?: number }>(`/channels/group`, token, {
       method: "POST",
       body: JSON.stringify([currentUser.id, ...recipients])
     });
 
     // Mattermost returns the existing group for the same members, which the
-    // creator may have closed. Starting it again shows it again.
+    // creator may have closed. Starting it again shows it again. Whoever made
+    // the group just now is its owner and may name it; asking for a group that
+    // already existed does not make someone its owner.
+    const preferences = [
+      { user_id: currentUser.id, category: "group_channel_show", name: channel.id, value: "true" }
+    ];
+    if (wasCreatedNow(channel.create_at, requestedAt)) {
+      preferences.push({
+        user_id: currentUser.id,
+        category: GROUP_OWNER_PREF_CATEGORY,
+        name: channel.id,
+        value: "true"
+      });
+    }
     await mmUserFetch(`/users/${encodeURIComponent(currentUser.id)}/preferences`, token, {
       method: "PUT",
-      body: JSON.stringify([
-        { user_id: currentUser.id, category: "group_channel_show", name: channel.id, value: "true" }
-      ])
-    }).catch((error) => console.warn("MM group: unable to reopen group", { error }));
+      body: JSON.stringify(preferences)
+    }).catch((error) => console.warn("MM group: unable to save group preferences", { error }));
 
     return NextResponse.json({ channelId: channel.id });
   } catch (error) {

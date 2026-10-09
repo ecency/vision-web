@@ -5,6 +5,7 @@ import {
   handleMattermostError,
   mmUserFetch
 } from "@/server/mattermost";
+import { GROUP_OWNER_PREF_CATEGORY } from "@/server/chat-group-name";
 import {
   fetchAllChannelPages,
   fetchAllChannelMemberPages,
@@ -158,6 +159,11 @@ export async function GET() {
       (preferences || [])
         .filter((pref) => pref.category === "direct_channel_show")
         .map((pref) => [pref.name, pref.value])
+    );
+    const ownedGroupIds = new Set(
+      (preferences || [])
+        .filter((pref) => pref.category === GROUP_OWNER_PREF_CATEGORY && pref.value === "true")
+        .map((pref) => pref.name)
     );
     const closedGroupIds = new Set(
       (preferences || [])
@@ -400,8 +406,16 @@ export async function GET() {
 
     return NextResponse.json({
       channels: orderedChannels.map((channel) => {
+        if (channel.type !== "G") return channel;
         const groupUsers = groupUsersById.get(channel.id);
-        return groupUsers ? { ...channel, groupUsers } : channel;
+        // A group's custom name lives in its header (see chat-group-name).
+        const groupName = typeof channel.header === "string" ? channel.header.trim() : "";
+        return {
+          ...channel,
+          ...(groupUsers ? { groupUsers } : {}),
+          group_name: groupName || undefined,
+          group_owner: ownedGroupIds.has(channel.id)
+        };
       })
     });
   } catch (error) {

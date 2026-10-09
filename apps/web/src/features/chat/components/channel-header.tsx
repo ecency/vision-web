@@ -5,6 +5,7 @@ import { ProfileLink, UserAvatar } from "@/features/shared";
 import { useState } from "react";
 import i18next from "i18next";
 import { PeopleListModal } from "./people-list-modal";
+import { RenameGroupModal } from "./rename-group-modal";
 
 interface ChannelHeaderProps {
   channelTitle: string;
@@ -30,6 +31,8 @@ interface ChannelHeaderProps {
   groupMembers?: MattermostUser[];
   /** The viewer, listed first among a group's members. */
   viewerUsername?: string;
+  /** Group channels the viewer started: offers renaming. */
+  renameGroup?: { channelId: string; currentName?: string };
 }
 
 export function ChannelHeader({
@@ -53,9 +56,11 @@ export function ChannelHeader({
   setShowKeyboardShortcuts,
   onClose,
   groupMembers,
-  viewerUsername
+  viewerUsername,
+  renameGroup
 }: ChannelHeaderProps) {
   const [showMembers, setShowMembers] = useState(false);
+  const [showRename, setShowRename] = useState(false);
 
   return (
     <div className="border-b border-[--border-color] px-4 py-2.5">
@@ -85,6 +90,25 @@ export function ChannelHeader({
                 <span className="text-sm leading-none" aria-hidden>👥</span>
                 <span>{i18next.t("chat.members")}</span>
               </button>
+            )}
+
+            {renameGroup && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowRename(true)}
+                  className="flex items-center gap-1 rounded-full border border-[--border-color] px-2 py-1 text-[11px] text-[--text-muted] transition hover:border-blue-dark-sky hover:text-[--text-color]"
+                >
+                  <span className="text-sm leading-none" aria-hidden>✏️</span>
+                  <span>{i18next.t("chat.rename-group")}</span>
+                </button>
+                <RenameGroupModal
+                  show={showRename}
+                  onHide={() => setShowRename(false)}
+                  channelId={renameGroup.channelId}
+                  currentName={renameGroup.currentName}
+                />
+              </>
             )}
 
             {groupMembers && (
