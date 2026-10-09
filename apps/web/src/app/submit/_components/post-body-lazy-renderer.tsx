@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import {renderPostBody, setProxyBase} from "@ecency/render-helper";
 import md5 from "js-md5";
 import defaults from "@/defaults";
+import "@/features/post-renderer/video-embeds.scss";
 
 interface Props {
   rawBody: string;
