@@ -53,6 +53,8 @@ interface MattermostChannel {
   group_name?: string;
   /** Group channels only: whether the viewer started it and may rename it. */
   group_owner?: boolean;
+  /** Group channels only: no owner yet; the first member to name it owns it. */
+  group_claimable?: boolean;
   mention_count?: number;
   message_count?: number;
   last_post_at?: number;
@@ -352,8 +354,11 @@ export function useMattermostRenameGroup() {
       });
 
       if (!res.ok) {
-        const data = await safeJson<{ error?: string }>(res).catch(() => null);
-        throw new Error(data?.error || `Unable to rename group (${res.status})`);
+        const data = await safeJson<{ error?: string; code?: string }>(res).catch(() => null);
+        throw Object.assign(new Error(data?.error || `Unable to rename group (${res.status})`), {
+          code: data?.code,
+          status: res.status
+        });
       }
 
       return (await safeJson(res)) as { name: string };

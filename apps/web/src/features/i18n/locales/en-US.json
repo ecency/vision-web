@@ -2635,7 +2635,10 @@
     "rename-group-saving": "Saving...",
     "group-name": "Group name",
     "group-renamed": "renamed the group to \"{{name}}\"",
-    "group-name-cleared": "removed the group name"
+    "group-name-cleared": "removed the group name",
+    "rename-group-not-owner": "Only the person who started this group can rename it.",
+    "rename-group-too-long": "A group name can be up to {{max}} characters.",
+    "rename-group-failed": "Could not rename the group. Please try again."
   },
   "add-image": {
     "title": "Add Image",

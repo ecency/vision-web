@@ -115,6 +115,16 @@ describe("useMessageRendering", () => {
     expect(link?.getAttribute("target")).toBe("_blank");
   });
 
+  it("keeps a link labelled with its address plus formatting as a link", () => {
+    const { result } = renderHook(() => useMessageRendering(hookProps));
+    const url = "https://ecency.com/@alice/my-post";
+
+    render(<div>{result.current.renderMessageContent(`[${url} **extra**](${url})`)}</div>);
+
+    expect(screen.queryByTestId("post-link-card")).toBeNull();
+    expect(screen.getByText("extra")).toBeTruthy();
+  });
+
   it("does not preview a profile link", () => {
     const { result } = renderHook(() => useMessageRendering(hookProps));
 

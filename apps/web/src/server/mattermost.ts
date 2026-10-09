@@ -448,37 +448,110 @@ interface MattermostChannelBasic {
   type: string;
 }
 
-/**
- * Whether any of these users holds the preference category/name with value
- * "true". Read with the admin token, since a user may only read their own
- * preferences. The full list is read because Mattermost answers a missing
- * single preference with a 400 that cannot be told apart from a bad request.
- */
-export async function anyUserHasPreference(
-  userIds: string[],
-  category: string,
-  name: string
-): Promise<boolean> {
-  const results = await Promise.all(
-    userIds.map(async (userId) => {
-      const preferences = await mmFetch<Array<{ category: string; name: string; value: string }>>(
-        `/users/${encodeURIComponent(userId)}/preferences`,
-        { headers: getAdminHeaders() }
-      );
-      return hasPreference(preferences, category, name);
-    })
-  );
-  return results.some(Boolean);
+// Group ownership. Mattermost records no creator for a group conversation, so
+// the owner is kept as one preference row on the admin account: category
+// GROUP_OWNER_CATEGORY, name = the group's channel id, value = the owner's user
+// id. Users cannot write the admin's preferences, every region reads the same
+// row, and a group has at most one owner. An owner never changes once set, so
+// a found owner is cached for long; a missing one only briefly.
+const GROUP_OWNER_CATEGORY = "ecency_group_owner";
+const GROUP_OWNER_FOUND_TTL_MS = 60 * 60_000;
+const GROUP_OWNER_MISSING_TTL_MS = 60_000;
+const GROUP_OWNER_CACHE_MAX = 5_000;
+const MATTERMOST_ID_RE = /^[a-z0-9]{26}$/;
+const groupOwnerCache = new Map<string, { ownerId: string | null; expiresAt: number }>();
+let adminUserIdPromise: Promise<string> | null = null;
+
+function getAdminUserId(): Promise<string> {
+  adminUserIdPromise ??= mmFetch<{ id: string }>(`/users/me`, { headers: getAdminHeaders() })
+    .then((user) => user.id)
+    .catch((error) => {
+      adminUserIdPromise = null;
+      throw error;
+    });
+  return adminUserIdPromise;
 }
 
-export function hasPreference(
-  preferences: Array<{ category: string; name: string; value: string }> | undefined,
-  category: string,
-  name: string
-) {
-  return (preferences ?? []).some(
-    (pref) => pref.category === category && pref.name === name && pref.value === "true"
-  );
+function rememberGroupOwner(channelId: string, ownerId: string | null) {
+  if (groupOwnerCache.size >= GROUP_OWNER_CACHE_MAX) {
+    const oldest = groupOwnerCache.keys().next().value;
+    if (oldest !== undefined) groupOwnerCache.delete(oldest);
+  }
+  groupOwnerCache.set(channelId, {
+    ownerId,
+    expiresAt: Date.now() + (ownerId ? GROUP_OWNER_FOUND_TTL_MS : GROUP_OWNER_MISSING_TTL_MS)
+  });
+}
+
+/** The user id of the group's owner, or null when it has none yet. */
+export async function getGroupOwnerId(
+  channelId: string,
+  options: { fresh?: boolean } = {}
+): Promise<string | null> {
+  if (!MATTERMOST_ID_RE.test(channelId)) return null;
+  const cached = groupOwnerCache.get(channelId);
+  if (!options.fresh && cached && cached.expiresAt > Date.now()) return cached.ownerId;
+
+  const adminId = await getAdminUserId();
+  let ownerId: string | null = null;
+  try {
+    const pref = await mmFetch<{ value?: string }>(
+      `/users/${encodeURIComponent(adminId)}/preferences/${GROUP_OWNER_CATEGORY}/name/${channelId}`,
+      { headers: getAdminHeaders() }
+    );
+    ownerId = typeof pref?.value === "string" && MATTERMOST_ID_RE.test(pref.value) ? pref.value : null;
+  } catch (error) {
+    // A missing preference is a 400 in Mattermost 10 (a 404 in some versions).
+    // The request itself is well formed, so either means "no owner".
+    if (!(error instanceof MattermostError) || (error.status !== 400 && error.status !== 404)) {
+      throw error;
+    }
+  }
+  rememberGroupOwner(channelId, ownerId);
+  return ownerId;
+}
+
+/**
+ * Confirms a group has no owner before anyone claims it. A single missing
+ * preference reads as a 400, which Mattermost also returns when a read fails,
+ * so a claim checks the whole category instead: a 404 there means empty, a
+ * list is searched, and any other answer refuses the claim.
+ */
+export async function isGroupOwnerMissing(channelId: string): Promise<boolean> {
+  if (!MATTERMOST_ID_RE.test(channelId)) return false;
+  const adminId = await getAdminUserId();
+  try {
+    const prefs = await mmFetch<Array<{ name: string; value?: string }>>(
+      `/users/${encodeURIComponent(adminId)}/preferences/${GROUP_OWNER_CATEGORY}`,
+      { headers: getAdminHeaders() }
+    );
+    return !(prefs ?? []).some((pref) => pref.name === channelId && pref.value);
+  } catch (error) {
+    if (error instanceof MattermostError && error.status === 404) return true;
+    throw error;
+  }
+}
+
+/** Records the group's owner. Callers check that it has none first. */
+export async function setGroupOwnerId(channelId: string, userId: string): Promise<void> {
+  if (!MATTERMOST_ID_RE.test(channelId) || !MATTERMOST_ID_RE.test(userId)) {
+    throw new Error("Invalid group owner record");
+  }
+  const adminId = await getAdminUserId();
+  await mmFetch(`/users/${encodeURIComponent(adminId)}/preferences`, {
+    method: "PUT",
+    headers: getAdminHeaders(),
+    body: JSON.stringify([
+      { user_id: adminId, category: GROUP_OWNER_CATEGORY, name: channelId, value: userId }
+    ])
+  });
+  rememberGroupOwner(channelId, userId);
+}
+
+/** Test hook: forget cached owners and the admin id. */
+export function resetGroupOwnerCacheForTests() {
+  groupOwnerCache.clear();
+  adminUserIdPromise = null;
 }
 
 export async function getUserChannels(userId: string): Promise<MattermostChannelBasic[]> {
@@ -837,6 +910,10 @@ export async function mmUserFetchNdjson<T>(path: string, token: string, init?: R
 
 export function isMattermostUnauthorizedError(error: unknown) {
   return error instanceof MattermostError && (error.status === 401 || error.status === 403);
+}
+
+export function isMattermostNotFoundError(error: unknown) {
+  return error instanceof MattermostError && error.status === 404;
 }
 
 // Env-pinned super-admin username (default "ecency"), shared by every admin

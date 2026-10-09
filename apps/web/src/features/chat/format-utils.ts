@@ -141,7 +141,7 @@ export function getAddedUserDisplayName(
  * Posts shown as a centered notice rather than as someone's message: a member
  * joining, and a group being renamed.
  */
-export function isChannelNoticePost(post: Pick<MattermostPost, "type">) {
+export function isChannelNoticePost(post: Pick<MattermostPost, "type">): boolean {
   return post.type === "system_add_to_channel" || post.type === "system_header_change";
 }
 

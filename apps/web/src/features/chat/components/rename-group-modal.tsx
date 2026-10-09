@@ -6,9 +6,14 @@ import { Modal, ModalBody, ModalHeader } from "@ui/modal";
 import { FormControl } from "@ui/input";
 import { Button } from "@ui/button";
 import { useMattermostRenameGroup } from "../mattermost-api";
+import { GROUP_NAME_MAX_LENGTH, groupNameLength } from "../group-utils";
 
-/** Matches the server's limit in chat-group-name. */
-export const GROUP_NAME_MAX_LENGTH = 64;
+function renameErrorText(error: unknown) {
+  const code = (error as { code?: string } | null)?.code;
+  if (code === "not_owner") return i18next.t("chat.rename-group-not-owner");
+  if (code === "too_long") return i18next.t("chat.rename-group-too-long", { max: GROUP_NAME_MAX_LENGTH });
+  return i18next.t("chat.rename-group-failed");
+}
 
 interface RenameGroupModalProps {
   show: boolean;
@@ -26,16 +31,18 @@ export function RenameGroupModal({ show, onHide, channelId, currentName }: Renam
       setName(currentName ?? "");
       rename.reset();
     }
-    // Start from the saved name each time the dialog opens.
+    // Start from the saved name when the dialog opens, or when it changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [show]);
+  }, [show, currentName]);
 
   const trimmed = name.trim();
   const unchanged = trimmed === (currentName ?? "").trim();
+  // Counted as the server counts, so an emoji is one character.
+  const tooLong = groupNameLength(trimmed) > GROUP_NAME_MAX_LENGTH;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (unchanged || rename.isPending) return;
+    if (unchanged || tooLong || rename.isPending) return;
     rename.mutate({ channelId, name: trimmed }, { onSuccess: onHide });
   };
 
@@ -50,14 +57,19 @@ export function RenameGroupModal({ show, onHide, channelId, currentName }: Renam
             aria-label={i18next.t("chat.group-name")}
             placeholder={i18next.t("chat.group-name")}
             value={name}
-            maxLength={GROUP_NAME_MAX_LENGTH}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
             autoFocus={true}
           />
 
-          {rename.error && (
+          {tooLong && (
             <div className="text-sm text-red-500" role="alert">
-              {(rename.error as Error).message}
+              {i18next.t("chat.rename-group-too-long", { max: GROUP_NAME_MAX_LENGTH })}
+            </div>
+          )}
+
+          {rename.error && !tooLong && (
+            <div className="text-sm text-red-500" role="alert">
+              {renameErrorText(rename.error)}
             </div>
           )}
 
@@ -65,7 +77,7 @@ export function RenameGroupModal({ show, onHide, channelId, currentName }: Renam
             <Button appearance="secondary" type="button" onClick={onHide}>
               {i18next.t("g.cancel")}
             </Button>
-            <Button type="submit" disabled={unchanged || rename.isPending}>
+            <Button type="submit" disabled={unchanged || tooLong || rename.isPending}>
               {rename.isPending ? i18next.t("chat.rename-group-saving") : i18next.t("g.save")}
             </Button>
           </div>

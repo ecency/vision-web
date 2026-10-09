@@ -6,158 +6,160 @@ class FakeMattermostError extends Error {
   }
 }
 
+const GROUP = "g".repeat(26);
+const ME = "m".repeat(26);
+const BOB = "b".repeat(26);
+
 const mockMmUserFetch = vi.fn();
-const mockAnyUserHasPreference = vi.fn();
+const mockGetOwner = vi.fn();
+const mockSetOwner = vi.fn();
+const mockOwnerMissing = vi.fn();
 
-vi.mock("@/server/mattermost", async () => {
-  const actual = await vi.importActual<typeof import("@/server/mattermost")>("@/server/mattermost");
-  return {
-    getMattermostTokenFromCookies: () => Promise.resolve("test-token"),
-    handleMattermostError: (error: unknown) => ({
-      status: error instanceof FakeMattermostError ? error.status : 500
-    }),
-    hasPreference: actual.hasPreference,
-    anyUserHasPreference: (...args: unknown[]) => mockAnyUserHasPreference(...args),
-    mmUserFetch: (...args: unknown[]) => mockMmUserFetch(...args)
-  };
-});
-
-const OWN_PREFS = "/users/me/preferences";
+vi.mock("@/server/mattermost", () => ({
+  getMattermostTokenFromCookies: () => Promise.resolve("test-token"),
+  handleMattermostError: (error: unknown) => ({
+    status: error instanceof FakeMattermostError ? error.status : 500
+  }),
+  getGroupOwnerId: (...args: unknown[]) => mockGetOwner(...args),
+  setGroupOwnerId: (...args: unknown[]) => mockSetOwner(...args),
+  isGroupOwnerMissing: (...args: unknown[]) => mockOwnerMissing(...args),
+  mmUserFetch: (...args: unknown[]) => mockMmUserFetch(...args)
+}));
 
 function request(body: unknown) {
   return { json: async () => body } as never;
 }
 
-const params = { params: Promise.resolve({ channelId: "group-1" }) };
+const params = { params: Promise.resolve({ channelId: GROUP }) };
 
-function setup({
-  type = "G",
-  header = "",
-  owner = true
-}: { type?: string; header?: string; owner?: boolean } = {}) {
-  mockMmUserFetch.mockImplementation((path: string, _token: string, init?: RequestInit) => {
-    if (path === "/channels/group-1") return Promise.resolve({ id: "group-1", type, header });
-    if (path === "/users/me") return Promise.resolve({ id: "me" });
-    if (path === OWN_PREFS && !init?.method) {
-      // The full list: an owner of another group, and of this one when owner.
-      return Promise.resolve([
-        { category: "ecency_group_owner", name: "group-9", value: "true" },
-        { category: "group_channel_show", name: "group-1", value: "true" },
-        ...(owner ? [{ category: "ecency_group_owner", name: "group-1", value: "true" }] : [])
-      ]);
-    }
-    if (path === "/users?in_channel=group-1&per_page=20") {
-      return Promise.resolve([{ id: "me" }, { id: "bob" }, { id: "carol" }]);
-    }
-    if (path === "/channels/group-1/patch") return Promise.resolve({});
-    if (path === OWN_PREFS && init?.method === "PUT") return Promise.resolve([]);
+function setup({ type = "G", header = "" }: { type?: string; header?: string } = {}) {
+  mockMmUserFetch.mockImplementation((path: string) => {
+    if (path === `/channels/${GROUP}`) return Promise.resolve({ id: GROUP, type, header });
+    if (path === "/users/me") return Promise.resolve({ id: ME });
+    if (path === `/channels/${GROUP}/patch`) return Promise.resolve({});
     return Promise.reject(new Error(`unexpected ${path}`));
   });
 }
 
-const calls = (path: string) => mockMmUserFetch.mock.calls.filter(([p]) => p === path);
-const writes = (path: string) =>
-  mockMmUserFetch.mock.calls.filter(([p, , init]) => p === path && init?.method);
+const patches = () => mockMmUserFetch.mock.calls.filter(([p]) => p === `/channels/${GROUP}/patch`);
+
+async function put(name: unknown) {
+  const { PUT } = await import("@/app/api/mattermost/channels/[channelId]/name/route");
+  return PUT(request({ name }), params);
+}
 
 describe("PUT /api/mattermost/channels/[channelId]/name", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockAnyUserHasPreference.mockResolvedValue(false);
+    mockGetOwner.mockResolvedValue(ME);
+    mockSetOwner.mockResolvedValue(undefined);
+    mockOwnerMissing.mockResolvedValue(true);
   });
 
   it("lets the owner name the group, kept in its header", async () => {
     setup();
-    const { PUT } = await import("@/app/api/mattermost/channels/[channelId]/name/route");
 
-    const res = await PUT(request({ name: "  Book   club \n" }), params);
+    const res = await put("  Book   club \n");
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ name: "Book club" });
-    expect(JSON.parse(calls("/channels/group-1/patch")[0][2].body)).toEqual({ header: "Book club" });
-    expect(mockAnyUserHasPreference).not.toHaveBeenCalled();
-    expect(writes(OWN_PREFS)).toHaveLength(0);
+    expect(JSON.parse(patches()[0][2].body)).toEqual({ header: "Book club" });
+    expect(mockGetOwner).toHaveBeenCalledWith(GROUP, { fresh: true });
+    expect(mockSetOwner).not.toHaveBeenCalled();
   });
 
-  it("refuses a member when someone else started the group", async () => {
-    setup({ owner: false });
-    mockAnyUserHasPreference.mockResolvedValue(true);
-    const { PUT } = await import("@/app/api/mattermost/channels/[channelId]/name/route");
+  it("refuses a member when someone else owns the group", async () => {
+    setup();
+    mockGetOwner.mockResolvedValue(BOB);
 
-    const res = await PUT(request({ name: "Mine now" }), params);
+    const res = await put("Mine now");
 
     expect(res.status).toBe(403);
-    expect(mockAnyUserHasPreference).toHaveBeenCalledWith(
-      ["bob", "carol"],
-      "ecency_group_owner",
-      "group-1"
-    );
-    expect(calls("/channels/group-1/patch")).toHaveLength(0);
+    expect(mockSetOwner).not.toHaveBeenCalled();
+    expect(patches()).toHaveLength(0);
   });
 
-  it("lets the first member name a group that has no owner yet, and records them", async () => {
-    setup({ owner: false });
-    const { PUT } = await import("@/app/api/mattermost/channels/[channelId]/name/route");
+  it("lets the first member name a group with no owner, recording them", async () => {
+    setup();
+    mockGetOwner.mockResolvedValueOnce(null).mockResolvedValueOnce(ME);
 
-    const res = await PUT(request({ name: "Old group" }), params);
+    const res = await put("Old group");
 
     expect(res.status).toBe(200);
-    expect(calls("/channels/group-1/patch")).toHaveLength(1);
-    expect(JSON.parse(writes(OWN_PREFS)[0][2].body)).toEqual([
-      { user_id: "me", category: "ecency_group_owner", name: "group-1", value: "true" }
-    ]);
+    expect(mockSetOwner).toHaveBeenCalledWith(GROUP, ME);
+    expect(patches()).toHaveLength(1);
+  });
+
+  it("does not claim when the full owner list shows an owner after all", async () => {
+    setup();
+    mockGetOwner.mockResolvedValue(null);
+    mockOwnerMissing.mockResolvedValue(false);
+
+    const res = await put("Not yours");
+
+    expect(res.status).toBe(403);
+    expect(mockSetOwner).not.toHaveBeenCalled();
+    expect(patches()).toHaveLength(0);
+  });
+
+  it("refuses the loser when two members claim at once", async () => {
+    setup();
+    mockGetOwner.mockResolvedValueOnce(null).mockResolvedValueOnce(BOB);
+
+    const res = await put("Race");
+
+    expect(res.status).toBe(403);
+    expect(patches()).toHaveLength(0);
   });
 
   it("clears the name with an empty string", async () => {
     setup({ header: "Book club" });
-    const { PUT } = await import("@/app/api/mattermost/channels/[channelId]/name/route");
 
-    const res = await PUT(request({ name: "" }), params);
+    const res = await put("");
 
     expect(res.status).toBe(200);
-    expect(JSON.parse(calls("/channels/group-1/patch")[0][2].body)).toEqual({ header: "" });
+    expect(JSON.parse(patches()[0][2].body)).toEqual({ header: "" });
   });
 
   it("does not post a change when the name is the same", async () => {
     setup({ header: " Book   club " });
-    const { PUT } = await import("@/app/api/mattermost/channels/[channelId]/name/route");
 
-    const res = await PUT(request({ name: "Book club" }), params);
+    const res = await put("Book club");
 
     expect(res.status).toBe(200);
-    expect(calls("/channels/group-1/patch")).toHaveLength(0);
+    expect(patches()).toHaveLength(0);
   });
 
-  it("only renames group conversations", async () => {
+  it("only renames group conversations, and never claims anything else", async () => {
     setup({ type: "O" });
-    const { PUT } = await import("@/app/api/mattermost/channels/[channelId]/name/route");
 
-    const res = await PUT(request({ name: "Town square" }), params);
+    const res = await put("Town square");
 
     expect(res.status).toBe(400);
-    expect(calls("/channels/group-1/patch")).toHaveLength(0);
+    expect(mockGetOwner).not.toHaveBeenCalled();
+    expect(mockSetOwner).not.toHaveBeenCalled();
+    expect(patches()).toHaveLength(0);
   });
 
   it("rejects a name that is too long or not text", async () => {
     setup();
-    const { PUT } = await import("@/app/api/mattermost/channels/[channelId]/name/route");
 
-    expect((await PUT(request({ name: "x".repeat(65) }), params)).status).toBe(400);
-    expect((await PUT(request({ name: 42 }), params)).status).toBe(400);
+    expect((await put("x".repeat(65))).status).toBe(400);
+    expect((await put(42)).status).toBe(400);
     expect(mockMmUserFetch).not.toHaveBeenCalled();
   });
 
   it("passes through a refusal to read the channel, as for a non-member", async () => {
-    setup();
     mockMmUserFetch.mockImplementation((path: string) =>
-      path === "/channels/group-1"
+      path === `/channels/${GROUP}`
         ? Promise.reject(new FakeMattermostError(403))
-        : Promise.resolve({ id: "me" })
+        : Promise.resolve({ id: ME })
     );
-    const { PUT } = await import("@/app/api/mattermost/channels/[channelId]/name/route");
 
-    const res = await PUT(request({ name: "Sneaky" }), params);
+    const res = await put("Sneaky");
 
     expect(res.status).toBe(403);
-    expect(calls("/channels/group-1/patch")).toHaveLength(0);
+    expect(mockSetOwner).not.toHaveBeenCalled();
+    expect(patches()).toHaveLength(0);
   });
 });

@@ -369,7 +369,11 @@ export function useMessageRendering({
                 // preview card as on post pages. A link with its own wording
                 // stays a plain link.
                 const postLink = trimTrailingLinkPunctuation(href);
+                // Only a link whose whole content is its address: a label with
+                // any formatting of its own keeps its wording.
+                const onlyText = (domNode.children || []).every((child) => child.type === "text");
                 const isBareLink =
+                  onlyText &&
                   !!childText &&
                   (childText === href || childText === href.replace(/^https?:\/\//, ""));
                 if (!inLink && isBareLink && isEnhanceableEcencyPostLink(postLink)) {

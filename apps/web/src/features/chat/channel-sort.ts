@@ -10,7 +10,7 @@ interface SortableChannel {
  * The latest moment anything happened in a channel for this viewer: the last
  * message in it, or the last time they opened it, whichever is newer.
  */
-export function getChannelActivityAt(channel: SortableChannel) {
+export function getChannelActivityAt(channel: SortableChannel): number {
   return Math.max(Number(channel.last_post_at) || 0, Number(channel.last_viewed_at) || 0);
 }
 

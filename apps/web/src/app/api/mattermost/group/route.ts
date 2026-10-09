@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  getGroupOwnerId,
+  getMattermostTeamId,
   lookupMattermostUser,
   getMattermostTokenFromCookies,
   handleMattermostError,
-  mmUserFetch
+  isMattermostNotFoundError,
+  mmUserFetch,
+  setGroupOwnerId
 } from "@/server/mattermost";
 import { getDmPrivacyRejection } from "@/server/chat-dm-privacy";
 import { checkDmFanout, dmFanoutLimitFor } from "@/server/chat-dm-fanout";
-import { GROUP_OWNER_PREF_CATEGORY, wasCreatedNow } from "@/server/chat-group-name";
+import { getGroupChannelName } from "@/server/chat-group-name";
 
 // Mattermost group channels hold 3 to 8 members, the creator included.
 const GROUP_MIN_OTHERS = 2;
@@ -134,31 +138,42 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const requestedAt = Date.now();
-    const channel = await mmUserFetch<{ id: string; create_at?: number }>(`/channels/group`, token, {
+    // Whether this exact group exists already decides who owns it: only the
+    // person whose request creates it. Mattermost answers create with the
+    // existing group either way, so look first. When the lookup fails, nobody
+    // is made owner and the group stays open to be claimed.
+    const memberIds = [currentUser.id, ...recipients];
+    const existedBefore = await mmUserFetch(
+      `/teams/${encodeURIComponent(getMattermostTeamId())}/channels/name/${getGroupChannelName(memberIds)}?include_deleted=true`,
+      token
+    ).then(
+      () => true,
+      (error) => (isMattermostNotFoundError(error) ? false : null)
+    );
+
+    const channel = await mmUserFetch<{ id: string }>(`/channels/group`, token, {
       method: "POST",
-      body: JSON.stringify([currentUser.id, ...recipients])
+      body: JSON.stringify(memberIds)
     });
 
-    // Mattermost returns the existing group for the same members, which the
-    // creator may have closed. Starting it again shows it again. Whoever made
-    // the group just now is its owner and may name it; asking for a group that
-    // already existed does not make someone its owner.
-    const preferences = [
-      { user_id: currentUser.id, category: "group_channel_show", name: channel.id, value: "true" }
-    ];
-    if (wasCreatedNow(channel.create_at, requestedAt)) {
-      preferences.push({
-        user_id: currentUser.id,
-        category: GROUP_OWNER_PREF_CATEGORY,
-        name: channel.id,
-        value: "true"
-      });
+    if (existedBefore === false) {
+      try {
+        if (!(await getGroupOwnerId(channel.id, { fresh: true }))) {
+          await setGroupOwnerId(channel.id, currentUser.id);
+        }
+      } catch (error) {
+        console.error("MM group: unable to record the group owner", { error });
+      }
     }
+
+    // Mattermost returns the existing group for the same members, which the
+    // creator may have closed. Starting it again shows it again.
     await mmUserFetch(`/users/${encodeURIComponent(currentUser.id)}/preferences`, token, {
       method: "PUT",
-      body: JSON.stringify(preferences)
-    }).catch((error) => console.warn("MM group: unable to save group preferences", { error }));
+      body: JSON.stringify([
+        { user_id: currentUser.id, category: "group_channel_show", name: channel.id, value: "true" }
+      ])
+    }).catch((error) => console.warn("MM group: unable to reopen group", { error }));
 
     return NextResponse.json({ channelId: channel.id });
   } catch (error) {

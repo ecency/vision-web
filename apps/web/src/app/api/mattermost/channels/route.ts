@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import {
+  getGroupOwnerId,
   getMattermostTeamId,
   getMattermostTokenFromCookies,
   handleMattermostError,
   mmUserFetch
 } from "@/server/mattermost";
-import { GROUP_OWNER_PREF_CATEGORY } from "@/server/chat-group-name";
 import {
   fetchAllChannelPages,
   fetchAllChannelMemberPages,
@@ -159,11 +159,6 @@ export async function GET() {
       (preferences || [])
         .filter((pref) => pref.category === "direct_channel_show")
         .map((pref) => [pref.name, pref.value])
-    );
-    const ownedGroupIds = new Set(
-      (preferences || [])
-        .filter((pref) => pref.category === GROUP_OWNER_PREF_CATEGORY && pref.value === "true")
-        .map((pref) => pref.name)
     );
     const closedGroupIds = new Set(
       (preferences || [])
@@ -404,17 +399,37 @@ export async function GET() {
       )
     );
 
+    // Owners are cached per group; a group whose owner cannot be read is
+    // neither offered for renaming nor claimable (undefined).
+    const groupOwnerById = new Map(
+      await Promise.all(
+        orderedChannels
+          .filter((channel) => channel.type === "G")
+          .slice(0, MAX_GROUPS_RESOLVED)
+          .map(async (channel) => {
+            try {
+              return [channel.id, await getGroupOwnerId(channel.id)] as const;
+            } catch {
+              return [channel.id, undefined] as const;
+            }
+          })
+      )
+    );
+
     return NextResponse.json({
       channels: orderedChannels.map((channel) => {
         if (channel.type !== "G") return channel;
         const groupUsers = groupUsersById.get(channel.id);
+        const ownerId = groupOwnerById.get(channel.id);
         // A group's custom name lives in its header (see chat-group-name).
         const groupName = typeof channel.header === "string" ? channel.header.trim() : "";
         return {
           ...channel,
           ...(groupUsers ? { groupUsers } : {}),
           group_name: groupName || undefined,
-          group_owner: ownedGroupIds.has(channel.id)
+          group_owner: Boolean(ownerId) && ownerId === currentUser.id,
+          // No owner recorded: the first member to name it becomes its owner.
+          group_claimable: ownerId === null
         };
       })
     });

@@ -6,6 +6,14 @@ import { getUserDisplayName } from "./format-utils";
 export const GROUP_MIN_OTHERS = 2;
 export const GROUP_MAX_OTHERS = 7;
 
+/** Characters (code points) a group name may have. Checked on the server too. */
+export const GROUP_NAME_MAX_LENGTH = 64;
+
+/** The length of a group name as the server counts it, so emoji count as one. */
+export function groupNameLength(name: string): number {
+  return Array.from(name.trim()).length;
+}
+
 export function isGroupChannel(channel?: { type?: string } | null) {
   return channel?.type === "G";
 }

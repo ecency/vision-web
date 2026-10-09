@@ -1,21 +1,18 @@
 import { NextResponse } from "next/server";
 import {
-  anyUserHasPreference,
+  getGroupOwnerId,
   getMattermostTokenFromCookies,
   handleMattermostError,
-  hasPreference,
-  mmUserFetch
+  isGroupOwnerMissing,
+  mmUserFetch,
+  setGroupOwnerId
 } from "@/server/mattermost";
-import {
-  GROUP_NAME_MAX_LENGTH,
-  GROUP_OWNER_PREF_CATEGORY,
-  normalizeGroupName
-} from "@/server/chat-group-name";
+import { GROUP_NAME_MAX_LENGTH, normalizeGroupName } from "@/server/chat-group-name";
 
 /**
- * Names a group conversation, or clears its name with "". Only the person who
- * started the group may do it. A group started before owners were recorded
- * has no owner yet: the first member to name it becomes its owner.
+ * Names a group conversation, or clears its name with "". Only the group's
+ * owner may do it. A group with no owner yet, such as one started before
+ * owners were recorded, is claimed by the first member who names it.
  */
 export async function PUT(req: Request, { params }: { params: Promise<{ channelId: string }> }) {
   const token = await getMattermostTokenFromCookies();
@@ -29,7 +26,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ channelI
     const name = normalizeGroupName(body?.name);
     if (name === null) {
       return NextResponse.json(
-        { error: `A group name can be up to ${GROUP_NAME_MAX_LENGTH} characters.` },
+        { error: `A group name can be up to ${GROUP_NAME_MAX_LENGTH} characters.`, code: "too_long" },
         { status: 400 }
       );
     }
@@ -42,44 +39,41 @@ export async function PUT(req: Request, { params }: { params: Promise<{ channelI
     ]);
 
     if (channel.type !== "G") {
-      return NextResponse.json({ error: "Only group conversations can be renamed here." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Only group conversations can be renamed here.", code: "not_group" },
+        { status: 400 }
+      );
     }
 
-    const ownPreferences = await mmUserFetch<Array<{ category: string; name: string; value: string }>>(
-      `/users/me/preferences`,
-      token
-    );
-    const isOwner = hasPreference(ownPreferences, GROUP_OWNER_PREF_CATEGORY, channelId);
-
-    let claim = false;
-    if (!isOwner) {
-      const members = await mmUserFetch<Array<{ id: string }>>(
-        `/users?in_channel=${channelPath}&per_page=20`,
-        token
+    const forbidden = () =>
+      NextResponse.json(
+        { error: "Only the person who started this group can rename it.", code: "not_owner" },
+        { status: 403 }
       );
-      const others = members.map((member) => member.id).filter((id) => id !== currentUser.id);
-      if (await anyUserHasPreference(others, GROUP_OWNER_PREF_CATEGORY, channelId)) {
-        return NextResponse.json(
-          { error: "Only the person who started this group can rename it." },
-          { status: 403 }
-        );
+
+    const ownerId = await getGroupOwnerId(channel.id, { fresh: true });
+    if (ownerId && ownerId !== currentUser.id) {
+      return forbidden();
+    }
+
+    if (!ownerId) {
+      // A failed read can look like "no owner"; make sure before claiming.
+      if (!(await isGroupOwnerMissing(channel.id))) {
+        return forbidden();
       }
-      claim = true;
+      // Claim, then read back, so a claim another member made just before
+      // wins over this one.
+      await setGroupOwnerId(channel.id, currentUser.id);
+      const confirmed = await getGroupOwnerId(channel.id, { fresh: true });
+      if (confirmed !== currentUser.id) {
+        return forbidden();
+      }
     }
 
     if (normalizeGroupName(channel.header ?? "") !== name) {
       await mmUserFetch(`/channels/${channelPath}/patch`, token, {
         method: "PUT",
         body: JSON.stringify({ header: name })
-      });
-    }
-
-    if (claim) {
-      await mmUserFetch(`/users/${encodeURIComponent(currentUser.id)}/preferences`, token, {
-        method: "PUT",
-        body: JSON.stringify([
-          { user_id: currentUser.id, category: GROUP_OWNER_PREF_CATEGORY, name: channelId, value: "true" }
-        ])
       });
     }
 
