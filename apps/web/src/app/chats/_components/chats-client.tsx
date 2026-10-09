@@ -34,6 +34,7 @@ import { getChatBanInfo } from "@/features/chat/chat-ban-notice";
 import { ChatBanScreen } from "@/features/chat/components/chat-ban-screen";
 import { ChannelAvatar } from "@/features/chat/components/channel-avatar";
 import { NewGroupModal } from "@/features/chat/components/new-group-modal";
+import { sortChannelsByActivity } from "@/features/chat/channel-sort";
 import {
   getGroupTitle,
   isConversationChannel,
@@ -162,55 +163,10 @@ export function ChatsClient() {
     [unreadByChannelId]
   );
 
-  const sortedChannels = useMemo(() => {
-    const defaultOrder = Number.MAX_SAFE_INTEGER;
-
-    return [...filteredChannels]
-      .map((channel) => ({
-        channel,
-        unread: getUnreadCount(channel) > 0,
-        favorite: Boolean(channel.is_favorite),
-        // Order by the logged-in user's most recent interaction (last viewed),
-        // falling back to latest post time if we have never opened the channel.
-        lastInteraction: channel.last_viewed_at ?? channel.last_post_at ?? 0,
-        order: channelOrder.get(channel.id) ?? defaultOrder
-      }))
-      .sort((a, b) => {
-        if (a.unread !== b.unread) {
-          return a.unread ? -1 : 1;
-        }
-
-        if (a.favorite !== b.favorite) {
-          return a.favorite ? -1 : 1;
-        }
-
-        if (a.lastInteraction !== b.lastInteraction) {
-          return b.lastInteraction - a.lastInteraction;
-        }
-
-        return a.order - b.order;
-      })
-      .map((item) => item.channel);
-  }, [channelOrder, filteredChannels, getUnreadCount]);
-
-  // Group channels by category for better organization
-  const channelsByCategory = useMemo(() => {
-    const favorites: typeof sortedChannels = [];
-    const directMessages: typeof sortedChannels = [];
-    const regularChannels: typeof sortedChannels = [];
-
-    sortedChannels.forEach((channel) => {
-      if (channel.is_favorite) {
-        favorites.push(channel);
-      } else if (isConversationChannel(channel)) {
-        directMessages.push(channel);
-      } else {
-        regularChannels.push(channel);
-      }
-    });
-
-    return { favorites, directMessages, regularChannels };
-  }, [sortedChannels]);
+  const sortedChannels = useMemo(
+    () => sortChannelsByActivity(filteredChannels, getUnreadCount, channelOrder),
+    [channelOrder, filteredChannels, getUnreadCount]
+  );
 
 
   const joinableChannelResults = useMemo(() => {
@@ -362,6 +318,141 @@ export function ChatsClient() {
   }, []);
 
   const activeChannelId = params?.id || defaultChannelId;
+
+  const renderChannelRow = (channel: (typeof sortedChannels)[number]) => {
+    const unread = getUnreadCount(channel);
+    const isMuted = Boolean(channel.is_muted);
+    const isConversation = isConversationChannel(channel);
+    const markAsReadLabel = markChannelViewedMutation.isPending
+      ? i18next.t("chat.marking-as-read")
+      : i18next.t("chat.mark-as-read");
+    const favoriteLabel = channel.is_favorite
+      ? i18next.t("favorite-btn.delete")
+      : i18next.t("chat.favorite-channel");
+    const muteLabel = i18next.t(isMuted ? "chat.unmute-channel" : "chat.mute-channel");
+    const isActive = activeChannelId === channel.id;
+
+    return (
+      <Link
+        href={buildChannelUrl(channel.id)}
+        key={channel.id}
+        className={clsx(
+          "rounded-lg border-l-2 p-2.5 transition",
+          isActive
+            ? "border-blue-dark-sky bg-blue-duck-egg dark:bg-dark-default"
+            : "border-transparent hover:bg-gray-100 dark:hover:bg-white/5"
+        )}
+        onClickCapture={handleChannelLinkClick}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="relative flex-shrink-0">
+            <ChannelAvatar channel={channel} />
+            {unread > 0 && (
+              <span
+                className="absolute -right-1 -top-1 size-2.5 rounded-full bg-[--primary-color] ring-2 ring-[--surface-color]"
+                aria-hidden="true"
+              />
+            )}
+          </div>
+
+          <div className="flex flex-1 flex-col gap-0.5 min-w-0 overflow-hidden">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-1 font-semibold min-w-0 flex-1">
+                <span className="truncate">{getChannelTitle(channel)}</span>
+                {channel.is_favorite && (
+                  <span
+                    className="text-amber-500 flex-shrink-0 text-sm"
+                    style={{ color: "#f59e0b" }}
+                    aria-label="Favorite channel"
+                    title="Favorite channel"
+                  >
+                    ★
+                  </span>
+                )}
+                {isMuted && (
+                  <span
+                    className="text-[--text-muted] inline-flex shrink-0 size-4 [&>svg]:size-full"
+                    aria-label={i18next.t("chat.channel-muted")}
+                    title={i18next.t("chat.channel-muted")}
+                  >
+                    {volumeOffSvg}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="text-xs text-[--text-muted] truncate">{getChannelSubtitle(channel)}</div>
+          </div>
+
+          {unread > 0 && (
+            <span className="inline-flex min-w-[20px] max-w-[40px] justify-center rounded-full bg-[--primary-color] px-1.5 py-0.5 text-[10px] font-semibold text-[--primary-button-text-color] flex-shrink-0">
+              {unread > 99 ? "99+" : unread}
+            </span>
+          )}
+
+          <div className="flex-shrink-0" data-chat-channel-actions onClick={(e) => e.stopPropagation()}>
+            <Dropdown>
+              <DropdownToggle
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+              >
+                <Button appearance="gray-link" icon={dotsHorizontal} className={KEBAB_BUTTON_CLASS} aria-label={i18next.t("g.menu", { defaultValue: "Menu" })} aria-haspopup="menu" />
+              </DropdownToggle>
+              <DropdownMenu align="right">
+                {unread > 0 && (
+                  <DropdownItemWithIcon
+                    icon={checkSvg}
+                    label={markAsReadLabel}
+                    onClick={(e: MouseEvent) =>
+                      handleChannelAction(e, () => markChannelViewedMutation.mutate(channel.id))
+                    }
+                    disabled={markChannelViewedMutation.isPending}
+                  />
+                )}
+                {!isConversation && (
+                  <DropdownItemWithIcon
+                    label={favoriteLabel}
+                    onClick={(e: MouseEvent) =>
+                      handleChannelAction(e, () =>
+                        favoriteChannelMutation.mutate({
+                          channelId: channel.id,
+                          favorite: !channel.is_favorite
+                        })
+                      )
+                    }
+                  />
+                )}
+                {!isConversation && (
+                  <DropdownItemWithIcon
+                    label={muteLabel}
+                    onClick={(e: MouseEvent) =>
+                      handleChannelAction(e, () =>
+                        muteChannelMutation.mutate({ channelId: channel.id, mute: !isMuted })
+                      )
+                    }
+                  />
+                )}
+                {isConversation ? (
+                  <DropdownItemWithIcon
+                    label={i18next.t("chat.leave-conversation")}
+                    onClick={(e: MouseEvent) => handleChannelAction(e, () => leaveChannel(channel.id))}
+                  />
+                ) : (
+                  !isTownHallChannel(channel) && (
+                    <DropdownItemWithIcon
+                      label={i18next.t("chat.leave-channel")}
+                      onClick={(e: MouseEvent) => handleChannelAction(e, () => leaveChannel(channel.id))}
+                    />
+                  )
+                )}
+              </DropdownMenu>
+            </Dropdown>
+          </div>
+        </div>
+      </Link>
+    );
+  };
 
   if (!hydrated) {
     return (
@@ -536,543 +627,7 @@ export function ChatsClient() {
                 pushing the unread badge + kebab past overflow-x-hidden and clipping
                 them off the right edge. */}
             <div className="grid grid-cols-1 gap-4">
-              {/* Favorites Section */}
-              {!hasSearchTerm && channelsByCategory.favorites.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 px-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[--text-muted]">
-                      <span className="text-amber-500" style={{ color: "#f59e0b" }}>
-                        ★
-                      </span>{" "}
-                      Favorites
-                    </span>
-                    <div className="h-px flex-1 bg-[--border-color]" />
-                  </div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {channelsByCategory.favorites.map((channel) => {
-                      const unread = getUnreadCount(channel);
-                      const isMuted = Boolean(channel.is_muted);
-                      const markAsReadLabel = markChannelViewedMutation.isPending
-                        ? i18next.t("chat.marking-as-read")
-                        : i18next.t("chat.mark-as-read");
-                      const favoriteLabel = channel.is_favorite
-                        ? i18next.t("favorite-btn.delete")
-                        : i18next.t("chat.favorite-channel");
-                      const muteLabel = i18next.t(isMuted ? "chat.unmute-channel" : "chat.mute-channel");
-                      const isActive = activeChannelId === channel.id;
-
-                      return (
-                        <Link
-                          href={buildChannelUrl(channel.id)}
-                          key={channel.id}
-                          className={clsx(
-                            "rounded-lg border-l-2 p-2.5 transition",
-                            isActive
-                              ? "border-blue-dark-sky bg-blue-duck-egg dark:bg-dark-default"
-                              : "border-transparent hover:bg-gray-100 dark:hover:bg-white/5"
-                          )}
-                          onClickCapture={handleChannelLinkClick}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="relative flex-shrink-0">
-                              <ChannelAvatar channel={channel} />
-                              {unread > 0 && (
-                                <span
-                                  className="absolute -right-1 -top-1 size-2.5 rounded-full bg-[--primary-color] ring-2 ring-[--surface-color]"
-                                  aria-hidden="true"
-                                />
-                              )}
-                            </div>
-
-                            <div className="flex flex-1 flex-col gap-0.5 min-w-0 overflow-hidden">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="flex items-center gap-1 font-semibold min-w-0 flex-1">
-                                  <span className="truncate">{getChannelTitle(channel)}</span>
-                                  {channel.is_favorite && (
-                                    <span
-                                      className="text-amber-500 flex-shrink-0 text-sm"
-                                      style={{ color: "#f59e0b" }}
-                                      aria-label="Favorite channel"
-                                      title="Favorite channel"
-                                    >
-                                      ★
-                                    </span>
-                                  )}
-                                  {isMuted && (
-                                    <span
-                                      className="text-[--text-muted] inline-flex shrink-0 size-4 [&>svg]:size-full"
-                                      aria-label={i18next.t("chat.channel-muted")}
-                                      title={i18next.t("chat.channel-muted")}
-                                    >
-                                      {volumeOffSvg}
-                                    </span>
-                                  )}
-                                </div>
-                                </div>
-                              <div className="text-xs text-[--text-muted] truncate">{getChannelSubtitle(channel)}</div>
-                            </div>
-
-                            {unread > 0 && (
-                              <span className="inline-flex min-w-[20px] max-w-[40px] justify-center rounded-full bg-[--primary-color] px-1.5 py-0.5 text-[10px] font-semibold text-[--primary-button-text-color] flex-shrink-0">
-                                {unread > 99 ? '99+' : unread}
-                              </span>
-                            )}
-
-                            {channel.type !== "D" ? (
-                              <div className="flex-shrink-0" data-chat-channel-actions onClick={(e) => e.stopPropagation()}>
-                                <Dropdown>
-                                  <DropdownToggle
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                    }}
-                                  >
-                                    <Button appearance="gray-link" icon={dotsHorizontal} className={KEBAB_BUTTON_CLASS} aria-label={i18next.t("g.menu", { defaultValue: "Menu" })} aria-haspopup="menu" />
-                                  </DropdownToggle>
-                                  <DropdownMenu align="right">
-                                    {unread > 0 && (
-                                      <DropdownItemWithIcon
-                                        icon={checkSvg}
-                                        label={markAsReadLabel}
-                                        onClick={(e: MouseEvent) =>
-                                          handleChannelAction(e, () => markChannelViewedMutation.mutate(channel.id))
-                                        }
-                                        disabled={markChannelViewedMutation.isPending}
-                                      />
-                                    )}
-                                    <DropdownItemWithIcon
-                                      label={favoriteLabel}
-                                      onClick={(e: MouseEvent) =>
-                                        handleChannelAction(e, () =>
-                                          favoriteChannelMutation.mutate({
-                                            channelId: channel.id,
-                                            favorite: !channel.is_favorite
-                                          })
-                                        )
-                                      }
-                                    />
-                                    <DropdownItemWithIcon
-                                      label={muteLabel}
-                                      onClick={(e: MouseEvent) =>
-                                        handleChannelAction(e, () =>
-                                          muteChannelMutation.mutate({ channelId: channel.id, mute: !isMuted })
-                                        )
-                                      }
-                                    />
-                                    {!isTownHallChannel(channel) && (
-                                      <DropdownItemWithIcon
-                                        label={i18next.t("chat.leave-channel")}
-                                        onClick={(e: MouseEvent) =>
-                                          handleChannelAction(e, () => leaveChannel(channel.id))
-                                        }
-                                      />
-                                    )}
-                                  </DropdownMenu>
-                                </Dropdown>
-                              </div>
-                            ) : (
-                              unread > 0 && (
-                                <div className="ml-2 flex-shrink-0" data-chat-channel-actions onClick={(e) => e.stopPropagation()}>
-                                  <Dropdown>
-                                    <DropdownToggle
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                      }}
-                                    >
-                                      <Button appearance="gray-link" icon={dotsHorizontal} className={KEBAB_BUTTON_CLASS} aria-label={i18next.t("g.menu", { defaultValue: "Menu" })} aria-haspopup="menu" />
-                                    </DropdownToggle>
-                                    <DropdownMenu align="right">
-                                      <DropdownItemWithIcon
-                                        icon={checkSvg}
-                                        label={markAsReadLabel}
-                                        onClick={(e: MouseEvent) =>
-                                          handleChannelAction(e, () => markChannelViewedMutation.mutate(channel.id))
-                                        }
-                                        disabled={markChannelViewedMutation.isPending}
-                                      />
-                                    </DropdownMenu>
-                                  </Dropdown>
-                                </div>
-                              )
-                            )}
-                          </div>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Direct Messages Section */}
-              {!hasSearchTerm && channelsByCategory.directMessages.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 px-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[--text-muted]">
-                      💬 Direct Messages
-                    </span>
-                    <div className="h-px flex-1 bg-[--border-color]" />
-                  </div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {channelsByCategory.directMessages.map((channel) => {
-                      const unread = getUnreadCount(channel);
-                      const isMuted = Boolean(channel.is_muted);
-                      const markAsReadLabel = markChannelViewedMutation.isPending
-                        ? i18next.t("chat.marking-as-read")
-                        : i18next.t("chat.mark-as-read");
-                      const isActive = activeChannelId === channel.id;
-
-                      return (
-                        <Link
-                          href={buildChannelUrl(channel.id)}
-                          key={channel.id}
-                          className={clsx(
-                            "rounded-lg border-l-2 p-2.5 transition",
-                            isActive
-                              ? "border-blue-dark-sky bg-blue-duck-egg dark:bg-dark-default"
-                              : "border-transparent hover:bg-gray-100 dark:hover:bg-white/5"
-                          )}
-                          onClickCapture={handleChannelLinkClick}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="relative flex-shrink-0">
-                              <ChannelAvatar channel={channel} />
-                              {unread > 0 && (
-                                <span
-                                  className="absolute -right-1 -top-1 size-2.5 rounded-full bg-[--primary-color] ring-2 ring-[--surface-color]"
-                                  aria-hidden="true"
-                                />
-                              )}
-                            </div>
-
-                            <div className="flex flex-1 flex-col gap-0.5 min-w-0 overflow-hidden">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="flex items-center font-semibold min-w-0 flex-1">
-                                  <span className="truncate">{getChannelTitle(channel)}</span>
-                                </div>
-                              </div>
-                              <div className="text-xs text-[--text-muted] truncate">{getChannelSubtitle(channel)}</div>
-                            </div>
-
-                            {unread > 0 && (
-                              <span className="inline-flex min-w-[20px] max-w-[40px] justify-center rounded-full bg-[--primary-color] px-1.5 py-0.5 text-[10px] font-semibold text-[--primary-button-text-color] flex-shrink-0">
-                                {unread > 99 ? '99+' : unread}
-                              </span>
-                            )}
-
-                            <div className="flex-shrink-0" data-chat-channel-actions onClick={(e) => e.stopPropagation()}>
-                              <Dropdown>
-                                <DropdownToggle
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                  }}
-                                >
-                                  <Button appearance="gray-link" icon={dotsHorizontal} className={KEBAB_BUTTON_CLASS} aria-label={i18next.t("g.menu", { defaultValue: "Menu" })} aria-haspopup="menu" />
-                                </DropdownToggle>
-                                <DropdownMenu align="right">
-                                  {unread > 0 && (
-                                    <DropdownItemWithIcon
-                                      icon={checkSvg}
-                                      label={markAsReadLabel}
-                                      onClick={(e: MouseEvent) =>
-                                        handleChannelAction(e, () => markChannelViewedMutation.mutate(channel.id))
-                                      }
-                                      disabled={markChannelViewedMutation.isPending}
-                                    />
-                                  )}
-                                  <DropdownItemWithIcon
-                                    label={i18next.t("chat.leave-conversation")}
-                                    onClick={(e: MouseEvent) =>
-                                      handleChannelAction(e, () => leaveChannel(channel.id))
-                                    }
-                                  />
-                                </DropdownMenu>
-                              </Dropdown>
-                            </div>
-                          </div>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Regular Channels Section */}
-              {!hasSearchTerm && channelsByCategory.regularChannels.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 px-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[--text-muted]">
-                      # Channels
-                    </span>
-                    <div className="h-px flex-1 bg-[--border-color]" />
-                  </div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {channelsByCategory.regularChannels.map((channel) => {
-                      const unread = getUnreadCount(channel);
-                      const isMuted = Boolean(channel.is_muted);
-                      const markAsReadLabel = markChannelViewedMutation.isPending
-                        ? i18next.t("chat.marking-as-read")
-                        : i18next.t("chat.mark-as-read");
-                      const favoriteLabel = channel.is_favorite
-                        ? i18next.t("favorite-btn.delete")
-                        : i18next.t("chat.favorite-channel");
-                      const muteLabel = i18next.t(isMuted ? "chat.unmute-channel" : "chat.mute-channel");
-                      const isActive = activeChannelId === channel.id;
-
-                      return (
-                        <Link
-                          href={buildChannelUrl(channel.id)}
-                          key={channel.id}
-                          className={clsx(
-                            "rounded-lg border-l-2 p-2.5 transition",
-                            isActive
-                              ? "border-blue-dark-sky bg-blue-duck-egg dark:bg-dark-default"
-                              : "border-transparent hover:bg-gray-100 dark:hover:bg-white/5"
-                          )}
-                          onClickCapture={handleChannelLinkClick}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="relative flex-shrink-0">
-                              <UserAvatar username={channel.name} size="medium" className="size-10" />
-                              {unread > 0 && (
-                                <span
-                                  className="absolute -right-1 -top-1 size-2.5 rounded-full bg-[--primary-color] ring-2 ring-[--surface-color]"
-                                  aria-hidden="true"
-                                />
-                              )}
-                            </div>
-
-                            <div className="flex flex-1 flex-col gap-0.5 min-w-0 overflow-hidden">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="flex items-center gap-1 font-semibold min-w-0 flex-1">
-                                  <span className="truncate">{getChannelTitle(channel)}</span>
-                                  {isMuted && (
-                                    <span
-                                      className="text-[--text-muted] inline-flex shrink-0 size-4 [&>svg]:size-full"
-                                      aria-label={i18next.t("chat.channel-muted")}
-                                      title={i18next.t("chat.channel-muted")}
-                                    >
-                                      {volumeOffSvg}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="text-xs text-[--text-muted] truncate">{getChannelSubtitle(channel)}</div>
-                            </div>
-
-                            {unread > 0 && (
-                              <span className="inline-flex min-w-[20px] max-w-[40px] justify-center rounded-full bg-[--primary-color] px-1.5 py-0.5 text-[10px] font-semibold text-[--primary-button-text-color] flex-shrink-0">
-                                {unread > 99 ? '99+' : unread}
-                              </span>
-                            )}
-
-                            <div className="flex-shrink-0" data-chat-channel-actions onClick={(e) => e.stopPropagation()}>
-                              <Dropdown>
-                                <DropdownToggle
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                  }}
-                                >
-                                  <Button appearance="gray-link" icon={dotsHorizontal} className={KEBAB_BUTTON_CLASS} aria-label={i18next.t("g.menu", { defaultValue: "Menu" })} aria-haspopup="menu" />
-                                </DropdownToggle>
-                                <DropdownMenu align="right">
-                                  {unread > 0 && (
-                                    <DropdownItemWithIcon
-                                      icon={checkSvg}
-                                      label={markAsReadLabel}
-                                      onClick={(e: MouseEvent) =>
-                                        handleChannelAction(e, () => markChannelViewedMutation.mutate(channel.id))
-                                      }
-                                      disabled={markChannelViewedMutation.isPending}
-                                    />
-                                  )}
-                                  <DropdownItemWithIcon
-                                    label={favoriteLabel}
-                                    onClick={(e: MouseEvent) =>
-                                      handleChannelAction(e, () =>
-                                        favoriteChannelMutation.mutate({
-                                          channelId: channel.id,
-                                          favorite: !channel.is_favorite
-                                        })
-                                      )
-                                    }
-                                  />
-                                  <DropdownItemWithIcon
-                                    label={muteLabel}
-                                    onClick={(e: MouseEvent) =>
-                                      handleChannelAction(e, () =>
-                                        muteChannelMutation.mutate({ channelId: channel.id, mute: !isMuted })
-                                      )
-                                    }
-                                  />
-                                  {!isTownHallChannel(channel) && (
-                                    <DropdownItemWithIcon
-                                      label={i18next.t("chat.leave-channel")}
-                                      onClick={(e: MouseEvent) =>
-                                        handleChannelAction(e, () => leaveChannel(channel.id))
-                                      }
-                                    />
-                                  )}
-                                </DropdownMenu>
-                              </Dropdown>
-                            </div>
-                          </div>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Search Results - Flat List */}
-              {hasSearchTerm && sortedChannels.map((channel) => {
-                const unread = getUnreadCount(channel);
-                const isMuted = Boolean(channel.is_muted);
-                const markAsReadLabel = markChannelViewedMutation.isPending
-                  ? i18next.t("chat.marking-as-read")
-                  : i18next.t("chat.mark-as-read");
-                const favoriteLabel = channel.is_favorite
-                  ? i18next.t("favorite-btn.delete")
-                  : i18next.t("chat.favorite-channel");
-                const muteLabel = i18next.t(isMuted ? "chat.unmute-channel" : "chat.mute-channel");
-                const isActive = activeChannelId === channel.id;
-
-                return (
-                  <Link
-                    href={buildChannelUrl(channel.id)}
-                    key={channel.id}
-                    className={clsx(
-                      "rounded-lg border-l-2 p-2.5 transition",
-                      isActive
-                        ? "border-blue-dark-sky bg-blue-duck-egg dark:bg-dark-default"
-                        : "border-transparent hover:bg-gray-100 dark:hover:bg-white/5"
-                    )}
-                    onClickCapture={handleChannelLinkClick}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="relative flex-shrink-0">
-                        <ChannelAvatar channel={channel} />
-                        {unread > 0 && (
-                          <span
-                            className="absolute -right-1 -top-1 size-2.5 rounded-full bg-[--primary-color] ring-2 ring-[--surface-color]"
-                            aria-hidden="true"
-                          />
-                        )}
-                      </div>
-
-                      <div className="flex flex-1 flex-col gap-0.5 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 font-semibold truncate">
-                            <span className="truncate">{getChannelTitle(channel)}</span>
-                            {channel.is_favorite && (
-                              <span className="text-amber-500 flex-shrink-0" aria-label="Favorite channel" title="Favorite channel">
-                                ★
-                              </span>
-                            )}
-                            {isMuted && (
-                              <span
-                                className="text-[--text-muted] inline-flex shrink-0 size-4 [&>svg]:size-full"
-                                aria-label={i18next.t("chat.channel-muted")}
-                                title={i18next.t("chat.channel-muted")}
-                              >
-                                {volumeOffSvg}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-xs text-[--text-muted] truncate">{getChannelSubtitle(channel)}</div>
-                      </div>
-
-                      {unread > 0 && (
-                        <span className="ml-auto inline-flex min-w-[24px] flex-shrink-0 justify-center rounded-full bg-[--primary-color] px-2 py-1 text-xs font-semibold text-[--primary-button-text-color]">
-                          {unread}
-                        </span>
-                      )}
-
-                      {channel.type !== "D" ? (
-                        <div className="ml-2 flex-shrink-0" data-chat-channel-actions onClick={(e) => e.stopPropagation()}>
-                          <Dropdown>
-                            <DropdownToggle
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                              }}
-                            >
-                              <Button appearance="gray-link" icon={dotsHorizontal} className={KEBAB_BUTTON_CLASS} aria-label={i18next.t("g.menu", { defaultValue: "Menu" })} aria-haspopup="menu" />
-                            </DropdownToggle>
-                            <DropdownMenu align="right">
-                              {unread > 0 && (
-                                <DropdownItemWithIcon
-                                  icon={checkSvg}
-                                  label={markAsReadLabel}
-                                  onClick={(e: MouseEvent) =>
-                                    handleChannelAction(e, () => markChannelViewedMutation.mutate(channel.id))
-                                  }
-                                  disabled={markChannelViewedMutation.isPending}
-                                />
-                              )}
-                              <DropdownItemWithIcon
-                                label={favoriteLabel}
-                                onClick={(e: MouseEvent) =>
-                                  handleChannelAction(e, () =>
-                                    favoriteChannelMutation.mutate({
-                                      channelId: channel.id,
-                                      favorite: !channel.is_favorite
-                                    })
-                                  )
-                                }
-                              />
-                                    <DropdownItemWithIcon
-                                      label={muteLabel}
-                                      onClick={(e: MouseEvent) =>
-                                        handleChannelAction(e, () =>
-                                          muteChannelMutation.mutate({ channelId: channel.id, mute: !isMuted })
-                                        )
-                                      }
-                                    />
-                                    {!isTownHallChannel(channel) && (
-                                      <DropdownItemWithIcon
-                                        label={i18next.t("chat.leave-channel")}
-                                        onClick={(e: MouseEvent) =>
-                                          handleChannelAction(e, () => leaveChannel(channel.id))
-                                        }
-                                      />
-                                    )}
-                                  </DropdownMenu>
-                                </Dropdown>
-                              </div>
-                            ) : (
-                        unread > 0 && (
-                          <div className="ml-2 flex-shrink-0" data-chat-channel-actions onClick={(e) => e.stopPropagation()}>
-                            <Dropdown>
-                              <DropdownToggle
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                }}
-                              >
-                                <Button appearance="gray-link" icon={dotsHorizontal} className={KEBAB_BUTTON_CLASS} aria-label={i18next.t("g.menu", { defaultValue: "Menu" })} aria-haspopup="menu" />
-                              </DropdownToggle>
-                              <DropdownMenu align="right">
-                                <DropdownItemWithIcon
-                                  icon={checkSvg}
-                                  label={markAsReadLabel}
-                                  onClick={(e: MouseEvent) =>
-                                    handleChannelAction(e, () => markChannelViewedMutation.mutate(channel.id))
-                                  }
-                                  disabled={markChannelViewedMutation.isPending}
-                                />
-                              </DropdownMenu>
-                            </Dropdown>
-                          </div>
-                        )
-                      )}
-                    </div>
-                  </Link>
-                );
-              })}
+              {sortedChannels.map(renderChannelRow)}
               {!sortedChannels.length && !channelsLoading && (
                 <div className="text-sm text-[--text-muted]">
                   {hasSearchTerm ? i18next.t("chat.no-channels-search") : i18next.t("chat.no-channels")}

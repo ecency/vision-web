@@ -105,16 +105,22 @@ export function formatReactorNames(
   });
 }
 
-/** Reactor ids that are not in the users map yet, for a batched lookup. */
-export function findMissingReactorIds(
-  posts: Array<{ metadata?: { reactions?: MattermostReaction[] } }>,
+/**
+ * Authors and reactors that are not in the users map yet, for a batched lookup.
+ * A message or a reaction that arrives live can come from someone the loaded
+ * pages never mentioned, such as the first message in a new group.
+ */
+export function findMissingUserIds(
+  posts: Array<{ user_id?: string; metadata?: { reactions?: MattermostReaction[] } }>,
   usersById: Record<string, MattermostUser>
 ) {
   const missing = new Set<string>();
+  const check = (userId?: string) => {
+    if (userId && !usersById[userId]) missing.add(userId);
+  };
   posts.forEach((post) => {
-    post.metadata?.reactions?.forEach((reaction) => {
-      if (reaction.user_id && !usersById[reaction.user_id]) missing.add(reaction.user_id);
-    });
+    check(post.user_id);
+    post.metadata?.reactions?.forEach((reaction) => check(reaction.user_id));
   });
   return Array.from(missing).sort();
 }
