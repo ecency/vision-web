@@ -9,18 +9,20 @@ class FakeMattermostError extends Error {
 const mockMmUserFetch = vi.fn();
 const mockAnyUserHasPreference = vi.fn();
 
-vi.mock("@/server/mattermost", () => ({
-  getMattermostTokenFromCookies: () => Promise.resolve("test-token"),
-  handleMattermostError: (error: unknown) => ({
-    status: error instanceof FakeMattermostError ? error.status : 500
-  }),
-  isMattermostNotFoundError: (error: unknown) =>
-    error instanceof FakeMattermostError && error.status === 404,
-  anyUserHasPreference: (...args: unknown[]) => mockAnyUserHasPreference(...args),
-  mmUserFetch: (...args: unknown[]) => mockMmUserFetch(...args)
-}));
+vi.mock("@/server/mattermost", async () => {
+  const actual = await vi.importActual<typeof import("@/server/mattermost")>("@/server/mattermost");
+  return {
+    getMattermostTokenFromCookies: () => Promise.resolve("test-token"),
+    handleMattermostError: (error: unknown) => ({
+      status: error instanceof FakeMattermostError ? error.status : 500
+    }),
+    hasPreference: actual.hasPreference,
+    anyUserHasPreference: (...args: unknown[]) => mockAnyUserHasPreference(...args),
+    mmUserFetch: (...args: unknown[]) => mockMmUserFetch(...args)
+  };
+});
 
-const OWNER_PREF = "/users/me/preferences/ecency_group_owner/name/group-1";
+const OWN_PREFS = "/users/me/preferences";
 
 function request(body: unknown) {
   return { json: async () => body } as never;
@@ -33,22 +35,29 @@ function setup({
   header = "",
   owner = true
 }: { type?: string; header?: string; owner?: boolean } = {}) {
-  mockMmUserFetch.mockImplementation((path: string) => {
+  mockMmUserFetch.mockImplementation((path: string, _token: string, init?: RequestInit) => {
     if (path === "/channels/group-1") return Promise.resolve({ id: "group-1", type, header });
     if (path === "/users/me") return Promise.resolve({ id: "me" });
-    if (path === OWNER_PREF) {
-      return owner ? Promise.resolve({}) : Promise.reject(new FakeMattermostError(404));
+    if (path === OWN_PREFS && !init?.method) {
+      // The full list: an owner of another group, and of this one when owner.
+      return Promise.resolve([
+        { category: "ecency_group_owner", name: "group-9", value: "true" },
+        { category: "group_channel_show", name: "group-1", value: "true" },
+        ...(owner ? [{ category: "ecency_group_owner", name: "group-1", value: "true" }] : [])
+      ]);
     }
     if (path === "/users?in_channel=group-1&per_page=20") {
       return Promise.resolve([{ id: "me" }, { id: "bob" }, { id: "carol" }]);
     }
     if (path === "/channels/group-1/patch") return Promise.resolve({});
-    if (path === "/users/me/preferences") return Promise.resolve([]);
+    if (path === OWN_PREFS && init?.method === "PUT") return Promise.resolve([]);
     return Promise.reject(new Error(`unexpected ${path}`));
   });
 }
 
 const calls = (path: string) => mockMmUserFetch.mock.calls.filter(([p]) => p === path);
+const writes = (path: string) =>
+  mockMmUserFetch.mock.calls.filter(([p, , init]) => p === path && init?.method);
 
 describe("PUT /api/mattermost/channels/[channelId]/name", () => {
   beforeEach(() => {
@@ -66,7 +75,7 @@ describe("PUT /api/mattermost/channels/[channelId]/name", () => {
     expect(await res.json()).toEqual({ name: "Book club" });
     expect(JSON.parse(calls("/channels/group-1/patch")[0][2].body)).toEqual({ header: "Book club" });
     expect(mockAnyUserHasPreference).not.toHaveBeenCalled();
-    expect(calls("/users/me/preferences")).toHaveLength(0);
+    expect(writes(OWN_PREFS)).toHaveLength(0);
   });
 
   it("refuses a member when someone else started the group", async () => {
@@ -93,7 +102,7 @@ describe("PUT /api/mattermost/channels/[channelId]/name", () => {
 
     expect(res.status).toBe(200);
     expect(calls("/channels/group-1/patch")).toHaveLength(1);
-    expect(JSON.parse(calls("/users/me/preferences")[0][2].body)).toEqual([
+    expect(JSON.parse(writes(OWN_PREFS)[0][2].body)).toEqual([
       { user_id: "me", category: "ecency_group_owner", name: "group-1", value: "true" }
     ]);
   });
@@ -109,7 +118,7 @@ describe("PUT /api/mattermost/channels/[channelId]/name", () => {
   });
 
   it("does not post a change when the name is the same", async () => {
-    setup({ header: "Book club" });
+    setup({ header: " Book   club " });
     const { PUT } = await import("@/app/api/mattermost/channels/[channelId]/name/route");
 
     const res = await PUT(request({ name: "Book club" }), params);

@@ -407,7 +407,8 @@ export function MattermostChannelView({ channelId }: Props) {
     usersByUsername,
     activeUsername: activeUser?.username,
     startDirectMessage,
-    normalizeUsername
+    normalizeUsername,
+    channelType: channelData?.channel?.type
   });
 
   const {

@@ -131,7 +131,8 @@ export function ChatsClient() {
         channel.name.toLowerCase().includes(query) ||
         directUsername.toLowerCase().includes(query) ||
         directDisplayName.toLowerCase().includes(query) ||
-        groupNames.toLowerCase().includes(query)
+        groupNames.toLowerCase().includes(query) ||
+        (channel.group_name || "").toLowerCase().includes(query)
       );
     });
   }, [channels?.channels, getDirectUserDisplayName, searchTerm]);
@@ -416,7 +417,7 @@ export function ChatsClient() {
                     disabled={markChannelViewedMutation.isPending}
                   />
                 )}
-                {!isConversation && (
+                {(!isConversation || channel.is_favorite) && (
                   <DropdownItemWithIcon
                     label={favoriteLabel}
                     onClick={(e: MouseEvent) =>

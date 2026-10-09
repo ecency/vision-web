@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { normalizeGroupName, wasCreatedNow } from "@/server/chat-group-name";
 
 describe("normalizeGroupName", () => {
@@ -24,5 +24,22 @@ describe("wasCreatedNow", () => {
     expect(wasCreatedNow(started - 4_000, started)).toBe(true);
     expect(wasCreatedNow(started - 60_000, started)).toBe(false);
     expect(wasCreatedNow(undefined, started)).toBe(false);
+  });
+});
+
+describe("hasPreference", () => {
+  it("matches the category, the name and a true value only", async () => {
+    const { hasPreference } = await vi.importActual<typeof import("@/server/mattermost")>(
+      "@/server/mattermost"
+    );
+    const prefs = [
+      { category: "ecency_group_owner", name: "g1", value: "true" },
+      { category: "ecency_group_owner", name: "g2", value: "false" },
+      { category: "group_channel_show", name: "g3", value: "true" }
+    ];
+    expect(hasPreference(prefs, "ecency_group_owner", "g1")).toBe(true);
+    expect(hasPreference(prefs, "ecency_group_owner", "g2")).toBe(false);
+    expect(hasPreference(prefs, "ecency_group_owner", "g3")).toBe(false);
+    expect(hasPreference(undefined, "ecency_group_owner", "g1")).toBe(false);
   });
 });

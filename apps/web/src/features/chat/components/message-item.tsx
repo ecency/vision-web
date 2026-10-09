@@ -235,7 +235,10 @@ function MessageItemInner({
         {isChannelNoticePost(post) ? (
           <div className="w-full flex justify-center">
             <div className="rounded bg-[--surface-color] px-4 py-2 text-sm text-[--text-muted] text-center">
-              {renderMessageContent(getDecodedDisplayMessage(post))}
+              {post.type === "system_header_change"
+                ? // A group name is plain text: never markdown, links or mentions.
+                  getDecodedDisplayMessage(post)
+                : renderMessageContent(getDecodedDisplayMessage(post))}
             </div>
           </div>
         ) : (

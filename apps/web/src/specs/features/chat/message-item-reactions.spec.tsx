@@ -49,10 +49,14 @@ const post: MattermostPost = {
   }
 };
 
-function renderItem(toggleReaction = vi.fn()) {
+function renderItem(
+  toggleReaction = vi.fn(),
+  item: MattermostPost = post,
+  renderMessageContent = (content: string) => <span>{content}</span>
+) {
   render(
     <MessageItem
-      post={post}
+      post={item}
       index={0}
       isGroupStart={true}
       showUnreadDivider={false}
@@ -66,7 +70,7 @@ function renderItem(toggleReaction = vi.fn()) {
       getDisplayName={() => "author"}
       getUsername={() => "author"}
       getDecodedDisplayMessage={(p) => p.message}
-      renderMessageContent={(content) => <span>{content}</span>}
+      renderMessageContent={renderMessageContent}
       normalizeUsername={(name) => name ?? undefined}
       startDirectMessage={vi.fn()}
       openThread={vi.fn()}
@@ -121,5 +125,21 @@ describe("MessageItem reactions", () => {
     expect(screen.getByText("someone")).toBeTruthy();
     const profileLinks = Array.from(document.querySelectorAll("a")).map((a) => a.getAttribute("href"));
     expect(profileLinks).toEqual(expect.arrayContaining(["/@alice", "/@bob"]));
+  });
+
+  it("shows a group rename as plain text, never through the markdown renderer", () => {
+    const rendered = vi.fn((content: string) => <span data-testid="markdown">{content}</span>);
+    const rename = {
+      ...post,
+      type: "system_header_change",
+      message: "renamed the group to \"![x](https://example.com/a.png) [click](https://example.com)\"",
+      metadata: {}
+    } as MattermostPost;
+
+    renderItem(vi.fn(), rename, rendered);
+
+    expect(rendered).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("markdown")).toBeNull();
+    expect(screen.getByText(/renamed the group to/).textContent).toContain("[click](https://example.com)");
   });
 });

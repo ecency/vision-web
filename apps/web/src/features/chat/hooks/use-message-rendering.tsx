@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useMemo } from "react";
 import type { MattermostPost, MattermostUser } from "../mattermost-api";
 import {
+  getGroupRenameText,
   getPostDisplayName,
   getPostUsername,
   getAddedUserDisplayName,
@@ -128,6 +129,8 @@ interface UseMessageRenderingParams {
   activeUsername: string | undefined;
   startDirectMessage: (username: string) => void;
   normalizeUsername: (username?: string | null) => string | undefined;
+  /** The open channel's type: a header change reads as a rename only in a group. */
+  channelType?: string;
 }
 
 export function useMessageRendering({
@@ -135,7 +138,8 @@ export function useMessageRendering({
   usersByUsername,
   activeUsername,
   startDirectMessage,
-  normalizeUsername
+  normalizeUsername,
+  channelType
 }: UseMessageRenderingParams) {
 
   const getProxiedImageUrl = useCallback(
@@ -160,13 +164,13 @@ export function useMessageRendering({
       const baseMessage =
         post.type === "system_add_to_channel"
           ? `${getAddedUserDisplayName(post, usersById)} joined the channel`
-          : post.type === "system_header_change"
-            ? `${getPostDisplayName(post, usersById, normalizeUsername)} ${getDisplayMessage(post)}`
+          : post.type === "system_header_change" && channelType === "G"
+            ? `${getPostDisplayName(post, usersById, normalizeUsername)} ${getGroupRenameText(post)}`
             : getDisplayMessage(post);
 
       return decodeMessageEmojis(baseMessage);
     },
-    [usersById, normalizeUsername]
+    [usersById, normalizeUsername, channelType]
   );
 
   const markdownParser = useCallback(

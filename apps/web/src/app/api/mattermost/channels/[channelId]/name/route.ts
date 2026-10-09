@@ -3,7 +3,7 @@ import {
   anyUserHasPreference,
   getMattermostTokenFromCookies,
   handleMattermostError,
-  isMattermostNotFoundError,
+  hasPreference,
   mmUserFetch
 } from "@/server/mattermost";
 import {
@@ -45,16 +45,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ channelI
       return NextResponse.json({ error: "Only group conversations can be renamed here." }, { status: 400 });
     }
 
-    const isOwner = await mmUserFetch(
-      `/users/me/preferences/${GROUP_OWNER_PREF_CATEGORY}/name/${channelPath}`,
+    const ownPreferences = await mmUserFetch<Array<{ category: string; name: string; value: string }>>(
+      `/users/me/preferences`,
       token
-    ).then(
-      () => true,
-      (error) => {
-        if (isMattermostNotFoundError(error)) return false;
-        throw error;
-      }
     );
+    const isOwner = hasPreference(ownPreferences, GROUP_OWNER_PREF_CATEGORY, channelId);
 
     let claim = false;
     if (!isOwner) {
@@ -72,7 +67,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ channelI
       claim = true;
     }
 
-    if ((channel.header ?? "").trim() !== name) {
+    if (normalizeGroupName(channel.header ?? "") !== name) {
       await mmUserFetch(`/channels/${channelPath}/patch`, token, {
         method: "PUT",
         body: JSON.stringify({ header: name })

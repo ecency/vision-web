@@ -449,9 +449,10 @@ interface MattermostChannelBasic {
 }
 
 /**
- * Whether any of these users holds the preference category/name. Read with the
- * admin token, since a user may only read their own preferences. A missing
- * preference is a 404, which reads as "no".
+ * Whether any of these users holds the preference category/name with value
+ * "true". Read with the admin token, since a user may only read their own
+ * preferences. The full list is read because Mattermost answers a missing
+ * single preference with a 400 that cannot be told apart from a bad request.
  */
 export async function anyUserHasPreference(
   userIds: string[],
@@ -460,19 +461,24 @@ export async function anyUserHasPreference(
 ): Promise<boolean> {
   const results = await Promise.all(
     userIds.map(async (userId) => {
-      try {
-        await mmFetch(
-          `/users/${encodeURIComponent(userId)}/preferences/${encodeURIComponent(category)}/name/${encodeURIComponent(name)}`,
-          { headers: getAdminHeaders() }
-        );
-        return true;
-      } catch (error) {
-        if (error instanceof MattermostError && error.status === 404) return false;
-        throw error;
-      }
+      const preferences = await mmFetch<Array<{ category: string; name: string; value: string }>>(
+        `/users/${encodeURIComponent(userId)}/preferences`,
+        { headers: getAdminHeaders() }
+      );
+      return hasPreference(preferences, category, name);
     })
   );
   return results.some(Boolean);
+}
+
+export function hasPreference(
+  preferences: Array<{ category: string; name: string; value: string }> | undefined,
+  category: string,
+  name: string
+) {
+  return (preferences ?? []).some(
+    (pref) => pref.category === category && pref.name === name && pref.value === "true"
+  );
 }
 
 export async function getUserChannels(userId: string): Promise<MattermostChannelBasic[]> {
@@ -831,10 +837,6 @@ export async function mmUserFetchNdjson<T>(path: string, token: string, init?: R
 
 export function isMattermostUnauthorizedError(error: unknown) {
   return error instanceof MattermostError && (error.status === 401 || error.status === 403);
-}
-
-export function isMattermostNotFoundError(error: unknown) {
-  return error instanceof MattermostError && error.status === 404;
 }
 
 // Env-pinned super-admin username (default "ecency"), shared by every admin
