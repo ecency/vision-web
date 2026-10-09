@@ -3,16 +3,14 @@ import {
   getGroupOwnerId,
   getMattermostTokenFromCookies,
   handleMattermostError,
-  isGroupOwnerMissing,
-  mmUserFetch,
-  setGroupOwnerId
+  mmUserFetch
 } from "@/server/mattermost";
 import { GROUP_NAME_MAX_LENGTH, normalizeGroupName } from "@/server/chat-group-name";
 
 /**
  * Names a group conversation, or clears its name with "". Only the group's
- * owner may do it. A group with no owner yet, such as one started before
- * owners were recorded, is claimed by the first member who names it.
+ * owner may do it. Ownership is never claimed here: Mattermost has no atomic
+ * write to claim it with, so it is recorded only when the group is created.
  */
 export async function PUT(req: Request, { params }: { params: Promise<{ channelId: string }> }) {
   const token = await getMattermostTokenFromCookies();
@@ -45,29 +43,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ channelI
       );
     }
 
-    const forbidden = () =>
-      NextResponse.json(
+    const ownerId = await getGroupOwnerId(channel.id, { fresh: true });
+    if (!ownerId || ownerId !== currentUser.id) {
+      return NextResponse.json(
         { error: "Only the person who started this group can rename it.", code: "not_owner" },
         { status: 403 }
       );
-
-    const ownerId = await getGroupOwnerId(channel.id, { fresh: true });
-    if (ownerId && ownerId !== currentUser.id) {
-      return forbidden();
-    }
-
-    if (!ownerId) {
-      // A failed read can look like "no owner"; make sure before claiming.
-      if (!(await isGroupOwnerMissing(channel.id))) {
-        return forbidden();
-      }
-      // Claim, then read back, so a claim another member made just before
-      // wins over this one.
-      await setGroupOwnerId(channel.id, currentUser.id);
-      const confirmed = await getGroupOwnerId(channel.id, { fresh: true });
-      if (confirmed !== currentUser.id) {
-        return forbidden();
-      }
     }
 
     if (normalizeGroupName(channel.header ?? "") !== name) {

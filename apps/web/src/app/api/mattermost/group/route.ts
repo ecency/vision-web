@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
     // Whether this exact group exists already decides who owns it: only the
     // person whose request creates it. Mattermost answers create with the
     // existing group either way, so look first. When the lookup fails, nobody
-    // is made owner and the group stays open to be claimed.
+    // is made owner and the group has no name control.
     const memberIds = [currentUser.id, ...recipients];
     const existedBefore = await mmUserFetch(
       `/teams/${encodeURIComponent(getMattermostTeamId())}/channels/name/${getGroupChannelName(memberIds)}?include_deleted=true`,
@@ -157,12 +157,18 @@ export async function POST(req: NextRequest) {
     });
 
     if (existedBefore === false) {
-      try {
-        if (!(await getGroupOwnerId(channel.id, { fresh: true }))) {
-          await setGroupOwnerId(channel.id, currentUser.id);
+      // The only moment ownership is written, so try twice before giving up.
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          if (!(await getGroupOwnerId(channel.id, { fresh: true }))) {
+            await setGroupOwnerId(channel.id, currentUser.id);
+          }
+          break;
+        } catch (error) {
+          if (attempt === 2) {
+            console.error("MM group: unable to record the group owner", { error });
+          }
         }
-      } catch (error) {
-        console.error("MM group: unable to record the group owner", { error });
       }
     }
 

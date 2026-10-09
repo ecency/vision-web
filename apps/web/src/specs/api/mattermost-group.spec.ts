@@ -180,6 +180,9 @@ describe("POST /api/mattermost/group", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ channelId: "group-1" });
+    // Tried twice, since creation is the only moment ownership is written.
+    expect(mockSetOwner).toHaveBeenCalledTimes(2);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
     errorSpy.mockRestore();
   });
 

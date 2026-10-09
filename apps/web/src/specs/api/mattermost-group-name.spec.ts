@@ -12,8 +12,6 @@ const BOB = "b".repeat(26);
 
 const mockMmUserFetch = vi.fn();
 const mockGetOwner = vi.fn();
-const mockSetOwner = vi.fn();
-const mockOwnerMissing = vi.fn();
 
 vi.mock("@/server/mattermost", () => ({
   getMattermostTokenFromCookies: () => Promise.resolve("test-token"),
@@ -21,8 +19,6 @@ vi.mock("@/server/mattermost", () => ({
     status: error instanceof FakeMattermostError ? error.status : 500
   }),
   getGroupOwnerId: (...args: unknown[]) => mockGetOwner(...args),
-  setGroupOwnerId: (...args: unknown[]) => mockSetOwner(...args),
-  isGroupOwnerMissing: (...args: unknown[]) => mockOwnerMissing(...args),
   mmUserFetch: (...args: unknown[]) => mockMmUserFetch(...args)
 }));
 
@@ -52,8 +48,6 @@ describe("PUT /api/mattermost/channels/[channelId]/name", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetOwner.mockResolvedValue(ME);
-    mockSetOwner.mockResolvedValue(undefined);
-    mockOwnerMissing.mockResolvedValue(true);
   });
 
   it("lets the owner name the group, kept in its header", async () => {
@@ -65,7 +59,6 @@ describe("PUT /api/mattermost/channels/[channelId]/name", () => {
     expect(await res.json()).toEqual({ name: "Book club" });
     expect(JSON.parse(patches()[0][2].body)).toEqual({ header: "Book club" });
     expect(mockGetOwner).toHaveBeenCalledWith(GROUP, { fresh: true });
-    expect(mockSetOwner).not.toHaveBeenCalled();
   });
 
   it("refuses a member when someone else owns the group", async () => {
@@ -75,40 +68,17 @@ describe("PUT /api/mattermost/channels/[channelId]/name", () => {
     const res = await put("Mine now");
 
     expect(res.status).toBe(403);
-    expect(mockSetOwner).not.toHaveBeenCalled();
     expect(patches()).toHaveLength(0);
   });
 
-  it("lets the first member name a group with no owner, recording them", async () => {
+  it("refuses everyone while a group has no owner, so nobody can race to claim it", async () => {
     setup();
-    mockGetOwner.mockResolvedValueOnce(null).mockResolvedValueOnce(ME);
+    mockGetOwner.mockResolvedValue(null);
 
     const res = await put("Old group");
 
-    expect(res.status).toBe(200);
-    expect(mockSetOwner).toHaveBeenCalledWith(GROUP, ME);
-    expect(patches()).toHaveLength(1);
-  });
-
-  it("does not claim when the full owner list shows an owner after all", async () => {
-    setup();
-    mockGetOwner.mockResolvedValue(null);
-    mockOwnerMissing.mockResolvedValue(false);
-
-    const res = await put("Not yours");
-
     expect(res.status).toBe(403);
-    expect(mockSetOwner).not.toHaveBeenCalled();
-    expect(patches()).toHaveLength(0);
-  });
-
-  it("refuses the loser when two members claim at once", async () => {
-    setup();
-    mockGetOwner.mockResolvedValueOnce(null).mockResolvedValueOnce(BOB);
-
-    const res = await put("Race");
-
-    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: "not_owner" });
     expect(patches()).toHaveLength(0);
   });
 
@@ -137,7 +107,6 @@ describe("PUT /api/mattermost/channels/[channelId]/name", () => {
 
     expect(res.status).toBe(400);
     expect(mockGetOwner).not.toHaveBeenCalled();
-    expect(mockSetOwner).not.toHaveBeenCalled();
     expect(patches()).toHaveLength(0);
   });
 
@@ -159,7 +128,6 @@ describe("PUT /api/mattermost/channels/[channelId]/name", () => {
     const res = await put("Sneaky");
 
     expect(res.status).toBe(403);
-    expect(mockSetOwner).not.toHaveBeenCalled();
     expect(patches()).toHaveLength(0);
   });
 });

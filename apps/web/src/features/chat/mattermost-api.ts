@@ -53,8 +53,6 @@ interface MattermostChannel {
   group_name?: string;
   /** Group channels only: whether the viewer started it and may rename it. */
   group_owner?: boolean;
-  /** Group channels only: no owner yet; the first member to name it owns it. */
-  group_claimable?: boolean;
   mention_count?: number;
   message_count?: number;
   last_post_at?: number;

@@ -399,8 +399,8 @@ export async function GET() {
       )
     );
 
-    // Owners are cached per group; a group whose owner cannot be read is
-    // neither offered for renaming nor claimable (undefined).
+    // Owners are cached per group; a group whose owner cannot be read is not
+    // offered for renaming.
     const groupOwnerById = new Map(
       await Promise.all(
         orderedChannels
@@ -427,9 +427,7 @@ export async function GET() {
           ...channel,
           ...(groupUsers ? { groupUsers } : {}),
           group_name: groupName || undefined,
-          group_owner: Boolean(ownerId) && ownerId === currentUser.id,
-          // No owner recorded: the first member to name it becomes its owner.
-          group_claimable: ownerId === null
+          group_owner: Boolean(ownerId) && ownerId === currentUser.id
         };
       })
     });

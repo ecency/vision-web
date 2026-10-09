@@ -59,9 +59,7 @@ export function useChannelMetadata({
   const isGroup = channelData?.channel?.type === "G" || directChannelFromList?.type === "G";
   const groupUsers = isGroup ? directChannelFromList?.groupUsers : undefined;
   const groupName: string | undefined = isGroup ? directChannelFromList?.group_name : undefined;
-  const canRenameGroup = Boolean(
-    isGroup && (directChannelFromList?.group_owner || directChannelFromList?.group_claimable)
-  );
+  const canRenameGroup = Boolean(isGroup && directChannelFromList?.group_owner);
 
   const channelTitle = useMemo(() => {
     if (directChannelUser) {

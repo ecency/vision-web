@@ -103,30 +103,22 @@ describe("group owner record", () => {
       { user_id: ADMIN, category: "ecency_group_owner", name: GROUP, value: ALICE }
     ]);
     expect((write![1]!.headers as Record<string, string>).Authorization).toBe("Bearer admin-token");
-    // Remembered without another read.
-    expect(await getGroupOwnerId(GROUP)).toBe(ALICE);
   });
 
-  it("confirms a group has no owner from the whole category before a claim", async () => {
-    const categoryPath = `/users/${ADMIN}/preferences/ecency_group_owner`;
-    const other = "o".repeat(26);
-    let answer: { status: number; body?: unknown } = { status: 404, body: { message: "empty" } };
-    mockMattermost({
+  it("reads the record again after writing, so a later write by someone else stands", async () => {
+    let stored = ALICE;
+    const fetchMock = mockMattermost({
       "GET /users/me": () => ({ status: 200, body: { id: ADMIN } }),
-      [`GET ${categoryPath}`]: () => answer
+      [`GET ${ownerPath}`]: () => ({ status: 200, body: { value: stored } }),
+      [`PUT /users/${ADMIN}/preferences`]: () => ({ status: 200, body: { status: "OK" } })
     });
-    const { isGroupOwnerMissing } = await load();
+    const { setGroupOwnerId, getGroupOwnerId } = await load();
 
-    expect(await isGroupOwnerMissing(GROUP)).toBe(true);
+    await setGroupOwnerId(GROUP, ALICE);
+    // Another member's create request wrote last.
+    stored = "b".repeat(26);
 
-    answer = { status: 200, body: [{ name: other, value: ALICE }] };
-    expect(await isGroupOwnerMissing(GROUP)).toBe(true);
-
-    answer = { status: 200, body: [{ name: GROUP, value: ALICE }] };
-    expect(await isGroupOwnerMissing(GROUP)).toBe(false);
-
-    // A failed read never counts as "no owner".
-    answer = { status: 400, body: { message: "read failed" } };
-    await expect(isGroupOwnerMissing(GROUP)).rejects.toThrow();
+    expect(await getGroupOwnerId(GROUP)).toBe("b".repeat(26));
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(ownerPath))).toBe(true);
   });
 });

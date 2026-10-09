@@ -21,10 +21,9 @@ function metadataFor(channel: Record<string, unknown>) {
 }
 
 describe("who is offered Rename", () => {
-  it("offers it to the owner and to anyone while the group has no owner", () => {
+  it("offers it to the owner only", () => {
     expect(metadataFor({ group_owner: true }).canRenameGroup).toBe(true);
-    expect(metadataFor({ group_claimable: true }).canRenameGroup).toBe(true);
-    expect(metadataFor({ group_owner: false, group_claimable: false }).canRenameGroup).toBe(false);
+    expect(metadataFor({ group_owner: false }).canRenameGroup).toBe(false);
     expect(metadataFor({}).canRenameGroup).toBe(false);
   });
 

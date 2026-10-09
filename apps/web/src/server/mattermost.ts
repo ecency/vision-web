@@ -452,8 +452,8 @@ interface MattermostChannelBasic {
 // the owner is kept as one preference row on the admin account: category
 // GROUP_OWNER_CATEGORY, name = the group's channel id, value = the owner's user
 // id. Users cannot write the admin's preferences, every region reads the same
-// row, and a group has at most one owner. An owner never changes once set, so
-// a found owner is cached for long; a missing one only briefly.
+// row, and a group has at most one owner. The row is written only when the
+// group is created, so a found owner is cached for long; a missing one briefly.
 const GROUP_OWNER_CATEGORY = "ecency_group_owner";
 const GROUP_OWNER_FOUND_TTL_MS = 60 * 60_000;
 const GROUP_OWNER_MISSING_TTL_MS = 60_000;
@@ -512,27 +512,11 @@ export async function getGroupOwnerId(
 }
 
 /**
- * Confirms a group has no owner before anyone claims it. A single missing
- * preference reads as a 400, which Mattermost also returns when a read fails,
- * so a claim checks the whole category instead: a 404 there means empty, a
- * list is searched, and any other answer refuses the claim.
+ * Records the group's owner. Only the request that creates the group calls
+ * it. Two members creating the same group at the same instant both write and
+ * the last write stands, so the cache is cleared rather than set and the next
+ * read finds whichever record stood.
  */
-export async function isGroupOwnerMissing(channelId: string): Promise<boolean> {
-  if (!MATTERMOST_ID_RE.test(channelId)) return false;
-  const adminId = await getAdminUserId();
-  try {
-    const prefs = await mmFetch<Array<{ name: string; value?: string }>>(
-      `/users/${encodeURIComponent(adminId)}/preferences/${GROUP_OWNER_CATEGORY}`,
-      { headers: getAdminHeaders() }
-    );
-    return !(prefs ?? []).some((pref) => pref.name === channelId && pref.value);
-  } catch (error) {
-    if (error instanceof MattermostError && error.status === 404) return true;
-    throw error;
-  }
-}
-
-/** Records the group's owner. Callers check that it has none first. */
 export async function setGroupOwnerId(channelId: string, userId: string): Promise<void> {
   if (!MATTERMOST_ID_RE.test(channelId) || !MATTERMOST_ID_RE.test(userId)) {
     throw new Error("Invalid group owner record");
@@ -545,13 +529,7 @@ export async function setGroupOwnerId(channelId: string, userId: string): Promis
       { user_id: adminId, category: GROUP_OWNER_CATEGORY, name: channelId, value: userId }
     ])
   });
-  rememberGroupOwner(channelId, userId);
-}
-
-/** Test hook: forget cached owners and the admin id. */
-export function resetGroupOwnerCacheForTests() {
-  groupOwnerCache.clear();
-  adminUserIdPromise = null;
+  groupOwnerCache.delete(channelId);
 }
 
 export async function getUserChannels(userId: string): Promise<MattermostChannelBasic[]> {
