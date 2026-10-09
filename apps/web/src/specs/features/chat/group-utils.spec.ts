@@ -14,7 +14,7 @@ vi.mock("i18next", () => {
 });
 
 import {
-  findMissingReactorIds,
+  findMissingUserIds,
   formatReactorNames,
   getGroupTitle,
   getReactorName,
@@ -99,7 +99,7 @@ describe("reactor names", () => {
   });
 });
 
-describe("findMissingReactorIds", () => {
+describe("findMissingUserIds", () => {
   it("lists reactors without a record, once and sorted", () => {
     const posts = [
       { metadata: { reactions: [{ user_id: "z9", post_id: "a", emoji_name: "x" }] } },
@@ -114,6 +114,15 @@ describe("findMissingReactorIds", () => {
       },
       {}
     ];
-    expect(findMissingReactorIds(posts, { known: user("known") })).toEqual(["a1", "z9"]);
+    expect(findMissingUserIds(posts, { known: user("known") })).toEqual(["a1", "z9"]);
+  });
+
+  it("lists message authors without a record, such as a new group's first sender", () => {
+    const posts = [
+      { user_id: "sender", metadata: { reactions: [{ user_id: "known", post_id: "a", emoji_name: "x" }] } },
+      { user_id: "known" },
+      { user_id: "sender" }
+    ];
+    expect(findMissingUserIds(posts, { known: user("known") })).toEqual(["sender"]);
   });
 });

@@ -437,6 +437,10 @@ export class MattermostWebSocket {
       case "user_removed":
         this.handleUserChange(message);
         break;
+      case "channel_updated":
+        // A group was renamed: refresh the names in the list and header.
+        this.queryClient?.invalidateQueries({ queryKey: ["mattermost-channels"] });
+        break;
       default:
         // Log unknown events for debugging
         // console.log("Unknown WebSocket event:", message.event);

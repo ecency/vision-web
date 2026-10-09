@@ -6,6 +6,14 @@ import { getUserDisplayName } from "./format-utils";
 export const GROUP_MIN_OTHERS = 2;
 export const GROUP_MAX_OTHERS = 7;
 
+/** Characters (code points) a group name may have. Checked on the server too. */
+export const GROUP_NAME_MAX_LENGTH = 64;
+
+/** The length of a group name as the server counts it, so emoji count as one. */
+export function groupNameLength(name: string): number {
+  return Array.from(name.trim()).length;
+}
+
 export function isGroupChannel(channel?: { type?: string } | null) {
   return channel?.type === "G";
 }
@@ -105,16 +113,22 @@ export function formatReactorNames(
   });
 }
 
-/** Reactor ids that are not in the users map yet, for a batched lookup. */
-export function findMissingReactorIds(
-  posts: Array<{ metadata?: { reactions?: MattermostReaction[] } }>,
+/**
+ * Authors and reactors that are not in the users map yet, for a batched lookup.
+ * A message or a reaction that arrives live can come from someone the loaded
+ * pages never mentioned, such as the first message in a new group.
+ */
+export function findMissingUserIds(
+  posts: Array<{ user_id?: string; metadata?: { reactions?: MattermostReaction[] } }>,
   usersById: Record<string, MattermostUser>
 ) {
   const missing = new Set<string>();
+  const check = (userId?: string) => {
+    if (userId && !usersById[userId]) missing.add(userId);
+  };
   posts.forEach((post) => {
-    post.metadata?.reactions?.forEach((reaction) => {
-      if (reaction.user_id && !usersById[reaction.user_id]) missing.add(reaction.user_id);
-    });
+    check(post.user_id);
+    post.metadata?.reactions?.forEach((reaction) => check(reaction.user_id));
   });
   return Array.from(missing).sort();
 }

@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  getGroupOwnerId,
+  getMattermostTeamId,
   lookupMattermostUser,
   getMattermostTokenFromCookies,
   handleMattermostError,
-  mmUserFetch
+  isMattermostNotFoundError,
+  mmUserFetch,
+  setGroupOwnerId
 } from "@/server/mattermost";
 import { getDmPrivacyRejection } from "@/server/chat-dm-privacy";
 import { checkDmFanout, dmFanoutLimitFor } from "@/server/chat-dm-fanout";
+import { getGroupChannelName } from "@/server/chat-group-name";
 
 // Mattermost group channels hold 3 to 8 members, the creator included.
 const GROUP_MIN_OTHERS = 2;
@@ -133,10 +138,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Whether this exact group exists already decides who owns it: only the
+    // person whose request creates it. Mattermost answers create with the
+    // existing group either way, so look first. When the lookup fails, nobody
+    // is made owner and the group has no name control.
+    const memberIds = [currentUser.id, ...recipients];
+    const existedBefore = await mmUserFetch(
+      `/teams/${encodeURIComponent(getMattermostTeamId())}/channels/name/${getGroupChannelName(memberIds)}?include_deleted=true`,
+      token
+    ).then(
+      () => true,
+      (error) => (isMattermostNotFoundError(error) ? false : null)
+    );
+
     const channel = await mmUserFetch<{ id: string }>(`/channels/group`, token, {
       method: "POST",
-      body: JSON.stringify([currentUser.id, ...recipients])
+      body: JSON.stringify(memberIds)
     });
+
+    if (existedBefore === false) {
+      // The only moment ownership is written, so try twice before giving up.
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          if (!(await getGroupOwnerId(channel.id, { fresh: true }))) {
+            await setGroupOwnerId(channel.id, currentUser.id);
+          }
+          break;
+        } catch (error) {
+          if (attempt === 2) {
+            console.error("MM group: unable to record the group owner", { error });
+          }
+        }
+      }
+    }
 
     // Mattermost returns the existing group for the same members, which the
     // creator may have closed. Starting it again shows it again.

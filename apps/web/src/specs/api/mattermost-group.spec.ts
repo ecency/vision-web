@@ -1,11 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockMmUserFetch = vi.fn();
+const mockGetOwner = vi.fn();
+const mockSetOwner = vi.fn();
+
+class FakeMattermostError extends Error {
+  constructor(public status: number) {
+    super(`status ${status}`);
+  }
+}
 const mockFindUser = vi.fn();
 const mockPrivacy = vi.fn();
 const mockCheckDmFanout = vi.fn();
 
 vi.mock("@/server/mattermost", () => ({
+  getGroupOwnerId: (...args: unknown[]) => mockGetOwner(...args),
+  setGroupOwnerId: (...args: unknown[]) => mockSetOwner(...args),
+  getMattermostTeamId: () => "team-1",
+  isMattermostNotFoundError: (error: unknown) =>
+    error instanceof FakeMattermostError && error.status === 404,
   lookupMattermostUser: (...args: unknown[]) => mockFindUser(...args),
   getMattermostTokenFromCookies: () => Promise.resolve("test-token"),
   handleMattermostError: () => ({ status: 500 }),
@@ -85,6 +98,92 @@ describe("POST /api/mattermost/group", () => {
     expect(JSON.parse(pref![2].body)).toEqual([
       { user_id: "me", category: "group_channel_show", name: "group-1", value: "true" }
     ]);
+  });
+
+  it("makes the creator the owner when the group did not exist before", async () => {
+    mockMmUserFetch.mockImplementation((path: string) => {
+      if (path === "/users/me") {
+        return Promise.resolve({ id: "me", username: "alice", create_at: ESTABLISHED });
+      }
+      if (path.startsWith("/teams/team-1/channels/name/")) {
+        return Promise.reject(new FakeMattermostError(404));
+      }
+      if (path === "/channels/group") return Promise.resolve({ id: "group-1" });
+      if (path === "/users/me/preferences") return Promise.resolve([]);
+      return Promise.reject(new Error(`unexpected ${path}`));
+    });
+    mockGetOwner.mockResolvedValue(null);
+    const { POST } = await import("@/app/api/mattermost/group/route");
+
+    const res = await POST(request({ usernames: ["bob", "carol"] }));
+
+    expect(res.status).toBe(200);
+    const lookup = mockMmUserFetch.mock.calls.find(([path]) => path.startsWith("/teams/"));
+    expect(lookup![0]).toMatch(/^\/teams\/team-1\/channels\/name\/[0-9a-f]{40}\?include_deleted=true$/);
+    expect(mockSetOwner).toHaveBeenCalledWith("group-1", "me");
+  });
+
+  it("does not make someone the owner of a group that already existed", async () => {
+    mockMmUserFetch.mockImplementation((path: string) => {
+      if (path === "/users/me") {
+        return Promise.resolve({ id: "me", username: "alice", create_at: ESTABLISHED });
+      }
+      if (path.startsWith("/teams/team-1/channels/name/")) return Promise.resolve({ id: "group-1" });
+      if (path === "/channels/group") return Promise.resolve({ id: "group-1" });
+      if (path === "/users/me/preferences") return Promise.resolve([]);
+      return Promise.reject(new Error(`unexpected ${path}`));
+    });
+    mockGetOwner.mockResolvedValue(null);
+    const { POST } = await import("@/app/api/mattermost/group/route");
+
+    await POST(request({ usernames: ["bob", "carol"] }));
+
+    expect(mockSetOwner).not.toHaveBeenCalled();
+  });
+
+  it("makes nobody the owner when it cannot tell whether the group existed", async () => {
+    mockMmUserFetch.mockImplementation((path: string) => {
+      if (path === "/users/me") {
+        return Promise.resolve({ id: "me", username: "alice", create_at: ESTABLISHED });
+      }
+      if (path.startsWith("/teams/team-1/channels/name/")) {
+        return Promise.reject(new FakeMattermostError(503));
+      }
+      if (path === "/channels/group") return Promise.resolve({ id: "group-1" });
+      return Promise.reject(new Error(`unexpected ${path}`));
+    });
+    const { POST } = await import("@/app/api/mattermost/group/route");
+
+    const res = await POST(request({ usernames: ["bob", "carol"] }));
+
+    expect(res.status).toBe(200);
+    expect(mockSetOwner).not.toHaveBeenCalled();
+  });
+
+  it("still creates the group when recording the owner fails", async () => {
+    mockMmUserFetch.mockImplementation((path: string) => {
+      if (path === "/users/me") {
+        return Promise.resolve({ id: "me", username: "alice", create_at: ESTABLISHED });
+      }
+      if (path.startsWith("/teams/team-1/channels/name/")) {
+        return Promise.reject(new FakeMattermostError(404));
+      }
+      if (path === "/channels/group") return Promise.resolve({ id: "group-1" });
+      return Promise.reject(new Error(`unexpected ${path}`));
+    });
+    mockGetOwner.mockResolvedValue(null);
+    mockSetOwner.mockRejectedValue(new Error("down"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { POST } = await import("@/app/api/mattermost/group/route");
+
+    const res = await POST(request({ usernames: ["bob", "carol"] }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ channelId: "group-1" });
+    // Tried twice, since creation is the only moment ownership is written.
+    expect(mockSetOwner).toHaveBeenCalledTimes(2);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    errorSpy.mockRestore();
   });
 
   it("still answers with the group when reopening it fails", async () => {

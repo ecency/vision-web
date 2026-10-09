@@ -8,6 +8,7 @@ import { GifPicker } from "@ui/gif-picker";
 import clsx from "clsx";
 import type { MattermostPost, MattermostUser } from "../mattermost-api";
 import type { EmojiSuggestion } from "../emoji-utils";
+import { isChannelNoticePost } from "../format-utils";
 
 type GifPickerStyle = {
   width: string;
@@ -354,7 +355,7 @@ export function MessageInput({
                       const myPosts = posts.filter(
                         (post) =>
                           post.user_id === channelData?.member?.user_id &&
-                          post.type !== "system_add_to_channel" &&
+                          !isChannelNoticePost(post) &&
                           !post.root_id
                       );
                       const lastPost = myPosts[myPosts.length - 1];

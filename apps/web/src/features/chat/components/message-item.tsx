@@ -10,7 +10,7 @@ import {
   DropdownToggle
 } from "@ui/dropdown";
 import { Popover, PopoverContent } from "@ui/popover";
-import { formatRelativeTime, getAvatarUrl } from "../format-utils";
+import { formatRelativeTime, getAvatarUrl, isChannelNoticePost } from "../format-utils";
 import { getNativeEmojiFromShortcode } from "../emoji-utils";
 import { resolveReplyPreview } from "./reply-preview";
 import { MessageTranslate } from "./message-translate";
@@ -232,10 +232,13 @@ function MessageItemInner({
         </div>
       )}
       <div className="flex gap-2.5 group relative rounded px-2 py-0.5 -mx-2 hover:bg-[--surface-color] transition-colors">
-        {post.type === "system_add_to_channel" ? (
+        {isChannelNoticePost(post) ? (
           <div className="w-full flex justify-center">
             <div className="rounded bg-[--surface-color] px-4 py-2 text-sm text-[--text-muted] text-center">
-              {renderMessageContent(getDecodedDisplayMessage(post))}
+              {post.type === "system_header_change"
+                ? // A group name is plain text: never markdown, links or mentions.
+                  getDecodedDisplayMessage(post)
+                : renderMessageContent(getDecodedDisplayMessage(post))}
             </div>
           </div>
         ) : (
@@ -394,7 +397,7 @@ function MessageItemInner({
             </div>
           </>
         )}
-        {post.type !== "system_add_to_channel" && (
+        {!isChannelNoticePost(post) && (
           <div className="absolute -right-2 -top-2 flex gap-1 opacity-100 md:opacity-0 transition-opacity duration-150 md:group-hover:opacity-100 pointer-events-auto md:pointer-events-none md:group-hover:pointer-events-auto">
             {(() => {
               const isReactionPickerOpen = openReactionPostId === post.id;

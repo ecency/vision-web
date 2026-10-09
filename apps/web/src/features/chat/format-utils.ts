@@ -1,3 +1,4 @@
+import i18next from "i18next";
 import { dateToFullRelative, dateToFormatted } from "@/utils/parse-date";
 import type { MattermostPost, MattermostUser } from "./mattermost-api";
 
@@ -136,6 +137,23 @@ export function getAddedUserDisplayName(
 /**
  * Get display message for a post (handles system messages)
  */
+/**
+ * Posts shown as a centered notice rather than as someone's message: a member
+ * joining, and a group being renamed.
+ */
+export function isChannelNoticePost(post: Pick<MattermostPost, "type">): boolean {
+  return post.type === "system_add_to_channel" || post.type === "system_header_change";
+}
+
+/**
+ * Mattermost announces a header change; in a group the header is its name
+ * (see server/chat-group-name). Plain text: show it without markdown.
+ */
+export function getGroupRenameText(post: MattermostPost): string {
+  const name = typeof post.props?.new_header === "string" ? post.props.new_header.trim() : "";
+  return name ? i18next.t("chat.group-renamed", { name }) : i18next.t("chat.group-name-cleared");
+}
+
 export function getDisplayMessage(post: MattermostPost): string {
   if (post.type === "system_add_to_channel") {
     return "joined the channel";

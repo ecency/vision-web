@@ -5,6 +5,8 @@ interface MattermostChannel {
   name: string;
   display_name: string;
   type: string;
+  /** Holds a group's custom name (see chat-group-name). */
+  header?: string;
   is_favorite?: boolean;
   is_muted?: boolean;
   total_msg_count?: number;

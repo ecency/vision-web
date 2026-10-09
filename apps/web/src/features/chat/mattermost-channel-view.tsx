@@ -44,7 +44,7 @@ import {
 import { saveDraft, loadDraft, clearDraft } from "./draft-utils";
 import { ThreadPanel } from "./components/thread-panel";
 import { mergeThreadPosts } from "./components/thread-merge";
-import { findMissingReactorIds } from "./group-utils";
+import { findMissingUserIds } from "./group-utils";
 import { MessageInput } from "./components/message-input";
 import { type PostItem } from "./components/message-list";
 import { VirtualizedMessageList } from "./components/virtualized-message-list";
@@ -57,6 +57,7 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useQueryClient } from "@tanstack/react-query";
 import defaults from "@/defaults";
 import { useRouter, useSearchParams } from "next/navigation";
+import { isChannelNoticePost } from "./format-utils";
 
 const CHANNEL_WIDE_MENTIONS = [
   {
@@ -250,8 +251,8 @@ export function MattermostChannelView({ channelId }: Props) {
           lastItem &&
           lastItem.type === 'message' &&
           lastItem.post.user_id === post.user_id &&
-          lastItem.post.type !== "system_add_to_channel" &&
-          post.type !== "system_add_to_channel" &&
+          !isChannelNoticePost(lastItem.post) &&
+          !isChannelNoticePost(post) &&
           !post.root_id &&
           !lastItem.post.root_id &&
           (post.create_at - lastItem.post.create_at) < MESSAGE_GROUP_TIME_WINDOW
@@ -301,29 +302,30 @@ export function MattermostChannelView({ channelId }: Props) {
     data?.pages?.forEach((page) => fold(page.users));
     // Authors of thread-only posts may not appear in the channel buffer.
     fold(threadData?.users);
-    // Reactors whose reaction arrived live, after the page was loaded.
+    // Authors and reactors that arrived live, after the page was loaded.
     fold(extraUsers);
     return acc;
   }, [data?.pages, threadData?.users, extraUsers, normalizeUsername]);
 
-  // A reaction that arrives over the websocket can come from someone the
-  // loaded pages never mentioned. Look those people up in one batch and keep
-  // them, so their names show in the reaction tooltips and list.
-  const missingReactorIds = useMemo(
-    () => findMissingReactorIds([...posts, ...(threadData?.posts ?? [])], usersById),
+  // A message or reaction that arrives over the websocket can come from
+  // someone the loaded pages never mentioned, such as the first message in a
+  // new group. Look those people up in one batch and keep them, so their names
+  // show on the message and in the reaction tooltips and list.
+  const missingUserIds = useMemo(
+    () => findMissingUserIds([...posts, ...(threadData?.posts ?? [])], usersById),
     [posts, threadData?.posts, usersById]
   );
-  const { data: resolvedReactors } = useMattermostUsersByIds(missingReactorIds);
+  const { data: resolvedUsers } = useMattermostUsersByIds(missingUserIds);
   useEffect(() => {
-    if (!resolvedReactors?.length) return;
+    if (!resolvedUsers?.length) return;
     setExtraUsers((current) => {
       const next = { ...current };
-      resolvedReactors.forEach((user) => {
+      resolvedUsers.forEach((user) => {
         next[user.id] = user;
       });
       return next;
     });
-  }, [resolvedReactors]);
+  }, [resolvedUsers]);
 
   const channelData = useMemo(() => data?.pages?.[0], [data?.pages]);
 
@@ -405,7 +407,8 @@ export function MattermostChannelView({ channelId }: Props) {
     usersByUsername,
     activeUsername: activeUser?.username,
     startDirectMessage,
-    normalizeUsername
+    normalizeUsername,
+    channelType: channelData?.channel?.type
   });
 
   const {
@@ -475,7 +478,9 @@ export function MattermostChannelView({ channelId }: Props) {
     channelSubtitle,
     onlineUsers,
     onlineCount,
-    groupUsers
+    groupUsers,
+    groupName,
+    canRenameGroup
   } = useChannelMetadata({
     channelId,
     channelData,
@@ -1114,6 +1119,7 @@ export function MattermostChannelView({ channelId }: Props) {
           onClose={() => router.push("/chats")}
           groupMembers={groupUsers}
           viewerUsername={activeUser?.username}
+          renameGroup={canRenameGroup ? { channelId, currentName: groupName } : undefined}
         />
 
         {showDmWarning && (

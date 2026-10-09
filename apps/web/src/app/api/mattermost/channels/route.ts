@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  getGroupOwnerId,
   getMattermostTeamId,
   getMattermostTokenFromCookies,
   handleMattermostError,
@@ -398,10 +399,36 @@ export async function GET() {
       )
     );
 
+    // Owners are cached per group; a group whose owner cannot be read is not
+    // offered for renaming.
+    const groupOwnerById = new Map(
+      await Promise.all(
+        orderedChannels
+          .filter((channel) => channel.type === "G")
+          .slice(0, MAX_GROUPS_RESOLVED)
+          .map(async (channel) => {
+            try {
+              return [channel.id, await getGroupOwnerId(channel.id)] as const;
+            } catch {
+              return [channel.id, undefined] as const;
+            }
+          })
+      )
+    );
+
     return NextResponse.json({
       channels: orderedChannels.map((channel) => {
+        if (channel.type !== "G") return channel;
         const groupUsers = groupUsersById.get(channel.id);
-        return groupUsers ? { ...channel, groupUsers } : channel;
+        const ownerId = groupOwnerById.get(channel.id);
+        // A group's custom name lives in its header (see chat-group-name).
+        const groupName = typeof channel.header === "string" ? channel.header.trim() : "";
+        return {
+          ...channel,
+          ...(groupUsers ? { groupUsers } : {}),
+          group_name: groupName || undefined,
+          group_owner: Boolean(ownerId) && ownerId === currentUser.id
+        };
       })
     });
   } catch (error) {

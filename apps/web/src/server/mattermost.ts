@@ -448,6 +448,90 @@ interface MattermostChannelBasic {
   type: string;
 }
 
+// Group ownership. Mattermost records no creator for a group conversation, so
+// the owner is kept as one preference row on the admin account: category
+// GROUP_OWNER_CATEGORY, name = the group's channel id, value = the owner's user
+// id. Users cannot write the admin's preferences, every region reads the same
+// row, and a group has at most one owner. The row is written only when the
+// group is created, so a found owner is cached for long; a missing one briefly.
+const GROUP_OWNER_CATEGORY = "ecency_group_owner";
+const GROUP_OWNER_FOUND_TTL_MS = 60 * 60_000;
+const GROUP_OWNER_MISSING_TTL_MS = 60_000;
+const GROUP_OWNER_CACHE_MAX = 5_000;
+const MATTERMOST_ID_RE = /^[a-z0-9]{26}$/;
+const groupOwnerCache = new Map<string, { ownerId: string | null; expiresAt: number }>();
+let adminUserIdPromise: Promise<string> | null = null;
+
+function getAdminUserId(): Promise<string> {
+  adminUserIdPromise ??= mmFetch<{ id: string }>(`/users/me`, { headers: getAdminHeaders() })
+    .then((user) => user.id)
+    .catch((error) => {
+      adminUserIdPromise = null;
+      throw error;
+    });
+  return adminUserIdPromise;
+}
+
+function rememberGroupOwner(channelId: string, ownerId: string | null) {
+  if (groupOwnerCache.size >= GROUP_OWNER_CACHE_MAX) {
+    const oldest = groupOwnerCache.keys().next().value;
+    if (oldest !== undefined) groupOwnerCache.delete(oldest);
+  }
+  groupOwnerCache.set(channelId, {
+    ownerId,
+    expiresAt: Date.now() + (ownerId ? GROUP_OWNER_FOUND_TTL_MS : GROUP_OWNER_MISSING_TTL_MS)
+  });
+}
+
+/** The user id of the group's owner, or null when it has none yet. */
+export async function getGroupOwnerId(
+  channelId: string,
+  options: { fresh?: boolean } = {}
+): Promise<string | null> {
+  if (!MATTERMOST_ID_RE.test(channelId)) return null;
+  const cached = groupOwnerCache.get(channelId);
+  if (!options.fresh && cached && cached.expiresAt > Date.now()) return cached.ownerId;
+
+  const adminId = await getAdminUserId();
+  let ownerId: string | null = null;
+  try {
+    const pref = await mmFetch<{ value?: string }>(
+      `/users/${encodeURIComponent(adminId)}/preferences/${GROUP_OWNER_CATEGORY}/name/${channelId}`,
+      { headers: getAdminHeaders() }
+    );
+    ownerId = typeof pref?.value === "string" && MATTERMOST_ID_RE.test(pref.value) ? pref.value : null;
+  } catch (error) {
+    // A missing preference is a 400 in Mattermost 10 (a 404 in some versions).
+    // The request itself is well formed, so either means "no owner".
+    if (!(error instanceof MattermostError) || (error.status !== 400 && error.status !== 404)) {
+      throw error;
+    }
+  }
+  rememberGroupOwner(channelId, ownerId);
+  return ownerId;
+}
+
+/**
+ * Records the group's owner. Only the request that creates the group calls
+ * it. Two members creating the same group at the same instant both write and
+ * the last write stands, so the cache is cleared rather than set and the next
+ * read finds whichever record stood.
+ */
+export async function setGroupOwnerId(channelId: string, userId: string): Promise<void> {
+  if (!MATTERMOST_ID_RE.test(channelId) || !MATTERMOST_ID_RE.test(userId)) {
+    throw new Error("Invalid group owner record");
+  }
+  const adminId = await getAdminUserId();
+  await mmFetch(`/users/${encodeURIComponent(adminId)}/preferences`, {
+    method: "PUT",
+    headers: getAdminHeaders(),
+    body: JSON.stringify([
+      { user_id: adminId, category: GROUP_OWNER_CATEGORY, name: channelId, value: userId }
+    ])
+  });
+  groupOwnerCache.delete(channelId);
+}
+
 export async function getUserChannels(userId: string): Promise<MattermostChannelBasic[]> {
   const teamId = getMattermostTeamId();
   const PAGE_SIZE = 200;
@@ -804,6 +888,10 @@ export async function mmUserFetchNdjson<T>(path: string, token: string, init?: R
 
 export function isMattermostUnauthorizedError(error: unknown) {
   return error instanceof MattermostError && (error.status === 401 || error.status === 403);
+}
+
+export function isMattermostNotFoundError(error: unknown) {
+  return error instanceof MattermostError && error.status === 404;
 }
 
 // Env-pinned super-admin username (default "ecency"), shared by every admin

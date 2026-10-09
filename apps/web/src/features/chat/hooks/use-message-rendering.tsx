@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useMemo } from "react";
 import type { MattermostPost, MattermostUser } from "../mattermost-api";
 import {
+  getGroupRenameText,
   getPostDisplayName,
   getPostUsername,
   getAddedUserDisplayName,
@@ -128,6 +129,8 @@ interface UseMessageRenderingParams {
   activeUsername: string | undefined;
   startDirectMessage: (username: string) => void;
   normalizeUsername: (username?: string | null) => string | undefined;
+  /** The open channel's type: a header change reads as a rename only in a group. */
+  channelType?: string;
 }
 
 export function useMessageRendering({
@@ -135,7 +138,8 @@ export function useMessageRendering({
   usersByUsername,
   activeUsername,
   startDirectMessage,
-  normalizeUsername
+  normalizeUsername,
+  channelType
 }: UseMessageRenderingParams) {
 
   const getProxiedImageUrl = useCallback(
@@ -160,11 +164,13 @@ export function useMessageRendering({
       const baseMessage =
         post.type === "system_add_to_channel"
           ? `${getAddedUserDisplayName(post, usersById)} joined the channel`
-          : getDisplayMessage(post);
+          : post.type === "system_header_change" && channelType === "G"
+            ? `${getPostDisplayName(post, usersById, normalizeUsername)} ${getGroupRenameText(post)}`
+            : getDisplayMessage(post);
 
       return decodeMessageEmojis(baseMessage);
     },
-    [usersById]
+    [usersById, normalizeUsername, channelType]
   );
 
   const markdownParser = useCallback(
@@ -355,6 +361,29 @@ export function useMessageRendering({
                 // If link wraps an image, render just the image with zoom (no navigation)
                 if (containsImage) {
                   return <>{children}</>;
+                }
+
+                // A pasted post link arrives here already auto-linked, so it
+                // never reaches the text path that previews post links. When
+                // the link's text is just its own address, show the same
+                // preview card as on post pages. A link with its own wording
+                // stays a plain link.
+                const postLink = trimTrailingLinkPunctuation(href);
+                // Only a link whose whole content is its address: a label with
+                // any formatting of its own keeps its wording.
+                const onlyText = (domNode.children || []).every((child) => child.type === "text");
+                const isBareLink =
+                  onlyText &&
+                  !!childText &&
+                  (childText === href || childText === href.replace(/^https?:\/\//, ""));
+                if (!inLink && isBareLink && isEnhanceableEcencyPostLink(postLink)) {
+                  const trailing = href.slice(postLink.length);
+                  return (
+                    <>
+                      <HivePostLinkRenderer link={postLink} />
+                      {trailing}
+                    </>
+                  );
                 }
 
                 return (
