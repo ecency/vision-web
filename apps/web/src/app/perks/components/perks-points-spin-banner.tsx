@@ -26,9 +26,10 @@ export function PerksPointsSpinBanner() {
   // is being processed, and after a successful one until a status requested after
   // that claim has loaded: the status on screen still offers the spin that was just
   // used.
-  // Both are kept per account: the banner stays mounted across an account switch.
-  const [claimingFor, setClaimingFor] = useState<string | null>(null);
-  const [lastClaim, setLastClaim] = useState<{ username: string; at: number }>();
+  // Both are kept per account, for every account that has claimed: the banner stays
+  // mounted across account switches, and switching back must find the hold intact.
+  const [claiming, setClaiming] = useState<Record<string, boolean>>({});
+  const [claimedAt, setClaimedAt] = useState<Record<string, number>>({});
 
   const { data, refetch, dataUpdatedAt } = useQuery(
     getGameStatusCheckQueryOptions(
@@ -56,7 +57,7 @@ export function PerksPointsSpinBanner() {
     // the SDK now throws a stable message so the group stays a single Sentry issue
     // instead of one per gateway page.
     const claimant = activeUser?.username ?? "";
-    setClaimingFor(claimant);
+    setClaiming((current) => ({ ...current, [claimant]: true }));
     try {
       try {
         await claim();
@@ -70,20 +71,23 @@ export function PerksPointsSpinBanner() {
       // that is still in flight, so every status arriving after this moment was
       // requested after the claim. One requested before the claim that lands during
       // the delay is older than the stamp and does not release the button.
-      setLastClaim({ username: claimant, at: Date.now() });
+      const stamp = Date.now();
+      setClaimedAt((current) => ({ ...current, [claimant]: stamp }));
       refetch();
       success(i18next.t("perks.spin-success"));
     } finally {
-      setClaimingFor((current) => (current === claimant ? null : current));
+      setClaiming((current) => ({ ...current, [claimant]: false }));
     }
   }, [activeUser?.username, claim, refetch]);
 
   // after an account switch the other account is not mid-claim, and its status is
   // not stale just because it was loaded before this claim
   const username = activeUser?.username ?? "";
-  const isClaiming = claimingFor === username;
-  const isStatusStale =
-    !!lastClaim && lastClaim.username === username && dataUpdatedAt < lastClaim.at;
+  // own entries only: an account name can match an inherited object key
+  const own = <T,>(record: Record<string, T>): T | undefined =>
+    Object.prototype.hasOwnProperty.call(record, username) ? record[username] : undefined;
+  const isClaiming = own(claiming) === true;
+  const isStatusStale = dataUpdatedAt < (own(claimedAt) ?? 0);
   const canSpin = typeof data?.remaining === "number" && data.remaining > 0;
 
   return (

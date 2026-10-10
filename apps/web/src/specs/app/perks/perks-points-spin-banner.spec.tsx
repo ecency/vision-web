@@ -216,6 +216,56 @@ describe("PerksPointsSpinBanner", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Spin" })).toBeEnabled());
   });
 
+  it("keeps each account's hold when several accounts claimed and no reload succeeded", async () => {
+    claim.mockResolvedValue({ score: 50 });
+    refetch.mockImplementation(() => undefined);
+
+    const { rerender } = render(<PerksPointsSpinBanner />);
+    clickClaim();
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+
+    status.username = "bob";
+    rerender(<PerksPointsSpinBanner />);
+    clickClaim();
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: "Spin" })).toBeDisabled();
+
+    // back to alice: her status is still the one from before her claim
+    status.username = "alice";
+    rerender(<PerksPointsSpinBanner />);
+    expect(screen.getByRole("button", { name: "Spin" })).toBeDisabled();
+    clickClaim();
+    expect(claim).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the first account's claim in flight after a switch away and back", async () => {
+    let finishAlice: (value: { score: number }) => void = () => undefined;
+    claim.mockImplementationOnce(
+      () => new Promise<{ score: number }>((resolve) => (finishAlice = resolve))
+    );
+    let finishBob: (value: { score: number }) => void = () => undefined;
+    claim.mockImplementationOnce(
+      () => new Promise<{ score: number }>((resolve) => (finishBob = resolve))
+    );
+
+    const { rerender } = render(<PerksPointsSpinBanner />);
+    clickClaim();
+    status.username = "bob";
+    rerender(<PerksPointsSpinBanner />);
+    clickClaim();
+    expect(claim).toHaveBeenCalledTimes(2);
+
+    status.username = "alice";
+    rerender(<PerksPointsSpinBanner />);
+    expect(screen.getByRole("button", { name: "Spin" })).toBeDisabled();
+    clickClaim();
+    expect(claim).toHaveBeenCalledTimes(2);
+
+    finishAlice({ score: 50 });
+    finishBob({ score: 50 });
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(2));
+  });
+
   it("does not hold another account to the status age of the account that claimed", async () => {
     claim.mockResolvedValue({ score: 50 });
     refetch.mockImplementation(() => undefined);
@@ -228,6 +278,13 @@ describe("PerksPointsSpinBanner", () => {
     // bob's status was loaded before alice claimed, and is still his current status
     status.username = "bob";
     rerender(<PerksPointsSpinBanner />);
+    expect(screen.getByRole("button", { name: "Spin" })).toBeEnabled();
+  });
+
+  it("is not confused by an account name that matches a built-in object key", () => {
+    status.username = "constructor";
+
+    render(<PerksPointsSpinBanner />);
     expect(screen.getByRole("button", { name: "Spin" })).toBeEnabled();
   });
 
