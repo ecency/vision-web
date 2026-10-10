@@ -25,15 +25,18 @@ vi.mock("@sentry/nextjs", () => ({ captureException }));
 
 vi.mock("@ecency/sdk", () => ({
   useGameClaim: () => ({ mutateAsync: claim, isPending: false, data: undefined }),
-  getGameStatusCheckQueryOptions: () => ({ queryKey: ["games", "status", "spin"] })
+  getGameStatusCheckQueryOptions: (username: string) => ({
+    queryKey: ["games", "status", "spin", username]
+  })
 }));
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({
     data: { remaining: status.remaining, key: "spin-key" },
-    refetch,
     dataUpdatedAt: status.dataUpdatedAt
-  })
+  }),
+  // the banner reloads the status through the query client, by key
+  useQueryClient: () => ({ refetchQueries: refetch })
 }));
 
 vi.mock("@/core/hooks/use-active-account", () => ({
@@ -264,6 +267,25 @@ describe("PerksPointsSpinBanner", () => {
     finishAlice({ score: 50 });
     finishBob({ score: 50 });
     await waitFor(() => expect(success).toHaveBeenCalledTimes(2));
+  });
+
+  // The reload must go to the account that claimed. After a switch the query on
+  // screen is the other account's, and reloading that one would leave the claimant
+  // held with a status that is never asked for again.
+  it("reloads the status of the account that claimed after a switch during the claim", async () => {
+    let finishClaim: (value: { score: number }) => void = () => undefined;
+    claim.mockImplementationOnce(
+      () => new Promise<{ score: number }>((resolve) => (finishClaim = resolve))
+    );
+
+    const { rerender } = render(<PerksPointsSpinBanner />);
+    clickClaim();
+    status.username = "bob";
+    rerender(<PerksPointsSpinBanner />);
+
+    finishClaim({ score: 50 });
+    await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));
+    expect(refetch).toHaveBeenCalledWith({ queryKey: ["games", "status", "spin", "alice"] });
   });
 
   it("does not hold another account to the status age of the account that claimed", async () => {

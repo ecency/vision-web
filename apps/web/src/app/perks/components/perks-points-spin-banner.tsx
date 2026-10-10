@@ -8,7 +8,7 @@ import { Button, Modal, ModalBody, ModalFooter, ModalHeader, StyledTooltip } fro
 import { delay, getAccessToken } from "@/utils";
 import { getGameStatusCheckQueryOptions, useGameClaim } from "@ecency/sdk";
 import * as Sentry from "@sentry/nextjs";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UilMoneyStack, UilSpin } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
 import Image from "next/image";
@@ -31,7 +31,8 @@ export function PerksPointsSpinBanner() {
   const [claiming, setClaiming] = useState<Record<string, boolean>>({});
   const [claimedAt, setClaimedAt] = useState<Record<string, number>>({});
 
-  const { data, refetch, dataUpdatedAt } = useQuery(
+  const queryClient = useQueryClient();
+  const { data, dataUpdatedAt } = useQuery(
     getGameStatusCheckQueryOptions(
       activeUser?.username,
       getAccessToken(activeUser?.username ?? ""),
@@ -57,6 +58,11 @@ export function PerksPointsSpinBanner() {
     // the SDK now throws a stable message so the group stays a single Sentry issue
     // instead of one per gateway page.
     const claimant = activeUser?.username ?? "";
+    const claimantStatusKey = getGameStatusCheckQueryOptions(
+      activeUser?.username,
+      getAccessToken(claimant),
+      "spin"
+    ).queryKey;
     setClaiming((current) => ({ ...current, [claimant]: true }));
     try {
       try {
@@ -67,18 +73,20 @@ export function PerksPointsSpinBanner() {
         return;
       }
       await delay(1000);
-      // Stamped here, not when the claim returned: refetch cancels a status request
-      // that is still in flight, so every status arriving after this moment was
-      // requested after the claim. One requested before the claim that lands during
-      // the delay is older than the stamp and does not release the button.
+      // Stamped here, not when the claim returned: the reload cancels a status
+      // request that is still in flight, so every status arriving after this moment
+      // was requested after the claim. One requested before the claim that lands
+      // during the delay is older than the stamp and does not release the button.
+      // The reload goes to the claimant's status by key: after an account switch the
+      // query on screen belongs to someone else.
       const stamp = Date.now();
       setClaimedAt((current) => ({ ...current, [claimant]: stamp }));
-      refetch();
+      queryClient.refetchQueries({ queryKey: claimantStatusKey });
       success(i18next.t("perks.spin-success"));
     } finally {
       setClaiming((current) => ({ ...current, [claimant]: false }));
     }
-  }, [activeUser?.username, claim, refetch]);
+  }, [activeUser?.username, claim, queryClient]);
 
   // after an account switch the other account is not mid-claim, and its status is
   // not stale just because it was loaded before this claim
