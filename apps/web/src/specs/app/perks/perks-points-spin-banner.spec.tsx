@@ -5,13 +5,20 @@ import { PerksPointsSpinBanner } from "@/app/perks/components/perks-points-spin-
 
 // vi.hoisted: the vi.mock factories below are hoisted above module scope, so the
 // spies they close over have to be created there too.
-const { claim, refetch, success, error, captureException } = vi.hoisted(() => ({
+const { claim, refetch, success, error, captureException, status } = vi.hoisted(() => ({
   claim: vi.fn(),
   refetch: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
-  captureException: vi.fn()
+  captureException: vi.fn(),
+  // when the spin status on screen was loaded, as useQuery reports it
+  status: { dataUpdatedAt: 1, remaining: 3, username: "alice" }
 }));
+
+// a status reload that succeeds: the status on screen is newer than any claim so far
+function reloadSucceeds() {
+  status.dataUpdatedAt = Date.now() + 1;
+}
 
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 
@@ -21,11 +28,15 @@ vi.mock("@ecency/sdk", () => ({
 }));
 
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: { remaining: 3, key: "spin-key" }, refetch })
+  useQuery: () => ({
+    data: { remaining: status.remaining, key: "spin-key" },
+    refetch,
+    dataUpdatedAt: status.dataUpdatedAt
+  })
 }));
 
 vi.mock("@/core/hooks/use-active-account", () => ({
-  useActiveAccount: () => ({ activeUser: { username: "alice" } })
+  useActiveAccount: () => ({ activeUser: { username: status.username } })
 }));
 
 vi.mock("@/features/shared", () => ({ success, error }));
@@ -68,6 +79,10 @@ describe("PerksPointsSpinBanner", () => {
   beforeEach(() => {
     claim.mockReset();
     refetch.mockReset();
+    refetch.mockImplementation(reloadSucceeds);
+    status.dataUpdatedAt = 1;
+    status.remaining = 3;
+    status.username = "alice";
     success.mockReset();
     error.mockReset();
     captureException.mockReset();
@@ -121,6 +136,50 @@ describe("PerksPointsSpinBanner", () => {
     await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
     expect(error).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByRole("button", { name: "Spin" })).toBeEnabled());
+  });
+
+  // After a successful claim the status on screen still offers the spin that was
+  // just used. If the reload fails, the button must not come back with it.
+  it("keeps the button disabled after a claim until a newer status has loaded", async () => {
+    claim.mockResolvedValue({ score: 50 });
+    refetch.mockImplementation(() => undefined);
+
+    const { rerender } = render(<PerksPointsSpinBanner />);
+    clickClaim();
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Spin" })).toBeDisabled();
+
+    clickClaim();
+    expect(claim).toHaveBeenCalledTimes(1);
+
+    reloadSucceeds();
+    rerender(<PerksPointsSpinBanner />);
+    expect(screen.getByRole("button", { name: "Spin" })).toBeEnabled();
+  });
+
+  it("does not hold another account to the status age of the account that claimed", async () => {
+    claim.mockResolvedValue({ score: 50 });
+    refetch.mockImplementation(() => undefined);
+
+    const { rerender } = render(<PerksPointsSpinBanner />);
+    clickClaim();
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Spin" })).toBeDisabled();
+
+    // bob's status was loaded before alice claimed, and is still his current status
+    status.username = "bob";
+    rerender(<PerksPointsSpinBanner />);
+    expect(screen.getByRole("button", { name: "Spin" })).toBeEnabled();
+  });
+
+  it("disables the button when no spins remain", () => {
+    status.remaining = 0;
+
+    render(<PerksPointsSpinBanner />);
+    expect(screen.getByRole("button", { name: "Spin" })).toBeDisabled();
+    clickClaim();
+    expect(claim).not.toHaveBeenCalled();
   });
 
   it("lets the user spin again after a failed claim", async () => {

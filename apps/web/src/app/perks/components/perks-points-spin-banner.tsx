@@ -22,11 +22,13 @@ export function PerksPointsSpinBanner() {
   const [showSpinner, setShowSpinner] = useState(false);
   // A claim takes about a second and the button used to stay live for all of it,
   // so a second click sent the same spin again and the loser came back as an error
-  // on a spin that had in fact been rewarded. The button is disabled for as long
-  // as a claim is being processed.
+  // on a spin that had in fact been rewarded. The button is disabled while a claim
+  // is being processed, and after a successful one until a status newer than that
+  // claim has loaded: the status on screen still offers the spin that was just used.
   const [isClaiming, setIsClaiming] = useState(false);
+  const [lastClaim, setLastClaim] = useState<{ username?: string; at: number }>();
 
-  const { data, refetch } = useQuery(
+  const { data, refetch, dataUpdatedAt } = useQuery(
     getGameStatusCheckQueryOptions(
       activeUser?.username,
       getAccessToken(activeUser?.username ?? ""),
@@ -60,16 +62,20 @@ export function PerksPointsSpinBanner() {
         error(i18next.t("perks.spin-error"));
         return;
       }
+      setLastClaim({ username: activeUser?.username, at: Date.now() });
       await delay(1000);
-      // Hold the button until the status has been asked for again, so it does not
-      // come back offering the spin that was just used. refetch does not reject: if
-      // the request fails the old status stays and the next claim reports it.
-      await refetch();
+      refetch();
       success(i18next.t("perks.spin-success"));
     } finally {
       setIsClaiming(false);
     }
-  }, [claim, refetch]);
+  }, [activeUser?.username, claim, refetch]);
+
+  // scoped to the account that claimed: after an account switch the other account's
+  // status is not stale just because it was loaded before this claim
+  const isStatusStale =
+    !!lastClaim && lastClaim.username === activeUser?.username && dataUpdatedAt < lastClaim.at;
+  const canSpin = typeof data?.remaining === "number" && data.remaining > 0;
 
   return (
     <>
@@ -111,10 +117,10 @@ export function PerksPointsSpinBanner() {
             {data?.remaining ?? 0} {i18next.t("perks.spins-left")}
           </div>
           <Button
-            disabled={typeof data?.remaining !== "number" || isClaiming}
+            disabled={!canSpin || isClaiming || isStatusStale}
             appearance="success"
             size="lg"
-            icon={typeof data?.remaining !== "number" ? undefined : <UilSpin />}
+            icon={canSpin ? <UilSpin /> : undefined}
             onClick={claimGame}
           >
             <PerksPointsSpinCountdown />
