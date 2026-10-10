@@ -23,10 +23,12 @@ export function PerksPointsSpinBanner() {
   // A claim takes about a second and the button used to stay live for all of it,
   // so a second click sent the same spin again and the loser came back as an error
   // on a spin that had in fact been rewarded. The button is disabled while a claim
-  // is being processed, and after a successful one until a status newer than that
-  // claim has loaded: the status on screen still offers the spin that was just used.
-  const [isClaiming, setIsClaiming] = useState(false);
-  const [lastClaim, setLastClaim] = useState<{ username?: string; at: number }>();
+  // is being processed, and after a successful one until a status requested after
+  // that claim has loaded: the status on screen still offers the spin that was just
+  // used.
+  // Both are kept per account: the banner stays mounted across an account switch.
+  const [claimingFor, setClaimingFor] = useState<string | null>(null);
+  const [lastClaim, setLastClaim] = useState<{ username: string; at: number }>();
 
   const { data, refetch, dataUpdatedAt } = useQuery(
     getGameStatusCheckQueryOptions(
@@ -53,7 +55,8 @@ export function PerksPointsSpinBanner() {
     // Report it explicitly: catching it removes the unhandled-rejection signal, and
     // the SDK now throws a stable message so the group stays a single Sentry issue
     // instead of one per gateway page.
-    setIsClaiming(true);
+    const claimant = activeUser?.username ?? "";
+    setClaimingFor(claimant);
     try {
       try {
         await claim();
@@ -62,19 +65,25 @@ export function PerksPointsSpinBanner() {
         error(i18next.t("perks.spin-error"));
         return;
       }
-      setLastClaim({ username: activeUser?.username, at: Date.now() });
       await delay(1000);
+      // Stamped here, not when the claim returned: refetch cancels a status request
+      // that is still in flight, so every status arriving after this moment was
+      // requested after the claim. One requested before the claim that lands during
+      // the delay is older than the stamp and does not release the button.
+      setLastClaim({ username: claimant, at: Date.now() });
       refetch();
       success(i18next.t("perks.spin-success"));
     } finally {
-      setIsClaiming(false);
+      setClaimingFor((current) => (current === claimant ? null : current));
     }
   }, [activeUser?.username, claim, refetch]);
 
-  // scoped to the account that claimed: after an account switch the other account's
-  // status is not stale just because it was loaded before this claim
+  // after an account switch the other account is not mid-claim, and its status is
+  // not stale just because it was loaded before this claim
+  const username = activeUser?.username ?? "";
+  const isClaiming = claimingFor === username;
   const isStatusStale =
-    !!lastClaim && lastClaim.username === activeUser?.username && dataUpdatedAt < lastClaim.at;
+    !!lastClaim && lastClaim.username === username && dataUpdatedAt < lastClaim.at;
   const canSpin = typeof data?.remaining === "number" && data.remaining > 0;
 
   return (

@@ -5,12 +5,13 @@ import { PerksPointsSpinBanner } from "@/app/perks/components/perks-points-spin-
 
 // vi.hoisted: the vi.mock factories below are hoisted above module scope, so the
 // spies they close over have to be created there too.
-const { claim, refetch, success, error, captureException, status } = vi.hoisted(() => ({
+const { claim, refetch, success, error, captureException, status, delay } = vi.hoisted(() => ({
   claim: vi.fn(),
   refetch: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
   captureException: vi.fn(),
+  delay: vi.fn(),
   // when the spin status on screen was loaded, as useQuery reports it
   status: { dataUpdatedAt: 1, remaining: 3, username: "alice" }
 }));
@@ -47,7 +48,7 @@ vi.mock("@/features/points", () => ({
 }));
 
 vi.mock("@/utils", () => ({
-  delay: vi.fn(async () => undefined),
+  delay,
   getAccessToken: vi.fn(() => "hs-token")
 }));
 
@@ -79,6 +80,8 @@ describe("PerksPointsSpinBanner", () => {
   beforeEach(() => {
     claim.mockReset();
     refetch.mockReset();
+    delay.mockReset();
+    delay.mockImplementation(async () => undefined);
     refetch.mockImplementation(reloadSucceeds);
     status.dataUpdatedAt = 1;
     status.remaining = 3;
@@ -156,6 +159,61 @@ describe("PerksPointsSpinBanner", () => {
     reloadSucceeds();
     rerender(<PerksPointsSpinBanner />);
     expect(screen.getByRole("button", { name: "Spin" })).toBeEnabled();
+  });
+
+  // A status request that was already in flight when the claim was sent can land
+  // after it, still offering the used spin. It is newer than the claim, but it was
+  // not requested after it.
+  it("is not released by a status that was requested before the claim and lands after it", async () => {
+    claim.mockResolvedValue({ score: 50 });
+    refetch.mockImplementation(() => undefined);
+    delay.mockImplementation(async () => {
+      status.dataUpdatedAt = Date.now();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+
+    const { rerender } = render(<PerksPointsSpinBanner />);
+    clickClaim();
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+    rerender(<PerksPointsSpinBanner />);
+    expect(screen.getByRole("button", { name: "Spin" })).toBeDisabled();
+
+    clickClaim();
+    expect(claim).toHaveBeenCalledTimes(1);
+
+    reloadSucceeds();
+    rerender(<PerksPointsSpinBanner />);
+    expect(screen.getByRole("button", { name: "Spin" })).toBeEnabled();
+  });
+
+  it("does not block another account while the first account's claim is in flight", async () => {
+    let finishClaim: (value: { score: number }) => void = () => undefined;
+    claim.mockImplementationOnce(
+      () => new Promise<{ score: number }>((resolve) => (finishClaim = resolve))
+    );
+
+    const { rerender } = render(<PerksPointsSpinBanner />);
+    clickClaim();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Spin" })).toBeDisabled());
+
+    status.username = "bob";
+    rerender(<PerksPointsSpinBanner />);
+    expect(screen.getByRole("button", { name: "Spin" })).toBeEnabled();
+
+    // bob claims; alice's claim finishing must not release bob's button
+    let finishBob: (value: { score: number }) => void = () => undefined;
+    claim.mockImplementationOnce(
+      () => new Promise<{ score: number }>((resolve) => (finishBob = resolve))
+    );
+    clickClaim();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Spin" })).toBeDisabled());
+    finishClaim({ score: 50 });
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Spin" })).toBeDisabled();
+
+    finishBob({ score: 50 });
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Spin" })).toBeEnabled());
   });
 
   it("does not hold another account to the status age of the account that claimed", async () => {
