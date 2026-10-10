@@ -8,7 +8,7 @@ import { Button, Modal, ModalBody, ModalFooter, ModalHeader, StyledTooltip } fro
 import { delay, getAccessToken } from "@/utils";
 import { getGameStatusCheckQueryOptions, useGameClaim } from "@ecency/sdk";
 import * as Sentry from "@sentry/nextjs";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UilMoneyStack, UilSpin } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
 import Image from "next/image";
@@ -20,8 +20,19 @@ export function PerksPointsSpinBanner() {
   const { activeUser } = useActiveAccount();
 
   const [showSpinner, setShowSpinner] = useState(false);
+  // A claim takes about a second and the button used to stay live for all of it,
+  // so a second click sent the same spin again and the loser came back as an error
+  // on a spin that had in fact been rewarded. The button is disabled while a claim
+  // is being processed, and after a successful one until a status requested after
+  // that claim has loaded: the status on screen still offers the spin that was just
+  // used.
+  // Both are kept per account, for every account that has claimed: the banner stays
+  // mounted across account switches, and switching back must find the hold intact.
+  const [claiming, setClaiming] = useState<Record<string, boolean>>({});
+  const [claimedAt, setClaimedAt] = useState<Record<string, number>>({});
 
-  const { data, refetch } = useQuery(
+  const queryClient = useQueryClient();
+  const { data, dataUpdatedAt } = useQuery(
     getGameStatusCheckQueryOptions(
       activeUser?.username,
       getAccessToken(activeUser?.username ?? ""),
@@ -46,17 +57,46 @@ export function PerksPointsSpinBanner() {
     // Report it explicitly: catching it removes the unhandled-rejection signal, and
     // the SDK now throws a stable message so the group stays a single Sentry issue
     // instead of one per gateway page.
+    const claimant = activeUser?.username ?? "";
+    const claimantStatusKey = getGameStatusCheckQueryOptions(
+      activeUser?.username,
+      getAccessToken(claimant),
+      "spin"
+    ).queryKey;
+    setClaiming((current) => ({ ...current, [claimant]: true }));
     try {
-      await claim();
-    } catch (e) {
-      Sentry.captureException(e, { extra: { route: "/private-api/post-game" } });
-      error(i18next.t("perks.spin-error"));
-      return;
+      try {
+        await claim();
+      } catch (e) {
+        Sentry.captureException(e, { extra: { route: "/private-api/post-game" } });
+        error(i18next.t("perks.spin-error"));
+        return;
+      }
+      await delay(1000);
+      // Stamped here, not when the claim returned: the reload cancels a status
+      // request that is still in flight, so every status arriving after this moment
+      // was requested after the claim. One requested before the claim that lands
+      // during the delay is older than the stamp and does not release the button.
+      // The reload goes to the claimant's status by key: after an account switch the
+      // query on screen belongs to someone else.
+      const stamp = Date.now();
+      setClaimedAt((current) => ({ ...current, [claimant]: stamp }));
+      queryClient.refetchQueries({ queryKey: claimantStatusKey });
+      success(i18next.t("perks.spin-success"));
+    } finally {
+      setClaiming((current) => ({ ...current, [claimant]: false }));
     }
-    await delay(1000);
-    refetch();
-    success(i18next.t("perks.spin-success"));
-  }, [claim, refetch]);
+  }, [activeUser?.username, claim, queryClient]);
+
+  // after an account switch the other account is not mid-claim, and its status is
+  // not stale just because it was loaded before this claim
+  const username = activeUser?.username ?? "";
+  // own entries only: an account name can match an inherited object key
+  const own = <T,>(record: Record<string, T>): T | undefined =>
+    Object.prototype.hasOwnProperty.call(record, username) ? record[username] : undefined;
+  const isClaiming = own(claiming) === true;
+  const isStatusStale = dataUpdatedAt < (own(claimedAt) ?? 0);
+  const canSpin = typeof data?.remaining === "number" && data.remaining > 0;
 
   return (
     <>
@@ -98,10 +138,10 @@ export function PerksPointsSpinBanner() {
             {data?.remaining ?? 0} {i18next.t("perks.spins-left")}
           </div>
           <Button
-            disabled={typeof data?.remaining !== "number"}
+            disabled={!canSpin || isClaiming || isStatusStale}
             appearance="success"
             size="lg"
-            icon={typeof data?.remaining !== "number" ? undefined : <UilSpin />}
+            icon={canSpin ? <UilSpin /> : undefined}
             onClick={claimGame}
           >
             <PerksPointsSpinCountdown />
