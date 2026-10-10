@@ -20,6 +20,11 @@ export function PerksPointsSpinBanner() {
   const { activeUser } = useActiveAccount();
 
   const [showSpinner, setShowSpinner] = useState(false);
+  // A claim takes about a second and the button used to stay live for all of it,
+  // so a second click sent the same spin again and the loser came back as an error
+  // on a spin that had in fact been rewarded. The button is disabled for as long
+  // as a claim is being processed.
+  const [isClaiming, setIsClaiming] = useState(false);
 
   const { data, refetch } = useQuery(
     getGameStatusCheckQueryOptions(
@@ -46,16 +51,24 @@ export function PerksPointsSpinBanner() {
     // Report it explicitly: catching it removes the unhandled-rejection signal, and
     // the SDK now throws a stable message so the group stays a single Sentry issue
     // instead of one per gateway page.
+    setIsClaiming(true);
     try {
-      await claim();
-    } catch (e) {
-      Sentry.captureException(e, { extra: { route: "/private-api/post-game" } });
-      error(i18next.t("perks.spin-error"));
-      return;
+      try {
+        await claim();
+      } catch (e) {
+        Sentry.captureException(e, { extra: { route: "/private-api/post-game" } });
+        error(i18next.t("perks.spin-error"));
+        return;
+      }
+      await delay(1000);
+      // Hold the button until the status has been asked for again, so it does not
+      // come back offering the spin that was just used. refetch does not reject: if
+      // the request fails the old status stays and the next claim reports it.
+      await refetch();
+      success(i18next.t("perks.spin-success"));
+    } finally {
+      setIsClaiming(false);
     }
-    await delay(1000);
-    refetch();
-    success(i18next.t("perks.spin-success"));
   }, [claim, refetch]);
 
   return (
@@ -98,7 +111,7 @@ export function PerksPointsSpinBanner() {
             {data?.remaining ?? 0} {i18next.t("perks.spins-left")}
           </div>
           <Button
-            disabled={typeof data?.remaining !== "number"}
+            disabled={typeof data?.remaining !== "number" || isClaiming}
             appearance="success"
             size="lg"
             icon={typeof data?.remaining !== "number" ? undefined : <UilSpin />}

@@ -100,4 +100,40 @@ describe("PerksPointsSpinBanner", () => {
     expect(error).not.toHaveBeenCalled();
     expect(captureException).not.toHaveBeenCalled();
   });
+
+  // The button stayed live while a claim was in flight, so impatient clicks sent
+  // the same spin several times and every duplicate surfaced as an error toast.
+  it("sends one claim however many times the button is clicked while it is in flight", async () => {
+    let finishClaim: (value: { score: number }) => void = () => undefined;
+    claim.mockImplementation(
+      () => new Promise<{ score: number }>((resolve) => (finishClaim = resolve))
+    );
+
+    render(<PerksPointsSpinBanner />);
+    clickClaim();
+    clickClaim();
+    clickClaim();
+
+    expect(claim).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Spin" })).toBeDisabled());
+
+    finishClaim({ score: 50 });
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+    expect(error).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Spin" })).toBeEnabled());
+  });
+
+  it("lets the user spin again after a failed claim", async () => {
+    claim.mockRejectedValueOnce(new Error("[SDK][Games] – failed with status 502"));
+    claim.mockResolvedValueOnce({ score: 50 });
+
+    render(<PerksPointsSpinBanner />);
+    clickClaim();
+    await waitFor(() => expect(error).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Spin" })).toBeEnabled());
+
+    clickClaim();
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+    expect(claim).toHaveBeenCalledTimes(2);
+  });
 });
