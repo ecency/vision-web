@@ -1,9 +1,4 @@
-import React, {
-  forwardRef,
-  MutableRefObject,
-  useEffect,
-  useState
-} from "react";
+import React, { forwardRef, MutableRefObject, useState } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import ReactTextareaAutocomplete from "@webscopeio/react-textarea-autocomplete";
 import { lookupAccountsQueryOptions, searchPath } from "@ecency/sdk";
@@ -22,7 +17,6 @@ export const TextareaAutocomplete = forwardRef<HTMLTextAreaElement, any>((props,
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
 
-  const [value, setValue] = useState(props.value);
   const [rows, setRows] = useState(props.minrows || 10);
   const [minrows, setMinrows] = useState(props.minrows || 10);
   const [maxrows, setMaxrows] = useState(props.maxrows || 20);
@@ -35,9 +29,10 @@ export const TextareaAutocomplete = forwardRef<HTMLTextAreaElement, any>((props,
     attrs.rows = isComment ? rows : rows;
   }
 
-  useEffect(() => {
-    setValue(props.value);
-  }, [props.value, value]);
+  // The textarea is fully controlled by the parent's `value` prop. Mirroring it
+  // into local state (and re-syncing it in an effect keyed on that local state)
+  // made every change ping-pong between the two and tripped React's
+  // "Maximum update depth exceeded" guard.
 
   const handleChange = (event: any) => {
     const isMobile = typeof window !== "undefined" && window.innerWidth < 570;
@@ -60,7 +55,6 @@ export const TextareaAutocomplete = forwardRef<HTMLTextAreaElement, any>((props,
       setRows(currentRows < maxrows ? currentRows : maxrows);
     }
 
-    setValue(event.target.value);
     props.onChange(event);
   };
 
@@ -75,7 +69,7 @@ export const TextareaAutocomplete = forwardRef<HTMLTextAreaElement, any>((props,
         }
       }}
       loadingComponent={Loading}
-      value={value}
+      value={props.value ?? ""}
       placeholder={props.placeholder}
       onChange={handleChange}
       {...(isComment ? {} : { boundariesElement: ".body-input" })}
