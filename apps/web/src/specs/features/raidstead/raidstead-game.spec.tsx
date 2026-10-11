@@ -928,6 +928,10 @@ describe("Raidstead page", () => {
       api.attack.mockResolvedValueOnce({ hit: "wasp", dodged: false, waspHp: 2, energy: 4, hp: 600, maxHp: 600 });
       render(<RaidsteadGame />);
       await ready();
+      // the weakness badge wears the colour of the button to press
+      const badge = document.querySelector(".rs-weak.known") as HTMLElement;
+      expect(badge.style.getPropertyValue("--c")).toBe(attackButton("ink").style.getPropertyValue("--c"));
+      expect(badge.style.getPropertyValue("--c")).not.toBe(attackButton("forge").style.getPropertyValue("--c"));
       await act(async () => {
         fireEvent.click(attackButton("ink"));
       });
