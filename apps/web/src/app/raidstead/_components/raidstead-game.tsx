@@ -1259,7 +1259,12 @@ export function RaidsteadGame() {
             <div className="rs-row">
               <span>{alive ? t("boss.hp", { hp: boss.hp, max: boss.maxHp }) : t("boss.next")}</span>
               {alive && (
-                <span className={`rs-weak${boss.weakness ? " known" : ""}`}>
+                <span
+                  className={`rs-weak${boss.weakness ? " known" : ""}`}
+                  style={{
+                    ["--c" as string]: TYPES.find(({ type }) => type === boss.weakness)?.color
+                  }}
+                >
                   {boss.weakness
                     ? t("boss.weak-known", { type: t(`types.${boss.weakness}`) })
                     : t("boss.weak-unknown")}
