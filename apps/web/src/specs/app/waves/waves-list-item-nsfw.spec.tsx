@@ -125,6 +125,20 @@ describe("WavesListItem and waves flagged as explicit", () => {
     expect(openInNewTab).toHaveBeenCalledWith("/waves/alice/linked?sensitive=1");
   });
 
+  it("drops the hint once the viewer has revealed the wave, or has NSFW turned on", () => {
+    // Asking again on the wave page for a picture they just chose to see is noise.
+    const { container } = render(<WavesListItem item={wave("seen", { nsfw: true })} i={0} />);
+    fireEvent.click(screen.getByRole("button", { name: "waves.nsfw-reveal" }));
+    fireEvent.click(container.querySelector(".waves-list-item") as HTMLElement);
+    expect(push).toHaveBeenCalledWith("/waves/alice/seen");
+
+    store.nsfw = true;
+    push.mockClear();
+    const second = render(<WavesListItem item={wave("opted", { nsfw: true })} i={0} />);
+    fireEvent.click(second.container.querySelector(".waves-list-item") as HTMLElement);
+    expect(push).toHaveBeenCalledWith("/waves/alice/opted");
+  });
+
   it("links an ordinary wave without the hint", () => {
     const { container } = render(<WavesListItem item={wave("plain-link")} i={0} />);
     fireEvent.click(container.querySelector(".waves-list-item") as HTMLElement);

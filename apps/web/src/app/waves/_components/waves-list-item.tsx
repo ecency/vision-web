@@ -144,11 +144,12 @@ export const WavesListItem = React.memo(function WavesListItem({
     []
   );
 
-  // A flagged wave carries the verdict to its own page in the link, in this tab
-  // or a new one: that page reads the chain, which has no verdict.
+  // A covered wave carries the verdict to its own page in the link, in this tab
+  // or a new one: that page reads the chain, which has no verdict. Only while it
+  // is covered here, so a viewer who already chose to see it is not asked again.
   const wavePath = useMemo(
-    () => withNsfwHint(`/waves/${item.author}/${item.permlink}`, nsfwFlagged),
-    [item.author, item.permlink, nsfwFlagged]
+    () => withNsfwHint(`/waves/${item.author}/${item.permlink}`, nsfwCovered),
+    [item.author, item.permlink, nsfwCovered]
   );
 
   const openWave = useCallback(
