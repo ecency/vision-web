@@ -15,6 +15,9 @@ import { useOptionalWavesTagFilter } from "@/app/waves/_context";
 import { useWaveImageGrid } from "@/app/waves/_hooks";
 import { getPostTipsQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
+import { useGlobalStore } from "@/core/global-store";
+import { WaveNsfwGate } from "@/app/waves/_components/wave-nsfw-gate";
+import { isRememberedNsfwWave, waveNeedsNsfwCover } from "@/app/waves/_utils/wave-nsfw";
 
 interface Props {
   entry: WaveEntry;
@@ -33,6 +36,17 @@ export function WaveViewDetails({ entry: initialEntry }: Props) {
   const { data: postTips } = useQuery(getPostTipsQueryOptions(entry?.author ?? "", entry?.permlink ?? ""));
 
   const status = "default";
+
+  // This entry comes from the chain, which carries the author's nsfw tag but not
+  // the image check's verdict. The verdict is known only when the wave was seen
+  // flagged in a feed during this visit; see rememberNsfwWave.
+  const globalNsfw = useGlobalStore((s) => s.nsfw);
+  const [nsfwRevealed, setNsfwRevealed] = useState(false);
+  const nsfwCovered =
+    !globalNsfw &&
+    !nsfwRevealed &&
+    (waveNeedsNsfwCover(initialEntry, entry) ||
+      isRememberedNsfwWave(initialEntry.author, initialEntry.permlink));
 
   useMount(() => window.scrollTo(0, 0));
   useWaveImageGrid(contentRef, entry?.body);
@@ -66,12 +80,14 @@ export function WaveViewDetails({ entry: initialEntry }: Props) {
         />
       </div>
       <div ref={contentRef} className="p-4">
-        <PostContentRenderer
-          value={entry?.body ?? ""}
-          images={entry?.json_metadata?.image}
-          renderOptions={{ embedVideosDirectly: true }}
-          onTagClick={tagFilter ? handleTagClick : undefined}
-        />
+        <WaveNsfwGate covered={nsfwCovered} onReveal={() => setNsfwRevealed(true)}>
+          <PostContentRenderer
+            value={entry?.body ?? ""}
+            images={entry?.json_metadata?.image}
+            renderOptions={{ embedVideosDirectly: true }}
+            onTagClick={tagFilter ? handleTagClick : undefined}
+          />
+        </WaveNsfwGate>
         {poll && <PollWidget entry={entry} poll={poll} isReadOnly={false} />}
       </div>
       <WaveActions

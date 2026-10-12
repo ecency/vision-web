@@ -27,6 +27,9 @@ import {
 } from "@/app/waves/_constants";
 import { useOptionalWavesTagFilter } from "@/app/waves/_context";
 import { openInNewTab } from "@/utils/open-in-new-tab";
+import { useGlobalStore } from "@/core/global-store";
+import { WaveNsfwGate } from "@/app/waves/_components/wave-nsfw-gate";
+import { rememberNsfwWave, waveNeedsNsfwCover } from "@/app/waves/_utils/wave-nsfw";
 
 const INTERACTIVE_SELECTOR =
   "a,button,input,textarea,select,img,[role='button'],[role='link'],[role='menuitem'],[contenteditable='true']";
@@ -117,6 +120,20 @@ export const WavesListItem = React.memo(function WavesListItem({
   }, [collectPageView, inViewport]);
 
   useWaveImageGrid(contentRef, isMuted ? undefined : entry?.body);
+
+  // `item` is the row the waves API returned and the only place its image-check
+  // flag lives; `entry` may be a chain refetch that replaced it. Either can carry
+  // the author's own nsfw tag. A viewer who turned NSFW on globally sees no cover.
+  const globalNsfw = useGlobalStore((s) => s.nsfw);
+  const [nsfwRevealed, setNsfwRevealed] = useState(false);
+  const nsfwFlagged = waveNeedsNsfwCover(item, entry);
+  const nsfwCovered = nsfwFlagged && !globalNsfw && !nsfwRevealed;
+
+  useEffect(() => {
+    if (nsfwFlagged) {
+      rememberNsfwWave(item.author, item.permlink);
+    }
+  }, [nsfwFlagged, item.author, item.permlink]);
 
   const status = "default";
 
@@ -297,12 +314,14 @@ export const WavesListItem = React.memo(function WavesListItem({
             {i18next.t("waves.muted-post")}
           </div>
         ) : (
-          <PostContentRenderer
-            value={entry?.body ?? ""}
-            images={entry?.json_metadata?.image}
-            renderOptions={{ embedVideosDirectly: true }}
-            onTagClick={tagFilter ? handleTagClick : undefined}
-          />
+          <WaveNsfwGate covered={nsfwCovered} onReveal={() => setNsfwRevealed(true)}>
+            <PostContentRenderer
+              value={entry?.body ?? ""}
+              images={entry?.json_metadata?.image}
+              renderOptions={{ embedVideosDirectly: true }}
+              onTagClick={tagFilter ? handleTagClick : undefined}
+            />
+          </WaveNsfwGate>
         )}
       </div>
       {!isMuted && (
