@@ -55,9 +55,10 @@ vi.mock("@/features/shared", () => ({
   )
 }));
 vi.mock("@ui/modal", () => ({ Modal: () => null, ModalHeader: () => null }));
+const openInNewTab = vi.fn();
+vi.mock("@/utils/open-in-new-tab", () => ({ openInNewTab: (path: string) => openInNewTab(path) }));
 
 import { WavesListItem } from "@/app/waves/_components/waves-list-item";
-import { isRememberedNsfwWave } from "@/app/waves/_utils/wave-nsfw";
 import { WaveEntry } from "@/entities";
 
 function wave(permlink: string, over: Record<string, unknown> = {}): WaveEntry {
@@ -76,13 +77,13 @@ describe("WavesListItem and waves flagged as explicit", () => {
   beforeEach(() => {
     store.nsfw = false;
     push.mockClear();
+    openInNewTab.mockClear();
   });
 
   it("shows an ordinary wave as it is", () => {
     const { container } = render(<WavesListItem item={wave("plain")} i={0} />);
     expect(screen.getByTestId("body")).toBeInTheDocument();
     expect(covered(container)).toBeNull();
-    expect(isRememberedNsfwWave("alice", "plain")).toBe(false);
   });
 
   it("covers a wave the API flagged, even after a chain refetch dropped the flag", () => {
@@ -113,8 +114,20 @@ describe("WavesListItem and waves flagged as explicit", () => {
     expect(covered(container)).toBeNull();
   });
 
-  it("remembers a flagged wave so its own page can cover it too", () => {
-    render(<WavesListItem item={wave("remembered", { nsfw: true })} i={0} />);
-    expect(isRememberedNsfwWave("alice", "remembered")).toBe(true);
+  it("carries the verdict to the wave page in the link, in this tab and a new one", () => {
+    // The wave page reads the chain, which has no verdict. A new tab is a
+    // separate realm, so nothing kept in memory would reach it.
+    const { container } = render(<WavesListItem item={wave("linked", { nsfw: true })} i={0} />);
+    const card = container.querySelector(".waves-list-item") as HTMLElement;
+    fireEvent.click(card);
+    expect(push).toHaveBeenCalledWith("/waves/alice/linked?sensitive=1");
+    fireEvent.click(card, { ctrlKey: true });
+    expect(openInNewTab).toHaveBeenCalledWith("/waves/alice/linked?sensitive=1");
+  });
+
+  it("links an ordinary wave without the hint", () => {
+    const { container } = render(<WavesListItem item={wave("plain-link")} i={0} />);
+    fireEvent.click(container.querySelector(".waves-list-item") as HTMLElement);
+    expect(push).toHaveBeenCalledWith("/waves/alice/plain-link");
   });
 });

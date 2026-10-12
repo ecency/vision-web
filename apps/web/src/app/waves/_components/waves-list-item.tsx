@@ -29,7 +29,7 @@ import { useOptionalWavesTagFilter } from "@/app/waves/_context";
 import { openInNewTab } from "@/utils/open-in-new-tab";
 import { useGlobalStore } from "@/core/global-store";
 import { WaveNsfwGate } from "@/app/waves/_components/wave-nsfw-gate";
-import { rememberNsfwWave, waveNeedsNsfwCover } from "@/app/waves/_utils/wave-nsfw";
+import { waveNeedsNsfwCover, withNsfwHint } from "@/app/waves/_utils/wave-nsfw";
 
 const INTERACTIVE_SELECTOR =
   "a,button,input,textarea,select,img,[role='button'],[role='link'],[role='menuitem'],[contenteditable='true']";
@@ -129,12 +129,6 @@ export const WavesListItem = React.memo(function WavesListItem({
   const nsfwFlagged = waveNeedsNsfwCover(item, entry);
   const nsfwCovered = nsfwFlagged && !globalNsfw && !nsfwRevealed;
 
-  useEffect(() => {
-    if (nsfwFlagged) {
-      rememberNsfwWave(item.author, item.permlink);
-    }
-  }, [nsfwFlagged, item.author, item.permlink]);
-
   const status = "default";
 
   const isFromInteractiveElement = useCallback(
@@ -150,9 +144,11 @@ export const WavesListItem = React.memo(function WavesListItem({
     []
   );
 
+  // A flagged wave carries the verdict to its own page in the link, in this tab
+  // or a new one: that page reads the chain, which has no verdict.
   const wavePath = useMemo(
-    () => `/waves/${item.author}/${item.permlink}`,
-    [item.author, item.permlink]
+    () => withNsfwHint(`/waves/${item.author}/${item.permlink}`, nsfwFlagged),
+    [item.author, item.permlink, nsfwFlagged]
   );
 
   const openWave = useCallback(

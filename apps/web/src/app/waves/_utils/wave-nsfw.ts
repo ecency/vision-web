@@ -33,19 +33,23 @@ export function waveNeedsNsfwCover(...entries: MaybeFlagged[]): boolean {
 }
 
 /**
- * Flagged waves seen in a feed during this visit.
+ * The hint a covered card puts on the link to its wave page.
  *
- * The single wave page loads its entry from the chain, which knows nothing about
- * the image check. Without this, clicking a covered card (anywhere but its reveal
- * button) would open the same picture full size one navigation later. In memory
- * only: a cold link to a wave carries no verdict, and that case is not covered.
+ * The wave page loads its entry from the chain, which knows nothing about the
+ * image check, so without a hint the picture a card was covering would be shown
+ * full size one navigation later. It travels in the URL rather than in memory
+ * because a card can be opened in a new tab (a separate realm with its own
+ * storage), and so that a link copied from that tab stays covered too.
+ *
+ * It can only ADD a cover. A link without it shows the wave as the chain has it,
+ * which is the cold-link case this does not solve.
  */
-const seenFlagged = new Set<string>();
+export const WAVE_NSFW_PARAM = "sensitive";
 
-export function rememberNsfwWave(author: string, permlink: string): void {
-  seenFlagged.add(`${author}/${permlink}`);
+export function withNsfwHint(path: string, flagged: boolean): string {
+  return flagged ? `${path}?${WAVE_NSFW_PARAM}=1` : path;
 }
 
-export function isRememberedNsfwWave(author?: string, permlink?: string): boolean {
-  return Boolean(author && permlink && seenFlagged.has(`${author}/${permlink}`));
+export function hasNsfwHint(params: { get(name: string): string | null } | null | undefined): boolean {
+  return params?.get(WAVE_NSFW_PARAM) === "1";
 }

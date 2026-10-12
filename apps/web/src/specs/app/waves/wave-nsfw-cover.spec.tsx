@@ -3,11 +3,7 @@ import { vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { WaveNsfwGate } from "@/app/waves/_components/wave-nsfw-gate";
-import {
-  isRememberedNsfwWave,
-  rememberNsfwWave,
-  waveNeedsNsfwCover
-} from "@/app/waves/_utils/wave-nsfw";
+import { hasNsfwHint, waveNeedsNsfwCover, withNsfwHint } from "@/app/waves/_utils/wave-nsfw";
 
 describe("waveNeedsNsfwCover", () => {
   it("covers a wave the API flagged", () => {
@@ -41,14 +37,21 @@ describe("waveNeedsNsfwCover", () => {
   });
 });
 
-describe("flagged waves remembered for the wave page", () => {
-  it("knows a wave seen flagged in a feed, and only that one", () => {
-    expect(isRememberedNsfwWave("alice", "wave-1")).toBe(false);
-    rememberNsfwWave("alice", "wave-1");
-    expect(isRememberedNsfwWave("alice", "wave-1")).toBe(true);
-    expect(isRememberedNsfwWave("alice", "wave-2")).toBe(false);
-    expect(isRememberedNsfwWave("bob", "wave-1")).toBe(false);
-    expect(isRememberedNsfwWave(undefined, "wave-1")).toBe(false);
+describe("the hint a covered card puts on its wave link", () => {
+  it("is added for a flagged wave only, and read back from the URL", () => {
+    expect(withNsfwHint("/waves/alice/wave-1", false)).toBe("/waves/alice/wave-1");
+    const hinted = withNsfwHint("/waves/alice/wave-1", true);
+    expect(hinted).toBe("/waves/alice/wave-1?sensitive=1");
+    // Read the way the wave page reads it, so it survives a new tab.
+    expect(hasNsfwHint(new URL(hinted, "https://example.test").searchParams)).toBe(true);
+  });
+
+  it("reads nothing but its own value", () => {
+    expect(hasNsfwHint(new URLSearchParams(""))).toBe(false);
+    expect(hasNsfwHint(new URLSearchParams("sensitive=0"))).toBe(false);
+    expect(hasNsfwHint(new URLSearchParams("other=1"))).toBe(false);
+    expect(hasNsfwHint(null)).toBe(false);
+    expect(hasNsfwHint(undefined)).toBe(false);
   });
 });
 
@@ -106,6 +109,43 @@ describe("WaveNsfwGate", () => {
     expect(onReveal).toHaveBeenCalledTimes(1);
     // The card opens the wave on a click: reaching it would show the picture full size.
     expect(onCardClick).not.toHaveBeenCalled();
+  });
+
+  it("swallows a click on a link that wraps covered media", () => {
+    // `[![](pic)](pic)` renders <a><img></a>. The image is inert, so the click
+    // lands on the anchor, which would open the original picture.
+    const onCardClick = vi.fn();
+    const onLinkClick = vi.fn();
+    const onTextLinkClick = vi.fn((e: React.MouseEvent) => e.preventDefault());
+    render(
+      // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+      <div onClick={onCardClick} onAuxClick={onCardClick}>
+        <WaveNsfwGate covered={true} onReveal={() => {}}>
+          <a
+            href="https://images.test/a.png"
+            aria-label="picture"
+            data-testid="media-link"
+            onClick={onLinkClick}
+          >
+            <img src="https://images.test/a.png" alt="" />
+          </a>
+          <a href="https://example.test/page" data-testid="text-link" onClick={onTextLinkClick}>
+            a plain link
+          </a>
+        </WaveNsfwGate>
+      </div>
+    );
+    const mediaLink = screen.getByTestId("media-link");
+    // dispatchEvent returns false when the default action was prevented
+    expect(fireEvent.click(mediaLink)).toBe(false);
+    expect(fireEvent.click(mediaLink.querySelector("img")!)).toBe(false);
+    // middle click, the open-in-new-tab gesture
+    expect(fireEvent(mediaLink, new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }))).toBe(false);
+    expect(onLinkClick).not.toHaveBeenCalled();
+    expect(onCardClick).not.toHaveBeenCalled();
+    // A link with no media in it keeps working.
+    fireEvent.click(screen.getByTestId("text-link"));
+    expect(onTextLinkClick).toHaveBeenCalledTimes(1);
   });
 
   it("has both strings in the catalog", async () => {

@@ -20,6 +20,31 @@ const COVERED_MEDIA = clsx(
   "[&_picture]:overflow-hidden [&_figure]:overflow-hidden"
 );
 
+const MEDIA = "img,video,iframe,picture";
+
+/**
+ * Is this click aimed at covered media? Either the media itself, or a link that
+ * wraps it: `[![](pic)](pic)` renders an <a> around the <img>, and with the image
+ * made inert the click lands on that anchor, which would open the original.
+ */
+function hitsCoveredMedia(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  if (target.closest(MEDIA)) {
+    return true;
+  }
+  const link = target.closest("a");
+  return Boolean(link?.querySelector(MEDIA));
+}
+
+function swallowMediaClick(e: React.MouseEvent) {
+  if (hitsCoveredMedia(e.target)) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}
+
 /**
  * Covers the media of a wave flagged as explicit and leaves its text readable.
  *
@@ -50,7 +75,16 @@ export function WaveNsfwGate({ covered, onReveal, children }: Props) {
           {i18next.t("waves.nsfw-reveal")}
         </button>
       </div>
-      <div className={clsx("overflow-hidden", COVERED_MEDIA)} data-nsfw-covered="true">
+      {/* Capture phase, so it runs before the link's own navigation and before a
+          lightbox or the card handler can act on a click aimed at covered media.
+          Middle click and modified clicks arrive as auxclick / click alike. */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+      <div
+        className={clsx("overflow-hidden", COVERED_MEDIA)}
+        data-nsfw-covered="true"
+        onClickCapture={swallowMediaClick}
+        onAuxClickCapture={swallowMediaClick}
+      >
         {children}
       </div>
     </div>

@@ -4,10 +4,12 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 const store = { nsfw: false };
+const location = { search: "" };
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
-  usePathname: () => "/waves/alice/p"
+  usePathname: () => "/waves/alice/p",
+  useSearchParams: () => new URLSearchParams(location.search)
 }));
 vi.mock("react-use/lib/useMount", () => ({ default: () => {} }));
 vi.mock("@/core/global-store", () => ({
@@ -39,7 +41,6 @@ vi.mock("@/features/shared", () => ({
 vi.mock("@ui/modal", () => ({ Modal: () => null, ModalHeader: () => null }));
 
 import { WaveViewDetails } from "@/app/waves/[author]/[permlink]/_components/wave-view-details";
-import { rememberNsfwWave } from "@/app/waves/_utils/wave-nsfw";
 import { WaveEntry } from "@/entities";
 
 // What the page gets: an entry from the chain, with tags but never an `nsfw` field.
@@ -57,6 +58,7 @@ const covered = (container: HTMLElement) => container.querySelector("[data-nsfw-
 describe("the wave page and waves flagged as explicit", () => {
   beforeEach(() => {
     store.nsfw = false;
+    location.search = "";
   });
 
   it("shows an ordinary wave as it is", () => {
@@ -70,10 +72,10 @@ describe("the wave page and waves flagged as explicit", () => {
     expect(covered(container)).not.toBeNull();
   });
 
-  it("covers a wave that was seen flagged in a feed, then reveals on request", () => {
-    // Clicking a covered card opens this page; without the memory the picture
-    // the card was hiding would be shown full size one navigation later.
-    rememberNsfwWave("alice", "from-feed");
+  it("covers a wave opened from a covered card, then reveals on request", () => {
+    // Clicking a covered card opens this page; without the hint on its link the
+    // picture the card was hiding would be shown full size one navigation later.
+    location.search = "?sensitive=1";
     const { container } = render(<WaveViewDetails entry={chainWave("from-feed")} />);
     expect(covered(container)).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "waves.nsfw-reveal" }));
@@ -82,7 +84,7 @@ describe("the wave page and waves flagged as explicit", () => {
 
   it("does not cover for a viewer who turned NSFW on", () => {
     store.nsfw = true;
-    rememberNsfwWave("alice", "opted-in");
+    location.search = "?sensitive=1";
     const { container } = render(<WaveViewDetails entry={chainWave("opted-in", ["nsfw"])} />);
     expect(covered(container)).toBeNull();
   });
