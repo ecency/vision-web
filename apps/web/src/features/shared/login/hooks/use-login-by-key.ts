@@ -166,6 +166,16 @@ export function useLoginByKey(
           const match = activeMatch || postingMatch;
 
           if (!match) {
+            // A recovered account can keep an owner key from an older master
+            // password while its active and posting keys have been replaced.
+            // Recognize that case without treating the owner key as a login key.
+            const ownerPublic = PrivateKey.fromLogin(account.name, keyOrSeed, "owner")
+              .createPublic().toString();
+            if (account.owner.key_auths.some(([pub]) => String(pub) === ownerPublic)) {
+              throw new Error(i18next.t("login.error-owner-only", {
+                defaultValue: "Owner key matches, but active and posting keys have changed. Use a current key."
+              }));
+            }
             throw new Error(i18next.t("login.error-authenticate"));
           }
 
@@ -188,6 +198,11 @@ export function useLoginByKey(
         const hasActiveKey = account.active.key_auths.some(([pub]) => pub === activePublicInput);
 
         if (!hasActiveKey && !withPostingKey) {
+          if (account.owner.key_auths.some(([pub]) => String(pub) === activePublicInput)) {
+            throw new Error(i18next.t("login.error-owner-key", {
+              defaultValue: "Owner keys cannot sign in here. Use a current active or posting key."
+            }));
+          }
           throw new Error(i18next.t("login.error-authenticate")); // enter master or active key
         }
 

@@ -484,6 +484,8 @@
     "error-user-not-found-cache": "Cache inconsistency detected. Please retry login with your credentials.",
     "error-permission": "Couldn't get posting permission",
     "error-authenticate": "Wrong private key. Master or active or posting private key required.",
+    "error-owner-only": "Owner key matches, but active and posting keys have changed. Use a current key.",
+    "error-owner-key": "Owner keys cannot sign in here. Use a current active or posting key.",
     "with-hive-signer": "Login with hivesigner",
     "with-keychain": "Login with keychain",
     "sign-up-text-1": "Don't have an account?",
