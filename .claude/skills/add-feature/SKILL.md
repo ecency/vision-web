@@ -7,7 +7,7 @@ argument-hint: [feature-name]
 # Add Feature
 
 Order of operations only; CLAUDE.md covers package boundaries, `.claude/rules/web-app.md` mutation architecture and
-icon rules. Paths below are relative to `apps/web/src`, except repo-rooted ones, which begin
+`.claude/rules/icons.md` icon rules. Paths below are relative to `apps/web/src`, except repo-rooted ones, which begin
 with `apps/`, `packages/`, `scripts/` or `.github/`.
 
 ## 1. Feature directory

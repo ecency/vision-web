@@ -79,7 +79,7 @@ re-checks through `verifyPostOnAlternateNode`, which accepts a response only whe
 the shared singleton; those that hit the private API instead (drafts, images,
 schedules, notifications) broadcast nothing.
 
-**Icon sizing** is one `size-N` class or a sanctioned slot: `.claude/rules/web-app.md` and
+**Icon sizing** is one `size-N` class or a sanctioned slot: `.claude/rules/icons.md` and
 `docs/icons.md` carry the rule plus its enforcement. **framer-motion is gone**;
 modals use CSS transitions (`apps/web/src/features/ui/modal/index.tsx`). Do not
 reintroduce it.

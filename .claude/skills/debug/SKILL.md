@@ -49,7 +49,7 @@ Specs: `verify-on-alternate-node.spec.ts`, `get-post-query-options.spec.ts`.
 
 ## Broadcast or auth-upgrade failure
 
-`.claude/rules/web-app.md` covers the auth methods. What bites:
+`.claude/rules/auth-broadcast.md` covers the auth methods. What bites:
 
 - `AuthorityLevel` and `getRequiredAuthority(ops)` are in
   `packages/sdk/src/modules/operations/authority-map.ts`; `use-broadcast-mutation.ts` only

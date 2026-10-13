@@ -2,6 +2,10 @@
 paths:
   - "apps/self-hosted/**"
   - "apps/web/src/features/hosting-signup/**"
+  - "apps/web/src/specs/features/hosting-signup/**"
+  - "apps/web/src/app/hosting/**"
+  - "apps/web/src/app/api/hosting/**"
+  - "apps/web/src/server/hosting-internal.ts"
   - ".github/workflows/self-hosted.yml"
 ---
 

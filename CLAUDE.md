@@ -14,10 +14,12 @@ its content before touching a matching file.
 
 | Rule file | Loads for | Covers |
 | --- | --- | --- |
-| `.claude/rules/web-app.md` | `apps/web/**` | App architecture, state, routing, API layer, mutation architecture, auth and broadcasting, styling and icon sizing, i18n, env, production build |
+| `.claude/rules/web-app.md` | `apps/web/**` | App architecture, state, routing, API layer, mutation architecture, styling, i18n, env, production build |
+| `.claude/rules/auth-broadcast.md` | `apps/web/**`, `packages/sdk/src/**`, `apps/self-hosted/src/providers/sdk/**` | Auth methods, broadcast adapter pattern, smart auth strategy, auth upgrade flow |
+| `.claude/rules/icons.md` | `.tsx`, `.scss` and `.css` under `apps/web/src` and `apps/self-hosted/src`, `docs/icons.md`, `scripts/icon-*` | Icon sizing convention and its CI enforcement |
 | `.claude/rules/web-testing.md` | `apps/web/src/specs/**`, `apps/web/vitest.config.*` | Vitest setup, global mocks, the `@/utils` re-mock, testing patterns, coverage |
 | `.claude/rules/packages.md` | `packages/**` | Per-package scope and entry points, dual builds, package tests, publishing |
-| `.claude/rules/self-hosted.md` | `apps/self-hosted/**`, `apps/web/src/features/hosting-signup/**`, `.github/workflows/self-hosted.yml` | Self-hosted SPA, theme platform, releases, managed blog hosting, claim and signup flows |
+| `.claude/rules/self-hosted.md` | `apps/self-hosted/**`, the hosting signup feature, its specs, the `/hosting` page and `api/hosting` routes under `apps/web/src`, `.github/workflows/self-hosted.yml` | Self-hosted SPA, theme platform, releases, managed blog hosting, claim and signup flows |
 | `.claude/rules/deploy-infra.md` | `infra/**`, `apps/web/docker-compose*.yml`, `.github/workflows/**`, `scripts/origin-config-audit.mjs` | Stack deploys, deployment topology, the origin config audit |
 
 When adding guidance, put it in the rule file for the area it applies to, and here only if it
