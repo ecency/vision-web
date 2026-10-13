@@ -331,6 +331,20 @@ describe('cleanReply() method - Reply Cleaning', () => {
       expect(result).toBe(input)
     })
 
+    it('should keep the separator when the 3speak.tv line under it is kept', () => {
+      const input = 'Notes\n\n---\n▶ [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/episode-1) and my notes'
+      const result = cleanReply(input)
+
+      expect(result).toBe(input)
+    })
+
+    it('should remove an indented 3speak.tv watch link together with its separator', () => {
+      const input = 'Notes\n\n---\n  ▶ [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/episode-1)  '
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe('Notes')
+    })
+
     it('should stay fast on a long run of play glyphs after a separator', () => {
       const input = '---\n' + '▶'.repeat(100000)
       const start = performance.now()

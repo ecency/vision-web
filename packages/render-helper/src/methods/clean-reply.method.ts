@@ -6,7 +6,7 @@ export function cleanReply(s: string): string {
   // otherwise the line filters below leave a dangling <hr> at the end of the post.
   const pre = s
     ? s.replace(
-        /(^|\n)-{3,}[ \t]*\n+(?=[^\n]*(?:originally posted through \[scrobble\.life|\*posted via lumen)|▶\uFE0F?[ \t]*\[watch on 3speak\.tv\]\(https:\/\/3speak\.tv\/watch)/i,
+        /(^|\n)-{3,}[ \t]*\n+(?=[^\n]*(?:originally posted through \[scrobble\.life|\*posted via lumen)|[ \t]*▶\uFE0F?[ \t]*\[watch on 3speak\.tv\]\(https:\/\/3speak\.tv\/watch[^)\s]*\)[^\S\n]*(?:\n|$))/i,
         '$1'
       )
     : s
@@ -45,8 +45,9 @@ export function cleanReply(s: string): string {
     .filter(item => item.toLowerCase().includes('*posted via lumen') === false)
     .filter(item => item.toLowerCase().includes('<sub>posted via [hivesuite](') === false)
     // Newer 3Speak footer link (plain or emoji glyph). Whole-line match, so a line that
-    // carries the same link next to the author's own text survives.
-    .filter(item => !/^\s*▶\uFE0F?[ \t]*\[watch on 3speak\.tv\]\(https:\/\/3speak\.tv\/watch[^)\s]*\)\s*$/i.test(item))
+    // carries the same link next to the author's own text survives. Keep it in step with
+    // the 3Speak branch of the separator lookahead above.
+    .filter(item => !/^[ \t]*▶\uFE0F?[ \t]*\[watch on 3speak\.tv\]\(https:\/\/3speak\.tv\/watch[^)\s]*\)\s*$/i.test(item))
     .filter(item => item.toLowerCase().includes('view this post <a href="https://travelfeed.com/') === false)
     .filter(item => {
       // Same two-part match as the Liketu Speak footer above.
