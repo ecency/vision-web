@@ -21,9 +21,11 @@ import { hasNsfwHint, waveNeedsNsfwCover } from "@/app/waves/_utils/wave-nsfw";
 
 interface Props {
   entry: WaveEntry;
+  // The image check's verdict for this wave, looked up on the server.
+  nsfwFlagged?: boolean;
 }
 
-export function WaveViewDetails({ entry: initialEntry }: Props) {
+export function WaveViewDetails({ entry: initialEntry, nsfwFlagged = false }: Props) {
   const { data: entry } = useQuery(EcencyEntriesCacheManagement.getEntryQuery(initialEntry));
 
   const contentRef = useRef<HTMLDivElement>(null);
@@ -38,16 +40,16 @@ export function WaveViewDetails({ entry: initialEntry }: Props) {
   const status = "default";
 
   // This entry comes from the chain, which carries the author's nsfw tag but not
-  // the image check's verdict. The verdict arrives as a hint on the link a covered
-  // card opened; see withNsfwHint.
+  // the image check's verdict. The verdict is looked up on the server
+  // (`nsfwFlagged`); the hint a covered card puts on its link (withNsfwHint) is
+  // the fallback for when that lookup could not answer.
   const searchParams = useSearchParams();
   const globalNsfw = useGlobalStore((s) => s.nsfw);
   const [nsfwRevealed, setNsfwRevealed] = useState(false);
   const nsfwCovered =
     !globalNsfw &&
     !nsfwRevealed &&
-    (waveNeedsNsfwCover(initialEntry, entry) ||
-      hasNsfwHint(searchParams));
+    (nsfwFlagged || waveNeedsNsfwCover(initialEntry, entry) || hasNsfwHint(searchParams));
 
   useMount(() => window.scrollTo(0, 0));
   useWaveImageGrid(contentRef, entry?.body);

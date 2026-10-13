@@ -41,8 +41,9 @@ export function waveNeedsNsfwCover(...entries: MaybeFlagged[]): boolean {
  * because a card can be opened in a new tab (a separate realm with its own
  * storage), and so that a link copied from that tab stays covered too.
  *
- * It can only ADD a cover. A link without it shows the wave as the chain has it,
- * which is the cold-link case this does not solve.
+ * It can only ADD a cover, and it is the fallback: the wave page also asks the
+ * API for the verdict on the server (see server/wave-nsfw.ts), which is what
+ * covers a wave opened by a plain link.
  */
 export const WAVE_NSFW_PARAM = "sensitive";
 

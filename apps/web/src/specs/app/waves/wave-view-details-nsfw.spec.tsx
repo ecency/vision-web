@@ -82,10 +82,20 @@ describe("the wave page and waves flagged as explicit", () => {
     expect(covered(container)).toBeNull();
   });
 
+  it("covers a wave opened by a plain link when the server found it flagged", () => {
+    // No tag on the chain entry and no hint on the URL: the direct-link case.
+    const { container } = render(<WaveViewDetails entry={chainWave("cold")} nsfwFlagged={true} />);
+    expect(covered(container)).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "waves.nsfw-reveal" }));
+    expect(covered(container)).toBeNull();
+  });
+
   it("does not cover for a viewer who turned NSFW on", () => {
     store.nsfw = true;
     location.search = "?sensitive=1";
-    const { container } = render(<WaveViewDetails entry={chainWave("opted-in", ["nsfw"])} />);
+    const { container } = render(
+      <WaveViewDetails entry={chainWave("opted-in", ["nsfw"])} nsfwFlagged={true} />
+    );
     expect(covered(container)).toBeNull();
   });
 });
