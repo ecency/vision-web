@@ -153,4 +153,18 @@
       max-width: 600px;
     }
   }
+
+  // 3Speak audio player (render-helper wraps audio.3speak.tv/play links as
+  // .markdown-audio-link-speak > iframe, mode=compact). It is a single player
+  // bar, not a video: without a size of its own it fell through to the 16:9
+  // iframe fallback and left a large empty area under the player.
+  .markdown-audio-link-speak iframe {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: 120px;
+    aspect-ratio: auto;
+    border: none;
+    margin: 0.5rem 0;
+  }
 }
