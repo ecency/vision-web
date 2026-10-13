@@ -6,7 +6,7 @@ argument-hint: [feature-name]
 
 # Add Feature
 
-Order of operations only; CLAUDE.md covers package boundaries, mutation architecture and
+Order of operations only; CLAUDE.md covers package boundaries, `.claude/rules/web-app.md` mutation architecture and
 icon rules. Paths below are relative to `apps/web/src`, except repo-rooted ones, which begin
 with `apps/`, `packages/`, `scripts/` or `.github/`.
 
@@ -85,7 +85,7 @@ to it for pattern matching.
 ## 6. Specs
 
 Vitest's `include`, set in `apps/web/vitest.config.mts` and relative to `apps/web/`, is
-`src/specs/**/*.spec.{ts,tsx}`, so a spec beside the component is not collected (CLAUDE.md's
+`src/specs/**/*.spec.{ts,tsx}`, so a spec beside the component is not collected (`.claude/rules/web-testing.md`'s
 "co-located with components" test-pattern line is stale on this). Put it in
 `specs/features/<feature-name>/`, render with `renderWithQueryClient` from
 `@/specs/test-utils` and seed with `seedQueryClient(queryClient, data)`, client first.

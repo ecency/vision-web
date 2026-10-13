@@ -6,7 +6,7 @@ argument-hint: [operation-name]
 
 # Add SDK Mutation
 
-Layering is in CLAUDE.md under "Mutation Architecture". Copy the real files below.
+Layering is in `.claude/rules/web-app.md` under "Mutation Architecture". Copy the real files below.
 
 ## 1. SDK mutation hook
 
@@ -107,7 +107,7 @@ export function useTransferMutation() {
 
 Match it: `"use client"`, then `useActiveUsername()` rather than `useActiveAccount()`,
 then the shared singleton `getWebBroadcastAdapter()` rather than
-`createWebBroadcastAdapter`. The CLAUDE.md "Mutation Architecture" section still
+`createWebBroadcastAdapter`. The `.claude/rules/web-app.md` "Mutation Architecture" section still
 names the older pair in its prose, so follow this file instead. A couple of adapter
 wrappers keep that core then add orchestration: `use-proposal-vote-mutation.ts` plus
 `use-witness-vote-mutation.ts` feed the SDK hook into their own `useMutation`, which
