@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.42
+
+### Patch Changes
+
+- fix(render-helper): strip HiveSuite byline and updated 3Speak, TravelFeed, Liketu Clips bylines (#1949)
+
 ## 2.5.41
 
 ### Patch Changes
