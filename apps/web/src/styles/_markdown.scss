@@ -430,8 +430,10 @@
   // Exclude video iframes from global iframe styling
   // .youtube-player is the direct-embed YouTube iframe (embedVideosDirectly),
   // which its .markdown-video-link-youtube wrapper sizes; the fixed sizes here
-  // would otherwise win and shrink it inside the box.
-  iframe:not(.youtube-shorts-iframe):not(.speak-iframe):not(.portrait-embed):not(.youtube-player) {
+  // would otherwise win and shrink it inside the box. The 3Speak audio player
+  // (link or pasted iframe) is a short bar sized in _video-embed-rules.scss,
+  // not a video box.
+  iframe:not(.youtube-shorts-iframe):not(.speak-iframe):not(.portrait-embed):not(.youtube-player):not(.speak-audio-iframe):not(.markdown-audio-link-speak *) {
     max-width: 100% !important;
     max-height: 500px;
     display: block;

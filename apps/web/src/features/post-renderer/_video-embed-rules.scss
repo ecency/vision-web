@@ -153,4 +153,31 @@
       max-width: 600px;
     }
   }
+
+  // 3Speak audio player: a single player bar, not a video. Without a size of
+  // its own it fell through to the 16:9 iframe fallback and left a large empty
+  // area under the player. Two forms from render-helper:
+  //   link   .markdown-audio-link-speak > iframe (mode defaults to compact)
+  //   pasted iframe.speak-audio-iframe, no wrapper
+  // Heights per player mode (the player centres itself in the frame):
+  // minimal ~52px, compact ~74px, full ~119px with a one-line title.
+  .markdown-audio-link-speak iframe,
+  iframe.speak-audio-iframe {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: 120px;
+    aspect-ratio: auto;
+    border: none;
+    margin: 0.5rem 0;
+
+    &[src*="mode=minimal"] {
+      height: 80px;
+    }
+
+    // Shows the title too, which can wrap to a second line
+    &[src*="mode=full"] {
+      height: 180px;
+    }
+  }
 }
