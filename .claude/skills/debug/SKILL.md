@@ -6,7 +6,7 @@ argument-hint: [issue-description]
 
 # Debug Guide
 
-CLAUDE.md has the architecture and commands; note that root `pnpm test` is web-only and
+CLAUDE.md has the commands and package boundaries, `.claude/rules/web-app.md` the app architecture; note that root `pnpm test` is web-only and
 the `node scripts/*-audit.mjs` checks gate CI without running under it. Below is triage
 plus the invariants that break easily.
 
@@ -19,7 +19,7 @@ goes through its own API client. Check the adapter or the operation before blami
 `callRPC`. Read `packages/sdk/src/` rather than `dist/`:
 `exports` in `packages/sdk/package.json` points at the build, so an unbuilt SDK edit is
 invisible. Most invariants below have a spec; find it before a repro; web specs live under
-`apps/web/src/specs/` (CLAUDE.md's co-location note is stale for the web app). A report from
+`apps/web/src/specs/`. A report from
 one browser only, or only right after a deploy, is often already handled by the
 scripts in `apps/web/public/scripts/`; check those first.
 
@@ -49,7 +49,7 @@ Specs: `verify-on-alternate-node.spec.ts`, `get-post-query-options.spec.ts`.
 
 ## Broadcast or auth-upgrade failure
 
-CLAUDE.md covers the auth methods. What bites:
+`.claude/rules/auth-broadcast.md` covers the auth methods. What bites:
 
 - `AuthorityLevel` and `getRequiredAuthority(ops)` are in
   `packages/sdk/src/modules/operations/authority-map.ts`; `use-broadcast-mutation.ts` only

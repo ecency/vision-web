@@ -8,7 +8,7 @@ argument-hint: [component-or-file-path]
 
 Procedure for `apps/web` (`@ecency/web`) specs. Background you should not re-read here:
 
-- CLAUDE.md "Testing" covers best practices and coverage expectations.
+- `.claude/rules/web-testing.md` covers best practices and coverage expectations.
 - `apps/web/src/specs/README.md` covers most `test-utils.tsx` exports (`renderWithQueryClient`,
   `createTestQueryClient`, `seedQueryClient`, `mockFullAccount`, `mockEntry`, `mockCommunity`,
   `mockActiveUser`, `setupModalContainers`, `cleanupModalContainers`, `EntryBuilder`,
@@ -26,9 +26,7 @@ include: ['src/specs/**/*.spec.{ts,tsx}']
 ```
 
 A spec outside `src/specs/` is not collected, so it silently does not run. The spec files live
-under `apps/web/src/specs/`, not co-located with source. CLAUDE.md's "Main App (Vitest)" bullet
-list is stale on the "co-located" test pattern, on "Configuration: `apps/web/vitest.config.ts`"
-(the real file is `vitest.config.mts`) plus on the mocked-modules list. Its "Test Structure"
+under `apps/web/src/specs/`, not co-located with source. `.claude/rules/web-testing.md`'s "Test Structure"
 section has the right location but lists a subset of the places specs actually live.
 
 Pick the subdirectory matching the source area: `features/`, `utils/`, `api/`, `app/`, `core/`,
@@ -45,9 +43,6 @@ pnpm test src/specs/features/shared/my-thing.spec.tsx
 **Do not add `--`.** pnpm forwards it literally, so vitest runs `vitest run -- <path>` and files
 everything after `--` under passthrough args instead of its file filters. No filter is applied
 and the entire suite runs.
-
-CLAUDE.md's "Running Single Tests" block still shows the `--` form for `@ecency/web`; it is
-stale on that point.
 
 Run the whole suite with `pnpm test` before pushing. The gate that runs specs on a PR is
 `PR-branch.yml` (triggered on `pull_request`); it runs `pnpm build:packages` ahead of
@@ -73,7 +68,7 @@ in `web-build.yml` (push to `develop`), `staging.yml` and `master.yml`; none of 
 | `react-tweet` | an EMPTY module, no exports at all. Reaching any export throws, so a spec touching it needs its own local re-mock |
 
 It also polyfills `TextEncoder`, `TextDecoder` and `IntersectionObserver` for jsdom.
-`@ecency/render-helper` is **not** globally mocked despite CLAUDE.md listing it; mock it locally.
+`@ecency/render-helper` is **not** globally mocked; mock it locally.
 
 Touching an export the mock omits throws at property access:
 

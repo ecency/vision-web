@@ -79,7 +79,7 @@ re-checks through `verifyPostOnAlternateNode`, which accepts a response only whe
 the shared singleton; those that hit the private API instead (drafts, images,
 schedules, notifications) broadcast nothing.
 
-**Icon sizing** is one `size-N` class or a sanctioned slot: CLAUDE.md and
+**Icon sizing** is one `size-N` class or a sanctioned slot: `.claude/rules/icons.md` and
 `docs/icons.md` carry the rule plus its enforcement. **framer-motion is gone**;
 modals use CSS transitions (`apps/web/src/features/ui/modal/index.tsx`). Do not
 reintroduce it.
@@ -95,12 +95,12 @@ reintroduce it.
 - One `vi.mock()` per module per spec: vitest keeps the LAST factory, so an
   earlier one's exports vanish and reading them throws `No "x" export is defined
   on the mock`. `setup-any-spec.ts` also mocks partially, so re-mock with
-  `importActual` (CLAUDE.md has the snippet).
+  `importActual` (`.claude/rules/web-testing.md` has the snippet).
 - Root `pnpm test` is web only; CI runs `pnpm -r test`. `apps/web` also resolves
   `@ecency/sdk` through the COMMITTED `packages/sdk/dist`, so SDK edits stay
   invisible to web tests until `pnpm build:packages`.
 
-**Strings** go into `en-US.json` only (CLAUDE.md). Nothing enforces that, so it
+**Strings** go into `en-US.json` only (`.claude/rules/web-app.md`). Nothing enforces that, so it
 is yours to catch. A duplicate key is a separate trap: valid JSON whose earlier
 value `JSON.parse` silently discards. That one IS guarded, across the locale
 files, by `apps/web/src/specs/features/i18n-locale-duplicate-keys.spec.ts`.

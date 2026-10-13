@@ -6,8 +6,8 @@ argument-hint: [feature-name]
 
 # Add Feature
 
-Order of operations only; CLAUDE.md covers package boundaries, mutation architecture and
-icon rules. Paths below are relative to `apps/web/src`, except repo-rooted ones, which begin
+Order of operations only; CLAUDE.md covers package boundaries, `.claude/rules/web-app.md` mutation architecture and
+`.claude/rules/icons.md` icon rules. Paths below are relative to `apps/web/src`, except repo-rooted ones, which begin
 with `apps/`, `packages/`, `scripts/` or `.github/`.
 
 ## 1. Feature directory
@@ -85,8 +85,7 @@ to it for pattern matching.
 ## 6. Specs
 
 Vitest's `include`, set in `apps/web/vitest.config.mts` and relative to `apps/web/`, is
-`src/specs/**/*.spec.{ts,tsx}`, so a spec beside the component is not collected (CLAUDE.md's
-"co-located with components" test-pattern line is stale on this). Put it in
+`src/specs/**/*.spec.{ts,tsx}`, so a spec beside the component is not collected. Put it in
 `specs/features/<feature-name>/`, render with `renderWithQueryClient` from
 `@/specs/test-utils` and seed with `seedQueryClient(queryClient, data)`, client first.
 i18next is globally mocked to return the key, so assert on `"<feature-name>.button-label"`.
