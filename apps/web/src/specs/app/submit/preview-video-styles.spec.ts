@@ -71,12 +71,32 @@ describe("classic editor preview video styles", () => {
     expect(play).toMatch(/background:\s*url\(play-icon\.svg\)/);
   });
 
-  it("styles nothing but video embeds inside .markdown-view", () => {
+  // A 3Speak audio embed is a short player bar, not a 16:9 video. Both forms
+  // render-helper emits: the link (.markdown-audio-link-speak > iframe) and a
+  // pasted iframe (iframe.speak-audio-iframe, no wrapper).
+  it("sizes 3Speak audio embeds as a player bar, per player mode", () => {
+    const file = "features/post-renderer/video-embeds.scss";
+    for (const base of [
+      ".markdown-view .markdown-audio-link-speak iframe",
+      ".markdown-view iframe.speak-audio-iframe"
+    ]) {
+      const bar = declarationsFor(file, base);
+      expect(bar).toMatch(/height:\s*120px/);
+      expect(bar).toMatch(/aspect-ratio:\s*auto/);
+      expect(bar).toMatch(/width:\s*100%/);
+      expect(declarationsFor(file, `${base}[src*="mode=minimal"]`)).toMatch(/height:\s*80px/);
+      expect(declarationsFor(file, `${base}[src*="mode=full"]`)).toMatch(/height:\s*180px/);
+    }
+  });
+
+  it("styles nothing but video and audio embeds inside .markdown-view", () => {
     const selectors = compiledSelectors("features/post-renderer/video-embeds.scss");
     expect(selectors.length).toBeGreaterThan(0);
     for (const sel of selectors) {
       expect(sel.startsWith(".markdown-view ")).toBe(true);
-      expect(sel).toMatch(/markdown-video-link|portrait-embed|speak-iframe/);
+      expect(sel).toMatch(
+        /markdown-video-link|portrait-embed|speak-iframe|markdown-audio-link-speak|speak-audio-iframe/
+      );
     }
   });
 
