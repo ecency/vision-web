@@ -277,6 +277,106 @@ describe('cleanReply() method - Reply Cleaning', () => {
       expect(result.trim().endsWith('More thoughts')).toBe(true)
     })
 
+    it('should remove the HiveSuite footer', () => {
+      const input =
+        'How do you choose just 1 ?\n\n<sub>Posted via [HiveSuite](https://hivesuite.app/@someone/pumpkin-hunting-lrx19rg3)</sub>'
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe('How do you choose just 1 ?')
+    })
+
+    it('should remove the HiveSuite footer stacked under another app footer', () => {
+      const input =
+        'Text\n\nPosted Using [INLEO](https://inleo.io/threads/view/someone/permlink)\n\n<sub>Posted via [HiveSuite](https://hivesuite.app/@someone/permlink)</sub>'
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe('Text')
+    })
+
+    it('should remove the 3speak.tv watch link and its separator', () => {
+      const input =
+        'https://play.3speak.tv/embed?v=someone/l15060ai\n\nMy video notes\n\n\n---\n▶ [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/my-video-54)'
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe('https://play.3speak.tv/embed?v=someone/l15060ai\n\nMy video notes')
+    })
+
+    it('should remove the 3speak.tv watch link written with the emoji glyph', () => {
+      const input = 'My video notes\n\n---\n▶️ [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/my-video-54)'
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe('My video notes')
+    })
+
+    it('should preserve unrelated horizontal rules when removing the 3speak.tv watch link', () => {
+      const input =
+        'Intro\n\n---\n\nMore thoughts\n\n---\n▶ [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/my-video-54)'
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe('Intro\n\n---\n\nMore thoughts')
+    })
+
+    it('should preserve a hand-written link to a 3speak.tv video', () => {
+      const input = 'Earlier episode: [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/episode-1)'
+      const result = cleanReply(input)
+
+      expect(result).toBe(input)
+    })
+
+    it('should preserve lines that put their own text next to a glyph-prefixed 3speak.tv link', () => {
+      const input =
+        'Press ▶ to play. [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/episode-1)\n- ▶ [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/episode-2)\nNew video ▶ [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/episode-3)'
+      const result = cleanReply(input)
+
+      expect(result).toBe(input)
+    })
+
+    it('should keep the separator when the 3speak.tv line under it is kept', () => {
+      const input = 'Notes\n\n---\n▶ [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/episode-1) and my notes'
+      const result = cleanReply(input)
+
+      expect(result).toBe(input)
+    })
+
+    it('should remove an indented 3speak.tv watch link together with its separator', () => {
+      const input = 'Notes\n\n---\n  ▶ [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/episode-1)  '
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe('Notes')
+    })
+
+    it('should stay fast on a long run of play glyphs after a separator', () => {
+      const input = '---\n' + '▶'.repeat(100000)
+      const start = performance.now()
+      const result = cleanReply(input)
+
+      expect(result).toBe(input)
+      expect(performance.now() - start).toBeLessThan(500)
+    })
+
+    it('should remove the travelfeed.com footer', () => {
+      const input =
+        'Trip report\n\n<hr /><center><em>View this post <a href="https://travelfeed.com/@someone/trip-report">on TravelFeed</a> for the best experience.</em></center>'
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe('Trip report')
+    })
+
+    it('should remove the Liketu Clips footer', () => {
+      const input =
+        'Tags: #training #running\n_Posted from Liketu Clips — short video, trimmed for low-bandwidth scrolling._'
+      const result = cleanReply(input)
+
+      expect(result.trim()).toBe('Tags: #training #running')
+    })
+
+    it('should preserve replies that merely mention HiveSuite or Liketu Clips', () => {
+      const input = 'I posted via HiveSuite today, and my note read _Posted from Liketu Clips_ by mistake'
+      const result = cleanReply(input)
+
+      expect(result).toBe(input)
+    })
+
     it('should preserve replies that merely mention Lumen', () => {
       const input = 'I posted via Lumen for the first time today and it worked'
       const result = cleanReply(input)

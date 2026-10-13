@@ -1,11 +1,12 @@
 export function cleanReply(s: string): string {
-  // scrobble.life ("---\n_Originally posted through [scrobble.life/...") and Lumen
-  // ("---\n*Posted via Lumen*" or "---\n*Posted via Lumen by <user>*") both put a separator
+  // scrobble.life ("---\n_Originally posted through [scrobble.life/..."), Lumen
+  // ("---\n*Posted via Lumen*" or "---\n*Posted via Lumen by <user>*") and 3Speak
+  // ("---\n▶ [Watch on 3speak.tv](https://3speak.tv/watch?v=...") all put a separator
   // right before their byline; drop it too (lookahead keeps unrelated horizontal rules),
   // otherwise the line filters below leave a dangling <hr> at the end of the post.
   const pre = s
     ? s.replace(
-        /(^|\n)-{3,}[ \t]*\n+(?=[^\n]*(?:originally posted through \[scrobble\.life|\*posted via lumen))/i,
+        /(^|\n)-{3,}[ \t]*\n+(?=[^\n]*(?:originally posted through \[scrobble\.life|\*posted via lumen)|[ \t]*▶\uFE0F?[ \t]*\[watch on 3speak\.tv\]\(https:\/\/3speak\.tv\/watch[^)\s]*\)[^\S\n]*(?:\n|$))/i,
         '$1'
       )
     : s
@@ -42,6 +43,17 @@ export function cleanReply(s: string): string {
     })
     .filter(item => item.toLowerCase().includes('originally posted through [scrobble.life') === false)
     .filter(item => item.toLowerCase().includes('*posted via lumen') === false)
+    .filter(item => item.toLowerCase().includes('<sub>posted via [hivesuite](') === false)
+    // Newer 3Speak footer link (plain or emoji glyph). Whole-line match, so a line that
+    // carries the same link next to the author's own text survives. Keep it in step with
+    // the 3Speak branch of the separator lookahead above.
+    .filter(item => !/^[ \t]*▶\uFE0F?[ \t]*\[watch on 3speak\.tv\]\(https:\/\/3speak\.tv\/watch[^)\s]*\)\s*$/i.test(item))
+    .filter(item => item.toLowerCase().includes('view this post <a href="https://travelfeed.com/') === false)
+    .filter(item => {
+      // Same two-part match as the Liketu Speak footer above.
+      const l = item.toLowerCase();
+      return !(l.includes('_posted from liketu clips') && l.includes('short video, trimmed'));
+    })
     .filter(item => item.toLowerCase().includes('[via Inbox]') === false)
     .filter(item => item.toLowerCase().includes('<sub>[via apps from](') === false)
     .join('\n') : '')
