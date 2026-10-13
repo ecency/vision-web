@@ -27,6 +27,9 @@ import {
 } from "@/app/waves/_constants";
 import { useOptionalWavesTagFilter } from "@/app/waves/_context";
 import { openInNewTab } from "@/utils/open-in-new-tab";
+import { useGlobalStore } from "@/core/global-store";
+import { WaveNsfwGate } from "@/app/waves/_components/wave-nsfw-gate";
+import { waveNeedsNsfwCover, withNsfwHint } from "@/app/waves/_utils/wave-nsfw";
 
 const INTERACTIVE_SELECTOR =
   "a,button,input,textarea,select,img,[role='button'],[role='link'],[role='menuitem'],[contenteditable='true']";
@@ -118,6 +121,14 @@ export const WavesListItem = React.memo(function WavesListItem({
 
   useWaveImageGrid(contentRef, isMuted ? undefined : entry?.body);
 
+  // `item` is the row the waves API returned and the only place its image-check
+  // flag lives; `entry` may be a chain refetch that replaced it. Either can carry
+  // the author's own nsfw tag. A viewer who turned NSFW on globally sees no cover.
+  const globalNsfw = useGlobalStore((s) => s.nsfw);
+  const [nsfwRevealed, setNsfwRevealed] = useState(false);
+  const nsfwFlagged = waveNeedsNsfwCover(item, entry);
+  const nsfwCovered = nsfwFlagged && !globalNsfw && !nsfwRevealed;
+
   const status = "default";
 
   const isFromInteractiveElement = useCallback(
@@ -133,9 +144,12 @@ export const WavesListItem = React.memo(function WavesListItem({
     []
   );
 
+  // A covered wave carries the verdict to its own page in the link, in this tab
+  // or a new one: that page reads the chain, which has no verdict. Only while it
+  // is covered here, so a viewer who already chose to see it is not asked again.
   const wavePath = useMemo(
-    () => `/waves/${item.author}/${item.permlink}`,
-    [item.author, item.permlink]
+    () => withNsfwHint(`/waves/${item.author}/${item.permlink}`, nsfwCovered),
+    [item.author, item.permlink, nsfwCovered]
   );
 
   const openWave = useCallback(
@@ -297,12 +311,14 @@ export const WavesListItem = React.memo(function WavesListItem({
             {i18next.t("waves.muted-post")}
           </div>
         ) : (
-          <PostContentRenderer
-            value={entry?.body ?? ""}
-            images={entry?.json_metadata?.image}
-            renderOptions={{ embedVideosDirectly: true }}
-            onTagClick={tagFilter ? handleTagClick : undefined}
-          />
+          <WaveNsfwGate covered={nsfwCovered} onReveal={() => setNsfwRevealed(true)}>
+            <PostContentRenderer
+              value={entry?.body ?? ""}
+              images={entry?.json_metadata?.image}
+              renderOptions={{ embedVideosDirectly: true }}
+              onTagClick={tagFilter ? handleTagClick : undefined}
+            />
+          </WaveNsfwGate>
         )}
       </div>
       {!isMuted && (

@@ -3575,6 +3575,8 @@
     "success-reply": "You have replied successfully",
     "success-reply-edit": "You have edited successfully",
     "muted-post": "Muted author's post",
+    "nsfw-cover": "This wave may contain sensitive media",
+    "nsfw-reveal": "Show",
     "not-available": "This wave is no longer available",
     "not-available-hint": "It may have been deleted by its author.",
     "back-to-waves": "Back to Waves",

@@ -1,5 +1,5 @@
 import React from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 // Streams the real wave page through React's server renderer and asserts on the
@@ -68,7 +68,13 @@ vi.mock("@/utils", async () => ({
   getAccessToken: vi.fn(() => "mock-token")
 }));
 
-const fixtures = vi.hoisted(() => ({ entry: null as unknown }));
+const fixtures = vi.hoisted(() => ({ entry: null as unknown, nsfwFlagged: false }));
+
+// The page asks the API for this wave's image-check verdict on the server. Stubbed
+// so the spec makes no network call, and switchable so the cover can be asserted.
+vi.mock("@/server/wave-nsfw", () => ({
+  isWaveFlaggedNsfw: async () => fixtures.nsfwFlagged
+}));
 
 vi.mock("@/core/react-query", async () => {
   const actual = await vi.importActual<typeof import("@/core/react-query")>("@/core/react-query");
@@ -126,6 +132,24 @@ async function streamPage(): Promise<string> {
 }
 
 describe("wave page streamed HTML", () => {
+  afterEach(() => {
+    fixtures.nsfwFlagged = false;
+  });
+
+  it("ships an unflagged wave with no cover", { timeout: 20000 }, async () => {
+    expect(await streamPage()).not.toContain("data-nsfw-covered");
+  });
+
+  it("covers a flagged wave in the HTML the server sends, not after hydration", { timeout: 20000 }, async () => {
+    // The chain entry in this fixture has no nsfw tag and the URL carries no
+    // hint: this is a wave opened by a plain link. A cover that only appeared
+    // on the client would paint the picture first.
+    fixtures.nsfwFlagged = true;
+    const html = await streamPage();
+    expect(html).toContain("data-nsfw-covered");
+    expect(html).toContain("Wave body paragraph that has to reach the browser in the shell.");
+  });
+
   it("ships the wave body in the shell, outside every hidden segment", { timeout: 20000 }, async () => {
     const html = await streamPage();
     const body = html.indexOf("markdown-view");

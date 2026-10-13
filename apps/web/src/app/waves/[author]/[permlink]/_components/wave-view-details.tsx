@@ -10,17 +10,22 @@ import { EcencyEntriesCacheManagement } from "@/core/caches";
 import useMount from "react-use/lib/useMount";
 import { PostContentRenderer } from "@/features/shared";
 import { PollWidget, useEntryPollExtractor } from "@/features/polls";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useOptionalWavesTagFilter } from "@/app/waves/_context";
 import { useWaveImageGrid } from "@/app/waves/_hooks";
 import { getPostTipsQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
+import { useGlobalStore } from "@/core/global-store";
+import { WaveNsfwGate } from "@/app/waves/_components/wave-nsfw-gate";
+import { hasNsfwHint, waveNeedsNsfwCover } from "@/app/waves/_utils/wave-nsfw";
 
 interface Props {
   entry: WaveEntry;
+  // The image check's verdict for this wave, looked up on the server.
+  nsfwFlagged?: boolean;
 }
 
-export function WaveViewDetails({ entry: initialEntry }: Props) {
+export function WaveViewDetails({ entry: initialEntry, nsfwFlagged = false }: Props) {
   const { data: entry } = useQuery(EcencyEntriesCacheManagement.getEntryQuery(initialEntry));
 
   const contentRef = useRef<HTMLDivElement>(null);
@@ -33,6 +38,18 @@ export function WaveViewDetails({ entry: initialEntry }: Props) {
   const { data: postTips } = useQuery(getPostTipsQueryOptions(entry?.author ?? "", entry?.permlink ?? ""));
 
   const status = "default";
+
+  // This entry comes from the chain, which carries the author's nsfw tag but not
+  // the image check's verdict. The verdict is looked up on the server
+  // (`nsfwFlagged`); the hint a covered card puts on its link (withNsfwHint) is
+  // the fallback for when that lookup could not answer.
+  const searchParams = useSearchParams();
+  const globalNsfw = useGlobalStore((s) => s.nsfw);
+  const [nsfwRevealed, setNsfwRevealed] = useState(false);
+  const nsfwCovered =
+    !globalNsfw &&
+    !nsfwRevealed &&
+    (nsfwFlagged || waveNeedsNsfwCover(initialEntry, entry) || hasNsfwHint(searchParams));
 
   useMount(() => window.scrollTo(0, 0));
   useWaveImageGrid(contentRef, entry?.body);
@@ -66,12 +83,14 @@ export function WaveViewDetails({ entry: initialEntry }: Props) {
         />
       </div>
       <div ref={contentRef} className="p-4">
-        <PostContentRenderer
-          value={entry?.body ?? ""}
-          images={entry?.json_metadata?.image}
-          renderOptions={{ embedVideosDirectly: true }}
-          onTagClick={tagFilter ? handleTagClick : undefined}
-        />
+        <WaveNsfwGate covered={nsfwCovered} onReveal={() => setNsfwRevealed(true)}>
+          <PostContentRenderer
+            value={entry?.body ?? ""}
+            images={entry?.json_metadata?.image}
+            renderOptions={{ embedVideosDirectly: true }}
+            onTagClick={tagFilter ? handleTagClick : undefined}
+          />
+        </WaveNsfwGate>
         {poll && <PollWidget entry={entry} poll={poll} isReadOnly={false} />}
       </div>
       <WaveActions

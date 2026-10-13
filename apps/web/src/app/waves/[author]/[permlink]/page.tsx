@@ -10,6 +10,7 @@ import { stripAnonEntryCacheInPlace } from "@/core/react-query/strip-active-vote
 import { EcencyConfigManager } from "@/config";
 import { Metadata } from "next";
 import { ScrollToTop } from "@/features/shared/scroll-to-top";
+import { isWaveFlaggedNsfw } from "@/server/wave-nsfw";
 
 interface Props {
   params: Promise<{
@@ -38,10 +39,14 @@ export default async function WaveViewPage({ params }: Props) {
   // the entry route: anonymous-only, cache rewritten in place so the prop and the
   // dehydrated copy remain a single reference.
   const loggedInUser = (await cookies()).get(ACTIVE_USER_COOKIE_NAME)?.value;
-  const fetched = (await prefetchQuery(EcencyEntriesCacheManagement.getEntryQueryByPath(
-    author.replace(/%40/g, ""),
-    permlink
-  ))) as WaveEntry;
+  const authorName = author.replace(/%40/g, "");
+  // Beside the entry fetch, not after it: the entry comes from the chain and
+  // carries no image-check verdict, so a wave opened by its link would render
+  // its media uncovered. Resolves to false when the API cannot answer.
+  const [fetched, nsfwFlagged] = await Promise.all([
+    prefetchQuery(EcencyEntriesCacheManagement.getEntryQueryByPath(authorName, permlink)) as Promise<WaveEntry>,
+    isWaveFlaggedNsfw(authorName, permlink)
+  ]);
   const data = stripAnonEntryCacheInPlace(getQueryClient(), fetched, loggedInUser);
 
   if (!data) {
@@ -52,7 +57,7 @@ export default async function WaveViewPage({ params }: Props) {
     <HydrationBoundary state={dehydrate(getQueryClient())}>
       <div className="flex flex-col gap-4 lg:gap-6 xl:gap-8">
         <ScrollToTop />
-        <WaveViewDetails entry={data} />
+        <WaveViewDetails entry={data} nsfwFlagged={nsfwFlagged} />
         <WaveViewDiscussion entry={data} />
       </div>
     </HydrationBoundary>
