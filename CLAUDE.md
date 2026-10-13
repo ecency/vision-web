@@ -99,8 +99,9 @@ node scripts/origin-config-audit.mjs --fail
 ### Running Single Tests
 
 ```bash
-# For main app (Vitest)
-pnpm --filter @ecency/web test -- path/to/test.spec.tsx
+# For main app (Vitest). From the workspace root, path relative to apps/web. Do not add `--`:
+# pnpm forwards it literally, no filter applies and the entire suite runs
+pnpm test src/specs/path/to/test.spec.tsx
 
 # For packages (Vitest)
 pnpm --filter @ecency/sdk test -- path/to/test.spec.ts
@@ -205,12 +206,13 @@ export function getHiveEngineTokensBalancesQueryOptions(username: string) { ... 
 // In @ecency/web - SDK mutation wrappers (apps/web/src/api/sdk-mutations/)
 // Each wrapper adds the web broadcast adapter and active user context
 import { useVote } from "@ecency/sdk";
-import { createWebBroadcastAdapter } from "@/providers/sdk";
+import { getWebBroadcastAdapter } from "@/providers/sdk";
+import { useActiveUsername } from "@/core/hooks/use-active-username";
 
 export function useVoteMutation() {
-  const { activeUser } = useActiveAccount();
-  const adapter = createWebBroadcastAdapter();
-  return useVote(activeUser?.username, { adapter });
+  const username = useActiveUsername();
+  const adapter = getWebBroadcastAdapter();
+  return useVote(username, { adapter });
 }
 ```
 

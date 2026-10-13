@@ -37,16 +37,16 @@ pnpm test --ui
 Use `src/specs/test-utils.tsx` for common testing patterns:
 
 ```typescript
-import { renderWithQueryClient, mockFullAccount, setupModalContainers } from '@/specs/test-utils';
+import { QueryClient } from '@tanstack/react-query';
+import { renderWithQueryClient, seedQueryClient, setupModalContainers } from '@/specs/test-utils';
 
 describe('MyComponent', () => {
   beforeEach(setupModalContainers);
 
   test('renders correctly', () => {
-    const { container } = renderWithQueryClient(
-      <MyComponent />,
-      { queryClient: seedQueryClient({ posts: mockData }) }
-    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    seedQueryClient(queryClient, { posts: mockData });
+    const { container } = renderWithQueryClient(<MyComponent />, { queryClient });
   });
 });
 ```
@@ -54,7 +54,8 @@ describe('MyComponent', () => {
 ## Mocking Strategy
 
 **Global Mocks** (`setup-any-spec.ts`):
-- External packages (@ecency/sdk, @ecency/wallets, @ecency/render-helper)
+- External packages (@ecency/sdk, @ecency/wallets). `@ecency/render-helper` is NOT globally mocked; mock it locally when needed
+- `@/features/post-renderer`, `@/features/pro/pro-badge` (stubbed)
 - i18next (returns keys as-is)
 - `@/utils` (only exports `random` and `getAccessToken`)
 - `@/core/hooks/use-active-account` (returns null active user)
@@ -148,7 +149,7 @@ test('displays data', () => {
 
 - Test environment: jsdom
 - Test location: `src/specs/`
-- Test pattern: `*.spec.tsx` co-located with components
+- Test pattern: `src/specs/**/*.spec.{ts,tsx}`. A spec outside `src/specs/` is not collected and silently does not run
 - Setup file: `src/specs/setup-any-spec.ts`
-- Mocked modules: i18next, @ecency/sdk, @ecency/wallets, @ecency/render-helper
-- Configuration: `apps/web/vitest.config.ts`
+- Mocked modules: i18next, @ecency/sdk, @ecency/wallets
+- Configuration: `apps/web/vitest.config.mts`

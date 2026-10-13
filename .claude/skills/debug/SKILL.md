@@ -19,7 +19,7 @@ goes through its own API client. Check the adapter or the operation before blami
 `callRPC`. Read `packages/sdk/src/` rather than `dist/`:
 `exports` in `packages/sdk/package.json` points at the build, so an unbuilt SDK edit is
 invisible. Most invariants below have a spec; find it before a repro; web specs live under
-`apps/web/src/specs/` (`.claude/rules/web-testing.md`'s co-location note is stale for the web app). A report from
+`apps/web/src/specs/`. A report from
 one browser only, or only right after a deploy, is often already handled by the
 scripts in `apps/web/public/scripts/`; check those first.
 

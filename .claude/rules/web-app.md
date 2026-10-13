@@ -85,7 +85,7 @@ apps/web/src/
 
 These are configured in:
 - `apps/web/tsconfig.json` (TypeScript)
-- `apps/web/vitest.config.ts` (Vitest)
+- `apps/web/vitest.config.mts` (Vitest)
 - `apps/web/next.config.js` (Webpack)
 
 ### Routing Architecture
@@ -133,8 +133,8 @@ noisy endpoint and a quiet one can be failing in exactly the same way.
 **Mutation Architecture**:
 
 All blockchain mutations live in `@ecency/sdk` and are wrapped for web use in `apps/web/src/api/sdk-mutations/`. Each wrapper hook:
-1. Gets the active user via `useActiveAccount()`
-2. Creates a web broadcast adapter via `createWebBroadcastAdapter()`
+1. Gets the active username via `useActiveUsername()`
+2. Takes the shared web broadcast adapter via `getWebBroadcastAdapter()`
 3. Passes both to the SDK mutation hook
 
 ```
@@ -195,8 +195,8 @@ flow are in `.claude/rules/auth-broadcast.md`, which also loads for `packages/sd
 Copy `apps/web/.env.template` to `apps/web/.env` and configure:
 
 ```bash
-NEXT_PUBLIC_HS_CLIENT_ID      # HiveSigner client ID
-NEXT_PUBLIC_HS_CLIENT_SECRET  # HiveSigner secret
+HIVESIGNER_CLIENT_ID          # HiveSigner client ID (server-only)
+HIVESIGNER_SECRET             # HiveSigner secret (server-only)
 NEXT_PUBLIC_APP_BASE          # App base URL
 NEXT_PUBLIC_APP_NAME          # App name
 NEXT_PUBLIC_APP_TITLE         # App title

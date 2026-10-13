@@ -107,8 +107,7 @@ export function useTransferMutation() {
 
 Match it: `"use client"`, then `useActiveUsername()` rather than `useActiveAccount()`,
 then the shared singleton `getWebBroadcastAdapter()` rather than
-`createWebBroadcastAdapter`. The `.claude/rules/web-app.md` "Mutation Architecture" section still
-names the older pair in its prose, so follow this file instead. A couple of adapter
+`createWebBroadcastAdapter`. A couple of adapter
 wrappers keep that core then add orchestration: `use-proposal-vote-mutation.ts` plus
 `use-witness-vote-mutation.ts` feed the SDK hook into their own `useMutation`, which
 polls the chain for confirmation. The wrappers with no adapter cover private-API
@@ -148,5 +147,4 @@ expected; just keep `dist` out of what you stage.
 - Keep the SDK lightweight and generic. Toasts, i18n, session storage and error
   formatting stay in web.
 - Auth upgrade is automatic: an active-authority op on a posting-key session drives
-  `showAuthUpgradeUI` through the adapter. See "Authentication & Broadcasting" in
-  CLAUDE.md.
+  `showAuthUpgradeUI` through the adapter. See `.claude/rules/auth-broadcast.md`.
