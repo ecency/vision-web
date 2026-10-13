@@ -323,6 +323,23 @@ describe('cleanReply() method - Reply Cleaning', () => {
       expect(result).toBe(input)
     })
 
+    it('should preserve lines that put their own text next to a glyph-prefixed 3speak.tv link', () => {
+      const input =
+        'Press ▶ to play. [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/episode-1)\n- ▶ [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/episode-2)\nNew video ▶ [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/episode-3)'
+      const result = cleanReply(input)
+
+      expect(result).toBe(input)
+    })
+
+    it('should stay fast on a long run of play glyphs after a separator', () => {
+      const input = '---\n' + '▶'.repeat(100000)
+      const start = performance.now()
+      const result = cleanReply(input)
+
+      expect(result).toBe(input)
+      expect(performance.now() - start).toBeLessThan(500)
+    })
+
     it('should remove the travelfeed.com footer', () => {
       const input =
         'Trip report\n\n<hr /><center><em>View this post <a href="https://travelfeed.com/@someone/trip-report">on TravelFeed</a> for the best experience.</em></center>'
@@ -340,7 +357,7 @@ describe('cleanReply() method - Reply Cleaning', () => {
     })
 
     it('should preserve replies that merely mention HiveSuite or Liketu Clips', () => {
-      const input = 'I posted via HiveSuite today, and yesterday I posted from Liketu Clips'
+      const input = 'I posted via HiveSuite today, and my note read _Posted from Liketu Clips_ by mistake'
       const result = cleanReply(input)
 
       expect(result).toBe(input)

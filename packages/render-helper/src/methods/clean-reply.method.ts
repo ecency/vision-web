@@ -6,7 +6,7 @@ export function cleanReply(s: string): string {
   // otherwise the line filters below leave a dangling <hr> at the end of the post.
   const pre = s
     ? s.replace(
-        /(^|\n)-{3,}[ \t]*\n+(?=[^\n]*(?:originally posted through \[scrobble\.life|\*posted via lumen|▶[^\n]*\[watch on 3speak\.tv\]\(https:\/\/3speak\.tv\/watch))/i,
+        /(^|\n)-{3,}[ \t]*\n+(?=[^\n]*(?:originally posted through \[scrobble\.life|\*posted via lumen)|▶\uFE0F?[ \t]*\[watch on 3speak\.tv\]\(https:\/\/3speak\.tv\/watch)/i,
         '$1'
       )
     : s
@@ -44,13 +44,15 @@ export function cleanReply(s: string): string {
     .filter(item => item.toLowerCase().includes('originally posted through [scrobble.life') === false)
     .filter(item => item.toLowerCase().includes('*posted via lumen') === false)
     .filter(item => item.toLowerCase().includes('<sub>posted via [hivesuite](') === false)
-    .filter(item => {
-      // Newer 3Speak footer link; the glyph check also covers the emoji form (▶ + variation selector).
-      const l = item.toLowerCase();
-      return !(l.includes('▶') && l.includes('[watch on 3speak.tv](https://3speak.tv/watch'));
-    })
+    // Newer 3Speak footer link (plain or emoji glyph). Whole-line match, so a line that
+    // carries the same link next to the author's own text survives.
+    .filter(item => !/^\s*▶\uFE0F?[ \t]*\[watch on 3speak\.tv\]\(https:\/\/3speak\.tv\/watch[^)\s]*\)\s*$/i.test(item))
     .filter(item => item.toLowerCase().includes('view this post <a href="https://travelfeed.com/') === false)
-    .filter(item => item.toLowerCase().includes('_posted from liketu clips') === false)
+    .filter(item => {
+      // Same two-part match as the Liketu Speak footer above.
+      const l = item.toLowerCase();
+      return !(l.includes('_posted from liketu clips') && l.includes('short video, trimmed'));
+    })
     .filter(item => item.toLowerCase().includes('[via Inbox]') === false)
     .filter(item => item.toLowerCase().includes('<sub>[via apps from](') === false)
     .join('\n') : '')
