@@ -105,7 +105,12 @@ export function useChannelMetadata({
         : i18next.t("chat.new-group-members");
     }
 
-    const baseName = channelData?.community ? `${channelData.community} channel` : "Channel";
+    const isPrivate = channelData?.channel?.type === "P" || directChannelFromList?.type === "P";
+    const baseName = channelData?.community
+      ? `${channelData.community} channel`
+      : isPrivate
+        ? i18next.t("chat.channel-type-private")
+        : "Channel";
     const memberCount = channelData?.memberCount;
 
     if (memberCount !== undefined) {

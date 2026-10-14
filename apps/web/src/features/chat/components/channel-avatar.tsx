@@ -12,7 +12,8 @@ interface ChannelAvatarProps {
 
 /**
  * A direct message shows the other person, a group the first two other
- * members overlapped, anything else the channel's own avatar.
+ * members overlapped, a private channel a lock, anything else the channel's
+ * own avatar.
  */
 export function ChannelAvatar({ channel }: ChannelAvatarProps) {
   if (channel.type === "D") {
@@ -43,6 +44,17 @@ export function ChannelAvatar({ channel }: ChannelAvatarProps) {
             className="absolute bottom-0 right-0 size-7 ring-2 ring-[--surface-color]"
           />
         )}
+      </span>
+    );
+  }
+
+  if (channel.type === "P") {
+    return (
+      <span
+        className="flex size-10 items-center justify-center rounded-full bg-[--background-color] text-lg"
+        aria-hidden="true"
+      >
+        🔒
       </span>
     );
   }

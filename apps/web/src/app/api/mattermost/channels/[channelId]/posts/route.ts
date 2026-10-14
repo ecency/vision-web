@@ -14,6 +14,13 @@ import {
   isUserChatBanned,
   CHAT_BAN_PROP
 } from "@/server/mattermost";
+import {
+  CHANNEL_WIDE_MENTION_FORBIDDEN,
+  SPECIAL_MENTIONS,
+  canMentionEveryone,
+  hasChannelWideMention,
+  pickPostProps
+} from "@/server/chat-special-mentions";
 import { checkDmFanout } from "@/server/chat-dm-fanout";
 import { addMentionedUsersToChannel } from "@/server/chat-mentions";
 import { collectPostUserIds } from "@/server/chat-post-users";
@@ -25,8 +32,6 @@ export const dynamic = "force-dynamic";
 const USER_MENTION_REGEX =
   /@(?=[a-zA-Z][a-zA-Z0-9.-]{1,15}\b)[a-zA-Z][a-zA-Z0-9-]{2,}(?:\.[a-zA-Z][a-zA-Z0-9-]{2,})*\b/gi;
 
-const SPECIAL_MENTIONS = new Set(["here", "everyone"]);
-const SPECIAL_MENTION_REGEX = /(^|\s)@(here|everyone)\b/i;
 
 interface MattermostUser {
   id: string;
@@ -300,6 +305,7 @@ export async function GET(
       member,
       community: moderation.community,
       canModerate: moderation.canModerate,
+      canMentionEveryone: canMentionEveryone(moderation),
       hasMore,
       memberCount,
       onlineUserIds: includeOnline ? onlineUserIds : undefined
@@ -328,7 +334,7 @@ export async function POST(
 
     const message = body.message as string;
     const rootId = (body.rootId as string | null | undefined) || null;
-    const props = (body.props as Record<string, unknown> | undefined) || undefined;
+    const props = pickPostProps(body.props);
 
     if (!message) {
       return NextResponse.json({ error: "message required" }, { status: 400 });
@@ -367,7 +373,7 @@ export async function POST(
     // No need to re-validate on every message send - improves performance significantly
 
     // --- Special mentions & regular @mentions in text ---
-    const hasSpecialMention = SPECIAL_MENTION_REGEX.test(message);
+    const hasSpecialMention = hasChannelWideMention(message);
 
     const mentionedUsers = Array.from(
       new Set(
@@ -384,13 +390,8 @@ export async function POST(
         channelId
       );
 
-      if (!moderation.canModerate) {
-        return NextResponse.json(
-          {
-            error: "Only community moderators can mention everyone in this channel."
-          },
-          { status: 403 }
-        );
+      if (!canMentionEveryone(moderation)) {
+        return NextResponse.json({ error: CHANNEL_WIDE_MENTION_FORBIDDEN }, { status: 403 });
       }
     }
 

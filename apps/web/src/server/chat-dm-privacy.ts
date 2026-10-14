@@ -31,11 +31,17 @@ export async function getDmPrivacyRejection(
   }
 
   if (dmPrivacy === "followers") {
+    // Hive refuses the lookup outright for a name it does not know. Such a name
+    // cannot be followed, so it counts as no follow instead of a server error.
+    // Any other failure is an outage and still fails the request.
     const relationships = await Promise.all(
       senderUsernames.map((sender) =>
-        getQueryClient().fetchQuery(
-          getRelationshipBetweenAccountsQueryOptions(target.username, sender)
-        )
+        getQueryClient()
+          .fetchQuery(getRelationshipBetweenAccountsQueryOptions(target.username, sender))
+          .catch((error: unknown) => {
+            if (isUnknownAccountError(error)) return null;
+            throw error;
+          })
       )
     );
     const unfollowed = senderUsernames.filter((_, i) => !relationships[i]?.follows);
@@ -55,4 +61,13 @@ export async function getDmPrivacyRejection(
   }
 
   return null;
+}
+
+// Hive's answers for a name it does not know, or that cannot be a Hive name
+// (chat usernames may hold "_" or run to 22 characters).
+const UNKNOWN_ACCOUNT_RE =
+  /^Assert Exception:(Account \S+ does not exist|invalid account (char|name length))/i;
+
+function isUnknownAccountError(error: unknown) {
+  return error instanceof Error && UNKNOWN_ACCOUNT_RE.test(error.message);
 }

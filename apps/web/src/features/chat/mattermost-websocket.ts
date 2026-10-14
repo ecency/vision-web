@@ -580,7 +580,9 @@ export class MattermostWebSocket {
   }
 
   private handleUserChange(message: MattermostWSEvent): void {
-    const channelId = message.broadcast?.channel_id;
+    // The removed person is no longer in the channel, so Mattermost tells them
+    // in a user-scoped event that names the channel in data, not in broadcast.
+    const channelId = message.broadcast?.channel_id || message.data?.channel_id;
     if (!channelId || !this.queryClient) return;
 
     this.queryClient.invalidateQueries({

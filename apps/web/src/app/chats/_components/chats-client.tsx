@@ -34,6 +34,7 @@ import { getChatBanInfo } from "@/features/chat/chat-ban-notice";
 import { ChatBanScreen } from "@/features/chat/components/chat-ban-screen";
 import { ChannelAvatar } from "@/features/chat/components/channel-avatar";
 import { NewGroupModal } from "@/features/chat/components/new-group-modal";
+import { NewPrivateChannelModal } from "@/features/chat/components/private-channel-modals";
 import { sortChannelsByActivity } from "@/features/chat/channel-sort";
 import {
   getGroupTitle,
@@ -57,6 +58,7 @@ export function ChatsClient() {
   const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState("");
   const [showNewGroup, setShowNewGroup] = useState(false);
+  const [showNewPrivateChannel, setShowNewPrivateChannel] = useState(false);
   const shareText = searchParams?.get("text")?.trim();
   const dmTarget = searchParams?.get("dm")?.trim();
   const isShareMode = Boolean(shareText);
@@ -446,7 +448,10 @@ export function ChatsClient() {
                     onClick={(e: MouseEvent) => handleChannelAction(e, () => leaveChannel(channel.id))}
                   />
                 ) : (
-                  !isTownHallChannel(channel) && (
+                  // The chat admin manages private channels from inside them;
+                  // leaving would drop the only way back in.
+                  !isTownHallChannel(channel) &&
+                  !(channel.type === "P" && channels?.canManagePrivateChannels) && (
                     <DropdownItemWithIcon
                       label={i18next.t("chat.leave-channel")}
                       onClick={(e: MouseEvent) => handleChannelAction(e, () => leaveChannel(channel.id))}
@@ -553,6 +558,17 @@ export function ChatsClient() {
           router.push(buildChannelUrl(channelId));
         }}
       />
+      {channels?.canManagePrivateChannels && (
+        <NewPrivateChannelModal
+          show={showNewPrivateChannel}
+          onHide={() => setShowNewPrivateChannel(false)}
+          currentUsername={activeUser?.username}
+          onCreated={(channelId) => {
+            setShowNewPrivateChannel(false);
+            router.push(buildChannelUrl(channelId));
+          }}
+        />
+      )}
       <div className="flex flex-col gap-3 border-b border-[--border-color] p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -575,6 +591,20 @@ export function ChatsClient() {
             >
               {i18next.t("chat.new-group")}
             </Button>
+            {channels?.canManagePrivateChannels && (
+              <Button
+                type="button"
+                size="sm"
+                appearance="secondary"
+                outline={true}
+                icon={<UilPlus />}
+                iconPlacement="left"
+                className="whitespace-nowrap"
+                onClick={() => setShowNewPrivateChannel(true)}
+              >
+                {i18next.t("chat.new-private-channel")}
+              </Button>
+            )}
           </div>
         </div>
         <form className="flex gap-2" onSubmit={(e) => e.preventDefault()}>

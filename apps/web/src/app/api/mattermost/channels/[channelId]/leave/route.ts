@@ -4,6 +4,7 @@ import {
   COMMUNITY_CHANNEL_NAME_PATTERN,
   getMattermostTokenFromCookies,
   handleMattermostError,
+  isMattermostSuperAdmin,
   mmUserFetch,
   MattermostChannel,
   MattermostUser
@@ -62,6 +63,14 @@ export async function POST(_: Request, { params }: { params: Promise<{ channelId
         ])
       });
     } else {
+      // The chat admin manages private channels from inside them, so leaving
+      // one would leave no way back in from the app.
+      if (channel.type === "P" && isMattermostSuperAdmin(currentUser)) {
+        return NextResponse.json(
+          { error: "Remove the channel's members instead of leaving it." },
+          { status: 400 }
+        );
+      }
       await mmUserFetch(`/channels/${encodeURIComponent(channelId)}/members/me`, token, { method: "DELETE" });
 
       // Track that the user manually left this community channel

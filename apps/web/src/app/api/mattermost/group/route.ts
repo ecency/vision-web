@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { callRPC } from "@ecency/sdk/hive";
 import {
   getGroupOwnerId,
   getMattermostTeamId,
@@ -74,6 +75,28 @@ export async function POST(req: NextRequest) {
             missing.length === 1 ? "is" : "are"
           } not on Ecency chat yet.`,
           missing
+        },
+        { status: 404 }
+      );
+    }
+
+    // A chat account is not proof of a Hive account. When Hive cannot be
+    // asked, nobody is confirmed, so the group is not created.
+    const onHive = await findHiveAccounts(usernames);
+    if (!onHive) {
+      return NextResponse.json(
+        { error: "Unable to check these accounts right now. Please try again." },
+        { status: 503, headers: { "Retry-After": "5" } }
+      );
+    }
+    const notOnHive = usernames.filter((name) => !onHive.has(name));
+    if (notOnHive.length) {
+      return NextResponse.json(
+        {
+          error: `${notOnHive.map((name) => `@${name}`).join(", ")} ${
+            notOnHive.length === 1 ? "is not a Hive account" : "are not Hive accounts"
+          }.`,
+          missing: notOnHive
         },
         { status: 404 }
       );
@@ -184,5 +207,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ channelId: channel.id });
   } catch (error) {
     return handleMattermostError(error);
+  }
+}
+
+/** The given names that exist on Hive, or null when Hive could not be asked. */
+async function findHiveAccounts(usernames: string[]): Promise<Set<string> | null> {
+  try {
+    // A non-array answer is a fault of the node that gave it: the next is asked.
+    const accounts = await callRPC(
+      "condenser_api.get_accounts",
+      [usernames],
+      undefined,
+      undefined,
+      undefined,
+      (given) => Array.isArray(given)
+    );
+    if (!Array.isArray(accounts)) return null;
+    return new Set(
+      accounts
+        .map((account) => (account as { name?: unknown })?.name)
+        .filter((name): name is string => typeof name === "string")
+        .map((name) => name.toLowerCase())
+    );
+  } catch {
+    return null;
   }
 }

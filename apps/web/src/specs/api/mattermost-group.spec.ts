@@ -12,6 +12,11 @@ class FakeMattermostError extends Error {
 const mockFindUser = vi.fn();
 const mockPrivacy = vi.fn();
 const mockCheckDmFanout = vi.fn();
+const mockCallRPC = vi.fn();
+
+vi.mock("@ecency/sdk/hive", () => ({
+  callRPC: (...args: unknown[]) => mockCallRPC(...args)
+}));
 
 vi.mock("@/server/mattermost", () => ({
   getGroupOwnerId: (...args: unknown[]) => mockGetOwner(...args),
@@ -63,6 +68,9 @@ describe("POST /api/mattermost/group", () => {
       Promise.resolve({ id: `id-${name}`, username: name })
     );
     mockPrivacy.mockResolvedValue(null);
+    mockCallRPC.mockImplementation((_method: string, [names]: [string[]]) =>
+      Promise.resolve(names.map((name) => ({ name })))
+    );
     mockCheckDmFanout.mockResolvedValue({
       allowed: true,
       recipients: 2,
@@ -239,6 +247,37 @@ describe("POST /api/mattermost/group", () => {
 
     expect(res.status).toBe(404);
     expect((await res.json()).missing).toEqual(["ghost"]);
+    expect(createCalls()).toHaveLength(0);
+  });
+
+  it("names the members who have a chat account but no Hive account", async () => {
+    mockCallRPC.mockResolvedValue([{ name: "bob" }]);
+    const { POST } = await import("@/app/api/mattermost/group/route");
+
+    const res = await POST(request({ usernames: ["bob", "Ghost"] }));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      error: "@ghost is not a Hive account.",
+      missing: ["ghost"]
+    });
+    const [method, params, , , , validate] = mockCallRPC.mock.calls[0];
+    expect([method, params]).toEqual(["condenser_api.get_accounts", [["bob", "ghost"]]]);
+    // A malformed answer makes the client ask the next node.
+    expect(validate({})).toBe(false);
+    expect(validate([])).toBe(true);
+    expect(mockPrivacy).not.toHaveBeenCalled();
+    expect(createCalls()).toHaveLength(0);
+  });
+
+  it("creates nothing when Hive cannot confirm the accounts", async () => {
+    mockCallRPC.mockRejectedValue(new Error("all nodes failed"));
+    const { POST } = await import("@/app/api/mattermost/group/route");
+
+    const res = await POST(request({ usernames: ["bob", "carol"] }));
+
+    expect(res.status).toBe(503);
+    expect(mockPrivacy).not.toHaveBeenCalled();
     expect(createCalls()).toHaveLength(0);
   });
 

@@ -29,6 +29,7 @@ vi.mock("@/server/mattermost", () => ({
   getMattermostTeamId: () => "team-123",
   getMattermostTokenFromCookies: () => Promise.resolve("test-token"),
   handleMattermostError: (err: unknown) => ({ error: String(err) }),
+  isMattermostSuperAdmin: (user: { username?: string }) => user?.username === "ecency",
   mmUserFetch: (...args: unknown[]) => mockMmUserFetch(...args)
 }));
 

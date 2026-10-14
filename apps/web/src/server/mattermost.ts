@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { bridgeApiCall, getProfiles } from "@ecency/sdk";
 import { CommunityRole, ROLES } from "@ecency/sdk";
 import { toPublicChatUser } from "@/server/chat-public-user";
+import { findHiveCommunity } from "@/server/hive-community";
 import { ChatUserBusyError, withChatUserLock } from "@/server/chat-user-lock";
 
 export { ChatUserBusyError };
@@ -324,20 +325,43 @@ function normalizeCommunityId(community: string) {
 
 export async function ensureChannelForCommunity(
   community: string,
-  displayName?: string,
+  // Unused: a new channel takes the community's title from Hive, never the caller's.
+  _displayName?: string,
   signal?: AbortSignal
 ): Promise<string> {
   const teamId = requireEnv(MATTERMOST_TEAM_ID, "MATTERMOST_TEAM_ID");
   const channelName = normalizeCommunityId(community);
+  // Callers join users to what this returns with the admin token, so it only
+  // ever names a public community channel: never a private channel found by
+  // name, and never a channel created under a name a client made up.
+  if (!COMMUNITY_CHANNEL_NAME_PATTERN.test(channelName)) {
+    throw new Error(`Not a community channel name: ${channelName}`);
+  }
+  const asCommunityChannel = (channel: { id: string; type?: string }) => {
+    if (channel.type !== "O") {
+      throw new Error(`Channel ${channelName} is not a public channel`);
+    }
+    return channel.id;
+  };
+  let existing: { id: string; type?: string } | null = null;
   try {
-    const existing = await mmFetch<{ id: string }>(`/teams/${encodeURIComponent(teamId)}/channels/name/${encodeURIComponent(channelName)}`, {
+    existing = await mmFetch<{ id: string; type?: string }>(`/teams/${encodeURIComponent(teamId)}/channels/name/${encodeURIComponent(channelName)}`, {
       headers: getAdminHeaders(),
       signal
     });
-    return existing.id;
   } catch {
     // channel doesn't exist (or lookup failed) — create below
   }
+  if (existing) {
+    return asCommunityChannel(existing);
+  }
+  // Only a community that exists on Hive gets a channel, named as Hive names it,
+  // so a client cannot create channels under made-up names.
+  const hiveCommunity = await findHiveCommunity(channelName, signal);
+  if (!hiveCommunity) {
+    throw new Error(`Community ${channelName} was not found on Hive`);
+  }
+  const title = hiveCommunity.title?.trim() || channelName;
   try {
     const created = await mmFetch<{ id: string }>(`/channels`, {
       method: "POST",
@@ -345,7 +369,8 @@ export async function ensureChannelForCommunity(
       body: JSON.stringify({
         team_id: teamId,
         name: channelName,
-        display_name: displayName || community,
+        // Mattermost caps a display name at 64 characters.
+        display_name: Array.from(title).slice(0, 64).join(""),
         type: "O"
       }),
       signal
@@ -355,15 +380,16 @@ export async function ensureChannelForCommunity(
     // A concurrent bootstrap (e.g. several subscribers of a new community
     // bootstrapping at once) may have created the channel between the lookup
     // and this create. Re-fetch by name; if it now exists, use it.
+    let raced: { id: string; type?: string };
     try {
-      const existing = await mmFetch<{ id: string }>(`/teams/${encodeURIComponent(teamId)}/channels/name/${encodeURIComponent(channelName)}`, {
+      raced = await mmFetch<{ id: string; type?: string }>(`/teams/${encodeURIComponent(teamId)}/channels/name/${encodeURIComponent(channelName)}`, {
         headers: getAdminHeaders(),
         signal
       });
-      return existing.id;
     } catch {
       throw error;
     }
+    return asCommunityChannel(raced);
   }
 }
 
@@ -440,6 +466,87 @@ export async function removeUserFromChannel(userId: string, channelId: string) {
     method: "DELETE",
     headers: getAdminHeaders()
   });
+}
+
+// Private channels are created and managed by the chat super-admin only. The
+// admin token does the membership work, so management keeps working even if
+// the super-admin leaves a channel they set up.
+export interface MattermostTeamChannel extends MattermostChannel {
+  team_id: string;
+  delete_at: number;
+}
+
+/**
+ * A live private channel of the chat team, or null when the id names a
+ * channel of any other kind, another team's, an archived one or none at all.
+ * Callers act with the admin token only on what this returns.
+ */
+export async function getPrivateTeamChannelAsAdmin(
+  channelId: string
+): Promise<MattermostTeamChannel | null> {
+  if (!MATTERMOST_ID_RE.test(channelId)) return null;
+  let channel: MattermostTeamChannel;
+  try {
+    channel = await mmFetch<MattermostTeamChannel>(`/channels/${encodeURIComponent(channelId)}`, {
+      headers: getAdminHeaders()
+    });
+  } catch (error) {
+    if (isMattermostNotFoundError(error)) return null;
+    throw error;
+  }
+  const isPrivateTeamChannel =
+    channel.type === "P" && channel.team_id === getMattermostTeamId() && !channel.delete_at;
+  return isPrivateTeamChannel ? channel : null;
+}
+
+/** Creates a private channel in the chat team as the caller, who becomes its first member. */
+export async function createPrivateTeamChannel(token: string, displayName: string) {
+  return await mmUserFetch<MattermostTeamChannel>(`/channels`, token, {
+    method: "POST",
+    body: JSON.stringify({
+      team_id: getMattermostTeamId(),
+      // Stable, unique and clear of the community pattern; people see display_name.
+      name: `private-${randomBytes(8).toString("hex")}`,
+      display_name: displayName,
+      type: "P"
+    })
+  });
+}
+
+export async function renameChannelAsAdmin(channelId: string, displayName: string) {
+  await mmFetch(`/channels/${encodeURIComponent(channelId)}/patch`, {
+    method: "PUT",
+    headers: getAdminHeaders(),
+    body: JSON.stringify({ display_name: displayName })
+  });
+}
+
+const CHANNEL_MEMBERS_PAGE = 200;
+
+/** Every member of a channel as id and username, sorted by username. */
+export async function listChannelMembersAsAdmin(
+  channelId: string
+): Promise<Pick<MattermostUser, "id" | "username">[]> {
+  const ids: string[] = [];
+  for (let page = 0; ; page++) {
+    const members = await mmFetch<{ user_id: string }[]>(
+      `/channels/${encodeURIComponent(channelId)}/members?page=${page}&per_page=${CHANNEL_MEMBERS_PAGE}`,
+      { headers: getAdminHeaders() }
+    );
+    ids.push(...(members ?? []).map((member) => member.user_id));
+    if (!members || members.length < CHANNEL_MEMBERS_PAGE) break;
+  }
+
+  const users: Pick<MattermostUser, "id" | "username">[] = [];
+  for (let i = 0; i < ids.length; i += CHANNEL_MEMBERS_PAGE) {
+    const batch = await mmFetch<MattermostUser[]>(`/users/ids`, {
+      method: "POST",
+      headers: getAdminHeaders(),
+      body: JSON.stringify(ids.slice(i, i + CHANNEL_MEMBERS_PAGE))
+    });
+    users.push(...(batch ?? []).map(({ id, username }) => ({ id, username })));
+  }
+  return users.sort((a, b) => a.username.localeCompare(b.username));
 }
 
 interface MattermostChannelBasic {
@@ -916,6 +1023,14 @@ export function hasSystemAdminRole(user: Pick<MattermostUser, "roles">): boolean
   return (user.roles?.split(/\s+/) ?? []).includes("system_admin");
 }
 
+/** Whether this Mattermost user, read with their own token, is the chat super-admin. */
+export function isMattermostSuperAdmin(user: Pick<MattermostUser, "username" | "roles">): boolean {
+  return (
+    user.username === MATTERMOST_SUPER_ADMIN &&
+    (!MATTERMOST_REQUIRE_SYSTEM_ADMIN || hasSystemAdminRole(user))
+  );
+}
+
 /**
  * Verifies the caller is the Mattermost super-admin, using the CALLER'S OWN
  * personal access token (never the shared admin token). Requires the env-pinned
@@ -946,11 +1061,7 @@ export async function requireMattermostSuperAdmin(
     throw error;
   }
 
-  const isSuperAdmin =
-    currentUser.username === MATTERMOST_SUPER_ADMIN &&
-    (!MATTERMOST_REQUIRE_SYSTEM_ADMIN || hasSystemAdminRole(currentUser));
-
-  if (!isSuperAdmin) {
+  if (!isMattermostSuperAdmin(currentUser)) {
     return { response: NextResponse.json({ error: "not found" }, { status: 404 }) };
   }
 

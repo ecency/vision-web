@@ -4,6 +4,7 @@ import {
   getMattermostTeamId,
   getMattermostTokenFromCookies,
   handleMattermostError,
+  isMattermostSuperAdmin,
   mmUserFetch
 } from "@/server/mattermost";
 import {
@@ -43,6 +44,7 @@ interface MattermostUser {
   nickname?: string;
   last_picture_update?: number;
   delete_at?: number;
+  roles?: string;
 }
 
 /** Groups have at most 8 members, so one page covers any of them. */
@@ -417,6 +419,8 @@ export async function GET() {
     );
 
     return NextResponse.json({
+      // Shows the private channel tools. The admin routes check for themselves.
+      canManagePrivateChannels: isMattermostSuperAdmin(currentUser),
       channels: orderedChannels.map((channel) => {
         if (channel.type !== "G") return channel;
         const groupUsers = groupUsersById.get(channel.id);
