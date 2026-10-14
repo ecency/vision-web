@@ -35,16 +35,19 @@ function fromCodePoint(code: number, fallback: string) {
  * on ".-:" so "x.@all" still counts.
  */
 export function hasChannelWideMention(message: string) {
-  // Both readings are checked, so neither can hide a mention from the other.
-  return hasSystemMentionWord(message) || hasSystemMentionWord(asMattermostReadsIt(message));
+  // Every reading is checked, so none can hide a mention from another.
+  return [message, asMattermostReadsIt(message)].some(
+    (text) => WORD_SPLITS.some((split) => hasSystemMentionWord(text.split(split)))
+  );
 }
 
-function hasSystemMentionWord(text: string) {
-  // Mattermost keeps letters and digits of any script in a word, but which
-  // characters count depends on its Unicode version. The mentions are ASCII,
-  // so splitting on everything else only ever finds more of them.
-  const words = text.split(/[^:.\-_@A-Za-z0-9]+/);
+// Mattermost keeps letters and digits of any script in a word, but which
+// characters count depends on its Unicode version. Words are split both ways:
+// on letters of any script, as Mattermost does, and on anything not ASCII,
+// which catches letters newer than Mattermost's tables.
+const WORD_SPLITS = [/[^:.\-_@\p{L}\p{N}]+/u, /[^:.\-_@A-Za-z0-9]+/];
 
+function hasSystemMentionWord(words: string[]) {
   for (const raw of words) {
     // Mattermost skips a ":word:" as an emoji code. Not skipped here: after the
     // ASCII-only split a ":word:" can be the tail of a longer Mattermost word.

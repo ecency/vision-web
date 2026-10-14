@@ -67,7 +67,10 @@ describe("channel-wide mentions", () => {
     // A non-ASCII letter keeps ":@all:" inside a longer word for Mattermost.
     "é:@all:",
     "中:@channel:",
-    "١:@here:"
+    "١:@here:",
+    "é:@all:x",
+    "中.@all.x",
+    "é-@here.x"
   ])("recognises %j", (message) => {
     expect(hasChannelWideMention(message)).toBe(true);
   });
