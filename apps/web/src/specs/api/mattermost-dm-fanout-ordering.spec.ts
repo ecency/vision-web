@@ -103,6 +103,25 @@ describe("posts route — DM fan-out runs last", () => {
     expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts", expect.anything(), expect.anything());
   });
 
+  it("drops attachments and other props a client could hide a mention in", async () => {
+    const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    allowFanout();
+
+    const res = await POST(
+      {
+        json: async () => ({
+          message: "hi",
+          props: { parent_id: "p0", attachments: [{ text: "@channel" }] }
+        })
+      } as never,
+      params
+    );
+
+    expect(res.status).toBe(200);
+    const sent = mockMmUserFetch.mock.calls.find(([path]) => path === "/posts")!;
+    expect(JSON.parse(sent[2].body).props).toEqual({ parent_id: "p0" });
+  });
+
   it("records the recipient and posts for an ordinary DM", async () => {
     const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
     allowFanout();

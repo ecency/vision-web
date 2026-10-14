@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   canMentionEveryone,
   hasChannelWideMention,
+  pickPostProps,
   SPECIAL_MENTIONS
 } from "@/server/chat-special-mentions";
 
@@ -13,7 +14,20 @@ describe("channel-wide mentions", () => {
     "@all",
     "(@all) please",
     "hey @ALL.",
-    "done, @channel!"
+    "done, @channel!",
+    // Mattermost trims leading ":.-_" and tries trailing ".-:_" off.
+    ".@all",
+    "-@channel",
+    "_@here_",
+    "-@here-",
+    "@all-",
+    "@all_",
+    "@channel-.",
+    // and splits a word not starting with "@" on ".-:".
+    "x.@all",
+    "foo-@here",
+    "**@all**",
+    "line one\n@channel"
   ])("recognises %j", (message) => {
     expect(hasChannelWideMention(message)).toBe(true);
   });
@@ -25,13 +39,42 @@ describe("channel-wide mentions", () => {
     "@all.ecency",
     "mail me at x@all.com",
     "a@here",
-    "all channel here"
+    "all channel here",
+    ":@all:",
+    "use `@channel` to ping",
+    "```\n@all\n```",
+    "see https://x.com/@all",
+    "[profile](https://x.com/@all)",
+    "@allison."
   ])("leaves %j alone", (message) => {
     expect(hasChannelWideMention(message)).toBe(false);
   });
 
   it("keeps every channel-wide name out of the user mentions", () => {
     expect([...SPECIAL_MENTIONS].sort()).toEqual(["all", "channel", "everyone", "here"]);
+  });
+
+  it("lets anyone use them in a direct message, which reaches one person", () => {
+    expect(
+      canMentionEveryone({ canModerate: false, currentUser: { username: "alice" }, channel: { type: "D" } })
+    ).toBe(true);
+    expect(
+      canMentionEveryone({ canModerate: false, currentUser: { username: "alice" }, channel: { type: "G" } })
+    ).toBe(false);
+  });
+
+  it("forwards only the post props our clients send", () => {
+    expect(
+      pickPostProps({
+        parent_id: "p1",
+        link_url: "https://ecency.com",
+        attachments: [{ text: "@channel" }],
+        from_webhook: "true",
+        parent_message: { nested: true }
+      })
+    ).toEqual({ parent_id: "p1", link_url: "https://ecency.com" });
+    expect(pickPostProps({ attachments: [] })).toBeUndefined();
+    expect(pickPostProps("x")).toBeUndefined();
   });
 
   it("allows community moderators and the chat admin only", () => {
@@ -59,7 +102,7 @@ describe("editing a post into a channel-wide mention", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockMmUserFetch.mockResolvedValue({ id: "p1" });
+    mockMmUserFetch.mockResolvedValue({ id: "p1", channel_id: "c1" });
   });
 
   it("refuses @channel and @all from a regular member", async () => {
@@ -70,7 +113,19 @@ describe("editing a post into a channel-wide mention", () => {
       const res = await PATCH(edit(message), params);
       expect(res.status).toBe(403);
     }
-    expect(mockMmUserFetch).not.toHaveBeenCalled();
+    expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts/p1/patch", expect.anything(), expect.anything());
+  });
+
+  it("checks the channel the post is in, not the one in the address", async () => {
+    // A moderator of their own community aims an edit at a post elsewhere.
+    mockModerationContext.mockResolvedValue({ canModerate: true, currentUser: { username: "mod" }, channel: { id: "c1", type: "O" } });
+    mockMmUserFetch.mockResolvedValue({ id: "p1", channel_id: "other-channel" });
+    const { PATCH, DELETE } = await import("@/app/api/mattermost/channels/[channelId]/posts/[postId]/route");
+
+    expect((await PATCH(edit("@channel hi"), params)).status).toBe(404);
+    expect((await DELETE({} as never, params)).status).toBe(404);
+    expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts/p1/patch", expect.anything(), expect.anything());
+    expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts/p1", "test-token", { method: "DELETE" });
   });
 
   it("lets the chat admin use them, in a private channel too", async () => {

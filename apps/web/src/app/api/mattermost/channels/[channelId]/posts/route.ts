@@ -18,7 +18,8 @@ import {
   CHANNEL_WIDE_MENTION_FORBIDDEN,
   SPECIAL_MENTIONS,
   canMentionEveryone,
-  hasChannelWideMention
+  hasChannelWideMention,
+  pickPostProps
 } from "@/server/chat-special-mentions";
 import { checkDmFanout } from "@/server/chat-dm-fanout";
 import { addMentionedUsersToChannel } from "@/server/chat-mentions";
@@ -333,7 +334,7 @@ export async function POST(
 
     const message = body.message as string;
     const rootId = (body.rootId as string | null | undefined) || null;
-    const props = (body.props as Record<string, unknown> | undefined) || undefined;
+    const props = pickPostProps(body.props);
 
     if (!message) {
       return NextResponse.json({ error: "message required" }, { status: 400 });

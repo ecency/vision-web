@@ -93,7 +93,10 @@ export function NewPrivateChannelModal({
             value={name}
             maxLength={PRIVATE_CHANNEL_NAME_MAX_LENGTH}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
-            onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && submit()}
+            onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+              // Enter that confirms an IME composition is not a submit.
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
+            }}
           />
 
           {show && !incompleteChannelId && (

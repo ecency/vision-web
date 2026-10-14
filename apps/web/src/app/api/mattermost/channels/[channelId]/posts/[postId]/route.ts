@@ -21,7 +21,15 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ chan
 
   try {
     const moderation = await getMattermostCommunityModerationContext(token, channelId);
-    const post = await mmUserFetch<{ user_id: string }>(`/posts/${encodeURIComponent(postId)}`, token);
+    const post = await mmUserFetch<{ user_id: string; channel_id: string }>(
+      `/posts/${encodeURIComponent(postId)}`,
+      token
+    );
+    // Moderation rights belong to the channel in the URL, so they only reach
+    // posts in that channel.
+    if (post.channel_id !== moderation.channel.id) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
 
     const isAuthor = post.user_id === moderation.currentUser.id;
 
@@ -54,6 +62,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ channe
 
     if (!message) {
       return NextResponse.json({ error: "message required" }, { status: 400 });
+    }
+
+    // The edit lands on the post's own channel, so that is the one checked.
+    const existing = await mmUserFetch<{ channel_id: string }>(
+      `/posts/${encodeURIComponent(postId)}`,
+      token
+    );
+    if (existing.channel_id !== channelId) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
     }
 
     if (hasChannelWideMention(message)) {
