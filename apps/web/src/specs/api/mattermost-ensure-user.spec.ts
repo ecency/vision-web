@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const mockFindHiveCommunity = vi.fn();
+vi.mock("@/server/hive-community", () => ({
+  findHiveCommunity: (...args: unknown[]) => mockFindHiveCommunity(...args)
+}));
+
 // ensureMattermostUser must be idempotent: a concurrent/repeat bootstrap
 // (common with browser-extension integrations) can create the MM user
 // between the username lookup and the create POST. Mattermost then returns
@@ -235,6 +240,7 @@ describe("ensureUserInChannel / ensureChannelForCommunity — idempotency", () =
   });
 
   it("ensureChannelForCommunity reuses a concurrently-created channel", async () => {
+    mockFindHiveCommunity.mockResolvedValue({ name: "hive-1", title: "Hive One" });
     const { ensureChannelForCommunity } = await loadModule();
     fetchMock
       .mockResolvedValueOnce(resp(404, "no such channel")) // GET channel by name
@@ -250,6 +256,27 @@ describe("ensureUserInChannel / ensureChannelForCommunity — idempotency", () =
 
     await expect(ensureCommunityChannelMembership("u-1", "hive-1", "x", true)).rejects.toThrow();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates a channel only for a community that exists on Hive, named as Hive names it", async () => {
+    const { ensureChannelForCommunity } = await loadModule();
+
+    mockFindHiveCommunity.mockResolvedValue(null);
+    fetchMock.mockResolvedValueOnce(resp(404, "no such channel"));
+    await expect(ensureChannelForCommunity("hive-999999999", "Free airdrop")).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fetchMock.mockReset();
+    mockFindHiveCommunity.mockResolvedValue({ name: "hive-2", title: "Real Title" });
+    fetchMock
+      .mockResolvedValueOnce(resp(404, "no such channel"))
+      .mockResolvedValueOnce(resp(201, { id: "ch-2", type: "O" }));
+    await expect(ensureChannelForCommunity("hive-2", "Client Title")).resolves.toBe("ch-2");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
+      name: "hive-2",
+      display_name: "Real Title",
+      type: "O"
+    });
   });
 
   it("refuses a name that is not a community before asking Mattermost", async () => {

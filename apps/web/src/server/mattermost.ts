@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { bridgeApiCall, getProfiles } from "@ecency/sdk";
 import { CommunityRole, ROLES } from "@ecency/sdk";
 import { toPublicChatUser } from "@/server/chat-public-user";
+import { findHiveCommunity } from "@/server/hive-community";
 import { ChatUserBusyError, withChatUserLock } from "@/server/chat-user-lock";
 
 export { ChatUserBusyError };
@@ -353,6 +354,13 @@ export async function ensureChannelForCommunity(
   if (existing) {
     return asCommunityChannel(existing);
   }
+  // Only a community that exists on Hive gets a channel, named as Hive names it,
+  // so a client cannot create channels under made-up names.
+  const hiveCommunity = await findHiveCommunity(channelName);
+  if (!hiveCommunity) {
+    throw new Error(`Community ${channelName} was not found on Hive`);
+  }
+  const title = (hiveCommunity.title?.trim() || displayName || channelName).trim();
   try {
     const created = await mmFetch<{ id: string }>(`/channels`, {
       method: "POST",
@@ -360,7 +368,8 @@ export async function ensureChannelForCommunity(
       body: JSON.stringify({
         team_id: teamId,
         name: channelName,
-        display_name: displayName || community,
+        // Mattermost caps a display name at 64 characters.
+        display_name: Array.from(title).slice(0, 64).join(""),
         type: "O"
       }),
       signal
