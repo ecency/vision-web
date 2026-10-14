@@ -6,6 +6,7 @@ import { useState } from "react";
 import i18next from "i18next";
 import { PeopleListModal } from "./people-list-modal";
 import { RenameGroupModal } from "./rename-group-modal";
+import { ManagePrivateChannelModal } from "./private-channel-modals";
 
 interface ChannelHeaderProps {
   channelTitle: string;
@@ -33,6 +34,8 @@ interface ChannelHeaderProps {
   viewerUsername?: string;
   /** Group channels the viewer started: offers renaming. */
   renameGroup?: { channelId: string; currentName?: string };
+  /** Private channels, for the chat admin: offers managing name and members. */
+  managePrivateChannelId?: string;
 }
 
 export function ChannelHeader({
@@ -57,10 +60,12 @@ export function ChannelHeader({
   onClose,
   groupMembers,
   viewerUsername,
-  renameGroup
+  renameGroup,
+  managePrivateChannelId
 }: ChannelHeaderProps) {
   const [showMembers, setShowMembers] = useState(false);
   const [showRename, setShowRename] = useState(false);
+  const [showManage, setShowManage] = useState(false);
 
   return (
     <div className="border-b border-[--border-color] px-4 py-2.5">
@@ -107,6 +112,24 @@ export function ChannelHeader({
                   onHide={() => setShowRename(false)}
                   channelId={renameGroup.channelId}
                   currentName={renameGroup.currentName}
+                />
+              </>
+            )}
+
+            {managePrivateChannelId && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowManage(true)}
+                  className="flex items-center gap-1 rounded-full border border-[--border-color] px-2 py-1 text-[11px] text-[--text-muted] transition hover:border-blue-dark-sky hover:text-[--text-color]"
+                >
+                  <span className="text-sm leading-none" aria-hidden>⚙️</span>
+                  <span>{i18next.t("chat.manage-private-channel")}</span>
+                </button>
+                <ManagePrivateChannelModal
+                  show={showManage}
+                  onHide={() => setShowManage(false)}
+                  channelId={managePrivateChannelId}
                 />
               </>
             )}

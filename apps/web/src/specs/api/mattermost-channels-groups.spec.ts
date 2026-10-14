@@ -8,6 +8,7 @@ vi.mock("@/server/mattermost", () => ({
   handleMattermostError: (err: unknown) => {
     throw err;
   },
+  isMattermostSuperAdmin: (user: { username?: string }) => user?.username === "ecency",
   mmUserFetch: (...args: unknown[]) => mockMmUserFetch(...args)
 }));
 
@@ -80,6 +81,17 @@ describe("channels route — group members", () => {
     expect(group).toBeDefined();
     expect(group.groupUsers).toBeUndefined();
     expect(group.display_name).toBe("carol, dave, me");
+  });
+
+  it("offers the private channel tools to the chat admin only", async () => {
+    const { GET } = await import("@/app/api/mattermost/channels/route");
+    expect((await (await GET()).json()).canManagePrivateChannels).toBe(false);
+
+    const fallback = mockMmUserFetch.getMockImplementation()!;
+    mockMmUserFetch.mockImplementation((path: string, ...rest: unknown[]) =>
+      path === "/users/me" ? Promise.resolve({ id: "me", username: "ecency" }) : fallback(path, ...rest)
+    );
+    expect((await (await GET()).json()).canManagePrivateChannels).toBe(true);
   });
 
   it("does not look up members of other channel types", async () => {

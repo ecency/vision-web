@@ -248,7 +248,11 @@ export function useMattermostChannels(enabled: boolean) {
         const data = await safeJson<{ error?: string }>(res);
         throw new Error(data?.error || "Unable to load channels");
       }
-      return (await safeJson(res)) as { channels: MattermostChannel[] };
+      return (await safeJson(res)) as {
+        channels: MattermostChannel[];
+        /** Whether the viewer is the chat admin, who creates and manages private channels. */
+        canManagePrivateChannels?: boolean;
+      };
     }
   });
 }
@@ -871,6 +875,100 @@ export function useMattermostGroupChannel() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["mattermost-channels"], exact: false });
+    }
+  });
+}
+
+async function privateChannelRequest<T>(path: string, init: RequestInit, fallbackError: string) {
+  const res = await fetch(`/api/mattermost/admin/private-channels${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json" }
+  });
+  if (!res.ok) {
+    const data = await safeJson<{ error?: string }>(res).catch(() => null);
+    throw new Error(data?.error || `${fallbackError} (${res.status})`);
+  }
+  return (await safeJson(res)) as T;
+}
+
+/** Private channels: created and managed by the chat admin only. */
+export function useMattermostCreatePrivateChannel() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ name, usernames }: { name: string; usernames: string[] }) => {
+      const data = await privateChannelRequest<{ channelId?: unknown; incomplete?: boolean }>(
+        "",
+        { method: "POST", body: JSON.stringify({ name, usernames }) },
+        "Unable to create the channel"
+      );
+      const channelId = asChannelId(data.channelId);
+      if (!channelId) {
+        throw new Error("Unable to create the channel");
+      }
+      return { channelId, incomplete: Boolean(data.incomplete) };
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["mattermost-channels"], exact: false });
+    }
+  });
+}
+
+export interface PrivateChannelDetails {
+  channel: { id: string; display_name: string };
+  members: Array<{ id: string; username: string }>;
+}
+
+export function useMattermostPrivateChannel(channelId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["mattermost-private-channel", channelId],
+    enabled: enabled && Boolean(channelId),
+    queryFn: () =>
+      privateChannelRequest<PrivateChannelDetails>(
+        `/${encodeURIComponent(channelId)}`,
+        { method: "GET" },
+        "Unable to load the channel"
+      )
+  });
+}
+
+type PrivateChannelChange =
+  | { kind: "rename"; name: string }
+  | { kind: "add"; usernames: string[] }
+  | { kind: "remove"; username: string };
+
+export function useMattermostManagePrivateChannel(channelId: string) {
+  const queryClient = useQueryClient();
+  const channelPath = `/${encodeURIComponent(channelId)}`;
+
+  return useMutation({
+    mutationFn: (change: PrivateChannelChange) => {
+      switch (change.kind) {
+        case "rename":
+          return privateChannelRequest(
+            channelPath,
+            { method: "PUT", body: JSON.stringify({ name: change.name }) },
+            "Unable to rename the channel"
+          );
+        case "add":
+          return privateChannelRequest(
+            `${channelPath}/members`,
+            { method: "POST", body: JSON.stringify({ usernames: change.usernames }) },
+            "Unable to add people"
+          );
+        case "remove":
+          return privateChannelRequest(
+            `${channelPath}/members`,
+            { method: "DELETE", body: JSON.stringify({ username: change.username }) },
+            "Unable to remove this person"
+          );
+      }
+    },
+    onSettled: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["mattermost-private-channel", channelId] }),
+        queryClient.invalidateQueries({ queryKey: ["mattermost-channels"], exact: false })
+      ]);
     }
   });
 }

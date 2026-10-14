@@ -1120,6 +1120,9 @@ export function MattermostChannelView({ channelId }: Props) {
           groupMembers={groupUsers}
           viewerUsername={activeUser?.username}
           renameGroup={canRenameGroup ? { channelId, currentName: groupName } : undefined}
+          managePrivateChannelId={
+            channels?.canManagePrivateChannels && channelData?.channel?.type === "P" ? channelId : undefined
+          }
         />
 
         {showDmWarning && (
