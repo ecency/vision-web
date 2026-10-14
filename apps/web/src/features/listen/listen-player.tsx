@@ -31,7 +31,8 @@ const VISITOR_STATUS_DELAY_MS = 1500;
 const UNSUPPORTED_SCRIPTS = [/\p{Script=Thai}/gu, /\p{Script=Bengali}/gu, /\p{Script=Hebrew}/gu,
   /\p{Script=Tamil}/gu, /\p{Script=Telugu}/gu];
 const HAN = /\p{Script=Han}/gu;
-// Japanese and Korean are supported and also use Han characters: kana or hangul mark them.
+// Japanese and Korean are supported and also use Han characters. Any kana or hangul marks
+// them (Chinese text has none), so kanji-heavy Japanese is never taken for Chinese.
 const KANA_HANGUL = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu;
 const LETTER = /\p{L}/gu;
 
@@ -66,6 +67,7 @@ const count = (text: string, re: RegExp) => text.match(re)?.length ?? 0;
  * True when most of a post's letters are in a script the voice cannot read (Thai,
  * Bengali, Hebrew, Tamil, Telugu, or Chinese). Links and image markup are left out
  * first. Latin and Arabic script posts are left to the server's language detection.
+ * Only a first guess: the server's analysis overrides it either way.
  */
 export function isUnreadableScript(body: string): boolean {
   const text = body.replace(/!?\[[^\]]*\]\([^)]*\)/g, " ").replace(/https?:\/\/\S+/g, " ");
@@ -73,7 +75,7 @@ export function isUnreadableScript(body: string): boolean {
   if (letters === 0) return false;
   const unsupported = UNSUPPORTED_SCRIPTS.reduce((n, re) => n + count(text, re), 0);
   const kanaHangul = count(text, KANA_HANGUL);
-  const chinese = kanaHangul > letters * 0.05 ? 0 : count(text, HAN);
+  const chinese = kanaHangul > 0 ? 0 : count(text, HAN);
   return (unsupported + chinese) / letters > 0.5;
 }
 
@@ -84,7 +86,8 @@ export function isUnreadableScript(body: string): boolean {
  *
  * Post pages are what crawlers and most visitors load, so the bar costs them nothing:
  * it is in the server HTML from the first paint (no layout shift when it fills in),
- * a post in a script the voice cannot read never shows it, a visitor's status is only
+ * a post in a script the voice cannot read does not show it until the server finds a
+ * supported language in it (the status is still asked for), a visitor's status is only
  * asked for once the page is idle (it can still hide the bar for a post already found
  * unsupported), and `data-nosnippet` keeps it out of search snippets.
  */
@@ -127,7 +130,7 @@ export function ListenPlayer({ entry }: Props) {
   );
   const { data: status } = useQuery({
     ...statusOptions,
-    enabled: !isComment && !unreadable && (!!username || idle) && tokenReady && statusOptions.enabled !== false
+    enabled: !isComment && (!!username || idle) && tokenReady && statusOptions.enabled !== false
   });
 
   const unlock = useListenUnlock(username, token?.value);
@@ -194,7 +197,9 @@ export function ListenPlayer({ entry }: Props) {
     [entry.body]
   );
 
-  if (isComment || unreadable || status?.status === "unsupported") {
+  // The text-only guess holds until the server has analysed the post.
+  const analysedSupported = !!status && status.status !== "unsupported" && status.languages.length > 0;
+  if (isComment || status?.status === "unsupported" || (unreadable && !analysedSupported)) {
     return null;
   }
   // Until the status arrives, the bar is drawn from the post alone, at its final height.

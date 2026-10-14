@@ -122,10 +122,18 @@ describe("ListenPlayer", () => {
     await waitFor(() => expect(container.querySelector(".listen-bar")).toBeNull(), { timeout: 3000 });
   });
 
-  it("never offers a post in a script the voice cannot read", async () => {
+  it("does not offer a post in a script the voice cannot read until the server finds a voice", async () => {
+    activeUser.current = { username: "alice" };
     const thai = mockEntry({ author: "noelyss", permlink: "plaza", body: "สวัสดีครับ ".repeat(200) });
+    status.current = new Promise(() => undefined); // not answered yet
+    const first = render(thai);
+    expect(first.container.querySelector(".listen-bar")).toBeNull();
+    first.unmount();
+
+    // the guess never stops the request, and an analysis with a supported track wins
+    status.current = { cost: 50, unlocked: false, status: "none", languages: [{ lang: "en", share: 0.4, seconds: 90 }] };
     const { container } = render(thai);
-    expect(container.querySelector(".listen-bar")).toBeNull();
+    await waitFor(() => expect(container.querySelector(".listen-bar")).not.toBeNull());
   });
 
   it("keeps the bar in place while a reader's status loads", async () => {
@@ -266,6 +274,8 @@ describe("listen helpers", () => {
     expect(isUnreadableScript("今日はとても良い天気ですね。公園に行きましょう。")).toBe(false); // Japanese
     // kanji-heavy Japanese: the kana are what tell it from Chinese
     expect(isUnreadableScript("東京都庁舎の展望室見学報告。新宿駅西口から徒歩十分、入場無料です。")).toBe(false);
+    // 27 kanji and a single kana is still Japanese
+    expect(isUnreadableScript("東京都庁舎展望室見学報告新宿駅西口徒歩十分入場無料営業時間午前九時の")).toBe(false);
     expect(isUnreadableScript("오늘 날씨가 정말 좋네요")).toBe(false); // Korean
     expect(isUnreadableScript("Hola a todos, hoy es un buen día")).toBe(false);
     expect(isUnreadableScript("مرحبا بالجميع")).toBe(false); // Arabic: left to the server
