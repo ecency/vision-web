@@ -45,6 +45,7 @@ describe("private channel dialogs", () => {
   beforeEach(() => {
     setupModalContainers();
     vi.clearAllMocks();
+    createMutate.mockReset();
     searchUsers = [
       { id: "1", username: "alice" },
       { id: "2", username: "bob" },
@@ -101,6 +102,30 @@ describe("private channel dialogs", () => {
     );
   });
 
+  it("never offers the admin their own removal", () => {
+    render(<ManagePrivateChannelModal show={true} onHide={vi.fn()} channelId="c1" viewerUsername="Ecency" />);
+
+    const ownRow = screen.getByText("@ecency").closest("li")!;
+    expect(within(ownRow).queryByRole("button")).toBeNull();
+    expect(within(screen.getByText("@bob").closest("li")!).getByRole("button")).toBeTruthy();
+  });
+
+  it("keeps the dialog open with a notice when not everyone could be added", () => {
+    const onCreated = vi.fn();
+    createMutate.mockImplementation((_vars, { onSuccess }) =>
+      onSuccess({ channelId: "c9", incomplete: true })
+    );
+    render(<NewPrivateChannelModal show={true} onHide={vi.fn()} currentUsername="ecency" onCreated={onCreated} />);
+    fireEvent.change(screen.getByLabelText("chat.private-channel-name"), { target: { value: "Curators" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "chat.private-channel-create" }));
+
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toBe("chat.private-channel-incomplete");
+    fireEvent.click(screen.getByRole("button", { name: "chat.private-channel-open" }));
+    expect(onCreated).toHaveBeenCalledWith("c9");
+  });
+
   it("renames only to a changed, valid name", () => {
     render(<ManagePrivateChannelModal show={true} onHide={vi.fn()} channelId="c1" />);
     const input = screen.getByLabelText("chat.private-channel-name") as HTMLInputElement;
@@ -111,6 +136,9 @@ describe("private channel dialogs", () => {
 
     fireEvent.change(input, { target: { value: "Curation team" } });
     fireEvent.click(save);
-    expect(manageMutate).toHaveBeenCalledWith({ kind: "rename", name: "Curation team" });
+    expect(manageMutate).toHaveBeenCalledWith(
+      { kind: "rename", name: "Curation team" },
+      expect.any(Object)
+    );
   });
 });

@@ -47,12 +47,15 @@ export function NewPrivateChannelModal({
 }: NewPrivateChannelModalProps) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<MattermostUser[]>([]);
+  // Set when the channel exists but not everyone could be added to it.
+  const [incompleteChannelId, setIncompleteChannelId] = useState<string | null>(null);
   const create = useMattermostCreatePrivateChannel();
 
   useEffect(() => {
     if (!show) {
       setName("");
       setSelected([]);
+      setIncompleteChannelId(null);
       create.reset();
     }
     // Reset only when the dialog closes.
@@ -65,12 +68,14 @@ export function NewPrivateChannelModal({
   );
   const canCreate = nameIsValid(name) && !create.isPending;
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (!canCreate) return;
+  const submit = () => {
+    if (!canCreate || incompleteChannelId) return;
     create.mutate(
       { name: name.trim(), usernames: selected.map((user) => user.username) },
-      { onSuccess: ({ channelId }) => onCreated(channelId) }
+      {
+        onSuccess: ({ channelId, incomplete }) =>
+          incomplete ? setIncompleteChannelId(channelId) : onCreated(channelId)
+      }
     );
   };
 
@@ -78,7 +83,8 @@ export function NewPrivateChannelModal({
     <Modal show={show} onHide={onHide} centered size="md">
       <ModalHeader closeButton={true}>{i18next.t("chat.new-private-channel")}</ModalHeader>
       <ModalBody>
-        <form className="flex flex-col gap-3" onSubmit={submit}>
+        {/* No form: Enter in the people search must not create the channel. */}
+        <div className="flex flex-col gap-3">
           <p className="text-xs text-[--text-muted]">{i18next.t("chat.private-channel-hint")}</p>
           <FormControl
             type="text"
@@ -89,23 +95,36 @@ export function NewPrivateChannelModal({
             onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
           />
 
-          {show && (
+          {show && !incompleteChannelId && (
             <PeoplePicker selected={selected} onChange={setSelected} exclude={exclude} enabled={show} />
           )}
 
           <ErrorText error={create.error} />
 
-          <div className="flex justify-end gap-2">
-            <Button appearance="secondary" type="button" onClick={onHide}>
-              {i18next.t("g.cancel")}
-            </Button>
-            <Button type="submit" disabled={!canCreate}>
-              {create.isPending
-                ? i18next.t("chat.private-channel-creating")
-                : i18next.t("chat.private-channel-create")}
-            </Button>
-          </div>
-        </form>
+          {incompleteChannelId ? (
+            <>
+              <div className="text-sm text-red-500" role="alert">
+                {i18next.t("chat.private-channel-incomplete")}
+              </div>
+              <div className="flex justify-end">
+                <Button type="button" onClick={() => onCreated(incompleteChannelId)}>
+                  {i18next.t("chat.private-channel-open")}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex justify-end gap-2">
+              <Button appearance="secondary" type="button" onClick={onHide}>
+                {i18next.t("g.cancel")}
+              </Button>
+              <Button type="button" disabled={!canCreate} onClick={submit}>
+                {create.isPending
+                  ? i18next.t("chat.private-channel-creating")
+                  : i18next.t("chat.private-channel-create")}
+              </Button>
+            </div>
+          )}
+        </div>
       </ModalBody>
     </Modal>
   );
@@ -115,23 +134,33 @@ interface ManagePrivateChannelModalProps {
   show: boolean;
   onHide: () => void;
   channelId: string;
+  /** The admin: never offered for removal, which would lock them out. */
+  viewerUsername?: string;
 }
 
 /** Chat admin only: renames a private channel and adds or removes its members. */
-export function ManagePrivateChannelModal({ show, onHide, channelId }: ManagePrivateChannelModalProps) {
+export function ManagePrivateChannelModal({
+  show,
+  onHide,
+  channelId,
+  viewerUsername
+}: ManagePrivateChannelModalProps) {
   const details = useMattermostPrivateChannel(channelId, show);
   const manage = useMattermostManagePrivateChannel(channelId);
   const [name, setName] = useState("");
+  const [nameTouched, setNameTouched] = useState(false);
   const [adding, setAdding] = useState<MattermostUser[]>([]);
 
   const savedName = details.data?.channel.display_name ?? "";
+  // Follow the saved name until the admin starts editing it.
   useEffect(() => {
-    if (show) setName(savedName);
-  }, [show, savedName]);
+    if (show && !nameTouched) setName(savedName);
+  }, [show, savedName, nameTouched]);
 
   useEffect(() => {
     if (!show) {
       setAdding([]);
+      setNameTouched(false);
       manage.reset();
     }
     // Reset only when the dialog closes.
@@ -147,7 +176,7 @@ export function ManagePrivateChannelModal({ show, onHide, channelId }: ManagePri
   const rename = (event: FormEvent) => {
     event.preventDefault();
     if (!nameIsValid(name) || name.trim() === savedName || manage.isPending) return;
-    manage.mutate({ kind: "rename", name: name.trim() });
+    manage.mutate({ kind: "rename", name: name.trim() }, { onSuccess: () => setNameTouched(false) });
   };
 
   const add = () => {
@@ -170,7 +199,10 @@ export function ManagePrivateChannelModal({ show, onHide, channelId }: ManagePri
               placeholder={i18next.t("chat.private-channel-name")}
               value={name}
               maxLength={PRIVATE_CHANNEL_NAME_MAX_LENGTH}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                setNameTouched(true);
+                setName(e.target.value);
+              }}
             />
             <Button
               type="submit"
@@ -217,6 +249,7 @@ export function ManagePrivateChannelModal({ show, onHide, channelId }: ManagePri
                       <UserAvatar username={member.username} size="small" className="size-6" />
                       <span className="truncate">@{member.username}</span>
                     </span>
+                    {member.username.toLowerCase() !== viewerUsername?.toLowerCase() && (
                     <Button
                       type="button"
                       size="xs"
@@ -228,6 +261,7 @@ export function ManagePrivateChannelModal({ show, onHide, channelId }: ManagePri
                     >
                       {i18next.t("chat.private-channel-remove")}
                     </Button>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -9,6 +9,7 @@ import {
 export const PRIVATE_CHANNEL_NAME_MAX_LENGTH = 64;
 // How many people one request may add. More can be added in further requests.
 export const PRIVATE_CHANNEL_MAX_ADD = 100;
+const LOOKUP_CONCURRENCY = 10;
 
 /** The trimmed name with inner whitespace collapsed, or null when empty or too long. */
 export function normalizePrivateChannelName(raw: unknown): string | null {
@@ -41,9 +42,13 @@ export function parseUsernames(raw: unknown): string[] | null {
  * for, since adding them gives them nothing.
  */
 export async function findChatUsers(usernames: string[], { includeInactive = false } = {}) {
-  const found = (await Promise.all(usernames.map((name) => lookupMattermostUser(name)))).map(
-    (user) => (user && (includeInactive || !user.delete_at) ? user : null)
-  );
+  const found: (MattermostUser | null)[] = [];
+  for (let i = 0; i < usernames.length; i += LOOKUP_CONCURRENCY) {
+    const batch = await Promise.all(
+      usernames.slice(i, i + LOOKUP_CONCURRENCY).map((name) => lookupMattermostUser(name))
+    );
+    found.push(...batch.map((user) => (user && (includeInactive || !user.delete_at) ? user : null)));
+  }
   return {
     users: found.filter((user): user is MattermostUser => !!user),
     missing: usernames.filter((_, i) => !found[i])

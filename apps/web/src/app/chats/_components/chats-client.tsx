@@ -448,7 +448,10 @@ export function ChatsClient() {
                     onClick={(e: MouseEvent) => handleChannelAction(e, () => leaveChannel(channel.id))}
                   />
                 ) : (
-                  !isTownHallChannel(channel) && (
+                  // The chat admin manages private channels from inside them;
+                  // leaving would drop the only way back in.
+                  !isTownHallChannel(channel) &&
+                  !(channel.type === "P" && channels?.canManagePrivateChannels) && (
                     <DropdownItemWithIcon
                       label={i18next.t("chat.leave-channel")}
                       onClick={(e: MouseEvent) => handleChannelAction(e, () => leaveChannel(channel.id))}

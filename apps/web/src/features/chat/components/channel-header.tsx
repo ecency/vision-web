@@ -130,6 +130,7 @@ export function ChannelHeader({
                   show={showManage}
                   onHide={() => setShowManage(false)}
                   channelId={managePrivateChannelId}
+                  viewerUsername={viewerUsername}
                 />
               </>
             )}

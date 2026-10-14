@@ -59,6 +59,12 @@ describe("getDmPrivacyRejection", () => {
     expect(rejection?.error).not.toContain("@alice");
   });
 
+  it("still fails when Hive cannot be reached, rather than claiming no follow", async () => {
+    mockFetchQuery.mockRejectedValue(new Error("all RPC nodes failed"));
+
+    await expect(getDmPrivacyRejection(VICTIM, ["alice"])).rejects.toThrow("all RPC nodes failed");
+  });
+
   it("rejects a member who accepts no DMs without looking anything up", async () => {
     mockProps.mockResolvedValue({ props: { ecency_dm_privacy: "none" } });
 
