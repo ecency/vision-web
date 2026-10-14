@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.25
+
+### Patch Changes
+
+- Listen: natural-voice audio player unlocked with Points, remove Web Speech TTS (#1956)
+
 ## 2.4.24
 
 ### Patch Changes

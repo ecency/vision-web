@@ -1,0 +1,2 @@
+import {a as a$1}from'./chunk-OBSTAXZB.js';import {b}from'./chunk-PFVWZI3W.js';import {a as a$2}from'./chunk-CQOMDMT6.js';function a(t,o,u){return b(["communities","subscribe"],t,({community:e})=>[a$1(t,e)],async(e,r)=>{o?.adapter?.invalidateQueries&&await o.adapter.invalidateQueries([a$2.accounts.subscriptions(t),[...a$2.communities.singlePrefix(r.community)],a$2.communities.context(t,r.community)]);},o,"posting",{broadcastMode:u??"async"})}export{a};//# sourceMappingURL=chunk-TZW7RWFI.js.map
+//# sourceMappingURL=chunk-TZW7RWFI.js.map
