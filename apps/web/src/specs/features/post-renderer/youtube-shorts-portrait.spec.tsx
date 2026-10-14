@@ -62,11 +62,14 @@ describe("YouTube Shorts portrait sizing", () => {
   // `iframe` rule, so without the exclusion a Short rendered as a small player
   // at the top of a tall black box.
   it("keeps the direct-embed YouTube iframe out of the global iframe sizing", () => {
-    expect(markdownScss).toContain(
-      "iframe:not(.youtube-shorts-iframe):not(.speak-iframe):not(.portrait-embed):not(.youtube-player) {"
+    // Other embeds add their own exclusions to these selectors, so match the
+    // .youtube-player one wherever it sits in the list. It must stay a plain,
+    // top-level argument: a nested :not(:not(...)) would select the player.
+    expect(markdownScss).toMatch(
+      /^\s*iframe(?::not\([^()]*\))*:not\(\.youtube-player\)(?::not\([^()]*\))*\s*\{/m
     );
-    expect(scss).toContain(
-      "iframe:where(:not(.youtube-shorts-iframe, .youtube-player, .speak-iframe, .portrait-embed)) {"
+    expect(scss).toMatch(
+      /^\s*iframe:where\(:not\((?:[^()]*,\s*)?\.youtube-player\s*(?:,[^()]*)?\)\)\s*\{/m
     );
   });
 
