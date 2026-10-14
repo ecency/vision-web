@@ -9,6 +9,14 @@ import { QueryClient } from "@tanstack/react-query";
   is ready, with one chip per language track.
 */
 
+function defaultStatusOptions(author: string, permlink: string, username?: string) {
+  return {
+    queryKey: ["spec", "listen", author, permlink, username],
+    queryFn: async () => status.current,
+    enabled: true
+  };
+}
+
 const { status, mutate, toggleUiProp, toastError, activeUser, ensureValidToken } = vi.hoisted(() => ({
   ensureValidToken: vi.fn(async () => "fresh-token" as string | undefined),
   status: { current: null as any },
@@ -20,11 +28,7 @@ const { status, mutate, toggleUiProp, toastError, activeUser, ensureValidToken }
 
 vi.mock("@ecency/sdk", async () => ({
   ...(await vi.importActual<Record<string, unknown>>("@ecency/sdk")),
-  getListenStatusQueryOptions: vi.fn((author: string, permlink: string, username?: string) => ({
-    queryKey: ["spec", "listen", author, permlink, username],
-    queryFn: async () => status.current,
-    enabled: true
-  })),
+  getListenStatusQueryOptions: vi.fn(defaultStatusOptions),
   useListenUnlock: vi.fn(() => ({ mutate, isPending: false })),
   makeIdempotencyKey: vi.fn(() => "key-1234567890")
 }));
@@ -62,7 +66,9 @@ function render(entry = mockEntry({ author: "noelyss", permlink: "plaza", body: 
 }
 
 describe("ListenPlayer", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    const { getListenStatusQueryOptions } = await import("@ecency/sdk");
+    vi.mocked(getListenStatusQueryOptions).mockImplementation(defaultStatusOptions as any);
     mutate.mockReset();
     toggleUiProp.mockReset();
     toastError.mockReset();
@@ -79,6 +85,7 @@ describe("ListenPlayer", () => {
   });
 
   it("renders nothing when the post's language has no voice", async () => {
+    activeUser.current = { username: "alice" };
     status.current = { cost: 50, unlocked: false, status: "unsupported", languages: [] };
     const { container } = render();
     await new Promise((r) => setTimeout(r, 20));
@@ -89,6 +96,33 @@ describe("ListenPlayer", () => {
     render();
     fireEvent.click(await screen.findByText("listen.login"));
     expect(toggleUiProp).toHaveBeenCalledWith("login");
+  });
+
+  it("draws the bar for a visitor at once, without asking for the status", async () => {
+    const statusFn = vi.fn(async () => status.current);
+    const { getListenStatusQueryOptions } = await import("@ecency/sdk");
+    vi.mocked(getListenStatusQueryOptions).mockImplementation(((author: string, permlink: string) => ({
+      queryKey: ["spec", "listen", author, permlink],
+      queryFn: statusFn,
+      enabled: true
+    })) as any);
+    const { container } = render();
+    // first render, before any effect or query: crawlers and the first paint see it
+    expect(container.querySelector(".listen-bar")).not.toBeNull();
+    expect(container.querySelector(".listen-bar")!.hasAttribute("data-nosnippet")).toBe(true);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(statusFn).not.toHaveBeenCalled();
+  });
+
+  it("keeps the bar in place while a reader's status loads", async () => {
+    activeUser.current = { username: "alice" };
+    status.current = new Promise(() => undefined); // never answers
+    const { container } = render();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(container.querySelector(".listen-bar")).not.toBeNull();
+    expect(container.querySelector("[aria-busy='true']")).not.toBeNull();
+    expect(screen.queryByText("listen.unlock")).toBeNull();
+    expect(screen.queryByText("listen.login")).toBeNull();
   });
 
   it("names the languages before unlock", async () => {

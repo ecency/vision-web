@@ -52,8 +52,13 @@ export function pickTrack(tracks: ListenTrack[], uiLanguage: string): ListenTrac
 /**
  * Natural-voice audio of a post, on top of its body. Readers unlock it once with
  * Points; the audio is generated server-side and cached, so later readers of the same
- * post get it at once. Hidden for comments, for posts in a language without a voice,
- * and while the status is unknown.
+ * post get it at once. Hidden for comments and for posts in a language without a voice.
+ *
+ * Post pages are what crawlers and most visitors load, so the bar costs them nothing:
+ * it is in the server HTML from the first paint (no layout shift when it fills in),
+ * visitors who are not logged in get it without any request (the status is only
+ * fetched for a reader who could unlock), and `data-nosnippet` keeps it out of search
+ * snippets.
  */
 export function ListenPlayer({ entry }: Props) {
   const isComment = !!entry.parent_author;
@@ -88,7 +93,7 @@ export function ListenPlayer({ entry }: Props) {
   );
   const { data: status } = useQuery({
     ...statusOptions,
-    enabled: !isComment && tokenReady && statusOptions.enabled !== false
+    enabled: !isComment && !!username && tokenReady && statusOptions.enabled !== false
   });
 
   const unlock = useListenUnlock(username, token?.value);
@@ -155,17 +160,21 @@ export function ListenPlayer({ entry }: Props) {
     [entry.body]
   );
 
-  if (isComment || !status || status.status === "unsupported") {
+  if (isComment || status?.status === "unsupported") {
     return null;
   }
+  // Until a reader's status arrives (and always for visitors), the bar is drawn from
+  // the post alone, at its final height.
+  const loading = !!username && !status;
+  const view = status ?? { cost: 0, unlocked: false, status: "none" as const, languages: [] };
 
   const locale = i18next.language || "en";
-  const languages = status.languages.map((l) => languageName(l.lang, locale)).join(" + ");
-  const minutes = status.languages.length
-    ? Math.max(1, Math.round(Math.max(...status.languages.map((l) => l.seconds)) / 60))
+  const languages = view.languages.map((l) => languageName(l.lang, locale)).join(" + ");
+  const minutes = view.languages.length
+    ? Math.max(1, Math.round(Math.max(...view.languages.map((l) => l.seconds)) / 60))
     : estimateMinutes;
 
-  const tracks = status.unlocked && status.status === "ready" ? status.tracks ?? [] : [];
+  const tracks = view.unlocked && view.status === "ready" ? status?.tracks ?? [] : [];
   if (tracks.length > 0) {
     return (
       <ListenAudio
@@ -186,17 +195,17 @@ export function ListenPlayer({ entry }: Props) {
     );
   }
 
-  const preparing = status.unlocked && (status.status === "preparing" || status.status === "analyzing");
+  const preparing = view.unlocked && (view.status === "preparing" || view.status === "analyzing");
 
   return (
-    <div className="listen-bar flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[--border-color] px-3 py-2 mb-3 text-sm">
+    <div data-nosnippet="" className="listen-bar flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[--border-color] px-3 py-2 mb-3 text-sm">
       <UilHeadphones className="size-5 text-blue-dark-sky shrink-0" aria-hidden={true} />
       <div className="flex-1 min-w-[10rem]">
         <div className="font-semibold">{i18next.t("listen.title")}</div>
         <div className="opacity-60">
           {languages ? `${languages} · ` : ""}
           {i18next.t("listen.minutes", { n: minutes })}
-          {status.status === "failed" && !status.unlocked && ` · ${i18next.t("listen.failed-refunded")}`}
+          {view.status === "failed" && !view.unlocked && ` · ${i18next.t("listen.failed-refunded")}`}
         </div>
       </div>
 
@@ -207,21 +216,27 @@ export function ListenPlayer({ entry }: Props) {
         </div>
       )}
 
+      {loading && (
+        <Button size="sm" disabled={true} aria-busy={true}>
+          <Spinner className="size-4" />
+        </Button>
+      )}
+
       {!preparing && !username && (
         <Button size="sm" onClick={() => toggleUiProp("login")}>
           {i18next.t("listen.login")}
         </Button>
       )}
 
-      {!preparing && username && !status.unlocked && !confirming && !shortfall && (
+      {!preparing && !loading && username && !view.unlocked && !confirming && !shortfall && (
         <Button size="sm" onClick={() => setConfirming(true)}>
-          {i18next.t("listen.unlock", { n: status.cost })}
+          {i18next.t("listen.unlock", { n: view.cost })}
         </Button>
       )}
 
-      {!preparing && username && !status.unlocked && confirming && (
+      {!preparing && !loading && username && !view.unlocked && confirming && (
         <div className="flex items-center gap-2">
-          <span className="opacity-75">{i18next.t("listen.confirm", { n: status.cost })}</span>
+          <span className="opacity-75">{i18next.t("listen.confirm", { n: view.cost })}</span>
           <Button size="sm" disabled={busy} onClick={onUnlock}>
             {busy ? <Spinner className="size-4" /> : i18next.t("g.confirm")}
           </Button>
@@ -231,9 +246,9 @@ export function ListenPlayer({ entry }: Props) {
         </div>
       )}
 
-      {!preparing && username && !status.unlocked && shortfall && !confirming && (
+      {!preparing && !loading && username && !view.unlocked && shortfall && !confirming && (
         <div className="flex items-center gap-2">
-          <span className="opacity-75">{i18next.t("listen.not-enough", { n: status.cost })}</span>
+          <span className="opacity-75">{i18next.t("listen.not-enough", { n: view.cost })}</span>
           <PointsTopupCta required={shortfall.required} available={shortfall.available} />
           {/* The top-up opens in a new tab; coming back, the reader can try again here. */}
           <Button
@@ -306,7 +321,7 @@ function ListenAudio({ entry, tracks, locale, onExpired }: AudioProps) {
   };
 
   return (
-    <div className="listen-bar flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[--border-color] px-3 py-2 mb-3 text-sm">
+    <div data-nosnippet="" className="listen-bar flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[--border-color] px-3 py-2 mb-3 text-sm">
       <audio
         ref={audioRef}
         src={track.url}
