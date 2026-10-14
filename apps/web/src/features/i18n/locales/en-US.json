@@ -5533,6 +5533,8 @@
     "unlock-failed": "Could not unlock the audio, please try again",
     "seek": "Seek",
     "speed": "Playback speed",
-    "language": "Audio language"
+    "language": "Audio language",
+    "login-again": "Please log in again to unlock the audio",
+    "retry": "Try again"
   }
 }

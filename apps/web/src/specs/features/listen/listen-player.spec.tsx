@@ -9,7 +9,8 @@ import { QueryClient } from "@tanstack/react-query";
   is ready, with one chip per language track.
 */
 
-const { status, mutate, toggleUiProp, toastError, activeUser } = vi.hoisted(() => ({
+const { status, mutate, toggleUiProp, toastError, activeUser, ensureValidToken } = vi.hoisted(() => ({
+  ensureValidToken: vi.fn(async () => "fresh-token" as string | undefined),
   status: { current: null as any },
   mutate: vi.fn(),
   toggleUiProp: vi.fn(),
@@ -30,7 +31,7 @@ vi.mock("@ecency/sdk", async () => ({
 vi.mock("@/utils", async () => ({
   ...(await vi.importActual("@/utils")),
   getAccessToken: vi.fn(() => "token"),
-  ensureValidToken: vi.fn(async () => "fresh-token")
+  ensureValidToken
 }));
 vi.mock("@/core/hooks/use-active-account", () => ({
   useActiveAccount: vi.fn(() => ({ activeUser: activeUser.current }))
@@ -66,6 +67,8 @@ describe("ListenPlayer", () => {
     toggleUiProp.mockReset();
     toastError.mockReset();
     activeUser.current = null;
+    ensureValidToken.mockReset();
+    ensureValidToken.mockImplementation(async () => "fresh-token");
     status.current = { cost: 50, unlocked: false, status: "none", languages: [] };
   });
 
@@ -121,6 +124,54 @@ describe("ListenPlayer", () => {
     fireEvent.click(screen.getByText("g.confirm"));
     expect(await screen.findByText("topup 50")).toBeTruthy();
     expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("lets the reader try again after topping up", async () => {
+    activeUser.current = { username: "alice" };
+    mutate.mockImplementationOnce((_params, { onError }) =>
+      onError(Object.assign(new Error("402"), { status: 402, data: { required: 50, available: 10 } }))
+    );
+    render();
+    fireEvent.click(await screen.findByText("listen.unlock"));
+    fireEvent.click(screen.getByText("g.confirm"));
+    fireEvent.click(await screen.findByText("listen.retry"));
+    fireEvent.click(screen.getByText("g.confirm"));
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not unlock twice on a double click, nor without a token", async () => {
+    activeUser.current = { username: "alice" };
+    let release: (v: string | undefined) => void = () => undefined;
+    ensureValidToken.mockImplementation(async () => "fresh-token");
+    render();
+    fireEvent.click(await screen.findByText("listen.unlock"));
+    ensureValidToken.mockImplementation(() => new Promise((r) => (release = r)));
+    const confirm = screen.getByText("g.confirm");
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    release(undefined);
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("listen.login-again"));
+    expect(ensureValidToken).toHaveBeenCalledTimes(2); // mount + one click
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("refreshes the token before renewing an expired audio URL", async () => {
+    activeUser.current = { username: "alice" };
+    status.current = { cost: 50, unlocked: true, status: "ready", languages: LANGS, tracks: TRACKS };
+    const { getListenStatusQueryOptions } = await import("@ecency/sdk");
+    const { container } = render();
+    await waitFor(() => expect(container.querySelector("audio")).not.toBeNull());
+    ensureValidToken.mockImplementation(async () => "renewed-token");
+    fireEvent.error(container.querySelector("audio")!);
+    await waitFor(() =>
+      expect(vi.mocked(getListenStatusQueryOptions)).toHaveBeenCalledWith(
+        "noelyss",
+        "plaza",
+        "alice",
+        "renewed-token",
+        expect.anything()
+      )
+    );
   });
 
   it("shows progress while the audio is being made", async () => {

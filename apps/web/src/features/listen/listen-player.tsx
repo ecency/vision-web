@@ -95,12 +95,30 @@ export function ListenPlayer({ entry }: Props) {
   const keyRef = useRef<string | undefined>(undefined);
   const [confirming, setConfirming] = useState(false);
   const [shortfall, setShortfall] = useState<{ required?: number; available?: number }>();
+  // Covers the token refresh before mutate starts, when isPending is still false.
+  // A ref, not only state: two clicks in one tick would both read stale state.
+  const startingRef = useRef(false);
+  const [starting, setStarting] = useState(false);
+  const busy = starting || unlock.isPending;
 
   const onUnlock = useCallback(async () => {
-    if (!username) return;
+    if (!username || startingRef.current || unlock.isPending) return;
+    startingRef.current = true;
+    setStarting(true);
     // Reused until the outcome is known, so a retry after a lost answer is a replay.
     keyRef.current ??= makeIdempotencyKey();
-    const code = await ensureValidToken(username);
+    let code: string | undefined;
+    try {
+      code = await ensureValidToken(username);
+    } finally {
+      startingRef.current = false;
+      setStarting(false);
+    }
+    if (!code) {
+      // No usable token: the request would be a 401. Ask for a fresh login instead.
+      error(i18next.t("listen.login-again"));
+      return;
+    }
     unlock.mutate(
       {
         author: entry.author,
@@ -154,9 +172,16 @@ export function ListenPlayer({ entry }: Props) {
         entry={entry}
         tracks={tracks}
         locale={locale}
-        onExpired={() =>
-          queryClient.invalidateQueries({ queryKey: statusOptions.queryKey })
-        }
+        onExpired={async () => {
+          // The page may have outlived the access token as well as the signed URL:
+          // refresh it first, and refetch with it, or the renewal is a 401.
+          const value = username ? await ensureValidToken(username).catch(() => undefined) : undefined;
+          setToken({ username, value });
+          await queryClient.fetchQuery({
+            ...getListenStatusQueryOptions(entry.author, entry.permlink, username, value, entry.updated),
+            staleTime: 0
+          });
+        }}
       />
     );
   }
@@ -197,19 +222,30 @@ export function ListenPlayer({ entry }: Props) {
       {!preparing && username && !status.unlocked && confirming && (
         <div className="flex items-center gap-2">
           <span className="opacity-75">{i18next.t("listen.confirm", { n: status.cost })}</span>
-          <Button size="sm" disabled={unlock.isPending} onClick={onUnlock}>
-            {unlock.isPending ? <Spinner className="size-4" /> : i18next.t("g.confirm")}
+          <Button size="sm" disabled={busy} onClick={onUnlock}>
+            {busy ? <Spinner className="size-4" /> : i18next.t("g.confirm")}
           </Button>
-          <Button size="sm" appearance="gray" disabled={unlock.isPending} onClick={() => setConfirming(false)}>
+          <Button size="sm" appearance="gray" disabled={busy} onClick={() => setConfirming(false)}>
             {i18next.t("g.cancel")}
           </Button>
         </div>
       )}
 
-      {!preparing && username && !status.unlocked && shortfall && (
+      {!preparing && username && !status.unlocked && shortfall && !confirming && (
         <div className="flex items-center gap-2">
           <span className="opacity-75">{i18next.t("listen.not-enough", { n: status.cost })}</span>
           <PointsTopupCta required={shortfall.required} available={shortfall.available} />
+          {/* The top-up opens in a new tab; coming back, the reader can try again here. */}
+          <Button
+            size="sm"
+            appearance="gray"
+            onClick={() => {
+              setShortfall(undefined);
+              setConfirming(true);
+            }}
+          >
+            {i18next.t("listen.retry")}
+          </Button>
         </div>
       )}
     </div>
@@ -220,7 +256,7 @@ interface AudioProps {
   entry: Entry;
   tracks: ListenTrack[];
   locale: string;
-  onExpired: () => void;
+  onExpired: () => Promise<void> | void;
 }
 
 function ListenAudio({ entry, tracks, locale, onExpired }: AudioProps) {
@@ -296,7 +332,7 @@ function ListenAudio({ entry, tracks, locale, onExpired }: AudioProps) {
           refreshesRef.current += 1;
           const audio = e.currentTarget;
           resumeRef.current = { at: audio.currentTime || time, play: playing };
-          onExpired();
+          Promise.resolve(onExpired()).catch(() => undefined);
         }}
       />
       <button
