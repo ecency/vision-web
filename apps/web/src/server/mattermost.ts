@@ -329,14 +329,29 @@ export async function ensureChannelForCommunity(
 ): Promise<string> {
   const teamId = requireEnv(MATTERMOST_TEAM_ID, "MATTERMOST_TEAM_ID");
   const channelName = normalizeCommunityId(community);
+  // Callers join users to what this returns with the admin token, so it only
+  // ever names a public community channel: never a private channel found by
+  // name, and never a channel created under a name a client made up.
+  if (!COMMUNITY_CHANNEL_NAME_PATTERN.test(channelName)) {
+    throw new Error(`Not a community channel name: ${channelName}`);
+  }
+  const asCommunityChannel = (channel: { id: string; type?: string }) => {
+    if (channel.type !== "O") {
+      throw new Error(`Channel ${channelName} is not a public channel`);
+    }
+    return channel.id;
+  };
+  let existing: { id: string; type?: string } | null = null;
   try {
-    const existing = await mmFetch<{ id: string }>(`/teams/${encodeURIComponent(teamId)}/channels/name/${encodeURIComponent(channelName)}`, {
+    existing = await mmFetch<{ id: string; type?: string }>(`/teams/${encodeURIComponent(teamId)}/channels/name/${encodeURIComponent(channelName)}`, {
       headers: getAdminHeaders(),
       signal
     });
-    return existing.id;
   } catch {
     // channel doesn't exist (or lookup failed) — create below
+  }
+  if (existing) {
+    return asCommunityChannel(existing);
   }
   try {
     const created = await mmFetch<{ id: string }>(`/channels`, {
@@ -355,15 +370,16 @@ export async function ensureChannelForCommunity(
     // A concurrent bootstrap (e.g. several subscribers of a new community
     // bootstrapping at once) may have created the channel between the lookup
     // and this create. Re-fetch by name; if it now exists, use it.
+    let raced: { id: string; type?: string };
     try {
-      const existing = await mmFetch<{ id: string }>(`/teams/${encodeURIComponent(teamId)}/channels/name/${encodeURIComponent(channelName)}`, {
+      raced = await mmFetch<{ id: string; type?: string }>(`/teams/${encodeURIComponent(teamId)}/channels/name/${encodeURIComponent(channelName)}`, {
         headers: getAdminHeaders(),
         signal
       });
-      return existing.id;
     } catch {
       throw error;
     }
+    return asCommunityChannel(raced);
   }
 }
 

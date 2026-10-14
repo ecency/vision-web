@@ -239,8 +239,26 @@ describe("ensureUserInChannel / ensureChannelForCommunity — idempotency", () =
     fetchMock
       .mockResolvedValueOnce(resp(404, "no such channel")) // GET channel by name
       .mockResolvedValueOnce(resp(400, { id: "store.sql_channel.save_channel.exists.app_error" })) // POST create raced
-      .mockResolvedValueOnce(resp(200, { id: "ch-1", name: "hive-1" })); // re-fetch by name
+      .mockResolvedValueOnce(resp(200, { id: "ch-1", name: "hive-1", type: "O" })); // re-fetch by name
     await expect(ensureChannelForCommunity("hive-1", "Hive One")).resolves.toBe("ch-1");
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("never hands back a private channel found by name, so nobody is joined to one", async () => {
+    const { ensureCommunityChannelMembership } = await loadModule();
+    fetchMock.mockResolvedValueOnce(resp(200, { id: "p-1", name: "hive-1", type: "P" }));
+
+    await expect(ensureCommunityChannelMembership("u-1", "hive-1", "x", true)).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a name that is not a community before asking Mattermost", async () => {
+    const { ensureCommunityChannelMembership } = await loadModule();
+
+    await expect(
+      ensureCommunityChannelMembership("u-1", "private-0123456789abcdef", "x", true)
+    ).rejects.toThrow();
+    await expect(ensureCommunityChannelMembership("u-1", "anything", "x", true)).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
