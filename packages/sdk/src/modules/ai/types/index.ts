@@ -110,3 +110,32 @@ export interface AiTranscribeResponse {
   request_id: string;
   idempotent_replay?: boolean;
 }
+
+/** State of a post's Listen audio (natural-voice audio unlocked with Points). */
+export type ListenStatusValue = "none" | "analyzing" | "preparing" | "ready" | "failed" | "unsupported";
+
+export interface ListenLanguage {
+  lang: string;
+  /** Share of the post's text, 0..1 */
+  share: number;
+  /** Estimated length of this language's track */
+  seconds: number;
+}
+
+export interface ListenTrack {
+  lang: string;
+  seconds: number;
+  /** Signed URL, valid for about an hour; fetch the status again when it expires */
+  url: string;
+}
+
+export interface ListenStatus {
+  cost: number;
+  unlocked: boolean;
+  status: ListenStatusValue;
+  languages: ListenLanguage[];
+  /** Present only for a reader who unlocked the post, once the audio is ready */
+  tracks?: ListenTrack[];
+  idempotent_replay?: boolean;
+  already_unlocked?: boolean;
+}

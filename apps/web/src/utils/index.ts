@@ -40,7 +40,6 @@ export * from "./username-validation";
 export * from "./use-entry-location";
 export * from "./sdk-auth";
 export * from "./get-pure-post-text";
-export * from "./speech";
 export * from "./normalize-beneficiary-weight";
 export * from "./safe-decode-uri";
 export * from "./image-file-ext";
