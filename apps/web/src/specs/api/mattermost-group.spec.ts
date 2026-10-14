@@ -12,6 +12,11 @@ class FakeMattermostError extends Error {
 const mockFindUser = vi.fn();
 const mockPrivacy = vi.fn();
 const mockCheckDmFanout = vi.fn();
+const mockCallRPC = vi.fn();
+
+vi.mock("@ecency/sdk/hive", () => ({
+  callRPC: (...args: unknown[]) => mockCallRPC(...args)
+}));
 
 vi.mock("@/server/mattermost", () => ({
   getGroupOwnerId: (...args: unknown[]) => mockGetOwner(...args),
@@ -63,6 +68,9 @@ describe("POST /api/mattermost/group", () => {
       Promise.resolve({ id: `id-${name}`, username: name })
     );
     mockPrivacy.mockResolvedValue(null);
+    mockCallRPC.mockImplementation((_method: string, [names]: [string[]]) =>
+      Promise.resolve(names.map((name) => ({ name })))
+    );
     mockCheckDmFanout.mockResolvedValue({
       allowed: true,
       recipients: 2,
@@ -240,6 +248,40 @@ describe("POST /api/mattermost/group", () => {
     expect(res.status).toBe(404);
     expect((await res.json()).missing).toEqual(["ghost"]);
     expect(createCalls()).toHaveLength(0);
+  });
+
+  it("names the members who have a chat account but no Hive account", async () => {
+    mockCallRPC.mockResolvedValue([{ name: "bob" }]);
+    const { POST } = await import("@/app/api/mattermost/group/route");
+
+    const res = await POST(request({ usernames: ["bob", "Ghost"] }));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      error: "@ghost is not a Hive account.",
+      missing: ["ghost"]
+    });
+    expect(mockCallRPC).toHaveBeenCalledWith("condenser_api.get_accounts", [["bob", "ghost"]]);
+    expect(mockPrivacy).not.toHaveBeenCalled();
+    expect(createCalls()).toHaveLength(0);
+  });
+
+  it("goes on with the other checks when Hive cannot be asked", async () => {
+    mockCallRPC.mockRejectedValue(new Error("all nodes failed"));
+    mockMmUserFetch.mockImplementation((path: string) => {
+      if (path === "/users/me") {
+        return Promise.resolve({ id: "me", username: "alice", create_at: ESTABLISHED });
+      }
+      if (path === "/channels/group") return Promise.resolve({ id: "group-1" });
+      if (path === "/users/me/preferences") return Promise.resolve([]);
+      return Promise.reject(new Error(`unexpected ${path}`));
+    });
+    const { POST } = await import("@/app/api/mattermost/group/route");
+
+    const res = await POST(request({ usernames: ["bob", "carol"] }));
+
+    expect(res.status).toBe(200);
+    expect(mockPrivacy).toHaveBeenCalledTimes(2);
   });
 
   it("refuses the whole group when any member does not accept DMs", async () => {

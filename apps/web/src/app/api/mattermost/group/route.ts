@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { callRPC } from "@ecency/sdk/hive";
 import {
   getGroupOwnerId,
   getMattermostTeamId,
@@ -74,6 +75,23 @@ export async function POST(req: NextRequest) {
             missing.length === 1 ? "is" : "are"
           } not on Ecency chat yet.`,
           missing
+        },
+        { status: 404 }
+      );
+    }
+
+    // A chat account is not proof of a Hive account, and every check below
+    // asks Hive about these names. When Hive cannot be asked, the checks below
+    // still hold: an unconfirmed follow counts as none.
+    const onHive = await findHiveAccounts(usernames);
+    const notOnHive = onHive ? usernames.filter((name) => !onHive.has(name)) : [];
+    if (notOnHive.length) {
+      return NextResponse.json(
+        {
+          error: `${notOnHive.map((name) => `@${name}`).join(", ")} ${
+            notOnHive.length === 1 ? "is not a Hive account" : "are not Hive accounts"
+          }.`,
+          missing: notOnHive
         },
         { status: 404 }
       );
@@ -184,5 +202,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ channelId: channel.id });
   } catch (error) {
     return handleMattermostError(error);
+  }
+}
+
+/** The given names that exist on Hive, or null when Hive could not be asked. */
+async function findHiveAccounts(usernames: string[]): Promise<Set<string> | null> {
+  try {
+    const accounts = await callRPC("condenser_api.get_accounts", [usernames]);
+    if (!Array.isArray(accounts)) return null;
+    return new Set(
+      accounts
+        .map((account) => (account as { name?: unknown })?.name)
+        .filter((name): name is string => typeof name === "string")
+        .map((name) => name.toLowerCase())
+    );
+  } catch {
+    return null;
   }
 }

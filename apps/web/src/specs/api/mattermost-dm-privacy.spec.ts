@@ -45,6 +45,20 @@ describe("getDmPrivacyRejection", () => {
     expect(rejection?.error).toContain("@stranger");
   });
 
+  it("treats a follow Hive cannot confirm as no follow instead of failing", async () => {
+    mockFetchQuery.mockImplementation(({ following }: { following: string }) =>
+      following === "ghost"
+        ? Promise.reject(new Error("Assert Exception:Account ghost does not exist"))
+        : Promise.resolve({ follows: true })
+    );
+
+    const rejection = await getDmPrivacyRejection(VICTIM, ["alice", "ghost"]);
+
+    expect(rejection).toMatchObject({ privacy_level: "followers", target_username: "victor" });
+    expect(rejection?.error).toContain("@ghost");
+    expect(rejection?.error).not.toContain("@alice");
+  });
+
   it("rejects a member who accepts no DMs without looking anything up", async () => {
     mockProps.mockResolvedValue({ props: { ecency_dm_privacy: "none" } });
 

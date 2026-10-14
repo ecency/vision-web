@@ -31,11 +31,14 @@ export async function getDmPrivacyRejection(
   }
 
   if (dmPrivacy === "followers") {
+    // A follow that cannot be confirmed counts as no follow. Hive refuses the
+    // lookup outright for a name it does not know, and that must not turn into
+    // a server error for the person starting the conversation.
     const relationships = await Promise.all(
       senderUsernames.map((sender) =>
-        getQueryClient().fetchQuery(
-          getRelationshipBetweenAccountsQueryOptions(target.username, sender)
-        )
+        getQueryClient()
+          .fetchQuery(getRelationshipBetweenAccountsQueryOptions(target.username, sender))
+          .catch(() => null)
       )
     );
     const unfollowed = senderUsernames.filter((_, i) => !relationships[i]?.follows);
