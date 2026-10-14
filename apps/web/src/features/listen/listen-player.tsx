@@ -23,6 +23,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 const SPOKEN_WORDS_PER_MINUTE = 150;
 const SPEEDS = [1, 1.25, 1.5];
 const MAX_URL_REFRESHES = 3;
+// A visitor's status waits for an idle page, so it never competes with the post itself.
+const VISITOR_STATUS_DELAY_MS = 1500;
+
+// Scripts of languages the voice cannot read. A post written mostly in one of them is
+// known to be unsupported from its text alone, without asking the server.
+const UNSUPPORTED_SCRIPTS = [/\p{Script=Thai}/gu, /\p{Script=Bengali}/gu, /\p{Script=Hebrew}/gu,
+  /\p{Script=Tamil}/gu, /\p{Script=Telugu}/gu];
+const HAN = /\p{Script=Han}/gu;
+// Japanese and Korean are supported and also use Han characters: kana or hangul mark them.
+const KANA_HANGUL = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu;
+const LETTER = /\p{L}/gu;
 
 interface Props {
   entry: Entry;
@@ -49,6 +60,23 @@ export function pickTrack(tracks: ListenTrack[], uiLanguage: string): ListenTrac
   return tracks.find((t) => t.lang === ui) ?? tracks[0];
 }
 
+const count = (text: string, re: RegExp) => text.match(re)?.length ?? 0;
+
+/**
+ * True when most of a post's letters are in a script the voice cannot read (Thai,
+ * Bengali, Hebrew, Tamil, Telugu, or Chinese). Links and image markup are left out
+ * first. Latin and Arabic script posts are left to the server's language detection.
+ */
+export function isUnreadableScript(body: string): boolean {
+  const text = body.replace(/!?\[[^\]]*\]\([^)]*\)/g, " ").replace(/https?:\/\/\S+/g, " ");
+  const letters = count(text, LETTER);
+  if (letters === 0) return false;
+  const unsupported = UNSUPPORTED_SCRIPTS.reduce((n, re) => n + count(text, re), 0);
+  const kanaHangul = count(text, KANA_HANGUL);
+  const chinese = kanaHangul > letters * 0.05 ? 0 : count(text, HAN);
+  return (unsupported + chinese) / letters > 0.5;
+}
+
 /**
  * Natural-voice audio of a post, on top of its body. Readers unlock it once with
  * Points; the audio is generated server-side and cached, so later readers of the same
@@ -56,12 +84,18 @@ export function pickTrack(tracks: ListenTrack[], uiLanguage: string): ListenTrac
  *
  * Post pages are what crawlers and most visitors load, so the bar costs them nothing:
  * it is in the server HTML from the first paint (no layout shift when it fills in),
- * visitors who are not logged in get it without any request (the status is only
- * fetched for a reader who could unlock), and `data-nosnippet` keeps it out of search
- * snippets.
+ * a post in a script the voice cannot read never shows it, a visitor's status is only
+ * asked for once the page is idle (it can still hide the bar for a post already found
+ * unsupported), and `data-nosnippet` keeps it out of search snippets.
  */
 export function ListenPlayer({ entry }: Props) {
   const isComment = !!entry.parent_author;
+  const unreadable = useMemo(() => isUnreadableScript(entry.body ?? ""), [entry.body]);
+  const [idle, setIdle] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setIdle(true), VISITOR_STATUS_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, []);
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username;
   const toggleUiProp = useGlobalStore((s) => s.toggleUiProp);
@@ -93,7 +127,7 @@ export function ListenPlayer({ entry }: Props) {
   );
   const { data: status } = useQuery({
     ...statusOptions,
-    enabled: !isComment && !!username && tokenReady && statusOptions.enabled !== false
+    enabled: !isComment && !unreadable && (!!username || idle) && tokenReady && statusOptions.enabled !== false
   });
 
   const unlock = useListenUnlock(username, token?.value);
@@ -160,11 +194,10 @@ export function ListenPlayer({ entry }: Props) {
     [entry.body]
   );
 
-  if (isComment || status?.status === "unsupported") {
+  if (isComment || unreadable || status?.status === "unsupported") {
     return null;
   }
-  // Until a reader's status arrives (and always for visitors), the bar is drawn from
-  // the post alone, at its final height.
+  // Until the status arrives, the bar is drawn from the post alone, at its final height.
   const loading = !!username && !status;
   const view = status ?? { cost: 0, unlocked: false, status: "none" as const, languages: [] };
 
@@ -185,6 +218,11 @@ export function ListenPlayer({ entry }: Props) {
           // The page may have outlived the access token as well as the signed URL:
           // refresh it first, and refetch with it, or the renewal is a 401.
           const value = username ? await ensureValidToken(username).catch(() => undefined) : undefined;
+          if (username && !value) {
+            // Without a token the refetch would be anonymous and drop the unlocked state.
+            error(i18next.t("listen.login-again"));
+            return;
+          }
           setToken({ username, value });
           await queryClient.fetchQuery({
             ...getListenStatusQueryOptions(entry.author, entry.permlink, username, value, entry.updated),

@@ -48,7 +48,7 @@ vi.mock("@/features/shared/points-topup-cta", () => ({
   PointsTopupCta: ({ required }: { required?: number }) => <div>topup {required}</div>
 }));
 
-import { ListenPlayer, formatTime, languageName, pickTrack } from "@/features/listen";
+import { ListenPlayer, formatTime, isUnreadableScript, languageName, pickTrack } from "@/features/listen";
 import { mockEntry, renderWithQueryClient } from "@/specs/test-utils";
 
 const TRACKS = [
@@ -98,7 +98,7 @@ describe("ListenPlayer", () => {
     expect(toggleUiProp).toHaveBeenCalledWith("login");
   });
 
-  it("draws the bar for a visitor at once, without asking for the status", async () => {
+  it("draws the bar for a visitor at once, and asks for the status only once the page is idle", async () => {
     const statusFn = vi.fn(async () => status.current);
     const { getListenStatusQueryOptions } = await import("@ecency/sdk");
     vi.mocked(getListenStatusQueryOptions).mockImplementation(((author: string, permlink: string) => ({
@@ -110,8 +110,22 @@ describe("ListenPlayer", () => {
     // first render, before any effect or query: crawlers and the first paint see it
     expect(container.querySelector(".listen-bar")).not.toBeNull();
     expect(container.querySelector(".listen-bar")!.hasAttribute("data-nosnippet")).toBe(true);
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 300));
     expect(statusFn).not.toHaveBeenCalled();
+    await waitFor(() => expect(statusFn).toHaveBeenCalledTimes(1), { timeout: 3000 });
+  });
+
+  it("hides a visitor's bar once the post is known to be unsupported", async () => {
+    status.current = { cost: 50, unlocked: false, status: "unsupported", languages: [] };
+    const { container } = render();
+    expect(container.querySelector(".listen-bar")).not.toBeNull();
+    await waitFor(() => expect(container.querySelector(".listen-bar")).toBeNull(), { timeout: 3000 });
+  });
+
+  it("never offers a post in a script the voice cannot read", async () => {
+    const thai = mockEntry({ author: "noelyss", permlink: "plaza", body: "สวัสดีครับ ".repeat(200) });
+    const { container } = render(thai);
+    expect(container.querySelector(".listen-bar")).toBeNull();
   });
 
   it("keeps the bar in place while a reader's status loads", async () => {
@@ -208,6 +222,21 @@ describe("ListenPlayer", () => {
     );
   });
 
+  it("keeps the unlocked player when the token cannot be renewed", async () => {
+    activeUser.current = { username: "alice" };
+    status.current = { cost: 50, unlocked: true, status: "ready", languages: LANGS, tracks: TRACKS };
+    const { getListenStatusQueryOptions } = await import("@ecency/sdk");
+    const { container } = render();
+    await waitFor(() => expect(container.querySelector("audio")).not.toBeNull());
+    vi.mocked(getListenStatusQueryOptions).mockClear();
+    ensureValidToken.mockImplementation(async () => undefined);
+    fireEvent.error(container.querySelector("audio")!);
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("listen.login-again"));
+    // no anonymous refetch: it would answer "locked" and drop the player
+    expect(vi.mocked(getListenStatusQueryOptions).mock.calls.some((c) => c[3] === undefined)).toBe(false);
+    expect(container.querySelector("audio")).not.toBeNull();
+  });
+
   it("shows progress while the audio is being made", async () => {
     activeUser.current = { username: "alice" };
     status.current = { cost: 50, unlocked: true, status: "preparing", languages: LANGS };
@@ -230,6 +259,20 @@ describe("ListenPlayer", () => {
 });
 
 describe("listen helpers", () => {
+  it("tells unreadable scripts from supported ones", () => {
+    expect(isUnreadableScript("สวัสดีครับ ทุกคน วันนี้อากาศดีมาก")).toBe(true); // Thai
+    expect(isUnreadableScript("今天天气很好，我们去公园散步吧。")).toBe(true); // Chinese
+    expect(isUnreadableScript("שלום לכולם, היום יום יפה")).toBe(true); // Hebrew
+    expect(isUnreadableScript("今日はとても良い天気ですね。公園に行きましょう。")).toBe(false); // Japanese
+    // kanji-heavy Japanese: the kana are what tell it from Chinese
+    expect(isUnreadableScript("東京都庁舎の展望室見学報告。新宿駅西口から徒歩十分、入場無料です。")).toBe(false);
+    expect(isUnreadableScript("오늘 날씨가 정말 좋네요")).toBe(false); // Korean
+    expect(isUnreadableScript("Hola a todos, hoy es un buen día")).toBe(false);
+    expect(isUnreadableScript("مرحبا بالجميع")).toBe(false); // Arabic: left to the server
+    expect(isUnreadableScript("Great trip ![](https://images.ecency.com/漢字.png) 很好")).toBe(false);
+    expect(isUnreadableScript("")).toBe(false);
+  });
+
   it("prefers the interface language, else the main track", () => {
     expect(pickTrack(TRACKS, "en-US")?.lang).toBe("en");
     expect(pickTrack(TRACKS, "de")?.lang).toBe("es");
