@@ -64,16 +64,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ channe
       return NextResponse.json({ error: "message required" }, { status: 400 });
     }
 
-    // The edit lands on the post's own channel, so that is the one checked.
-    const existing = await mmUserFetch<{ channel_id: string }>(
-      `/posts/${encodeURIComponent(postId)}`,
-      token
-    );
-    if (existing.channel_id !== channelId) {
-      return NextResponse.json({ error: "not found" }, { status: 404 });
-    }
-
     if (hasChannelWideMention(message)) {
+      // The edit lands on the post's own channel, so that is the one checked.
+      const existing = await mmUserFetch<{ channel_id: string }>(
+        `/posts/${encodeURIComponent(postId)}`,
+        token
+      );
+      if (existing.channel_id !== channelId) {
+        return NextResponse.json({ error: "not found" }, { status: 404 });
+      }
+
       const moderation = await getMattermostCommunityModerationContext(token, channelId);
 
       if (!canMentionEveryone(moderation)) {

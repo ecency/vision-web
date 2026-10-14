@@ -27,7 +27,27 @@ describe("channel-wide mentions", () => {
     "x.@all",
     "foo-@here",
     "**@all**",
-    "line one\n@channel"
+    "line one\n@channel",
+    // Ways a markdown-aware skip was fooled: nothing is skipped any more.
+    "`@all``",
+    "`a\n`@all`",
+    "```a`\n@all\n```",
+    "\t```\n@all\n```",
+    "](@all)",
+    "http://@all",
+    "http://x_y.com/@all",
+    "[ http://x.com/@all",
+    "use `@channel` to ping",
+    "see https://x.com/@all",
+    // Character references and emoji codes, as Mattermost reads them.
+    "@al&#108;",
+    "@channe&#108;",
+    "@her&#101;",
+    "@al&#x6C;",
+    "@all-:x:",
+    "@channel.:smile:",
+    "x &commat;all",
+    "@all&#120;"
   ])("recognises %j", (message) => {
     expect(hasChannelWideMention(message)).toBe(true);
   });
@@ -41,11 +61,9 @@ describe("channel-wide mentions", () => {
     "a@here",
     "all channel here",
     ":@all:",
-    "use `@channel` to ping",
-    "```\n@all\n```",
-    "see https://x.com/@all",
-    "[profile](https://x.com/@all)",
-    "@allison."
+    "@all:smile:",
+    "@allison.",
+    "&#64;allison"
   ])("leaves %j alone", (message) => {
     expect(hasChannelWideMention(message)).toBe(false);
   });
@@ -126,6 +144,22 @@ describe("editing a post into a channel-wide mention", () => {
     expect((await DELETE({} as never, params)).status).toBe(404);
     expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts/p1/patch", expect.anything(), expect.anything());
     expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts/p1", "test-token", { method: "DELETE" });
+  });
+
+  it("pins and unpins only posts in the channel named in the request", async () => {
+    mockModerationContext.mockResolvedValue({
+      canModerate: false,
+      currentUser: { username: "alice" },
+      channel: { id: "c1", type: "D" }
+    });
+    mockMmUserFetch.mockResolvedValue({ id: "p1", channel_id: "community-b" });
+    const { POST, DELETE } = await import(
+      "@/app/api/mattermost/channels/[channelId]/posts/[postId]/pin/route"
+    );
+
+    expect((await POST({} as never, params)).status).toBe(404);
+    expect((await DELETE({} as never, params)).status).toBe(404);
+    expect(mockMmUserFetch.mock.calls.map(([path]) => path)).toEqual(["/posts/p1", "/posts/p1"]);
   });
 
   it("lets the chat admin use them, in a private channel too", async () => {

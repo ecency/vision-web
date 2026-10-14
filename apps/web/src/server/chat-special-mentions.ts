@@ -6,24 +6,38 @@ export const SPECIAL_MENTIONS = new Set(["here", "everyone", "channel", "all"]);
 const SYSTEM_MENTIONS = new Set([...SPECIAL_MENTIONS].map((name) => `@${name}`));
 const isSystemMention = (word: string) => SYSTEM_MENTIONS.has(word.toLowerCase());
 
-// Text Mattermost does not read mentions from: code, link targets and bare URLs.
-function stripUnparsedText(message: string) {
+// Mattermost reads the text after markdown: numeric character references are
+// letters by then, and an emoji code such as ":smile:" is a node of its own.
+// Code, links and URLs are not skipped here: getting markdown exactly right is
+// the only way to skip them safely, so "@all" quoted in code is refused too.
+function asMattermostReadsIt(message: string) {
   return message
-    .replace(/(^|\n)[ \t]*(```|~~~)[\s\S]*?(\n[ \t]*\2|$)/g, "\n")
-    .replace(/`[^`\n]*`/g, " ")
-    .replace(/\]\([^)\s]*\)/g, "] ")
-    .replace(/\b(?:https?|ftp):\/\/\S+/gi, " ");
+    .replace(/&#(\d{1,7});/g, (match, code: string) => fromCodePoint(Number(code), match))
+    .replace(/&#[xX]([0-9a-fA-F]{1,6});/g, (match, code: string) =>
+      fromCodePoint(parseInt(code, 16), match)
+    )
+    .replace(/&commat;/gi, "@")
+    .replace(/(^|[^A-Za-z0-9_]):[a-z0-9_+-]+:(?![A-Za-z0-9_])/g, "$1 ");
+}
+
+function fromCodePoint(code: number, fallback: string) {
+  return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : fallback;
 }
 
 /**
- * Whether Mattermost would notify the whole channel for this text. Mirrors its
+ * Whether Mattermost could notify the whole channel for this text. Mirrors its
  * mention parser (app/mention_parser_standard.go, v10.11): words split on
  * anything but letters, digits and ":.-_@", leading ":.-_" trimmed, trailing
  * ".-:_" tried off one at a time, and a word not starting with "@" split again
  * on ".-:" so "x.@all" still counts.
  */
 export function hasChannelWideMention(message: string) {
-  const words = stripUnparsedText(message).split(/[^:.\-_@\p{L}\p{N}]+/u);
+  // Both readings are checked, so neither can hide a mention from the other.
+  return hasSystemMentionWord(message) || hasSystemMentionWord(asMattermostReadsIt(message));
+}
+
+function hasSystemMentionWord(text: string) {
+  const words = text.split(/[^:.\-_@\p{L}\p{N}]+/u);
 
   for (const raw of words) {
     if (!raw || (raw.startsWith(":") && raw.endsWith(":"))) continue;

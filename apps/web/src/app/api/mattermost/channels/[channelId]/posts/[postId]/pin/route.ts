@@ -16,6 +16,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ channe
 
   try {
     const moderation = await getMattermostCommunityModerationContext(token, channelId);
+    if (!(await isPostInChannel(token, postId, moderation.channel.id))) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
 
     // Check permissions based on channel type
     if (moderation.channel.type === "O") {
@@ -72,6 +75,9 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ chan
 
   try {
     const moderation = await getMattermostCommunityModerationContext(token, channelId);
+    if (!(await isPostInChannel(token, postId, moderation.channel.id))) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
 
     // Check permissions based on channel type
     if (moderation.channel.type === "O") {
@@ -103,4 +109,10 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ chan
   } catch (error) {
     return handleMattermostError(error);
   }
+}
+
+// The checks above are for the channel in the URL, so they only cover its posts.
+async function isPostInChannel(token: string, postId: string, channelId: string) {
+  const post = await mmUserFetch<{ channel_id: string }>(`/posts/${encodeURIComponent(postId)}`, token);
+  return post.channel_id === channelId;
 }
