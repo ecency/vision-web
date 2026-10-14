@@ -325,7 +325,8 @@ function normalizeCommunityId(community: string) {
 
 export async function ensureChannelForCommunity(
   community: string,
-  displayName?: string,
+  // Unused: a new channel takes the community's title from Hive, never the caller's.
+  _displayName?: string,
   signal?: AbortSignal
 ): Promise<string> {
   const teamId = requireEnv(MATTERMOST_TEAM_ID, "MATTERMOST_TEAM_ID");
@@ -356,11 +357,11 @@ export async function ensureChannelForCommunity(
   }
   // Only a community that exists on Hive gets a channel, named as Hive names it,
   // so a client cannot create channels under made-up names.
-  const hiveCommunity = await findHiveCommunity(channelName);
+  const hiveCommunity = await findHiveCommunity(channelName, signal);
   if (!hiveCommunity) {
     throw new Error(`Community ${channelName} was not found on Hive`);
   }
-  const title = (hiveCommunity.title?.trim() || displayName || channelName).trim();
+  const title = hiveCommunity.title?.trim() || channelName;
   try {
     const created = await mmFetch<{ id: string }>(`/channels`, {
       method: "POST",
