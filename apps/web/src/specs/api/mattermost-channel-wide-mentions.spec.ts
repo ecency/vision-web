@@ -63,7 +63,11 @@ describe("channel-wide mentions", () => {
     // Letters newer than Mattermost's Unicode tables split words there.
     "@all\u{2EBF0}",
     "@all\u{10D50}",
-    "\u{10D50}@all"
+    "\u{10D50}@all",
+    // A non-ASCII letter keeps ":@all:" inside a longer word for Mattermost.
+    "é:@all:",
+    "中:@channel:",
+    "١:@here:"
   ])("recognises %j", (message) => {
     expect(hasChannelWideMention(message)).toBe(true);
   });
@@ -76,7 +80,6 @@ describe("channel-wide mentions", () => {
     "mail me at x@all.com",
     "a@here",
     "all channel here",
-    ":@all:",
     "@all:smile:",
     "@allison.",
     "&#64;allison"

@@ -46,7 +46,9 @@ function hasSystemMentionWord(text: string) {
   const words = text.split(/[^:.\-_@A-Za-z0-9]+/);
 
   for (const raw of words) {
-    if (!raw || (raw.startsWith(":") && raw.endsWith(":"))) continue;
+    // Mattermost skips a ":word:" as an emoji code. Not skipped here: after the
+    // ASCII-only split a ":word:" can be the tail of a longer Mattermost word.
+    if (!raw) continue;
 
     const word = raw.replace(/^[:.\-_]+/, "");
     if (isSystemMention(word)) return true;
