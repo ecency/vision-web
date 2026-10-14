@@ -266,22 +266,15 @@ describe("POST /api/mattermost/group", () => {
     expect(createCalls()).toHaveLength(0);
   });
 
-  it("goes on with the other checks when Hive cannot be asked", async () => {
+  it("creates nothing when Hive cannot confirm the accounts", async () => {
     mockCallRPC.mockRejectedValue(new Error("all nodes failed"));
-    mockMmUserFetch.mockImplementation((path: string) => {
-      if (path === "/users/me") {
-        return Promise.resolve({ id: "me", username: "alice", create_at: ESTABLISHED });
-      }
-      if (path === "/channels/group") return Promise.resolve({ id: "group-1" });
-      if (path === "/users/me/preferences") return Promise.resolve([]);
-      return Promise.reject(new Error(`unexpected ${path}`));
-    });
     const { POST } = await import("@/app/api/mattermost/group/route");
 
     const res = await POST(request({ usernames: ["bob", "carol"] }));
 
-    expect(res.status).toBe(200);
-    expect(mockPrivacy).toHaveBeenCalledTimes(2);
+    expect(res.status).toBe(503);
+    expect(mockPrivacy).not.toHaveBeenCalled();
+    expect(createCalls()).toHaveLength(0);
   });
 
   it("refuses the whole group when any member does not accept DMs", async () => {

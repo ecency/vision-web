@@ -3,8 +3,25 @@ import {
   ensureUserInChannel,
   getMattermostTokenFromCookies,
   handleMattermostError,
+  MattermostChannel,
   mmUserFetch
 } from "@/server/mattermost";
+
+/**
+ * Reacting in a public channel joins it, as reading one by link does. The join
+ * uses the admin token, so it is limited to public channels, which the caller
+ * can read anyway, and to posts that are really in the channel. Any other
+ * channel stays as Mattermost has it: a private one cannot be joined this way.
+ * Returns false when the post is not in the channel.
+ */
+async function joinIfPublicAndOwnsPost(token: string, userId: string, channelId: string, postId: string) {
+  const channel = await mmUserFetch<MattermostChannel>(`/channels/${encodeURIComponent(channelId)}`, token);
+  if (channel.type === "O") {
+    await ensureUserInChannel(userId, channel.id);
+  }
+  const post = await mmUserFetch<{ channel_id: string }>(`/posts/${encodeURIComponent(postId)}`, token);
+  return post.channel_id === channel.id;
+}
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ channelId: string; postId: string }> }) {
   const { channelId, postId } = await params;
@@ -23,7 +40,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ cha
 
     const user = await mmUserFetch<{ id: string }>(`/users/me`, token);
 
-    await ensureUserInChannel(user.id, channelId);
+    if (!(await joinIfPublicAndOwnsPost(token, user.id, channelId, postId))) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
 
     const reaction = await mmUserFetch<{ user_id: string; post_id: string; emoji_name: string }>(
       `/reactions`,
@@ -57,7 +76,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ c
 
     const user = await mmUserFetch<{ id: string }>(`/users/me`, token);
 
-    await ensureUserInChannel(user.id, channelId);
+    if (!(await joinIfPublicAndOwnsPost(token, user.id, channelId, postId))) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
 
     await mmUserFetch(
       `/users/${user.id}/posts/${encodeURIComponent(postId)}/reactions/${encodeURIComponent(emoji)}`,

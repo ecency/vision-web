@@ -80,11 +80,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // A chat account is not proof of a Hive account, and every check below
-    // asks Hive about these names. When Hive cannot be asked, this check is
-    // skipped and the privacy check below fails the request instead.
+    // A chat account is not proof of a Hive account. When Hive cannot be
+    // asked, nobody is confirmed, so the group is not created.
     const onHive = await findHiveAccounts(usernames);
-    const notOnHive = onHive ? usernames.filter((name) => !onHive.has(name)) : [];
+    if (!onHive) {
+      return NextResponse.json(
+        { error: "Unable to check these accounts right now. Please try again." },
+        { status: 503, headers: { "Retry-After": "5" } }
+      );
+    }
+    const notOnHive = usernames.filter((name) => !onHive.has(name));
     if (notOnHive.length) {
       return NextResponse.json(
         {

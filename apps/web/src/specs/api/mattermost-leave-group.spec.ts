@@ -10,12 +10,13 @@ vi.mock("@/server/mattermost", () => ({
   handleMattermostError: (err: unknown) => {
     throw err;
   },
+  isMattermostSuperAdmin: (user: { username?: string }) => user?.username === "ecency",
   mmUserFetch: (...args: unknown[]) => mockMmUserFetch(...args)
 }));
 
-function respondWith(channel: { id: string; name: string; type: string }) {
+function respondWith(channel: { id: string; name: string; type: string }, username = "me") {
   mockMmUserFetch.mockImplementation((path: string) => {
-    if (path === "/users/me") return Promise.resolve({ id: "me", username: "me" });
+    if (path === "/users/me") return Promise.resolve({ id: "me", username });
     if (path === `/channels/${channel.id}`) return Promise.resolve(channel);
     return Promise.resolve({});
   });
@@ -74,5 +75,18 @@ describe("POST /api/mattermost/channels/[id]/leave", () => {
     // Closing anyway would let its unread messages reopen it on the next fetch.
     await expect(POST(new Request("http://x"), params("g-1"))).rejects.toThrow("upstream 500");
     expect(mockMmUserFetch.mock.calls.some(([path]) => path === "/users/me/preferences")).toBe(false);
+  });
+
+  it("lets a member leave a private channel but not the chat admin who manages it", async () => {
+    const { POST } = await import("@/app/api/mattermost/channels/[channelId]/leave/route");
+
+    respondWith({ id: "p-1", name: "private-x", type: "P" });
+    expect((await POST(new Request("http://x"), params("p-1"))).status).toBe(200);
+    expect(mockMmUserFetch).toHaveBeenCalledWith("/channels/p-1/members/me", "test-token", { method: "DELETE" });
+
+    vi.clearAllMocks();
+    respondWith({ id: "p-1", name: "private-x", type: "P" }, "ecency");
+    expect((await POST(new Request("http://x"), params("p-1"))).status).toBe(400);
+    expect(mockMmUserFetch).not.toHaveBeenCalledWith("/channels/p-1/members/me", expect.anything(), expect.anything());
   });
 });
