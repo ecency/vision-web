@@ -261,7 +261,11 @@ describe("POST /api/mattermost/group", () => {
       error: "@ghost is not a Hive account.",
       missing: ["ghost"]
     });
-    expect(mockCallRPC).toHaveBeenCalledWith("condenser_api.get_accounts", [["bob", "ghost"]]);
+    const [method, params, , , , validate] = mockCallRPC.mock.calls[0];
+    expect([method, params]).toEqual(["condenser_api.get_accounts", [["bob", "ghost"]]]);
+    // A malformed answer makes the client ask the next node.
+    expect(validate({})).toBe(false);
+    expect(validate([])).toBe(true);
     expect(mockPrivacy).not.toHaveBeenCalled();
     expect(createCalls()).toHaveLength(0);
   });

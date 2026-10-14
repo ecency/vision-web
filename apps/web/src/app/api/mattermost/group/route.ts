@@ -213,7 +213,15 @@ export async function POST(req: NextRequest) {
 /** The given names that exist on Hive, or null when Hive could not be asked. */
 async function findHiveAccounts(usernames: string[]): Promise<Set<string> | null> {
   try {
-    const accounts = await callRPC("condenser_api.get_accounts", [usernames]);
+    // A non-array answer is a fault of the node that gave it: the next is asked.
+    const accounts = await callRPC(
+      "condenser_api.get_accounts",
+      [usernames],
+      undefined,
+      undefined,
+      undefined,
+      (given) => Array.isArray(given)
+    );
     if (!Array.isArray(accounts)) return null;
     return new Set(
       accounts

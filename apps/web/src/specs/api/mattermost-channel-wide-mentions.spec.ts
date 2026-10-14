@@ -156,6 +156,14 @@ describe("editing a post into a channel-wide mention", () => {
     expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts/p1/patch", expect.anything(), expect.anything());
   });
 
+  it("refuses even a plain edit sent through another channel's address", async () => {
+    mockMmUserFetch.mockResolvedValue({ id: "p1", channel_id: "other-channel" });
+    const { PATCH } = await import("@/app/api/mattermost/channels/[channelId]/posts/[postId]/route");
+
+    expect((await PATCH(edit("just fixing a typo"), params)).status).toBe(404);
+    expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts/p1/patch", expect.anything(), expect.anything());
+  });
+
   it("checks the channel the post is in, not the one in the address", async () => {
     // A moderator of their own community aims an edit at a post elsewhere.
     mockModerationContext.mockResolvedValue({ canModerate: true, currentUser: { username: "mod" }, channel: { id: "c1", type: "O" } });

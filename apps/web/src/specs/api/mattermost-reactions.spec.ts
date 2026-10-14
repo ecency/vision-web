@@ -53,6 +53,7 @@ describe("reactions route", () => {
     const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/[postId]/reactions/route");
 
     expect((await POST(request("POST"), params)).status).toBe(404);
+    expect(mockEnsureUserInChannel).not.toHaveBeenCalled();
     expect(mockMmUserFetch).not.toHaveBeenCalledWith("/reactions", expect.anything(), expect.anything());
   });
 });

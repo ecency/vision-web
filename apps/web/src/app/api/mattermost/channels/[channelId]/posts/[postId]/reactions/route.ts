@@ -16,11 +16,13 @@ import {
  */
 async function joinIfPublicAndOwnsPost(token: string, userId: string, channelId: string, postId: string) {
   const channel = await mmUserFetch<MattermostChannel>(`/channels/${encodeURIComponent(channelId)}`, token);
+  // Checked before joining, so a mismatched request changes no membership.
+  const post = await mmUserFetch<{ channel_id: string }>(`/posts/${encodeURIComponent(postId)}`, token);
+  if (post.channel_id !== channel.id) return false;
   if (channel.type === "O") {
     await ensureUserInChannel(userId, channel.id);
   }
-  const post = await mmUserFetch<{ channel_id: string }>(`/posts/${encodeURIComponent(postId)}`, token);
-  return post.channel_id === channel.id;
+  return true;
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ channelId: string; postId: string }> }) {
