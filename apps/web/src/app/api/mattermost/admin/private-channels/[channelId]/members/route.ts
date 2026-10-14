@@ -75,6 +75,11 @@ export async function DELETE(req: Request, { params }: Params) {
     if (!username) {
       return NextResponse.json({ error: "username is required" }, { status: 400 });
     }
+    // Management happens from inside the channel, so the admin leaving it
+    // would leave no way back in from the app.
+    if (username === guard.user.username.toLowerCase()) {
+      return NextResponse.json({ error: "You cannot remove yourself." }, { status: 400 });
+    }
 
     const { channelId } = await params;
     const channel = await getPrivateTeamChannelAsAdmin(channelId);

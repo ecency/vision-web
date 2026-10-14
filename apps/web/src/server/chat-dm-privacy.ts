@@ -63,7 +63,11 @@ export async function getDmPrivacyRejection(
   return null;
 }
 
-// Hive answers "Assert Exception:Account <name> does not exist".
+// Hive's answers for a name it does not know, or that cannot be a Hive name
+// (chat usernames may hold "_" or run to 22 characters).
+const UNKNOWN_ACCOUNT_RE =
+  /^Assert Exception:(Account \S+ does not exist|invalid account (char|name length))/i;
+
 function isUnknownAccountError(error: unknown) {
-  return error instanceof Error && /account \S+ does not exist/i.test(error.message);
+  return error instanceof Error && UNKNOWN_ACCOUNT_RE.test(error.message);
 }

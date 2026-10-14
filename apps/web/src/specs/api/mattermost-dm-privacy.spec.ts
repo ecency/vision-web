@@ -45,7 +45,7 @@ describe("getDmPrivacyRejection", () => {
     expect(rejection?.error).toContain("@stranger");
   });
 
-  it("treats a follow Hive cannot confirm as no follow instead of failing", async () => {
+  it("treats an account Hive does not know as no follow", async () => {
     mockFetchQuery.mockImplementation(({ following }: { following: string }) =>
       following === "ghost"
         ? Promise.reject(new Error("Assert Exception:Account ghost does not exist"))
@@ -57,6 +57,15 @@ describe("getDmPrivacyRejection", () => {
     expect(rejection).toMatchObject({ privacy_level: "followers", target_username: "victor" });
     expect(rejection?.error).toContain("@ghost");
     expect(rejection?.error).not.toContain("@alice");
+  });
+
+  it.each([
+    "Assert Exception:invalid account char",
+    "Assert Exception:invalid account name length: `a_very_long_chat_name`"
+  ])("treats a name Hive cannot hold as no follow (%s)", async (message) => {
+    mockFetchQuery.mockRejectedValue(new Error(message));
+
+    expect(await getDmPrivacyRejection(VICTIM, ["odd_name"])).toMatchObject({ privacy_level: "followers" });
   });
 
   it("still fails when Hive cannot be reached, rather than claiming no follow", async () => {

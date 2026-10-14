@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
 import i18next from "i18next";
 import { Modal, ModalBody, ModalHeader } from "@ui/modal";
 import { FormControl } from "@ui/input";
@@ -93,10 +93,16 @@ export function NewPrivateChannelModal({
             value={name}
             maxLength={PRIVATE_CHANNEL_NAME_MAX_LENGTH}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+            onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && submit()}
           />
 
           {show && !incompleteChannelId && (
-            <PeoplePicker selected={selected} onChange={setSelected} exclude={exclude} enabled={show} />
+            <PeoplePicker
+              selected={selected}
+              onChange={setSelected}
+              exclude={exclude}
+              enabled={show}
+            />
           )}
 
           <ErrorText error={create.error} />
@@ -176,7 +182,10 @@ export function ManagePrivateChannelModal({
   const rename = (event: FormEvent) => {
     event.preventDefault();
     if (!nameIsValid(name) || name.trim() === savedName || manage.isPending) return;
-    manage.mutate({ kind: "rename", name: name.trim() }, { onSuccess: () => setNameTouched(false) });
+    manage.mutate(
+      { kind: "rename", name: name.trim() },
+      { onSuccess: () => setNameTouched(false) }
+    );
   };
 
   const add = () => {
@@ -224,7 +233,12 @@ export function ManagePrivateChannelModal({
               />
             )}
             <div className="flex justify-end">
-              <Button type="button" size="sm" disabled={!adding.length || manage.isPending} onClick={add}>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!adding.length || manage.isPending}
+                onClick={add}
+              >
                 {i18next.t("chat.private-channel-add")}
               </Button>
             </div>
@@ -250,17 +264,19 @@ export function ManagePrivateChannelModal({
                       <span className="truncate">@{member.username}</span>
                     </span>
                     {member.username.toLowerCase() !== viewerUsername?.toLowerCase() && (
-                    <Button
-                      type="button"
-                      size="xs"
-                      appearance="secondary"
-                      outline={true}
-                      disabled={manage.isPending}
-                      onClick={() => manage.mutate({ kind: "remove", username: member.username })}
-                      aria-label={i18next.t("chat.new-group-remove", { username: member.username })}
-                    >
-                      {i18next.t("chat.private-channel-remove")}
-                    </Button>
+                      <Button
+                        type="button"
+                        size="xs"
+                        appearance="secondary"
+                        outline={true}
+                        disabled={manage.isPending}
+                        onClick={() => manage.mutate({ kind: "remove", username: member.username })}
+                        aria-label={i18next.t("chat.new-group-remove", {
+                          username: member.username
+                        })}
+                      >
+                        {i18next.t("chat.private-channel-remove")}
+                      </Button>
                     )}
                   </li>
                 ))}

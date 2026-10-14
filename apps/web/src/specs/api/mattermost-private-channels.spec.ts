@@ -228,6 +228,16 @@ describe("admin private channels", () => {
     expect(patch).toMatchObject({ auth: "Bearer admin-token", body: { display_name: "Curation team" } });
   });
 
+  it("does not let the admin remove themselves", async () => {
+    mockMattermost({ "GET /users/me": me("ecency", ECENCY) });
+    const { DELETE } = await load<MembersRoute>(
+      "@/app/api/mattermost/admin/private-channels/[channelId]/members/route"
+    );
+
+    expect((await DELETE(request({ username: "@Ecency" }), params)).status).toBe(400);
+    expect(writes()).toEqual([]);
+  });
+
   it("adds people and removes one, treating a non-member as already removed", async () => {
     mockMattermost({
       "GET /users/me": me("ecency", ECENCY),

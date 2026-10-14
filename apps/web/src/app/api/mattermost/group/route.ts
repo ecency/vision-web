@@ -81,8 +81,8 @@ export async function POST(req: NextRequest) {
     }
 
     // A chat account is not proof of a Hive account, and every check below
-    // asks Hive about these names. When Hive cannot be asked, the checks below
-    // still hold: an unconfirmed follow counts as none.
+    // asks Hive about these names. When Hive cannot be asked, this check is
+    // skipped and the privacy check below fails the request instead.
     const onHive = await findHiveAccounts(usernames);
     const notOnHive = onHive ? usernames.filter((name) => !onHive.has(name)) : [];
     if (notOnHive.length) {
