@@ -6,22 +6,25 @@ export const SPECIAL_MENTIONS = new Set(["here", "everyone", "channel", "all"]);
 const SYSTEM_MENTIONS = new Set([...SPECIAL_MENTIONS].map((name) => `@${name}`));
 const isSystemMention = (word: string) => SYSTEM_MENTIONS.has(word.toLowerCase());
 
-// Mattermost reads the text after markdown: numeric character references are
-// letters by then, and an emoji code such as ":smile:" is a node of its own.
+// Mattermost reads the text after markdown. A numeric character reference is
+// a letter by then that joins the text before it but not the text after it;
+// an emoji code such as ":smile:" and an autolink are nodes of their own.
 // Code, links and URLs are not skipped here: getting markdown exactly right is
 // the only way to skip them safely, so "@all" quoted in code is refused too.
 function asMattermostReadsIt(message: string) {
   return message
-    .replace(/&#(\d{1,7});/g, (match, code: string) => fromCodePoint(Number(code), match))
-    .replace(/&#[xX]([0-9a-fA-F]{1,6});/g, (match, code: string) =>
+    .replace(/&#(\d{1,8});/g, (match, code: string) => fromCodePoint(Number(code), match))
+    .replace(/&#[xX]([0-9a-fA-F]{1,8});/g, (match, code: string) =>
       fromCodePoint(parseInt(code, 16), match)
     )
     .replace(/&commat;/gi, "@")
-    .replace(/(^|[^A-Za-z0-9_]):[a-z0-9_+-]+:(?![A-Za-z0-9_])/g, "$1 ");
+    .replace(/(^|[^A-Za-z0-9_]):[a-z0-9_+-]+:(?![A-Za-z0-9_])/g, "$1 ")
+    .replace(/(^|[^A-Za-z0-9])((?:https?|ftp|mailto|tel):\/\/)/gi, "$1 $2")
+    .replace(/(www\d{0,3}\.)/gi, " $1");
 }
 
 function fromCodePoint(code: number, fallback: string) {
-  return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : fallback;
+  return code > 0 && code <= 0x10ffff ? `${String.fromCodePoint(code)} ` : fallback;
 }
 
 /**
@@ -37,7 +40,10 @@ export function hasChannelWideMention(message: string) {
 }
 
 function hasSystemMentionWord(text: string) {
-  const words = text.split(/[^:.\-_@\p{L}\p{N}]+/u);
+  // Mattermost keeps letters and digits of any script in a word, but which
+  // characters count depends on its Unicode version. The mentions are ASCII,
+  // so splitting on everything else only ever finds more of them.
+  const words = text.split(/[^:.\-_@A-Za-z0-9]+/);
 
   for (const raw of words) {
     if (!raw || (raw.startsWith(":") && raw.endsWith(":"))) continue;

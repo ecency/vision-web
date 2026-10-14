@@ -47,7 +47,23 @@ describe("channel-wide mentions", () => {
     "@all-:x:",
     "@channel.:smile:",
     "x &commat;all",
-    "@all&#120;"
+    "@all&#120;",
+    // A reference joins the text before it, not after it.
+    "@al&#108;x",
+    "@al&#108;ison",
+    "@channe&#108;s",
+    "@al&#00000108;",
+    "@al&#x0000006C;",
+    // An autolink is a node of its own.
+    "@all-http://x.com",
+    "@all.http://x.com",
+    "@here:http://x.com",
+    "@all-ftp://x",
+    "@all_www.x.com",
+    // Letters newer than Mattermost's Unicode tables split words there.
+    "@all\u{2EBF0}",
+    "@all\u{10D50}",
+    "\u{10D50}@all"
   ])("recognises %j", (message) => {
     expect(hasChannelWideMention(message)).toBe(true);
   });
