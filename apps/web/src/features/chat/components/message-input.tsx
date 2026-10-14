@@ -76,6 +76,7 @@ interface MessageInputProps {
   channelData?: {
     member?: { user_id?: string };
     canModerate?: boolean;
+    canMentionEveryone?: boolean;
   };
 
   // Callbacks
@@ -158,6 +159,8 @@ export function MessageInput({
   posts,
   typingUsernames
 }: MessageInputProps) {
+  // Older cached responses predate canMentionEveryone; moderators could always.
+  const canMentionEveryone = channelData?.canMentionEveryone ?? channelData?.canModerate ?? false;
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   return (
@@ -492,7 +495,7 @@ export function MessageInput({
                 )}
               </div>
               <div className="max-h-48 overflow-y-auto">
-                {channelData?.canModerate && channelWideMentionOptions.length > 0 && (
+                {canMentionEveryone && channelWideMentionOptions.length > 0 && (
                   <>
                     <div className="px-3 pt-2 text-xs font-semibold text-[--text-muted]">
                       Channel-wide mentions
@@ -515,9 +518,9 @@ export function MessageInput({
                     <div className="border-t border-[--border-color]" />
                   </>
                 )}
-                {!channelData?.canModerate && isChannelWideMentionQuery && (
+                {!canMentionEveryone && isChannelWideMentionQuery && (
                   <div className="px-3 py-2 text-xs text-[--text-muted]">
-                    Channel-wide mentions (@here, @everyone) are limited to community moderators.
+                    Channel-wide mentions (@here, @channel, @all, @everyone) are limited to moderators.
                   </div>
                 )}
                 {mentionQuery.length < 2 && (

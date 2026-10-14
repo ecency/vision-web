@@ -20,6 +20,7 @@ vi.mock("@/server/mattermost", () => ({
   getPrivateChannelRecipientIds: (...args: unknown[]) => mockRecipientIds(...args),
   handleMattermostError: () => ({ status: 500 }),
   isUserChatBanned: () => null,
+  isMattermostSuperAdmin: (user: { username?: string }) => user?.username === "ecency",
   mmUserFetch: (...args: unknown[]) => mockMmUserFetch(...args)
 }));
 
@@ -80,12 +81,24 @@ describe("posts route — DM fan-out runs last", () => {
   // message before the record is written costs nothing and needs no undo.
   it("does not record a recipient for a message it rejects", async () => {
     const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
-    mockModerationContext.mockResolvedValue({ canModerate: false });
+    mockModerationContext.mockResolvedValue({ canModerate: false, currentUser: { username: "newbie" } });
     allowFanout();
 
     const res = await POST(request("@everyone free airdrop"), params);
 
     expect(res.status).toBe(403);
+    expect(mockCheckDmFanout).not.toHaveBeenCalled();
+    expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts", expect.anything(), expect.anything());
+  });
+
+  it("refuses @channel and @all from a regular member before anything is sent", async () => {
+    const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    mockModerationContext.mockResolvedValue({ canModerate: false, currentUser: { username: "newbie" } });
+    allowFanout();
+
+    for (const message of ["@channel free airdrop", "@all free airdrop"]) {
+      expect((await POST(request(message), params)).status).toBe(403);
+    }
     expect(mockCheckDmFanout).not.toHaveBeenCalled();
     expect(mockMmUserFetch).not.toHaveBeenCalledWith("/posts", expect.anything(), expect.anything());
   });

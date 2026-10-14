@@ -6,8 +6,11 @@ import {
   handleMattermostError,
   mmUserFetch
 } from "@/server/mattermost";
-
-const SPECIAL_MENTION_REGEX = /(^|\s)@(here|everyone)\b/i;
+import {
+  CHANNEL_WIDE_MENTION_FORBIDDEN,
+  canMentionEveryone,
+  hasChannelWideMention
+} from "@/server/chat-special-mentions";
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ channelId: string; postId: string }> }) {
   const { channelId, postId } = await params;
@@ -53,14 +56,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ channe
       return NextResponse.json({ error: "message required" }, { status: 400 });
     }
 
-    if (SPECIAL_MENTION_REGEX.test(message)) {
+    if (hasChannelWideMention(message)) {
       const moderation = await getMattermostCommunityModerationContext(token, channelId);
 
-      if (!moderation.canModerate) {
-        return NextResponse.json(
-          { error: "Only community moderators can mention everyone in this channel." },
-          { status: 403 }
-        );
+      if (!canMentionEveryone(moderation)) {
+        return NextResponse.json({ error: CHANNEL_WIDE_MENTION_FORBIDDEN }, { status: 403 });
       }
     }
 

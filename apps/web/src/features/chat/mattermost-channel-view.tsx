@@ -66,6 +66,16 @@ const CHANNEL_WIDE_MENTIONS = [
     description: "Notify everyone in this channel unless they have it muted."
   },
   {
+    key: "channel",
+    label: "@channel",
+    description: "Notify all channel members unless they muted the channel."
+  },
+  {
+    key: "all",
+    label: "@all",
+    description: "Notify all channel members unless they muted the channel."
+  },
+  {
     key: "everyone",
     label: "@everyone",
     description: "Notify all channel members unless they muted the channel."

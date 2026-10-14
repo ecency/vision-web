@@ -27,6 +27,7 @@ vi.mock("@/server/mattermost", async () => {
     followMattermostThreadForUser: vi.fn(),
     getUserChatBanReason: vi.fn(),
     isUserChatBanned: vi.fn(),
+    isMattermostSuperAdmin: () => false,
     CHAT_BAN_PROP: "ecency_chat_banned_until"
   };
 });
@@ -82,7 +83,8 @@ describe("chat routes return public user records only", () => {
     vi.mocked(getMattermostCommunityModerationContext).mockResolvedValue({
       channel: { id: "c-1" },
       community: null,
-      canModerate: false
+      canModerate: false,
+      currentUser: { id: "u-1", username: "viewer" }
     } as never);
     mockMmUserFetch.mockImplementation((path: string) => {
       if (path.startsWith("/channels/c-1/posts?")) {

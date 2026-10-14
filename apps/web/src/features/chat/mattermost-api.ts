@@ -575,6 +575,8 @@ export interface MattermostPostsResponse {
   };
   community?: string | null;
   canModerate?: boolean;
+  /** Whether the viewer may use @here, @channel, @all and @everyone here. */
+  canMentionEveryone?: boolean;
   hasMore?: boolean;
   memberCount?: number;
   onlineUserIds?: string[];
