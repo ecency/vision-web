@@ -15,6 +15,7 @@ import { EntryPageWarnings } from "./entry-page-warnings";
 import { EntryTags } from "./entry-tags";
 import { EntryPageNsfwBodyWrapper } from "./entry-page-nsfw-body-wrapper";
 import { EntryTranslateInline } from "@/features/shared/entry-translate/entry-translate-inline";
+import { ListenPlayer } from "@/features/listen";
 
 interface Props {
   entry: Entry;
@@ -42,6 +43,7 @@ export function EntryPageContentSSR({ entry, isRawContent }: Props) {
         <EntryPageNsfwBodyWrapper entry={entry}>
           {!isRawContent && (
             <div className="px-3 md:px-4 py-3 md:py-4">
+              <ListenPlayer entry={entry} />
               <EntryTranslateInline entry={entry} />
               <EntryPageStaticBody entry={entry} />
               {postPoll && <PollWidget entry={entry} poll={postPoll} isReadOnly={false} />}

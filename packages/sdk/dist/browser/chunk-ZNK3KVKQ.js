@@ -1,0 +1,2 @@
+import {a}from'./chunk-CQOMDMT6.js';import {j}from'./chunk-RAWKN3XW.js';import {infiniteQueryOptions}from'@tanstack/react-query';function N(o,i){return infiniteQueryOptions({queryKey:a.communities.accountNotifications(o,i),initialPageParam:null,queryFn:async({pageParam:t})=>await j("bridge.account_notifications",{account:o,limit:i,last_id:t??void 0})??[],getNextPageParam:t=>t?.length>=i?t[t.length-1].id:null})}export{N as a};//# sourceMappingURL=chunk-ZNK3KVKQ.js.map
+//# sourceMappingURL=chunk-ZNK3KVKQ.js.map

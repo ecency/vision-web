@@ -700,6 +700,11 @@ export const QueryKeys = {
     assistPrices: (username?: string) => ["ai", "assist-prices", username] as const,
     transcribePrice: (username?: string) => ["ai", "transcribe-price", username] as const,
     images: (username?: string) => ["ai", "images", username] as const,
+    // Listen (post audio unlocked with Points). The reader is last so the post's key is
+    // a prefix of every reader's key for it.
+    listenStatus: (author: string, permlink: string, username?: string) =>
+      key("ai", "listen-status", author, permlink, username),
+    listenUnlock: (username?: string) => ["ai", "listen-unlock", username] as const,
     _prefix: ["ai"],
   },
 } as const;

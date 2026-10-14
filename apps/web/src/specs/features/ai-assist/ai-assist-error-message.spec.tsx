@@ -1,6 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
 import i18next from "i18next";
 import { QueryKeys } from "@ecency/sdk";
 import type { QueryClient } from "@tanstack/react-query";
@@ -38,10 +37,6 @@ vi.mock("@/utils", async () => ({
 }));
 vi.mock("@/features/shared", () => ({ error: toastError, success: vi.fn() }));
 vi.mock("@/features/shared/points-topup-cta", () => ({ PointsTopupCta: () => null }));
-vi.mock("@/features/text-to-speech", () => ({
-  useTts: vi.fn(() => ({ speechRef: { current: undefined }, hasPaused: false, hasStarted: false })),
-  TextToSpeechSettingsDialog: ({ children }: { children: ReactNode }) => <>{children}</>
-}));
 vi.mock("@/api/translation", () => ({
   getTranslation: vi.fn(),
   getLanguages: vi.fn(async () => [])

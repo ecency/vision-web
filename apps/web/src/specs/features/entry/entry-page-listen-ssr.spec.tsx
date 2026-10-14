@@ -1,6 +1,5 @@
 import { vi, describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { ReactNode } from "react";
 
 /*
   SSR pin for #1662: the word count and read time are pure derivations of
@@ -17,10 +16,6 @@ vi.mock("@/utils", async () => ({
   ensureValidToken: vi.fn()
 }));
 vi.mock("@/features/shared", () => ({ error: vi.fn(), success: vi.fn() }));
-vi.mock("@/features/text-to-speech", () => ({
-  useTts: vi.fn(() => ({ speechRef: { current: undefined }, hasPaused: false, hasStarted: false })),
-  TextToSpeechSettingsDialog: ({ children }: { children: ReactNode }) => <>{children}</>
-}));
 vi.mock("@/api/translation", () => ({
   getTranslation: vi.fn(),
   getLanguages: vi.fn(async () => [])

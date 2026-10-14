@@ -108,6 +108,7 @@ vi.mock("@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/e
 vi.mock("@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-listen", () => ({ EntryPageListen: () => null }));
 vi.mock("@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-tags", () => ({ EntryTags: () => null }));
 vi.mock("@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-footer-info", () => ({ EntryFooterInfo: () => null }));
+vi.mock("@/features/listen", () => ({ ListenPlayer: () => null }));
 vi.mock("@/features/newsletter/runtime", () => ({ NewsletterGate: () => null }));
 vi.mock("@/features/newsletter/post-subscribe-prompt", () => ({ PostSubscribePrompt: () => null }));
 vi.mock("@/features/shared/entry-translate/entry-translate-inline", () => ({

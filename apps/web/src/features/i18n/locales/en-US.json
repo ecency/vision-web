@@ -1227,9 +1227,7 @@
       "promotion-title": "Want more views and reads?",
       "promotion-subtitle": "Use Ecency Perks to promote your post and gain wider exposure.",
       "try-now": "Try now"
-    },
-    "listen": "Listen",
-    "tts-settings": "Text-to-speech settings"
+    }
   },
   "edit-history": {
     "title": "Edit History",
@@ -3930,13 +3928,6 @@
     "success-upload": "Image has uploaded successfully",
     "uploading": "Uploading..."
   },
-  "tts-settings": {
-    "title": "Text-to-Speech settings",
-    "voice-updated": "Text-to-Speech voice changed to {{n}}",
-    "hint": "Text-to-Speech uses browser`s built-in tools for converting text content to speech. Voices list, availability and quality depends only on your browser and device.",
-    "playground": "Playground",
-    "voices": "Voices"
-  },
   "external-transfer": {
     "title": "Send {{token}}",
     "recipient-label": "Recipient address",
@@ -4647,7 +4638,7 @@
       "reco-lag-tooltip": "How far the recommendation index is behind the chain head. Recommendations reach the desk from the chain, so they arrive after the post does.",
       "curated-today": "Curated today",
       "curated-today-tooltip": "Posts the trail curated in the last 24 h. Trail votes today: {{posts}} on posts plus {{comments}} on comments.",
-      "trail-votes": "{{posts}} posts \u00b7 {{comments}} comments",
+      "trail-votes": "{{posts}} posts · {{comments}} comments",
       "worker-stale": "index stalled",
       "live-paused": "live updates paused"
     },
@@ -4823,7 +4814,7 @@
       "trusted-tooltip": "Ten or more recommendations with a weight of x1.2 or better.",
       "window": "Last {{days}} days",
       "yours": "Your last {{days}} days",
-      "line": "{{recommended}} recommended \u00b7 {{curated}} curated \u00b7 {{dismissed}} dismissed \u00b7 {{withdrawn}} withdrawn",
+      "line": "{{recommended}} recommended · {{curated}} curated · {{dismissed}} dismissed · {{withdrawn}} withdrawn",
       "weight": "x{{precision}} weight",
       "weight-tooltip": "Weight orders the recommended list. It never hides a post.",
       "incentive": "Recommendations that curators dismiss lower your weight; ones that get curated raise it.",
@@ -5522,7 +5513,7 @@
       "step-build": "Build your town",
       "step-build-desc": "Wins bring materials. Build together, and each building helps the next raid.",
       "pests-title": "Season {{n}} pests",
-      "pest-week": "Week {{week}} \u00b7 {{date}}",
+      "pest-week": "Week {{week}} · {{date}}",
       "pest-hidden": "Shows itself on {{date}}",
       "pests-note": "Every alliance faces the same pest each week. Each one shows what it looks like on the day it arrives.",
       "folk-title": "The townsfolk",
@@ -5540,5 +5531,21 @@
       "close": "Back to town",
       "close-preseason": "See you there"
     }
+  },
+  "listen": {
+    "title": "Listen to this post",
+    "minutes": "~{{n}} min",
+    "login": "Log in to listen",
+    "unlock": "Unlock · {{n}} Points",
+    "confirm": "Spend {{n}} Points to listen?",
+    "not-enough": "You need {{n}} Points to listen.",
+    "preparing": "Preparing audio…",
+    "failed-refunded": "Audio could not be made, your Points were refunded",
+    "unlock-failed": "Could not unlock the audio, please try again",
+    "seek": "Seek",
+    "speed": "Playback speed",
+    "language": "Audio language",
+    "login-again": "Please log in again to unlock the audio",
+    "retry": "Try again"
   }
 }
