@@ -166,6 +166,19 @@ describe("ChatsClient New chat flow", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("User is not on chat");
   });
 
+  it("starts a ?dm request only from the chat list on screen", () => {
+    search = new URLSearchParams("dm=john");
+    onScreen = false;
+    const hidden = render(<ChatsClient />);
+    expect(directMutation.mutate).not.toHaveBeenCalled();
+
+    onScreen = true;
+    render(<ChatsClient />);
+    expect(directMutation.mutate).toHaveBeenCalledTimes(1);
+    expect(directMutation.mutate).toHaveBeenCalledWith("john", expect.any(Object));
+    hidden.unmount();
+  });
+
   it("shows a failed bootstrap refetch once data is cached", () => {
     bootstrapResult = { data: { ok: true }, isLoading: false, error: new Error("Refetch failed") };
     render(<ChatsClient />);

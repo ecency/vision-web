@@ -61,6 +61,7 @@ export function ChatsClient() {
   const [showSearch, setShowSearch] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const isOnScreen = () => Boolean(rootRef.current?.getClientRects().length);
   const pathname = usePathname();
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [showNewPrivateChannel, setShowNewPrivateChannel] = useState(false);
@@ -195,7 +196,7 @@ export function ChatsClient() {
   // Auto-start DM when navigating from profile (?dm=username)
   const dmInitiated = useRef<string | null>(null);
   useEffect(() => {
-    if (dmTarget && bootstrap?.ok && dmInitiated.current !== dmTarget) {
+    if (dmTarget && bootstrap?.ok && isOnScreen() && dmInitiated.current !== dmTarget) {
       dmInitiated.current = dmTarget;
       directChannelMutation.mutate(dmTarget, {
         onSuccess: (data) => {
@@ -218,8 +219,6 @@ export function ChatsClient() {
   // The layout mounts one ChatsClient on every chats route (CSS-hidden below
   // md) and mobile /chats mounts a second, so only the instance on screen may
   // open the modal, or two would stack.
-  const isOnScreen = () => Boolean(rootRef.current?.getClientRects().length);
-
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "k") return;
