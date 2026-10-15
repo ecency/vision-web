@@ -29,6 +29,8 @@ interface Props {
   dismissViaOnHide?: boolean;
 }
 
+let openModalCount = 0;
+
 export function Modal(props: Omit<HTMLProps<HTMLDivElement>, "size"> & Props) {
   const [show, setShow] = useState<boolean>();
 
@@ -117,14 +119,18 @@ export function Modal(props: Omit<HTMLProps<HTMLDivElement>, "size"> & Props) {
     }
   }, [show]);
 
+  // Counted across every open modal: when one closes in the same update that
+  // another opens (search -> create dialog), a plain remove would unlock the
+  // page under the modal that is still open.
   useEffect(() => {
-    if (show) {
-      document.body.classList.add("overflow-hidden");
-    } else {
-      document.body.classList.remove("overflow-hidden");
-    }
+    if (!show) return;
+    openModalCount += 1;
+    document.body.classList.add("overflow-hidden");
     return () => {
-      document.body.classList.remove("overflow-hidden");
+      openModalCount = Math.max(0, openModalCount - 1);
+      if (openModalCount === 0) {
+        document.body.classList.remove("overflow-hidden");
+      }
     };
   }, [show]);
 

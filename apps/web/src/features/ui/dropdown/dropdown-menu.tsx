@@ -18,7 +18,7 @@ export function DropdownMenu(props: Omit<HTMLProps<HTMLDivElement>, "size"> & Pr
     <div
       {...nativeProps}
       className={classNameObject({
-        "z-[1000] ecency-dropdown-menu absolute flex flex-col items-start border border-[--border-color] rounded-xl bg-white animate-scale-in":
+        "z-[1000] ecency-dropdown-menu absolute flex flex-col items-start border border-[--border-color] rounded-xl bg-white dark:bg-dark-200 animate-scale-in":
           true,
         "origin-top": props.align !== "top" && props.align !== "rightBottom",
         "origin-bottom": props.align === "top" || props.align === "rightBottom",

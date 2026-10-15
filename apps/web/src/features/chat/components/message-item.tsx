@@ -91,7 +91,7 @@ const UsernameActions = memo(function UsernameActions({
           {displayName}
         </span>
       </DropdownToggle>
-      <DropdownMenu align="left" size="small" className="dark:!bg-dark-200">
+      <DropdownMenu align="left" size="small">
         <DropdownItemWithIcon icon={blogSvg} label="View blog" href={`/@${username}`} />
         {!isSelf && (
           <DropdownItemWithIcon
@@ -231,7 +231,7 @@ function MessageItemInner({
           <div className="flex-1 border-t border-[--border-color]" />
         </div>
       )}
-      <div className="group relative -mx-2 flex flex-wrap gap-x-2.5 rounded px-2 py-0.5 transition-colors hover:bg-[--surface-color] md:flex-nowrap">
+      <div tabIndex={-1} className="group relative -mx-2 flex gap-2.5 rounded px-2 py-0.5 outline-none transition-colors hover:bg-[--surface-color] focus-within:bg-[--surface-color]">
         {isChannelNoticePost(post) ? (
           <div className="w-full flex justify-center">
             <div className="rounded bg-[--surface-color] px-4 py-2 text-sm text-[--text-muted] text-center">
@@ -398,7 +398,7 @@ function MessageItemInner({
           </>
         )}
         {!isChannelNoticePost(post) && (
-          <div className="flex w-full justify-end gap-1 pt-1 md:absolute md:-right-2 md:-top-2 md:w-auto md:pt-0 md:opacity-0 md:pointer-events-none md:transition-opacity md:duration-150 md:group-hover:pointer-events-auto md:group-hover:opacity-100 md:group-focus-within:pointer-events-auto md:group-focus-within:opacity-100">
+          <div className="absolute -right-2 -top-2 flex gap-1 rounded-md bg-[--surface-color] opacity-0 pointer-events-none transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
             {(() => {
               const isReactionPickerOpen = openReactionPostId === post.id;
 
@@ -471,7 +471,7 @@ function MessageItemInner({
                   aria-label="Message actions"
                 />
               </DropdownToggle>
-              <DropdownMenu align="right" size="small" className="dark:!bg-dark-200">
+              <DropdownMenu align="right" size="small">
                 <DropdownItemWithIcon
                   icon={mailSvg}
                   label="Open thread"

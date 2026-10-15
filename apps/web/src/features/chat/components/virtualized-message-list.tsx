@@ -277,7 +277,10 @@ export const VirtualizedMessageList = memo(function VirtualizedMessageList({
       ref={virtuosoRef}
       data={groupedPosts}
       firstItemIndex={firstItemIndex}
-      initialTopMostItemIndex={firstItemIndex + (initialScrollIndex ?? groupedPosts.length - 1)}
+      // A data index (0..length-1), not offset by firstItemIndex.
+      initialTopMostItemIndex={
+        groupedPosts.length ? (initialScrollIndex ?? groupedPosts.length - 1) : undefined
+      }
       followOutput={followOutput}
       startReached={onStartReached}
       atBottomStateChange={onAtBottomStateChange}

@@ -144,6 +144,11 @@ export async function fetchDeactivatedDmPartners<TUser extends MattermostDmUser>
  * silently swallowed every first-contact DM — the badge stayed at 0 while a
  * real message sat unread. Neither channel type can be auto-joined, so there is
  * no history flood to protect against and the guard has no work to do.
+ *
+ * Private (`P`) channels are exempt for the same reason: only the chat admin
+ * creates them and adds people one by one, and community channels are always
+ * open (`O`). A member who has not opened a private channel yet must still see
+ * it go unread, or they never notice they were added.
  */
 export function isChannelUnreadSuppressed(
   channel: { type?: string },
@@ -153,7 +158,7 @@ export function isChannelUnreadSuppressed(
   }
 ): boolean {
   if (isChannelMuted(member)) return true;
-  if (isDirectLikeChannel(channel)) return false;
+  if (isDirectLikeChannel(channel) || channel.type === "P") return false;
   return isChannelNeverViewed(member);
 }
 

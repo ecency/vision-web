@@ -44,7 +44,11 @@ const CHANNELS = [
   // Mattermost keeps reporting unread after every post is deleted.
   { id: "d-phantom", type: "D", name: "u-self__u-ghost", total_msg_count: 2 },
   // Group messages cannot be auto-joined either, so the guard must skip them.
-  { id: "g-neverviewed", type: "G", name: "groupchat", total_msg_count: 3 }
+  { id: "g-neverviewed", type: "G", name: "groupchat", total_msg_count: 3 },
+  // Private channels are admin-made, never auto-joined: a member who has not
+  // opened one yet must still see it go unread.
+  { id: "p-neverviewed", type: "P", name: "private-abc", total_msg_count: 4 },
+  { id: "p-muted", type: "P", name: "private-def", total_msg_count: 4 }
 ];
 
 // Channels whose post list comes back empty because every post is soft-deleted.
@@ -64,7 +68,15 @@ const MEMBERS = [
   { channel_id: "c-neverviewed-zero", mention_count: 0, msg_count: 0, last_viewed_at: 0 },
   { channel_id: "d-neverviewed", mention_count: 2, msg_count: 0, last_viewed_at: 0 },
   { channel_id: "d-phantom", mention_count: 2, msg_count: 0, last_viewed_at: 0 },
-  { channel_id: "g-neverviewed", mention_count: 0, msg_count: 0, last_viewed_at: 0 }
+  { channel_id: "g-neverviewed", mention_count: 0, msg_count: 0, last_viewed_at: 0 },
+  { channel_id: "p-neverviewed", mention_count: 0, msg_count: 0, last_viewed_at: 0 },
+  {
+    channel_id: "p-muted",
+    mention_count: 0,
+    msg_count: 0,
+    last_viewed_at: 0,
+    notify_props: { mark_unread: "mention" }
+  }
 ];
 
 describe("channels/unreads route — unread_eligible flag", () => {
@@ -146,6 +158,16 @@ describe("channels/unreads route — unread_eligible flag", () => {
   it("counts a never-viewed group message — it cannot be auto-joined either", async () => {
     const byId = await getChannels();
     expect(byId["g-neverviewed"]).toEqual({ unread_eligible: true, message_count: 3 });
+  });
+
+  it("counts a never-viewed private channel — only the admin adds people to one", async () => {
+    const byId = await getChannels();
+    expect(byId["p-neverviewed"]).toEqual({ unread_eligible: true, message_count: 4 });
+  });
+
+  it("still suppresses a muted private channel", async () => {
+    const byId = await getChannels();
+    expect(byId["p-muted"]).toEqual({ unread_eligible: false, message_count: 0 });
   });
 
   // The realtime updater has to tell an expiring verdict from a structural one:

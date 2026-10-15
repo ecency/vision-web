@@ -111,6 +111,12 @@ describe("NavbarMobile", () => {
     expect(screen.getByLabelText("navbar.home")).not.toHaveAttribute("aria-current", "page");
   });
 
+  test("hides the compose FAB on chats, where it would cover the composer", () => {
+    pathname = "/chats/abc";
+    renderNav();
+    expect(screen.queryByLabelText("navbar.post")).not.toBeInTheDocument();
+  });
+
   test("the menu button opens the browse/governance drawer", () => {
     const { setMainBarExpanded } = renderNav();
     fireEvent.click(screen.getByLabelText("navbar.toggle-menu"));

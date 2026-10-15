@@ -635,11 +635,6 @@ export function MattermostChannelView({ channelId }: Props) {
           e.preventDefault();
         }
       }
-
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        window.dispatchEvent(new Event("ecency:open-chat-search"));
-        e.preventDefault();
-      }
     };
 
     document.addEventListener("keydown", handleKeyDown);

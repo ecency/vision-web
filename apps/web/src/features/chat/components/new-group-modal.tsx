@@ -42,9 +42,9 @@ export function NewGroupModal({ show, onHide, currentUsername, onCreated }: NewG
   };
 
   return (
-    <Modal show={show} onHide={onHide} centered size="md" dialogClassName="!mt-0 max-h-[calc(100dvh-7rem)] overflow-y-auto">
-      <ModalHeader closeButton={true}>{i18next.t("chat.new-group")}</ModalHeader>
-      <ModalBody>
+    <Modal show={show} onHide={onHide} centered size="md" dialogClassName="!mt-0 flex max-h-[calc(100dvh-7rem)] flex-col overflow-hidden">
+      <ModalHeader closeButton={true} className="shrink-0">{i18next.t("chat.new-group")}</ModalHeader>
+      <ModalBody className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-3">
           <p className="text-xs text-[--text-muted]">
             {i18next.t("chat.new-group-hint", { min: GROUP_MIN_OTHERS, max: GROUP_MAX_OTHERS })}

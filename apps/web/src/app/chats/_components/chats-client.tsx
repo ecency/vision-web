@@ -21,7 +21,7 @@ import { UserAvatar } from "@/features/shared/user-avatar";
 import i18next from "i18next";
 import Link from "next/link";
 import { useHydrated } from "@/api/queries";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
 import { FormControl } from "@ui/input";
 import { Button } from "@ui/button";
 import { Modal, ModalBody, ModalHeader } from "@ui/modal";
@@ -60,10 +60,13 @@ export function ChatsClient() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [showNewPrivateChannel, setShowNewPrivateChannel] = useState(false);
   const shareText = searchParams?.get("text")?.trim();
   const dmTarget = searchParams?.get("dm")?.trim();
+  const openSearchParam = searchParams?.get("search") === "1";
   const isShareMode = Boolean(shareText);
 
   const { data: bootstrap, isLoading, error, refetch: refetchBootstrap } = useMattermostBootstrap();
@@ -120,8 +123,10 @@ export function ChatsClient() {
   const filteredChannels = useMemo(() => {
     if (!channels?.channels) return [];
 
+    // Only the New chat modal reads this list, so skip the work while it is
+    // closed or the term is too short to search.
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return channels.channels;
+    if (!showSearch || query.length < 2) return [];
 
     return channels.channels.filter((channel) => {
       const displayName = channel.display_name || channel.name;
@@ -140,7 +145,7 @@ export function ChatsClient() {
         (channel.group_name || "").toLowerCase().includes(query)
       );
     });
-  }, [channels?.channels, getDirectUserDisplayName, searchTerm]);
+  }, [channels?.channels, getDirectUserDisplayName, searchTerm, showSearch]);
 
   const unreadByChannelId = useMemo(() => {
     if (!unreadSummary?.channels) return new Map<string, { mention_count: number; message_count: number; thread_unread: number }>();
@@ -206,13 +211,39 @@ export function ChatsClient() {
   const closeSearch = () => {
     setShowSearch(false);
     setSearchTerm("");
+    joinChannelMutation.reset();
+    directChannelMutation.reset();
   };
 
+  // The layout mounts one ChatsClient on every chats route (CSS-hidden below
+  // md) and mobile /chats mounts a second, so only the instance on screen may
+  // open the modal, or two would stack.
+  const isOnScreen = () => Boolean(rootRef.current?.getClientRects().length);
+
   useEffect(() => {
-    const openSearch = () => setShowSearch(true);
-    window.addEventListener("ecency:open-chat-search", openSearch);
-    return () => window.removeEventListener("ecency:open-chat-search", openSearch);
-  }, []);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "k") return;
+      if (isOnScreen()) {
+        e.preventDefault();
+        setShowSearch(true);
+      } else if (params?.id) {
+        // Mobile channel page: no list is on screen, so go to the one on /chats.
+        e.preventDefault();
+        router.push("/chats?search=1");
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [params?.id, router]);
+
+  useEffect(() => {
+    if (!openSearchParam || !bootstrap?.ok || !isOnScreen()) return;
+    setShowSearch(true);
+    const next = new URLSearchParams(searchParams?.toString());
+    next.delete("search");
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  }, [openSearchParam, bootstrap?.ok]);
 
   useEffect(() => {
     if (showSearch) requestAnimationFrame(() => searchInputRef.current?.focus());
@@ -315,9 +346,12 @@ export function ChatsClient() {
     );
   }, [channelsById, messageSearchResults?.posts]);
 
+  // Someone with a DM is left out of People only when that DM is already in
+  // Your chats. The server matches more user fields than the local filter, so
+  // a DM partner found by, say, nickname must still be reachable here.
   const discoverableUsers = useMemo(() => {
     const existingDmUsernames = new Set(
-      (channels?.channels || [])
+      searchedChannels
         .filter((channel) => channel.type === "D")
         .map((channel) => channel.directUser?.username?.toLowerCase())
     );
@@ -325,7 +359,7 @@ export function ChatsClient() {
       (user) => user.username.toLowerCase() !== activeUser?.username?.toLowerCase() &&
         !existingDmUsernames.has(user.username.toLowerCase())
     );
-  }, [activeUser?.username, channels?.channels, userSearch?.users]);
+  }, [activeUser?.username, searchedChannels, userSearch?.users]);
 
   const buildChannelUrl = useCallback(
     (channelId: string) =>
@@ -437,7 +471,7 @@ export function ChatsClient() {
             >
               <Button appearance="gray-link" icon={dotsHorizontal} className={KEBAB_BUTTON_CLASS} aria-label={`${i18next.t("g.menu", { defaultValue: "Menu" })}: ${getChannelTitle(channel)}`} aria-haspopup="menu" />
             </DropdownToggle>
-            <DropdownMenu align="right" className="dark:!bg-dark-200">
+            <DropdownMenu align="right">
               {unread > 0 && (
                 <DropdownItemWithIcon
                   icon={checkSvg}
@@ -576,7 +610,7 @@ export function ChatsClient() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div ref={rootRef} className="flex h-full min-h-0 flex-col">
       <NewGroupModal
         show={showNewGroup}
         onHide={() => setShowNewGroup(false)}
@@ -609,8 +643,8 @@ export function ChatsClient() {
             appearance="secondary"
             outline={true}
             icon={<UilPlus />}
-            aria-label={i18next.t("chat.new-chat", { defaultValue: "New chat" })}
-            title={i18next.t("chat.new-chat", { defaultValue: "New chat" })}
+            aria-label={i18next.t("chat.new-chat")}
+            title={i18next.t("chat.new-chat")}
             data-chat-search-trigger
             className="!size-10 !shrink-0 !p-0"
             onClick={() => setShowSearch(true)}
@@ -624,7 +658,15 @@ export function ChatsClient() {
             <p className="mt-2 break-words text-sm text-[--text-muted]">{shareText}</p>
           </div>
         )}
-        {channelsError && <div className="text-sm text-red-500" role="alert">{(channelsError as Error).message}</div>}
+        {(error || channelsError || (!showSearch && directChannelMutation.error)) && (
+          <div className="grid gap-1 text-sm text-red-500 dark:text-red-400" role="alert">
+            {error && <div>{error.message}</div>}
+            {channelsError && <div>{(channelsError as Error).message}</div>}
+            {!showSearch && directChannelMutation.error && (
+              <div>{(directChannelMutation.error as Error).message}</div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
@@ -637,17 +679,16 @@ export function ChatsClient() {
           </div>
         </div>
       </div>
-      <Modal show={showSearch} onHide={closeSearch} centered size="lg" className="!pt-3 sm:!py-4" dialogClassName="!mt-0 max-h-[calc(100dvh-1.5rem)] overflow-y-auto">
-        <ModalHeader closeButton={true}>{i18next.t("chat.new-chat", { defaultValue: "New chat" })}</ModalHeader>
-        <ModalBody>
+      <Modal show={showSearch} onHide={closeSearch} centered size="lg" className="!pt-3 sm:!py-4" dialogClassName="!mt-0 flex max-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden">
+        <ModalHeader closeButton={true} className="shrink-0">{i18next.t("chat.new-chat")}</ModalHeader>
+        <ModalBody className="min-h-0 flex-1 overflow-y-auto">
           <div className="flex flex-col gap-4">
-            <p className="text-sm text-[--text-muted]">{i18next.t("chat.find-or-create-hint", { defaultValue: "Find a person, channel, or message, or create a new conversation." })}</p>
+            <p className="text-sm text-[--text-muted]">{i18next.t("chat.find-or-create-hint")}</p>
             <FormControl
               ref={searchInputRef}
-              autoFocus
               type="search"
-              aria-label={i18next.t("chat.search-chats", { defaultValue: "Search chats" })}
-              placeholder={i18next.t("chat.search-chats-placeholder", { defaultValue: "Search people, channels, and messages" })}
+              aria-label={i18next.t("chat.search-chats")}
+              placeholder={i18next.t("chat.search-chats-placeholder")}
               value={searchTerm}
               onChange={(e: ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
               className="w-full"
@@ -663,7 +704,7 @@ export function ChatsClient() {
               )}
             </div>
             {(channelSearchError || messageSearchError || joinChannelMutation.error || directChannelMutation.error || userSearchError) && (
-              <div className="grid gap-1 text-sm text-red-500" role="alert">
+              <div className="grid gap-1 text-sm text-red-500 dark:text-red-400" role="alert">
                 {channelSearchError && <div>{(channelSearchError as Error).message}</div>}
                 {messageSearchError && <div>{(messageSearchError as Error).message}</div>}
                 {joinChannelMutation.error && <div>{(joinChannelMutation.error as Error).message}</div>}
@@ -671,11 +712,11 @@ export function ChatsClient() {
                 {userSearchError && <div>{(userSearchError as Error).message}</div>}
               </div>
             )}
-            {!hasSearchTerm && <p className="text-sm text-[--text-muted]">{i18next.t("chat.search-to-start", { defaultValue: "Type at least 2 characters to search or choose a creation option above." })}</p>}
+            {!hasSearchTerm && <p className="text-sm text-[--text-muted]">{i18next.t("chat.search-to-start")}</p>}
             {hasSearchTerm && searchedChannels.length > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs font-semibold text-[--text-muted]">
-                  <span>{i18next.t("chat.existing-chats", { defaultValue: "Your chats" })}</span>
+                  <span>{i18next.t("chat.existing-chats")}</span>
                 </div>
                 <div className="grid grid-cols-1 gap-1">
                   {searchedChannels.map((channel) => (
@@ -690,7 +731,7 @@ export function ChatsClient() {
           {hasSearchTerm && (userSearchLoading || discoverableUsers.length > 0) && (
             <div className="space-y-2 rounded border border-[--border-color] bg-[--background-color] p-3">
               <div className="flex items-center justify-between text-xs text-[--text-muted]">
-                <span>{i18next.t("chat.people", { defaultValue: "People" })}</span>
+                <span>{i18next.t("chat.people")}</span>
                 {userSearchLoading && <span>{i18next.t("chat.searching")}</span>}
               </div>
               <div className="grid grid-cols-1 gap-2">
@@ -808,7 +849,7 @@ export function ChatsClient() {
           {hasSearchTerm && !searchedChannels.length && !discoverableUsers.length &&
             !joinableChannelResults.length && !subscribedMessageResults.length &&
             !userSearchLoading && !channelSearchLoading && !messageSearchLoading && (
-              <p className="text-sm text-[--text-muted]">{i18next.t("chat.no-search-results", { defaultValue: "No people, channels, or messages found." })}</p>
+              <p className="text-sm text-[--text-muted]">{i18next.t("chat.no-search-results")}</p>
             )}
           </div>
         </ModalBody>

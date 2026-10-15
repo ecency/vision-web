@@ -1,3 +1,4 @@
+import i18next from "i18next";
 import React, { type ChangeEvent, useState } from "react";
 import { ChatBanInfo, formatChatBanNotice } from "../chat-ban-notice";
 import { Button } from "@ui/button";
@@ -401,8 +402,8 @@ export function MessageInput({
                       submitMessage();
                     }
                   }}
-                  placeholder="Write a message"
-                  aria-label="Write a message"
+                  placeholder={i18next.t("chat.write-message")}
+                  aria-label={i18next.t("chat.write-message")}
                   className={clsx(
                     "block w-full resize-none bg-transparent",
                     "text-base leading-[1.4]",

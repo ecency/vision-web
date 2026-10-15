@@ -70,7 +70,7 @@ export function ChannelHeader({
   return (
     <div className="shrink-0 border-b border-[--border-color] px-3 py-2.5 sm:px-4">
       <div className="flex items-center justify-between gap-3">
-        <button type="button" onClick={onClose} className="flex size-10 shrink-0 items-center justify-center rounded-lg text-[--text-muted] hover:bg-[--background-color] hover:text-[--text-color] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-dark-sky md:hidden" aria-label="Back to chats" title="Back to chats">←</button>
+        <button type="button" onClick={onClose} className="flex size-10 shrink-0 items-center justify-center rounded-lg text-[--text-muted] hover:bg-[--background-color] hover:text-[--text-color] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-dark-sky md:hidden" aria-label={i18next.t("chat.back-to-chats")} title={i18next.t("chat.back-to-chats")}>←</button>
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="truncate text-base font-semibold">{channelTitle}</div>
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-[--text-muted]">
