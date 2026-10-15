@@ -275,6 +275,21 @@ describe("ListenPlayer", () => {
     expect(container.querySelector("[role='progressbar']")!.getAttribute("aria-valuenow")).toBe("43");
   });
 
+  it("shows a job that is next in line as queued, not as being made", async () => {
+    activeUser.current = { username: "alice" };
+    status.current = { cost: 50, unlocked: true, status: "preparing", languages: LANGS, queued_ahead: 0, progress: 0 };
+    render();
+    expect(await screen.findByText("listen.next-in-line")).toBeTruthy();
+    expect(screen.queryByText("listen.preparing-eta")).toBeNull();
+  });
+
+  it("estimates the wait when the server reports no queue or progress", async () => {
+    activeUser.current = { username: "alice" };
+    status.current = { cost: 50, unlocked: true, status: "preparing", languages: LANGS };
+    render();
+    expect(await screen.findByText("listen.preparing-eta")).toBeTruthy();
+  });
+
   it("never shows 100% before the audio is ready", async () => {
     activeUser.current = { username: "alice" };
     status.current = { cost: 50, unlocked: true, status: "preparing", languages: LANGS, progress: 1 };

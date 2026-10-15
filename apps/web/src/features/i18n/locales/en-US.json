@@ -5543,6 +5543,7 @@
     "preparing-eta": "Preparing audio, about {{n}} min…",
     "preparing-progress": "Preparing audio · {{n}}%",
     "waiting": "Waiting in line, {{n}} ahead…",
+    "next-in-line": "Next in line…",
     "failed-refunded": "Audio could not be made, your Points were refunded",
     "unlock-failed": "Could not unlock the audio, please try again",
     "seek": "Seek",

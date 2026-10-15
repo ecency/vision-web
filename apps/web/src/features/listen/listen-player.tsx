@@ -321,6 +321,8 @@ export function ListenPlayer({ entry }: Props) {
  * worker reports one, and before that an estimate from the post's length.
  */
 function PreparingState({ status }: { status: ListenStatus }) {
+  // Present only while the job waits for the worker; 0 means it is next.
+  const queued = typeof status.queued_ahead === "number";
   const ahead = status.queued_ahead ?? 0;
   const progress = status.progress ?? 0;
   // The server only reports progress once the worker holds the job, never while queued.
@@ -345,8 +347,10 @@ function PreparingState({ status }: { status: ListenStatus }) {
   return (
     <div className="flex items-center gap-2 opacity-75" role="status">
       <Spinner className="size-4" />
-      {ahead > 0
-        ? i18next.t("listen.waiting", { n: ahead })
+      {queued
+        ? ahead > 0
+          ? i18next.t("listen.waiting", { n: ahead })
+          : i18next.t("listen.next-in-line")
         : status.languages.length
           ? i18next.t("listen.preparing-eta", { n: preparingMinutes(status.languages) })
           : i18next.t("listen.preparing")}
