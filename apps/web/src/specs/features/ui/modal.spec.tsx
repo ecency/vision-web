@@ -211,6 +211,38 @@ describe("Modal", () => {
       );
       expect(document.body.classList.contains("overflow-hidden")).toBe(false);
     });
+
+    it("keeps the page locked when one modal closes as another opens", () => {
+      // The opening modal sits first in the tree, so its effect runs before the
+      // closing one's cleanup; a plain remove would unlock the page under it.
+      const Pair = ({ second }: { second: boolean }) => (
+        <>
+          <Modal show={second} onHide={vi.fn()}>
+            <div>Second</div>
+          </Modal>
+          <Modal show={!second} onHide={vi.fn()}>
+            <div>First</div>
+          </Modal>
+        </>
+      );
+      const { rerender } = render(<Pair second={false} />);
+      expect(document.body.classList.contains("overflow-hidden")).toBe(true);
+
+      rerender(<Pair second={true} />);
+      expect(document.body.classList.contains("overflow-hidden")).toBe(true);
+
+      rerender(
+        <>
+          <Modal show={false} onHide={vi.fn()}>
+            <div>Second</div>
+          </Modal>
+          <Modal show={false} onHide={vi.fn()}>
+            <div>First</div>
+          </Modal>
+        </>
+      );
+      expect(document.body.classList.contains("overflow-hidden")).toBe(false);
+    });
   });
 
   describe("Custom Styling", () => {

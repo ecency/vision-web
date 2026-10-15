@@ -68,11 +68,12 @@ export function ChannelHeader({
   const [showManage, setShowManage] = useState(false);
 
   return (
-    <div className="border-b border-[--border-color] px-4 py-2.5">
+    <div className="shrink-0 border-b border-[--border-color] px-3 py-2.5 sm:px-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex flex-col min-w-0">
+        <button type="button" onClick={onClose} className="flex size-10 shrink-0 items-center justify-center rounded-lg text-[--text-muted] hover:bg-[--background-color] hover:text-[--text-color] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-dark-sky md:hidden" aria-label={i18next.t("chat.back-to-chats")} title={i18next.t("chat.back-to-chats")}>←</button>
+        <div className="flex min-w-0 flex-1 flex-col">
           <div className="truncate text-base font-semibold">{channelTitle}</div>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-[--text-muted]">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-[--text-muted]">
             <span className="truncate">{channelSubtitle}</span>
 
             {pinnedPosts && pinnedPosts.length > 0 && (
@@ -257,9 +258,8 @@ export function ChannelHeader({
         </Modal>
 
         {/* Right side */}
-        <div className="flex items-center gap-3 shrink-0">
-          <button type="button" onClick={() => setShowKeyboardShortcuts(true)} className="text-[--text-muted] hover:text-[--text-color] p-1 text-sm" aria-label="Keyboard shortcuts" title={effectiveLastViewedAt > 0 ? `Keyboard shortcuts • Last viewed ${formatTimestamp(effectiveLastViewedAt)}` : "Keyboard shortcuts"}>⌨️</button>
-          <button type="button" onClick={onClose} className="md:hidden text-[--text-muted] hover:text-[--text-color] p-1" aria-label="Close chat" title="Back to chats">✕</button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button type="button" onClick={() => setShowKeyboardShortcuts(true)} className="hidden size-10 items-center justify-center rounded-lg text-[--text-muted] hover:bg-[--background-color] hover:text-[--text-color] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-dark-sky sm:flex" aria-label="Keyboard shortcuts" title={effectiveLastViewedAt > 0 ? `Keyboard shortcuts • Last viewed ${formatTimestamp(effectiveLastViewedAt)}` : "Keyboard shortcuts"}>⌨️</button>
         </div>
       </div>
     </div>

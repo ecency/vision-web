@@ -80,9 +80,9 @@ export function NewPrivateChannelModal({
   };
 
   return (
-    <Modal show={show} onHide={onHide} centered size="md">
-      <ModalHeader closeButton={true}>{i18next.t("chat.new-private-channel")}</ModalHeader>
-      <ModalBody>
+    <Modal show={show} onHide={onHide} centered size="md" dialogClassName="!mt-0 flex max-h-[calc(100dvh-7rem)] flex-col overflow-hidden">
+      <ModalHeader closeButton={true} className="shrink-0">{i18next.t("chat.new-private-channel")}</ModalHeader>
+      <ModalBody className="min-h-0 flex-1 overflow-y-auto">
         {/* No form: Enter in the people search must not create the channel. */}
         <div className="flex flex-col gap-3">
           <p className="text-xs text-[--text-muted]">{i18next.t("chat.private-channel-hint")}</p>
@@ -122,11 +122,11 @@ export function NewPrivateChannelModal({
               </div>
             </>
           ) : (
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <Button appearance="secondary" type="button" onClick={onHide}>
                 {i18next.t("g.cancel")}
               </Button>
-              <Button type="button" disabled={!canCreate} onClick={submit}>
+              <Button type="button" disabled={!canCreate} onClick={submit} className="disabled:!opacity-75">
                 {create.isPending
                   ? i18next.t("chat.private-channel-creating")
                   : i18next.t("chat.private-channel-create")}
@@ -200,17 +200,18 @@ export function ManagePrivateChannelModal({
   };
 
   return (
-    <Modal show={show} onHide={onHide} centered size="md">
-      <ModalHeader closeButton={true}>{i18next.t("chat.manage-private-channel")}</ModalHeader>
-      <ModalBody>
+    <Modal show={show} onHide={onHide} centered size="md" dialogClassName="!mt-0 flex max-h-[calc(100dvh-7rem)] flex-col overflow-hidden">
+      <ModalHeader closeButton={true} className="shrink-0">{i18next.t("chat.manage-private-channel")}</ModalHeader>
+      <ModalBody className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-4">
-          <form className="flex gap-2" onSubmit={rename}>
+          <form className="flex min-w-0 gap-2" onSubmit={rename}>
             <FormControl
               type="text"
               aria-label={i18next.t("chat.private-channel-name")}
               placeholder={i18next.t("chat.private-channel-name")}
               value={name}
               maxLength={PRIVATE_CHANNEL_NAME_MAX_LENGTH}
+              className="min-w-0 flex-1"
               onChange={(e: ChangeEvent<HTMLInputElement>) => {
                 setNameTouched(true);
                 setName(e.target.value);
@@ -219,6 +220,7 @@ export function ManagePrivateChannelModal({
             <Button
               type="submit"
               size="sm"
+              className="disabled:!opacity-75"
               disabled={!nameIsValid(name) || name.trim() === savedName || manage.isPending}
             >
               {i18next.t("g.save")}
@@ -239,6 +241,7 @@ export function ManagePrivateChannelModal({
               <Button
                 type="button"
                 size="sm"
+                className="disabled:!opacity-75"
                 disabled={!adding.length || manage.isPending}
                 onClick={add}
               >
@@ -262,7 +265,7 @@ export function ManagePrivateChannelModal({
                     key={member.id}
                     className="flex items-center justify-between gap-2 px-3 py-1.5 text-sm"
                   >
-                    <span className="flex min-w-0 items-center gap-2">
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
                       <UserAvatar username={member.username} size="small" className="size-6" />
                       <span className="truncate">@{member.username}</span>
                     </span>
@@ -272,6 +275,7 @@ export function ManagePrivateChannelModal({
                         size="xs"
                         appearance="secondary"
                         outline={true}
+                        className="shrink-0"
                         disabled={manage.isPending}
                         onClick={() => manage.mutate({ kind: "remove", username: member.username })}
                         aria-label={i18next.t("chat.new-group-remove", {

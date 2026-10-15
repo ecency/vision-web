@@ -31,5 +31,7 @@ describe("MattermostWebSocket membership events", () => {
     handle(qc, { event: "user_added", data: { user_id: "bob" }, broadcast: { channel_id: "c1" } });
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["mattermost-channels"] });
+    // A private channel the viewer was added to must reach the unread badge too.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["mattermost-unread"] });
   });
 });

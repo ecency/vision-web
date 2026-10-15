@@ -1,3 +1,4 @@
+import i18next from "i18next";
 import React, { type ChangeEvent, useState } from "react";
 import { ChatBanInfo, formatChatBanNotice } from "../chat-ban-notice";
 import { Button } from "@ui/button";
@@ -166,7 +167,7 @@ export function MessageInput({
   return (
     <>
       <form
-        className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+72px)] z-20 flex flex-col border-t border-[--border-color] bg-white shadow-[0_-8px_24px_rgba(0,0,0,0.08)] md:sticky md:inset-x-0 md:bottom-0 md:border-t md:bg-white md:shadow-[0_-8px_24px_rgba(0,0,0,0.04)]"
+        className="relative z-10 flex shrink-0 flex-col border-t border-[--border-color] bg-[--surface-color] shadow-[0_-8px_24px_rgba(0,0,0,0.04)]"
         onSubmit={(e) => {
           e.preventDefault();
           submitMessage();
@@ -270,7 +271,7 @@ export function MessageInput({
                   <button
                     type="button"
                     onClick={() => removeImage(index)}
-                    className="absolute -top-2 -right-2 size-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-600"
+                    className="absolute -top-2 -right-2 flex size-7 items-center justify-center rounded-full bg-red-500 text-white shadow-lg hover:bg-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-dark-sky sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
                     aria-label="Remove image"
                   >
                     ×
@@ -401,10 +402,11 @@ export function MessageInput({
                       submitMessage();
                     }
                   }}
-                  placeholder="Write a message"
+                  placeholder={i18next.t("chat.write-message")}
+                  aria-label={i18next.t("chat.write-message")}
                   className={clsx(
                     "block w-full resize-none bg-transparent",
-                    "text-sm md:text-base leading-[1.4]",
+                    "text-base leading-[1.4]",
                     "py-1.5",
                     "outline-none border-none",
                     "placeholder:text-[--text-muted]",

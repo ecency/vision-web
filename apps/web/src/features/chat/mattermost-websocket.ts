@@ -592,6 +592,12 @@ export class MattermostWebSocket {
     this.queryClient.invalidateQueries({
       queryKey: ["mattermost-channels"]
     });
+
+    // Being added to a channel (a private one the admin put you in) changes
+    // what the badge may count, so the unread summary must learn about it too.
+    this.queryClient.invalidateQueries({
+      queryKey: ["mattermost-unread"]
+    });
   }
 
   private upsertPostInCaches(channelId: string, post: MattermostPost): void {

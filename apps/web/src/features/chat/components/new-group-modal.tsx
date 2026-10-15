@@ -42,9 +42,9 @@ export function NewGroupModal({ show, onHide, currentUsername, onCreated }: NewG
   };
 
   return (
-    <Modal show={show} onHide={onHide} centered size="md">
-      <ModalHeader closeButton={true}>{i18next.t("chat.new-group")}</ModalHeader>
-      <ModalBody>
+    <Modal show={show} onHide={onHide} centered size="md" dialogClassName="!mt-0 flex max-h-[calc(100dvh-7rem)] flex-col overflow-hidden">
+      <ModalHeader closeButton={true} className="shrink-0">{i18next.t("chat.new-group")}</ModalHeader>
+      <ModalBody className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-3">
           <p className="text-xs text-[--text-muted]">
             {i18next.t("chat.new-group-hint", { min: GROUP_MIN_OTHERS, max: GROUP_MAX_OTHERS })}
@@ -70,7 +70,7 @@ export function NewGroupModal({ show, onHide, currentUsername, onCreated }: NewG
             <Button appearance="secondary" type="button" onClick={onHide}>
               {i18next.t("g.cancel")}
             </Button>
-            <Button type="button" disabled={!canCreate} onClick={create}>
+            <Button type="button" disabled={!canCreate} onClick={create} className="disabled:!opacity-75">
               {createGroup.isPending ? i18next.t("chat.new-group-creating") : i18next.t("chat.new-group-create")}
             </Button>
           </div>

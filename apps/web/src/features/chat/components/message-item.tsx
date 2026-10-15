@@ -231,7 +231,7 @@ function MessageItemInner({
           <div className="flex-1 border-t border-[--border-color]" />
         </div>
       )}
-      <div className="flex gap-2.5 group relative rounded px-2 py-0.5 -mx-2 hover:bg-[--surface-color] transition-colors">
+      <div tabIndex={-1} className="group relative -mx-2 flex gap-2.5 rounded px-2 py-0.5 outline-none transition-colors hover:bg-[--surface-color] focus-within:bg-[--surface-color]">
         {isChannelNoticePost(post) ? (
           <div className="w-full flex justify-center">
             <div className="rounded bg-[--surface-color] px-4 py-2 text-sm text-[--text-muted] text-center">
@@ -289,7 +289,7 @@ function MessageItemInner({
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               {/* Header with name and timestamp - show only for group start */}
               {isGroupStart && (
-                <div className="flex items-center gap-2 text-xs text-[--text-muted]">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-[--text-muted]">
                   {(() => {
                     const username = getUsername(post);
                     const displayName = getDisplayName(post);
@@ -353,7 +353,7 @@ function MessageItemInner({
                   );
                 })()}
               <div
-                className="text-sm break-words space-y-1 [&>*]:m-0"
+                className="space-y-1 break-words text-sm text-[--text-color] [&>*]:m-0"
               >
                 {renderMessageContent(getDecodedDisplayMessage(post))}
               </div>
@@ -398,7 +398,7 @@ function MessageItemInner({
           </>
         )}
         {!isChannelNoticePost(post) && (
-          <div className="absolute -right-2 -top-2 flex gap-1 opacity-100 md:opacity-0 transition-opacity duration-150 md:group-hover:opacity-100 pointer-events-auto md:pointer-events-none md:group-hover:pointer-events-auto">
+          <div className="absolute -right-2 -top-2 flex gap-1 rounded-md bg-[--surface-color] opacity-0 pointer-events-none transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
             {(() => {
               const isReactionPickerOpen = openReactionPostId === post.id;
 

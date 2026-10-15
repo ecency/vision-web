@@ -635,14 +635,6 @@ export function MattermostChannelView({ channelId }: Props) {
           e.preventDefault();
         }
       }
-
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        const searchInput = document.querySelector<HTMLInputElement>('[type="search"]');
-        if (searchInput) {
-          searchInput.focus();
-          e.preventDefault();
-        }
-      }
     };
 
     document.addEventListener("keydown", handleKeyDown);
@@ -1146,7 +1138,7 @@ export function MattermostChannelView({ channelId }: Props) {
         )}
 
         <div className="flex flex-1 min-h-0 flex-col">
-          <div className="relative flex-1 min-h-0 overflow-hidden pb-[72px] md:pb-0 md:min-h-[340px]">
+          <div className="relative min-h-0 flex-1 overflow-hidden">
             {isLoading && <div className="p-4 text-sm text-[--text-muted]">Loading messages…</div>}
             {error && !showJoinPrompt && <div className="p-4 text-sm text-red-500">{(error as Error).message || "Failed to load"}</div>}
             {moderationError && <div className="p-4 text-sm text-red-500">{moderationError}</div>}
