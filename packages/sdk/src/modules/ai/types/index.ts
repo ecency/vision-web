@@ -136,6 +136,10 @@ export interface ListenStatus {
   languages: ListenLanguage[];
   /** Present only for a reader who unlocked the post, once the audio is ready */
   tracks?: ListenTrack[];
+  /** While preparing, once the worker has the job: the share of the text done (0..1) */
+  progress?: number;
+  /** While preparing, before the worker has the job: audio jobs waiting ahead of it */
+  queued_ahead?: number;
   idempotent_replay?: boolean;
   already_unlocked?: boolean;
 }

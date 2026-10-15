@@ -48,7 +48,14 @@ vi.mock("@/features/shared/points-topup-cta", () => ({
   PointsTopupCta: ({ required }: { required?: number }) => <div>topup {required}</div>
 }));
 
-import { ListenPlayer, formatTime, isUnreadableScript, languageName, pickTrack } from "@/features/listen";
+import {
+  ListenPlayer,
+  formatTime,
+  isUnreadableScript,
+  languageName,
+  pickTrack,
+  preparingMinutes
+} from "@/features/listen";
 import { mockEntry, renderWithQueryClient } from "@/specs/test-utils";
 
 const TRACKS = [
@@ -249,8 +256,46 @@ describe("ListenPlayer", () => {
     activeUser.current = { username: "alice" };
     status.current = { cost: 50, unlocked: true, status: "preparing", languages: LANGS };
     render();
-    expect(await screen.findByText("listen.preparing")).toBeTruthy();
+    // the post was analysed, so the wait is estimated from its length
+    expect(await screen.findByText("listen.preparing-eta")).toBeTruthy();
     expect(screen.queryByText("listen.unlock")).toBeNull();
+  });
+
+  it("shows the place in line, then the percentage the server reports", async () => {
+    activeUser.current = { username: "alice" };
+    status.current = { cost: 50, unlocked: true, status: "preparing", languages: LANGS, queued_ahead: 2, progress: 0 };
+    const first = render();
+    expect(await screen.findByText("listen.waiting")).toBeTruthy();
+    expect(first.container.querySelector("[role='progressbar']")).toBeNull();
+    first.unmount();
+
+    status.current = { cost: 50, unlocked: true, status: "preparing", languages: LANGS, queued_ahead: 0, progress: 0.426 };
+    const { container } = render();
+    expect(await screen.findByText("listen.preparing-progress")).toBeTruthy();
+    expect(container.querySelector("[role='progressbar']")!.getAttribute("aria-valuenow")).toBe("43");
+  });
+
+  it("never shows 100% before the audio is ready", async () => {
+    activeUser.current = { username: "alice" };
+    status.current = { cost: 50, unlocked: true, status: "preparing", languages: LANGS, progress: 1 };
+    const { container } = render();
+    await waitFor(() => expect(container.querySelector("[role='progressbar']")).not.toBeNull());
+    expect(container.querySelector("[role='progressbar']")!.getAttribute("aria-valuenow")).toBe("99");
+  });
+
+  it("cycles the speed up to 2.5x and back", async () => {
+    activeUser.current = { username: "alice" };
+    status.current = { cost: 50, unlocked: true, status: "ready", languages: LANGS, tracks: TRACKS };
+    const { container } = render();
+    await waitFor(() => expect(container.querySelector("audio")).not.toBeNull());
+    const button = screen.getByLabelText("listen.speed");
+    const seen = [button.textContent];
+    for (let i = 0; i < 6; i++) {
+      fireEvent.click(button);
+      seen.push(button.textContent);
+    }
+    expect(seen).toEqual(["1x", "1.25x", "1.5x", "1.75x", "2x", "2.5x", "1x"]);
+    expect(container.querySelector("audio")!.playbackRate).toBe(1);
   });
 
   it("plays the ready track and switches language", async () => {
@@ -286,6 +331,14 @@ describe("listen helpers", () => {
   it("prefers the interface language, else the main track", () => {
     expect(pickTrack(TRACKS, "en-US")?.lang).toBe("en");
     expect(pickTrack(TRACKS, "de")?.lang).toBe("es");
+  });
+
+  it("estimates the generation wait from the audio length", () => {
+    // the first bilingual post: 201 s + 171 s of audio, made in 87 s
+    expect(preparingMinutes([{ seconds: 201 }, { seconds: 171 }])).toBe(2);
+    expect(preparingMinutes([{ seconds: 2700 }])).toBe(14); // the longest posts
+    expect(preparingMinutes([{ seconds: 30 }])).toBe(1);
+    expect(preparingMinutes([])).toBe(1);
   });
 
   it("formats time", () => {
