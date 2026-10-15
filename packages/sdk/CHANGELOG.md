@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.26
+
+### Patch Changes
+
+- Listen player: speeds up to 2.5x, and generation progress (#1959)
+
 ## 2.4.25
 
 ### Patch Changes

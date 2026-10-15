@@ -10,6 +10,7 @@ import {
   getListenStatusQueryOptions,
   makeIdempotencyKey,
   useListenUnlock,
+  type ListenStatus,
   type ListenTrack
 } from "@ecency/sdk";
 import { Button } from "@ui/button";
@@ -21,7 +22,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // Speech pace for the estimate shown before the post has been analysed.
 const SPOKEN_WORDS_PER_MINUTE = 150;
-const SPEEDS = [1, 1.25, 1.5];
+const SPEEDS = [1, 1.25, 1.5, 1.75, 2, 2.5];
+// Generation takes about a quarter of the audio's length (measured 0.27 on the worker),
+// rounded up a little so the estimate is not beaten by the wait.
+const GENERATION_PER_AUDIO_SECOND = 0.3;
+
+/** Minutes the audio of these languages takes to generate, at least one. */
+export function preparingMinutes(languages: { seconds: number }[]): number {
+  const audio = languages.reduce((sum, l) => sum + l.seconds, 0);
+  return Math.max(1, Math.round((audio * GENERATION_PER_AUDIO_SECOND) / 60));
+}
 const MAX_URL_REFRESHES = 3;
 // A visitor's status waits for an idle page, so it never competes with the post itself.
 const VISITOR_STATUS_DELAY_MS = 1500;
@@ -252,12 +262,7 @@ export function ListenPlayer({ entry }: Props) {
         </div>
       </div>
 
-      {preparing && (
-        <div className="flex items-center gap-2 opacity-75" role="status">
-          <Spinner className="size-4" />
-          {i18next.t("listen.preparing")}
-        </div>
-      )}
+      {preparing && <PreparingState status={view} />}
 
       {loading && (
         <Button size="sm" disabled={true} aria-busy={true}>
@@ -306,6 +311,49 @@ export function ListenPlayer({ entry }: Props) {
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Where the audio is. The server keeps the progress, so a reader who reloads sees the
+ * same percentage rather than a restart: waiting in line, then a percentage once the
+ * worker reports one, and before that an estimate from the post's length.
+ */
+function PreparingState({ status }: { status: ListenStatus }) {
+  // Present only while the job waits for the worker; 0 means it is next.
+  const queued = typeof status.queued_ahead === "number";
+  const ahead = status.queued_ahead ?? 0;
+  const progress = status.progress ?? 0;
+  // The server only reports progress once the worker holds the job, never while queued.
+  if (progress > 0) {
+    const percent = Math.min(99, Math.round(progress * 100));
+    return (
+      <div className="flex items-center gap-2 opacity-75" role="status">
+        <div
+          className="h-1.5 w-24 rounded-full bg-[--border-color] overflow-hidden"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
+          aria-label={i18next.t("listen.preparing")}
+        >
+          <div className="h-full bg-blue-dark-sky transition-[width] duration-1000" style={{ width: `${percent}%` }} />
+        </div>
+        <span className="tabular-nums">{i18next.t("listen.preparing-progress", { n: percent })}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 opacity-75" role="status">
+      <Spinner className="size-4" />
+      {queued
+        ? ahead > 0
+          ? i18next.t("listen.waiting", { n: ahead })
+          : i18next.t("listen.next-in-line")
+        : status.languages.length
+          ? i18next.t("listen.preparing-eta", { n: preparingMinutes(status.languages) })
+          : i18next.t("listen.preparing")}
     </div>
   );
 }
