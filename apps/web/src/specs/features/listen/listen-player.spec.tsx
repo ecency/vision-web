@@ -95,8 +95,9 @@ describe("ListenPlayer", () => {
     activeUser.current = { username: "alice" };
     status.current = { cost: 50, unlocked: false, status: "unsupported", languages: [] };
     const { container } = render();
-    await new Promise((r) => setTimeout(r, 20));
-    expect(container.querySelector(".listen-bar")).toBeNull();
+    // The bar is drawn at once and leaves when the status arrives: wait for that, not
+    // a fixed delay (a busy CI runner took longer than 20 ms and failed the build).
+    await waitFor(() => expect(container.querySelector(".listen-bar")).toBeNull());
   });
 
   it("asks a visitor to log in", async () => {
