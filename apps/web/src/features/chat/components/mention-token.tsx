@@ -54,7 +54,7 @@ export function MentionToken({
           @{username}
         </span>
       </DropdownToggle>
-      <DropdownMenu align="left" size="small">
+      <DropdownMenu align="left" size="small" className="dark:!bg-dark-200">
         <DropdownItemWithIcon icon={blogSvg} label="View blog" href={`/@${username}`} />
         {!isSelf && (
           <DropdownItemWithIcon

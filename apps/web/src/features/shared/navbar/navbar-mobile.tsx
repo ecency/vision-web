@@ -219,33 +219,35 @@ export function NavbarMobile({
       </div>
 
       {/* Floating compose button (FAB), mirroring the native app's create action. */}
-      <Button
-        href="/publish"
-        appearance="primary"
-        noPadding={true}
-        icon={<UilPen />}
-        aria-label={i18next.t("navbar.post")}
-        aria-current={isActive("/publish") ? "page" : undefined}
-        className={clsx(
-          // `!h-12 !w-12` (48px) overrides the Button's injected `h-[2.125rem]`
-          // size class so this renders as a true circle, level with the
-          // scroll-to-top control on the opposite corner (same size + bottom).
-          "md:hidden fixed right-4 z-20 !h-12 !w-12 !rounded-full flex items-center justify-center shadow-lg",
-          "transition-transform duration-300",
-          step === 1 && "transparent"
-        )}
-        style={{
-          bottom: `calc(${fabBottom})`,
-          // When hidden, slide fully off-screen instead of stopping half-cut: a
-          // flat translate-y-[200%] (96px) left ~28px of the 48px button poking
-          // above the edge because it rests `fabBottom` up from it. Travel the
-          // height (100%) + that offset + 1rem so the button and its shadow
-          // clear the viewport bottom. Left undefined when shown so the Button's
-          // `active:scale-95` press feedback isn't overridden by an inline
-          // transform (none <-> translateY still animates).
-          transform: hidden ? `translateY(calc(100% + ${fabBottom} + 1rem))` : undefined
-        }}
-      />
+      {!isActive("/chats") && (
+        <Button
+          href="/publish"
+          appearance="primary"
+          noPadding={true}
+          icon={<UilPen />}
+          aria-label={i18next.t("navbar.post")}
+          aria-current={isActive("/publish") ? "page" : undefined}
+          className={clsx(
+            // `!h-12 !w-12` (48px) overrides the Button's injected `h-[2.125rem]`
+            // size class so this renders as a true circle, level with the
+            // scroll-to-top control on the opposite corner (same size + bottom).
+            "md:hidden fixed right-4 z-20 !h-12 !w-12 !rounded-full flex items-center justify-center shadow-lg",
+            "transition-transform duration-300",
+            step === 1 && "transparent"
+          )}
+          style={{
+            bottom: `calc(${fabBottom})`,
+            // When hidden, slide fully off-screen instead of stopping half-cut: a
+            // flat translate-y-[200%] (96px) left ~28px of the 48px button poking
+            // above the edge because it rests `fabBottom` up from it. Travel the
+            // height (100%) + that offset + 1rem so the button and its shadow
+            // clear the viewport bottom. Left undefined when shown so the Button's
+            // `active:scale-95` press feedback isn't overridden by an inline
+            // transform (none <-> translateY still animates).
+            transform: hidden ? `translateY(calc(100% + ${fabBottom} + 1rem))` : undefined
+          }}
+        />
+      )}
 
       {activeUser && <NavbarSide key={`mobile-${activeUser.username}`} show={expanded} setShow={setExpanded} />}
       <NavbarMainSidebar setShow={setMainBarExpanded} show={mainBarExpanded} setStepOne={setStepOne} />

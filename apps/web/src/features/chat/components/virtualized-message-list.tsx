@@ -193,7 +193,7 @@ export const VirtualizedMessageList = memo(function VirtualizedMessageList({
       const isGroupStart = item.isGroupStart;
 
       return (
-        <div className="px-4">
+        <div className="mx-auto max-w-4xl px-4">
           <MessageItem
             post={post}
             index={index}
@@ -277,7 +277,7 @@ export const VirtualizedMessageList = memo(function VirtualizedMessageList({
       ref={virtuosoRef}
       data={groupedPosts}
       firstItemIndex={firstItemIndex}
-      initialTopMostItemIndex={initialScrollIndex ?? groupedPosts.length - 1}
+      initialTopMostItemIndex={firstItemIndex + (initialScrollIndex ?? groupedPosts.length - 1)}
       followOutput={followOutput}
       startReached={onStartReached}
       atBottomStateChange={onAtBottomStateChange}
