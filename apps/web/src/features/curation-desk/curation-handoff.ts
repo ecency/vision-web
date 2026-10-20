@@ -104,8 +104,14 @@ export function describeLane(lane: CurationLane | null | undefined, communityTit
   return shown.join(", ");
 }
 
+/** The later of a curator's last mark and last curation, as epoch ms. */
+function lastActivity(entry: CurationHandoffEntry): number {
+  return Math.max(parseChainDate(entry.last_mark_at) ?? 0, parseChainDate(entry.last_curated_at) ?? 0);
+}
+
 /**
- * The viewer first, then whoever marked most recently. Their own line is the
+ * The viewer first, then whoever was active most recently, a mark or a
+ * curation, whichever is later. Their own line is the
  * one they check against, so it should not move down the list as colleagues
  * work. The order of the rest is decided here rather than trusted from the
  * wire: nothing in the response contract promises one.
@@ -118,7 +124,7 @@ export function orderHandoff(
   const mine = username ? entries.filter((e) => e.username === username) : [];
   const others = entries
     .filter((e) => e.username !== username)
-    .sort((a, b) => (parseChainDate(b.last_mark_at) ?? 0) - (parseChainDate(a.last_mark_at) ?? 0));
+    .sort((a, b) => lastActivity(b) - lastActivity(a));
   return [...mine, ...others];
 }
 

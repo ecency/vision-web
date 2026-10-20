@@ -103,10 +103,17 @@ export function CurationHandoffBar({
                     : `@${entry.username}`}
                 </span>
                 {at && <span>{at}</span>}
-                <span className="text-gray-500">{dateToRelative(entry.last_mark_at)}</span>
+                {entry.last_mark_at && (
+                  <span className="text-gray-500">{dateToRelative(entry.last_mark_at)}</span>
+                )}
                 {entry.marks_24h != null && (
                   <span className="text-gray-500">
                     {i18next.t("curation-desk.handoff.marks", { count: entry.marks_24h })}
+                  </span>
+                )}
+                {entry.curations_24h != null && (
+                  <span className="text-gray-500">
+                    {i18next.t("curation-desk.handoff.curations", { count: entry.curations_24h })}
                   </span>
                 )}
                 {lane && <span className="text-gray-500">{lane}</span>}
