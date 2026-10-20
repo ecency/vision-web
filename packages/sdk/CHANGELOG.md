@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.28
+
+### Patch Changes
+
+- Stop lists paging forever when everything loaded is hidden (muted profiles) (#1966)
+
 ## 2.4.27
 
 ### Patch Changes
