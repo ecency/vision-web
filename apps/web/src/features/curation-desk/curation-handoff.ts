@@ -105,7 +105,8 @@ export function describeLane(lane: CurationLane | null | undefined, communityTit
 }
 
 /**
- * The viewer first, then whoever marked most recently. Their own line is the
+ * The viewer first, then whoever marked most recently. A curator who only
+ * curated has no mark time and sorts after everyone who marked. Their own line is the
  * one they check against, so it should not move down the list as colleagues
  * work. The order of the rest is decided here rather than trusted from the
  * wire: nothing in the response contract promises one.

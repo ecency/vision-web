@@ -240,6 +240,55 @@ describe("CurationHandoffBar", () => {
     );
     expect(screen.getByText("@seckorama")).toBeInTheDocument();
     expect(screen.queryByText("curation-desk.handoff.marks")).toBeNull();
+    expect(screen.queryByText("curation-desk.handoff.curations")).toBeNull();
+  });
+
+  it("shows how many posts each curator got curated next to their marks", () => {
+    renderWithQueryClient(
+      <CurationHandoffBar
+        entries={[entry({ username: "seckorama", curations_24h: 4 })]}
+        username="me"
+        updatedAt={NOW}
+        now={NOW}
+        communities={[]}
+        queueStartsAtOldestUnhandled
+      />
+    );
+    const row = screen.getByRole("listitem");
+    expect(within(row).getByText("curation-desk.handoff.marks")).toBeInTheDocument();
+    expect(within(row).getByText("curation-desk.handoff.curations")).toBeInTheDocument();
+  });
+
+  /** A curator who only voted has no position and no mark time. */
+  it("renders a curator who curated without marking, after everyone who marked", () => {
+    renderWithQueryClient(
+      <CurationHandoffBar
+        entries={[
+          entry({
+            username: "voteronly",
+            reviewed_to: null,
+            reviewed_to_post_id: null,
+            last_mark_at: null,
+            marks_24h: 0,
+            lane: null,
+            curations_24h: 2,
+          }),
+          entry({ username: "seckorama" }),
+        ]}
+        username="me"
+        updatedAt={NOW}
+        now={NOW}
+        communities={[]}
+        queueStartsAtOldestUnhandled
+      />
+    );
+    const rows = screen.getAllByRole("listitem");
+    expect(within(rows[0]).getByText("@seckorama")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("@voteronly")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("curation-desk.handoff.curations")).toBeInTheDocument();
+    // no position and no "2 hours ago" for a mark that never happened
+    expect(within(rows[1]).queryByText("2 hours ago")).toBeNull();
+    expect(within(rows[1]).queryByText(/curation-desk\.handoff\.to-/)).toBeNull();
   });
 
   it("renders a position whose lane is unknown, without claiming the whole queue", () => {
