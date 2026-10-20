@@ -4,15 +4,29 @@ import {
   DetectBottom,
   EntryListContent,
   EntryListContentLoading,
-  EntryListContentNoData
+  EntryListContentNoData,
+  MessageNoData
 } from "@/features/shared";
 import React, { useMemo } from "react";
 import { usePostsFeedQuery } from "@/api/queries";
-import { useVisibleEntries } from "@/features/shared/entry-list-item/use-muted-authors";
+import { useBottomPagination } from "@/core/hooks";
+import {
+  useMutedAuthors,
+  useVisibleEntries
+} from "@/features/shared/entry-list-item/use-muted-authors";
+import { useAutoPagingPaused } from "@/features/shared/entry-list-item/use-auto-paging-paused";
+import { isAuthorMuted } from "@ecency/sdk";
+import i18next from "i18next";
 import { Entry, FullAccount } from "@/entities";
 // Direct module import, not the `_helpers` barrel: that barrel also re-exports
 // generate-profile-metadata, which is server-only.
 import { isPinnedDuplicate } from "@/app/(dynamicPages)/profile/[username]/_helpers/pinned-permlink";
+
+/**
+ * Sections made of the profile owner's own posts (blog adds the odd reblog).
+ * Replies are written by other people, so muting the owner leaves them visible.
+ */
+const OWNER_AUTHORED_SECTIONS = ["blog", "posts", "comments"];
 
 interface Props {
   account: FullAccount;
@@ -50,14 +64,25 @@ export function ProfileEntriesInfiniteList({
   // Personalising properly needs the SSR page replaced, which means adding this
   // tier to cache-policy's USER_SPECIFIC_TIERS_WHEN_LOGGED_IN (giving up the
   // shared edge-cache entry) or re-fetching page 1 on every logged-in view.
-  const { fetchNextPage, data, isFetching, isLoading, hasNextPage, isFetchingNextPage } =
+  const { fetchNextPage, data, dataUpdatedAt, isFetching, hasNextPage, isFetchingNextPage } =
     usePostsFeedQuery(section, `@${account.name}`);
+
+  // A viewer who muted the owner can see none of these entries, so the sentinel
+  // never leaves the viewport and would page through the owner's entire history
+  // (tens of thousands of posts for an active account). Say so and stop paging.
+  const mutedAuthors = useMutedAuthors();
+  const ownerMuted =
+    OWNER_AUTHORED_SECTIONS.includes(section) && isAuthorMuted(account.name, mutedAuthors);
 
   const dropFirstPage = initialPageEntriesCount > 0;
 
-  const entryList = useMemo(() => {
+  const relevantPages = useMemo(() => {
     const pages = (data?.pages ?? []) as Entry[][];
-    const relevantPages = dropFirstPage ? pages.slice(1) : pages;
+    return dropFirstPage ? pages.slice(1) : pages;
+  }, [data?.pages, dropFirstPage]);
+  const autoPagingPaused = useAutoPagingPaused(relevantPages);
+
+  const entryList = useMemo(() => {
     return (
       relevantPages
         ?.reduce<Entry[]>((acc: Entry[], page: Entry[]) => [...acc, ...page], [])
@@ -67,7 +92,7 @@ export function ProfileEntriesInfiniteList({
         // unvalidated metadata string rather than the entry that was shown.
         ?.filter((item: Entry) => !isPinnedDuplicate(item, pinnedKeys)) ?? []
     );
-  }, [data?.pages, dropFirstPage, pinnedKeys]);
+  }, [relevantPages, pinnedKeys]);
 
   // Count what the viewer can see, across the server-rendered page and ours: a
   // profile whose every post the viewer muted must show its empty state rather
@@ -87,10 +112,28 @@ export function ProfileEntriesInfiniteList({
   const shouldShowEmptyState =
     isDataReady && !isFetchingData && !hasNextPage && totalEntriesCount === 0;
 
-  const handleBottom = () => {
-    if (!hasNextPage || isFetchingData) return;
-    fetchNextPage();
-  };
+  // Not an inline handler: that is a new function every render, so a FAILED
+  // fetch re-ran the sentinel and retried at once, in a loop for as long as the
+  // API was down. See useBottomPagination. With the owner muted, the list
+  // below is not rendered at all.
+  const handleBottom = useBottomPagination({
+    data,
+    dataUpdatedAt,
+    hasNextPage,
+    isFetching: isFetchingData,
+    fetchNextPage
+  });
+
+  if (ownerMuted) {
+    return (
+      <MessageNoData
+        title={i18next.t("profile.muted-owner-title", { n: account.name })}
+        description={i18next.t("profile.muted-owner-description")}
+        buttonText=""
+        buttonTo=""
+      />
+    );
+  }
 
   return (
     <>
@@ -109,7 +152,7 @@ export function ProfileEntriesInfiniteList({
           section={section}
         />
       )}
-      <DetectBottom onBottom={handleBottom} />
+      <DetectBottom onBottom={handleBottom} paused={autoPagingPaused} />
       {isFetchingData && <EntryListContentLoading />}
     </>
   );

@@ -3,8 +3,7 @@ import type { AuthContext } from "@/modules/core/types";
 import { useMutation } from "@tanstack/react-query";
 import { getRelationshipBetweenAccountsQueryOptions, getAccountFullQueryOptions } from "../queries";
 import { AccountRelationship } from "../types";
-
-type Kind = "toggle-ignore" | "toggle-follow";
+import { nextRelation, RelationToggle, syncMutedUsersCache } from "./relation-toggle";
 
 export function useAccountRelationsUpdate(
   reference: string | undefined,
@@ -15,7 +14,7 @@ export function useAccountRelationsUpdate(
 ) {
   return useMutation({
     mutationKey: ["accounts", "relation", "update", reference, target],
-    mutationFn: async (kind: Kind) => {
+    mutationFn: async (kind: RelationToggle) => {
       const relationsQuery = getRelationshipBetweenAccountsQueryOptions(
         reference!,
         target!
@@ -46,17 +45,7 @@ export function useAccountRelationsUpdate(
         auth
       );
 
-      return {
-        ...actualRelation,
-        ignores:
-          kind === "toggle-ignore"
-            ? !actualRelation?.ignores
-            : actualRelation?.ignores,
-        follows:
-          kind === "toggle-follow"
-            ? !actualRelation?.follows
-            : actualRelation?.follows,
-      } satisfies Partial<AccountRelationship>;
+      return nextRelation(kind, actualRelation);
     },
     onError,
     onSuccess(data) {
@@ -66,6 +55,11 @@ export function useAccountRelationsUpdate(
         QueryKeys.accounts.relations(reference!, target!),
         data
       );
+
+      // Either toggle can change the mute state (see the mutationFn).
+      if (reference && target) {
+        syncMutedUsersCache(reference, target, data.ignores === true);
+      }
 
       // Invalidate account query to refetch follow stats (follower_count, following_count)
       // This is needed because profile pages use staleTime: Infinity for performance

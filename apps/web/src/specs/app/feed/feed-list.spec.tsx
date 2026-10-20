@@ -41,7 +41,11 @@ vi.mock("next/navigation", async () => ({
   useSearchParams: () => new URLSearchParams("")
 }));
 
-vi.mock("@/features/shared/detect-bottom", () => ({ DetectBottom: () => null }));
+vi.mock("@/features/shared/detect-bottom", () => ({
+  DetectBottom: ({ paused }: { paused?: boolean }) => (
+    <div data-testid="bottom" data-paused={String(!!paused)} />
+  )
+}));
 vi.mock("@/features/shared/entry-list-content", () => ({
   EntryListContent: ({ entries }: { entries: Entry[] }) => (
     <div data-testid="list">{entries.length}</div>
@@ -52,9 +56,14 @@ vi.mock("@/features/shared/entry-list-content", () => ({
 
 import { FeedList } from "@/app/(dynamicPages)/feed/_components/feed-list";
 
-function renderFeed(entries: Entry[], mutedAuthors: string[], hasNextPage: boolean) {
+function renderFeed(
+  entries: Entry[] | Entry[][],
+  mutedAuthors: string[],
+  hasNextPage: boolean
+) {
+  const pages = Array.isArray(entries[0]) ? entries : [entries];
   usePostsFeedQuery.mockReturnValue({
-    data: { pages: [entries] },
+    data: { pages },
     fetchNextPage: vi.fn(),
     isLoading: false,
     isFetching: false,
@@ -100,9 +109,16 @@ describe("FeedList", () => {
     expect(screen.queryByTestId("no-data")).not.toBeInTheDocument();
   });
 
+  it("stops loading on its own after three fully muted pages in a row", () => {
+    const hidden = (n: number) => [mockEntry({ author: "spammer", permlink: `s${n}` })];
+    renderFeed([[mockEntry({ author: "alice", permlink: "a" })], hidden(1), hidden(2), hidden(3)], ["spammer"], true);
+    expect(screen.getByTestId("bottom")).toHaveAttribute("data-paused", "true");
+  });
+
   it("keeps quiet while the viewer can still see something", () => {
     renderFeed([mockEntry({ author: "alice", permlink: "a" })], ["spammer"], false);
 
     expect(screen.queryByTestId("no-data")).not.toBeInTheDocument();
+    expect(screen.getByTestId("bottom")).toHaveAttribute("data-paused", "false");
   });
 });

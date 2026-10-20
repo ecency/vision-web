@@ -1445,7 +1445,9 @@
     "empty-communities": "No communities here",
     "empty-communities-hint": "User isn't a member of any community yet. Join one of the communities or create your own",
     "dm-followers-only": "DMs: followers only",
-    "dm-disabled": "DMs: disabled"
+    "dm-disabled": "DMs: disabled",
+    "muted-owner-title": "You muted @{{n}}",
+    "muted-owner-description": "Their posts and comments are hidden from you. Unmute them on this profile to see them again."
   },
   "profile-info": {
     "joined": "Joined",
