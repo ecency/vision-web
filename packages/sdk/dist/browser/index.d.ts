@@ -10648,9 +10648,18 @@ interface CurationHandoffEntry {
     username: string;
     reviewed_to: string | null;
     reviewed_to_post_id: number | null;
-    last_mark_at: string;
+    /** Null for a curator who curated in the last 24 h without marking anything. */
+    last_mark_at: string | null;
     /** Absent for a trial viewer looking at somebody else. */
     marks_24h?: number;
+    /**
+     * Posts the trail followed this curator on in the last 24 h (confirmed trail
+     * vote, curator credited). Absent for a trial viewer looking at somebody
+     * else, and until the backend that counts it is deployed.
+     */
+    curations_24h?: number;
+    /** When the latest of those curations landed; null when there was none. */
+    last_curated_at?: string | null;
     /**
      * Null is UNKNOWN: a mark from before the desk sent lanes, or one that said
      * nothing. It is never the whole queue, which is `{}`. Absent until the

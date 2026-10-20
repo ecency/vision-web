@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.27
+
+### Patch Changes
+
+- Curation desk: show 24h curated count per curator in the team hand-off (#1964)
+
 ## 2.4.26
 
 ### Patch Changes
