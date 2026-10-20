@@ -183,6 +183,13 @@ describe("ProfileEntriesInfiniteList", () => {
     expect(screen.getByTestId("bottom")).toHaveAttribute("data-paused", "true");
   });
 
+  // A page holding only the pinned post's duplicate renders nothing either.
+  it("counts a page of only pinned duplicates as showing nothing", () => {
+    const dup = (n: number) => [mockEntry({ author: "alice", permlink: `pinned-post-hive-${n}`, original_entry: pinned })];
+    renderList(["alice"], [dup(1), dup(2), dup(3)], [], true, ["alice/pinned-post"], pinningAccount, "blog");
+    expect(screen.getByTestId("bottom")).toHaveAttribute("data-paused", "true");
+  });
+
   it("keeps loading on its own while fewer pages in a row showed nothing", () => {
     const hidden = (n: number) => [mockEntry({ author: "spammer", permlink: `s${n}` })];
     renderList(["bob"], [hidden(1), hidden(2)], ["spammer"], true, [], account, "blog");

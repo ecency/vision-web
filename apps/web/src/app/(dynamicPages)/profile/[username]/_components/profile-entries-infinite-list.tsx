@@ -78,23 +78,21 @@ export function ProfileEntriesInfiniteList({
 
   const dropFirstPage = initialPageEntriesCount > 0;
 
+  // The client pages as the list renders them, pinned duplicates dropped, so
+  // the pause below counts exactly what the viewer could have seen.
   const relevantPages = useMemo(() => {
     const pages = (data?.pages ?? []) as Entry[][];
-    return dropFirstPage ? pages.slice(1) : pages;
-  }, [data?.pages, dropFirstPage]);
+    return (dropFirstPage ? pages.slice(1) : pages).map((page) =>
+      // Same comparison the server used on page 1: a raw
+      // `permlink !== profile.pinned` misses the cross-post wrapper, whose
+      // card renders the pinned post itself (#1807), and it read the
+      // unvalidated metadata string rather than the entry that was shown.
+      page.filter((item: Entry) => !isPinnedDuplicate(item, pinnedKeys))
+    );
+  }, [data?.pages, dropFirstPage, pinnedKeys]);
   const autoPagingPaused = useAutoPagingPaused(relevantPages);
 
-  const entryList = useMemo(() => {
-    return (
-      relevantPages
-        ?.reduce<Entry[]>((acc: Entry[], page: Entry[]) => [...acc, ...page], [])
-        // Same comparison the server used on page 1: a raw
-        // `permlink !== profile.pinned` misses the cross-post wrapper, whose
-        // card renders the pinned post itself (#1807), and it read the
-        // unvalidated metadata string rather than the entry that was shown.
-        ?.filter((item: Entry) => !isPinnedDuplicate(item, pinnedKeys)) ?? []
-    );
-  }, [relevantPages, pinnedKeys]);
+  const entryList = useMemo(() => relevantPages.flat(), [relevantPages]);
 
   // Count what the viewer can see, across the server-rendered page and ours: a
   // profile whose every post the viewer muted must show its empty state rather

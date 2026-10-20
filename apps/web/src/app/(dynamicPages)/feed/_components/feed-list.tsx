@@ -23,6 +23,8 @@ interface Props {
 }
 
 type Page = Entry[] | SearchResponse;
+/** The object form a feed page can take: entries under `items` or `results`. */
+type FeedPageObject = { items?: Entry[]; results?: Entry[] };
 
 export function FeedList({ filter, tag, observer }: Props) {
   const searchParams = useSearchParams();
@@ -47,7 +49,9 @@ export function FeedList({ filter, tag, observer }: Props) {
     return pages.map((page) => {
       const extracted: Entry[] = Array.isArray(page)
         ? page
-        : ((page as any).items ?? (page as any).results ?? []);
+        : ((page as unknown as FeedPageObject).items ??
+          (page as unknown as FeedPageObject).results ??
+          []);
       return noReblog
         ? extracted.filter((entry: Entry) => !entry.reblogged_by || entry.reblogged_by.length === 0)
         : extracted;
