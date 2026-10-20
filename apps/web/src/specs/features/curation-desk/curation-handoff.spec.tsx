@@ -121,6 +121,27 @@ describe("isSameUtcDay", () => {
   });
 });
 
+describe("orderHandoff", () => {
+  /** A fresh curation outranks a mark from hours ago, even with no mark at all. */
+  it("orders colleagues by their latest mark or curation, whichever is later", () => {
+    const ordered = orderHandoff(
+      [
+        entry({ username: "oldmark", last_mark_at: "2026-09-06T13:00:00", last_curated_at: null }),
+        entry({
+          username: "voteronly",
+          reviewed_to: null,
+          last_mark_at: null,
+          last_curated_at: "2026-09-07T11:59:00",
+        }),
+        entry({ username: "markthencurate", last_mark_at: "2026-09-07T09:00:00", last_curated_at: "2026-09-07T11:00:00" }),
+        entry({ username: "me", last_mark_at: "2026-09-06T12:30:00" }),
+      ],
+      "me"
+    );
+    expect(ordered.map((e) => e.username)).toEqual(["me", "voteronly", "markthencurate", "oldmark"]);
+  });
+});
+
 describe("CurationHandoffBar", () => {
   it("shows one line per curator, the viewer first and named as themselves", () => {
     renderWithQueryClient(
@@ -260,7 +281,7 @@ describe("CurationHandoffBar", () => {
   });
 
   /** A curator who only voted has no position and no mark time. */
-  it("renders a curator who curated without marking, after everyone who marked", () => {
+  it("renders a curator who curated without marking, with no position", () => {
     renderWithQueryClient(
       <CurationHandoffBar
         entries={[

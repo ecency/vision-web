@@ -263,6 +263,8 @@ export interface CurationHandoffEntry {
    * else, and until the backend that counts it is deployed.
    */
   curations_24h?: number;
+  /** When the latest of those curations landed; null when there was none. */
+  last_curated_at?: string | null;
   /**
    * Null is UNKNOWN: a mark from before the desk sent lanes, or one that said
    * nothing. It is never the whole queue, which is `{}`. Absent until the
