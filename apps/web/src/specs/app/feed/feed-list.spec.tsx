@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -41,7 +41,11 @@ vi.mock("next/navigation", async () => ({
   useSearchParams: () => new URLSearchParams("")
 }));
 
-vi.mock("@/features/shared/detect-bottom", () => ({ DetectBottom: () => null }));
+vi.mock("@/features/shared/detect-bottom", () => ({
+  DetectBottom: ({ paused }: { paused?: boolean }) => (
+    <div data-testid="bottom" data-paused={String(!!paused)} />
+  )
+}));
 vi.mock("@/features/shared/entry-list-content", () => ({
   EntryListContent: ({ entries }: { entries: Entry[] }) => (
     <div data-testid="list">{entries.length}</div>
@@ -52,10 +56,20 @@ vi.mock("@/features/shared/entry-list-content", () => ({
 
 import { FeedList } from "@/app/(dynamicPages)/feed/_components/feed-list";
 
-function renderFeed(entries: Entry[], mutedAuthors: string[], hasNextPage: boolean) {
+function renderFeed(
+  entries: Entry[] | Entry[][] | undefined,
+  mutedAuthors: string[],
+  hasNextPage: boolean,
+  isError = false
+) {
+  const pages = entries === undefined ? undefined : Array.isArray(entries[0]) ? entries : [entries];
+  const fetchNextPage = vi.fn();
+  const refetch = vi.fn();
   usePostsFeedQuery.mockReturnValue({
-    data: { pages: [entries] },
-    fetchNextPage: vi.fn(),
+    data: pages && { pages },
+    isError,
+    fetchNextPage,
+    refetch,
     isLoading: false,
     isFetching: false,
     isFetchingNextPage: false,
@@ -66,11 +80,12 @@ function renderFeed(entries: Entry[], mutedAuthors: string[], hasNextPage: boole
   queryClient.setQueryData(QueryKeys.accounts.mutedUsers(VIEWER), mutedAuthors);
 
   // "feed" is a personalized filter, the only kind that shows an empty state.
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <FeedList filter="feed" tag="my" observer={VIEWER} />
     </QueryClientProvider>
   );
+  return { fetchNextPage, refetch };
 }
 
 describe("FeedList", () => {
@@ -100,9 +115,39 @@ describe("FeedList", () => {
     expect(screen.queryByTestId("no-data")).not.toBeInTheDocument();
   });
 
+  // The sentinel stays put after a failure and does not retry by itself, so a
+  // feed whose first page failed had no way back short of a reload.
+  it("offers a retry instead of the empty state when the first page failed", () => {
+    const { fetchNextPage } = renderFeed(undefined, [], false, true);
+
+    expect(screen.queryByTestId("no-data")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "g.try-again" }));
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a complete feed whose refetch failed by refetching it", () => {
+    const { fetchNextPage, refetch } = renderFeed([mockEntry({ author: "alice", permlink: "a" })], [], false, true);
+
+    fireEvent.click(screen.getByRole("button", { name: "g.try-again" }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+
+  it("offers no retry when nothing failed", () => {
+    renderFeed([mockEntry({ author: "alice", permlink: "a" })], [], true);
+    expect(screen.queryByRole("button", { name: "g.try-again" })).not.toBeInTheDocument();
+  });
+
+  it("stops loading on its own after three fully muted pages in a row", () => {
+    const hidden = (n: number) => [mockEntry({ author: "spammer", permlink: `s${n}` })];
+    renderFeed([[mockEntry({ author: "alice", permlink: "a" })], hidden(1), hidden(2), hidden(3)], ["spammer"], true);
+    expect(screen.getByTestId("bottom")).toHaveAttribute("data-paused", "true");
+  });
+
   it("keeps quiet while the viewer can still see something", () => {
     renderFeed([mockEntry({ author: "alice", permlink: "a" })], ["spammer"], false);
 
     expect(screen.queryByTestId("no-data")).not.toBeInTheDocument();
+    expect(screen.getByTestId("bottom")).toHaveAttribute("data-paused", "false");
   });
 });

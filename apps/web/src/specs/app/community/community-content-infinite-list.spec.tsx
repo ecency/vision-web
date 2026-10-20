@@ -38,7 +38,9 @@ vi.mock("@/core/hooks", async () => ({
 
 vi.mock("@/features/shared", async () => ({
   ...(await vi.importActual<Record<string, unknown>>("@/features/shared")),
-  DetectBottom: () => null,
+  DetectBottom: ({ paused }: { paused?: boolean }) => (
+    <div data-testid="bottom" data-paused={String(!!paused)} />
+  ),
   EntryListContent: ({ entries }: { entries: Entry[] }) => (
     <div data-testid="list">{entries.length}</div>
   ),
@@ -52,13 +54,13 @@ const community = { name: "hive-101690", title: "Sports Talk Social" } as Commun
 
 function renderList(
   initialEntryAuthors: string[],
-  pageTwo: Entry[],
+  pageTwo: Entry[] | Entry[][],
   mutedAuthors: string[],
   hasNextPage = false
 ) {
   usePostsFeedQuery.mockReturnValue({
     // Page 1 is the server-rendered slice this component drops.
-    data: { pages: [[], pageTwo] },
+    data: { pages: [[], ...(Array.isArray(pageTwo[0]) ? (pageTwo as Entry[][]) : [pageTwo as Entry[]])] },
     fetchNextPage: vi.fn(),
     isFetching: false,
     hasNextPage,
@@ -98,6 +100,18 @@ describe("CommunityContentInfiniteList", () => {
     renderList(["spammer"], [mockEntry({ author: "spammer", permlink: "p2" })], ["spammer"]);
 
     expect(screen.getByTestId("no-data")).toBeInTheDocument();
+  });
+
+  it("stops loading on its own after three fully muted pages in a row", () => {
+    const hidden = (n: number) => [mockEntry({ author: "spammer", permlink: `s${n}` })];
+    renderList(["alice"], [hidden(1), hidden(2), hidden(3)], ["spammer"], true);
+    expect(screen.getByTestId("bottom")).toHaveAttribute("data-paused", "true");
+  });
+
+  it("keeps loading on its own when the newest page shows something", () => {
+    const hidden = (n: number) => [mockEntry({ author: "spammer", permlink: `s${n}` })];
+    renderList(["alice"], [hidden(1), hidden(2), hidden(3), [mockEntry({ author: "bob", permlink: "b" })]], ["spammer"], true);
+    expect(screen.getByTestId("bottom")).toHaveAttribute("data-paused", "false");
   });
 
   it("keeps quiet while the server-rendered slice still has something to show", () => {

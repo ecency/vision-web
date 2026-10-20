@@ -2379,14 +2379,9 @@ interface Payload$4 {
  */
 declare function useAccountUpdate(username: string | undefined, auth?: AuthContextV2, broadcastMode?: BroadcastMode): _tanstack_react_query.UseMutationResult<unknown, Error, Partial<Payload$4>, unknown>;
 
-type Kind = "toggle-ignore" | "toggle-follow";
-declare function useAccountRelationsUpdate(reference: string | undefined, target: string | undefined, auth: AuthContext | undefined, onSuccess: (data: Partial<AccountRelationship> | undefined) => void, onError: (e: Error) => void): _tanstack_react_query.UseMutationResult<{
-    ignores: boolean | undefined;
-    follows: boolean | undefined;
-    blacklists?: boolean | undefined;
-    follows_muted?: boolean | undefined;
-    follows_blacklists?: boolean | undefined;
-}, Error, Kind, unknown>;
+type RelationToggle = "toggle-ignore" | "toggle-follow";
+
+declare function useAccountRelationsUpdate(reference: string | undefined, target: string | undefined, auth: AuthContext | undefined, onSuccess: (data: Partial<AccountRelationship> | undefined) => void, onError: (e: Error) => void): _tanstack_react_query.UseMutationResult<Partial<AccountRelationship>, Error, RelationToggle, unknown>;
 
 /**
  * Payload for following an account.

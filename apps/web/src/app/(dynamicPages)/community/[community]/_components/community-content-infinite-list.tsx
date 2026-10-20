@@ -8,8 +8,10 @@ import {
 } from "@/features/shared";
 import React, { useMemo } from "react";
 import { useBottomPagination } from "@/core/hooks";
+import { EntryListLoadError } from "@/features/shared/entry-list-content/entry-list-load-error";
 import { usePostsFeedQuery } from "@/api/queries";
 import { useVisibleEntries } from "@/features/shared/entry-list-item/use-muted-authors";
+import { useAutoPagingPaused } from "@/features/shared/entry-list-item/use-auto-paging-paused";
 import { Community, Entry, SearchResponse } from "@/entities";
 import type { InfiniteData } from "@tanstack/react-query";
 
@@ -36,6 +38,8 @@ export function CommunityContentInfiniteList({ section, community, initialEntryA
 
     const fetchNextPage = result.fetchNextPage;
     const isFetching = result.isFetching;
+    const isError = result.isError;
+    const refetch = result.refetch;
     const hasNextPage = result.hasNextPage;
     const dataUpdatedAt = result.dataUpdatedAt;
 
@@ -57,12 +61,10 @@ export function CommunityContentInfiniteList({ section, community, initialEntryA
         fetchNextPage
     });
 
-    const entryList = useMemo(
-        () =>
-            // Drop the first page (already rendered on the server)
-            (data?.pages?.slice(1)?.flatMap(pageToEntries) ?? []),
-        [data?.pages]
-    );
+    // Drop the first page (already rendered on the server)
+    const clientPages = useMemo(() => data?.pages?.slice(1)?.map(pageToEntries) ?? [], [data?.pages]);
+    const autoPagingPaused = useAutoPagingPaused(clientPages);
+    const entryList = useMemo(() => clientPages.flat(), [clientPages]);
 
     // Count what the viewer can see across the server-rendered slice and ours, so
     // a community whose every loaded author they muted says so instead of
@@ -80,8 +82,13 @@ export function CommunityContentInfiniteList({ section, community, initialEntryA
     const shouldShowEmptyState =
         hasClientData &&
         !isFetching &&
+        !isError &&
         !hasNextPage &&
         initialVisible.length + visibleEntryList.length === 0;
+
+    // The pagination callback only fetches a next page (or a missing first one);
+    // a failed refetch of a list that is already complete needs a plain refetch.
+    const retry = hasNextPage || !data?.pages?.length ? onBottom : () => refetch();
 
     return (
         <>
@@ -96,7 +103,8 @@ export function CommunityContentInfiniteList({ section, community, initialEntryA
             {shouldShowEmptyState && (
                 <EntryListContentNoData username={community.name} loading={false} section={section} />
             )}
-            <DetectBottom onBottom={onBottom} />
+            <DetectBottom onBottom={onBottom} paused={autoPagingPaused} />
+            {isError && !isFetching && <EntryListLoadError onRetry={retry} />}
             {isFetching && <EntryListContentLoading />}
         </>
     );
