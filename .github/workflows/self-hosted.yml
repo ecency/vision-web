@@ -309,4 +309,15 @@ jobs:
             cd ~/hosting
             docker pull ecency/self-hosted:$IMAGE_TAG
             docker pull ecency/hosting-api:$IMAGE_TAG
-            TAG=$IMAGE_TAG docker compose up -d
+            TAG=$IMAGE_TAG docker compose up -d || exit 1
+            # Every deploy pulls a new sha-tagged build of both images. Keep the
+            # newest 5 of each (the one just deployed plus 4 for rollback) and drop
+            # the rest so they don't pile up on the host disk. Plain `docker rmi`
+            # refuses images a container still uses, and a failed cleanup must not
+            # fail the deploy.
+            for repo in ecency/self-hosted ecency/hosting-api; do
+              docker images "$repo" --format '{{.CreatedAt}}\t{{.Tag}}' \
+                | sort -r | cut -f2 \
+                | grep '^sha-' | grep -vx "$IMAGE_TAG" | tail -n +5 \
+                | xargs -r -I{} docker rmi "$repo:{}" || true
+            done
