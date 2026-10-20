@@ -68,6 +68,25 @@ describe("computeRecoverySubmitState", () => {
     expect(self.canSubmit).toBe(false);
   });
 
+  it("treats an @-prefixed account name identically to the stripped version", () => {
+    // Users sometimes type '@melinda010100' — the @ must be stripped before comparing / submitting.
+    const withAt = computeRecoverySubmitState({
+      newRecoveryAccount: "@melinda010100".replace(/^@+/, ""),
+      currentRecoveryAccount: "ecency",
+      activeUsername: "alice",
+      formInitiated: false
+    });
+    const withoutAt = computeRecoverySubmitState({
+      newRecoveryAccount: "melinda010100",
+      currentRecoveryAccount: "ecency",
+      activeUsername: "alice",
+      formInitiated: false
+    });
+    expect(withAt.isRecoveryAccountChanged).toBe(true);
+    expect(withAt.canSubmit).toBe(true);
+    expect(withAt).toEqual(withoutAt);
+  });
+
   it("treats an empty recovery account as no change", () => {
     const s = computeRecoverySubmitState({
       newRecoveryAccount: "",

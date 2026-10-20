@@ -31,6 +31,7 @@ const schema = yup.object({
   isEcency: yup.boolean().optional(),
   newRecoveryAccount: yup
     .string()
+    .transform((v: string) => (typeof v === "string" ? v.replace(/^@+/, "") : v))
     .required(i18next.t("validation.required"))
     .min(2, i18next.t("sign-up.username-max-length-error")),
   recoveryEmail: yup.string().when("isEcency", {
@@ -97,18 +98,19 @@ export function AccountRecovery() {
   const handleSign = useCallback(
     async (type: Parameters<typeof updateRecovery>[0]["type"], key?: PrivateKey) => {
       const { isEcency, newRecoveryAccount } = methods.getValues();
+      const accountName = methods.getValues().newRecoveryAccount.replace(/^@+/, "");
       if (isEcency || newRecoveryAccount === ECENCY) {
         await updateRecovery({
           type: "ecency",
           email: methods.getValues().recoveryEmail,
-          accountName: methods.getValues().newRecoveryAccount
+          accountName
         });
       }
 
       await updateRecovery({
         type,
         key,
-        accountName: methods.getValues().newRecoveryAccount
+        accountName
       });
 
       setKeyDialog(false);
