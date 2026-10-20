@@ -198,6 +198,57 @@ describe("DetectBottom", () => {
       expect(mockOnBottom).toHaveBeenCalledTimes(1);
     });
 
+    // The scroll that brings the sentinel on screen is the request for more;
+    // waiting for a second gesture at the bottom felt stuck.
+    test("loads for the gesture that brought it into view", () => {
+      (useInViewport as any).mockReturnValue({ inViewport: false });
+      const { rerender } = render(<DetectBottom onBottom={mockOnBottom} paused />);
+
+      fireEvent.keyDown(window, { key: "End" });
+      expect(mockOnBottom).not.toHaveBeenCalled();
+
+      (useInViewport as any).mockReturnValue({ inViewport: true });
+      rerender(<DetectBottom onBottom={mockOnBottom} paused />);
+      expect(mockOnBottom).toHaveBeenCalledTimes(1);
+    });
+
+    test("does not count a gesture from long before it came into view", () => {
+      (useInViewport as any).mockReturnValue({ inViewport: false });
+      const { rerender } = render(<DetectBottom onBottom={mockOnBottom} paused />);
+
+      fireEvent.keyDown(window, { key: "End" });
+      vi.advanceTimersByTime(1000);
+      (useInViewport as any).mockReturnValue({ inViewport: true });
+      rerender(<DetectBottom onBottom={mockOnBottom} paused />);
+      expect(mockOnBottom).not.toHaveBeenCalled();
+    });
+
+    test("keeps a finger drag going across a parent re-render", () => {
+      const { rerender } = render(<DetectBottom onBottom={mockOnBottom} paused />);
+
+      fireEvent.touchStart(window, { touches: [{ clientY: 300 }] });
+      rerender(<DetectBottom onBottom={() => mockOnBottom()} paused />);
+      fireEvent.touchMove(window, { touches: [{ clientY: 200 }] });
+      expect(mockOnBottom).toHaveBeenCalledTimes(1);
+    });
+
+    test("ignores Shift+Space, shortcuts, handled keys and menu items", () => {
+      const { container } = render(
+        <>
+          <div role="menuitem" tabIndex={0}>item</div>
+          <DetectBottom onBottom={mockOnBottom} paused />
+        </>
+      );
+
+      fireEvent.keyDown(window, { key: " ", shiftKey: true });
+      fireEvent.keyDown(window, { key: "End", metaKey: true });
+      fireEvent.keyDown(container.querySelector('[role="menuitem"]')!, { key: " " });
+      const handled = new KeyboardEvent("keydown", { key: "PageDown", cancelable: true });
+      handled.preventDefault();
+      window.dispatchEvent(handled);
+      expect(mockOnBottom).not.toHaveBeenCalled();
+    });
+
     test("stops listening once unmounted", () => {
       const { unmount } = render(<DetectBottom onBottom={mockOnBottom} paused />);
       unmount();

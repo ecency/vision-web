@@ -25,10 +25,29 @@ export function nextRelation(
  * Applies a mute change to the viewer's cached mute list. Lists hide muted
  * authors straight from this cache, so it has to follow the toggle rather than
  * wait to go stale: otherwise an unmuted author stays hidden until a reload.
- * A list that was never fetched is left alone; its first fetch is current.
+ *
+ * A fetch of the list still in flight started before the toggle and would land
+ * the old list on top of this change, so it is cancelled first. When there was
+ * no list yet to patch (that cancelled fetch was its first), any screen showing
+ * it fetches it again, and the toggle is applied on top of the result too: a
+ * node that has not indexed the new operation yet still returns the old list.
+ * A list nobody has fetched is left alone; its first fetch is current.
  */
-export function syncMutedUsersCache(reference: string, target: string, ignores: boolean) {
-  getQueryClient().setQueryData<string[]>(QueryKeys.accounts.mutedUsers(reference), (list) => {
+export async function syncMutedUsersCache(
+  reference: string,
+  target: string,
+  ignores: boolean
+): Promise<void> {
+  const client = getQueryClient();
+  const queryKey = QueryKeys.accounts.mutedUsers(reference);
+
+  await client.cancelQueries({ queryKey, exact: true });
+
+  if (client.getQueryData<string[]>(queryKey) === undefined) {
+    await client.invalidateQueries({ queryKey, exact: true });
+  }
+
+  client.setQueryData<string[]>(queryKey, (list) => {
     if (!list) return list;
     const rest = list.filter((name) => name !== target);
     return ignores ? [...rest, target] : rest;

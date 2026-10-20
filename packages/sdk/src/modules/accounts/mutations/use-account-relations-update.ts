@@ -58,7 +58,7 @@ export function useAccountRelationsUpdate(
 
       // Either toggle can change the mute state (see the mutationFn).
       if (reference && target) {
-        syncMutedUsersCache(reference, target, data.ignores === true);
+        void syncMutedUsersCache(reference, target, data.ignores === true);
       }
 
       // Invalidate account query to refetch follow stats (follower_count, following_count)

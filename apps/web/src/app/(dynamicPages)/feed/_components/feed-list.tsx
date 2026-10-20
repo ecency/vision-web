@@ -3,6 +3,7 @@
 import React, { useMemo } from "react";
 import { usePostsFeedQuery } from "@/api/queries";
 import { useBottomPagination } from "@/core/hooks";
+import { EntryListLoadError } from "@/features/shared/entry-list-content/entry-list-load-error";
 import { Entry, SearchResponse } from "@/entities";
 import type { InfiniteData } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
@@ -36,7 +37,7 @@ export function FeedList({ filter, tag, observer }: Props) {
   });
 
   // Single source of truth - one query call
-  const { data, dataUpdatedAt, fetchNextPage, isLoading, isFetching, isFetchingNextPage, hasNextPage } =
+  const { data, dataUpdatedAt, fetchNextPage, refetch, isError, isLoading, isFetching, isFetchingNextPage, hasNextPage } =
     usePostsFeedQuery(filter, tag, observer);
 
   // Extract entries from all pages (no skipping - simpler and works with client-side navigation)
@@ -64,7 +65,9 @@ export function FeedList({ filter, tag, observer }: Props) {
   // loaded so far being muted is not an empty feed, and DetectBottom is already
   // fetching the next page.
   const isLoadingData = isLoading || (isFetching && visibleEntries.length === 0);
-  const isEmpty = !isLoading && !isFetching && !hasNextPage && visibleEntries.length === 0;
+  // A failed load is not an empty feed; the retry below says what happened.
+  const isEmpty =
+    !isLoading && !isFetching && !isError && !hasNextPage && visibleEntries.length === 0;
   const showLoading = isLoadingData || isFetchingNextPage;
 
   // Check if this is a global feed (should never show empty state)
@@ -88,6 +91,10 @@ export function FeedList({ filter, tag, observer }: Props) {
     fetchNextPage
   });
 
+  // The pagination callback only fetches a next page (or a missing first one);
+  // a failed refetch of a list that is already complete needs a plain refetch.
+  const retry = hasNextPage || !data?.pages?.length ? handleLoadMore : () => refetch();
+
   return (
     <>
       {/* Show all entries */}
@@ -108,6 +115,7 @@ export function FeedList({ filter, tag, observer }: Props) {
 
       {/* Infinite scroll trigger - only active after initial load */}
       <DetectBottom onBottom={handleLoadMore} paused={autoPagingPaused} />
+      {isError && !isFetching && <EntryListLoadError onRetry={retry} />}
 
       {/* Loading indicator - single instance */}
       {showLoading && <EntryListContentLoading />}

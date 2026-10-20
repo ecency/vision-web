@@ -152,6 +152,15 @@ describe("ProfileEntriesInfiniteList", () => {
     expect(fetchNextPage).not.toHaveBeenCalled();
   });
 
+  // The blog also carries the owner's reblogs of other authors, which the
+  // viewer did not mute; the general cap handles a blog that shows nothing.
+  it("keeps a muted owner's blog tab, reblogs and all", () => {
+    renderList(["alice", "bob"], [mockEntry({ author: "bob", permlink: "r1" })], ["alice"], true, [], account, "blog");
+
+    expect(screen.queryByText("profile.muted-owner-title")).not.toBeInTheDocument();
+    expect(screen.getByTestId("list")).toHaveTextContent("r1");
+  });
+
   it("keeps paging replies to a muted owner, which other people wrote", () => {
     const { fetchNextPage } = renderList(
       ["bob"],

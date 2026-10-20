@@ -811,7 +811,8 @@
     "description-user-feed": "{{u}}'s feed",
     "faq": "FAQ",
     "tos": "Terms of service",
-    "pp": "Privacy Policy"
+    "pp": "Privacy Policy",
+    "load-error": "Couldn't load posts."
   },
   "decks": {
     "title": "Decks",

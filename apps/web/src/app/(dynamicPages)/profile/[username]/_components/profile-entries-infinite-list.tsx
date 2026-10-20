@@ -10,6 +10,7 @@ import {
 import React, { useMemo } from "react";
 import { usePostsFeedQuery } from "@/api/queries";
 import { useBottomPagination } from "@/core/hooks";
+import { EntryListLoadError } from "@/features/shared/entry-list-content/entry-list-load-error";
 import {
   useMutedAuthors,
   useVisibleEntries
@@ -23,10 +24,11 @@ import { Entry, FullAccount } from "@/entities";
 import { isPinnedDuplicate } from "@/app/(dynamicPages)/profile/[username]/_helpers/pinned-permlink";
 
 /**
- * Sections made of the profile owner's own posts (blog adds the odd reblog).
- * Replies are written by other people, so muting the owner leaves them visible.
+ * Sections made only of the profile owner's own posts. Not replies (written by
+ * other people) and not blog, whose reblogs of other authors stay visible; a
+ * blog that shows nothing is left to useAutoPagingPaused.
  */
-const OWNER_AUTHORED_SECTIONS = ["blog", "posts", "comments"];
+const OWNER_AUTHORED_SECTIONS = ["posts", "comments"];
 
 interface Props {
   account: FullAccount;
@@ -64,7 +66,7 @@ export function ProfileEntriesInfiniteList({
   // Personalising properly needs the SSR page replaced, which means adding this
   // tier to cache-policy's USER_SPECIFIC_TIERS_WHEN_LOGGED_IN (giving up the
   // shared edge-cache entry) or re-fetching page 1 on every logged-in view.
-  const { fetchNextPage, data, dataUpdatedAt, isFetching, hasNextPage, isFetchingNextPage } =
+  const { fetchNextPage, refetch, data, dataUpdatedAt, isError, isFetching, hasNextPage, isFetchingNextPage } =
     usePostsFeedQuery(section, `@${account.name}`);
 
   // A viewer who muted the owner can see none of these entries, so the sentinel
@@ -110,7 +112,7 @@ export function ProfileEntriesInfiniteList({
   // still to come: everything loaded so far being muted is not an empty profile,
   // and the sentinel below is already fetching the next page.
   const shouldShowEmptyState =
-    isDataReady && !isFetchingData && !hasNextPage && totalEntriesCount === 0;
+    isDataReady && !isFetchingData && !isError && !hasNextPage && totalEntriesCount === 0;
 
   // Not an inline handler: that is a new function every render, so a FAILED
   // fetch re-ran the sentinel and retried at once, in a loop for as long as the
@@ -123,6 +125,10 @@ export function ProfileEntriesInfiniteList({
     isFetching: isFetchingData,
     fetchNextPage
   });
+
+  // The pagination callback only fetches a next page (or a missing first one);
+  // a failed refetch of a list that is already complete needs a plain refetch.
+  const retry = hasNextPage || !data?.pages?.length ? handleBottom : () => refetch();
 
   if (ownerMuted) {
     return (
@@ -153,6 +159,7 @@ export function ProfileEntriesInfiniteList({
         />
       )}
       <DetectBottom onBottom={handleBottom} paused={autoPagingPaused} />
+      {isError && !isFetchingData && <EntryListLoadError onRetry={retry} />}
       {isFetchingData && <EntryListContentLoading />}
     </>
   );
