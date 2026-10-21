@@ -50,7 +50,7 @@ interface MattermostWSEvent {
   seq?: number;
 }
 
-export type ConnectionStatus = "live" | "connected" | "paused" | "disconnected";
+export type ConnectionStatus = "live" | "connected" | "disconnected";
 
 // Global instance tracker to prevent duplicate connections
 let globalInstance: MattermostWebSocket | null = null;
@@ -82,7 +82,6 @@ export class MattermostWebSocket {
   // Idle management
   private lastActivityTime = Date.now();
   private idleCheckInterval: NodeJS.Timeout | null = null;
-  private pollInterval: NodeJS.Timeout | null = null;
   private currentStatus: ConnectionStatus = "disconnected";
 
   // Connection metrics for debugging
@@ -108,8 +107,6 @@ export class MattermostWebSocket {
 
   // Idle thresholds
   private readonly IDLE_WARNING_MS = 5 * 60 * 1000;      // 5 min - reduce ping frequency
-  private readonly IDLE_DISCONNECT_MS = 15 * 60 * 1000;  // 15 min - disconnect and poll
-  private readonly POLL_INTERVAL_MS = 60 * 1000;         // 1 min - polling when disconnected
 
   // Ping intervals. Cloudflare drops a websocket that carries no data for 100s,
   // so every interval stays well under that, with room for browsers throttling
@@ -234,8 +231,6 @@ export class MattermostWebSocket {
         }
         this.metrics.lastConnectedAt = Date.now();
 
-        this.onConnectionChangeCallback?.(true);
-
         // Start ping interval to keep connection alive
         this.startPingInterval();
 
@@ -352,9 +347,6 @@ export class MattermostWebSocket {
     // Stop idle management
     this.stopIdleManagement();
 
-    // Stop polling
-    this.stopPolling();
-
     // Remove event listeners to prevent memory leaks
     this.removeEventListeners();
 
@@ -455,7 +447,9 @@ export class MattermostWebSocket {
     // Authenticated with Mattermost: the connection is really up from here.
     this.reconnectAttempts = 0;
     this.firstDisconnectTime = null;
-    this.stopPolling();
+    // Report active only now: while it is false the UI keeps its API fallback
+    // (polling, refetch after send), which an open-but-unauthenticated socket needs.
+    this.onConnectionChangeCallback?.(true);
 
     // Events sent while a previous socket was down are gone, so refetch what they would have updated.
     if (this.hasAuthenticated) {
@@ -860,10 +854,6 @@ export class MattermostWebSocket {
   // Utility methods
   public sendTyping(channelId: string): void {
     if (!this.ws || this.connectionState !== "connected") {
-      // If disconnected but polling, try to reconnect
-      if (this.currentStatus === "paused") {
-        this.resumeConnection();
-      }
       return;
     }
 
@@ -907,7 +897,7 @@ export class MattermostWebSocket {
   private recordActivity(): void {
     this.lastActivityTime = Date.now();
 
-    // If we were idle/paused, go back to live
+    // If we were idle, go back to live
     if (this.currentStatus !== "live" && this.isConnected) {
       this.updateStatus("live");
       this.adjustPingInterval(this.PING_ACTIVE);
@@ -1019,52 +1009,15 @@ export class MattermostWebSocket {
     // Don't change state if tab is hidden (page visibility handles that)
     if (document.hidden) return;
 
-    if (idleTime >= this.IDLE_DISCONNECT_MS) {
-      // Idle for 15+ minutes - disconnect and start polling
-      this.disconnectAndPoll();
-    } else if (idleTime >= this.IDLE_WARNING_MS) {
+    // Stays connected however long it is idle: activity is only counted when
+    // typing, so dropping the socket would cut off someone who is just reading.
+    if (idleTime >= this.IDLE_WARNING_MS) {
       // Idle for 5+ minutes - reduce ping frequency but stay connected
       if (this.currentStatus === "live") {
         this.updateStatus("connected");
         this.adjustPingInterval(this.PING_IDLE);
       }
     }
-  }
-
-  private disconnectAndPoll(): void {
-    if (this.currentStatus === "paused") return; // Already polling
-
-    // Close WebSocket but don't trigger full disconnect
-    this.stopPingInterval();
-    this.stopIdleManagement();
-
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-
-    this.isConnected = false;
-    this.updateStatus("paused");
-    this.onConnectionChangeCallback?.(false);
-
-    // Start polling for new messages
-    this.startPolling();
-  }
-
-  private startPolling(): void {
-    this.stopPolling(); // Clear any existing polling
-
-    this.pollInterval = setInterval(() => {
-      // Invalidate queries to fetch new messages
-      if (this.queryClient && this.channelId) {
-        this.queryClient.invalidateQueries({
-          queryKey: ["mattermost-posts-infinite", this.channelId]
-        });
-        this.queryClient.invalidateQueries({
-          queryKey: ["mattermost-unread"]
-        });
-      }
-    }, this.POLL_INTERVAL_MS);
   }
 
   private refreshAfterReconnect(): void {
@@ -1074,26 +1027,13 @@ export class MattermostWebSocket {
       this.queryClient.invalidateQueries({
         queryKey: ["mattermost-posts-infinite", this.channelId]
       });
+      this.queryClient.invalidateQueries({
+        queryKey: ["mattermost-pinned-posts", this.channelId]
+      });
     }
     this.queryClient.invalidateQueries({ queryKey: ["mattermost-thread"] });
     this.queryClient.invalidateQueries({ queryKey: ["mattermost-unread"] });
     this.queryClient.invalidateQueries({ queryKey: ["mattermost-channels"] });
-  }
-
-  private stopPolling(): void {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
-    }
-  }
-
-  // Resume real-time connection from paused state
-  public resumeConnection(): void {
-    if (this.currentStatus !== "paused") return;
-
-    this.stopPolling();
-    this.lastActivityTime = Date.now();
-    this.connect(); // Reconnect WebSocket
   }
 
   // Page visibility handling
@@ -1108,11 +1048,7 @@ export class MattermostWebSocket {
           this.adjustPingInterval(this.PING_BACKGROUND);
         }
       } else {
-        // Tab visible - check if we need to resume
-        if (this.currentStatus === "paused") {
-          // User returned to tab, resume connection
-          this.resumeConnection();
-        } else if (this.isConnected) {
+        if (this.isConnected) {
           // Restore active ping interval
           const idleTime = Date.now() - this.lastActivityTime;
           if (idleTime < this.IDLE_WARNING_MS) {

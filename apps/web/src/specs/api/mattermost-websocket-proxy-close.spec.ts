@@ -18,8 +18,16 @@ function listen(server: WebSocketServer) {
   );
 }
 
-function waitFor<T>(emitter: { once: (event: string, cb: (...args: any[]) => void) => unknown }, event: string) {
-  return new Promise<T>((resolve) => emitter.once(event, (...args: any[]) => resolve(args as T)));
+function waitForConnection(server: WebSocketServer) {
+  return new Promise<WebSocket>((resolve) => server.once("connection", resolve));
+}
+
+function waitForClose(socket: WebSocket) {
+  return new Promise<number>((resolve) => socket.once("close", (code: number) => resolve(code)));
+}
+
+function waitForMessage(socket: WebSocket) {
+  return new Promise<void>((resolve) => socket.once("message", () => resolve()));
 }
 
 describe("toSendableCloseCode", () => {
@@ -79,51 +87,51 @@ describe("chat websocket proxy close handling", () => {
   });
 
   async function connectPair() {
-    const upstreamSide = waitFor<[WebSocket]>(upstreamServer, "connection");
+    const upstreamSide = waitForConnection(upstreamServer);
     const browser = new WebSocket(`ws://127.0.0.1:${frontPort}`);
-    const hello = waitFor(browser, "message");
-    const [mattermostSocket] = await upstreamSide;
+    const hello = waitForMessage(browser);
+    const mattermostSocket = await upstreamSide;
     await hello;
     return { browser, mattermostSocket };
   }
 
   it("closes the Mattermost side when the browser drops without a close frame", async () => {
     const { browser, mattermostSocket } = await connectPair();
-    const upstreamClosed = waitFor<[number]>(mattermostSocket, "close");
+    const upstreamClosed = waitForClose(mattermostSocket);
 
     browser.terminate(); // proxy sees 1006
 
-    const [code] = await upstreamClosed;
+    const code = await upstreamClosed;
     expect(code).toBe(1000);
   });
 
   it("closes the browser side when Mattermost drops without a close frame", async () => {
     const { browser, mattermostSocket } = await connectPair();
-    const browserClosed = waitFor<[number]>(browser, "close");
+    const browserClosed = waitForClose(browser);
 
     mattermostSocket.terminate(); // proxy sees 1006 from upstream
 
-    const [code] = await browserClosed;
+    const code = await browserClosed;
     expect(code).toBe(1000);
   });
 
   it("closes the Mattermost side when the browser closes without a code", async () => {
     const { browser, mattermostSocket } = await connectPair();
-    const upstreamClosed = waitFor<[number]>(mattermostSocket, "close");
+    const upstreamClosed = waitForClose(mattermostSocket);
 
     browser.close(); // proxy sees 1005, the everyday path (channel switch, unmount)
 
-    const [code] = await upstreamClosed;
+    const code = await upstreamClosed;
     expect(code).toBe(1000);
   });
 
   it("forwards a normal close code unchanged", async () => {
     const { browser, mattermostSocket } = await connectPair();
-    const upstreamClosed = waitFor<[number]>(mattermostSocket, "close");
+    const upstreamClosed = waitForClose(mattermostSocket);
 
     browser.close(4001);
 
-    const [code] = await upstreamClosed;
+    const code = await upstreamClosed;
     expect(code).toBe(4001);
   });
 });

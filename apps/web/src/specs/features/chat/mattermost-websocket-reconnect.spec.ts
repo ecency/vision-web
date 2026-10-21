@@ -91,7 +91,7 @@ describe("MattermostWebSocket keepalive and reconnect", () => {
     expect(invalidate).not.toHaveBeenCalled();
   });
 
-  it("refetches the open channel, threads, unreads and channel list once a reconnect is authenticated", async () => {
+  it("refetches the open channel, its pins, threads, unreads and channel list once a reconnect is authenticated", async () => {
     const first = await open();
     first.hello();
 
@@ -104,6 +104,7 @@ describe("MattermostWebSocket keepalive and reconnect", () => {
     expect(keys).toEqual(
       expect.arrayContaining([
         ["mattermost-posts-infinite", "channel-1"],
+        ["mattermost-pinned-posts", "channel-1"],
         ["mattermost-thread"],
         ["mattermost-unread"],
         ["mattermost-channels"]
@@ -125,6 +126,36 @@ describe("MattermostWebSocket keepalive and reconnect", () => {
     expect(invalidate).not.toHaveBeenCalled();
     // Attempts keep counting up (so the delay grows) instead of resetting on each open.
     expect((ws as unknown as { reconnectAttempts: number }).reconnectAttempts).toBe(4);
+  });
+
+  it("reports active only once Mattermost says hello, so the UI fallback stays on during an outage", async () => {
+    const active: boolean[] = [];
+    ws.onConnectionChange((value) => active.push(value));
+
+    const first = await open();
+    expect(active).toEqual([]);
+    first.hello();
+    expect(active).toEqual([true]);
+
+    let socket = first;
+    for (let i = 0; i < 3; i++) {
+      socket = await dropAndReopen(socket); // opens, but no hello
+    }
+    expect(active).toEqual([true, false]);
+
+    socket.hello();
+    expect(active).toEqual([true, false, true]);
+  });
+
+  it("stays connected on a visible tab that has been idle for a long time", async () => {
+    const socket = await open();
+    socket.hello();
+    socket.send.mockImplementation(() => setTimeout(() => socket.pong(), 50));
+
+    await vi.advanceTimersByTimeAsync(20 * 60_000);
+
+    expect(socket.close).not.toHaveBeenCalled();
+    expect(FakeSocket.instances).toHaveLength(1);
   });
 
   it("does not close a healthy socket when the tab is hidden mid-interval", async () => {
