@@ -9,16 +9,13 @@ vi.mock("@/features/tiptap-editor/extensions", () => ({
 }));
 
 import { Editor } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
-import Table from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
+import { PublishStarterKit } from "@/features/tiptap-editor/extensions/publish-starter-kit";
+import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { simpleMarkdownToHTML } from "@ecency/render-helper";
 
 import { parseAllExtensionsToDoc } from "@/features/tiptap-editor/functions/parse-all-extensions-to-doc";
 
-const TABLE_EXTENSIONS = [StarterKit, Table, TableRow, TableCell, TableHeader];
+const TABLE_EXTENSIONS = [PublishStarterKit, Table, TableRow, TableCell, TableHeader];
 
 /** Pastes markdown exactly as the clipboard text strategy does. */
 function pasteMarkdown(markdown: string): string {

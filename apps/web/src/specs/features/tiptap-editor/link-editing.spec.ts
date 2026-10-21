@@ -1,5 +1,5 @@
 import { Editor } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
+import { PublishStarterKit } from "@/features/tiptap-editor/extensions/publish-starter-kit";
 
 import { SafeLink } from "@/features/tiptap-editor/extensions/safe-link-extension";
 import {
@@ -60,7 +60,7 @@ describe("isValidLinkTarget", () => {
 function makeEditor(content: string) {
   return new Editor({
     element: document.createElement("div"),
-    extensions: [StarterKit, SafeLink],
+    extensions: [PublishStarterKit, SafeLink],
     content
   });
 }

@@ -1,4 +1,5 @@
 import Link from '@tiptap/extension-link';
+import StarterKit from '@tiptap/starter-kit';
 
 /**
  * Shared by the publish and edit editors so both round-trip links identically.
@@ -23,4 +24,17 @@ export const LINK_EXTENSION = Link.configure({
   autolink: false,
   linkOnPaste: true,
   HTMLAttributes: { target: null, rel: null },
+});
+
+/**
+ * StarterKit as both editors use it. TipTap 3 added link, underline,
+ * listKeymap and trailingNode to StarterKit; they are off to keep the TipTap 2
+ * behaviour: LINK_EXTENSION above is the only link mark, markdown has no
+ * underline, and a trailing empty paragraph would change the stored body.
+ */
+export const STARTER_KIT_EXTENSION = StarterKit.configure({
+  link: false,
+  underline: false,
+  trailingNode: false,
+  listKeymap: false,
 });

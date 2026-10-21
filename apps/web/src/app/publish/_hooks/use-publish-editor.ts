@@ -11,20 +11,16 @@ import {
   DelStrike,
   markdownToHtml,
   parseAllExtensionsToDoc,
-  LoomVideoExtension
+  LoomVideoExtension,
+  PublishStarterKit
 } from "@/features/tiptap-editor";
 import Image from "@tiptap/extension-image";
 import Mention from "@tiptap/extension-mention";
-import Placeholder from "@tiptap/extension-placeholder";
-import Table from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
+import { Placeholder } from "@tiptap/extensions";
+import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import TextAlign from "@tiptap/extension-text-align";
-import Color from "@tiptap/extension-color";
-import TextStyle from "@tiptap/extension-text-style";
-import { AnyExtension, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
+import { Color, TextStyle } from "@tiptap/extension-text-style";
+import { ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import { simpleMarkdownToHTML } from "@ecency/render-helper";
 import { useCallback, useEffect, useRef } from "react";
 import { PublishEditorImageViewer } from "../_editor-extensions";
@@ -39,6 +35,8 @@ import { usePublishState } from "./use-publish-state";
 import { usePublishLinksAttach } from "./use-publish-links-attach";
 import i18next from "i18next";
 
+// mergeNestedSpanStyles defaults to true in TipTap 3 and false in TipTap 2.
+// Kept false so pasted nested spans parse exactly as before.
 const PublishTextStyle = TextStyle.extend({
   addAttributes() {
     const parentAttributes = (this.parent?.() ?? {}) as Record<string, unknown>;
@@ -141,7 +139,7 @@ const PublishTextStyle = TextStyle.extend({
       }
     };
   }
-});
+}).configure({ mergeNestedSpanStyles: false });
 
 export function usePublishEditor(onHtmlPaste: () => void) {
   const clipboardStrategyRef = useRef<ReturnType<typeof clipboardPlugin> | null>(null);
@@ -157,9 +155,7 @@ export function usePublishEditor(onHtmlPaste: () => void) {
       }) as any
     },
     extensions: [
-      StarterKit.configure({
-        strike: false
-      }) as AnyExtension,
+      PublishStarterKit,
       DelStrike,
       Placeholder.configure({
         placeholder: i18next.t("submit.body-placeholder")
@@ -225,12 +221,12 @@ export function usePublishEditor(onHtmlPaste: () => void) {
           : undefined;
         editor
           ?.chain()
-          .setContent(doc ?? "")
+          .setContent(doc ?? "", { emitUpdate: false })
           .run();
       } catch (e) {
         error("Failed to load local draft. We are working on it");
         console.error(e);
-        editor?.commands.setContent("");
+        editor?.commands.setContent("", { emitUpdate: false });
       }
     },
     [editor]
@@ -239,7 +235,7 @@ export function usePublishEditor(onHtmlPaste: () => void) {
   // Handle editor clearing
   useEffect(() => {
     if (!publishState.content && editor?.getText() !== "") {
-      editor?.commands.setContent("");
+      editor?.commands.setContent("", { emitUpdate: false });
     }
   }, [editor, publishState.content]);
 

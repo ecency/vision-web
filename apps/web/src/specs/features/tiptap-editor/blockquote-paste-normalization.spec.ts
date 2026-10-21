@@ -9,13 +9,14 @@ vi.mock("@/features/tiptap-editor/extensions", () => ({
 }));
 
 import { Editor } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
+// Imported by file path: the barrel above is mocked.
+import { PublishStarterKit } from "@/features/tiptap-editor/extensions/publish-starter-kit";
 import { simpleMarkdownToHTML } from "@ecency/render-helper";
 
 import { parseAllExtensionsToDoc } from "@/features/tiptap-editor/functions/parse-all-extensions-to-doc";
 
 function insertPastedMarkdown(markdown: string) {
-  const editor = new Editor({ extensions: [StarterKit], content: "<p></p>" });
+  const editor = new Editor({ extensions: [PublishStarterKit], content: "<p></p>" });
   try {
     const parsed = parseAllExtensionsToDoc(simpleMarkdownToHTML(markdown));
     editor.chain().insertContent(parsed).run();

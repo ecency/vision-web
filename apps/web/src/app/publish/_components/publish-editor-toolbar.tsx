@@ -871,7 +871,9 @@ export function PublishEditorToolbar({ editor, allowToUploadVideo = true }: Prop
                 publishState.setAiTools((prev) => ({ ...prev, writing_edit: true }));
                 const sanitized = simpleMarkdownToHTML(output);
                 const doc = parseAllExtensionsToDoc(sanitized);
-                editor?.commands.setContent(doc);
+                // Emit the update so the draft (and what gets published) picks up
+                // the applied text right away, not only after the next keystroke.
+                editor?.commands.setContent(doc, { emitUpdate: true });
                 setShowAiAssist(false);
               } else if (action === "generate_title") {
                 publishState.setTitle(output.trim());

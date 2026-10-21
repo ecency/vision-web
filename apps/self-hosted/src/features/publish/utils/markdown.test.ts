@@ -2,14 +2,10 @@
 
 import { Editor } from '@tiptap/core';
 import Image from '@tiptap/extension-image';
-import Table from '@tiptap/extension-table';
-import TableCell from '@tiptap/extension-table-cell';
-import TableHeader from '@tiptap/extension-table-header';
-import TableRow from '@tiptap/extension-table-row';
+import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import TextAlign from '@tiptap/extension-text-align';
-import StarterKit from '@tiptap/starter-kit';
 import { describe, expect, it } from 'vitest';
-import { LINK_EXTENSION } from './editor-extensions';
+import { LINK_EXTENSION, STARTER_KIT_EXTENSION } from './editor-extensions';
 import {
   hasUnsupportedMarkup,
   htmlToMarkdown,
@@ -24,7 +20,7 @@ import {
 function roundTrip(markdown: string): string {
   const editor = new Editor({
     extensions: [
-      StarterKit,
+      STARTER_KIT_EXTENSION,
       LINK_EXTENSION,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Table.configure({ resizable: true }),

@@ -1,15 +1,12 @@
 import { AnyExtension } from "@tiptap/core";
 import Image from "@tiptap/extension-image";
 import Mention from "@tiptap/extension-mention";
-import Table from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
-import StarterKit from "@tiptap/starter-kit";
+import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 
 import {
   HivePostExtension,
   LoomVideoExtension,
+  PublishStarterKit,
   ThreeSpeakVideoExtension,
   YoutubeVideoExtension
 } from "@/features/tiptap-editor/extensions";
@@ -41,7 +38,7 @@ import {
  *    asserting on it in a spec.
  */
 export const PUBLISH_EDITOR_EXTENSIONS: AnyExtension[] = [
-  StarterKit.configure({ strike: false }) as AnyExtension,
+  PublishStarterKit,
   Image.configure({ inline: true }),
   Table,
   TableRow,

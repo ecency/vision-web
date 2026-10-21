@@ -4,7 +4,7 @@ import { Button, Popover, PopoverContent } from "@/features/ui";
 import { proxifyImageSrc } from "@ecency/render-helper";
 import i18next from "i18next";
 import Paragraph from "@tiptap/extension-paragraph";
-import Placeholder from "@tiptap/extension-placeholder";
+import { Placeholder } from "@tiptap/extensions";
 import Text from "@tiptap/extension-text";
 import { EditorContent, Node, NodeViewProps, NodeViewWrapper, useEditor } from "@tiptap/react";
 import { UilSpinner, UilTrash } from "@tooni/iconscout-unicons-react";
