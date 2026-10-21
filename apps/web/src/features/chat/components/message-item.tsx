@@ -225,7 +225,7 @@ function MessageItemInner({
       data-post-id={post.id}
     >
       {showUnreadDivider && index === firstUnreadIndex && (
-        <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-[--text-muted]">
+        <div className="flex items-center gap-3 text-xs md:text-[11px] font-semibold uppercase tracking-wide text-[--text-muted]">
           <div className="flex-1 border-t border-[--border-color]" />
           <span>New</span>
           <div className="flex-1 border-t border-[--border-color]" />
@@ -234,7 +234,7 @@ function MessageItemInner({
       <div tabIndex={-1} className="group relative -mx-2 flex gap-2.5 rounded px-2 py-0.5 outline-none transition-colors hover:bg-[--surface-color] focus-within:bg-[--surface-color]">
         {isChannelNoticePost(post) ? (
           <div className="w-full flex justify-center">
-            <div className="rounded bg-[--surface-color] px-4 py-2 text-sm text-[--text-muted] text-center">
+            <div className="rounded bg-[--surface-color] px-4 py-2 text-base md:text-sm text-[--text-muted] text-center">
               {post.type === "system_header_change"
                 ? // A group name is plain text: never markdown, links or mentions.
                   getDecodedDisplayMessage(post)
@@ -289,7 +289,7 @@ function MessageItemInner({
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               {/* Header with name and timestamp - show only for group start */}
               {isGroupStart && (
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-[--text-muted]">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-sm md:text-xs text-[--text-muted]">
                   {(() => {
                     const username = getUsername(post);
                     const displayName = getDisplayName(post);
@@ -315,7 +315,7 @@ function MessageItemInner({
                   </span>
                   {!!post.edit_at && post.edit_at > post.create_at && (
                     <span
-                      className="text-[11px] text-[--text-muted] cursor-help"
+                      className="text-xs md:text-[11px] text-[--text-muted] cursor-help"
                       title={`Edited ${new Date(post.edit_at).toLocaleString()}`}
                     >
                       • Edited {formatRelativeTime(post.edit_at)}
@@ -343,7 +343,7 @@ function MessageItemInner({
                         e.stopPropagation();
                         openThread(rootPost);
                       }}
-                      className="text-left border-l-2 border-l-blue-dark-sky pl-2.5 py-0.5 text-xs text-[--text-muted] hover:text-[--text-color] transition-colors"
+                      className="text-left border-l-2 border-l-blue-dark-sky pl-2.5 py-0.5 text-sm md:text-xs text-[--text-muted] hover:text-[--text-color] transition-colors"
                     >
                       <span className="font-medium">{parentUsername || "conversation"}</span>
                       {parentMessage && (
@@ -353,7 +353,7 @@ function MessageItemInner({
                   );
                 })()}
               <div
-                className="space-y-1 break-words text-sm text-[--text-color] [&>*]:m-0"
+                className="space-y-1 break-words text-base md:text-sm text-[--text-color] [&>*]:m-0"
               >
                 {renderMessageContent(getDecodedDisplayMessage(post))}
               </div>

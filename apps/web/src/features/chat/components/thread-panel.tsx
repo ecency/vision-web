@@ -38,7 +38,7 @@ export function ThreadPanel({
           <span className="text-sm font-semibold text-[--text-color]">Thread</span>
           {threadRootPost && (
             <span
-              className="text-[11px] text-[--text-muted] cursor-help"
+              className="text-xs md:text-[11px] text-[--text-muted] cursor-help"
               title={new Date(threadRootPost.create_at).toLocaleString()}
             >
               Started by {getDisplayName(threadRootPost)} •{" "}
@@ -94,7 +94,7 @@ export function ThreadPanel({
                   })()}
                 </div>
                 <div className="flex flex-col gap-1 w-full">
-                  <div className="flex items-center gap-2 text-xs text-[--text-muted]">
+                  <div className="flex items-center gap-2 text-sm md:text-xs text-[--text-muted]">
                     <span className="font-semibold text-[--text-color]">
                       {getDisplayName(post)}
                     </span>
@@ -106,7 +106,7 @@ export function ThreadPanel({
                     </span>
                     {!!post.edit_at && post.edit_at > post.create_at && (
                       <span
-                        className="text-[11px] text-[--text-muted] cursor-help"
+                        className="text-xs md:text-[11px] text-[--text-muted] cursor-help"
                         title={`Edited ${new Date(post.edit_at).toLocaleString()}`}
                       >
                         • Edited {formatRelativeTime(post.edit_at)}
@@ -115,7 +115,7 @@ export function ThreadPanel({
                   </div>
                   <div className="flex flex-col gap-1">
                     <div
-                      className="rounded bg-[--surface-color] p-2.5 text-sm whitespace-pre-wrap break-words space-y-1 [&>*]:m-0"
+                      className="rounded bg-[--surface-color] p-2.5 text-base md:text-sm whitespace-pre-wrap break-words space-y-1 [&>*]:m-0"
                     >
                       {renderMessageContent(getDecodedDisplayMessage(post))}
                     </div>
