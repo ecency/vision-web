@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react';
+import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const updatePost = vi.hoisted(() => vi.fn(async (_input: { body: string }) => undefined));
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children?: unknown }) => children ?? null,
+  Link: ({ children }: { children?: ReactNode }) => <>{children}</>,
 }));
 vi.mock('@tooni/iconscout-unicons-react', () => ({ UilArrowLeft: () => null }));
 vi.mock('../hooks/use-update-post', () => ({

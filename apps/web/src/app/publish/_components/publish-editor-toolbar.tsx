@@ -84,8 +84,7 @@ import { PublishEditorTableToolbar } from "./publish-editor-table-toolbar";
 import { PublishEditorToolbarFragments } from "./publish-editor-toolbar-fragments";
 import { AiImageIcon } from "@/features/shared/ai-image-icon";
 import { UilEditAlt } from "@tooni/iconscout-unicons-react";
-import { parseAllExtensionsToDoc } from "@/features/tiptap-editor";
-import { simpleMarkdownToHTML } from "@ecency/render-helper";
+import { applyRewrittenBody } from "../_utils/apply-rewritten-body";
 
 const PublishEditorDictationDialog = dynamic(
   () =>
@@ -869,11 +868,7 @@ export function PublishEditorToolbar({ editor, allowToUploadVideo = true }: Prop
                 // suggestions aren't grammar/formatting edits, so they leave it unset
                 // (still editable in the AI usage dialog).
                 publishState.setAiTools((prev) => ({ ...prev, writing_edit: true }));
-                const sanitized = simpleMarkdownToHTML(output);
-                const doc = parseAllExtensionsToDoc(sanitized);
-                // Emit the update so the draft (and what gets published) picks up
-                // the applied text right away, not only after the next keystroke.
-                editor?.commands.setContent(doc, { emitUpdate: true });
+                applyRewrittenBody(editor, output);
                 setShowAiAssist(false);
               } else if (action === "generate_title") {
                 publishState.setTitle(output.trim());

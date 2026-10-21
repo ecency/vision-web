@@ -25,6 +25,7 @@ vi.mock("@/app/publish/_editor-extensions", () => ({
 vi.mock("@/features/shared", () => ({ error: vi.fn() }));
 
 import { usePublishEditor } from "@/app/publish/_hooks/use-publish-editor";
+import { applyRewrittenBody } from "@/app/publish/_utils/apply-rewritten-body";
 
 describe("publish editor draft loading", () => {
   beforeEach(() => {
@@ -50,5 +51,18 @@ describe("publish editor draft loading", () => {
 
     expect(publishState.setContent).toHaveBeenCalledTimes(1);
     expect(publishState.setContent.mock.calls[0][0]).toBe("Hello **world!**");
+  });
+
+  it("writes an applied rewrite to the draft without another keystroke", async () => {
+    const { result } = renderHook(() => usePublishEditor(() => undefined));
+    await waitFor(() => expect(result.current.editor?.getText()).toBe("Hello world"));
+
+    act(() => {
+      applyRewrittenBody(result.current.editor, "Rewritten **body**");
+    });
+
+    expect(result.current.editor?.getText()).toBe("Rewritten body");
+    expect(publishState.setContent).toHaveBeenCalledTimes(1);
+    expect(publishState.setContent.mock.calls[0][0]).toBe("Rewritten **body**");
   });
 });
