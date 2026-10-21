@@ -17,8 +17,8 @@ import {
  * assertions are about what a post looks like AFTER it has been loaded into the
  * editor and saved again, which is the path that was silently rewriting posts.
  */
-function roundTrip(markdown: string): string {
-  const editor = new Editor({
+function createEditor(content: string): Editor {
+  return new Editor({
     extensions: [
       STARTER_KIT_EXTENSION,
       LINK_EXTENSION,
@@ -29,8 +29,12 @@ function roundTrip(markdown: string): string {
       TableCell,
       Image.configure({ inline: true }),
     ],
-    content: markdownToHtml(markdown),
+    content,
   });
+}
+
+function roundTrip(markdown: string): string {
+  const editor = createEditor(markdownToHtml(markdown));
 
   try {
     return htmlToMarkdown(editor.getHTML());
@@ -437,5 +441,40 @@ describe('hasUnsupportedMarkup', () => {
     const body = '<iframe src="https://www.youtube.com/embed/abc"></iframe>';
     expect(roundTrip(body)).not.toContain('iframe');
     expect(hasUnsupportedMarkup(body)).toBe(true);
+  });
+});
+
+describe('tables saved by the editor', () => {
+  function savedTable(columns: number): string {
+    const editor = createEditor('<p></p>');
+    try {
+      editor.commands.insertTable({ rows: 2, cols: columns, withHeaderRow: true });
+      return htmlToMarkdown(editor.getHTML());
+    } finally {
+      editor.destroy();
+    }
+  }
+
+  it.each([1, 2, 3])('reopens a %i column table in the rich editor', (columns) => {
+    const saved = savedTable(columns);
+    // Guard: the saved body really carries the width the check is about.
+    expect(saved.replace(/\s+/g, '')).toContain(`min-width:${columns * 25}px`);
+    expect(hasUnsupportedMarkup(saved)).toBe(false);
+  });
+
+  it('counts colspan="0" as no column, the way TipTap does', () => {
+    expect(
+      hasUnsupportedMarkup(
+        '<table style="min-width: 50px;"><tbody><tr><td colspan="0">a</td><td>b</td></tr></tbody></table>',
+      ),
+    ).toBe(true);
+  });
+
+  it('still flags a width that does not match the column count', () => {
+    expect(
+      hasUnsupportedMarkup(
+        '<table style="min-width: 25px;"><tbody><tr><td>a</td><td>b</td></tr></tbody></table>',
+      ),
+    ).toBe(true);
   });
 });

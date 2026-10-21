@@ -19,127 +19,17 @@ import Mention from "@tiptap/extension-mention";
 import { Placeholder } from "@tiptap/extensions";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import TextAlign from "@tiptap/extension-text-align";
-import { Color, TextStyle } from "@tiptap/extension-text-style";
+import { Color } from "@tiptap/extension-text-style";
 import { ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import { simpleMarkdownToHTML } from "@ecency/render-helper";
 import { useCallback, useEffect, useRef } from "react";
 import { PublishEditorImageViewer } from "../_editor-extensions";
-import {
-  TEXT_COLOR_CLASS_PREFIX,
-  getTextColorClassName,
-  getTextColorFromClassName,
-  normalizeTextColor
-} from "../_constants/text-colors";
+import { PublishTextStyle } from "../_editor-extensions/publish-text-style";
 import { useEditorDragDrop } from "./use-editor-drag-drop";
 import { usePublishState } from "./use-publish-state";
 import { usePublishLinksAttach } from "./use-publish-links-attach";
 import i18next from "i18next";
 
-// mergeNestedSpanStyles defaults to true in TipTap 3 and false in TipTap 2.
-// Kept false so pasted nested spans parse exactly as before.
-const PublishTextStyle = TextStyle.extend({
-  addAttributes() {
-    const parentAttributes = (this.parent?.() ?? {}) as Record<string, unknown>;
-    const parentColor = (parentAttributes.color ?? {}) as Record<string, unknown>;
-
-    return {
-      ...parentAttributes,
-      color: {
-        ...parentColor,
-        parseHTML: (element) => {
-          const classAttribute = element.getAttribute("class");
-
-          if (classAttribute) {
-            const classes = classAttribute
-              .split(/\s+/)
-              .map((className) => className.trim())
-              .filter(Boolean);
-
-            for (const className of classes) {
-              const parsed = getTextColorFromClassName(className);
-
-              if (parsed) {
-                return parsed;
-              }
-            }
-          }
-
-          const inlineColor = element.style.color || element.getAttribute("color");
-
-          const normalizedInlineColor = normalizeTextColor(inlineColor);
-          if (normalizedInlineColor) {
-            return normalizedInlineColor;
-          }
-
-          const parentParseHTML =
-            typeof (parentColor as { parseHTML?: unknown }).parseHTML === "function"
-              ? (parentColor as { parseHTML: (element: HTMLElement) => unknown }).parseHTML
-              : null;
-
-          if (parentParseHTML) {
-            const parsed = parentParseHTML(element);
-
-            if (typeof parsed === "string") {
-              const normalized = normalizeTextColor(parsed);
-
-              if (normalized) {
-                return normalized;
-              }
-            }
-          }
-
-          return null;
-        },
-        renderHTML: (attributes) => {
-          const {
-            color,
-            class: className,
-            style,
-            ...otherAttributes
-          } = (attributes ?? {}) as Record<string, string | undefined>;
-
-          const normalizedColor = normalizeTextColor(color);
-
-          const classNames = new Set<string>();
-
-          if (className) {
-            className
-              .split(/\s+/)
-              .map((item) => item.trim())
-              .filter(Boolean)
-              .forEach((item) => {
-                if (!item.startsWith(TEXT_COLOR_CLASS_PREFIX)) {
-                  classNames.add(item);
-                }
-              });
-          }
-
-          if (normalizedColor) {
-            classNames.add(getTextColorClassName(normalizedColor));
-          }
-
-          const renderedAttributes: Record<string, string> = {};
-
-          Object.entries(otherAttributes ?? {}).forEach(([key, value]) => {
-            if (typeof value === "string" && value.length > 0) {
-              renderedAttributes[key] = value;
-            }
-          });
-
-          if (typeof style === "string" && style.length > 0) {
-            renderedAttributes.style = style;
-          }
-
-          if (classNames.size > 0) {
-            renderedAttributes.class = Array.from(classNames).join(" ");
-          }
-
-          return renderedAttributes;
-        }
-      }
-    };
-  }
-}).configure({ mergeNestedSpanStyles: false });
 
 export function usePublishEditor(onHtmlPaste: () => void) {
   const clipboardStrategyRef = useRef<ReturnType<typeof clipboardPlugin> | null>(null);
