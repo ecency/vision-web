@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeRecoverySubmitState } from "@/app/(dynamicPages)/profile/[username]/permissions/_components/account-recovery-utils";
+import { computeRecoverySubmitState, recoveryFormSchema } from "@/app/(dynamicPages)/profile/[username]/permissions/_components/account-recovery-utils";
 
 describe("computeRecoverySubmitState", () => {
   it("hides the Update button when nothing has changed", () => {
@@ -99,5 +99,23 @@ describe("recovery account input", () => {
     });
     expect(self.isSelfRecovery).toBe(true);
     expect(self.canSubmit).toBe(false);
+  });
+});
+
+describe("recoveryFormSchema", () => {
+  const valid = (newRecoveryAccount: string) =>
+    recoveryFormSchema.isValid({ newRecoveryAccount, isEcency: false });
+
+  it("accepts a name typed with @ and capitals", async () => {
+    expect(await valid("@Melinda010100")).toBe(true);
+  });
+
+  it("rejects names the chain would refuse, before any key is asked for", async () => {
+    expect(await valid("")).toBe(false);
+    expect(await valid("bad_name")).toBe(false);
+    expect(await valid("alice%40bob")).toBe(false);
+    await expect(
+      recoveryFormSchema.validateAt("newRecoveryAccount", { newRecoveryAccount: "bad_name" })
+    ).rejects.toThrow("validation.invalid-account-name");
   });
 });

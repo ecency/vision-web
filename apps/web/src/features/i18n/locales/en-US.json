@@ -301,7 +301,8 @@
     "min-length": "Must be at least {{n}} characters",
     "max-length": "Must be at most {{n}} characters",
     "url": "Invalid URL format",
-    "invalid-account-name": "Enter a valid Hive account name, for example ecency."
+    "invalid-account-name": "Enter a valid Hive account name, for example ecency.",
+    "account-not-found": "This account does not exist on Hive."
   },
   "confirm": {
     "title": "Are you sure?",
@@ -2341,6 +2342,7 @@
     "extra-description": "Enter account name below to vote for a witness outside of Top 50",
     "proxy-description": "You can also choose a proxy that will vote for witnesses for you. This will reset your current witness selection.",
     "proxy-btn-label": "Set Proxy",
+    "proxy-self-error": "You can't set yourself as your proxy.",
     "proxy-active-description": "You have set a voting proxy. If you would like to re-enable manual voting, please clear your proxy.",
     "proxy-active-current": "Your current proxy is",
     "proxy-active-btn-label": "Clear Proxy",
