@@ -2552,6 +2552,7 @@
     "success-message": "New recovery agent is effective after 30 days",
     "info-message": "Overwrite pending request? @{{n}}",
     "same-account-error": "You can't set yourself as recovery account!",
+    "invalid-account": "Enter a valid Hive account name, for example ecency.",
     "same-recover-agent-suggestion": "Please change your recovery account to Ecency or any other account",
     "email-placeholder": "Email, used for verifying recovery process",
     "update-successful": "Update successful",

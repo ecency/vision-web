@@ -23,7 +23,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import * as yup from "yup";
 import { getAccessToken, getSdkAuthContext, getUser } from "@/utils";
-import { computeRecoverySubmitState } from "./account-recovery-utils";
+import {
+  computeRecoverySubmitState,
+  isValidRecoveryAccount,
+  normalizeRecoveryAccount
+} from "./account-recovery-utils";
 
 const ECENCY = "ecency";
 
@@ -32,7 +36,9 @@ const schema = yup.object({
   newRecoveryAccount: yup
     .string()
     .required(i18next.t("validation.required"))
-    .min(2, i18next.t("sign-up.username-max-length-error")),
+    .test("hive-account-name", i18next.t("account-recovery.invalid-account"), (value) =>
+      isValidRecoveryAccount(value)
+    ),
   recoveryEmail: yup.string().when("isEcency", {
     is: true,
     then: (s) =>
@@ -66,7 +72,8 @@ export function AccountRecovery() {
     },
     mode: "onChange"
   });
-  const newRecoveryAccount = methods.watch("newRecoveryAccount");
+  // The raw field may hold "@Name " - everything below works on the cleaned name.
+  const newRecoveryAccount = normalizeRecoveryAccount(methods.watch("newRecoveryAccount"));
   // Gating logic lives in a pure helper (account-recovery-utils) so it can be unit-tested.
   const { isSelfRecovery, showUpdate, canSubmit } = computeRecoverySubmitState({
     newRecoveryAccount,
@@ -96,19 +103,20 @@ export function AccountRecovery() {
   }, [canSubmit]);
   const handleSign = useCallback(
     async (type: Parameters<typeof updateRecovery>[0]["type"], key?: PrivateKey) => {
-      const { isEcency, newRecoveryAccount } = methods.getValues();
-      if (isEcency || newRecoveryAccount === ECENCY) {
+      const { isEcency, recoveryEmail } = methods.getValues();
+      const accountName = normalizeRecoveryAccount(methods.getValues().newRecoveryAccount);
+      if (isEcency || accountName === ECENCY) {
         await updateRecovery({
           type: "ecency",
-          email: methods.getValues().recoveryEmail,
-          accountName: methods.getValues().newRecoveryAccount
+          email: recoveryEmail,
+          accountName
         });
       }
 
       await updateRecovery({
         type,
         key,
-        accountName: methods.getValues().newRecoveryAccount
+        accountName
       });
 
       setKeyDialog(false);
@@ -158,7 +166,7 @@ export function AccountRecovery() {
           <div className="text-sm px-2 text-red">
             {methods.formState.errors.newRecoveryAccount?.message}
           </div>
-          {methods.getValues().newRecoveryAccount === activeUser?.username && (
+          {isSelfRecovery && (
             <div className="text-sm px-2 text-red">
               {i18next.t("account-recovery.same-account-error")}
             </div>
