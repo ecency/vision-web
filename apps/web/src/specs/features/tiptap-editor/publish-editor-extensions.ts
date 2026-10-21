@@ -1,11 +1,11 @@
 import { AnyExtension } from "@tiptap/core";
-import Image from "@tiptap/extension-image";
 import Mention from "@tiptap/extension-mention";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 
 import {
   HivePostExtension,
   LoomVideoExtension,
+  PublishImage,
   PublishStarterKit,
   ThreeSpeakVideoExtension,
   YoutubeVideoExtension
@@ -39,7 +39,7 @@ import {
  */
 export const PUBLISH_EDITOR_EXTENSIONS: AnyExtension[] = [
   PublishStarterKit,
-  Image.configure({ inline: true }),
+  PublishImage,
   Table,
   TableRow,
   TableCell,

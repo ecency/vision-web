@@ -12,9 +12,9 @@ import {
   markdownToHtml,
   parseAllExtensionsToDoc,
   LoomVideoExtension,
+  PublishImage,
   PublishStarterKit
 } from "@/features/tiptap-editor";
-import Image from "@tiptap/extension-image";
 import Mention from "@tiptap/extension-mention";
 import { Placeholder } from "@tiptap/extensions";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
@@ -170,9 +170,7 @@ export function usePublishEditor(onHtmlPaste: () => void) {
       TableRow,
       TableCell,
       TableHeader,
-      Image.configure({
-        inline: true
-      }).extend({
+      PublishImage.extend({
         addNodeView() {
           return ReactNodeViewRenderer(PublishEditorImageViewer);
         }

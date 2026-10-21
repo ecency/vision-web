@@ -13,7 +13,7 @@ export const USER_MENTION_SPAN_REGEX =
   /<span[^>]*data-type="mention"[^>]*>@([a-zA-Z0-9\-\.]*)<\/span>/gi;
 
 const MentionList = forwardRef<{ onKeyDown: (e: any) => void }, SuggestionProps<string, any>>(
-  function MentionListForwarded({ items, command }, ref) {
+  function MentionListForwarded({ items, command, loading }, ref) {
     const [selectedIndex, setSelectedIndex] = useState(0);
 
     const selectItem = (index: number) => {
@@ -58,6 +58,12 @@ const MentionList = forwardRef<{ onKeyDown: (e: any) => void }, SuggestionProps<
         return false;
       }
     }));
+
+    // TipTap 3 opens the suggestion before items() resolves. Wait for the
+    // first results instead of flashing "No result" on every keystroke.
+    if (loading && items.length === 0) {
+      return null;
+    }
 
     return (
       <div className="animate-scale-in origin-top overflow-hidden flex flex-col items-start border border-[--border-color] rounded-xl bg-white text-sm">

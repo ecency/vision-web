@@ -22,6 +22,10 @@ export function PublishEditorImageViewer({
   selected
 }: NodeViewProps) {
   const captionEditor = useEditor({
+    // This node view only renders in the browser. TipTap 3 defaults to a
+    // deferred first render under Next.js; create the caption editor at once
+    // as TipTap 2 did.
+    immediatelyRender: true,
     shouldRerenderOnTransaction: true,
     content: alt ?? "",
     extensions: [
