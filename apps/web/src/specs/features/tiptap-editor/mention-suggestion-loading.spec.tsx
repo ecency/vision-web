@@ -85,4 +85,27 @@ describe("mention suggestion while loading", () => {
       expect(document.getElementById("popper-container")!.textContent).toContain("No result")
     );
   });
+
+  it("keeps the previous results while the next search runs", async () => {
+    let editor: any;
+    render(<TestEditor onReady={(e) => (editor = e)} />);
+    await waitFor(() => expect(editor).toBeDefined());
+    const popper = document.getElementById("popper-container")!;
+
+    act(() => {
+      editor.chain().focus().insertContent("@ab").run();
+    });
+    search.state.results = ["ecency"];
+    await act(async () => {
+      search.state.resolve();
+    });
+    await waitFor(() => expect(popper.textContent).toContain("ecency"));
+
+    // Next keystroke starts a new search that has not resolved yet.
+    act(() => {
+      editor.chain().insertContent("c").run();
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(popper.textContent).toContain("ecency");
+  });
 });
