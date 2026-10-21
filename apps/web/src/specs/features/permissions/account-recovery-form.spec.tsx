@@ -8,6 +8,8 @@ import { AccountRecovery } from "@/app/(dynamicPages)/profile/[username]/permiss
 const state = vi.hoisted(() => ({
   // Accounts the mocked chain lookup reports as existing.
   existing: new Set<string>(),
+  // When set, the chain lookup waits on this promise so a test can act mid-request.
+  lookupGate: null as Promise<void> | null,
   updateRecovery: vi.fn(async () => undefined)
 }));
 
@@ -37,8 +39,12 @@ vi.mock("@ecency/sdk", async () => ({
   }),
   getAccountsQueryOptions: (names: string[]) => ({
     queryKey: ["accounts", ...names],
-    queryFn: async () =>
-      names.filter((name) => state.existing.has(name)).map((name) => ({ name }))
+    queryFn: async () => {
+      if (state.lookupGate) {
+        await state.lookupGate;
+      }
+      return names.filter((name) => state.existing.has(name)).map((name) => ({ name }));
+    }
   }),
   useAccountUpdateRecovery: () => ({ mutateAsync: state.updateRecovery, isPending: false })
 }));
@@ -46,7 +52,8 @@ vi.mock("@ecency/sdk", async () => ({
 describe("AccountRecovery form", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    state.existing = new Set(["melinda010100"]);
+    state.existing = new Set(["melinda010100", "otheruser"]);
+    state.lookupGate = null;
     vi.mocked(useActiveAccount).mockReturnValue({
       activeUser: { username: "krk101" },
       username: "krk101"
@@ -91,5 +98,30 @@ describe("AccountRecovery form", () => {
     expect(await screen.findByText("validation.account-not-found")).toBeInTheDocument();
     expect(screen.queryByText("sign-with-keychain")).not.toBeInTheDocument();
     expect(state.updateRecovery).not.toHaveBeenCalled();
+  });
+
+  it("signs the name that was checked, even if the field is edited during the lookup", async () => {
+    let release!: () => void;
+    state.lookupGate = new Promise<void>((resolve) => (release = resolve));
+    renderWithQueryClient(<AccountRecovery />);
+
+    await typeAndSubmit("melinda010100");
+    const input = screen.getByDisplayValue("melinda010100");
+    await waitFor(() => expect(input).toBeDisabled());
+
+    // An edit sneaking in while the lookup is pending must not change what gets signed.
+    fireEvent.change(input, { target: { value: "otheruser" } });
+    release();
+    fireEvent.click(await screen.findByText("sign-with-keychain"));
+
+    await waitFor(() => expect(state.updateRecovery).toHaveBeenCalled());
+    expect(state.updateRecovery).toHaveBeenCalledWith({
+      type: "keychain",
+      key: undefined,
+      accountName: "melinda010100"
+    });
+    expect(state.updateRecovery).not.toHaveBeenCalledWith(
+      expect.objectContaining({ accountName: "otheruser" })
+    );
   });
 });

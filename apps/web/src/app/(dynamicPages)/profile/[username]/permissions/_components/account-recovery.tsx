@@ -43,6 +43,9 @@ export function AccountRecovery() {
   const [formInitiated, setFormInitiated] = useState(false);
   const [keyDialog, setKeyDialog] = useState(false);
   const [checkingAccount, setCheckingAccount] = useState(false);
+  // The name that passed the existence check. Signing uses this, never the live field,
+  // so an edit made while the lookup was pending cannot reach the chain unchecked.
+  const [checkedAccount, setCheckedAccount] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const methods = useForm({
@@ -82,14 +85,16 @@ export function AccountRecovery() {
       return;
     }
     // Catch a typo before the owner key is asked for: the chain would reject it anyway.
+    const accountName = newRecoveryAccount;
     setCheckingAccount(true);
     try {
-      if (!(await accountExists(queryClient, newRecoveryAccount))) {
+      if (!(await accountExists(queryClient, accountName))) {
         methods.setError("newRecoveryAccount", {
           message: i18next.t("validation.account-not-found")
         });
         return;
       }
+      setCheckedAccount(accountName);
       setKeyDialog(true);
     } catch (e) {
       error(...formatError(e));
@@ -99,9 +104,12 @@ export function AccountRecovery() {
   }, [canSubmit, checkingAccount, methods, newRecoveryAccount, queryClient]);
   const handleSign = useCallback(
     async (type: Parameters<typeof updateRecovery>[0]["type"], key?: PrivateKey) => {
-      const { isEcency, recoveryEmail, newRecoveryAccount } = methods.getValues();
-      const accountName = normalizeAccountName(newRecoveryAccount);
-      if (isEcency || accountName === ECENCY) {
+      const accountName = checkedAccount;
+      if (!accountName) {
+        return;
+      }
+      const { recoveryEmail } = methods.getValues();
+      if (accountName === ECENCY) {
         await updateRecovery({
           type: "ecency",
           email: recoveryEmail,
@@ -117,7 +125,7 @@ export function AccountRecovery() {
 
       setKeyDialog(false);
     },
-    [methods, updateRecovery]
+    [checkedAccount, methods, updateRecovery]
   );
 
   useEffect(() => {
@@ -157,6 +165,7 @@ export function AccountRecovery() {
             type="text"
             autoFocus={true}
             autoComplete="off"
+            disabled={checkingAccount}
             aria-invalid={!!methods.formState.errors.newRecoveryAccount}
           />
           <div className="text-sm px-2 text-red">
