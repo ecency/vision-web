@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { renderWithQueryClient } from "@/specs/test-utils";
 import { WalletOperationWithdrawRoutesForm } from "@/features/wallet/operations/wallet-operation-withdraw-routes-form";
@@ -14,6 +14,9 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
+// Accounts the mocked chain lookup reports as existing.
+const existingAccounts = new Set<string>();
+
 vi.mock("@ecency/sdk", async () => {
   const actual = await vi.importActual("@ecency/sdk");
   return {
@@ -21,6 +24,11 @@ vi.mock("@ecency/sdk", async () => {
     getBadActorsQueryOptions: vi.fn(() => ({
       queryKey: ["bad-actors"],
       queryFn: vi.fn()
+    })),
+    getAccountsQueryOptions: vi.fn((names: string[]) => ({
+      queryKey: ["accounts", ...names],
+      queryFn: async () =>
+        names.filter((name) => existingAccounts.has(name)).map((name) => ({ name }))
     }))
   };
 });
@@ -30,6 +38,8 @@ describe("WalletOperationWithdrawRoutesForm", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    existingAccounts.clear();
+    existingAccounts.add("alice");
 
     (useActiveAccount as any).mockReturnValue({
       activeUser: { username: "testuser" },
@@ -81,5 +91,38 @@ describe("WalletOperationWithdrawRoutesForm", () => {
     );
 
     expect(screen.queryByText("transfer.to-bad-actor")).not.toBeInTheDocument();
+  });
+
+  test("submits the bare account name when typed with @, spaces and capitals", async () => {
+    const { container } = renderWithQueryClient(
+      <WalletOperationWithdrawRoutesForm onSubmit={onSubmit} initialValues={{ account: " @Alice " }} />
+    );
+
+    fireEvent.submit(container.querySelector("form")!);
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0].to_account).toBe("alice");
+  });
+
+  test("shows an error instead of submitting when the account does not exist", async () => {
+    const { container } = renderWithQueryClient(
+      <WalletOperationWithdrawRoutesForm onSubmit={onSubmit} initialValues={{ account: "nosuchuser" }} />
+    );
+
+    fireEvent.submit(container.querySelector("form")!);
+
+    expect(await screen.findByText("validation.account-not-found")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  test("does not submit a name the chain would reject", async () => {
+    const { container } = renderWithQueryClient(
+      <WalletOperationWithdrawRoutesForm onSubmit={onSubmit} initialValues={{ account: "bad_name" }} />
+    );
+
+    fireEvent.submit(container.querySelector("form")!);
+
+    expect(await screen.findByText("validation.invalid-account-name")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

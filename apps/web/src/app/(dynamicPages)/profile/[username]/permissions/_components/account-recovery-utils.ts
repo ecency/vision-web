@@ -1,6 +1,24 @@
 // Pure gating logic for the account-recovery form, extracted so it can be unit-tested
 // without rendering the whole settings component.
 
+import i18next from "i18next";
+import * as yup from "yup";
+import { isValidAccountName, normalizeAccountName } from "@/utils/hive-account-name";
+
+export const recoveryFormSchema = yup.object({
+  isEcency: yup.boolean().optional(),
+  newRecoveryAccount: yup
+    .string()
+    .required(i18next.t("validation.required"))
+    .test("hive-account-name", i18next.t("validation.invalid-account-name"), isValidAccountName),
+  recoveryEmail: yup.string().when("isEcency", {
+    is: true,
+    then: (s) =>
+      s.required(i18next.t("validation.required")).email(i18next.t("validation.invalid-email")),
+    otherwise: (s) => s.optional()
+  })
+});
+
 export interface RecoverySubmitParams {
   /** The recovery account currently entered in the form. */
   newRecoveryAccount?: string;
@@ -34,6 +52,7 @@ export function computeRecoverySubmitState({
   activeUsername,
   formInitiated
 }: RecoverySubmitParams): RecoverySubmitState {
+  newRecoveryAccount = normalizeAccountName(newRecoveryAccount);
   const isSelfRecovery = !!newRecoveryAccount && newRecoveryAccount === activeUsername;
   const isRecoveryAccountChanged =
     !!newRecoveryAccount && newRecoveryAccount !== currentRecoveryAccount;

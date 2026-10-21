@@ -7,11 +7,17 @@ import i18next from "i18next";
 import { Button, FormControl } from "@/features/ui";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { getBadActorsQueryOptions } from "@ecency/sdk";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatError } from "@/api/format-error";
+import { error } from "@/features/shared";
+import { accountExists, isValidAccountName, normalizeAccountName } from "@/utils/hive-account-name";
 
 // Define schema outside the component to prevent recreation on each render
 const schema = yup.object({
-  account: yup.string().required(i18next.t("withdraw-routes.validation-account")).min(3).max(20),
+  account: yup
+    .string()
+    .required(i18next.t("withdraw-routes.validation-account"))
+    .test("hive-account-name", i18next.t("validation.invalid-account-name"), isValidAccountName),
   percent: yup.number().required(i18next.t("withdraw-routes.validation-percent")).min(0).max(100),
   auto: yup.string().required()
 });
@@ -34,6 +40,7 @@ interface Props {
 export function WalletOperationWithdrawRoutesForm({ onSubmit, initialValues }: Props) {
   const { activeUser } = useActiveAccount();
   const { data: badActors } = useQuery(getBadActorsQueryOptions());
+  const queryClient = useQueryClient();
   const methods = useForm<WithdrawRoutesFormData>({
     resolver: yupResolver(schema),
     defaultValues: {
@@ -47,15 +54,26 @@ export function WalletOperationWithdrawRoutesForm({ onSubmit, initialValues }: P
     <FormProvider {...methods}>
       <form
         className="border-b border-[--border-color] p-4 items-end grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-        onSubmit={methods.handleSubmit((data) =>
+        onSubmit={methods.handleSubmit(async (data) => {
+          const toAccount = normalizeAccountName(data.account);
+          // Catch a typo before the sign step: the chain would reject it anyway.
+          try {
+            if (!(await accountExists(queryClient, toAccount))) {
+              methods.setError("account", { message: i18next.t("validation.account-not-found") });
+              return;
+            }
+          } catch (e) {
+            error(...formatError(e));
+            return;
+          }
           onSubmit({
             from: activeUser!.username,
             from_account: activeUser!.username,
-            to_account: data.account,
+            to_account: toAccount,
             auto_vest: data.auto === "yes",
             percent: data.percent * 100
-          })
-        )}
+          });
+        })}
       >
         <div className="lg:col-span-3">
           <label>{i18next.t("withdraw-routes.account")}</label>
@@ -73,7 +91,7 @@ export function WalletOperationWithdrawRoutesForm({ onSubmit, initialValues }: P
               {methods.formState.errors.account.message}
             </div>
           )}
-          {badActors?.has(methods.watch("account")?.trim().toLowerCase()) && (
+          {badActors?.has(normalizeAccountName(methods.watch("account"))) && (
             <div className="animate-fade-in-up text-warning-default text-xs px-3 pt-0.5">
               {i18next.t("transfer.to-bad-actor")}
             </div>
@@ -99,7 +117,13 @@ export function WalletOperationWithdrawRoutesForm({ onSubmit, initialValues }: P
             <option value="no">{i18next.t("g.no")}</option>
           </FormControl>
         </div>
-        <Button appearance="gray" size="lg" full={true} type="submit">
+        <Button
+          appearance="gray"
+          size="lg"
+          full={true}
+          type="submit"
+          disabled={methods.formState.isSubmitting}
+        >
           {i18next.t("g.add")}
         </Button>
       </form>

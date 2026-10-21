@@ -13,7 +13,7 @@ import {
 import { PrivateKey } from "@ecency/sdk";
 import { buildHsCallbackUrl } from "@/utils/hs-callback";
 import { yupResolver } from "@hookform/resolvers/yup";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UilEditAlt } from "@tooni/iconscout-unicons-react";
 import { Button } from "@ui/button";
 import { FormControl, InputGroup } from "@ui/input";
@@ -21,25 +21,11 @@ import { Modal, ModalBody, ModalHeader } from "@ui/modal";
 import i18next from "i18next";
 import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import * as yup from "yup";
 import { getAccessToken, getSdkAuthContext, getUser } from "@/utils";
-import { computeRecoverySubmitState } from "./account-recovery-utils";
+import { accountExists, normalizeAccountName } from "@/utils/hive-account-name";
+import { computeRecoverySubmitState, recoveryFormSchema } from "./account-recovery-utils";
 
 const ECENCY = "ecency";
-
-const schema = yup.object({
-  isEcency: yup.boolean().optional(),
-  newRecoveryAccount: yup
-    .string()
-    .required(i18next.t("validation.required"))
-    .min(2, i18next.t("sign-up.username-max-length-error")),
-  recoveryEmail: yup.string().when("isEcency", {
-    is: true,
-    then: (s) =>
-      s.required(i18next.t("validation.required")).email(i18next.t("validation.invalid-email")),
-    otherwise: (s) => s.optional()
-  })
-});
 
 export function AccountRecovery() {
   const { activeUser } = useActiveAccount();
@@ -56,9 +42,14 @@ export function AccountRecovery() {
   );
   const [formInitiated, setFormInitiated] = useState(false);
   const [keyDialog, setKeyDialog] = useState(false);
+  const [checkingAccount, setCheckingAccount] = useState(false);
+  // The name that passed the existence check. Signing uses this, never the live field,
+  // so an edit made while the lookup was pending cannot reach the chain unchecked.
+  const [checkedAccount, setCheckedAccount] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const methods = useForm({
-    resolver: yupResolver(schema),
+    resolver: yupResolver(recoveryFormSchema),
     defaultValues: {
       newRecoveryAccount: "",
       recoveryEmail: "",
@@ -66,7 +57,8 @@ export function AccountRecovery() {
     },
     mode: "onChange"
   });
-  const newRecoveryAccount = methods.watch("newRecoveryAccount");
+  // The raw field may hold "@Name " - everything below works on the cleaned name.
+  const newRecoveryAccount = normalizeAccountName(methods.watch("newRecoveryAccount"));
   // Gating logic lives in a pure helper (account-recovery-utils) so it can be unit-tested.
   const { isSelfRecovery, showUpdate, canSubmit } = computeRecoverySubmitState({
     newRecoveryAccount,
@@ -86,34 +78,54 @@ export function AccountRecovery() {
     getSdkAuthContext(getUser(activeUser?.username ?? ""))
   );
 
-  const update = useCallback(() => {
+  const update = useCallback(async () => {
     // Enforce the same gate as the Update button so an Enter-key form submit can't bypass it:
     // no submit when the recovery account is unchanged (showUpdate=false) or is self-recovery.
-    if (!canSubmit) {
+    if (!canSubmit || checkingAccount) {
       return;
     }
-    setKeyDialog(true);
-  }, [canSubmit]);
+    // Catch a typo before the owner key is asked for: the chain would reject it anyway.
+    const accountName = newRecoveryAccount;
+    setCheckingAccount(true);
+    try {
+      if (!(await accountExists(queryClient, accountName))) {
+        methods.setError("newRecoveryAccount", {
+          message: i18next.t("validation.account-not-found")
+        });
+        return;
+      }
+      setCheckedAccount(accountName);
+      setKeyDialog(true);
+    } catch (e) {
+      error(...formatError(e));
+    } finally {
+      setCheckingAccount(false);
+    }
+  }, [canSubmit, checkingAccount, methods, newRecoveryAccount, queryClient]);
   const handleSign = useCallback(
     async (type: Parameters<typeof updateRecovery>[0]["type"], key?: PrivateKey) => {
-      const { isEcency, newRecoveryAccount } = methods.getValues();
-      if (isEcency || newRecoveryAccount === ECENCY) {
+      const accountName = checkedAccount;
+      if (!accountName) {
+        return;
+      }
+      const { recoveryEmail } = methods.getValues();
+      if (accountName === ECENCY) {
         await updateRecovery({
           type: "ecency",
-          email: methods.getValues().recoveryEmail,
-          accountName: methods.getValues().newRecoveryAccount
+          email: recoveryEmail,
+          accountName
         });
       }
 
       await updateRecovery({
         type,
         key,
-        accountName: methods.getValues().newRecoveryAccount
+        accountName
       });
 
       setKeyDialog(false);
     },
-    [methods, updateRecovery]
+    [checkedAccount, methods, updateRecovery]
   );
 
   useEffect(() => {
@@ -153,12 +165,13 @@ export function AccountRecovery() {
             type="text"
             autoFocus={true}
             autoComplete="off"
+            disabled={checkingAccount}
             aria-invalid={!!methods.formState.errors.newRecoveryAccount}
           />
           <div className="text-sm px-2 text-red">
             {methods.formState.errors.newRecoveryAccount?.message}
           </div>
-          {methods.getValues().newRecoveryAccount === activeUser?.username && (
+          {isSelfRecovery && (
             <div className="text-sm px-2 text-red">
               {i18next.t("account-recovery.same-account-error")}
             </div>
@@ -199,7 +212,7 @@ export function AccountRecovery() {
 
         <div className="w-full flex flex-end">
           {showUpdate && (
-              <Button size="sm" type="submit" disabled={isSelfRecovery}>
+              <Button size="sm" type="submit" disabled={isSelfRecovery || checkingAccount}>
                 {i18next.t("g.update")}
               </Button>
           )}
