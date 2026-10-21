@@ -4,7 +4,7 @@ import { Button, Popover, PopoverContent } from "@/features/ui";
 import { proxifyImageSrc } from "@ecency/render-helper";
 import i18next from "i18next";
 import Paragraph from "@tiptap/extension-paragraph";
-import Placeholder from "@tiptap/extension-placeholder";
+import { Placeholder } from "@tiptap/extensions";
 import Text from "@tiptap/extension-text";
 import { EditorContent, Node, NodeViewProps, NodeViewWrapper, useEditor } from "@tiptap/react";
 import { UilSpinner, UilTrash } from "@tooni/iconscout-unicons-react";
@@ -22,6 +22,10 @@ export function PublishEditorImageViewer({
   selected
 }: NodeViewProps) {
   const captionEditor = useEditor({
+    // This node view only renders in the browser. TipTap 3 defaults to a
+    // deferred first render under Next.js; create the caption editor at once
+    // as TipTap 2 did.
+    immediatelyRender: true,
     shouldRerenderOnTransaction: true,
     content: alt ?? "",
     extensions: [

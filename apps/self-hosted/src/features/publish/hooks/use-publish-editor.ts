@@ -1,14 +1,10 @@
 import { useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
-import Placeholder from "@tiptap/extension-placeholder";
-import Table from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
+import { Placeholder } from "@tiptap/extensions";
+import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import TextAlign from "@tiptap/extension-text-align";
 import { useCallback, useEffect } from "react";
-import { LINK_EXTENSION } from "../utils/editor-extensions";
+import { LINK_EXTENSION, STARTER_KIT_EXTENSION } from "../utils/editor-extensions";
 import { htmlToMarkdown, markdownToHtml } from "../utils/markdown";
 import { usePublishState } from "./use-publish-state";
 
@@ -19,7 +15,7 @@ export function usePublishEditor() {
     immediatelyRender: false,
     shouldRerenderOnTransaction: true,
     extensions: [
-      StarterKit,
+      STARTER_KIT_EXTENSION,
       LINK_EXTENSION,
       Placeholder.configure({
         placeholder: "Start writing..."
@@ -51,16 +47,16 @@ export function usePublishEditor() {
 
       try {
         if (!content || content.trim() === "") {
-          editor.commands.setContent("");
+          editor.commands.setContent("", { emitUpdate: false });
           return;
         }
 
         // Convert markdown to HTML and load into editor
         const html = markdownToHtml(content);
-        editor.commands.setContent(html);
+        editor.commands.setContent(html, { emitUpdate: false });
       } catch (error) {
         console.error("Failed to load content into editor:", error);
-        editor.commands.setContent("");
+        editor.commands.setContent("", { emitUpdate: false });
       }
     },
     [editor]
@@ -76,7 +72,7 @@ export function usePublishEditor() {
   // Handle editor clearing when content is cleared
   useEffect(() => {
     if (!publishState.content && editor?.getText() !== "") {
-      editor?.commands.setContent("");
+      editor?.commands.setContent("", { emitUpdate: false });
     }
   }, [editor, publishState.content]);
 

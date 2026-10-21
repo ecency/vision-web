@@ -4,19 +4,33 @@ import { computePosition, flip } from "@floating-ui/dom";
 import { InfiniteData } from "@tanstack/react-query";
 import { PluginKey } from "@tiptap/pm/state";
 import { ReactRenderer } from "@tiptap/react";
-import { SuggestionProps } from "@tiptap/suggestion";
+import { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
 import clsx from "clsx";
-import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 export const TAG_MENTION_PURE_REGEX = /#\w+/gi;
 export const TAG_MENTION_SPAN_REGEX =
   /<span[^>]*data-type="tag"[^>]*>#([a-zA-Z0-9\-\.]*)<\/span>/gi;
 
-const MentionList = forwardRef<{ onKeyDown: (e: any) => void }, SuggestionProps<string, any>>(
-  function MentionListForwarded({ items, command }, ref) {
+const MentionList = forwardRef<
+  { onKeyDown: (props: SuggestionKeyDownProps) => boolean },
+  SuggestionProps<string, { id: string }>
+>(
+  function MentionListForwarded({ items: incomingItems, command, loading }, ref) {
+    // TipTap 3 sends items: [] with loading: true on every new query, before
+    // items() resolves. Keep showing the last results meanwhile, as TipTap 2
+    // did, but do not let them be picked: they belong to the previous query.
+    const lastItems = useRef(incomingItems);
+    if (!loading) {
+      lastItems.current = incomingItems;
+    }
+    const items = loading ? lastItems.current : incomingItems;
     const [selectedIndex, setSelectedIndex] = useState(0);
 
     const selectItem = (index: number) => {
+      if (loading) {
+        return;
+      }
       const item = items[index];
 
       if (item) {
@@ -40,6 +54,11 @@ const MentionList = forwardRef<{ onKeyDown: (e: any) => void }, SuggestionProps<
 
     useImperativeHandle(ref, () => ({
       onKeyDown: ({ event }) => {
+        // Nothing shown yet: let the editor handle the key.
+        if (loading && items.length === 0) {
+          return false;
+        }
+
         if (event.key === "ArrowUp") {
           upHandler();
           return true;
@@ -59,8 +78,19 @@ const MentionList = forwardRef<{ onKeyDown: (e: any) => void }, SuggestionProps<
       }
     }));
 
+    // Wait for the first results instead of flashing "No result".
+    if (loading && items.length === 0) {
+      return null;
+    }
+
     return (
-      <div className="animate-scale-in origin-top overflow-hidden flex flex-col items-start border border-[--border-color] rounded-xl bg-white text-sm">
+      <div
+        className={clsx(
+          "animate-scale-in origin-top overflow-hidden flex flex-col items-start border border-[--border-color] rounded-xl bg-white text-sm",
+          loading && "opacity-50"
+        )}
+        aria-busy={loading}
+      >
         {items.map((item, index) => (
           <div
             className={clsx(

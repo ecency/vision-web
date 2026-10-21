@@ -18,7 +18,7 @@ interface TextContent {
  * `<iframe src=...></iframe>` puts `&lt;iframe src=...&gt;` in the document as
  * visible text. The same branch double-escapes when the parse is text alone:
  * `A &amp; B` arrives as those literal characters rather than `A & B`.
- * See @tiptap/core 2.26.2 dist/index.js, insertContentAt.
+ * See insertContentAt in @tiptap/core dist/index.js (unchanged from 2.26 to 3.32).
  *
  * @param schema the editor's schema, which decides what renders at all
  * @param html normalised HTML, straight from parseAllExtensionsToDoc

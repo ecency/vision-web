@@ -1,17 +1,13 @@
 import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
-import Placeholder from "@tiptap/extension-placeholder";
-import Table from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
+import { Placeholder } from "@tiptap/extensions";
+import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import TextAlign from "@tiptap/extension-text-align";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { UilArrowLeft } from "@tooni/iconscout-unicons-react";
 import { t } from "@/core";
-import { LINK_EXTENSION } from "../utils/editor-extensions";
+import { LINK_EXTENSION, STARTER_KIT_EXTENSION } from "../utils/editor-extensions";
 import {
   hasUnsupportedMarkup,
   htmlToMarkdown,
@@ -59,7 +55,7 @@ export function EditPostEditor({
     immediatelyRender: false,
     shouldRerenderOnTransaction: true,
     extensions: [
-      StarterKit,
+      STARTER_KIT_EXTENSION,
       LINK_EXTENSION,
       Placeholder.configure({ placeholder: t("editor_start_writing") }),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
@@ -83,10 +79,10 @@ export function EditPostEditor({
     if (editor && initialBody) {
       try {
         const html = markdownToHtml(initialBody);
-        editor.commands.setContent(html);
+        editor.commands.setContent(html, { emitUpdate: false });
       } catch (e) {
         console.error("Failed to load content into editor:", e);
-        editor.commands.setContent("");
+        editor.commands.setContent("", { emitUpdate: false });
       }
     }
   }, [editAsMarkdown, editor, initialBody]);

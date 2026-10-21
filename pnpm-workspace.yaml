@@ -57,8 +57,12 @@ overrides:
   # of the ProseMirror graph resolved to, and without this it installs a SECOND copy —
   # two prosemirror-model instances mean nodes and schemas fail cross-copy identity
   # checks inside the editor. Both must stay single-version.
+  # TipTap 3's @tiptap/pm asks for newer prosemirror-state/-transform than other
+  # packages in the graph, which left two copies of each, so they are pinned too.
   prosemirror-view: "^1.42.3"
   prosemirror-model: "^1.25.11"
+  prosemirror-state: "^1.4.4"
+  prosemirror-transform: "^1.12.2"
   # NOTE: @opentelemetry/core is intentionally NOT overridden — forcing 2.8.x breaks
   # @sentry/nextjs' pinned OpenTelemetry graph (undefined `AlwaysOn`). Its advisory stays
   # until @sentry/nextjs is bumped.
