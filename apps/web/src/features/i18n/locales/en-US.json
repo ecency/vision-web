@@ -300,7 +300,8 @@
     "required": "Required field",
     "min-length": "Must be at least {{n}} characters",
     "max-length": "Must be at most {{n}} characters",
-    "url": "Invalid URL format"
+    "url": "Invalid URL format",
+    "invalid-account-name": "Enter a valid Hive account name, for example ecency."
   },
   "confirm": {
     "title": "Are you sure?",
@@ -2552,7 +2553,6 @@
     "success-message": "New recovery agent is effective after 30 days",
     "info-message": "Overwrite pending request? @{{n}}",
     "same-account-error": "You can't set yourself as recovery account!",
-    "invalid-account": "Enter a valid Hive account name, for example ecency.",
     "same-recover-agent-suggestion": "Please change your recovery account to Ecency or any other account",
     "email-placeholder": "Email, used for verifying recovery process",
     "update-successful": "Update successful",

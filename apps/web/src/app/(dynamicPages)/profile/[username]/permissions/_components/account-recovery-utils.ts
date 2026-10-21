@@ -1,21 +1,7 @@
 // Pure gating logic for the account-recovery form, extracted so it can be unit-tested
 // without rendering the whole settings component.
 
-import { utils as hiveUtils } from "@ecency/sdk/hive";
-import { sanitizeWalletUsername } from "@/features/wallet/utils/sanitize-username";
-
-/**
- * Turn what the user typed into an account name the chain accepts: drop surrounding
- * spaces and a leading "@", lowercase. "@Alice " becomes "alice".
- */
-export function normalizeRecoveryAccount(value?: string | null): string {
-  return sanitizeWalletUsername(value);
-}
-
-/** True when the (normalized) input follows Hive's account name rules. */
-export function isValidRecoveryAccount(value?: string | null): boolean {
-  return hiveUtils.validateUsername(normalizeRecoveryAccount(value)) === null;
-}
+import { normalizeAccountName } from "@/utils/hive-account-name";
 
 export interface RecoverySubmitParams {
   /** The recovery account currently entered in the form. */
@@ -50,7 +36,7 @@ export function computeRecoverySubmitState({
   activeUsername,
   formInitiated
 }: RecoverySubmitParams): RecoverySubmitState {
-  newRecoveryAccount = normalizeRecoveryAccount(newRecoveryAccount);
+  newRecoveryAccount = normalizeAccountName(newRecoveryAccount);
   const isSelfRecovery = !!newRecoveryAccount && newRecoveryAccount === activeUsername;
   const isRecoveryAccountChanged =
     !!newRecoveryAccount && newRecoveryAccount !== currentRecoveryAccount;

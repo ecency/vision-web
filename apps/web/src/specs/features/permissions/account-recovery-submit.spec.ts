@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  computeRecoverySubmitState,
-  isValidRecoveryAccount,
-  normalizeRecoveryAccount
-} from "@/app/(dynamicPages)/profile/[username]/permissions/_components/account-recovery-utils";
+import { computeRecoverySubmitState } from "@/app/(dynamicPages)/profile/[username]/permissions/_components/account-recovery-utils";
 
 describe("computeRecoverySubmitState", () => {
   it("hides the Update button when nothing has changed", () => {
@@ -86,23 +82,6 @@ describe("computeRecoverySubmitState", () => {
 });
 
 describe("recovery account input", () => {
-  it("strips a leading @, spaces and casing so the chain gets a bare name", () => {
-    expect(normalizeRecoveryAccount("@melinda010100")).toBe("melinda010100");
-    expect(normalizeRecoveryAccount("  @@Trustee ")).toBe("trustee");
-    expect(normalizeRecoveryAccount(undefined)).toBe("");
-  });
-
-  it("accepts names typed with @ and rejects names the chain would refuse", () => {
-    expect(isValidRecoveryAccount("@melinda010100")).toBe(true);
-    expect(isValidRecoveryAccount("good.name")).toBe(true);
-    expect(isValidRecoveryAccount("")).toBe(false);
-    expect(isValidRecoveryAccount("ab")).toBe(false);
-    expect(isValidRecoveryAccount("1abc")).toBe(false);
-    expect(isValidRecoveryAccount("bad_name")).toBe(false);
-    expect(isValidRecoveryAccount("abc-")).toBe(false);
-    expect(isValidRecoveryAccount("a".repeat(17))).toBe(false);
-  });
-
   it("treats @ and case variants of the current or own account as unchanged / self", () => {
     const unchanged = computeRecoverySubmitState({
       newRecoveryAccount: "@Ecency",

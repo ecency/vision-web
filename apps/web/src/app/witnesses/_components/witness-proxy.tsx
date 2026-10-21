@@ -7,6 +7,7 @@ import { error, LoginRequired } from "@/features/shared";
 import i18next from "i18next";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useWitnessProxyMutation } from "@/api/sdk-mutations";
+import { isValidAccountName, normalizeAccountName } from "@/utils/hive-account-name";
 import "./witness-proxy.scss";
 
 interface Props {
@@ -18,10 +19,11 @@ export function WitnessesProxy({ onDone }: Props) {
 
   const [username, setUsername] = useState("");
   const { mutateAsync, isPending } = useWitnessProxyMutation();
+  const canSetProxy = isValidAccountName(username);
 
   const setProxy = async () => {
     try {
-      await mutateAsync({ proxy: username });
+      await mutateAsync({ proxy: normalizeAccountName(username) });
       onDone();
       setUsername("");
     } catch (e) {
@@ -45,7 +47,7 @@ export function WitnessesProxy({ onDone }: Props) {
         </div>
         <div>
           {activeUser ? (
-            username ? (
+            canSetProxy ? (
               <Button
                 disabled={isPending}
                 icon={isPending && <Spinner className="mr-[6px] size-3.5" />}

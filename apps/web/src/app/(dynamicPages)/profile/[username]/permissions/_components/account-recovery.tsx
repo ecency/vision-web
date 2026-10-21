@@ -23,11 +23,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import * as yup from "yup";
 import { getAccessToken, getSdkAuthContext, getUser } from "@/utils";
-import {
-  computeRecoverySubmitState,
-  isValidRecoveryAccount,
-  normalizeRecoveryAccount
-} from "./account-recovery-utils";
+import { isValidAccountName, normalizeAccountName } from "@/utils/hive-account-name";
+import { computeRecoverySubmitState } from "./account-recovery-utils";
 
 const ECENCY = "ecency";
 
@@ -36,9 +33,7 @@ const schema = yup.object({
   newRecoveryAccount: yup
     .string()
     .required(i18next.t("validation.required"))
-    .test("hive-account-name", i18next.t("account-recovery.invalid-account"), (value) =>
-      isValidRecoveryAccount(value)
-    ),
+    .test("hive-account-name", i18next.t("validation.invalid-account-name"), isValidAccountName),
   recoveryEmail: yup.string().when("isEcency", {
     is: true,
     then: (s) =>
@@ -73,7 +68,7 @@ export function AccountRecovery() {
     mode: "onChange"
   });
   // The raw field may hold "@Name " - everything below works on the cleaned name.
-  const newRecoveryAccount = normalizeRecoveryAccount(methods.watch("newRecoveryAccount"));
+  const newRecoveryAccount = normalizeAccountName(methods.watch("newRecoveryAccount"));
   // Gating logic lives in a pure helper (account-recovery-utils) so it can be unit-tested.
   const { isSelfRecovery, showUpdate, canSubmit } = computeRecoverySubmitState({
     newRecoveryAccount,
@@ -103,8 +98,8 @@ export function AccountRecovery() {
   }, [canSubmit]);
   const handleSign = useCallback(
     async (type: Parameters<typeof updateRecovery>[0]["type"], key?: PrivateKey) => {
-      const { isEcency, recoveryEmail } = methods.getValues();
-      const accountName = normalizeRecoveryAccount(methods.getValues().newRecoveryAccount);
+      const { isEcency, recoveryEmail, newRecoveryAccount } = methods.getValues();
+      const accountName = normalizeAccountName(newRecoveryAccount);
       if (isEcency || accountName === ECENCY) {
         await updateRecovery({
           type: "ecency",

@@ -8,10 +8,14 @@ import { Button, FormControl } from "@/features/ui";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { getBadActorsQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
+import { isValidAccountName, normalizeAccountName } from "@/utils/hive-account-name";
 
 // Define schema outside the component to prevent recreation on each render
 const schema = yup.object({
-  account: yup.string().required(i18next.t("withdraw-routes.validation-account")).min(3).max(20),
+  account: yup
+    .string()
+    .required(i18next.t("withdraw-routes.validation-account"))
+    .test("hive-account-name", i18next.t("validation.invalid-account-name"), isValidAccountName),
   percent: yup.number().required(i18next.t("withdraw-routes.validation-percent")).min(0).max(100),
   auto: yup.string().required()
 });
@@ -51,7 +55,7 @@ export function WalletOperationWithdrawRoutesForm({ onSubmit, initialValues }: P
           onSubmit({
             from: activeUser!.username,
             from_account: activeUser!.username,
-            to_account: data.account,
+            to_account: normalizeAccountName(data.account),
             auto_vest: data.auto === "yes",
             percent: data.percent * 100
           })
@@ -73,7 +77,7 @@ export function WalletOperationWithdrawRoutesForm({ onSubmit, initialValues }: P
               {methods.formState.errors.account.message}
             </div>
           )}
-          {badActors?.has(methods.watch("account")?.trim().toLowerCase()) && (
+          {badActors?.has(normalizeAccountName(methods.watch("account"))) && (
             <div className="animate-fade-in-up text-warning-default text-xs px-3 pt-0.5">
               {i18next.t("transfer.to-bad-actor")}
             </div>

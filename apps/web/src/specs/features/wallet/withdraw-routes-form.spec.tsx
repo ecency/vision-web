@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { renderWithQueryClient } from "@/specs/test-utils";
 import { WalletOperationWithdrawRoutesForm } from "@/features/wallet/operations/wallet-operation-withdraw-routes-form";
@@ -81,5 +81,27 @@ describe("WalletOperationWithdrawRoutesForm", () => {
     );
 
     expect(screen.queryByText("transfer.to-bad-actor")).not.toBeInTheDocument();
+  });
+
+  test("submits the bare account name when typed with @, spaces and capitals", async () => {
+    const { container } = renderWithQueryClient(
+      <WalletOperationWithdrawRoutesForm onSubmit={onSubmit} initialValues={{ account: " @Alice " }} />
+    );
+
+    fireEvent.submit(container.querySelector("form")!);
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0].to_account).toBe("alice");
+  });
+
+  test("does not submit a name the chain would reject", async () => {
+    const { container } = renderWithQueryClient(
+      <WalletOperationWithdrawRoutesForm onSubmit={onSubmit} initialValues={{ account: "bad_name" }} />
+    );
+
+    fireEvent.submit(container.querySelector("form")!);
+
+    expect(await screen.findByText("validation.invalid-account-name")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });
