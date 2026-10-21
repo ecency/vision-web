@@ -15,6 +15,7 @@ export function normalizeAccountName(value?: string | null): string {
   return value
     .trim()
     .replace(/^(?:@|%40)+/i, "")
+    .trim()
     .toLowerCase();
 }
 
@@ -28,13 +29,17 @@ export function isValidAccountName(value?: string | null): boolean {
 
 /**
  * Ask the chain whether the account exists, so a typo is caught before the user signs.
- * Network errors propagate to the caller.
+ * Always asks the chain: a cached "not found" (e.g. from a sign-up availability check)
+ * may be out of date. Network errors propagate to the caller.
  */
 export async function accountExists(
   queryClient: QueryClient,
   value?: string | null
 ): Promise<boolean> {
   const name = normalizeAccountName(value);
-  const accounts = await queryClient.fetchQuery(getAccountsQueryOptions([name]));
+  const accounts = await queryClient.fetchQuery({
+    ...getAccountsQueryOptions([name]),
+    staleTime: 0
+  });
   return accounts.some((account) => account.name === name);
 }

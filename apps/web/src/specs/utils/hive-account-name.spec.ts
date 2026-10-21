@@ -1,11 +1,24 @@
-import { describe, it, expect } from "vitest";
-import { isValidAccountName, normalizeAccountName } from "@/utils/hive-account-name";
+import { describe, it, expect, vi } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
+import { accountExists, isValidAccountName, normalizeAccountName } from "@/utils/hive-account-name";
+
+const lookup = vi.hoisted(() => ({ existing: new Set<string>() }));
+
+vi.mock("@ecency/sdk", async () => ({
+  ...(await vi.importActual<Record<string, unknown>>("@ecency/sdk")),
+  getAccountsQueryOptions: (names: string[]) => ({
+    queryKey: ["accounts", ...names],
+    queryFn: async () =>
+      names.filter((name) => lookup.existing.has(name)).map((name) => ({ name }))
+  })
+}));
 
 describe("normalizeAccountName", () => {
   it("strips a leading @, spaces and casing so the chain gets a bare name", () => {
     expect(normalizeAccountName("@melinda010100")).toBe("melinda010100");
     expect(normalizeAccountName("  @@Trustee ")).toBe("trustee");
     expect(normalizeAccountName("%40Alice")).toBe("alice");
+    expect(normalizeAccountName("@ alice")).toBe("alice");
     expect(normalizeAccountName(undefined)).toBe("");
   });
 
@@ -33,5 +46,17 @@ describe("isValidAccountName", () => {
     expect(isValidAccountName("a".repeat(17))).toBe(false);
     expect(isValidAccountName("alice%40bob")).toBe(false);
     expect(isValidAccountName("alice@bob")).toBe(false);
+  });
+});
+
+describe("accountExists", () => {
+  it("asks the chain again instead of trusting a cached not-found", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 60_000 } } });
+    lookup.existing = new Set();
+    expect(await accountExists(queryClient, "@NewUser")).toBe(false);
+
+    // The account gets created right after the first lookup cached [].
+    lookup.existing.add("newuser");
+    expect(await accountExists(queryClient, "newuser")).toBe(true);
   });
 });
