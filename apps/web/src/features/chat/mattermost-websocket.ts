@@ -50,7 +50,7 @@ interface MattermostWSEvent {
   seq?: number;
 }
 
-export type ConnectionStatus = "live" | "connected" | "paused" | "disconnected";
+export type ConnectionStatus = "live" | "connected" | "disconnected";
 
 // Global instance tracker to prevent duplicate connections
 let globalInstance: MattermostWebSocket | null = null;
@@ -82,7 +82,6 @@ export class MattermostWebSocket {
   // Idle management
   private lastActivityTime = Date.now();
   private idleCheckInterval: NodeJS.Timeout | null = null;
-  private pollInterval: NodeJS.Timeout | null = null;
   private currentStatus: ConnectionStatus = "disconnected";
 
   // Connection metrics for debugging
@@ -98,6 +97,7 @@ export class MattermostWebSocket {
   // Prevent indefinite reconnects - give up after 1 hour
   private readonly MAX_DISCONNECT_DURATION = 60 * 60 * 1000; // 1 hour
   private firstDisconnectTime: number | null = null;
+  private hasAuthenticated = false;
 
   // Event listeners for cleanup
   private visibilityChangeHandler: (() => void) | null = null;
@@ -107,13 +107,13 @@ export class MattermostWebSocket {
 
   // Idle thresholds
   private readonly IDLE_WARNING_MS = 5 * 60 * 1000;      // 5 min - reduce ping frequency
-  private readonly IDLE_DISCONNECT_MS = 15 * 60 * 1000;  // 15 min - disconnect and poll
-  private readonly POLL_INTERVAL_MS = 60 * 1000;         // 1 min - polling when disconnected
 
-  // Ping intervals
-  private readonly PING_ACTIVE = 30 * 1000;      // 30s when active
-  private readonly PING_IDLE = 120 * 1000;       // 2 min when idle but connected
-  private readonly PING_BACKGROUND = 180 * 1000; // 3 min when tab hidden
+  // Ping intervals. Cloudflare drops a websocket that carries no data for 100s,
+  // so every interval stays well under that, with room for browsers throttling
+  // timers in hidden tabs to about once a minute.
+  private readonly PING_ACTIVE = 30 * 1000;     // 30s when active
+  private readonly PING_IDLE = 45 * 1000;       // 45s when idle but connected
+  private readonly PING_BACKGROUND = 50 * 1000; // 50s when tab hidden
   private readonly PONG_TIMEOUT = 10 * 1000;     // 10s to receive pong
 
   private currentPingInterval = this.PING_ACTIVE;
@@ -218,8 +218,8 @@ export class MattermostWebSocket {
       this.ws.onopen = () => {
         this.isConnected = true;
         this.connectionState = "connected";
-        this.reconnectAttempts = 0; // Reset on successful connection
-        this.firstDisconnectTime = null; // Reset disconnect timer
+        // Reconnect backoff resets on Mattermost's hello, not here: the proxy
+        // accepts the socket before it knows the chat server is reachable.
         this.lastActivityTime = Date.now();
         this.lastPongReceived = Date.now();
         this.updateStatus("live");
@@ -230,8 +230,6 @@ export class MattermostWebSocket {
           this.metrics.firstConnectedAt = Date.now();
         }
         this.metrics.lastConnectedAt = Date.now();
-
-        this.onConnectionChangeCallback?.(true);
 
         // Start ping interval to keep connection alive
         this.startPingInterval();
@@ -349,9 +347,6 @@ export class MattermostWebSocket {
     // Stop idle management
     this.stopIdleManagement();
 
-    // Stop polling
-    this.stopPolling();
-
     // Remove event listeners to prevent memory leaks
     this.removeEventListeners();
 
@@ -448,8 +443,19 @@ export class MattermostWebSocket {
     }
   }
 
-  private handleHello(message: MattermostWSEvent): void {
-    // WebSocket authenticated successfully
+  private handleHello(_message: MattermostWSEvent): void {
+    // Authenticated with Mattermost: the connection is really up from here.
+    this.reconnectAttempts = 0;
+    this.firstDisconnectTime = null;
+    // Report active only now: while it is false the UI keeps its API fallback
+    // (polling, refetch after send), which an open-but-unauthenticated socket needs.
+    this.onConnectionChangeCallback?.(true);
+
+    // Events sent while a previous socket was down are gone, so refetch what they would have updated.
+    if (this.hasAuthenticated) {
+      this.refreshAfterReconnect();
+    }
+    this.hasAuthenticated = true;
   }
 
   private handlePosted(message: MattermostWSEvent): void {
@@ -848,10 +854,6 @@ export class MattermostWebSocket {
   // Utility methods
   public sendTyping(channelId: string): void {
     if (!this.ws || this.connectionState !== "connected") {
-      // If disconnected but polling, try to reconnect
-      if (this.currentStatus === "paused") {
-        this.resumeConnection();
-      }
       return;
     }
 
@@ -895,7 +897,7 @@ export class MattermostWebSocket {
   private recordActivity(): void {
     this.lastActivityTime = Date.now();
 
-    // If we were idle/paused, go back to live
+    // If we were idle, go back to live
     if (this.currentStatus !== "live" && this.isConnected) {
       this.updateStatus("live");
       this.adjustPingInterval(this.PING_ACTIVE);
@@ -908,32 +910,35 @@ export class MattermostWebSocket {
     this.pingInterval = setInterval(() => {
       if (this.ws && this.connectionState === "connected") {
         // Check if last pong was received recently
-        // Threshold must exceed ping interval so the first check doesn't
-        // fire before the first ping is even sent
+        // Two intervals of slack: hidden tabs can run timers late, and the pong
+        // timeout below is what detects a dead socket.
         const timeSinceLastPong = Date.now() - this.lastPongReceived;
-        if (timeSinceLastPong > this.currentPingInterval + this.PONG_TIMEOUT) {
+        if (timeSinceLastPong > 2 * this.currentPingInterval + this.PONG_TIMEOUT) {
           console.warn("No pong received for too long, reconnecting...");
           this.ws.close(1000, "Ping timeout");
           return;
         }
 
-        try {
-          this.ws.send(JSON.stringify({
-            action: "ping",
-            seq: this.messageSeq++
-          }));
-
-          // Start timeout for pong response
-          this.startPongTimeout();
-        } catch (error) {
-          console.error("Failed to send ping:", error);
-          // Try to reconnect on ping failure
-          if (this.ws) {
-            this.ws.close(1011, "Ping send failed");
-          }
-        }
+        this.sendPing();
       }
     }, this.currentPingInterval);
+  }
+
+  private sendPing(): void {
+    if (!this.ws) return;
+    try {
+      this.ws.send(JSON.stringify({
+        action: "ping",
+        seq: this.messageSeq++
+      }));
+
+      // Start timeout for pong response
+      this.startPongTimeout();
+    } catch (error) {
+      console.error("Failed to send ping:", error);
+      // Try to reconnect on ping failure
+      this.ws.close(4000, "Ping send failed"); // browsers only accept 1000 and 3000-4999
+    }
   }
 
   private stopPingInterval(): void {
@@ -971,7 +976,14 @@ export class MattermostWebSocket {
 
     this.currentPingInterval = newInterval;
     if (this.isConnected) {
-      this.startPingInterval(); // Restart with new interval
+      // Restarting the timer would otherwise count the time since the previous
+      // ping against the new interval and close a healthy socket. Ping now and
+      // measure from here; the pong timeout still catches a dead socket.
+      this.lastPongReceived = Date.now();
+      this.startPingInterval();
+      if (this.connectionState === "connected") {
+        this.sendPing();
+      }
     }
   }
 
@@ -997,10 +1009,9 @@ export class MattermostWebSocket {
     // Don't change state if tab is hidden (page visibility handles that)
     if (document.hidden) return;
 
-    if (idleTime >= this.IDLE_DISCONNECT_MS) {
-      // Idle for 15+ minutes - disconnect and start polling
-      this.disconnectAndPoll();
-    } else if (idleTime >= this.IDLE_WARNING_MS) {
+    // Stays connected however long it is idle: activity is only counted when
+    // typing, so dropping the socket would cut off someone who is just reading.
+    if (idleTime >= this.IDLE_WARNING_MS) {
       // Idle for 5+ minutes - reduce ping frequency but stay connected
       if (this.currentStatus === "live") {
         this.updateStatus("connected");
@@ -1009,56 +1020,20 @@ export class MattermostWebSocket {
     }
   }
 
-  private disconnectAndPoll(): void {
-    if (this.currentStatus === "paused") return; // Already polling
+  private refreshAfterReconnect(): void {
+    if (!this.queryClient) return;
 
-    // Close WebSocket but don't trigger full disconnect
-    this.stopPingInterval();
-    this.stopIdleManagement();
-
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    if (this.channelId) {
+      this.queryClient.invalidateQueries({
+        queryKey: ["mattermost-posts-infinite", this.channelId]
+      });
+      this.queryClient.invalidateQueries({
+        queryKey: ["mattermost-pinned-posts", this.channelId]
+      });
     }
-
-    this.isConnected = false;
-    this.updateStatus("paused");
-    this.onConnectionChangeCallback?.(false);
-
-    // Start polling for new messages
-    this.startPolling();
-  }
-
-  private startPolling(): void {
-    this.stopPolling(); // Clear any existing polling
-
-    this.pollInterval = setInterval(() => {
-      // Invalidate queries to fetch new messages
-      if (this.queryClient && this.channelId) {
-        this.queryClient.invalidateQueries({
-          queryKey: ["mattermost-posts-infinite", this.channelId]
-        });
-        this.queryClient.invalidateQueries({
-          queryKey: ["mattermost-unread"]
-        });
-      }
-    }, this.POLL_INTERVAL_MS);
-  }
-
-  private stopPolling(): void {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
-    }
-  }
-
-  // Resume real-time connection from paused state
-  public resumeConnection(): void {
-    if (this.currentStatus !== "paused") return;
-
-    this.stopPolling();
-    this.lastActivityTime = Date.now();
-    this.connect(); // Reconnect WebSocket
+    this.queryClient.invalidateQueries({ queryKey: ["mattermost-thread"] });
+    this.queryClient.invalidateQueries({ queryKey: ["mattermost-unread"] });
+    this.queryClient.invalidateQueries({ queryKey: ["mattermost-channels"] });
   }
 
   // Page visibility handling
@@ -1073,11 +1048,7 @@ export class MattermostWebSocket {
           this.adjustPingInterval(this.PING_BACKGROUND);
         }
       } else {
-        // Tab visible - check if we need to resume
-        if (this.currentStatus === "paused") {
-          // User returned to tab, resume connection
-          this.resumeConnection();
-        } else if (this.isConnected) {
+        if (this.isConnected) {
           // Restore active ping interval
           const idleTime = Date.now() - this.lastActivityTime;
           if (idleTime < this.IDLE_WARNING_MS) {

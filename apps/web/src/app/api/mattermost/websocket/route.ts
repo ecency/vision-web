@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { WebSocket } from "ws";
 import type { WebSocketServer } from "ws";
 import { scrubChatSocketFrame } from "@/server/chat-public-user";
+import { closeSocketSafely } from "@/server/chat-socket-close";
 
 const MATTERMOST_TOKEN_COOKIE = "mm_pat" as const;
 const TOKEN_QUERY_PARAM = "token" as const;
@@ -184,13 +185,14 @@ export function UPGRADE(
     }
   });
 
-  client.on("close", (code, reason) => {
-    try {
-      if (upstream.readyState === WebSocket.OPEN) {
-        upstream.close(code, reason);
-      }
-    } catch (error) {
-      // Silent - connection already closing
+  // Close reasons are not forwarded: clients only log them, and a long one would make `close` throw.
+  client.on("close", (code) => {
+    console.info("Chat WebSocket: client closed", { code });
+    clearTimeout(connectionTimeout);
+    if (upstream.readyState === WebSocket.CONNECTING) {
+      upstream.terminate();
+    } else if (upstream.readyState === WebSocket.OPEN) {
+      closeSocketSafely(upstream, code);
     }
   });
 
@@ -277,16 +279,22 @@ export function UPGRADE(
       code,
       reason: reason?.toString?.() || ""
     });
-    try {
-      if (client.readyState === WebSocket.OPEN) {
-        client.close(code, reason);
-      }
-    } catch (error) {
-      console.error("Chat WebSocket: close failed", error);
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      pingInterval = null;
+    }
+    if (client.readyState === WebSocket.OPEN) {
+      closeSocketSafely(client, code);
     }
   });
 
   upstream.on("error", (error) => {
+    if (client.readyState === WebSocket.CLOSING || client.readyState === WebSocket.CLOSED) {
+      // The browser already left (e.g. before upstream finished connecting).
+      console.info("Chat WebSocket: upstream closed after client left");
+      closeBoth(1000, "client left");
+      return;
+    }
     console.error("Chat WebSocket: upstream error", error);
     closeBoth(1011, "upstream error");
   });

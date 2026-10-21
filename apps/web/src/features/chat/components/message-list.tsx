@@ -101,7 +101,7 @@ export const MessageList = memo(function MessageList({
           return (
             <div key={item.groupId} className="space-y-3">
               {showUnreadDivider && firstUnreadInGroup !== undefined && (
-                <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-[--text-muted]">
+                <div className="flex items-center gap-3 text-xs md:text-[11px] font-semibold uppercase tracking-wide text-[--text-muted]">
                   <div className="flex-1 border-t border-[--border-color]" />
                   <span>New</span>
                   <div className="flex-1 border-t border-[--border-color]" />
@@ -121,7 +121,7 @@ export const MessageList = memo(function MessageList({
                       return next;
                     });
                   }}
-                  className="rounded bg-[--surface-color] px-4 py-2 text-sm text-[--text-muted] text-center hover:bg-[--hover-color] transition-colors cursor-pointer"
+                  className="rounded bg-[--surface-color] px-4 py-2 text-base md:text-sm text-[--text-muted] text-center hover:bg-[--hover-color] transition-colors cursor-pointer"
                 >
                   {isExpanded ? (
                     <div className="space-y-1">
