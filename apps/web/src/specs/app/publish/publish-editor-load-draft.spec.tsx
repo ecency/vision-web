@@ -65,4 +65,15 @@ describe("publish editor draft loading", () => {
     expect(publishState.setContent).toHaveBeenCalledTimes(1);
     expect(publishState.setContent.mock.calls[0][0]).toBe("Rewritten **body**");
   });
+
+  it("keeps text colour when a saved draft is loaded", async () => {
+    publishState.content =
+      'Hello <span style="color: rgb(220, 38, 38)" class="ecency-text-color-dc2626">red</span>';
+    const { result } = renderHook(() => usePublishEditor(() => undefined));
+
+    await waitFor(() => expect(result.current.editor?.getText()).toBe("Hello red"));
+
+    expect(result.current.editor?.getHTML()).toContain('class="ecency-text-color-dc2626"');
+    expect(publishState.setContent).not.toHaveBeenCalled();
+  });
 });

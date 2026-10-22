@@ -108,14 +108,35 @@ const isAlignmentStyle: AttributeCheck = (value) =>
 
 /**
  * Only the table style Tiptap emits itself round-trips. The extension always
- * re-serialises min-width from its own cellMinWidth, so any other width is
- * silently rewritten: a table carrying min-width:100px would come back as
- * 25px. Matching the exact emitted value keeps that table on the markdown
- * path, and a future cellMinWidth change fails safe the same way.
+ * re-serialises min-width from its own cellMinWidth: 25px for every column of
+ * the first row. Any other width is silently rewritten (a one-column table
+ * carrying min-width:100px would come back as 25px), so only the exact value
+ * for this table's column count is accepted. Anything else keeps the table on
+ * the markdown path, and a future cellMinWidth change fails safe the same way.
  */
-const TIPTAP_TABLE_STYLE = "min-width:25px";
-const isTableStyle: AttributeCheck = (value) =>
-  value.replace(/\s+/g, "").replace(/;$/, "").toLowerCase() === TIPTAP_TABLE_STYLE;
+const TIPTAP_CELL_MIN_WIDTH = 25;
+
+function firstRowColumnCount(table: Element): number {
+  const row = table.querySelector("tr");
+  if (!row) return 0;
+  let columns = 0;
+  for (const cell of Array.from(row.children)) {
+    if (cell.tagName !== "TD" && cell.tagName !== "TH") continue;
+    // Counted the way TipTap counts them: colspan="0" adds no column.
+    const span = Number.parseInt(cell.getAttribute("colspan") ?? "1", 10);
+    columns += Number.isFinite(span) && span >= 0 ? span : 1;
+  }
+  return columns;
+}
+
+const isTableStyle: AttributeCheck = (value, element) => {
+  const columns = firstRowColumnCount(element);
+  return (
+    columns > 0 &&
+    value.replace(/\s+/g, "").replace(/;$/, "").toLowerCase() ===
+      `min-width:${columns * TIPTAP_CELL_MIN_WIDTH}px`
+  );
+};
 
 /**
  * A language class only survives on the <code> inside a <pre>, which is what
