@@ -2,7 +2,7 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useGlobalStore } from "@/core/global-store";
 import clsx from "clsx";
 import i18next from "i18next";
-import Image from "next/image";
+import { Esie } from "@ui/esie";
 import { useMemo } from "react";
 import { LoginUserItem } from "./login-user-item";
 import dynamic from "next/dynamic";
@@ -65,13 +65,7 @@ export function LoginUsersList({ showOnMobile }: Props) {
 
       {users.length === 0 && (
         <div className="h-full flex flex-col items-center justify-center">
-          <Image
-            width={400}
-            height={400}
-            src="/assets/undraw-login.svg"
-            alt="Logo"
-            className="max-w-[300px] pt-4"
-          />
+          <Esie placement="welcome" priority className="pt-4" />
         </div>
       )}
     </div>

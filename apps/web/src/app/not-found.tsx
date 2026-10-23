@@ -6,6 +6,7 @@ import { PagesMetadataGenerator } from "@/features/metadata";
 import { SentryIssueReporterDialog } from "@/features/issue-reporter";
 import { Feedback } from "@/features/shared/feedback";
 import defaults from "@/defaults";
+import { Esie } from "@ui/esie";
 import { NotFoundBackButton } from "./not-found-back-button";
 
 export async function generateMetadata(
@@ -42,13 +43,7 @@ export default async function NotFoundPage() {
           </div>
         </div>
         {/* The page's main illustration and its LCP element — don't lazy-load it. */}
-        <Image
-          src="/assets/illustration-open-source.png"
-          alt="logo"
-          width={571}
-          height={460}
-          priority
-        />
+        <Esie mood="sad" height={360} priority className="mx-auto w-[300px] max-w-full" />
       </div>
     </div>
   );

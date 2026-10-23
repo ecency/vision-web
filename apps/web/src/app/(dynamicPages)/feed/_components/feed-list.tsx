@@ -119,7 +119,9 @@ export function FeedList({ filter, tag, observer }: Props) {
 
       {/* Infinite scroll trigger - only active after initial load */}
       <DetectBottom onBottom={handleLoadMore} paused={autoPagingPaused} />
-      {isError && !isFetching && <EntryListLoadError onRetry={retry} />}
+      {isError && !isFetching && (
+        <EntryListLoadError onRetry={retry} nothingShown={visibleEntries.length === 0} />
+      )}
 
       {/* Loading indicator - single instance */}
       {showLoading && <EntryListContentLoading />}

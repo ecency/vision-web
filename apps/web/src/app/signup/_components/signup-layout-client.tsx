@@ -3,7 +3,7 @@
 import { Feedback } from "@/features/shared/feedback";
 import { Navbar } from "@/features/shared/navbar";
 import i18next from "i18next";
-import Image from "next/image";
+import { Esie, esieSrc } from "@ui/esie";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UilArrowLeft } from "@tooni/iconscout-unicons-react";
@@ -33,15 +33,15 @@ export function SignupLayoutClient({ children }: PropsWithChildren) {
       <Feedback />
       <Navbar />
 
-      {/* Hoisted into <head> by React. The hero <img> below must stay lazy:
-          its container is display:none under md, and a lazy image with no box
-          is never fetched, which keeps this ~47KB file off mobile. The media
-          query scopes the early fetch to the viewports that paint it. */}
+      {/* Hoisted into <head> by React. The hero below must stay lazy: its column
+          is display:none under md, and a lazy image with no box is never fetched,
+          which keeps it off mobile. The media query scopes the early fetch to the
+          viewports that paint it. */}
       {!hideHeader && (
         <link
           rel="preload"
           as="image"
-          href="/assets/signup-main.svg"
+          href={esieSrc("wave")}
           media="(min-width: 768px)"
           fetchPriority="high"
         />
@@ -59,13 +59,7 @@ export function SignupLayoutClient({ children }: PropsWithChildren) {
             </div>
 
             <div className="col-span-12 md:col-span-6 top-16 rounded-2xl hidden md:block overflow-hidden">
-              <Image
-                width={1920}
-                height={1920}
-                src="/assets/signup-main.svg"
-                alt=""
-                className="w-full max-h-[240px] object-contain"
-              />
+              <Esie placement="welcome" height={240} className="mx-auto" />
             </div>
           </div>
         )}

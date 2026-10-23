@@ -28,12 +28,13 @@ vi.mock("@/features/metadata", () => ({
   PagesMetadataGenerator: { getForPage: vi.fn(async () => ({})) }
 }));
 
+import { esieSrc } from "@ui/esie";
 import { SignupLayoutClient } from "@/app/signup/_components/signup-layout-client";
 import SignupPage from "@/app/signup/page";
 
 // React hoists rendered <link> elements into <head>, so query the document.
 const heroPreload = () =>
-  document.head.querySelector('link[rel="preload"][href="/assets/signup-main.svg"]');
+  document.head.querySelector(`link[rel="preload"][href="${esieSrc("wave")}"]`);
 
 describe("signup LCP images", () => {
   afterEach(() => {
@@ -42,7 +43,7 @@ describe("signup LCP images", () => {
     document.head.querySelectorAll('link[rel="preload"]').forEach((el) => el.remove());
   });
 
-  describe("desktop hero (signup-main.svg)", () => {
+  describe("desktop hero (waving Esie)", () => {
     it("preloads the hero for md+ viewports at high priority", () => {
       usePathnameMock.mockReturnValue("/signup");
       render(<SignupLayoutClient>content</SignupLayoutClient>);
@@ -61,7 +62,7 @@ describe("signup LCP images", () => {
       usePathnameMock.mockReturnValue("/signup");
       const { container } = render(<SignupLayoutClient>content</SignupLayoutClient>);
 
-      const hero = container.querySelector('img[src="/assets/signup-main.svg"]');
+      const hero = container.querySelector('img[data-esie-mood="wave"]');
       expect(hero).not.toBeNull();
       expect(hero).toHaveAttribute("loading", "lazy");
     });
@@ -71,7 +72,7 @@ describe("signup LCP images", () => {
       const { container } = render(<SignupLayoutClient>content</SignupLayoutClient>);
 
       expect(heroPreload()).toBeNull();
-      expect(container.querySelector('img[src="/assets/signup-main.svg"]')).toBeNull();
+      expect(container.querySelector('img[data-esie-mood="wave"]')).toBeNull();
     });
   });
 

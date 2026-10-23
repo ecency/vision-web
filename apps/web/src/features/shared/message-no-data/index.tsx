@@ -1,5 +1,6 @@
 import React, { ReactNode } from "react";
 import { Button } from "@ui/button";
+import { Esie } from "@ui/esie";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -28,14 +29,12 @@ export function MessageNoData({
 }: Props) {
   return (
     <div className="rounded-2xl grid grid-cols-4 gap-4 max-w-[640px] mx-auto border border-[--border-color] p-4 justify-center items-center my-4 md:my-8 xl:my-12">
-      <div className="col-span-1">
-        <Image
-          width={400}
-          height={400}
-          src={img || "/assets/writer.png"}
-          alt=""
-          className="w-full h-full"
-        />
+      <div className="col-span-1 flex justify-center">
+        {img ? (
+          <Image width={400} height={400} src={img} alt="" className="w-full h-full" />
+        ) : (
+          <Esie placement="empty" />
+        )}
       </div>
       <div className="flex flex-col gap-4 col-span-3">
         <h2>{title}</h2>
