@@ -37,13 +37,13 @@ describe("MessageNoData", () => {
     expect(link).toHaveAttribute("href", "/create");
   });
 
-  test("renders default image when no img prop provided", () => {
+  test("renders resting Esie when no img prop provided", () => {
     const { container } = render(<MessageNoData {...defaultProps} />);
 
     const image = container.querySelector("img");
-    // Next.js Image component transforms and URL-encodes src URLs
-    const src = image?.getAttribute("src") || "";
-    expect(decodeURIComponent(src)).toContain("/assets/writer.png");
+    expect(image).toHaveAttribute("data-esie-mood", "rest");
+    expect(image?.getAttribute("src")).toMatch(/^\/assets\/esie\/rest\.svg\?v=/);
+    expect(image).toHaveAttribute("aria-hidden", "true");
   });
 
   test("renders custom image when img prop provided", () => {
@@ -167,8 +167,14 @@ describe("MessageNoData", () => {
     expect(description).toHaveClass("text-gray-600", "lead");
   });
 
-  test("renders image with correct dimensions", () => {
+  test("renders Esie at the native empty-state height", () => {
     const { container } = render(<MessageNoData {...defaultProps} />);
+
+    expect(container.querySelector("img")).toHaveAttribute("height", "120");
+  });
+
+  test("renders a custom image with correct dimensions", () => {
+    const { container } = render(<MessageNoData {...defaultProps} img="/custom-image.png" />);
 
     const image = container.querySelector("img");
     expect(image).toHaveAttribute("width", "400");

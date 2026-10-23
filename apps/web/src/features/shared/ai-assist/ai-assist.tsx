@@ -7,6 +7,7 @@ import { PointsTopupCta } from "@/features/shared/points-topup-cta";
 import { getAiAssistErrorMessage } from "./ai-assist-error-message";
 import { assistRequestKey, forgetAssistRequestKey } from "./assist-request-key";
 import { Button, FormControl } from "@/features/ui";
+import { Esie } from "@ui/esie";
 import { getAccessToken, ensureValidToken } from "@/utils";
 import {
   getAiAssistPriceQueryOptions,
@@ -457,7 +458,8 @@ export function AiAssist({ onApply, initialText = "" }: Props) {
         </div>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex justify-end items-center gap-3">
+        {isProcessing && <Esie placement="thinking" height={64} priority />}
         <Button
           disabled={!canSubmit}
           isLoading={isProcessing}

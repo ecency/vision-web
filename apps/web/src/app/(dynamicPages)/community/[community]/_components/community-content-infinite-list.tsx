@@ -104,7 +104,12 @@ export function CommunityContentInfiniteList({ section, community, initialEntryA
                 <EntryListContentNoData username={community.name} loading={false} section={section} />
             )}
             <DetectBottom onBottom={onBottom} paused={autoPagingPaused} />
-            {isError && !isFetching && <EntryListLoadError onRetry={retry} />}
+            {isError && !isFetching && (
+              <EntryListLoadError
+                onRetry={retry}
+                nothingShown={initialVisible.length + visibleEntryList.length === 0}
+              />
+            )}
             {isFetching && <EntryListContentLoading />}
         </>
     );

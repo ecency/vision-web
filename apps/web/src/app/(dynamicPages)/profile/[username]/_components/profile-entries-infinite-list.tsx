@@ -157,7 +157,9 @@ export function ProfileEntriesInfiniteList({
         />
       )}
       <DetectBottom onBottom={handleBottom} paused={autoPagingPaused} />
-      {isError && !isFetchingData && <EntryListLoadError onRetry={retry} />}
+      {isError && !isFetchingData && (
+        <EntryListLoadError onRetry={retry} nothingShown={totalEntriesCount === 0} />
+      )}
       {isFetchingData && <EntryListContentLoading />}
     </>
   );

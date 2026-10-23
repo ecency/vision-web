@@ -2,6 +2,7 @@
 
 import { Component, ReactNode } from "react";
 import { Button } from "@ui/button";
+import { Esie } from "@ui/esie";
 
 interface Props {
   children: ReactNode;
@@ -31,7 +32,7 @@ export class ChatErrorBoundary extends Component<Props, State> {
       return (
         <div className="flex h-full items-center justify-center p-8">
           <div className="max-w-md space-y-4 rounded-lg border border-[--border-color] bg-[--surface-color] p-6 text-center">
-            <div className="text-4xl">⚠️</div>
+            <Esie placement="error" className="mx-auto" />
             <h2 className="text-lg font-semibold text-[--text-color]">
               Something went wrong
             </h2>
