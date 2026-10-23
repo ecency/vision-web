@@ -1,10 +1,11 @@
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { render } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { Esie, ESIE_PLACEMENTS, esieSrc } from "@ui/esie";
 import { ESIE_MOODS, type EsieMood } from "@ui/esie/esie-moods.generated";
+// @ts-expect-error plain ESM build script without types
+import { buildEsie } from "../../../../../../scripts/esie/build.mjs";
 
 const publicDir = join(__dirname, "../../../../public");
 const moods = Object.keys(ESIE_MOODS) as EsieMood[];
@@ -48,14 +49,23 @@ describe("Esie", () => {
     expect(img).not.toHaveAttribute("decoding");
   });
 
-  it("gives a mood shown again its own URL, so its animation starts over", () => {
-    const first = render(<Esie mood="surprised" />);
-    expect(first.container.querySelector("img")).toHaveAttribute("src", esieSrc("surprised"));
+  it("serves every mount the same URL, so the signup preload matches the hero", () => {
+    const first = render(<Esie mood="wave" />);
     first.unmount();
+    const again = render(<Esie mood="wave" />);
 
-    const again = render(<Esie mood="surprised" />);
-    const src = again.container.querySelector("img")!.getAttribute("src")!;
-    expect(src.startsWith(`${esieSrc("surprised")}&i=`)).toBe(true);
+    expect(again.container.querySelector("img")).toHaveAttribute("src", esieSrc("wave"));
+  });
+
+  it("matches a fresh build of the master and motion (rerun scripts/esie/build.mjs)", () => {
+    const { files, ts } = buildEsie() as { files: Record<string, string>; ts: string };
+    const committed = readdirSync(join(publicDir, "assets/esie")).filter((f) => f.endsWith(".svg"));
+
+    expect(committed.sort()).toEqual(Object.keys(files).sort());
+    for (const [name, content] of Object.entries(files)) {
+      expect(readFileSync(join(publicDir, "assets/esie", name), "utf8")).toBe(content);
+    }
+    expect(readFileSync(join(__dirname, "../../../features/ui/esie/esie-moods.generated.ts"), "utf8")).toBe(ts);
   });
 
   it("only uses moods that exist", () => {
@@ -66,16 +76,21 @@ describe("Esie", () => {
 
   describe.each(moods)("generated %s.svg", (mood) => {
     const { src, ratio } = ESIE_MOODS[mood];
-    const svg = readFileSync(join(publicDir, src.split("?")[0]), "utf8");
+    const svg = readFileSync(join(publicDir, src), "utf8");
 
     it("matches the ratio the component sizes it by", () => {
       const [, , w, h] = svg.match(/viewBox="([^"]+)"/)![1].split(" ").map(Number);
       expect(w / h).toBeCloseTo(ratio, 3);
     });
 
-    it("is the build output its URL hash names (rerun scripts/esie/build.mjs)", () => {
-      const hash = createHash("sha256").update(svg.replace(/\n$/, "")).digest("hex").slice(0, 8);
-      expect(src).toBe(`/assets/esie/${mood}.svg?v=${hash}`);
+    it("names its version in the file name, which the PWA caches match", () => {
+      expect(src).toMatch(new RegExp(`^/assets/esie/${mood}\\.[0-9a-f]{8}\\.svg$`));
+    });
+
+    it("shows exactly one mouth: an override beats the rule hiding the others", () => {
+      const overrides = svg.match(/#mouth #mouth_[a-z]+\{opacity:1!important\}/g) ?? [];
+      expect(svg).not.toMatch(/[}>]#mouth_[a-z]+\{opacity:1!important\}/);
+      expect(overrides.length).toBeLessThanOrEqual(1);
     });
 
     it("holds still under reduced motion", () => {

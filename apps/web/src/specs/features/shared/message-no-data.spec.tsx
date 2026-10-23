@@ -42,7 +42,7 @@ describe("MessageNoData", () => {
 
     const image = container.querySelector("img");
     expect(image).toHaveAttribute("data-esie-mood", "rest");
-    expect(image?.getAttribute("src")).toMatch(/^\/assets\/esie\/rest\.svg\?v=/);
+    expect(image?.getAttribute("src")).toMatch(/^\/assets\/esie\/rest\.[0-9a-f]{8}\.svg$/);
     expect(image).toHaveAttribute("aria-hidden", "true");
   });
 
