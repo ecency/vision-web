@@ -455,6 +455,7 @@ export function MattermostChannelView({ channelId }: Props) {
       sendMutationRef
     },
     usersById,
+    composerText: message,
     isWebSocketActive,
     setIsWebSocketActive,
     setReconnectAttempt,

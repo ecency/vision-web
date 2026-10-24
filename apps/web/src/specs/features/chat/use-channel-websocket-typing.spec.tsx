@@ -32,7 +32,7 @@ const ref = <T,>(current: T) => ({ current });
 
 function setup(usersById: Record<string, MattermostUser>, isWebSocketActive = true) {
   return renderHook(
-    ({ users }) =>
+    ({ users, text }: { users: Record<string, MattermostUser>; text: string }) =>
       useChannelWebSocket({
         channelId: "c1",
         queryClient: new QueryClient(),
@@ -48,12 +48,13 @@ function setup(usersById: Record<string, MattermostUser>, isWebSocketActive = tr
           sendMutationRef: ref({ reset: vi.fn() })
         },
         usersById: users,
+        composerText: text,
         setIsWebSocketActive: vi.fn(),
         setReconnectAttempt: vi.fn(),
         setReconnectDelay: vi.fn(),
         isWebSocketActive
       }),
-    { initialProps: { users: usersById } }
+    { initialProps: { users: usersById, text: "h" } }
   );
 }
 
@@ -73,7 +74,7 @@ describe("useChannelWebSocket typing", () => {
     expect(result.current.unknownTypingUserIds).toEqual(["esie-id"]);
     expect(result.current.typingUsernames).toEqual([]);
 
-    rerender({ users: { "esie-id": esie } });
+    rerender({ users: { "esie-id": esie }, text: "h" });
     expect(result.current.unknownTypingUserIds).toEqual([]);
     expect(result.current.typingUsernames).toEqual(["@esie"]);
   });
@@ -125,10 +126,11 @@ describe("useChannelWebSocket typing", () => {
     expect(sendTyping).not.toHaveBeenCalled();
   });
 
+  // however it empties: cleared by hand, edit canceled (button or Escape), sent
   it("does not announce typing after the box was emptied while offline", () => {
-    const { result } = setup({}, false);
+    const { result, rerender } = setup({}, false);
     result.current.onComposerTextChange("h");
-    result.current.onComposerTextChange("");
+    rerender({ users: {}, text: "" });
 
     act(() => onConnectionChange!(true));
     expect(sendTyping).not.toHaveBeenCalled();
@@ -164,5 +166,7 @@ describe("useChannelWebSocket typing", () => {
     const clear = submit.indexOf("clearQueuedTyping();");
     expect(clear).toBeGreaterThan(-1);
     expect(clear).toBeLessThan(submit.indexOf("if (editingPost) {"));
+    // and hands the hook the live composer text, so canceling an edit or clearing the box drops it too
+    expect(view).toContain("composerText: message,");
   });
 });

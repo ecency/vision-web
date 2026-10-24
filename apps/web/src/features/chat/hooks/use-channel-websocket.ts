@@ -27,6 +27,8 @@ interface UseChannelWebSocketParams {
     sendMutationRef: React.MutableRefObject<{ reset: () => void }>;
   };
   usersById: Record<string, MattermostUser>;
+  /** What the composer holds now. Empty, however it got there (sent, canceled, cleared), ends the typing */
+  composerText: string;
 }
 
 const TYPING_TIMEOUT = 5000;
@@ -39,6 +41,7 @@ export function useChannelWebSocket({
   onPostedConfirm,
   pendingPostRefs,
   usersById,
+  composerText,
   setIsWebSocketActive,
   setReconnectAttempt,
   setReconnectDelay,
@@ -198,12 +201,13 @@ export function useChannelWebSocket({
   // pause meant someone typing steadily never showed as typing to the other side.
   // Typing into a dropped connection retries it, but not on every keystroke.
   const lastReconnectKickRef = useRef(0);
+  // An empty composer ends the typing, so nothing queued may announce it afterwards
+  useEffect(() => {
+    if (!composerText) typingWhileOfflineAtRef.current = 0;
+  }, [composerText]);
+
   const onComposerTextChange = useCallback((text: string) => {
-    // an emptied box ends the typing; nothing queued should announce it afterwards
-    if (!text) {
-      typingWhileOfflineAtRef.current = 0;
-      return;
-    }
+    if (!text) return;
     const ws = websocketRef.current;
     if (!ws) return;
     if (!isWebSocketActive) {
