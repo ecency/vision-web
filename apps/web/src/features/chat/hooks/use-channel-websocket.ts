@@ -78,7 +78,7 @@ export function useChannelWebSocket({
         .onConnectionChange((active) => {
           setIsWebSocketActiveRef.current(active);
           if (active && Date.now() - typingWhileOfflineAtRef.current < TYPING_TIMEOUT) {
-            // typed while the connection was opening: still typing, so tell the other side now
+            // typed while the connection was opening and not sent yet: still typing, so say so now
             typingWhileOfflineAtRef.current = 0;
             ws.sendTyping(channelId);
           }
@@ -213,8 +213,14 @@ export function useChannelWebSocket({
     ws.sendTyping(channelId);
   }, [channelId, isWebSocketActive]);
 
+  // A sent message ends the typing; nothing queued should announce it afterwards
+  const clearQueuedTyping = useCallback(() => {
+    typingWhileOfflineAtRef.current = 0;
+  }, []);
+
   return {
     typingUsernames,
+    clearQueuedTyping,
     unknownTypingUserIds,
     sendTypingDebounced,
     websocketRef

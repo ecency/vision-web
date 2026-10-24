@@ -425,6 +425,7 @@ export function MattermostChannelView({ channelId }: Props) {
   const {
     typingUsernames,
     unknownTypingUserIds,
+    clearQueuedTyping,
     sendTypingDebounced
   } = useChannelWebSocket({
     channelId,
@@ -947,6 +948,7 @@ export function MattermostChannelView({ channelId }: Props) {
     lastSentMessageRef.current = finalMessage;
     lastSentRootIdRef.current = rootId;
     lastSentAtRef.current = Date.now();
+    clearQueuedTyping();
     pendingAbortControllerRef.current = new AbortController();
 
     sendMutation.mutate(

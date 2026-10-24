@@ -114,6 +114,15 @@ describe("useChannelWebSocket typing", () => {
     expect(sendTyping).toHaveBeenCalledTimes(1);
   });
 
+  it("does not announce typing for a message already sent while offline", () => {
+    const { result } = setup({}, false);
+    result.current.sendTypingDebounced();
+    result.current.clearQueuedTyping();
+
+    act(() => onConnectionChange!(true));
+    expect(sendTyping).not.toHaveBeenCalled();
+  });
+
   it("retries a dropped connection from typing at most once every few seconds", () => {
     vi.useFakeTimers();
     try {
