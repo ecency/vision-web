@@ -198,7 +198,12 @@ export function useChannelWebSocket({
   // pause meant someone typing steadily never showed as typing to the other side.
   // Typing into a dropped connection retries it, but not on every keystroke.
   const lastReconnectKickRef = useRef(0);
-  const sendTypingDebounced = useCallback(() => {
+  const onComposerTextChange = useCallback((text: string) => {
+    // an emptied box ends the typing; nothing queued should announce it afterwards
+    if (!text) {
+      typingWhileOfflineAtRef.current = 0;
+      return;
+    }
     const ws = websocketRef.current;
     if (!ws) return;
     if (!isWebSocketActive) {
@@ -222,7 +227,7 @@ export function useChannelWebSocket({
     typingUsernames,
     clearQueuedTyping,
     unknownTypingUserIds,
-    sendTypingDebounced,
+    onComposerTextChange,
     websocketRef
   };
 }

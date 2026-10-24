@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
@@ -84,7 +86,7 @@ describe("useChannelWebSocket typing", () => {
 
   it("sends typing on the first keystroke, not after a pause", () => {
     const { result } = setup({});
-    result.current.sendTypingDebounced();
+    result.current.onComposerTextChange("h");
     expect(sendTyping).toHaveBeenCalledWith("c1");
   });
 
@@ -102,7 +104,7 @@ describe("useChannelWebSocket typing", () => {
 
   it("sends typing from while the connection was opening once it is up", () => {
     const { result } = setup({}, false);
-    result.current.sendTypingDebounced();
+    result.current.onComposerTextChange("h");
     expect(sendTyping).not.toHaveBeenCalled();
 
     act(() => onConnectionChange!(true));
@@ -116,10 +118,25 @@ describe("useChannelWebSocket typing", () => {
 
   it("does not announce typing for a message already sent while offline", () => {
     const { result } = setup({}, false);
-    result.current.sendTypingDebounced();
+    result.current.onComposerTextChange("h");
     result.current.clearQueuedTyping();
 
     act(() => onConnectionChange!(true));
+    expect(sendTyping).not.toHaveBeenCalled();
+  });
+
+  it("does not announce typing after the box was emptied while offline", () => {
+    const { result } = setup({}, false);
+    result.current.onComposerTextChange("h");
+    result.current.onComposerTextChange("");
+
+    act(() => onConnectionChange!(true));
+    expect(sendTyping).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing for an empty box", () => {
+    const { result } = setup({});
+    result.current.onComposerTextChange("");
     expect(sendTyping).not.toHaveBeenCalled();
   });
 
@@ -128,14 +145,24 @@ describe("useChannelWebSocket typing", () => {
     try {
       const { result } = setup({}, false);
       connect.mockClear();
-      for (let i = 0; i < 20; i++) result.current.sendTypingDebounced();
+      for (let i = 0; i < 20; i++) result.current.onComposerTextChange("h");
       expect(connect).toHaveBeenCalledTimes(1);
 
       vi.advanceTimersByTime(5001);
-      result.current.sendTypingDebounced();
+      result.current.onComposerTextChange("h");
       expect(connect).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // the channel view is too heavy to render here: pin that sending a message and saving an edit
+  // both drop queued typing, by clearing it before the two paths split
+  it("is cleared by the composer on every submit, edits included", () => {
+    const view = readFileSync(join(__dirname, "../../../features/chat/mattermost-channel-view.tsx"), "utf8");
+    const submit = view.slice(view.indexOf("const submitMessage = () => {"));
+    const clear = submit.indexOf("clearQueuedTyping();");
+    expect(clear).toBeGreaterThan(-1);
+    expect(clear).toBeLessThan(submit.indexOf("if (editingPost) {"));
   });
 });

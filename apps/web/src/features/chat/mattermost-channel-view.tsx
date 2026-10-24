@@ -426,7 +426,7 @@ export function MattermostChannelView({ channelId }: Props) {
     typingUsernames,
     unknownTypingUserIds,
     clearQueuedTyping,
-    sendTypingDebounced
+    onComposerTextChange
   } = useChannelWebSocket({
     channelId,
     queryClient,
@@ -865,9 +865,7 @@ export function MattermostChannelView({ channelId }: Props) {
     updateMentionState(value, cursor);
     updateEmojiState(value, cursor);
 
-    if (value.length > 0) {
-      sendTypingDebounced();
-    }
+    onComposerTextChange(value);
 
     autoResize();
   };
@@ -902,6 +900,8 @@ export function MattermostChannelView({ channelId }: Props) {
     }
 
     setMessageError(null);
+    // sending or saving an edit ends the typing; nothing queued should announce it afterwards
+    clearQueuedTyping();
 
     if (editingPost) {
       updateMutation.mutate(
@@ -948,7 +948,6 @@ export function MattermostChannelView({ channelId }: Props) {
     lastSentMessageRef.current = finalMessage;
     lastSentRootIdRef.current = rootId;
     lastSentAtRef.current = Date.now();
-    clearQueuedTyping();
     pendingAbortControllerRef.current = new AbortController();
 
     sendMutation.mutate(
