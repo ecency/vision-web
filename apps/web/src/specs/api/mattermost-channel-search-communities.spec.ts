@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  mmChannels: [] as { id: string; name: string; display_name: string; type: string }[],
+  mmChannels: [] as unknown,
   ensureChannelForCommunity: vi.fn(async (name: string) => `ch-${name}`),
   findHiveCommunity: vi.fn(async (_name: string): Promise<{ name: string; title?: string } | null> => null),
   searchHiveCommunities: vi.fn(async (): Promise<{ name: string; title?: string }[]> => [])
@@ -42,6 +42,8 @@ async function search(body: Record<string, unknown>): Promise<SearchResult> {
 
 describe("POST /api/mattermost/channels/search Hive community fallback", () => {
   beforeEach(() => {
+    // The route caches Hive matches and channel ids per process.
+    vi.resetModules();
     mocks.mmChannels = [];
     mocks.ensureChannelForCommunity.mockClear();
     mocks.findHiveCommunity.mockReset().mockResolvedValue(null);
@@ -100,5 +102,42 @@ describe("POST /api/mattermost/channels/search Hive community fallback", () => {
     const { channels } = await search({ term: "photo" });
 
     expect(channels.map((c) => c.id)).toEqual(["ch-a"]);
+  });
+
+  it("reuses cached Hive matches and channel ids for a repeated search", async () => {
+    mocks.searchHiveCommunities.mockResolvedValue([{ name: "hive-2", title: "B" }]);
+    const { POST } = await import("@/app/api/mattermost/channels/search/route");
+    const call = () =>
+      POST(
+        new Request("http://localhost/api/mattermost/channels/search", {
+          method: "POST",
+          body: JSON.stringify({ term: "photo" })
+        })
+      ).then((r) => r.json() as Promise<SearchResult>);
+
+    await call();
+    const second = await call();
+
+    expect(mocks.searchHiveCommunities).toHaveBeenCalledTimes(1);
+    expect(mocks.ensureChannelForCommunity).toHaveBeenCalledTimes(1);
+    expect(second.channels.map((c) => c.id)).toEqual(["ch-hive-2"]);
+  });
+
+  it("returns Mattermost results when the Hive lookup times out", async () => {
+    mocks.mmChannels = [{ id: "ch-a", name: "hive-1", display_name: "A", type: "O" }];
+    mocks.searchHiveCommunities.mockRejectedValue(new DOMException("timed out", "TimeoutError"));
+
+    const { channels } = await search({ term: "photo" });
+
+    expect(channels.map((c) => c.id)).toEqual(["ch-a"]);
+  });
+
+  it("passes a non-array Mattermost body through without a Hive lookup", async () => {
+    mocks.mmChannels = { unexpected: true };
+
+    const body = (await search({ term: "photo" })) as unknown as { channels: unknown };
+
+    expect(body.channels).toEqual({ unexpected: true });
+    expect(mocks.searchHiveCommunities).not.toHaveBeenCalled();
   });
 });

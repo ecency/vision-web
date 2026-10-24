@@ -1,6 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useDebounce } from "react-use";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { getAccessToken, getRefreshToken } from "@/utils";
 import { useGlobalStore } from "@/core/global-store";
@@ -445,8 +447,13 @@ export function useMattermostUserSearch(term: string, enabled: boolean) {
   });
 }
 
+// Each channel search can also look communities up on Hive and create their
+// channels server-side, so wait for typing to pause (same delay as mobile).
+const CHANNEL_SEARCH_DEBOUNCE_MS = 350;
+
 export function useMattermostChannelSearch(term: string, enabled: boolean) {
-  const query = term.trim();
+  const [query, setQuery] = useState(() => term.trim());
+  useDebounce(() => setQuery(term.trim()), CHANNEL_SEARCH_DEBOUNCE_MS, [term]);
 
   return useQuery({
     queryKey: ["mattermost-channel-search", query],
