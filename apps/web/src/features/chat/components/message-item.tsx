@@ -10,7 +10,8 @@ import {
   DropdownToggle
 } from "@ui/dropdown";
 import { Popover, PopoverContent } from "@ui/popover";
-import { formatRelativeTime, getAvatarUrl, isChannelNoticePost } from "../format-utils";
+import { formatRelativeTime, getAvatarUrl, isChannelNoticePost, isOfficialPostAuthor } from "../format-utils";
+import { OfficialBadge } from "./official-badge";
 import { getNativeEmojiFromShortcode } from "../emoji-utils";
 import { resolveReplyPreview } from "./reply-preview";
 import { MessageTranslate } from "./message-translate";
@@ -70,11 +71,13 @@ const UsernameActions = memo(function UsernameActions({
   username,
   displayName,
   currentUsername,
+  official,
   onStartDm
 }: {
   username: string;
   displayName: string;
   currentUsername?: string;
+  official: boolean;
   onStartDm: (username: string) => void;
 }) {
   const isSelf = currentUsername
@@ -90,6 +93,7 @@ const UsernameActions = memo(function UsernameActions({
         >
           {displayName}
         </span>
+        {official && <OfficialBadge username={username} className="ml-1" />}
       </DropdownToggle>
       <DropdownMenu align="left" size="small">
         <DropdownItemWithIcon icon={blogSvg} label="View blog" href={`/@${username}`} />
@@ -300,6 +304,7 @@ function MessageItemInner({
                           username={username}
                           displayName={displayName}
                           currentUsername={activeUser?.username}
+                          official={isOfficialPostAuthor(post, usersById)}
                           onStartDm={startDirectMessage}
                         />
                       );

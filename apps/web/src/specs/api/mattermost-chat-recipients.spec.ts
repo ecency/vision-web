@@ -131,3 +131,67 @@ describe("collectPostUserIds", () => {
     expect(ids.sort()).toEqual(["a", "b", "c", "d"]);
   });
 });
+
+describe("getDmFanoutExemptUserIds", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("looks Esie up once, and retries after a failed lookup instead of caching it", async () => {
+    const { getDmFanoutExemptUserIds } = await loadModule();
+    fetchMock.mockResolvedValueOnce(resp(503, { message: "down" }));
+
+    expect(await getDmFanoutExemptUserIds()).toEqual(new Set());
+
+    fetchMock.mockResolvedValueOnce(resp(200, { id: "esie-id", username: "esie" }));
+    expect(await getDmFanoutExemptUserIds()).toEqual(new Set(["esie-id"]));
+    expect(await getDmFanoutExemptUserIds()).toEqual(new Set(["esie-id"]));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1][0])).toContain("/users/username/esie");
+  });
+});
+
+describe("getDmFanoutExemptUserIds on a chat server without Esie", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("does not look the missing account up on every message", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue(resp(404, { message: "not found" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { getDmFanoutExemptUserIds } = await loadModule();
+
+    await getDmFanoutExemptUserIds();
+    await getDmFanoutExemptUserIds();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(10 * 60_000 + 1);
+    await getDmFanoutExemptUserIds();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("getDmFanoutExemptUserIds under concurrent first posts", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("shares one lookup", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(resp(200, { id: "esie-id", username: "esie" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { getDmFanoutExemptUserIds } = await loadModule();
+
+    const results = await Promise.all([getDmFanoutExemptUserIds(), getDmFanoutExemptUserIds(), getDmFanoutExemptUserIds()]);
+
+    expect(results).toEqual([new Set(["esie-id"]), new Set(["esie-id"]), new Set(["esie-id"])]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

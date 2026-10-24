@@ -14,6 +14,7 @@ import { classNameObject } from "@ui/util";
 import i18next from "i18next";
 import { useEffect, useState } from "react";
 import { NavbarTextMenu } from "./navbar-text-menu";
+import { NavbarAskEsie } from "./navbar-ask-esie";
 import { useHydrated } from "@/api/queries";
 import { useMattermostUnread } from "@/features/chat/mattermost-api";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -82,6 +83,7 @@ export function NavbarDesktop({
             aria-label={i18next.t("entry-index.faq")}
           />
         </Tooltip>
+        <NavbarAskEsie />
         {(step !== 1 || transparentVerify) && (
           // Slot is always rendered so it reserves its flex space (no layout
           // shift when Search mounts). Only the heavy Search itself is gated on

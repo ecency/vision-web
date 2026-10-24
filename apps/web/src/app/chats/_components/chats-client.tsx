@@ -37,6 +37,10 @@ import { ChannelAvatar } from "@/features/chat/components/channel-avatar";
 import { NewGroupModal } from "@/features/chat/components/new-group-modal";
 import { NewPrivateChannelModal } from "@/features/chat/components/private-channel-modals";
 import { sortChannelsByActivity } from "@/features/chat/channel-sort";
+import { OfficialBadge } from "@/features/chat/components/official-badge";
+import { getUserDisplayName } from "@/features/chat/format-utils";
+import { ASK_ESIE_HREF, ESIE_USERNAME, safeChatName } from "@/features/chat/official-accounts";
+import { ESIE_MOODS } from "@ui/esie/esie-moods.generated";
 import {
   getGroupTitle,
   isConversationChannel,
@@ -108,18 +112,7 @@ export function ChatsClient() {
     return new Map((channels?.channels || []).map((channel) => [channel.id, channel]));
   }, [channels?.channels]);
 
-  const getDirectUserDisplayName = useCallback((user?: MattermostUser | null) => {
-    if (!user) return undefined;
-
-    const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
-    if (fullName) return fullName;
-
-    if (user.nickname) return user.nickname;
-
-    if (user.username) return `@${user.username}`;
-
-    return undefined;
-  }, []);
+  const getDirectUserDisplayName = getUserDisplayName;
 
   const filteredChannels = useMemo(() => {
     if (!channels?.channels) return [];
@@ -179,6 +172,15 @@ export function ChatsClient() {
     () => sortChannelsByActivity(channels?.channels || [], getUnreadCount, channelOrder),
     [channelOrder, channels?.channels, getUnreadCount]
   );
+  // Esie is pinned on top, so it is reachable before any conversation with it exists
+  const esieChannel = useMemo(
+    () => sortedChannels.find((c) => c.type === "D" && c.directUser?.username === ESIE_USERNAME),
+    [sortedChannels]
+  );
+  const listedChannels = useMemo(
+    () => (esieChannel ? sortedChannels.filter((c) => c !== esieChannel) : sortedChannels),
+    [esieChannel, sortedChannels]
+  );
   const searchedChannels = useMemo(
     () => sortChannelsByActivity(filteredChannels, getUnreadCount, channelOrder),
     [channelOrder, filteredChannels, getUnreadCount]
@@ -196,6 +198,8 @@ export function ChatsClient() {
   // Auto-start DM when navigating from profile (?dm=username)
   const dmInitiated = useRef<string | null>(null);
   useEffect(() => {
+    // the list stays mounted across chats, so a later link to the same person must start again
+    if (!dmTarget) dmInitiated.current = null;
     if (dmTarget && bootstrap?.ok && isOnScreen() && dmInitiated.current !== dmTarget) {
       dmInitiated.current = dmTarget;
       directChannelMutation.mutate(dmTarget, {
@@ -294,7 +298,8 @@ export function ChatsClient() {
 
       if (isGroupChannel(channel)) {
         return (
-          channel.group_name || getGroupTitle(channel.groupUsers, channel.display_name || channel.name)
+          safeChatName(channel.group_name) ||
+          getGroupTitle(channel.groupUsers, channel.display_name || channel.name)
         );
       }
 
@@ -429,6 +434,7 @@ export function ChatsClient() {
             <div className="flex items-center gap-2 min-w-0">
               <div className="flex items-center gap-1 font-semibold min-w-0 flex-1">
                 <span className="truncate">{getChannelTitle(channel)}</span>
+                {channel.type === "D" && <OfficialBadge username={channel.directUser?.username} />}
                 {channel.is_favorite && (
                   <span
                     className="text-amber-500 flex-shrink-0 text-sm"
@@ -671,7 +677,33 @@ export function ChatsClient() {
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-1">
-            {sortedChannels.map(renderChannelRow)}
+            {esieChannel ? (
+              renderChannelRow(esieChannel)
+            ) : (
+              <Link
+                href={ASK_ESIE_HREF}
+                data-chat-esie-pinned
+                className="flex min-h-11 min-w-0 items-center gap-2 rounded-lg border-l-2 border-transparent p-2.5 transition hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-dark-sky dark:hover:bg-white/5"
+              >
+                <img
+                  src={ESIE_MOODS.avatar.src}
+                  width={40}
+                  height={40}
+                  alt=""
+                  aria-hidden
+                  draggable={false}
+                  className="size-10 shrink-0 rounded-full bg-blue-duck-egg dark:bg-dark-default"
+                />
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <div className="flex min-w-0 items-center gap-1 font-semibold">
+                    <span className="truncate">{i18next.t("chat.esie-title")}</span>
+                    <OfficialBadge username={ESIE_USERNAME} />
+                  </div>
+                  <div className="truncate text-xs text-[--text-muted]">{i18next.t("chat.esie-subtitle")}</div>
+                </div>
+              </Link>
+            )}
+            {listedChannels.map(renderChannelRow)}
             {!sortedChannels.length && !channelsLoading && (
               <div className="text-sm text-[--text-muted]">{i18next.t("chat.no-channels")}</div>
             )}
@@ -738,7 +770,7 @@ export function ChatsClient() {
                 {!userSearchLoading &&
                   discoverableUsers.map((user) => {
                     const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
-                    const secondary = user.nickname || fullName;
+                    const secondary = safeChatName(user.nickname || fullName, user.username);
 
                     return (
                       <button

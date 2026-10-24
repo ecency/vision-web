@@ -18,7 +18,10 @@ vi.mock("@ecency/sdk/hive", () => ({
   callRPC: (...args: unknown[]) => mockCallRPC(...args)
 }));
 
+const mockExemptIds = vi.fn(async () => new Set<string>());
+
 vi.mock("@/server/mattermost", () => ({
+  getDmFanoutExemptUserIds: () => mockExemptIds(),
   getGroupOwnerId: (...args: unknown[]) => mockGetOwner(...args),
   setGroupOwnerId: (...args: unknown[]) => mockSetOwner(...args),
   getMattermostTeamId: () => "team-1",
@@ -213,6 +216,16 @@ describe("POST /api/mattermost/group", () => {
       userId: "me",
       recipients: ["id-bob", "id-carol", "id-dave"]
     });
+  });
+
+  it("adds Esie to the group without counting it against the fan-out limit", async () => {
+    const { POST } = await import("@/app/api/mattermost/group/route");
+    mockExemptIds.mockResolvedValueOnce(new Set(["id-esie"]));
+
+    await POST(request({ usernames: ["bob", "esie", "carol"] }));
+
+    expect(mockCheckDmFanout.mock.calls[0][0]).toMatchObject({ recipients: ["id-bob", "id-carol"] });
+    expect(JSON.parse(createCalls()[0][2].body)).toEqual(["me", "id-bob", "id-esie", "id-carol"]);
   });
 
   it("rejects fewer than two or more than seven other people", async () => {

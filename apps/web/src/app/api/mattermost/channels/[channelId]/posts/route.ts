@@ -7,6 +7,7 @@ import {
   handleMattermostError,
   MattermostChannel,
   getMattermostTokenFromCookies,
+  getDmFanoutExemptUserIds,
   getPrivateChannelRecipientIds,
   mmUserFetch,
   toPublicChatUserMap,
@@ -412,8 +413,13 @@ export async function POST(
     //
     // A post into a group reaches every member, so every other member is
     // counted as a recipient, the same as if each had been messaged directly.
+    // Esie, the AI helper, is never counted: asking it for help must not use up the budget.
     if (channel.type === "D" || channel.type === "G") {
-      const recipients = await getPrivateChannelRecipientIds(channel, currentUser.id, token);
+      const [exempt, allRecipients] = await Promise.all([
+        getDmFanoutExemptUserIds(),
+        getPrivateChannelRecipientIds(channel, currentUser.id, token)
+      ]);
+      const recipients = allRecipients.filter((id) => !exempt.has(id));
       const fanout = await checkDmFanout({
         userId: currentUser.id,
         recipients,

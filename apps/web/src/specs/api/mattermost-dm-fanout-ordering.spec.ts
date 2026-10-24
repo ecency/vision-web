@@ -9,6 +9,7 @@ const mockMmUserFetch = vi.fn();
 const mockCheckDmFanout = vi.fn();
 const mockModerationContext = vi.fn();
 const mockRecipientIds = vi.fn();
+const mockExemptIds = vi.fn(async () => new Set<string>());
 
 vi.mock("@/server/mattermost", () => ({
   CHAT_BAN_PROP: "ecency_chat_banned_until",
@@ -17,6 +18,7 @@ vi.mock("@/server/mattermost", () => ({
   followMattermostThreadForUser: vi.fn(),
   getMattermostCommunityModerationContext: (...args: unknown[]) => mockModerationContext(...args),
   getMattermostTokenFromCookies: () => Promise.resolve("test-token"),
+  getDmFanoutExemptUserIds: () => mockExemptIds(),
   getPrivateChannelRecipientIds: (...args: unknown[]) => mockRecipientIds(...args),
   handleMattermostError: () => ({ status: 500 }),
   isUserChatBanned: () => null,
@@ -132,6 +134,30 @@ describe("posts route — DM fan-out runs last", () => {
     expect(mockCheckDmFanout).toHaveBeenCalledOnce();
     expect(mockCheckDmFanout.mock.calls[0][0]).toMatchObject({ userId: "u-1", recipients: ["u-2"] });
     expect(mockMmUserFetch).toHaveBeenCalledWith("/posts", "test-token", expect.anything());
+  });
+
+  it("never counts Esie, so asking the AI helper costs no fan-out slot", async () => {
+    const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    allowFanout();
+    mockRecipientIds.mockResolvedValue(["esie-id"]);
+    mockExemptIds.mockResolvedValueOnce(new Set(["esie-id"]));
+
+    const res = await POST(request("how do I power up?"), params);
+
+    expect(res.status).toBe(200);
+    expect(mockCheckDmFanout.mock.calls[0][0]).toMatchObject({ recipients: [] });
+  });
+
+  it("still counts everyone else in a group that includes Esie", async () => {
+    const { POST } = await import("@/app/api/mattermost/channels/[channelId]/posts/route");
+    asGroupChannel();
+    allowFanout();
+    mockRecipientIds.mockResolvedValue(["esie-id", "u-2", "u-3"]);
+    mockExemptIds.mockResolvedValueOnce(new Set(["esie-id"]));
+
+    await POST(request("hi all"), params);
+
+    expect(mockCheckDmFanout.mock.calls[0][0]).toMatchObject({ recipients: ["u-2", "u-3"] });
   });
 
   it("rejects with 429 and sends nothing once the cap is reached", async () => {
