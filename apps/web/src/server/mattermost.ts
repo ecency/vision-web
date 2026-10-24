@@ -322,7 +322,10 @@ export async function ensureChannelForCommunity(
   community: string,
   // Unused: a new channel takes the community's title from Hive, never the caller's.
   _displayName?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  // Asked once, right before a missing channel would be created. Returning
+  // false makes the call fail instead (used to budget creates from search).
+  allowCreate?: () => Promise<boolean>
 ): Promise<string> {
   const teamId = requireEnv(MATTERMOST_TEAM_ID, "MATTERMOST_TEAM_ID");
   const channelName = normalizeCommunityId(community);
@@ -357,6 +360,9 @@ export async function ensureChannelForCommunity(
     throw new Error(`Community ${channelName} was not found on Hive`);
   }
   const title = hiveCommunity.title?.trim() || channelName;
+  if (allowCreate && !(await allowCreate())) {
+    throw new Error(`Creating a channel for ${channelName} is not allowed right now`);
+  }
   try {
     const created = await mmFetch<{ id: string }>(`/channels`, {
       method: "POST",

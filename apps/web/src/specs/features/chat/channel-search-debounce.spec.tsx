@@ -47,4 +47,30 @@ describe("useMattermostChannelSearch", () => {
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(JSON.parse(init.body as string)).toEqual({ term: "photo" });
   });
+
+  it("hides the previous term's results while the new term is pending", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ channels: [{ id: "old" }] })))
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+
+    const { result, rerender } = renderHook(({ term }) => useMattermostChannelSearch(term, true), {
+      wrapper,
+      initialProps: { term: "photo" }
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(result.current.data?.channels).toEqual([{ id: "old" }]);
+
+    rerender({ term: "photography" });
+
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.isFetching).toBe(true);
+  });
 });

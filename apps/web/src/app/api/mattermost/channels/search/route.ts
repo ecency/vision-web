@@ -9,6 +9,7 @@ import {
 } from "@/server/mattermost";
 import { isMattermostDefaultChannel } from "../helpers";
 import { findHiveCommunity, searchHiveCommunities } from "@/server/hive-community";
+import { takeChannelCreateSlot } from "@/server/chat-channel-create-budget";
 
 interface MattermostChannelSummary {
   id: string;
@@ -25,81 +26,88 @@ interface ChannelSearchPayload {
 
 const HIVE_COMMUNITY_ID = /^hive-\d+$/i;
 const MAX_HIVE_MATCHES = 3;
+// Hive's title search also matches descriptions; ask for a few more and keep
+// only communities whose title really contains the query.
+const HIVE_SEARCH_LIMIT = 10;
 const HIVE_LOOKUP_TIMEOUT_MS = 5_000;
 
-// Short per-process caches so repeated and prefix searches don't re-ask Hive
-// or the Mattermost admin API every time.
+// Short per-process cache so repeated and prefix searches don't re-ask Hive.
 const HIVE_MATCHES_TTL_MS = 60_000;
-const CHANNEL_ID_TTL_MS = 60_000;
 const MAX_CACHE_ENTRIES = 1_000;
 type Community = { name: string; title?: string };
 const hiveMatchesCache = new Map<string, { at: number; value: Community[] }>();
-const channelIdCache = new Map<string, { at: number; value: string }>();
 
-function readCache<T>(cache: Map<string, { at: number; value: T }>, key: string, ttl: number) {
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < ttl) return hit.value;
-  cache.delete(key);
+function readHiveMatches(key: string): Community[] | undefined {
+  const hit = hiveMatchesCache.get(key);
+  if (hit && Date.now() - hit.at < HIVE_MATCHES_TTL_MS) return hit.value;
+  hiveMatchesCache.delete(key);
   return undefined;
 }
 
-function writeCache<T>(cache: Map<string, { at: number; value: T }>, key: string, value: T) {
-  if (cache.size >= MAX_CACHE_ENTRIES) cache.clear();
-  cache.set(key, { at: Date.now(), value });
+function writeHiveMatches(key: string, value: Community[]): void {
+  if (hiveMatchesCache.size >= MAX_CACHE_ENTRIES) hiveMatchesCache.clear();
+  hiveMatchesCache.set(key, { at: Date.now(), value });
 }
 
+/** Communities that clearly match: the exact id, or a title containing the query. */
 async function lookUpHiveCommunities(query: string, signal: AbortSignal): Promise<Community[]> {
   const key = query.toLowerCase();
-  const cached = readCache(hiveMatchesCache, key, HIVE_MATCHES_TTL_MS);
+  const cached = readHiveMatches(key);
   if (cached) return cached;
   let matches: Community[];
   if (HIVE_COMMUNITY_ID.test(key)) {
     const community = await findHiveCommunity(key, signal);
     matches = community ? [community] : [];
   } else if (key.length >= 3) {
-    matches = await searchHiveCommunities(query, MAX_HIVE_MATCHES, signal);
+    matches = (await searchHiveCommunities(query, HIVE_SEARCH_LIMIT, signal))
+      .filter((c) => c.title?.toLowerCase().includes(key))
+      .slice(0, MAX_HIVE_MATCHES);
   } else {
     return [];
   }
   // A failed or aborted Hive call also reads as "no match", so only remember
   // real matches. Empty results are cheap to ask for again.
-  if (matches.length > 0) writeCache(hiveMatchesCache, key, matches);
+  if (matches.length > 0) writeHiveMatches(key, matches);
   return matches;
-}
-
-async function ensureCommunityChannelId(community: Community, signal: AbortSignal) {
-  const key = community.name.toLowerCase();
-  const cached = readCache(channelIdCache, key, CHANNEL_ID_TTL_MS);
-  if (cached) return cached;
-  const id = await ensureChannelForCommunity(community.name, community.title, signal);
-  writeCache(channelIdCache, key, id);
-  return id;
 }
 
 // Bootstrap only auto-joins a user's first few subscribed communities, so a
 // community channel may not exist yet. Look the query up on Hive and make sure
-// its best matches have a channel, so they can be found and joined from search
-// (the mobile app has no other way to reach them). Never fails the search.
+// its clear matches have a channel, so they can be found and joined from search
+// (the mobile app has no other way to reach them). Creating a missing channel
+// spends the user's hourly budget. Never fails the search.
 async function findHiveCommunityChannels(
   query: string,
   knownNames: Set<string>,
+  token: string,
   signal: AbortSignal
 ): Promise<MattermostChannelSummary[]> {
   const communities = await lookUpHiveCommunities(query, signal);
+  const missing = communities.filter((c) => !knownNames.has(c.name.toLowerCase()));
+  if (!missing.length) return [];
 
-  const missing = communities
-    .filter((c) => !knownNames.has(c.name.toLowerCase()))
-    .slice(0, MAX_HIVE_MATCHES);
+  let userId: Promise<string> | undefined;
+  const allowCreate = async (): Promise<boolean> => {
+    userId ??= mmUserFetch<{ id: string }>("/users/me", token, { signal }).then((u) => u.id);
+    return takeChannelCreateSlot(await userId);
+  };
 
   const results = await Promise.allSettled(
     missing.map(async (c) => ({
-      id: await ensureCommunityChannelId(c, signal),
+      id: await ensureChannelForCommunity(c.name, c.title, signal, allowCreate),
       name: c.name.toLowerCase(),
       display_name: Array.from(c.title?.trim() || c.name).slice(0, 64).join(""),
       type: "O"
     }))
   );
-  return results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+  return results.flatMap((r, i) => {
+    if (r.status === "fulfilled") return [r.value];
+    console.warn("MM channel search: community channel unavailable", {
+      community: missing[i].name,
+      error: r.reason instanceof Error ? r.reason.message : String(r.reason)
+    });
+    return [];
+  });
 }
 
 export async function POST(req: Request) {
@@ -154,6 +162,7 @@ export async function POST(req: Request) {
       ? await findHiveCommunityChannels(
           query,
           new Set(visible.map((channel) => channel.name.toLowerCase())),
+          token,
           AbortSignal.any([req.signal, AbortSignal.timeout(HIVE_LOOKUP_TIMEOUT_MS)])
         ).catch(() => [])
       : [];

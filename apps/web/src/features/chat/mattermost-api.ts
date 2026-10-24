@@ -454,8 +454,11 @@ const CHANNEL_SEARCH_DEBOUNCE_MS = 350;
 export function useMattermostChannelSearch(term: string, enabled: boolean) {
   const [query, setQuery] = useState(() => term.trim());
   useDebounce(() => setQuery(term.trim()), CHANNEL_SEARCH_DEBOUNCE_MS, [term]);
+  // While typing, the last results belong to an older term: hide them and
+  // report a search in progress until the new term is sent.
+  const pending = enabled && term.trim().length >= 2 && term.trim() !== query;
 
-  return useQuery({
+  const result = useQuery({
     queryKey: ["mattermost-channel-search", query],
     enabled: enabled && query.length >= 2,
     queryFn: async () => {
@@ -473,6 +476,8 @@ export function useMattermostChannelSearch(term: string, enabled: boolean) {
       return (await safeJson(res)) as { channels: MattermostChannelSummary[] };
     }
   });
+
+  return pending ? { ...result, data: undefined, isFetching: true } : result;
 }
 
 export function useMattermostMessageSearch(term: string, enabled: boolean) {

@@ -2,7 +2,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   mmChannels: [] as unknown,
-  ensureChannelForCommunity: vi.fn(async (name: string) => `ch-${name}`),
+  // Behaves as if every channel were missing, so each call asks allowCreate.
+  ensureChannelForCommunity: vi.fn(
+    async (name: string, _title?: string, _signal?: AbortSignal, allowCreate?: () => Promise<boolean>) => {
+      if (allowCreate && !(await allowCreate())) throw new Error("not allowed");
+      return `ch-${name}`;
+    }
+  ),
+  takeChannelCreateSlot: vi.fn(async (_userId: string) => true),
+  mmUserFetch: vi.fn(async (path: string): Promise<unknown> =>
+    path === "/users/me" ? { id: "user-1" } : mocks.mmChannels
+  ),
   findHiveCommunity: vi.fn(async (_name: string): Promise<{ name: string; title?: string } | null> => null),
   searchHiveCommunities: vi.fn(async (): Promise<{ name: string; title?: string }[]> => [])
 }));
@@ -12,13 +22,17 @@ vi.mock("@/server/hive-community", () => ({
   searchHiveCommunities: mocks.searchHiveCommunities
 }));
 
+vi.mock("@/server/chat-channel-create-budget", () => ({
+  takeChannelCreateSlot: mocks.takeChannelCreateSlot
+}));
+
 vi.mock("@/server/mattermost", async (importActual) => {
   const actual = await importActual<typeof import("@/server/mattermost")>();
   return {
     ...actual,
     getMattermostTokenFromCookies: vi.fn(async () => "user-token"),
     getMattermostTeamId: vi.fn(() => "team-1"),
-    mmUserFetch: vi.fn(async () => mocks.mmChannels),
+    mmUserFetch: mocks.mmUserFetch,
     ensureChannelForCommunity: mocks.ensureChannelForCommunity
   };
 });
@@ -42,10 +56,12 @@ async function search(body: Record<string, unknown>): Promise<SearchResult> {
 
 describe("POST /api/mattermost/channels/search Hive community fallback", () => {
   beforeEach(() => {
-    // The route caches Hive matches and channel ids per process.
+    // The route caches Hive matches per process.
     vi.resetModules();
     mocks.mmChannels = [];
     mocks.ensureChannelForCommunity.mockClear();
+    mocks.mmUserFetch.mockClear();
+    mocks.takeChannelCreateSlot.mockReset().mockResolvedValue(true);
     mocks.findHiveCommunity.mockReset().mockResolvedValue(null);
     mocks.searchHiveCommunities.mockReset().mockResolvedValue([]);
   });
@@ -77,12 +93,11 @@ describe("POST /api/mattermost/channels/search Hive community fallback", () => {
 
   it("caps Hive matches at 3", async () => {
     mocks.searchHiveCommunities.mockResolvedValue(
-      Array.from({ length: 5 }, (_, i) => ({ name: `hive-${i}` }))
+      Array.from({ length: 5 }, (_, i) => ({ name: `hive-${i}`, title: `Art ${i}` }))
     );
 
     const { channels } = await search({ term: "art" });
 
-    expect(mocks.searchHiveCommunities.mock.calls[0][1]).toBe(3);
     expect(channels).toHaveLength(3);
   });
 
@@ -96,7 +111,7 @@ describe("POST /api/mattermost/channels/search Hive community fallback", () => {
 
   it("still returns Mattermost results when channel creation fails", async () => {
     mocks.mmChannels = [{ id: "ch-a", name: "hive-1", display_name: "A", type: "O" }];
-    mocks.searchHiveCommunities.mockResolvedValue([{ name: "hive-2" }]);
+    mocks.searchHiveCommunities.mockResolvedValue([{ name: "hive-2", title: "Photo" }]);
     mocks.ensureChannelForCommunity.mockRejectedValueOnce(new Error("boom"));
 
     const { channels } = await search({ term: "photo" });
@@ -104,8 +119,8 @@ describe("POST /api/mattermost/channels/search Hive community fallback", () => {
     expect(channels.map((c) => c.id)).toEqual(["ch-a"]);
   });
 
-  it("reuses cached Hive matches and channel ids for a repeated search", async () => {
-    mocks.searchHiveCommunities.mockResolvedValue([{ name: "hive-2", title: "B" }]);
+  it("reuses cached Hive matches for a repeated search", async () => {
+    mocks.searchHiveCommunities.mockResolvedValue([{ name: "hive-2", title: "Photo B" }]);
     const { POST } = await import("@/app/api/mattermost/channels/search/route");
     const call = () =>
       POST(
@@ -119,14 +134,13 @@ describe("POST /api/mattermost/channels/search Hive community fallback", () => {
     const second = await call();
 
     expect(mocks.searchHiveCommunities).toHaveBeenCalledTimes(1);
-    expect(mocks.ensureChannelForCommunity).toHaveBeenCalledTimes(1);
     expect(second.channels.map((c) => c.id)).toEqual(["ch-hive-2"]);
   });
 
   it("does not cache an empty Hive result, so a failed lookup is retried", async () => {
     // The real helpers turn Hive errors and timeouts into an empty result.
     mocks.searchHiveCommunities.mockResolvedValueOnce([]);
-    mocks.searchHiveCommunities.mockResolvedValueOnce([{ name: "hive-2", title: "B" }]);
+    mocks.searchHiveCommunities.mockResolvedValueOnce([{ name: "hive-2", title: "Photo B" }]);
     const { POST } = await import("@/app/api/mattermost/channels/search/route");
     const call = () =>
       POST(
@@ -150,5 +164,33 @@ describe("POST /api/mattermost/channels/search Hive community fallback", () => {
 
     expect(body.channels).toEqual({ unexpected: true });
     expect(mocks.searchHiveCommunities).not.toHaveBeenCalled();
+  });
+
+  it("only uses communities whose title contains the query", async () => {
+    mocks.searchHiveCommunities.mockResolvedValue([
+      { name: "hive-9", title: "Town Square" },
+      { name: "hive-8", title: "PhotoFeed" }
+    ]);
+
+    const { channels } = await search({ term: "photo" });
+
+    expect(channels.map((c) => c.name)).toEqual(["hive-8"]);
+    expect(mocks.ensureChannelForCommunity.mock.calls.map((c) => c[0])).toEqual(["hive-8"]);
+  });
+
+  it("spends the caller's creation budget and skips channels it refuses", async () => {
+    mocks.searchHiveCommunities.mockResolvedValue([
+      { name: "hive-1", title: "Photo A" },
+      { name: "hive-2", title: "Photo B" }
+    ]);
+    mocks.takeChannelCreateSlot.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+    const { channels } = await search({ term: "photo" });
+
+    expect(channels).toHaveLength(1);
+    expect(mocks.takeChannelCreateSlot).toHaveBeenCalledTimes(2);
+    expect(mocks.takeChannelCreateSlot.mock.calls.every((c) => c[0] === "user-1")).toBe(true);
+    // the caller is looked up once per search, not per community
+    expect(mocks.mmUserFetch.mock.calls.filter((c) => c[0] === "/users/me")).toHaveLength(1);
   });
 });

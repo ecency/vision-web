@@ -279,6 +279,22 @@ describe("ensureUserInChannel / ensureChannelForCommunity — idempotency", () =
     });
   });
 
+  it("asks allowCreate only before creating, and does not create when refused", async () => {
+    const { ensureChannelForCommunity } = await loadModule();
+    const allowCreate = vi.fn(async () => false);
+
+    fetchMock.mockResolvedValueOnce(resp(200, { id: "ch-1", name: "hive-1", type: "O" }));
+    await expect(ensureChannelForCommunity("hive-1", "x", undefined, allowCreate)).resolves.toBe("ch-1");
+    expect(allowCreate).not.toHaveBeenCalled();
+
+    fetchMock.mockReset();
+    mockFindHiveCommunity.mockResolvedValue({ name: "hive-2", title: "Two" });
+    fetchMock.mockResolvedValueOnce(resp(404, "no such channel"));
+    await expect(ensureChannelForCommunity("hive-2", "x", undefined, allowCreate)).rejects.toThrow();
+    expect(allowCreate).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses a name that is not a community before asking Mattermost", async () => {
     const { ensureCommunityChannelMembership } = await loadModule();
 
