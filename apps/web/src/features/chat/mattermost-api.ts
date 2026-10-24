@@ -1,6 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useDebounce } from "react-use";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { getAccessToken, getRefreshToken } from "@/utils";
 import { useGlobalStore } from "@/core/global-store";
@@ -445,10 +447,18 @@ export function useMattermostUserSearch(term: string, enabled: boolean) {
   });
 }
 
-export function useMattermostChannelSearch(term: string, enabled: boolean) {
-  const query = term.trim();
+// Each channel search can also look communities up on Hive and create their
+// channels server-side, so wait for typing to pause (same delay as mobile).
+const CHANNEL_SEARCH_DEBOUNCE_MS = 350;
 
-  return useQuery({
+export function useMattermostChannelSearch(term: string, enabled: boolean) {
+  const [query, setQuery] = useState(() => term.trim());
+  useDebounce(() => setQuery(term.trim()), CHANNEL_SEARCH_DEBOUNCE_MS, [term]);
+  // While typing, the last results belong to an older term: hide them and
+  // report a search in progress until the new term is sent.
+  const pending = enabled && term.trim().length >= 2 && term.trim() !== query;
+
+  const result = useQuery({
     queryKey: ["mattermost-channel-search", query],
     enabled: enabled && query.length >= 2,
     queryFn: async () => {
@@ -466,6 +476,12 @@ export function useMattermostChannelSearch(term: string, enabled: boolean) {
       return (await safeJson(res)) as { channels: MattermostChannelSummary[] };
     }
   });
+
+  return {
+    data: pending ? undefined : result.data,
+    isFetching: pending || result.isFetching,
+    error: pending ? null : result.error
+  };
 }
 
 export function useMattermostMessageSearch(term: string, enabled: boolean) {

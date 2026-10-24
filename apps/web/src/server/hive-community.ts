@@ -16,3 +16,23 @@ export async function findHiveCommunity(
     return null;
   }
 }
+
+/** Communities whose title or description matches the query, best ranked first. Empty when Hive cannot be asked. */
+export async function searchHiveCommunities(
+  query: string,
+  limit: number,
+  signal?: AbortSignal
+): Promise<{ name: string; title?: string }[]> {
+  try {
+    const communities = await bridgeApiCall<{ name?: string; title?: string }[] | null>(
+      "list_communities",
+      { query, limit },
+      signal
+    );
+    return (communities ?? [])
+      .filter((c): c is { name: string; title?: string } => typeof c?.name === "string")
+      .map((c) => ({ name: c.name, title: c.title }));
+  } catch {
+    return [];
+  }
+}
