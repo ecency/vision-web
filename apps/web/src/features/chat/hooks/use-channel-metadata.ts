@@ -3,6 +3,7 @@ import i18next from "i18next";
 import type { MattermostPostsResponse, MattermostUser } from "../mattermost-api";
 import { getUserDisplayName } from "../format-utils";
 import { getGroupTitle } from "../group-utils";
+import { safeChatName } from "../official-accounts";
 
 interface UseChannelMetadataParams {
   channelId: string;
@@ -67,7 +68,8 @@ export function useChannelMetadata({
       if (displayName) return displayName;
     }
 
-    if (groupName) return groupName;
+    const safeGroupName = safeChatName(groupName);
+    if (safeGroupName) return safeGroupName;
 
     if (groupUsers?.length) {
       return getGroupTitle(groupUsers, i18next.t("chat.group"));

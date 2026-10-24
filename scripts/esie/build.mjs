@@ -35,7 +35,9 @@ const VIEWPORTS = {
   happy: [211.02596, 174.8251, 1835.5774, 1772.3641],
   sad: [598.8225, 268.0, 1834.0144, 1775.829],
   thinking: [568.2747, 246.00687, 1856.6112, 1771.6663],
-  surprised: [597.98737, 168.43448, 1835.5767, 1772.472]
+  surprised: [597.98737, 168.43448, 1835.5767, 1772.472],
+  // the face, square, for the navbar button and the chat list (not a native viewport)
+  avatar: [580, 110, 1920, 1450]
 };
 
 // Loops run this many times (at least 30 s), so they end on their first frame and hold.
@@ -110,6 +112,8 @@ ${mouth("mouth_hmm")}
 #thought_1{animation:${loop("dot", 1800, "ease-in-out", "both")}}
 #thought_2{animation:dot 1800ms ease-in-out 300ms both ${times(1800)}}
 #thought_3{animation:dot 1800ms ease-in-out 600ms both ${times(1800)}}`,
+  // still apart from the blink: it sits in the navbar on every page
+  avatar: `#fin_front,#fin_back{display:none!important}#fin_rest{display:inline!important}#tail_tip{animation:none}`,
   surprised: `#esie{animation:jolt 450ms cubic-bezier(.2,1.8,.4,1) 1,breathe 3200ms ease-in-out 450ms ${times(3200)}}${REST_FIN}
 #brows_surprised{display:inline!important}
 ${mouth("mouth_o")}

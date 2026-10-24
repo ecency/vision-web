@@ -30,6 +30,7 @@ import defaults from "@/defaults";
 import { useHydrated } from "@/api/queries";
 import { useMattermostUnread } from "@/features/chat/mattermost-api";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { ASK_ESIE_HREF } from "@/features/chat/official-accounts";
 
 // The full search experience (suggester + transfer/gallery/bookmarks graph) is
 // heavy and only appears inside the opened main sidebar, so load it as a
@@ -215,6 +216,13 @@ export function NavbarMainSidebar({ show, setShow, setStepOne }: Props) {
             to="https://docs.ecency.com"
             onClick={() => setShow(false)}
           />
+          {hydrated && activeUser && (
+            <NavbarSideMainMenuItem
+              label={i18next.t("navbar.ask-esie")}
+              to={ASK_ESIE_HREF}
+              onClick={() => setShow(false)}
+            />
+          )}
           <NavbarSideMainMenuItem
             label={i18next.t("entry-index.tos")}
             to="/terms-of-service"

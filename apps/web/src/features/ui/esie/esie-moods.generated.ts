@@ -6,6 +6,7 @@ export const ESIE_MOODS = {
   "happy": { src: "/assets/esie/happy.a49b4fd9.svg", ratio: 1.0163 },
   "sad": { src: "/assets/esie/sad.5150c69f.svg", ratio: 0.8203 },
   "thinking": { src: "/assets/esie/thinking.402b0a0f.svg", ratio: 0.8447 },
+  "avatar": { src: "/assets/esie/avatar.3ef26f1f.svg", ratio: 1.0000 },
   "surprised": { src: "/assets/esie/surprised.0b9f369d.svg", ratio: 0.7720 }
 } as const;
 

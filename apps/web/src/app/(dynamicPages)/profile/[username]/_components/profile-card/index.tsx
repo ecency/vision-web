@@ -36,6 +36,7 @@ import { profileText } from "./profile-text";
 import { FinalizeCommunityBanner } from "../finalize-community-banner";
 import { useActiveAccount } from "@/core/hooks";
 import { ProBadge } from "@/features/pro";
+import { OfficialBadge } from "@/features/chat/components/official-badge";
 import { ComposeDigestButton, DigestSubscribeButton, NewsletterGate, SenderStatusNotice, SentIssues, SubscriberCount } from "@/features/newsletter";
 
 interface Props {
@@ -116,6 +117,7 @@ export function ProfileCard({ account }: Props) {
           <div className="font-semibold flex items-center flex-wrap gap-2">
             {displayName ?? account.name}
             <ProBadge username={account.name} />
+            <OfficialBadge username={account.name} />
           </div>
           <span className="text-sm text-gray-600 dark:text-gray-400 truncate flex gap-1">
             @{account.name}

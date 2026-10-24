@@ -326,16 +326,17 @@ export function MattermostChannelView({ channelId }: Props) {
     [posts, threadData?.posts, usersById]
   );
   const { data: resolvedUsers } = useMattermostUsersByIds(missingUserIds);
-  useEffect(() => {
-    if (!resolvedUsers?.length) return;
+  const addExtraUsers = useCallback((users: MattermostUser[] | undefined) => {
+    if (!users?.length) return;
     setExtraUsers((current) => {
       const next = { ...current };
-      resolvedUsers.forEach((user) => {
+      users.forEach((user) => {
         next[user.id] = user;
       });
       return next;
     });
-  }, [resolvedUsers]);
+  }, []);
+  useEffect(() => addExtraUsers(resolvedUsers), [addExtraUsers, resolvedUsers]);
 
   const channelData = useMemo(() => data?.pages?.[0], [data?.pages]);
 
@@ -423,6 +424,7 @@ export function MattermostChannelView({ channelId }: Props) {
 
   const {
     typingUsernames,
+    unknownTypingUserIds,
     sendTypingDebounced
   } = useChannelWebSocket({
     channelId,
@@ -457,6 +459,9 @@ export function MattermostChannelView({ channelId }: Props) {
     setReconnectAttempt,
     setReconnectDelay
   });
+  // name someone typing before they have a message on the page
+  const { data: resolvedTypingUsers } = useMattermostUsersByIds(unknownTypingUserIds);
+  useEffect(() => addExtraUsers(resolvedTypingUsers), [addExtraUsers, resolvedTypingUsers]);
 
   const {
     deletingPostId,
@@ -484,6 +489,7 @@ export function MattermostChannelView({ channelId }: Props) {
   }, [handlePinToggleRaw]);
 
   const {
+    directChannelUser,
     channelTitle,
     channelSubtitle,
     onlineUsers,
@@ -1101,6 +1107,7 @@ export function MattermostChannelView({ channelId }: Props) {
       <div className="flex flex-1 flex-col gap-0 md:pb-0 min-h-0">
         <ChannelHeader
           channelTitle={channelTitle}
+          directUsername={directChannelUser?.username}
           channelSubtitle={channelSubtitle}
           effectiveLastViewedAt={effectiveLastViewedAt}
           pinnedPosts={pinnedPostsQuery.data?.posts}

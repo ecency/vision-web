@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import type { MattermostPost, MattermostPostsResponse } from "../mattermost-api";
 import { MattermostWebSocket } from "../mattermost-websocket";
@@ -30,6 +30,7 @@ interface UseChannelWebSocketParams {
 }
 
 const TYPING_TIMEOUT = 5000;
+const TYPING_RECONNECT_INTERVAL = 5000;
 
 export function useChannelWebSocket({
   channelId,
@@ -90,6 +91,13 @@ export function useChannelWebSocket({
           setTypingUsers(prev => new Map(prev).set(userId, Date.now()));
         })
         .onPosted((post) => {
+          // their message is here, so they are no longer typing it
+          setTypingUsers((prev) => {
+            if (!prev.has(post.user_id)) return prev;
+            const next = new Map(prev);
+            next.delete(post.user_id);
+            return next;
+          });
           const refs = pendingPostRefsRef.current;
           const currentUserId = getCurrentUserIdRef.current();
           const pendingPostId = post.pending_post_id;
@@ -162,6 +170,13 @@ export function useChannelWebSocket({
     return () => clearInterval(interval);
   }, []);
 
+  // Someone typing who has no message on the loaded page (Esie answering the first question in a
+  // new DM) is unknown here: the caller looks them up, until then they cannot be named
+  const unknownTypingUserIds = useMemo(
+    () => Array.from(typingUsers.keys()).filter((userId) => !usersById[userId]).sort(),
+    [typingUsers, usersById]
+  );
+
   // Compute typing usernames for display
   const typingUsernames = useMemo(() => {
     return Array.from(typingUsers.keys())
@@ -171,23 +186,25 @@ export function useChannelWebSocket({
       .slice(0, 3);
   }, [typingUsers, usersById]);
 
-  // Debounced typing sender with auto-reconnect
-  const sendTypingDebounced = useMemo(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        const ws = websocketRef.current;
-        if (ws) {
-          if (!isWebSocketActive) ws.connect();
-          ws.sendTyping(channelId);
-        }
-      }, 500);
-    };
+  // Sent at once: sendTyping already sends at most one event every few seconds, while waiting for a
+  // pause meant someone typing steadily never showed as typing to the other side.
+  // Typing into a dropped connection retries it, but not on every keystroke.
+  const lastReconnectKickRef = useRef(0);
+  const sendTypingDebounced = useCallback(() => {
+    const ws = websocketRef.current;
+    if (!ws) return;
+    if (!isWebSocketActive) {
+      const now = Date.now();
+      if (now - lastReconnectKickRef.current < TYPING_RECONNECT_INTERVAL) return;
+      lastReconnectKickRef.current = now;
+      ws.connect();
+    }
+    ws.sendTyping(channelId);
   }, [channelId, isWebSocketActive]);
 
   return {
     typingUsernames,
+    unknownTypingUserIds,
     sendTypingDebounced,
     websocketRef
   };

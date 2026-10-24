@@ -1,6 +1,7 @@
 import i18next from "i18next";
 import { dateToFullRelative, dateToFormatted } from "@/utils/parse-date";
 import type { MattermostPost, MattermostUser } from "./mattermost-api";
+import { impersonatesOfficialAccount, isOfficialChatAccount } from "./official-accounts";
 
 /**
  * Format timestamp to short format (e.g., "Jan 1, 12:00 PM")
@@ -21,15 +22,14 @@ export function formatRelativeTime(timestamp: number): string {
 }
 
 /**
- * Get display name for a user (full name > nickname > @username)
+ * Get display name for a user (full name > nickname > @username). A name posing as an official
+ * account (see impersonatesOfficialAccount) is replaced by the @username.
  */
-export function getUserDisplayName(user?: MattermostUser): string | undefined {
+export function getUserDisplayName(user?: MattermostUser | null): string | undefined {
   if (!user) return undefined;
 
-  const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
-  if (fullName) return fullName;
-
-  if (user.nickname) return user.nickname;
+  const name = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.nickname;
+  if (name && !impersonatesOfficialAccount(name, user.username)) return name;
 
   if (user.username) return `@${user.username}`;
 
@@ -64,12 +64,8 @@ export function getPostDisplayName(
   const user = usersById[post.user_id];
 
   if (user) {
-    const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
-    if (fullName) return fullName;
-
-    if (user.nickname) return user.nickname;
-
-    if (user.username) return `@${user.username}`;
+    const name = getUserDisplayName(user);
+    if (name) return name;
   }
 
   const fallbackUsername =
@@ -79,6 +75,15 @@ export function getPostDisplayName(
   if (fallbackUsername) return fallbackUsername;
 
   return post.user_id || "Unknown user";
+}
+
+/**
+ * True only for a post by the official account's own chat user. Never from post props: a webhook
+ * or bot post can name any user there.
+ */
+export function isOfficialPostAuthor(post: MattermostPost, usersById: Record<string, MattermostUser>): boolean {
+  if (post.type?.startsWith("system_") || post.props?.override_username || post.props?.from_webhook) return false;
+  return isOfficialChatAccount(usersById[post.user_id]?.username);
 }
 
 /**

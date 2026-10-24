@@ -3,6 +3,7 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "crypto"
 import { NextResponse } from "next/server";
 import { bridgeApiCall } from "@ecency/sdk";
 import { CommunityRole, ROLES } from "@ecency/sdk";
+import { ESIE_USERNAME } from "@/features/chat/official-accounts";
 import { toPublicChatUser } from "@/server/chat-public-user";
 import { findHiveCommunity } from "@/server/hive-community";
 import { ChatUserBusyError, withChatUserLock } from "@/server/chat-user-lock";
@@ -668,6 +669,32 @@ export async function lookupMattermostUser(username: string): Promise<Mattermost
     }
     throw error;
   }
+}
+
+// Chat user ids are permanent, so a found id is kept for the life of the process. An account
+// that does not exist (a chat server without Esie) is asked about again after a while.
+const dmFanoutExemptIds = new Map<string, string>();
+const dmFanoutExemptMissingAt = new Map<string, number>();
+const DM_FANOUT_EXEMPT_RECHECK_MS = 10 * 60_000;
+
+/**
+ * Chat user ids that never count toward the sender's DM fan-out limit: Esie, the AI helper,
+ * which anyone may ask at any time. A failed lookup is retried on the next call, and until it
+ * succeeds Esie simply counts like anyone else.
+ */
+export async function getDmFanoutExemptUserIds(): Promise<Set<string>> {
+  for (const username of [ESIE_USERNAME]) {
+    if (dmFanoutExemptIds.has(username)) continue;
+    if (Date.now() - (dmFanoutExemptMissingAt.get(username) ?? 0) < DM_FANOUT_EXEMPT_RECHECK_MS) continue;
+    try {
+      const user = await lookupMattermostUser(username);
+      if (user?.id) dmFanoutExemptIds.set(username, user.id);
+      else dmFanoutExemptMissingAt.set(username, Date.now());
+    } catch {
+      // counted normally this time
+    }
+  }
+  return new Set(dmFanoutExemptIds.values());
 }
 
 export async function getMattermostUserWithProps(userId: string, signal?: AbortSignal): Promise<MattermostUserWithProps> {

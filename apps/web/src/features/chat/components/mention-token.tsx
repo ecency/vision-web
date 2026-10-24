@@ -7,6 +7,7 @@ import {
 } from "@ui/dropdown";
 import { blogSvg, mailSvg } from "@ui/svg";
 import type { MattermostUser } from "../mattermost-api";
+import { safeChatName } from "../official-accounts";
 
 interface MentionTokenProps {
   username: string;
@@ -21,8 +22,10 @@ export function MentionToken({
   currentUsername,
   onStartDm
 }: MentionTokenProps) {
-  const secondary =
-    [user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.nickname;
+  const secondary = safeChatName(
+    [user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.nickname,
+    user?.username
+  );
   const isSelf = currentUsername
     ? username.toLowerCase() === currentUsername.toLowerCase()
     : false;
