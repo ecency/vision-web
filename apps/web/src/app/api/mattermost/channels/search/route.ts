@@ -71,6 +71,8 @@ async function lookUpHiveCommunities(query: string, signal: AbortSignal): Promis
   return matches;
 }
 
+class CreateRefusedError extends Error {}
+
 // Bootstrap only auto-joins a user's first few subscribed communities, so a
 // community channel may not exist yet. Look the query up on Hive and make sure
 // its clear matches have a channel, so they can be found and joined from search
@@ -89,7 +91,8 @@ async function findHiveCommunityChannels(
   let userId: Promise<string> | undefined;
   const allowCreate = async (): Promise<boolean> => {
     userId ??= mmUserFetch<{ id: string }>("/users/me", token, { signal }).then((u) => u.id);
-    return takeChannelCreateSlot(await userId);
+    if (await takeChannelCreateSlot(await userId)) return true;
+    throw new CreateRefusedError();
   };
 
   const results = await Promise.allSettled(
@@ -100,14 +103,22 @@ async function findHiveCommunityChannels(
       type: "O"
     }))
   );
-  return results.flatMap((r, i) => {
-    if (r.status === "fulfilled") return [r.value];
-    console.warn("MM channel search: community channel unavailable", {
-      community: missing[i].name,
-      error: r.reason instanceof Error ? r.reason.message : String(r.reason)
+  const failed = results.flatMap((r, i) =>
+    r.status === "rejected" ? [{ community: missing[i].name, reason: r.reason }] : []
+  );
+  // A refused budget or an aborted request is expected; log anything else once.
+  const unexpected = failed.filter(
+    (f) => !(f.reason instanceof CreateRefusedError) && !signal.aborted
+  );
+  if (unexpected.length) {
+    console.warn("MM channel search: community channels unavailable", {
+      failures: unexpected.map((f) => ({
+        community: f.community,
+        error: f.reason instanceof Error ? f.reason.message : String(f.reason)
+      }))
     });
-    return [];
-  });
+  }
+  return results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
 }
 
 export async function POST(req: Request) {

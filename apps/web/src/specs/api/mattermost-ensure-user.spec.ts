@@ -295,6 +295,24 @@ describe("ensureUserInChannel / ensureChannelForCommunity — idempotency", () =
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("asks allowCreate only for a real community after a clear not-found", async () => {
+    const { ensureChannelForCommunity } = await loadModule();
+    const allowCreate = vi.fn(async () => true);
+
+    // not on Hive: refused before any budget is asked for
+    mockFindHiveCommunity.mockResolvedValue(null);
+    fetchMock.mockResolvedValueOnce(resp(404, "no such channel"));
+    await expect(ensureChannelForCommunity("hive-3", "x", undefined, allowCreate)).rejects.toThrow();
+
+    // lookup failed for another reason: the channel may exist, so no create
+    fetchMock.mockReset();
+    mockFindHiveCommunity.mockResolvedValue({ name: "hive-3", title: "Three" });
+    fetchMock.mockResolvedValue(resp(500, "boom"));
+    await expect(ensureChannelForCommunity("hive-3", "x", undefined, allowCreate)).rejects.toThrow();
+
+    expect(allowCreate).not.toHaveBeenCalled();
+  });
+
   it("refuses a name that is not a community before asking Mattermost", async () => {
     const { ensureCommunityChannelMembership } = await loadModule();
 

@@ -347,8 +347,13 @@ export async function ensureChannelForCommunity(
       headers: getAdminHeaders(),
       signal
     });
-  } catch {
-    // channel doesn't exist (or lookup failed) — create below
+  } catch (error) {
+    // channel doesn't exist (or lookup failed) — create below. A budgeted
+    // caller only creates after a clear "not found", so an outage cannot
+    // spend its budget on channels that may already exist.
+    if (allowCreate && !(error instanceof MattermostError && error.status === 404)) {
+      throw error;
+    }
   }
   if (existing) {
     return asCommunityChannel(existing);

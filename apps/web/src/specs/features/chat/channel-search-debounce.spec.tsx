@@ -72,5 +72,14 @@ describe("useMattermostChannelSearch", () => {
 
     expect(result.current.data).toBeUndefined();
     expect(result.current.isFetching).toBe(true);
+
+    // the debounce fires first, then the new request runs and settles
+    for (let i = 0; i < 2; i++) {
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+    }
+    expect(result.current.isFetching).toBe(false);
+    expect(result.current.data?.channels).toEqual([{ id: "old" }]);
   });
 });

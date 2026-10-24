@@ -477,7 +477,11 @@ export function useMattermostChannelSearch(term: string, enabled: boolean) {
     }
   });
 
-  return pending ? { ...result, data: undefined, isFetching: true } : result;
+  return {
+    data: pending ? undefined : result.data,
+    isFetching: pending || result.isFetching,
+    error: result.error
+  };
 }
 
 export function useMattermostMessageSearch(term: string, enabled: boolean) {

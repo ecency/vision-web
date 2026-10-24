@@ -23,8 +23,10 @@ export async function takeChannelCreateSlot(
   if (!redis || !userId) return false;
   try {
     const key = `${KEY_PREFIX}${userId}`;
+    // Create the key with its expiry first, so a failure between the two
+    // calls can never leave a counter that lives forever.
+    await redis.set(key, 0, "PX", CHANNEL_CREATE_WINDOW_MS, "NX");
     const count = await redis.incr(key);
-    if (count === 1) await redis.pexpire(key, CHANNEL_CREATE_WINDOW_MS);
     return count <= CHANNEL_CREATE_MAX;
   } catch {
     return false;

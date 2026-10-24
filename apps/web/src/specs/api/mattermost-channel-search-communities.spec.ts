@@ -98,6 +98,8 @@ describe("POST /api/mattermost/channels/search Hive community fallback", () => {
 
     const { channels } = await search({ term: "art" });
 
+    // over-fetch so the title filter still leaves up to 3
+    expect(mocks.searchHiveCommunities.mock.calls[0][1]).toBe(10);
     expect(channels).toHaveLength(3);
   });
 
