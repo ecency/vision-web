@@ -108,7 +108,10 @@ async function findHiveCommunityChannels(
   );
   // A refused budget or an aborted request is expected; log anything else once.
   const unexpected = failed.filter(
-    (f) => !(f.reason instanceof CreateRefusedError) && !signal.aborted
+    (f) =>
+      !(f.reason instanceof CreateRefusedError) &&
+      f.reason?.name !== "AbortError" &&
+      f.reason?.name !== "TimeoutError"
   );
   if (unexpected.length) {
     console.warn("MM channel search: community channels unavailable", {

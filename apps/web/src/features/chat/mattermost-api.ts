@@ -480,7 +480,7 @@ export function useMattermostChannelSearch(term: string, enabled: boolean) {
   return {
     data: pending ? undefined : result.data,
     isFetching: pending || result.isFetching,
-    error: result.error
+    error: pending ? null : result.error
   };
 }
 

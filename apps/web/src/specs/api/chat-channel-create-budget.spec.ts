@@ -16,6 +16,10 @@ function fakeRedis() {
       const next = (counts.get(key) ?? 0) + 1;
       counts.set(key, next);
       return next;
+    }),
+    pexpire: vi.fn(async (key: string, ms: number, _nx: string) => {
+      if (!ttls.has(key)) ttls.set(key, ms);
+      return 1;
     })
   };
   return { redis: redis as unknown as Redis, mock: redis, ttls };
@@ -52,5 +56,14 @@ describe("takeChannelCreateSlot", () => {
     // the key exists only with its expiry, so it cannot lock the user out
     expect(ttls.get("chat:searchcreate:v1:u-1")).toBe(CHANNEL_CREATE_WINDOW_MS);
     expect(await takeChannelCreateSlot("u-1", redis)).toBe(true);
+  });
+
+  it("re-arms the expiry when the key vanished between SET and INCR", async () => {
+    const { redis, mock, ttls } = fakeRedis();
+    // SET sees an old key (no-op); it then expires before INCR recreates it
+    mock.set.mockResolvedValueOnce(null);
+
+    expect(await takeChannelCreateSlot("u-1", redis)).toBe(true);
+    expect(ttls.get("chat:searchcreate:v1:u-1")).toBe(CHANNEL_CREATE_WINDOW_MS);
   });
 });
