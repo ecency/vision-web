@@ -1261,6 +1261,28 @@ export function getUserLeftChannels(user: Pick<MattermostUserWithProps, "props">
   }
 }
 
+// Bootstrap auto-joins only this many subscribed communities. Every join is
+// a few sequential Mattermost calls, so following hundreds of communities
+// would push bootstrap past its deadline. Other community chats still open
+// on demand from the community page (explicit join).
+export const MAX_AUTO_JOIN_COMMUNITIES = 10;
+
+// Keeps Hive's order (communities where the user holds a role come first),
+// drops duplicates and channels the user left, then caps the list.
+export function pickAutoJoinCommunities(
+  subscriptions: { id: string; title?: string }[],
+  leftChannels: Set<string>,
+  limit: number = MAX_AUTO_JOIN_COMMUNITIES
+): Map<string, string | undefined> {
+  const picked = new Map<string, string | undefined>();
+  for (const { id, title } of subscriptions) {
+    if (picked.size >= limit) break;
+    if (picked.has(id) || leftChannels.has(id.trim().toLowerCase())) continue;
+    picked.set(id, title);
+  }
+  return picked;
+}
+
 // Props writers take the per-user token lock so their read-then-replace cannot
 // interleave with a token being stored or retired.
 

@@ -12,14 +12,16 @@ import {
   ensureUserInTeam,
   getMattermostOutageStatus,
   getUserLeftChannels,
+  pickAutoJoinCommunities,
   removeUserLeftChannel,
   withMattermostTokenCookie
 } from "@/server/mattermost";
 import { verifyHsAccessToken } from "@/server/hivesigner-verify";
 
 // Hard ceiling on the entire bootstrap handler. Individual mmFetch calls
-// have their own 10s timeout, but a user with 50 communities chains
-// 10+ batches sequentially. Without a total cap, worst case is 100s+.
+// have their own 10s timeout, and the user, token, team and community join
+// steps chain several of them, so a slow Mattermost could otherwise hold
+// the request far past what clients wait for.
 const BOOTSTRAP_TIMEOUT_MS = 30_000;
 
 export async function POST(req: Request) {
@@ -231,24 +233,17 @@ async function handleBootstrap(req: Request, signal: AbortSignal): Promise<NextR
             Boolean(value.id)
         );
 
-    const uniqueCommunityIds = new Map<string, string | undefined>();
-    for (const c of communityIds) {
-        if (!uniqueCommunityIds.has(c.id)) {
-          uniqueCommunityIds.set(c.id, c.title);
-        }
-    }
-
     let channelId: string | null = null;
 
-    // 5) Join channels for communities the user is subscribed to
+    // 5) Join channels for the user's first subscribed communities (capped)
     //    Skip channels the user has manually left (respect user choice)
     const BATCH_SIZE = 5;
 
     const leftChannels = getUserLeftChannels(userWithProps);
+    const uniqueCommunityIds = pickAutoJoinCommunities(communityIds, leftChannels);
 
     signal.throwIfAborted();
 
-    // Ensure channels exist and join for all subscribed communities
     const communityEntries = Array.from(uniqueCommunityIds);
     const channelResults: PromiseSettledResult<{ communityId: string; channelId: string }>[] = [];
 
@@ -257,15 +252,12 @@ async function handleBootstrap(req: Request, signal: AbortSignal): Promise<NextR
       const batch = communityEntries.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.allSettled(
         batch.map(async ([communityId, title]) => {
-          const normalizedId = communityId.trim().toLowerCase();
-          // Skip auto-join if user manually left this channel
-          const shouldAutoJoin = !leftChannels.has(normalizedId);
           try {
             const ensuredChannelId = await ensureCommunityChannelMembership(
               user.id,
               communityId,
               title,
-              shouldAutoJoin,
+              true,
               signal
             );
             return { communityId, channelId: ensuredChannelId };
