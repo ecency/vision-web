@@ -123,13 +123,24 @@ describe("POST /api/mattermost/channels/search Hive community fallback", () => {
     expect(second.channels.map((c) => c.id)).toEqual(["ch-hive-2"]);
   });
 
-  it("returns Mattermost results when the Hive lookup times out", async () => {
-    mocks.mmChannels = [{ id: "ch-a", name: "hive-1", display_name: "A", type: "O" }];
-    mocks.searchHiveCommunities.mockRejectedValue(new DOMException("timed out", "TimeoutError"));
+  it("does not cache an empty Hive result, so a failed lookup is retried", async () => {
+    // The real helpers turn Hive errors and timeouts into an empty result.
+    mocks.searchHiveCommunities.mockResolvedValueOnce([]);
+    mocks.searchHiveCommunities.mockResolvedValueOnce([{ name: "hive-2", title: "B" }]);
+    const { POST } = await import("@/app/api/mattermost/channels/search/route");
+    const call = () =>
+      POST(
+        new Request("http://localhost/api/mattermost/channels/search", {
+          method: "POST",
+          body: JSON.stringify({ term: "photo" })
+        })
+      ).then((r) => r.json() as Promise<SearchResult>);
 
-    const { channels } = await search({ term: "photo" });
+    expect((await call()).channels).toEqual([]);
+    const second = await call();
 
-    expect(channels.map((c) => c.id)).toEqual(["ch-a"]);
+    expect(mocks.searchHiveCommunities).toHaveBeenCalledTimes(2);
+    expect(second.channels.map((c) => c.id)).toEqual(["ch-hive-2"]);
   });
 
   it("passes a non-array Mattermost body through without a Hive lookup", async () => {

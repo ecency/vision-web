@@ -30,7 +30,7 @@ const HIVE_LOOKUP_TIMEOUT_MS = 5_000;
 // Short per-process caches so repeated and prefix searches don't re-ask Hive
 // or the Mattermost admin API every time.
 const HIVE_MATCHES_TTL_MS = 60_000;
-const CHANNEL_ID_TTL_MS = 5 * 60_000;
+const CHANNEL_ID_TTL_MS = 60_000;
 const MAX_CACHE_ENTRIES = 1_000;
 type Community = { name: string; title?: string };
 const hiveMatchesCache = new Map<string, { at: number; value: Community[] }>();
@@ -61,8 +61,9 @@ async function lookUpHiveCommunities(query: string, signal: AbortSignal): Promis
   } else {
     return [];
   }
-  // An aborted lookup reads as "no match"; don't remember it.
-  if (!signal.aborted) writeCache(hiveMatchesCache, key, matches);
+  // A failed or aborted Hive call also reads as "no match", so only remember
+  // real matches. Empty results are cheap to ask for again.
+  if (matches.length > 0) writeCache(hiveMatchesCache, key, matches);
   return matches;
 }
 
