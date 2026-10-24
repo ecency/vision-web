@@ -29,6 +29,7 @@ export async function takeChannelCreateSlot(
     const count = await redis.incr(key);
     // The key can expire between the two calls, and INCR then recreates it
     // without a TTL. Re-arm it; a no-op whenever SET already set one.
+    // PEXPIRE ... NX needs Redis 7+ (the stacks run redis:7-alpine).
     if (count === 1) await redis.pexpire(key, CHANNEL_CREATE_WINDOW_MS, "NX");
     return count <= CHANNEL_CREATE_MAX;
   } catch {
