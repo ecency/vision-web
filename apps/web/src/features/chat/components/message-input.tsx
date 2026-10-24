@@ -9,7 +9,7 @@ import { GifPicker } from "@ui/gif-picker";
 import clsx from "clsx";
 import type { MattermostPost, MattermostUser } from "../mattermost-api";
 import type { EmojiSuggestion } from "../emoji-utils";
-import { isChannelNoticePost } from "../format-utils";
+import { getUserDisplayName, isChannelNoticePost } from "../format-utils";
 
 type GifPickerStyle = {
   width: string;
@@ -540,11 +540,8 @@ export function MessageInput({
                     <UserAvatar username={user.username} size="medium" className="size-8" />
                     <div className="flex flex-col text-left">
                       <span className="font-semibold">@{user.username}</span>
-                      {(user.nickname || user.first_name || user.last_name) && (
-                        <span className="text-xs text-[--text-muted]">
-                          {[user.first_name, user.last_name].filter(Boolean).join(" ") ||
-                            user.nickname}
-                        </span>
+                      {getUserDisplayName(user) !== `@${user.username}` && (
+                        <span className="text-xs text-[--text-muted]">{getUserDisplayName(user)}</span>
                       )}
                     </div>
                   </button>

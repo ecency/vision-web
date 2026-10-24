@@ -1,5 +1,6 @@
 import type { MattermostPost, MattermostUser } from "../mattermost-api";
 import { formatTimestamp, getUserDisplayName } from "../format-utils";
+import { OfficialBadge } from "./official-badge";
 import { Modal, ModalBody } from "@ui/modal";
 import { ProfileLink, UserAvatar } from "@/features/shared";
 import { useState } from "react";
@@ -10,6 +11,8 @@ import { ManagePrivateChannelModal } from "./private-channel-modals";
 
 interface ChannelHeaderProps {
   channelTitle: string;
+  /** The other person in a 1:1 conversation, for the official badge. */
+  directUsername?: string;
   channelSubtitle: string;
   effectiveLastViewedAt: number;
   pinnedPosts: MattermostPost[] | undefined;
@@ -40,6 +43,7 @@ interface ChannelHeaderProps {
 
 export function ChannelHeader({
   channelTitle,
+  directUsername,
   channelSubtitle,
   effectiveLastViewedAt,
   pinnedPosts,
@@ -72,7 +76,10 @@ export function ChannelHeader({
       <div className="flex items-center justify-between gap-3">
         <button type="button" onClick={onClose} className="flex size-10 shrink-0 items-center justify-center rounded-lg text-[--text-muted] hover:bg-[--background-color] hover:text-[--text-color] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-dark-sky md:hidden" aria-label={i18next.t("chat.back-to-chats")} title={i18next.t("chat.back-to-chats")}>←</button>
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="truncate text-base font-semibold">{channelTitle}</div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-base font-semibold">{channelTitle}</span>
+            <OfficialBadge username={directUsername} />
+          </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-[--text-muted]">
             <span className="truncate">{channelSubtitle}</span>
 
