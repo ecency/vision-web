@@ -26,7 +26,9 @@ const ANY = "*";
 /** The name's words in Latin letters. A run of single letters ("E s i e", "E.s.i.e") is one word. */
 function nameWords(text: string): string[] {
   // the table first: decomposing can turn a lookalike into something else (lunate ϲ into ς)
-  const latin = Array.from(text.toLowerCase())
+  // invisible characters (zero-width space, joiners, soft hyphen, direction marks) display nothing,
+  // so they must not split "Es\u200bie" into two words
+  const latin = Array.from(text.replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, "").toLowerCase())
     .flatMap((ch) => LOOKALIKES[ch] ?? Array.from(ch.normalize("NFKD").replace(/\p{M}/gu, "")))
     .map((ch) => LOOKALIKES[ch] ?? ch)
     .map((ch) => (/[a-z]/.test(ch) ? ch : /[\p{L}\p{N}]/u.test(ch) ? ANY : " "))

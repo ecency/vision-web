@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callRPC } from "@ecency/sdk/hive";
 import {
+  getDmFanoutExemptUserIds,
   getGroupOwnerId,
   getMattermostTeamId,
   lookupMattermostUser,
@@ -126,8 +127,11 @@ export async function POST(req: NextRequest) {
     }
 
     const recipients = members.map((member) => member.id);
+    // Esie, the AI helper, is a member like anyone else but never counts toward the limit
+    const exempt = await getDmFanoutExemptUserIds();
+    const counted = recipients.filter((id) => !exempt.has(id));
     const limit = dmFanoutLimitFor(currentUser.create_at, Date.now());
-    if (recipients.length > limit) {
+    if (counted.length > limit) {
       return NextResponse.json(
         {
           error: `You can start a group with up to ${limit} other people for now.`,
@@ -141,7 +145,7 @@ export async function POST(req: NextRequest) {
     // after this can reject the request except Mattermost itself.
     const fanout = await checkDmFanout({
       userId: currentUser.id,
-      recipients,
+      recipients: counted,
       accountCreatedAt: currentUser.create_at
     });
 

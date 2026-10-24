@@ -4,7 +4,8 @@ import { QueryClient } from "@tanstack/react-query";
 import type { MattermostUser } from "@/features/chat/mattermost-api";
 
 let onTyping: ((userId: string) => void) | undefined;
-let onPosted: ((post: { user_id: string }) => void) | undefined;
+let onPosted: ((post: { user_id: string; channel_id: string }) => void) | undefined;
+let onConnectionChange: ((active: boolean) => void) | undefined;
 const sendTyping = vi.fn();
 const connect = vi.fn(() => Promise.resolve());
 
@@ -12,10 +13,10 @@ vi.mock("@/features/chat/mattermost-websocket", () => ({
   MattermostWebSocket: class {
     withChannel() { return this; }
     withQueryClient() { return this; }
-    onConnectionChange() { return this; }
+    onConnectionChange(cb: (active: boolean) => void) { onConnectionChange = cb; return this; }
     onReconnecting() { return this; }
     onTyping(cb: (userId: string) => void) { onTyping = cb; return this; }
-    onPosted(cb: (post: { user_id: string }) => void) { onPosted = cb; return this; }
+    onPosted(cb: (post: { user_id: string; channel_id: string }) => void) { onPosted = cb; return this; }
     connect = connect;
     disconnect() {}
     sendTyping = sendTyping;
@@ -57,6 +58,7 @@ function setup(usersById: Record<string, MattermostUser>, isWebSocketActive = tr
 describe("useChannelWebSocket typing", () => {
   beforeEach(() => {
     onTyping = undefined;
+    onConnectionChange = undefined;
     sendTyping.mockClear();
     connect.mockClear();
   });
@@ -91,8 +93,25 @@ describe("useChannelWebSocket typing", () => {
     act(() => onTyping!("esie-id"));
     expect(result.current.typingUsernames).toEqual(["@esie"]);
 
-    act(() => onPosted!({ user_id: "esie-id" }));
+    act(() => onPosted!({ user_id: "esie-id", channel_id: "other" }));
+    expect(result.current.typingUsernames).toEqual(["@esie"]);
+
+    act(() => onPosted!({ user_id: "esie-id", channel_id: "c1" }));
     expect(result.current.typingUsernames).toEqual([]);
+  });
+
+  it("sends typing from while the connection was opening once it is up", () => {
+    const { result } = setup({}, false);
+    result.current.sendTypingDebounced();
+    expect(sendTyping).not.toHaveBeenCalled();
+
+    act(() => onConnectionChange!(true));
+    expect(sendTyping).toHaveBeenCalledTimes(1);
+    expect(sendTyping).toHaveBeenCalledWith("c1");
+
+    // only once, and not for typing long gone
+    act(() => onConnectionChange!(true));
+    expect(sendTyping).toHaveBeenCalledTimes(1);
   });
 
   it("retries a dropped connection from typing at most once every few seconds", () => {

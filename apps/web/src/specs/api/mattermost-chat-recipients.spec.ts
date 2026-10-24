@@ -180,3 +180,18 @@ describe("getDmFanoutExemptUserIds on a chat server without Esie", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("getDmFanoutExemptUserIds under concurrent first posts", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("shares one lookup", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(resp(200, { id: "esie-id", username: "esie" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { getDmFanoutExemptUserIds } = await loadModule();
+
+    const results = await Promise.all([getDmFanoutExemptUserIds(), getDmFanoutExemptUserIds(), getDmFanoutExemptUserIds()]);
+
+    expect(results).toEqual([new Set(["esie-id"]), new Set(["esie-id"]), new Set(["esie-id"])]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

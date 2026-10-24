@@ -51,6 +51,7 @@ export function useChannelWebSocket({
 }) {
   const [typingUsers, setTypingUsers] = useState<Map<string, number>>(new Map());
   const websocketRef = useRef<MattermostWebSocket | null>(null);
+  const typingWhileOfflineAtRef = useRef(0);
 
   // Ref bridges to avoid recreating WebSocket on callback changes
   const onPostedConfirmRef = useRef(onPostedConfirm);
@@ -76,6 +77,11 @@ export function useChannelWebSocket({
         .withQueryClient(queryClient)
         .onConnectionChange((active) => {
           setIsWebSocketActiveRef.current(active);
+          if (active && Date.now() - typingWhileOfflineAtRef.current < TYPING_TIMEOUT) {
+            // typed while the connection was opening: still typing, so tell the other side now
+            typingWhileOfflineAtRef.current = 0;
+            ws.sendTyping(channelId);
+          }
           if (active) {
             setReconnectAttemptRef.current(null);
             setReconnectDelayRef.current(null);
@@ -91,13 +97,15 @@ export function useChannelWebSocket({
           setTypingUsers(prev => new Map(prev).set(userId, Date.now()));
         })
         .onPosted((post) => {
-          // their message is here, so they are no longer typing it
-          setTypingUsers((prev) => {
-            if (!prev.has(post.user_id)) return prev;
-            const next = new Map(prev);
-            next.delete(post.user_id);
-            return next;
-          });
+          // their message is here, so they are no longer typing it (posts from every channel arrive here)
+          if (post.channel_id === channelId) {
+            setTypingUsers((prev) => {
+              if (!prev.has(post.user_id)) return prev;
+              const next = new Map(prev);
+              next.delete(post.user_id);
+              return next;
+            });
+          }
           const refs = pendingPostRefsRef.current;
           const currentUserId = getCurrentUserIdRef.current();
           const pendingPostId = post.pending_post_id;
@@ -194,10 +202,13 @@ export function useChannelWebSocket({
     const ws = websocketRef.current;
     if (!ws) return;
     if (!isWebSocketActive) {
+      // sent once the connection opens
+      typingWhileOfflineAtRef.current = Date.now();
       const now = Date.now();
       if (now - lastReconnectKickRef.current < TYPING_RECONNECT_INTERVAL) return;
       lastReconnectKickRef.current = now;
       ws.connect();
+      return;
     }
     ws.sendTyping(channelId);
   }, [channelId, isWebSocketActive]);

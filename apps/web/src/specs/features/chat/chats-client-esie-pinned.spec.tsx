@@ -17,7 +17,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => search
 }));
 vi.mock("next/link", () => ({
-  default: ({ href, children, ...rest }: any) => (
+  default: ({ href, children, ...rest }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
     <a href={href} {...rest}>
       {children}
     </a>
@@ -125,6 +125,12 @@ describe("ChatsClient pinned Esie", () => {
     const links = Array.from(container.querySelectorAll('a[href^="/chats/"]')).map((a) => a.getAttribute("href"));
     expect(links).toEqual(["/chats/c-esie", "/chats/c-alice"]);
     expect(container.querySelectorAll("[data-official-badge]")).toHaveLength(1);
+  });
+
+  it("does not call a list with only the Esie conversation empty", () => {
+    channelList = [dm("c-esie", "esie")];
+    render(<ChatsClient />);
+    expect(screen.queryByText("chat.no-channels")).not.toBeInTheDocument();
   });
 
   it("shows the empty notice under the pinned row when there is nothing else", () => {

@@ -22,7 +22,8 @@ describe("official chat accounts", () => {
 
   it.each([
     "Esie", "ESIE support", "E-s-i-e", "E.s.i.e", "3sie", "E$ie", "Еsie", "Esıe", "Ɛsie", "Ecency Team",
-    "Ecen¢y", "Εcency", "Eϲency", "Ecenсү", "e c e n c y", "Support: Esie", "EsieBot"
+    "Ecen¢y", "Εcency", "Eϲency", "Ecenсү", "e c e n c y", "Support: Esie", "EsieBot",
+    "Es\u200bie", "E\u2060s\u200di\u00ade", "Ec\u202eency", "\u200bE\u200bs\u200bi\u200be"
   ])(
     "treats the display name %j on another account as posing as an official one",
     (name) => {

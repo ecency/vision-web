@@ -704,7 +704,7 @@ export function ChatsClient() {
               </Link>
             )}
             {listedChannels.map(renderChannelRow)}
-            {!listedChannels.length && !channelsLoading && (
+            {!sortedChannels.length && !channelsLoading && (
               <div className="text-sm text-[--text-muted]">{i18next.t("chat.no-channels")}</div>
             )}
           </div>
