@@ -1,17 +1,61 @@
 import { describe, it, expect, vi } from "vitest";
 
+const mocks = vi.hoisted(() => ({
+  subscriptions: [] as string[][],
+  ensureCommunityChannelMembership: vi.fn(async () => "channel-id")
+}));
+
 vi.mock("@/server/hive-community", () => ({
   findHiveCommunity: vi.fn()
 }));
 
-async function loadModule() {
+vi.mock("@/server/hivesigner-verify", () => ({
+  verifyHsAccessToken: vi.fn(async () => ({ ok: true, username: "alice" }))
+}));
+
+vi.mock("@ecency/sdk", () => ({
+  getAccountSubscriptionsQueryOptions: vi.fn((username: string) => ({
+    queryKey: ["accounts", "subscriptions", username],
+    queryFn: vi.fn()
+  }))
+}));
+
+vi.mock("@tanstack/react-query", () => ({
+  // `function`, not an arrow: the route constructs it with `new`.
+  QueryClient: vi.fn().mockImplementation(function () {
+    return {
+      fetchQuery: vi.fn(async () => mocks.subscriptions),
+      cancelQueries: vi.fn(),
+      clear: vi.fn()
+    };
+  })
+}));
+
+vi.mock("@/server/mattermost", async (importActual) => {
+  const actual = await importActual<typeof import("@/server/mattermost")>();
+  return {
+    ...actual,
+    ensureMattermostUser: vi.fn(async () => ({ id: "user-1" })),
+    ensureUserInTeam: vi.fn(async () => undefined),
+    ensurePersonalToken: vi.fn(async () => ({
+      token: "pat",
+      user: { id: "user-1", props: {} }
+    })),
+    ensureCommunityChannelMembership: mocks.ensureCommunityChannelMembership,
+    withMattermostTokenCookie: vi.fn((response: Response) => response)
+  };
+});
+
+type MattermostModule = typeof import("@/server/mattermost");
+
+async function loadModule(): Promise<MattermostModule> {
   process.env.MATTERMOST_BASE_URL = "https://chat.test/api/v4";
   process.env.MATTERMOST_ADMIN_TOKEN = "admin-token";
   process.env.MATTERMOST_TEAM_ID = "team-1";
   return await import("@/server/mattermost");
 }
 
-const subs = (n: number) =>
+const subs = (n: number): { id: string; title: string }[] =>
   Array.from({ length: n }, (_, i) => ({ id: `hive-${100000 + i}`, title: `C${i}` }));
 
 describe("pickAutoJoinCommunities", () => {
@@ -51,5 +95,27 @@ describe("pickAutoJoinCommunities", () => {
   it("returns everything when under the cap", async () => {
     const { pickAutoJoinCommunities } = await loadModule();
     expect(pickAutoJoinCommunities(subs(3), new Set()).size).toBe(3);
+  });
+});
+
+describe("POST /api/mattermost/bootstrap auto-join cap", () => {
+  it("auto-joins only the first 10 of many subscribed communities", async () => {
+    await loadModule();
+    mocks.subscriptions = subs(25).map((s) => [s.id, s.title, "guest", ""]);
+    mocks.ensureCommunityChannelMembership.mockClear();
+    const { POST } = await import("@/app/api/mattermost/bootstrap/route");
+
+    const res = await POST(
+      new Request("http://localhost/api/mattermost/bootstrap", {
+        method: "POST",
+        body: JSON.stringify({ username: "alice", accessToken: "token" })
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const joined = mocks.ensureCommunityChannelMembership.mock.calls.map(
+      (call: unknown[]) => call[1]
+    );
+    expect(joined).toEqual(subs(10).map((s) => s.id));
   });
 });
