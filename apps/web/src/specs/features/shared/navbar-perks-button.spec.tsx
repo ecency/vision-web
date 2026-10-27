@@ -55,11 +55,18 @@ describe("NavbarPerksButton", () => {
     expect(container.textContent).toContain("7");
   });
 
-  test("caps the streak display at 99+ for large streaks", () => {
+  test("shows the full streak count up to three digits", () => {
     markPerksSeen();
     const { container } = renderWith({ current: 150, best: 200, at_risk: false });
-    expect(container.textContent).toContain("99+");
-    expect(container.textContent).not.toContain("150");
+    expect(container.textContent).toContain("150");
+    expect(container.textContent).not.toContain("+");
+  });
+
+  test("caps the streak display at 999+ past three digits", () => {
+    markPerksSeen();
+    const { container } = renderWith({ current: 1200, best: 1200, at_risk: false });
+    expect(container.textContent).toContain("999+");
+    expect(container.textContent).not.toContain("1200");
   });
 
   test("uses the at-risk (orange) styling when the streak is at risk", () => {
@@ -110,7 +117,8 @@ describe("NavbarPerksButton", () => {
       const { container } = renderWith({ current: 150, best: 200, at_risk: true }, true);
       const link = screen.getByRole("link", { name: "Perks: 150-day streak", exact: true });
       expect(link).toHaveAttribute("href", "/perks");
-      expect(link).toHaveTextContent("99+");
+      // Icon plus number only: the "Perks" word stays in the accessible name.
+      expect(link).toHaveTextContent(/^150$/);
       expect(link).toHaveClass("text-orange-500");
       expect(dot(container)).not.toBeNull();
     } finally {

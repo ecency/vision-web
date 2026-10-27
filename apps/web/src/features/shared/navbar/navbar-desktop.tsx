@@ -3,23 +3,21 @@ import { UserAvatar } from "@/features/shared/user-avatar";
 import { AnonUserButtons } from "@/features/shared/navbar/anon-user-buttons";
 import { NavbarMainSidebar } from "@/features/shared/navbar/navbar-main-sidebar";
 import { NavbarMainSidebarToggle } from "@/features/shared/navbar/navbar-main-sidebar-toggle";
-import { NavbarSearchShell } from "@/features/shared/navbar/navbar-search-shell";
+import { NavbarSearchToggle } from "@/features/shared/navbar/navbar-search-toggle";
 import { NavbarNotificationsButton } from "@/features/shared/navbar/navbar-notifications-button";
 import { NavbarPerksButton } from "@/features/shared/navbar/navbar-perks-button";
 import { NavbarSide } from "@/features/shared/navbar/sidebar/navbar-side";
-import { UilComment, UilEditAlt, UilQuestionCircle } from "@tooni/iconscout-unicons-react";
+import { UilComment, UilEditAlt } from "@tooni/iconscout-unicons-react";
 import { Button } from "@ui/button";
 import { Tooltip } from "@ui/tooltip";
 import { classNameObject } from "@ui/util";
 import i18next from "i18next";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { NavbarTextMenu } from "./navbar-text-menu";
 import { NavbarAskEsie } from "./navbar-ask-esie";
 import { useHydrated } from "@/api/queries";
 import { useMattermostUnread } from "@/features/chat/mattermost-api";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-
-import { Search } from "@/features/shared/navbar/navbar-search-dynamic";
 
 interface Props {
   step?: number;
@@ -45,18 +43,6 @@ export function NavbarDesktop({
 
   const [showSidebar, setShowSidebar] = useState(false);
 
-  // SSR-safe desktop detection: false on the server and on phones, true only
-  // once a >=768px viewport is confirmed on the client. Gates the heavy Search
-  // so its chunk is never fetched on mobile.
-  const [isDesktop, setIsDesktop] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px)");
-    const update = () => setIsDesktop(mq.matches);
-    update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, []);
-
   return (
     <div
       className={`navbar-desktop-shell hidden md:flex w-full select-none relative ${
@@ -73,27 +59,8 @@ export function NavbarDesktop({
         <div className="flex-1" />
         <NavbarTextMenu />
         <div className="flex-spacer" />
-        <Tooltip content="FAQ and documetation">
-          <Button
-            className="after:!hidden"
-            href="https://docs.ecency.com"
-            target="_blank"
-            icon={<UilQuestionCircle />}
-            appearance="gray-link"
-            aria-label={i18next.t("entry-index.faq")}
-          />
-        </Tooltip>
         <NavbarAskEsie />
-        {(step !== 1 || transparentVerify) && (
-          // Slot is always rendered so it reserves its flex space (no layout
-          // shift when Search mounts). Only the heavy Search itself is gated on
-          // isDesktop, so its chunk never loads on mobile; until it mounts the
-          // pixel-identical server-rendered shell keeps the input visible from
-          // the first paint (#1664).
-          <div className="navbar-search-slot max-w-[400px] w-full">
-            {isDesktop ? <Search /> : <NavbarSearchShell />}
-          </div>
-        )}
+        {(step !== 1 || transparentVerify) && <NavbarSearchToggle />}
         <div className="navbar-actions flex items-center ml-3 gap-3">
           <NavbarPerksButton subdued />
           <Tooltip content={i18next.t("navbar.post")}>
@@ -105,7 +72,7 @@ export function NavbarDesktop({
               icon={<UilEditAlt />}
               aria-label={i18next.t("navbar.write")}
             >
-              <span className="hidden xl:inline">{i18next.t("navbar.write")}</span>
+              <span className="hidden lg:inline">{i18next.t("navbar.write")}</span>
             </Button>
           </Tooltip>
           <Tooltip content={i18next.t("chat.title")}>
