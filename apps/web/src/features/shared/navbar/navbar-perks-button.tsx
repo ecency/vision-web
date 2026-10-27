@@ -56,14 +56,12 @@ export function NavbarPerksButton({ subdued = false }: { subdued?: boolean }) {
       >
         <span className="inline-flex items-center gap-1.5">
           {subdued ? (
-            <>
-              <UilFire className="size-4 xl:hidden" aria-hidden="true" />
-              <span className="hidden xl:inline">{label}</span>
-            </>
+            <UilFire className="size-4" aria-hidden="true" />
           ) : (
             <span aria-hidden>🔥</span>
           )}
-          <span>{streak.current > 99 ? "99+" : streak.current}</span>
+          {/* A streak is earned, so show the full count; cap only past 3 digits. */}
+          <span>{streak.current > 999 ? "999+" : streak.current}</span>
         </span>
       </Button>
     ) : (
