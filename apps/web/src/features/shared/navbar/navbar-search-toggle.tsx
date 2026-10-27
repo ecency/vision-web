@@ -123,7 +123,9 @@ export function NavbarSearchToggle() {
             if (e.key === "Enter") close(false);
           }}
           onClick={(e) => {
-            if ((e.target as HTMLElement).closest(".list-item")) close(false);
+            // Every link in the dropdown (suggestion, quick action, "more
+            // results") ends the search; they carry no shared class to match.
+            if ((e.target as HTMLElement).closest("a")) close(false);
           }}
         >
           <Search autoFocus={true} />

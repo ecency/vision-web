@@ -4,18 +4,34 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 const nav = vi.hoisted(() => ({ pathname: "/trending" }));
-vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname }));
-vi.mock("@/features/shared/navbar/search", () => ({ Search: () => null }));
-vi.mock("@/features/shared/navbar/navbar-search-dynamic", () => ({
-  Search: ({ autoFocus }: { autoFocus?: boolean }) => (
-    <div>
-      <input id="navbar-search" aria-label="search input" autoFocus={autoFocus} />
-      <a href="#" className="list-item">
-        suggestion
-      </a>
-    </div>
-  )
+vi.mock("next/navigation", () => ({
+  usePathname: () => nav.pathname,
+  useRouter: () => ({ push: vi.fn() })
 }));
+vi.mock("@/features/shared/navbar/search", () => ({ Search: () => null }));
+// The real SuggestionList, so the test sees the real dropdown markup (an earlier
+// hand-written mock had a class the real links lack, and hid a bug).
+const selected = vi.hoisted(() => vi.fn());
+vi.mock("@/features/shared/navbar/navbar-search-dynamic", async () => {
+  const { SuggestionList } = await vi.importActual<
+    typeof import("@/features/shared/suggestion-list")
+  >("@/features/shared/suggestion-list");
+  const modeItems = [
+    {
+      header: "actions",
+      items: ["suggestion"],
+      renderer: (x: string) => <span>{x}</span>,
+      onSelect: selected
+    }
+  ];
+  return {
+    Search: ({ autoFocus }: { autoFocus?: boolean }) => (
+      <SuggestionList items={[]} modeItems={modeItems} searchValue="query">
+        <input type="text" id="navbar-search" aria-label="search input" autoFocus={autoFocus} />
+      </SuggestionList>
+    )
+  };
+});
 
 import { NavbarSearchToggle } from "@/features/shared/navbar/navbar-search-toggle";
 
@@ -113,10 +129,18 @@ describe("NavbarSearchToggle", () => {
     expect(input()).not.toHaveFocus();
   });
 
-  it("closes when a suggestion is picked", () => {
+  it("closes when a suggestion or quick action is picked", () => {
     render(<NavbarSearchToggle />);
     fireEvent.click(toggle());
     fireEvent.click(screen.getByText("suggestion"));
+    expect(selected).toHaveBeenCalledWith("suggestion");
+    expect(isOpen()).toBe(false);
+  });
+
+  it("closes on more results, which can stay on the same pathname", () => {
+    render(<NavbarSearchToggle />);
+    fireEvent.click(toggle());
+    fireEvent.click(screen.getByText("g.more-results"));
     expect(isOpen()).toBe(false);
   });
 
