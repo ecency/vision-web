@@ -53,7 +53,9 @@ export function NavbarTextMenu() {
   const visibleItems = ITEMS.filter((item) => item.show);
 
   // Links that wrapped to the clipped row are out of sight; hide them for real
-  // so keyboard focus cannot land on them (and scroll the menu).
+  // so keyboard focus cannot land on them (and scroll the menu). Which links
+  // wrap changes when the menu resizes and also when a link's own width does
+  // (web font loaded, label translated), so watch the menu and every link.
   const menuRef = useRef<HTMLDivElement>(null);
   const linksKey = visibleItems.map((item) => item.link).join();
   useEffect(() => {
@@ -62,12 +64,19 @@ export function NavbarTextMenu() {
     const sync = () => {
       const links = Array.from(menu.children) as HTMLElement[];
       const firstRowTop = links[0]?.offsetTop ?? 0;
+      const wrapped = links.filter((link) => link.offsetTop > firstRowTop);
+      const shown = links.filter((link) => !wrapped.includes(link));
+      // Never hide the link the user is on without moving them somewhere visible.
+      if (wrapped.some((link) => link === document.activeElement)) {
+        shown[shown.length - 1]?.focus();
+      }
       links.forEach((link) => {
-        link.style.visibility = link.offsetTop > firstRowTop ? "hidden" : "";
+        link.style.visibility = wrapped.includes(link) ? "hidden" : "";
       });
     };
     const observer = new ResizeObserver(sync);
     observer.observe(menu);
+    Array.from(menu.children).forEach((link) => observer.observe(link));
     return () => observer.disconnect();
   }, [linksKey]);
 
