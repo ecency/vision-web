@@ -6,6 +6,7 @@ import { Tooltip } from "@ui/tooltip";
 import i18next from "i18next";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Search } from "./navbar-search-dynamic";
 
 const preloadSearch = () => {
@@ -20,8 +21,13 @@ const preloadSearch = () => {
  * dialogs (transfer, bookmarks, drafts, gallery), which are portaled to body,
  * survive the search closing. The heavy chunk loads on hover/focus or click,
  * never on first paint. "/" opens it from the keyboard.
+ *
+ * `anchor` is where the open field is drawn (right-aligned inside it). The
+ * desktop bar passes the text-menu area, so the field covers the menu links
+ * and leaves Ask Esie and the icons visible. Without it, the field opens
+ * leftward from the icon.
  */
-export function NavbarSearchToggle() {
+export function NavbarSearchToggle({ anchor }: { anchor?: HTMLElement | null }) {
   const pathname = usePathname();
   const slotRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -74,9 +80,12 @@ export function NavbarSearchToggle() {
     panelRef.current?.querySelector("input")?.focus();
 
     const onPointerDown = (e: PointerEvent) => {
-      // The icon lives in the slot too, so pressing it toggles instead of
-      // closing here and reopening on click.
-      if (!slotRef.current?.contains(e.target as Node)) close(false);
+      // The icon lives in the slot, so pressing it toggles instead of closing
+      // here and reopening on click. The panel may be portaled out of the slot.
+      const target = e.target as Node;
+      if (!slotRef.current?.contains(target) && !panelRef.current?.contains(target)) {
+        close(false);
+      }
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") close(true);
@@ -90,6 +99,34 @@ export function NavbarSearchToggle() {
   }, [open, close]);
 
   const label = i18next.t("navbar.search");
+
+  const panel = (
+    <div
+      ref={panelRef}
+      role="search"
+      className={
+        open
+          ? // In the anchor, never wider than it.
+            `absolute right-0 top-1/2 z-[110] -translate-y-1/2 ${
+              anchor ? "w-full max-w-[400px]" : "w-[min(400px,50vw)]"
+            }`
+          : "hidden"
+      }
+      // Submitting or picking a suggestion is done with search. Closing here
+      // also covers a new query on /search, where only ?q changes and the
+      // pathname effect above never fires.
+      onKeyDown={(e) => {
+        if (e.key === "Enter") close(false);
+      }}
+      onClick={(e) => {
+        // Every link in the dropdown (suggestion, quick action, "more
+        // results") ends the search; they carry no shared class to match.
+        if ((e.target as HTMLElement).closest("a")) close(false);
+      }}
+    >
+      <Search autoFocus={true} />
+    </div>
+  );
 
   return (
     <div ref={slotRef} className="navbar-search-slot relative shrink-0">
@@ -107,30 +144,7 @@ export function NavbarSearchToggle() {
           }}
         />
       </Tooltip>
-      {mounted && (
-        <div
-          ref={panelRef}
-          role="search"
-          className={
-            open
-              ? "absolute right-0 top-1/2 z-[110] w-[min(400px,50vw)] -translate-y-1/2"
-              : "hidden"
-          }
-          // Submitting or picking a suggestion is done with search. Closing here
-          // also covers a new query on /search, where only ?q changes and the
-          // pathname effect above never fires.
-          onKeyDown={(e) => {
-            if (e.key === "Enter") close(false);
-          }}
-          onClick={(e) => {
-            // Every link in the dropdown (suggestion, quick action, "more
-            // results") ends the search; they carry no shared class to match.
-            if ((e.target as HTMLElement).closest("a")) close(false);
-          }}
-        >
-          <Search autoFocus={true} />
-        </div>
-      )}
+      {mounted && (anchor ? createPortal(panel, anchor) : panel)}
     </div>
   );
 }

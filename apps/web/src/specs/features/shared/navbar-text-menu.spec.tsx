@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 vi.mock("@/api/queries", () => ({
@@ -90,5 +90,74 @@ describe("NavbarTextMenu — current section", () => {
     render(<NavbarTextMenu />);
     for (const link of screen.getAllByRole("link"))
       expect(link.getAttribute("aria-current")).toBeNull();
+  });
+});
+
+describe("NavbarTextMenu — links that do not fit", () => {
+  // jsdom has no layout: fake each link's row (offsetTop) and drive the
+  // ResizeObserver by hand, the way a resize, font load or relabel would.
+  const rowOf = new Map<string, number>();
+  let observed: Element[] = [];
+  let fire = () => {};
+  const offsetTop = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetTop");
+
+  beforeEach(() => {
+    setLoggedIn(false);
+    rowOf.clear();
+    observed = [];
+    Object.defineProperty(HTMLElement.prototype, "offsetTop", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return (rowOf.get(this.getAttribute("href") ?? "") ?? 0) * 48;
+      }
+    });
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) {
+          fire = () => act(() => cb());
+        }
+        observe(el: Element) {
+          observed.push(el);
+        }
+        disconnect() {}
+      }
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (offsetTop) Object.defineProperty(HTMLElement.prototype, "offsetTop", offsetTop);
+  });
+
+  // hidden: true, since role queries skip visibility:hidden links by default
+  const link = (href: string) =>
+    screen.getAllByRole("link", { hidden: true }).find((a) => a.getAttribute("href") === href)!;
+
+  it("watches every link as well as the menu, so a font load or relabel re-checks", () => {
+    render(<NavbarTextMenu />);
+    for (const a of screen.getAllByRole("link")) expect(observed).toContain(a);
+    expect(observed).toContain(link("/discover").parentElement);
+  });
+
+  it("hides links on the clipped row and shows them again once they fit", () => {
+    render(<NavbarTextMenu />);
+    rowOf.set("/raidstead", 1);
+    fire();
+    expect(link("/raidstead").style.visibility).toBe("hidden");
+    expect(link("/discover").style.visibility).toBe("");
+
+    // e.g. the web font finished loading and the labels got narrower
+    rowOf.clear();
+    fire();
+    expect(link("/raidstead").style.visibility).toBe("");
+  });
+
+  it("moves focus to the last visible link when the focused one is clipped", () => {
+    render(<NavbarTextMenu />);
+    link("/raidstead").focus();
+    rowOf.set("/raidstead", 1);
+    fire();
+    expect(link("/raidstead").style.visibility).toBe("hidden");
+    expect(document.activeElement).toBe(link("/communities"));
   });
 });

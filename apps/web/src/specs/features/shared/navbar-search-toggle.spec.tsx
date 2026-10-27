@@ -59,6 +59,7 @@ const pressSlash = () => {
   });
   return event;
 };
+const NavbarTextMenuStub = () => <a href="#">menu link</a>;
 const isOpen = () => toggle().getAttribute("aria-expanded") === "true";
 
 describe("NavbarSearchToggle", () => {
@@ -169,6 +170,28 @@ describe("NavbarSearchToggle", () => {
     fireEvent.keyDown(input()!, { key: "Escape" });
     fireEvent.click(toggle());
     expect(input()).toHaveFocus();
+  });
+
+  it("draws the open field in the anchor, and pressing inside it keeps it open", () => {
+    const anchor = document.createElement("div");
+    anchor.setAttribute("data-testid", "menu-area");
+    document.body.appendChild(anchor);
+    try {
+      render(
+        <>
+          <NavbarTextMenuStub />
+          <NavbarSearchToggle anchor={anchor} />
+        </>
+      );
+      fireEvent.click(toggle());
+      expect(anchor).toContainElement(input());
+      fireEvent.pointerDown(input()!);
+      expect(isOpen()).toBe(true);
+      fireEvent.pointerDown(screen.getByText("menu link"));
+      expect(isOpen()).toBe(false);
+    } finally {
+      anchor.remove();
+    }
   });
 
   it("ignores / while typing in another field", () => {
