@@ -5,7 +5,7 @@ import { Button } from "@ui/button";
 import { Tooltip } from "@ui/tooltip";
 import i18next from "i18next";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Search } from "./navbar-search-dynamic";
 
 const preloadSearch = () => {
@@ -24,14 +24,30 @@ const preloadSearch = () => {
 export function NavbarSearchToggle() {
   const pathname = usePathname();
   const slotRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
+  // Never leave focus in the hidden input: "/" would read it as typing and
+  // keyboard users would be lost. Escape hands focus back to the icon; other
+  // closes just drop it, since the user is already moving somewhere else.
+  const close = useCallback((returnFocus: boolean) => {
+    const active = document.activeElement as HTMLElement | null;
+    if (active && panelRef.current?.contains(active)) {
+      if (returnFocus) {
+        slotRef.current?.querySelector<HTMLButtonElement>("button[aria-expanded]")?.focus();
+      } else {
+        active.blur();
+      }
+    }
     setOpen(false);
-  }, [pathname]);
+  }, []);
 
-  // "/" opens search from anywhere except while typing somewhere else.
+  useEffect(() => {
+    close(false);
+  }, [pathname, close]);
+
+  // "/" opens search, unless the user is typing or a dialog or sidebar is open.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
@@ -39,6 +55,8 @@ export function NavbarSearchToggle() {
       if (t?.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) {
         return;
       }
+      // Every modal and sidebar renders through @ui/modal, which unmounts when hidden.
+      if (document.querySelector(".ecency-modal-content")) return;
       // The desktop bar also mounts (hidden) on phones; ignore it there.
       if (!slotRef.current?.offsetParent) return;
       e.preventDefault();
@@ -52,15 +70,16 @@ export function NavbarSearchToggle() {
   useEffect(() => {
     if (!open) return;
     // On first open the input mounts with autoFocus; on later opens refocus it.
-    document.getElementById("navbar-search")?.focus();
+    // Scoped to this panel: the mobile navbar has an input with the same id.
+    panelRef.current?.querySelector("input")?.focus();
 
     const onPointerDown = (e: PointerEvent) => {
       // The icon lives in the slot too, so pressing it toggles instead of
       // closing here and reopening on click.
-      if (!slotRef.current?.contains(e.target as Node)) setOpen(false);
+      if (!slotRef.current?.contains(e.target as Node)) close(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") close(true);
     };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -68,7 +87,7 @@ export function NavbarSearchToggle() {
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [open]);
+  }, [open, close]);
 
   const label = i18next.t("navbar.search");
 
@@ -90,11 +109,22 @@ export function NavbarSearchToggle() {
       </Tooltip>
       {mounted && (
         <div
+          ref={panelRef}
+          role="search"
           className={
             open
               ? "absolute right-0 top-1/2 z-[110] w-[min(400px,50vw)] -translate-y-1/2"
               : "hidden"
           }
+          // Submitting or picking a suggestion is done with search. Closing here
+          // also covers a new query on /search, where only ?q changes and the
+          // pathname effect above never fires.
+          onKeyDown={(e) => {
+            if (e.key === "Enter") close(false);
+          }}
+          onClick={(e) => {
+            if ((e.target as HTMLElement).closest(".list-item")) close(false);
+          }}
         >
           <Search autoFocus={true} />
         </div>

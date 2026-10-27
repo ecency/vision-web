@@ -8,7 +8,12 @@ vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname }));
 vi.mock("@/features/shared/navbar/search", () => ({ Search: () => null }));
 vi.mock("@/features/shared/navbar/navbar-search-dynamic", () => ({
   Search: ({ autoFocus }: { autoFocus?: boolean }) => (
-    <input id="navbar-search" aria-label="search input" autoFocus={autoFocus} />
+    <div>
+      <input id="navbar-search" aria-label="search input" autoFocus={autoFocus} />
+      <a href="#" className="list-item">
+        suggestion
+      </a>
+    </div>
   )
 }));
 
@@ -30,7 +35,14 @@ afterAll(() => {
 });
 
 const toggle = () => screen.getByRole("button", { name: "navbar.search" });
-const input = () => document.getElementById("navbar-search");
+const input = () => screen.queryByLabelText("search input");
+const pressSlash = () => {
+  const event = new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true });
+  act(() => {
+    (document.activeElement ?? document.body).dispatchEvent(event);
+  });
+  return event;
+};
 const isOpen = () => toggle().getAttribute("aria-expanded") === "true";
 
 describe("NavbarSearchToggle", () => {
@@ -76,12 +88,63 @@ describe("NavbarSearchToggle", () => {
 
   it("opens with the / key", () => {
     render(<NavbarSearchToggle />);
-    const event = new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true });
-    act(() => {
-      document.body.dispatchEvent(event);
-    });
+    const event = pressSlash();
     expect(isOpen()).toBe(true);
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("returns focus to the icon on Escape, so / can reopen search", () => {
+    render(<NavbarSearchToggle />);
+    fireEvent.click(toggle());
+    expect(input()).toHaveFocus();
+    fireEvent.keyDown(input()!, { key: "Escape" });
+    expect(isOpen()).toBe(false);
+    expect(toggle()).toHaveFocus();
+    pressSlash();
+    expect(isOpen()).toBe(true);
+    expect(input()).toHaveFocus();
+  });
+
+  it("closes and releases focus on submit, covering a new query on /search", () => {
+    render(<NavbarSearchToggle />);
+    fireEvent.click(toggle());
+    fireEvent.keyDown(input()!, { key: "Enter" });
+    expect(isOpen()).toBe(false);
+    expect(input()).not.toHaveFocus();
+  });
+
+  it("closes when a suggestion is picked", () => {
+    render(<NavbarSearchToggle />);
+    fireEvent.click(toggle());
+    fireEvent.click(screen.getByText("suggestion"));
+    expect(isOpen()).toBe(false);
+  });
+
+  it("ignores / while a dialog or sidebar is open", () => {
+    render(
+      <>
+        <NavbarSearchToggle />
+        <div className="ecency-modal-content">
+          <button>close</button>
+        </div>
+      </>
+    );
+    screen.getByRole("button", { name: "close" }).focus();
+    pressSlash();
+    expect(isOpen()).toBe(false);
+  });
+
+  it("focuses its own input, not the mobile one with the same id", () => {
+    render(
+      <>
+        <input id="navbar-search" aria-label="mobile search" />
+        <NavbarSearchToggle />
+      </>
+    );
+    fireEvent.click(toggle());
+    fireEvent.keyDown(input()!, { key: "Escape" });
+    fireEvent.click(toggle());
+    expect(input()).toHaveFocus();
   });
 
   it("ignores / while typing in another field", () => {
