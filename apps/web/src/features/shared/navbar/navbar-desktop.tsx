@@ -42,6 +42,7 @@ export function NavbarDesktop({
   const { data: unread } = useMattermostUnread(Boolean(activeUser && hydrated));
 
   const [showSidebar, setShowSidebar] = useState(false);
+  const [searchAnchor, setSearchAnchor] = useState<HTMLDivElement | null>(null);
 
   return (
     <div
@@ -51,23 +52,32 @@ export function NavbarDesktop({
     >
       <div
         className={classNameObject({
-          "ecency-navbar-desktop max-w-[1600px] w-full mx-auto flex items-center justify-between px-4 py-3": true,
+          "ecency-navbar-desktop w-full flex items-center justify-between px-4 py-3": true,
           transparent: !transparentVerify && step === 1
         })}
       >
         <NavbarMainSidebarToggle onClick={() => setMainBarExpanded(true)} />
-        <div className="flex-1" />
-        <NavbarTextMenu />
-        <div className="flex-spacer" />
+        {/* Fills the free space with the links on the left, next to the logo;
+            links that no longer fit drop off its end one at a time. It is also
+            where the open search field is drawn (from its right edge), so it
+            never covers the icons or Ask Esie; the links hide while it is open. */}
+        <div
+          ref={setSearchAnchor}
+          className="navbar-search-anchor relative flex min-w-0 flex-1 items-center"
+        >
+          <NavbarTextMenu />
+        </div>
+        {(step !== 1 || transparentVerify) && <NavbarSearchToggle anchor={searchAnchor} />}
         <NavbarAskEsie />
-        {(step !== 1 || transparentVerify) && <NavbarSearchToggle />}
         <div className="navbar-actions flex items-center ml-3 gap-3">
           <NavbarPerksButton subdued />
           <Tooltip content={i18next.t("navbar.post")}>
             <Button
               href="/publish"
               appearance={activeUser ? "primary" : "gray-link"}
-              className="navbar-write-button"
+              // Below lg the label is hidden but Button's empty label wrapper
+              // still takes the gap, pushing the icon off center.
+              className="navbar-write-button !gap-0 lg:!gap-2"
               iconPlacement="left"
               icon={<UilEditAlt />}
               aria-label={i18next.t("navbar.write")}

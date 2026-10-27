@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { IntentLink } from "@/features/shared/intent-link";
 import i18next from "i18next";
 import i18n from "i18next";
@@ -52,8 +52,32 @@ export function NavbarTextMenu() {
 
   const visibleItems = ITEMS.filter((item) => item.show);
 
+  // Links that wrapped to the clipped row are out of sight; hide them for real
+  // so keyboard focus cannot land on them (and scroll the menu).
+  const menuRef = useRef<HTMLDivElement>(null);
+  const linksKey = visibleItems.map((item) => item.link).join();
+  useEffect(() => {
+    const menu = menuRef.current;
+    if (!menu || typeof ResizeObserver === "undefined") return;
+    const sync = () => {
+      const links = Array.from(menu.children) as HTMLElement[];
+      const firstRowTop = links[0]?.offsetTop ?? 0;
+      links.forEach((link) => {
+        link.style.visibility = link.offsetTop > firstRowTop ? "hidden" : "";
+      });
+    };
+    const observer = new ResizeObserver(sync);
+    observer.observe(menu);
+    return () => observer.disconnect();
+  }, [linksKey]);
+
   return (
-    <div className="hidden sm:flex md:hidden xl:flex text-menu items-center gap-4 justify-center h-full md:mr-2">
+    // One row tall with overflow hidden: links that do not fit wrap to a second,
+    // clipped row, so the menu loses links from its end only when out of room.
+    <div
+      ref={menuRef}
+      className="text-menu flex flex-1 min-w-0 flex-wrap items-center justify-start h-12 py-0.5 px-1 overflow-hidden md:ml-4 md:mr-2"
+    >
       {visibleItems.map((item) => {
         const active = isPathInSection(pathname, item.link);
         return (

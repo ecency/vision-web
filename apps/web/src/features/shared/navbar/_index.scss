@@ -73,8 +73,13 @@ body.is-inapp-browser .profile-page {
     flex-shrink: 0;
   }
   .text-menu {
+    // row-gap pushes a wrapped (out of room) row past the clipped height
     gap: 8px;
-    flex-shrink: 0;
+  }
+  // While search is open over the menu area, hide the links so none peeks out
+  // beside the field (link widths vary by language, so no fixed width fits).
+  .navbar-search-anchor:has(> [role="search"]:not(.hidden)) .text-menu {
+    visibility: hidden;
   }
   .text-menu a {
     border-radius: 0;
