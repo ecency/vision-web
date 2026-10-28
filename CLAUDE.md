@@ -241,7 +241,9 @@ The web app will not see package changes until they are rebuilt.
 ## Pull Requests
 
 - Branch from `develop` (not `master`)
-- Include tests with changes
+- Test first: issues carry an **Acceptance tests** list (`.github/ISSUE_TEMPLATE/spec.md`); write those specs
+  before the code, see them fail for the right reason, then make them green. The PR says so, or repeats the
+  issue's `No test-first: <reason>`
 - Update tests if modifying existing code
 - Mark PR as WIP if not ready
 - Include description, screenshots/videos, and link to issues

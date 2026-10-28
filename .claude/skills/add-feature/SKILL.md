@@ -6,11 +6,25 @@ argument-hint: [feature-name]
 
 # Add Feature
 
-Order of operations only; CLAUDE.md covers package boundaries, `.claude/rules/web-app.md` mutation architecture and
+Order of operations only, spec first; CLAUDE.md covers package boundaries, `.claude/rules/web-app.md` mutation architecture and
 `.claude/rules/icons.md` icon rules. Paths below are relative to `apps/web/src`, except repo-rooted ones, which begin
 with `apps/`, `packages/`, `scripts/` or `.github/`.
 
-## 1. Feature directory
+## 1. Failing spec first
+
+Start from the issue's **Acceptance tests** list and write one `it()` per behaviour before any feature code. Run it and confirm it fails **for the right reason**: an assertion about the missing behaviour, not an import error, a missing mock or a typo. When the subject file does not exist yet, add a stub export (a component returning `null`, a function returning `undefined`) so the run reaches the assertion. Steps 2 to 8 then make it green. If the issue says `No test-first: <reason>` (pure layout or CSS, a dependency upgrade, infra config), skip this step and repeat that line in the PR.
+
+Vitest's `include`, set in `apps/web/vitest.config.mts` and relative to `apps/web/`, is
+`src/specs/**/*.spec.{ts,tsx}`, so a spec beside the component is not collected. Put it in
+`specs/features/<feature-name>/`, render with `renderWithQueryClient` from
+`@/specs/test-utils` and seed with `seedQueryClient(queryClient, data)`, client first.
+i18next is globally mocked to return the key, so assert on `"<feature-name>.button-label"`.
+The same global setup (`specs/setup-any-spec.ts`) mocks `@/utils` down to `random` and
+`getAccessToken`, so a spec that reaches a feature-local api wrapper pulling anything else
+from `@/utils` has to re-mock it with `vi.importActual("@/utils")`. `pnpm test` at the root
+is web-only.
+
+## 2. Feature directory
 
 Files sit flat at the feature root with an `index.ts` barrel. Most feature dirs have that
 barrel; a few carry `components/`, `hooks/`, `api/` or `types/` subfolders. Do not scaffold
@@ -31,7 +45,7 @@ here. A feature stylesheet Tailwind cannot express is registered as an `@import`
 `styles/_shared-components.scss`, which `styles/style.scss` pulls in once. Do not import it
 from the component.
 
-## 2. Flag (only if toggleable)
+## 3. Flag (only if toggleable)
 
 Add to `visionFeatures` in `config/config.ts`, then mirror into `config/config.template.ts`
 by hand: nothing imports the template, so a missed edit is not caught. Gate with
@@ -45,7 +59,7 @@ by hand: nothing imports the template, so a missed edit is not caught. Gate with
 
 Outside JSX: `getConfigValue(({ visionFeatures }) => ...)`.
 
-## 3. Data
+## 4. Data
 
 - Blockchain: run `/add-sdk-mutation` or `/add-query` first.
 - Private API: the client is `packages/sdk/src/modules/private-api`. There is no
@@ -57,7 +71,7 @@ Outside JSX: `getConfigValue(({ visionFeatures }) => ...)`.
 - `useActiveAccount()` from `@/core/hooks/use-active-account`. Keys: `QueryKeys` from
   `@ecency/sdk`, or `QueryIdentifiers` from `@/core/react-query` for web-only queries.
 
-## 4. i18n
+## 5. i18n
 
 The app imports the i18next default export directly. `react-i18next` and `useTranslation`
 are not used here.
@@ -75,33 +89,21 @@ one object is silently last-wins, guarded by
 `specs/features/i18n-locale-duplicate-keys.spec.ts`. Inline markup uses `Tsx` from
 `@/features/i18n/helper`.
 
-## 5. Page route (if it owns a URL)
+## 6. Page route (if it owns a URL)
 
 Plain `apps/web/src/app/<route>/page.tsx`. `(dynamicPages)` holds profile, entry, feed and
 community; other routes sit at the app root or under `(staticPages)`. Page-local components
 go in `_components/` beside `page.tsx`. `routes.ts` is a legacy map read by a few files; add
 to it for pattern matching.
 
-## 6. Specs
-
-Vitest's `include`, set in `apps/web/vitest.config.mts` and relative to `apps/web/`, is
-`src/specs/**/*.spec.{ts,tsx}`, so a spec beside the component is not collected. Put it in
-`specs/features/<feature-name>/`, render with `renderWithQueryClient` from
-`@/specs/test-utils` and seed with `seedQueryClient(queryClient, data)`, client first.
-i18next is globally mocked to return the key, so assert on `"<feature-name>.button-label"`.
-The same global setup (`specs/setup-any-spec.ts`) mocks `@/utils` down to `random` and
-`getAccessToken`, so a spec that reaches a feature-local api wrapper pulling anything else
-from `@/utils` has to re-mock it with `vi.importActual("@/utils")`. `pnpm test` at the root
-is web-only.
-
-## 7. Wiring in
+## 8. Wiring in
 
 - Toolbar button: `features/shared/editor-toolbar/index.tsx`, inside a `Conditional`. The
   publish route's `app/publish/_editor-extensions/` is not this.
 - Profile section: `app/(dynamicPages)/profile/[username]/_components/`.
 - Navigation: `features/shared/navbar/navbar-main-sidebar.tsx`.
 
-Finish with `pnpm lint`, `pnpm typecheck` and `pnpm test`. Those three run none of the script
+Before the PR, the spec from step 1 must be green and the PR body says it was red first. Finish with `pnpm lint`, `pnpm typecheck` and `pnpm test`. Those three run none of the script
 audits in `.github/workflows/typecheck.yml`; the ones a feature is likely to trip are
 `node scripts/icon-scss-audit.mjs`, `node scripts/icon-tsx-audit.mjs --fail` and
 `node scripts/slim-entries-audit.mjs --fail`. Copy each line's flags exactly. The two

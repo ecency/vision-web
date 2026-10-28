@@ -8,6 +8,10 @@ argument-hint: [operation-name]
 
 Layering is in `.claude/rules/web-app.md` under "Mutation Architecture". Copy the real files below.
 
+## 0. Failing spec first
+
+Before the hook, write `use-<operation>.spec.ts` beside where it will live, for the logic the hook adds: the operation payload it builds, any cache update and the keys it invalidates. Copy the layout of `posts/mutations/use-vote.spec.ts`, which tests the vote's pure helpers rather than the React hook. Run it and confirm it fails **for the right reason**: an assertion about the missing behaviour, not an import error, a missing mock or a typo. When the subject file does not exist yet, add a stub export (a component returning `null`, a function returning `undefined`) so the run reaches the assertion. A hook that only forwards to `useBroadcastMutation` with no logic of its own needs no spec; say so in the PR. If the issue says `No test-first: <reason>` (pure layout or CSS, a dependency upgrade, infra config), skip this step and repeat that line in the PR.
+
 ## 1. SDK mutation hook
 
 `packages/sdk/src/modules/<domain>/mutations/use-<operation>.ts`. Operations come
@@ -68,9 +72,8 @@ Imports as the SDK uses them: `useBroadcastMutation` from `@/modules/core` or
 `AuthContextV2` as `import type`, usually from `@/modules/core/types`.
 `invalidateAfterBroadcast` already defers on async broadcasts, so no hand rolled
 `setTimeout`. Other models:
-`posts/mutations/use-vote.ts`, `use-reblog.ts`, `use-comment.ts`. Co-locate a
-`use-<operation>.spec.ts` when the hook has logic of its own; most hooks have none,
-so copy the pattern from `posts/mutations/use-vote.spec.ts`.
+`posts/mutations/use-vote.ts`, `use-reblog.ts`, `use-comment.ts`. The spec from step 0 goes green
+here.
 
 Export with `export * from "./use-<operation>";` in the domain's
 `mutations/index.ts`. The chain up to `packages/sdk/src/index.ts` is usually
@@ -116,7 +119,7 @@ named export to `apps/web/src/api/sdk-mutations/index.ts`.
 
 ## 4. Verify
 
-The web app resolves `@ecency/sdk` through `dist`,
+The step 0 spec passes and the PR body says it failed first. The web app resolves `@ecency/sdk` through `dist`,
 so `pnpm typecheck` reports your new export as missing from the package until the SDK
 is rebuilt:
 

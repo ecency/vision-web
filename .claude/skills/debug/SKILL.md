@@ -23,6 +23,10 @@ invisible. Most invariants below have a spec; find it before a repro; web specs 
 one browser only, or only right after a deploy, is often already handled by the
 scripts in `apps/web/public/scripts/`; check those first.
 
+## First: a failing spec that reproduces the bug
+
+Before changing any code, write a spec that fails the way the report does, driven through the real code path with the reporter's real input (not a simplified harness that can drop the cause). Use the triage below to find where. Run it and confirm it fails **for the right reason**: an assertion about the missing behaviour, not an import error, a missing mock or a typo. When the subject file does not exist yet, add a stub export (a component returning `null`, a function returning `undefined`) so the run reaches the assertion. The fix is done when that spec is green and the rest of the suite still passes; keep the spec. A bug that only shows in a real browser or on a live node (layout, CDN, network) may not fit a spec; then record the manual repro steps in the issue and say why there is no spec.
+
 ## Post shown as deleted, 404, or spinning
 
 `getPostQueryOptions(author, permlink?, observer = "", num?)`

@@ -85,6 +85,12 @@ modals use CSS transitions (`apps/web/src/features/ui/modal/index.tsx`). Do not
 reintroduce it.
 
 **Tests**
+- **Each new or changed spec must fail without the change.** Check it: revert only the
+  source part of the diff (keep the spec), run the spec and confirm it goes red for the
+  behaviour it names, then restore. For a new guard, delete just the guard. A spec that
+  stays green only exercises the path where the change does nothing: flag it as `BUG`.
+  Restore from a copy of the file, never `git checkout -- <file>`, which drops
+  uncommitted work. A change with no spec needs the issue's `No test-first: <reason>`.
 - Placement decides collection. Some workspaces pin `include`, so a misplaced or
   wrongly suffixed file there is silently never run: `apps/web` takes
   `src/specs/**/*.spec.{ts,tsx}` only, `packages/wallets` `src/**/*.spec.ts`,
