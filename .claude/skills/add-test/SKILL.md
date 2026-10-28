@@ -15,6 +15,8 @@ Procedure for `apps/web` (`@ecency/web`) specs. Background you should not re-rea
   `AccountBuilder`). It does not mention `mockFeatureFlags` or `waitForMs`, so read
   `test-utils.tsx` itself before assuming a helper is missing.
 
+When a spec covers behaviour being added or fixed, write it before the code, from the issue's **Acceptance tests** list. Run it and confirm it fails **for the right reason**: an assertion about the missing behaviour, not an import error, a missing mock or a typo. When the subject file does not exist yet, add a stub export (a component returning `null`, a function returning `undefined`) so the run reaches the assertion. A spec that pins behaviour which already works (a test-only PR, a refactor) has no red run; say so in the PR.
+
 Sections 1-4 cover what usually breaks.
 
 ## 1. Where the file goes
@@ -175,4 +177,5 @@ vi.mocked(useQuery).mockImplementation(() => {
 - [ ] `import "@testing-library/jest-dom"` when asserting on the DOM
 - [ ] `@/utils` and `@ecency/sdk` re-mocked with `importActual` for anything past the global stubs
 - [ ] Assertions target i18n keys, not English strings
+- [ ] For new or fixed behaviour: spec was run red before the change, failing on its assertion
 - [ ] `pnpm test <path>` passes with no `--`, then `pnpm test` for the full suite

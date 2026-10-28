@@ -23,7 +23,28 @@ an SDK file plus one line in the wallets re-export. CLAUDE.md holds the package 
 rules: the multi-chain code stays in `@ecency/wallets`. Its external chain list is stale,
 since the chains under `assets/external/` are BTC, ETH, BNB and SOL.
 
-## 1. Add the key
+## 1. Failing spec first
+
+Write the builder's spec before the builder: the `queryKey` it must produce, what `queryFn` returns for a mocked response (empty and error shapes too) plus the `enabled` guard for missing arguments. Run it and confirm it fails **for the right reason**: an assertion about the missing behaviour, not an import error, a missing mock or a typo. When the subject file does not exist yet, add a stub export (a component returning `null`, a function returning `undefined`) so the run reaches the assertion. If the issue says `No test-first: <reason>` (pure layout or CSS, a dependency upgrade, infra config), skip this step and repeat that line in the PR.
+
+In either package, colocate `get-<entity>-query-options.spec.ts` beside the builder (the SDK
+picks up vitest's default spec glob, `packages/wallets/vitest.config.ts` includes
+`src/**/*.spec.ts`), then run the one spec (plus `pnpm typecheck` once it is green):
+
+```bash
+pnpm --filter @ecency/sdk test src/modules/<domain>/queries/get-<entity>-query-options.spec.ts
+pnpm --filter @ecency/wallets test src/modules/wallets/queries/<name>.spec.ts
+pnpm --filter @ecency/wallets test src/modules/assets/external/<chain>/<name>.spec.ts   # BTC, ETH, BNB, SOL
+```
+
+**Never add `--` before the path.** pnpm forwards it to vitest as a passthrough separator
+rather than a file filter, so the whole package suite runs instead of the one spec.
+
+A web query does not colocate. `apps/web/vitest.config.mts` includes
+`src/specs/**/*.spec.{ts,tsx}` only, so the spec goes under `apps/web/src/specs/api/queries/`
+and runs from the workspace root as `pnpm test src/specs/api/queries/<name>.spec.ts`.
+
+## 2. Add the key
 
 Key style is per workspace, so pick the right one before writing anything:
 
@@ -31,7 +52,7 @@ Key style is per workspace, so pick the right one before writing anything:
 |---|---|
 | `@ecency/sdk` | the shared `QueryKeys` object, below |
 | `@ecency/wallets` | a package-local namespaced array; `QueryKeys` is not imported there |
-| `apps/web` | the `QueryIdentifiers` enum, or a local suffix constant appended to another builder's key (step 3) |
+| `apps/web` | the `QueryIdentifiers` enum, or a local suffix constant appended to another builder's key (step 4, where the enum member is added) |
 
 `@ecency/wallets` keeps its keys local so the multi-chain code does not reach
 back into the SDK, so CLAUDE.md's blanket rule to take every cache key from `QueryKeys` is
@@ -71,7 +92,7 @@ prefix-safe. Some keys stay prefix-safe without the helper by branching on the m
 argument and returning the shorter array: `search.similarEntries`,
 `wallet.aggregatedHistory` plus `polls.vote`.
 
-## 2. Write the builder
+## 3. Write the builder
 
 File: `packages/sdk/src/modules/<domain>/queries/get-<entity>-query-options.ts`. In
 `@ecency/wallets` there are two homes: a wallet-level builder is
@@ -79,7 +100,7 @@ File: `packages/sdk/src/modules/<domain>/queries/get-<entity>-query-options.ts`.
 ETH, BNB or SOL sits directly in `packages/wallets/src/modules/assets/external/<chain>/`,
 with no `queries/` level. A web-only
 query is `apps/web/src/api/queries/<name>-query.ts` (`get-contributors-query.ts`,
-`get-gifs-query.ts`), usually with its key from `QueryIdentifiers` (step 3). The builder
+`get-gifs-query.ts`), usually with its key from `QueryIdentifiers` (step 4, where the enum member is added). The builder
 shape below carries across those homes; the imports do not. Export a function, never a
 hook, so one options object serves a component, a server prefetch or a non-React caller.
 Almost all top-level `export function` names under
@@ -178,7 +199,7 @@ type PageParam = {
     },
 ```
 
-## 3. Export it
+## 4. Export it
 
 Add one line to the domain's `queries/index.ts`, which `modules/<domain>/index.ts` already
 re-exports. A brand new domain also needs `export * from "./modules/<domain>";` in
@@ -201,7 +222,7 @@ directory can import the BTC, ETH, BNB or SOL builders. Nothing does. Adding a b
 there means adding the missing `export * from "./external";` line as well, otherwise the new
 export is unreachable.
 
-## 4. Consume it
+## 5. Consume it
 
 ```typescript
 const { data } = useQuery(getPostQueryOptions(author, permlink));
@@ -213,24 +234,6 @@ const entry = await prefetchQuery(getPostQueryOptions(author, permlink));
 
 Those helpers (`apps/web/src/core/react-query/query-helpers.ts`) wrap the fetch in an SSR
 timeout, so a hanging node cannot hold a render open.
-
-## 5. Test
-
-In either package, colocate `get-<entity>-query-options.spec.ts` beside the builder (the SDK
-picks up vitest's default spec glob, `packages/wallets/vitest.config.ts` includes
-`src/**/*.spec.ts`), then run the one spec plus `pnpm typecheck`:
-
-```bash
-pnpm --filter @ecency/sdk test src/modules/<domain>/queries/get-<entity>-query-options.spec.ts
-pnpm --filter @ecency/wallets test src/modules/wallets/queries/<name>.spec.ts
-```
-
-**Never add `--` before the path.** pnpm forwards it to vitest as a passthrough separator
-rather than a file filter, so the whole package suite runs instead of the one spec.
-
-A web query does not colocate. `apps/web/vitest.config.mts` includes
-`src/specs/**/*.spec.{ts,tsx}` only, so the spec goes under `apps/web/src/specs/api/queries/`
-and runs from the workspace root as `pnpm test src/specs/api/queries/<name>.spec.ts`.
 
 ## Gotchas
 
