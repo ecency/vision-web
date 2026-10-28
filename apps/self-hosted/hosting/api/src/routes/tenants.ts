@@ -55,7 +55,7 @@ const createTenantSchema = z.object({
 // an optional int) was enough to trigger it.
 const fullConfigDocSchema = z.object({
   version: z.number().int().optional(),
-  configuration: z.record(z.any()),
+  configuration: z.record(z.string(), z.any()),
 });
 // Kept for callers that send flat keys: create/signup uses this vocabulary, and the PATCH has
 // accepted it since before the Configuration Editor existed. A flat body carries no
@@ -79,7 +79,7 @@ const flatConfigUpdateSchema = z.object({
 // are a 400 here; well-formed ones the server will not act on come back in `discarded` with the
 // reason. TenantService.resetConfigPaths re-checks everything, this is only the early answer.
 const updateTenantSchema = z.object({
-  config: z.record(z.any()).optional(),
+  config: z.record(z.string(), z.any()).optional(),
   reset: z.array(z.string().max(200).regex(CONFIG_RESET_PATH)).max(MAX_RESET_PATHS).optional(),
 });
 
