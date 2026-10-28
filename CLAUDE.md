@@ -104,7 +104,7 @@ node scripts/origin-config-audit.mjs --fail
 pnpm test src/specs/path/to/test.spec.tsx
 
 # For packages (Vitest)
-pnpm --filter @ecency/sdk test -- path/to/test.spec.ts
+pnpm --filter @ecency/sdk test path/to/test.spec.ts   # no `--`: it runs the whole package suite
 ```
 
 ## Monorepo Architecture
@@ -241,9 +241,9 @@ The web app will not see package changes until they are rebuilt.
 ## Pull Requests
 
 - Branch from `develop` (not `master`)
-- Test first: issues carry an **Acceptance tests** list (`.github/ISSUE_TEMPLATE/spec.md`); write those specs
-  before the code, see them fail for the right reason, then make them green. The PR says so, or repeats the
-  issue's `No test-first: <reason>`
+- Test first: issues carry a required **Acceptance tests** field (`.github/ISSUE_TEMPLATE/spec.yml`); write those
+  specs before the code, see them fail for the right reason, then make them green. The PR body lists each spec path, the command and the assertion that failed before the change, then the green run after it,
+  or repeats the issue's `No test-first: <reason>`
 - Update tests if modifying existing code
 - Mark PR as WIP if not ready
 - Include description, screenshots/videos, and link to issues

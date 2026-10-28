@@ -34,6 +34,7 @@ picks up vitest's default spec glob, `packages/wallets/vitest.config.ts` include
 ```bash
 pnpm --filter @ecency/sdk test src/modules/<domain>/queries/get-<entity>-query-options.spec.ts
 pnpm --filter @ecency/wallets test src/modules/wallets/queries/<name>.spec.ts
+pnpm --filter @ecency/wallets test src/modules/assets/external/<chain>/<name>.spec.ts   # BTC, ETH, BNB, SOL
 ```
 
 **Never add `--` before the path.** pnpm forwards it to vitest as a passthrough separator
@@ -51,7 +52,7 @@ Key style is per workspace, so pick the right one before writing anything:
 |---|---|
 | `@ecency/sdk` | the shared `QueryKeys` object, below |
 | `@ecency/wallets` | a package-local namespaced array; `QueryKeys` is not imported there |
-| `apps/web` | the `QueryIdentifiers` enum, or a local suffix constant appended to another builder's key (step 4) |
+| `apps/web` | the `QueryIdentifiers` enum, or a local suffix constant appended to another builder's key (step 4, where the enum member is added) |
 
 `@ecency/wallets` keeps its keys local so the multi-chain code does not reach
 back into the SDK, so CLAUDE.md's blanket rule to take every cache key from `QueryKeys` is
@@ -99,7 +100,7 @@ File: `packages/sdk/src/modules/<domain>/queries/get-<entity>-query-options.ts`.
 ETH, BNB or SOL sits directly in `packages/wallets/src/modules/assets/external/<chain>/`,
 with no `queries/` level. A web-only
 query is `apps/web/src/api/queries/<name>-query.ts` (`get-contributors-query.ts`,
-`get-gifs-query.ts`), usually with its key from `QueryIdentifiers` (step 4). The builder
+`get-gifs-query.ts`), usually with its key from `QueryIdentifiers` (step 4, where the enum member is added). The builder
 shape below carries across those homes; the imports do not. Export a function, never a
 hook, so one options object serves a component, a server prefetch or a non-React caller.
 Almost all top-level `export function` names under

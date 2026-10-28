@@ -85,12 +85,19 @@ modals use CSS transitions (`apps/web/src/features/ui/modal/index.tsx`). Do not
 reintroduce it.
 
 **Tests**
-- **Each new or changed spec must fail without the change.** Check it: revert only the
-  source part of the diff (keep the spec), run the spec and confirm it goes red for the
-  behaviour it names, then restore. For a new guard, delete just the guard. A spec that
-  stays green only exercises the path where the change does nothing: flag it as `BUG`.
-  Restore from a copy of the file, never `git checkout -- <file>`, which drops
-  uncommitted work. A change with no spec needs the issue's `No test-first: <reason>`.
+- **A spec for added or fixed behaviour must fail without the change.** Check it: revert
+  only the source part of the diff (keep the spec), run the spec and confirm it goes red on
+  the assertion it names, then restore. A source file the PR adds cannot be reverted that
+  way, since the spec would then fail on its import: replace it with a stub export (a
+  component returning `null`, a function returning `undefined`) instead. For a new guard,
+  delete just the guard. A spec that stays green only exercises the path where the change
+  does nothing: flag it as `BUG`. Restore from a copy of the file, never
+  `git checkout -- <file>`, which drops uncommitted work.
+- Specs that pin behaviour which already works (a test-only PR, a refactor) are expected
+  to stay green and are not a finding.
+- The PR body lists each spec path, the command, the assertion that failed before the
+  change and the green run after it. A change with no spec repeats the issue's
+  `No test-first: <reason>`.
 - Placement decides collection. Some workspaces pin `include`, so a misplaced or
   wrongly suffixed file there is silently never run: `apps/web` takes
   `src/specs/**/*.spec.{ts,tsx}` only, `packages/wallets` `src/**/*.spec.ts`,

@@ -12,7 +12,7 @@ with `apps/`, `packages/`, `scripts/` or `.github/`.
 
 ## 1. Failing spec first
 
-Start from the issue's **Acceptance tests** list and write one `it()` per behaviour before any feature code. Run it and confirm it fails **for the right reason**: an assertion about the missing behaviour, not an import error, a missing mock or a typo. When the subject file does not exist yet, add a stub export (a component returning `null`, a function returning `undefined`) so the run reaches the assertion. Steps 2 to 8 then make it green. If the issue says `No test-first: <reason>` (pure layout or CSS, a dependency upgrade, infra config), skip this step and repeat that line in the PR.
+Start from the issue's **Acceptance tests** list and write one `it()` per behaviour before any feature code. Run it and confirm it fails **for the right reason**: an assertion about the missing behaviour, not an import error, a missing mock or a typo. When the subject file does not exist yet, add a stub export (a component returning `null`, a function returning `undefined`) so the run reaches the assertion. Steps 2 to 7 then make it green. If the issue says `No test-first: <reason>` (pure layout or CSS, a dependency upgrade, infra config), skip this step and repeat that line in the PR.
 
 Vitest's `include`, set in `apps/web/vitest.config.mts` and relative to `apps/web/`, is
 `src/specs/**/*.spec.{ts,tsx}`, so a spec beside the component is not collected. Put it in
@@ -96,14 +96,14 @@ community; other routes sit at the app root or under `(staticPages)`. Page-local
 go in `_components/` beside `page.tsx`. `routes.ts` is a legacy map read by a few files; add
 to it for pattern matching.
 
-## 8. Wiring in
+## 7. Wiring in
 
 - Toolbar button: `features/shared/editor-toolbar/index.tsx`, inside a `Conditional`. The
   publish route's `app/publish/_editor-extensions/` is not this.
 - Profile section: `app/(dynamicPages)/profile/[username]/_components/`.
 - Navigation: `features/shared/navbar/navbar-main-sidebar.tsx`.
 
-Before the PR, the spec from step 1 must be green and the PR body says it was red first. Finish with `pnpm lint`, `pnpm typecheck` and `pnpm test`. Those three run none of the script
+Before the PR, the spec from step 1 must be green and the PR body lists each spec path, the command and the assertion that failed before the change, then the green run after it. When step 1 was skipped, the PR repeats the issue's `No test-first: <reason>` instead. Finish with `pnpm lint`, `pnpm typecheck` and `pnpm test`. Those three run none of the script
 audits in `.github/workflows/typecheck.yml`; the ones a feature is likely to trip are
 `node scripts/icon-scss-audit.mjs`, `node scripts/icon-tsx-audit.mjs --fail` and
 `node scripts/slim-entries-audit.mjs --fail`. Copy each line's flags exactly. The two
