@@ -104,7 +104,7 @@ node scripts/origin-config-audit.mjs --fail
 pnpm test src/specs/path/to/test.spec.tsx
 
 # For packages (Vitest)
-pnpm --filter @ecency/sdk test path/to/test.spec.ts   # no `--`: it runs the whole package suite
+pnpm --filter @ecency/sdk test path/to/test.spec.ts   # no `--`: with it, the whole package suite runs
 ```
 
 ## Monorepo Architecture
