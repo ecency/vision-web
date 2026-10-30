@@ -344,16 +344,17 @@ describe("PerksPointsSpinBanner", () => {
   it("reloads the spin status at 00:00 UTC, when the free spin resets", () => {
     vi.useFakeTimers();
     try {
-      vi.setSystemTime(new Date("2026-10-30T23:58:30Z"));
+      // opened mid-minute: the reload still lands at 00:00:00, not up to a minute later
+      vi.setSystemTime(new Date("2026-10-30T23:59:30Z"));
       render(<PerksPointsSpinBanner />);
 
       act(() => {
-        vi.advanceTimersByTime(60 * 1000);
+        vi.advanceTimersByTime(29_999);
       });
       expect(refetch).not.toHaveBeenCalled();
 
       act(() => {
-        vi.advanceTimersByTime(60 * 1000);
+        vi.advanceTimersByTime(1);
       });
       expect(refetch).toHaveBeenCalledTimes(1);
       expect(refetch).toHaveBeenCalledWith({ queryKey: ["games", "status", "spin", "alice"] });

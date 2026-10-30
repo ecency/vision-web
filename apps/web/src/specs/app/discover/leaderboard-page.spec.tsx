@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React, { type ReactNode } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import i18next from "i18next";
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -26,12 +27,6 @@ vi.mock("@/app/discover/_components", () => ({
     <div data-username={username}>{children}</div>
   ),
   UserTableListHeader: ({ children }: WithChildren) => <div>{children}</div>
-}));
-
-vi.mock("@/app/discover/_components/day-reset-label", () => ({
-  DayResetLabel: ({ onDayChange }: { onDayChange?: () => void }) => (
-    <button data-testid="day-reset-label" aria-label="day changed" onClick={() => onDayChange?.()} />
-  )
 }));
 
 vi.mock("@/app/discover/_components/discover-period-dropdown", () => ({
@@ -72,16 +67,22 @@ import LeaderboardPage from "@/app/discover/@leaderboard/page";
 
 const rows: Row[] = [{ _id: "alice", count: 3, points: "1.000", quests_done: true }];
 
-function renderPage() {
-  return render(
+function page() {
+  return (
     <QueryClientProvider client={mocks.queryClient!}>
       <LeaderboardPage searchParams={Promise.resolve({})} />
     </QueryClientProvider>
   );
 }
 
+const renderPage = () => render(page());
+
 describe("Leaderboard page, UTC day reset", () => {
   beforeEach(() => {
+    // a fixed clock that still lets react-query's promises settle
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-10-30T18:48:00Z"));
+    vi.mocked(i18next.t).mockClear();
     // the app's client never refetches fresh data on mount by default
     mocks.queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity, refetchOnMount: false } }
@@ -90,15 +91,21 @@ describe("Leaderboard page, UTC day reset", () => {
     mocks.period = null;
   });
 
-  it("shows the UTC reset label on the day board", () => {
-    renderPage();
-    expect(screen.getByTestId("day-reset-label")).toBeInTheDocument();
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it.each(["week", "month"])("shows no reset label on the %s board", (period) => {
+  it("shows the UTC reset countdown on the day board", () => {
+    renderPage();
+    expect(screen.getByText("leaderboard.day-resets-in")).toBeInTheDocument();
+    expect(i18next.t).toHaveBeenCalledWith("leaderboard.day-resets-in", { hours: 5, minutes: 12 });
+  });
+
+  it.each(["week", "month"])("shows no reset countdown on the %s board", (period) => {
     mocks.period = period;
     renderPage();
-    expect(screen.queryByTestId("day-reset-label")).not.toBeInTheDocument();
+    expect(screen.queryByText("leaderboard.day-resets-in")).not.toBeInTheDocument();
+    expect(i18next.t).not.toHaveBeenCalledWith("leaderboard.day-resets-in", expect.anything());
   });
 
   it("refetches the day board on mount instead of showing an earlier copy", async () => {
@@ -107,11 +114,29 @@ describe("Leaderboard page, UTC day reset", () => {
     await waitFor(() => expect(mocks.queryFn).toHaveBeenCalledWith("day"));
   });
 
-  it("loads the new day board when the UTC day changes while the page is open", async () => {
+  it("loads the new day board right at 00:00 UTC while the page is open", async () => {
+    vi.setSystemTime(new Date("2026-10-30T23:59:30Z"));
     renderPage();
     await waitFor(() => expect(mocks.queryFn).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByTestId("day-reset-label"));
+    await act(async () => {
+      vi.advanceTimersByTime(30 * 1000);
+    });
     await waitFor(() => expect(mocks.queryFn).toHaveBeenCalledTimes(2));
+  });
+
+  it("reloads the day board when coming back to it from another period", async () => {
+    const { rerender } = renderPage();
+    await waitFor(() => expect(mocks.queryFn).toHaveBeenCalledTimes(1));
+
+    mocks.period = "week";
+    rerender(page());
+    await waitFor(() => expect(mocks.queryFn).toHaveBeenCalledWith("week"));
+
+    mocks.period = null;
+    rerender(page());
+    await waitFor(() =>
+      expect(vi.mocked(mocks.queryFn).mock.calls.filter(([d]) => d === "day")).toHaveLength(2)
+    );
   });
 });

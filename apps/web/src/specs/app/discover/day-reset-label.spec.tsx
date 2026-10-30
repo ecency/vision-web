@@ -83,4 +83,21 @@ describe("DayResetLabel", () => {
     });
     expect(onDayChange).toHaveBeenCalledTimes(1);
   });
+
+  it("fires the day change at 00:00:00 UTC, not up to a minute later", () => {
+    vi.setSystemTime(new Date("2026-10-30T23:59:30Z"));
+    const onDayChange = vi.fn();
+    render(<DayResetLabel onDayChange={onDayChange} />);
+
+    act(() => {
+      vi.advanceTimersByTime(29_999);
+    });
+    expect(onDayChange).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(onDayChange).toHaveBeenCalledTimes(1);
+    expect(i18next.t).toHaveBeenLastCalledWith("leaderboard.day-resets-in", { hours: 24, minutes: 0 });
+  });
 });
