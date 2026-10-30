@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
 
 /**
- * The time, updated every minute, for anything tied to the 00:00 UTC reset (day
- * leaderboard, daily quests, free spin). `onDayChange` runs once when the UTC day
+ * The time, updated on every UTC minute boundary, for anything tied to the 00:00 UTC
+ * reset (day leaderboard, daily quests, free spin). `onDayChange` runs once when the UTC day
  * changes while the component is mounted, so it can reload what reset.
  *
  * Null until mounted: server HTML can be served later from a cache, so whatever
@@ -31,9 +32,18 @@ export function useUtcClock(onDayChange?: () => void): number | null {
       day = today;
       setNow(t);
     };
+    // Each tick lands on the next minute boundary, not 60 s after mount, so the
+    // reset is seen at 00:00:00 UTC however far into a minute the page opened.
+    let id: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      id = setTimeout(() => {
+        tick();
+        schedule();
+      }, MINUTE_MS - (Date.now() % MINUTE_MS));
+    };
     tick();
-    const id = setInterval(tick, 60 * 1000);
-    return () => clearInterval(id);
+    schedule();
+    return () => clearTimeout(id);
   }, []);
 
   return now;

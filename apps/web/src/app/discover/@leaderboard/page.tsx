@@ -36,6 +36,16 @@ export default function LeaderboardPage({ searchParams }: Props) {
     refetchOnMount: "always"
   });
 
+  // Coming back to the day board from week or month reuses its cached copy, and the
+  // reset label was not on screen to see a midnight in between, so reload it.
+  const previousPeriod = React.useRef(period);
+  React.useEffect(() => {
+    if (period === "day" && previousPeriod.current !== "day") {
+      refetch();
+    }
+    previousPeriod.current = period;
+  }, [period, refetch]);
+
   return (
     <HydrationBoundary state={dehydrate(getQueryClient())}>
       <EcencyConfigManager.Conditional
