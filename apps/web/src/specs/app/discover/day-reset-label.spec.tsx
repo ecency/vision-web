@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import i18next from "i18next";
+import { renderToString } from "react-dom/server";
 import { DayResetLabel, timeUntilUtcReset } from "@/app/discover/_components/day-reset-label";
 
 const at = (iso: string) => new Date(iso).getTime();
@@ -52,5 +53,34 @@ describe("DayResetLabel", () => {
     });
 
     expect(i18next.t).toHaveBeenLastCalledWith("leaderboard.day-resets-in", { hours: 4, minutes: 12 });
+  });
+
+  it("puts no time in the server HTML, which can be served later from a cache", () => {
+    vi.setSystemTime(new Date("2026-10-30T18:48:00Z"));
+    const html = renderToString(<DayResetLabel />);
+
+    expect(html).not.toContain("leaderboard.day-resets-in");
+    expect(i18next.t).not.toHaveBeenCalled();
+  });
+
+  it("tells the page once when the UTC day changes, so it can load the new board", () => {
+    vi.setSystemTime(new Date("2026-10-30T23:58:30Z"));
+    const onDayChange = vi.fn();
+    render(<DayResetLabel onDayChange={onDayChange} />);
+
+    act(() => {
+      vi.advanceTimersByTime(60 * 1000);
+    });
+    expect(onDayChange).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(60 * 1000);
+    });
+    expect(onDayChange).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(10 * 60 * 1000);
+    });
+    expect(onDayChange).toHaveBeenCalledTimes(1);
   });
 });

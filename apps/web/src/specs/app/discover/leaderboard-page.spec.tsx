@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -23,7 +23,9 @@ vi.mock("@/app/discover/_components", () => ({
 }));
 
 vi.mock("@/app/discover/_components/day-reset-label", () => ({
-  DayResetLabel: () => <span data-testid="day-reset-label" />
+  DayResetLabel: ({ onDayChange }: { onDayChange?: () => void }) => (
+    <button data-testid="day-reset-label" onClick={() => onDayChange?.()} />
+  )
 }));
 
 vi.mock("@/app/discover/_components/discover-period-dropdown", () => ({
@@ -91,5 +93,13 @@ describe("Leaderboard page, UTC day reset", () => {
     mocks.queryClient.setQueryData(["analytics", "discover-leaderboard", "day"], []);
     renderPage();
     await waitFor(() => expect(mocks.queryFn).toHaveBeenCalledWith("day"));
+  });
+
+  it("loads the new day board when the UTC day changes while the page is open", async () => {
+    renderPage();
+    await waitFor(() => expect(mocks.queryFn).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByTestId("day-reset-label"));
+    await waitFor(() => expect(mocks.queryFn).toHaveBeenCalledTimes(2));
   });
 });
