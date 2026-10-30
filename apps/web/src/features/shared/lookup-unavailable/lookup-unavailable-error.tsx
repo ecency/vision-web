@@ -33,6 +33,10 @@ interface Props {
  * Either way it keeps the layout (profile card, menu, community header) around
  * a retry instead of the full-page global 500.
  *
+ * As a segment error module it also catches any other error in these routes,
+ * a real bug included, and in production a server error reaches the client
+ * with its message hidden. So the copy names no cause.
+ *
  * A server-render error carries a `digest` and was already seen server-side,
  * so only an error thrown by the client render is reported from here.
  */

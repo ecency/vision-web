@@ -65,7 +65,14 @@ let details = new Set();
 
 function sampleDetail(detail) {
   if (detail === undefined || detail === null || details.size >= MAX_SAMPLE_DETAILS) return;
-  details.add(String(detail).replace(/\s+/g, " ").slice(0, MAX_DETAIL_LENGTH));
+  // The detail is upstream text (an RPC node's error message): control
+  // characters, terminal escapes included, never reach the log.
+  const clean = String(detail)
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  details.add(clean.slice(0, MAX_DETAIL_LENGTH));
 }
 
 function pathOf(req) {
@@ -86,9 +93,13 @@ function mark(reason, detail) {
   if (!ctx) return;
   const why = String(reason || "degraded");
   sampleDetail(detail);
-  // Kept apart from ctx.reason: an earlier mark under another reason must not
-  // stop a failed record lookup from going out as a 503.
-  if (why === LOOKUP_UNAVAILABLE && !ctx.res.headersSent) ctx.unavailable = true;
+  // A failed record lookup is the more specific reason: it must go out as a
+  // 503 and be counted as itself even when an optional prefetch (a layout's)
+  // marked the request first.
+  if (why === LOOKUP_UNAVAILABLE && !ctx.res.headersSent) {
+    ctx.unavailable = true;
+    if (ctx.reason && !ctx.closed) ctx.reason = why;
+  }
   if (ctx.res.headersSent) {
     // Once per request: the head is gone and nothing can be changed. A request
     // marked before its head already went out uncacheable, so it is not late.

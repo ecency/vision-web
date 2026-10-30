@@ -3538,7 +3538,7 @@
   },
   "lookup-unavailable": {
     "title": "This page could not be loaded",
-    "description": "The data it needs did not arrive in time. It is usually back in a moment.",
+    "description": "Something went wrong while loading it. Please try again. If it keeps happening, let us know.",
     "retry": "Try again"
   },
   "issue-reporter": {

@@ -238,6 +238,28 @@ describe("ssr-degraded preload", () => {
     expect(reply.status).toBe(503);
   });
 
+  // A page's layout marks a failed optional prefetch first; the required
+  // lookup's failure is the more specific reason, so the count says that.
+  it("counts the response under lookup-unavailable when it was marked after another reason", async () => {
+    const { port } = await boot();
+    await get(port, "/@alice?premark=1&mark=10&reason=lookup-unavailable&failed=500");
+    expect(await state(port)).toEqual({ sent: { "lookup-unavailable": 1 }, late: {}, abandoned: {} });
+  });
+
+  it("keeps terminal control characters from an upstream error out of the log line", async () => {
+    const { port, stderr } = await boot();
+    const detail = encodeURIComponent("bad\u001b[31m red\u0007 node\u009b");
+    await get(port, `/@a?mark=10&reason=lookup-unavailable&failed=500&detail=${detail}`);
+    await get(port, "/api/flush");
+    await new Promise((r) => setTimeout(r, 50));
+    const line = stderr()
+      .split("\n")
+      .find((l) => l.startsWith("[ssr-degraded]"));
+    expect(line).toBeDefined();
+    expect(line).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+    expect(line).toContain("errors [bad [31m red node]");
+  });
+
   it("does not count a marked response whose client left before any head as sent", async () => {
     const { port } = await boot();
     await new Promise<void>((resolve) => {
