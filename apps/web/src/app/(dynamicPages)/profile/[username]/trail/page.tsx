@@ -1,7 +1,6 @@
-import { notFound } from "next/navigation";
 import { CurationTrail } from "../_components";
 import { ProfileEntriesLayout } from "@/app/(dynamicPages)/profile/[username]/_components/profile-entries-layout";
-import { prefetchQuery } from "@/core/react-query";
+import { prefetchRequired } from "@/core/react-query";
 import { getAccountFullQueryOptions } from "@ecency/sdk";
 import { Metadata, ResolvingMetadata } from "next";
 import { generateProfileMetadata } from "@/app/(dynamicPages)/profile/[username]/_helpers";
@@ -17,11 +16,7 @@ export async function generateMetadata(props: Props, parent: ResolvingMetadata):
 
 export default async function TrailPage({ params }: Props) {
   const { username } = await params;
-  const account = await prefetchQuery(getAccountFullQueryOptions(username.replace(/%40/g, "")));
-
-  if (!account) {
-    return notFound();
-  }
+  const account = await prefetchRequired(getAccountFullQueryOptions(username.replace(/%40/g, "")));
 
   return (
     <ProfileEntriesLayout username={username.replace(/%40/g, "")} section="trail">

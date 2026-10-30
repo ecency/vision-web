@@ -113,15 +113,21 @@ vi.mock("@/core/react-query", async () => {
     ]
   };
 
+  const prefetchFixture = async (options: { queryKey: readonly unknown[] }) => {
+    const data = JSON.stringify(options.queryKey).includes("account")
+      ? fixtures.account
+      : fixtures.pinnedEntry;
+    actual.getQueryClient().setQueryData(options.queryKey, data);
+    return data;
+  };
+
+  // prefetchRequired is the account lookup (found here, so it returns the
+  // record); its failure and not-found paths are pinned in
+  // profile-community-lookup-unavailable.spec.ts.
   return {
     ...actual,
-    prefetchQuery: async (options: { queryKey: readonly unknown[] }) => {
-      const data = JSON.stringify(options.queryKey).includes("account")
-        ? fixtures.account
-        : fixtures.pinnedEntry;
-      actual.getQueryClient().setQueryData(options.queryKey, data);
-      return data;
-    }
+    prefetchQuery: prefetchFixture,
+    prefetchRequired: prefetchFixture
   };
 });
 

@@ -59,4 +59,18 @@ describe("Sentry config wiring to the URL scrubber", () => {
     expect(tx.spans[0].data["url.full"]).toBe(SCRUBBED);
     expect(crumbUrl(opts)).toBe(SCRUBBED);
   });
+
+  // Issue #2000: a record lookup that failed upstream is answered with a
+  // retryable 503 and counted in the ssr-degraded log line. It is an expected
+  // upstream condition, not a code defect, so it must not reach Sentry.
+  it("server: drops a lookup-unavailable error and keeps every other error", async () => {
+    await import("../../../sentry.server.config");
+    const opts = init.mock.calls[0][0] as Hooks;
+    const lookup = {
+      exception: { values: [{ type: "SsrLookupUnavailableError", value: "account lookup failed" }] }
+    };
+    expect(opts.beforeSend!(lookup)).toBeNull();
+    const other = { exception: { values: [{ type: "TypeError", value: "x is undefined" }] } };
+    expect(opts.beforeSend!(other)).not.toBeNull();
+  });
 });

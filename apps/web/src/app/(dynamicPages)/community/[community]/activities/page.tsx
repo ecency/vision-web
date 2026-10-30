@@ -1,7 +1,6 @@
 import { CommunityActivities } from "../_components";
 import { getCommunityCache } from "@/core/caches";
-import { notFound } from "next/navigation";
-import { getQueryClient, prefetchQuery } from "@/core/react-query";
+import { getQueryClient, prefetchRequired } from "@/core/react-query";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { Metadata, ResolvingMetadata } from "next";
 import { generateCommunityMetadata } from "@/app/(dynamicPages)/community/[community]/_helpers";
@@ -17,10 +16,7 @@ export async function generateMetadata(props: Props, parent: ResolvingMetadata):
 
 export default async function ActivitiesPage({ params }: Props) {
   const { community } = await params;
-  const communityData = await prefetchQuery(getCommunityCache(community));
-  if (!communityData) {
-    return notFound();
-  }
+  const communityData = await prefetchRequired(getCommunityCache(community));
 
   return (
     <HydrationBoundary state={dehydrate(getQueryClient())}>

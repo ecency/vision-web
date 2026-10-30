@@ -8,7 +8,12 @@ const NOT_FOUND = [
   'Assert Exception:[{"nosuchaccount": "account does not exist"}]',
   "Assert Exception:Tag nosuchtag does not exist",
   "Assert Exception:invalid tag `Foo`",
-  "Assert Exception:given community name is not valid"
+  "Assert Exception:given community name is not valid",
+  // An account name longer than any account can be (#2000): no such account.
+  "Assert Exception:in_len <= sizeof(data): Input too large: `averyveryverylongname` (21) for fixed size string: (16)",
+  // Hivemind's answer for an author no account can have (bridge.get_post).
+  "Assert Exception:invalid account char",
+  "Assert Exception:invalid account name length: `averyveryverylongname`"
 ];
 
 const FAILURES = [

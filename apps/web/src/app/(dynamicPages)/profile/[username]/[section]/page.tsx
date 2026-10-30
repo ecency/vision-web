@@ -9,7 +9,12 @@ import { prefetchGetPostsFeedQuery } from "@/api/queries";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { notFound, redirect } from "next/navigation";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
-import { getQueryClient, prefetchQuery, fetchInfiniteQuery } from "@/core/react-query";
+import {
+  getQueryClient,
+  prefetchQuery,
+  prefetchRequired,
+  fetchInfiniteQuery
+} from "@/core/react-query";
 import { stripActiveVotesFromDehydratedState } from "@/core/react-query/strip-active-votes";
 import { cookies } from "next/headers";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
@@ -35,6 +40,9 @@ import type { SearchResponse } from "@ecency/sdk";
 // none of the three. profile-section-page-no-ssr-skeleton.spec.ts pins the
 // absence here and on every ancestor segment.
 
+/** The feed tabs this segment serves; any other section is a 404. */
+const PROFILE_FEED_SECTIONS = ["", "posts", "comments", "replies", "blog"];
+
 interface Props {
   params: Promise<{ username: string; section: string }>;
   searchParams: Promise<Record<string, string | undefined>>;
@@ -58,6 +66,12 @@ export default async function Page({ params, searchParams }: Props) {
 
   const username = usernameParam.replace(/%40/g, "");
 
+  // An unknown section is a 404 whatever the account lookup does, so it is
+  // answered before any lookup (and costs no upstream call).
+  if (!PROFILE_FEED_SECTIONS.includes(section)) {
+    return notFound();
+  }
+
   // Cursor archive page (/@author/<section>?before=<author>/<permlink>): O(1),
   // one fetch of the 20 posts older than the cursor. Page 1 is the clean,
   // query-less default view; archiveCursor() returns null there.
@@ -65,12 +79,9 @@ export default async function Page({ params, searchParams }: Props) {
   if (cursor) {
     const basePath = `/@${username}/${section}`;
     const [account, archive] = await Promise.all([
-      prefetchQuery(getAccountFullQueryOptions(username)),
+      prefetchRequired(getAccountFullQueryOptions(username)),
       fetchAuthorCursorPage(username, section, cursor)
     ]);
-    if (!account) {
-      return notFound();
-    }
     // Stale/invalid cursor (nothing older than it): send to the clean first page.
     if (archive.entries.length === 0) {
       return redirect(basePath);
@@ -90,8 +101,10 @@ export default async function Page({ params, searchParams }: Props) {
     );
   }
 
+  // A missing account is notFound(); a lookup that failed throws a retryable
+  // lookup-unavailable error instead (prefetchRequired).
   const [account, searchPages, prefetchedFeed] = await Promise.all([
-    prefetchQuery(getAccountFullQueryOptions(username)),
+    prefetchRequired(getAccountFullQueryOptions(username)),
     searchParam
       ? fetchInfiniteQuery(
           getSearchApiInfiniteQueryOptions(
@@ -112,7 +125,7 @@ export default async function Page({ params, searchParams }: Props) {
   // is load-bearing: getPostQueryOptions trims the permlink while BUILDING the
   // options object, so a non-string `pinned` throws before the first flush and
   // would take the whole document.
-  const pinned = pinnedPermlink(account?.profile);
+  const pinned = pinnedPermlink(account.profile);
   if (pinned) {
     await prefetchQuery(EcencyEntriesCacheManagement.getEntryQueryByPath(username, pinned));
   }
@@ -127,10 +140,6 @@ export default async function Page({ params, searchParams }: Props) {
         .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
     : undefined;
   const initialFeed = prefetchedFeed as InfiniteData<Entry[], unknown> | undefined;
-
-  if (!account || !["", "posts", "comments", "replies", "blog"].includes(section)) {
-    return notFound();
-  }
 
   return (
     <HydrationBoundary state={stripActiveVotesFromDehydratedState(dehydrate(getQueryClient()), loggedInUser)}>

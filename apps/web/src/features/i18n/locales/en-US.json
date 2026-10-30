@@ -3536,6 +3536,11 @@
   "global-error": {
     "description": "Please, try again or report an issue..."
   },
+  "lookup-unavailable": {
+    "title": "This page could not be loaded",
+    "description": "The data it needs did not arrive in time. It is usually back in a moment.",
+    "retry": "Try again"
+  },
   "issue-reporter": {
     "report": "Report",
     "report-issue": "Report an issue",

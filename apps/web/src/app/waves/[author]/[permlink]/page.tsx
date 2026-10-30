@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { WaveViewDetails, WaveViewDiscussion } from "@/app/waves/[author]/[permlink]/_components";
 import { WaveEntry } from "@/entities";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
-import { getQueryClient, prefetchQuery } from "@/core/react-query";
+import { getQueryClient, prefetchRequired } from "@/core/react-query";
 import { cookies } from "next/headers";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { stripAnonEntryCacheInPlace } from "@/core/react-query/strip-active-votes";
@@ -43,15 +43,15 @@ export default async function WaveViewPage({ params }: Props) {
   // Beside the entry fetch, not after it: the entry comes from the chain and
   // carries no image-check verdict, so a wave opened by its link would render
   // its media uncovered. Resolves to false when the API cannot answer.
+  // A missing wave is notFound(); a lookup that failed throws a retryable
+  // lookup-unavailable error instead (prefetchRequired).
   const [fetched, nsfwFlagged] = await Promise.all([
-    prefetchQuery(EcencyEntriesCacheManagement.getEntryQueryByPath(authorName, permlink)) as Promise<WaveEntry>,
+    prefetchRequired(
+      EcencyEntriesCacheManagement.getEntryQueryByPath(authorName, permlink)
+    ) as Promise<WaveEntry>,
     isWaveFlaggedNsfw(authorName, permlink)
   ]);
   const data = stripAnonEntryCacheInPlace(getQueryClient(), fetched, loggedInUser);
-
-  if (!data) {
-    return notFound();
-  }
 
   return (
     <HydrationBoundary state={dehydrate(getQueryClient())}>

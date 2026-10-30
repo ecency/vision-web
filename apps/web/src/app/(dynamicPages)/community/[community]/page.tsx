@@ -1,5 +1,4 @@
 import { getCommunityCache } from "@/core/caches";
-import { notFound } from "next/navigation";
 import { prefetchGetPostsFeedQuery } from "@/api/queries";
 import { EntryListContent } from "@/features/shared/entry-list-content";
 import { LinearProgress } from "@/features/shared/linear-progress";
@@ -8,7 +7,7 @@ import { ProfileEntriesLayout } from "@/app/(dynamicPages)/profile/[username]/_c
 import { Entry } from "@/entities";
 import { CommunityContentInfiniteList } from "@/app/(dynamicPages)/community/[community]/_components/community-content-infinite-list";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
-import { getQueryClient, prefetchQuery } from "@/core/react-query";
+import { getQueryClient, prefetchRequired } from "@/core/react-query";
 import { cookies } from "next/headers";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { stripAnonEntryCacheInPlace } from "@/core/react-query/strip-active-votes";
@@ -45,10 +44,9 @@ export default async function CommunityPostsPage({ params }: Props) {
   // rewritten in place so the dehydrated copy and the entries prop share one
   // reference.
   const loggedInUser = (await cookies()).get(ACTIVE_USER_COOKIE_NAME)?.value;
-  const communityData = await prefetchQuery(getCommunityCache(community));
-  if (!communityData) {
-    return notFound();
-  }
+  // A missing community is notFound(); a lookup that failed throws a retryable
+  // lookup-unavailable error instead (prefetchRequired).
+  const communityData = await prefetchRequired(getCommunityCache(community));
 
   const fetched = await prefetchGetPostsFeedQuery("created", community);
   if (!fetched || !fetched.pages || fetched.pages.length === 0) {
