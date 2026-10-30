@@ -31,7 +31,7 @@ export default function LeaderboardPage({ searchParams }: Props) {
 
   // "always": returning to Discover in the same tab must not show an earlier copy of the
   // board, whose checkmarks and day can be out of date.
-  const { data } = useQuery({
+  const { data, refetch } = useQuery({
     ...getDiscoverLeaderboardQueryOptions(period),
     refetchOnMount: "always"
   });
@@ -47,7 +47,7 @@ export default function LeaderboardPage({ searchParams }: Props) {
               <div className="font-semibold">
                 {i18next.t(`leaderboard.title-${params.get("period") ?? "day"}`)}
               </div>
-              {period === "day" && <DayResetLabel />}
+              {period === "day" && <DayResetLabel onDayChange={() => refetch()} />}
             </div>
             <DiscoverPeriodDropdown />
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import i18next from "i18next";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -16,17 +16,43 @@ export function timeUntilUtcReset(now: number): { hours: number; minutes: number
   return { hours: Math.floor(totalMinutes / 60), minutes: totalMinutes % 60 };
 }
 
-export function DayResetLabel() {
-  const [now, setNow] = useState(() => Date.now());
+interface Props {
+  /** Called once when the UTC day changes while the label is on screen. */
+  onDayChange?: () => void;
+}
+
+export function DayResetLabel({ onDayChange }: Props) {
+  // null until mounted: the server HTML can be served later from a cache, so it
+  // carries no time, and the browser renders the countdown from its own clock.
+  const [now, setNow] = useState<number | null>(null);
+  const onDayChangeRef = useRef(onDayChange);
 
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 60 * 1000);
+    onDayChangeRef.current = onDayChange;
+  }, [onDayChange]);
+
+  useEffect(() => {
+    let day: number | null = null;
+    const tick = () => {
+      const t = Date.now();
+      const today = Math.floor(t / DAY_MS);
+      if (day !== null && today !== day) {
+        onDayChangeRef.current?.();
+      }
+      day = today;
+      setNow(t);
+    };
+    tick();
+    const id = setInterval(tick, 60 * 1000);
     return () => clearInterval(id);
   }, []);
 
+  if (now === null) {
+    return null;
+  }
+
   return (
-    // The minute can differ between the server render and the browser; the browser value wins.
-    <div className="text-xs opacity-50" suppressHydrationWarning={true}>
+    <div className="text-xs opacity-50">
       {i18next.t("leaderboard.day-resets-in", timeUntilUtcReset(now))}
     </div>
   );

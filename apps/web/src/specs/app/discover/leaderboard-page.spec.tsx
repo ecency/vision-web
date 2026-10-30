@@ -24,7 +24,7 @@ vi.mock("@/app/discover/_components", () => ({
 
 vi.mock("@/app/discover/_components/day-reset-label", () => ({
   DayResetLabel: ({ onDayChange }: { onDayChange?: () => void }) => (
-    <button data-testid="day-reset-label" onClick={() => onDayChange?.()} />
+    <button data-testid="day-reset-label" aria-label="day changed" onClick={() => onDayChange?.()} />
   )
 }));
 
