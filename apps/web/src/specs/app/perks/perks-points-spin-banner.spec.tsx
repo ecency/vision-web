@@ -332,4 +332,11 @@ describe("PerksPointsSpinBanner", () => {
     await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
     expect(claim).toHaveBeenCalledTimes(2);
   });
+
+  it("says the free spin resets daily at 00:00 UTC next to the countdown", () => {
+    render(<PerksPointsSpinBanner />);
+    const hint = screen.getByText("perks.spin-resets-utc");
+    // same footer as the spin button that carries the countdown
+    expect(hint.closest("div")?.parentElement).toContainElement(screen.getByRole("button", { name: "Spin" }));
+  });
 });
