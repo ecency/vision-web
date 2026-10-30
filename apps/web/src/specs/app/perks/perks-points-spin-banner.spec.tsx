@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { PerksPointsSpinBanner } from "@/app/perks/components/perks-points-spin-banner";
 
 // vi.hoisted: the vi.mock factories below are hoisted above module scope, so the
@@ -339,5 +339,26 @@ describe("PerksPointsSpinBanner", () => {
     const footer = screen.getByTestId("modal-footer");
     expect(within(footer).getByText("perks.spin-resets-utc")).toBeInTheDocument();
     expect(within(footer).getByRole("button", { name: "Spin" })).toBeInTheDocument();
+  });
+
+  it("reloads the spin status at 00:00 UTC, when the free spin resets", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-10-30T23:58:30Z"));
+      render(<PerksPointsSpinBanner />);
+
+      act(() => {
+        vi.advanceTimersByTime(60 * 1000);
+      });
+      expect(refetch).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(60 * 1000);
+      });
+      expect(refetch).toHaveBeenCalledTimes(1);
+      expect(refetch).toHaveBeenCalledWith({ queryKey: ["games", "status", "spin", "alice"] });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

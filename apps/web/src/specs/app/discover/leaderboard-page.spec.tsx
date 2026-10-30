@@ -1,25 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import React from "react";
+import React, { type ReactNode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+type Row = { _id: string; count: number; points: string; quests_done?: boolean };
+
 const mocks = vi.hoisted(() => ({
   period: null as string | null,
-  queryClient: null as any,
-  queryFn: null as any
+  queryClient: null as QueryClient | null,
+  queryFn: (async () => []) as (duration: string) => Promise<Row[]>
 }));
+
+type WithChildren = { children?: ReactNode };
 
 vi.mock("@/config", () => ({
   EcencyConfigManager: {
-    Conditional: ({ children }: any) => <>{children}</>
+    Conditional: ({ children }: WithChildren) => <>{children}</>
   }
 }));
 
 vi.mock("@/app/discover/_components", () => ({
-  UsersTableListLayout: ({ children }: any) => <div>{children}</div>,
-  UsersTableListItem: ({ children, username }: any) => <div data-username={username}>{children}</div>,
-  UserTableListHeader: ({ children }: any) => <div>{children}</div>
+  UsersTableListLayout: ({ children }: WithChildren) => <div>{children}</div>,
+  UsersTableListItem: ({ children, username }: WithChildren & { username: string }) => (
+    <div data-username={username}>{children}</div>
+  ),
+  UserTableListHeader: ({ children }: WithChildren) => <div>{children}</div>
 }));
 
 vi.mock("@/app/discover/_components/day-reset-label", () => ({
@@ -36,8 +42,8 @@ vi.mock("@tooni/iconscout-unicons-react", () => ({
   UilInfoCircle: () => null,
   UilCheckCircle: () => null
 }));
-vi.mock("@ui/tooltip", () => ({ Tooltip: ({ children }: any) => <>{children}</> }));
-vi.mock("@ui/badge", () => ({ Badge: ({ children }: any) => <span>{children}</span> }));
+vi.mock("@ui/tooltip", () => ({ Tooltip: ({ children }: WithChildren) => <>{children}</> }));
+vi.mock("@ui/badge", () => ({ Badge: ({ children }: WithChildren) => <span>{children}</span> }));
 vi.mock("@ui/svg", () => ({ medalSvg: null }));
 
 vi.mock("next/navigation", () => ({
@@ -49,20 +55,26 @@ vi.mock("@/core/react-query", () => ({
   getQueryClient: () => mocks.queryClient
 }));
 
-vi.mock("@ecency/sdk", () => ({
-  getDiscoverLeaderboardQueryOptions: (duration: string) => ({
-    queryKey: ["analytics", "discover-leaderboard", duration],
-    queryFn: () => mocks.queryFn(duration)
-  })
-}));
+// the real QueryKeys, so the key here cannot drift from the SDK's
+vi.mock("@ecency/sdk", async () => {
+  const { QueryKeys } = await vi.importActual<typeof import("@ecency/sdk")>("@ecency/sdk");
+  return {
+    QueryKeys,
+    getDiscoverLeaderboardQueryOptions: (duration: string) => ({
+      queryKey: QueryKeys.analytics.discoverLeaderboard(duration),
+      queryFn: () => mocks.queryFn(duration)
+    })
+  };
+});
 
+import { QueryKeys } from "@ecency/sdk";
 import LeaderboardPage from "@/app/discover/@leaderboard/page";
 
-const rows = [{ _id: "alice", count: 3, points: "1.000", quests_done: true }];
+const rows: Row[] = [{ _id: "alice", count: 3, points: "1.000", quests_done: true }];
 
 function renderPage() {
   return render(
-    <QueryClientProvider client={mocks.queryClient}>
+    <QueryClientProvider client={mocks.queryClient!}>
       <LeaderboardPage searchParams={Promise.resolve({})} />
     </QueryClientProvider>
   );
@@ -90,7 +102,7 @@ describe("Leaderboard page, UTC day reset", () => {
   });
 
   it("refetches the day board on mount instead of showing an earlier copy", async () => {
-    mocks.queryClient.setQueryData(["analytics", "discover-leaderboard", "day"], []);
+    mocks.queryClient!.setQueryData(QueryKeys.analytics.discoverLeaderboard("day"), []);
     renderPage();
     await waitFor(() => expect(mocks.queryFn).toHaveBeenCalledWith("day"));
   });
