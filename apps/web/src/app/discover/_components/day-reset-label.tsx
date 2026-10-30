@@ -1,7 +1,7 @@
 "use client";
 
 import i18next from "i18next";
-import { useEffect, useRef, useState } from "react";
+import { useUtcClock } from "@/core/hooks/use-utc-clock";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -22,30 +22,7 @@ interface Props {
 }
 
 export function DayResetLabel({ onDayChange }: Props) {
-  // null until mounted: the server HTML can be served later from a cache, so it
-  // carries no time, and the browser renders the countdown from its own clock.
-  const [now, setNow] = useState<number | null>(null);
-  const onDayChangeRef = useRef(onDayChange);
-
-  useEffect(() => {
-    onDayChangeRef.current = onDayChange;
-  }, [onDayChange]);
-
-  useEffect(() => {
-    let day: number | null = null;
-    const tick = () => {
-      const t = Date.now();
-      const today = Math.floor(t / DAY_MS);
-      if (day !== null && today !== day) {
-        onDayChangeRef.current?.();
-      }
-      day = today;
-      setNow(t);
-    };
-    tick();
-    const id = setInterval(tick, 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
+  const now = useUtcClock(onDayChange);
 
   if (now === null) {
     return null;
