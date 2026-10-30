@@ -1,6 +1,7 @@
 "use client";
 
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { useUtcClock } from "@/core/hooks/use-utc-clock";
 
 import { PointsSpin, SPIN_VALUES } from "@/features/points";
 import { error, success } from "@/features/shared";
@@ -88,6 +89,20 @@ export function PerksPointsSpinBanner() {
     }
   }, [activeUser?.username, claim, queryClient]);
 
+  // The free spin resets at 00:00 UTC. A status loaded before then still says no spins
+  // are left, so reload it at the reset; the countdown reads the same query.
+  useUtcClock(
+    useCallback(() => {
+      queryClient.refetchQueries({
+        queryKey: getGameStatusCheckQueryOptions(
+          activeUser?.username,
+          getAccessToken(activeUser?.username ?? ""),
+          "spin"
+        ).queryKey
+      });
+    }, [activeUser?.username, queryClient])
+  );
+
   // after an account switch the other account is not mid-claim, and its status is
   // not stale just because it was loaded before this claim
   const username = activeUser?.username ?? "";
@@ -135,7 +150,10 @@ export function PerksPointsSpinBanner() {
         </ModalBody>
         <ModalFooter className="flex justify-between items-center">
           <div>
-            {data?.remaining ?? 0} {i18next.t("perks.spins-left")}
+            <div>
+              {data?.remaining ?? 0} {i18next.t("perks.spins-left")}
+            </div>
+            <div className="text-xs opacity-50">{i18next.t("perks.spin-resets-utc")}</div>
           </div>
           <Button
             disabled={!canSpin || isClaiming || isStatusStale}

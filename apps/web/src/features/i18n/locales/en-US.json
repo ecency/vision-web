@@ -2255,6 +2255,7 @@
     "title-day": "Daily leaders",
     "title-week": "Weekly leaders",
     "title-month": "Monthly leaders",
+    "day-resets-in": "Today (UTC), resets in {{hours}}h {{minutes}}m",
     "period-day": "Daily",
     "period-week": "Weekly",
     "period-month": "Monthly",
@@ -3413,6 +3414,7 @@
     "spin-error": "Could not complete the spin. Please try again.",
     "spins-left": "spins left",
     "next-spin": "Next free spin",
+    "spin-resets-utc": "Resets daily at 00:00 UTC",
     "quests": {
       "title": "Quests",
       "subtitle": "Complete daily goals, earn points and keep your streak alive",

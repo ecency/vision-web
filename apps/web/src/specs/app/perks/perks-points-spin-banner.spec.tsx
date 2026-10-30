@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { PerksPointsSpinBanner } from "@/app/perks/components/perks-points-spin-banner";
 
 // vi.hoisted: the vi.mock factories below are hoisted above module scope, so the
@@ -65,7 +65,7 @@ vi.mock("@/features/ui", () => ({
   Button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
   Modal: ({ children }: any) => <div>{children}</div>,
   ModalBody: ({ children }: any) => <div>{children}</div>,
-  ModalFooter: ({ children }: any) => <div>{children}</div>,
+  ModalFooter: ({ children }: any) => <div data-testid="modal-footer">{children}</div>,
   ModalHeader: ({ children }: any) => <div>{children}</div>,
   StyledTooltip: ({ children }: any) => <div>{children}</div>
 }));
@@ -331,5 +331,35 @@ describe("PerksPointsSpinBanner", () => {
     clickClaim();
     await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
     expect(claim).toHaveBeenCalledTimes(2);
+  });
+
+  it("says the free spin resets daily at 00:00 UTC next to the countdown", () => {
+    render(<PerksPointsSpinBanner />);
+    // in the footer with the spin button that carries the countdown
+    const footer = screen.getByTestId("modal-footer");
+    expect(within(footer).getByText("perks.spin-resets-utc")).toBeInTheDocument();
+    expect(within(footer).getByRole("button", { name: "Spin" })).toBeInTheDocument();
+  });
+
+  it("reloads the spin status at 00:00 UTC, when the free spin resets", () => {
+    vi.useFakeTimers();
+    try {
+      // opened mid-minute: the reload still lands at 00:00:00, not up to a minute later
+      vi.setSystemTime(new Date("2026-10-30T23:59:30Z"));
+      render(<PerksPointsSpinBanner />);
+
+      act(() => {
+        vi.advanceTimersByTime(29_999);
+      });
+      expect(refetch).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(refetch).toHaveBeenCalledTimes(1);
+      expect(refetch).toHaveBeenCalledWith({ queryKey: ["games", "status", "spin", "alice"] });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

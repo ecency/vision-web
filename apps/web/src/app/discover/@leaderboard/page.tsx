@@ -6,6 +6,7 @@ import { getDiscoverLeaderboardQueryOptions } from "@ecency/sdk";
 import { dehydrate, HydrationBoundary, useQuery } from "@tanstack/react-query";
 import { getQueryClient } from "@/core/react-query";
 import { DiscoverPeriodDropdown } from "@/app/discover/_components/discover-period-dropdown";
+import { DayResetLabel } from "@/app/discover/_components/day-reset-label";
 import i18next from "i18next";
 import { Tooltip } from "@ui/tooltip";
 import React from "react";
@@ -28,7 +29,22 @@ export default function LeaderboardPage({ searchParams }: Props) {
   const params = useSearchParams();
   const period = (params.get("period") as LeaderBoardDuration) ?? "day";
 
-  const { data } = useQuery(getDiscoverLeaderboardQueryOptions(period));
+  // "always": returning to Discover in the same tab must not show an earlier copy of the
+  // board, whose checkmarks and day can be out of date.
+  const { data, refetch } = useQuery({
+    ...getDiscoverLeaderboardQueryOptions(period),
+    refetchOnMount: "always"
+  });
+
+  // Coming back to the day board from week or month reuses its cached copy, and the
+  // reset label was not on screen to see a midnight in between, so reload it.
+  const previousPeriod = React.useRef(period);
+  React.useEffect(() => {
+    if (period === "day" && previousPeriod.current !== "day") {
+      refetch();
+    }
+    previousPeriod.current = period;
+  }, [period, refetch]);
 
   return (
     <HydrationBoundary state={dehydrate(getQueryClient())}>
@@ -37,8 +53,11 @@ export default function LeaderboardPage({ searchParams }: Props) {
       >
         <UsersTableListLayout>
           <div className="flex flex-wrap gap-2 justify-between items-center">
-            <div className="font-semibold">
-              {i18next.t(`leaderboard.title-${params.get("period") ?? "day"}`)}
+            <div>
+              <div className="font-semibold">
+                {i18next.t(`leaderboard.title-${params.get("period") ?? "day"}`)}
+              </div>
+              {period === "day" && <DayResetLabel onDayChange={() => refetch()} />}
             </div>
             <DiscoverPeriodDropdown />
           </div>
