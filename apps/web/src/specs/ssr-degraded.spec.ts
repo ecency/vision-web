@@ -260,6 +260,18 @@ describe("ssr-degraded preload", () => {
     expect(line).toContain("errors [bad [31m red node]");
   });
 
+  it("skips a detail that is nothing but control characters, keeping its slot", async () => {
+    const { port, stderr } = await boot();
+    await get(port, `/@a?mark=10&reason=lookup-unavailable&failed=500&detail=${encodeURIComponent("\u0007\u001b\n")}`);
+    await get(port, "/@b?mark=10&reason=lookup-unavailable&failed=500&detail=real");
+    await get(port, "/api/flush");
+    await new Promise((r) => setTimeout(r, 50));
+    const line = stderr()
+      .split("\n")
+      .find((l) => l.startsWith("[ssr-degraded]"));
+    expect(line).toContain("errors [real]");
+  });
+
   it("does not count a marked response whose client left before any head as sent", async () => {
     const { port } = await boot();
     await new Promise<void>((resolve) => {

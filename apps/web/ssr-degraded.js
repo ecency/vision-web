@@ -72,7 +72,10 @@ function sampleDetail(detail) {
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  details.add(clean.slice(0, MAX_DETAIL_LENGTH));
+  // Nothing left to say: keep the slot for a detail that has something.
+  if (!clean) return;
+  // By code point, so the cut never splits a surrogate pair.
+  details.add(Array.from(clean).slice(0, MAX_DETAIL_LENGTH).join(""));
 }
 
 function pathOf(req) {
