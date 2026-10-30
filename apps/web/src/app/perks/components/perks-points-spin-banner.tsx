@@ -135,7 +135,10 @@ export function PerksPointsSpinBanner() {
         </ModalBody>
         <ModalFooter className="flex justify-between items-center">
           <div>
-            {data?.remaining ?? 0} {i18next.t("perks.spins-left")}
+            <div>
+              {data?.remaining ?? 0} {i18next.t("perks.spins-left")}
+            </div>
+            <div className="text-xs opacity-50">{i18next.t("perks.spin-resets-utc")}</div>
           </div>
           <Button
             disabled={!canSpin || isClaiming || isStatusStale}

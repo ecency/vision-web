@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { PerksPointsSpinBanner } from "@/app/perks/components/perks-points-spin-banner";
 
 // vi.hoisted: the vi.mock factories below are hoisted above module scope, so the
@@ -65,7 +65,7 @@ vi.mock("@/features/ui", () => ({
   Button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
   Modal: ({ children }: any) => <div>{children}</div>,
   ModalBody: ({ children }: any) => <div>{children}</div>,
-  ModalFooter: ({ children }: any) => <div>{children}</div>,
+  ModalFooter: ({ children }: any) => <div data-testid="modal-footer">{children}</div>,
   ModalHeader: ({ children }: any) => <div>{children}</div>,
   StyledTooltip: ({ children }: any) => <div>{children}</div>
 }));
@@ -335,8 +335,9 @@ describe("PerksPointsSpinBanner", () => {
 
   it("says the free spin resets daily at 00:00 UTC next to the countdown", () => {
     render(<PerksPointsSpinBanner />);
-    const hint = screen.getByText("perks.spin-resets-utc");
-    // same footer as the spin button that carries the countdown
-    expect(hint.closest("div")?.parentElement).toContainElement(screen.getByRole("button", { name: "Spin" }));
+    // in the footer with the spin button that carries the countdown
+    const footer = screen.getByTestId("modal-footer");
+    expect(within(footer).getByText("perks.spin-resets-utc")).toBeInTheDocument();
+    expect(within(footer).getByRole("button", { name: "Spin" })).toBeInTheDocument();
   });
 });
