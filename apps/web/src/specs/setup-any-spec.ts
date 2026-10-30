@@ -92,6 +92,28 @@ vi.mock("@ecency/sdk", async () => ({
   },
   getBookmarksQueryOptions: vi.fn(),
   getAccountFullQueryOptions: vi.fn(() => ({ queryKey: ["account"], queryFn: vi.fn() })),
+  // Profile section feeds (page 1 and the cursor archive): empty by default.
+  getAccountPostsQueryOptions: vi.fn((...key: unknown[]) => ({
+    queryKey: ["account-posts", ...key],
+    queryFn: vi.fn(async () => [])
+  })),
+  getAccountPostsInfiniteQueryOptions: vi.fn((...key: unknown[]) => ({
+    queryKey: ["account-posts-infinite", ...key],
+    queryFn: vi.fn(async () => []),
+    initialPageParam: undefined,
+    getNextPageParam: () => undefined
+  })),
+  // Ranked tag/community feeds (page 1 and the cursor archive): empty by default.
+  getPostsRankedQueryOptions: vi.fn((...key: unknown[]) => ({
+    queryKey: ["posts-ranked", ...key],
+    queryFn: vi.fn(async () => [])
+  })),
+  getPostsRankedInfiniteQueryOptions: vi.fn((...key: unknown[]) => ({
+    queryKey: ["posts-ranked-infinite", ...key],
+    queryFn: vi.fn(async () => []),
+    initialPageParam: undefined,
+    getNextPageParam: () => undefined
+  })),
   getAccountDelegationsQueryOptions: vi.fn((username) => ({
     queryKey: ["assets", "account-delegations", username],
     queryFn: vi.fn()

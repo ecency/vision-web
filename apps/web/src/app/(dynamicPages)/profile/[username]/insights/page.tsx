@@ -1,8 +1,7 @@
 import { generateProfileMetadata } from "../_helpers";
 import { Metadata, ResolvingMetadata } from "next";
-import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
-import { prefetchQuery } from "@/core/react-query";
+import { prefetchQuery, prefetchRequired } from "@/core/react-query";
 import { getAccountFullQueryOptions, getProMembersQueryOptions } from "@ecency/sdk";
 import { isProMember } from "@/features/pro/pro-config";
 import { ProfileInsights } from "./_page";
@@ -21,11 +20,7 @@ export default async function InsightsPage({ params }: Props) {
   const { username } = await params;
   const { get } = await cookies();
 
-  const account = await prefetchQuery(getAccountFullQueryOptions(username.replace(/%40/g, "")));
-
-  if (!account) {
-    return notFound();
-  }
+  const account = await prefetchRequired(getAccountFullQueryOptions(username.replace(/%40/g, "")));
 
   // Own insights stay free; viewing anyone else's is an Ecency Pro perk. Non-Pro viewers get a
   // Go-Pro upsell instead of the data (previously this was a hard owner-only redirect).

@@ -1,7 +1,10 @@
 "use client"; // Error boundaries must be Client Components
 
 /**
- * This is the app's ONLY error module. #1808 asked whether the entry, wave,
+ * The app-wide error module. The profile and community segments have their own
+ * (#2000, see the note at the end of this comment); everything else lands here.
+ *
+ * #1808 asked whether the entry, wave,
  * feed, profile and community routes should get an `error.tsx` of their own now
  * that their loading modules are gone. The answer is no. The reason is worth
  * recording so the next reader does not re-derive it.
@@ -39,6 +42,16 @@
  * widget with real logic, a third-party embed), or if a Suspense boundary comes
  * back for an unrelated reason - with one in place, an `error.tsx` below it
  * would start earning its chunk.
+ *
+ * #2000 is that case for profile, community and wave pages. A failed account,
+ * community or post lookup now THROWS (prefetchRequired) instead of answering
+ * notFound(): a lookup failure is not an absence. On the routes without a
+ * Suspense boundary a full page load is still not caught by a boundary - the
+ * server answers it as a retryable 503 - but on a CLIENT-side navigation, and
+ * on the profile sub-pages that keep a loading.tsx, the error reaches the
+ * client and would land here, a full-page 500 with no retry. The segments'
+ * `error.tsx` (features/shared/lookup-unavailable) keep the layout around a
+ * retry instead.
  */
 
 import { Feedback } from "@/features/shared/feedback";

@@ -13,6 +13,7 @@ import type {
   QueryClient,
   QueryKey
 } from "@tanstack/query-core";
+import { notFound } from "next/navigation";
 import { EcencyConfigManager } from "@/config";
 import { isHiveNotFoundError } from "@/utils/hive-not-found-error";
 
@@ -30,12 +31,15 @@ const SSR_PREFETCH_TIMEOUT_MS = 10_000;
  * the page needs (`fallback-incomplete`).
  */
 export function markSsrDegraded(
-  reason: "prefetch-timeout" | "prefetch-error" | "fallback-incomplete"
+  reason: "prefetch-timeout" | "prefetch-error" | "fallback-incomplete" | "lookup-unavailable",
+  detail?: string
 ) {
   if (!isServer) return;
-  (
-    globalThis as { __ecencySsrDegraded?: { mark(reason: string): void } }
-  ).__ecencySsrDegraded?.mark(reason);
+  const degraded = (
+    globalThis as { __ecencySsrDegraded?: { mark(reason: string, detail?: string): void } }
+  ).__ecencySsrDegraded;
+  if (detail === undefined) degraded?.mark(reason);
+  else degraded?.mark(reason, detail);
 }
 
 /**
@@ -132,6 +136,71 @@ export async function prefetchQuery<
   await withSsrTimeout(qc.prefetchQuery(options), options.queryKey, degradeOnFailure);
   if (degradeOnFailure) markIfPrefetchFailed(qc, options.queryKey);
   return qc.getQueryData<T>(options.queryKey);
+}
+
+/**
+ * A record a page needs could not be read: the lookup errored or timed out.
+ * Distinct from "the record does not exist", which is notFound(). Thrown on
+ * the server, Next answers 500, which ssr-degraded.js sends as a retryable
+ * 503 (no-store). Matched by name, not instanceof, wherever it may cross a
+ * module or serialization boundary (Sentry events carry only the name).
+ */
+export class SsrLookupUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SsrLookupUnavailableError";
+  }
+}
+
+function describeLookupFailure(error: unknown): string {
+  if (error instanceof Error) {
+    // The SDK's node errors name the node that answered last: that is what
+    // tells a throttling upstream apart from a general outage.
+    const node = (error as { node?: unknown }).node;
+    const from = typeof node === "string" && node ? ` (${node})` : "";
+    return `${error.name}: ${error.message}${from}`;
+  }
+  return error === undefined ? "timed out" : String(error);
+}
+
+/**
+ * Prefetch a record the page cannot render without (an account, a community)
+ * and tell its three outcomes apart:
+ *
+ * - found: returns it;
+ * - the lookup succeeded and found nothing (`null`, or a node's not-found
+ *   assert): notFound(), a real 404;
+ * - the lookup failed or timed out: marks the response `lookup-unavailable`
+ *   and throws SsrLookupUnavailableError. A failure is not an absence, and a
+ *   404 for a live account tells readers and crawlers it is gone.
+ *
+ * Same React Query fetch as prefetchQuery, so a layout and a page asking for
+ * the same key during one request still share a single upstream call.
+ */
+export async function prefetchRequired<T, TKey extends QueryKey = QueryKey>(
+  options: FetchQueryOptions<T, Error, T, TKey>
+): Promise<NonNullable<T>> {
+  const qc = getQueryClient();
+  // This helper marks the outcome itself: a not-found answer is not degraded,
+  // a failure is marked once, under its own reason.
+  await withSsrTimeout(qc.prefetchQuery(options), options.queryKey, false);
+  const state = qc.getQueryState<T, Error>(options.queryKey);
+
+  // Data first, whatever the status: a record read earlier and refetched into
+  // an error keeps its data (status "error"), and is still the record.
+  if (state?.data != null) return state.data as NonNullable<T>;
+  if (state?.status === "success") notFound();
+  if (state?.status === "error" && isHiveNotFoundError(state.error)) {
+    notFound();
+  }
+
+  // Anything else is a lookup that did not answer: an error, or a timeout that
+  // cancelled the query back to pending.
+  const detail = describeLookupFailure(state?.status === "error" ? state.error : undefined);
+  markSsrDegraded("lookup-unavailable", detail);
+  throw new SsrLookupUnavailableError(
+    `${String(options.queryKey[0])} lookup unavailable: ${detail}`
+  );
 }
 
 /**

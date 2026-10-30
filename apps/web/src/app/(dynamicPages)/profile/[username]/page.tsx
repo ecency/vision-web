@@ -1,12 +1,16 @@
 import { ProfileEntriesList, ProfileSearchContent } from "./_components";
 import { prefetchGetPostsFeedQuery } from "@/api/queries";
-import { prefetchQuery, getQueryClient, fetchInfiniteQuery } from "@/core/react-query";
+import {
+  prefetchQuery,
+  prefetchRequired,
+  getQueryClient,
+  fetchInfiniteQuery
+} from "@/core/react-query";
 import { stripActiveVotesFromDehydratedState } from "@/core/react-query/strip-active-votes";
 import { cookies } from "next/headers";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { getAccountFullQueryOptions, getSearchApiInfiniteQueryOptions } from "@ecency/sdk";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
-import { notFound } from "next/navigation";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { Metadata, ResolvingMetadata } from "next";
 import {
@@ -39,8 +43,10 @@ export default async function Page({ params, searchParams }: Props) {
   const { query: searchParam } = await searchParams;
   const loggedInUser = (await cookies()).get(ACTIVE_USER_COOKIE_NAME)?.value;
 
+  // A missing account is notFound(); a lookup that failed throws a retryable
+  // lookup-unavailable error instead (prefetchRequired).
   const [account, searchPages, prefetchedFeed] = await Promise.all([
-    prefetchQuery(getAccountFullQueryOptions(username)),
+    prefetchRequired(getAccountFullQueryOptions(username)),
     searchParam
       ? fetchInfiniteQuery(
           getSearchApiInfiniteQueryOptions(
@@ -60,7 +66,7 @@ export default async function Page({ params, searchParams }: Props) {
   // options object — before the `enabled` gate and outside the queryFn — so a
   // non-string pinned value throws here, ahead of the first flush, and now that
   // this route has no loading.tsx above it that throw is the whole document.
-  const pinned = pinnedPermlink(account?.profile);
+  const pinned = pinnedPermlink(account.profile);
   if (pinned) {
     await prefetchQuery(EcencyEntriesCacheManagement.getEntryQueryByPath(username, pinned));
   }
@@ -74,10 +80,6 @@ export default async function Page({ params, searchParams }: Props) {
         .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
     : undefined;
   const initialFeed = prefetchedFeed as InfiniteData<Entry[], unknown> | undefined;
-
-  if (!account) {
-    return notFound();
-  }
 
   return (
     <HydrationBoundary state={stripActiveVotesFromDehydratedState(dehydrate(getQueryClient()), loggedInUser)}>

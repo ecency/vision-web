@@ -1,11 +1,11 @@
 import { getCommunityCache } from "@/core/caches";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { prefetchGetPostsFeedQuery } from "@/api/queries";
 import { EntryListContent } from "@/features/shared/entry-list-content";
 import { EntryArchivePager } from "@/features/shared/entry-archive-pager";
 import { LinearProgress } from "@/features/shared/linear-progress";
 import { dehydrate, HydrationBoundary, InfiniteData } from "@tanstack/react-query";
-import { getQueryClient, prefetchQuery } from "@/core/react-query";
+import { getQueryClient, prefetchRequired } from "@/core/react-query";
 import { cookies } from "next/headers";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { stripAnonEntryCacheInPlace } from "@/core/react-query/strip-active-votes";
@@ -61,10 +61,9 @@ export default async function CommunityPostsPage({ params, searchParams }: Props
   // fully server-rendered (no infinite scroll) with a crawlable pager.
   if (cursor) {
     const [communityData, archive] = await Promise.all([
-      prefetchQuery(getCommunityCache(community)),
+      prefetchRequired(getCommunityCache(community)),
       fetchRankedCursorPage(tag, community, cursor)
     ]);
-    if (!communityData) return notFound();
     if (archive.entries.length === 0) return redirect(basePath); // stale cursor
     const archiveEntries = stripAnonEntryCacheInPlace(
       getQueryClient(),
@@ -98,13 +97,13 @@ export default async function CommunityPostsPage({ params, searchParams }: Props
     );
   }
 
+  // A missing community is notFound(); a lookup that failed throws a retryable
+  // lookup-unavailable error instead (prefetchRequired).
   const [communityData, data, base] = await Promise.all([
-    prefetchQuery(getCommunityCache(community)),
+    prefetchRequired(getCommunityCache(community)),
     prefetchGetPostsFeedQuery(tag, community),
     getServerAppBase()
   ]);
-
-  if (!communityData) return notFound();
 
   if (!data || !Array.isArray(data.pages) || data.pages.length === 0) {
     return null;

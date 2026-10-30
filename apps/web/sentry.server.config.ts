@@ -46,6 +46,12 @@ Sentry.init({
     // inbox at fatal level — the request is already abandoned by the
     // client so there's nothing actionable on our side.
     const ex = event.exception?.values?.[0];
+    // A page's required record lookup failed upstream (query-helpers.ts,
+    // prefetchRequired). Expected, answered as a retryable 503 and counted in
+    // the ssr-degraded log line with its error: not a code defect.
+    if (ex?.type === "SsrLookupUnavailableError") {
+      return null;
+    }
     if (ex?.type === "Error" && ex?.value === "aborted") {
       const frames = JSON.stringify(ex?.stacktrace?.frames ?? "");
       if (frames.includes("_http_server") || frames.includes("abortIncoming")) {

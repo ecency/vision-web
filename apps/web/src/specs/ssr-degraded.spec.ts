@@ -48,13 +48,29 @@ const CHILD_SERVER = `
     const marked = markAt === null ? Promise.resolve() : new Promise((done) => {
       setTimeout(() => {
         Promise.resolve().then(() => setImmediate(() => {
-          globalThis.__ecencySsrDegraded.mark(url.searchParams.get("reason") || "prefetch-timeout");
+          globalThis.__ecencySsrDegraded.mark(
+            url.searchParams.get("reason") || "prefetch-timeout",
+            url.searchParams.get("detail") || undefined
+          );
           done();
         }));
       }, Number(markAt));
     });
     await marked;
     await wait(Number(url.searchParams.get("end") || 0));
+    // ?failed=500 sets the status after the mark, as Next does once the page
+    // has thrown; ?head=500 writes it with an explicit writeHead(status).
+    if (url.searchParams.get("failed")) res.statusCode = Number(url.searchParams.get("failed"));
+    // ?headobj=1 passes the route's own Cache-Control in writeHead's headers
+    // object, which Node applies over anything set with setHeader.
+    if (url.searchParams.get("head")) {
+      const status = Number(url.searchParams.get("head"));
+      if (url.searchParams.get("headobj")) {
+        res.writeHead(status, { "Cache-Control": "public, s-maxage=300", "Retry-After": "999" });
+      } else {
+        res.writeHead(status);
+      }
+    }
     res.end("body");
   });
   server.listen(0, "127.0.0.1", () => process.stdout.write(String(server.address().port) + "\\n"));
@@ -168,6 +184,94 @@ describe("ssr-degraded preload", () => {
     expect(await state(port)).toEqual({ sent: { "prefetch-error": 1 }, late: {}, abandoned: {} });
   });
 
+  // Issue #2000: a record lookup that failed throws, and Next answers 500.
+  // Sent as a 503 with Retry-After it reads as temporary to crawlers and lets
+  // stale-serving caches and retrying proxies in front of the app step in.
+  it("sends a failed record lookup that ended in a server error as a retryable 503", async () => {
+    const { port } = await boot();
+    const reply = await get(port, "/@alice/posts?mark=10&reason=lookup-unavailable&failed=500");
+    expect(reply.status).toBe(503);
+    expect(reply.headers["retry-after"]).toBe("30");
+    expect(reply.headers["cache-control"]).toBe("private, no-store");
+    expect(reply.headers["x-cache-tier"]).toBe("profile-degraded");
+    expect(await state(port)).toEqual({ sent: { "lookup-unavailable": 1 }, late: {}, abandoned: {} });
+  });
+
+  it("rewrites an explicit writeHead(500) the same way", async () => {
+    const { port } = await boot();
+    const reply = await get(port, "/@alice?mark=10&reason=lookup-unavailable&head=500");
+    expect(reply.status).toBe(503);
+    expect(reply.headers["retry-after"]).toBe("30");
+  });
+
+  it("keeps a marked response uncacheable when writeHead carries its own Cache-Control", async () => {
+    const { port } = await boot();
+    const failed = await get(port, "/@alice?mark=10&reason=lookup-unavailable&head=500&headobj=1");
+    expect(failed.status).toBe(503);
+    expect(failed.headers["cache-control"]).toBe("private, no-store");
+    expect(failed.headers["retry-after"]).toBe("30");
+    const degraded = await get(port, "/@alice?mark=10&reason=prefetch-error&head=200&headobj=1");
+    expect(degraded.status).toBe(200);
+    expect(degraded.headers["cache-control"]).toBe("private, no-store");
+  });
+
+  it("leaves a marked lookup that answered 404 or 200 at its own status", async () => {
+    const { port } = await boot();
+    const notFound = await get(port, "/@gone?mark=10&reason=lookup-unavailable&failed=404");
+    expect(notFound.status).toBe(404);
+    expect(notFound.headers["retry-after"]).toBeUndefined();
+    const ok = await get(port, "/@alice?mark=10&reason=lookup-unavailable");
+    expect(ok.status).toBe(200);
+    expect(ok.headers["cache-control"]).toBe("private, no-store");
+  });
+
+  it("does not turn a 500 from any other degraded reason into a 503", async () => {
+    const { port } = await boot();
+    const reply = await get(port, "/@alice?mark=10&reason=prefetch-error&failed=500");
+    expect(reply.status).toBe(500);
+    expect(reply.headers["retry-after"]).toBeUndefined();
+  });
+
+  it("still sends a 503 when another reason marked the response first", async () => {
+    const { port } = await boot();
+    const reply = await get(port, "/@alice?premark=1&mark=10&reason=lookup-unavailable&failed=500");
+    expect(reply.status).toBe(503);
+  });
+
+  // A page's layout marks a failed optional prefetch first; the required
+  // lookup's failure is the more specific reason, so the count says that.
+  it("counts the response under lookup-unavailable when it was marked after another reason", async () => {
+    const { port } = await boot();
+    await get(port, "/@alice?premark=1&mark=10&reason=lookup-unavailable&failed=500");
+    expect(await state(port)).toEqual({ sent: { "lookup-unavailable": 1 }, late: {}, abandoned: {} });
+  });
+
+  it("keeps terminal control characters from an upstream error out of the log line", async () => {
+    const { port, stderr } = await boot();
+    const detail = encodeURIComponent("bad\u001b[31m red\u0007 node\u009b");
+    await get(port, `/@a?mark=10&reason=lookup-unavailable&failed=500&detail=${detail}`);
+    await get(port, "/api/flush");
+    await new Promise((r) => setTimeout(r, 50));
+    const line = stderr()
+      .split("\n")
+      .find((l) => l.startsWith("[ssr-degraded]"));
+    expect(line).toBeDefined();
+    expect(line).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+    expect(line).toContain("errors [bad [31m red node]");
+  });
+
+  it("skips a detail that is nothing but control characters, keeping its slot", async () => {
+    const { port, stderr } = await boot();
+    await get(port, `/@a?mark=10&reason=lookup-unavailable&failed=500&detail=${encodeURIComponent("\u0007\u001b\n")}`);
+    await get(port, "/@b?mark=10&reason=lookup-unavailable&failed=500&detail=real");
+    await get(port, "/api/flush");
+    await new Promise((r) => setTimeout(r, 50));
+    const line = stderr()
+      .split("\n")
+      .find((l) => l.startsWith("[ssr-degraded]"));
+    expect(line).toContain("errors [real]");
+  });
+
   it("does not count a marked response whose client left before any head as sent", async () => {
     const { port } = await boot();
     await new Promise<void>((resolve) => {
@@ -220,6 +324,25 @@ describe("ssr-degraded preload", () => {
         .split("\n")
         .filter((l) => l.startsWith("[ssr-degraded]"))
     ).toHaveLength(1);
+  });
+
+  // Issue #2000: without the error, the line says a lookup failed but not why.
+  it("adds a short sample of the distinct errors the window saw", async () => {
+    const { port, stderr } = await boot();
+    const long = "x".repeat(300);
+    await get(port, "/@a?mark=10&reason=lookup-unavailable&failed=500&detail=HTTP%20429%20rate%20limited");
+    await get(port, "/@b?mark=10&reason=lookup-unavailable&failed=500&detail=HTTP%20429%20rate%20limited");
+    await get(port, `/@c?mark=10&reason=lookup-unavailable&failed=500&detail=${long}`);
+    await get(port, "/@d?mark=10&reason=lookup-unavailable&failed=500&detail=timed%20out");
+    await get(port, "/@e?mark=10&reason=lookup-unavailable&failed=500&detail=fourth");
+    await get(port, "/api/flush");
+    await new Promise((r) => setTimeout(r, 50));
+    const lines = stderr()
+      .split("\n")
+      .filter((l) => l.startsWith("[ssr-degraded]"));
+    expect(lines).toEqual([
+      `[ssr-degraded] last 60s: sent lookup-unavailable=5 [/@a /@b /@c /@d /@e]; errors [HTTP 429 rate limited | ${"x".repeat(120)} | timed out]`
+    ]);
   });
 
   it("is a no-op outside any request", async () => {

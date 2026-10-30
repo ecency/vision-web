@@ -87,12 +87,16 @@ vi.mock("@/core/react-query", async () => {
     body: "Wave body paragraph that has to reach the browser in the shell.\n\n".repeat(20),
     json_metadata: { tags: ["waves"], app: "ecency/waves" }
   });
+  const prefetchFixture = async (options: { queryKey: readonly unknown[] }) => {
+    actual.getQueryClient().setQueryData(options.queryKey, fixtures.entry);
+    return fixtures.entry;
+  };
+  // prefetchRequired is the wave lookup (found here); its failure and
+  // not-found paths are pinned in profile-community-lookup-unavailable.spec.ts.
   return {
     ...actual,
-    prefetchQuery: async (options: { queryKey: readonly unknown[] }) => {
-      actual.getQueryClient().setQueryData(options.queryKey, fixtures.entry);
-      return fixtures.entry;
-    }
+    prefetchQuery: prefetchFixture,
+    prefetchRequired: prefetchFixture
   };
 });
 
