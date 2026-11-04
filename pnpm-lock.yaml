@@ -452,11 +452,11 @@ importers:
         specifier: ^0.0.4
         version: 0.0.4
       highcharts:
-        specifier: ^12.1.2
-        version: 12.4.0
+        specifier: ^12.6.2
+        version: 12.6.2
       highcharts-react-official:
         specifier: ^3.2.1
-        version: 3.2.3(highcharts@12.4.0)(react@19.2.3)
+        version: 3.2.3(highcharts@12.6.2)(react@19.2.3)
       hive-uri:
         specifier: ^0.2.5
         version: 0.2.8
@@ -2786,8 +2786,8 @@ packages:
     resolution: {integrity: sha512-JD6DerIKdJGmRp4jQyX5FlrQjA4tjOw1cvfsPAZXfOOEErMUHjPcPSICS+6WnM0nB0efSFARh0KAZss+bvExOA==}
     engines: {node: '>=14'}
 
-  '@opentelemetry/semantic-conventions@1.43.0':
-    resolution: {integrity: sha512-eSYWTm620tTk45EKSedaUL8MFYI8hW164hIXsgIHyxu3VobUB3fFCu5t0hQby6OoWRPsG1KkKUG2M5UadiLiVg==}
+  '@opentelemetry/semantic-conventions@1.44.0':
+    resolution: {integrity: sha512-E3JkOlMBi3N8OGGkbl7tFyqk2MAS6/lySRZBK3Mu7AzjF1fT8oIChH9ChE48SUWzDn9Kdwta+G/p5LJ4xW4CLQ==}
     engines: {node: '>=14'}
 
   '@opentelemetry/sql-common@0.40.1':
@@ -5725,8 +5725,16 @@ packages:
       highcharts: '>=6.0.0'
       react: '>=16.8.0'
 
-  highcharts@12.4.0:
-    resolution: {integrity: sha512-o6UxxfChSUrvrZUbWrAuqL1HO/+exhAUPcZY6nnqLsadZQlnP16d082sg7DnXKZCk1gtfkyfkp6g3qkIZ9miZg==}
+  highcharts@12.6.2:
+    resolution: {integrity: sha512-I089uxv6AN2+qIQGhOSzFMjZJFnW+TAuP3WaEj1qRrH7XN3UR8wYzPsoIYX1sDTdQiHl4KJwGd+4bAwhaF1/3w==}
+    peerDependencies:
+      jspdf: ^4.1.0
+      svg2pdf.js: ^2.7.0
+    peerDependenciesMeta:
+      jspdf:
+        optional: true
+      svg2pdf.js:
+        optional: true
 
   hive-auth-wrapper@1.0.0:
     resolution: {integrity: sha512-HHWKCXO7gT8Zvo+bFwfYWqeUZVk+8fhi1UM27z5hV1zrl/Fe6Fzt/NGhojlNaKDNrIa5VZclnUr21qFZYFYHzQ==}
@@ -10484,7 +10492,7 @@ snapshots:
   '@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.0)':
     dependencies:
       '@opentelemetry/api': 1.9.0
-      '@opentelemetry/semantic-conventions': 1.43.0
+      '@opentelemetry/semantic-conventions': 1.44.0
 
   '@opentelemetry/instrumentation-amqplib@0.46.1(@opentelemetry/api@1.9.0)':
     dependencies:
@@ -10751,7 +10759,7 @@ snapshots:
 
   '@opentelemetry/semantic-conventions@1.37.0': {}
 
-  '@opentelemetry/semantic-conventions@1.43.0': {}
+  '@opentelemetry/semantic-conventions@1.44.0': {}
 
   '@opentelemetry/sql-common@0.40.1(@opentelemetry/api@1.9.0)':
     dependencies:
@@ -11938,7 +11946,10 @@ snapshots:
 
   '@types/highcharts@7.0.0':
     dependencies:
-      highcharts: 12.4.0
+      highcharts: 12.6.2
+    transitivePeerDependencies:
+      - jspdf
+      - svg2pdf.js
 
   '@types/js-cookie@2.2.7': {}
 
@@ -13986,12 +13997,12 @@ snapshots:
 
   heic2any@0.0.4: {}
 
-  highcharts-react-official@3.2.3(highcharts@12.4.0)(react@19.2.3):
+  highcharts-react-official@3.2.3(highcharts@12.6.2)(react@19.2.3):
     dependencies:
-      highcharts: 12.4.0
+      highcharts: 12.6.2
       react: 19.2.3
 
-  highcharts@12.4.0: {}
+  highcharts@12.6.2: {}
 
   hive-auth-wrapper@1.0.0:
     dependencies:
