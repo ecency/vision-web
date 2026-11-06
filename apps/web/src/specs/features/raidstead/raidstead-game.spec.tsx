@@ -2490,23 +2490,24 @@ describe("Raidstead page", () => {
     });
 
     it("asks once for a tab whose list is still on its way", async () => {
-      let answer: (rows: ReturnType<typeof row>[]) => void = () => undefined;
+      const answers: Record<string, (rows: ReturnType<typeof row>[]) => void> = {};
       const load = vi.fn((league: string) =>
-        league === "large"
-          ? new Promise<ReturnType<typeof row>[]>((r) => (answer = r))
-          : Promise.resolve(boards[league])
+        league === "small"
+          ? Promise.resolve(boards[league])
+          : new Promise<ReturnType<typeof row>[]>((r) => (answers[league] = r))
       );
       render(<LeaderboardSheet season={1} league="small" load={load as never} onClose={vi.fn()} />);
       await waitFor(() => expect(ranks()).toEqual(["1 HIVE-S1"]));
-      const large = screen.getByRole("tab", { name: "raidstead.profile.leagues.large" });
-      const small = screen.getByRole("tab", { name: "raidstead.profile.leagues.small" });
-      await act(async () => {
-        fireEvent.click(large);
-        fireEvent.click(small);
-        fireEvent.click(large);
-      });
+      const tab = (name: string) => screen.getByRole("tab", { name: `raidstead.profile.leagues.${name}` });
+      // medium and large both on their way; each click is its own render
+      await act(async () => fireEvent.click(tab("medium")));
+      await act(async () => fireEvent.click(tab("large")));
+      // medium's answer lands while large is still open: the list changes, large is not asked again
+      await act(async () => answers.medium(boards.medium));
+      await act(async () => fireEvent.click(tab("small")));
+      await act(async () => fireEvent.click(tab("large")));
       expect(load.mock.calls.filter(([l]) => l === "large")).toHaveLength(1);
-      await act(async () => answer(boards.large));
+      await act(async () => answers.large(boards.large));
       expect(ranks()).toEqual(["1 HIVE-L1", "2 HIVE-L2"]);
     });
 
