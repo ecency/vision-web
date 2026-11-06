@@ -42,6 +42,7 @@ import {
   buildNudgeShown,
   buildReport,
   dismissBuildNudge,
+  lowerBuildNudge,
   laterMark,
   markOf,
   newsAfter,
@@ -425,6 +426,7 @@ export function RaidsteadGame() {
         // nor a card that was open for it, or news waiting for one
         setSheet(null);
         setAwayNews(null);
+        newsWaiting.current = false;
       }
       // a guest session whose account has now logged in to Ecency ends with that login
       if (session && username && !session.ecency) {
@@ -571,6 +573,12 @@ export function RaidsteadGame() {
   // stays away until the materials grow (this visit too, if storage is blocked)
   const nudgeMem = useRef<Record<string, number>>({});
   const [nudgeDismissed, setNudgeDismissed] = useState(0);
+  // a drop in materials lowers the card's mark, before the render below reads it
+  const [nudgeLowered, setNudgeLowered] = useState(0);
+  useEffect(() => {
+    if (!data?.alliance) return;
+    if (lowerBuildNudge(data, nudgeMem.current)) setNudgeLowered((n) => n + 1);
+  }, [data]);
 
   // Town news. What happened while the player was away opens as a card, after the
   // week's card if that is due too. One line that arrives while they play, with
@@ -620,6 +628,8 @@ export function RaidsteadGame() {
   } | null>(null);
   const awayRef = useRef(awayNews);
   awayRef.current = awayNews;
+  // news queued for its card, as effects of the same commit see it (the state lands later)
+  const newsWaiting = useRef(false);
   const [tabShown, setTabShown] = useState(() => !document.hidden);
   useEffect(() => {
     const onVisible = () => setTabShown(!document.hidden);
@@ -631,6 +641,7 @@ export function RaidsteadGame() {
   useEffect(() => {
     booted.current = false;
     setAwayNews(null);
+    newsWaiting.current = false;
   }, [newsScope]);
   useEffect(() => {
     if (phase !== "ready" || !newsScope || !notes) return;
@@ -670,6 +681,7 @@ export function RaidsteadGame() {
       tell(noteText(all[0], i18next.t));
       return;
     }
+    newsWaiting.current = true;
     setAwayNews({
       scope: newsScope,
       notes: all,
@@ -689,9 +701,11 @@ export function RaidsteadGame() {
     const mark = readMark(newsScope);
     const left = mark === null ? awayNews.notes : newsAfter(awayNews.notes, mark);
     setAwayNews(null);
+    newsWaiting.current = false;
     if (!left.length) return;
     writeMark(newsScope, awayNews.upTo);
     setSheet({ kind: "news", notes: left, away: awayNews.away });
+    sheetRef.current = { kind: "news", notes: left, away: awayNews.away };
   }, [awayNews, sheet, phase, tabShown, newsScope, readMark, writeMark]);
 
   // Once a visit, on a season's day 1: how a raid goes. Told once nothing covers
@@ -700,7 +714,7 @@ export function RaidsteadGame() {
   const dayOne = !!alliance && data?.calendar.day === 1 && !data.calendar.resting;
   useEffect(() => {
     if (greeted.current || !dayOne || phase !== "ready") return;
-    if (sheet || sheetRef.current || awayNews) return;
+    if (sheet || sheetRef.current || awayNews || newsWaiting.current) return;
     greeted.current = true;
     say(t("toast.day-one"));
   }, [dayOne, phase, sheet, awayNews, say]);
@@ -992,6 +1006,7 @@ export function RaidsteadGame() {
   const doSignOut = async () => {
     // news waiting behind the menu must not open (and count as read) on the way out
     setAwayNews(null);
+    newsWaiting.current = false;
     setSheet(null);
     await signOut().catch(() => undefined);
     setData(null);
@@ -1042,9 +1057,9 @@ export function RaidsteadGame() {
   // the HUD renders every second: storage is read again only when the state changes
   const nudgeDue = useMemo(
     () => buildNudgeShown(data, nudgeMem.current),
-    // nudgeDismissed: asked again after a dismissal
+    // asked again after a dismissal, and once a new state has lowered the mark
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, nudgeDismissed]
+    [data, nudgeDismissed, nudgeLowered]
   );
   const nudge = playing && view === "raid" && nudgeDue;
   const resting = !!cal?.resting;

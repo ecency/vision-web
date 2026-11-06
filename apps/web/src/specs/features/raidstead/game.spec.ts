@@ -6,6 +6,7 @@ import {
   buildBlock,
   buildNudgeShown,
   buildReport,
+  lowerBuildNudge,
   chestBlock,
   chestHoursLeft,
   countdown,
@@ -559,9 +560,26 @@ describe("build nudge", () => {
     dismissBuildNudge(town(100));
     expect(buildNudgeShown(town(100))).toBe(false);
     // an ally builds: fewer materials, still nothing new to tell
-    expect(buildNudgeShown(town(60))).toBe(false);
+    lowerBuildNudge(town(60));
     expect(buildNudgeShown(town(60))).toBe(false);
     expect(buildNudgeShown(town(85))).toBe(true);
+  });
+
+  it("lowers the mark even when nothing is affordable, and only by being told to", () => {
+    const tower = (mats: number) => {
+      const s = town(mats);
+      s.alliance!.town.hall = 1; // a tower (30) may follow the Hall now
+      return s;
+    };
+    dismissBuildNudge(tower(60));
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    // reading never writes
+    expect(buildNudgeShown(tower(20))).toBe(false);
+    expect(buildNudgeShown(tower(40))).toBe(false);
+    expect(setItem).not.toHaveBeenCalled();
+    lowerBuildNudge(tower(20));
+    expect(setItem).toHaveBeenCalled();
+    expect(buildNudgeShown(tower(40))).toBe(true);
   });
 
   it("keeps each account's and alliance's dismissal apart", () => {

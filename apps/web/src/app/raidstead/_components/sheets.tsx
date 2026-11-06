@@ -963,7 +963,8 @@ export function LeaderboardSheet({
       asking.current.add(l);
       load(l)
         .then(
-          (r) => live.current && setRows((x) => ({ ...x, [l]: r })),
+          // only the asked league: an older server may send them all
+          (r) => live.current && setRows((x) => ({ ...x, [l]: r.filter((x) => x.league === l) })),
           () => live.current && setRows((x) => ({ ...x, [l]: "failed" }))
         )
         .finally(() => asking.current.delete(l));
@@ -981,19 +982,41 @@ export function LeaderboardSheet({
   useEffect(() => {
     if (tab && rows[tab] === undefined) fetchLeague(tab);
   }, [tab, rows, fetchLeague]);
+  // a tab opened on a league whose list failed, while the player's own is not
+  // known yet: a retry that finds it there, or in another league, moves to it
+  const guessed = useRef(false);
   useEffect(() => {
-    if (tab || !detect) return;
-    const list = (l: League) => rows[l];
-    const mine = LEAGUES.find((l) => {
-      const r = list(l);
+    if (!detect || (tab && !guessed.current)) return;
+    const lists = LEAGUES.map((l) => rows[l]);
+    const mine = LEAGUES.find((_, i) => {
+      const r = lists[i];
       return Array.isArray(r) && r.some((x) => x.community === own);
     });
-    if (mine) setTab(mine);
-    else if (LEAGUES.every((l) => list(l))) setTab("small");
+    if (mine) {
+      guessed.current = false;
+      setTab(mine);
+      return;
+    }
+    if (lists.some((r) => r === undefined)) return;
+    // not found: maybe in a league whose list failed (its error and retry show),
+    // or in none of them (Small)
+    const failed = LEAGUES.find((_, i) => lists[i] === "failed");
+    guessed.current = !!failed;
+    if (!tab) setTab(failed ?? "small");
   }, [rows, tab, own, detect]);
-  const choose = (l: League) => {
+  const pick = (l: League) => {
+    guessed.current = false;
     setTab(l);
+  };
+  const choose = (l: League) => {
+    pick(l);
     tabRefs.current[l]?.focus();
+  };
+  const retry = () => {
+    // every failed list is asked again while the player's league is still a guess
+    const again = guessed.current ? LEAGUES.filter((l) => rows[l] === "failed") : [tab!];
+    setRows((x) => ({ ...x, ...Object.fromEntries(again.map((l) => [l, undefined])) }));
+    again.forEach(fetchLeague);
   };
   const onKey = (e: KeyboardEvent, l: League) => {
     const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
@@ -1018,7 +1041,7 @@ export function LeaderboardSheet({
             aria-selected={tab === l}
             aria-controls="rs-league-panel"
             tabIndex={tab === l || (!tab && l === "small") ? 0 : -1}
-            onClick={() => setTab(l)}
+            onClick={() => pick(l)}
             onKeyDown={(e) => onKey(e, l)}
           >
             {t(`profile.leagues.${l}`)}
@@ -1030,12 +1053,7 @@ export function LeaderboardSheet({
           <>
             <p className="rs-muted">{t("leaderboard.failed")}</p>
             <div className="rs-btns">
-              <button
-                className="rs-btn"
-                onClick={() => {
-                  setRows((x) => ({ ...x, [tab!]: undefined }));
-                }}
-              >
+              <button className="rs-btn" onClick={retry}>
                 {i18next.t("g.try-again")}
               </button>
             </div>

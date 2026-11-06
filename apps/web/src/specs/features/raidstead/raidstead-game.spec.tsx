@@ -2249,6 +2249,43 @@ describe("Raidstead page", () => {
       expect(card()).toBeNull();
     });
 
+    it("comes back once materials grow past a low point nothing could be built at", async () => {
+      // the Hall is up, so a tower (30) may be built
+      const at = (mats: number) => {
+        const s = state();
+        s.alliance.mats = mats;
+        s.alliance.town = { ...s.alliance.town, hall: 1 };
+        s.member.attackDays = 1;
+        return s;
+      };
+      const next = async (mats: number) => {
+        api.state.mockResolvedValue(at(mats));
+        const asked = api.state.mock.calls.length;
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.quests/ }));
+        });
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: /raidstead.quests.claim/ }));
+        });
+        await waitFor(() => expect(api.state.mock.calls.length).toBeGreaterThan(asked));
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+        });
+      };
+      api.state.mockResolvedValue(at(60));
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "raidstead.build-nudge.dismiss" }));
+      });
+      expect(card()).toBeNull();
+      await next(20);
+      expect(card()).toBeNull();
+      await next(40);
+      await waitFor(() => expect(card()).toBeTruthy());
+    });
+
     it("goes away when dismissed, even with storage blocked", async () => {
       withTown(60, 1);
       asUser("ann");
@@ -2303,6 +2340,26 @@ describe("Raidstead page", () => {
         fireEvent.click(screen.getByRole("button", { name: "g.close" }));
       });
       await waitFor(() => expect(toast()).toBe("raidstead.toast.day-one"));
+    });
+
+    it("waits for the town news card to close", async () => {
+      const s = state();
+      s.calendar = { ...s.calendar, day: 1 };
+      Object.assign(s.alliance, {
+        notes: [{ seq: 1, day: 1, kind: "copied", n: 45, text: "x" }]
+      });
+      api.state.mockImplementation(async () => structuredClone(s));
+      localStorage.setItem("ecency_raidstead_news", JSON.stringify({ "1:hive-123456:ann": 0 }));
+      asUser("ann");
+      render(<RaidsteadGame />);
+      const card = await screen.findByRole("dialog", { name: "raidstead.news.away" });
+      expect(toast()).toBe("");
+      expect(greetings()).toBe(0);
+      await act(async () => {
+        fireEvent.click(within(card).getByRole("button", { name: "raidstead.news.ok" }));
+      });
+      await waitFor(() => expect(toast()).toBe("raidstead.toast.day-one"));
+      expect(greetings()).toBe(1);
     });
 
     it("greets once, however often the state is asked", async () => {
@@ -2509,6 +2566,32 @@ describe("Raidstead page", () => {
       expect(load.mock.calls.filter(([l]) => l === "large")).toHaveLength(1);
       await act(async () => answers.large(boards.large));
       expect(ranks()).toEqual(["1 HIVE-L1", "2 HIVE-L2"]);
+    });
+
+    it("without a league from the server, opens on a league that failed to load, then finds the player's", async () => {
+      const load = vi.fn(async (league: string) => {
+        if (league === "medium" && load.mock.calls.filter(([l]) => l === "medium").length === 1)
+          throw new Error("offline");
+        return boards[league];
+      });
+      render(
+        <LeaderboardSheet season={1} own="hive-123456" load={load as never} onClose={vi.fn()} />
+      );
+      await screen.findByText("raidstead.leaderboard.failed");
+      expect(selected()).toEqual(["raidstead.profile.leagues.medium"]);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.try-again" }));
+      });
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-M1", "2 HIVE-123456"]));
+      expect(selected()).toEqual(["raidstead.profile.leagues.medium"]);
+    });
+
+    it("lists only the tab's own league, from a server that ignores the filter", async () => {
+      const load = vi.fn(async () => [...boards.large, ...boards.small, ...boards.medium]);
+      render(
+        <LeaderboardSheet season={1} league="medium" load={load as never} onClose={vi.fn()} />
+      );
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-M1", "2 HIVE-123456"]));
     });
 
     it("says a list could not load, with a way to try again", async () => {

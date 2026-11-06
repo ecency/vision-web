@@ -374,19 +374,32 @@ function lowerNudge(scope: string, mats: number, mem: Record<string, number>) {
   ls.set(NUDGE_KEY, { ...kept, [scope]: mats });
 }
 
+/// The mark a dismissed card is waiting to see the materials grow past, if any.
+function nudgeMark(state: State, mem: Record<string, number>): number | undefined {
+  const scope = nudgeScope(state);
+  // storage that throws or is empty falls back on the page's own copy
+  const stored = ((ls.get(NUDGE_KEY) ?? {}) as Record<string, unknown>)[scope];
+  return typeof stored === "number" ? stored : mem[scope];
+}
+
 /// The raid screen's card telling the player their town can build something now.
 /// Dismissed, it stays away until the materials grow past the lowest they have
-/// been since (a build in between lowers that mark).
+/// been since (see lowerBuildNudge). Reads only: safe to call while rendering.
 export function buildNudgeShown(state: State | null, mem: Record<string, number> = {}): boolean {
   if (!state?.alliance || !BUILDING_IDS.some((id) => buildBlock(state, id) === null)) return false;
-  const scope = nudgeScope(state);
-  // storage that throws or is empty only means the card shows
-  const stored = ((ls.get(NUDGE_KEY) ?? {}) as Record<string, unknown>)[scope];
-  const low = typeof stored === "number" ? stored : mem[scope];
-  const mats = state.alliance.mats;
-  if (low === undefined || mats > low) return true;
-  if (mats < low) lowerNudge(scope, mats, mem);
-  return false;
+  const low = nudgeMark(state, mem);
+  return low === undefined || state.alliance.mats > low;
+}
+
+/// Each new state: materials below a dismissed card's mark (a build, the player's
+/// own or an ally's) lower it, whether or not anything is affordable now.
+/// Says whether it did.
+export function lowerBuildNudge(state: State, mem: Record<string, number> = {}): boolean {
+  const low = nudgeMark(state, mem);
+  const mats = state.alliance?.mats;
+  if (low === undefined || mats === undefined || mats >= low) return false;
+  lowerNudge(nudgeScope(state), mats, mem);
+  return true;
 }
 
 export const dismissBuildNudge = (state: State, mem: Record<string, number> = {}) =>
