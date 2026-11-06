@@ -18,6 +18,7 @@ import { CommunitySettingsDialog } from "@/app/(dynamicPages)/community/[communi
 import { CommunityRewardsRegistrationDialog } from "../community-rewards-registration";
 import { EcencyConfigManager } from "@/config";
 import Link from "next/link";
+import { AllianceOfWeekBadge } from "@/features/raidstead/alliance-of-week";
 
 interface Props {
   community: Community;
@@ -79,6 +80,7 @@ export function CommunityCard({ community, account }: Props) {
         </h1>
         <div className="about">{community.about}</div>
         {community.is_nsfw && <span className="nsfw">nsfw</span>}
+        <AllianceOfWeekBadge community={community.name} />
       </div>
       {/* Sender tools sit BELOW the community's identity, the same order the
           profile card uses. Rendered first, they pushed the avatar and title

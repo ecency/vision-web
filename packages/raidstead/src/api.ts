@@ -74,6 +74,10 @@ export interface Session { token: string; account: string; expiresAt: string }
 /// `players` (members playing this season) and `lastSeason` (who played last season)
 /// come from newer servers only.
 export interface Community { name: string; title: string; players?: number; lastSeason?: number }
+/// An alliance that chased off its pest in a given week: `killSecs` from the week's
+/// start to the kill, `raiders` the members who attacked that week.
+export interface WeekKill { community: string; title: string; league: League; killSecs: number; raiders: number; members: number }
+export interface WeekKills { season: number; week: number; kills: WeekKill[] }
 export interface LeaderRow { community: string; title: string; members: number; kills: number; damage: number; league: string; score?: number; killSecs?: number }
 
 export class RaidsteadError extends Error {
@@ -132,6 +136,11 @@ export function createApi(opts: ApiOptions) {
     leaderboard: ({ season, league }: { season?: number; league?: League } = {}) => {
       const q = [season ? `season=${season}` : "", league ? `league=${league}` : ""].filter(Boolean).join("&");
       return call<{ season: number; alliances: LeaderRow[] }>("GET", `/v1/raidstead/leaderboard${q ? `?${q}` : ""}`, undefined, false);
+    },
+    // the kills of one week; without one, the server's last finished week
+    week: ({ season, week }: { season?: number; week?: number } = {}) => {
+      const q = [season ? `season=${season}` : "", week ? `week=${week}` : ""].filter(Boolean).join("&");
+      return call<WeekKills>("GET", `/v1/raidstead/week${q ? `?${q}` : ""}`, undefined, false);
     },
   };
 }

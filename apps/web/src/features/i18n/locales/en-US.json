@@ -5503,15 +5503,29 @@
       "title": "Raid report",
       "desc": "A draft to post in your community. You can edit everything before publishing.",
       "open": "Open in the editor",
-      "post-title": "{{name}} vs the {{boss}}: week {{week}} raid report",
+      "preparing": "Getting the draft ready...",
+      "post-title": "{{name}} vs the {{boss}}: week {{week}}, {{outcome}}",
       "intro-won": "This week **{{name}}** chased off the {{boss}} in Raidstead.",
       "intro-escaped": "This week the {{boss}} got away from **{{name}}** in Raidstead.",
       "intro-fighting": "This week **{{name}}** is still fighting the {{boss}} in Raidstead.",
       "raiders": "Top raiders this week:",
       "line": "{{i}}. @{{name}}: {{dmg}} damage",
-      "town": "Our town: Hall stage {{hall}}, {{mats}} materials in store.",
-      "outro": "Raidstead is played with your community on Ecency: [ecency.com/raidstead](https://ecency.com/raidstead)",
-      "helpers": "Helped by {{names}}"
+      "town": "Hall stage {{hall}}, {{mats}} materials in store.",
+      "outro": "Raidstead is a weekly co-op game for Hive communities on Ecency. Come raid with {{name}}: [ecency.com/raidstead](https://ecency.com/raidstead)",
+      "helpers": "Helped by {{names}}",
+      "outcome": {
+        "won": "chased off",
+        "escaped": "got away",
+        "fighting": "still fighting"
+      },
+      "days": "The week, day by day",
+      "week-start": "Week {{week}} began with the {{boss}} in town.",
+      "hero": "Hero of the week: @{{who}}, who landed the last hit.",
+      "town-title": "Our town",
+      "built": "Finished this week: {{list}}.",
+      "card-alt": "Raid report card",
+      "card-top": "Top raiders",
+      "card-week": "Season {{season}}, week {{week}}"
     },
     "hero-card": {
       "scribe": "Writes the town's story, one post at a time. In a raid the Scribe throws Ink.",
@@ -5555,13 +5569,19 @@
       "web_gone": "The Drama Spider got bored and left the {{name}}.",
       "escaped": "The {{name}} escaped.",
       "killed": "The {{name}} was chased off. @{{who}} landed the last hit.",
+      "killed_plain": "The {{name}} was chased off.",
       "chest": "The war chest filled up: +1 damage for 24 hours. @{{who}} gave the last Points.",
       "chest_kept": "The war chest filled up: +1 damage for 24 hours once the next pest arrives. @{{who}} gave the last Points.",
       "chest_open": "The war chest kept for this pest is open: +1 damage for 24 hours.",
       "chest_open_hours": "The war chest kept for this pest is open: +1 damage for {{n}}h.",
       "chest_saved": "The war chest still had {{n}}h to run. They are kept for the next pest.",
       "chest_back": "The war chest is open again: +1 damage for {{n}}h more.",
-      "helped": "@{{who}} came from another town to help against the {{name}}."
+      "helped": "@{{who}} came from another town to help against the {{name}}.",
+      "arrived": "The {{name}} arrived.",
+      "shifted": "The {{name}} fell below {{n}}% health and its weakness shifted.",
+      "gnats": "A shield of {{n}} gnats formed.",
+      "built": "The {{name}} was finished.",
+      "built_by": "@{{who}} finished the {{name}}."
     },
     "guide": {
       "title": "Field guide",
@@ -5625,6 +5645,13 @@
         "not_found": "That town is not in the raid any more."
       },
       "energy": "{{n}} / {{max}} energy"
+    },
+    "aotw": {
+      "banner": "Alliance of the Week {{week}} ({{league}}): {{name}}",
+      "banner-yours": "You are the Alliance of the Week {{week}} ({{league}})",
+      "board": "Alliance of the Week {{week}}: {{name}}",
+      "badge": "Raidstead Alliance of the Week",
+      "badge-desc": "Fastest to chase off the week {{week}} pest in the {{league}} league."
     }
   },
   "listen": {

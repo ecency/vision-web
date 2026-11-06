@@ -1,7 +1,7 @@
 /* Still pictures of one model in the print look, for cards and share images:
    no scene, no animation, every dot at its resting place. */
 import { SPECIES } from "./art";
-import { buildModel, INKS, PAPER, type Part } from "./print";
+import { buildModel, CORAL, INKS, NIGHT, PAPER, VIOLET, type Part } from "./print";
 
 export interface PortraitDot { x: number; y: number; r: number; color: string; knock: boolean }
 export interface Portrait { width: number; height: number; dots: PortraitDot[] }
@@ -61,19 +61,78 @@ export function drawPortrait(canvas: HTMLCanvasElement, kind: string, opts: { sp
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.fillStyle = PAPER;
   g.fillRect(0, 0, w, h);
+  paint(g, portrait(kind, { width: w, height: h, ...opts }).dots);
+}
+
+/// Inks multiplied onto the paper already there; knockout dots print paper.
+function paint(g: CanvasRenderingContext2D, dots: PortraitDot[], ox = 0, oy = 0): void {
   let knock = false;
   g.globalCompositeOperation = "multiply";
-  for (const d of portrait(kind, { width: w, height: h, ...opts }).dots) {
+  for (const d of dots) {
     if (d.knock !== knock) {
       knock = d.knock;
       g.globalCompositeOperation = knock ? "source-over" : "multiply";
     }
     g.fillStyle = d.color;
     g.beginPath();
-    g.arc(d.x, d.y, d.r, 0, 6.283);
+    g.arc(ox + d.x, oy + d.y, d.r, 0, 6.283);
     g.fill();
   }
   g.globalCompositeOperation = "source-over";
+}
+
+/// What a raid report's share card shows; the words come translated.
+export interface ShareCard {
+  kind: string;
+  /// the alliance's title
+  title: string;
+  /// chased off, got away, still fighting
+  outcome: string;
+  /// "Season 2, week 1"
+  week: string;
+  topLabel: string;
+  top: { account: string; damage: number }[];
+}
+
+export const SHARE_CARD = { width: 1200, height: 630 };
+const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+
+/// The raid report's share image (1200 x 630, the size link previews use): the
+/// week's pest on the left, the alliance, the outcome and the top 3 on the right.
+/// Says whether it drew: a canvas without a 2D context is left blank (false).
+export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): boolean {
+  const { width: W, height: H } = SHARE_CARD;
+  canvas.width = W;
+  canvas.height = H;
+  const g = canvas.getContext("2d");
+  if (!g) return false;
+  g.fillStyle = PAPER;
+  g.fillRect(0, 0, W, H);
+  paint(g, portrait(card.kind, { width: 560, height: 560, pad: 16, spacing: 5 }).dots, 20, 35);
+
+  // text measured where the context can, guessed where it cannot
+  const fits = (text: string, max: number) => (g.measureText?.(text)?.width ?? text.length * 30) <= max;
+  const x = 620, max = W - x - 50;
+  const line = (text: string, y: number, size: number, color: string, weight = 400) => {
+    g.font = `${weight} ${size}px ${FONT}`;
+    g.fillStyle = color;
+    let shown = text;
+    while (shown.length > 1 && !fits(shown, max)) shown = shown.slice(0, -2) + "\u2026";
+    g.fillText(shown, x, y);
+  };
+  g.textBaseline = "alphabetic";
+  line("RAIDSTEAD", 110, 26, INKS[VIOLET].c, 700);
+  line(card.week, 150, 28, INKS[NIGHT].c);
+  // the title as large as fits, down to a size that still reads
+  let size = 68;
+  g.font = `800 ${size}px ${FONT}`;
+  while (size > 40 && !fits(card.title, max)) g.font = `800 ${(size -= 4)}px ${FONT}`;
+  line(card.title, 240, size, INKS[NIGHT].c, 800);
+  line(card.outcome, 310, 48, INKS[CORAL].c, 800);
+  line(card.topLabel, 390, 26, INKS[VIOLET].c, 700);
+  card.top.slice(0, 3).forEach((r, i) => line(`${i + 1}. @${r.account}  ${r.damage}`, 435 + i * 44, 32, INKS[NIGHT].c));
+  line("ecency.com/raidstead", H - 40, 24, INKS[VIOLET].c, 700);
+  return true;
 }
 
 /// The same picture as an SVG document, for places without a canvas (a
@@ -84,3 +143,4 @@ export function portraitSvg(kind: string, opts: PortraitOptions): string {
   const body = dots.map((d) => `<circle cx="${f(d.x)}" cy="${f(d.y)}" r="${f(d.r)}" fill="${d.color}"/>`).join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${body}</svg>`;
 }
+

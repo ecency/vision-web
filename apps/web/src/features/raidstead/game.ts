@@ -1,4 +1,4 @@
-import { BOSS_KINDS, BUILDING_IDS, type BossKind } from "@ecency/raidstead";
+import { BOSS_KINDS, BUILDING_IDS, LEAGUES, type BossKind } from "@ecency/raidstead";
 import type {
   AttackResult,
   AttackType,
@@ -6,13 +6,15 @@ import type {
   BuildingId,
   Impact,
   LeaderRow,
+  League,
   Calendar,
   Community,
   Note,
   RaidsteadError,
   SceneWorld,
   State,
-  View
+  View,
+  WeekKill
 } from "@ecency/raidstead";
 import * as ls from "@/utils/local-storage";
 
@@ -114,6 +116,22 @@ export function noteText(n: Note, t: T): string {
   const building = (BUILDING_IDS as readonly string[]).includes(what);
   const pest = (BOSS_KINDS as readonly string[]).includes(what);
   switch (n.kind) {
+    case "arrived":
+      if (!pest) return n.text;
+      return t("raidstead.news.arrived", { name: t(`raidstead.bosses.${what}.name`) });
+    case "shifted":
+      // n: the health mark (75 or 25, in %) the pest fell below
+      if (!pest || typeof n.n !== "number") return n.text;
+      return t("raidstead.news.shifted", { name: t(`raidstead.bosses.${what}.name`), n: n.n });
+    case "gnats":
+      if (typeof n.n !== "number") return n.text;
+      return t("raidstead.news.gnats", { n: n.n });
+    case "built":
+      // a building finished (stage 3), by `who`
+      if (!building) return n.text;
+      return n.who
+        ? t("raidstead.news.built_by", { name: t(`raidstead.town.buildings.${what}.name`), who: n.who })
+        : t("raidstead.news.built", { name: t(`raidstead.town.buildings.${what}.name`) });
     case "copied":
     case "healed":
       return t(`raidstead.news.${n.kind}`, { n: n.n ?? 0 });
@@ -126,7 +144,9 @@ export function noteText(n: Note, t: T): string {
       return t("raidstead.news.escaped", { name: t(`raidstead.bosses.${what}.name`) });
     case "killed":
       if (!pest) return n.text;
-      return t("raidstead.news.killed", { name: t(`raidstead.bosses.${what}.name`), who: n.who ?? "" });
+      return n.who
+        ? t("raidstead.news.killed", { name: t(`raidstead.bosses.${what}.name`), who: n.who })
+        : t("raidstead.news.killed_plain", { name: t(`raidstead.bosses.${what}.name`) });
     case "helped":
       if (!pest || !n.who) return n.text;
       return t("raidstead.news.helped", { name: t(`raidstead.bosses.${what}.name`), who: n.who });
@@ -262,19 +282,63 @@ export const tierOf = (karma: number) =>
 /// URL or @name in one is still linked by the renderer, as anywhere in a post.
 export const escapeMarkdown = (text: string) => text.replace(/[\\`*_{}[\]()#+!|<>~]/g, "\\$&");
 
-/// A raid report the player can edit and post in their community.
+/// This week's town news in the order it happened: by day, then as the server
+/// numbered the lines (lines without a number keep the order they came in).
+/// The season's last pest gets away the day after the last raid day (29): that
+/// line is week 4's. Earlier escapes are logged on the next pest's first day,
+/// and belong to that week.
+function weekNews(notes: Note[], week: number): Note[] {
+  const first = (week - 1) * 7 + 1;
+  const last = week >= 4 ? 29 : first + 6;
+  return notes
+    .filter((n) => n.day >= first && n.day <= last)
+    .sort(
+      (a, b) =>
+        a.day - b.day || (typeof a.seq === "number" && typeof b.seq === "number" ? a.seq - b.seq : 0)
+    );
+}
+
+/// A raid report the player can edit and post in their community: the week
+/// told as a story from the town news, the hero, the board and the town.
 export function buildReport(state: State, t: T): { title: string; body: string } | null {
   const a = state.alliance;
   if (!a) return null;
   const boss = t(`raidstead.bosses.${a.boss.kind}.name`);
-  const title = t("raidstead.report.post-title", { name: a.title, boss, week: a.week });
-  const lines = [
-    t(a.boss.alive ? "raidstead.report.intro-fighting" : a.boss.killed === false ? "raidstead.report.intro-escaped" : "raidstead.report.intro-won", {
-      name: escapeMarkdown(a.title),
-      boss
-    }),
-    ""
-  ];
+  const name = escapeMarkdown(a.title);
+  // a pest that is gone without being chased off got away; a server that does not say: chased off
+  const outcome = a.boss.alive ? "fighting" : a.boss.killed === false ? "escaped" : "won";
+  const title = t("raidstead.report.post-title", {
+    name: a.title,
+    boss,
+    week: a.week,
+    outcome: t(`raidstead.report.outcome.${outcome}`)
+  });
+  const news = weekNews(a.notes ?? [], a.week);
+  // the last hit, only for a pest that was chased off; told once, in its own line
+  const hero = outcome === "won" ? news.filter((n) => n.kind === "killed" && n.who).pop()?.who : undefined;
+  const lines = [t(`raidstead.report.intro-${outcome}`, { name, boss }), ""];
+
+  // day by day; a server that does not tell the arrival: the week's start, from its number
+  lines.push(`### ${t("raidstead.report.days")}`, "");
+  if (!news.some((n) => n.kind === "arrived")) {
+    lines.push(t("raidstead.report.week-start", { week: a.week, boss }), "");
+  }
+  const days = new Map<number, string[]>();
+  for (const n of news) {
+    // what the server wrote and the names in it stay text; the page's own words are Markdown-safe
+    const who = hero && n.kind === "killed" ? undefined : n.who && escapeMarkdown(n.who);
+    const text = noteText({ ...n, text: escapeMarkdown(n.text ?? ""), who }, t);
+    const day = days.get(n.day) ?? [];
+    // the same line twice in a day (a weakness that shifted back and forth) is told once
+    if (text && !day.includes(text)) day.push(text);
+    days.set(n.day, day);
+  }
+  days.forEach((texts, day) => {
+    if (texts.length) lines.push(`**${t("raidstead.news.day", { day })}** ${texts.join(" ")}`, "");
+  });
+
+  if (hero) lines.push(t("raidstead.report.hero", { who: escapeMarkdown(hero) }), "");
+
   if (a.raiders.length) {
     lines.push(t("raidstead.report.raiders"), "");
     a.raiders
@@ -292,12 +356,44 @@ export function buildReport(state: State, t: T): { title: string; body: string }
     const names = helpers.map((h) => `@${escapeMarkdown(h.account)}`).join(", ");
     lines.push(t("raidstead.report.helpers", { names }), "");
   }
+
+  // the town: what was finished this week, then where it stands
+  lines.push(`### ${t("raidstead.report.town-title")}`, "");
+  const built = [
+    ...new Set(
+      news
+        .filter((n) => n.kind === "built" && (BUILDING_IDS as readonly string[]).includes(n.what ?? ""))
+        .map((n) => t(`raidstead.town.buildings.${n.what}.name`))
+    )
+  ];
+  if (built.length) lines.push(t("raidstead.report.built", { list: built.join(", ") }), "");
   lines.push(
     t("raidstead.report.town", { hall: a.town.hall, mats: a.mats }),
     "",
-    t("raidstead.report.outro")
+    t("raidstead.report.outro", { name })
   );
   return { title, body: lines.join("\n") };
+}
+
+/// The Alliance of the Week in each league: the fastest kill, then the most
+/// raiders, then the community name. A league with no kill has none; rows a
+/// newer or broken server sends that this page cannot read are left out.
+export function alliancesOfWeek(kills: WeekKill[]): Partial<Record<League, WeekKill>> {
+  const best: Partial<Record<League, WeekKill>> = {};
+  for (const k of kills) {
+    if (!k || !LEAGUES.includes(k.league) || !Number.isFinite(k.killSecs) || typeof k.community !== "string") continue;
+    const b = best[k.league];
+    const raiders = (x: WeekKill) => (Number.isFinite(x.raiders) ? x.raiders : 0);
+    if (
+      !b ||
+      k.killSecs < b.killSecs ||
+      (k.killSecs === b.killSecs &&
+        (raiders(k) > raiders(b) || (raiders(k) === raiders(b) && k.community < b.community)))
+    ) {
+      best[k.league] = k;
+    }
+  }
+  return best;
 }
 
 /// The line a player shares with their alliance once they know today's weakness.
@@ -445,3 +541,4 @@ export function sortCommunities(list: Community[]): Community[] {
       title(a).localeCompare(title(b))
   );
 }
+

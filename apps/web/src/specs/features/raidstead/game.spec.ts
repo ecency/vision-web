@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AttackResult, Note, State } from "@ecency/raidstead";
+import type { AttackResult, League, Note, State } from "@ecency/raidstead";
 import {
   aimOf,
+  alliancesOfWeek,
   attackMessage,
   buildBlock,
   buildNudgeShown,
@@ -211,7 +212,7 @@ describe("raidstead game helpers", () => {
 
   it("drafts a report the player can post", () => {
     const r = buildReport(state(), t)!;
-    expect(r.title).toBe("post-title|name=Ink & Oak,boss=name,week=1");
+    expect(r.title).toBe("post-title|name=Ink & Oak,boss=name,week=1,outcome=fighting");
     expect(r.body).toContain("intro-fighting|name=Ink & Oak,boss=name");
     expect(r.body).toContain("line|i=1,name=ann,dmg=40");
     expect(r.body).toContain("town|hall=2,mats=80");
@@ -424,6 +425,8 @@ describe("town news", () => {
     ]);
     expect(noteText(notes[2], full)).toBe('raidstead.news.webbed {"name":"raidstead.town.buildings.tower.name"}');
     expect(noteText(notes[3], full)).toBe('raidstead.news.killed {"name":"raidstead.bosses.beetle.name","who":"bob"}');
+    // a kill without who (an older line) never shows an empty "@"
+    expect(noteText({ day: 5, kind: "killed", what: "beetle", text: "x" }, full)).toBe('raidstead.news.killed_plain {"name":"raidstead.bosses.beetle.name"}');
     expect(noteText({ day: 5, kind: "web_gone", what: "hall", text: "x" }, full)).toBe(
       'raidstead.news.web_gone {"name":"raidstead.town.buildings.hall.name"}'
     );
@@ -696,5 +699,130 @@ describe("weaknessLine", () => {
     );
     expect(line).not.toMatch(/[\u2013\u2014]/);
     expect(weaknessLine("beetle", "ink", realT)).toContain("the Spam Beetle is weak to Ink");
+  });
+});
+
+// The raid report tells the week as a story, from the town news and the board.
+describe("story report", () => {
+  const killed = { day: 5, seq: 9, kind: "killed", what: "beetle", who: "a", text: "The beetle was chased off." };
+
+  it("tells the week day by day in day order, with the hero of the week", () => {
+    const s = state({ alive: false, killed: true });
+    // the list as the server may send it: not in order, two lines on one day
+    s.alliance!.notes = [
+      killed,
+      { day: 3, seq: 5, kind: "shifted", what: "beetle", n: 75, text: "The beetle's weakness shifted." },
+      { day: 1, seq: 2, kind: "arrived", what: "beetle", text: "The beetle arrived." },
+      { day: 3, seq: 4, kind: "gnats", n: 6, text: "6 gnats" }
+    ];
+    const body = buildReport(s, realT)!.body;
+    const at = (x: string) => body.indexOf(x);
+    expect(at("**Day 1:**")).toBeGreaterThan(-1);
+    expect(at("**Day 1:**")).toBeLessThan(at("**Day 3:**"));
+    expect(at("**Day 3:**")).toBeLessThan(at("**Day 5:**"));
+    expect(body).toContain("The Spam Beetle arrived.");
+    // within a day, in the order the lines were written
+    expect(at("6 gnats")).toBeLessThan(at("below 75% health"));
+    expect(body).toContain("Hero of the week: @a");
+    // the last hit is told once, in the hero line
+    expect(body).toContain("**Day 5:** The Spam Beetle was chased off.\n");
+    expect(body.match(/@a\b/g)).toHaveLength(1);
+    // the board still follows
+    expect(body).toContain("1. @ann: 40 damage");
+  });
+
+  it("says a pest that got away in the title and names no hero", () => {
+    const s = state({ alive: false, killed: false });
+    s.alliance!.notes = [{ day: 7, seq: 3, kind: "escaped", what: "beetle", text: "The beetle escaped." }];
+    const r = buildReport(s, realT)!;
+    expect(r.title).toBe("Ink & Oak vs the Spam Beetle: week 1, got away");
+    expect(r.body).not.toContain("Hero of the week");
+    // a stray last-hit line does not make one either
+    s.alliance!.notes.push({ ...killed, day: 6 });
+    expect(buildReport(s, realT)!.body).not.toContain("Hero of the week");
+  });
+
+  it("names a building finished this week in the town section, not one from an earlier week", () => {
+    const s = state();
+    s.calendar.day = 10;
+    s.alliance!.week = 2;
+    s.alliance!.notes = [
+      { day: 3, seq: 1, kind: "built", what: "tower", who: "bob", text: "The tower was finished." },
+      { day: 9, seq: 6, kind: "built", what: "beacon", who: "ann", text: "The beacon was finished." }
+    ];
+    const body = buildReport(s, realT)!.body;
+    const town = body.slice(body.indexOf("### Our town"));
+    expect(body.indexOf("### Our town")).toBeGreaterThan(-1);
+    expect(town).toContain("Beacon");
+    expect(town).not.toContain("Watchtower");
+  });
+
+  it("tells the season's last pest getting away, logged the day after the last raid day", () => {
+    const s = state({ kind: "queen", alive: false, killed: false });
+    s.calendar.day = 28;
+    s.alliance!.week = 4;
+    s.alliance!.notes = [
+      { day: 22, seq: 1, kind: "arrived", what: "queen", text: "The queen arrived." },
+      { day: 29, seq: 2, kind: "escaped", what: "queen", text: "The queen escaped." }
+    ];
+    expect(buildReport(s, realT)!.body).toContain("**Day 29:** The Copycat Queen escaped.");
+    // mid-season, the escape on the next pest's first day is not this week's
+    const w1 = state({ alive: false, killed: false });
+    w1.alliance!.notes = [{ day: 8, seq: 2, kind: "escaped", what: "beetle", text: "The beetle escaped." }];
+    expect(buildReport(w1, realT)!.body).not.toContain("escaped");
+  });
+
+  it("reads well from a server without the new news: the week's start, no hero line", () => {
+    const s = state();
+    s.alliance!.notes = [{ day: 2, kind: "copied", n: 30, text: "copied" }, { day: 2, kind: "moth_dance", text: "A moth danced." }];
+    const r = buildReport(s, realT)!;
+    expect(r.title).toBe("Ink & Oak vs the Spam Beetle: week 1, still fighting");
+    expect(r.body).toContain("Week 1 began with the Spam Beetle in town.");
+    // a kind this page has no words for: the server's own line
+    expect(r.body).toContain("A moth danced.");
+    expect(r.body).not.toContain("Hero of the week");
+    expect(r.body).not.toMatch(/[\u2013\u2014]/);
+    expect(r.body).toContain("https://ecency.com/raidstead");
+  });
+});
+
+describe("alliance of the week", () => {
+  const kill = (community: string, league: string, hours: number, raiders = 5) => ({
+    community,
+    title: community.toUpperCase(),
+    league: league as League,
+    killSecs: hours * 3600,
+    raiders,
+    members: 10
+  });
+
+  it("picks the fastest kill in each league", () => {
+    const w = alliancesOfWeek([
+      kill("hive-a", "medium", 30),
+      kill("hive-b", "medium", 20),
+      kill("hive-c", "medium", 50),
+      kill("hive-s", "small", 40)
+    ]);
+    expect(w.medium?.community).toBe("hive-b");
+    expect(w.small?.community).toBe("hive-s");
+  });
+
+  it("has no winner for a league with no kill that week", () => {
+    const w = alliancesOfWeek([kill("hive-a", "medium", 30)]);
+    expect(w.large).toBeUndefined();
+    expect(w.small).toBeUndefined();
+    expect(alliancesOfWeek([])).toEqual({});
+  });
+
+  it("breaks a tie on turnout, then on the community name; skips rows it cannot read", () => {
+    const w = alliancesOfWeek([
+      kill("hive-b", "large", 20, 9),
+      kill("hive-a", "large", 20, 9),
+      kill("hive-c", "large", 20, 4),
+      { ...kill("hive-0", "large", 1), killSecs: null as unknown as number },
+      kill("hive-x", "huge", 1)
+    ]);
+    expect(w.large?.community).toBe("hive-a");
+    expect(Object.keys(w)).toEqual(["large"]);
   });
 });

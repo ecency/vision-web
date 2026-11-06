@@ -236,6 +236,18 @@
     gap: 8px;
   }
 
+  // last week's Alliance of the Week, the plate's last line: one line on a phone
+  .rs-aotw {
+    margin: 0;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--rs-violet);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   // before the first season: a clock over the live scene
   .rs-countdown {
     text-align: center;
@@ -935,6 +947,14 @@
 }
 
 // The raiders list, in the docked board and in the menu sheet.
+// the shown league's Alliance of the Week, under the tabs
+.raidstead-sheet .rs-aotw {
+  margin: 0 0 10px;
+  font-weight: 600;
+  color: var(--rs-violet);
+  overflow-wrap: anywhere;
+}
+
 .raidstead-sheet .rs-league-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
