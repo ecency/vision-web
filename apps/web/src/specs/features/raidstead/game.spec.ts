@@ -606,6 +606,26 @@ describe("build nudge", () => {
     expect(() => dismissBuildNudge(town(60))).not.toThrow();
     expect(buildNudgeShown(town(60))).toBe(true);
   });
+
+  it("trusts the page's newer mark over an older one storage failed to replace", () => {
+    const mem: Record<string, number> = {};
+    dismissBuildNudge(town(40), mem);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("full");
+    });
+    // the materials grew, the card came back, and the player dismissed it again
+    dismissBuildNudge(town(60), mem);
+    expect(buildNudgeShown(town(60), mem)).toBe(false);
+    expect(lowerBuildNudge(town(60), mem)).toBe(false);
+    expect(buildNudgeShown(town(70), mem)).toBe(true);
+  });
+
+  it("follows a dismissal another tab saved after this page's own", () => {
+    const here: Record<string, number> = {};
+    dismissBuildNudge(town(40), here);
+    dismissBuildNudge(town(60), {});
+    expect(buildNudgeShown(town(60), here)).toBe(false);
+  });
 });
 
 describe("sortCommunities", () => {

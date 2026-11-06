@@ -372,14 +372,17 @@ function lowerNudge(scope: string, mats: number, mem: Record<string, number>) {
     Object.entries(stored).filter(([k, v]) => k.startsWith(`${season}:`) && typeof v === "number")
   );
   ls.set(NUDGE_KEY, { ...kept, [scope]: mats });
+  // saved: storage is shared with other tabs, so it speaks from now on
+  if (((ls.get(NUDGE_KEY) ?? {}) as Record<string, unknown>)[scope] === mats) delete mem[scope];
 }
 
 /// The mark a dismissed card is waiting to see the materials grow past, if any.
 function nudgeMark(state: State, mem: Record<string, number>): number | undefined {
   const scope = nudgeScope(state);
-  // storage that throws or is empty falls back on the page's own copy
+  // the page keeps its own copy only when storage failed to take it
+  if (typeof mem[scope] === "number") return mem[scope];
   const stored = ((ls.get(NUDGE_KEY) ?? {}) as Record<string, unknown>)[scope];
-  return typeof stored === "number" ? stored : mem[scope];
+  return typeof stored === "number" ? stored : undefined;
 }
 
 /// The raid screen's card telling the player their town can build something now.
