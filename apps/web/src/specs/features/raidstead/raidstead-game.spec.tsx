@@ -383,6 +383,48 @@ describe("Raidstead page", () => {
     }
   });
 
+  it.each([
+    ["User cancelled", "User cancelled"],
+    ["<b>no</b> posting key", "<b>no</b> posting key"]
+  ])("says the wallet's own reason when it refuses: %s", async (message, text) => {
+    box.stored = null;
+    asUser(null);
+    walletInBrowser(true);
+    vi.mocked(signIn).mockRejectedValueOnce(Object.assign(new Error(message), { walletMessage: message }));
+    // the stand-in shows keys only; this line needs its words to check the reason is text
+    const real = vi.mocked(i18next.t).getMockImplementation();
+    vi.mocked(i18next.t).mockImplementation(((key: string, values?: { reason?: string }) =>
+      key === "raidstead.signin.refused" ? `Signing in did not work: ${values?.reason}` : key) as never);
+    try {
+      render(<RaidsteadGame />);
+      fireEvent.change(await screen.findByLabelText("raidstead.signin.username"), { target: { value: "alice" } });
+      fireEvent.click(screen.getByRole("button", { name: "raidstead.signin.with-wallet" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toBe(`Signing in did not work: ${text}`);
+      expect(alert.querySelector("b")).toBeNull();
+    } finally {
+      if (real) vi.mocked(i18next.t).mockImplementation(real);
+      walletInBrowser(false);
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it("keeps the general line when the wallet gives no reason", async () => {
+    box.stored = null;
+    asUser(null);
+    walletInBrowser(true);
+    vi.mocked(signIn).mockRejectedValueOnce(Object.assign(new Error("not signed"), { walletMessage: undefined }));
+    try {
+      render(<RaidsteadGame />);
+      fireEvent.change(await screen.findByLabelText("raidstead.signin.username"), { target: { value: "alice" } });
+      fireEvent.click(screen.getByRole("button", { name: "raidstead.signin.with-wallet" }));
+      expect((await screen.findByRole("alert")).textContent).toBe("raidstead.signin.failed");
+    } finally {
+      walletInBrowser(false);
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
   it("does not sign in by itself with a wallet: the player taps first", async () => {
     box.stored = null;
     asUser("ann");

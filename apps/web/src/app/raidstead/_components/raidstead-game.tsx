@@ -132,6 +132,8 @@ export function RaidsteadGame() {
   // The last try to sign in did not work: said on the sign-in sheet.
   // "expired": ecency.com no longer takes this login, so trying again is no use.
   const [signFailed, setSignFailed] = useState<"failed" | "expired" | null>(null);
+  // what the wallet said when it refused to sign, shown with the failure
+  const [walletReason, setWalletReason] = useState<string | null>(null);
   const whyFailed = (e: unknown) => {
     const { status, code, vouching } = (e ?? {}) as {
       status?: number;
@@ -404,6 +406,7 @@ export function RaidsteadGame() {
     let cancelled = false;
     // what an earlier try said was said for another user or another visit
     setSignFailed(null);
+    setWalletReason(null);
     (async () => {
       let session = loadSession();
       // logging out of Ecency (here or on any other page) ends the game
@@ -440,6 +443,7 @@ export function RaidsteadGame() {
             saveSession(signed);
           } catch (e) {
             if (!cancelled) {
+              setWalletReason(null);
               setSignFailed(whyFailed(e));
               setPhase("signin");
             }
@@ -527,12 +531,15 @@ export function RaidsteadGame() {
         if (asUser && session.account !== asUser) return;
         saveSession(session);
         setSignFailed(null);
+        setWalletReason(null);
         const s = await refresh();
         if (s) setPhase("ready");
         // signed in, but the game could not be loaded: say so, with a way to try again
         else if (!unauthorized.current) setPhase("failed");
       } catch (e) {
         // the toast is not drawn behind the sign-in sheet: the sheet says it
+        const reason = (e as { walletMessage?: unknown } | null)?.walletMessage;
+        setWalletReason(typeof reason === "string" && reason ? reason : null);
         setSignFailed(whyFailed(e) ?? "failed");
         say(t("signin.failed"));
       } finally {
@@ -1031,6 +1038,7 @@ export function RaidsteadGame() {
             (signerFor(username) === "ecency" && !(signFailed && hasAnyHiveExtension())))
         }
         failed={signFailed}
+        walletReason={walletReason}
         hasWallet={hasAnyHiveExtension()}
         signing={signing}
         onSign={onSign}

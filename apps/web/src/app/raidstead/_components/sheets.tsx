@@ -108,6 +108,8 @@ export function SignInSheet(props: {
   silent?: boolean;
   /// the last try did not work; "expired": Ecency no longer takes this login
   failed?: "failed" | "expired" | null;
+  /// the wallet's own words when it refused to sign; shown as text
+  walletReason?: string | null;
   hasWallet: boolean;
   signing: boolean;
   onSign: (account: string) => void;
@@ -121,7 +123,13 @@ export function SignInSheet(props: {
       <h1>{t("title")}</h1>
       <p>{t("intro")}</p>
       {props.failed && (
-        <p role="alert">{t(props.failed === "expired" ? "signin.expired" : "signin.failed")}</p>
+        <p role="alert">
+          {props.failed === "expired"
+            ? t("signin.expired")
+            : props.walletReason
+              ? t("signin.refused", { reason: props.walletReason })
+              : t("signin.failed")}
+        </p>
       )}
       {props.username && props.canSign ? (
         <>
