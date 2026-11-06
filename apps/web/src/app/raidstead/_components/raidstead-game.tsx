@@ -1128,7 +1128,10 @@ export function RaidsteadGame() {
 
   // last finished week's Alliance of the Week per league, this season's only;
   // nothing at all when the server cannot say
-  const weekWinners = useWeekWinners();
+  const today = data?.calendar;
+  // the week that has finished: the one before this, or the last on the quiet days
+  const finished = today ? `${today.season}:${today.resting ? 4 : Math.max(0, today.week - 1)}` : undefined;
+  const weekWinners = useWeekWinners(finished);
   const winners = weekWinners && weekWinners.season === data?.calendar.season ? weekWinners : null;
   // on the raid screen: the player's own league, or the first league with one
   const aotwLeague = winners
@@ -1139,17 +1142,19 @@ export function RaidsteadGame() {
   // the share card is drawn and uploaded on the way to the composer; one at a time
   const [drafting, setDrafting] = useState(false);
   // which tap the card is on its way for; closing the sheet moves it on and stops the upload
-  const reportTap = useRef<{ n: number; abort: AbortController | null }>({ n: 0, abort: null });
+  const reportTap = useRef<{ n: number; abort: AbortController | null; user?: string | null }>({ n: 0, abort: null });
   const cancelReport = () => {
     reportTap.current.abort?.abort();
     reportTap.current = { n: reportTap.current.n + 1, abort: null };
     setDrafting(false);
   };
   // the report can also go without its close button (a logout, another tab's
-  // session, the page leaving): the card on its way for it stops too
+  // session, a refused ask, an account switch, the page leaving): the card on
+  // its way for it stops too
   useEffect(() => {
-    if (sheet?.kind !== "report" && reportTap.current.abort) cancelReport();
-  }, [sheet]);
+    const gone = sheet?.kind !== "report" || !data || phase !== "ready" || reportTap.current.user !== username;
+    if (gone && reportTap.current.abort) cancelReport();
+  }, [sheet, data, phase, username]);
   useEffect(() => () => reportTap.current.abort?.abort(), []);
   const openReport = async () => {
     if (!data || !alliance || drafting) return;
@@ -1158,7 +1163,7 @@ export function RaidsteadGame() {
     const community = alliance.community;
     const abort = new AbortController();
     const tap = reportTap.current.n + 1;
-    reportTap.current = { n: tap, abort };
+    reportTap.current = { n: tap, abort, user: username };
     setDrafting(true);
     let image: string | null = null;
     // uploaded as the Ecency user who will post it; without one the draft goes without the card

@@ -3414,6 +3414,43 @@ describe("Raidstead page", () => {
       expect(nav.push).not.toHaveBeenCalled();
     });
 
+    it("does not open the composer when a background ask ends the game session during the upload", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        asUser("ann");
+        let land: (url: string | null) => void = () => undefined;
+        nav.card.mockImplementation(() => new Promise<string | null>((r) => (land = r)));
+        render(<RaidsteadGame />);
+        await openDraft();
+        const signal = (nav.card.mock.calls[0] as unknown[])[2] as AbortSignal | undefined;
+        api.state.mockRejectedValue({ status: 401, code: "unauthorized", message: "x" });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(20_500);
+        });
+        expect(clearSession).toHaveBeenCalled();
+        expect(signal?.aborted).toBe(true);
+        await act(async () => land("https://images.ecency.com/DQm/card.png"));
+        expect(nav.push).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not open the composer for an account the player switched away from", async () => {
+      asUser("ann");
+      let land: (url: string | null) => void = () => undefined;
+      nav.card.mockImplementation(() => new Promise<string | null>((r) => (land = r)));
+      const view = render(<RaidsteadGame />);
+      await openDraft();
+      const signal = (nav.card.mock.calls[0] as unknown[])[2] as AbortSignal | undefined;
+      asUser("bob");
+      view.rerender(<RaidsteadGame />);
+      await act(async () => undefined);
+      expect(signal?.aborted).toBe(true);
+      await act(async () => land("https://images.ecency.com/DQm/card.png"));
+      expect(nav.push).not.toHaveBeenCalled();
+    });
+
     it("still opens the draft, without the card, when the upload fails", async () => {
       asUser("ann");
       nav.card.mockRejectedValue(new Error("upload failed"));
@@ -3432,6 +3469,15 @@ describe("Raidstead page", () => {
         medium: { community: "hive-m1", title: "HIVE-M1", league: "medium", killSecs: 72_000, raiders: 9, members: 40 },
         small: { community: "hive-123456", title: "Ink & Oak", league: "small", killSecs: 90_000, raiders: 4, members: 8 }
       }
+    });
+
+    it("asks for the week that has finished by the page's calendar", async () => {
+      const s = state();
+      Object.assign(s.calendar, { week: 2, day: 9 });
+      api.state.mockResolvedValue(s);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await waitFor(() => expect(nav.week).toHaveBeenLastCalledWith("1:1"));
     });
 
     it("names the player's league's alliance of the week on the raid screen", async () => {
