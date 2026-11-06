@@ -871,6 +871,15 @@ function sanitizeHtml(html, options) {
   return preserveImageDimensions ? enforceImageDimensionPair(withoutBareSource) : withoutBareSource;
 }
 
+// src/methods/internal-thumbnail.ts
+var internalThumbnails = /* @__PURE__ */ new WeakSet();
+function markInternalThumbnail(el) {
+  internalThumbnails.add(el);
+}
+function isInternalThumbnail(el) {
+  return internalThumbnails.has(el);
+}
+
 // src/methods/img.method.ts
 var IMAGE_SIZES = "(max-width: 768px) 100vw, 700px";
 function wrapInPicture(el, rawUrl) {
@@ -945,31 +954,39 @@ function img(el, state, forApp = true, renderOptions) {
   if (isAvatar || imageIndex !== 0) {
     el.removeAttribute("fetchpriority");
   }
-  const cls = el.getAttribute("class") || "";
-  const shouldReplace = !cls.includes("no-replace");
+  const shouldReplace = !isInternalThumbnail(el);
   const base = trimTrailingSlash(getProxyBase());
   const hasAlreadyProxied = src.startsWith(`${base}/p/`) || src.startsWith(`${base}/u/`) || new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/\\d+x\\d+/`).test(src);
   if (shouldReplace && !hasAlreadyProxied) {
     const proxified = proxifyImageSrc(decodedSrc, 0, 0, "match", { forceProxy: true });
     if (proxified) {
       el.setAttribute("src", proxified);
-      const srcset = buildSrcSet(decodedSrc);
-      if (srcset) {
-        el.setAttribute("srcset", srcset);
+      const srcset2 = buildSrcSet(decodedSrc);
+      if (srcset2) {
+        el.setAttribute("srcset", srcset2);
         el.setAttribute("sizes", IMAGE_SIZES);
       }
       if (!forApp) {
         wrapInPicture(el, decodedSrc);
       }
+    } else if (/^https?:\/\//i.test(decodedSrc)) {
+      el.removeAttribute("src");
+      el.removeAttribute("srcset");
+      el.removeAttribute("sizes");
     }
   } else if (shouldReplace && hasAlreadyProxied) {
     if (src.startsWith(`${base}/p/`)) {
-      const srcset = buildSrcSet(src);
-      if (srcset) {
-        el.setAttribute("srcset", srcset);
+      const srcset2 = buildSrcSet(src);
+      if (srcset2) {
+        el.setAttribute("srcset", srcset2);
         el.setAttribute("sizes", IMAGE_SIZES);
       }
     }
+  }
+  const srcset = shouldReplace ? el.getAttribute("srcset") : null;
+  if (srcset && srcset.split(",").some((c) => !c.trim().startsWith(`${base}/`))) {
+    el.removeAttribute("srcset");
+    el.removeAttribute("sizes");
   }
 }
 function createImageHTML(src, isLCP, forApp = true) {
@@ -1423,6 +1440,7 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
     } else {
       const thumbImg = el.ownerDocument.createElement("img");
       thumbImg.setAttribute("class", "no-replace video-thumbnail");
+      markInternalThumbnail(thumbImg);
       thumbImg.setAttribute("itemprop", "thumbnailUrl");
       thumbImg.setAttribute("src", thumbnail);
       const play = el.ownerDocument.createElement("span");
@@ -1512,6 +1530,7 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
           const thumbnail = proxifyImageSrc(src.replace(/\s+/g, ""), 0, 0, "match");
           const thumbImg = el.ownerDocument.createElement("img");
           thumbImg.setAttribute("class", "no-replace video-thumbnail");
+          markInternalThumbnail(thumbImg);
           thumbImg.setAttribute("itemprop", "thumbnailUrl");
           thumbImg.setAttribute("src", thumbnail);
           el.appendChild(thumbImg);
@@ -1572,6 +1591,7 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
               const thumbnail = proxifyImageSrc(src.replace(/\s+/g, ""), 0, 0, "match");
               const thumbImg = el.ownerDocument.createElement("img");
               thumbImg.setAttribute("class", "no-replace video-thumbnail");
+              markInternalThumbnail(thumbImg);
               thumbImg.setAttribute("itemprop", "thumbnailUrl");
               thumbImg.setAttribute("src", thumbnail);
               el.appendChild(thumbImg);
@@ -2036,6 +2056,7 @@ function text(node, forApp, renderOptions) {
       }
       const thumbImg = node.ownerDocument.createElement("img");
       thumbImg.setAttribute("class", "no-replace video-thumbnail");
+      markInternalThumbnail(thumbImg);
       thumbImg.setAttribute("src", thumbnail);
       anchor.appendChild(thumbImg);
       const play = node.ownerDocument.createElement("span");
@@ -2113,7 +2134,7 @@ function cleanReply(s) {
   return (pre ? pre.split("\n").filter((item) => item.toLowerCase().includes("posted using [partiko") === false).filter((item) => item.toLowerCase().includes("posted using [dapplr") === false).filter((item) => item.toLowerCase().includes("posted using [leofinance") === false).filter((item) => item.toLowerCase().includes("posted via [neoxian") === false).filter((item) => item.toLowerCase().includes("posted using [neoxian") === false).filter((item) => item.toLowerCase().includes("posted via [first context") === false).filter((item) => item.toLowerCase().includes("posted with [stemgeeks") === false).filter((item) => item.toLowerCase().includes("posted using [bilpcoin") === false).filter((item) => item.toLowerCase().includes("posted using [inleo") === false).filter((item) => item.toLowerCase().includes("posted using [sportstalksocial]") === false).filter((item) => item.toLowerCase().includes("<center><sub>[posted using aeneas.blog") === false).filter((item) => item.toLowerCase().includes("<center><sub>posted via [proofofbrain.io") === false).filter((item) => item.toLowerCase().includes("<center>posted on [hypnochain") === false).filter((item) => item.toLowerCase().includes("<center><sub>posted via [weedcash.network") === false).filter((item) => item.toLowerCase().includes("<center>posted on [naturalmedicine.io") === false).filter((item) => item.toLowerCase().includes("<center><sub>posted via [musicforlife.io") === false).filter((item) => item.toLowerCase().includes("if the truvvl embed is unsupported by your current frontend, click this link to view this story") === false).filter((item) => item.toLowerCase().includes("<center><em>posted from truvvl") === false).filter((item) => item.toLowerCase().includes('view this post <a href="https://travelfeed.io/') === false).filter((item) => item.toLowerCase().includes("read this post on travelfeed.io for the best experience") === false).filter((item) => item.toLowerCase().includes('posted via <a href="https://www.dporn.co/"') === false).filter((item) => item.toLowerCase().includes("\u25B6\uFE0F [watch on 3speak](https://3speak") === false).filter((item) => item.toLowerCase().includes("<sup><sub>posted via [inji.com]") === false).filter((item) => item.toLowerCase().includes("view this post on [liketu]") === false).filter((item) => {
     const l = item.toLowerCase();
     return !(l.includes("posted from liketu speak") && l.includes("auto-transcrib"));
-  }).filter((item) => item.toLowerCase().includes("originally posted through [scrobble.life") === false).filter((item) => item.toLowerCase().includes("*posted via lumen") === false).filter((item) => item.toLowerCase().includes("<sub>posted via [hivesuite](") === false).filter((item) => !/^[ \t]*▶\uFE0F?[ \t]*\[watch on 3speak\.tv\]\(https:\/\/3speak\.tv\/watch[^)\s]*\)\s*$/i.test(item)).filter((item) => item.toLowerCase().includes('view this post <a href="https://travelfeed.com/') === false).filter((item) => {
+  }).filter((item) => item.toLowerCase().includes("originally posted through [scrobble.life") === false).filter((item) => item.toLowerCase().includes("*posted via lumen") === false).filter((item) => item.toLowerCase().includes("<sub>posted via [hivesuite](") === false).filter((item) => !/^\s*<sub>\[via hivesuite\]\(https:\/\/hivesuite\.app\/[^)\s]*\)<\/sub>\s*$/i.test(item)).filter((item) => !/^[ \t]*▶\uFE0F?[ \t]*\[watch on 3speak\.tv\]\(https:\/\/3speak\.tv\/watch[^)\s]*\)\s*$/i.test(item)).filter((item) => item.toLowerCase().includes('view this post <a href="https://travelfeed.com/') === false).filter((item) => {
     const l = item.toLowerCase();
     return !(l.includes("_posted from liketu clips") && l.includes("short video, trimmed"));
   }).filter((item) => item.toLowerCase().includes("[via Inbox]") === false).filter((item) => item.toLowerCase().includes("<sub>[via apps from](") === false).join("\n") : "").replace('Posted via <a href="https://d.buzz" data-link="promote-link">D.Buzz</a>', "").replace('<div class="pull-right"><a href="/@hive.engage">![](https://i.imgur.com/XsrNmcl.png)</a></div>', "").replace('<div><a href="https://engage.hivechain.app">![](https://i.imgur.com/XsrNmcl.png)</a></div>', "").replace(`<div class="text-center"><img src="https://cdn.steemitimages.com/DQmNp6YwAm2qwquALZw8PdcovDorwaBSFuxQ38TrYziGT6b/A-20.png"><a href="https://bit.ly/actifit-app"><img src="https://cdn.steemitimages.com/DQmQqfpSmcQtfrHAtzfBtVccXwUL9vKNgZJ2j93m8WNjizw/l5.png"></a><a href="https://bit.ly/actifit-ios"><img src="https://cdn.steemitimages.com/DQmbWy8KzKT1UvCvznUTaFPw6wBUcyLtBT5XL9wdbB7Hfmn/l6.png"></a></div>`, "");
