@@ -2877,6 +2877,104 @@ describe("Raidstead page", () => {
       expect(within(sheet).getByText("raidstead.help.errors.own_boss_alive")).toBeTruthy();
     });
 
+    // an answer to come later, settled by the test
+    const later = <T,>() => {
+      let settle!: (v: T) => void;
+      const promise = new Promise<T>((r) => (settle = r));
+      return { promise, settle };
+    };
+
+    it("keeps the newer list when two asks answer out of order, and never brings back a refused town", async () => {
+      api.state.mockResolvedValue(gone());
+      render(<RaidsteadGame />);
+      const button = await helpButton();
+      const older = later<{ targets: (typeof target)[] }>();
+      const newer = later<{ targets: (typeof target)[] }>();
+      api.help.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+      await act(async () => {
+        fireEvent.click(button); // asks again for the open card: the older ask
+      });
+      const sheet = screen.getByRole("dialog");
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: /Far Field/ }));
+      });
+      api.helpAttack.mockRejectedValueOnce(
+        Object.assign(new Error("full"), { status: 409, code: "help_full", message: "full" })
+      );
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.actions.attack-ink" }));
+      });
+      // the refusal asked again: the newer ask answers first, then the older one
+      await act(async () => {
+        newer.settle({ targets: [] });
+      });
+      await act(async () => {
+        older.settle({ targets: [target] });
+      });
+      expect(within(sheet).queryByRole("button", { name: /Far Field/ })).toBeNull();
+      expect(within(sheet).getByText("raidstead.help.none")).toBeTruthy();
+    });
+
+    it("ignores a list asked for another day", async () => {
+      const day3 = later<{ targets: (typeof target)[] }>();
+      api.help.mockReturnValueOnce(day3.promise).mockResolvedValue({ targets: [] });
+      api.state.mockResolvedValue(gone());
+      api.quests.mockResolvedValue({ claimed: [], quests: [], energy: 5 });
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      // a new day comes in with the next state (here, after claiming quests)
+      const day4 = gone();
+      day4.calendar.day = 4;
+      api.state.mockResolvedValue(day4);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.quests/ }));
+      });
+      await act(async () => {
+        fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /raidstead.quests.claim/ }));
+      });
+      await waitFor(() => expect(api.help).toHaveBeenCalledTimes(2));
+      await act(async () => {
+        day3.settle({ targets: [target] });
+      });
+      expect(screen.queryByRole("button", { name: /raidstead.help.button/ })).toBeNull();
+    });
+
+    it("tells on the page that the player's own pest is back, after the card closes", async () => {
+      api.state.mockResolvedValue(gone());
+      api.helpAttack.mockRejectedValue(
+        Object.assign(new Error("alive"), { status: 409, code: "own_boss_alive", message: "alive" })
+      );
+      render(<RaidsteadGame />);
+      const sheet = await openTarget();
+      api.state.mockResolvedValue(state()); // the next pest is in town
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.actions.attack-ink" }));
+      });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(document.querySelector(".rs-toast")!.textContent).toContain("raidstead.help.errors.own_boss_alive");
+    });
+
+    it("does not show one town's refusal under the next town", async () => {
+      const other = { ...target, community: "hive-888", title: "Near Field" };
+      api.help.mockResolvedValue({ targets: [target, other] });
+      api.state.mockResolvedValue(gone());
+      api.helpAttack.mockRejectedValue(
+        Object.assign(new Error("full"), { status: 409, code: "help_full", message: "full" })
+      );
+      render(<RaidsteadGame />);
+      const sheet = await openTarget();
+      api.help.mockResolvedValue({ targets: [other] }); // the full town has left the list
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.actions.attack-ink" }));
+      });
+      // back on the list, which says why the town left
+      expect(within(sheet).getByText("raidstead.help.errors.help_full")).toBeTruthy();
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: /Near Field/ }));
+      });
+      expect(within(sheet).queryByText("raidstead.help.errors.help_full")).toBeNull();
+    });
+
     it("asks for the state again after a refused help attack", async () => {
       api.state.mockResolvedValue(gone());
       api.helpAttack.mockRejectedValue(
@@ -2918,7 +3016,9 @@ describe("Raidstead page", () => {
   describe("tell my alliance", () => {
     // the locale's own English, so the line reads as it will be sent
     const realT = (key: string, values: Record<string, unknown> = {}) => {
-      const text = key.split(".").reduce<any>((o, k) => o?.[k], enUS);
+      const text = key
+        .split(".")
+        .reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), enUS);
       return typeof text === "string"
         ? text.replace(/\{\{(\w+)\}\}/g, (_, k) => String(values[k] ?? ""))
         : key;
@@ -3086,6 +3186,30 @@ describe("Raidstead page", () => {
         "fetch /api/mattermost/channels/ch1/posts"
       ]);
       expect(screen.getByText("raidstead.share.sent")).toBeTruthy();
+    });
+
+    it("does not post once the Ecency user has switched while the channels were asked for", async () => {
+      api.state.mockResolvedValue(scouted());
+      let channels!: (r: Response) => void;
+      fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((async (url: string) => {
+        steps.push(`fetch ${url}`);
+        if (url === "/api/mattermost/me") return new Response(JSON.stringify({ username: "ann" }));
+        if (url === "/api/mattermost/channels") return new Promise<Response>((r) => (channels = r));
+        return new Response(JSON.stringify({ post: { id: "p1" } }));
+      }) as never);
+      fakeClipboard();
+      const view = render(<RaidsteadGame />);
+      const button = await shareButton();
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      await waitFor(() => expect(steps).toContain("fetch /api/mattermost/channels"));
+      asUser("bob");
+      view.rerender(<RaidsteadGame />);
+      await act(async () => {
+        channels(new Response(JSON.stringify({ channels: [{ id: "ch1", name: "hive-123456", display_name: "Ink & Oak", type: "O" }] })));
+      });
+      expect(steps.some((x) => x.endsWith("/posts"))).toBe(false);
     });
 
     it("sends once for two quick taps", async () => {

@@ -1008,15 +1008,25 @@ export function RaidsteadGame() {
   const canHelp =
     phase === "ready" && !!alliance && !!boss && !boss.alive && !data?.calendar.resting;
   const helpKey = canHelp ? `${data!.calendar.season}:${data!.calendar.day}:${alliance!.community}` : "";
+  // Only the latest ask for the list counts, and only for the day and alliance it
+  // was asked for: answers can overtake each other, and a refusal that drops a
+  // town makes every earlier ask stale.
+  const helpSeq = useRef(0);
+  const helpKeyRef = useRef(helpKey);
+  helpKeyRef.current = helpKey;
   // `again`: asked anew for an open card, which keeps what it has when the ask fails
   const loadHelp = useCallback(async (again = false) => {
+    const seq = ++helpSeq.current;
+    const key = helpKeyRef.current;
+    const current = () => mounted.current && seq === helpSeq.current && key === helpKeyRef.current;
     try {
       const r = await raidsteadApi.help();
-      if (mounted.current && Array.isArray(r?.targets)) setHelpTargets(r.targets);
-      else if (mounted.current && !again) setHelpTargets(null);
+      if (!current()) return;
+      if (Array.isArray(r?.targets)) setHelpTargets(r.targets);
+      else if (!again) setHelpTargets(null);
     } catch {
       // an older server, or none to ask: no help offered, nothing said
-      if (mounted.current && !again) setHelpTargets(null);
+      if (current() && !again) setHelpTargets(null);
     }
   }, []);
   useEffect(() => {
@@ -1056,9 +1066,13 @@ export function RaidsteadGame() {
       // leaves the list, which is asked for again
       const code = (e as { code?: string })?.code;
       if (code === "help_full" || code === "not_fighting" || code === "not_found") {
+        helpSeq.current++;
         setHelpTargets((list) => list?.filter((x) => x.community !== target.community) ?? list);
         loadHelp(true);
       }
+      // the player's own pest is back: the card closes with the refresh, so the
+      // page says it
+      if (code === "own_boss_alive") say(helpErrorMessage(e, i18next.t));
       return helpErrorMessage(e, i18next.t);
     } finally {
       setBusy(false);
@@ -1078,7 +1092,11 @@ export function RaidsteadGame() {
       const copied = copyLine(line);
       // the chat session belongs to the Ecency user: only when that is who plays
       if (username && username === data?.account.name) {
-        if (await postToAllianceChat(alliance.community, line, username)) return say(t("share.sent"));
+        // still the same Ecency user and game session when it comes to posting
+        const token = loadSession()?.token;
+        const stillOk = () => userRef.current === username && loadSession()?.token === token;
+        if (await postToAllianceChat(alliance.community, line, username, stillOk))
+          return say(t("share.sent"));
       }
       if (await copied) return say(t("share.copied"));
       // nothing copied either: the line itself, kept up longer to copy by hand

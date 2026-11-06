@@ -558,7 +558,14 @@ export function HelpSheet({
         <ul className="rs-list">
           {targets.map((x) => (
             <li key={x.community}>
-              <button className="rs-opt" onClick={() => setPicked(x.community)}>
+              <button
+                className="rs-opt"
+                onClick={() => {
+                  // a line about the last town is not about this one
+                  setPicked(x.community);
+                  setLine("");
+                }}
+              >
                 <i className="rs-banner" aria-hidden="true" />
                 <span className="rs-help-row">
                   <b>{x.title || x.community}</b>

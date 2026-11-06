@@ -673,7 +673,9 @@ describe("sortCommunities", () => {
 
 // The locale's own English, for lines whose exact words matter.
 const realT = (key: string, values: Record<string, unknown> = {}) => {
-  const text = key.split(".").reduce<any>((o, k) => o?.[k], enUS);
+  const text = key
+    .split(".")
+    .reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), enUS);
   return typeof text === "string" ? text.replace(/\{\{(\w+)\}\}/g, (_, k) => String(values[k] ?? "")) : key;
 };
 
