@@ -2,6 +2,7 @@ import { proxifyImageSrc, buildSrcSet, getProxyBase, buildPictureSources } from 
 import { trimTrailingSlash, decodeImageSrc } from "../helper";
 import { authorPixelSize } from "./image-dimensions";
 import type { RenderOptions } from "../types";
+import { isInternalThumbnail } from "./internal-thumbnail";
 
 /**
  * The `sizes` value the renderer applies to in-body post images (see `img()`
@@ -136,8 +137,9 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCo
     el.removeAttribute("fetchpriority");
   }
 
-  const cls = el.getAttribute("class") || "";
-  const shouldReplace = !cls.includes("no-replace");
+  // Only render-helper's own video thumbnails skip this step; an author's
+  // class="no-replace" must not (#1999).
+  const shouldReplace = !isInternalThumbnail(el);
   // Only skip re-proxification for URLs already going through proxy/avatar/cover routes
   // Direct upload URLs (e.g. /DQm...) should still be proxified for resizing & format optimization
   const base = trimTrailingSlash(getProxyBase());
@@ -163,6 +165,13 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCo
       if (!forApp) {
         wrapInPicture(el, decodedSrc);
       }
+    } else if (/^https?:\/\//i.test(decodedSrc)) {
+      // The proxy refuses this URL (too long or malformed). Loading it
+      // straight from its host would expose readers to the author's server,
+      // so drop it like an invalid src.
+      el.removeAttribute("src");
+      el.removeAttribute("srcset");
+      el.removeAttribute("sizes");
     }
   } else if (shouldReplace && hasAlreadyProxied) {
     // Only /p/ URLs have extractable hashes for srcset; /u/ and /WxH/ routes
@@ -174,6 +183,14 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCo
         el.setAttribute("sizes", IMAGE_SIZES);
       }
     }
+  }
+  // An author's srcset can name any host, and the branches above leave it in
+  // place next to an already proxied src. Keep it only when every candidate
+  // is on the image proxy.
+  const srcset = shouldReplace ? el.getAttribute("srcset") : null;
+  if (srcset && srcset.split(",").some(c => !c.trim().startsWith(`${base}/`))) {
+    el.removeAttribute("srcset");
+    el.removeAttribute("sizes");
   }
 }
 
