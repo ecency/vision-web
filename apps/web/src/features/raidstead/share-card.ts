@@ -10,9 +10,15 @@ export const CARD_WAIT_MS = 15_000;
 /// `username`, the way the composer uploads (one automatic retry on a server
 /// hiccup, no Retry prompt). Resolves the image URL, or null when anything
 /// fails or takes too long: the draft then opens without the card.
-export async function shareCardImage(card: ShareCard, username: string): Promise<string | null> {
+/// `signal`: the caller no longer wants it (the player closed the report).
+export async function shareCardImage(
+  card: ShareCard,
+  username: string,
+  signal?: AbortSignal
+): Promise<string | null> {
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), CARD_WAIT_MS);
+  signal?.addEventListener("abort", () => abort.abort(), { once: true });
   try {
     const canvas = document.createElement("canvas");
     drawShareCard(canvas, card);

@@ -1138,11 +1138,21 @@ export function RaidsteadGame() {
 
   // the share card is drawn and uploaded on the way to the composer; one at a time
   const [drafting, setDrafting] = useState(false);
+  // which tap the card is on its way for; closing the sheet moves it on and stops the upload
+  const reportTap = useRef<{ n: number; abort: AbortController | null }>({ n: 0, abort: null });
+  const cancelReport = () => {
+    reportTap.current.abort?.abort();
+    reportTap.current = { n: reportTap.current.n + 1, abort: null };
+    setDrafting(false);
+  };
   const openReport = async () => {
     if (!data || !alliance || drafting) return;
     const report = buildReport(data, i18next.t);
     if (!report) return;
     const community = alliance.community;
+    const abort = new AbortController();
+    const tap = reportTap.current.n + 1;
+    reportTap.current = { n: tap, abort };
     setDrafting(true);
     let image: string | null = null;
     // uploaded as the Ecency user who will post it; without one the draft goes without the card
@@ -1157,10 +1167,13 @@ export function RaidsteadGame() {
           topLabel: t("report.card-top"),
           top: alliance.raiders.slice(0, 3)
         },
-        username
+        username,
+        abort.signal
       ).catch(() => null);
     }
-    if (!mounted.current) return;
+    // the player closed the report (or the page) meanwhile: no composer
+    if (!mounted.current || reportTap.current.n !== tap) return;
+    reportTap.current.abort = null;
     setDrafting(false);
     const body = image ? `![${t("report.card-alt")}](${image})\n\n${report.body}` : report.body;
     stageForPublish(body, report.title, [community, "raidstead", "ecency"]);
@@ -1403,7 +1416,15 @@ export function RaidsteadGame() {
       case "report": {
         const report = buildReport(data, i18next.t);
         open = report ? (
-          <ReportSheet report={report} busy={drafting} onClose={close} onOpen={openReport} />
+          <ReportSheet
+            report={report}
+            busy={drafting}
+            onClose={() => {
+              cancelReport();
+              close();
+            }}
+            onOpen={openReport}
+          />
         ) : null;
         break;
       }

@@ -3375,8 +3375,26 @@ describe("Raidstead page", () => {
       render(<RaidsteadGame />);
       await openDraft();
       await waitFor(() => expect(nav.push).toHaveBeenCalled());
-      expect(nav.card).toHaveBeenCalledWith(expect.objectContaining({ kind: "beetle", title: "Ink & Oak" }), "ann");
+      expect(nav.card).toHaveBeenCalledWith(expect.objectContaining({ kind: "beetle", title: "Ink & Oak" }), "ann", expect.any(AbortSignal));
       expect(nav.writer.mock.calls[0][0]).toMatch(/^!\[raidstead.report.card-alt\]\(https:\/\/images.ecency.com\/DQm\/card.png\)\n\n/);
+    });
+
+    it("does not open the composer once the player closed the report while the card was on its way", async () => {
+      asUser("ann");
+      let land: (url: string | null) => void = () => undefined;
+      nav.card.mockImplementation(() => new Promise<string | null>((r) => (land = r)));
+      render(<RaidsteadGame />);
+      await openDraft();
+      expect(nav.card).toHaveBeenCalledTimes(1);
+      // the upload is told to stop
+      const signal = (nav.card.mock.calls[0] as unknown[])[2] as AbortSignal | undefined;
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+      });
+      expect(signal?.aborted).toBe(true);
+      await act(async () => land("https://images.ecency.com/DQm/card.png"));
+      expect(nav.writer).not.toHaveBeenCalled();
+      expect(nav.push).not.toHaveBeenCalled();
     });
 
     it("still opens the draft, without the card, when the upload fails", async () => {
