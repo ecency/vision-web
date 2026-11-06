@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { Redis } from "ioredis";
+import RedisMock from "ioredis-mock";
 import { CHANNEL_CREATE_MAX, CHANNEL_CREATE_WINDOW_MS, takeChannelCreateSlot } from "@/server/chat-channel-create-budget";
 
 function fakeRedis() {
@@ -78,5 +79,37 @@ describe("takeChannelCreateSlot", () => {
 
     await takeChannelCreateSlot("u-1", redis);
     expect(ttls.get("chat:searchcreate:v1:u-1")).toBe(CHANNEL_CREATE_WINDOW_MS);
+  });
+
+  // The cases below run the real Lua script, not the fake above.
+  describe("against a Redis that runs the script", () => {
+    const key = "chat:searchcreate:v1:u-lua";
+    const real = () => new RedisMock() as unknown as Redis;
+
+    it("gives a new counter the window as its expiry", async () => {
+      const redis = real();
+      await redis.del(key);
+      expect(await takeChannelCreateSlot("u-lua", redis)).toBe(true);
+      const ttl = await redis.pttl(key);
+      expect(ttl).toBeGreaterThan(CHANNEL_CREATE_WINDOW_MS - 5_000);
+      expect(ttl).toBeLessThanOrEqual(CHANNEL_CREATE_WINDOW_MS);
+    });
+
+    it("repairs a counter that was left without an expiry", async () => {
+      const redis = real();
+      await redis.set(key, CHANNEL_CREATE_MAX + 3);
+      expect(await redis.pttl(key)).toBe(-1);
+      // over the cap, so refused, but the counter now expires
+      expect(await takeChannelCreateSlot("u-lua", redis)).toBe(false);
+      expect(await redis.pttl(key)).toBeGreaterThan(0);
+    });
+
+    it("keeps an expiry that is already running", async () => {
+      const redis = real();
+      await redis.set(key, 1, "PX", 5_000);
+      expect(await takeChannelCreateSlot("u-lua", redis)).toBe(true);
+      expect(await redis.pttl(key)).toBeLessThanOrEqual(5_000);
+      expect(await redis.get(key)).toBe("2");
+    });
   });
 });
