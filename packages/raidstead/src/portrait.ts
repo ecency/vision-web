@@ -99,13 +99,13 @@ const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
 /// The raid report's share image (1200 x 630, the size link previews use): the
 /// week's pest on the left, the alliance, the outcome and the top 3 on the right.
-/// Draws nothing on a canvas without a 2D context.
-export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): void {
+/// Says whether it drew: a canvas without a 2D context is left blank (false).
+export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): boolean {
   const { width: W, height: H } = SHARE_CARD;
   canvas.width = W;
   canvas.height = H;
   const g = canvas.getContext("2d");
-  if (!g) return;
+  if (!g) return false;
   g.fillStyle = PAPER;
   g.fillRect(0, 0, W, H);
   paint(g, portrait(card.kind, { width: 560, height: 560, pad: 16, spacing: 5 }).dots, 20, 35);
@@ -132,6 +132,7 @@ export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): void 
   line(card.topLabel, 390, 26, INKS[VIOLET].c, 700);
   card.top.slice(0, 3).forEach((r, i) => line(`${i + 1}. @${r.account}  ${r.damage}`, 435 + i * 44, 32, INKS[NIGHT].c));
   line("ecency.com/raidstead", H - 40, 24, INKS[VIOLET].c, 700);
+  return true;
 }
 
 /// The same picture as an SVG document, for places without a canvas (a

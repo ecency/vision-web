@@ -56,8 +56,9 @@ describe("share card", () => {
   it("draws the pest portrait and the alliance title for each pest kind", () => {
     for (const kind of BOSS_KINDS) {
       const { canvas, calls } = recordingCanvas();
+      let drawn: unknown;
       expect(() =>
-        drawShareCard(canvas, {
+        (drawn = drawShareCard(canvas, {
           kind,
           title: "Ink & Oak",
           outcome: "chased off",
@@ -68,8 +69,9 @@ describe("share card", () => {
             { account: "bob", damage: 12 },
             { account: "cat", damage: 9 }
           ]
-        })
+        }))
       ).not.toThrow();
+      expect(drawn, kind).toBe(true);
       expect(canvas.width, kind).toBe(1200);
       expect(canvas.height, kind).toBe(630);
       expect(calls.filter((c) => c.name === "arc").length, kind).toBeGreaterThan(100);
@@ -79,8 +81,9 @@ describe("share card", () => {
     }
   });
 
-  it("draws nothing and does not throw without a 2D context", () => {
+  it("draws nothing, does not throw and says so without a 2D context", () => {
     const canvas = { width: 0, height: 0, getContext: () => null } as unknown as HTMLCanvasElement;
-    expect(() => drawShareCard(canvas, { kind: "beetle", title: "x", outcome: "y", week: "z", topLabel: "t", top: [] })).not.toThrow();
+    // false: the caller has no picture to use (a blank image is not one)
+    expect(drawShareCard(canvas, { kind: "beetle", title: "x", outcome: "y", week: "z", topLabel: "t", top: [] })).toBe(false);
   });
 });
