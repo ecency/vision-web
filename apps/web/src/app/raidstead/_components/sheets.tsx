@@ -1001,8 +1001,9 @@ export function LeaderboardSheet({
     // not found: maybe in a league whose list failed (its error and retry show),
     // or in none of them (Small)
     const failed = LEAGUES.find((_, i) => lists[i] === "failed");
+    // a guess follows the list still failing, so its retry stays in view
+    if (!tab || guessed.current) setTab(failed ?? "small");
     guessed.current = !!failed;
-    if (!tab) setTab(failed ?? "small");
   }, [rows, tab, own, detect]);
   const pick = (l: League) => {
     guessed.current = false;

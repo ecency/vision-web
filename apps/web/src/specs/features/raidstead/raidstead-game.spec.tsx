@@ -2586,6 +2586,48 @@ describe("Raidstead page", () => {
       expect(selected()).toEqual(["raidstead.profile.leagues.medium"]);
     });
 
+    it("while the player's league is a guess, a retry that finds it in another league moves there", async () => {
+      // small and large fail first; the player is in large
+      const tries: Record<string, number> = {};
+      const load = vi.fn(async (league: string) => {
+        tries[league] = (tries[league] ?? 0) + 1;
+        if ((league === "small" || league === "large") && tries[league] === 1) throw new Error("offline");
+        return boards[league];
+      });
+      render(
+        <LeaderboardSheet season={1} own={boards.large[0].community} load={load as never} onClose={vi.fn()} />
+      );
+      await screen.findByText("raidstead.leaderboard.failed");
+      expect(selected()).toEqual(["raidstead.profile.leagues.small"]);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.try-again" }));
+      });
+      await waitFor(() => expect(selected()).toEqual(["raidstead.profile.leagues.large"]));
+      expect(ranks()).toEqual(["1 HIVE-L1", "2 HIVE-L2"]);
+      // only the failed lists were asked again
+      expect(tries).toEqual({ small: 2, medium: 1, large: 2 });
+    });
+
+    it("while the player's league is a guess, a retry that loads one list but not another moves to the one still failing", async () => {
+      const tries: Record<string, number> = {};
+      const load = vi.fn(async (league: string) => {
+        tries[league] = (tries[league] ?? 0) + 1;
+        if (league === "small" && tries[league] === 1) throw new Error("offline");
+        if (league === "large") throw new Error("offline");
+        return boards[league];
+      });
+      render(
+        <LeaderboardSheet season={1} own="hive-nowhere" load={load as never} onClose={vi.fn()} />
+      );
+      await screen.findByText("raidstead.leaderboard.failed");
+      expect(selected()).toEqual(["raidstead.profile.leagues.small"]);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.try-again" }));
+      });
+      await waitFor(() => expect(selected()).toEqual(["raidstead.profile.leagues.large"]));
+      expect(screen.getByText("raidstead.leaderboard.failed")).toBeTruthy();
+    });
+
     it("lists only the tab's own league, from a server that ignores the filter", async () => {
       const load = vi.fn(async () => [...boards.large, ...boards.small, ...boards.medium]);
       render(
