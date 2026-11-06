@@ -51,8 +51,8 @@ describe("FieldGuideSheet", () => {
       .mocked(drawPortrait)
       .mock.calls.filter(([, kind]) => ["beetle", "slug", "twins", "queen"].includes(kind));
     expect(pestCalls.map(([, kind]) => kind).sort()).toEqual(["beetle", "queen", "slug", "twins"]);
-    // drawn in full: no silhouette option at all
-    expect(pestCalls.every(([, , o]) => !o || !("silhouette" in o))).toBe(true);
+    // drawn in full, with no options
+    expect(pestCalls.every(([, , o]) => o === undefined)).toBe(true);
     expect(screen.getByText("raidstead.guide.ready-title")).toBeTruthy();
   });
 
@@ -74,7 +74,7 @@ describe("FieldGuideSheet", () => {
       .mocked(drawPortrait)
       .mock.calls.filter(([, kind]) => ["beetle", "slug", "twins", "queen"].includes(kind));
     expect(pestCalls.map(([, kind]) => kind).sort()).toEqual(["beetle", "queen", "slug", "twins"]);
-    expect(pestCalls.every(([, , o]) => !o || !("silhouette" in o))).toBe(true);
+    expect(pestCalls.every(([, , o]) => o === undefined)).toBe(true);
     expect(screen.queryByText("raidstead.guide.pest-hidden")).toBeNull();
     expect(screen.queryByText("raidstead.guide.pests-note")).toBeNull();
     expect(screen.queryByText("raidstead.guide.ready-title")).toBeNull();
