@@ -17,6 +17,8 @@ import useMount from "react-use/lib/useMount";
 export interface PublishHandoff {
   body: string;
   title?: string;
+  /// The tags to start with, the community first when it has one (a raid report).
+  tags?: string[];
 }
 
 export const PUBLISH_HANDOFF_KEY = PREFIX + "_pub_handoff";
@@ -29,7 +31,8 @@ export function usePublishHandoffWriter() {
   const [, setHandoff] = useLocalStorage<PublishHandoff>(PUBLISH_HANDOFF_KEY);
 
   return useCallback(
-    (body: string, title?: string) => setHandoff(title ? { body, title } : { body }),
+    (body: string, title?: string, tags?: string[]) =>
+      setHandoff({ body, ...(title ? { title } : {}), ...(tags?.length ? { tags } : {}) }),
     [setHandoff]
   );
 }
@@ -39,12 +42,17 @@ export function usePublishHandoffWriter() {
  * before it is handed over so that content which the editor cannot swallow
  * fails a single time rather than on every subsequent visit.
  */
-export function usePublishHandoff(onReceive: (body: string, title?: string) => void) {
+export function usePublishHandoff(
+  onReceive: (body: string, title?: string, tags?: string[]) => void
+) {
   const [handoff, , removeHandoff] = useLocalStorage<PublishHandoff>(PUBLISH_HANDOFF_KEY);
 
   useMount(() => {
     const body = handoff?.body;
     const title = typeof handoff?.title === "string" ? handoff.title : undefined;
+    const tags = Array.isArray(handoff?.tags)
+      ? handoff.tags.filter((tag): tag is string => typeof tag === "string" && !!tag)
+      : [];
 
     // Dropped before anything else, so that an entry the composer cannot use,
     // whether malformed or simply empty, is cleared rather than re-examined on
@@ -56,7 +64,8 @@ export function usePublishHandoff(onReceive: (body: string, title?: string) => v
       return;
     }
 
-    if (title) onReceive(body, title);
+    if (tags.length) onReceive(body, title, tags);
+    else if (title) onReceive(body, title);
     else onReceive(body);
   });
 }

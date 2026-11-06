@@ -87,3 +87,26 @@ describe("help", () => {
     ]);
   });
 });
+
+// The week's kills are public: asked without the session, for the last finished week by default.
+describe("week", () => {
+  const seen: { url: string; auth?: string }[] = [];
+  const api = createApi({
+    base: "https://games.example",
+    token: () => "rs1_secret",
+    fetch: async (url, init) => {
+      seen.push({ url: String(url), auth: ((init?.headers ?? {}) as Record<string, string>).authorization });
+      return new Response(JSON.stringify({ season: 2, week: 1, kills: [] }), { status: 200 });
+    }
+  });
+
+  it("asks without the session token, for a given week or the last finished one", async () => {
+    seen.length = 0;
+    expect(await api.week()).toEqual({ season: 2, week: 1, kills: [] });
+    await api.week({ season: 2, week: 3 });
+    expect(seen).toEqual([
+      { url: "https://games.example/v1/raidstead/week", auth: undefined },
+      { url: "https://games.example/v1/raidstead/week?season=2&week=3", auth: undefined }
+    ]);
+  });
+});

@@ -10,6 +10,7 @@ import {
   type ReactNode
 } from "react";
 import Link from "next/link";
+import type { WeekWinners } from "@/features/raidstead/week";
 import i18next from "i18next";
 import {
   BOSS_KINDS,
@@ -1094,6 +1095,7 @@ export function LeaderboardSheet({
   season,
   own,
   league,
+  winners,
   load,
   onClose
 }: {
@@ -1102,6 +1104,8 @@ export function LeaderboardSheet({
   own?: string;
   /// its league, from a server that says
   league?: League;
+  /// last finished week's Alliance of the Week per league, when known
+  winners?: WeekWinners | null;
   load: (league: League) => Promise<LeaderRow[]>;
   onClose: () => void;
 }) {
@@ -1205,6 +1209,14 @@ export function LeaderboardSheet({
         ))}
       </div>
       <div id="rs-league-panel" role="tabpanel" aria-labelledby={tab ? tabId(tab) : undefined}>
+        {tab && winners?.winners[tab] && (
+          <p className="rs-aotw">
+            {t("aotw.board", {
+              week: winners.week,
+              name: winners.winners[tab]!.title || winners.winners[tab]!.community
+            })}
+          </p>
+        )}
         {list === "failed" ? (
           <>
             <p className="rs-muted">{t("leaderboard.failed")}</p>
@@ -1236,10 +1248,13 @@ export function LeaderboardSheet({
 
 export function ReportSheet({
   report,
+  busy = false,
   onClose,
   onOpen
 }: {
   report: { title: string; body: string };
+  /// the share card is on its way to the image server
+  busy?: boolean;
   onClose: () => void;
   onOpen: () => void;
 }) {
@@ -1254,8 +1269,8 @@ export function ReportSheet({
         {report.body}
       </pre>
       <div className="rs-btns">
-        <button className="rs-btn rs-primary" onClick={onOpen}>
-          {t("report.open")}
+        <button className="rs-btn rs-primary" onClick={onOpen} disabled={busy} aria-busy={busy}>
+          {busy ? t("report.preparing") : t("report.open")}
         </button>
       </div>
     </Sheet>

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The page around the scene: the scene itself (WebGL) is stubbed, the games
 // API is mocked, and the Ecency user is switched under the page.
-const { scene, api, box } = vi.hoisted(() => ({
+const { scene, api, box, nav } = vi.hoisted(() => ({
   scene: {
     setSlot: vi.fn(),
     sync: vi.fn(),
@@ -34,6 +34,7 @@ const { scene, api, box } = vi.hoisted(() => ({
     }),
     helpAttack: vi.fn()
   },
+  nav: { push: vi.fn(), writer: vi.fn(), card: vi.fn(async (): Promise<string | null> => null), week: vi.fn() },
   box: {
     stored: null as { account: string; token: string; expiresAt: string; ecency?: boolean } | null
   }
@@ -59,8 +60,12 @@ vi.mock("@/features/raidstead/client", () => ({
 }));
 vi.mock("@/api/queries", () => ({ useHydrated: () => true }));
 vi.mock("@/features/shared/login", () => ({ LoginDialog: () => null }));
-vi.mock("@/app/publish/_hooks", () => ({ usePublishHandoffWriter: () => vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("@/app/publish/_hooks", () => ({ usePublishHandoffWriter: () => nav.writer }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: nav.push }) }));
+// the share card is drawn and uploaded on its own (a canvas and the image server)
+vi.mock("@/features/raidstead/share-card", () => ({ shareCardImage: nav.card }));
+// last week's kills: a server without the route by default
+vi.mock("@/features/raidstead/week", () => ({ useWeekWinners: nav.week }));
 
 import i18next from "i18next";
 import enUS from "@/features/i18n/locales/en-US.json";
@@ -167,6 +172,8 @@ describe("Raidstead page", () => {
       expiresAt: new Date(Date.now() + 86_400_000).toISOString()
     };
     api.state.mockResolvedValue(state());
+    nav.card.mockResolvedValue(null);
+    nav.week.mockReturnValue(null);
     // a full reset: one-time answers a failed test left unused must not reach the next one
     api.calendar.mockReset().mockResolvedValue(state().calendar);
   });
@@ -3335,6 +3342,108 @@ describe("Raidstead page", () => {
       render(<RaidsteadGame />);
       await screen.findByRole("button", { name: /raidstead.actions.rally/ });
       expect(screen.queryByRole("button", { name: /raidstead.share.button/ })).toBeNull();
+    });
+  });
+
+  describe("raid report", () => {
+    const openDraft = async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.menu.report/ }));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.report.open/ }));
+      });
+    };
+
+    it("opens the composer with the body, the community and the three tags", async () => {
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await openDraft();
+      await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/publish?com=hive-123456"));
+      expect(nav.writer).toHaveBeenCalledTimes(1);
+      const [body, title, tags] = nav.writer.mock.calls[0];
+      expect(body).toContain("raidstead.report.intro-fighting");
+      expect(body).toContain("raidstead.report.outro");
+      expect(title).toBe("raidstead.report.post-title");
+      expect(tags).toEqual(["hive-123456", "raidstead", "ecency"]);
+    });
+
+    it("puts the uploaded share card on top of the draft", async () => {
+      asUser("ann");
+      nav.card.mockResolvedValue("https://images.ecency.com/DQm/card.png");
+      render(<RaidsteadGame />);
+      await openDraft();
+      await waitFor(() => expect(nav.push).toHaveBeenCalled());
+      expect(nav.card).toHaveBeenCalledWith(expect.objectContaining({ kind: "beetle", title: "Ink & Oak" }), "ann");
+      expect(nav.writer.mock.calls[0][0]).toMatch(/^!\[raidstead.report.card-alt\]\(https:\/\/images.ecency.com\/DQm\/card.png\)\n\n/);
+    });
+
+    it("still opens the draft, without the card, when the upload fails", async () => {
+      asUser("ann");
+      nav.card.mockRejectedValue(new Error("upload failed"));
+      render(<RaidsteadGame />);
+      await openDraft();
+      await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/publish?com=hive-123456"));
+      expect(nav.writer.mock.calls[0][0]).not.toContain("![");
+    });
+  });
+
+  describe("alliance of the week", () => {
+    const win = (season: number) => ({
+      season,
+      week: 1,
+      winners: {
+        medium: { community: "hive-m1", title: "HIVE-M1", league: "medium", killSecs: 72_000, raiders: 9, members: 40 },
+        small: { community: "hive-123456", title: "Ink & Oak", league: "small", killSecs: 90_000, raiders: 4, members: 8 }
+      }
+    });
+
+    it("names the player's league's alliance of the week on the raid screen", async () => {
+      nav.week.mockReturnValue(win(1));
+      const s = state();
+      (s.alliance as Record<string, unknown>).league = "medium";
+      api.state.mockResolvedValue(s);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await waitFor(() => expect(document.querySelector(".rs-aotw")).not.toBeNull());
+      expect(shown("raidstead.aotw.banner")).toEqual({ week: 1, league: "raidstead.profile.leagues.medium", name: "HIVE-M1" });
+    });
+
+    it("says so when the player's own alliance won", async () => {
+      nav.week.mockReturnValue(win(1));
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await waitFor(() => expect(document.querySelector(".rs-aotw")?.textContent).toBe("raidstead.aotw.banner-yours"));
+    });
+
+    it("shows none from another season, or when the server cannot say", async () => {
+      nav.week.mockReturnValue(win(2));
+      asUser("ann");
+      const view = render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.menu/ });
+      expect(document.querySelector(".rs-aotw")).toBeNull();
+      nav.week.mockReturnValue(null);
+      view.rerender(<RaidsteadGame />);
+      expect(document.querySelector(".rs-aotw")).toBeNull();
+    });
+
+    it("names the shown league's alliance of the week in the leaderboard", async () => {
+      render(
+        <LeaderboardSheet
+          season={1}
+          league="medium"
+          winners={win(1) as never}
+          load={async () => []}
+          onClose={vi.fn()}
+        />
+      );
+      await waitFor(() => expect(document.querySelector(".rs-aotw")).not.toBeNull());
+      expect(shown("raidstead.aotw.board")).toEqual({ week: 1, name: "HIVE-M1" });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("tab", { name: "raidstead.profile.leagues.large" }));
+      });
+      expect(document.querySelector(".rs-aotw")).toBeNull();
     });
   });
 });

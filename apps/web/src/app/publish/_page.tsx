@@ -68,12 +68,18 @@ export default function Publish() {
   // so seed both and let whichever lands second win with the same value.
   usePublishHandoff(
     useCallback(
-      (body: string, title?: string) => {
+      (body: string, title?: string, tags?: string[]) => {
         setContent(body);
         setEditorContent(body);
         if (title) setTitle(title);
+        if (tags?.length) {
+          setTags(tags);
+          // a community among them already leads: the ?com= effect below runs in
+          // the same commit with the tags before these, and must not replace them
+          if (isCommunity(tags[0])) appliedCommunityRef.current = tags[0].toLowerCase();
+        }
       },
-      [setContent, setEditorContent, setTitle]
+      [setContent, setEditorContent, setTitle, setTags]
     )
   );
 

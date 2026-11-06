@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BOSS_KINDS, FOLK } from "./art";
-import { portrait, portraitSvg } from "./portrait";
+import { drawShareCard, portrait, portraitSvg } from "./portrait";
 import { INKS, LIME, VIOLET } from "./print";
 
 const inside = (p: ReturnType<typeof portrait>) =>
@@ -38,5 +38,49 @@ describe("portrait", () => {
 
   it("refuses an unknown model", () => {
     expect(() => portrait("dragon", { width: 10, height: 10 })).toThrow("unknown model dragon");
+  });
+});
+
+// A 2D context that records what is drawn on it, for a page without a real canvas.
+function recordingCanvas() {
+  const calls: { name: string; args: unknown[] }[] = [];
+  const g = new Proxy({} as Record<string, unknown>, {
+    get: (o, k: string) => (k in o ? o[k] : (...args: unknown[]) => void calls.push({ name: k, args })),
+    set: (o, k: string, v) => ((o[k] = v), true)
+  });
+  const canvas = { width: 0, height: 0, getContext: () => g } as unknown as HTMLCanvasElement;
+  return { canvas, calls };
+}
+
+describe("share card", () => {
+  it("draws the pest portrait and the alliance title for each pest kind", () => {
+    for (const kind of BOSS_KINDS) {
+      const { canvas, calls } = recordingCanvas();
+      expect(() =>
+        drawShareCard(canvas, {
+          kind,
+          title: "Ink & Oak",
+          outcome: "chased off",
+          week: "Season 2, week 1",
+          topLabel: "Top raiders",
+          top: [
+            { account: "ann", damage: 40 },
+            { account: "bob", damage: 12 },
+            { account: "cat", damage: 9 }
+          ]
+        })
+      ).not.toThrow();
+      expect(canvas.width, kind).toBe(1200);
+      expect(canvas.height, kind).toBe(630);
+      expect(calls.filter((c) => c.name === "arc").length, kind).toBeGreaterThan(100);
+      const texts = calls.filter((c) => c.name === "fillText").map((c) => String(c.args[0]));
+      expect(texts, kind).toContain("Ink & Oak");
+      expect(texts.join(" "), kind).toContain("@ann");
+    }
+  });
+
+  it("draws nothing and does not throw without a 2D context", () => {
+    const canvas = { width: 0, height: 0, getContext: () => null } as unknown as HTMLCanvasElement;
+    expect(() => drawShareCard(canvas, { kind: "beetle", title: "x", outcome: "y", week: "z", topLabel: "t", top: [] })).not.toThrow();
   });
 });

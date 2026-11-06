@@ -6,6 +6,7 @@ import i18next from "i18next";
 import {
   createScene,
   FOLK,
+  LEAGUES,
   type AttackType,
   type BuildingId,
   type Calendar,
@@ -61,6 +62,8 @@ import {
   worldOf
 } from "@/features/raidstead/game";
 import { copyLine, postToAllianceChat } from "@/features/raidstead/share";
+import { shareCardImage } from "@/features/raidstead/share-card";
+import { useWeekWinners } from "@/features/raidstead/week";
 import {
   BoardSheet,
   BossSheet,
@@ -1123,12 +1126,45 @@ export function RaidsteadGame() {
     }
   };
 
-  const openReport = () => {
-    if (!data || !alliance) return;
+  // last finished week's Alliance of the Week per league, this season's only;
+  // nothing at all when the server cannot say
+  const weekWinners = useWeekWinners();
+  const winners = weekWinners && weekWinners.season === data?.calendar.season ? weekWinners : null;
+  // on the raid screen: the player's own league, or the first league with one
+  const aotwLeague = winners
+    ? ([alliance?.league, ...LEAGUES] as (League | undefined)[]).find((l) => l && winners.winners[l])
+    : undefined;
+  const aotw = aotwLeague ? winners!.winners[aotwLeague] : undefined;
+
+  // the share card is drawn and uploaded on the way to the composer; one at a time
+  const [drafting, setDrafting] = useState(false);
+  const openReport = async () => {
+    if (!data || !alliance || drafting) return;
     const report = buildReport(data, i18next.t);
     if (!report) return;
-    stageForPublish(report.body, report.title);
-    router.push(`/publish?com=${encodeURIComponent(alliance.community)}`);
+    const community = alliance.community;
+    setDrafting(true);
+    let image: string | null = null;
+    // uploaded as the Ecency user who will post it; without one the draft goes without the card
+    if (username) {
+      const outcome = alliance.boss.alive ? "fighting" : alliance.boss.killed === false ? "escaped" : "won";
+      image = await shareCardImage(
+        {
+          kind: alliance.boss.kind,
+          title: alliance.title,
+          outcome: t(`report.outcome.${outcome}`),
+          week: t("report.card-week", { season: data.calendar.season, week: alliance.week }),
+          topLabel: t("report.card-top"),
+          top: alliance.raiders.slice(0, 3)
+        },
+        username
+      ).catch(() => null);
+    }
+    if (!mounted.current) return;
+    setDrafting(false);
+    const body = image ? `![${t("report.card-alt")}](${image})\n\n${report.body}` : report.body;
+    stageForPublish(body, report.title, [community, "raidstead", "ecency"]);
+    router.push(`/publish?com=${encodeURIComponent(community)}`);
   };
 
   const doSignOut = async () => {
@@ -1355,6 +1391,7 @@ export function RaidsteadGame() {
             season={Math.max(1, data.calendar.season)}
             own={alliance?.community}
             league={alliance?.league}
+            winners={winners}
             load={loadLeaders}
             onClose={close}
           />
@@ -1365,7 +1402,9 @@ export function RaidsteadGame() {
         break;
       case "report": {
         const report = buildReport(data, i18next.t);
-        open = report ? <ReportSheet report={report} onClose={close} onOpen={openReport} /> : null;
+        open = report ? (
+          <ReportSheet report={report} busy={drafting} onClose={close} onOpen={openReport} />
+        ) : null;
         break;
       }
     }
@@ -1486,6 +1525,17 @@ export function RaidsteadGame() {
               )}
 
             </div>
+            {aotw && aotwLeague && (
+              <p className="rs-aotw">
+                {aotw.community === alliance?.community
+                  ? t("aotw.banner-yours", { week: winners!.week, league: t(`profile.leagues.${aotwLeague}`) })
+                  : t("aotw.banner", {
+                      week: winners!.week,
+                      league: t(`profile.leagues.${aotwLeague}`),
+                      name: aotw.title || aotw.community
+                    })}
+              </p>
+            )}
           </section>
         )}
 

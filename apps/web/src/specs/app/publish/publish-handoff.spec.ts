@@ -54,6 +54,19 @@ describe("publish handoff", () => {
     expect(onReceive).toHaveBeenCalledWith("report body", "Week 1 raid report");
   });
 
+  it("carries the tags a raid report starts with, community first", () => {
+    const writer = renderHook(() => usePublishHandoffWriter());
+    act(() => writer.result.current("report body", "Week 1", ["hive-1", "raidstead", "ecency"]));
+    const onReceive = vi.fn();
+    renderHook(() => usePublishHandoff(onReceive));
+    expect(onReceive).toHaveBeenCalledWith("report body", "Week 1", ["hive-1", "raidstead", "ecency"]);
+    // tags that are not text are dropped
+    localStorage.setItem(PUBLISH_HANDOFF_KEY, JSON.stringify({ body: "b", tags: [1, "x", null] }));
+    const again = vi.fn();
+    renderHook(() => usePublishHandoff(again));
+    expect(again).toHaveBeenCalledWith("b", undefined, ["x"]);
+  });
+
   it("ignores a title that is not text", () => {
     localStorage.setItem(PUBLISH_HANDOFF_KEY, JSON.stringify({ body: "a body", title: { x: 1 } }));
     const onReceive = vi.fn();
