@@ -1698,7 +1698,7 @@ export function RaidsteadGame() {
               // during the festival, the energy its hits spend
               <div className="rs-card rs-chip">
                 <span>
-                  <small>{fest ? t("festival.chip") : t("energy.label")}</small>
+                  <small>{t("energy.label")}</small>
                   <b>{t("energy.value", { n: chipEnergy, max: chipMax })}</b>
                 </span>
                 <span className="rs-pips" aria-hidden="true">
@@ -1935,7 +1935,7 @@ export function RaidsteadGame() {
                             ? t("festival.raiders-only")
                             : fest.energy <= 0
                               ? t("actions.no-energy")
-                              : t("festival.cost")
+                              : t("actions.cost")
                         : !alive || resting
                           ? t("actions.resting")
                           : energy <= 0

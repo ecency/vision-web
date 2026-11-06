@@ -3484,14 +3484,15 @@ describe("Raidstead page", () => {
       expect(api.festival).not.toHaveBeenCalled();
     });
 
-    it("shows festival energy in the energy chip and on the buttons, and the day's energy from the server", async () => {
+    it("shows festival energy in the energy chip, the day's energy from the server, in labels that stay one line", async () => {
       api.state.mockResolvedValue(quiet());
       api.festival.mockResolvedValue({ ...fest(), energy: 3 });
       render(<RaidsteadGame />);
       const p = await plate();
-      expect(screen.getByText("raidstead.festival.chip")).toBeTruthy();
+      // the same short words as on raid days: longer ones wrap on a phone
+      expect(screen.getByText("raidstead.energy.label")).toBeTruthy();
       expect(shown("raidstead.energy.value")).toEqual({ n: 3, max: 5 });
-      expect(screen.getAllByText("raidstead.festival.cost")).toHaveLength(3);
+      expect(screen.getAllByText("raidstead.actions.cost")).toHaveLength(3);
       fireEvent.click(within(p).getByRole("button", { name: "raidstead.festival.about" }));
       expect(shown("raidstead.festival.desc")).toEqual({ max: 5 });
     });

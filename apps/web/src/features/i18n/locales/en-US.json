@@ -5662,8 +5662,6 @@
     "festival": {
       "title": "Festival pest",
       "label": "Shared by every town",
-      "chip": "Festival energy",
-      "cost": "1 festival energy",
       "about": "About the festival pest",
       "desc": "On the quiet days one pest visits every town. Everyone who raided this season can hit it: plain damage, {{max}} energy a day. A hit earns the Festival badge, and if it is chased off every hitter gets karma.",
       "hit": "{{dmg}} damage to the festival pest.",
