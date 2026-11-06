@@ -2686,15 +2686,35 @@ describe("Raidstead page", () => {
     const ready = () => screen.findByRole("button", { name: /raidstead.actions.rally/ });
     beforeEach(() => asUser("ann"));
 
-    it("shows the streak next to energy", async () => {
+    it("shows the streak as its own chip beside the alliance, not in the energy chip", async () => {
       const s = state();
       Object.assign(s.member, { streak: 5, streakBest: 9 });
       api.state.mockResolvedValue(s);
       render(<RaidsteadGame />);
       await ready();
-      const chip = screen.getByText("raidstead.energy.label").closest(".rs-chip")!;
-      expect(within(chip as HTMLElement).getByText("raidstead.streak.value")).toBeTruthy();
-      expect(shown("raidstead.streak.value")).toEqual({ n: 5 });
+      const chip = screen.getByText("raidstead.streak.label").closest(".rs-chip") as HTMLElement;
+      expect(within(chip).getByText("raidstead.streak.value")).toBeTruthy();
+      expect(shown("raidstead.streak.value")).toEqual({ count: 5 });
+      // in the top row with the alliance, so season and energy keep their row
+      expect(chip.closest(".rs-top-left")!.contains(screen.getByText("raidstead.alliance.label"))).toBe(true);
+      const energy = screen.getByText("raidstead.energy.label").closest(".rs-chip") as HTMLElement;
+      expect(within(energy).queryByText("raidstead.streak.value")).toBeNull();
+      // flat dots only: no emoji
+      expect(chip.textContent).not.toMatch(/\p{Extended_Pictographic}/u);
+    });
+
+    it("shows the best streak in the profile", async () => {
+      const s = state();
+      Object.assign(s.member, { streak: 5, streakBest: 9 });
+      api.state.mockResolvedValue(s);
+      render(<RaidsteadGame />);
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.menu.profile/ }));
+      });
+      const tile = within(screen.getByRole("dialog")).getByText("raidstead.profile.streak-best").closest(".rs-stat")!;
+      expect(tile.textContent).toContain("raidstead.streak.value");
+      expect(shown("raidstead.streak.value")).toEqual({ count: 9 });
     });
 
     it("shows no streak at 0 or from a server that sends none", async () => {
@@ -2718,7 +2738,8 @@ describe("Raidstead page", () => {
       api.state.mockResolvedValue(s);
       render(<RaidsteadGame />);
       await ready();
-      expect(screen.getByText("raidstead.streak.free-day-used")).toBeTruthy();
+      const note = screen.getByText("raidstead.streak.free-day-used");
+      expect(note.closest(".rs-chip")!.textContent).toContain("raidstead.streak.label");
     });
 
     it("lists the streak badges by name in the profile", async () => {
@@ -2781,6 +2802,11 @@ describe("Raidstead page", () => {
       });
       const sheet = screen.getByRole("dialog");
       expect(within(sheet).getByText("Far Field")).toBeTruthy();
+      // a full-width action in the footer, not squeezed into the boss card
+      const helpGo = screen.getByRole("button", { name: /raidstead.help.button/ });
+      expect(helpGo.closest(".rs-actions")).toBeTruthy();
+      expect(helpGo.closest(".rs-plate")).toBeNull();
+      expect(helpGo.classList.contains("rs-help-go")).toBe(true);
       expect(within(sheet).getByRole("meter").getAttribute("aria-valuenow")).toBe("50");
       expect(shown("raidstead.help.raiders")).toEqual({ n: 4 });
     });
@@ -2807,6 +2833,9 @@ describe("Raidstead page", () => {
       api.helpAttack.mockResolvedValue({ damage: 3, hp: 150, maxHp: 600, energy: 4, helpLeft: 9, badge: null });
       render(<RaidsteadGame />);
       const sheet = await openTarget();
+      const after = gone();
+      after.member.energy = 4;
+      api.state.mockResolvedValue(after);
       await act(async () => {
         fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.actions.attack-ink" }));
       });
@@ -2814,6 +2843,7 @@ describe("Raidstead page", () => {
       expect(api.attack).not.toHaveBeenCalled();
       expect(within(sheet).getByRole("meter").getAttribute("aria-valuenow")).toBe("25");
       expect(within(sheet).getByText("raidstead.help.hit")).toBeTruthy();
+      expect(shown("raidstead.help.energy")).toEqual({ n: 4, max: 15 });
     });
 
     it("says the town has had all the help it can take", async () => {
@@ -3084,6 +3114,16 @@ describe("Raidstead page", () => {
       expect(screen.queryByText("raidstead.share.copied")).toBeNull();
       expect(screen.getByText("raidstead.share.manual")).toBeTruthy();
       expect(shown("raidstead.share.manual")).toEqual({ line: expect.stringContaining("weak to Forge") });
+    });
+
+    it("sits with the other actions, naming the type it shares", async () => {
+      api.state.mockResolvedValue(scouted());
+      render(<RaidsteadGame />);
+      const button = await shareButton();
+      expect(button.closest(".rs-secondary")).toBeTruthy();
+      expect(button.className).toBe("rs-sec");
+      expect(document.querySelector(".rs-plate")!.contains(button)).toBe(false);
+      expect(shown("raidstead.share.sub")).toEqual({ type: "Forge" });
     });
 
     it("offers no share before a scout", async () => {

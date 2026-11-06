@@ -5489,7 +5489,8 @@
           "name": "Good neighbour",
           "desc": "Help another town with its pest"
         }
-      }
+      },
+      "streak-best": "Best streak"
     },
     "leaderboard": {
       "title": "Season {{n}} alliances",
@@ -5592,16 +5593,18 @@
       "close-preseason": "See you there"
     },
     "streak": {
-      "value": "{{n}}",
-      "label": "Daily streak: {{n}} days in a row",
-      "free-day-used": "Free day used this week"
+      "label": "Streak",
+      "value_one": "{{count}} day",
+      "value_other": "{{count}} days",
+      "free-day-used": "Free day used"
     },
     "share": {
-      "button": "Tell my alliance",
+      "button": "Tell alliance",
       "line": "Raidstead: today the {{pest}} is weak to {{type}} (until it shifts). Join us at ecency.com/raidstead",
       "sent": "Sent to your alliance's chat.",
       "copied": "Copied. Paste it where your alliance talks.",
-      "manual": "Could not copy. Here it is: {{line}}"
+      "manual": "Could not copy. Here it is: {{line}}",
+      "sub": "weak to {{type}}"
     },
     "help": {
       "button": "Help another town",
@@ -5620,7 +5623,8 @@
         "own_boss_alive": "Your own pest is still in town: fight it first.",
         "not_fighting": "This town is not fighting a pest right now.",
         "not_found": "That town is not in the raid any more."
-      }
+      },
+      "energy": "{{n}} / {{max}} energy"
     }
   },
   "listen": {

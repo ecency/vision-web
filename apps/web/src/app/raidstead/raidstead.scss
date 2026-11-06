@@ -147,6 +147,23 @@
     }
   }
 
+  // the alliance and the daily streak
+  .rs-top-left {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  // help another town: a full-width action of its own, like the build card's row
+  .rs-help-go {
+    grid-column: 1 / -1;
+    min-height: 44px;
+    font: 600 16px/1 var(--rs-head);
+    color: #fff;
+    background: var(--rs-violet);
+    box-shadow: 3px 3px 0 var(--rs-ink);
+  }
+
   .rs-top-right {
     display: flex;
     gap: 8px;
@@ -487,7 +504,8 @@
       display: contents;
     }
 
-    .rs-ally {
+    .rs-ally,
+    .rs-top-left {
       grid-area: ally;
       align-self: start;
     }
@@ -733,12 +751,6 @@
   .rs-help-row {
     display: grid;
     gap: 4px;
-  }
-
-  // the daily streak, next to energy
-  .rs-streak {
-    font-weight: 700;
-    white-space: nowrap;
   }
 
   // a far town's facts: three equal tiles

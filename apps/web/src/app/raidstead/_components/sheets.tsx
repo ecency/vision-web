@@ -514,7 +514,7 @@ export function HelpSheet({
         {meter(target)}
         <p className="rs-muted">
           {t("boss.hp", { hp: target.hp, max: target.maxHp })} ·{" "}
-          {t("energy.value", { n: energy, max: maxEnergy })}
+          {t("help.energy", { n: energy, max: maxEnergy })}
         </p>
         <div className="rs-attacks">
           {types.map(({ type, color }) => (
@@ -1036,6 +1036,14 @@ export function ProfileSheet({ state, onClose }: { state: State; onClose: () => 
           <b>{acc.shards}</b>
         </div>
       </div>
+      {typeof state.member?.streakBest === "number" && (
+        <div className="rs-stats">
+          <div className="rs-stat">
+            <small>{t("profile.streak-best")}</small>
+            <b>{t("streak.value", { count: state.member.streakBest })}</b>
+          </div>
+        </div>
+      )}
       <Trophies state={state} />
       <p className="rs-muted">{t("profile.keeps")}</p>
     </Sheet>

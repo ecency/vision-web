@@ -1340,16 +1340,28 @@ export function RaidsteadGame() {
       <div className="rs-world" ref={worldRef} />
       <div className="rs-hud">
         <header className="rs-top">
-          <button
-            className="rs-card rs-chip rs-ally"
-            onClick={() => alliance && setSheet({ kind: "boss" })}
-          >
-            <i className="rs-banner" aria-hidden="true" />
-            <span>
-              <small>{t("alliance.label")}</small>
-              <b>{alliance?.title ?? t("alliance.pick")}</b>
-            </span>
-          </button>
+          <div className="rs-top-left">
+            <button
+              className="rs-card rs-chip rs-ally"
+              onClick={() => alliance && setSheet({ kind: "boss" })}
+            >
+              <i className="rs-banner" aria-hidden="true" />
+              <span>
+                <small>{t("alliance.label")}</small>
+                <b>{alliance?.title ?? t("alliance.pick")}</b>
+              </span>
+            </button>
+            {/* the daily streak, from servers that send one */}
+            {member && streak > 0 && (
+              <div className="rs-card rs-chip">
+                <span>
+                  <small>{t("streak.label")}</small>
+                  <b>{t("streak.value", { count: streak })}</b>
+                  {member.freeDayUsed && <small>{t("streak.free-day-used")}</small>}
+                </span>
+              </div>
+            )}
+          </div>
           <div className="rs-top-right">
             {cal && cal.season > 0 && (
               <div className="rs-card rs-chip">
@@ -1370,19 +1382,6 @@ export function RaidsteadGame() {
                     <i key={i} className={i < energy ? "on" : undefined} />
                   ))}
                 </span>
-                {/* the daily streak, from servers that send one */}
-                {(streak > 0 || member.freeDayUsed) && (
-                  <span>
-                    {streak > 0 && (
-                      <b className="rs-streak" title={t("streak.label", { n: streak })}>
-                        <span aria-hidden="true">🔥</span>
-                        <span className="sr-only">{t("streak.label", { n: streak })}</span>
-                        <span aria-hidden="true">{t("streak.value", { n: streak })}</span>
-                      </b>
-                    )}
-                    {member.freeDayUsed && <small>{t("streak.free-day-used")}</small>}
-                  </span>
-                )}
               </div>
             )}
           </div>
@@ -1433,19 +1432,7 @@ export function RaidsteadGame() {
             </div>
             <div className="rs-row">
               <span>{alive ? t("boss.hp", { hp: boss.hp, max: boss.maxHp }) : t("boss.next")}</span>
-              {!alive && canHelp && !!helpTargets?.length && (
-                <button
-                  className="rs-btn rs-primary"
-                  aria-haspopup="dialog"
-                  onClick={() => {
-                    setSheet({ kind: "assist" });
-                    // the list as it is now: other towns keep fighting meanwhile
-                    loadHelp(true);
-                  }}
-                >
-                  {t("help.button")}
-                </button>
-              )}
+
               {alive && (
                 <span
                   className={`rs-weak${boss.weakness ? " known" : ""}`}
@@ -1461,11 +1448,7 @@ export function RaidsteadGame() {
                     : ""}
                 </span>
               )}
-              {alive && boss.weakness && (
-                <button className="rs-btn" onClick={shareWeakness}>
-                  {t("share.button")}
-                </button>
-              )}
+
             </div>
           </section>
         )}
@@ -1514,6 +1497,19 @@ export function RaidsteadGame() {
                   ×
                 </button>
               </div>
+            )}
+            {view === "raid" && !alive && canHelp && !!helpTargets?.length && (
+              <button
+                className="rs-help-go"
+                aria-haspopup="dialog"
+                onClick={() => {
+                  setSheet({ kind: "assist" });
+                  // the list as it is now: other towns keep fighting meanwhile
+                  loadHelp(true);
+                }}
+              >
+                {t("help.button")}
+              </button>
             )}
             <p className="rs-toast" aria-live="polite">
               {[toast, flash].filter(Boolean).join(" ")}
@@ -1582,6 +1578,12 @@ export function RaidsteadGame() {
                 >
                   {t("actions.scout")}
                   <small>{scoutSub}</small>
+                </button>
+              )}
+              {view === "raid" && alive && boss?.weakness && (
+                <button className="rs-sec" onClick={shareWeakness}>
+                  {t("share.button")}
+                  <small>{t("share.sub", { type: t(`types.${boss.weakness}`) })}</small>
                 </button>
               )}
               {view === "raid" && (
