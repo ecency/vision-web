@@ -2846,6 +2846,43 @@ describe("Raidstead page", () => {
       });
       expect(within(sheet).getByText("raidstead.help.errors.own_boss_alive")).toBeTruthy();
     });
+
+    it("asks for the state again after a refused help attack", async () => {
+      api.state.mockResolvedValue(gone());
+      api.helpAttack.mockRejectedValue(
+        Object.assign(new Error("slow"), { status: 429, code: "too_fast", message: "slow" })
+      );
+      render(<RaidsteadGame />);
+      const sheet = await openTarget();
+      const before = api.state.mock.calls.length;
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.actions.attack-ink" }));
+      });
+      expect(api.state.mock.calls.length).toBe(before + 1);
+    });
+
+    it("keeps focus in the card when it changes what it shows", async () => {
+      api.state.mockResolvedValue(gone());
+      api.helpAttack.mockRejectedValue(
+        Object.assign(new Error("full"), { status: 409, code: "help_full", message: "full" })
+      );
+      render(<RaidsteadGame />);
+      const sheet = await openTarget();
+      expect(document.activeElement).toBe(within(sheet).getByRole("heading", { name: "raidstead.bosses.slug.name" }));
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.help.back" }));
+      });
+      expect(document.activeElement).toBe(within(sheet).getByRole("heading", { name: "raidstead.help.title" }));
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: /Far Field/ }));
+      });
+      // the town leaves the list: back on the list's heading, not on the page behind
+      api.help.mockResolvedValue({ targets: [] });
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.actions.attack-ink" }));
+      });
+      expect(document.activeElement).toBe(within(sheet).getByRole("heading", { name: "raidstead.help.title" }));
+    });
   });
 
   describe("tell my alliance", () => {
@@ -2913,6 +2950,89 @@ describe("Raidstead page", () => {
       } finally {
         delete (navigator as unknown as { clipboard?: unknown }).clipboard;
       }
+    });
+
+    // a clipboard that records when it is written, in one list with the requests
+    const steps: string[] = [];
+    const fakeClipboard = (ok = true) => {
+      const writeText = vi.fn(async () => {
+        steps.push("copy");
+        if (!ok) throw new Error("NotAllowedError");
+      });
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+      return writeText;
+    };
+    const inChannel = () =>
+      vi.spyOn(globalThis, "fetch").mockImplementation((async (url: string) => {
+        steps.push(`fetch ${url}`);
+        return url === "/api/mattermost/channels"
+          ? new Response(JSON.stringify({ channels: [{ id: "ch1", name: "hive-123456", display_name: "Ink & Oak", type: "O" }] }))
+          : new Response(JSON.stringify({ post: { id: "p1" } }));
+      }) as never);
+    const chatCalls = () => fetchSpy.mock.calls.filter(([u]) => String(u).startsWith("/api/mattermost"));
+    beforeEach(() => {
+      steps.length = 0;
+    });
+    afterEach(() => {
+      delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+    });
+
+    it("copies the line inside the tap, before any request", async () => {
+      api.state.mockResolvedValue(scouted());
+      fetchSpy = inChannel();
+      fakeClipboard();
+      render(<RaidsteadGame />);
+      const button = await shareButton();
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(steps[0]).toBe("copy");
+      expect(steps).toContain("fetch /api/mattermost/channels/ch1/posts");
+      expect(screen.getByText("raidstead.share.sent")).toBeTruthy();
+    });
+
+    it("never asks the chat for a player who is not the Ecency user", async () => {
+      // a guest: playing as ann with no Ecency login, so the chat session is not theirs
+      asUser(null);
+      api.state.mockResolvedValue(scouted());
+      fetchSpy = inChannel();
+      const writeText = fakeClipboard();
+      render(<RaidsteadGame />);
+      const button = await shareButton();
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(chatCalls()).toHaveLength(0);
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining("weak to Forge"));
+      expect(screen.getByText("raidstead.share.copied")).toBeTruthy();
+    });
+
+    it("sends once for two quick taps", async () => {
+      api.state.mockResolvedValue(scouted());
+      fetchSpy = inChannel();
+      fakeClipboard();
+      render(<RaidsteadGame />);
+      const button = await shareButton();
+      await act(async () => {
+        fireEvent.click(button);
+        fireEvent.click(button);
+      });
+      expect(chatCalls().filter(([u]) => String(u).endsWith("/posts"))).toHaveLength(1);
+    });
+
+    it("does not say copied when nothing could be copied or sent", async () => {
+      api.state.mockResolvedValue(scouted());
+      fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((async () =>
+        new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 })) as never);
+      fakeClipboard(false);
+      render(<RaidsteadGame />);
+      const button = await shareButton();
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(screen.queryByText("raidstead.share.copied")).toBeNull();
+      expect(screen.getByText("raidstead.share.manual")).toBeTruthy();
+      expect(shown("raidstead.share.manual")).toEqual({ line: expect.stringContaining("weak to Forge") });
     });
 
     it("offers no share before a scout", async () => {

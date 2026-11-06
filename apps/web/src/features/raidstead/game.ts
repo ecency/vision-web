@@ -253,7 +253,7 @@ export function helpErrorMessage(e: unknown, t: T): string {
   return errorMessage(e, t);
 }
 
-export const TIERS =[0, 50, 150, 400, 1000];
+export const TIERS = [0, 50, 150, 400, 1000];
 export const tierOf = (karma: number) =>
   TIERS.reduce((best, min, i) => (karma >= min ? i : best), 0);
 

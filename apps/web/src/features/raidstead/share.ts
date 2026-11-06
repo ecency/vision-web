@@ -25,3 +25,27 @@ export async function postToAllianceChat(community: string, message: string): Pr
     return false;
   }
 }
+
+/// Copies a line, starting inside the tap that asked for it: Safari takes a
+/// copy only while the tap is still current, so call this before any await.
+/// Says whether it was copied.
+export function copyLine(line: string): Promise<boolean> {
+  const byHand = () => {
+    const input = document.createElement("textarea");
+    input.value = line;
+    document.body.appendChild(input);
+    input.select();
+    try {
+      return typeof document.execCommand === "function" && document.execCommand("copy");
+    } catch {
+      return false;
+    } finally {
+      input.remove();
+    }
+  };
+  if (!navigator.clipboard?.writeText) return Promise.resolve(byHand());
+  return navigator.clipboard.writeText(line).then(
+    () => true,
+    () => false
+  );
+}

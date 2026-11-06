@@ -474,6 +474,18 @@ export function HelpSheet({
   const [picked, setPicked] = useState<string | null>(null);
   const [line, setLine] = useState("");
   const target = targets.find((x) => x.community === picked) ?? null;
+  // when the card switches between the list and a town (a pick, Back, a town
+  // that left the list), focus goes to its heading, not to the page behind
+  const heading = useRef<HTMLHeadingElement>(null);
+  const shownView = target?.community ?? "";
+  const firstView = useRef(true);
+  useEffect(() => {
+    if (firstView.current) {
+      firstView.current = false;
+      return;
+    }
+    heading.current?.focus();
+  }, [shownView]);
   const hpPct = (x: HelpTarget) => (x.maxHp > 0 ? Math.ceil((x.hp / x.maxHp) * 100) : 0);
   const meter = (x: HelpTarget) => (
     <div
@@ -496,7 +508,9 @@ export function HelpSheet({
     return (
       <Sheet onClose={onClose} label={t("help.title")}>
         <small>{target.title || target.community}</small>
-        <h2>{pest}</h2>
+        <h2 ref={heading} tabIndex={-1}>
+          {pest}
+        </h2>
         {meter(target)}
         <p className="rs-muted">
           {t("boss.hp", { hp: target.hp, max: target.maxHp })} ·{" "}
@@ -536,7 +550,9 @@ export function HelpSheet({
   }
   return (
     <Sheet onClose={onClose} label={t("help.title")}>
-      <h2>{t("help.title")}</h2>
+      <h2 ref={heading} tabIndex={-1}>
+        {t("help.title")}
+      </h2>
       <p className="rs-muted">{t("help.desc")}</p>
       {targets.length ? (
         <ul className="rs-list">

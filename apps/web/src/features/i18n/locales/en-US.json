@@ -5600,7 +5600,8 @@
       "button": "Tell my alliance",
       "line": "Raidstead: today the {{pest}} is weak to {{type}} (until it shifts). Join us at ecency.com/raidstead",
       "sent": "Sent to your alliance's chat.",
-      "copied": "Copied. Paste it where your alliance talks."
+      "copied": "Copied. Paste it where your alliance talks.",
+      "manual": "Could not copy. Here it is: {{line}}"
     },
     "help": {
       "button": "Help another town",

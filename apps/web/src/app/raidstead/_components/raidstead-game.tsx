@@ -60,8 +60,7 @@ import {
   weaknessLine,
   worldOf
 } from "@/features/raidstead/game";
-import { postToAllianceChat } from "@/features/raidstead/share";
-import { clipboard } from "@/utils/clipboard";
+import { copyLine, postToAllianceChat } from "@/features/raidstead/share";
 import {
   BoardSheet,
   BossSheet,
@@ -1051,6 +1050,8 @@ export function RaidsteadGame() {
         .filter(Boolean)
         .join(" ");
     } catch (e) {
+      // as after a refused attack: the energy and the card as the server has them
+      refresh({ quiet: true });
       // a town that takes no more help (full, its pest gone, out of the raid)
       // leaves the list, which is asked for again
       const code = (e as { code?: string })?.code;
@@ -1066,19 +1067,24 @@ export function RaidsteadGame() {
 
   // Tell my alliance: today's weakness, to the community's chat channel when
   // the player is in it, otherwise copied for them to paste
+  // one share at a time: a second tap while one is on its way does nothing
+  const sharing = useRef(false);
   const shareWeakness = async () => {
-    if (!alliance || !boss?.weakness) return;
+    if (sharing.current || !alliance || !boss?.weakness) return;
+    sharing.current = true;
     const line = weaknessLine(boss.kind, boss.weakness, i18next.t);
-    // the chat session belongs to the Ecency user: only when that is who plays
-    if (username && username === data?.account.name) {
-      if (await postToAllianceChat(alliance.community, line)) return say(t("share.sent"));
-    }
+    // copied first, while the tap is still current (Safari refuses a copy after an await)
+    const copied = copyLine(line);
     try {
-      await navigator.clipboard.writeText(line);
-    } catch {
-      clipboard(line);
+      // the chat session belongs to the Ecency user: only when that is who plays
+      if (username && username === data?.account.name) {
+        if (await postToAllianceChat(alliance.community, line)) return say(t("share.sent"));
+      }
+      // nothing copied either: the line itself, to copy by hand
+      say((await copied) ? t("share.copied") : t("share.manual", { line }));
+    } finally {
+      sharing.current = false;
     }
-    say(t("share.copied"));
   };
 
   const openReport = () => {
