@@ -2886,6 +2886,33 @@ describe("Raidstead page", () => {
       return { promise, settle };
     };
 
+    it("keeps a hit's new health over a list asked for before it", async () => {
+      api.state.mockResolvedValue(gone());
+      api.helpAttack.mockResolvedValue({ damage: 6, hp: 150, maxHp: 600, energy: 4, helpLeft: 0, badge: null });
+      render(<RaidsteadGame />);
+      const button = await helpButton();
+      // opening the card asks for the list again; that answer comes after the hit
+      const pending = later<{ targets: (typeof target)[] }>();
+      api.help.mockReturnValueOnce(pending.promise);
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      const sheet = screen.getByRole("dialog");
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: /Far Field/ }));
+      });
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.actions.attack-ink" }));
+      });
+      await act(async () => {
+        pending.settle({ targets: [target] });
+      });
+      expect(within(sheet).getByRole("meter").getAttribute("aria-valuenow")).toBe("25");
+      expect(
+        (within(sheet).getByRole("button", { name: "raidstead.actions.attack-ink" }) as HTMLButtonElement).disabled
+      ).toBe(true);
+    });
+
     it("keeps the newer list when two asks answer out of order, and never brings back a refused town", async () => {
       api.state.mockResolvedValue(gone());
       render(<RaidsteadGame />);

@@ -1053,6 +1053,8 @@ export function RaidsteadGame() {
     setBusy(true);
     try {
       const r = await raidsteadApi.helpAttack(target.community, type);
+      // a list asked for before this hit would bring back the health and help left before it
+      helpSeq.current++;
       setHelpTargets(
         (list) =>
           list?.map((x) =>
