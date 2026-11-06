@@ -50,6 +50,14 @@ describe("share card image", () => {
     expect(up.upload).toHaveBeenCalledTimes(1);
   });
 
+  it("does nothing for a caller that stopped wanting it before it began", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((() => recorder()) as never);
+    const gone = new AbortController();
+    gone.abort();
+    expect(await shareCardImage(card, "ann", gone.signal)).toBeNull();
+    expect(up.upload).not.toHaveBeenCalled();
+  });
+
   it("uploads nothing when the card could not be drawn (no 2D canvas)", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((() => null) as never);
     expect(await shareCardImage(card, "ann")).toBeNull();

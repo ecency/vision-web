@@ -425,6 +425,8 @@ describe("town news", () => {
     ]);
     expect(noteText(notes[2], full)).toBe('raidstead.news.webbed {"name":"raidstead.town.buildings.tower.name"}');
     expect(noteText(notes[3], full)).toBe('raidstead.news.killed {"name":"raidstead.bosses.beetle.name","who":"bob"}');
+    // a kill without who (an older line) never shows an empty "@"
+    expect(noteText({ day: 5, kind: "killed", what: "beetle", text: "x" }, full)).toBe('raidstead.news.killed_plain {"name":"raidstead.bosses.beetle.name"}');
     expect(noteText({ day: 5, kind: "web_gone", what: "hall", text: "x" }, full)).toBe(
       'raidstead.news.web_gone {"name":"raidstead.town.buildings.hall.name"}'
     );

@@ -1145,6 +1145,12 @@ export function RaidsteadGame() {
     reportTap.current = { n: reportTap.current.n + 1, abort: null };
     setDrafting(false);
   };
+  // the report can also go without its close button (a logout, another tab's
+  // session, the page leaving): the card on its way for it stops too
+  useEffect(() => {
+    if (sheet?.kind !== "report" && reportTap.current.abort) cancelReport();
+  }, [sheet]);
+  useEffect(() => () => reportTap.current.abort?.abort(), []);
   const openReport = async () => {
     if (!data || !alliance || drafting) return;
     const report = buildReport(data, i18next.t);

@@ -30,6 +30,8 @@ export function shareCardImage(
     }, CARD_WAIT_MS);
     abort.signal.addEventListener("abort", () => resolve(null), { once: true });
   });
+  // a caller that gave up before this began gets nothing drawn or sent
+  if (signal?.aborted) stop();
   const work = (async (): Promise<string | null> => {
     const canvas = document.createElement("canvas");
     // no 2D canvas: no picture, and a blank one is not uploaded

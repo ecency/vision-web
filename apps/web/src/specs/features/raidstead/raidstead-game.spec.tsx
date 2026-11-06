@@ -3397,6 +3397,23 @@ describe("Raidstead page", () => {
       expect(nav.push).not.toHaveBeenCalled();
     });
 
+    it("does not open the composer once the report went away with the game session", async () => {
+      asUser("ann");
+      let land: (url: string | null) => void = () => undefined;
+      nav.card.mockImplementation(() => new Promise<string | null>((r) => (land = r)));
+      const view = render(<RaidsteadGame />);
+      await openDraft();
+      const signal = (nav.card.mock.calls[0] as unknown[])[2] as AbortSignal | undefined;
+      // ann logs out of Ecency while the card is on its way: the sheet closes with the session
+      asUser(null);
+      view.rerender(<RaidsteadGame />);
+      await waitFor(() => expect(clearSession).toHaveBeenCalled());
+      expect(signal?.aborted).toBe(true);
+      await act(async () => land("https://images.ecency.com/DQm/card.png"));
+      expect(nav.writer).not.toHaveBeenCalled();
+      expect(nav.push).not.toHaveBeenCalled();
+    });
+
     it("still opens the draft, without the card, when the upload fails", async () => {
       asUser("ann");
       nav.card.mockRejectedValue(new Error("upload failed"));
