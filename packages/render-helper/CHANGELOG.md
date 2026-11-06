@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.43
+
+### Patch Changes
+
+- fix: iOS signup/purchase links, chat budget expiry, HiveSuite byline, image proxy bypass, Raidstead wallet reason (#2007)
+
 ## 2.5.42
 
 ### Patch Changes

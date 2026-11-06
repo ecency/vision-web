@@ -37,6 +37,16 @@ describe("raidstead client", () => {
     vi.mocked(signBufferWithExtension).mockReset();
   });
 
+  it("keeps the wallet's own reason when it refuses to sign", async () => {
+    vi.mocked(signBufferWithExtension).mockResolvedValue({ success: false, message: " User cancelled " } as never);
+    await expect(signIn("ann", "extension", false)).rejects.toMatchObject({ walletMessage: "User cancelled" });
+    // no reason, or not text: nothing to show
+    vi.mocked(signBufferWithExtension).mockResolvedValue({ success: false } as never);
+    await expect(signIn("ann", "extension", false)).rejects.toMatchObject({ walletMessage: undefined });
+    vi.mocked(signBufferWithExtension).mockResolvedValue({ success: false, message: { code: 1 } } as never);
+    await expect(signIn("ann", "extension", false)).rejects.toMatchObject({ walletMessage: undefined });
+  });
+
   it("signs silently only for posting-key logins", () => {
     vi.mocked(getLoginType).mockReturnValue("privateKey");
     vi.mocked(getPostingKey).mockReturnValue("5K...");

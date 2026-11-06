@@ -1483,4 +1483,18 @@ describe('Markdown2Html', () => {
       expect(inertOut).toContain('<span class="er-author er-author-link">')
     })
   })
+
+  describe('author images and the image proxy (#1999)', () => {
+    it('proxies an author image that carries class="no-replace"', () => {
+      const out = markdown2Html('<img class="no-replace" src="https://example.com/a.png">')
+      expect(out).toMatch(/src="https:\/\/i\.ecency\.com\/p\//)
+      expect(out).not.toMatch(/src="https:\/\/example\.com/)
+    })
+
+    it('renders no image that loads an over-long URL directly', () => {
+      const longUrl = 'https://example.com/' + 'a'.repeat(2048) + '.png'
+      const out = markdown2Html(`<img src="${longUrl}">`)
+      expect(out).not.toContain(`src="${longUrl}"`)
+    })
+  })
 })

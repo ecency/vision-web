@@ -79,8 +79,21 @@ function signer(kind: "key" | "extension", username: string): (text: string) => 
     };
   }
   return async (text) => {
-    const r = await signBufferWithExtension(username, text, "Posting");
-    if (!r.success || !r.result) throw new Error(r.message || "not signed");
+    // The wallet's own reason (cancelled, no such account, a message it will
+    // not sign) tells the player what to do; the sign-in sheet shows it. The
+    // Keychain and Peak Vault adapters refuse by rejecting with it, others may
+    // answer success: false with a message.
+    const refused = (message: unknown): never => {
+      const reason = typeof message === "string" ? message.trim().slice(0, 200) : "";
+      throw Object.assign(new Error(reason || "not signed"), { walletMessage: reason || undefined });
+    };
+    let r: Awaited<ReturnType<typeof signBufferWithExtension>>;
+    try {
+      r = await signBufferWithExtension(username, text, "Posting");
+    } catch (e) {
+      return refused(e instanceof Error ? e.message : e);
+    }
+    if (!r.success || !r.result) return refused(r.message);
     return r.result;
   };
 }

@@ -5116,6 +5116,7 @@
       "username": "Hive username",
       "with-wallet": "Sign in with your wallet",
       "failed": "Signing in did not work. Try again.",
+      "refused": "Signing in did not work: {{reason}}",
       "expired": "Your Ecency login could not be confirmed. Log out of Ecency and in again, then come back.",
       "sign-out": "Sign out of Raidstead"
     },

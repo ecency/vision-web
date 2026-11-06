@@ -58,6 +58,7 @@ vi.mock("@/app/publish/_hooks", () => ({ usePublishHandoffWriter: () => vi.fn() 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import i18next from "i18next";
+import enUS from "@/features/i18n/locales/en-US.json";
 import { createScene } from "@ecency/raidstead";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { clearSession, signerFor, signIn } from "@/features/raidstead/client";
@@ -379,6 +380,53 @@ describe("Raidstead page", () => {
     } finally {
       walletInBrowser(false);
       vi.mocked(signerFor).mockReturnValue("extension");
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it.each([
+    ["User cancelled", "User cancelled"],
+    ["<b>no</b> posting key", "<b>no</b> posting key"]
+  ])("says the wallet's own reason when it refuses: %s", async (message, text) => {
+    box.stored = null;
+    asUser(null);
+    walletInBrowser(true);
+    vi.mocked(signIn).mockRejectedValueOnce(Object.assign(new Error(message), { walletMessage: message }));
+    // the stand-in shows keys only; this line needs its words to check the reason is text
+    const real = vi.mocked(i18next.t).getMockImplementation();
+    vi.mocked(i18next.t).mockImplementation(((key: string, values?: { reason?: string }) =>
+      key === "raidstead.signin.refused" ? `Signing in did not work: ${values?.reason}` : key) as never);
+    try {
+      render(<RaidsteadGame />);
+      fireEvent.change(await screen.findByLabelText("raidstead.signin.username"), { target: { value: "alice" } });
+      fireEvent.click(screen.getByRole("button", { name: "raidstead.signin.with-wallet" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toBe(`Signing in did not work: ${text}`);
+      expect(alert.querySelector("b")).toBeNull();
+    } finally {
+      if (real) vi.mocked(i18next.t).mockImplementation(real);
+      walletInBrowser(false);
+      vi.mocked(signIn).mockReset();
+    }
+  });
+
+  it("has the refusal line in the locale, with the wallet's reason in it", () => {
+    // the refusal case above stands in its own words for the line; this is the real one
+    expect(enUS.raidstead.signin.refused).toMatch(/\{\{reason\}\}/);
+  });
+
+  it("keeps the general line when the wallet gives no reason", async () => {
+    box.stored = null;
+    asUser(null);
+    walletInBrowser(true);
+    vi.mocked(signIn).mockRejectedValueOnce(Object.assign(new Error("not signed"), { walletMessage: undefined }));
+    try {
+      render(<RaidsteadGame />);
+      fireEvent.change(await screen.findByLabelText("raidstead.signin.username"), { target: { value: "alice" } });
+      fireEvent.click(screen.getByRole("button", { name: "raidstead.signin.with-wallet" }));
+      expect((await screen.findByRole("alert")).textContent).toBe("raidstead.signin.failed");
+    } finally {
+      walletInBrowser(false);
       vi.mocked(signIn).mockReset();
     }
   });

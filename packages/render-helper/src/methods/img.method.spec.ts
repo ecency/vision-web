@@ -130,30 +130,53 @@ describe('img() method - Image Processing', () => {
       expect(image.getAttribute('src')).toBe(proxiedUrl)
     })
 
-    it('should skip proxification for images with no-replace class', () => {
+    // no-replace is render-helper's own marker for the video thumbnails it
+    // builds. An author's class must not opt an image out of the proxy (#1999).
+    it.each([
+      'no-replace',
+      'some-class no-replace another-class',
+      'no-replace video-thumbnail'
+    ])('proxies an author image even with class="%s"', (cls) => {
       const parent = doc.createElement('div')
       const image = doc.createElement('img')
-      const originalUrl = 'https://example.com/image.jpg'
-      image.setAttribute('src', originalUrl)
-      image.setAttribute('class', 'no-replace')
+      image.setAttribute('src', 'https://example.com/image.jpg')
+      image.setAttribute('class', cls)
       parent.appendChild(image)
 
       img(image)
 
-      expect(image.getAttribute('src')).toBe(originalUrl)
+      expect(image.getAttribute('src')).toMatch(/^https:\/\/i\.ecency\.com\/p\//)
+      expect(image.getAttribute('src')).not.toContain('example.com')
     })
 
-    it('should skip proxification for images with class containing no-replace', () => {
+    it.each([
+      'https://i.ecency.com/u/someone/avatar',
+      'https://i.ecency.com/640x0/https://example.com/a.png',
+      'https://i.ecency.com/p/abc?format=match&mode=fit'
+    ])('drops an author srcset next to an already proxied src %s', (src) => {
       const parent = doc.createElement('div')
       const image = doc.createElement('img')
-      const originalUrl = 'https://example.com/image.jpg'
-      image.setAttribute('src', originalUrl)
-      image.setAttribute('class', 'some-class no-replace another-class')
+      image.setAttribute('src', src)
+      image.setAttribute('srcset', 'https://evil.example/t.png 1x')
       parent.appendChild(image)
 
       img(image)
 
-      expect(image.getAttribute('src')).toBe(originalUrl)
+      expect(image.getAttribute('srcset') || '').not.toContain('evil.example')
+    })
+
+    it('does not load an image the proxy cannot take straight from its source', () => {
+      const parent = doc.createElement('div')
+      const image = doc.createElement('img')
+      const longUrl = 'https://example.com/' + 'a'.repeat(2048) + '.jpg'
+      image.setAttribute('src', longUrl)
+      image.setAttribute('srcset', `${longUrl} 1x`)
+      parent.appendChild(image)
+
+      img(image)
+
+      expect(image.getAttribute('src')).toBeNull()
+      expect(image.getAttribute('srcset')).toBeNull()
     })
   })
 

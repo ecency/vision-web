@@ -1,3 +1,4 @@
+import { markInternalThumbnail } from './internal-thumbnail'
 import {
   BITCHUTE_REGEX,
   CUSTOM_COMMUNITY_REGEX,
@@ -687,6 +688,7 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
     } else {
       const thumbImg = el.ownerDocument.createElement('img')
       thumbImg.setAttribute('class', 'no-replace video-thumbnail')
+      markInternalThumbnail(thumbImg)
       thumbImg.setAttribute('itemprop', 'thumbnailUrl')
       thumbImg.setAttribute('src', thumbnail)
 
@@ -818,6 +820,7 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
           const thumbImg = el.ownerDocument.createElement('img')
 
           thumbImg.setAttribute('class', 'no-replace video-thumbnail')
+          markInternalThumbnail(thumbImg)
           thumbImg.setAttribute('itemprop', 'thumbnailUrl')
 
           thumbImg.setAttribute('src', thumbnail)
@@ -900,6 +903,7 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
               const thumbnail = proxifyImageSrc(src.replace(/\s+/g, ''), 0, 0, 'match')
               const thumbImg = el.ownerDocument.createElement('img')
               thumbImg.setAttribute('class', 'no-replace video-thumbnail')
+              markInternalThumbnail(thumbImg)
               thumbImg.setAttribute('itemprop', 'thumbnailUrl')
               thumbImg.setAttribute('src', thumbnail)
               el.appendChild(thumbImg)

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { Redis } from "ioredis";
+import RedisMock from "ioredis-mock";
 import { CHANNEL_CREATE_MAX, CHANNEL_CREATE_WINDOW_MS, takeChannelCreateSlot } from "@/server/chat-channel-create-budget";
 
 function fakeRedis() {
@@ -20,6 +21,13 @@ function fakeRedis() {
     pexpire: vi.fn(async (key: string, ms: number, _nx: string) => {
       if (!ttls.has(key)) ttls.set(key, ms);
       return 1;
+    }),
+    // Stands in for the INCR + PEXPIRE-when-no-TTL script, run as one call.
+    eval: vi.fn(async (_script: string, _numKeys: number, key: string, ms: string) => {
+      const next = (counts.get(key) ?? 0) + 1;
+      counts.set(key, next);
+      if (!ttls.has(key)) ttls.set(key, Number(ms));
+      return next;
     })
   };
   return { redis: redis as unknown as Redis, mock: redis, ttls };
@@ -41,29 +49,67 @@ describe("takeChannelCreateSlot", () => {
 
   it("refuses when Redis is missing or failing", async () => {
     expect(await takeChannelCreateSlot("u-1", null)).toBe(false);
-    const broken = { incr: vi.fn(async () => { throw new Error("down"); }) } as unknown as Redis;
+    const broken = {
+      eval: vi.fn(async () => {
+        throw new Error("down");
+      })
+    } as unknown as Redis;
     expect(await takeChannelCreateSlot("u-1", broken)).toBe(false);
   });
 
-  it("never leaves a counter without an expiry when Redis fails midway", async () => {
-    const { redis, mock, ttls } = fakeRedis();
-    mock.set.mockRejectedValueOnce(new Error("blip"));
-    expect(await takeChannelCreateSlot("u-1", redis)).toBe(false);
-    expect(mock.incr).not.toHaveBeenCalled();
-
-    mock.incr.mockRejectedValueOnce(new Error("blip"));
-    expect(await takeChannelCreateSlot("u-1", redis)).toBe(false);
-    // the key exists only with its expiry, so it cannot lock the user out
-    expect(ttls.get("chat:searchcreate:v1:u-1")).toBe(CHANNEL_CREATE_WINDOW_MS);
+  it("counts and sets the expiry in one Redis call", async () => {
+    const { redis, mock } = fakeRedis();
     expect(await takeChannelCreateSlot("u-1", redis)).toBe(true);
+    expect(mock.eval).toHaveBeenCalledTimes(1);
+    expect(mock.eval).toHaveBeenCalledWith(
+      expect.stringContaining("PEXPIRE"),
+      1,
+      "chat:searchcreate:v1:u-1",
+      String(CHANNEL_CREATE_WINDOW_MS)
+    );
   });
 
-  it("re-arms the expiry when the key vanished between SET and INCR", async () => {
+  it("repairs a counter that was left without an expiry", async () => {
     const { redis, mock, ttls } = fakeRedis();
-    // SET sees an old key (no-op); it then expires before INCR recreates it
-    mock.set.mockResolvedValueOnce(null);
+    // Stuck state from #1990: INCR recreated the key with no TTL past the
+    // first count, and the PEXPIRE after it failed.
+    await mock.incr("chat:searchcreate:v1:u-1");
+    await mock.incr("chat:searchcreate:v1:u-1");
+    expect(ttls.has("chat:searchcreate:v1:u-1")).toBe(false);
 
-    expect(await takeChannelCreateSlot("u-1", redis)).toBe(true);
+    await takeChannelCreateSlot("u-1", redis);
     expect(ttls.get("chat:searchcreate:v1:u-1")).toBe(CHANNEL_CREATE_WINDOW_MS);
+  });
+
+  // The cases below run the real Lua script, not the fake above.
+  describe("against a Redis that runs the script", () => {
+    const key = "chat:searchcreate:v1:u-lua";
+    const real = () => new RedisMock() as unknown as Redis;
+
+    it("gives a new counter the window as its expiry", async () => {
+      const redis = real();
+      await redis.del(key);
+      expect(await takeChannelCreateSlot("u-lua", redis)).toBe(true);
+      const ttl = await redis.pttl(key);
+      expect(ttl).toBeGreaterThan(CHANNEL_CREATE_WINDOW_MS - 5_000);
+      expect(ttl).toBeLessThanOrEqual(CHANNEL_CREATE_WINDOW_MS);
+    });
+
+    it("repairs a counter that was left without an expiry", async () => {
+      const redis = real();
+      await redis.set(key, CHANNEL_CREATE_MAX + 3);
+      expect(await redis.pttl(key)).toBe(-1);
+      // over the cap, so refused, but the counter now expires
+      expect(await takeChannelCreateSlot("u-lua", redis)).toBe(false);
+      expect(await redis.pttl(key)).toBeGreaterThan(0);
+    });
+
+    it("keeps an expiry that is already running", async () => {
+      const redis = real();
+      await redis.set(key, 1, "PX", 5_000);
+      expect(await takeChannelCreateSlot("u-lua", redis)).toBe(true);
+      expect(await redis.pttl(key)).toBeLessThanOrEqual(5_000);
+      expect(await redis.get(key)).toBe("2");
+    });
   });
 });

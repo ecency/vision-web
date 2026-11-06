@@ -24,7 +24,14 @@ export function GET() {
             // and the web share cards open (/waves?text=...): without these the
             // app is never offered and the link lands in the browser.
             "/waves",
-            "/waves/*"
+            "/waves/*",
+            // Signup and purchase links the native app routes. /auth stays out:
+            // it is also the web HiveSigner callback (/auth?code=...), and listing
+            // it would hand a website login to the app.
+            "/signup",
+            "/signup/*",
+            "/purchase",
+            "/purchase/*"
           ]
         }
       ]

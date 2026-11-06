@@ -183,6 +183,7 @@
     "baseline-browser-mapping": "^2.11.22",
     "eslint": "^8",
     "eslint-config-next": "15.5.15",
+    "ioredis-mock": "8.13.1",
     "postcss": "^8",
     "prettier": "^3.1.0",
     "sass": "^1.69.5",

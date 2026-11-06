@@ -1,4 +1,5 @@
 import { IMG_REGEX, YOUTUBE_REGEX, WHITE_LIST, DOMParser, POST_REGEX  } from '../consts'
+import { markInternalThumbnail } from './internal-thumbnail'
 import { extractYtStartTime, youtubeVideoLinkClass, isValidPermlink, isValidUsername, sanitizePermlink } from '../helper'
 import { proxifyImageSrc } from '../proxify-image-src'
 import { linkify } from './linkify.method'
@@ -117,6 +118,7 @@ export function text(node: HTMLElement | null, forApp: boolean, renderOptions?: 
       // Create and append thumbnail image
       const thumbImg = node.ownerDocument.createElement('img')
       thumbImg.setAttribute('class', 'no-replace video-thumbnail')
+      markInternalThumbnail(thumbImg)
       thumbImg.setAttribute('src', thumbnail)
       anchor.appendChild(thumbImg)
 
