@@ -3,6 +3,7 @@ import type {
   AttackResult,
   AttackType,
   Boss,
+  BuildingId,
   Impact,
   LeaderRow,
   Calendar,
@@ -12,6 +13,7 @@ import type {
   State,
   View
 } from "@ecency/raidstead";
+import * as ls from "@/utils/local-storage";
 
 type T = (key: string, values?: Record<string, unknown>) => string;
 
@@ -326,3 +328,45 @@ export function pestCalendar(cal: Pick<Calendar, "startsAt">): PestWeek[] {
   const start = Date.parse(cal.startsAt);
   return BOSS_KINDS.map((kind, i) => ({ week: i + 1, kind, at: start + i * 7 * 86_400_000 }));
 }
+
+/// What each building's next stage costs in materials, by stage (the server's own table).
+export const BUILD_COSTS: Record<BuildingId, number[]> = {
+  tower: [30, 60, 90],
+  workshop: [30, 60, 90],
+  trophy: [30, 50, 80],
+  hall: [40, 80, 120],
+  library: [30, 60, 90],
+  beacon: [30, 60, 90],
+  walls: [40, 70, 100]
+};
+
+/// Why the player cannot build the next stage of a building right now, or null
+/// when they can: a member builds only after raiding this season, no building
+/// grows past the Hall, and the alliance needs the materials.
+export function buildBlock(
+  state: State,
+  id: BuildingId
+): "done" | "raid-first" | "hall-first" | "short" | null {
+  const a = state.alliance;
+  const stage = a?.town[id] ?? 3;
+  if (!a || stage >= 3) return "done";
+  if (!state.member || state.member.attackDays <= 0) return "raid-first";
+  if (id !== "hall" && stage >= a.town.hall) return "hall-first";
+  return a.mats < BUILD_COSTS[id][stage] ? "short" : null;
+}
+
+const NUDGE_KEY = "raidstead_build_nudge";
+
+/// A dismissed build card is remembered by season, alliance, account and the
+/// materials it showed: any change in the materials brings it back.
+export const buildNudgeMark = (state: State) =>
+  `${state.calendar.season}:${state.alliance?.community ?? ""}:${state.account.name}@${state.alliance?.mats ?? 0}`;
+
+/// The raid screen's card telling the player their town can build something now.
+export function buildNudgeShown(state: State | null): boolean {
+  if (!state?.alliance || !BUILDING_IDS.some((id) => buildBlock(state, id) === null)) return false;
+  // storage that throws or is empty only means the card shows
+  return ls.get(NUDGE_KEY) !== buildNudgeMark(state);
+}
+
+export const dismissBuildNudge = (state: State) => ls.set(NUDGE_KEY, buildNudgeMark(state));

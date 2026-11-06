@@ -181,6 +181,37 @@
     gap: 5px;
   }
 
+  // the town can build something: a small card at the top of the field
+  .rs-nudge {
+    grid-area: slot;
+    align-self: start;
+    justify-self: center;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    max-width: min(440px, 100%);
+    padding: 4px 4px 4px 12px;
+  }
+
+  .rs-nudge-open {
+    border: 0;
+    background: none;
+    padding: 4px 0;
+    text-align: left;
+    font-weight: 700;
+    text-decoration: underline dotted 2px;
+    text-underline-offset: 3px;
+  }
+
+  .rs-nudge-close {
+    border: 0;
+    background: none;
+    min-width: 32px;
+    min-height: 32px;
+    font-size: 20px;
+    line-height: 1;
+  }
+
   .rs-row {
     display: flex;
     justify-content: space-between;

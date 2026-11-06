@@ -5225,6 +5225,9 @@
       "quests": "Quests",
       "quests-left": "{{n}} to do",
       "quests-done": "all done",
+      "attack-ink": "Ink attack",
+      "attack-signal": "Signal attack",
+      "attack-forge": "Forge attack",
       "menu": "Menu",
       "raid": "Raid",
       "town": "Town",
@@ -5234,6 +5237,10 @@
       "title": "This week's raiders",
       "you": "You",
       "empty": "Nobody has attacked yet this week."
+    },
+    "build-nudge": {
+      "text": "Your town has {{n}} materials. Build something",
+      "dismiss": "Hide"
     },
     "toast": {
       "day": "Day {{day}}. Tap the boss or pick an attack.",
@@ -5270,7 +5277,8 @@
       "quests-none": "No new quests finished yet today.",
       "donated": "Donated 50 Points to the war chest. They are burned.",
       "chest-full": "War chest full! +1 damage for the whole alliance for 24 hours.",
-      "chest-kept": "War chest full! It opens for 24 hours once the next pest arrives."
+      "chest-kept": "War chest full! It opens for 24 hours once the next pest arrives.",
+      "day-one": "Scout first, then attack with the weak type."
     },
     "errors": {
       "generic": "Something went wrong. Try again.",

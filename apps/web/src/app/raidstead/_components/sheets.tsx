@@ -15,6 +15,8 @@ import {
   type State
 } from "@ecency/raidstead";
 import {
+  BUILD_COSTS,
+  buildBlock,
   chestBlock,
   chestHoursLeft,
   noteId,
@@ -359,7 +361,9 @@ export function HeroSheet({
   const canRally = !type && rallyWhy === null && !busy;
   return (
     <Sheet onClose={onClose} label={name}>
-      <small>{type ? t(`types.${type}`) : t("hero-card.herald-role")}</small>
+      <small>
+        {type ? t("hero-card.attack", { type: t(`types.${type}`) }) : t("hero-card.herald-role")}
+      </small>
       <h2>{name}</h2>
       {lines.map((l, i) => (
         <p key={i} className={i ? "rs-muted" : undefined}>
@@ -417,16 +421,6 @@ export function TownSheet({ town, onClose }: { town: Neighbor; onClose: () => vo
   );
 }
 
-const COSTS: Record<BuildingId, number[]> = {
-  tower: [30, 60, 90],
-  workshop: [30, 60, 90],
-  trophy: [30, 50, 80],
-  hall: [40, 80, 120],
-  library: [30, 60, 90],
-  beacon: [30, 60, 90],
-  walls: [40, 70, 100]
-};
-
 export function BuildingSheet(props: {
   id: BuildingId | "homes";
   state: State;
@@ -446,10 +440,8 @@ export function BuildingSheet(props: {
     );
   }
   const stage = a.town[id];
-  const cost = stage < 3 ? COSTS[id][stage] : 0;
-  const hallFirst = id !== "hall" && stage >= a.town.hall && stage < 3;
-  const short = a.mats < cost;
-  const raided = m.attackDays > 0;
+  const cost = stage < 3 ? BUILD_COSTS[id][stage] : 0;
+  const why = buildBlock(state, id);
   const webbed = a.web === id;
   const talked = a.webTalk.includes(state.account.name);
   return (
@@ -495,17 +487,17 @@ export function BuildingSheet(props: {
             </span>
             <button
               className="rs-btn rs-primary"
-              disabled={hallFirst || short || !raided || props.busy}
+              disabled={why !== null || props.busy}
               onClick={() => props.onBuild(id)}
             >
               {t("town.build")}
             </button>
           </div>
-          {!raided ? (
+          {why === "raid-first" ? (
             <p className="rs-muted">{t("town.raid-first")}</p>
-          ) : hallFirst ? (
+          ) : why === "hall-first" ? (
             <p className="rs-muted">{t("town.hall-first", { n: stage + 1 })}</p>
-          ) : short ? (
+          ) : why === "short" ? (
             <p className="rs-muted">{t("town.short")}</p>
           ) : null}
         </>

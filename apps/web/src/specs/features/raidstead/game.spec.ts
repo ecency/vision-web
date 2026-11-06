@@ -1,12 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AttackResult, Note, State } from "@ecency/raidstead";
 import {
   aimOf,
   attackMessage,
+  buildBlock,
+  buildNudgeShown,
   buildReport,
   chestBlock,
   chestHoursLeft,
   countdown,
+  dismissBuildNudge,
   errorMessage,
   GNATS_SHOWN,
   impactOf,
@@ -506,5 +509,59 @@ describe("pestCalendar", () => {
       for (const w of pestCalendar(c))
         expect(Object.keys(w).sort()).toEqual(["at", "kind", "week"]);
     }
+  });
+});
+
+describe("build nudge", () => {
+  // a member who has raided, with a Hall to build first (stage 0 costs 40)
+  const town = (mats: number, attackDays = 1): State => {
+    const s = state();
+    s.alliance!.mats = mats;
+    s.alliance!.town = {
+      tower: 0,
+      workshop: 0,
+      trophy: 0,
+      hall: 0,
+      library: 0,
+      beacon: 0,
+      walls: 0
+    };
+    s.member!.attackDays = attackDays;
+    return s;
+  };
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it("follows the Town's own rules: raid first, the Hall first, enough materials", () => {
+    expect(buildBlock(town(60), "hall")).toBeNull();
+    expect(buildBlock(town(60), "tower")).toBe("hall-first");
+    expect(buildBlock(town(20), "hall")).toBe("short");
+    expect(buildBlock(town(60, 0), "hall")).toBe("raid-first");
+    expect(buildNudgeShown(town(60))).toBe(true);
+    expect(buildNudgeShown(town(20))).toBe(false);
+    expect(buildNudgeShown(town(60, 0))).toBe(false);
+  });
+
+  it("stays hidden once dismissed until the materials grow again", () => {
+    dismissBuildNudge(town(60));
+    expect(buildNudgeShown(town(60))).toBe(false);
+    expect(buildNudgeShown(town(85))).toBe(true);
+    // the dismissal is per season, alliance and account
+    const next = town(60);
+    next.calendar.season = 2;
+    expect(buildNudgeShown(next)).toBe(true);
+  });
+
+  it("still shows, and nothing breaks, when storage throws", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    expect(() => dismissBuildNudge(town(60))).not.toThrow();
+    expect(buildNudgeShown(town(60))).toBe(true);
   });
 });

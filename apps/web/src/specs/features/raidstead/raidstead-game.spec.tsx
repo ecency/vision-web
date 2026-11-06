@@ -875,7 +875,7 @@ describe("Raidstead page", () => {
   describe("playing alongside allies", () => {
     const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
     const ready = () => screen.findByRole("button", { name: /raidstead.actions.rally/ });
-    const attackButton = (type: string) => screen.getByRole("button", { name: new RegExp(`raidstead\\.types\\.${type}`) });
+    const attackButton = (type: string) => screen.getByRole("button", { name: `raidstead.actions.attack-${type}` });
     // Timers the page itself has left. The test DOM starts a 0 ms one of its own
     // for every storage write (its notice to other windows): those go first.
     const pageTimers = async () => {
@@ -2175,5 +2175,111 @@ describe("Raidstead page", () => {
       await tick(4100);
       expect(signInButton()).not.toBeNull();
     });
+  });
+
+  it("names the attack buttons by what they do", async () => {
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    const attacks = document.querySelectorAll(".rs-atk");
+    expect(attacks).toHaveLength(3);
+    expect(
+      ["ink", "signal", "forge"].map(
+        (type) => screen.getByRole("button", { name: `raidstead.actions.attack-${type}` }).className
+      )
+    ).toEqual(["rs-atk", "rs-atk", "rs-atk"]);
+  });
+
+  it("titles a hero's card by the attack it makes", async () => {
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    const onTap = vi.mocked(createScene).mock.calls.at(-1)![1]!.onTap!;
+    await act(async () => {
+      onTap({ kind: "hero", hero: "scribe" });
+    });
+    const card = screen.getByRole("dialog");
+    expect(card.querySelector("small")!.textContent).toBe("raidstead.hero-card.attack");
+    expect(shown("raidstead.hero-card.attack")).toEqual({ type: "raidstead.types.ink" });
+  });
+
+  describe("build card", () => {
+    const withTown = (mats: number, attackDays: number) => {
+      const s = state();
+      s.alliance.mats = mats;
+      s.member.attackDays = attackDays;
+      api.state.mockResolvedValue(s);
+    };
+    const card = () => screen.queryByRole("button", { name: "raidstead.build-nudge.text" });
+
+    it("shows the town's materials when something can be built, and opens the Town", async () => {
+      // a Hall at stage 0 costs 40
+      withTown(60, 1);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(card()).toBeTruthy();
+      expect(shown("raidstead.build-nudge.text")).toEqual({ n: 60 });
+      await act(async () => {
+        fireEvent.click(card()!);
+      });
+      expect(
+        screen.getByRole("button", { name: "raidstead.actions.town" }).getAttribute("aria-pressed")
+      ).toBe("true");
+      expect(card()).toBeNull();
+    });
+
+    it("is not there when nothing is affordable", async () => {
+      withTown(20, 1);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(card()).toBeNull();
+    });
+
+    it("is not there for a member who has not raided this season", async () => {
+      withTown(60, 0);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(card()).toBeNull();
+    });
+
+    it("goes away when dismissed, even with storage blocked", async () => {
+      withTown(60, 1);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new Error("blocked");
+      });
+      try {
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: "raidstead.build-nudge.dismiss" }));
+        });
+        expect(card()).toBeNull();
+      } finally {
+        setItem.mockRestore();
+      }
+    });
+  });
+
+  it("on day 1 says to scout first", async () => {
+    const s = state();
+    s.calendar.day = 1;
+    api.state.mockResolvedValue(s);
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    await waitFor(() =>
+      expect(document.querySelector(".rs-toast")!.textContent).toBe("raidstead.toast.day-one")
+    );
+  });
+
+  it("says nothing on arrival after day 1", async () => {
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    expect(document.querySelector(".rs-toast")!.textContent).toBe("");
   });
 });

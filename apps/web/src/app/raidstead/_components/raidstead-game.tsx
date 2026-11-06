@@ -38,7 +38,10 @@ import { pendingSpendKey, settleSpend } from "@/features/raidstead/spends";
 import {
   aimOf,
   attackMessage,
+  buildNudgeMark,
+  buildNudgeShown,
   buildReport,
+  dismissBuildNudge,
   laterMark,
   markOf,
   newsAfter,
@@ -564,6 +567,18 @@ export function RaidsteadGame() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, data?.calendar.season, alliance?.week]);
 
+  // the first state of a visit on a season's day 1: how a raid goes
+  const greeted = useRef(false);
+  useEffect(() => {
+    if (!data || !alliance || phase !== "ready" || greeted.current) return;
+    greeted.current = true;
+    if (data.calendar.day === 1 && !data.calendar.resting) say(t("toast.day-one"));
+  }, [data, alliance, phase, say]);
+
+  // a card on the raid screen while the town can build something; dismissed, it
+  // stays away until the materials change (this visit too, if storage is blocked)
+  const [nudgeGone, setNudgeGone] = useState("");
+
   // Town news. What happened while the player was away opens as a card, after the
   // week's card if that is due too. One line that arrives while they play, with
   // nothing else open, is told next to the toast; more than one, or a line that
@@ -1017,6 +1032,8 @@ export function RaidsteadGame() {
               : t("actions.scout-free");
   const questsLeft = 3 - (member?.quests.length ?? 0);
   const playing = phase === "ready" && !!alliance && !!member;
+  const nudge =
+    playing && view === "raid" && buildNudgeShown(data) && nudgeGone !== buildNudgeMark(data!);
   const resting = !!cal?.resting;
   const rallyWhy = rallyBlock(data);
 
@@ -1285,6 +1302,24 @@ export function RaidsteadGame() {
           </section>
         )}
 
+        {nudge && (
+          <div className="rs-card rs-nudge">
+            <button className="rs-nudge-open" onClick={() => setView("town")}>
+              {t("build-nudge.text", { n: alliance!.mats })}
+            </button>
+            <button
+              className="rs-nudge-close"
+              aria-label={t("build-nudge.dismiss")}
+              onClick={() => {
+                dismissBuildNudge(data!);
+                setNudgeGone(buildNudgeMark(data!));
+              }}
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {playing && view === "town" && (
           <section className="rs-card rs-plate" aria-label={t("actions.town")}>
             <div className="rs-row">
@@ -1352,11 +1387,13 @@ export function RaidsteadGame() {
                     className="rs-atk"
                     style={{ ["--c" as string]: color }}
                     aria-pressed={selected === type}
+                    aria-label={t(`actions.attack-${type}`)}
+                    aria-describedby={`rs-atk-${type}`}
                     disabled={!alive || energy <= 0 || resting}
                     onClick={() => attack(type)}
                   >
-                    <b>{t(`types.${type}`)}</b>
-                    <small>
+                    <b>{t(`actions.attack-${type}`)}</b>
+                    <small id={`rs-atk-${type}`}>
                       {!alive || resting
                         ? t("actions.resting")
                         : energy <= 0
