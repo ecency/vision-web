@@ -5479,7 +5479,8 @@
       "title": "Season {{n}} alliances",
       "kills": "{{n}} chased off",
       "empty": "No alliances yet this season.",
-      "leagues": "Leagues"
+      "leagues": "Leagues",
+      "failed": "This list could not load."
     },
     "report": {
       "title": "Raid report",

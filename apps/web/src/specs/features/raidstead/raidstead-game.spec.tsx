@@ -2465,5 +2465,90 @@ describe("Raidstead page", () => {
       expect(selected()).toEqual(["raidstead.profile.leagues.small"]);
       expect(api.leaderboard).toHaveBeenCalledWith({ league: "small" });
     });
+
+    it("opens on the league the state names, asking for that league only", async () => {
+      api.leaderboard.mockImplementation(byLeague as never);
+      const s = state();
+      api.state.mockResolvedValue({
+        ...s,
+        alliance: { ...s.alliance, members: 8, league: "medium" }
+      });
+      asUser("ann");
+      render(<RaidsteadGame />);
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.menu.leaderboard/ }));
+      });
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-M1", "2 HIVE-123456"]));
+      expect(selected()).toEqual(["raidstead.profile.leagues.medium"]);
+      expect(api.leaderboard.mock.calls).toEqual([[{ league: "medium" }]]);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("tab", { name: "raidstead.profile.leagues.large" }));
+      });
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-L1", "2 HIVE-L2"]));
+      expect(api.leaderboard.mock.calls).toEqual([[{ league: "medium" }], [{ league: "large" }]]);
+    });
+
+    it("asks once for a tab whose list is still on its way", async () => {
+      let answer: (rows: ReturnType<typeof row>[]) => void = () => undefined;
+      const load = vi.fn((league: string) =>
+        league === "large"
+          ? new Promise<ReturnType<typeof row>[]>((r) => (answer = r))
+          : Promise.resolve(boards[league])
+      );
+      render(<LeaderboardSheet season={1} league="small" load={load as never} onClose={vi.fn()} />);
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-S1"]));
+      const large = screen.getByRole("tab", { name: "raidstead.profile.leagues.large" });
+      const small = screen.getByRole("tab", { name: "raidstead.profile.leagues.small" });
+      await act(async () => {
+        fireEvent.click(large);
+        fireEvent.click(small);
+        fireEvent.click(large);
+      });
+      expect(load.mock.calls.filter(([l]) => l === "large")).toHaveLength(1);
+      await act(async () => answer(boards.large));
+      expect(ranks()).toEqual(["1 HIVE-L1", "2 HIVE-L2"]);
+    });
+
+    it("says a list could not load, with a way to try again", async () => {
+      const load = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("offline"))
+        .mockResolvedValue(boards.small);
+      render(<LeaderboardSheet season={1} league="small" load={load} onClose={vi.fn()} />);
+      await screen.findByText("raidstead.leaderboard.failed");
+      expect(screen.queryByText("raidstead.leaderboard.empty")).toBeNull();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.try-again" }));
+      });
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-S1"]));
+      expect(load).toHaveBeenCalledTimes(2);
+    });
+
+    it("ties tabs to their panel and moves between them with the arrow keys", async () => {
+      const load = vi.fn(async (league: string) => boards[league]);
+      render(<LeaderboardSheet season={1} league="large" load={load as never} onClose={vi.fn()} />);
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-L1", "2 HIVE-L2"]));
+      const tabs = screen.getAllByRole("tab");
+      const panel = screen.getByRole("tabpanel");
+      for (const tab of tabs) expect(tab.getAttribute("aria-controls")).toBe(panel.id);
+      const large = screen.getByRole("tab", { name: "raidstead.profile.leagues.large" });
+      expect(panel.getAttribute("aria-labelledby")).toBe(large.id);
+      expect(tabs.map((x) => x.tabIndex)).toEqual([-1, -1, 0]);
+      // Right from the last wraps to the first, Left from the first to the last
+      await act(async () => {
+        fireEvent.keyDown(large, { key: "ArrowRight" });
+      });
+      const small = screen.getByRole("tab", { name: "raidstead.profile.leagues.small" });
+      expect(document.activeElement).toBe(small);
+      expect(selected()).toEqual(["raidstead.profile.leagues.small"]);
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-S1"]));
+      expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe(small.id);
+      await act(async () => {
+        fireEvent.keyDown(small, { key: "ArrowLeft" });
+      });
+      expect(document.activeElement).toBe(large);
+      expect(selected()).toEqual(["raidstead.profile.leagues.large"]);
+    });
   });
 });

@@ -1196,6 +1196,7 @@ export function RaidsteadGame() {
           <LeaderboardSheet
             season={Math.max(1, data.calendar.season)}
             own={alliance?.community}
+            league={alliance?.league}
             load={loadLeaders}
             onClose={close}
           />

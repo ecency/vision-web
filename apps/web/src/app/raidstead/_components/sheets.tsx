@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
   type ReactNode
 } from "react";
 import Link from "next/link";
@@ -930,45 +931,78 @@ export function BoardSheet({ state, onClose }: { state: State; onClose: () => vo
 }
 
 /// The season's alliances, one league per tab, opened on the player's own league
-/// (Small before they have one). Each tab ranks its league from 1.
+/// (Small before they have one). Each tab ranks its league from 1. A tab's list is
+/// asked for when the tab is first shown. An older server does not say which
+/// league the player's alliance is in: then every league is asked for at once,
+/// and the one that lists it opens.
 export function LeaderboardSheet({
   season,
   own,
+  league,
   load,
   onClose
 }: {
   season: number;
   /// the player's alliance (community name), if any
   own?: string;
+  /// its league, from a server that says
+  league?: League;
   load: (league: League) => Promise<LeaderRow[]>;
   onClose: () => void;
 }) {
-  const [rows, setRows] = useState<Partial<Record<League, LeaderRow[]>>>({});
-  // with an alliance, which league is its own is known once a list holds it
-  const [tab, setTab] = useState<League | null>(own ? null : "small");
+  const detect = !league && !!own;
+  const [rows, setRows] = useState<Partial<Record<League, LeaderRow[] | "failed">>>({});
+  const [tab, setTab] = useState<League | null>(league ?? (own ? null : "small"));
   const live = useRef(true);
+  const asking = useRef(new Set<League>());
+  const tabRefs = useRef<Partial<Record<League, HTMLButtonElement | null>>>({});
   const fetchLeague = useCallback(
-    (league: League) =>
-      load(league).then(
-        (r) => live.current && setRows((x) => ({ ...x, [league]: r })),
-        () => live.current && setRows((x) => ({ ...x, [league]: [] }))
-      ),
+    (l: League) => {
+      // one ask per tab at a time
+      if (asking.current.has(l)) return;
+      asking.current.add(l);
+      load(l)
+        .then(
+          (r) => live.current && setRows((x) => ({ ...x, [l]: r })),
+          () => live.current && setRows((x) => ({ ...x, [l]: "failed" }))
+        )
+        .finally(() => asking.current.delete(l));
+    },
     [load]
   );
   useEffect(() => {
     live.current = true;
-    (own ? LEAGUES : (["small"] as const)).forEach(fetchLeague);
+    if (detect) LEAGUES.forEach(fetchLeague);
     return () => {
       live.current = false;
     };
-  }, [fetchLeague, own]);
+  }, [fetchLeague, detect]);
+  // the shown tab's list, once
   useEffect(() => {
-    if (tab || !own) return;
-    const mine = LEAGUES.find((l) => rows[l]?.some((r) => r.community === own));
+    if (tab && rows[tab] === undefined) fetchLeague(tab);
+  }, [tab, rows, fetchLeague]);
+  useEffect(() => {
+    if (tab || !detect) return;
+    const list = (l: League) => rows[l];
+    const mine = LEAGUES.find((l) => {
+      const r = list(l);
+      return Array.isArray(r) && r.some((x) => x.community === own);
+    });
     if (mine) setTab(mine);
-    else if (LEAGUES.every((l) => rows[l])) setTab("small");
-  }, [rows, tab, own]);
+    else if (LEAGUES.every((l) => list(l))) setTab("small");
+  }, [rows, tab, own, detect]);
+  const choose = (l: League) => {
+    setTab(l);
+    tabRefs.current[l]?.focus();
+  };
+  const onKey = (e: KeyboardEvent, l: League) => {
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    choose(LEAGUES[(LEAGUES.indexOf(l) + step + LEAGUES.length) % LEAGUES.length]);
+  };
   const list = tab ? rows[tab] : undefined;
+  const tabId = (l: League) => `rs-league-tab-${l}`;
   return (
     <Sheet onClose={onClose} label={t("leaderboard.title", { n: season })}>
       <h2>{t("leaderboard.title", { n: season })}</h2>
@@ -976,32 +1010,52 @@ export function LeaderboardSheet({
         {LEAGUES.map((l) => (
           <button
             key={l}
+            ref={(el) => {
+              tabRefs.current[l] = el;
+            }}
+            id={tabId(l)}
             role="tab"
             aria-selected={tab === l}
-            onClick={() => {
-              setTab(l);
-              if (!rows[l]) fetchLeague(l);
-            }}
+            aria-controls="rs-league-panel"
+            tabIndex={tab === l || (!tab && l === "small") ? 0 : -1}
+            onClick={() => setTab(l)}
+            onKeyDown={(e) => onKey(e, l)}
           >
             {t(`profile.leagues.${l}`)}
           </button>
         ))}
       </div>
-      {!list ? (
-        <p className="rs-muted">{t("loading")}</p>
-      ) : list.length ? (
-        <ol className="rs-rank" role="tabpanel">
-          {list.map((r, i) => (
-            <li key={r.community}>
-              <span>{i + 1}</span>
-              <span>{r.title}</span>
-              <span>{t("leaderboard.kills", { n: r.kills })}</span>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="rs-muted">{t("leaderboard.empty")}</p>
-      )}
+      <div id="rs-league-panel" role="tabpanel" aria-labelledby={tab ? tabId(tab) : undefined}>
+        {list === "failed" ? (
+          <>
+            <p className="rs-muted">{t("leaderboard.failed")}</p>
+            <div className="rs-btns">
+              <button
+                className="rs-btn"
+                onClick={() => {
+                  setRows((x) => ({ ...x, [tab!]: undefined }));
+                }}
+              >
+                {i18next.t("g.try-again")}
+              </button>
+            </div>
+          </>
+        ) : !list ? (
+          <p className="rs-muted">{t("loading")}</p>
+        ) : list.length ? (
+          <ol className="rs-rank">
+            {list.map((r, i) => (
+              <li key={r.community}>
+                <span>{i + 1}</span>
+                <span>{r.title}</span>
+                <span>{t("leaderboard.kills", { n: r.kills })}</span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="rs-muted">{t("leaderboard.empty")}</p>
+        )}
+      </div>
     </Sheet>
   );
 }

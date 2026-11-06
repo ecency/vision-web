@@ -30,6 +30,8 @@ export interface Boss {
 }
 export interface Alliance {
   community: string; title: string; week: number; boss: Boss;
+  /// How many members it has and the league that puts it in (newer servers only).
+  members?: number; league?: League;
   town: Record<BuildingId, number>; mats: number; web: BuildingId | null; webTalk: string[];
   chest: number; chestGoal: number; buffToday: boolean; kills: number; raiders: Raider[];
   notes: Note[];
