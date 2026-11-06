@@ -11,6 +11,7 @@ import {
   type Calendar,
   type Community,
   type FolkClass,
+  type HelpTarget,
   type League,
   type Note,
   type PowerId,
@@ -54,13 +55,17 @@ import {
   twinSide,
   type Neighbor,
   errorMessage,
+  helpErrorMessage,
   impactOf,
+  weaknessLine,
   worldOf
 } from "@/features/raidstead/game";
+import { copyLine, postToAllianceChat } from "@/features/raidstead/share";
 import {
   BoardSheet,
   BossSheet,
   BuildingSheet,
+  HelpSheet,
   HeroSheet,
   TownSheet,
   InfoSheet,
@@ -104,6 +109,7 @@ type SheetState =
   | { kind: "hero"; hero: FolkClass }
   | { kind: "town"; town: Neighbor }
   | { kind: "quests" }
+  | { kind: "assist" }
   | { kind: "menu" }
   | { kind: "news"; notes: Note[]; away: boolean }
   | { kind: MenuItem };
@@ -995,6 +1001,128 @@ export function RaidsteadGame() {
     []
   );
 
+  // Help another town: once the player's own pest is gone this week (not on a
+  // resting day), the towns still fighting. Null while unknown, and for good on a
+  // server without the help routes (no button then).
+  const [helpTargets, setHelpTargets] = useState<HelpTarget[] | null>(null);
+  const canHelp =
+    phase === "ready" && !!alliance && !!boss && !boss.alive && !data?.calendar.resting;
+  const helpKey = canHelp ? `${data!.calendar.season}:${data!.calendar.day}:${alliance!.community}` : "";
+  // Only the latest ask for the list counts, and only for the day and alliance it
+  // was asked for: answers can overtake each other, and a refusal that drops a
+  // town makes every earlier ask stale.
+  const helpSeq = useRef(0);
+  // the last ask could not reach the server: ask again with the next state
+  const helpRetry = useRef(false);
+  const helpKeyRef = useRef(helpKey);
+  helpKeyRef.current = helpKey;
+  // `again`: asked anew for an open card, which keeps what it has when the ask fails
+  const loadHelp = useCallback(async (again = false) => {
+    const seq = ++helpSeq.current;
+    const key = helpKeyRef.current;
+    const current = () => mounted.current && seq === helpSeq.current && key === helpKeyRef.current;
+    try {
+      const r = await raidsteadApi.help();
+      if (!current()) return;
+      if (Array.isArray(r?.targets)) setHelpTargets(r.targets);
+      else if (!again) setHelpTargets(null);
+    } catch (e) {
+      // an older server, or none to ask: no help offered, nothing said
+      if (current() && !again) setHelpTargets(null);
+      // a server that answered (an older one, without help) is not asked again;
+      // one that could not answer is, with the next state
+      const status = (e as { status?: number })?.status ?? 0;
+      if (current() && (status === 0 || status >= 500)) helpRetry.current = true;
+    }
+  }, []);
+  useEffect(() => {
+    helpRetry.current = false;
+    setHelpTargets(null);
+    if (helpKey) loadHelp();
+  }, [helpKey, loadHelp]);
+  useEffect(() => {
+    if (!helpKey || !helpRetry.current) return;
+    helpRetry.current = false;
+    loadHelp();
+  }, [data, helpKey, loadHelp]);
+  // the help card has nothing to show once the list is gone (a new day, the next pest)
+  useEffect(() => {
+    if (sheet?.kind === "assist" && !helpTargets) setSheet(null);
+  }, [sheet, helpTargets]);
+  const helpAttack = async (target: HelpTarget, type: AttackType): Promise<string> => {
+    setBusy(true);
+    try {
+      const r = await raidsteadApi.helpAttack(target.community, type);
+      // a list asked for before this hit would bring back the health and help left before it
+      helpSeq.current++;
+      setHelpTargets(
+        (list) =>
+          list?.map((x) =>
+            x.community === target.community
+              ? { ...x, hp: r.hp, maxHp: r.maxHp, helpLeft: r.helpLeft }
+              : x
+          ) ?? list
+      );
+      // the energy spent shows at once; an answer asked before this one no longer counts
+      appliedSeq.current = ++refreshSeq.current;
+      setData((d) => (d?.member ? { ...d, member: { ...d.member, energy: r.energy } } : d));
+      refresh({ quiet: true });
+      return [
+        t("help.hit", { dmg: r.damage, name: target.title || target.community }),
+        r.badge ? t("help.badge") : ""
+      ]
+        .filter(Boolean)
+        .join(" ");
+    } catch (e) {
+      // as after a refused attack: the energy and the card as the server has them
+      refresh({ quiet: true });
+      // a town that takes no more help (full, its pest gone, out of the raid)
+      // leaves the list, which is asked for again
+      const code = (e as { code?: string })?.code;
+      if (code === "help_full" || code === "not_fighting" || code === "not_found") {
+        helpSeq.current++;
+        setHelpTargets((list) => list?.filter((x) => x.community !== target.community) ?? list);
+        loadHelp(true);
+      }
+      // the player's own pest is back: the card closes with the refresh, so the
+      // page says it, once
+      if (code === "own_boss_alive") {
+        say(helpErrorMessage(e, i18next.t));
+        return "";
+      }
+      return helpErrorMessage(e, i18next.t);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Tell my alliance: today's weakness, to the community's chat channel when
+  // the player is in it, otherwise copied for them to paste
+  // one share at a time: a second tap while one is on its way does nothing
+  const sharing = useRef(false);
+  const shareWeakness = async () => {
+    if (sharing.current || !alliance || !boss?.weakness) return;
+    sharing.current = true;
+    try {
+      const line = weaknessLine(boss.kind, boss.weakness, i18next.t);
+      // copied first, while the tap is still current (Safari refuses a copy after an await)
+      const copied = copyLine(line);
+      // the chat session belongs to the Ecency user: only when that is who plays
+      if (username && username === data?.account.name) {
+        // still the same Ecency user and game session when it comes to posting
+        const token = loadSession()?.token;
+        const stillOk = () => userRef.current === username && loadSession()?.token === token;
+        if (await postToAllianceChat(alliance.community, line, username, stillOk))
+          return say(t("share.sent"));
+      }
+      if (await copied) return say(t("share.copied"));
+      // nothing copied either: the line itself, kept up longer to copy by hand
+      tell(t("share.manual", { line }));
+    } finally {
+      sharing.current = false;
+    }
+  };
+
   const openReport = () => {
     if (!data || !alliance) return;
     const report = buildReport(data, i18next.t);
@@ -1034,6 +1162,7 @@ export function RaidsteadGame() {
     cal && cal.season > 0 ? t("season.day", { day: Math.min(cal.day, 28), total: 28 }) : "";
   const energy = member?.energy ?? 0;
   const maxEnergy = member?.maxEnergy ?? 15;
+  const streak = typeof member?.streak === "number" ? member.streak : 0;
   const alive = !!boss?.alive;
   const pct = boss ? Math.ceil((boss.hp / boss.maxHp) * 100) : 100;
   const reshuffleIn = boss?.reshuffleAt
@@ -1187,6 +1316,20 @@ export function RaidsteadGame() {
           />
         ) : null;
         break;
+      case "assist":
+        open =
+          alliance && helpTargets ? (
+            <HelpSheet
+              targets={helpTargets}
+              energy={energy}
+              maxEnergy={maxEnergy}
+              busy={busy}
+              types={TYPES}
+              onAttack={helpAttack}
+              onClose={close}
+            />
+          ) : null;
+        break;
       case "news":
         open = <NewsSheet notes={sheet.notes} away={sheet.away} onClose={close} />;
         break;
@@ -1233,16 +1376,28 @@ export function RaidsteadGame() {
       <div className="rs-world" ref={worldRef} />
       <div className="rs-hud">
         <header className="rs-top">
-          <button
-            className="rs-card rs-chip rs-ally"
-            onClick={() => alliance && setSheet({ kind: "boss" })}
-          >
-            <i className="rs-banner" aria-hidden="true" />
-            <span>
-              <small>{t("alliance.label")}</small>
-              <b>{alliance?.title ?? t("alliance.pick")}</b>
-            </span>
-          </button>
+          <div className="rs-top-left">
+            <button
+              className="rs-card rs-chip rs-ally"
+              onClick={() => alliance && setSheet({ kind: "boss" })}
+            >
+              <i className="rs-banner" aria-hidden="true" />
+              <span>
+                <small>{t("alliance.label")}</small>
+                <b>{alliance?.title ?? t("alliance.pick")}</b>
+              </span>
+            </button>
+            {/* the daily streak, from servers that send one */}
+            {member && streak > 0 && (
+              <div className="rs-card rs-chip">
+                <span>
+                  <small>{t("streak.label")}</small>
+                  <b>{t("streak.value", { count: streak })}</b>
+                  {member.freeDayUsed && <small>{t("streak.free-day-used")}</small>}
+                </span>
+              </div>
+            )}
+          </div>
           <div className="rs-top-right">
             {cal && cal.season > 0 && (
               <div className="rs-card rs-chip">
@@ -1313,6 +1468,7 @@ export function RaidsteadGame() {
             </div>
             <div className="rs-row">
               <span>{alive ? t("boss.hp", { hp: boss.hp, max: boss.maxHp }) : t("boss.next")}</span>
+
               {alive && (
                 <span
                   className={`rs-weak${boss.weakness ? " known" : ""}`}
@@ -1328,6 +1484,7 @@ export function RaidsteadGame() {
                     : ""}
                 </span>
               )}
+
             </div>
           </section>
         )}
@@ -1376,6 +1533,19 @@ export function RaidsteadGame() {
                   ×
                 </button>
               </div>
+            )}
+            {view === "raid" && !alive && canHelp && !!helpTargets?.length && (
+              <button
+                className="rs-help-go"
+                aria-haspopup="dialog"
+                onClick={() => {
+                  setSheet({ kind: "assist" });
+                  // the list as it is now: other towns keep fighting meanwhile
+                  loadHelp(true);
+                }}
+              >
+                {t("help.button")}
+              </button>
             )}
             <p className="rs-toast" aria-live="polite">
               {[toast, flash].filter(Boolean).join(" ")}
@@ -1444,6 +1614,12 @@ export function RaidsteadGame() {
                 >
                   {t("actions.scout")}
                   <small>{scoutSub}</small>
+                </button>
+              )}
+              {view === "raid" && alive && boss?.weakness && (
+                <button className="rs-sec" onClick={shareWeakness}>
+                  {t("share.button")}
+                  <small>{t("share.sub", { type: t(`types.${boss.weakness}`) })}</small>
                 </button>
               )}
               {view === "raid" && (

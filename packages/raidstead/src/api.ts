@@ -35,6 +35,8 @@ export interface Alliance {
   town: Record<BuildingId, number>; mats: number; web: BuildingId | null; webTalk: string[];
   chest: number; chestGoal: number; buffToday: boolean; kills: number; raiders: Raider[];
   notes: Note[];
+  /// Players from other alliances who helped hit this alliance's pest this week (newer servers only).
+  helpers?: Helper[];
   /// When the war chest's +1 damage ends, on the server's clock.
   buffUntil?: number | null;
   /// The chest filled with no pest in town: it is kept and opens for the next one.
@@ -48,6 +50,11 @@ export interface Member {
   powers: PowerId[]; equipped: PowerId[]; slots: number; attackDays: number;
   /// A scout costs nothing right now (the wasp is in town).
   scoutFree?: boolean;
+  /// Days in a row the player has raided, and their best run (newer servers only).
+  streak?: number;
+  streakBest?: number;
+  /// This raid week's one forgiven missed day is already used.
+  freeDayUsed?: boolean;
 }
 /// `now` is the server's clock (ms) when it answered: the times in a state are read by it.
 export interface State { calendar: Calendar; now?: number; account: Account; trophies: Trophy[]; alliance: Alliance | null; member: Member | null }
@@ -58,6 +65,10 @@ export type AttackResult = { energy: number; hp: number; maxHp: number } & (
   | { hit: "echo"; side: 0 | 1 }
   | { hit: "boss"; damage: number; weak: boolean; paired: { by: string; damage: number; hits?: number } | null; killed: boolean; phaseShift: boolean; gnatsSpawned: number; waspArrived: boolean }
 );
+export interface Helper { account: string; damage: number }
+/// Another alliance still fighting its pest, which the player can help once their own is gone.
+export interface HelpTarget { community: string; title: string; league: League; kind: string; hp: number; maxHp: number; raiders: number; helpLeft: number }
+export interface HelpAttackResult { damage: number; hp: number; maxHp: number; energy: number; helpLeft: number; badge: "helper" | null }
 export interface ScoutResult { weakness: AttackType; tomorrow?: AttackType; scoutsLeft: number }
 export interface Session { token: string; account: string; expiresAt: string }
 /// `players` (members playing this season) and `lastSeason` (who played last season)
@@ -107,6 +118,8 @@ export function createApi(opts: ApiOptions) {
     join: (community: string) => call<State>("POST", "/v1/raidstead/join", { community }),
     scout: () => call<ScoutResult>("POST", "/v1/raidstead/scout"),
     attack: (type: AttackType, side: 0 | 1 = 0) => call<AttackResult>("POST", "/v1/raidstead/attack", { type, side }),
+    help: () => call<{ targets: HelpTarget[] }>("GET", "/v1/raidstead/help"),
+    helpAttack: (community: string, type: AttackType) => call<HelpAttackResult>("POST", "/v1/raidstead/help/attack", { community, type }),
     rally: (key: string) => call<{ applied: { energy: number }; balance: number }>("POST", "/v1/raidstead/rally", { key }),
     chest: (key: string) => call<{ applied: { chest: number; filled: boolean; buffUntil?: number | null; kept?: boolean }; balance: number }>("POST", "/v1/raidstead/chest", { key }),
     quests: () => call<{ claimed: string[]; quests: string[]; energy: number }>("POST", "/v1/raidstead/quests"),

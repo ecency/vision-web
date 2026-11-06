@@ -12,12 +12,14 @@ import {
 import Link from "next/link";
 import i18next from "i18next";
 import {
+  BOSS_KINDS,
   LEAGUES,
   POWERS,
   type AttackType,
   type BuildingId,
   type Community,
   type FolkClass,
+  type HelpTarget,
   type League,
   type LeaderRow,
   type Note,
@@ -450,6 +452,147 @@ export function TownSheet({ town, onClose }: { town: Neighbor; onClose: () => vo
   );
 }
 
+/// Help another town: the alliances still fighting, then one town's pest with
+/// the three attacks (plain damage, no scout). `onAttack` answers the line to show.
+export function HelpSheet({
+  targets,
+  energy,
+  maxEnergy,
+  busy,
+  types,
+  onAttack,
+  onClose
+}: {
+  targets: HelpTarget[];
+  energy: number;
+  maxEnergy: number;
+  busy: boolean;
+  types: { type: AttackType; color: string }[];
+  onAttack: (target: HelpTarget, type: AttackType) => Promise<string>;
+  onClose: () => void;
+}) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const [line, setLine] = useState("");
+  const target = targets.find((x) => x.community === picked) ?? null;
+  // when the card switches between the list and a town (a pick, Back, a town
+  // that left the list), focus goes to its heading, not to the page behind
+  const heading = useRef<HTMLHeadingElement>(null);
+  const shownView = target?.community ?? "";
+  const firstView = useRef(true);
+  useEffect(() => {
+    if (firstView.current) {
+      firstView.current = false;
+      return;
+    }
+    heading.current?.focus();
+  }, [shownView]);
+  const hpPct = (x: HelpTarget) => (x.maxHp > 0 ? Math.ceil((x.hp / x.maxHp) * 100) : 0);
+  const meter = (x: HelpTarget) => (
+    <div
+      className="rs-hpbar"
+      role="meter"
+      aria-label={t("boss.hp", { hp: x.hp, max: x.maxHp })}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={hpPct(x)}
+    >
+      <span style={{ width: `${hpPct(x)}%` }} />
+    </div>
+  );
+  if (target) {
+    // a pest kind from a newer server than this page has no name here
+    const pest = (BOSS_KINDS as readonly string[]).includes(target.kind)
+      ? t(`bosses.${target.kind}.name`)
+      : t("help.pest");
+    const full = target.helpLeft <= 0;
+    return (
+      <Sheet onClose={onClose} label={t("help.title")}>
+        <small>{target.title || target.community}</small>
+        <h2 ref={heading} tabIndex={-1}>
+          {pest}
+        </h2>
+        {meter(target)}
+        <p className="rs-muted">
+          {t("boss.hp", { hp: target.hp, max: target.maxHp })} ·{" "}
+          {t("help.energy", { n: energy, max: maxEnergy })}
+        </p>
+        <div className="rs-attacks">
+          {types.map(({ type, color }) => (
+            <button
+              key={type}
+              className="rs-atk"
+              style={{ ["--c" as string]: color }}
+              aria-label={t(`actions.attack-${type}`)}
+              disabled={busy || energy <= 0 || target.hp <= 0 || full}
+              onClick={async () => setLine(await onAttack(target, type))}
+            >
+              <b>{t(`actions.attack-${type}`)}</b>
+              <small>{energy <= 0 ? t("actions.no-energy") : t("actions.cost")}</small>
+            </button>
+          ))}
+        </div>
+        <p className="rs-muted" aria-live="polite">
+          {line}
+        </p>
+        <div className="rs-btns">
+          <button
+            className="rs-btn"
+            // a hit on the way belongs to this town: stay with it until it lands
+            disabled={busy}
+            onClick={() => {
+              setPicked(null);
+              setLine("");
+            }}
+          >
+            {t("help.back")}
+          </button>
+        </div>
+      </Sheet>
+    );
+  }
+  return (
+    <Sheet onClose={onClose} label={t("help.title")}>
+      <h2 ref={heading} tabIndex={-1}>
+        {t("help.title")}
+      </h2>
+      <p className="rs-muted">{t("help.desc")}</p>
+      {targets.length ? (
+        <ul className="rs-list">
+          {targets.map((x) => (
+            <li key={x.community}>
+              <button
+                className="rs-opt"
+                disabled={busy}
+                onClick={() => {
+                  // a line about the last town is not about this one
+                  setPicked(x.community);
+                  setLine("");
+                }}
+              >
+                <i className="rs-banner" aria-hidden="true" />
+                <span className="rs-help-row">
+                  <b>{x.title || x.community}</b>
+                  <small className="rs-muted">
+                    {x.helpLeft > 0 ? t("help.raiders", { n: x.raiders }) : t("help.full")}
+                  </small>
+                  {meter(x)}
+                </span>
+                <span aria-hidden="true">›</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="rs-muted">{t("help.none")}</p>
+      )}
+      {/* why a town just left the list */}
+      <p className="rs-muted" aria-live="polite">
+        {line}
+      </p>
+    </Sheet>
+  );
+}
+
 export function BuildingSheet(props: {
   id: BuildingId | "homes";
   state: State;
@@ -664,7 +807,11 @@ const BADGES = [
   "loyal",
   "season",
   "builder",
-  "peacemaker"
+  "peacemaker",
+  "streak7",
+  "streak14",
+  "streak28",
+  "helper"
 ];
 const QUESTS = ["checkin", "post", "comments"];
 
@@ -899,6 +1046,14 @@ export function ProfileSheet({ state, onClose }: { state: State; onClose: () => 
           <b>{acc.shards}</b>
         </div>
       </div>
+      {typeof state.member?.streakBest === "number" && (
+        <div className="rs-stats">
+          <div className="rs-stat">
+            <small>{t("profile.streak-best")}</small>
+            <b>{t("streak.value", { count: state.member.streakBest })}</b>
+          </div>
+        </div>
+      )}
       <Trophies state={state} />
       <p className="rs-muted">{t("profile.keeps")}</p>
     </Sheet>

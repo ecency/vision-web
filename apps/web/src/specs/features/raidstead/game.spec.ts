@@ -25,8 +25,10 @@ import {
   sortCommunities,
   tierOf,
   twinSide,
+  weaknessLine,
   worldOf
 } from "@/features/raidstead/game";
+import enUS from "@/features/i18n/locales/en-US.json";
 
 // Keys come back with their values, so the assertions read the chosen message.
 const t = (key: string, values?: Record<string, unknown>) =>
@@ -214,6 +216,26 @@ describe("raidstead game helpers", () => {
     expect(r.body).toContain("line|i=1,name=ann,dmg=40");
     expect(r.body).toContain("town|hall=2,mats=80");
     expect(buildReport({ ...state(), alliance: null }, t)).toBeNull();
+  });
+
+  it("lists the other alliances' helpers apart, in a Helped by line", () => {
+    const s = state();
+    s.alliance!.helpers = [
+      { account: "cat", damage: 30 },
+      { account: "dan_x", damage: 9 }
+    ];
+    const r = buildReport(s, t)!;
+    expect(r.body).toContain("helpers|names=@cat, @dan\\_x");
+    // a server that sends no helpers, or none this week: no line
+    expect(buildReport(state(), t)!.body).not.toContain("helpers|");
+    s.alliance!.helpers = [];
+    expect(buildReport(s, t)!.body).not.toContain("helpers|");
+  });
+
+  it("drafts the Helped by line in plain words", () => {
+    const s = state();
+    s.alliance!.helpers = [{ account: "cat", damage: 30 }, { account: "dan", damage: 9 }];
+    expect(buildReport(s, realT)!.body).toContain("Helped by @cat, @dan");
   });
 
   it("keeps a community title as text in the report body", () => {
@@ -646,5 +668,33 @@ describe("sortCommunities", () => {
       { name: "a", title: "Alpha" }
     ];
     expect(sortCommunities(list).map((c) => c.name)).toEqual(["z", "a"]);
+  });
+});
+
+// The locale's own English, for lines whose exact words matter.
+const realT = (key: string, values: Record<string, unknown> = {}) => {
+  const text = key
+    .split(".")
+    .reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), enUS);
+  return typeof text === "string" ? text.replace(/\{\{(\w+)\}\}/g, (_, k) => String(values[k] ?? "")) : key;
+};
+
+describe("helped news", () => {
+  it("tells who came from another town, in plain words", () => {
+    const n = { day: 3, seq: 9, kind: "helped", who: "cat", what: "slug", text: "@cat came from another town to help against the slug." };
+    expect(noteText(n, realT)).toBe("@cat came from another town to help against the Doomscroll Slug.");
+    // a pest this page does not know: the server's own line
+    expect(noteText({ ...n, what: "moth" }, realT)).toBe(n.text);
+  });
+});
+
+describe("weaknessLine", () => {
+  it("names the pest and the type, with no long dashes", () => {
+    const line = weaknessLine("slug", "forge", realT);
+    expect(line).toBe(
+      "Raidstead: today the Doomscroll Slug is weak to Forge (until it shifts). Join us at ecency.com/raidstead"
+    );
+    expect(line).not.toMatch(/[\u2013\u2014]/);
+    expect(weaknessLine("beetle", "ink", realT)).toContain("the Spam Beetle is weak to Ink");
   });
 });

@@ -127,6 +127,9 @@ export function noteText(n: Note, t: T): string {
     case "killed":
       if (!pest) return n.text;
       return t("raidstead.news.killed", { name: t(`raidstead.bosses.${what}.name`), who: n.who ?? "" });
+    case "helped":
+      if (!pest || !n.who) return n.text;
+      return t("raidstead.news.helped", { name: t(`raidstead.bosses.${what}.name`), who: n.who });
     case "chest":
     case "chest_kept":
       return t(`raidstead.news.${n.kind}`, { who: n.who ?? "" });
@@ -241,6 +244,15 @@ export function errorMessage(e: unknown, t: T): string {
   return t("raidstead.errors.generic");
 }
 
+/// A readable line for a refused help attack: the help rules have their own words.
+export function helpErrorMessage(e: unknown, t: T): string {
+  const code = (e as Partial<RaidsteadError>)?.code;
+  if (code === "help_full" || code === "own_boss_alive" || code === "not_fighting" || code === "not_found") {
+    return t(`raidstead.help.errors.${code}`);
+  }
+  return errorMessage(e, t);
+}
+
 export const TIERS = [0, 50, 150, 400, 1000];
 export const tierOf = (karma: number) =>
   TIERS.reduce((best, min, i) => (karma >= min ? i : best), 0);
@@ -274,6 +286,12 @@ export function buildReport(state: State, t: T): { title: string; body: string }
       );
     lines.push("");
   }
+  // players from other alliances who helped, told apart from the alliance's own
+  const helpers = a.helpers ?? [];
+  if (helpers.length) {
+    const names = helpers.map((h) => `@${escapeMarkdown(h.account)}`).join(", ");
+    lines.push(t("raidstead.report.helpers", { names }), "");
+  }
   lines.push(
     t("raidstead.report.town", { hall: a.town.hall, mats: a.mats }),
     "",
@@ -281,6 +299,13 @@ export function buildReport(state: State, t: T): { title: string; body: string }
   );
   return { title, body: lines.join("\n") };
 }
+
+/// The line a player shares with their alliance once they know today's weakness.
+export const weaknessLine = (kind: BossKind, type: AttackType, t: T) =>
+  t("raidstead.share.line", {
+    pest: t(`raidstead.bosses.${kind}.name`),
+    type: t(`raidstead.types.${type}`)
+  });
 
 /// Another alliance shown as a town in the sky, with its rank in its league.
 export type Neighbor = LeaderRow & { rank: number };
