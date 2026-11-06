@@ -117,6 +117,14 @@ export function BalanceHistoryChart({ username, coinType }: Props) {
       timeScale: {
         timeVisible: true,
       },
+      // Kinetic scrolling runs a requestAnimationFrame loop in lightweight-charts
+      // v3 that is never cancelled on chart.remove(). If the component unmounts
+      // mid-animation, the pending frame dereferences the destroyed pane and
+      // throws "Value is null" (ECENCY-NEXT-1CSW). Keep it off.
+      kineticScroll: {
+        touch: false,
+        mouse: false,
+      },
       layout: {
         background: { color: "transparent" },
         textColor: isDark ? "#fff" : "#000",
