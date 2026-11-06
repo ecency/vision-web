@@ -293,6 +293,20 @@ describe('cleanReply() method - Reply Cleaning', () => {
       expect(result.trim()).toBe('Text')
     })
 
+    it('should remove the newer HiveSuite byline', () => {
+      expect(cleanReply('Body\n\n<sub>[via HiveSuite](https://hivesuite.app/@a/p)</sub>')).toBe('Body\n')
+      expect(cleanReply('Body\n\n  <SUB>[Via HiveSuite](https://hivesuite.app/@a/p)</SUB>  ')).toBe('Body\n')
+    })
+
+    it('should keep text that quotes or imitates the newer HiveSuite byline', () => {
+      const quoted = 'It now ends with <sub>[via HiveSuite](https://hivesuite.app/@a/p)</sub> on every post'
+      expect(cleanReply(quoted)).toBe(quoted)
+      const otherSite = '<sub>[via HiveSuite](https://example.com/@a/p)</sub>'
+      expect(cleanReply(otherSite)).toBe(otherSite)
+      const spaced = '<sub>[via HiveSuite](https://hivesuite.app/@a/p and more)</sub>'
+      expect(cleanReply(spaced)).toBe(spaced)
+    })
+
     it('should remove the 3speak.tv watch link and its separator', () => {
       const input =
         'https://play.3speak.tv/embed?v=someone/l15060ai\n\nMy video notes\n\n\n---\n▶ [Watch on 3speak.tv](https://3speak.tv/watch?v=someone/my-video-54)'

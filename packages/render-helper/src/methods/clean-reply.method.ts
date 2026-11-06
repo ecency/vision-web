@@ -44,6 +44,9 @@ export function cleanReply(s: string): string {
     .filter(item => item.toLowerCase().includes('originally posted through [scrobble.life') === false)
     .filter(item => item.toLowerCase().includes('*posted via lumen') === false)
     .filter(item => item.toLowerCase().includes('<sub>posted via [hivesuite](') === false)
+    // Newer HiveSuite byline, "<sub>[via HiveSuite](https://hivesuite.app/@a/p)</sub>".
+    // Whole-line match, so prose that quotes the markup survives.
+    .filter(item => !/^\s*<sub>\[via hivesuite\]\(https:\/\/hivesuite\.app\/[^)\s]*\)<\/sub>\s*$/i.test(item))
     // Newer 3Speak footer link (plain or emoji glyph). Whole-line match, so a line that
     // carries the same link next to the author's own text survives. Keep it in step with
     // the 3Speak branch of the separator lookahead above.
