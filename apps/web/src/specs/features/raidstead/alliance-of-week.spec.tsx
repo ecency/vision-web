@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // the game's strings load on their own; here they are there at once
 vi.mock("@/features/i18n/raidstead", () => ({ ensureRaidsteadLoaded: vi.fn(async () => undefined) }));
 
+import { EcencyConfigManager } from "@/config";
 import { AllianceOfWeekBadge } from "@/features/raidstead/alliance-of-week";
 import { forgetWeekWinners } from "@/features/raidstead/week";
 
@@ -58,5 +59,21 @@ describe("Alliance of the Week badge", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(screen.queryByRole("link")).toBeNull();
     expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks nothing and shows nothing where Raidstead is turned off", async () => {
+    const flag = EcencyConfigManager.CONFIG.visionFeatures.raidstead;
+    const was = flag.enabled;
+    (flag as { enabled: boolean }).enabled = false;
+    try {
+      const f = answer(200, { season: 2, week: 1, kills: [kill("hive-b", "medium", 20)] });
+      globalThis.fetch = f as typeof fetch;
+      render(<AllianceOfWeekBadge community="hive-b" />);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(f).not.toHaveBeenCalled();
+      expect(screen.queryByRole("link")).toBeNull();
+    } finally {
+      (flag as { enabled: boolean }).enabled = was;
+    }
   });
 });
