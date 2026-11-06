@@ -2874,7 +2874,9 @@ describe("Raidstead page", () => {
       await act(async () => {
         fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.actions.attack-forge" }));
       });
-      expect(within(sheet).getByText("raidstead.help.errors.own_boss_alive")).toBeTruthy();
+      // said once, on the page, which outlives the card
+      expect(document.querySelector(".rs-toast")!.textContent).toContain("raidstead.help.errors.own_boss_alive");
+      expect(within(sheet).queryByText("raidstead.help.errors.own_boss_alive")).toBeNull();
     });
 
     // an answer to come later, settled by the test
@@ -2913,6 +2915,42 @@ describe("Raidstead page", () => {
       });
       expect(within(sheet).queryByRole("button", { name: /Far Field/ })).toBeNull();
       expect(within(sheet).getByText("raidstead.help.none")).toBeTruthy();
+    });
+
+    // a refresh of the state, here by claiming quests
+    const claimQuests = async () => {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.quests/ }));
+      });
+      await act(async () => {
+        fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /raidstead.quests.claim/ }));
+      });
+    };
+
+    it("asks for the list again with the next state after a failed ask", async () => {
+      api.help
+        .mockRejectedValueOnce(Object.assign(new Error("down"), { status: 502, code: "error" }))
+        .mockResolvedValue({ targets: [target] });
+      // every answer a new state, as from the server
+      api.state.mockImplementation(async () => gone());
+      api.quests.mockResolvedValue({ claimed: [], quests: [], energy: 5 });
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(screen.queryByRole("button", { name: /raidstead.help.button/ })).toBeNull();
+      await claimQuests();
+      expect(await screen.findByRole("button", { name: /raidstead.help.button/ })).toBeTruthy();
+    });
+
+    it("does not ask a server without help again with every state", async () => {
+      api.help.mockRejectedValue(Object.assign(new Error("Not Found"), { status: 404, code: "not_found" }));
+      // every answer a new state, as from the server
+      api.state.mockImplementation(async () => gone());
+      api.quests.mockResolvedValue({ claimed: [], quests: [], energy: 5 });
+      render(<RaidsteadGame />);
+      await waitFor(() => expect(api.help).toHaveBeenCalledTimes(1));
+      await claimQuests();
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(api.help).toHaveBeenCalledTimes(1);
     });
 
     it("ignores a list asked for another day", async () => {

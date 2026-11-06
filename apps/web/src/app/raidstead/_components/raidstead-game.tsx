@@ -1012,6 +1012,8 @@ export function RaidsteadGame() {
   // was asked for: answers can overtake each other, and a refusal that drops a
   // town makes every earlier ask stale.
   const helpSeq = useRef(0);
+  // the last ask could not reach the server: ask again with the next state
+  const helpRetry = useRef(false);
   const helpKeyRef = useRef(helpKey);
   helpKeyRef.current = helpKey;
   // `again`: asked anew for an open card, which keeps what it has when the ask fails
@@ -1024,15 +1026,25 @@ export function RaidsteadGame() {
       if (!current()) return;
       if (Array.isArray(r?.targets)) setHelpTargets(r.targets);
       else if (!again) setHelpTargets(null);
-    } catch {
+    } catch (e) {
       // an older server, or none to ask: no help offered, nothing said
       if (current() && !again) setHelpTargets(null);
+      // a server that answered (an older one, without help) is not asked again;
+      // one that could not answer is, with the next state
+      const status = (e as { status?: number })?.status ?? 0;
+      if (current() && (status === 0 || status >= 500)) helpRetry.current = true;
     }
   }, []);
   useEffect(() => {
+    helpRetry.current = false;
     setHelpTargets(null);
     if (helpKey) loadHelp();
   }, [helpKey, loadHelp]);
+  useEffect(() => {
+    if (!helpKey || !helpRetry.current) return;
+    helpRetry.current = false;
+    loadHelp();
+  }, [data, helpKey, loadHelp]);
   // the help card has nothing to show once the list is gone (a new day, the next pest)
   useEffect(() => {
     if (sheet?.kind === "assist" && !helpTargets) setSheet(null);
@@ -1071,8 +1083,11 @@ export function RaidsteadGame() {
         loadHelp(true);
       }
       // the player's own pest is back: the card closes with the refresh, so the
-      // page says it
-      if (code === "own_boss_alive") say(helpErrorMessage(e, i18next.t));
+      // page says it, once
+      if (code === "own_boss_alive") {
+        say(helpErrorMessage(e, i18next.t));
+        return "";
+      }
       return helpErrorMessage(e, i18next.t);
     } finally {
       setBusy(false);
