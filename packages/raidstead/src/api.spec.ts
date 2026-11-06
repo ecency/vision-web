@@ -110,3 +110,39 @@ describe("week", () => {
     ]);
   });
 });
+
+// The festival on the quiet days and the season's own totals: asked with the session.
+describe("festival and wrapped", () => {
+  const seen: { url: string; method?: string; body?: string; auth?: string }[] = [];
+  const api = createApi({
+    base: "https://games.example",
+    token: () => "rs1_secret",
+    fetch: async (url, init) => {
+      seen.push({
+        url: String(url),
+        method: init?.method,
+        body: init?.body as string | undefined,
+        auth: ((init?.headers ?? {}) as Record<string, string>).authorization
+      });
+      return new Response(JSON.stringify({}), { status: 200 });
+    }
+  });
+
+  it("asks for the festival, posts a hit's type, and asks for a season's totals", async () => {
+    seen.length = 0;
+    const calls = [
+      async () => api.festival(),
+      async () => api.festivalAttack("signal"),
+      async () => api.wrapped(),
+      async () => api.wrapped(2)
+    ];
+    for (const call of calls) await call().catch(() => undefined);
+    const auth = "Bearer rs1_secret";
+    expect(seen).toEqual([
+      { url: "https://games.example/v1/raidstead/festival", method: "GET", body: undefined, auth },
+      { url: "https://games.example/v1/raidstead/festival/attack", method: "POST", body: JSON.stringify({ type: "signal" }), auth },
+      { url: "https://games.example/v1/raidstead/wrapped", method: "GET", body: undefined, auth },
+      { url: "https://games.example/v1/raidstead/wrapped?season=2", method: "GET", body: undefined, auth }
+    ]);
+  });
+});

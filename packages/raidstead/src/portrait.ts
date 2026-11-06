@@ -92,13 +92,16 @@ export interface ShareCard {
   week: string;
   topLabel: string;
   top: { account: string; damage: number }[];
+  /// Lines of its own in place of the top 3 (Season Wrapped's numbers), at most 3.
+  rows?: string[];
 }
 
 export const SHARE_CARD = { width: 1200, height: 630 };
 const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
 /// The raid report's share image (1200 x 630, the size link previews use): the
-/// week's pest on the left, the alliance, the outcome and the top 3 on the right.
+/// week's pest on the left, the alliance, the outcome and the top 3 on the right
+/// (or the card's own `rows`, as Season Wrapped draws its numbers).
 /// Says whether it drew: a canvas without a 2D context is left blank (false).
 export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): boolean {
   const { width: W, height: H } = SHARE_CARD;
@@ -130,7 +133,8 @@ export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): boole
   line(card.title, 240, size, INKS[NIGHT].c, 800);
   line(card.outcome, 310, 48, INKS[CORAL].c, 800);
   line(card.topLabel, 390, 26, INKS[VIOLET].c, 700);
-  card.top.slice(0, 3).forEach((r, i) => line(`${i + 1}. @${r.account}  ${r.damage}`, 435 + i * 44, 32, INKS[NIGHT].c));
+  const rows = card.rows ?? card.top.map((r, i) => `${i + 1}. @${r.account}  ${r.damage}`);
+  rows.slice(0, 3).forEach((text, i) => line(text, 435 + i * 44, 32, INKS[NIGHT].c));
   line("ecency.com/raidstead", H - 40, 24, INKS[VIOLET].c, 700);
   return true;
 }
