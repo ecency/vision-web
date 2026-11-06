@@ -181,16 +181,16 @@
     gap: 5px;
   }
 
-  // the town can build something: a small card at the top of the field
+  // the town can build something: a compact strip on its own row of the
+  // actions (full width there, in every layout), never over the field
   .rs-nudge {
-    grid-area: slot;
-    align-self: start;
+    grid-column: 1 / -1;
     justify-self: center;
     display: flex;
     align-items: center;
     gap: 4px;
-    max-width: min(440px, 100%);
-    padding: 4px 4px 4px 12px;
+    max-width: 100%;
+    padding: 0 2px 0 12px;
   }
 
   .rs-nudge-open {
@@ -374,8 +374,12 @@
       box-shadow: 1px 1px 0 var(--rs-ink);
     }
 
+    // "Signal attack" is the longest: on a narrow phone it shrinks, and if it
+    // still wraps, two tight lines fit the button's own height
     b {
-      font: 600 18px/1 var(--rs-head);
+      font: 600 clamp(14px, 4vw, 18px) / 1 var(--rs-head);
+      text-align: center;
+      text-wrap: balance;
     }
 
     small {

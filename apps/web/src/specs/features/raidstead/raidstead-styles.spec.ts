@@ -38,3 +38,12 @@ describe("raidstead type colours", () => {
     expect(rule).toMatch(/^background:\s*var\(--c\b/);
   });
 });
+
+describe("raidstead build card", () => {
+  // the scene lays the boss, the wasp and the heroes in the slot: the card stays out of it
+  it("takes its own row with the actions, not the field", () => {
+    const rules = declarationsFor(".raidstead .rs-nudge");
+    expect(rules.filter((d) => /^grid-area\s*:/.test(d))).toEqual([]);
+    expect(rules).toContain("grid-column: 1/-1");
+  });
+});

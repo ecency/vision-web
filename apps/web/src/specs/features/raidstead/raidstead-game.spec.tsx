@@ -2220,6 +2220,9 @@ describe("Raidstead page", () => {
       render(<RaidsteadGame />);
       await screen.findByRole("button", { name: /raidstead.actions.rally/ });
       expect(card()).toBeTruthy();
+      // with the actions, off the field where the boss, the wasp and the heroes are tapped
+      expect(card()!.closest(".rs-actions")).toBeTruthy();
+      expect(card()!.closest(".rs-slot")).toBeNull();
       expect(shown("raidstead.build-nudge.text")).toEqual({ n: 60 });
       await act(async () => {
         fireEvent.click(card()!);
@@ -2275,6 +2278,57 @@ describe("Raidstead page", () => {
     await waitFor(() =>
       expect(document.querySelector(".rs-toast")!.textContent).toBe("raidstead.toast.day-one")
     );
+  });
+
+  describe("day 1 greeting", () => {
+    const greetings = () =>
+      vi.mocked(i18next.t).mock.calls.filter(([k]) => k === "raidstead.toast.day-one").length;
+    const toast = () => document.querySelector(".rs-toast")!.textContent;
+    const dayOne = (resting = false) => {
+      const s = state();
+      s.calendar = { ...s.calendar, day: 1, resting };
+      api.state.mockResolvedValue(s);
+    };
+
+    it("waits for the week card to close", async () => {
+      dayOne();
+      localStorage.removeItem("ecency_raidstead_seen_week");
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      await screen.findByRole("dialog");
+      expect(toast()).toBe("");
+      expect(greetings()).toBe(0);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+      });
+      await waitFor(() => expect(toast()).toBe("raidstead.toast.day-one"));
+    });
+
+    it("greets once, however often the state is asked", async () => {
+      dayOne();
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      await waitFor(() => expect(greetings()).toBe(1));
+      const asked = api.state.mock.calls.length;
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.quests/ }));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.quests.claim/ }));
+      });
+      await waitFor(() => expect(api.state.mock.calls.length).toBeGreaterThan(asked));
+      expect(greetings()).toBe(1);
+    });
+
+    it("says nothing on a resting day 1", async () => {
+      dayOne(true);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.quests/ });
+      expect(greetings()).toBe(0);
+    });
   });
 
   it("says nothing on arrival after day 1", async () => {

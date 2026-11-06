@@ -555,6 +555,29 @@ describe("build nudge", () => {
     expect(buildNudgeShown(next)).toBe(true);
   });
 
+  it("after a drop in materials, stays hidden until they grow past the low point", () => {
+    dismissBuildNudge(town(100));
+    expect(buildNudgeShown(town(100))).toBe(false);
+    // an ally builds: fewer materials, still nothing new to tell
+    expect(buildNudgeShown(town(60))).toBe(false);
+    expect(buildNudgeShown(town(60))).toBe(false);
+    expect(buildNudgeShown(town(85))).toBe(true);
+  });
+
+  it("keeps each account's and alliance's dismissal apart", () => {
+    const other = (s: State, name: string, community: string) => {
+      s.account.name = name;
+      s.alliance!.community = community;
+      return s;
+    };
+    dismissBuildNudge(other(town(60), "ann", "hive-1"));
+    dismissBuildNudge(other(town(70), "bob", "hive-2"));
+    expect(buildNudgeShown(other(town(60), "ann", "hive-1"))).toBe(false);
+    expect(buildNudgeShown(other(town(70), "bob", "hive-2"))).toBe(false);
+    expect(buildNudgeShown(other(town(65), "ann", "hive-1"))).toBe(true);
+    expect(buildNudgeShown(other(town(60), "ann", "hive-2"))).toBe(true);
+  });
+
   it("still shows, and nothing breaks, when storage throws", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked");

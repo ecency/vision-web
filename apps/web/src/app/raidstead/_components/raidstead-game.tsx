@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import i18next from "i18next";
 import {
@@ -39,7 +39,6 @@ import { pendingSpendKey, settleSpend } from "@/features/raidstead/spends";
 import {
   aimOf,
   attackMessage,
-  buildNudgeMark,
   buildNudgeShown,
   buildReport,
   dismissBuildNudge,
@@ -568,17 +567,10 @@ export function RaidsteadGame() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, data?.calendar.season, alliance?.week]);
 
-  // the first state of a visit on a season's day 1: how a raid goes
-  const greeted = useRef(false);
-  useEffect(() => {
-    if (!data || !alliance || phase !== "ready" || greeted.current) return;
-    greeted.current = true;
-    if (data.calendar.day === 1 && !data.calendar.resting) say(t("toast.day-one"));
-  }, [data, alliance, phase, say]);
-
   // a card on the raid screen while the town can build something; dismissed, it
-  // stays away until the materials change (this visit too, if storage is blocked)
-  const [nudgeGone, setNudgeGone] = useState("");
+  // stays away until the materials grow (this visit too, if storage is blocked)
+  const nudgeMem = useRef<Record<string, number>>({});
+  const [nudgeDismissed, setNudgeDismissed] = useState(0);
 
   // Town news. What happened while the player was away opens as a card, after the
   // week's card if that is due too. One line that arrives while they play, with
@@ -701,6 +693,17 @@ export function RaidsteadGame() {
     writeMark(newsScope, awayNews.upTo);
     setSheet({ kind: "news", notes: left, away: awayNews.away });
   }, [awayNews, sheet, phase, tabShown, newsScope, readMark, writeMark]);
+
+  // Once a visit, on a season's day 1: how a raid goes. Told once nothing covers
+  // the toast (the week's card, town news waiting for its card).
+  const greeted = useRef(false);
+  const dayOne = !!alliance && data?.calendar.day === 1 && !data.calendar.resting;
+  useEffect(() => {
+    if (greeted.current || !dayOne || phase !== "ready") return;
+    if (sheet || sheetRef.current || awayNews) return;
+    greeted.current = true;
+    say(t("toast.day-one"));
+  }, [dayOne, phase, sheet, awayNews, say]);
 
   // Allies raid at the same time: ask for the state again while the page shows.
   // The server answers these without a lock or a write when nothing is due.
@@ -1036,8 +1039,14 @@ export function RaidsteadGame() {
               : t("actions.scout-free");
   const questsLeft = 3 - (member?.quests.length ?? 0);
   const playing = phase === "ready" && !!alliance && !!member;
-  const nudge =
-    playing && view === "raid" && buildNudgeShown(data) && nudgeGone !== buildNudgeMark(data!);
+  // the HUD renders every second: storage is read again only when the state changes
+  const nudgeDue = useMemo(
+    () => buildNudgeShown(data, nudgeMem.current),
+    // nudgeDismissed: asked again after a dismissal
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, nudgeDismissed]
+  );
+  const nudge = playing && view === "raid" && nudgeDue;
   const resting = !!cal?.resting;
   const rallyWhy = rallyBlock(data);
 
@@ -1307,24 +1316,6 @@ export function RaidsteadGame() {
           </section>
         )}
 
-        {nudge && (
-          <div className="rs-card rs-nudge">
-            <button className="rs-nudge-open" onClick={() => setView("town")}>
-              {t("build-nudge.text", { n: alliance!.mats })}
-            </button>
-            <button
-              className="rs-nudge-close"
-              aria-label={t("build-nudge.dismiss")}
-              onClick={() => {
-                dismissBuildNudge(data!);
-                setNudgeGone(buildNudgeMark(data!));
-              }}
-            >
-              ×
-            </button>
-          </div>
-        )}
-
         {playing && view === "town" && (
           <section className="rs-card rs-plate" aria-label={t("actions.town")}>
             <div className="rs-row">
@@ -1351,6 +1342,25 @@ export function RaidsteadGame() {
 
         {playing && (
           <footer className="rs-actions">
+            {/* its own row with the actions: the field above is where the boss, the
+                wasp and the heroes are tapped */}
+            {nudge && (
+              <div className="rs-card rs-nudge">
+                <button className="rs-nudge-open" onClick={() => setView("town")}>
+                  {t("build-nudge.text", { n: alliance!.mats })}
+                </button>
+                <button
+                  className="rs-nudge-close"
+                  aria-label={t("build-nudge.dismiss")}
+                  onClick={() => {
+                    dismissBuildNudge(data!, nudgeMem.current);
+                    setNudgeDismissed((n) => n + 1);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <p className="rs-toast" aria-live="polite">
               {[toast, flash].filter(Boolean).join(" ")}
             </p>

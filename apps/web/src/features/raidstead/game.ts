@@ -358,19 +358,39 @@ export function buildBlock(
 
 const NUDGE_KEY = "raidstead_build_nudge";
 
-/// A dismissed build card is remembered by season, alliance, account and the
-/// materials it showed: any change in the materials brings it back.
-export const buildNudgeMark = (state: State) =>
-  `${state.calendar.season}:${state.alliance?.community ?? ""}:${state.account.name}@${state.alliance?.mats ?? 0}`;
+/// Whose build card: one per season, alliance and account (as the news marks).
+const nudgeScope = (state: State) =>
+  `${state.calendar.season}:${state.alliance?.community ?? ""}:${state.account.name}`;
 
-/// The raid screen's card telling the player their town can build something now.
-export function buildNudgeShown(state: State | null): boolean {
-  if (!state?.alliance || !BUILDING_IDS.some((id) => buildBlock(state, id) === null)) return false;
-  // storage that throws or is empty only means the card shows
-  return ls.get(NUDGE_KEY) !== buildNudgeMark(state);
+/// Remembers the lowest materials seen since the card was dismissed. `mem` is
+/// the page's own copy, for storage that refuses. Only this season's are kept.
+function lowerNudge(scope: string, mats: number, mem: Record<string, number>) {
+  mem[scope] = mats;
+  const season = scope.split(":")[0];
+  const stored = (ls.get(NUDGE_KEY) ?? {}) as Record<string, unknown>;
+  const kept = Object.fromEntries(
+    Object.entries(stored).filter(([k, v]) => k.startsWith(`${season}:`) && typeof v === "number")
+  );
+  ls.set(NUDGE_KEY, { ...kept, [scope]: mats });
 }
 
-export const dismissBuildNudge = (state: State) => ls.set(NUDGE_KEY, buildNudgeMark(state));
+/// The raid screen's card telling the player their town can build something now.
+/// Dismissed, it stays away until the materials grow past the lowest they have
+/// been since (a build in between lowers that mark).
+export function buildNudgeShown(state: State | null, mem: Record<string, number> = {}): boolean {
+  if (!state?.alliance || !BUILDING_IDS.some((id) => buildBlock(state, id) === null)) return false;
+  const scope = nudgeScope(state);
+  // storage that throws or is empty only means the card shows
+  const stored = ((ls.get(NUDGE_KEY) ?? {}) as Record<string, unknown>)[scope];
+  const low = typeof stored === "number" ? stored : mem[scope];
+  const mats = state.alliance.mats;
+  if (low === undefined || mats > low) return true;
+  if (mats < low) lowerNudge(scope, mats, mem);
+  return false;
+}
+
+export const dismissBuildNudge = (state: State, mem: Record<string, number> = {}) =>
+  lowerNudge(nudgeScope(state), state.alliance?.mats ?? 0, mem);
 
 /// The alliance picker's order: most players now, then most last season, then
 /// by title. A server that sends no counts keeps its own order.
