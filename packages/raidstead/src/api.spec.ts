@@ -54,3 +54,36 @@ describe("leaderboard", () => {
     ]);
   });
 });
+
+// Help another town: the list is asked for with the session, an attack posts the town and the type.
+describe("help", () => {
+  const seen: { url: string; method?: string; body?: string; auth?: string }[] = [];
+  const api = createApi({
+    base: "https://games.example",
+    token: () => "rs1_secret",
+    fetch: async (url, init) => {
+      seen.push({
+        url: String(url),
+        method: init?.method,
+        body: init?.body as string | undefined,
+        auth: ((init?.headers ?? {}) as Record<string, string>).authorization
+      });
+      return new Response(JSON.stringify({ targets: [] }), { status: 200 });
+    }
+  });
+
+  it("lists targets and posts an attack on one", async () => {
+    seen.length = 0;
+    expect(await api.help()).toEqual({ targets: [] });
+    await api.helpAttack("hive-1", "ink");
+    expect(seen).toEqual([
+      { url: "https://games.example/v1/raidstead/help", method: "GET", body: undefined, auth: "Bearer rs1_secret" },
+      {
+        url: "https://games.example/v1/raidstead/help/attack",
+        method: "POST",
+        body: JSON.stringify({ community: "hive-1", type: "ink" }),
+        auth: "Bearer rs1_secret"
+      }
+    ]);
+  });
+});

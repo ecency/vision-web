@@ -27,7 +27,12 @@ const { scene, api, box } = vi.hoisted(() => ({
     communities: vi.fn(async () => ({ communities: [] })),
     leaderboard: vi.fn(async () => ({ season: 1, alliances: [] })),
     calendar: vi.fn(),
-    session: vi.fn()
+    session: vi.fn(),
+    // an older server has no help routes
+    help: vi.fn(async (): Promise<unknown> => {
+      throw Object.assign(new Error("Not Found"), { status: 404, code: "not_found" });
+    }),
+    helpAttack: vi.fn()
   },
   box: {
     stored: null as { account: string; token: string; expiresAt: string; ecency?: boolean } | null
@@ -2675,6 +2680,245 @@ describe("Raidstead page", () => {
       });
       expect(document.activeElement).toBe(large);
       expect(selected()).toEqual(["raidstead.profile.leagues.large"]);
+    });
+  });
+  describe("daily streak", () => {
+    const ready = () => screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    beforeEach(() => asUser("ann"));
+
+    it("shows the streak next to energy", async () => {
+      const s = state();
+      Object.assign(s.member, { streak: 5, streakBest: 9 });
+      api.state.mockResolvedValue(s);
+      render(<RaidsteadGame />);
+      await ready();
+      const chip = screen.getByText("raidstead.energy.label").closest(".rs-chip")!;
+      expect(within(chip as HTMLElement).getByText("raidstead.streak.value")).toBeTruthy();
+      expect(shown("raidstead.streak.value")).toEqual({ n: 5 });
+    });
+
+    it("shows no streak at 0 or from a server that sends none", async () => {
+      const s = state();
+      Object.assign(s.member, { streak: 0 });
+      api.state.mockResolvedValue(s);
+      const view = render(<RaidsteadGame />);
+      await ready();
+      expect(screen.queryByText("raidstead.streak.value")).toBeNull();
+      view.unmount();
+      api.state.mockResolvedValue(state());
+      render(<RaidsteadGame />);
+      await ready();
+      expect(screen.queryByText("raidstead.streak.value")).toBeNull();
+      expect(screen.queryByText("raidstead.streak.free-day-used")).toBeNull();
+    });
+
+    it("says when this week's free day is used", async () => {
+      const s = state();
+      Object.assign(s.member, { streak: 3, freeDayUsed: true });
+      api.state.mockResolvedValue(s);
+      render(<RaidsteadGame />);
+      await ready();
+      expect(screen.getByText("raidstead.streak.free-day-used")).toBeTruthy();
+    });
+
+    it("lists the streak badges by name in the profile", async () => {
+      const s = state();
+      s.account.badges = ["streak7"] as never;
+      api.state.mockResolvedValue(s);
+      render(<RaidsteadGame />);
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.menu.profile/ }));
+      });
+      const badge = screen.getByText("raidstead.profile.badge-list.streak7.name").closest(".rs-badge")!;
+      expect(badge.classList.contains("on")).toBe(true);
+      expect(screen.getByText("raidstead.profile.badge-list.helper.name")).toBeTruthy();
+    });
+  });
+
+  describe("help another town", () => {
+    const target = {
+      community: "hive-999",
+      title: "Far Field",
+      league: "small",
+      kind: "slug",
+      hp: 300,
+      maxHp: 600,
+      raiders: 4,
+      helpLeft: 10
+    };
+    const gone = () => {
+      const s = state();
+      Object.assign(s.alliance.boss, { alive: false, killed: true, hp: 0 });
+      return s;
+    };
+    const helpButton = async () => {
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      return screen.findByRole("button", { name: /raidstead.help.button/ });
+    };
+    const openTarget = async () => {
+      const button = await helpButton();
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      const sheet = screen.getByRole("dialog");
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: /Far Field/ }));
+      });
+      return sheet;
+    };
+    beforeEach(() => {
+      asUser("ann");
+      api.help.mockResolvedValue({ targets: [target] });
+    });
+
+    it("offers to help once the player's pest was chased off, listing the server's targets", async () => {
+      api.state.mockResolvedValue(gone());
+      render(<RaidsteadGame />);
+      const button = await helpButton();
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      const sheet = screen.getByRole("dialog");
+      expect(within(sheet).getByText("Far Field")).toBeTruthy();
+      expect(within(sheet).getByRole("meter").getAttribute("aria-valuenow")).toBe("50");
+      expect(shown("raidstead.help.raiders")).toEqual({ n: 4 });
+    });
+
+    it("offers no help while the player's pest is alive", async () => {
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(screen.queryByRole("button", { name: /raidstead.help.button/ })).toBeNull();
+      expect(api.help).not.toHaveBeenCalled();
+    });
+
+    it("offers no help on a server without it", async () => {
+      api.help.mockRejectedValue(Object.assign(new Error("Not Found"), { status: 404, code: "not_found" }));
+      api.state.mockResolvedValue(gone());
+      render(<RaidsteadGame />);
+      await waitFor(() => expect(api.help).toHaveBeenCalled());
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(screen.queryByRole("button", { name: /raidstead.help.button/ })).toBeNull();
+      expect(screen.queryByText("raidstead.errors.generic")).toBeNull();
+    });
+
+    it("attacks a target with Ink and shows its new health", async () => {
+      api.state.mockResolvedValue(gone());
+      api.helpAttack.mockResolvedValue({ damage: 3, hp: 150, maxHp: 600, energy: 4, helpLeft: 9, badge: null });
+      render(<RaidsteadGame />);
+      const sheet = await openTarget();
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.actions.attack-ink" }));
+      });
+      expect(api.helpAttack).toHaveBeenCalledWith("hive-999", "ink");
+      expect(api.attack).not.toHaveBeenCalled();
+      expect(within(sheet).getByRole("meter").getAttribute("aria-valuenow")).toBe("25");
+      expect(within(sheet).getByText("raidstead.help.hit")).toBeTruthy();
+    });
+
+    it("says the town has had all the help it can take", async () => {
+      api.state.mockResolvedValue(gone());
+      api.helpAttack.mockRejectedValue(
+        Object.assign(new Error("full"), { status: 409, code: "help_full", message: "full" })
+      );
+      render(<RaidsteadGame />);
+      const sheet = await openTarget();
+      api.help.mockResolvedValue({ targets: [] }); // the server now leaves the full town out
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.actions.attack-ink" }));
+      });
+      expect(within(sheet).getByText("raidstead.help.errors.help_full")).toBeTruthy();
+      // the full town leaves the list
+      expect(within(sheet).queryByRole("button", { name: /Far Field/ })).toBeNull();
+      expect(within(sheet).getByText("raidstead.help.none")).toBeTruthy();
+      expect(enUS.raidstead.help.errors.help_full).toMatch(/all the help it can take/);
+    });
+
+    it("says the player's own pest comes first", async () => {
+      api.state.mockResolvedValue(gone());
+      api.helpAttack.mockRejectedValue(
+        Object.assign(new Error("alive"), { status: 409, code: "own_boss_alive", message: "alive" })
+      );
+      render(<RaidsteadGame />);
+      const sheet = await openTarget();
+      await act(async () => {
+        fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.actions.attack-forge" }));
+      });
+      expect(within(sheet).getByText("raidstead.help.errors.own_boss_alive")).toBeTruthy();
+    });
+  });
+
+  describe("tell my alliance", () => {
+    // the locale's own English, so the line reads as it will be sent
+    const realT = (key: string, values: Record<string, unknown> = {}) => {
+      const text = key.split(".").reduce<any>((o, k) => o?.[k], enUS);
+      return typeof text === "string"
+        ? text.replace(/\{\{(\w+)\}\}/g, (_, k) => String(values[k] ?? ""))
+        : key;
+    };
+    const scouted = () => {
+      const s = state();
+      s.alliance.boss.weakness = "forge" as never;
+      return s;
+    };
+    const shareButton = async () => {
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      return screen.findByRole("button", { name: /raidstead.share.button/ });
+    };
+    let fetchSpy: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      asUser("ann");
+      vi.mocked(i18next.t).mockImplementation(((key: string, values?: Record<string, unknown>) =>
+        key.startsWith("raidstead.share.line") || key.startsWith("raidstead.bosses.") || key.startsWith("raidstead.types.")
+          ? realT(key, values)
+          : key) as never);
+    });
+    afterEach(() => {
+      vi.mocked(i18next.t).mockImplementation(((key: string) => key) as never);
+      fetchSpy?.mockRestore();
+    });
+
+    it("sends the line to the community's chat channel when the player is in it", async () => {
+      api.state.mockResolvedValue(scouted());
+      fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((async (url: string) =>
+        url === "/api/mattermost/channels"
+          ? new Response(JSON.stringify({ channels: [{ id: "ch1", name: "hive-123456", display_name: "Ink & Oak", type: "O" }] }))
+          : new Response(JSON.stringify({ post: { id: "p1" } }))) as never);
+      render(<RaidsteadGame />);
+      const button = await shareButton();
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      const post = fetchSpy.mock.calls.find(([u]) => u === "/api/mattermost/channels/ch1/posts");
+      expect(post).toBeTruthy();
+      expect(JSON.parse((post![1] as RequestInit).body as string).message).toContain("weak to Forge");
+      expect(screen.getByText("raidstead.share.sent")).toBeTruthy();
+    });
+
+    it("copies the line and says so without a chat channel", async () => {
+      api.state.mockResolvedValue(scouted());
+      fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((async () =>
+        new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 })) as never);
+      const writeText = vi.fn(async () => undefined);
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+      try {
+        render(<RaidsteadGame />);
+        const button = await shareButton();
+        await act(async () => {
+          fireEvent.click(button);
+        });
+        expect(writeText).toHaveBeenCalledWith(expect.stringContaining("weak to Forge"));
+        expect(screen.getByText("raidstead.share.copied")).toBeTruthy();
+        expect(fetchSpy.mock.calls.some(([u]) => String(u).endsWith("/posts"))).toBe(false);
+      } finally {
+        delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+      }
+    });
+
+    it("offers no share before a scout", async () => {
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(screen.queryByRole("button", { name: /raidstead.share.button/ })).toBeNull();
     });
   });
 });

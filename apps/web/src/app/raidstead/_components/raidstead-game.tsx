@@ -11,6 +11,7 @@ import {
   type Calendar,
   type Community,
   type FolkClass,
+  type HelpTarget,
   type League,
   type Note,
   type PowerId,
@@ -54,13 +55,18 @@ import {
   twinSide,
   type Neighbor,
   errorMessage,
+  helpErrorMessage,
   impactOf,
+  weaknessLine,
   worldOf
 } from "@/features/raidstead/game";
+import { postToAllianceChat } from "@/features/raidstead/share";
+import { clipboard } from "@/utils/clipboard";
 import {
   BoardSheet,
   BossSheet,
   BuildingSheet,
+  HelpSheet,
   HeroSheet,
   TownSheet,
   InfoSheet,
@@ -104,6 +110,7 @@ type SheetState =
   | { kind: "hero"; hero: FolkClass }
   | { kind: "town"; town: Neighbor }
   | { kind: "quests" }
+  | { kind: "assist" }
   | { kind: "menu" }
   | { kind: "news"; notes: Note[]; away: boolean }
   | { kind: MenuItem };
@@ -995,6 +1002,85 @@ export function RaidsteadGame() {
     []
   );
 
+  // Help another town: once the player's own pest is gone this week (not on a
+  // resting day), the towns still fighting. Null while unknown, and for good on a
+  // server without the help routes (no button then).
+  const [helpTargets, setHelpTargets] = useState<HelpTarget[] | null>(null);
+  const canHelp =
+    phase === "ready" && !!alliance && !!boss && !boss.alive && !data?.calendar.resting;
+  const helpKey = canHelp ? `${data!.calendar.season}:${data!.calendar.day}:${alliance!.community}` : "";
+  // `again`: asked anew for an open card, which keeps what it has when the ask fails
+  const loadHelp = useCallback(async (again = false) => {
+    try {
+      const r = await raidsteadApi.help();
+      if (mounted.current && Array.isArray(r?.targets)) setHelpTargets(r.targets);
+      else if (mounted.current && !again) setHelpTargets(null);
+    } catch {
+      // an older server, or none to ask: no help offered, nothing said
+      if (mounted.current && !again) setHelpTargets(null);
+    }
+  }, []);
+  useEffect(() => {
+    setHelpTargets(null);
+    if (helpKey) loadHelp();
+  }, [helpKey, loadHelp]);
+  // the help card has nothing to show once the list is gone (a new day, the next pest)
+  useEffect(() => {
+    if (sheet?.kind === "assist" && !helpTargets) setSheet(null);
+  }, [sheet, helpTargets]);
+  const helpAttack = async (target: HelpTarget, type: AttackType): Promise<string> => {
+    setBusy(true);
+    try {
+      const r = await raidsteadApi.helpAttack(target.community, type);
+      setHelpTargets(
+        (list) =>
+          list?.map((x) =>
+            x.community === target.community
+              ? { ...x, hp: r.hp, maxHp: r.maxHp, helpLeft: r.helpLeft }
+              : x
+          ) ?? list
+      );
+      // the energy spent shows at once; an answer asked before this one no longer counts
+      appliedSeq.current = ++refreshSeq.current;
+      setData((d) => (d?.member ? { ...d, member: { ...d.member, energy: r.energy } } : d));
+      refresh({ quiet: true });
+      return [
+        t("help.hit", { dmg: r.damage, name: target.title || target.community }),
+        r.badge ? t("help.badge") : ""
+      ]
+        .filter(Boolean)
+        .join(" ");
+    } catch (e) {
+      // a town that takes no more help (full, its pest gone, out of the raid)
+      // leaves the list, which is asked for again
+      const code = (e as { code?: string })?.code;
+      if (code === "help_full" || code === "not_fighting" || code === "not_found") {
+        setHelpTargets((list) => list?.filter((x) => x.community !== target.community) ?? list);
+        loadHelp(true);
+      }
+      return helpErrorMessage(e, i18next.t);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Tell my alliance: today's weakness, to the community's chat channel when
+  // the player is in it, otherwise copied for them to paste
+  const shareWeakness = async () => {
+    if (!alliance || !boss?.weakness) return;
+    const line = weaknessLine(boss.kind, boss.weakness, i18next.t);
+    // the chat session belongs to the Ecency user: only when that is who plays
+    if (username && username === data?.account.name) {
+      if (await postToAllianceChat(alliance.community, line)) return say(t("share.sent"));
+    }
+    try {
+      await navigator.clipboard.writeText(line);
+    } catch {
+      clipboard(line);
+    }
+    say(t("share.copied"));
+  };
+
   const openReport = () => {
     if (!data || !alliance) return;
     const report = buildReport(data, i18next.t);
@@ -1034,6 +1120,7 @@ export function RaidsteadGame() {
     cal && cal.season > 0 ? t("season.day", { day: Math.min(cal.day, 28), total: 28 }) : "";
   const energy = member?.energy ?? 0;
   const maxEnergy = member?.maxEnergy ?? 15;
+  const streak = typeof member?.streak === "number" ? member.streak : 0;
   const alive = !!boss?.alive;
   const pct = boss ? Math.ceil((boss.hp / boss.maxHp) * 100) : 100;
   const reshuffleIn = boss?.reshuffleAt
@@ -1187,6 +1274,20 @@ export function RaidsteadGame() {
           />
         ) : null;
         break;
+      case "assist":
+        open =
+          alliance && helpTargets ? (
+            <HelpSheet
+              targets={helpTargets}
+              energy={energy}
+              maxEnergy={maxEnergy}
+              busy={busy}
+              types={TYPES}
+              onAttack={helpAttack}
+              onClose={close}
+            />
+          ) : null;
+        break;
       case "news":
         open = <NewsSheet notes={sheet.notes} away={sheet.away} onClose={close} />;
         break;
@@ -1263,6 +1364,19 @@ export function RaidsteadGame() {
                     <i key={i} className={i < energy ? "on" : undefined} />
                   ))}
                 </span>
+                {/* the daily streak, from servers that send one */}
+                {(streak > 0 || member.freeDayUsed) && (
+                  <span>
+                    {streak > 0 && (
+                      <b className="rs-streak" title={t("streak.label", { n: streak })}>
+                        <span aria-hidden="true">🔥</span>
+                        <span className="sr-only">{t("streak.label", { n: streak })}</span>
+                        <span aria-hidden="true">{t("streak.value", { n: streak })}</span>
+                      </b>
+                    )}
+                    {member.freeDayUsed && <small>{t("streak.free-day-used")}</small>}
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -1313,6 +1427,19 @@ export function RaidsteadGame() {
             </div>
             <div className="rs-row">
               <span>{alive ? t("boss.hp", { hp: boss.hp, max: boss.maxHp }) : t("boss.next")}</span>
+              {!alive && canHelp && !!helpTargets?.length && (
+                <button
+                  className="rs-btn rs-primary"
+                  aria-haspopup="dialog"
+                  onClick={() => {
+                    setSheet({ kind: "assist" });
+                    // the list as it is now: other towns keep fighting meanwhile
+                    loadHelp(true);
+                  }}
+                >
+                  {t("help.button")}
+                </button>
+              )}
               {alive && (
                 <span
                   className={`rs-weak${boss.weakness ? " known" : ""}`}
@@ -1327,6 +1454,11 @@ export function RaidsteadGame() {
                     ? ` · ${t("boss.reshuffle", { s: reshuffleIn })}`
                     : ""}
                 </span>
+              )}
+              {alive && boss.weakness && (
+                <button className="rs-btn" onClick={shareWeakness}>
+                  {t("share.button")}
+                </button>
               )}
             </div>
           </section>

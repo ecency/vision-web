@@ -5472,6 +5472,22 @@
         "peacemaker": {
           "name": "Peacemaker",
           "desc": "Talk the Drama Spider down"
+        },
+        "streak7": {
+          "name": "Week streak",
+          "desc": "Raid 7 days in a row"
+        },
+        "streak14": {
+          "name": "Fortnight streak",
+          "desc": "Raid 14 days in a row"
+        },
+        "streak28": {
+          "name": "Unbroken",
+          "desc": "Raid 28 days in a row"
+        },
+        "helper": {
+          "name": "Good neighbour",
+          "desc": "Help another town with its pest"
         }
       }
     },
@@ -5493,7 +5509,8 @@
       "raiders": "Top raiders this week:",
       "line": "{{i}}. @{{name}}: {{dmg}} damage",
       "town": "Our town: Hall stage {{hall}}, {{mats}} materials in store.",
-      "outro": "Raidstead is played with your community on Ecency: [ecency.com/raidstead](https://ecency.com/raidstead)"
+      "outro": "Raidstead is played with your community on Ecency: [ecency.com/raidstead](https://ecency.com/raidstead)",
+      "helpers": "Helped by {{names}}"
     },
     "hero-card": {
       "scribe": "Writes the town's story, one post at a time. In a raid the Scribe throws Ink.",
@@ -5542,7 +5559,8 @@
       "chest_open": "The war chest kept for this pest is open: +1 damage for 24 hours.",
       "chest_open_hours": "The war chest kept for this pest is open: +1 damage for {{n}}h.",
       "chest_saved": "The war chest still had {{n}}h to run. They are kept for the next pest.",
-      "chest_back": "The war chest is open again: +1 damage for {{n}}h more."
+      "chest_back": "The war chest is open again: +1 damage for {{n}}h more.",
+      "helped": "@{{who}} came from another town to help against the {{name}}."
     },
     "guide": {
       "title": "Field guide",
@@ -5572,6 +5590,36 @@
       "ready-friends": "Tell your community. The pest is sized for the raiders who show up, so every one of them counts.",
       "close": "Back to town",
       "close-preseason": "See you there"
+    },
+    "streak": {
+      "value": "{{n}}",
+      "label": "Daily streak: {{n}} days in a row",
+      "free-day-used": "Free day used this week"
+    },
+    "share": {
+      "button": "Tell my alliance",
+      "line": "Raidstead: today the {{pest}} is weak to {{type}} (until it shifts). Join us at ecency.com/raidstead",
+      "sent": "Sent to your alliance's chat.",
+      "copied": "Copied. Paste it where your alliance talks."
+    },
+    "help": {
+      "button": "Help another town",
+      "button-desc": "Your pest is gone: lend a hand",
+      "title": "Help another town",
+      "desc": "Your own pest is gone this week. Help an alliance still fighting: plain damage, no scouting.",
+      "none": "No town needs help right now.",
+      "raiders": "{{n}} raiders",
+      "full": "Has all the help it can take",
+      "back": "All towns",
+      "pest": "Pest",
+      "hit": "{{dmg}} damage to the pest of {{name}}.",
+      "badge": "New badge: Good neighbour!",
+      "errors": {
+        "help_full": "This town has had all the help it can take this week.",
+        "own_boss_alive": "Your own pest is still in town: fight it first.",
+        "not_fighting": "This town is not fighting a pest right now.",
+        "not_found": "That town is not in the raid any more."
+      }
     }
   },
   "listen": {

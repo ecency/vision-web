@@ -729,6 +729,18 @@
     }
   }
 
+  // a town to help: its name, raiders and the health of its pest
+  .rs-help-row {
+    display: grid;
+    gap: 4px;
+  }
+
+  // the daily streak, next to energy
+  .rs-streak {
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
   // a far town's facts: three equal tiles
   .rs-facts {
     display: grid;
