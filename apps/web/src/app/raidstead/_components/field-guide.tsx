@@ -10,15 +10,7 @@ import { Sheet } from "./sheets";
 const t = (key: string, values?: Record<string, unknown>) => i18next.t(`raidstead.${key}`, values);
 
 /// One model printed still on a small canvas. Decorative: the name next to it says who it is.
-function Portrait({
-  kind,
-  silhouette = false,
-  className
-}: {
-  kind: string;
-  silhouette?: boolean;
-  className: string;
-}) {
+function Portrait({ kind, className }: { kind: string; className: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;
@@ -27,7 +19,7 @@ function Portrait({
       // drawn at the size the card gives it, which is only known once the sheet is open
       if (!c.clientWidth) return;
       try {
-        drawPortrait(c, kind, { silhouette });
+        drawPortrait(c, kind);
       } catch {
         // no 2D canvas (an old browser, a test DOM): the text carries the card on its own
       }
@@ -37,7 +29,7 @@ function Portrait({
     const ro = new ResizeObserver(draw);
     ro.observe(c);
     return () => ro.disconnect();
-  }, [kind, silhouette]);
+  }, [kind]);
   return <canvas ref={ref} className={className} aria-hidden="true" />;
 }
 
@@ -50,8 +42,7 @@ const STEPS = [
 ] as const;
 
 /// The rules, the season's pests and the townsfolk on one card. Before the first
-/// season it also says how to get ready. A pest that has not arrived yet shows as
-/// a silhouette with its name and trick: what it looks like is kept for its week.
+/// season it also says how to get ready.
 export function FieldGuideSheet({
   calendar,
   onClose
@@ -94,18 +85,14 @@ export function FieldGuideSheet({
       <h3>{t("guide.pests-title", { n: Math.max(1, calendar.season) })}</h3>
       <ul className="rs-pests">
         {weeks.map((w) => (
-          <li key={w.week} className={w.revealed ? undefined : "is-hidden"}>
-            <Portrait kind={w.kind} silhouette={!w.revealed} className="rs-pests-art" />
+          <li key={w.week}>
+            <Portrait kind={w.kind} className="rs-pests-art" />
             <small>{t("guide.pest-week", { week: w.week, date: date(w.at) })}</small>
             <b>{t(`bosses.${w.kind}.name`)}</b>
             <span className="rs-muted">{t(`bosses.${w.kind}.trick`)}</span>
-            {!w.revealed && (
-              <span className="rs-pests-soon">{t("guide.pest-hidden", { date: date(w.at) })}</span>
-            )}
           </li>
         ))}
       </ul>
-      {weeks.some((w) => !w.revealed) && <p className="rs-muted">{t("guide.pests-note")}</p>}
 
       <h3>{t("guide.folk-title")}</h3>
       <ul className="rs-folk">

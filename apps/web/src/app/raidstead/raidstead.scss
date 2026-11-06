@@ -651,10 +651,6 @@
     .rs-muted {
       font-size: 13px;
     }
-
-    .is-hidden b {
-      color: var(--rs-muted);
-    }
   }
 
   .rs-pests-art {
@@ -667,12 +663,6 @@
     color: var(--rs-violet);
     font-weight: 700;
     text-decoration: underline;
-  }
-
-  .rs-pests-soon {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--rs-violet);
   }
 
   .rs-list {

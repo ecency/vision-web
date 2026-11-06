@@ -491,7 +491,6 @@ describe("countdown", () => {
 
 describe("pestCalendar", () => {
   const start = "2026-10-10T00:00:00.000Z";
-  const shown = (c: Parameters<typeof pestCalendar>[0]) => pestCalendar(c).map((w) => w.revealed);
 
   it("lists the four weeks in the server's order, a week apart", () => {
     const weeks = pestCalendar({ season: 0, week: 0, resting: true, startsAt: start });
@@ -499,16 +498,13 @@ describe("pestCalendar", () => {
     expect(weeks.map((w) => new Date(w.at).toISOString().slice(0, 10))).toEqual(["2026-10-10", "2026-10-17", "2026-10-24", "2026-10-31"]);
   });
 
-  it("before the first season shows only the opening pest", () => {
-    expect(shown({ season: 0, week: 0, resting: true, startsAt: start })).toEqual([true, false, false, false]);
-  });
-
-  it("shows each pest from its own week on, and all of them once the season rests", () => {
-    expect(shown({ season: 1, week: 1, resting: false, startsAt: start })).toEqual([true, false, false, false]);
-    expect(shown({ season: 1, week: 3, resting: false, startsAt: start })).toEqual([true, true, true, false]);
-    expect(shown({ season: 1, week: 4, resting: false, startsAt: start })).toEqual([true, true, true, true]);
-    expect(shown({ season: 1, week: 4, resting: true, startsAt: start })).toEqual([true, true, true, true]);
-    // a new season reveals week by week again
-    expect(shown({ season: 2, week: 1, resting: false, startsAt: start })).toEqual([true, false, false, false]);
+  it("gives each week only its number, pest and arrival: nothing is hidden", () => {
+    for (const c of [
+      { season: 0, week: 0, resting: true, startsAt: start },
+      { season: 2, week: 1, resting: false, startsAt: start }
+    ]) {
+      for (const w of pestCalendar(c))
+        expect(Object.keys(w).sort()).toEqual(["at", "kind", "week"]);
+    }
   });
 });

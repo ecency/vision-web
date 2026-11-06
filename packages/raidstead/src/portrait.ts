@@ -89,7 +89,7 @@ export function portrait(kind: string, { width, height, pad = 6, spacing = 2.4, 
 
 /// Paints a portrait on a canvas: paper first, then inks multiplied onto it
 /// (overlapping inks darken, as on a press); knockout dots print paper.
-export function drawPortrait(canvas: HTMLCanvasElement, kind: string, opts: { silhouette?: boolean; spacing?: number; pad?: number } = {}): void {
+export function drawPortrait(canvas: HTMLCanvasElement, kind: string, opts: { spacing?: number; pad?: number } = {}): void {
   // CSS size: a canvas not laid out yet (inside a closed dialog) has none, and is left alone
   const w = canvas.clientWidth, h = canvas.clientHeight;
   const g = canvas.getContext("2d");

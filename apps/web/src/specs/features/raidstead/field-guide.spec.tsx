@@ -27,7 +27,7 @@ describe("FieldGuideSheet", () => {
     delete (HTMLCanvasElement.prototype as { clientWidth?: number }).clientWidth;
   });
 
-  it("before the season: the opening pest in full, the rest as silhouettes with their names, and how to get ready", () => {
+  it("before the season: every pest in full with its name, and how to get ready", () => {
     vi.mocked(drawPortrait).mockClear();
     render(
       <FieldGuideSheet
@@ -37,32 +37,30 @@ describe("FieldGuideSheet", () => {
     );
     const cards = pests();
     expect(cards).toHaveLength(4);
-    expect(cards.map((c) => c.classList.contains("is-hidden"))).toEqual([false, true, true, true]);
-    // names and tricks are public; only the look waits for the week
+    expect(cards.map((c) => c.classList.contains("is-hidden"))).toEqual([
+      false,
+      false,
+      false,
+      false
+    ]);
     expect(cards[2].textContent).toContain("raidstead.bosses.twins.name");
     expect(cards[2].textContent).toContain("raidstead.bosses.twins.trick");
-    expect(cards[2].textContent).toContain("raidstead.guide.pest-hidden");
-    const drawn = vi.mocked(drawPortrait).mock.calls.map(([, kind, o]) => [kind, !!o?.silhouette]);
-    expect(drawn).toEqual(
-      expect.arrayContaining([
-        ["beetle", false],
-        ["slug", true],
-        ["twins", true],
-        ["queen", true],
-        ["scout", false]
-      ])
-    );
-    // a hidden pest is never drawn in full
-    expect(
-      drawn.filter(([kind, s]) => ["slug", "twins", "queen"].includes(kind as string) && !s)
-    ).toEqual([]);
+    // the week and its arrival date stay
+    expect(cards[2].textContent).toContain("raidstead.guide.pest-week");
+    const pestCalls = vi
+      .mocked(drawPortrait)
+      .mock.calls.filter(([, kind]) => ["beetle", "slug", "twins", "queen"].includes(kind));
+    expect(pestCalls.map(([, kind]) => kind).sort()).toEqual(["beetle", "queen", "slug", "twins"]);
+    // drawn in full: no silhouette option at all
+    expect(pestCalls.every(([, , o]) => !o || !("silhouette" in o))).toBe(true);
     expect(screen.getByText("raidstead.guide.ready-title")).toBeTruthy();
   });
 
-  it("in week 3: three pests shown, the finale still hidden, no get-ready list", () => {
+  it("on season 2 day 1: all four pests in full, no get-ready list", () => {
+    vi.mocked(drawPortrait).mockClear();
     render(
       <FieldGuideSheet
-        calendar={{ season: 1, week: 3, resting: false, startsAt: start }}
+        calendar={{ season: 2, week: 1, resting: false, startsAt: start }}
         onClose={vi.fn()}
       />
     );
@@ -70,8 +68,15 @@ describe("FieldGuideSheet", () => {
       false,
       false,
       false,
-      true
+      false
     ]);
+    const pestCalls = vi
+      .mocked(drawPortrait)
+      .mock.calls.filter(([, kind]) => ["beetle", "slug", "twins", "queen"].includes(kind));
+    expect(pestCalls.map(([, kind]) => kind).sort()).toEqual(["beetle", "queen", "slug", "twins"]);
+    expect(pestCalls.every(([, , o]) => !o || !("silhouette" in o))).toBe(true);
+    expect(screen.queryByText("raidstead.guide.pest-hidden")).toBeNull();
+    expect(screen.queryByText("raidstead.guide.pests-note")).toBeNull();
     expect(screen.queryByText("raidstead.guide.ready-title")).toBeNull();
   });
 
