@@ -56,7 +56,9 @@ export type AttackResult = { energy: number; hp: number; maxHp: number } & (
 );
 export interface ScoutResult { weakness: AttackType; tomorrow?: AttackType; scoutsLeft: number }
 export interface Session { token: string; account: string; expiresAt: string }
-export interface Community { name: string; title: string }
+/// `players` (members playing this season) and `lastSeason` (who played last season)
+/// come from newer servers only.
+export interface Community { name: string; title: string; players?: number; lastSeason?: number }
 export interface LeaderRow { community: string; title: string; members: number; kills: number; damage: number; league: string; score?: number; killSecs?: number }
 
 export class RaidsteadError extends Error {

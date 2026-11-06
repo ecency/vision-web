@@ -21,6 +21,7 @@ import {
   pestCalendar,
   pickNeighbors,
   rallyBlock,
+  sortCommunities,
   tierOf,
   twinSide,
   worldOf
@@ -563,5 +564,26 @@ describe("build nudge", () => {
     });
     expect(() => dismissBuildNudge(town(60))).not.toThrow();
     expect(buildNudgeShown(town(60))).toBe(true);
+  });
+});
+
+describe("sortCommunities", () => {
+  it("sorts by players now, then last season, then title ignoring case", () => {
+    const sorted = sortCommunities([
+      { name: "c", title: "carrot", players: 0, lastSeason: 0 },
+      { name: "a", title: "Apple", players: 0, lastSeason: 0 },
+      { name: "x", title: "Busy", players: 3, lastSeason: 0 },
+      { name: "b", title: "banana", players: 0, lastSeason: 0 },
+      { name: "y", title: "Veteran", players: 0, lastSeason: 9 }
+    ]);
+    expect(sorted.map((c) => c.name)).toEqual(["x", "y", "a", "b", "c"]);
+  });
+
+  it("keeps the server's order when it sends no counts", () => {
+    const list = [
+      { name: "z", title: "Zed" },
+      { name: "a", title: "Alpha" }
+    ];
+    expect(sortCommunities(list).map((c) => c.name)).toEqual(["z", "a"]);
   });
 });

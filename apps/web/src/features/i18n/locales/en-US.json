@@ -5143,6 +5143,9 @@
       "pick-desc": "Your alliance is one of the Hive communities you have joined. It stays the same until the season ends.",
       "none": "You have not joined any communities yet. Join one on Ecency, then come back.",
       "join": "Join",
+      "players": "{{n}} playing now",
+      "last-season": "{{n}} played last season",
+      "nobody": "Nobody yet: be the first and invite friends",
       "locked": "Your alliance is set until the season ends on day {{day}}.",
       "browse": "Browse communities"
     },

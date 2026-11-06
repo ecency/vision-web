@@ -2282,4 +2282,58 @@ describe("Raidstead page", () => {
     await screen.findByRole("button", { name: /raidstead.actions.rally/ });
     expect(document.querySelector(".rs-toast")!.textContent).toBe("");
   });
+
+  describe("alliance picker", () => {
+    const noAlliance = () =>
+      api.state.mockResolvedValue({ ...state(), alliance: null, member: null });
+    const options = async () => {
+      const dialog = await screen.findByRole("dialog", { name: "raidstead.alliance.pick-title" });
+      await within(dialog).findAllByRole("button", { name: /raidstead.alliance.join/ });
+      return within(dialog).getAllByRole("listitem");
+    };
+
+    it("lists who plays where, busiest first, and invites a first player", async () => {
+      noAlliance();
+      api.communities.mockResolvedValueOnce({
+        communities: [
+          { name: "hive-a", title: "A", players: 0, lastSeason: 12 },
+          { name: "hive-c", title: "C", players: 0, lastSeason: 0 },
+          { name: "hive-b", title: "B", players: 4, lastSeason: 0 }
+        ]
+      } as never);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      const items = await options();
+      expect(items.map((li) => li.querySelector("b")!.textContent)).toEqual(["B", "A", "C"]);
+      // the stand-in t shows keys: what each line says is read from its values
+      const lines = vi.mocked(i18next.t).mock.calls;
+      expect(lines).toContainEqual(["raidstead.alliance.players", { n: 4 }]);
+      expect(lines).toContainEqual(["raidstead.alliance.last-season", { n: 12 }]);
+      expect(
+        lines.filter(([k]) => k === "raidstead.alliance.last-season").map(([, v]) => v)
+      ).not.toContainEqual({ n: 0 });
+      expect(items[1].textContent).toContain("raidstead.alliance.last-season");
+      expect(items[0].textContent).not.toContain("raidstead.alliance.last-season");
+      expect(items[2].textContent).toContain("raidstead.alliance.nobody");
+      expect(items[2].textContent).not.toContain("raidstead.alliance.players");
+      expect(items[0].textContent).not.toContain("raidstead.alliance.nobody");
+    });
+
+    it("keeps an older server's order, with no counts", async () => {
+      noAlliance();
+      api.communities.mockResolvedValueOnce({
+        communities: [
+          { name: "hive-z", title: "Zed" },
+          { name: "hive-a", title: "Alpha" }
+        ]
+      });
+      asUser("ann");
+      render(<RaidsteadGame />);
+      const items = await options();
+      expect(items.map((li) => li.querySelector("b")!.textContent)).toEqual(["Zed", "Alpha"]);
+      for (const li of items) {
+        expect(li.textContent).not.toMatch(/alliance\.(players|last-season|nobody)/);
+      }
+    });
+  });
 });

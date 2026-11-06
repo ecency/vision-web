@@ -22,6 +22,7 @@ import {
   noteId,
   noteText,
   rallyBlock,
+  sortCommunities,
   tierOf,
   type Neighbor
 } from "@/features/raidstead/game";
@@ -236,7 +237,10 @@ export function PickSheet({
   const [list, setList] = useState<Community[] | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    load().then(setList, () => setFailed(true));
+    load().then(
+      (l) => setList(sortCommunities(l)),
+      () => setFailed(true)
+    );
   }, [load]);
   return (
     <Sheet onClose={() => undefined} closable={false} label={t("alliance.pick-title")}>
@@ -264,6 +268,21 @@ export function PickSheet({
                   <b>{c.title || c.name}</b>
                   <br />
                   <small>{c.name}</small>
+                  {typeof c.players === "number" && (
+                    <>
+                      <br />
+                      <small className="rs-muted">
+                        {!c.players && !c.lastSeason
+                          ? t("alliance.nobody")
+                          : [
+                              t("alliance.players", { n: c.players }),
+                              c.lastSeason ? t("alliance.last-season", { n: c.lastSeason }) : ""
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                      </small>
+                    </>
+                  )}
                 </span>
                 <span>{t("alliance.join")}</span>
               </button>

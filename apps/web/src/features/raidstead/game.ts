@@ -7,6 +7,7 @@ import type {
   Impact,
   LeaderRow,
   Calendar,
+  Community,
   Note,
   RaidsteadError,
   SceneWorld,
@@ -370,3 +371,16 @@ export function buildNudgeShown(state: State | null): boolean {
 }
 
 export const dismissBuildNudge = (state: State) => ls.set(NUDGE_KEY, buildNudgeMark(state));
+
+/// The alliance picker's order: most players now, then most last season, then
+/// by title. A server that sends no counts keeps its own order.
+export function sortCommunities(list: Community[]): Community[] {
+  if (!list.some((c) => typeof c.players === "number")) return list;
+  const title = (c: Community) => (c.title || c.name).toLowerCase();
+  return [...list].sort(
+    (a, b) =>
+      (b.players ?? 0) - (a.players ?? 0) ||
+      (b.lastSeason ?? 0) - (a.lastSeason ?? 0) ||
+      title(a).localeCompare(title(b))
+  );
+}
