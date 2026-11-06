@@ -537,6 +537,8 @@ export function HelpSheet({
         <div className="rs-btns">
           <button
             className="rs-btn"
+            // a hit on the way belongs to this town: stay with it until it lands
+            disabled={busy}
             onClick={() => {
               setPicked(null);
               setLine("");
@@ -560,6 +562,7 @@ export function HelpSheet({
             <li key={x.community}>
               <button
                 className="rs-opt"
+                disabled={busy}
                 onClick={() => {
                   // a line about the last town is not about this one
                   setPicked(x.community);

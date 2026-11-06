@@ -2886,6 +2886,22 @@ describe("Raidstead page", () => {
       return { promise, settle };
     };
 
+    it("stays on the town while its hit is on the way", async () => {
+      api.state.mockResolvedValue(gone());
+      const hit = later<{ damage: number; hp: number; maxHp: number; energy: number; helpLeft: number; badge: null }>();
+      api.helpAttack.mockReturnValueOnce(hit.promise);
+      render(<RaidsteadGame />);
+      const sheet = await openTarget();
+      act(() => {
+        fireEvent.click(within(sheet).getByRole("button", { name: "raidstead.actions.attack-ink" }));
+      });
+      expect((within(sheet).getByRole("button", { name: /raidstead.help.back/ }) as HTMLButtonElement).disabled).toBe(true);
+      await act(async () => {
+        hit.settle({ damage: 6, hp: 294, maxHp: 600, energy: 4, helpLeft: 4, badge: null });
+      });
+      expect((within(sheet).getByRole("button", { name: /raidstead.help.back/ }) as HTMLButtonElement).disabled).toBe(false);
+    });
+
     it("keeps a hit's new health over a list asked for before it", async () => {
       api.state.mockResolvedValue(gone());
       api.helpAttack.mockResolvedValue({ damage: 6, hp: 150, maxHp: 600, energy: 4, helpLeft: 0, badge: null });
