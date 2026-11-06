@@ -144,7 +144,9 @@ export function noteText(n: Note, t: T): string {
       return t("raidstead.news.escaped", { name: t(`raidstead.bosses.${what}.name`) });
     case "killed":
       if (!pest) return n.text;
-      return t("raidstead.news.killed", { name: t(`raidstead.bosses.${what}.name`), who: n.who ?? "" });
+      return n.who
+        ? t("raidstead.news.killed", { name: t(`raidstead.bosses.${what}.name`), who: n.who })
+        : t("raidstead.news.killed_plain", { name: t(`raidstead.bosses.${what}.name`) });
     case "helped":
       if (!pest || !n.who) return n.text;
       return t("raidstead.news.helped", { name: t(`raidstead.bosses.${what}.name`), who: n.who });
@@ -282,10 +284,14 @@ export const escapeMarkdown = (text: string) => text.replace(/[\\`*_{}[\]()#+!|<
 
 /// This week's town news in the order it happened: by day, then as the server
 /// numbered the lines (lines without a number keep the order they came in).
+/// The season's last pest gets away the day after the last raid day (29): that
+/// line is week 4's. Earlier escapes are logged on the next pest's first day,
+/// and belong to that week.
 function weekNews(notes: Note[], week: number): Note[] {
   const first = (week - 1) * 7 + 1;
+  const last = week >= 4 ? 29 : first + 6;
   return notes
-    .filter((n) => n.day >= first && n.day < first + 7)
+    .filter((n) => n.day >= first && n.day <= last)
     .sort(
       (a, b) =>
         a.day - b.day || (typeof a.seq === "number" && typeof b.seq === "number" ? a.seq - b.seq : 0)
@@ -308,6 +314,8 @@ export function buildReport(state: State, t: T): { title: string; body: string }
     outcome: t(`raidstead.report.outcome.${outcome}`)
   });
   const news = weekNews(a.notes ?? [], a.week);
+  // the last hit, only for a pest that was chased off; told once, in its own line
+  const hero = outcome === "won" ? news.filter((n) => n.kind === "killed" && n.who).pop()?.who : undefined;
   const lines = [t(`raidstead.report.intro-${outcome}`, { name, boss }), ""];
 
   // day by day; a server that does not tell the arrival: the week's start, from its number
@@ -318,7 +326,8 @@ export function buildReport(state: State, t: T): { title: string; body: string }
   const days = new Map<number, string[]>();
   for (const n of news) {
     // what the server wrote and the names in it stay text; the page's own words are Markdown-safe
-    const text = noteText({ ...n, text: escapeMarkdown(n.text ?? ""), who: n.who && escapeMarkdown(n.who) }, t);
+    const who = hero && n.kind === "killed" ? undefined : n.who && escapeMarkdown(n.who);
+    const text = noteText({ ...n, text: escapeMarkdown(n.text ?? ""), who }, t);
     const day = days.get(n.day) ?? [];
     // the same line twice in a day (a weakness that shifted back and forth) is told once
     if (text && !day.includes(text)) day.push(text);
@@ -328,8 +337,6 @@ export function buildReport(state: State, t: T): { title: string; body: string }
     if (texts.length) lines.push(`**${t("raidstead.news.day", { day })}** ${texts.join(" ")}`, "");
   });
 
-  // the last hit, only for a pest that was chased off
-  const hero = outcome === "won" ? news.filter((n) => n.kind === "killed" && n.who).pop()?.who : undefined;
   if (hero) lines.push(t("raidstead.report.hero", { who: escapeMarkdown(hero) }), "");
 
   if (a.raiders.length) {

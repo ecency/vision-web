@@ -722,6 +722,9 @@ describe("story report", () => {
     // within a day, in the order the lines were written
     expect(at("6 gnats")).toBeLessThan(at("below 75% health"));
     expect(body).toContain("Hero of the week: @a");
+    // the last hit is told once, in the hero line
+    expect(body).toContain("**Day 5:** The Spam Beetle was chased off.\n");
+    expect(body.match(/@a\b/g)).toHaveLength(1);
     // the board still follows
     expect(body).toContain("1. @ann: 40 damage");
   });
@@ -750,6 +753,21 @@ describe("story report", () => {
     expect(body.indexOf("### Our town")).toBeGreaterThan(-1);
     expect(town).toContain("Beacon");
     expect(town).not.toContain("Watchtower");
+  });
+
+  it("tells the season's last pest getting away, logged the day after the last raid day", () => {
+    const s = state({ kind: "queen", alive: false, killed: false });
+    s.calendar.day = 28;
+    s.alliance!.week = 4;
+    s.alliance!.notes = [
+      { day: 22, seq: 1, kind: "arrived", what: "queen", text: "The queen arrived." },
+      { day: 29, seq: 2, kind: "escaped", what: "queen", text: "The queen escaped." }
+    ];
+    expect(buildReport(s, realT)!.body).toContain("**Day 29:** The Copycat Queen escaped.");
+    // mid-season, the escape on the next pest's first day is not this week's
+    const w1 = state({ alive: false, killed: false });
+    w1.alliance!.notes = [{ day: 8, seq: 2, kind: "escaped", what: "beetle", text: "The beetle escaped." }];
+    expect(buildReport(w1, realT)!.body).not.toContain("escaped");
   });
 
   it("reads well from a server without the new news: the week's start, no hero line", () => {

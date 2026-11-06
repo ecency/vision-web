@@ -5569,6 +5569,7 @@
       "web_gone": "The Drama Spider got bored and left the {{name}}.",
       "escaped": "The {{name}} escaped.",
       "killed": "The {{name}} was chased off. @{{who}} landed the last hit.",
+      "killed_plain": "The {{name}} was chased off.",
       "chest": "The war chest filled up: +1 damage for 24 hours. @{{who}} gave the last Points.",
       "chest_kept": "The war chest filled up: +1 damage for 24 hours once the next pest arrives. @{{who}} gave the last Points.",
       "chest_open": "The war chest kept for this pest is open: +1 damage for 24 hours.",
