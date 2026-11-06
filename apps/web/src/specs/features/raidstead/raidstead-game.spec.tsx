@@ -2918,9 +2918,11 @@ describe("Raidstead page", () => {
     it("sends the line to the community's chat channel when the player is in it", async () => {
       api.state.mockResolvedValue(scouted());
       fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((async (url: string) =>
-        url === "/api/mattermost/channels"
-          ? new Response(JSON.stringify({ channels: [{ id: "ch1", name: "hive-123456", display_name: "Ink & Oak", type: "O" }] }))
-          : new Response(JSON.stringify({ post: { id: "p1" } }))) as never);
+        url === "/api/mattermost/me"
+          ? new Response(JSON.stringify({ username: "ann" }))
+          : url === "/api/mattermost/channels"
+            ? new Response(JSON.stringify({ channels: [{ id: "ch1", name: "hive-123456", display_name: "Ink & Oak", type: "O" }] }))
+            : new Response(JSON.stringify({ post: { id: "p1" } }))) as never);
       render(<RaidsteadGame />);
       const button = await shareButton();
       await act(async () => {
@@ -2962,9 +2964,14 @@ describe("Raidstead page", () => {
       Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
       return writeText;
     };
-    const inChannel = () =>
+    // `owner`: whose chat session the cookie holds (null: no session)
+    const inChannel = (owner: string | null = "ann") =>
       vi.spyOn(globalThis, "fetch").mockImplementation((async (url: string) => {
         steps.push(`fetch ${url}`);
+        if (url === "/api/mattermost/me")
+          return owner
+            ? new Response(JSON.stringify({ username: owner }))
+            : new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
         return url === "/api/mattermost/channels"
           ? new Response(JSON.stringify({ channels: [{ id: "ch1", name: "hive-123456", display_name: "Ink & Oak", type: "O" }] }))
           : new Response(JSON.stringify({ post: { id: "p1" } }));
@@ -3005,6 +3012,50 @@ describe("Raidstead page", () => {
       expect(chatCalls()).toHaveLength(0);
       expect(writeText).toHaveBeenCalledWith(expect.stringContaining("weak to Forge"));
       expect(screen.getByText("raidstead.share.copied")).toBeTruthy();
+    });
+
+    it("does not post with a chat session left over from another account", async () => {
+      api.state.mockResolvedValue(scouted());
+      fetchSpy = inChannel("carol");
+      fakeClipboard();
+      render(<RaidsteadGame />);
+      const button = await shareButton();
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(steps.filter((x) => x.startsWith("fetch"))).toEqual(["fetch /api/mattermost/me"]);
+      expect(screen.getByText("raidstead.share.copied")).toBeTruthy();
+    });
+
+    it("copies when there is no chat session", async () => {
+      api.state.mockResolvedValue(scouted());
+      fetchSpy = inChannel(null);
+      fakeClipboard();
+      render(<RaidsteadGame />);
+      const button = await shareButton();
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(steps.filter((x) => x.startsWith("fetch"))).toEqual(["fetch /api/mattermost/me"]);
+      expect(screen.getByText("raidstead.share.copied")).toBeTruthy();
+    });
+
+    it("posts when the chat session is the player's own", async () => {
+      api.state.mockResolvedValue(scouted());
+      fetchSpy = inChannel("ann");
+      fakeClipboard();
+      render(<RaidsteadGame />);
+      const button = await shareButton();
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(steps).toEqual([
+        "copy",
+        "fetch /api/mattermost/me",
+        "fetch /api/mattermost/channels",
+        "fetch /api/mattermost/channels/ch1/posts"
+      ]);
+      expect(screen.getByText("raidstead.share.sent")).toBeTruthy();
     });
 
     it("sends once for two quick taps", async () => {

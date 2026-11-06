@@ -1078,7 +1078,7 @@ export function RaidsteadGame() {
     try {
       // the chat session belongs to the Ecency user: only when that is who plays
       if (username && username === data?.account.name) {
-        if (await postToAllianceChat(alliance.community, line)) return say(t("share.sent"));
+        if (await postToAllianceChat(alliance.community, line, username)) return say(t("share.sent"));
       }
       // nothing copied either: the line itself, to copy by hand
       say((await copied) ? t("share.copied") : t("share.manual", { line }));
