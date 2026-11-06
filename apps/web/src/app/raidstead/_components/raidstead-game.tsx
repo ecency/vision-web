@@ -1072,16 +1072,17 @@ export function RaidsteadGame() {
   const shareWeakness = async () => {
     if (sharing.current || !alliance || !boss?.weakness) return;
     sharing.current = true;
-    const line = weaknessLine(boss.kind, boss.weakness, i18next.t);
-    // copied first, while the tap is still current (Safari refuses a copy after an await)
-    const copied = copyLine(line);
     try {
+      const line = weaknessLine(boss.kind, boss.weakness, i18next.t);
+      // copied first, while the tap is still current (Safari refuses a copy after an await)
+      const copied = copyLine(line);
       // the chat session belongs to the Ecency user: only when that is who plays
       if (username && username === data?.account.name) {
         if (await postToAllianceChat(alliance.community, line, username)) return say(t("share.sent"));
       }
-      // nothing copied either: the line itself, to copy by hand
-      say((await copied) ? t("share.copied") : t("share.manual", { line }));
+      if (await copied) return say(t("share.copied"));
+      // nothing copied either: the line itself, kept up longer to copy by hand
+      tell(t("share.manual", { line }));
     } finally {
       sharing.current = false;
     }
