@@ -47,3 +47,13 @@ describe("raidstead build card", () => {
     expect(rules).toContain("grid-column: 1/-1");
   });
 });
+
+describe("raidstead attack labels", () => {
+  // "Signal attack" fits one line on a 360px phone only when sized by the button itself
+  it("sizes the label by the button's own width", () => {
+    expect(declarationsFor(".raidstead .rs-atk")).toContain("container-type: inline-size");
+    // the last size wins: a font shorthand after it would undo the button sizing
+    const sizes = declarationsFor(".raidstead .rs-atk b").filter((d) => /^font(-size)?\s*:/.test(d));
+    expect(sizes.at(-1)).toMatch(/^font-size:\s*clamp\(\s*\d+px,\s*[\d.]+cqi,\s*18px\s*\)$/);
+  });
+});

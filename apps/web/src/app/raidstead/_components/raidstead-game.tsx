@@ -85,10 +85,10 @@ const liveEcencyUser = (): string | null => {
   return typeof u === "string" && u ? u : null;
 };
 const t = (key: string, values?: Record<string, unknown>) => i18next.t(`raidstead.${key}`, values);
-const TYPES: { type: AttackType; hero: string; color: string }[] = [
-  { type: "ink", hero: "scribe", color: "var(--rs-scribe)" },
-  { type: "signal", hero: "scout", color: "var(--rs-scout)" },
-  { type: "forge", hero: "smith", color: "var(--rs-smith)" }
+const TYPES: { type: AttackType; color: string }[] = [
+  { type: "ink", color: "var(--rs-scribe)" },
+  { type: "signal", color: "var(--rs-scout)" },
+  { type: "forge", color: "var(--rs-smith)" }
 ];
 const SEEN_KEY = "raidstead_seen_week";
 // how far each account has read its alliance's town news this season
@@ -1412,7 +1412,7 @@ export function RaidsteadGame() {
             )}
             {view === "raid" && (
               <div className="rs-attacks">
-                {TYPES.map(({ type, hero, color }) => (
+                {TYPES.map(({ type, color }) => (
                   <button
                     key={type}
                     className="rs-atk"
@@ -1429,7 +1429,7 @@ export function RaidsteadGame() {
                         ? t("actions.resting")
                         : energy <= 0
                           ? t("actions.no-energy")
-                          : t("actions.cost", { hero: t(`heroes.${hero}`) })}
+                          : t("actions.cost")}
                     </small>
                   </button>
                 ))}

@@ -374,10 +374,14 @@
       box-shadow: 1px 1px 0 var(--rs-ink);
     }
 
-    // "Signal attack" is the longest: on a narrow phone it shrinks, and if it
-    // still wraps, two tight lines fit the button's own height
+    // the label is sized by the button's own width, so "Signal attack", the
+    // longest, stays on one line on any phone; without container units it
+    // falls back to the page width and may wrap into two tight lines
+    container-type: inline-size;
+
     b {
       font: 600 clamp(14px, 4vw, 18px) / 1 var(--rs-head);
+      font-size: clamp(11px, 14cqi, 18px);
       text-align: center;
       text-wrap: balance;
     }

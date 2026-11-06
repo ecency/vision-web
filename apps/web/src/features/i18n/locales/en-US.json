@@ -5210,7 +5210,7 @@
       "herald": "Herald"
     },
     "actions": {
-      "cost": "{{hero}} · 1 energy",
+      "cost": "1 energy",
       "no-energy": "no energy",
       "resting": "resting",
       "scout": "Scout",
