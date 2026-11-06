@@ -27,3 +27,30 @@ describe("calendar", () => {
     expect(seen[0].headers.authorization).toBeUndefined();
   });
 });
+
+// The leaderboard is public and can be read one league at a time.
+describe("leaderboard", () => {
+  const urls: string[] = [];
+  const api = createApi({
+    base: "https://games.example",
+    token: () => null,
+    fetch: async (url) => {
+      urls.push(String(url));
+      return new Response(JSON.stringify({ season: 2, alliances: [] }), { status: 200 });
+    }
+  });
+
+  it("sends the league and season it is asked for", async () => {
+    urls.length = 0;
+    await api.leaderboard({ league: "large" });
+    await api.leaderboard({ season: 2, league: "small" });
+    await api.leaderboard({ season: 2 });
+    await api.leaderboard();
+    expect(urls).toEqual([
+      "https://games.example/v1/raidstead/leaderboard?league=large",
+      "https://games.example/v1/raidstead/leaderboard?season=2&league=small",
+      "https://games.example/v1/raidstead/leaderboard?season=2",
+      "https://games.example/v1/raidstead/leaderboard"
+    ]);
+  });
+});

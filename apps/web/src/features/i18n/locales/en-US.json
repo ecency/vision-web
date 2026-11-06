@@ -5478,7 +5478,8 @@
     "leaderboard": {
       "title": "Season {{n}} alliances",
       "kills": "{{n}} chased off",
-      "empty": "No alliances yet this season."
+      "empty": "No alliances yet this season.",
+      "leagues": "Leagues"
     },
     "report": {
       "title": "Raid report",

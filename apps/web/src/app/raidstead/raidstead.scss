@@ -903,6 +903,26 @@
 }
 
 // The raiders list, in the docked board and in the menu sheet.
+.raidstead-sheet .rs-league-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+
+  button {
+    min-height: 36px;
+    border: 2px solid var(--rs-ink);
+    border-radius: 10px;
+    background: var(--rs-paper);
+    font: 600 15px/1 var(--rs-head);
+
+    &[aria-selected="true"] {
+      background: var(--rs-ink);
+      color: #fff;
+    }
+  }
+}
+
 .raidstead .rs-rank,
 .raidstead-sheet .rs-rank {
   margin: 0;

@@ -11,7 +11,9 @@ export interface Calendar { season: number; day: number; week: number; resting: 
 /// The public calendar also carries the server's clock (ms), when the server sends it.
 export type SeasonCalendar = Calendar & { now?: number };
 export interface Account { name: string; karma: number; shards: number; kills: number; scouts: number; badges: string[] }
-export interface Trophy { season: number; community: string; title: string; kills: number; rank: number; league: "small" | "medium" | "large" }
+export const LEAGUES = ["small", "medium", "large"] as const;
+export type League = (typeof LEAGUES)[number];
+export interface Trophy { season: number; community: string; title: string; kills: number; rank: number; league: League }
 export interface Raider { account: string; damage: number; attacks: number }
 /// A line of town news: an overnight trick, a kill, the war chest. `kind` names what
 /// happened (`text` is the same in plain English, for a kind the page does not know).
@@ -111,7 +113,11 @@ export function createApi(opts: ApiOptions) {
     powers: (power: PowerId, action: "craft" | "equip" | "unequip") => call<{ powers: PowerId[]; equipped: PowerId[]; slots: number }>("POST", "/v1/raidstead/powers", { power, action }),
     // `fresh`: past any cached copy (the answer may be cached for a minute)
     calendar: (fresh = false) => call<SeasonCalendar>("GET", `/v1/raidstead/calendar${fresh ? `?at=${Date.now()}` : ""}`, undefined, false),
-    leaderboard: (season?: number) => call<{ season: number; alliances: LeaderRow[] }>("GET", `/v1/raidstead/leaderboard${season ? `?season=${season}` : ""}`, undefined, false),
+    // one league only, when `league` is given
+    leaderboard: ({ season, league }: { season?: number; league?: League } = {}) => {
+      const q = [season ? `season=${season}` : "", league ? `league=${league}` : ""].filter(Boolean).join("&");
+      return call<{ season: number; alliances: LeaderRow[] }>("GET", `/v1/raidstead/leaderboard${q ? `?${q}` : ""}`, undefined, false);
+    },
   };
 }
 export type RaidsteadApi = ReturnType<typeof createApi>;

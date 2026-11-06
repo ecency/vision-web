@@ -63,6 +63,7 @@ import { createScene } from "@ecency/raidstead";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { clearSession, signerFor, signIn } from "@/features/raidstead/client";
 import { RaidsteadGame } from "@/app/raidstead/_components/raidstead-game";
+import { LeaderboardSheet } from "@/app/raidstead/_components/sheets";
 
 const expiry = () => new Date(Date.now() + 86_400_000).toISOString();
 
@@ -817,7 +818,7 @@ describe("Raidstead page", () => {
       fireEvent.click(screen.getByRole("button", { name: "raidstead.actions.town" }));
     });
     await waitFor(() => expect(scene.sync.mock.calls.at(-1)![0].neighbors).toHaveLength(1));
-    expect(api.leaderboard).toHaveBeenLastCalledWith(1);
+    expect(api.leaderboard).toHaveBeenLastCalledWith({ season: 1 });
     // same alliance, next season
     const next = state();
     next.calendar = { ...next.calendar, season: 2, day: 1 };
@@ -828,7 +829,7 @@ describe("Raidstead page", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /raidstead.quests.claim/ }));
     });
-    await waitFor(() => expect(api.leaderboard).toHaveBeenLastCalledWith(2));
+    await waitFor(() => expect(api.leaderboard).toHaveBeenLastCalledWith({ season: 2 }));
     expect(scene.sync.mock.calls.at(-1)![0].neighbors).toEqual([]);
   });
 
@@ -2334,6 +2335,81 @@ describe("Raidstead page", () => {
       for (const li of items) {
         expect(li.textContent).not.toMatch(/alliance\.(players|last-season|nobody)/);
       }
+    });
+  });
+
+  describe("leaderboard tabs", () => {
+    const row = (community: string, league: string) => ({
+      community,
+      title: community.toUpperCase(),
+      members: 3,
+      kills: 1,
+      damage: 10,
+      league
+    });
+    const boards: Record<string, ReturnType<typeof row>[]> = {
+      small: [row("hive-s1", "small")],
+      medium: [row("hive-m1", "medium"), row("hive-123456", "medium")],
+      large: [row("hive-l1", "large"), row("hive-l2", "large")]
+    };
+    const byLeague = async (o?: { league?: string }) => ({
+      season: 1,
+      alliances: o?.league ? boards[o.league] : Object.values(boards).flat()
+    });
+    const selected = () =>
+      screen
+        .getAllByRole("tab")
+        .filter((tab) => tab.getAttribute("aria-selected") === "true")
+        .map((tab) => tab.textContent);
+    const ranks = () =>
+      Array.from(document.querySelectorAll(".rs-rank li")).map(
+        (li) => `${li.children[0].textContent} ${li.children[1].firstChild!.textContent!.trim()}`
+      );
+
+    it("opens on the player's own league, ranked from 1", async () => {
+      api.leaderboard.mockImplementation(byLeague as never);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.menu.leaderboard/ }));
+      });
+      await waitFor(() => expect(selected()).toEqual(["raidstead.profile.leagues.medium"]));
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-M1", "2 HIVE-123456"]));
+      expect(api.leaderboard).toHaveBeenCalledWith(expect.objectContaining({ league: "medium" }));
+    });
+
+    it("asks the server for one league per tab", async () => {
+      api.leaderboard.mockImplementation(byLeague as never);
+      render(
+        <LeaderboardSheet
+          season={1}
+          own="hive-123456"
+          load={(league) => api.leaderboard({ league }).then((r) => r.alliances)}
+          onClose={vi.fn()}
+        />
+      );
+      await waitFor(() => expect(selected()).toEqual(["raidstead.profile.leagues.medium"]));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("tab", { name: "raidstead.profile.leagues.large" }));
+      });
+      expect(api.leaderboard).toHaveBeenCalledWith({ league: "large" });
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-L1", "2 HIVE-L2"]));
+      expect(selected()).toEqual(["raidstead.profile.leagues.large"]);
+    });
+
+    it("opens on Small with no alliance yet", async () => {
+      api.leaderboard.mockImplementation(byLeague as never);
+      render(
+        <LeaderboardSheet
+          season={1}
+          load={(league) => api.leaderboard({ league }).then((r) => r.alliances)}
+          onClose={vi.fn()}
+        />
+      );
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-S1"]));
+      expect(selected()).toEqual(["raidstead.profile.leagues.small"]);
+      expect(api.leaderboard).toHaveBeenCalledWith({ league: "small" });
     });
   });
 });

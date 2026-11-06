@@ -11,6 +11,7 @@ import {
   type Calendar,
   type Community,
   type FolkClass,
+  type League,
   type Note,
   type PowerId,
   type Scene,
@@ -316,7 +317,7 @@ export function RaidsteadGame() {
     const asked = skyKey;
     const current = () => ownRef.current === asked;
     raidsteadApi
-      .leaderboard(seasonNo || undefined)
+      .leaderboard({ season: seasonNo || undefined })
       .then((r) => {
         if (current()) setNeighbors(pickNeighbors(r.alliances, ownCommunity));
       })
@@ -972,7 +973,10 @@ export function RaidsteadGame() {
     async () => (await raidsteadApi.communities()).communities,
     []
   );
-  const loadLeaders = useCallback(async () => (await raidsteadApi.leaderboard()).alliances, []);
+  const loadLeaders = useCallback(
+    async (league: League) => (await raidsteadApi.leaderboard({ league })).alliances,
+    []
+  );
 
   const openReport = () => {
     if (!data || !alliance) return;
@@ -1182,6 +1186,7 @@ export function RaidsteadGame() {
         open = (
           <LeaderboardSheet
             season={Math.max(1, data.calendar.season)}
+            own={alliance?.community}
             load={loadLeaders}
             onClose={close}
           />

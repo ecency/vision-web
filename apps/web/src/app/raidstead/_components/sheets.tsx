@@ -1,14 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode
+} from "react";
 import Link from "next/link";
 import i18next from "i18next";
 import {
+  LEAGUES,
   POWERS,
   type AttackType,
   type BuildingId,
   type Community,
   type FolkClass,
+  type League,
   type LeaderRow,
   type Note,
   type PowerId,
@@ -920,32 +929,72 @@ export function BoardSheet({ state, onClose }: { state: State; onClose: () => vo
   );
 }
 
+/// The season's alliances, one league per tab, opened on the player's own league
+/// (Small before they have one). Each tab ranks its league from 1.
 export function LeaderboardSheet({
   season,
+  own,
   load,
   onClose
 }: {
   season: number;
-  load: () => Promise<LeaderRow[]>;
+  /// the player's alliance (community name), if any
+  own?: string;
+  load: (league: League) => Promise<LeaderRow[]>;
   onClose: () => void;
 }) {
-  const [rows, setRows] = useState<LeaderRow[] | null>(null);
+  const [rows, setRows] = useState<Partial<Record<League, LeaderRow[]>>>({});
+  // with an alliance, which league is its own is known once a list holds it
+  const [tab, setTab] = useState<League | null>(own ? null : "small");
+  const live = useRef(true);
+  const fetchLeague = useCallback(
+    (league: League) =>
+      load(league).then(
+        (r) => live.current && setRows((x) => ({ ...x, [league]: r })),
+        () => live.current && setRows((x) => ({ ...x, [league]: [] }))
+      ),
+    [load]
+  );
   useEffect(() => {
-    load().then(setRows, () => setRows([]));
-  }, [load]);
+    live.current = true;
+    (own ? LEAGUES : (["small"] as const)).forEach(fetchLeague);
+    return () => {
+      live.current = false;
+    };
+  }, [fetchLeague, own]);
+  useEffect(() => {
+    if (tab || !own) return;
+    const mine = LEAGUES.find((l) => rows[l]?.some((r) => r.community === own));
+    if (mine) setTab(mine);
+    else if (LEAGUES.every((l) => rows[l])) setTab("small");
+  }, [rows, tab, own]);
+  const list = tab ? rows[tab] : undefined;
   return (
     <Sheet onClose={onClose} label={t("leaderboard.title", { n: season })}>
       <h2>{t("leaderboard.title", { n: season })}</h2>
-      {!rows ? (
+      <div className="rs-league-tabs" role="tablist" aria-label={t("leaderboard.leagues")}>
+        {LEAGUES.map((l) => (
+          <button
+            key={l}
+            role="tab"
+            aria-selected={tab === l}
+            onClick={() => {
+              setTab(l);
+              if (!rows[l]) fetchLeague(l);
+            }}
+          >
+            {t(`profile.leagues.${l}`)}
+          </button>
+        ))}
+      </div>
+      {!list ? (
         <p className="rs-muted">{t("loading")}</p>
-      ) : rows.length ? (
-        <ol className="rs-rank">
-          {rows.map((r, i) => (
+      ) : list.length ? (
+        <ol className="rs-rank" role="tabpanel">
+          {list.map((r, i) => (
             <li key={r.community}>
               <span>{i + 1}</span>
-              <span>
-                {r.title} <small>{t(`profile.leagues.${r.league}`)}</small>
-              </span>
+              <span>{r.title}</span>
               <span>{t("leaderboard.kills", { n: r.kills })}</span>
             </li>
           ))}
