@@ -20,6 +20,13 @@ function fakeRedis() {
     pexpire: vi.fn(async (key: string, ms: number, _nx: string) => {
       if (!ttls.has(key)) ttls.set(key, ms);
       return 1;
+    }),
+    // Stands in for the INCR + PEXPIRE-when-no-TTL script, run as one call.
+    eval: vi.fn(async (_script: string, _numKeys: number, key: string, ms: string) => {
+      const next = (counts.get(key) ?? 0) + 1;
+      counts.set(key, next);
+      if (!ttls.has(key)) ttls.set(key, Number(ms));
+      return next;
     })
   };
   return { redis: redis as unknown as Redis, mock: redis, ttls };
@@ -41,29 +48,35 @@ describe("takeChannelCreateSlot", () => {
 
   it("refuses when Redis is missing or failing", async () => {
     expect(await takeChannelCreateSlot("u-1", null)).toBe(false);
-    const broken = { incr: vi.fn(async () => { throw new Error("down"); }) } as unknown as Redis;
+    const broken = {
+      eval: vi.fn(async () => {
+        throw new Error("down");
+      })
+    } as unknown as Redis;
     expect(await takeChannelCreateSlot("u-1", broken)).toBe(false);
   });
 
-  it("never leaves a counter without an expiry when Redis fails midway", async () => {
-    const { redis, mock, ttls } = fakeRedis();
-    mock.set.mockRejectedValueOnce(new Error("blip"));
-    expect(await takeChannelCreateSlot("u-1", redis)).toBe(false);
-    expect(mock.incr).not.toHaveBeenCalled();
-
-    mock.incr.mockRejectedValueOnce(new Error("blip"));
-    expect(await takeChannelCreateSlot("u-1", redis)).toBe(false);
-    // the key exists only with its expiry, so it cannot lock the user out
-    expect(ttls.get("chat:searchcreate:v1:u-1")).toBe(CHANNEL_CREATE_WINDOW_MS);
+  it("counts and sets the expiry in one Redis call", async () => {
+    const { redis, mock } = fakeRedis();
     expect(await takeChannelCreateSlot("u-1", redis)).toBe(true);
+    expect(mock.eval).toHaveBeenCalledTimes(1);
+    expect(mock.eval).toHaveBeenCalledWith(
+      expect.stringContaining("PEXPIRE"),
+      1,
+      "chat:searchcreate:v1:u-1",
+      String(CHANNEL_CREATE_WINDOW_MS)
+    );
   });
 
-  it("re-arms the expiry when the key vanished between SET and INCR", async () => {
+  it("repairs a counter that was left without an expiry", async () => {
     const { redis, mock, ttls } = fakeRedis();
-    // SET sees an old key (no-op); it then expires before INCR recreates it
-    mock.set.mockResolvedValueOnce(null);
+    // Stuck state from #1990: INCR recreated the key with no TTL past the
+    // first count, and the PEXPIRE after it failed.
+    await mock.incr("chat:searchcreate:v1:u-1");
+    await mock.incr("chat:searchcreate:v1:u-1");
+    expect(ttls.has("chat:searchcreate:v1:u-1")).toBe(false);
 
-    expect(await takeChannelCreateSlot("u-1", redis)).toBe(true);
+    await takeChannelCreateSlot("u-1", redis);
     expect(ttls.get("chat:searchcreate:v1:u-1")).toBe(CHANNEL_CREATE_WINDOW_MS);
   });
 });

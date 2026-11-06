@@ -16,6 +16,16 @@ export const CHANNEL_CREATE_WINDOW_MS = 60 * 60_000;
 export const CHANNEL_CREATE_MAX = 10;
 const KEY_PREFIX = "chat:searchcreate:v1:";
 
+// Count and arm the expiry in one atomic call. A key without a TTL (PTTL -1)
+// gets one, so a counter left without an expiry repairs itself on next use.
+const INCR_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+if redis.call('PTTL', KEYS[1]) < 0 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`;
+
 export async function takeChannelCreateSlot(
   userId: string,
   redis: RedisClient | null = getChatRedis()
@@ -23,14 +33,9 @@ export async function takeChannelCreateSlot(
   if (!redis || !userId) return false;
   try {
     const key = `${KEY_PREFIX}${userId}`;
-    // Create the key with its expiry first, so a failure between the two
-    // calls can never leave a counter that lives forever.
-    await redis.set(key, 0, "PX", CHANNEL_CREATE_WINDOW_MS, "NX");
-    const count = await redis.incr(key);
-    // The key can expire between the two calls, and INCR then recreates it
-    // without a TTL. Re-arm it; a no-op whenever SET already set one.
-    // PEXPIRE ... NX needs Redis 7+ (the stacks run redis:7-alpine).
-    if (count === 1) await redis.pexpire(key, CHANNEL_CREATE_WINDOW_MS, "NX");
+    const count = Number(
+      await redis.eval(INCR_SCRIPT, 1, key, String(CHANNEL_CREATE_WINDOW_MS))
+    );
     return count <= CHANNEL_CREATE_MAX;
   } catch {
     return false;
