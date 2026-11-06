@@ -58,6 +58,7 @@ vi.mock("@/app/publish/_hooks", () => ({ usePublishHandoffWriter: () => vi.fn() 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import i18next from "i18next";
+import enUS from "@/features/i18n/locales/en-US.json";
 import { createScene } from "@ecency/raidstead";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { clearSession, signerFor, signIn } from "@/features/raidstead/client";
@@ -407,6 +408,11 @@ describe("Raidstead page", () => {
       walletInBrowser(false);
       vi.mocked(signIn).mockReset();
     }
+  });
+
+  it("has the refusal line in the locale, with the wallet's reason in it", () => {
+    // the refusal case above stands in its own words for the line; this is the real one
+    expect(enUS.raidstead.signin.refused).toMatch(/\{\{reason\}\}/);
   });
 
   it("keeps the general line when the wallet gives no reason", async () => {
