@@ -1126,13 +1126,14 @@ export function RaidsteadGame() {
     }
   };
 
-  // last finished week's Alliance of the Week per league, this season's only;
+  // last finished week's Alliance of the Week per league, that week's only;
   // nothing at all when the server cannot say
   const today = data?.calendar;
   // the week that has finished: the one before this, or the last on the quiet days
   const finished = today ? `${today.season}:${today.resting ? 4 : Math.max(0, today.week - 1)}` : undefined;
   const weekWinners = useWeekWinners(finished);
-  const winners = weekWinners && weekWinners.season === data?.calendar.season ? weekWinners : null;
+  // only the week that finished: not one the server still had while catching up
+  const winners = weekWinners && `${weekWinners.season}:${weekWinners.week}` === finished ? weekWinners : null;
   // on the raid screen: the player's own league, or the first league with one
   const aotwLeague = winners
     ? ([alliance?.league, ...LEAGUES] as (League | undefined)[]).find((l) => l && winners.winners[l])

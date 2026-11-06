@@ -3480,9 +3480,22 @@ describe("Raidstead page", () => {
       await waitFor(() => expect(nav.week).toHaveBeenLastCalledWith("1:1"));
     });
 
+    it("hides an answer for another week than the one that finished (the server catching up)", async () => {
+      nav.week.mockReturnValue(win(1));
+      const s = state();
+      Object.assign(s.calendar, { week: 3, day: 15 });
+      api.state.mockResolvedValue(s);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await waitFor(() => expect(nav.week).toHaveBeenLastCalledWith("1:2"));
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(document.querySelector(".rs-aotw")).toBeNull();
+    });
+
     it("names the player's league's alliance of the week on the raid screen", async () => {
       nav.week.mockReturnValue(win(1));
       const s = state();
+      Object.assign(s.calendar, { week: 2, day: 9 });
       (s.alliance as Record<string, unknown>).league = "medium";
       api.state.mockResolvedValue(s);
       asUser("ann");
@@ -3493,6 +3506,9 @@ describe("Raidstead page", () => {
 
     it("says so when the player's own alliance won", async () => {
       nav.week.mockReturnValue(win(1));
+      const s = state();
+      Object.assign(s.calendar, { week: 2, day: 9 });
+      api.state.mockResolvedValue(s);
       asUser("ann");
       render(<RaidsteadGame />);
       await waitFor(() => expect(document.querySelector(".rs-aotw")?.textContent).toBe("raidstead.aotw.banner-yours"));
