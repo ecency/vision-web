@@ -3,15 +3,18 @@ import type {
   AttackResult,
   AttackType,
   Boss,
+  BuildingId,
   Impact,
   LeaderRow,
   Calendar,
+  Community,
   Note,
   RaidsteadError,
   SceneWorld,
   State,
   View
 } from "@ecency/raidstead";
+import * as ls from "@/utils/local-storage";
 
 type T = (key: string, values?: Record<string, unknown>) => string;
 
@@ -318,22 +321,102 @@ export interface PestWeek {
   kind: BossKind;
   /// when the week's pest arrives (ms)
   at: number;
-  /// its picture may show: it has arrived, or it is the opening pest everyone already sees
-  revealed: boolean;
 }
 
-/// The season's four raid weeks, one pest each, in the server's order. Names and
-/// tricks are public; a pest's picture stays hidden until its week begins, so each
-/// week brings something new to see. Before the first season only week 1 shows.
-/// Every season reveals its pests week by week again, so a new pest added to a
-/// later season is never given away early.
-export function pestCalendar(cal: Pick<Calendar, "season" | "week" | "resting" | "startsAt">): PestWeek[] {
+/// The season's four raid weeks, one pest each, in the server's order, with the
+/// day each one arrives. Names, tricks and pictures are all public.
+export function pestCalendar(cal: Pick<Calendar, "startsAt">): PestWeek[] {
   const start = Date.parse(cal.startsAt);
-  const shown = cal.season < 1 ? 1 : cal.resting ? BOSS_KINDS.length : Math.max(1, cal.week);
-  return BOSS_KINDS.map((kind, i) => ({
-    week: i + 1,
-    kind,
-    at: start + i * 7 * 86_400_000,
-    revealed: i < shown
-  }));
+  return BOSS_KINDS.map((kind, i) => ({ week: i + 1, kind, at: start + i * 7 * 86_400_000 }));
+}
+
+/// What each building's next stage costs in materials, by stage (the server's own table).
+export const BUILD_COSTS: Record<BuildingId, number[]> = {
+  tower: [30, 60, 90],
+  workshop: [30, 60, 90],
+  trophy: [30, 50, 80],
+  hall: [40, 80, 120],
+  library: [30, 60, 90],
+  beacon: [30, 60, 90],
+  walls: [40, 70, 100]
+};
+
+/// Why the player cannot build the next stage of a building right now, or null
+/// when they can: a member builds only after raiding this season, no building
+/// grows past the Hall, and the alliance needs the materials.
+export function buildBlock(
+  state: State,
+  id: BuildingId
+): "done" | "raid-first" | "hall-first" | "short" | null {
+  const a = state.alliance;
+  const stage = a?.town[id] ?? 3;
+  if (!a || stage >= 3) return "done";
+  if (!state.member || state.member.attackDays <= 0) return "raid-first";
+  if (id !== "hall" && stage >= a.town.hall) return "hall-first";
+  return a.mats < BUILD_COSTS[id][stage] ? "short" : null;
+}
+
+const NUDGE_KEY = "raidstead_build_nudge";
+
+/// Whose build card: one per season, alliance and account (as the news marks).
+const nudgeScope = (state: State) =>
+  `${state.calendar.season}:${state.alliance?.community ?? ""}:${state.account.name}`;
+
+/// Remembers the lowest materials seen since the card was dismissed. `mem` is
+/// the page's own copy, for storage that refuses. Only this season's are kept.
+function lowerNudge(scope: string, mats: number, mem: Record<string, number>) {
+  mem[scope] = mats;
+  const season = scope.split(":")[0];
+  const stored = (ls.get(NUDGE_KEY) ?? {}) as Record<string, unknown>;
+  const kept = Object.fromEntries(
+    Object.entries(stored).filter(([k, v]) => k.startsWith(`${season}:`) && typeof v === "number")
+  );
+  ls.set(NUDGE_KEY, { ...kept, [scope]: mats });
+  // saved: storage is shared with other tabs, so it speaks from now on
+  if (((ls.get(NUDGE_KEY) ?? {}) as Record<string, unknown>)[scope] === mats) delete mem[scope];
+}
+
+/// The mark a dismissed card is waiting to see the materials grow past, if any.
+function nudgeMark(state: State, mem: Record<string, number>): number | undefined {
+  const scope = nudgeScope(state);
+  // the page keeps its own copy only when storage failed to take it
+  if (typeof mem[scope] === "number") return mem[scope];
+  const stored = ((ls.get(NUDGE_KEY) ?? {}) as Record<string, unknown>)[scope];
+  return typeof stored === "number" ? stored : undefined;
+}
+
+/// The raid screen's card telling the player their town can build something now.
+/// Dismissed, it stays away until the materials grow past the lowest they have
+/// been since (see lowerBuildNudge). Reads only: safe to call while rendering.
+export function buildNudgeShown(state: State | null, mem: Record<string, number> = {}): boolean {
+  if (!state?.alliance || !BUILDING_IDS.some((id) => buildBlock(state, id) === null)) return false;
+  const low = nudgeMark(state, mem);
+  return low === undefined || state.alliance.mats > low;
+}
+
+/// Each new state: materials below a dismissed card's mark (a build, the player's
+/// own or an ally's) lower it, whether or not anything is affordable now.
+/// Says whether it did.
+export function lowerBuildNudge(state: State, mem: Record<string, number> = {}): boolean {
+  const low = nudgeMark(state, mem);
+  const mats = state.alliance?.mats;
+  if (low === undefined || mats === undefined || mats >= low) return false;
+  lowerNudge(nudgeScope(state), mats, mem);
+  return true;
+}
+
+export const dismissBuildNudge = (state: State, mem: Record<string, number> = {}) =>
+  lowerNudge(nudgeScope(state), state.alliance?.mats ?? 0, mem);
+
+/// The alliance picker's order: most players now, then most last season, then
+/// by title. A server that sends no counts keeps its own order.
+export function sortCommunities(list: Community[]): Community[] {
+  if (!list.some((c) => typeof c.players === "number")) return list;
+  const title = (c: Community) => (c.title || c.name).toLowerCase();
+  return [...list].sort(
+    (a, b) =>
+      (b.players ?? 0) - (a.players ?? 0) ||
+      (b.lastSeason ?? 0) - (a.lastSeason ?? 0) ||
+      title(a).localeCompare(title(b))
+  );
 }

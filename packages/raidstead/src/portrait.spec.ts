@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BOSS_KINDS, FOLK } from "./art";
 import { portrait, portraitSvg } from "./portrait";
-import { INKS, LIME, NIGHT, VIOLET } from "./print";
+import { INKS, LIME, VIOLET } from "./print";
 
 const inside = (p: ReturnType<typeof portrait>) =>
   p.dots.every((d) => d.x - d.r >= -0.01 && d.y - d.r >= -0.01 && d.x + d.r <= p.width + 0.01 && d.y + d.r <= p.height + 0.01);
@@ -9,25 +9,12 @@ const inside = (p: ReturnType<typeof portrait>) =>
 describe("portrait", () => {
   it("fits every pest and townsfolk into its frame, the parts outside the model's box included", () => {
     for (const kind of [...BOSS_KINDS, "wasp", "spider", "gnat", ...FOLK]) {
-      for (const silhouette of [false, true]) {
-        const p = portrait(kind, { width: 200, height: 150, pad: 4, silhouette });
-        expect(p.dots.length, kind).toBeGreaterThan(100);
-        expect(inside(p), `${kind} ${silhouette}`).toBe(true);
-      }
+      const p = portrait(kind, { width: 200, height: 150, pad: 4 });
+      expect(p.dots.length, kind).toBeGreaterThan(100);
+      expect(inside(p), kind).toBe(true);
     }
     // All appendages still fit a compact card.
     expect(inside(portrait("beetle", { width: 120, height: 90, pad: 0 }))).toBe(true);
-  });
-
-  it("a silhouette prints night ink with lime eyes, and nothing that shows detail", () => {
-    for (const kind of BOSS_KINDS) {
-      const p = portrait(kind, { width: 200, height: 150, silhouette: true });
-      const colors = new Set(p.dots.map((d) => d.color));
-      expect([...colors].sort(), kind).toEqual([INKS[LIME].c, INKS[NIGHT].c].sort());
-      // one even screen: every dot the same size, so no tone gives shading or parts away
-      expect(new Set(p.dots.map((d) => d.r.toFixed(3))).size, kind).toBe(1);
-      expect(p.dots.some((d) => d.knock), kind).toBe(false);
-    }
   });
 
   it("the full picture prints in the game's inks", () => {

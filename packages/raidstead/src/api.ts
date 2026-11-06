@@ -11,7 +11,9 @@ export interface Calendar { season: number; day: number; week: number; resting: 
 /// The public calendar also carries the server's clock (ms), when the server sends it.
 export type SeasonCalendar = Calendar & { now?: number };
 export interface Account { name: string; karma: number; shards: number; kills: number; scouts: number; badges: string[] }
-export interface Trophy { season: number; community: string; title: string; kills: number; rank: number; league: "small" | "medium" | "large" }
+export const LEAGUES = ["small", "medium", "large"] as const;
+export type League = (typeof LEAGUES)[number];
+export interface Trophy { season: number; community: string; title: string; kills: number; rank: number; league: League }
 export interface Raider { account: string; damage: number; attacks: number }
 /// A line of town news: an overnight trick, a kill, the war chest. `kind` names what
 /// happened (`text` is the same in plain English, for a kind the page does not know).
@@ -28,6 +30,8 @@ export interface Boss {
 }
 export interface Alliance {
   community: string; title: string; week: number; boss: Boss;
+  /// How many members it has and the league that puts it in (newer servers only).
+  members?: number; league?: League;
   town: Record<BuildingId, number>; mats: number; web: BuildingId | null; webTalk: string[];
   chest: number; chestGoal: number; buffToday: boolean; kills: number; raiders: Raider[];
   notes: Note[];
@@ -56,7 +60,9 @@ export type AttackResult = { energy: number; hp: number; maxHp: number } & (
 );
 export interface ScoutResult { weakness: AttackType; tomorrow?: AttackType; scoutsLeft: number }
 export interface Session { token: string; account: string; expiresAt: string }
-export interface Community { name: string; title: string }
+/// `players` (members playing this season) and `lastSeason` (who played last season)
+/// come from newer servers only.
+export interface Community { name: string; title: string; players?: number; lastSeason?: number }
 export interface LeaderRow { community: string; title: string; members: number; kills: number; damage: number; league: string; score?: number; killSecs?: number }
 
 export class RaidsteadError extends Error {
@@ -109,7 +115,11 @@ export function createApi(opts: ApiOptions) {
     powers: (power: PowerId, action: "craft" | "equip" | "unequip") => call<{ powers: PowerId[]; equipped: PowerId[]; slots: number }>("POST", "/v1/raidstead/powers", { power, action }),
     // `fresh`: past any cached copy (the answer may be cached for a minute)
     calendar: (fresh = false) => call<SeasonCalendar>("GET", `/v1/raidstead/calendar${fresh ? `?at=${Date.now()}` : ""}`, undefined, false),
-    leaderboard: (season?: number) => call<{ season: number; alliances: LeaderRow[] }>("GET", `/v1/raidstead/leaderboard${season ? `?season=${season}` : ""}`, undefined, false),
+    // one league only, when `league` is given
+    leaderboard: ({ season, league }: { season?: number; league?: League } = {}) => {
+      const q = [season ? `season=${season}` : "", league ? `league=${league}` : ""].filter(Boolean).join("&");
+      return call<{ season: number; alliances: LeaderRow[] }>("GET", `/v1/raidstead/leaderboard${q ? `?${q}` : ""}`, undefined, false);
+    },
   };
 }
 export type RaidsteadApi = ReturnType<typeof createApi>;

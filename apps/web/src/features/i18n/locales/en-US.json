@@ -5143,6 +5143,9 @@
       "pick-desc": "Your alliance is one of the Hive communities you have joined. It stays the same until the season ends.",
       "none": "You have not joined any communities yet. Join one on Ecency, then come back.",
       "join": "Join",
+      "players": "{{n}} playing now",
+      "last-season": "{{n}} played last season",
+      "nobody": "Nobody yet: be the first and invite friends",
       "locked": "Your alliance is set until the season ends on day {{day}}.",
       "browse": "Browse communities"
     },
@@ -5207,7 +5210,7 @@
       "herald": "Herald"
     },
     "actions": {
-      "cost": "{{hero}} · 1 energy",
+      "cost": "1 energy",
       "no-energy": "no energy",
       "resting": "resting",
       "scout": "Scout",
@@ -5225,6 +5228,9 @@
       "quests": "Quests",
       "quests-left": "{{n}} to do",
       "quests-done": "all done",
+      "attack-ink": "Ink attack",
+      "attack-signal": "Signal attack",
+      "attack-forge": "Forge attack",
       "menu": "Menu",
       "raid": "Raid",
       "town": "Town",
@@ -5234,6 +5240,10 @@
       "title": "This week's raiders",
       "you": "You",
       "empty": "Nobody has attacked yet this week."
+    },
+    "build-nudge": {
+      "text": "Your town has {{n}} materials. Build something",
+      "dismiss": "Hide"
     },
     "toast": {
       "day": "Day {{day}}. Tap the boss or pick an attack.",
@@ -5270,7 +5280,8 @@
       "quests-none": "No new quests finished yet today.",
       "donated": "Donated 50 Points to the war chest. They are burned.",
       "chest-full": "War chest full! +1 damage for the whole alliance for 24 hours.",
-      "chest-kept": "War chest full! It opens for 24 hours once the next pest arrives."
+      "chest-kept": "War chest full! It opens for 24 hours once the next pest arrives.",
+      "day-one": "Scout first, then attack with the weak type."
     },
     "errors": {
       "generic": "Something went wrong. Try again.",
@@ -5467,7 +5478,9 @@
     "leaderboard": {
       "title": "Season {{n}} alliances",
       "kills": "{{n}} chased off",
-      "empty": "No alliances yet this season."
+      "empty": "No alliances yet this season.",
+      "leagues": "Leagues",
+      "failed": "This list could not load."
     },
     "report": {
       "title": "Raid report",
@@ -5545,8 +5558,6 @@
       "step-build-desc": "Wins bring materials. Build together, and each building helps the next raid.",
       "pests-title": "Season {{n}} pests",
       "pest-week": "Week {{week}} · {{date}}",
-      "pest-hidden": "Shows itself on {{date}}",
-      "pests-note": "Every alliance faces the same pest each week. Each one shows what it looks like on the day it arrives.",
       "folk-title": "The townsfolk",
       "energy-title": "Energy and Points",
       "energy": "You get 5 energy a day, plus 1 for each Ecency quest you finish. A rally gives 5 more for 50 Points.",

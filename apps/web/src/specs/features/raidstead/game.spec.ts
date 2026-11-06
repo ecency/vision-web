@@ -1,12 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AttackResult, Note, State } from "@ecency/raidstead";
 import {
   aimOf,
   attackMessage,
+  buildBlock,
+  buildNudgeShown,
   buildReport,
+  lowerBuildNudge,
   chestBlock,
   chestHoursLeft,
   countdown,
+  dismissBuildNudge,
   errorMessage,
   GNATS_SHOWN,
   impactOf,
@@ -18,6 +22,7 @@ import {
   pestCalendar,
   pickNeighbors,
   rallyBlock,
+  sortCommunities,
   tierOf,
   twinSide,
   worldOf
@@ -491,7 +496,6 @@ describe("countdown", () => {
 
 describe("pestCalendar", () => {
   const start = "2026-10-10T00:00:00.000Z";
-  const shown = (c: Parameters<typeof pestCalendar>[0]) => pestCalendar(c).map((w) => w.revealed);
 
   it("lists the four weeks in the server's order, a week apart", () => {
     const weeks = pestCalendar({ season: 0, week: 0, resting: true, startsAt: start });
@@ -499,16 +503,148 @@ describe("pestCalendar", () => {
     expect(weeks.map((w) => new Date(w.at).toISOString().slice(0, 10))).toEqual(["2026-10-10", "2026-10-17", "2026-10-24", "2026-10-31"]);
   });
 
-  it("before the first season shows only the opening pest", () => {
-    expect(shown({ season: 0, week: 0, resting: true, startsAt: start })).toEqual([true, false, false, false]);
+  it("gives each week only its number, pest and arrival: nothing is hidden", () => {
+    for (const c of [
+      { season: 0, week: 0, resting: true, startsAt: start },
+      { season: 2, week: 1, resting: false, startsAt: start }
+    ]) {
+      for (const w of pestCalendar(c))
+        expect(Object.keys(w).sort()).toEqual(["at", "kind", "week"]);
+    }
+  });
+});
+
+describe("build nudge", () => {
+  // a member who has raided, with a Hall to build first (stage 0 costs 40)
+  const town = (mats: number, attackDays = 1): State => {
+    const s = state();
+    s.alliance!.mats = mats;
+    s.alliance!.town = {
+      tower: 0,
+      workshop: 0,
+      trophy: 0,
+      hall: 0,
+      library: 0,
+      beacon: 0,
+      walls: 0
+    };
+    s.member!.attackDays = attackDays;
+    return s;
+  };
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
   });
 
-  it("shows each pest from its own week on, and all of them once the season rests", () => {
-    expect(shown({ season: 1, week: 1, resting: false, startsAt: start })).toEqual([true, false, false, false]);
-    expect(shown({ season: 1, week: 3, resting: false, startsAt: start })).toEqual([true, true, true, false]);
-    expect(shown({ season: 1, week: 4, resting: false, startsAt: start })).toEqual([true, true, true, true]);
-    expect(shown({ season: 1, week: 4, resting: true, startsAt: start })).toEqual([true, true, true, true]);
-    // a new season reveals week by week again
-    expect(shown({ season: 2, week: 1, resting: false, startsAt: start })).toEqual([true, false, false, false]);
+  it("follows the Town's own rules: raid first, the Hall first, enough materials", () => {
+    expect(buildBlock(town(60), "hall")).toBeNull();
+    expect(buildBlock(town(60), "tower")).toBe("hall-first");
+    expect(buildBlock(town(20), "hall")).toBe("short");
+    expect(buildBlock(town(60, 0), "hall")).toBe("raid-first");
+    expect(buildNudgeShown(town(60))).toBe(true);
+    expect(buildNudgeShown(town(20))).toBe(false);
+    expect(buildNudgeShown(town(60, 0))).toBe(false);
+  });
+
+  it("stays hidden once dismissed until the materials grow again", () => {
+    dismissBuildNudge(town(60));
+    expect(buildNudgeShown(town(60))).toBe(false);
+    expect(buildNudgeShown(town(85))).toBe(true);
+    // the dismissal is per season, alliance and account
+    const next = town(60);
+    next.calendar.season = 2;
+    expect(buildNudgeShown(next)).toBe(true);
+  });
+
+  it("after a drop in materials, stays hidden until they grow past the low point", () => {
+    dismissBuildNudge(town(100));
+    expect(buildNudgeShown(town(100))).toBe(false);
+    // an ally builds: fewer materials, still nothing new to tell
+    lowerBuildNudge(town(60));
+    expect(buildNudgeShown(town(60))).toBe(false);
+    expect(buildNudgeShown(town(85))).toBe(true);
+  });
+
+  it("lowers the mark even when nothing is affordable, and only by being told to", () => {
+    const tower = (mats: number) => {
+      const s = town(mats);
+      s.alliance!.town.hall = 1; // a tower (30) may follow the Hall now
+      return s;
+    };
+    dismissBuildNudge(tower(60));
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    // reading never writes
+    expect(buildNudgeShown(tower(20))).toBe(false);
+    expect(buildNudgeShown(tower(40))).toBe(false);
+    expect(setItem).not.toHaveBeenCalled();
+    lowerBuildNudge(tower(20));
+    expect(setItem).toHaveBeenCalled();
+    expect(buildNudgeShown(tower(40))).toBe(true);
+  });
+
+  it("keeps each account's and alliance's dismissal apart", () => {
+    const other = (s: State, name: string, community: string) => {
+      s.account.name = name;
+      s.alliance!.community = community;
+      return s;
+    };
+    dismissBuildNudge(other(town(60), "ann", "hive-1"));
+    dismissBuildNudge(other(town(70), "bob", "hive-2"));
+    expect(buildNudgeShown(other(town(60), "ann", "hive-1"))).toBe(false);
+    expect(buildNudgeShown(other(town(70), "bob", "hive-2"))).toBe(false);
+    expect(buildNudgeShown(other(town(65), "ann", "hive-1"))).toBe(true);
+    expect(buildNudgeShown(other(town(60), "ann", "hive-2"))).toBe(true);
+  });
+
+  it("still shows, and nothing breaks, when storage throws", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    expect(() => dismissBuildNudge(town(60))).not.toThrow();
+    expect(buildNudgeShown(town(60))).toBe(true);
+  });
+
+  it("trusts the page's newer mark over an older one storage failed to replace", () => {
+    const mem: Record<string, number> = {};
+    dismissBuildNudge(town(40), mem);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("full");
+    });
+    // the materials grew, the card came back, and the player dismissed it again
+    dismissBuildNudge(town(60), mem);
+    expect(buildNudgeShown(town(60), mem)).toBe(false);
+    expect(lowerBuildNudge(town(60), mem)).toBe(false);
+    expect(buildNudgeShown(town(70), mem)).toBe(true);
+  });
+
+  it("follows a dismissal another tab saved after this page's own", () => {
+    const here: Record<string, number> = {};
+    dismissBuildNudge(town(40), here);
+    dismissBuildNudge(town(60), {});
+    expect(buildNudgeShown(town(60), here)).toBe(false);
+  });
+});
+
+describe("sortCommunities", () => {
+  it("sorts by players now, then last season, then title ignoring case", () => {
+    const sorted = sortCommunities([
+      { name: "c", title: "carrot", players: 0, lastSeason: 0 },
+      { name: "a", title: "Apple", players: 0, lastSeason: 0 },
+      { name: "x", title: "Busy", players: 3, lastSeason: 0 },
+      { name: "b", title: "banana", players: 0, lastSeason: 0 },
+      { name: "y", title: "Veteran", players: 0, lastSeason: 9 }
+    ]);
+    expect(sorted.map((c) => c.name)).toEqual(["x", "y", "a", "b", "c"]);
+  });
+
+  it("keeps the server's order when it sends no counts", () => {
+    const list = [
+      { name: "z", title: "Zed" },
+      { name: "a", title: "Alpha" }
+    ];
+    expect(sortCommunities(list).map((c) => c.name)).toEqual(["z", "a"]);
   });
 });

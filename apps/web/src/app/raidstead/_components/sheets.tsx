@@ -1,25 +1,38 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode
+} from "react";
 import Link from "next/link";
 import i18next from "i18next";
 import {
+  LEAGUES,
   POWERS,
   type AttackType,
   type BuildingId,
   type Community,
   type FolkClass,
+  type League,
   type LeaderRow,
   type Note,
   type PowerId,
   type State
 } from "@ecency/raidstead";
 import {
+  BUILD_COSTS,
+  buildBlock,
   chestBlock,
   chestHoursLeft,
   noteId,
   noteText,
   rallyBlock,
+  sortCommunities,
   tierOf,
   type Neighbor
 } from "@/features/raidstead/game";
@@ -234,7 +247,10 @@ export function PickSheet({
   const [list, setList] = useState<Community[] | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    load().then(setList, () => setFailed(true));
+    load().then(
+      (l) => setList(sortCommunities(l)),
+      () => setFailed(true)
+    );
   }, [load]);
   return (
     <Sheet onClose={() => undefined} closable={false} label={t("alliance.pick-title")}>
@@ -262,6 +278,21 @@ export function PickSheet({
                   <b>{c.title || c.name}</b>
                   <br />
                   <small>{c.name}</small>
+                  {typeof c.players === "number" && (
+                    <>
+                      <br />
+                      <small className="rs-muted">
+                        {!c.players && !c.lastSeason
+                          ? t("alliance.nobody")
+                          : [
+                              t("alliance.players", { n: c.players }),
+                              c.lastSeason ? t("alliance.last-season", { n: c.lastSeason }) : ""
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                      </small>
+                    </>
+                  )}
                 </span>
                 <span>{t("alliance.join")}</span>
               </button>
@@ -359,7 +390,9 @@ export function HeroSheet({
   const canRally = !type && rallyWhy === null && !busy;
   return (
     <Sheet onClose={onClose} label={name}>
-      <small>{type ? t(`types.${type}`) : t("hero-card.herald-role")}</small>
+      <small>
+        {type ? t("hero-card.attack", { type: t(`types.${type}`) }) : t("hero-card.herald-role")}
+      </small>
       <h2>{name}</h2>
       {lines.map((l, i) => (
         <p key={i} className={i ? "rs-muted" : undefined}>
@@ -417,16 +450,6 @@ export function TownSheet({ town, onClose }: { town: Neighbor; onClose: () => vo
   );
 }
 
-const COSTS: Record<BuildingId, number[]> = {
-  tower: [30, 60, 90],
-  workshop: [30, 60, 90],
-  trophy: [30, 50, 80],
-  hall: [40, 80, 120],
-  library: [30, 60, 90],
-  beacon: [30, 60, 90],
-  walls: [40, 70, 100]
-};
-
 export function BuildingSheet(props: {
   id: BuildingId | "homes";
   state: State;
@@ -446,10 +469,8 @@ export function BuildingSheet(props: {
     );
   }
   const stage = a.town[id];
-  const cost = stage < 3 ? COSTS[id][stage] : 0;
-  const hallFirst = id !== "hall" && stage >= a.town.hall && stage < 3;
-  const short = a.mats < cost;
-  const raided = m.attackDays > 0;
+  const cost = stage < 3 ? BUILD_COSTS[id][stage] : 0;
+  const why = buildBlock(state, id);
   const webbed = a.web === id;
   const talked = a.webTalk.includes(state.account.name);
   return (
@@ -495,17 +516,17 @@ export function BuildingSheet(props: {
             </span>
             <button
               className="rs-btn rs-primary"
-              disabled={hallFirst || short || !raided || props.busy}
+              disabled={why !== null || props.busy}
               onClick={() => props.onBuild(id)}
             >
               {t("town.build")}
             </button>
           </div>
-          {!raided ? (
+          {why === "raid-first" ? (
             <p className="rs-muted">{t("town.raid-first")}</p>
-          ) : hallFirst ? (
+          ) : why === "hall-first" ? (
             <p className="rs-muted">{t("town.hall-first", { n: stage + 1 })}</p>
-          ) : short ? (
+          ) : why === "short" ? (
             <p className="rs-muted">{t("town.short")}</p>
           ) : null}
         </>
@@ -909,39 +930,151 @@ export function BoardSheet({ state, onClose }: { state: State; onClose: () => vo
   );
 }
 
+/// The season's alliances, one league per tab, opened on the player's own league
+/// (Small before they have one). Each tab ranks its league from 1. A tab's list is
+/// asked for when the tab is first shown. An older server does not say which
+/// league the player's alliance is in: then every league is asked for at once,
+/// and the one that lists it opens.
 export function LeaderboardSheet({
   season,
+  own,
+  league,
   load,
   onClose
 }: {
   season: number;
-  load: () => Promise<LeaderRow[]>;
+  /// the player's alliance (community name), if any
+  own?: string;
+  /// its league, from a server that says
+  league?: League;
+  load: (league: League) => Promise<LeaderRow[]>;
   onClose: () => void;
 }) {
-  const [rows, setRows] = useState<LeaderRow[] | null>(null);
+  const detect = !league && !!own;
+  const [rows, setRows] = useState<Partial<Record<League, LeaderRow[] | "failed">>>({});
+  const [tab, setTab] = useState<League | null>(league ?? (own ? null : "small"));
+  const live = useRef(true);
+  const asking = useRef(new Set<League>());
+  const tabRefs = useRef<Partial<Record<League, HTMLButtonElement | null>>>({});
+  const fetchLeague = useCallback(
+    (l: League) => {
+      // one ask per tab at a time
+      if (asking.current.has(l)) return;
+      asking.current.add(l);
+      load(l)
+        .then(
+          // only the asked league: an older server may send them all
+          (r) => live.current && setRows((x) => ({ ...x, [l]: r.filter((x) => x.league === l) })),
+          () => live.current && setRows((x) => ({ ...x, [l]: "failed" }))
+        )
+        .finally(() => asking.current.delete(l));
+    },
+    [load]
+  );
   useEffect(() => {
-    load().then(setRows, () => setRows([]));
-  }, [load]);
+    live.current = true;
+    if (detect) LEAGUES.forEach(fetchLeague);
+    return () => {
+      live.current = false;
+    };
+  }, [fetchLeague, detect]);
+  // the shown tab's list, once
+  useEffect(() => {
+    if (tab && rows[tab] === undefined) fetchLeague(tab);
+  }, [tab, rows, fetchLeague]);
+  // a tab opened on a league whose list failed, while the player's own is not
+  // known yet: a retry that finds it there, or in another league, moves to it
+  const guessed = useRef(false);
+  useEffect(() => {
+    if (!detect || (tab && !guessed.current)) return;
+    const lists = LEAGUES.map((l) => rows[l]);
+    const mine = LEAGUES.find((_, i) => {
+      const r = lists[i];
+      return Array.isArray(r) && r.some((x) => x.community === own);
+    });
+    if (mine) {
+      guessed.current = false;
+      setTab(mine);
+      return;
+    }
+    if (lists.some((r) => r === undefined)) return;
+    // not found: maybe in a league whose list failed (its error and retry show),
+    // or in none of them (Small)
+    const failed = LEAGUES.find((_, i) => lists[i] === "failed");
+    // a guess follows the list still failing, so its retry stays in view
+    if (!tab || guessed.current) setTab(failed ?? "small");
+    guessed.current = !!failed;
+  }, [rows, tab, own, detect]);
+  const pick = (l: League) => {
+    guessed.current = false;
+    setTab(l);
+  };
+  const choose = (l: League) => {
+    pick(l);
+    tabRefs.current[l]?.focus();
+  };
+  const retry = () => {
+    // every failed list is asked again while the player's league is still a guess
+    const again = guessed.current ? LEAGUES.filter((l) => rows[l] === "failed") : [tab!];
+    setRows((x) => ({ ...x, ...Object.fromEntries(again.map((l) => [l, undefined])) }));
+    again.forEach(fetchLeague);
+  };
+  const onKey = (e: KeyboardEvent, l: League) => {
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    choose(LEAGUES[(LEAGUES.indexOf(l) + step + LEAGUES.length) % LEAGUES.length]);
+  };
+  const list = tab ? rows[tab] : undefined;
+  const tabId = (l: League) => `rs-league-tab-${l}`;
   return (
     <Sheet onClose={onClose} label={t("leaderboard.title", { n: season })}>
       <h2>{t("leaderboard.title", { n: season })}</h2>
-      {!rows ? (
-        <p className="rs-muted">{t("loading")}</p>
-      ) : rows.length ? (
-        <ol className="rs-rank">
-          {rows.map((r, i) => (
-            <li key={r.community}>
-              <span>{i + 1}</span>
-              <span>
-                {r.title} <small>{t(`profile.leagues.${r.league}`)}</small>
-              </span>
-              <span>{t("leaderboard.kills", { n: r.kills })}</span>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="rs-muted">{t("leaderboard.empty")}</p>
-      )}
+      <div className="rs-league-tabs" role="tablist" aria-label={t("leaderboard.leagues")}>
+        {LEAGUES.map((l) => (
+          <button
+            key={l}
+            ref={(el) => {
+              tabRefs.current[l] = el;
+            }}
+            id={tabId(l)}
+            role="tab"
+            aria-selected={tab === l}
+            aria-controls="rs-league-panel"
+            tabIndex={tab === l || (!tab && l === "small") ? 0 : -1}
+            onClick={() => pick(l)}
+            onKeyDown={(e) => onKey(e, l)}
+          >
+            {t(`profile.leagues.${l}`)}
+          </button>
+        ))}
+      </div>
+      <div id="rs-league-panel" role="tabpanel" aria-labelledby={tab ? tabId(tab) : undefined}>
+        {list === "failed" ? (
+          <>
+            <p className="rs-muted">{t("leaderboard.failed")}</p>
+            <div className="rs-btns">
+              <button className="rs-btn" onClick={retry}>
+                {i18next.t("g.try-again")}
+              </button>
+            </div>
+          </>
+        ) : !list ? (
+          <p className="rs-muted">{t("loading")}</p>
+        ) : list.length ? (
+          <ol className="rs-rank">
+            {list.map((r, i) => (
+              <li key={r.community}>
+                <span>{i + 1}</span>
+                <span>{r.title}</span>
+                <span>{t("leaderboard.kills", { n: r.kills })}</span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="rs-muted">{t("leaderboard.empty")}</p>
+        )}
+      </div>
     </Sheet>
   );
 }

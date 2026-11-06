@@ -1,12 +1,12 @@
-import { portraitSvg } from "@ecency/raidstead";
+import { BOSS_KINDS, portraitSvg } from "@ecency/raidstead";
 import { initI18next } from "@/features/i18n";
 import i18next from "i18next";
 import { ImageResponse } from "next/og";
 
 // The preview chat apps and Hive frontends show for a link to the game: the
-// week 1 pest (already on the page, so nothing is given away) facing the four
-// townsfolk, printed in the game's inks. No dynamic input, so Next renders it
-// once at build time.
+// season's four pests (their pictures are public) above the four townsfolk,
+// printed in the game's inks. No dynamic input, so Next renders it once at
+// build time.
 export const alt = "Raidstead";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -54,7 +54,11 @@ export default async function RaidsteadImage(): Promise<ImageResponse> {
           <div style={{ fontSize: 28, opacity: 0.75 }}>ecency.com/raidstead</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
-          <img src={art("beetle", 460, 330)} width={460} height={330} alt="" />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, width: 448 }}>
+            {BOSS_KINDS.map((k) => (
+              <img key={k} src={art(k, 220, 160)} width={220} height={160} alt="" />
+            ))}
+          </div>
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             {folk.map((f) => (
               <img key={f} src={art(f, 120, 150)} width={120} height={150} alt="" />

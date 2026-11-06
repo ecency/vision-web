@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import i18next from "i18next";
 import {
@@ -11,6 +11,7 @@ import {
   type Calendar,
   type Community,
   type FolkClass,
+  type League,
   type Note,
   type PowerId,
   type Scene,
@@ -38,7 +39,10 @@ import { pendingSpendKey, settleSpend } from "@/features/raidstead/spends";
 import {
   aimOf,
   attackMessage,
+  buildNudgeShown,
   buildReport,
+  dismissBuildNudge,
+  lowerBuildNudge,
   laterMark,
   markOf,
   newsAfter,
@@ -81,10 +85,10 @@ const liveEcencyUser = (): string | null => {
   return typeof u === "string" && u ? u : null;
 };
 const t = (key: string, values?: Record<string, unknown>) => i18next.t(`raidstead.${key}`, values);
-const TYPES: { type: AttackType; hero: string; color: string }[] = [
-  { type: "ink", hero: "scribe", color: "var(--rs-scribe)" },
-  { type: "signal", hero: "scout", color: "var(--rs-scout)" },
-  { type: "forge", hero: "smith", color: "var(--rs-smith)" }
+const TYPES: { type: AttackType; color: string }[] = [
+  { type: "ink", color: "var(--rs-scribe)" },
+  { type: "signal", color: "var(--rs-scout)" },
+  { type: "forge", color: "var(--rs-smith)" }
 ];
 const SEEN_KEY = "raidstead_seen_week";
 // how far each account has read its alliance's town news this season
@@ -313,7 +317,7 @@ export function RaidsteadGame() {
     const asked = skyKey;
     const current = () => ownRef.current === asked;
     raidsteadApi
-      .leaderboard(seasonNo || undefined)
+      .leaderboard({ season: seasonNo || undefined })
       .then((r) => {
         if (current()) setNeighbors(pickNeighbors(r.alliances, ownCommunity));
       })
@@ -422,6 +426,7 @@ export function RaidsteadGame() {
         // nor a card that was open for it, or news waiting for one
         setSheet(null);
         setAwayNews(null);
+        newsWaiting.current = false;
       }
       // a guest session whose account has now logged in to Ecency ends with that login
       if (session && username && !session.ecency) {
@@ -564,6 +569,17 @@ export function RaidsteadGame() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, data?.calendar.season, alliance?.week]);
 
+  // a card on the raid screen while the town can build something; dismissed, it
+  // stays away until the materials grow (this visit too, if storage is blocked)
+  const nudgeMem = useRef<Record<string, number>>({});
+  const [nudgeDismissed, setNudgeDismissed] = useState(0);
+  // a drop in materials lowers the card's mark, before the render below reads it
+  const [nudgeLowered, setNudgeLowered] = useState(0);
+  useEffect(() => {
+    if (!data?.alliance) return;
+    if (lowerBuildNudge(data, nudgeMem.current)) setNudgeLowered((n) => n + 1);
+  }, [data]);
+
   // Town news. What happened while the player was away opens as a card, after the
   // week's card if that is due too. One line that arrives while they play, with
   // nothing else open, is told next to the toast; more than one, or a line that
@@ -612,6 +628,8 @@ export function RaidsteadGame() {
   } | null>(null);
   const awayRef = useRef(awayNews);
   awayRef.current = awayNews;
+  // news queued for its card, as effects of the same commit see it (the state lands later)
+  const newsWaiting = useRef(false);
   const [tabShown, setTabShown] = useState(() => !document.hidden);
   useEffect(() => {
     const onVisible = () => setTabShown(!document.hidden);
@@ -623,6 +641,7 @@ export function RaidsteadGame() {
   useEffect(() => {
     booted.current = false;
     setAwayNews(null);
+    newsWaiting.current = false;
   }, [newsScope]);
   useEffect(() => {
     if (phase !== "ready" || !newsScope || !notes) return;
@@ -662,6 +681,7 @@ export function RaidsteadGame() {
       tell(noteText(all[0], i18next.t));
       return;
     }
+    newsWaiting.current = true;
     setAwayNews({
       scope: newsScope,
       notes: all,
@@ -681,10 +701,23 @@ export function RaidsteadGame() {
     const mark = readMark(newsScope);
     const left = mark === null ? awayNews.notes : newsAfter(awayNews.notes, mark);
     setAwayNews(null);
+    newsWaiting.current = false;
     if (!left.length) return;
     writeMark(newsScope, awayNews.upTo);
     setSheet({ kind: "news", notes: left, away: awayNews.away });
+    sheetRef.current = { kind: "news", notes: left, away: awayNews.away };
   }, [awayNews, sheet, phase, tabShown, newsScope, readMark, writeMark]);
+
+  // Once a visit, on a season's day 1: how a raid goes. Told once nothing covers
+  // the toast (the week's card, town news waiting for its card).
+  const greeted = useRef(false);
+  const dayOne = !!alliance && data?.calendar.day === 1 && !data.calendar.resting;
+  useEffect(() => {
+    if (greeted.current || !dayOne || phase !== "ready") return;
+    if (sheet || sheetRef.current || awayNews || newsWaiting.current) return;
+    greeted.current = true;
+    say(t("toast.day-one"));
+  }, [dayOne, phase, sheet, awayNews, say]);
 
   // Allies raid at the same time: ask for the state again while the page shows.
   // The server answers these without a lock or a write when nothing is due.
@@ -957,7 +990,10 @@ export function RaidsteadGame() {
     async () => (await raidsteadApi.communities()).communities,
     []
   );
-  const loadLeaders = useCallback(async () => (await raidsteadApi.leaderboard()).alliances, []);
+  const loadLeaders = useCallback(
+    async (league: League) => (await raidsteadApi.leaderboard({ league })).alliances,
+    []
+  );
 
   const openReport = () => {
     if (!data || !alliance) return;
@@ -970,6 +1006,7 @@ export function RaidsteadGame() {
   const doSignOut = async () => {
     // news waiting behind the menu must not open (and count as read) on the way out
     setAwayNews(null);
+    newsWaiting.current = false;
     setSheet(null);
     await signOut().catch(() => undefined);
     setData(null);
@@ -1017,6 +1054,14 @@ export function RaidsteadGame() {
               : t("actions.scout-free");
   const questsLeft = 3 - (member?.quests.length ?? 0);
   const playing = phase === "ready" && !!alliance && !!member;
+  // the HUD renders every second: storage is read again only when the state changes
+  const nudgeDue = useMemo(
+    () => buildNudgeShown(data, nudgeMem.current),
+    // asked again after a dismissal, and once a new state has lowered the mark
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, nudgeDismissed, nudgeLowered]
+  );
+  const nudge = playing && view === "raid" && nudgeDue;
   const resting = !!cal?.resting;
   const rallyWhy = rallyBlock(data);
 
@@ -1165,6 +1210,8 @@ export function RaidsteadGame() {
         open = (
           <LeaderboardSheet
             season={Math.max(1, data.calendar.season)}
+            own={alliance?.community}
+            league={alliance?.league}
             load={loadLeaders}
             onClose={close}
           />
@@ -1311,6 +1358,25 @@ export function RaidsteadGame() {
 
         {playing && (
           <footer className="rs-actions">
+            {/* its own row with the actions: the field above is where the boss, the
+                wasp and the heroes are tapped */}
+            {nudge && (
+              <div className="rs-card rs-nudge">
+                <button className="rs-nudge-open" onClick={() => setView("town")}>
+                  {t("build-nudge.text", { n: alliance!.mats })}
+                </button>
+                <button
+                  className="rs-nudge-close"
+                  aria-label={t("build-nudge.dismiss")}
+                  onClick={() => {
+                    dismissBuildNudge(data!, nudgeMem.current);
+                    setNudgeDismissed((n) => n + 1);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <p className="rs-toast" aria-live="polite">
               {[toast, flash].filter(Boolean).join(" ")}
             </p>
@@ -1346,22 +1412,24 @@ export function RaidsteadGame() {
             )}
             {view === "raid" && (
               <div className="rs-attacks">
-                {TYPES.map(({ type, hero, color }) => (
+                {TYPES.map(({ type, color }) => (
                   <button
                     key={type}
                     className="rs-atk"
                     style={{ ["--c" as string]: color }}
                     aria-pressed={selected === type}
+                    aria-label={t(`actions.attack-${type}`)}
+                    aria-describedby={`rs-atk-${type}`}
                     disabled={!alive || energy <= 0 || resting}
                     onClick={() => attack(type)}
                   >
-                    <b>{t(`types.${type}`)}</b>
-                    <small>
+                    <b>{t(`actions.attack-${type}`)}</b>
+                    <small id={`rs-atk-${type}`}>
                       {!alive || resting
                         ? t("actions.resting")
                         : energy <= 0
                           ? t("actions.no-energy")
-                          : t("actions.cost", { hero: t(`heroes.${hero}`) })}
+                          : t("actions.cost")}
                     </small>
                   </button>
                 ))}

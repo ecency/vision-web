@@ -181,6 +181,37 @@
     gap: 5px;
   }
 
+  // the town can build something: a compact strip on its own row of the
+  // actions (full width there, in every layout), never over the field
+  .rs-nudge {
+    grid-column: 1 / -1;
+    justify-self: center;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    padding: 0 2px 0 12px;
+  }
+
+  .rs-nudge-open {
+    border: 0;
+    background: none;
+    padding: 4px 0;
+    text-align: left;
+    font-weight: 700;
+    text-decoration: underline dotted 2px;
+    text-underline-offset: 3px;
+  }
+
+  .rs-nudge-close {
+    border: 0;
+    background: none;
+    min-width: 32px;
+    min-height: 32px;
+    font-size: 20px;
+    line-height: 1;
+  }
+
   .rs-row {
     display: flex;
     justify-content: space-between;
@@ -343,8 +374,16 @@
       box-shadow: 1px 1px 0 var(--rs-ink);
     }
 
+    // the label is sized by the button's own width, so "Signal attack", the
+    // longest, stays on one line on any phone; without container units it
+    // falls back to the page width and may wrap into two tight lines
+    container-type: inline-size;
+
     b {
-      font: 600 18px/1 var(--rs-head);
+      font: 600 clamp(14px, 4vw, 18px) / 1 var(--rs-head);
+      font-size: clamp(11px, 14cqi, 18px);
+      text-align: center;
+      text-wrap: balance;
     }
 
     small {
@@ -651,10 +690,6 @@
     .rs-muted {
       font-size: 13px;
     }
-
-    .is-hidden b {
-      color: var(--rs-muted);
-    }
   }
 
   .rs-pests-art {
@@ -667,12 +702,6 @@
     color: var(--rs-violet);
     font-weight: 700;
     text-decoration: underline;
-  }
-
-  .rs-pests-soon {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--rs-violet);
   }
 
   .rs-list {
@@ -882,6 +911,26 @@
 }
 
 // The raiders list, in the docked board and in the menu sheet.
+.raidstead-sheet .rs-league-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+
+  button {
+    min-height: 36px;
+    border: 2px solid var(--rs-ink);
+    border-radius: 10px;
+    background: var(--rs-paper);
+    font: 600 15px/1 var(--rs-head);
+
+    &[aria-selected="true"] {
+      background: var(--rs-ink);
+      color: #fff;
+    }
+  }
+}
+
 .raidstead .rs-rank,
 .raidstead-sheet .rs-rank {
   margin: 0;

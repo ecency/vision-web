@@ -63,6 +63,7 @@ import { createScene } from "@ecency/raidstead";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { clearSession, signerFor, signIn } from "@/features/raidstead/client";
 import { RaidsteadGame } from "@/app/raidstead/_components/raidstead-game";
+import { LeaderboardSheet } from "@/app/raidstead/_components/sheets";
 
 const expiry = () => new Date(Date.now() + 86_400_000).toISOString();
 
@@ -817,7 +818,7 @@ describe("Raidstead page", () => {
       fireEvent.click(screen.getByRole("button", { name: "raidstead.actions.town" }));
     });
     await waitFor(() => expect(scene.sync.mock.calls.at(-1)![0].neighbors).toHaveLength(1));
-    expect(api.leaderboard).toHaveBeenLastCalledWith(1);
+    expect(api.leaderboard).toHaveBeenLastCalledWith({ season: 1 });
     // same alliance, next season
     const next = state();
     next.calendar = { ...next.calendar, season: 2, day: 1 };
@@ -828,7 +829,7 @@ describe("Raidstead page", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /raidstead.quests.claim/ }));
     });
-    await waitFor(() => expect(api.leaderboard).toHaveBeenLastCalledWith(2));
+    await waitFor(() => expect(api.leaderboard).toHaveBeenLastCalledWith({ season: 2 }));
     expect(scene.sync.mock.calls.at(-1)![0].neighbors).toEqual([]);
   });
 
@@ -875,7 +876,7 @@ describe("Raidstead page", () => {
   describe("playing alongside allies", () => {
     const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
     const ready = () => screen.findByRole("button", { name: /raidstead.actions.rally/ });
-    const attackButton = (type: string) => screen.getByRole("button", { name: new RegExp(`raidstead\\.types\\.${type}`) });
+    const attackButton = (type: string) => screen.getByRole("button", { name: `raidstead.actions.attack-${type}` });
     // Timers the page itself has left. The test DOM starts a 0 ms one of its own
     // for every storage write (its notice to other windows): those go first.
     const pageTimers = async () => {
@@ -2174,6 +2175,506 @@ describe("Raidstead page", () => {
       render(<RaidsteadGame />);
       await tick(4100);
       expect(signInButton()).not.toBeNull();
+    });
+  });
+
+  it("names the attack buttons by what they do", async () => {
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    const attacks = document.querySelectorAll(".rs-atk");
+    expect(attacks).toHaveLength(3);
+    expect(
+      ["ink", "signal", "forge"].map(
+        (type) => screen.getByRole("button", { name: `raidstead.actions.attack-${type}` }).className
+      )
+    ).toEqual(["rs-atk", "rs-atk", "rs-atk"]);
+  });
+
+  it("titles a hero's card by the attack it makes", async () => {
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    const onTap = vi.mocked(createScene).mock.calls.at(-1)![1]!.onTap!;
+    await act(async () => {
+      onTap({ kind: "hero", hero: "scribe" });
+    });
+    const card = screen.getByRole("dialog");
+    expect(card.querySelector("small")!.textContent).toBe("raidstead.hero-card.attack");
+    expect(shown("raidstead.hero-card.attack")).toEqual({ type: "raidstead.types.ink" });
+  });
+
+  describe("build card", () => {
+    const withTown = (mats: number, attackDays: number) => {
+      const s = state();
+      s.alliance.mats = mats;
+      s.member.attackDays = attackDays;
+      api.state.mockResolvedValue(s);
+    };
+    const card = () => screen.queryByRole("button", { name: "raidstead.build-nudge.text" });
+
+    it("shows the town's materials when something can be built, and opens the Town", async () => {
+      // a Hall at stage 0 costs 40
+      withTown(60, 1);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(card()).toBeTruthy();
+      // with the actions, off the field where the boss, the wasp and the heroes are tapped
+      expect(card()!.closest(".rs-actions")).toBeTruthy();
+      expect(card()!.closest(".rs-slot")).toBeNull();
+      expect(shown("raidstead.build-nudge.text")).toEqual({ n: 60 });
+      await act(async () => {
+        fireEvent.click(card()!);
+      });
+      expect(
+        screen.getByRole("button", { name: "raidstead.actions.town" }).getAttribute("aria-pressed")
+      ).toBe("true");
+      expect(card()).toBeNull();
+    });
+
+    it("is not there when nothing is affordable", async () => {
+      withTown(20, 1);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(card()).toBeNull();
+    });
+
+    it("is not there for a member who has not raided this season", async () => {
+      withTown(60, 0);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      expect(card()).toBeNull();
+    });
+
+    it("comes back once materials grow past a low point nothing could be built at", async () => {
+      // the Hall is up, so a tower (30) may be built
+      const at = (mats: number) => {
+        const s = state();
+        s.alliance.mats = mats;
+        s.alliance.town = { ...s.alliance.town, hall: 1 };
+        s.member.attackDays = 1;
+        return s;
+      };
+      const next = async (mats: number) => {
+        api.state.mockResolvedValue(at(mats));
+        const asked = api.state.mock.calls.length;
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.quests/ }));
+        });
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: /raidstead.quests.claim/ }));
+        });
+        await waitFor(() => expect(api.state.mock.calls.length).toBeGreaterThan(asked));
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+        });
+      };
+      api.state.mockResolvedValue(at(60));
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "raidstead.build-nudge.dismiss" }));
+      });
+      expect(card()).toBeNull();
+      await next(20);
+      expect(card()).toBeNull();
+      await next(40);
+      await waitFor(() => expect(card()).toBeTruthy());
+    });
+
+    it("goes away when dismissed, even with storage blocked", async () => {
+      withTown(60, 1);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new Error("blocked");
+      });
+      try {
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: "raidstead.build-nudge.dismiss" }));
+        });
+        expect(card()).toBeNull();
+      } finally {
+        setItem.mockRestore();
+      }
+    });
+  });
+
+  it("on day 1 says to scout first", async () => {
+    const s = state();
+    s.calendar.day = 1;
+    api.state.mockResolvedValue(s);
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    await waitFor(() =>
+      expect(document.querySelector(".rs-toast")!.textContent).toBe("raidstead.toast.day-one")
+    );
+  });
+
+  describe("day 1 greeting", () => {
+    const greetings = () =>
+      vi.mocked(i18next.t).mock.calls.filter(([k]) => k === "raidstead.toast.day-one").length;
+    const toast = () => document.querySelector(".rs-toast")!.textContent;
+    const dayOne = (resting = false) => {
+      const s = state();
+      s.calendar = { ...s.calendar, day: 1, resting };
+      api.state.mockResolvedValue(s);
+    };
+
+    it("waits for the week card to close", async () => {
+      dayOne();
+      localStorage.removeItem("ecency_raidstead_seen_week");
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      await screen.findByRole("dialog");
+      expect(toast()).toBe("");
+      expect(greetings()).toBe(0);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+      });
+      await waitFor(() => expect(toast()).toBe("raidstead.toast.day-one"));
+    });
+
+    it("waits for the town news card to close", async () => {
+      const s = state();
+      s.calendar = { ...s.calendar, day: 1 };
+      Object.assign(s.alliance, {
+        notes: [{ seq: 1, day: 1, kind: "copied", n: 45, text: "x" }]
+      });
+      api.state.mockImplementation(async () => structuredClone(s));
+      localStorage.setItem("ecency_raidstead_news", JSON.stringify({ "1:hive-123456:ann": 0 }));
+      asUser("ann");
+      render(<RaidsteadGame />);
+      const card = await screen.findByRole("dialog", { name: "raidstead.news.away" });
+      expect(toast()).toBe("");
+      expect(greetings()).toBe(0);
+      await act(async () => {
+        fireEvent.click(within(card).getByRole("button", { name: "raidstead.news.ok" }));
+      });
+      await waitFor(() => expect(toast()).toBe("raidstead.toast.day-one"));
+      expect(greetings()).toBe(1);
+    });
+
+    it("greets once, however often the state is asked", async () => {
+      dayOne();
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      await waitFor(() => expect(greetings()).toBe(1));
+      const asked = api.state.mock.calls.length;
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.quests/ }));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.quests.claim/ }));
+      });
+      await waitFor(() => expect(api.state.mock.calls.length).toBeGreaterThan(asked));
+      expect(greetings()).toBe(1);
+    });
+
+    it("says nothing on a resting day 1", async () => {
+      dayOne(true);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.quests/ });
+      expect(greetings()).toBe(0);
+    });
+  });
+
+  it("says nothing on arrival after day 1", async () => {
+    asUser("ann");
+    render(<RaidsteadGame />);
+    await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+    expect(document.querySelector(".rs-toast")!.textContent).toBe("");
+  });
+
+  describe("alliance picker", () => {
+    const noAlliance = () =>
+      api.state.mockResolvedValue({ ...state(), alliance: null, member: null });
+    const options = async () => {
+      const dialog = await screen.findByRole("dialog", { name: "raidstead.alliance.pick-title" });
+      await within(dialog).findAllByRole("button", { name: /raidstead.alliance.join/ });
+      return within(dialog).getAllByRole("listitem");
+    };
+
+    it("lists who plays where, busiest first, and invites a first player", async () => {
+      noAlliance();
+      api.communities.mockResolvedValueOnce({
+        communities: [
+          { name: "hive-a", title: "A", players: 0, lastSeason: 12 },
+          { name: "hive-c", title: "C", players: 0, lastSeason: 0 },
+          { name: "hive-b", title: "B", players: 4, lastSeason: 0 }
+        ]
+      } as never);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      const items = await options();
+      expect(items.map((li) => li.querySelector("b")!.textContent)).toEqual(["B", "A", "C"]);
+      // the stand-in t shows keys: what each line says is read from its values
+      const lines = vi.mocked(i18next.t).mock.calls;
+      expect(lines).toContainEqual(["raidstead.alliance.players", { n: 4 }]);
+      expect(lines).toContainEqual(["raidstead.alliance.last-season", { n: 12 }]);
+      expect(
+        lines.filter(([k]) => k === "raidstead.alliance.last-season").map(([, v]) => v)
+      ).not.toContainEqual({ n: 0 });
+      expect(items[1].textContent).toContain("raidstead.alliance.last-season");
+      expect(items[0].textContent).not.toContain("raidstead.alliance.last-season");
+      expect(items[2].textContent).toContain("raidstead.alliance.nobody");
+      expect(items[2].textContent).not.toContain("raidstead.alliance.players");
+      expect(items[0].textContent).not.toContain("raidstead.alliance.nobody");
+    });
+
+    it("keeps an older server's order, with no counts", async () => {
+      noAlliance();
+      api.communities.mockResolvedValueOnce({
+        communities: [
+          { name: "hive-z", title: "Zed" },
+          { name: "hive-a", title: "Alpha" }
+        ]
+      });
+      asUser("ann");
+      render(<RaidsteadGame />);
+      const items = await options();
+      expect(items.map((li) => li.querySelector("b")!.textContent)).toEqual(["Zed", "Alpha"]);
+      for (const li of items) {
+        expect(li.textContent).not.toMatch(/alliance\.(players|last-season|nobody)/);
+      }
+    });
+  });
+
+  describe("leaderboard tabs", () => {
+    const row = (community: string, league: string) => ({
+      community,
+      title: community.toUpperCase(),
+      members: 3,
+      kills: 1,
+      damage: 10,
+      league
+    });
+    const boards: Record<string, ReturnType<typeof row>[]> = {
+      small: [row("hive-s1", "small")],
+      medium: [row("hive-m1", "medium"), row("hive-123456", "medium")],
+      large: [row("hive-l1", "large"), row("hive-l2", "large")]
+    };
+    const byLeague = async (o?: { league?: string }) => ({
+      season: 1,
+      alliances: o?.league ? boards[o.league] : Object.values(boards).flat()
+    });
+    const selected = () =>
+      screen
+        .getAllByRole("tab")
+        .filter((tab) => tab.getAttribute("aria-selected") === "true")
+        .map((tab) => tab.textContent);
+    const ranks = () =>
+      Array.from(document.querySelectorAll(".rs-rank li")).map(
+        (li) => `${li.children[0].textContent} ${li.children[1].firstChild!.textContent!.trim()}`
+      );
+
+    it("opens on the player's own league, ranked from 1", async () => {
+      api.leaderboard.mockImplementation(byLeague as never);
+      asUser("ann");
+      render(<RaidsteadGame />);
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.menu.leaderboard/ }));
+      });
+      await waitFor(() => expect(selected()).toEqual(["raidstead.profile.leagues.medium"]));
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-M1", "2 HIVE-123456"]));
+      expect(api.leaderboard).toHaveBeenCalledWith(expect.objectContaining({ league: "medium" }));
+    });
+
+    it("asks the server for one league per tab", async () => {
+      api.leaderboard.mockImplementation(byLeague as never);
+      render(
+        <LeaderboardSheet
+          season={1}
+          own="hive-123456"
+          load={(league) => api.leaderboard({ league }).then((r) => r.alliances)}
+          onClose={vi.fn()}
+        />
+      );
+      await waitFor(() => expect(selected()).toEqual(["raidstead.profile.leagues.medium"]));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("tab", { name: "raidstead.profile.leagues.large" }));
+      });
+      expect(api.leaderboard).toHaveBeenCalledWith({ league: "large" });
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-L1", "2 HIVE-L2"]));
+      expect(selected()).toEqual(["raidstead.profile.leagues.large"]);
+    });
+
+    it("opens on Small with no alliance yet", async () => {
+      api.leaderboard.mockImplementation(byLeague as never);
+      render(
+        <LeaderboardSheet
+          season={1}
+          load={(league) => api.leaderboard({ league }).then((r) => r.alliances)}
+          onClose={vi.fn()}
+        />
+      );
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-S1"]));
+      expect(selected()).toEqual(["raidstead.profile.leagues.small"]);
+      expect(api.leaderboard).toHaveBeenCalledWith({ league: "small" });
+    });
+
+    it("opens on the league the state names, asking for that league only", async () => {
+      api.leaderboard.mockImplementation(byLeague as never);
+      const s = state();
+      api.state.mockResolvedValue({
+        ...s,
+        alliance: { ...s.alliance, members: 8, league: "medium" }
+      });
+      asUser("ann");
+      render(<RaidsteadGame />);
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /raidstead.menu.leaderboard/ }));
+      });
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-M1", "2 HIVE-123456"]));
+      expect(selected()).toEqual(["raidstead.profile.leagues.medium"]);
+      expect(api.leaderboard.mock.calls).toEqual([[{ league: "medium" }]]);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("tab", { name: "raidstead.profile.leagues.large" }));
+      });
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-L1", "2 HIVE-L2"]));
+      expect(api.leaderboard.mock.calls).toEqual([[{ league: "medium" }], [{ league: "large" }]]);
+    });
+
+    it("asks once for a tab whose list is still on its way", async () => {
+      const answers: Record<string, (rows: ReturnType<typeof row>[]) => void> = {};
+      const load = vi.fn((league: string) =>
+        league === "small"
+          ? Promise.resolve(boards[league])
+          : new Promise<ReturnType<typeof row>[]>((r) => (answers[league] = r))
+      );
+      render(<LeaderboardSheet season={1} league="small" load={load as never} onClose={vi.fn()} />);
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-S1"]));
+      const tab = (name: string) => screen.getByRole("tab", { name: `raidstead.profile.leagues.${name}` });
+      // medium and large both on their way; each click is its own render
+      await act(async () => fireEvent.click(tab("medium")));
+      await act(async () => fireEvent.click(tab("large")));
+      // medium's answer lands while large is still open: the list changes, large is not asked again
+      await act(async () => answers.medium(boards.medium));
+      await act(async () => fireEvent.click(tab("small")));
+      await act(async () => fireEvent.click(tab("large")));
+      expect(load.mock.calls.filter(([l]) => l === "large")).toHaveLength(1);
+      await act(async () => answers.large(boards.large));
+      expect(ranks()).toEqual(["1 HIVE-L1", "2 HIVE-L2"]);
+    });
+
+    it("without a league from the server, opens on a league that failed to load, then finds the player's", async () => {
+      const load = vi.fn(async (league: string) => {
+        if (league === "medium" && load.mock.calls.filter(([l]) => l === "medium").length === 1)
+          throw new Error("offline");
+        return boards[league];
+      });
+      render(
+        <LeaderboardSheet season={1} own="hive-123456" load={load as never} onClose={vi.fn()} />
+      );
+      await screen.findByText("raidstead.leaderboard.failed");
+      expect(selected()).toEqual(["raidstead.profile.leagues.medium"]);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.try-again" }));
+      });
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-M1", "2 HIVE-123456"]));
+      expect(selected()).toEqual(["raidstead.profile.leagues.medium"]);
+    });
+
+    it("while the player's league is a guess, a retry that finds it in another league moves there", async () => {
+      // small and large fail first; the player is in large
+      const tries: Record<string, number> = {};
+      const load = vi.fn(async (league: string) => {
+        tries[league] = (tries[league] ?? 0) + 1;
+        if ((league === "small" || league === "large") && tries[league] === 1) throw new Error("offline");
+        return boards[league];
+      });
+      render(
+        <LeaderboardSheet season={1} own={boards.large[0].community} load={load as never} onClose={vi.fn()} />
+      );
+      await screen.findByText("raidstead.leaderboard.failed");
+      expect(selected()).toEqual(["raidstead.profile.leagues.small"]);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.try-again" }));
+      });
+      await waitFor(() => expect(selected()).toEqual(["raidstead.profile.leagues.large"]));
+      expect(ranks()).toEqual(["1 HIVE-L1", "2 HIVE-L2"]);
+      // only the failed lists were asked again
+      expect(tries).toEqual({ small: 2, medium: 1, large: 2 });
+    });
+
+    it("while the player's league is a guess, a retry that loads one list but not another moves to the one still failing", async () => {
+      const tries: Record<string, number> = {};
+      const load = vi.fn(async (league: string) => {
+        tries[league] = (tries[league] ?? 0) + 1;
+        if (league === "small" && tries[league] === 1) throw new Error("offline");
+        if (league === "large") throw new Error("offline");
+        return boards[league];
+      });
+      render(
+        <LeaderboardSheet season={1} own="hive-nowhere" load={load as never} onClose={vi.fn()} />
+      );
+      await screen.findByText("raidstead.leaderboard.failed");
+      expect(selected()).toEqual(["raidstead.profile.leagues.small"]);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.try-again" }));
+      });
+      await waitFor(() => expect(selected()).toEqual(["raidstead.profile.leagues.large"]));
+      expect(screen.getByText("raidstead.leaderboard.failed")).toBeTruthy();
+    });
+
+    it("lists only the tab's own league, from a server that ignores the filter", async () => {
+      const load = vi.fn(async () => [...boards.large, ...boards.small, ...boards.medium]);
+      render(
+        <LeaderboardSheet season={1} league="medium" load={load as never} onClose={vi.fn()} />
+      );
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-M1", "2 HIVE-123456"]));
+    });
+
+    it("says a list could not load, with a way to try again", async () => {
+      const load = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("offline"))
+        .mockResolvedValue(boards.small);
+      render(<LeaderboardSheet season={1} league="small" load={load} onClose={vi.fn()} />);
+      await screen.findByText("raidstead.leaderboard.failed");
+      expect(screen.queryByText("raidstead.leaderboard.empty")).toBeNull();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.try-again" }));
+      });
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-S1"]));
+      expect(load).toHaveBeenCalledTimes(2);
+    });
+
+    it("ties tabs to their panel and moves between them with the arrow keys", async () => {
+      const load = vi.fn(async (league: string) => boards[league]);
+      render(<LeaderboardSheet season={1} league="large" load={load as never} onClose={vi.fn()} />);
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-L1", "2 HIVE-L2"]));
+      const tabs = screen.getAllByRole("tab");
+      const panel = screen.getByRole("tabpanel");
+      for (const tab of tabs) expect(tab.getAttribute("aria-controls")).toBe(panel.id);
+      const large = screen.getByRole("tab", { name: "raidstead.profile.leagues.large" });
+      expect(panel.getAttribute("aria-labelledby")).toBe(large.id);
+      expect(tabs.map((x) => x.tabIndex)).toEqual([-1, -1, 0]);
+      // Right from the last wraps to the first, Left from the first to the last
+      await act(async () => {
+        fireEvent.keyDown(large, { key: "ArrowRight" });
+      });
+      const small = screen.getByRole("tab", { name: "raidstead.profile.leagues.small" });
+      expect(document.activeElement).toBe(small);
+      expect(selected()).toEqual(["raidstead.profile.leagues.small"]);
+      await waitFor(() => expect(ranks()).toEqual(["1 HIVE-S1"]));
+      expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe(small.id);
+      await act(async () => {
+        fireEvent.keyDown(small, { key: "ArrowLeft" });
+      });
+      expect(document.activeElement).toBe(large);
+      expect(selected()).toEqual(["raidstead.profile.leagues.large"]);
     });
   });
 });
