@@ -91,12 +91,15 @@ export interface Festival {
 }
 /// A festival hit: the festival as it is now, this hit's damage, and the badge a first hit earns.
 export type FestivalHit = Festival & { damage: number; badge?: "festival" | null };
-/// One player's season, for Season Wrapped. `badges`: how many they earned.
+/// One player's season, for Season Wrapped, as the server sends it. `lastHits` and
+/// `builds` are null for seasons before they were counted. `badges`: the ids earned
+/// (a count from some servers). `rank`: the alliance's place in its league; tied
+/// alliances share one.
 export interface Wrapped {
   season: number; account: string;
   alliance: { community: string; title: string; league: League; rank: number } | null;
-  attacks: number; damage: number; daysPlayed: number; kills: number; lastHits: number;
-  builds: number; bestStreak: number; badges: number;
+  attacks: number; damage: number; daysPlayed: number; kills: number; lastHits: number | null;
+  builds: number | null; bestStreak: number; badges: number | string[];
 }
 
 export class RaidsteadError extends Error {

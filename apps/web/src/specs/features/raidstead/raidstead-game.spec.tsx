@@ -3390,7 +3390,7 @@ describe("Raidstead page", () => {
       expect(within(p).getByText("raidstead.bosses.queen.name")).toBeTruthy();
       expect(within(p).getByRole("meter").getAttribute("aria-valuenow")).toBe("80");
       expect(shown("raidstead.boss.hp")).toEqual({ hp: 2400, max: 3000 });
-      expect(shown("raidstead.festival.energy")).toEqual({ n: 5, max: 5 });
+      expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
       // plain damage: no weakness to find
       expect(screen.queryByText("raidstead.boss.weak-unknown")).toBeNull();
       expect(atk("ink").disabled).toBe(false);
@@ -3409,6 +3409,8 @@ describe("Raidstead page", () => {
       api.festivalAttack.mockResolvedValue({ ...fest(), hp: 1500, energy: 4, damage: 12, badge: "festival" });
       render(<RaidsteadGame />);
       const p = await plate();
+      // what the next ask brings once the hit has landed
+      api.festival.mockResolvedValue({ ...fest(), hp: 1500, energy: 4 });
       await act(async () => {
         fireEvent.click(atk("signal"));
       });
@@ -3416,7 +3418,7 @@ describe("Raidstead page", () => {
       expect(api.attack).not.toHaveBeenCalled();
       expect(within(p).getByRole("meter").getAttribute("aria-valuenow")).toBe("50");
       expect(shown("raidstead.boss.hp")).toEqual({ hp: 1500, max: 3000 });
-      expect(shown("raidstead.festival.energy")).toEqual({ n: 4, max: 5 });
+      expect(shown("raidstead.energy.value")).toEqual({ n: 4, max: 5 });
       const toast = document.querySelector(".rs-toast")!.textContent;
       expect(toast).toContain("raidstead.festival.hit");
       expect(toast).toContain("raidstead.festival.badge");
@@ -3480,6 +3482,77 @@ describe("Raidstead page", () => {
       await screen.findByRole("button", { name: /raidstead.actions.rally/ });
       await act(async () => undefined);
       expect(api.festival).not.toHaveBeenCalled();
+    });
+
+    it("shows festival energy in the energy chip and on the buttons, and the day's energy from the server", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue({ ...fest(), energy: 3 });
+      render(<RaidsteadGame />);
+      const p = await plate();
+      expect(screen.getByText("raidstead.festival.chip")).toBeTruthy();
+      expect(shown("raidstead.energy.value")).toEqual({ n: 3, max: 5 });
+      expect(screen.getAllByText("raidstead.festival.cost")).toHaveLength(3);
+      fireEvent.click(within(p).getByRole("button", { name: "raidstead.festival.about" }));
+      expect(shown("raidstead.festival.desc")).toEqual({ max: 5 });
+    });
+
+    it("asks for the state again after a hit, landed or refused", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      api.festivalAttack.mockResolvedValueOnce({ ...fest(), hp: 2394, energy: 4, damage: 6 });
+      render(<RaidsteadGame />);
+      await plate();
+      const before = api.state.mock.calls.length;
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      await waitFor(() => expect(api.state.mock.calls.length).toBe(before + 1));
+      api.festivalAttack.mockRejectedValueOnce(Object.assign(new Error("x"), { status: 409, code: "no_energy", message: "x" }));
+      // past the double-tap guard
+      await new Promise((r) => setTimeout(r, 460));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      await waitFor(() => expect(api.state.mock.calls.length).toBe(before + 2));
+    });
+
+    it("asks again after a rate limit, and shows the plate", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        // each answer a new state, as from the server
+        api.state.mockImplementation(async () => quiet());
+        api.festival.mockResolvedValue(fest());
+        api.festival.mockRejectedValueOnce(Object.assign(new Error("x"), { status: 429, code: "rate_limited", message: "x" }));
+        render(<RaidsteadGame />);
+        await waitFor(() => expect(api.festival).toHaveBeenCalledTimes(1));
+        expect(screen.queryByRole("region", { name: "raidstead.festival.title" })).toBeNull();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(await plate()).toBeTruthy();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the festival card open when day 29 turns into day 30", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockResolvedValue(quiet(29));
+        api.festival.mockResolvedValue(fest());
+        render(<RaidsteadGame />);
+        fireEvent.click(within(await plate()).getByRole("button", { name: "raidstead.festival.about" }));
+        expect(screen.getByRole("dialog", { name: "raidstead.festival.title" })).toBeTruthy();
+        // day 30's festival is still on its way
+        api.festival.mockReturnValue(new Promise(() => undefined));
+        api.state.mockResolvedValue(quiet(30));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(screen.getByRole("dialog", { name: "raidstead.festival.title" })).toBeTruthy();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("lists the Festival badge on the profile", async () => {
@@ -3560,6 +3633,38 @@ describe("Raidstead page", () => {
       await act(async () => undefined);
       expect(screen.queryByRole("dialog", { name: "raidstead.wrapped.title" })).toBeNull();
       expect(await openFromMenu()).toBeTruthy();
+    });
+
+    it("closes the card when the season rolls over, so the raid answers keys again", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockResolvedValue(quiet(30));
+        api.wrapped.mockResolvedValue(totals());
+        render(<RaidsteadGame />);
+        await card();
+        const next = state();
+        next.calendar = { ...next.calendar, season: 2, day: 1 };
+        localStorage.setItem("ecency_raidstead_seen_week", JSON.stringify("2-1"));
+        api.state.mockResolvedValue(next);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+        fireEvent.keyDown(window, { key: "1" });
+        await waitFor(() => expect(api.attack).toHaveBeenCalled());
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the card when last hits and buildings were not counted that season", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.wrapped.mockResolvedValue({ ...totals(), lastHits: null, builds: null });
+      render(<RaidsteadGame />);
+      const c = await card();
+      expect(within(c).getByText("120")).toBeTruthy();
+      expect(within(c).queryByText("raidstead.wrapped.stats.last-hits")).toBeNull();
+      expect(within(c).queryByText("raidstead.wrapped.stats.builds")).toBeNull();
     });
 
     it("is hidden when the server has no totals for the player", async () => {

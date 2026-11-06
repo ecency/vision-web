@@ -23,8 +23,7 @@ import {
   type ShareCard,
   type State,
   type TapTarget,
-  type View,
-  type Wrapped
+  type View
 } from "@ecency/raidstead";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useGlobalStore } from "@/core/global-store";
@@ -50,6 +49,7 @@ import {
   buildReport,
   buildWrapped,
   dismissBuildNudge,
+  wrappedCardRows,
   festivalErrorMessage,
   lowerBuildNudge,
   laterMark,
@@ -61,6 +61,7 @@ import {
   readFestival,
   readWrapped,
   type NewsMark,
+  type WrappedTotals,
   rallyBlock,
   twinSide,
   type Neighbor,
@@ -829,10 +830,13 @@ export function RaidsteadGame() {
   // its health moves with everyone's hits. A server without it (or an answer the
   // page cannot read) leaves the quiet day as it was.
   const [festival, setFestival] = useState<Festival | null>(null);
-  const festivalKey =
+  // whose festival and which season's: another one starts empty
+  const festScope =
     phase === "ready" && data?.calendar.resting && data.calendar.season >= 1 && alliance
-      ? `${data.calendar.season}:${data.calendar.day}:${data.account.name}`
+      ? `${data.calendar.season}:${data.account.name}`
       : "";
+  // and which day: day 30 asks anew, while day 29's festival stays shown until it answers
+  const festivalKey = festScope ? `${festScope}:${data!.calendar.day}` : "";
   const festKeyRef = useRef(festivalKey);
   festKeyRef.current = festivalKey;
   // only the latest ask counts, and none asked before a hit
@@ -848,21 +852,23 @@ export function RaidsteadGame() {
       const f = readFestival(await raidsteadApi.festival());
       if (current()) setFestival(f);
     } catch (e) {
-      const status = (e as { status?: number })?.status ?? 0;
-      // could not answer just now: what shows stays, and the next state asks again
-      if (!current() || status === 0 || status >= 500) return;
+      const { status, code } = (e ?? {}) as { status?: number; code?: string };
+      // Only "there is none" hides it (an older server, or no festival this season).
+      // Anything else (offline, a rate limit, a lapsed session): what shows stays,
+      // and the next state asks again.
+      if (!current() || !(status === 404 || code === "not_festival")) return;
       festOff.current = key;
       setFestival(null);
     }
   }, []);
   useEffect(() => {
-    if (festAsked.current !== festivalKey) {
-      festAsked.current = festivalKey;
+    if (festAsked.current !== festScope) {
+      festAsked.current = festScope;
       setFestival(null);
     }
     if (festivalKey && festOff.current !== festivalKey) loadFestival();
-  }, [festivalKey, data, loadFestival]);
-  const fest = festivalKey ? festival : null;
+  }, [festScope, festivalKey, data, loadFestival]);
+  const fest = festScope ? festival : null;
   // a pest kind from a newer server than this page has no drawing: the scene stays as it was
   const festKind =
     fest && (BOSS_KINDS as readonly string[]).includes(fest.kind) ? (fest.kind as BossKind) : null;
@@ -910,17 +916,17 @@ export function RaidsteadGame() {
           festOff.current = festKeyRef.current;
           festSeq.current++;
           setFestival(null);
-        } else {
-          // the energy and health as the server has them
-          loadFestival();
         }
       }
+      // As after a raid attack: the profile's badges and karma, and a lapsed session
+      // signs in again. The new state asks for the festival again too.
+      refresh({ quiet: true });
     },
-    [fest, festKind, say, loadFestival]
+    [fest, festKind, say, refresh]
   );
 
   // ---------- Season Wrapped, from the quiet days on ----------
-  const [wrapped, setWrapped] = useState<Wrapped | null>(null);
+  const [wrapped, setWrapped] = useState<WrappedTotals | null>(null);
   const wrappedSeason =
     phase === "ready" && data?.calendar.resting && data.calendar.season >= 1 && alliance
       ? data.calendar.season
@@ -954,6 +960,11 @@ export function RaidsteadGame() {
     setSheet({ kind: "wrapped" });
     sheetRef.current = { kind: "wrapped" };
   }, [wrappedNow, wrappedKey, phase, sheet, awayNews]);
+  // a card whose festival or season is gone (the new season began) closes, rather
+  // than stay open with nothing in it, holding back taps, keys and news
+  useEffect(() => {
+    if ((sheet?.kind === "wrapped" && !wrappedNow) || (sheet?.kind === "festival" && !fest)) setSheet(null);
+  }, [sheet, wrappedNow, fest]);
 
   // ---------- actions ----------
   const act = useCallback(
@@ -1370,11 +1381,7 @@ export function RaidsteadGame() {
             })
           : "",
         top: [],
-        rows: [
-          t("wrapped.card-attacks", { attacks: w.attacks.toLocaleString(), damage: w.damage.toLocaleString() }),
-          t("wrapped.card-days", { days: w.daysPlayed, best: w.bestStreak }),
-          t("wrapped.card-kills", { kills: w.kills, lastHits: w.lastHits })
-        ]
+        rows: wrappedCardRows(w, i18next.t)
       }),
       t("wrapped.card-alt"),
       a?.community
@@ -1412,6 +1419,8 @@ export function RaidsteadGame() {
     cal && cal.season > 0 ? t("season.day", { day: Math.min(cal.day, 28), total: 28 }) : "";
   const energy = member?.energy ?? 0;
   const maxEnergy = member?.maxEnergy ?? 15;
+  const chipEnergy = fest ? fest.energy : energy;
+  const chipMax = fest ? fest.maxEnergy : maxEnergy;
   const streak = typeof member?.streak === "number" ? member.streak : 0;
   const alive = !!boss?.alive;
   const pct = boss ? Math.ceil((boss.hp / boss.maxHp) * 100) : 100;
@@ -1686,14 +1695,15 @@ export function RaidsteadGame() {
               </div>
             )}
             {member && (
+              // during the festival, the energy its hits spend
               <div className="rs-card rs-chip">
                 <span>
-                  <small>{t("energy.label")}</small>
-                  <b>{t("energy.value", { n: energy, max: maxEnergy })}</b>
+                  <small>{fest ? t("festival.chip") : t("energy.label")}</small>
+                  <b>{t("energy.value", { n: chipEnergy, max: chipMax })}</b>
                 </span>
                 <span className="rs-pips" aria-hidden="true">
-                  {Array.from({ length: maxEnergy }, (_, i) => (
-                    <i key={i} className={i < energy ? "on" : undefined} />
+                  {Array.from({ length: chipMax }, (_, i) => (
+                    <i key={i} className={i < chipEnergy ? "on" : undefined} />
                   ))}
                 </span>
               </div>
@@ -1736,7 +1746,7 @@ export function RaidsteadGame() {
             </div>
             <div className="rs-row">
               <span>{t("boss.hp", { hp: fest.hp, max: fest.maxHp })}</span>
-              <span className="rs-muted">{t("festival.energy", { n: fest.energy, max: fest.maxEnergy })}</span>
+              <span className="rs-muted">{t("festival.mine", { n: fest.myDamage.toLocaleString() })}</span>
             </div>
           </section>
         )}
@@ -1925,7 +1935,7 @@ export function RaidsteadGame() {
                             ? t("festival.raiders-only")
                             : fest.energy <= 0
                               ? t("actions.no-energy")
-                              : t("actions.cost")
+                              : t("festival.cost")
                         : !alive || resting
                           ? t("actions.resting")
                           : energy <= 0

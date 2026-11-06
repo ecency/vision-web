@@ -386,22 +386,37 @@ export function buildReport(state: State, t: T): { title: string; body: string }
   return { title, body: lines.join("\n") };
 }
 
+/// A season's totals as the page shows them: `badges` counted.
+export type WrappedTotals = Omit<Wrapped, "badges"> & { badges: number };
+
+/// One of a season's numbers in words, singular or plural by the number.
+const unit = (t: T, key: string, n: number) =>
+  t(`raidstead.wrapped.units.${key}`, { count: n, n: n.toLocaleString() });
+
 /// A player's season as a post to edit and share: the numbers, the alliance and
 /// its league rank, tagged with the alliance's community, raidstead and ecency.
-export function buildWrapped(w: Wrapped, t: T): { title: string; body: string; tags: string[] } {
+/// Last hits and buildings are left out for a season that did not count them.
+export function buildWrapped(w: WrappedTotals, t: T): { title: string; body: string; tags: string[] } {
   const a = w.alliance;
   const name = a ? escapeMarkdown(a.title || a.community) : "";
   const title = t("raidstead.wrapped.post-title", {
     season: w.season,
     name: a ? a.title || a.community : `@${w.account}`
   });
+  const numbers: [string, number | null][] = [
+    ["attacks", w.attacks],
+    ["damage", w.damage],
+    ["days", w.daysPlayed],
+    ["streak", w.bestStreak],
+    ["kills", w.kills],
+    ["last-hits", w.lastHits],
+    ["builds", w.builds],
+    ["badges", w.badges]
+  ];
   const lines = [
     a ? t("raidstead.wrapped.intro", { season: w.season, name }) : t("raidstead.wrapped.intro-solo", { season: w.season }),
     "",
-    `- ${t("raidstead.wrapped.post-attacks", { attacks: w.attacks, damage: w.damage })}`,
-    `- ${t("raidstead.wrapped.post-days", { days: w.daysPlayed, best: w.bestStreak })}`,
-    `- ${t("raidstead.wrapped.post-kills", { kills: w.kills, lastHits: w.lastHits })}`,
-    `- ${t("raidstead.wrapped.post-builds", { builds: w.builds, badges: w.badges })}`,
+    ...numbers.filter((x): x is [string, number] => num(x[1])).map(([k, n]) => `- **${unit(t, k, n)}**`),
     ""
   ];
   if (a) {
@@ -413,6 +428,17 @@ export function buildWrapped(w: Wrapped, t: T): { title: string; body: string; t
   lines.push(t("raidstead.wrapped.outro"));
   const tags = a ? [a.community, "raidstead", "ecency"] : ["raidstead", "ecency"];
   return { title, body: lines.join("\n"), tags };
+}
+
+/// The share card's three lines of numbers, short enough for the card.
+export function wrappedCardRows(w: WrappedTotals, t: T): string[] {
+  return [
+    `${unit(t, "attacks", w.attacks)}, ${unit(t, "damage", w.damage)}`,
+    `${unit(t, "card-days", w.daysPlayed)}, ${unit(t, "card-streak", w.bestStreak)}`,
+    num(w.lastHits)
+      ? `${unit(t, "card-kills", w.kills)}, ${unit(t, "last-hits", w.lastHits)}`
+      : unit(t, "card-kills", w.kills)
+  ];
 }
 
 const num = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -440,11 +466,12 @@ export function readFestival(x: unknown): Festival | null {
   };
 }
 
-const WRAPPED_NUMBERS = ["attacks", "damage", "daysPlayed", "kills", "lastHits", "builds", "bestStreak"] as const;
+const WRAPPED_NUMBERS = ["attacks", "damage", "daysPlayed", "kills", "bestStreak"] as const;
 
-/// A season's totals as the card shows them, or null when any number is missing.
-/// `badges` may come as a count or as the list of ids.
-export function readWrapped(x: unknown): Wrapped | null {
+/// A season's totals as the card shows them, or null when a number it always
+/// has is missing. Last hits and buildings may be null (a season before they were
+/// counted); `badges` may come as the list of ids or as a count.
+export function readWrapped(x: unknown): WrappedTotals | null {
   const w = x as Record<string, unknown> | null;
   if (!w || typeof w.account !== "string" || !num(w.season)) return null;
   if (WRAPPED_NUMBERS.some((k) => !num(w[k]))) return null;
@@ -455,7 +482,8 @@ export function readWrapped(x: unknown): Wrapped | null {
     a && typeof a.community === "string" && num(a.rank) && LEAGUES.includes(a.league)
       ? { community: a.community, title: typeof a.title === "string" ? a.title : a.community, league: a.league, rank: a.rank }
       : null;
-  return { ...(w as unknown as Wrapped), alliance, badges };
+  const orNull = (v: unknown) => (num(v) ? v : null);
+  return { ...(w as unknown as Wrapped), alliance, badges, lastHits: orNull(w.lastHits), builds: orNull(w.builds) };
 }
 
 /// The Alliance of the Week in each league: the fastest kill, then the most

@@ -26,8 +26,7 @@ import {
   type LeaderRow,
   type Note,
   type PowerId,
-  type State,
-  type Wrapped
+  type State
 } from "@ecency/raidstead";
 import {
   BUILD_COSTS,
@@ -39,7 +38,8 @@ import {
   rallyBlock,
   sortCommunities,
   tierOf,
-  type Neighbor
+  type Neighbor,
+  type WrappedTotals
 } from "@/features/raidstead/game";
 
 const t = (key: string, values?: Record<string, unknown>) => i18next.t(`raidstead.${key}`, values);
@@ -1324,7 +1324,7 @@ export function FestivalSheet({
     <Sheet onClose={onClose} label={t("festival.title")}>
       <small>{t("festival.title")}</small>
       <h2>{pest}</h2>
-      <p className="rs-muted">{t("festival.desc")}</p>
+      <p className="rs-muted">{t("festival.desc", { max: festival.maxEnergy })}</p>
       <p>
         <b>{t("festival.mine", { n: festival.myDamage.toLocaleString() })}</b>
       </p>
@@ -1341,22 +1341,25 @@ export function WrappedSheet({
   onClose,
   onOpen
 }: {
-  wrapped: Wrapped;
+  wrapped: WrappedTotals;
   /// the share card is on its way to the image server
   busy?: boolean;
   onClose: () => void;
   onOpen: () => void;
 }) {
   const a = wrapped.alliance;
-  const stats: [string, number][] = [
-    ["attacks", wrapped.attacks],
-    ["damage", wrapped.damage],
-    ["days", wrapped.daysPlayed],
-    ["kills", wrapped.kills],
-    ["last-hits", wrapped.lastHits],
-    ["builds", wrapped.builds],
-    ["badges", wrapped.badges]
-  ];
+  // last hits and buildings only for a season that counted them
+  const stats = (
+    [
+      ["attacks", wrapped.attacks],
+      ["damage", wrapped.damage],
+      ["days", wrapped.daysPlayed],
+      ["kills", wrapped.kills],
+      ["last-hits", wrapped.lastHits],
+      ["builds", wrapped.builds],
+      ["badges", wrapped.badges]
+    ] as [string, number | null][]
+  ).filter((x): x is [string, number] => typeof x[1] === "number");
   return (
     <Sheet onClose={onClose} label={t("wrapped.title")}>
       <small>{t("wrapped.season", { n: wrapped.season })}</small>

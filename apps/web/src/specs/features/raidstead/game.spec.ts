@@ -8,6 +8,8 @@ import {
   buildNudgeShown,
   buildReport,
   buildWrapped,
+  readWrapped,
+  wrappedCardRows,
   lowerBuildNudge,
   chestBlock,
   chestHoursLeft,
@@ -238,20 +240,52 @@ describe("raidstead game helpers", () => {
     it("has the numbers, the alliance and the raidstead tag", () => {
       const r = buildWrapped(wrapped(), t);
       expect(r.title).toBe("post-title|season=2,name=Ink & Oak");
-      for (const n of [
-        "attacks=120",
-        "damage=1500",
-        "days=20",
-        "kills=3",
-        "lastHits=2",
-        "builds=4",
-        "best=9",
-        "badges=5"
-      ]) {
-        expect(r.body).toContain(n);
+      for (const [unit, n] of [
+        ["attacks", 120],
+        ["damage", 1500],
+        ["days", 20],
+        ["kills", 3],
+        ["last-hits", 2],
+        ["builds", 4],
+        ["streak", 9],
+        ["badges", 5]
+      ] as const) {
+        expect(r.body).toContain(`${unit}|count=${n},n=${n.toLocaleString()}`);
       }
       expect(r.body).toContain("rank|name=Ink & Oak,rank=3,league=small");
       expect(r.tags).toEqual(["hive-123456", "raidstead", "ecency"]);
+    });
+
+    // the real words: plurals as i18next resolves them from the locale
+    const words = (key: string, v: Record<string, unknown> = {}) => {
+      const k = typeof v.count === "number" ? `${key}_${v.count === 1 ? "one" : "other"}` : key;
+      const found = k.split(".").reduce<unknown>((o, part) => (o as Record<string, unknown> | undefined)?.[part], enUS);
+      if (typeof found !== "string") return k;
+      return found.replace(/{{(\w+)}}/g, (_, x: string) => String(v[x]));
+    };
+    const ones = () => ({ ...wrapped(), attacks: 1, damage: 1, daysPlayed: 1, kills: 1, lastHits: 1, builds: 1, bestStreak: 1, badges: 1 });
+    const plural = /\b1\** (attacks|days|pests|last hits|badges|buildings)\b/;
+
+    it("says 1 of a thing in the singular, in the post and on the card", () => {
+      const body = buildWrapped(ones(), words).body;
+      expect(body).not.toMatch(plural);
+      expect(body).toMatch(/\b1\** last hit\b/);
+      const rows = wrappedCardRows(ones(), words);
+      expect(rows).toHaveLength(3);
+      expect(rows.join(" ")).not.toMatch(plural);
+      expect(wrappedCardRows(wrapped(), words)[0]).toBe(`120 attacks, ${(1500).toLocaleString()} damage`);
+    });
+
+    it("leaves out last hits and buildings for a season that did not count them", () => {
+      const w = { ...wrapped(), lastHits: null, builds: null };
+      expect(buildWrapped(w, words).body).not.toMatch(/last hit|building/);
+      expect(wrappedCardRows(w, words).join(" ")).not.toMatch(/last hit/);
+    });
+
+    it("reads totals without last hits and buildings, and badges sent as their ids", () => {
+      const w = readWrapped({ ...wrapped(), lastHits: null, builds: null, badges: ["festival", "helper"] });
+      expect(w).toMatchObject({ lastHits: null, builds: null, badges: 2, attacks: 120 });
+      expect(readWrapped({ ...wrapped(), attacks: null })).toBeNull();
     });
 
     it("keeps a community's Markdown as text, and drafts a season without an alliance", () => {
