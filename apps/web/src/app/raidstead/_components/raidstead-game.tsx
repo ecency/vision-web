@@ -850,7 +850,8 @@ export function RaidsteadGame() {
     const current = () => mounted.current && seq === festSeq.current && key === festKeyRef.current;
     try {
       const f = readFestival(await raidsteadApi.festival());
-      if (current()) setFestival(f);
+      // an answer the page cannot read leaves what shows as it is
+      if (current() && f) setFestival(f);
     } catch (e) {
       const { status, code } = (e ?? {}) as { status?: number; code?: string };
       // Only "there is none" hides it (an older server, or no festival this season).

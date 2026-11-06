@@ -3540,17 +3540,60 @@ describe("Raidstead page", () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       try {
         api.state.mockResolvedValue(quiet(29));
-        api.festival.mockResolvedValue(fest());
+        api.festival.mockResolvedValue({ ...fest(), energy: 1 });
         render(<RaidsteadGame />);
         fireEvent.click(within(await plate()).getByRole("button", { name: "raidstead.festival.about" }));
         expect(screen.getByRole("dialog", { name: "raidstead.festival.title" })).toBeTruthy();
         // day 30's festival is still on its way
-        api.festival.mockReturnValue(new Promise(() => undefined));
+        let answer: (f: unknown) => void = () => undefined;
+        api.festival.mockReturnValue(new Promise((r) => (answer = r)));
+        const asked = api.festival.mock.calls.length;
         api.state.mockResolvedValue(quiet(30));
         await act(async () => {
           await vi.advanceTimersByTimeAsync(60_500);
         });
         expect(screen.getByRole("dialog", { name: "raidstead.festival.title" })).toBeTruthy();
+        // day 30 is asked for anew, and its fresh energy replaces day 29's
+        expect(api.festival.mock.calls.length).toBeGreaterThan(asked);
+        await act(async () => answer({ ...fest(), energy: 5 }));
+        expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("closes the festival card when the festival goes, so the raid answers keys again", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockResolvedValue(quiet(29));
+        api.festival.mockResolvedValue(fest());
+        render(<RaidsteadGame />);
+        fireEvent.click(within(await plate()).getByRole("button", { name: "raidstead.festival.about" }));
+        expect(screen.getByRole("dialog", { name: "raidstead.festival.title" })).toBeTruthy();
+        api.festival.mockRejectedValue({ status: 404, code: "not_found", message: "x" });
+        api.state.mockResolvedValue({ ...quiet(29) });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(screen.queryByRole("dialog")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the festival when an answer cannot be read", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockResolvedValue(quiet(29));
+        api.festival.mockResolvedValue(fest());
+        render(<RaidsteadGame />);
+        await plate();
+        api.festival.mockResolvedValue({ season: 1 });
+        api.state.mockResolvedValue({ ...quiet(29) });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(screen.queryByRole("region", { name: "raidstead.festival.title" })).not.toBeNull();
       } finally {
         vi.useRealTimers();
       }
