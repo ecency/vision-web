@@ -32,7 +32,11 @@ const { scene, api, box, nav } = vi.hoisted(() => ({
     help: vi.fn(async (): Promise<unknown> => {
       throw Object.assign(new Error("Not Found"), { status: 404, code: "not_found" });
     }),
-    helpAttack: vi.fn()
+    helpAttack: vi.fn(),
+    // the festival and Season Wrapped: a server without them by default (set in beforeEach)
+    festival: vi.fn(),
+    festivalAttack: vi.fn(),
+    wrapped: vi.fn()
   },
   nav: { push: vi.fn(), writer: vi.fn(), card: vi.fn(async (): Promise<string | null> => null), week: vi.fn() },
   box: {
@@ -176,6 +180,10 @@ describe("Raidstead page", () => {
     nav.week.mockReturnValue(null);
     // a full reset: one-time answers a failed test left unused must not reach the next one
     api.calendar.mockReset().mockResolvedValue(state().calendar);
+    const notFound = () => Object.assign(new Error("Not Found"), { status: 404, code: "not_found", message: "Not Found" });
+    api.festival.mockReset().mockRejectedValue(notFound());
+    api.festivalAttack.mockReset();
+    api.wrapped.mockReset().mockRejectedValue(notFound());
   });
 
   afterEach(() => {
@@ -3342,6 +3350,268 @@ describe("Raidstead page", () => {
       render(<RaidsteadGame />);
       await screen.findByRole("button", { name: /raidstead.actions.rally/ });
       expect(screen.queryByRole("button", { name: /raidstead.share.button/ })).toBeNull();
+    });
+  });
+
+  // the quiet days between seasons (29 and 30): the week's last pest is gone
+  const quiet = (day = 29) => {
+    const s = state();
+    s.calendar = { ...s.calendar, day, week: 4, resting: true };
+    s.alliance.week = 4;
+    s.alliance.boss.alive = false;
+    localStorage.setItem("ecency_raidstead_seen_week", JSON.stringify("1-4"));
+    return s;
+  };
+
+  describe("festival pest", () => {
+    const fest = () => ({
+      season: 1,
+      kind: "queen",
+      hp: 2400,
+      maxHp: 3000,
+      chasedOff: false,
+      top: [
+        { community: "hive-123456", title: "Ink & Oak", damage: 300 },
+        { community: "hive-2", title: "Far Field", damage: 200 }
+      ],
+      energy: 5,
+      maxEnergy: 5,
+      myDamage: 40,
+      canPlay: true
+    });
+    const plate = () => screen.findByRole("region", { name: "raidstead.festival.title" });
+    const atk = (type: string) => screen.getByRole("button", { name: `raidstead.actions.attack-${type}` }) as HTMLButtonElement;
+
+    it("shows the festival pest and its shared health on day 29", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      render(<RaidsteadGame />);
+      const p = await plate();
+      expect(within(p).getByText("raidstead.bosses.queen.name")).toBeTruthy();
+      expect(within(p).getByRole("meter").getAttribute("aria-valuenow")).toBe("80");
+      expect(shown("raidstead.boss.hp")).toEqual({ hp: 2400, max: 3000 });
+      expect(shown("raidstead.festival.energy")).toEqual({ n: 5, max: 5 });
+      // plain damage: no weakness to find
+      expect(screen.queryByText("raidstead.boss.weak-unknown")).toBeNull();
+      expect(atk("ink").disabled).toBe(false);
+      // the scene shows the festival pest, in town
+      expect(vi.mocked(scene.sync).mock.calls.at(-1)?.[0]).toMatchObject({ boss: { kind: "queen", alive: true } });
+      // the top alliances by festival damage, on a card from the plate
+      fireEvent.click(within(p).getByRole("button", { name: "raidstead.festival.about" }));
+      const sheet = screen.getByRole("dialog");
+      expect(within(sheet).getByText("Far Field")).toBeTruthy();
+      expect(within(sheet).getByText("Ink & Oak")).toBeTruthy();
+    });
+
+    it("posts the type of a hit and shows the new shared health", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      api.festivalAttack.mockResolvedValue({ ...fest(), hp: 1500, energy: 4, damage: 12, badge: "festival" });
+      render(<RaidsteadGame />);
+      const p = await plate();
+      await act(async () => {
+        fireEvent.click(atk("signal"));
+      });
+      expect(api.festivalAttack).toHaveBeenCalledWith("signal");
+      expect(api.attack).not.toHaveBeenCalled();
+      expect(within(p).getByRole("meter").getAttribute("aria-valuenow")).toBe("50");
+      expect(shown("raidstead.boss.hp")).toEqual({ hp: 1500, max: 3000 });
+      expect(shown("raidstead.festival.energy")).toEqual({ n: 4, max: 5 });
+      const toast = document.querySelector(".rs-toast")!.textContent;
+      expect(toast).toContain("raidstead.festival.hit");
+      expect(toast).toContain("raidstead.festival.badge");
+      expect(shown("raidstead.festival.hit")).toEqual({ dmg: 12 });
+    });
+
+    it("says the festival is for this season's raiders", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      api.festivalAttack.mockRejectedValue(
+        Object.assign(new Error("x"), { status: 403, code: "not_this_season", message: "x" })
+      );
+      render(<RaidsteadGame />);
+      await plate();
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      expect(document.querySelector(".rs-toast")!.textContent).toContain("raidstead.festival.errors.not_this_season");
+      expect(enUS.raidstead.festival.errors.not_this_season).toMatch(/this season's raiders/);
+    });
+
+    it("keeps the buttons shut for a player who did not raid this season, and says why", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue({ ...fest(), canPlay: false });
+      render(<RaidsteadGame />);
+      await plate();
+      expect(atk("ink").disabled).toBe(true);
+      expect(screen.getAllByText("raidstead.festival.raiders-only").length).toBeGreaterThan(0);
+    });
+
+    it("shows a festival pest that was chased off", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue({ ...fest(), hp: 0, chasedOff: true });
+      render(<RaidsteadGame />);
+      const p = await plate();
+      expect(within(p).getByText("raidstead.festival.chased")).toBeTruthy();
+      expect(atk("forge").disabled).toBe(true);
+      expect(vi.mocked(scene.sync).mock.calls.at(-1)?.[0]).toMatchObject({ boss: { kind: "queen", alive: false } });
+    });
+
+    // an older server (404), or a season without one: season 1's quiet days answer 409 not_festival
+    it.each([
+      [404, "not_found"],
+      [409, "not_festival"]
+    ])("keeps today's quiet-day screen when the server has no festival (%s %s)", async (status, code) => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockRejectedValue(Object.assign(new Error("x"), { status, code, message: "x" }));
+      render(<RaidsteadGame />);
+      await screen.findByText("raidstead.boss.chased");
+      await waitFor(() => expect(api.festival).toHaveBeenCalled());
+      await act(async () => undefined);
+      expect(screen.queryByRole("region", { name: "raidstead.festival.title" })).toBeNull();
+      expect(screen.getByText("raidstead.boss.next")).toBeTruthy();
+      expect(atk("ink").disabled).toBe(true);
+      fireEvent.keyDown(window, { key: "1" });
+      expect(api.festivalAttack).not.toHaveBeenCalled();
+    });
+
+    it("is not asked for on a raid day", async () => {
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      await act(async () => undefined);
+      expect(api.festival).not.toHaveBeenCalled();
+    });
+
+    it("lists the Festival badge on the profile", async () => {
+      const s = quiet();
+      s.account.badges = ["festival"] as never[];
+      api.state.mockResolvedValue(s);
+      render(<RaidsteadGame />);
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      fireEvent.click(screen.getByRole("button", { name: /raidstead.menu.profile/ }));
+      const badge = screen.getByText("raidstead.profile.badge-list.festival.name").closest(".rs-badge")!;
+      expect(badge.classList.contains("on")).toBe(true);
+      expect(enUS.raidstead.profile["badge-list"].festival.name).toBeTruthy();
+    });
+  });
+
+  describe("season wrapped", () => {
+    const totals = () => ({
+      season: 1,
+      account: "ann",
+      alliance: { community: "hive-123456", title: "Ink & Oak", league: "small", rank: 3 },
+      attacks: 120,
+      damage: 1500,
+      daysPlayed: 20,
+      kills: 3,
+      lastHits: 2,
+      builds: 4,
+      bestStreak: 9,
+      badges: 5
+    });
+    const card = () => screen.findByRole("dialog", { name: "raidstead.wrapped.title" });
+    const openFromMenu = async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.menu.wrapped/ }));
+      return card();
+    };
+
+    it("shows each of the season's numbers", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.wrapped.mockResolvedValue(totals());
+      render(<RaidsteadGame />);
+      const c = await card();
+      for (const n of ["120", (1500).toLocaleString(), "20", "2", "3", "4", "5"]) {
+        expect(within(c).getByText(n)).toBeTruthy();
+      }
+      expect(shown("raidstead.streak.value")).toEqual({ count: 9 });
+      expect(shown("raidstead.wrapped.rank")).toMatchObject({ name: "Ink & Oak", rank: 3 });
+      expect(api.wrapped).toHaveBeenCalledWith(1);
+    });
+
+    it("is not there on day 28, and shows on day 29", async () => {
+      const last = state();
+      last.calendar = { ...last.calendar, day: 28, week: 4 };
+      last.alliance.week = 4;
+      localStorage.setItem("ecency_raidstead_seen_week", JSON.stringify("1-4"));
+      api.state.mockResolvedValue(last);
+      api.wrapped.mockResolvedValue(totals());
+      const first = render(<RaidsteadGame />);
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      expect(screen.queryByRole("button", { name: /raidstead.menu.wrapped/ })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "raidstead.wrapped.title" })).toBeNull();
+      expect(api.wrapped).not.toHaveBeenCalled();
+      first.unmount();
+
+      api.state.mockResolvedValue(quiet());
+      render(<RaidsteadGame />);
+      expect(await card()).toBeTruthy();
+    });
+
+    it("opens by itself once a season, then from the menu", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.wrapped.mockResolvedValue(totals());
+      const first = render(<RaidsteadGame />);
+      await card();
+      fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+      first.unmount();
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.menu/ });
+      await act(async () => undefined);
+      expect(screen.queryByRole("dialog", { name: "raidstead.wrapped.title" })).toBeNull();
+      expect(await openFromMenu()).toBeTruthy();
+    });
+
+    it("is hidden when the server has no totals for the player", async () => {
+      api.state.mockResolvedValue(quiet());
+      render(<RaidsteadGame />);
+      await waitFor(() => expect(api.wrapped).toHaveBeenCalled());
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      expect(screen.queryByRole("button", { name: /raidstead.menu.wrapped/ })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "raidstead.wrapped.title" })).toBeNull();
+    });
+
+    it("opens a drafted post with its share card, the community and the three tags", async () => {
+      asUser("ann");
+      api.state.mockResolvedValue(quiet());
+      api.wrapped.mockResolvedValue(totals());
+      nav.card.mockResolvedValue("https://images.ecency.com/DQm/season.png");
+      render(<RaidsteadGame />);
+      const c = await card();
+      await act(async () => {
+        fireEvent.click(within(c).getByRole("button", { name: /raidstead.report.open/ }));
+      });
+      await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/publish?com=hive-123456"));
+      expect(nav.card).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "@ann", rows: expect.any(Array) }),
+        "ann",
+        expect.any(AbortSignal)
+      );
+      const [body, title, tags] = nav.writer.mock.calls[0];
+      expect(body).toMatch(/^!\[raidstead.wrapped.card-alt\]\(https:\/\/images.ecency.com\/DQm\/season.png\)\n\n/);
+      expect(body).toContain("raidstead.wrapped.intro");
+      expect(title).toBe("raidstead.wrapped.post-title");
+      expect(tags).toEqual(["hive-123456", "raidstead", "ecency"]);
+    });
+
+    it("does not open the composer once the card was closed while its image was on its way", async () => {
+      asUser("ann");
+      api.state.mockResolvedValue(quiet());
+      api.wrapped.mockResolvedValue(totals());
+      let land: (url: string | null) => void = () => undefined;
+      nav.card.mockImplementation(() => new Promise<string | null>((r) => (land = r)));
+      render(<RaidsteadGame />);
+      const c = await card();
+      await act(async () => {
+        fireEvent.click(within(c).getByRole("button", { name: /raidstead.report.open/ }));
+      });
+      const signal = (nav.card.mock.calls[0] as unknown[])[2] as AbortSignal | undefined;
+      await act(async () => {
+        fireEvent.click(within(c).getByRole("button", { name: "g.close" }));
+      });
+      expect(signal?.aborted).toBe(true);
+      await act(async () => land("https://images.ecency.com/DQm/season.png"));
+      expect(nav.push).not.toHaveBeenCalled();
     });
   });
 

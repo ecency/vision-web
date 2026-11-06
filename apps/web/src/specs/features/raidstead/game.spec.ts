@@ -7,6 +7,7 @@ import {
   buildBlock,
   buildNudgeShown,
   buildReport,
+  buildWrapped,
   lowerBuildNudge,
   chestBlock,
   chestHoursLeft,
@@ -217,6 +218,50 @@ describe("raidstead game helpers", () => {
     expect(r.body).toContain("line|i=1,name=ann,dmg=40");
     expect(r.body).toContain("town|hall=2,mats=80");
     expect(buildReport({ ...state(), alliance: null }, t)).toBeNull();
+  });
+
+  describe("Season Wrapped post", () => {
+    const wrapped = () => ({
+      season: 2,
+      account: "ann",
+      alliance: { community: "hive-123456", title: "Ink & Oak", league: "small" as League, rank: 3 },
+      attacks: 120,
+      damage: 1500,
+      daysPlayed: 20,
+      kills: 3,
+      lastHits: 2,
+      builds: 4,
+      bestStreak: 9,
+      badges: 5
+    });
+
+    it("has the numbers, the alliance and the raidstead tag", () => {
+      const r = buildWrapped(wrapped(), t);
+      expect(r.title).toBe("post-title|season=2,name=Ink & Oak");
+      for (const n of [
+        "attacks=120",
+        "damage=1500",
+        "days=20",
+        "kills=3",
+        "lastHits=2",
+        "builds=4",
+        "best=9",
+        "badges=5"
+      ]) {
+        expect(r.body).toContain(n);
+      }
+      expect(r.body).toContain("rank|name=Ink & Oak,rank=3,league=small");
+      expect(r.tags).toEqual(["hive-123456", "raidstead", "ecency"]);
+    });
+
+    it("keeps a community's Markdown as text, and drafts a season without an alliance", () => {
+      const w = { ...wrapped(), alliance: { ...wrapped().alliance, title: "[Oak](x)" } };
+      expect(buildWrapped(w, t).body).toContain("name=\\[Oak\\]\\(x\\)");
+      const solo = buildWrapped({ ...wrapped(), alliance: null }, t);
+      expect(solo.title).toBe("post-title|season=2,name=@ann");
+      expect(solo.body).not.toContain("rank|");
+      expect(solo.tags).toEqual(["raidstead", "ecency"]);
+    });
   });
 
   it("lists the other alliances' helpers apart, in a Helped by line", () => {

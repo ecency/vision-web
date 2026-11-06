@@ -9,12 +9,14 @@ import type {
   League,
   Calendar,
   Community,
+  Festival,
   Note,
   RaidsteadError,
   SceneWorld,
   State,
   View,
-  WeekKill
+  WeekKill,
+  Wrapped
 } from "@ecency/raidstead";
 import * as ls from "@/utils/local-storage";
 
@@ -273,6 +275,15 @@ export function helpErrorMessage(e: unknown, t: T): string {
   return errorMessage(e, t);
 }
 
+/// A readable line for a refused festival hit: the festival's refusals have their own words.
+export function festivalErrorMessage(e: unknown, t: T): string {
+  const code = (e as Partial<RaidsteadError>)?.code;
+  if (code === "not_this_season" || code === "no_energy" || code === "chased_off" || code === "not_festival") {
+    return t(`raidstead.festival.errors.${code}`);
+  }
+  return errorMessage(e, t);
+}
+
 export const TIERS = [0, 50, 150, 400, 1000];
 export const tierOf = (karma: number) =>
   TIERS.reduce((best, min, i) => (karma >= min ? i : best), 0);
@@ -373,6 +384,78 @@ export function buildReport(state: State, t: T): { title: string; body: string }
     t("raidstead.report.outro", { name })
   );
   return { title, body: lines.join("\n") };
+}
+
+/// A player's season as a post to edit and share: the numbers, the alliance and
+/// its league rank, tagged with the alliance's community, raidstead and ecency.
+export function buildWrapped(w: Wrapped, t: T): { title: string; body: string; tags: string[] } {
+  const a = w.alliance;
+  const name = a ? escapeMarkdown(a.title || a.community) : "";
+  const title = t("raidstead.wrapped.post-title", {
+    season: w.season,
+    name: a ? a.title || a.community : `@${w.account}`
+  });
+  const lines = [
+    a ? t("raidstead.wrapped.intro", { season: w.season, name }) : t("raidstead.wrapped.intro-solo", { season: w.season }),
+    "",
+    `- ${t("raidstead.wrapped.post-attacks", { attacks: w.attacks, damage: w.damage })}`,
+    `- ${t("raidstead.wrapped.post-days", { days: w.daysPlayed, best: w.bestStreak })}`,
+    `- ${t("raidstead.wrapped.post-kills", { kills: w.kills, lastHits: w.lastHits })}`,
+    `- ${t("raidstead.wrapped.post-builds", { builds: w.builds, badges: w.badges })}`,
+    ""
+  ];
+  if (a) {
+    lines.push(
+      t("raidstead.wrapped.rank", { name, rank: a.rank, league: t(`raidstead.profile.leagues.${a.league}`) }),
+      ""
+    );
+  }
+  lines.push(t("raidstead.wrapped.outro"));
+  const tags = a ? [a.community, "raidstead", "ecency"] : ["raidstead", "ecency"];
+  return { title, body: lines.join("\n"), tags };
+}
+
+const num = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+
+/// The festival as the page can show it, or null for an answer it cannot read
+/// (an older or broken server): the page then stays as it was.
+export function readFestival(x: unknown): Festival | null {
+  const f = x as Partial<Festival> | null;
+  if (!f || typeof f.kind !== "string" || !num(f.hp) || !num(f.maxHp) || f.maxHp <= 0) return null;
+  if (!num(f.energy) || !num(f.maxEnergy)) return null;
+  const top = (Array.isArray(f.top) ? f.top : [])
+    .filter((r) => r && typeof r.community === "string" && num(r.damage))
+    .slice(0, 10);
+  return {
+    season: num(f.season) ? f.season : 0,
+    kind: f.kind,
+    hp: Math.max(0, f.hp),
+    maxHp: f.maxHp,
+    chasedOff: !!f.chasedOff || f.hp <= 0,
+    top,
+    energy: f.energy,
+    maxEnergy: f.maxEnergy,
+    myDamage: num(f.myDamage) ? f.myDamage : 0,
+    canPlay: f.canPlay !== false
+  };
+}
+
+const WRAPPED_NUMBERS = ["attacks", "damage", "daysPlayed", "kills", "lastHits", "builds", "bestStreak"] as const;
+
+/// A season's totals as the card shows them, or null when any number is missing.
+/// `badges` may come as a count or as the list of ids.
+export function readWrapped(x: unknown): Wrapped | null {
+  const w = x as Record<string, unknown> | null;
+  if (!w || typeof w.account !== "string" || !num(w.season)) return null;
+  if (WRAPPED_NUMBERS.some((k) => !num(w[k]))) return null;
+  const badges = Array.isArray(w.badges) ? w.badges.length : w.badges;
+  if (!num(badges)) return null;
+  const a = w.alliance as Wrapped["alliance"];
+  const alliance =
+    a && typeof a.community === "string" && num(a.rank) && LEAGUES.includes(a.league)
+      ? { community: a.community, title: typeof a.title === "string" ? a.title : a.community, league: a.league, rank: a.rank }
+      : null;
+  return { ...(w as unknown as Wrapped), alliance, badges };
 }
 
 /// The Alliance of the Week in each league: the fastest kill, then the most
