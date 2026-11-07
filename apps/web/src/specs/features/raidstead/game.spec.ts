@@ -8,6 +8,7 @@ import {
   buildNudgeShown,
   buildReport,
   buildWrapped,
+  readFestival,
   readWrapped,
   wrappedCardRows,
   lowerBuildNudge,
@@ -903,5 +904,18 @@ describe("alliance of the week", () => {
     ]);
     expect(w.large?.community).toBe("hive-a");
     expect(Object.keys(w)).toEqual(["large"]);
+  });
+});
+
+describe("readFestival", () => {
+  const f = () => ({ season: 2, kind: "queen", hp: 900, maxHp: 1000, chasedOff: false, top: [], energy: 5, maxEnergy: 5, myDamage: 0, canPlay: true });
+
+  it("reads who may hit only from a plain yes or no", () => {
+    expect(readFestival(f())?.canPlay).toBe(true);
+    expect(readFestival({ ...f(), canPlay: false })?.canPlay).toBe(false);
+    // missing or unreadable: not a festival answer this page can act on
+    const { canPlay: _, ...none } = f();
+    expect(readFestival(none)).toBeNull();
+    expect(readFestival({ ...f(), canPlay: "yes" })).toBeNull();
   });
 });

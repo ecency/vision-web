@@ -3599,6 +3599,114 @@ describe("Raidstead page", () => {
       }
     });
 
+    it("does not let a hit from day 29 that answers on day 30 change the day 30 festival", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockImplementation(async () => quiet(29));
+        api.festival.mockResolvedValue(fest());
+        let hit!: (r: unknown) => void;
+        api.festivalAttack.mockReturnValueOnce(new Promise((r) => (hit = r)));
+        render(<RaidsteadGame />);
+        await plate();
+        await act(async () => {
+          fireEvent.click(atk("ink"));
+        });
+        // day 30 comes while the hit is on its way; its festival answers later
+        let day30!: (r: unknown) => void;
+        api.state.mockImplementation(async () => quiet(30));
+        api.festival.mockReturnValue(new Promise((r) => (day30 = r)));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        await act(async () => hit({ ...fest(), hp: 2390, energy: 4, damage: 10 }));
+        expect(shown("raidstead.boss.hp")).not.toEqual({ hp: 2390, max: 3000 });
+        await act(async () => day30({ ...fest(), hp: 2000, energy: 5 }));
+        expect(shown("raidstead.boss.hp")).toEqual({ hp: 2000, max: 3000 });
+        expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not let an older hit's 'no festival' hide the festival of the day after", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockImplementation(async () => quiet(29));
+        api.festival.mockResolvedValue(fest());
+        let refuse!: (e: unknown) => void;
+        api.festivalAttack.mockReturnValueOnce(new Promise((_, r) => (refuse = r)));
+        render(<RaidsteadGame />);
+        await plate();
+        await act(async () => {
+          fireEvent.click(atk("ink"));
+        });
+        api.state.mockImplementation(async () => quiet(30));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        await act(async () => refuse(Object.assign(new Error("x"), { status: 409, code: "not_festival", message: "x" })));
+        await act(async () => undefined);
+        expect(screen.queryByRole("region", { name: "raidstead.festival.title" })).not.toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the newest hit's numbers when an older hit answers after it", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      let first!: (r: unknown) => void;
+      let second!: (r: unknown) => void;
+      api.festivalAttack
+        .mockReturnValueOnce(new Promise((r) => (first = r)))
+        .mockReturnValueOnce(new Promise((r) => (second = r)));
+      render(<RaidsteadGame />);
+      await plate();
+      // the asks after each hit stay out of the way
+      api.festival.mockReturnValue(new Promise(() => undefined));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      // past the double-tap guard
+      await new Promise((r) => setTimeout(r, 460));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      expect(api.festivalAttack).toHaveBeenCalledTimes(2);
+      await act(async () => second({ ...fest(), hp: 2380, energy: 3, damage: 10 }));
+      await act(async () => first({ ...fest(), hp: 2390, energy: 4, damage: 10 }));
+      expect(shown("raidstead.boss.hp")).toEqual({ hp: 2380, max: 3000 });
+      expect(shown("raidstead.energy.value")).toEqual({ n: 3, max: 5 });
+    });
+
+    it("gives the energy back when the server refuses a hit, even if the state cannot be asked again", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      render(<RaidsteadGame />);
+      await plate();
+      api.state.mockRejectedValue({ status: 0, code: "offline", message: "x" });
+      api.festivalAttack.mockRejectedValueOnce(Object.assign(new Error("x"), { status: 429, code: "rate_limited", message: "x" }));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      await act(async () => undefined);
+      expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
+    });
+
+    it("keeps the energy spent when it cannot tell whether a hit landed", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      render(<RaidsteadGame />);
+      await plate();
+      api.state.mockRejectedValue({ status: 0, code: "offline", message: "x" });
+      api.festivalAttack.mockRejectedValueOnce(Object.assign(new Error("x"), { status: 0, code: "offline", message: "x" }));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      await act(async () => undefined);
+      expect(shown("raidstead.energy.value")).toEqual({ n: 4, max: 5 });
+    });
+
     it("lists the Festival badge on the profile", async () => {
       const s = quiet();
       s.account.badges = ["festival"] as never[];
@@ -3696,6 +3804,71 @@ describe("Raidstead page", () => {
         await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
         fireEvent.keyDown(window, { key: "1" });
         await waitFor(() => expect(api.attack).toHaveBeenCalled());
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("opens by itself once a season for each account that plays in this browser", async () => {
+      const as = (name: string) => {
+        asUser(name);
+        box.stored = { account: name, token: `rs1_${name}`, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+        const s = quiet();
+        s.account.name = name;
+        api.state.mockResolvedValue(s);
+        api.wrapped.mockResolvedValue({ ...totals(), account: name });
+      };
+      as("ann");
+      let view = render(<RaidsteadGame />);
+      await card();
+      fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+      view.unmount();
+      as("bob");
+      view = render(<RaidsteadGame />);
+      await card();
+      fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+      view.unmount();
+      as("ann");
+      render(<RaidsteadGame />);
+      await waitFor(() => expect(api.wrapped).toHaveBeenCalledTimes(3));
+      await act(async () => undefined);
+      expect(screen.queryByRole("dialog", { name: "raidstead.wrapped.title" })).toBeNull();
+    });
+
+    it("asks for the totals again on a later state after a failed ask, and not after a 'none'", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockImplementation(async () => quiet());
+        api.wrapped.mockRejectedValueOnce(Object.assign(new Error("x"), { status: 503, code: "error", message: "x" }));
+        api.wrapped.mockResolvedValueOnce(totals());
+        render(<RaidsteadGame />);
+        await waitFor(() => expect(api.wrapped).toHaveBeenCalledTimes(1));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(await card()).toBeTruthy();
+        expect(api.wrapped).toHaveBeenCalledTimes(2);
+        // the totals are there: later states do not ask again
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(api.wrapped).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not ask again for a season the server has no totals for", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockImplementation(async () => quiet());
+        render(<RaidsteadGame />);
+        await waitFor(() => expect(api.wrapped).toHaveBeenCalledTimes(1));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(api.state.mock.calls.length).toBeGreaterThan(1);
+        expect(api.wrapped).toHaveBeenCalledTimes(1);
       } finally {
         vi.useRealTimers();
       }

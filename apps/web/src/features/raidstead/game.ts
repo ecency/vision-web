@@ -448,7 +448,7 @@ const num = (x: unknown): x is number => typeof x === "number" && Number.isFinit
 export function readFestival(x: unknown): Festival | null {
   const f = x as Partial<Festival> | null;
   if (!f || typeof f.kind !== "string" || !num(f.hp) || !num(f.maxHp) || f.maxHp <= 0) return null;
-  if (!num(f.energy) || !num(f.maxEnergy)) return null;
+  if (!num(f.energy) || !num(f.maxEnergy) || typeof f.canPlay !== "boolean") return null;
   const top = (Array.isArray(f.top) ? f.top : [])
     .filter((r) => r && typeof r.community === "string" && num(r.damage))
     .slice(0, 10);
@@ -462,7 +462,7 @@ export function readFestival(x: unknown): Festival | null {
     energy: f.energy,
     maxEnergy: f.maxEnergy,
     myDamage: num(f.myDamage) ? f.myDamage : 0,
-    canPlay: f.canPlay !== false
+    canPlay: f.canPlay
   };
 }
 

@@ -884,6 +884,8 @@ export function RaidsteadGame() {
     sceneRef.current?.sync({ ...world, neighbors });
   }, [data, view, neighbors, festKind, festAlive]);
 
+  // hits sent, so an older hit's answer never replaces a newer one's
+  const festHits = useRef(0);
   // plain damage with festival energy: no weakness, no shield, no wasp
   const festivalHit = useCallback(
     async (type: AttackType) => {
@@ -896,14 +898,23 @@ export function RaidsteadGame() {
       lastAttackRef.current = n;
       setSelected(type);
       const shot = festKind ? sceneRef.current?.attack(type, "boss", 0) : undefined;
+      // An answer counts only for the account, season and day that sent the hit:
+      // after a switch or a new day it would show another festival's numbers.
+      const key = festKeyRef.current;
+      const current = () => mounted.current && key === festKeyRef.current;
+      const hit = ++festHits.current;
       // the energy shows spent at once; a festival asked for before this hit no longer counts
       festSeq.current++;
-      setFestival((x) => (x ? { ...x, energy: x.energy - 1 } : x));
+      const spent = { ...fest, energy: fest.energy - 1 };
+      setFestival(spent);
       try {
         const r = await raidsteadApi.festivalAttack(type);
-        festSeq.current++;
         const next = readFestival(r);
-        if (mounted.current && next) setFestival(next);
+        // the buttons stay live while a hit is on its way: only the newest hit's answer shows
+        if (current() && hit === festHits.current) {
+          festSeq.current++;
+          if (next) setFestival(next);
+        }
         shot?.resolve({ kind: "boss", weak: false, killed: !!next?.chasedOff });
         say(
           [t("festival.hit", { dmg: r.damage }), r.badge === "festival" ? t("festival.badge") : ""]
@@ -913,10 +924,19 @@ export function RaidsteadGame() {
       } catch (e) {
         shot?.resolve({ kind: "miss" });
         say(festivalErrorMessage(e, i18next.t));
-        if ((e as { code?: string })?.code === "not_festival") {
-          festOff.current = festKeyRef.current;
+        const { status = 0, code } = (e ?? {}) as { status?: number; code?: string };
+        if (!current()) {
+          // another festival shows now: this hit's answer is not about it
+        } else if (code === "not_festival") {
+          festOff.current = key;
           festSeq.current++;
           setFestival(null);
+        } else if (status >= 400 && status < 500) {
+          // Refused, so nothing was spent: the energy comes back even if the state
+          // cannot be asked again. Offline or a server error may have landed, so
+          // those stay spent until the next answer says.
+          const left = code === "no_energy" ? 0 : fest.energy;
+          setFestival((x) => (x === spent ? { ...fest, energy: left } : x));
         }
       }
       // As after a raid attack: the profile's badges and karma, and a lapsed session
@@ -933,31 +953,47 @@ export function RaidsteadGame() {
       ? data.calendar.season
       : 0;
   const wrappedKey = wrappedSeason ? `${wrappedSeason}:${data!.account.name}` : "";
+  const wrappedKeyRef = useRef(wrappedKey);
+  wrappedKeyRef.current = wrappedKey;
+  // Asked once per account and season. A failed ask (offline, a rate limit, a
+  // lapsed session) is asked again with the next state; an answer, or "none"
+  // (a server without it, or a season the player did not play), is not.
+  const wrappedDone = useRef("");
+  const wrappedAsking = useRef("");
   useEffect(() => {
-    setWrapped(null);
-    if (!wrappedKey) return;
-    let gone = false;
-    // a server without it, or a season the player did not play: no card
+    if (!wrappedKey || wrappedDone.current === wrappedKey || wrappedAsking.current === wrappedKey) return;
+    const key = wrappedKey;
+    const current = () => mounted.current && key === wrappedKeyRef.current;
+    wrappedAsking.current = key;
     raidsteadApi
       .wrapped(wrappedSeason)
-      .then((w) => {
-        if (!gone) setWrapped(readWrapped(w));
-      })
-      .catch(() => undefined);
-    return () => {
-      gone = true;
-    };
-  }, [wrappedKey, wrappedSeason]);
+      .then(
+        (w) => {
+          if (!current()) return;
+          wrappedDone.current = key;
+          setWrapped(readWrapped(w));
+        },
+        (e) => {
+          if (current() && (e as { status?: number })?.status === 404) wrappedDone.current = key;
+        }
+      )
+      .finally(() => {
+        if (wrappedAsking.current === key) wrappedAsking.current = "";
+      });
+  }, [wrappedKey, wrappedSeason, data]);
   const wrappedNow =
     wrapped && wrappedKey === `${wrapped.season}:${wrapped.account}` ? wrapped : null;
   // Opens by itself once a season, on the first quiet-day visit, once nothing else
   // is open; this visit's own memory too, for a browser that refuses storage.
-  const wrappedShown = useRef("");
+  // Each account that plays in this browser keeps its own mark.
+  const wrappedShown = useRef<string[]>([]);
   useEffect(() => {
     if (!wrappedNow || phase !== "ready" || sheet || sheetRef.current || awayNews || newsWaiting.current) return;
-    if (wrappedShown.current === wrappedKey || ls.get(WRAPPED_SEEN_KEY) === wrappedKey) return;
-    wrappedShown.current = wrappedKey;
-    ls.set(WRAPPED_SEEN_KEY, wrappedKey);
+    const stored: unknown = ls.get(WRAPPED_SEEN_KEY);
+    const seen = (Array.isArray(stored) ? stored : [stored]).filter((k): k is string => typeof k === "string");
+    if (wrappedShown.current.includes(wrappedKey) || seen.includes(wrappedKey)) return;
+    wrappedShown.current.push(wrappedKey);
+    ls.set(WRAPPED_SEEN_KEY, [...seen, wrappedKey].slice(-10));
     setSheet({ kind: "wrapped" });
     sheetRef.current = { kind: "wrapped" };
   }, [wrappedNow, wrappedKey, phase, sheet, awayNews]);
