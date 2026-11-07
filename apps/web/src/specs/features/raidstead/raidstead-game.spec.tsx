@@ -3693,6 +3693,28 @@ describe("Raidstead page", () => {
       expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
     });
 
+    it("does not give back an older refused hit's energy over a newer hit still on its way", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      let refuse!: (e: unknown) => void;
+      api.festivalAttack
+        .mockReturnValueOnce(new Promise((_, r) => (refuse = r)))
+        .mockReturnValueOnce(new Promise(() => undefined));
+      render(<RaidsteadGame />);
+      await plate();
+      api.festival.mockReturnValue(new Promise(() => undefined));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      await new Promise((r) => setTimeout(r, 460));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      expect(shown("raidstead.energy.value")).toEqual({ n: 3, max: 5 });
+      await act(async () => refuse(Object.assign(new Error("x"), { status: 429, code: "rate_limited", message: "x" })));
+      expect(shown("raidstead.energy.value")).toEqual({ n: 3, max: 5 });
+    });
+
     it("keeps the energy spent when it cannot tell whether a hit landed", async () => {
       api.state.mockResolvedValue(quiet());
       api.festival.mockResolvedValue(fest());
