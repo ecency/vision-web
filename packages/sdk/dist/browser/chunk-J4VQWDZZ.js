@@ -1,0 +1,2 @@
+import {p}from'./chunk-UKK6NLAT.js';import {b}from'./chunk-CNB64U7U.js';import {c}from'./chunk-UYQJ3GLS.js';import {a}from'./chunk-CQOMDMT6.js';function s(e,r,a$1){return c(["wallet","delegate-rc"],e,({to:c,maxRc:o})=>[p(e,c,o)],async(c,o)=>{await b(r?.adapter,a$1,[a.accounts.full(e),a.accounts.full(o.to),a.resourceCredits.account(e),a.resourceCredits.account(o.to)]);},r,"active",{broadcastMode:a$1})}export{s as a};//# sourceMappingURL=chunk-J4VQWDZZ.js.map
+//# sourceMappingURL=chunk-J4VQWDZZ.js.map
