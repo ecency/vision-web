@@ -5416,7 +5416,9 @@
       "leaderboard-desc": "How alliances rank this season",
       "help": "Field guide",
       "help-desc": "Rules, pests and townsfolk",
-      "days": "Days change at 00:00 UTC."
+      "days": "Days change at 00:00 UTC.",
+      "wrapped": "Your season",
+      "wrapped-desc": "Your numbers, ready to share"
     },
     "profile": {
       "karma": "Karma",
@@ -5488,6 +5490,10 @@
         "helper": {
           "name": "Good neighbour",
           "desc": "Help another town with its pest"
+        },
+        "festival": {
+          "name": "Festival",
+          "desc": "Hit the festival pest"
         }
       },
       "streak-best": "Best streak"
@@ -5652,6 +5658,74 @@
       "board": "Alliance of the Week {{week}}: {{name}}",
       "badge": "Raidstead Alliance of the Week",
       "badge-desc": "Fastest to chase off the week {{week}} pest in the {{league}} league."
+    },
+    "festival": {
+      "title": "Festival pest",
+      "label": "Shared by every town",
+      "about": "About the festival pest",
+      "desc": "On the quiet days one pest visits every town. Everyone who raided this season can hit it: plain damage, {{max}} energy a day. A hit earns the Festival badge, and if it is chased off every hitter gets karma.",
+      "hit": "{{dmg}} damage to the festival pest.",
+      "badge": "New badge: Festival!",
+      "chased": "Chased off. Well done, everyone.",
+      "done": "chased off",
+      "raiders-only": "raiders only",
+      "top": "Top alliances",
+      "none": "No hits yet.",
+      "mine": "Your damage: {{n}}",
+      "errors": {
+        "not_this_season": "The festival is for this season's raiders.",
+        "no_energy": "No festival energy left today.",
+        "chased_off": "The festival pest is already chased off.",
+        "not_festival": "The festival is over."
+      }
+    },
+    "wrapped": {
+      "title": "Your season",
+      "season": "Season {{n}}",
+      "desc": "A draft to post about your season. You can edit everything before publishing.",
+      "rank": "{{name}} finished #{{rank}} in the {{league}} league.",
+      "stats": {
+        "attacks": "Attacks",
+        "damage": "Damage",
+        "days": "Days played",
+        "kills": "Pests chased off",
+        "last-hits": "Last hits",
+        "builds": "Buildings helped",
+        "badges": "Badges",
+        "streak": "Best streak"
+      },
+      "post-title": "My Raidstead season {{season}} with {{name}}",
+      "intro": "Season {{season}} of Raidstead is over. Here is how mine went with **{{name}}**.",
+      "intro-solo": "Season {{season}} of Raidstead is over. Here is how mine went.",
+      "outro": "Raidstead is a weekly co-op game for Hive communities on Ecency. Join the next season: [ecency.com/raidstead](https://ecency.com/raidstead)",
+      "card-alt": "Season Wrapped card",
+      "card-outcome": "My season",
+      "card-season": "Season {{season}}",
+      "card-rank": "{{name}}, #{{rank}} {{league}}",
+      "units": {
+        "attacks_one": "{{n}} attack",
+        "attacks_other": "{{n}} attacks",
+        "damage_one": "{{n}} damage",
+        "damage_other": "{{n}} damage",
+        "days_one": "{{n}} day played",
+        "days_other": "{{n}} days played",
+        "streak_one": "best streak {{n}} day",
+        "streak_other": "best streak {{n}} days",
+        "kills_one": "{{n}} pest chased off with my alliance",
+        "kills_other": "{{n}} pests chased off with my alliance",
+        "last-hits_one": "{{n}} last hit",
+        "last-hits_other": "{{n}} last hits",
+        "builds_one": "{{n}} building helped",
+        "builds_other": "{{n}} buildings helped",
+        "badges_one": "{{n}} badge earned",
+        "badges_other": "{{n}} badges earned",
+        "card-days_one": "{{n}} day",
+        "card-days_other": "{{n}} days",
+        "card-streak_one": "best streak {{n}}",
+        "card-streak_other": "best streak {{n}}",
+        "card-kills_one": "{{n}} chased off",
+        "card-kills_other": "{{n}} chased off"
+      }
     }
   },
   "listen": {

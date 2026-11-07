@@ -236,6 +236,12 @@
     gap: 8px;
   }
 
+  // the festival plate's lines are longer than the week's: they wrap on a phone
+  .rs-fest .rs-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
   // last week's Alliance of the Week, the plate's last line: one line on a phone
   .rs-aotw {
     margin: 0;

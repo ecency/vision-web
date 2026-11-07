@@ -80,6 +80,28 @@ export interface WeekKill { community: string; title: string; league: League; ki
 export interface WeekKills { season: number; week: number; kills: WeekKill[] }
 export interface LeaderRow { community: string; title: string; members: number; kills: number; damage: number; league: string; score?: number; killSecs?: number }
 
+/// The festival pest on the quiet days between seasons (days 29 and 30): one pest
+/// shared by every town, hit with its own energy. `canPlay`: the player attacked
+/// this season, so may hit it too.
+export interface Festival {
+  season: number; kind: string; hp: number; maxHp: number; chasedOff: boolean;
+  /// the alliances that did the most festival damage, most first
+  top: { community: string; title: string; damage: number }[];
+  energy: number; maxEnergy: number; myDamage: number; canPlay: boolean;
+}
+/// A festival hit: the festival as it is now, this hit's damage, and the badge a first hit earns.
+export type FestivalHit = Festival & { damage: number; badge?: "festival" | null };
+/// One player's season, for Season Wrapped, as the server sends it. `lastHits` and
+/// `builds` are null for seasons before they were counted. `badges`: the ids earned
+/// (a count from some servers). `rank`: the alliance's place in its league; tied
+/// alliances share one.
+export interface Wrapped {
+  season: number; account: string;
+  alliance: { community: string; title: string; league: League; rank: number } | null;
+  attacks: number; damage: number; daysPlayed: number; kills: number; lastHits: number | null;
+  builds: number | null; bestStreak: number; badges: number | string[];
+}
+
 export class RaidsteadError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string, public readonly extra: Record<string, unknown> = {}) {
     super(message);
@@ -130,6 +152,10 @@ export function createApi(opts: ApiOptions) {
     build: (building: BuildingId) => call<{ stage: number; cost: number; finished: boolean; mats: number }>("POST", "/v1/raidstead/build", { building }),
     talk: () => call<{ cleared: boolean; talkers: string[] }>("POST", "/v1/raidstead/talk"),
     powers: (power: PowerId, action: "craft" | "equip" | "unequip") => call<{ powers: PowerId[]; equipped: PowerId[]; slots: number }>("POST", "/v1/raidstead/powers", { power, action }),
+    festival: () => call<Festival>("GET", "/v1/raidstead/festival"),
+    festivalAttack: (type: AttackType) => call<FestivalHit>("POST", "/v1/raidstead/festival/attack", { type }),
+    // the player's own totals; without a season, the current one
+    wrapped: (season?: number) => call<Wrapped>("GET", `/v1/raidstead/wrapped${season ? `?season=${season}` : ""}`),
     // `fresh`: past any cached copy (the answer may be cached for a minute)
     calendar: (fresh = false) => call<SeasonCalendar>("GET", `/v1/raidstead/calendar${fresh ? `?at=${Date.now()}` : ""}`, undefined, false),
     // one league only, when `league` is given

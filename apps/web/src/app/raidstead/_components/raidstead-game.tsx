@@ -4,19 +4,23 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } 
 import { useRouter } from "next/navigation";
 import i18next from "i18next";
 import {
+  BOSS_KINDS,
   createScene,
   FOLK,
   LEAGUES,
   type AttackType,
+  type BossKind,
   type BuildingId,
   type Calendar,
   type Community,
+  type Festival,
   type FolkClass,
   type HelpTarget,
   type League,
   type Note,
   type PowerId,
   type Scene,
+  type ShareCard,
   type State,
   type TapTarget,
   type View
@@ -43,7 +47,10 @@ import {
   attackMessage,
   buildNudgeShown,
   buildReport,
+  buildWrapped,
   dismissBuildNudge,
+  wrappedCardRows,
+  festivalErrorMessage,
   lowerBuildNudge,
   laterMark,
   markOf,
@@ -51,7 +58,10 @@ import {
   noteId,
   noteText,
   pickNeighbors,
+  readFestival,
+  readWrapped,
   type NewsMark,
+  type WrappedTotals,
   rallyBlock,
   twinSide,
   type Neighbor,
@@ -68,6 +78,8 @@ import {
   BoardSheet,
   BossSheet,
   BuildingSheet,
+  FestivalSheet,
+  FestivalTop,
   HelpSheet,
   HeroSheet,
   TownSheet,
@@ -81,6 +93,7 @@ import {
   Raiders,
   ReportSheet,
   SignInSheet,
+  WrappedSheet,
   type MenuItem
 } from "./sheets";
 import { SeasonCountdown } from "./season-countdown";
@@ -105,6 +118,8 @@ const NEWS_KEY = "raidstead_news";
 // news. Slower once the week's pest is gone and only the town changes.
 const POLL_MS = 20_000;
 const POLL_IDLE_MS = 60_000;
+// whose season's Wrapped card has opened by itself already
+const WRAPPED_SEEN_KEY = "raidstead_wrapped_seen";
 
 type SheetState =
   | { kind: "boss" }
@@ -113,6 +128,7 @@ type SheetState =
   | { kind: "town"; town: Neighbor }
   | { kind: "quests" }
   | { kind: "assist" }
+  | { kind: "festival" }
   | { kind: "menu" }
   | { kind: "news"; notes: Note[]; away: boolean }
   | { kind: MenuItem };
@@ -335,9 +351,6 @@ export function RaidsteadGame() {
       });
   }, [view, phase, ownCommunity, skyKey, seasonNo]);
 
-  useEffect(() => {
-    sceneRef.current?.sync({ ...worldOf(data, view), neighbors });
-  }, [data, view, neighbors]);
 
   // ---------- before the season ----------
   useEffect(() => {
@@ -812,6 +825,196 @@ export function RaidsteadGame() {
     };
   }, [phase, nextDayAt, data, dayTick, refresh]);
 
+  // ---------- the festival pest, on the quiet days between seasons ----------
+  // One pest shared by every town on days 29 and 30. Asked for with each state, as
+  // its health moves with everyone's hits. A server without it (or an answer the
+  // page cannot read) leaves the quiet day as it was.
+  const [festival, setFestival] = useState<Festival | null>(null);
+  // whose festival and which season's: another one starts empty
+  const festScope =
+    phase === "ready" && data?.calendar.resting && data.calendar.season >= 1 && alliance
+      ? `${data.calendar.season}:${data.account.name}`
+      : "";
+  // and which day: day 30 asks anew, while day 29's festival stays shown until it answers
+  const festivalKey = festScope ? `${festScope}:${data!.calendar.day}` : "";
+  const festKeyRef = useRef(festivalKey);
+  festKeyRef.current = festivalKey;
+  // only the latest ask counts, and none asked before a hit
+  const festSeq = useRef(0);
+  // the server said there is no festival (an older server, or none today): not asked again that day
+  const festOff = useRef("");
+  const festAsked = useRef("");
+  const loadFestival = useCallback(async () => {
+    const seq = ++festSeq.current;
+    const key = festKeyRef.current;
+    const current = () => mounted.current && seq === festSeq.current && key === festKeyRef.current;
+    try {
+      const f = readFestival(await raidsteadApi.festival());
+      // an answer the page cannot read leaves what shows as it is
+      if (current() && f) setFestival(f);
+    } catch (e) {
+      const { status, code } = (e ?? {}) as { status?: number; code?: string };
+      // Only "there is none" hides it (an older server, or no festival this season).
+      // Anything else (offline, a rate limit, a lapsed session): what shows stays,
+      // and the next state asks again.
+      if (!current() || !(status === 404 || code === "not_festival")) return;
+      festOff.current = key;
+      setFestival(null);
+    }
+  }, []);
+  useEffect(() => {
+    if (festAsked.current !== festScope) {
+      festAsked.current = festScope;
+      setFestival(null);
+    }
+    if (festivalKey && festOff.current !== festivalKey) loadFestival();
+  }, [festScope, festivalKey, data, loadFestival]);
+  const fest = festScope ? festival : null;
+  // a pest kind from a newer server than this page has no drawing: the scene stays as it was
+  const festKind =
+    fest && (BOSS_KINDS as readonly string[]).includes(fest.kind) ? (fest.kind as BossKind) : null;
+  const festAlive = !!fest && !fest.chasedOff;
+
+  useEffect(() => {
+    const world = worldOf(data, view);
+    // the festival pest stands where the week's pest stood
+    if (festKind && view === "raid") {
+      Object.assign(world, { boss: { kind: festKind, alive: festAlive }, gnats: 0, wasp: false });
+    }
+    sceneRef.current?.sync({ ...world, neighbors });
+  }, [data, view, neighbors, festKind, festAlive]);
+
+  // hits sent, so an older hit's answer never replaces a newer one's
+  const festHits = useRef(0);
+  // the festival as this page last counted it itself (spent or given back), until a server answer replaces it
+  const festLocal = useRef<Festival | null>(null);
+  // plain damage with festival energy: no weakness, no shield, no wasp
+  const festivalHit = useCallback(
+    async (type: AttackType) => {
+      if (!fest) return;
+      if (fest.chasedOff) return say(t("festival.chased"));
+      if (!fest.canPlay) return say(t("festival.errors.not_this_season"));
+      if (fest.energy <= 0) return say(t("festival.errors.no_energy"));
+      const n = Date.now();
+      if (n - lastAttackRef.current < 450) return;
+      lastAttackRef.current = n;
+      setSelected(type);
+      const shot = festKind ? sceneRef.current?.attack(type, "boss", 0) : undefined;
+      // An answer counts only for the account, season and day that sent the hit:
+      // after a switch or a new day it would show another festival's numbers.
+      const key = festKeyRef.current;
+      const current = () => mounted.current && key === festKeyRef.current;
+      const hit = ++festHits.current;
+      // the energy shows spent at once; a festival asked for before this hit no longer counts
+      festSeq.current++;
+      const spent = { ...fest, energy: fest.energy - 1 };
+      festLocal.current = spent;
+      setFestival(spent);
+      try {
+        const r = await raidsteadApi.festivalAttack(type);
+        const next = readFestival(r);
+        // the buttons stay live while a hit is on its way: only the newest hit's answer shows
+        if (current() && hit === festHits.current) {
+          festSeq.current++;
+          if (next) setFestival(next);
+        }
+        shot?.resolve({ kind: "boss", weak: false, killed: !!next?.chasedOff });
+        say(
+          [t("festival.hit", { dmg: r.damage }), r.badge === "festival" ? t("festival.badge") : ""]
+            .filter(Boolean)
+            .join(" ")
+        );
+      } catch (e) {
+        shot?.resolve({ kind: "miss" });
+        say(festivalErrorMessage(e, i18next.t));
+        const { status = 0, code } = (e ?? {}) as { status?: number; code?: string };
+        if (!current()) {
+          // another festival shows now: this hit's answer is not about it
+        } else if (code === "not_festival") {
+          festOff.current = key;
+          festSeq.current++;
+          setFestival(null);
+        } else if (status >= 400 && status < 500) {
+          // Refused, so nothing was spent: the energy comes back even if the state
+          // cannot be asked again. Offline or a server error may have landed, so
+          // those stay spent until the next answer says.
+          // Each refused hit gives back its own one, on top of hits still on their way;
+          // a server answer shown since already counts right, so it stays.
+          const was = festLocal.current;
+          if (was) {
+            const back = { ...was, energy: code === "no_energy" ? 0 : was.energy + 1 };
+            festLocal.current = back;
+            setFestival((x) => (x === was ? back : x));
+          }
+        }
+      }
+      // As after a raid attack: the profile's badges and karma, and a lapsed session
+      // signs in again. The new state asks for the festival again too.
+      refresh({ quiet: true });
+    },
+    [fest, festKind, say, refresh]
+  );
+
+  // ---------- Season Wrapped, from the quiet days on ----------
+  const [wrapped, setWrapped] = useState<WrappedTotals | null>(null);
+  const wrappedSeason =
+    phase === "ready" && data?.calendar.resting && data.calendar.season >= 1 && alliance
+      ? data.calendar.season
+      : 0;
+  const wrappedKey = wrappedSeason ? `${wrappedSeason}:${data!.account.name}` : "";
+  // set once the render has committed (declared before the ask below, so it runs first)
+  const wrappedKeyRef = useRef(wrappedKey);
+  useEffect(() => {
+    wrappedKeyRef.current = wrappedKey;
+  }, [wrappedKey]);
+  // Asked once per account and season. A failed ask (offline, a rate limit, a
+  // lapsed session) is asked again with the next state; an answer, or "none"
+  // (a server without it, or a season the player did not play), is not.
+  const wrappedDone = useRef("");
+  const wrappedAsking = useRef("");
+  useEffect(() => {
+    if (!wrappedKey || wrappedDone.current === wrappedKey || wrappedAsking.current === wrappedKey) return;
+    const key = wrappedKey;
+    const current = () => mounted.current && key === wrappedKeyRef.current;
+    wrappedAsking.current = key;
+    raidsteadApi
+      .wrapped(wrappedSeason)
+      .then(
+        (w) => {
+          if (!current()) return;
+          wrappedDone.current = key;
+          setWrapped(readWrapped(w));
+        },
+        (e) => {
+          if (current() && (e as { status?: number })?.status === 404) wrappedDone.current = key;
+        }
+      )
+      .finally(() => {
+        if (wrappedAsking.current === key) wrappedAsking.current = "";
+      });
+  }, [wrappedKey, wrappedSeason, data]);
+  const wrappedNow =
+    wrapped && wrappedKey === `${wrapped.season}:${wrapped.account}` ? wrapped : null;
+  // Opens by itself once a season, on the first quiet-day visit, once nothing else
+  // is open; this visit's own memory too, for a browser that refuses storage.
+  // Each account that plays in this browser keeps its own mark.
+  const wrappedShown = useRef<string[]>([]);
+  useEffect(() => {
+    if (!wrappedNow || phase !== "ready" || sheet || sheetRef.current || awayNews || newsWaiting.current) return;
+    const stored: unknown = ls.get(WRAPPED_SEEN_KEY);
+    const seen = (Array.isArray(stored) ? stored : [stored]).filter((k): k is string => typeof k === "string");
+    if (wrappedShown.current.includes(wrappedKey) || seen.includes(wrappedKey)) return;
+    wrappedShown.current.push(wrappedKey);
+    ls.set(WRAPPED_SEEN_KEY, [...seen, wrappedKey].slice(-10));
+    setSheet({ kind: "wrapped" });
+    sheetRef.current = { kind: "wrapped" };
+  }, [wrappedNow, wrappedKey, phase, sheet, awayNews]);
+  // a card whose festival or season is gone (the new season began) closes, rather
+  // than stay open with nothing in it, holding back taps, keys and news
+  useEffect(() => {
+    if ((sheet?.kind === "wrapped" && !wrappedNow) || (sheet?.kind === "festival" && !fest)) setSheet(null);
+  }, [sheet, wrappedNow, fest]);
+
   // ---------- actions ----------
   const act = useCallback(
     async <T,>(fn: () => Promise<T>, after?: (r: T) => void) => {
@@ -837,6 +1040,7 @@ export function RaidsteadGame() {
 
   const attack = useCallback(
     async (type: AttackType, side?: 0 | 1) => {
+      if (fest) return festivalHit(type);
       if (!alliance || !member || !boss) return;
       if (!boss.alive) return say(t("toast.resting"));
       if (member.energy <= 0)
@@ -879,7 +1083,7 @@ export function RaidsteadGame() {
       }
       refresh({ quiet: true });
     },
-    [alliance, member, boss, data, refresh, say]
+    [alliance, member, boss, data, refresh, say, fest, festivalHit]
   );
 
   tapRef.current = (target) => {
@@ -1153,43 +1357,84 @@ export function RaidsteadGame() {
   // session, a refused ask, an account switch, the page leaving): the card on
   // its way for it stops too
   useEffect(() => {
-    const gone = sheet?.kind !== "report" || !data || phase !== "ready" || reportTap.current.user !== username;
+    const gone =
+      (sheet?.kind !== "report" && sheet?.kind !== "wrapped") ||
+      !data ||
+      phase !== "ready" ||
+      reportTap.current.user !== username;
     if (gone && reportTap.current.abort) cancelReport();
   }, [sheet, data, phase, username]);
   useEffect(() => () => reportTap.current.abort?.abort(), []);
-  const openReport = async () => {
-    if (!data || !alliance || drafting) return;
-    const report = buildReport(data, i18next.t);
-    if (!report) return;
-    const community = alliance.community;
+  // A draft for the composer, with its share card on top: drawn and uploaded as the
+  // Ecency user who will post it (without one the draft goes without the card).
+  // Used by the raid report and Season Wrapped.
+  const openDraft = async (
+    draft: { title: string; body: string; tags: string[] },
+    card: () => ShareCard,
+    alt: string,
+    community?: string
+  ) => {
+    if (drafting) return;
     const abort = new AbortController();
     const tap = reportTap.current.n + 1;
     reportTap.current = { n: tap, abort, user: username };
     setDrafting(true);
     let image: string | null = null;
-    // uploaded as the Ecency user who will post it; without one the draft goes without the card
-    if (username) {
-      const outcome = alliance.boss.alive ? "fighting" : alliance.boss.killed === false ? "escaped" : "won";
-      image = await shareCardImage(
-        {
+    if (username) image = await shareCardImage(card(), username, abort.signal).catch(() => null);
+    // the player closed the card (or the page) meanwhile: no composer
+    if (!mounted.current || reportTap.current.n !== tap) return;
+    reportTap.current.abort = null;
+    setDrafting(false);
+    const body = image ? `![${alt}](${image})\n\n${draft.body}` : draft.body;
+    stageForPublish(body, draft.title, draft.tags);
+    router.push(community ? `/publish?com=${encodeURIComponent(community)}` : "/publish");
+  };
+  const openReport = () => {
+    if (!data || !alliance) return;
+    const report = buildReport(data, i18next.t);
+    if (!report) return;
+    const community = alliance.community;
+    openDraft(
+      { ...report, tags: [community, "raidstead", "ecency"] },
+      () => {
+        const outcome = alliance.boss.alive ? "fighting" : alliance.boss.killed === false ? "escaped" : "won";
+        return {
           kind: alliance.boss.kind,
           title: alliance.title,
           outcome: t(`report.outcome.${outcome}`),
           week: t("report.card-week", { season: data.calendar.season, week: alliance.week }),
           topLabel: t("report.card-top"),
           top: alliance.raiders.slice(0, 3)
-        },
-        username,
-        abort.signal
-      ).catch(() => null);
-    }
-    // the player closed the report (or the page) meanwhile: no composer
-    if (!mounted.current || reportTap.current.n !== tap) return;
-    reportTap.current.abort = null;
-    setDrafting(false);
-    const body = image ? `![${t("report.card-alt")}](${image})\n\n${report.body}` : report.body;
-    stageForPublish(body, report.title, [community, "raidstead", "ecency"]);
-    router.push(`/publish?com=${encodeURIComponent(community)}`);
+        };
+      },
+      t("report.card-alt"),
+      community
+    );
+  };
+  const openWrapped = () => {
+    const w = wrappedNow;
+    if (!w) return;
+    const a = w.alliance;
+    openDraft(
+      buildWrapped(w, i18next.t),
+      () => ({
+        kind: festKind ?? alliance?.boss.kind ?? "beetle",
+        title: `@${w.account}`,
+        outcome: t("wrapped.card-outcome"),
+        week: t("wrapped.card-season", { season: w.season }),
+        topLabel: a
+          ? t("wrapped.card-rank", {
+              name: a.title || a.community,
+              rank: a.rank,
+              league: t(`profile.leagues.${a.league}`)
+            })
+          : "",
+        top: [],
+        rows: wrappedCardRows(w, i18next.t)
+      }),
+      t("wrapped.card-alt"),
+      a?.community
+    );
   };
 
   const doSignOut = async () => {
@@ -1223,6 +1468,8 @@ export function RaidsteadGame() {
     cal && cal.season > 0 ? t("season.day", { day: Math.min(cal.day, 28), total: 28 }) : "";
   const energy = member?.energy ?? 0;
   const maxEnergy = member?.maxEnergy ?? 15;
+  const chipEnergy = fest ? fest.energy : energy;
+  const chipMax = fest ? fest.maxEnergy : maxEnergy;
   const streak = typeof member?.streak === "number" ? member.streak : 0;
   const alive = !!boss?.alive;
   const pct = boss ? Math.ceil((boss.hp / boss.maxHp) * 100) : 100;
@@ -1394,6 +1641,22 @@ export function RaidsteadGame() {
       case "news":
         open = <NewsSheet notes={sheet.notes} away={sheet.away} onClose={close} />;
         break;
+      case "festival":
+        open = fest ? <FestivalSheet festival={fest} own={alliance?.community} onClose={close} /> : null;
+        break;
+      case "wrapped":
+        open = wrappedNow ? (
+          <WrappedSheet
+            wrapped={wrappedNow}
+            busy={drafting}
+            onClose={() => {
+              cancelReport();
+              close();
+            }}
+            onOpen={openWrapped}
+          />
+        ) : null;
+        break;
       case "menu":
         open = (
           <MenuSheet
@@ -1401,6 +1664,7 @@ export function RaidsteadGame() {
             onClose={close}
             onPick={(m) => setSheet({ kind: m })}
             onSignOut={doSignOut}
+            wrapped={!!wrappedNow}
           />
         );
         break;
@@ -1480,14 +1744,15 @@ export function RaidsteadGame() {
               </div>
             )}
             {member && (
+              // during the festival, the energy its hits spend
               <div className="rs-card rs-chip">
                 <span>
                   <small>{t("energy.label")}</small>
-                  <b>{t("energy.value", { n: energy, max: maxEnergy })}</b>
+                  <b>{t("energy.value", { n: chipEnergy, max: chipMax })}</b>
                 </span>
                 <span className="rs-pips" aria-hidden="true">
-                  {Array.from({ length: maxEnergy }, (_, i) => (
-                    <i key={i} className={i < energy ? "on" : undefined} />
+                  {Array.from({ length: chipMax }, (_, i) => (
+                    <i key={i} className={i < chipEnergy ? "on" : undefined} />
                   ))}
                 </span>
               </div>
@@ -1504,7 +1769,37 @@ export function RaidsteadGame() {
             onGuide={() => setSheet({ kind: "help" })}
           />
         )}
-        {playing && view === "raid" && boss && (
+        {playing && view === "raid" && fest && (
+          <section className="rs-card rs-plate rs-fest" aria-label={t("festival.title")}>
+            <div className="rs-row">
+              <button
+                className="rs-plate-name"
+                aria-label={t("festival.about")}
+                onClick={() => setSheet({ kind: "festival" })}
+              >
+                {(BOSS_KINDS as readonly string[]).includes(fest.kind)
+                  ? t(`bosses.${fest.kind}.name`)
+                  : t("help.pest")}
+              </button>
+              <small>{fest.chasedOff ? t("festival.chased") : t("festival.label")}</small>
+            </div>
+            <div
+              className="rs-hpbar"
+              role="meter"
+              aria-label={t("boss.hp", { hp: fest.hp, max: fest.maxHp })}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.ceil((fest.hp / fest.maxHp) * 100)}
+            >
+              <span style={{ width: `${(fest.hp / fest.maxHp) * 100}%` }} />
+            </div>
+            <div className="rs-row">
+              <span>{t("boss.hp", { hp: fest.hp, max: fest.maxHp })}</span>
+              <span className="rs-muted">{t("festival.mine", { n: fest.myDamage.toLocaleString() })}</span>
+            </div>
+          </section>
+        )}
+        {playing && view === "raid" && boss && !fest && (
           <section className="rs-card rs-plate" aria-label={t(`bosses.${boss.kind}.name`)}>
             <div className="rs-row">
               <button
@@ -1590,9 +1885,9 @@ export function RaidsteadGame() {
         <div className="rs-slot" ref={slotRef} />
 
         {playing && (
-          <aside className="rs-card rs-board" aria-label={t("board.title")}>
-            <h2>{t("board.title")}</h2>
-            <Raiders state={data!} />
+          <aside className="rs-card rs-board" aria-label={fest ? t("festival.top") : t("board.title")}>
+            <h2>{fest ? t("festival.top") : t("board.title")}</h2>
+            {fest ? <FestivalTop festival={fest} own={alliance!.community} /> : <Raiders state={data!} />}
           </aside>
         )}
 
@@ -1673,16 +1968,28 @@ export function RaidsteadGame() {
                     aria-pressed={selected === type}
                     aria-label={t(`actions.attack-${type}`)}
                     aria-describedby={`rs-atk-${type}`}
-                    disabled={!alive || energy <= 0 || resting}
+                    disabled={
+                      fest
+                        ? fest.chasedOff || !fest.canPlay || fest.energy <= 0
+                        : !alive || energy <= 0 || resting
+                    }
                     onClick={() => attack(type)}
                   >
                     <b>{t(`actions.attack-${type}`)}</b>
                     <small id={`rs-atk-${type}`}>
-                      {!alive || resting
-                        ? t("actions.resting")
-                        : energy <= 0
-                          ? t("actions.no-energy")
-                          : t("actions.cost")}
+                      {fest
+                        ? fest.chasedOff
+                          ? t("festival.done")
+                          : !fest.canPlay
+                            ? t("festival.raiders-only")
+                            : fest.energy <= 0
+                              ? t("actions.no-energy")
+                              : t("actions.cost")
+                        : !alive || resting
+                          ? t("actions.resting")
+                          : energy <= 0
+                            ? t("actions.no-energy")
+                            : t("actions.cost")}
                     </small>
                   </button>
                 ))}
