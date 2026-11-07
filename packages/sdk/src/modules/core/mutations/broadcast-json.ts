@@ -2,6 +2,8 @@ import { PrivateKey } from "../../../hive-tx";
 import { broadcastOperations } from "@/modules/core/hive-tx";
 import hs from "hivesigner";
 import type { AuthContextV2 } from "@/modules/core/types";
+import { shouldTriggerAuthFallback } from "@/modules/core/errors";
+import { broadcastWithMethod } from "./use-broadcast-mutation";
 
 export async function broadcastJson<T>(
   username: string | undefined,
@@ -62,11 +64,29 @@ export async function broadcastJson<T>(
     const ops: Parameters<NonNullable<typeof adapter.broadcastWithKeychain>>[1] =
       [["custom_json", jjson]];
 
-    if (auth?.loginType === "keychain" && adapter.broadcastWithKeychain) {
-      return adapter.broadcastWithKeychain(username, ops, "posting");
-    }
-    if (auth?.loginType === "hiveauth" && adapter.broadcastWithHiveAuth) {
-      return adapter.broadcastWithHiveAuth(username, ops, "posting");
+    const viaLoginMethod =
+      auth?.loginType === "keychain" && adapter.broadcastWithKeychain
+        ? () => adapter.broadcastWithKeychain!(username, ops, "posting")
+        : auth?.loginType === "hiveauth" && adapter.broadcastWithHiveAuth
+          ? () => adapter.broadcastWithHiveAuth!(username, ops, "posting")
+          : null;
+
+    if (viaLoginMethod) {
+      try {
+        return await viaLoginMethod();
+      } catch (error) {
+        // Same auth fallback as useBroadcastMutation: when the login method
+        // cannot sign (an extension that is off, an expired session), offer
+        // the sign options instead of failing.
+        if (!shouldTriggerAuthFallback(error) || !adapter.showAuthUpgradeUI) {
+          throw error;
+        }
+        const method = await adapter.showAuthUpgradeUI("posting", "custom_json");
+        if (!method) {
+          throw new Error("Operation requires posting authority. User declined alternate auth.");
+        }
+        return broadcastWithMethod(method, username, ops, auth, "posting", undefined, undefined, "sync");
+      }
     }
   }
 
