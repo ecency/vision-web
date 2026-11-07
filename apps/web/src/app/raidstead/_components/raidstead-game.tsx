@@ -841,6 +841,8 @@ export function RaidsteadGame() {
   festKeyRef.current = festivalKey;
   // only the latest ask counts, and none asked before a hit
   const festSeq = useRef(0);
+  // server answers shown so far: a refused hit sent before the latest one is already counted in it
+  const festAnswers = useRef(0);
   // the server said there is no festival (an older server, or none today): not asked again that day
   const festOff = useRef("");
   const festAsked = useRef("");
@@ -851,7 +853,10 @@ export function RaidsteadGame() {
     try {
       const f = readFestival(await raidsteadApi.festival());
       // an answer the page cannot read leaves what shows as it is
-      if (current() && f) setFestival(f);
+      if (current() && f) {
+        festAnswers.current++;
+        setFestival(f);
+      }
     } catch (e) {
       const { status, code } = (e ?? {}) as { status?: number; code?: string };
       // Only "there is none" hides it (an older server, or no festival this season).
@@ -886,8 +891,6 @@ export function RaidsteadGame() {
 
   // hits sent, so an older hit's answer never replaces a newer one's
   const festHits = useRef(0);
-  // the festival as this page last counted it itself (spent or given back), until a server answer replaces it
-  const festLocal = useRef<Festival | null>(null);
   // plain damage with festival energy: no weakness, no shield, no wasp
   const festivalHit = useCallback(
     async (type: AttackType) => {
@@ -908,7 +911,7 @@ export function RaidsteadGame() {
       // the energy shows spent at once; a festival asked for before this hit no longer counts
       festSeq.current++;
       const spent = { ...fest, energy: fest.energy - 1 };
-      festLocal.current = spent;
+      const answersBefore = festAnswers.current;
       setFestival(spent);
       try {
         const r = await raidsteadApi.festivalAttack(type);
@@ -916,7 +919,10 @@ export function RaidsteadGame() {
         // the buttons stay live while a hit is on its way: only the newest hit's answer shows
         if (current() && hit === festHits.current) {
           festSeq.current++;
-          if (next) setFestival(next);
+          if (next) {
+            festAnswers.current++;
+            setFestival(next);
+          }
         }
         shot?.resolve({ kind: "boss", weak: false, killed: !!next?.chasedOff });
         say(
@@ -938,13 +944,10 @@ export function RaidsteadGame() {
           // Refused, so nothing was spent: the energy comes back even if the state
           // cannot be asked again. Offline or a server error may have landed, so
           // those stay spent until the next answer says.
-          // Each refused hit gives back its own one, on top of hits still on their way;
-          // a server answer shown since already counts right, so it stays.
-          const was = festLocal.current;
-          if (was) {
-            const back = { ...was, energy: code === "no_energy" ? 0 : was.energy + 1 };
-            festLocal.current = back;
-            setFestival((x) => (x === was ? back : x));
+          // Each refused hit gives back its own one, on top of hits still on their way.
+          // A server answer shown since this hit was sent already counts it right.
+          if (festAnswers.current === answersBefore) {
+            setFestival((x) => (x ? { ...x, energy: code === "no_energy" ? 0 : x.energy + 1 } : x));
           }
         }
       }

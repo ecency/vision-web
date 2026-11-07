@@ -3721,6 +3721,43 @@ describe("Raidstead page", () => {
       expect(shown("raidstead.energy.value")).toEqual({ n: 2, max: 5 });
     });
 
+    it("does not give back a refused hit that a festival answer since then already counts", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockImplementation(async () => quiet());
+        api.festival.mockResolvedValue(fest());
+        const refused = () => Object.assign(new Error("x"), { status: 429, code: "rate_limited", message: "x" });
+        let refuse1!: (e: unknown) => void;
+        let refuse2!: (e: unknown) => void;
+        api.festivalAttack
+          .mockReturnValueOnce(new Promise((_, r) => (refuse1 = r)))
+          .mockReturnValueOnce(new Promise((_, r) => (refuse2 = r)));
+        render(<RaidsteadGame />);
+        await plate();
+        await act(async () => {
+          fireEvent.click(atk("ink"));
+        });
+        expect(shown("raidstead.energy.value")).toEqual({ n: 4, max: 5 });
+        // the next state brings a festival answer: the first hit has not spent anything yet
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
+        await act(async () => {
+          fireEvent.click(atk("ink"));
+        });
+        expect(shown("raidstead.energy.value")).toEqual({ n: 4, max: 5 });
+        // from here the state cannot be asked again
+        api.state.mockRejectedValue({ status: 0, code: "offline", message: "x" });
+        await act(async () => refuse1(refused()));
+        expect(shown("raidstead.energy.value")).toEqual({ n: 4, max: 5 });
+        await act(async () => refuse2(refused()));
+        expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("keeps the energy spent when it cannot tell whether a hit landed", async () => {
       api.state.mockResolvedValue(quiet());
       api.festival.mockResolvedValue(fest());
