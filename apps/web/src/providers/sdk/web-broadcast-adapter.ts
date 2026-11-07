@@ -14,7 +14,7 @@ import hs from 'hivesigner';
 import { encodeOps as encodeHiveUriOps } from 'hive-uri';
 import { getUser, getAccessToken, getPostingKey, getLoginType } from '@/utils/user-token';
 import * as ls from '@/utils/local-storage';
-import { requestAuthUpgrade, getTempActiveKey } from '@/features/shared/auth-upgrade';
+import { requestAuthUpgrade, getTempActiveKey, takeHandedPostingKey } from '@/features/shared/auth-upgrade';
 import { error, success } from '@/features/shared/feedback/feedback-events';
 import { broadcastWithExtension, hasAnyHiveExtension } from '@/utils/hive-extensions';
 
@@ -267,6 +267,12 @@ export function createWebBroadcastAdapter(): PlatformAdapter {
     },
 
     async getPostingKey(username: string) {
+      // A key just entered in the sign options dialog signs the retry that
+      // follows, whatever the login type (an extension that is off, an
+      // expired HiveSigner session).
+      const handed = takeHandedPostingKey(username);
+      if (handed) return handed;
+
       // Use existing helper - it handles localStorage access and decoding
       const postingKey = getPostingKey(username);
 

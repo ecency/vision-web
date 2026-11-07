@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.29
+
+### Patch Changes
+
+- Offer other sign options when an extension login's extension is unavailable (#2032)
+
 ## 2.4.28
 
 ### Patch Changes

@@ -1901,6 +1901,7 @@
     "with-extension": "Sign with Extension",
     "with-extension-named": "Sign with {{name}}",
     "no-extension-prompt": "Don't have a Hive extension? Install one:",
+    "extension-unavailable": "Your wallet extension seems unavailable. Enable it and reload the page, or use another sign option below.",
     "with-hiveauth": "Sign with HiveAuth",
     "invalid-key": "Invalid key format. Please check for invalid characters.",
     "key-error": "Failed to process the key. Please verify it is correct.",

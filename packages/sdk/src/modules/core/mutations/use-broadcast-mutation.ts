@@ -38,8 +38,9 @@ export type BroadcastMode = 'sync' | 'async';
  * @param broadcastMode - Whether to wait for block inclusion ('sync') or just mempool acceptance ('async')
  * @returns Transaction confirmation from the blockchain
  * @throws Error if method is not available or broadcast fails
+ * @internal Shared with broadcastJson's auth fallback; not part of the public API.
  */
-async function broadcastWithMethod(
+export async function broadcastWithMethod(
   method: string,
   username: string,
   ops: Operation[],

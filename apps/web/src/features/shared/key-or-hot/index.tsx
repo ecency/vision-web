@@ -12,6 +12,7 @@ import { useCallback, useState } from "react";
 import { OrDivider } from "../or-divider";
 import { MetaMaskSignButton } from "../metamask-sign-button";
 import { ExtensionChooser } from "../extension-chooser";
+import { ExtensionUnavailableNote } from "../extension-unavailable-note";
 import { shouldUseKeychainMobile } from "@/utils/client";
 import { isInAppBrowser } from "@/utils/keychain";
 import { getLoginType } from "@/utils/user-token";
@@ -90,6 +91,9 @@ export function KeyOrHot({ inProgress, onKey, onHot, onKc, onMetaMask, keyOnly, 
   return (
     <>
       <div className="key-or-hot">
+        <div className="mb-3 empty:hidden">
+          <ExtensionUnavailableNote username={username} authority={authority} />
+        </div>
         <KeyInput onSign={onKey} keyType={authority}/>
         {showOwnerHint && (
           <div className="text-xs opacity-75 mt-2">
