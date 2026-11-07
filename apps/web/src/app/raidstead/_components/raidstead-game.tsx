@@ -886,6 +886,8 @@ export function RaidsteadGame() {
 
   // hits sent, so an older hit's answer never replaces a newer one's
   const festHits = useRef(0);
+  // the festival as this page last counted it itself (spent or given back), until a server answer replaces it
+  const festLocal = useRef<Festival | null>(null);
   // plain damage with festival energy: no weakness, no shield, no wasp
   const festivalHit = useCallback(
     async (type: AttackType) => {
@@ -906,6 +908,7 @@ export function RaidsteadGame() {
       // the energy shows spent at once; a festival asked for before this hit no longer counts
       festSeq.current++;
       const spent = { ...fest, energy: fest.energy - 1 };
+      festLocal.current = spent;
       setFestival(spent);
       try {
         const r = await raidsteadApi.festivalAttack(type);
@@ -935,8 +938,14 @@ export function RaidsteadGame() {
           // Refused, so nothing was spent: the energy comes back even if the state
           // cannot be asked again. Offline or a server error may have landed, so
           // those stay spent until the next answer says.
-          const left = code === "no_energy" ? 0 : fest.energy;
-          setFestival((x) => (x === spent ? { ...fest, energy: left } : x));
+          // Each refused hit gives back its own one, on top of hits still on their way;
+          // a server answer shown since already counts right, so it stays.
+          const was = festLocal.current;
+          if (was) {
+            const back = { ...was, energy: code === "no_energy" ? 0 : was.energy + 1 };
+            festLocal.current = back;
+            setFestival((x) => (x === was ? back : x));
+          }
         }
       }
       // As after a raid attack: the profile's badges and karma, and a lapsed session
@@ -953,8 +962,11 @@ export function RaidsteadGame() {
       ? data.calendar.season
       : 0;
   const wrappedKey = wrappedSeason ? `${wrappedSeason}:${data!.account.name}` : "";
+  // set once the render has committed (declared before the ask below, so it runs first)
   const wrappedKeyRef = useRef(wrappedKey);
-  wrappedKeyRef.current = wrappedKey;
+  useEffect(() => {
+    wrappedKeyRef.current = wrappedKey;
+  }, [wrappedKey]);
   // Asked once per account and season. A failed ask (offline, a rate limit, a
   // lapsed session) is asked again with the next state; an answer, or "none"
   // (a server without it, or a season the player did not play), is not.

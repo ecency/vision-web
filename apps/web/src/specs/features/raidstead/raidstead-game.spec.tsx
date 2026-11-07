@@ -3693,16 +3693,19 @@ describe("Raidstead page", () => {
       expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
     });
 
-    it("does not give back an older refused hit's energy over a newer hit still on its way", async () => {
+    it("gives each refused hit its own energy back, even while a newer hit is on its way", async () => {
       api.state.mockResolvedValue(quiet());
-      api.festival.mockResolvedValue(fest());
-      let refuse!: (e: unknown) => void;
+      api.festival.mockResolvedValue({ ...fest(), energy: 2 });
+      const refused = () => Object.assign(new Error("x"), { status: 429, code: "rate_limited", message: "x" });
+      let refuse1!: (e: unknown) => void;
+      let refuse2!: (e: unknown) => void;
       api.festivalAttack
-        .mockReturnValueOnce(new Promise((_, r) => (refuse = r)))
-        .mockReturnValueOnce(new Promise(() => undefined));
+        .mockReturnValueOnce(new Promise((_, r) => (refuse1 = r)))
+        .mockReturnValueOnce(new Promise((_, r) => (refuse2 = r)));
       render(<RaidsteadGame />);
       await plate();
-      api.festival.mockReturnValue(new Promise(() => undefined));
+      // the state cannot be asked again: only the refunds put the energy right
+      api.state.mockRejectedValue({ status: 0, code: "offline", message: "x" });
       await act(async () => {
         fireEvent.click(atk("ink"));
       });
@@ -3710,9 +3713,12 @@ describe("Raidstead page", () => {
       await act(async () => {
         fireEvent.click(atk("ink"));
       });
-      expect(shown("raidstead.energy.value")).toEqual({ n: 3, max: 5 });
-      await act(async () => refuse(Object.assign(new Error("x"), { status: 429, code: "rate_limited", message: "x" })));
-      expect(shown("raidstead.energy.value")).toEqual({ n: 3, max: 5 });
+      expect(shown("raidstead.energy.value")).toEqual({ n: 0, max: 5 });
+      // the older hit refused while the newer is still on its way: one back, one still out
+      await act(async () => refuse1(refused()));
+      expect(shown("raidstead.energy.value")).toEqual({ n: 1, max: 5 });
+      await act(async () => refuse2(refused()));
+      expect(shown("raidstead.energy.value")).toEqual({ n: 2, max: 5 });
     });
 
     it("keeps the energy spent when it cannot tell whether a hit landed", async () => {
