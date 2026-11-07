@@ -11,6 +11,7 @@ import { PrivateKey } from "@ecency/sdk";
 import { MetaMaskSignButton } from "../metamask-sign-button";
 import { ExtensionInstallList, useShowExtensionInstall } from "../extension-install-list";
 import { ExtensionChooser } from "../extension-chooser";
+import { ExtensionUnavailableNote, isExtensionUnavailable } from "../extension-unavailable-note";
 import { resolveAuthUpgrade } from "./auth-upgrade-events";
 import { shouldUseKeychainMobile } from "@/utils/client";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -158,6 +159,7 @@ export function AuthUpgradeDialog() {
                 <MetaMaskSignButton onClick={handleMetaMask} />
               ) : (
                 <>
+                  <ExtensionUnavailableNote username={activeUser?.username} authority={authority} />
                   <KeyInput onSign={handleKeySign} keyType={authority} />
                   {authority === "active" && (
                     // Only the active key is kept, only for this tab. Say so
@@ -227,7 +229,12 @@ export function AuthUpgradeDialog() {
                       </Button>
                     )}
                   </div>
-                  {!showExtensionBtn && showInstall && extensionSupportsAuthority(authority) && (
+                  {!showExtensionBtn &&
+                    showInstall &&
+                    extensionSupportsAuthority(authority) &&
+                    // An extension login already has one installed; the note
+                    // above says to enable it instead.
+                    !isExtensionUnavailable(activeUser?.username, authority) && (
                     // Desktop with no extension and no mobile deep-link path:
                     // instead of a dead-end, point the user at the install
                     // options (browser-appropriate, hidden on mobile). Key entry

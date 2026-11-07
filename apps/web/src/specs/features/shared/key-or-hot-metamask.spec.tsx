@@ -168,4 +168,18 @@ describe("KeyOrHot - extension picker (respects the user's chosen extension)", (
     expect(ext.setPreferredExtensionId).not.toHaveBeenCalled();
     expect(props.onKc).not.toHaveBeenCalled();
   });
+  it("tells an extension login to enable and reload when no extension is on the page", () => {
+    ext.detected = [];
+    render(<KeyOrHot {...props} />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("key-or-hot.extension-unavailable");
+    // HiveSigner stays available as another way to sign.
+    expect(screen.getByRole("button", { name: /key-or-hot\.with-hivesigner/i })).toBeInTheDocument();
+  });
+
+  it("shows no note while the extension is available", () => {
+    ext.detected = [{ id: "keychain", name: "Keychain", icon: "/assets/keychain.png" }];
+    render(<KeyOrHot {...props} />);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
 });
