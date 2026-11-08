@@ -18,6 +18,7 @@ import { getLoginType } from "@/utils/user-token";
 import { getWebBroadcastAdapter } from "@/providers/sdk";
 import { buildHsCallbackUrl } from "@/utils/hs-callback";
 import { ExtensionChooser } from "@/features/shared/extension-chooser";
+import { ExtensionUnavailableNote } from "@/features/shared/extension-unavailable-note";
 import {
   getDetectedExtensions,
   hasAnyHiveExtension,
@@ -208,6 +209,9 @@ export function WalletOperationSign({ data, onSignError, onSignSuccess, asset, o
             </div>
           ) : (
             <>
+              <div className="col-span-2 empty:hidden">
+                <ExtensionUnavailableNote username={activeUser?.username} />
+              </div>
               <div className="col-span-2">
                 <div className="uppercase text-xs pb-2 font-semibold text-gray-600 dark:text-gray-400">
                   sign with private key

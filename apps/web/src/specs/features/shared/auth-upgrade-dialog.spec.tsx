@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
     { id: "keychain", name: "Keychain", icon: "/assets/keychain.png" }
   ] as { id: string; name: string; icon: string }[],
   kcMobile: false,
+  loginType: "key" as string | undefined,
   username: "testuser",
   setPreferredExtensionId: vi.fn(),
   resolveAuthUpgrade: vi.fn(),
@@ -32,6 +33,11 @@ vi.mock("@/utils", async (importOriginal) => ({
 vi.mock("@/utils/client", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   shouldUseKeychainMobile: () => h.kcMobile
+}));
+
+vi.mock("@/utils/user-token", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getLoginType: () => h.loginType
 }));
 
 vi.mock("@/utils/hive-extensions", () => ({
@@ -105,6 +111,7 @@ describe("AuthUpgradeDialog extension picker", () => {
       { id: "keychain", name: "Keychain", icon: "/assets/keychain.png" }
     ];
     h.kcMobile = false;
+    h.loginType = "key";
     h.setPreferredExtensionId.mockClear();
     h.resolveAuthUpgrade.mockClear();
   });
@@ -183,6 +190,28 @@ describe("AuthUpgradeDialog extension picker", () => {
     expect(keeperLink.getAttribute("href")).toContain("chromewebstore");
     expect(screen.getByRole("link", { name: /peak vault/i })).toBeInTheDocument();
     expect(h.setPreferredExtensionId).not.toHaveBeenCalled();
+    // A key login never had an extension, so no "enable it" note.
+    expect(screen.queryByText("key-or-hot.extension-unavailable")).toBeNull();
+  });
+
+  it("tells an extension login to enable and reload instead of installing", () => {
+    h.detected = [];
+    h.loginType = "keychain";
+    openDialog();
+
+    // The extension is installed but off: point at enabling it, not installing.
+    expect(screen.getByRole("status")).toHaveTextContent("key-or-hot.extension-unavailable");
+    expect(screen.queryByText("key-or-hot.no-extension-prompt")).toBeNull();
+    expect(screen.queryByRole("link", { name: /hive keeper|keychain|peak vault/i })).toBeNull();
+    // Key entry and HiveSigner remain as ways to sign now.
+    expect(screen.getByRole("button", { name: "stub-sign" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hivesigner/i })).toBeInTheDocument();
+  });
+
+  it("shows no note for an extension login whose extension is available", () => {
+    h.loginType = "keychain";
+    openDialog();
+    expect(screen.queryByText("key-or-hot.extension-unavailable")).toBeNull();
   });
 
   it("shows only the Firefox listing (Keychain) on Firefox", () => {

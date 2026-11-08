@@ -154,6 +154,18 @@ export function parseChainError(error: any): ParsedChainError {
     };
   }
 
+  // The account signs with a browser extension, but none is on the page
+  // (disabled, blocked for the site, or not injected since an update). Treat it
+  // as an auth fallback so the user can sign another way instead of hitting a
+  // dead end.
+  if (testPattern(/no hive browser extension found/i)) {
+    return {
+      message: "Your wallet extension is unavailable. Enable it and reload the page, or sign another way.",
+      type: ErrorType.MISSING_AUTHORITY,
+      originalError: error,
+    };
+  }
+
   // Missing active authority. Hive nodes return "missing required active
   // authority"; web operations.ts also throws the short form. Match both so the
   // auth fallback (auth-upgrade dialog) fires instead of misclassifying as a

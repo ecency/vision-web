@@ -81,6 +81,24 @@ describe("share card", () => {
     }
   });
 
+  it("draws lines of its own in place of the top raiders (Season Wrapped)", () => {
+    const { canvas, calls } = recordingCanvas();
+    expect(
+      drawShareCard(canvas, {
+        kind: "beetle",
+        title: "@ann",
+        outcome: "Your season",
+        week: "Season 2",
+        topLabel: "Ink & Oak, #3 in Small",
+        top: [{ account: "bob", damage: 12 }],
+        rows: ["120 attacks", "1500 damage", "2 last hits"]
+      })
+    ).toBe(true);
+    const texts = calls.filter((c) => c.name === "fillText").map((c) => String(c.args[0]));
+    expect(texts).toEqual(expect.arrayContaining(["120 attacks", "1500 damage", "2 last hits"]));
+    expect(texts.join(" ")).not.toContain("@bob");
+  });
+
   it("draws nothing, does not throw and says so without a 2D context", () => {
     const canvas = { width: 0, height: 0, getContext: () => null } as unknown as HTMLCanvasElement;
     // false: the caller has no picture to use (a blank image is not one)

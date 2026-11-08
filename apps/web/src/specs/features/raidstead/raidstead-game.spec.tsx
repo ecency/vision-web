@@ -32,7 +32,11 @@ const { scene, api, box, nav } = vi.hoisted(() => ({
     help: vi.fn(async (): Promise<unknown> => {
       throw Object.assign(new Error("Not Found"), { status: 404, code: "not_found" });
     }),
-    helpAttack: vi.fn()
+    helpAttack: vi.fn(),
+    // the festival and Season Wrapped: a server without them by default (set in beforeEach)
+    festival: vi.fn(),
+    festivalAttack: vi.fn(),
+    wrapped: vi.fn()
   },
   nav: { push: vi.fn(), writer: vi.fn(), card: vi.fn(async (): Promise<string | null> => null), week: vi.fn() },
   box: {
@@ -176,6 +180,10 @@ describe("Raidstead page", () => {
     nav.week.mockReturnValue(null);
     // a full reset: one-time answers a failed test left unused must not reach the next one
     api.calendar.mockReset().mockResolvedValue(state().calendar);
+    const notFound = () => Object.assign(new Error("Not Found"), { status: 404, code: "not_found", message: "Not Found" });
+    api.festival.mockReset().mockRejectedValue(notFound());
+    api.festivalAttack.mockReset();
+    api.wrapped.mockReset().mockRejectedValue(notFound());
   });
 
   afterEach(() => {
@@ -3342,6 +3350,655 @@ describe("Raidstead page", () => {
       render(<RaidsteadGame />);
       await screen.findByRole("button", { name: /raidstead.actions.rally/ });
       expect(screen.queryByRole("button", { name: /raidstead.share.button/ })).toBeNull();
+    });
+  });
+
+  // the quiet days between seasons (29 and 30): the week's last pest is gone
+  const quiet = (day = 29) => {
+    const s = state();
+    s.calendar = { ...s.calendar, day, week: 4, resting: true };
+    s.alliance.week = 4;
+    s.alliance.boss.alive = false;
+    localStorage.setItem("ecency_raidstead_seen_week", JSON.stringify("1-4"));
+    return s;
+  };
+
+  describe("festival pest", () => {
+    const fest = () => ({
+      season: 1,
+      kind: "queen",
+      hp: 2400,
+      maxHp: 3000,
+      chasedOff: false,
+      top: [
+        { community: "hive-123456", title: "Ink & Oak", damage: 300 },
+        { community: "hive-2", title: "Far Field", damage: 200 }
+      ],
+      energy: 5,
+      maxEnergy: 5,
+      myDamage: 40,
+      canPlay: true
+    });
+    const plate = () => screen.findByRole("region", { name: "raidstead.festival.title" });
+    const atk = (type: string) => screen.getByRole("button", { name: `raidstead.actions.attack-${type}` }) as HTMLButtonElement;
+
+    it("shows the festival pest and its shared health on day 29", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      render(<RaidsteadGame />);
+      const p = await plate();
+      expect(within(p).getByText("raidstead.bosses.queen.name")).toBeTruthy();
+      expect(within(p).getByRole("meter").getAttribute("aria-valuenow")).toBe("80");
+      expect(shown("raidstead.boss.hp")).toEqual({ hp: 2400, max: 3000 });
+      expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
+      // plain damage: no weakness to find
+      expect(screen.queryByText("raidstead.boss.weak-unknown")).toBeNull();
+      expect(atk("ink").disabled).toBe(false);
+      // the scene shows the festival pest, in town
+      expect(vi.mocked(scene.sync).mock.calls.at(-1)?.[0]).toMatchObject({ boss: { kind: "queen", alive: true } });
+      // the top alliances by festival damage, on a card from the plate
+      fireEvent.click(within(p).getByRole("button", { name: "raidstead.festival.about" }));
+      const sheet = screen.getByRole("dialog");
+      expect(within(sheet).getByText("Far Field")).toBeTruthy();
+      expect(within(sheet).getByText("Ink & Oak")).toBeTruthy();
+    });
+
+    it("posts the type of a hit and shows the new shared health", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      api.festivalAttack.mockResolvedValue({ ...fest(), hp: 1500, energy: 4, damage: 12, badge: "festival" });
+      render(<RaidsteadGame />);
+      const p = await plate();
+      // what the next ask brings once the hit has landed
+      api.festival.mockResolvedValue({ ...fest(), hp: 1500, energy: 4 });
+      await act(async () => {
+        fireEvent.click(atk("signal"));
+      });
+      expect(api.festivalAttack).toHaveBeenCalledWith("signal");
+      expect(api.attack).not.toHaveBeenCalled();
+      expect(within(p).getByRole("meter").getAttribute("aria-valuenow")).toBe("50");
+      expect(shown("raidstead.boss.hp")).toEqual({ hp: 1500, max: 3000 });
+      expect(shown("raidstead.energy.value")).toEqual({ n: 4, max: 5 });
+      const toast = document.querySelector(".rs-toast")!.textContent;
+      expect(toast).toContain("raidstead.festival.hit");
+      expect(toast).toContain("raidstead.festival.badge");
+      expect(shown("raidstead.festival.hit")).toEqual({ dmg: 12 });
+    });
+
+    it("says the festival is for this season's raiders", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      api.festivalAttack.mockRejectedValue(
+        Object.assign(new Error("x"), { status: 403, code: "not_this_season", message: "x" })
+      );
+      render(<RaidsteadGame />);
+      await plate();
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      expect(document.querySelector(".rs-toast")!.textContent).toContain("raidstead.festival.errors.not_this_season");
+      expect(enUS.raidstead.festival.errors.not_this_season).toMatch(/this season's raiders/);
+    });
+
+    it("keeps the buttons shut for a player who did not raid this season, and says why", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue({ ...fest(), canPlay: false });
+      render(<RaidsteadGame />);
+      await plate();
+      expect(atk("ink").disabled).toBe(true);
+      expect(screen.getAllByText("raidstead.festival.raiders-only").length).toBeGreaterThan(0);
+    });
+
+    it("shows a festival pest that was chased off", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue({ ...fest(), hp: 0, chasedOff: true });
+      render(<RaidsteadGame />);
+      const p = await plate();
+      expect(within(p).getByText("raidstead.festival.chased")).toBeTruthy();
+      expect(atk("forge").disabled).toBe(true);
+      expect(vi.mocked(scene.sync).mock.calls.at(-1)?.[0]).toMatchObject({ boss: { kind: "queen", alive: false } });
+    });
+
+    // an older server (404), or a season without one: season 1's quiet days answer 409 not_festival
+    it.each([
+      [404, "not_found"],
+      [409, "not_festival"]
+    ])("keeps today's quiet-day screen when the server has no festival (%s %s)", async (status, code) => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockRejectedValue(Object.assign(new Error("x"), { status, code, message: "x" }));
+      render(<RaidsteadGame />);
+      await screen.findByText("raidstead.boss.chased");
+      await waitFor(() => expect(api.festival).toHaveBeenCalled());
+      await act(async () => undefined);
+      expect(screen.queryByRole("region", { name: "raidstead.festival.title" })).toBeNull();
+      expect(screen.getByText("raidstead.boss.next")).toBeTruthy();
+      expect(atk("ink").disabled).toBe(true);
+      fireEvent.keyDown(window, { key: "1" });
+      expect(api.festivalAttack).not.toHaveBeenCalled();
+    });
+
+    it("is not asked for on a raid day", async () => {
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      await act(async () => undefined);
+      expect(api.festival).not.toHaveBeenCalled();
+    });
+
+    it("shows festival energy in the energy chip, the day's energy from the server, in labels that stay one line", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue({ ...fest(), energy: 3 });
+      render(<RaidsteadGame />);
+      const p = await plate();
+      // the same short words as on raid days: longer ones wrap on a phone
+      expect(screen.getByText("raidstead.energy.label")).toBeTruthy();
+      expect(shown("raidstead.energy.value")).toEqual({ n: 3, max: 5 });
+      expect(screen.getAllByText("raidstead.actions.cost")).toHaveLength(3);
+      fireEvent.click(within(p).getByRole("button", { name: "raidstead.festival.about" }));
+      expect(shown("raidstead.festival.desc")).toEqual({ max: 5 });
+    });
+
+    it("asks for the state again after a hit, landed or refused", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      api.festivalAttack.mockResolvedValueOnce({ ...fest(), hp: 2394, energy: 4, damage: 6 });
+      render(<RaidsteadGame />);
+      await plate();
+      const before = api.state.mock.calls.length;
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      await waitFor(() => expect(api.state.mock.calls.length).toBe(before + 1));
+      api.festivalAttack.mockRejectedValueOnce(Object.assign(new Error("x"), { status: 409, code: "no_energy", message: "x" }));
+      // past the double-tap guard
+      await new Promise((r) => setTimeout(r, 460));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      await waitFor(() => expect(api.state.mock.calls.length).toBe(before + 2));
+    });
+
+    it("asks again after a rate limit, and shows the plate", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        // each answer a new state, as from the server
+        api.state.mockImplementation(async () => quiet());
+        api.festival.mockResolvedValue(fest());
+        api.festival.mockRejectedValueOnce(Object.assign(new Error("x"), { status: 429, code: "rate_limited", message: "x" }));
+        render(<RaidsteadGame />);
+        await waitFor(() => expect(api.festival).toHaveBeenCalledTimes(1));
+        expect(screen.queryByRole("region", { name: "raidstead.festival.title" })).toBeNull();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(await plate()).toBeTruthy();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the festival card open when day 29 turns into day 30", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockResolvedValue(quiet(29));
+        api.festival.mockResolvedValue({ ...fest(), energy: 1 });
+        render(<RaidsteadGame />);
+        fireEvent.click(within(await plate()).getByRole("button", { name: "raidstead.festival.about" }));
+        expect(screen.getByRole("dialog", { name: "raidstead.festival.title" })).toBeTruthy();
+        // day 30's festival is still on its way
+        let answer: (f: unknown) => void = () => undefined;
+        api.festival.mockReturnValue(new Promise((r) => (answer = r)));
+        const asked = api.festival.mock.calls.length;
+        api.state.mockResolvedValue(quiet(30));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(screen.getByRole("dialog", { name: "raidstead.festival.title" })).toBeTruthy();
+        // day 30 is asked for anew, and its fresh energy replaces day 29's
+        expect(api.festival.mock.calls.length).toBeGreaterThan(asked);
+        await act(async () => answer({ ...fest(), energy: 5 }));
+        expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("closes the festival card when the festival goes, so the raid answers keys again", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockResolvedValue(quiet(29));
+        api.festival.mockResolvedValue(fest());
+        render(<RaidsteadGame />);
+        fireEvent.click(within(await plate()).getByRole("button", { name: "raidstead.festival.about" }));
+        expect(screen.getByRole("dialog", { name: "raidstead.festival.title" })).toBeTruthy();
+        api.festival.mockRejectedValue({ status: 404, code: "not_found", message: "x" });
+        api.state.mockResolvedValue({ ...quiet(29) });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(screen.queryByRole("dialog")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the festival when an answer cannot be read", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockResolvedValue(quiet(29));
+        api.festival.mockResolvedValue(fest());
+        render(<RaidsteadGame />);
+        await plate();
+        api.festival.mockResolvedValue({ season: 1 });
+        api.state.mockResolvedValue({ ...quiet(29) });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(screen.queryByRole("region", { name: "raidstead.festival.title" })).not.toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not let a hit from day 29 that answers on day 30 change the day 30 festival", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockImplementation(async () => quiet(29));
+        api.festival.mockResolvedValue(fest());
+        let hit!: (r: unknown) => void;
+        api.festivalAttack.mockReturnValueOnce(new Promise((r) => (hit = r)));
+        render(<RaidsteadGame />);
+        await plate();
+        await act(async () => {
+          fireEvent.click(atk("ink"));
+        });
+        // day 30 comes while the hit is on its way; its festival answers later
+        let day30!: (r: unknown) => void;
+        api.state.mockImplementation(async () => quiet(30));
+        api.festival.mockReturnValue(new Promise((r) => (day30 = r)));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        await act(async () => hit({ ...fest(), hp: 2390, energy: 4, damage: 10 }));
+        expect(shown("raidstead.boss.hp")).not.toEqual({ hp: 2390, max: 3000 });
+        await act(async () => day30({ ...fest(), hp: 2000, energy: 5 }));
+        expect(shown("raidstead.boss.hp")).toEqual({ hp: 2000, max: 3000 });
+        expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not let an older hit's 'no festival' hide the festival of the day after", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockImplementation(async () => quiet(29));
+        api.festival.mockResolvedValue(fest());
+        let refuse!: (e: unknown) => void;
+        api.festivalAttack.mockReturnValueOnce(new Promise((_, r) => (refuse = r)));
+        render(<RaidsteadGame />);
+        await plate();
+        await act(async () => {
+          fireEvent.click(atk("ink"));
+        });
+        api.state.mockImplementation(async () => quiet(30));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        await act(async () => refuse(Object.assign(new Error("x"), { status: 409, code: "not_festival", message: "x" })));
+        await act(async () => undefined);
+        expect(screen.queryByRole("region", { name: "raidstead.festival.title" })).not.toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the newest hit's numbers when an older hit answers after it", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      let first!: (r: unknown) => void;
+      let second!: (r: unknown) => void;
+      api.festivalAttack
+        .mockReturnValueOnce(new Promise((r) => (first = r)))
+        .mockReturnValueOnce(new Promise((r) => (second = r)));
+      render(<RaidsteadGame />);
+      await plate();
+      // the asks after each hit stay out of the way
+      api.festival.mockReturnValue(new Promise(() => undefined));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      // past the double-tap guard
+      await new Promise((r) => setTimeout(r, 460));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      expect(api.festivalAttack).toHaveBeenCalledTimes(2);
+      await act(async () => second({ ...fest(), hp: 2380, energy: 3, damage: 10 }));
+      await act(async () => first({ ...fest(), hp: 2390, energy: 4, damage: 10 }));
+      expect(shown("raidstead.boss.hp")).toEqual({ hp: 2380, max: 3000 });
+      expect(shown("raidstead.energy.value")).toEqual({ n: 3, max: 5 });
+    });
+
+    it("gives the energy back when the server refuses a hit, even if the state cannot be asked again", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      render(<RaidsteadGame />);
+      await plate();
+      api.state.mockRejectedValue({ status: 0, code: "offline", message: "x" });
+      api.festivalAttack.mockRejectedValueOnce(Object.assign(new Error("x"), { status: 429, code: "rate_limited", message: "x" }));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      await act(async () => undefined);
+      expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
+    });
+
+    it("gives each refused hit its own energy back, even while a newer hit is on its way", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue({ ...fest(), energy: 2 });
+      const refused = () => Object.assign(new Error("x"), { status: 429, code: "rate_limited", message: "x" });
+      let refuse1!: (e: unknown) => void;
+      let refuse2!: (e: unknown) => void;
+      api.festivalAttack
+        .mockReturnValueOnce(new Promise((_, r) => (refuse1 = r)))
+        .mockReturnValueOnce(new Promise((_, r) => (refuse2 = r)));
+      render(<RaidsteadGame />);
+      await plate();
+      // the state cannot be asked again: only the refunds put the energy right
+      api.state.mockRejectedValue({ status: 0, code: "offline", message: "x" });
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      await new Promise((r) => setTimeout(r, 460));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      expect(shown("raidstead.energy.value")).toEqual({ n: 0, max: 5 });
+      // the older hit refused while the newer is still on its way: one back, one still out
+      await act(async () => refuse1(refused()));
+      expect(shown("raidstead.energy.value")).toEqual({ n: 1, max: 5 });
+      await act(async () => refuse2(refused()));
+      expect(shown("raidstead.energy.value")).toEqual({ n: 2, max: 5 });
+    });
+
+    it("does not give back a refused hit that a festival answer since then already counts", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockImplementation(async () => quiet());
+        api.festival.mockResolvedValue(fest());
+        const refused = () => Object.assign(new Error("x"), { status: 429, code: "rate_limited", message: "x" });
+        let refuse1!: (e: unknown) => void;
+        let refuse2!: (e: unknown) => void;
+        api.festivalAttack
+          .mockReturnValueOnce(new Promise((_, r) => (refuse1 = r)))
+          .mockReturnValueOnce(new Promise((_, r) => (refuse2 = r)));
+        render(<RaidsteadGame />);
+        await plate();
+        await act(async () => {
+          fireEvent.click(atk("ink"));
+        });
+        expect(shown("raidstead.energy.value")).toEqual({ n: 4, max: 5 });
+        // the next state brings a festival answer: the first hit has not spent anything yet
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
+        await act(async () => {
+          fireEvent.click(atk("ink"));
+        });
+        expect(shown("raidstead.energy.value")).toEqual({ n: 4, max: 5 });
+        // from here the state cannot be asked again
+        api.state.mockRejectedValue({ status: 0, code: "offline", message: "x" });
+        await act(async () => refuse1(refused()));
+        expect(shown("raidstead.energy.value")).toEqual({ n: 4, max: 5 });
+        await act(async () => refuse2(refused()));
+        expect(shown("raidstead.energy.value")).toEqual({ n: 5, max: 5 });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the energy spent when it cannot tell whether a hit landed", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.festival.mockResolvedValue(fest());
+      render(<RaidsteadGame />);
+      await plate();
+      api.state.mockRejectedValue({ status: 0, code: "offline", message: "x" });
+      api.festivalAttack.mockRejectedValueOnce(Object.assign(new Error("x"), { status: 0, code: "offline", message: "x" }));
+      await act(async () => {
+        fireEvent.click(atk("ink"));
+      });
+      await act(async () => undefined);
+      expect(shown("raidstead.energy.value")).toEqual({ n: 4, max: 5 });
+    });
+
+    it("lists the Festival badge on the profile", async () => {
+      const s = quiet();
+      s.account.badges = ["festival"] as never[];
+      api.state.mockResolvedValue(s);
+      render(<RaidsteadGame />);
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      fireEvent.click(screen.getByRole("button", { name: /raidstead.menu.profile/ }));
+      const badge = screen.getByText("raidstead.profile.badge-list.festival.name").closest(".rs-badge")!;
+      expect(badge.classList.contains("on")).toBe(true);
+      expect(enUS.raidstead.profile["badge-list"].festival.name).toBeTruthy();
+    });
+  });
+
+  describe("season wrapped", () => {
+    const totals = () => ({
+      season: 1,
+      account: "ann",
+      alliance: { community: "hive-123456", title: "Ink & Oak", league: "small", rank: 3 },
+      attacks: 120,
+      damage: 1500,
+      daysPlayed: 20,
+      kills: 3,
+      lastHits: 2,
+      builds: 4,
+      bestStreak: 9,
+      badges: 5
+    });
+    const card = () => screen.findByRole("dialog", { name: "raidstead.wrapped.title" });
+    const openFromMenu = async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.menu.wrapped/ }));
+      return card();
+    };
+
+    it("shows each of the season's numbers", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.wrapped.mockResolvedValue(totals());
+      render(<RaidsteadGame />);
+      const c = await card();
+      for (const n of ["120", (1500).toLocaleString(), "20", "2", "3", "4", "5"]) {
+        expect(within(c).getByText(n)).toBeTruthy();
+      }
+      expect(shown("raidstead.streak.value")).toEqual({ count: 9 });
+      expect(shown("raidstead.wrapped.rank")).toMatchObject({ name: "Ink & Oak", rank: 3 });
+      expect(api.wrapped).toHaveBeenCalledWith(1);
+    });
+
+    it("is not there on day 28, and shows on day 29", async () => {
+      const last = state();
+      last.calendar = { ...last.calendar, day: 28, week: 4 };
+      last.alliance.week = 4;
+      localStorage.setItem("ecency_raidstead_seen_week", JSON.stringify("1-4"));
+      api.state.mockResolvedValue(last);
+      api.wrapped.mockResolvedValue(totals());
+      const first = render(<RaidsteadGame />);
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      expect(screen.queryByRole("button", { name: /raidstead.menu.wrapped/ })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "raidstead.wrapped.title" })).toBeNull();
+      expect(api.wrapped).not.toHaveBeenCalled();
+      first.unmount();
+
+      api.state.mockResolvedValue(quiet());
+      render(<RaidsteadGame />);
+      expect(await card()).toBeTruthy();
+    });
+
+    it("opens by itself once a season, then from the menu", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.wrapped.mockResolvedValue(totals());
+      const first = render(<RaidsteadGame />);
+      await card();
+      fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+      first.unmount();
+      render(<RaidsteadGame />);
+      await screen.findByRole("button", { name: /raidstead.actions.menu/ });
+      await act(async () => undefined);
+      expect(screen.queryByRole("dialog", { name: "raidstead.wrapped.title" })).toBeNull();
+      expect(await openFromMenu()).toBeTruthy();
+    });
+
+    it("closes the card when the season rolls over, so the raid answers keys again", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockResolvedValue(quiet(30));
+        api.wrapped.mockResolvedValue(totals());
+        render(<RaidsteadGame />);
+        await card();
+        const next = state();
+        next.calendar = { ...next.calendar, season: 2, day: 1 };
+        localStorage.setItem("ecency_raidstead_seen_week", JSON.stringify("2-1"));
+        api.state.mockResolvedValue(next);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+        fireEvent.keyDown(window, { key: "1" });
+        await waitFor(() => expect(api.attack).toHaveBeenCalled());
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("opens by itself once a season for each account that plays in this browser", async () => {
+      const as = (name: string) => {
+        asUser(name);
+        box.stored = { account: name, token: `rs1_${name}`, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+        const s = quiet();
+        s.account.name = name;
+        api.state.mockResolvedValue(s);
+        api.wrapped.mockResolvedValue({ ...totals(), account: name });
+      };
+      as("ann");
+      let view = render(<RaidsteadGame />);
+      await card();
+      fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+      view.unmount();
+      as("bob");
+      view = render(<RaidsteadGame />);
+      await card();
+      fireEvent.click(screen.getByRole("button", { name: "g.close" }));
+      view.unmount();
+      as("ann");
+      render(<RaidsteadGame />);
+      await waitFor(() => expect(api.wrapped).toHaveBeenCalledTimes(3));
+      await act(async () => undefined);
+      expect(screen.queryByRole("dialog", { name: "raidstead.wrapped.title" })).toBeNull();
+    });
+
+    it("asks for the totals again on a later state after a failed ask, and not after a 'none'", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockImplementation(async () => quiet());
+        api.wrapped.mockRejectedValueOnce(Object.assign(new Error("x"), { status: 503, code: "error", message: "x" }));
+        api.wrapped.mockResolvedValueOnce(totals());
+        render(<RaidsteadGame />);
+        await waitFor(() => expect(api.wrapped).toHaveBeenCalledTimes(1));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(await card()).toBeTruthy();
+        expect(api.wrapped).toHaveBeenCalledTimes(2);
+        // the totals are there: later states do not ask again
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(api.wrapped).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not ask again for a season the server has no totals for", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        api.state.mockImplementation(async () => quiet());
+        render(<RaidsteadGame />);
+        await waitFor(() => expect(api.wrapped).toHaveBeenCalledTimes(1));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_500);
+        });
+        expect(api.state.mock.calls.length).toBeGreaterThan(1);
+        expect(api.wrapped).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the card when last hits and buildings were not counted that season", async () => {
+      api.state.mockResolvedValue(quiet());
+      api.wrapped.mockResolvedValue({ ...totals(), lastHits: null, builds: null });
+      render(<RaidsteadGame />);
+      const c = await card();
+      expect(within(c).getByText("120")).toBeTruthy();
+      expect(within(c).queryByText("raidstead.wrapped.stats.last-hits")).toBeNull();
+      expect(within(c).queryByText("raidstead.wrapped.stats.builds")).toBeNull();
+    });
+
+    it("is hidden when the server has no totals for the player", async () => {
+      api.state.mockResolvedValue(quiet());
+      render(<RaidsteadGame />);
+      await waitFor(() => expect(api.wrapped).toHaveBeenCalled());
+      fireEvent.click(await screen.findByRole("button", { name: /raidstead.actions.menu/ }));
+      expect(screen.queryByRole("button", { name: /raidstead.menu.wrapped/ })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "raidstead.wrapped.title" })).toBeNull();
+    });
+
+    it("opens a drafted post with its share card, the community and the three tags", async () => {
+      asUser("ann");
+      api.state.mockResolvedValue(quiet());
+      api.wrapped.mockResolvedValue(totals());
+      nav.card.mockResolvedValue("https://images.ecency.com/DQm/season.png");
+      render(<RaidsteadGame />);
+      const c = await card();
+      await act(async () => {
+        fireEvent.click(within(c).getByRole("button", { name: /raidstead.report.open/ }));
+      });
+      await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/publish?com=hive-123456"));
+      expect(nav.card).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "@ann", rows: expect.any(Array) }),
+        "ann",
+        expect.any(AbortSignal)
+      );
+      const [body, title, tags] = nav.writer.mock.calls[0];
+      expect(body).toMatch(/^!\[raidstead.wrapped.card-alt\]\(https:\/\/images.ecency.com\/DQm\/season.png\)\n\n/);
+      expect(body).toContain("raidstead.wrapped.intro");
+      expect(title).toBe("raidstead.wrapped.post-title");
+      expect(tags).toEqual(["hive-123456", "raidstead", "ecency"]);
+    });
+
+    it("does not open the composer once the card was closed while its image was on its way", async () => {
+      asUser("ann");
+      api.state.mockResolvedValue(quiet());
+      api.wrapped.mockResolvedValue(totals());
+      let land: (url: string | null) => void = () => undefined;
+      nav.card.mockImplementation(() => new Promise<string | null>((r) => (land = r)));
+      render(<RaidsteadGame />);
+      const c = await card();
+      await act(async () => {
+        fireEvent.click(within(c).getByRole("button", { name: /raidstead.report.open/ }));
+      });
+      const signal = (nav.card.mock.calls[0] as unknown[])[2] as AbortSignal | undefined;
+      await act(async () => {
+        fireEvent.click(within(c).getByRole("button", { name: "g.close" }));
+      });
+      expect(signal?.aborted).toBe(true);
+      await act(async () => land("https://images.ecency.com/DQm/season.png"));
+      expect(nav.push).not.toHaveBeenCalled();
     });
   });
 

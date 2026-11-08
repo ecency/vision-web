@@ -7,6 +7,10 @@ import {
   buildBlock,
   buildNudgeShown,
   buildReport,
+  buildWrapped,
+  readFestival,
+  readWrapped,
+  wrappedCardRows,
   lowerBuildNudge,
   chestBlock,
   chestHoursLeft,
@@ -217,6 +221,82 @@ describe("raidstead game helpers", () => {
     expect(r.body).toContain("line|i=1,name=ann,dmg=40");
     expect(r.body).toContain("town|hall=2,mats=80");
     expect(buildReport({ ...state(), alliance: null }, t)).toBeNull();
+  });
+
+  describe("Season Wrapped post", () => {
+    const wrapped = () => ({
+      season: 2,
+      account: "ann",
+      alliance: { community: "hive-123456", title: "Ink & Oak", league: "small" as League, rank: 3 },
+      attacks: 120,
+      damage: 1500,
+      daysPlayed: 20,
+      kills: 3,
+      lastHits: 2,
+      builds: 4,
+      bestStreak: 9,
+      badges: 5
+    });
+
+    it("has the numbers, the alliance and the raidstead tag", () => {
+      const r = buildWrapped(wrapped(), t);
+      expect(r.title).toBe("post-title|season=2,name=Ink & Oak");
+      for (const [unit, n] of [
+        ["attacks", 120],
+        ["damage", 1500],
+        ["days", 20],
+        ["kills", 3],
+        ["last-hits", 2],
+        ["builds", 4],
+        ["streak", 9],
+        ["badges", 5]
+      ] as const) {
+        expect(r.body).toContain(`${unit}|count=${n},n=${n.toLocaleString()}`);
+      }
+      expect(r.body).toContain("rank|name=Ink & Oak,rank=3,league=small");
+      expect(r.tags).toEqual(["hive-123456", "raidstead", "ecency"]);
+    });
+
+    // the real words: plurals as i18next resolves them from the locale
+    const words = (key: string, v: Record<string, unknown> = {}) => {
+      const k = typeof v.count === "number" ? `${key}_${v.count === 1 ? "one" : "other"}` : key;
+      const found = k.split(".").reduce<unknown>((o, part) => (o as Record<string, unknown> | undefined)?.[part], enUS);
+      if (typeof found !== "string") return k;
+      return found.replace(/{{(\w+)}}/g, (_, x: string) => String(v[x]));
+    };
+    const ones = () => ({ ...wrapped(), attacks: 1, damage: 1, daysPlayed: 1, kills: 1, lastHits: 1, builds: 1, bestStreak: 1, badges: 1 });
+    const plural = /\b1\** (attacks|days|pests|last hits|badges|buildings)\b/;
+
+    it("says 1 of a thing in the singular, in the post and on the card", () => {
+      const body = buildWrapped(ones(), words).body;
+      expect(body).not.toMatch(plural);
+      expect(body).toMatch(/\b1\** last hit\b/);
+      const rows = wrappedCardRows(ones(), words);
+      expect(rows).toHaveLength(3);
+      expect(rows.join(" ")).not.toMatch(plural);
+      expect(wrappedCardRows(wrapped(), words)[0]).toBe(`120 attacks, ${(1500).toLocaleString()} damage`);
+    });
+
+    it("leaves out last hits and buildings for a season that did not count them", () => {
+      const w = { ...wrapped(), lastHits: null, builds: null };
+      expect(buildWrapped(w, words).body).not.toMatch(/last hit|building/);
+      expect(wrappedCardRows(w, words).join(" ")).not.toMatch(/last hit/);
+    });
+
+    it("reads totals without last hits and buildings, and badges sent as their ids", () => {
+      const w = readWrapped({ ...wrapped(), lastHits: null, builds: null, badges: ["festival", "helper"] });
+      expect(w).toMatchObject({ lastHits: null, builds: null, badges: 2, attacks: 120 });
+      expect(readWrapped({ ...wrapped(), attacks: null })).toBeNull();
+    });
+
+    it("keeps a community's Markdown as text, and drafts a season without an alliance", () => {
+      const w = { ...wrapped(), alliance: { ...wrapped().alliance, title: "[Oak](x)" } };
+      expect(buildWrapped(w, t).body).toContain("name=\\[Oak\\]\\(x\\)");
+      const solo = buildWrapped({ ...wrapped(), alliance: null }, t);
+      expect(solo.title).toBe("post-title|season=2,name=@ann");
+      expect(solo.body).not.toContain("rank|");
+      expect(solo.tags).toEqual(["raidstead", "ecency"]);
+    });
   });
 
   it("lists the other alliances' helpers apart, in a Helped by line", () => {
@@ -824,5 +904,18 @@ describe("alliance of the week", () => {
     ]);
     expect(w.large?.community).toBe("hive-a");
     expect(Object.keys(w)).toEqual(["large"]);
+  });
+});
+
+describe("readFestival", () => {
+  const f = () => ({ season: 2, kind: "queen", hp: 900, maxHp: 1000, chasedOff: false, top: [], energy: 5, maxEnergy: 5, myDamage: 0, canPlay: true });
+
+  it("reads who may hit only from a plain yes or no", () => {
+    expect(readFestival(f())?.canPlay).toBe(true);
+    expect(readFestival({ ...f(), canPlay: false })?.canPlay).toBe(false);
+    // missing or unreadable: not a festival answer this page can act on
+    const { canPlay: _, ...none } = f();
+    expect(readFestival(none)).toBeNull();
+    expect(readFestival({ ...f(), canPlay: "yes" })).toBeNull();
   });
 });

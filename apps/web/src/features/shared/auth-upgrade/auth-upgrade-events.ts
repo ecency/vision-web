@@ -26,6 +26,11 @@ let pendingAuthority: string | null = null;
  * switch, so the key it collects belongs to this account, not to whoever
  * happens to be active by the time the user submits it. */
 let pendingUsername: string | null = null;
+/** A posting key entered in the dialog, handed to the one retry that follows
+ * (adapter.getPostingKey) and then dropped. Unlike the active key it is not
+ * held: posting ops have their own fallbacks, and the login's own method
+ * (an extension, HiveSigner) should sign the next one once it works again. */
+let handedPostingKey: { key: string; username: string | null } | null = null;
 
 /**
  * Called by the broadcast adapter's showAuthUpgradeUI to show the dialog and wait for user choice.
@@ -41,6 +46,7 @@ export function requestAuthUpgrade(
   }
   pendingAuthority = authority;
   pendingUsername = (ls.get("active_user") as string | null) ?? null;
+  handedPostingKey = null;
 
   // An active-authority dialog only opens when no key was stored or the stored
   // one was rejected, so whatever is held is of no use. Dropping it keeps a
@@ -79,6 +85,8 @@ export function resolveAuthUpgrade(
     // Held for the rest of the page, so a run of active-authority operations
     // (tipping a feed's worth of posts) asks for the key once.
     setSessionActiveKey(key, derivedFor ?? pendingUsername ?? undefined);
+  } else if (key && pendingAuthority === "posting") {
+    handedPostingKey = { key, username: derivedFor ?? pendingUsername };
   }
   pendingResolve?.(method);
   pendingResolve = null;
@@ -93,6 +101,18 @@ export function resolveAuthUpgrade(
  */
 export function getTempActiveKey(username?: string): string | null {
   return getSessionActiveKey(username);
+}
+
+/**
+ * Called by adapter.getPostingKey() for the retry after a posting-authority
+ * dialog. Returns the key entered there once, and only to the account it was
+ * entered for.
+ */
+export function takeHandedPostingKey(username: string): string | null {
+  if (!handedPostingKey || handedPostingKey.username !== username) return null;
+  const { key } = handedPostingKey;
+  handedPostingKey = null;
+  return key;
 }
 
 /**

@@ -19,6 +19,7 @@ import {
   type AttackType,
   type BuildingId,
   type Community,
+  type Festival,
   type FolkClass,
   type HelpTarget,
   type League,
@@ -37,7 +38,8 @@ import {
   rallyBlock,
   sortCommunities,
   tierOf,
-  type Neighbor
+  type Neighbor,
+  type WrappedTotals
 } from "@/features/raidstead/game";
 
 const t = (key: string, values?: Record<string, unknown>) => i18next.t(`raidstead.${key}`, values);
@@ -812,7 +814,8 @@ const BADGES = [
   "streak7",
   "streak14",
   "streak28",
-  "helper"
+  "helper",
+  "festival"
 ];
 const QUESTS = ["checkin", "post", "comments"];
 
@@ -903,11 +906,19 @@ export function QuestsSheet(props: {
   );
 }
 
-export type MenuItem = "profile" | "board" | "report" | "leaderboard" | "help";
+export type MenuItem = "wrapped" | "profile" | "board" | "report" | "leaderboard" | "help";
 
 // The menu's small pictures, drawn like the game: ink lines on a halftone
 // tile in the item's colour.
 const MENU_ICONS: Record<MenuItem, { color: string; glyph: ReactNode }> = {
+  wrapped: {
+    color: "var(--rs-coral)",
+    glyph: (
+      <>
+        <path className="rs-solid" d="M12 3.5l2.4 5 5.4.6-4 3.7 1.1 5.4L12 15.5l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z" />
+      </>
+    )
+  },
   profile: {
     color: "var(--rs-violet)",
     glyph: (
@@ -986,21 +997,24 @@ export function MenuSheet({
   state,
   onClose,
   onPick,
-  onSignOut
+  onSignOut,
+  wrapped = false
 }: {
   state: State;
   onClose: () => void;
   onPick: (m: MenuItem) => void;
   onSignOut: () => void;
+  /// the player's season totals are in (the quiet days): "Your season" leads the menu
+  wrapped?: boolean;
 }) {
-  const items: MenuItem[] = ["profile", "board", "report", "leaderboard", "help"];
+  const items: MenuItem[] = ["wrapped", "profile", "board", "report", "leaderboard", "help"];
   return (
     <Sheet onClose={onClose} label={t("actions.menu")}>
       <h2>{t("season.day", { day: Math.min(state.calendar.day, 28), total: 28 })}</h2>
       <p className="rs-muted">{t("menu.days")}</p>
       <ul className="rs-list">
         {items
-          .filter((i) => i !== "report" || state.alliance)
+          .filter((i) => (i !== "report" || state.alliance) && (i !== "wrapped" || wrapped))
           .map((i) => (
             <li key={i}>
               <button className="rs-opt rs-opt-icon" onClick={() => onPick(i)}>
@@ -1268,6 +1282,112 @@ export function ReportSheet({
       <pre style={{ whiteSpace: "pre-wrap", margin: 0, font: "inherit", fontSize: 13 }}>
         {report.body}
       </pre>
+      <div className="rs-btns">
+        <button className="rs-btn rs-primary" onClick={onOpen} disabled={busy} aria-busy={busy}>
+          {busy ? t("report.preparing") : t("report.open")}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+/// The alliances that did the most festival damage, most first; the player's own in bold.
+export function FestivalTop({ festival, own }: { festival: Festival; own?: string }) {
+  if (!festival.top.length) return <p className="rs-muted">{t("festival.none")}</p>;
+  return (
+    <ol className="rs-rank">
+      {festival.top.map((r, i) => (
+        <li key={r.community} className={r.community === own ? "me" : undefined}>
+          <span>{i + 1}</span>
+          <span>{r.title || r.community}</span>
+          <span>{r.damage.toLocaleString()}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/// The festival pest's card: what it is, the player's own damage and the top 10 alliances.
+export function FestivalSheet({
+  festival,
+  own,
+  onClose
+}: {
+  festival: Festival;
+  own?: string;
+  onClose: () => void;
+}) {
+  const pest = (BOSS_KINDS as readonly string[]).includes(festival.kind)
+    ? t(`bosses.${festival.kind}.name`)
+    : t("help.pest");
+  return (
+    <Sheet onClose={onClose} label={t("festival.title")}>
+      <small>{t("festival.title")}</small>
+      <h2>{pest}</h2>
+      <p className="rs-muted">{t("festival.desc", { max: festival.maxEnergy })}</p>
+      <p>
+        <b>{t("festival.mine", { n: festival.myDamage.toLocaleString() })}</b>
+      </p>
+      <h3>{t("festival.top")}</h3>
+      <FestivalTop festival={festival} own={own} />
+    </Sheet>
+  );
+}
+
+/// Season Wrapped: the player's season in numbers, with a draft to share.
+export function WrappedSheet({
+  wrapped,
+  busy = false,
+  onClose,
+  onOpen
+}: {
+  wrapped: WrappedTotals;
+  /// the share card is on its way to the image server
+  busy?: boolean;
+  onClose: () => void;
+  onOpen: () => void;
+}) {
+  const a = wrapped.alliance;
+  // last hits and buildings only for a season that counted them
+  const stats = (
+    [
+      ["attacks", wrapped.attacks],
+      ["damage", wrapped.damage],
+      ["days", wrapped.daysPlayed],
+      ["kills", wrapped.kills],
+      ["last-hits", wrapped.lastHits],
+      ["builds", wrapped.builds],
+      ["badges", wrapped.badges]
+    ] as [string, number | null][]
+  ).filter((x): x is [string, number] => typeof x[1] === "number");
+  return (
+    <Sheet onClose={onClose} label={t("wrapped.title")}>
+      <small>{t("wrapped.season", { n: wrapped.season })}</small>
+      <h2>{t("wrapped.title")}</h2>
+      {a && (
+        <p>
+          <b>
+            {t("wrapped.rank", {
+              name: a.title || a.community,
+              rank: a.rank,
+              league: t(`profile.leagues.${a.league}`)
+            })}
+          </b>
+        </p>
+      )}
+      <div className="rs-stats">
+        {stats.map(([k, v]) => (
+          <div key={k} className="rs-stat">
+            <small>{t(`wrapped.stats.${k}`)}</small>
+            <b>{v.toLocaleString()}</b>
+          </div>
+        ))}
+        <div className="rs-stat">
+          <small>{t("wrapped.stats.streak")}</small>
+          <b>{t("streak.value", { count: wrapped.bestStreak })}</b>
+        </div>
+      </div>
+      <p className="rs-muted">{t("wrapped.desc")}</p>
       <div className="rs-btns">
         <button className="rs-btn rs-primary" onClick={onOpen} disabled={busy} aria-busy={busy}>
           {busy ? t("report.preparing") : t("report.open")}
