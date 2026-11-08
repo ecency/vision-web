@@ -64,6 +64,14 @@ export const TradingViewWidget = ({ widgetTypeChanged }: Props) => {
       timeScale: {
         timeVisible: true
       },
+      // Kinetic scrolling runs a requestAnimationFrame loop in lightweight-charts
+      // v3 that is never cancelled on chart.remove(). If the component unmounts
+      // mid-animation, the pending frame dereferences the destroyed pane and
+      // throws "Value is null" (ECENCY-NEXT-1CSW). Keep it off.
+      kineticScroll: {
+        touch: false,
+        mouse: false
+      },
       layout: {
         background: {
           color: "transparent"
@@ -123,6 +131,16 @@ export const TradingViewWidget = ({ widgetTypeChanged }: Props) => {
   useEffect(() => {
     chartRef.current?.resize(width ?? 0, height ?? 0);
   }, [width, height]);
+
+  // Dispose the chart on unmount so it doesn't leak listeners/canvases.
+  useEffect(() => {
+    return () => {
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (candleStickSeries) {

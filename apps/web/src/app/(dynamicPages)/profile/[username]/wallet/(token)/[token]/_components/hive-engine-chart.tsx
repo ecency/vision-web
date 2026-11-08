@@ -57,6 +57,14 @@ export function HiveEngineChart() {
       timeScale: {
         timeVisible: true
       },
+      // Kinetic scrolling runs a requestAnimationFrame loop in lightweight-charts
+      // v3 that is never cancelled on chart.remove(). If the component unmounts
+      // mid-animation, the pending frame dereferences the destroyed pane and
+      // throws "Value is null" (ECENCY-NEXT-1CSW). Keep it off.
+      kineticScroll: {
+        touch: false,
+        mouse: false
+      },
       layout: {
         background: {
           color: "transparent"
@@ -94,6 +102,17 @@ export function HiveEngineChart() {
       }
     });
   });
+
+  // Dispose the chart on unmount so it doesn't leak listeners/canvases.
+  useEffect(() => {
+    return () => {
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+        candleStickSeriesRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (candleStickSeriesRef.current && data) {
