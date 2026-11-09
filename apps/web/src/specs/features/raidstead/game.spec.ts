@@ -458,13 +458,17 @@ describe("what the page decides before asking the server", () => {
     expect(newerWeakness(boss, "signal", 6)).toMatchObject({ weakness: "signal", weaknessVersion: 6 });
     expect(newerWeakness(boss, null, 6)).toMatchObject({ weakness: null, weaknessVersion: 6 });
     expect(newerWeakness(boss, "signal", 5)).toBeNull();
+    // the same version: knowing it is newer than not knowing it (a scout changes no version)
+    expect(newerWeakness(at(null, 5).alliance!.boss, "ink", 5)).toMatchObject({ weakness: "ink", weaknessVersion: 5 });
+    expect(newerWeakness(boss, null, 5)).toBeNull();
     expect(newerWeakness(boss, "signal", 4)).toBeNull();
     expect(newerWeakness(boss, "signal", undefined)).toBeNull();
     expect(newerWeakness(at(null).alliance!.boss, "signal", 1)).toMatchObject({ weakness: "signal" });
     // a state answer that read the boss before a newer weakness was shown
     expect(keepNewerWeakness(at("signal", 6), at("ink", 5)).alliance!.boss).toMatchObject({ weakness: "signal", weaknessVersion: 6 });
     expect(keepNewerWeakness(at("signal", 6), at(null, 7)).alliance!.boss).toMatchObject({ weakness: null, weaknessVersion: 7 });
-    expect(keepNewerWeakness(at("signal", 6), at(null, 6)).alliance!.boss.weakness).toBeNull();
+    expect(keepNewerWeakness(at("signal", 6), at(null, 6)).alliance!.boss.weakness).toBe("signal");
+    expect(keepNewerWeakness(at(null, 6), at("signal", 6)).alliance!.boss.weakness).toBe("signal");
     // another town, nothing shown yet, or an older server: the answer as it came
     expect(keepNewerWeakness(at("signal", 6, "hive-2"), at("ink", 5)).alliance!.boss.weakness).toBe("ink");
     expect(keepNewerWeakness(null, at("ink", 5)).alliance!.boss.weakness).toBe("ink");

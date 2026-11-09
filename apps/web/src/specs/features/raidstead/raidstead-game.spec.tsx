@@ -1125,6 +1125,25 @@ describe("Raidstead page", () => {
         shows(null);
       });
 
+      it("a hit that tells a weakness learned by a scout still on its way shows it", async () => {
+        await start(null);
+        let scouted!: (r: unknown) => void;
+        api.scout.mockReturnValueOnce(new Promise((r) => (scouted = r)));
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.scout/ }));
+        });
+        // the scout went through on the server; the hit's answer comes back first
+        api.attack.mockResolvedValueOnce({ ...shift, phaseShift: false, weakness: "forge", weaknessVersion: V });
+        await tap("forge");
+        shows("forge");
+        await act(async () => scouted({ weakness: "forge", weaknessVersion: V, scoutsLeft: 0 }));
+        shows("forge");
+        // a state read made before the scout, at the same version, does not hide it again
+        const answer = await poll();
+        await answer(read(null, V));
+        shows("forge");
+      });
+
       it("a scout the server made before a shift the page already shows is not news", async () => {
         await start(null);
         const hit = pending();
@@ -3546,8 +3565,11 @@ describe("Raidstead page", () => {
       // plain damage: no weakness to find
       expect(screen.queryByText("raidstead.boss.weak-unknown")).toBeNull();
       expect(atk("ink").disabled).toBe(false);
-      // the scene shows the festival pest, in town
-      expect(vi.mocked(scene.sync).mock.calls.at(-1)?.[0]).toMatchObject({ boss: { kind: "queen", alive: true } });
+      // the scene shows the festival pest, in town (the scene is synced in an
+      // effect, which can run after the plate is already in the page)
+      await waitFor(() =>
+        expect(vi.mocked(scene.sync).mock.calls.at(-1)?.[0]).toMatchObject({ boss: { kind: "queen", alive: true } })
+      );
       // the top alliances by festival damage, on a card from the plate
       fireEvent.click(within(p).getByRole("button", { name: "raidstead.festival.about" }));
       const sheet = screen.getByRole("dialog");
@@ -3608,7 +3630,9 @@ describe("Raidstead page", () => {
       const p = await plate();
       expect(within(p).getByText("raidstead.festival.chased")).toBeTruthy();
       expect(atk("forge").disabled).toBe(true);
-      expect(vi.mocked(scene.sync).mock.calls.at(-1)?.[0]).toMatchObject({ boss: { kind: "queen", alive: false } });
+      await waitFor(() =>
+        expect(vi.mocked(scene.sync).mock.calls.at(-1)?.[0]).toMatchObject({ boss: { kind: "queen", alive: false } })
+      );
     });
 
     // an older server (404), or a season without one: season 1's quiet days answer 409 not_festival
