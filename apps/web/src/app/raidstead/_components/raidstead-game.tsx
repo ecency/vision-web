@@ -1084,13 +1084,16 @@ export function RaidsteadGame() {
         // The weakness shifted: show the new one the hit revealed, or none, now
         // rather than after the state is asked again. Only while nothing newer
         // (a later hit, a scout, a state answer) has been applied since the tap,
-        // and for the same session. The state asked below still corrects it.
+        // and for the same session. A read still on its way may have seen the
+        // boss before the hit landed: it no longer counts. The read asked below
+        // comes after the hit and is applied.
         if (
           r.hit === "boss" &&
           r.phaseShift &&
           appliedSeq.current === tapSeq &&
           loadSession()?.token === token
         ) {
+          appliedSeq.current = ++refreshSeq.current;
           setData((d) =>
             d?.alliance
               ? {

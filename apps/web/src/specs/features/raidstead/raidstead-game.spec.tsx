@@ -1082,6 +1082,29 @@ describe("Raidstead page", () => {
         expect(badge()!.style.getPropertyValue("--c")).toBe(colour("forge"));
       });
 
+      it("a state read asked during the hit and answered after it does not bring the old weakness back", async () => {
+        await start("ink");
+        const hit = pending();
+        await act(async () => {
+          fireEvent.click(attackButton("ink"));
+        });
+        // the page's regular read goes out while the hit is on its way, and reads
+        // the boss before the hit lands
+        let late!: (s: unknown) => void;
+        const asks = api.state.mock.calls.length;
+        api.state.mockImplementationOnce(() => new Promise((r) => (late = r)));
+        await act(async () => {
+          vi.advanceTimersByTime(20_500);
+        });
+        expect(api.state.mock.calls.length).toBe(asks + 1);
+        await hit({ ...shift, weakness: "signal" });
+        expect(badge()!.style.getPropertyValue("--c")).toBe(colour("signal"));
+        const before = state();
+        Object.assign(before.alliance.boss, { weakness: "ink" });
+        await act(async () => late(before));
+        expect(badge()!.style.getPropertyValue("--c")).toBe(colour("signal"));
+      });
+
       it("is not applied once another game session has started", async () => {
         await start("ink");
         const hit = pending();
