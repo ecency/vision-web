@@ -52,6 +52,33 @@ export function worldOf(state: State | null, view: View): SceneWorld {
 
 /// Where an attack will land before the server answers: the shield first,
 /// then the wasp, then the boss (the server resolves it the same way).
+/// Whether a weakness told at version `v` is newer than one told at `w`. The server's
+/// version grows with every shift, Queen reshuffle, day and season; at the same
+/// version knowing the weakness is newer than not (a scout changes no version, and
+/// nothing but a new version takes the knowledge away).
+const isNewer = (v: number, known: boolean, w: number, wasKnown: boolean) =>
+  v > w || (v === w && known && !wasKnown);
+
+/// The boss told a weakness at `version`, when that is newer than what it shows;
+/// null when it is not (answers arrive in any order). Without a version nothing
+/// can be said, so nothing changes.
+export function newerWeakness(boss: Boss, weakness: AttackType | null, version: number | undefined): Boss | null {
+  if (version === undefined) return null;
+  if (!isNewer(version, weakness !== null, boss.weaknessVersion ?? -1, boss.weakness !== null)) return null;
+  return { ...boss, weakness, weaknessVersion: version };
+}
+
+/// A state answer for the page, keeping the weakness the page already shows when
+/// that one is newer (a hit's answer that came first). Same game session only.
+export function keepNewerWeakness(shown: State | null, next: State): State {
+  const was = shown?.alliance, now = next.alliance;
+  if (!was || !now || was.community !== now.community) return next;
+  if (was.boss.weaknessVersion === undefined) return next;
+  const nb = now.boss, wb = was.boss;
+  if (!isNewer(wb.weaknessVersion!, wb.weakness !== null, nb.weaknessVersion ?? -1, nb.weakness !== null)) return next;
+  return { ...next, alliance: { ...now, boss: { ...nb, weakness: wb.weakness, weaknessVersion: wb.weaknessVersion } } };
+}
+
 export function aimOf(state: State | null): "boss" | "gnat" | "wasp" {
   const b = state?.alliance?.boss;
   if (!b) return "boss";

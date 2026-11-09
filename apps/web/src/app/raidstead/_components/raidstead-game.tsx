@@ -45,6 +45,8 @@ import { pendingSpendKey, settleSpend } from "@/features/raidstead/spends";
 import {
   aimOf,
   attackMessage,
+  keepNewerWeakness,
+  newerWeakness,
   buildNudgeShown,
   buildReport,
   buildWrapped,
@@ -250,10 +252,12 @@ export function RaidsteadGame() {
         // a newer answer already came back (answers can overtake each other)
         if (seq < appliedSeq.current) return dataRef.current;
         appliedSeq.current = seq;
+        const same = dataToken.current === token;
         dataRef.current = s;
         dataToken.current = token;
         if (typeof s.now === "number") stateSkew.current = s.now - Date.now();
-        setData(s);
+        // a hit's answer may have shown a newer weakness than this read saw
+        setData((d) => keepNewerWeakness(same ? d : null, s));
         return s;
       } catch (e) {
         if (loadSession()?.token !== token) return null;
@@ -1072,7 +1076,7 @@ export function RaidsteadGame() {
       const shot = sceneRef.current?.attack(type, aim, s);
       // an answer asked before this tap (a regular ask still on its way) would put
       // the spent energy back for a moment: it no longer counts
-      const tapSeq = (appliedSeq.current = ++refreshSeq.current);
+      appliedSeq.current = ++refreshSeq.current;
       const token = loadSession()?.token;
       setData((d) =>
         d?.member ? { ...d, member: { ...d.member, energy: d.member.energy - 1 } } : d
@@ -1081,30 +1085,14 @@ export function RaidsteadGame() {
         const r = await raidsteadApi.attack(type, s);
         shot?.resolve(impactOf(r));
         say(attackMessage(r, type, i18next.t, data?.account.name));
-        // The weakness shifted: show the new one the hit revealed, or none, now
-        // rather than after the state is asked again. Only while nothing newer
-        // (a later hit, a scout, a state answer) has been applied since the tap,
-        // and for the same session. A read still on its way may have seen the
-        // boss before the hit landed: it no longer counts. The read asked below
-        // comes after the hit and is applied.
-        if (
-          r.hit === "boss" &&
-          r.phaseShift &&
-          appliedSeq.current === tapSeq &&
-          loadSession()?.token === token
-        ) {
-          appliedSeq.current = ++refreshSeq.current;
-          setData((d) =>
-            d?.alliance
-              ? {
-                  ...d,
-                  alliance: {
-                    ...d.alliance,
-                    boss: { ...d.alliance.boss, weakness: r.weakness ?? null }
-                  }
-                }
-              : d
-          );
+        // A newer weakness than the page shows (the player's own shift, or one
+        // they did not see): shown now rather than after the state is asked
+        // again, whatever order the answers come in. Same game session only.
+        if (r.hit === "boss" && loadSession()?.token === token) {
+          setData((d) => {
+            const boss = d?.alliance && newerWeakness(d.alliance.boss, r.weakness ?? null, r.weaknessVersion);
+            return boss ? { ...d!, alliance: { ...d!.alliance!, boss } } : d;
+          });
         }
       } catch (e) {
         shot?.resolve({ kind: "miss" });
@@ -1148,14 +1136,14 @@ export function RaidsteadGame() {
         // an attack tapped right away must not be held back as unscouted (nor by
         // an answer that was asked before the scout)
         appliedSeq.current = ++refreshSeq.current;
-        setData((d) =>
-          d?.alliance
-            ? {
-                ...d,
-                alliance: { ...d.alliance, boss: { ...d.alliance.boss, weakness: r.weakness } }
-              }
-            : d
-        );
+        setData((d) => {
+          if (!d?.alliance) return d;
+          const shown = d.alliance.boss;
+          // a scout made before a shift the page already shows is no longer news
+          if (r.weaknessVersion !== undefined && r.weaknessVersion < (shown.weaknessVersion ?? -1)) return d;
+          const boss = { ...shown, weakness: r.weakness, weaknessVersion: r.weaknessVersion ?? shown.weaknessVersion };
+          return { ...d, alliance: { ...d.alliance, boss } };
+        });
       }
     );
   // A spend keeps its key until the server has answered, across a reload
