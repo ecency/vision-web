@@ -395,6 +395,37 @@ describe("ServiceWorkerRecovery", () => {
     expect(reloadMock).not.toHaveBeenCalled();
   });
 
+  describe("retired image cache", () => {
+    it("deletes the cache that held opaque image-host responses", async () => {
+      const del = vi.fn().mockResolvedValue(true);
+      vi.stubGlobal("caches", { delete: del });
+      render(<Recovery />);
+      await waitFor(() => expect(del).toHaveBeenCalledWith("ecency-images-cdn"));
+      expect(del).toHaveBeenCalledTimes(1);
+    });
+
+    it("is quiet when Cache Storage is missing or refuses", async () => {
+      vi.stubGlobal("caches", undefined);
+      expect(() => render(<Recovery />)).not.toThrow();
+
+      // jsdom does not route unhandled promise rejections to window, so listen
+      // where Node raises them.
+      const rejection = vi.fn();
+      process.prependListener("unhandledRejection", rejection);
+      try {
+        // A plain function: vi.fn() attaches its own handler to a returned promise
+        // (to record settled results), which would hide a missing .catch.
+        vi.stubGlobal("caches", { delete: () => Promise.reject(new Error("SecurityError")) });
+        render(<Recovery />);
+        await new Promise((r) => setTimeout(r, 20));
+        expect(rejection).not.toHaveBeenCalled();
+        expect(reloadMock).not.toHaveBeenCalled();
+      } finally {
+        process.removeListener("unhandledRejection", rejection);
+      }
+    });
+  });
+
   it("reloads once when a new service worker takes control of an already-controlled page", () => {
     const sw = mockServiceWorker({}); // controller present at mount → armed
     render(<Recovery />);
