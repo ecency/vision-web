@@ -63,7 +63,7 @@ export type AttackResult = { energy: number; hp: number; maxHp: number } & (
   | { hit: "gnat"; cleared: number; gnatsLeft: number }
   | { hit: "wasp"; dodged: boolean; waspHp: number }
   | { hit: "echo"; side: 0 | 1 }
-  | { hit: "boss"; damage: number; weak: boolean; paired: { by: string; damage: number; hits?: number } | null; killed: boolean; phaseShift: boolean; gnatsSpawned: number; waspArrived: boolean }
+  | { hit: "boss"; damage: number; weak: boolean; paired: { by: string; damage: number; hits?: number } | null; killed: boolean; phaseShift: boolean; gnatsSpawned: number; waspArrived: boolean; weakness?: AttackType }
 );
 export interface Helper { account: string; damage: number }
 /// Another alliance still fighting its pest, which the player can help once their own is gone.

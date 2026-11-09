@@ -425,6 +425,26 @@ describe("what the page decides before asking the server", () => {
     expect(attackMessage(shift(true), "ink", t)).toBe("hit-weak|type=ink,dmg=12 wasp-arrives");
   });
 
+  it("names the new weakness when the player's own hit shifted it and they saw it", () => {
+    const shift = (waspArrived: boolean) =>
+      hit({
+        hit: "boss",
+        damage: 12,
+        weak: true,
+        paired: null,
+        killed: false,
+        phaseShift: true,
+        gnatsSpawned: 0,
+        waspArrived,
+        weakness: "signal"
+      });
+    expect(attackMessage(shift(false), "ink", t)).toBe("hit-weak|type=ink,dmg=12 shift-seen|type=signal");
+    // the wasp cannot dodge a player who knows the weakness: no "scout again"
+    expect(attackMessage(shift(true), "ink", t)).toBe(
+      "hit-weak|type=ink,dmg=12 shift-seen|type=signal wasp-arrives-seen"
+    );
+  });
+
   it("says a pest that is gone without being chased off got away", () => {
     const s = state({ alive: false, killed: false });
     expect(buildReport(s, t)!.body).toContain("intro-escaped");

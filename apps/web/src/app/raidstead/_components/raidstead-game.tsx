@@ -1072,7 +1072,8 @@ export function RaidsteadGame() {
       const shot = sceneRef.current?.attack(type, aim, s);
       // an answer asked before this tap (a regular ask still on its way) would put
       // the spent energy back for a moment: it no longer counts
-      appliedSeq.current = ++refreshSeq.current;
+      const tapSeq = (appliedSeq.current = ++refreshSeq.current);
+      const token = loadSession()?.token;
       setData((d) =>
         d?.member ? { ...d, member: { ...d.member, energy: d.member.energy - 1 } } : d
       );
@@ -1080,6 +1081,31 @@ export function RaidsteadGame() {
         const r = await raidsteadApi.attack(type, s);
         shot?.resolve(impactOf(r));
         say(attackMessage(r, type, i18next.t, data?.account.name));
+        // The weakness shifted: show the new one the hit revealed, or none, now
+        // rather than after the state is asked again. Only while nothing newer
+        // (a later hit, a scout, a state answer) has been applied since the tap,
+        // and for the same session. A read still on its way may have seen the
+        // boss before the hit landed: it no longer counts. The read asked below
+        // comes after the hit and is applied.
+        if (
+          r.hit === "boss" &&
+          r.phaseShift &&
+          appliedSeq.current === tapSeq &&
+          loadSession()?.token === token
+        ) {
+          appliedSeq.current = ++refreshSeq.current;
+          setData((d) =>
+            d?.alliance
+              ? {
+                  ...d,
+                  alliance: {
+                    ...d.alliance,
+                    boss: { ...d.alliance.boss, weakness: r.weakness ?? null }
+                  }
+                }
+              : d
+          );
+        }
       } catch (e) {
         shot?.resolve({ kind: "miss" });
         say(errorMessage(e, i18next.t));

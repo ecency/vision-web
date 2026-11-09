@@ -236,10 +236,13 @@ export function attackMessage(r: AttackResult, type: AttackType, t: T, me?: stri
           dmg: r.damage
         })
   ];
+  // the player's own hit shifted it and they knew the old weakness: they saw the new one
+  const seen = r.phaseShift && r.weakness;
+  if (seen) parts.push(t("raidstead.toast.shift-seen", { type: t(`raidstead.types.${seen}`) }));
   // the wasp's own line says how to scout again (for free), so the shift's is left out
-  if (r.phaseShift && !r.waspArrived) parts.push(t("raidstead.toast.shift"));
+  else if (r.phaseShift && !r.waspArrived) parts.push(t("raidstead.toast.shift"));
   if (r.gnatsSpawned) parts.push(t("raidstead.toast.gnats-spawn", { n: r.gnatsSpawned }));
-  if (r.waspArrived) parts.push(t("raidstead.toast.wasp-arrives"));
+  if (r.waspArrived) parts.push(t(seen ? "raidstead.toast.wasp-arrives-seen" : "raidstead.toast.wasp-arrives"));
   return parts.join(" ");
 }
 
