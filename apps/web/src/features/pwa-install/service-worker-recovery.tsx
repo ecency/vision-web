@@ -45,6 +45,22 @@ export function reloadForSkew() {
   window.location.reload();
 }
 
+// Earlier service workers kept image-host responses here, errors included (they
+// are opaque, so the worker could not tell). The rule is gone; this clears what
+// returning visitors still hold. Safe to drop once old workers have aged out.
+const RETIRED_IMAGE_CACHE = "ecency-images-cdn";
+
+function deleteRetiredImageCache() {
+  try {
+    if (typeof caches === "undefined" || !caches) {
+      return;
+    }
+    void caches.delete(RETIRED_IMAGE_CACHE).catch(() => {});
+  } catch {
+    // Cache Storage blocked (private mode, insecure context): nothing to clear.
+  }
+}
+
 // Guards a controllerchange reload against firing twice within one page load.
 let controllerReloadStarted = false;
 
@@ -113,10 +129,12 @@ async function checkBuildSkew() {
  * 4. On tab refocus / page-cache restore, compare the running build against
  *    `/api/version` and reload on a mismatch — the only signal for a stale tab
  *    that never threw (the common iOS Chrome/Firefox case, where there's no
- *    service worker for (1) to use).
+ *    service worker for (1) to use). * 5. Delete the retired image cache (see RETIRED_IMAGE_CACHE).
  */
 export function ServiceWorkerRecovery() {
   useEffect(() => {
+    deleteRetiredImageCache();
+
     // Capture the container up front so cleanup detaches from the same object,
     // not whatever `navigator.serviceWorker` happens to be later.
     const swContainer =

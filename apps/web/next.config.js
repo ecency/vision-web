@@ -29,95 +29,13 @@ const withPWA = require("next-pwa")({
   buildExcludes: [/\.map$/, /app-build-manifest\.json$/, /(\[|%5B)/],
   // Keep the ~1.6MB geo-tag cities dataset OUT of the install-time precache so
   // it isn't eagerly downloaded for every user — it's fetched on demand when
-  // the geo-tag dialog opens and runtime-cached (see /geo rule below).
+  // the geo-tag dialog opens and runtime-cached (see the /geo rule in
+  // pwa-runtime-caching.js).
   publicExcludes: ["!noprecache/**/*", "!geo/**/*"],
   // Raise the max size to precache large chunks:
   maximumFileSizeToCacheInBytes: 8 * 1024 * 1024, // 8MB
   // Advanced caching strategies for better performance
-  runtimeCaching: [
-    {
-      // Geo-tag cities dataset: fetched once when the picker opens, then served
-      // from cache (it's a static, versioned data blob).
-      urlPattern: /\/geo\/.*\.json$/i,
-      handler: "CacheFirst",
-      options: {
-        cacheName: "ecency-geo-data",
-        expiration: {
-          maxEntries: 4,
-          maxAgeSeconds: 30 * 24 * 60 * 60 // 30 days
-        },
-        cacheableResponse: {
-          statuses: [0, 200]
-        }
-      }
-    },
-    {
-      // Build-id heartbeat for deploy-skew recovery: must ALWAYS hit the network
-      // so a stale tab never compares a service-worker-cached old build id against
-      // itself (the request's `no-store` doesn't bypass the SW Cache API). Listed
-      // before the generic /api/* NetworkFirst rule below — Workbox uses the first
-      // matching route. Offline simply fails the fetch, which the heartbeat treats
-      // as "skip" rather than a stale match.
-      urlPattern: /^https:\/\/ecency\.com\/api\/version(?:\?.*)?$/i,
-      handler: 'NetworkOnly'
-    },
-    {
-      // Cache API responses with network-first strategy
-      urlPattern: /^https:\/\/ecency\.com\/api\/.*/i,
-      handler: 'NetworkFirst',
-      options: {
-        cacheName: 'ecency-api',
-        networkTimeoutSeconds: 3,
-        expiration: {
-          maxEntries: 30,
-          maxAgeSeconds: 2 * 60 // 2 minutes
-        },
-        cacheableResponse: {
-          statuses: [0, 200]
-        }
-      }
-    },
-    {
-      // Cache CDN-proxied images (user avatars, post images).
-      // Covers i/img/images.ecency.com — all the same imagehoster backend.
-      urlPattern: /^https:\/\/(?:i|img|images)\.ecency\.com\/.*/i,
-      handler: 'CacheFirst',
-      options: {
-        cacheName: 'ecency-images-cdn',
-        expiration: {
-          maxEntries: 200,
-          maxAgeSeconds: 7 * 24 * 60 * 60 // 7 days
-        },
-        cacheableResponse: {
-          statuses: [0, 200]
-        }
-      }
-    },
-    {
-      // Cache local images and static assets
-      urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|avif)$/i,
-      handler: 'CacheFirst',
-      options: {
-        cacheName: 'local-images',
-        expiration: {
-          maxEntries: 100,
-          maxAgeSeconds: 30 * 24 * 60 * 60 // 30 days
-        }
-      }
-    },
-    {
-      // Cache fonts
-      urlPattern: /\.(?:woff|woff2|ttf|otf|eot)$/i,
-      handler: 'CacheFirst',
-      options: {
-        cacheName: 'fonts',
-        expiration: {
-          maxEntries: 20,
-          maxAgeSeconds: 365 * 24 * 60 * 60 // 1 year
-        }
-      }
-    }
-  ]
+  runtimeCaching: require("./pwa-runtime-caching")
 });
 const appPackage = require("./package.json");
 const { execSync } = require("child_process");
