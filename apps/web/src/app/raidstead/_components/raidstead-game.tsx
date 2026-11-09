@@ -1080,6 +1080,22 @@ export function RaidsteadGame() {
         const r = await raidsteadApi.attack(type, s);
         shot?.resolve(impactOf(r));
         say(attackMessage(r, type, i18next.t, data?.account.name));
+        if (r.hit === "boss" && r.phaseShift) {
+          // the weakness shifted: show the new one the hit revealed, or none, now
+          // rather than after the state is asked again (and not from an older answer)
+          appliedSeq.current = ++refreshSeq.current;
+          setData((d) =>
+            d?.alliance
+              ? {
+                  ...d,
+                  alliance: {
+                    ...d.alliance,
+                    boss: { ...d.alliance.boss, weakness: r.weakness ?? null }
+                  }
+                }
+              : d
+          );
+        }
       } catch (e) {
         shot?.resolve({ kind: "miss" });
         say(errorMessage(e, i18next.t));

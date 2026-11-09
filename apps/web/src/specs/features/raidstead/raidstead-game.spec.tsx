@@ -1008,6 +1008,31 @@ describe("Raidstead page", () => {
       expect(scene.attack).toHaveBeenCalledWith("ink", "wasp", 0);
     });
 
+    it("shows what a shifting hit did to the weakness before the state is asked again", async () => {
+      const s = state();
+      Object.assign(s.alliance.boss, { weakness: "ink" });
+      api.state.mockResolvedValue(s);
+      render(<RaidsteadGame />);
+      await ready();
+      // the state is slow to come back: the badge must not wait for it
+      api.state.mockImplementation(() => new Promise(() => {}));
+      const shift = { hit: "boss", damage: 12, weak: true, paired: null, killed: false, phaseShift: true, gnatsSpawned: 0, waspArrived: false, energy: 4, hp: 444, maxHp: 600 };
+      api.attack.mockResolvedValueOnce({ ...shift, weakness: "signal" });
+      await act(async () => {
+        fireEvent.click(attackButton("ink"));
+      });
+      const badge = () => document.querySelector(".rs-weak.known") as HTMLElement | null;
+      // the player's own hit shifted it and they saw the new one
+      expect(badge()!.style.getPropertyValue("--c")).toBe(attackButton("signal").style.getPropertyValue("--c"));
+      // a shift the player did not see: the old weakness is no longer shown as known
+      api.attack.mockResolvedValueOnce({ ...shift, hp: 140 });
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+        fireEvent.click(attackButton("signal"));
+      });
+      expect(badge()).toBeNull();
+    });
+
     it("says a plain scout is needed when the server does not offer a free one", async () => {
       const wasp = state();
       wasp.alliance.boss.waspHp = 3;
