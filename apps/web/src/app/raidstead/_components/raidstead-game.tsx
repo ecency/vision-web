@@ -1072,7 +1072,8 @@ export function RaidsteadGame() {
       const shot = sceneRef.current?.attack(type, aim, s);
       // an answer asked before this tap (a regular ask still on its way) would put
       // the spent energy back for a moment: it no longer counts
-      appliedSeq.current = ++refreshSeq.current;
+      const tapSeq = (appliedSeq.current = ++refreshSeq.current);
+      const token = loadSession()?.token;
       setData((d) =>
         d?.member ? { ...d, member: { ...d.member, energy: d.member.energy - 1 } } : d
       );
@@ -1080,10 +1081,16 @@ export function RaidsteadGame() {
         const r = await raidsteadApi.attack(type, s);
         shot?.resolve(impactOf(r));
         say(attackMessage(r, type, i18next.t, data?.account.name));
-        if (r.hit === "boss" && r.phaseShift) {
-          // the weakness shifted: show the new one the hit revealed, or none, now
-          // rather than after the state is asked again (and not from an older answer)
-          appliedSeq.current = ++refreshSeq.current;
+        // The weakness shifted: show the new one the hit revealed, or none, now
+        // rather than after the state is asked again. Only while nothing newer
+        // (a later hit, a scout, a state answer) has been applied since the tap,
+        // and for the same session. The state asked below still corrects it.
+        if (
+          r.hit === "boss" &&
+          r.phaseShift &&
+          appliedSeq.current === tapSeq &&
+          loadSession()?.token === token
+        ) {
           setData((d) =>
             d?.alliance
               ? {
