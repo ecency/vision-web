@@ -1008,130 +1008,155 @@ describe("Raidstead page", () => {
       expect(scene.attack).toHaveBeenCalledWith("ink", "wasp", 0);
     });
 
-    it("shows what a shifting hit did to the weakness before the state is asked again", async () => {
-      const s = state();
-      Object.assign(s.alliance.boss, { weakness: "ink" });
-      api.state.mockResolvedValue(s);
-      render(<RaidsteadGame />);
-      await ready();
-      // the state is slow to come back: the badge must not wait for it
-      api.state.mockImplementation(() => new Promise(() => {}));
-      const shift = { hit: "boss", damage: 12, weak: true, paired: null, killed: false, phaseShift: true, gnatsSpawned: 0, waspArrived: false, energy: 4, hp: 444, maxHp: 600 };
-      api.attack.mockResolvedValueOnce({ ...shift, weakness: "signal" });
-      await act(async () => {
-        fireEvent.click(attackButton("ink"));
-      });
-      const badge = () => document.querySelector(".rs-weak.known") as HTMLElement | null;
-      // the player's own hit shifted it and they saw the new one
-      expect(badge()!.style.getPropertyValue("--c")).toBe(attackButton("signal").style.getPropertyValue("--c"));
-      // a shift the player did not see: the old weakness is no longer shown as known
-      api.attack.mockResolvedValueOnce({ ...shift, hp: 140 });
-      await act(async () => {
-        vi.advanceTimersByTime(1000);
-        fireEvent.click(attackButton("signal"));
-      });
-      expect(badge()).toBeNull();
-    });
-
-    describe("a shifting hit's answer that is no longer the newest", () => {
+    describe("the weakness from answers that arrive in any order", () => {
+      // the server's weakness version: season, day and how often it has shifted
+      const V = 1_001_000_000;
       const shift = { hit: "boss", damage: 12, weak: true, paired: null, killed: false, phaseShift: true, gnatsSpawned: 0, waspArrived: false, energy: 4, hp: 444, maxHp: 600 };
       const badge = () => document.querySelector(".rs-weak.known") as HTMLElement | null;
       const colour = (type: string) => attackButton(type).style.getPropertyValue("--c");
+      const shows = (type: string | null) =>
+        type === null ? expect(badge()).toBeNull() : expect(badge()?.style.getPropertyValue("--c")).toBe(colour(type));
       const pending = () => {
         let answer!: (r: unknown) => void;
         api.attack.mockReturnValueOnce(new Promise((r) => (answer = r)));
         return (r: unknown) => act(async () => answer(r));
       };
-      const start = async (weakness: string | null) => {
+      const read = (weakness: string | null, weaknessVersion: number) => {
         const s = state();
-        Object.assign(s.alliance.boss, { weakness });
-        api.state.mockResolvedValue(s);
+        Object.assign(s.alliance.boss, { weakness, weaknessVersion });
+        return s;
+      };
+      // a state read the page asks on its own while the player plays
+      const poll = async () => {
+        let answer!: (s: unknown) => void;
+        api.state.mockImplementationOnce(() => new Promise((r) => (answer = r)));
+        await act(async () => {
+          vi.advanceTimersByTime(20_500);
+        });
+        return (s: unknown) => act(async () => answer(s));
+      };
+      const start = async (weakness: string | null) => {
+        api.state.mockResolvedValue(read(weakness, V));
         render(<RaidsteadGame />);
         await ready();
+        // reads asked from here on stay unanswered unless a test answers them
         api.state.mockImplementation(() => new Promise(() => {}));
       };
+      const tap = (type: string) =>
+        act(async () => {
+          vi.advanceTimersByTime(1000);
+          fireEvent.click(attackButton(type));
+        });
+
+      it("shows what a shifting hit did to the weakness before the state is asked again", async () => {
+        await start("ink");
+        api.attack.mockResolvedValueOnce({ ...shift, weakness: "signal", weaknessVersion: V + 1 });
+        await tap("ink");
+        shows("signal");                           // the player's own hit shifted it and they saw it
+        api.attack.mockResolvedValueOnce({ ...shift, hp: 140, weaknessVersion: V + 2 });
+        await tap("signal");
+        shows(null);                               // a shift the player did not see
+      });
+
+      it("a hit that knows nothing newer changes nothing", async () => {
+        await start("ink");
+        api.attack.mockResolvedValueOnce({ ...shift, phaseShift: false, weaknessVersion: V });
+        await tap("ink");
+        shows("ink");
+        // an older server sends no version: the badge waits for the state
+        api.attack.mockResolvedValueOnce({ ...shift, weakness: "signal" });
+        await tap("ink");
+        shows("ink");
+      });
 
       it("an older hit answered last does not undo the newer one", async () => {
         await start("ink");
         const first = pending(), second = pending();
-        await act(async () => {
-          fireEvent.click(attackButton("ink"));
-          vi.advanceTimersByTime(1000);
-        });
-        await act(async () => {
-          fireEvent.click(attackButton("ink"));
-        });
-        await second({ ...shift, weakness: "forge" });
-        expect(badge()!.style.getPropertyValue("--c")).toBe(colour("forge"));
-        await first({ ...shift, weakness: "signal" });
-        expect(badge()!.style.getPropertyValue("--c")).toBe(colour("forge"));
+        await tap("ink");
+        await tap("ink");
+        await second({ ...shift, weakness: "forge", weaknessVersion: V + 2 });
+        shows("forge");
+        await first({ ...shift, weakness: "signal", weaknessVersion: V + 1 });
+        shows("forge");
       });
 
-      it("a scout made while the hit was on its way is kept", async () => {
+      it("a scout made after the hit landed is kept; one made before it is not", async () => {
         await start(null);
-        const hit = pending();
-        await act(async () => {
-          fireEvent.click(attackButton("ink"));
-        });
-        api.scout.mockResolvedValueOnce({ weakness: "forge", scoutsLeft: 0 });
+        let hit = pending();
+        await tap("ink");
+        api.scout.mockResolvedValueOnce({ weakness: "forge", weaknessVersion: V + 1, scoutsLeft: 0 });
         await act(async () => {
           fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.scout/ }));
         });
-        expect(badge()!.style.getPropertyValue("--c")).toBe(colour("forge"));
-        await hit(shift);                          // a shift this player did not see
-        expect(badge()!.style.getPropertyValue("--c")).toBe(colour("forge"));
+        shows("forge");
+        await hit({ ...shift, weaknessVersion: V + 1 }); // the shift the scout already saw
+        shows("forge");
+        hit = pending();
+        await tap("forge");
+        await hit({ ...shift, weaknessVersion: V + 2 }); // a newer shift the player did not see
+        shows(null);
       });
 
-      it("a state read asked during the hit and answered after it does not bring the old weakness back", async () => {
+      it("a state read made before the hit landed does not undo it, whichever answers first", async () => {
         await start("ink");
-        const hit = pending();
-        await act(async () => {
-          fireEvent.click(attackButton("ink"));
-        });
-        // the page's regular read goes out while the hit is on its way, and reads
-        // the boss before the hit lands
-        let late!: (s: unknown) => void;
-        const asks = api.state.mock.calls.length;
-        api.state.mockImplementationOnce(() => new Promise((r) => (late = r)));
-        await act(async () => {
-          vi.advanceTimersByTime(20_500);
-        });
-        expect(api.state.mock.calls.length).toBe(asks + 1);
-        await hit({ ...shift, weakness: "signal" });
-        expect(badge()!.style.getPropertyValue("--c")).toBe(colour("signal"));
-        const before = state();
-        Object.assign(before.alliance.boss, { weakness: "ink" });
-        await act(async () => late(before));
-        expect(badge()!.style.getPropertyValue("--c")).toBe(colour("signal"));
+        let hit = pending();
+        await tap("ink");
+        const late = await poll();
+        await hit({ ...shift, weakness: "signal", weaknessVersion: V + 1 });
+        shows("signal");
+        await late(read("ink", V));                // answered after the hit
+        shows("signal");
+        hit = pending();
+        await tap("signal");
+        const early = await poll();
+        await early(read("signal", V + 1));        // answered before the hit
+        await hit({ ...shift, weakness: "forge", weaknessVersion: V + 2 });
+        shows("forge");
       });
 
-      it("a state read that read the boss before the hit landed and answered first does not hold the hit back", async () => {
+      it("a newer weakness from the state (a Queen reshuffle, an ally's shift) is not undone by a late hit", async () => {
         await start("ink");
         const hit = pending();
+        await tap("ink");
+        const early = await poll();
+        await early(read(null, V + 2));            // the hit landed, then the Queen reshuffled
+        shows(null);
+        await hit({ ...shift, weakness: "signal", weaknessVersion: V + 1 });
+        shows(null);
+      });
+
+      it("a scout the server made before a shift the page already shows is not news", async () => {
+        await start(null);
+        const hit = pending();
+        await tap("ink");
+        let scouted!: (r: unknown) => void;
+        api.scout.mockReturnValueOnce(new Promise((r) => (scouted = r)));
         await act(async () => {
-          fireEvent.click(attackButton("ink"));
+          fireEvent.click(screen.getByRole("button", { name: /raidstead.actions.scout/ }));
         });
-        let early!: (s: unknown) => void;
-        api.state.mockImplementationOnce(() => new Promise((r) => (early = r)));
-        await act(async () => {
-          vi.advanceTimersByTime(20_500);
-        });
-        const before = state();
-        Object.assign(before.alliance.boss, { weakness: "ink" });
-        await act(async () => early(before));
-        await hit({ ...shift, weakness: "signal" });
-        expect(badge()!.style.getPropertyValue("--c")).toBe(colour("signal"));
+        await hit({ ...shift, weaknessVersion: V + 2 }); // shifted after the scout was answered
+        await act(async () => scouted({ weakness: "signal", weaknessVersion: V + 1, scoutsLeft: 0 }));
+        shows(null);
+      });
+
+      it("a newer weakness of another game session is not kept over this one's state", async () => {
+        await start("ink");
+        api.attack.mockResolvedValueOnce({ ...shift, weakness: "signal", weaknessVersion: V + 1 });
+        await tap("ink");
+        shows("signal");
+        box.stored = { account: "bob", token: "rs1_bob", expiresAt: expiry() };
+        const answer = await poll();
+        await answer(read("forge", V));            // bob's own read of the same town
+        shows("forge");
       });
 
       it("is not applied once another game session has started", async () => {
         await start("ink");
         const hit = pending();
-        await act(async () => {
-          fireEvent.click(attackButton("ink"));
-        });
+        await tap("ink");
         box.stored = { account: "bob", token: "rs1_bob", expiresAt: expiry() };
-        await hit({ ...shift, weakness: "signal" });
-        expect(badge()!.style.getPropertyValue("--c")).toBe(colour("ink"));
+        await hit({ ...shift, weakness: "signal", weaknessVersion: V + 1 });
+        shows("ink");
       });
     });
 

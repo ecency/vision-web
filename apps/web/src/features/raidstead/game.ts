@@ -52,6 +52,26 @@ export function worldOf(state: State | null, view: View): SceneWorld {
 
 /// Where an attack will land before the server answers: the shield first,
 /// then the wasp, then the boss (the server resolves it the same way).
+/// The boss told a weakness at `version`, when that is newer than what it shows;
+/// null when it is not (answers arrive in any order, the server's version says
+/// which is newer). Without a version nothing can be said, so nothing changes.
+export function newerWeakness(boss: Boss, weakness: AttackType | null, version: number | undefined): Boss | null {
+  if (version === undefined || version <= (boss.weaknessVersion ?? -1)) return null;
+  return { ...boss, weakness, weaknessVersion: version };
+}
+
+/// A state answer for the page, keeping the weakness the page already shows when
+/// that one is newer (a hit's answer that came first). Same game session only.
+export function keepNewerWeakness(shown: State | null, next: State): State {
+  const was = shown?.alliance, now = next.alliance;
+  if (!was || !now || was.community !== now.community) return next;
+  if ((was.boss.weaknessVersion ?? -1) <= (now.boss.weaknessVersion ?? -1)) return next;
+  return {
+    ...next,
+    alliance: { ...now, boss: { ...now.boss, weakness: was.boss.weakness, weaknessVersion: was.boss.weaknessVersion } }
+  };
+}
+
 export function aimOf(state: State | null): "boss" | "gnat" | "wasp" {
   const b = state?.alliance?.boss;
   if (!b) return "boss";

@@ -24,6 +24,10 @@ export interface Boss {
   /// Chased off this week. A boss that is neither alive nor killed got away.
   killed?: boolean;
   weakness: AttackType | null;
+  /// Which weakness the boss is on: grows with every shift, Queen reshuffle, day
+  /// and season. Answers arrive in any order; the higher version is the newer one.
+  /// Older servers do not send it.
+  weaknessVersion?: number;
   /// Hits waiting on one twin for the other to be hit, until `until` on the server's clock.
   echo: { side: 0 | 1; by: string; until: number; hits?: number } | null;
   reshuffleAt: number | null;
@@ -63,13 +67,13 @@ export type AttackResult = { energy: number; hp: number; maxHp: number } & (
   | { hit: "gnat"; cleared: number; gnatsLeft: number }
   | { hit: "wasp"; dodged: boolean; waspHp: number }
   | { hit: "echo"; side: 0 | 1 }
-  | { hit: "boss"; damage: number; weak: boolean; paired: { by: string; damage: number; hits?: number } | null; killed: boolean; phaseShift: boolean; gnatsSpawned: number; waspArrived: boolean; weakness?: AttackType }
+  | { hit: "boss"; damage: number; weak: boolean; paired: { by: string; damage: number; hits?: number } | null; killed: boolean; phaseShift: boolean; gnatsSpawned: number; waspArrived: boolean; weakness?: AttackType; weaknessVersion?: number }
 );
 export interface Helper { account: string; damage: number }
 /// Another alliance still fighting its pest, which the player can help once their own is gone.
 export interface HelpTarget { community: string; title: string; league: League; kind: string; hp: number; maxHp: number; raiders: number; helpLeft: number }
 export interface HelpAttackResult { damage: number; hp: number; maxHp: number; energy: number; helpLeft: number; badge: "helper" | null }
-export interface ScoutResult { weakness: AttackType; tomorrow?: AttackType; scoutsLeft: number }
+export interface ScoutResult { weakness: AttackType; weaknessVersion?: number; tomorrow?: AttackType; scoutsLeft: number }
 export interface Session { token: string; account: string; expiresAt: string }
 /// `players` (members playing this season) and `lastSeason` (who played last season)
 /// come from newer servers only.

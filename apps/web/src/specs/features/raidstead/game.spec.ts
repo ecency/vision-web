@@ -4,6 +4,8 @@ import {
   aimOf,
   alliancesOfWeek,
   attackMessage,
+  keepNewerWeakness,
+  newerWeakness,
   buildBlock,
   buildNudgeShown,
   buildReport,
@@ -443,6 +445,30 @@ describe("what the page decides before asking the server", () => {
     expect(attackMessage(shift(true), "ink", t)).toBe(
       "hit-weak|type=ink,dmg=12 shift-seen|type=signal wasp-arrives-seen"
     );
+  });
+
+  it("keeps the newer of two weaknesses by the server's version", () => {
+    const at = (weakness: string | null, weaknessVersion?: number, community = "hive-1") => {
+      const s = state({ alive: true, killed: false });
+      Object.assign(s.alliance!, { community });
+      Object.assign(s.alliance!.boss, { weakness, weaknessVersion });
+      return s;
+    };
+    const boss = at("ink", 5).alliance!.boss;
+    expect(newerWeakness(boss, "signal", 6)).toMatchObject({ weakness: "signal", weaknessVersion: 6 });
+    expect(newerWeakness(boss, null, 6)).toMatchObject({ weakness: null, weaknessVersion: 6 });
+    expect(newerWeakness(boss, "signal", 5)).toBeNull();
+    expect(newerWeakness(boss, "signal", 4)).toBeNull();
+    expect(newerWeakness(boss, "signal", undefined)).toBeNull();
+    expect(newerWeakness(at(null).alliance!.boss, "signal", 1)).toMatchObject({ weakness: "signal" });
+    // a state answer that read the boss before a newer weakness was shown
+    expect(keepNewerWeakness(at("signal", 6), at("ink", 5)).alliance!.boss).toMatchObject({ weakness: "signal", weaknessVersion: 6 });
+    expect(keepNewerWeakness(at("signal", 6), at(null, 7)).alliance!.boss).toMatchObject({ weakness: null, weaknessVersion: 7 });
+    expect(keepNewerWeakness(at("signal", 6), at(null, 6)).alliance!.boss.weakness).toBeNull();
+    // another town, nothing shown yet, or an older server: the answer as it came
+    expect(keepNewerWeakness(at("signal", 6, "hive-2"), at("ink", 5)).alliance!.boss.weakness).toBe("ink");
+    expect(keepNewerWeakness(null, at("ink", 5)).alliance!.boss.weakness).toBe("ink");
+    expect(keepNewerWeakness(at("signal"), at("ink")).alliance!.boss.weakness).toBe("ink");
   });
 
   it("says a pest that is gone without being chased off got away", () => {
