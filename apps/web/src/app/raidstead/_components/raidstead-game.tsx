@@ -204,6 +204,10 @@ export function RaidsteadGame() {
   // session that asked
   const refreshSeq = useRef(0);
   const appliedSeq = useRef(0);
+  // The player's newest own action that tells the boss's weakness (a hit, a
+  // scout). A state answer cannot say whether it was read before or after a
+  // hit landed, so only these decide whether a hit's weakness is still news.
+  const weakSeq = useRef(0);
   const dataRef = useRef<State | null>(null);
   // the game session the shown state belongs to
   const dataToken = useRef<string | undefined>(undefined);
@@ -1072,7 +1076,7 @@ export function RaidsteadGame() {
       const shot = sceneRef.current?.attack(type, aim, s);
       // an answer asked before this tap (a regular ask still on its way) would put
       // the spent energy back for a moment: it no longer counts
-      const tapSeq = (appliedSeq.current = ++refreshSeq.current);
+      const tapSeq = (appliedSeq.current = weakSeq.current = ++refreshSeq.current);
       const token = loadSession()?.token;
       setData((d) =>
         d?.member ? { ...d, member: { ...d.member, energy: d.member.energy - 1 } } : d
@@ -1082,15 +1086,15 @@ export function RaidsteadGame() {
         shot?.resolve(impactOf(r));
         say(attackMessage(r, type, i18next.t, data?.account.name));
         // The weakness shifted: show the new one the hit revealed, or none, now
-        // rather than after the state is asked again. Only while nothing newer
-        // (a later hit, a scout, a state answer) has been applied since the tap,
-        // and for the same session. A read still on its way may have seen the
-        // boss before the hit landed: it no longer counts. The read asked below
-        // comes after the hit and is applied.
+        // rather than after the state is asked again. Only while the player has
+        // not hit or scouted since this tap, and for the same session. A state
+        // answer that came first may have read the boss before the hit landed,
+        // and one still on its way too: neither counts against it. The read
+        // asked below comes after the hit and is applied.
         if (
           r.hit === "boss" &&
           r.phaseShift &&
-          appliedSeq.current === tapSeq &&
+          weakSeq.current === tapSeq &&
           loadSession()?.token === token
         ) {
           appliedSeq.current = ++refreshSeq.current;
@@ -1147,7 +1151,7 @@ export function RaidsteadGame() {
         // known from this answer on, not only once the state has been asked again:
         // an attack tapped right away must not be held back as unscouted (nor by
         // an answer that was asked before the scout)
-        appliedSeq.current = ++refreshSeq.current;
+        appliedSeq.current = weakSeq.current = ++refreshSeq.current;
         setData((d) =>
           d?.alliance
             ? {

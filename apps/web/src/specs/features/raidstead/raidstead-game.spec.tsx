@@ -1105,6 +1105,24 @@ describe("Raidstead page", () => {
         expect(badge()!.style.getPropertyValue("--c")).toBe(colour("signal"));
       });
 
+      it("a state read that read the boss before the hit landed and answered first does not hold the hit back", async () => {
+        await start("ink");
+        const hit = pending();
+        await act(async () => {
+          fireEvent.click(attackButton("ink"));
+        });
+        let early!: (s: unknown) => void;
+        api.state.mockImplementationOnce(() => new Promise((r) => (early = r)));
+        await act(async () => {
+          vi.advanceTimersByTime(20_500);
+        });
+        const before = state();
+        Object.assign(before.alliance.boss, { weakness: "ink" });
+        await act(async () => early(before));
+        await hit({ ...shift, weakness: "signal" });
+        expect(badge()!.style.getPropertyValue("--c")).toBe(colour("signal"));
+      });
+
       it("is not applied once another game session has started", async () => {
         await start("ink");
         const hit = pending();
