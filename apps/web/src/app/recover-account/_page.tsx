@@ -7,7 +7,6 @@ import {
   deriveRecoveryKeys,
   type RecoveryKeySet
 } from "@/features/account-recovery/recovery-keys";
-import { verifyRecoveredKeys } from "@/features/account-recovery/recovery-chain";
 import { generateMasterPassword } from "@/utils/master-password";
 import { RecoverStartStep } from "./_components/recover-start-step";
 import { RecoverPasswordStep } from "./_components/recover-password-step";
@@ -39,6 +38,8 @@ interface Session {
 export interface RecoveryProof {
   oldKey: PrivateKey;
   recentOwnerAuthority: Authority;
+  /** When the proven key stopped being the owner key (chain time). */
+  validUntil: string;
 }
 
 /**
@@ -102,22 +103,27 @@ export function RecoverAccountPage() {
     setStep("code");
   }, []);
 
-  const finish = useCallback(async () => {
-    if (!session || !keysRef.current) return;
-    const publicKeys = keysRef.current.publicKeys;
+  // Keys are verified on chain: record the completion before the optional clean-up.
+  const handleKeysReplaced = useCallback(
+    async (keysVerified: boolean) => {
+      proofRef.current = null;
+      setVerified(keysVerified);
+      if (session && keysVerified) {
+        try {
+          await recoveryComplete(session.requestId);
+        } catch {
+          // Only an audit record; the account is already recovered on chain.
+        }
+      }
+      setStep("cleanup");
+    },
+    [session]
+  );
+
+  const finish = useCallback(() => {
     clearSecrets();
-    try {
-      await recoveryComplete(session.requestId);
-    } catch {
-      // Only an audit record; the account is already recovered on chain.
-    }
-    try {
-      setVerified(await verifyRecoveredKeys(session.username, publicKeys));
-    } catch {
-      setVerified(false);
-    }
     setStep("success");
-  }, [clearSecrets, session]);
+  }, [clearSecrets]);
 
   const keys = keysRef.current;
   const proof = proofRef.current;
@@ -176,10 +182,8 @@ export function RecoverAccountPage() {
             username={session.username}
             keys={keys}
             proof={proof}
-            onDone={() => {
-              proofRef.current = null;
-              setStep("cleanup");
-            }}
+            onKeysReplaced={handleKeysReplaced}
+            onManual={showManual}
           />
         )}
 

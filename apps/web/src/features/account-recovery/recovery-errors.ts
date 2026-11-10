@@ -10,7 +10,8 @@ export const MANUAL_HELP_ERRORS = new Set([
   "not_ecency_recovery",
   "no_email",
   "no_recent_owner_change",
-  "key_not_recent"
+  "key_not_recent",
+  "key_not_sufficient"
 ]);
 
 /** Errors that end the current request; the user has to start again. */

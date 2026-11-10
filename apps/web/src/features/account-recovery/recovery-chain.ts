@@ -5,13 +5,6 @@ import {
   buildRecoveryRecoverAccountOp,
   buildRecoveryReplaceKeysOp,
   callRPC,
-  getAccountPendingRecoveryQueryOptions,
-  getLastAccountRecoveryQueryOptions,
-  getOpenOrdersQueryOptions,
-  getOwnerHistoryQueryOptions,
-  getRecurrentTransfersQueryOptions,
-  getSavingsWithdrawFromQueryOptions,
-  getWithdrawRoutesQueryOptions,
   type Authority,
   type Operation,
   type OwnerHistoryEntry,
@@ -19,7 +12,7 @@ import {
   type PrivateKey,
   type RecoveryNewKeys
 } from "@ecency/sdk";
-import { getQueryClient } from "@/core/react-query";
+import { findPostingAuthsAddedAfter, parseChainTime } from "./recovery-eligibility";
 import type { RecoveryKeySet } from "./recovery-keys";
 
 export const RECOVERY_ACCOUNT = "ecency";
@@ -27,7 +20,7 @@ export const RECOVERY_ACCOUNT = "ecency";
 export type RecoveryRole = "owner" | "active" | "posting";
 export const RECOVERY_ROLES: RecoveryRole[] = ["owner", "active", "posting"];
 
-/** The raw chain account fields the recovery needs (not the parsed profile shape). */
+/** The chain account fields the recovery needs, as database_api.find_accounts returns them. */
 export interface RecoveryAccount {
   name: string;
   owner: Authority;
@@ -35,56 +28,87 @@ export interface RecoveryAccount {
   posting: Authority;
   memo_key: string;
   json_metadata: string;
-  last_owner_update: string;
   recovery_account: string;
-  vesting_withdraw_rate?: string;
+  last_owner_update: string;
+  previous_owner_update: string;
+  last_account_recovery: string;
+  /** Normalized to "x.xxxxxx VESTS". */
+  vesting_withdraw_rate: string;
 }
 
 export interface RecoveryChainState {
   account: RecoveryAccount;
   ownerHistory: OwnerHistoryEntry[];
+  /** Time of the latest recover_account, or null if the account was never recovered. */
   lastRecoveryTime: string | null;
-  hasPendingRecoveryChange: boolean;
+  /** Head block time in ms: hourly limits are judged against chain time. */
+  headTime: number;
 }
 
-/** Always read fresh: these reads gate owner key changes. */
-function fetchFresh<T>(options: { queryKey: readonly unknown[]; queryFn?: unknown }): Promise<T> {
-  return getQueryClient().fetchQuery({ ...(options as any), staleTime: 0, retry: 1 }) as Promise<T>;
+/** account_update (10) and account_update2 (43) in operation_filter_low. */
+const ACCOUNT_UPDATE_FILTER_LOW = 2 ** 10 + 2 ** 43;
+const NEVER = Date.parse("1970-01-02T00:00:00Z");
+
+function toVests(value: unknown): string {
+  if (typeof value === "string") return value;
+  const nai = value as { amount?: string; precision?: number } | undefined;
+  const precision = nai?.precision ?? 6;
+  return `${(Number(nai?.amount ?? 0) / 10 ** precision).toFixed(precision)} VESTS`;
 }
 
+/** Always reads fresh from the chain: these values gate owner key changes. */
 export async function loadRecoveryAccount(username: string): Promise<RecoveryAccount> {
-  const rows = (await callRPC(
-    "condenser_api.get_accounts",
-    [[username]],
+  const result = (await callRPC("database_api.find_accounts", { accounts: [username] })) as {
+    accounts?: (RecoveryAccount & { vesting_withdraw_rate: unknown })[];
+  };
+  const account = result?.accounts?.[0];
+  if (!account || account.name !== username) {
+    throw new Error("Account not found");
+  }
+  return { ...account, vesting_withdraw_rate: toVests(account.vesting_withdraw_rate) };
+}
+
+export async function loadRecoveryChainState(username: string): Promise<RecoveryChainState> {
+  const [account, ownerHistory, props] = await Promise.all([
+    loadRecoveryAccount(username),
+    callRPC("condenser_api.get_owner_history", [username]) as Promise<OwnerHistoryEntry[]>,
+    callRPC("database_api.get_dynamic_global_properties", {}) as Promise<{ time: string }>
+  ]);
+
+  const headTime = parseChainTime(props?.time ?? "");
+  if (!Array.isArray(ownerHistory) || Number.isNaN(headTime)) {
+    throw new Error("Unexpected chain response");
+  }
+  const lastRecovery = account.last_account_recovery;
+  return {
+    account,
+    ownerHistory,
+    lastRecoveryTime: lastRecovery && parseChainTime(lastRecovery) >= NEVER ? lastRecovery : null,
+    headTime
+  };
+}
+
+/**
+ * Posting account authorities set by account updates after `validUntil`, the
+ * moment the proven owner key was replaced. Rejects on a failed read; the page
+ * then treats every posting authority as unconfirmed.
+ */
+export async function loadRecentPostingAuthAdds(
+  username: string,
+  validUntil: string
+): Promise<Set<string>> {
+  const rows = await callRPC(
+    "condenser_api.get_account_history",
+    [username, -1, 1000, ACCOUNT_UPDATE_FILTER_LOW, 0],
     undefined,
     undefined,
     undefined,
     (result: unknown) => Array.isArray(result)
-  )) as RecoveryAccount[];
-  if (!rows?.[0]) {
-    throw new Error("Account not found");
+  );
+  if (!Array.isArray(rows)) {
+    throw new Error("Unexpected account history response");
   }
-  return rows[0];
-}
-
-export async function loadRecoveryChainState(username: string): Promise<RecoveryChainState> {
-  const [account, ownerHistory, lastRecoveryTime, pending] = await Promise.all([
-    loadRecoveryAccount(username),
-    fetchFresh<OwnerHistoryEntry[]>(getOwnerHistoryQueryOptions(username)),
-    fetchFresh<string | null>(getLastAccountRecoveryQueryOptions(username)),
-    fetchFresh<{ requests?: { account_to_recover: string }[] }>(
-      getAccountPendingRecoveryQueryOptions(username)
-    )
-  ]);
-
-  return {
-    account,
-    ownerHistory: ownerHistory ?? [],
-    lastRecoveryTime,
-    hasPendingRecoveryChange: (pending?.requests ?? []).some(
-      (r) => r.account_to_recover === username
-    )
-  };
+  return findPostingAuthsAddedAfter(rows, validUntil);
 }
 
 /** tx1: recover_account, signed by the proven old owner key and the new owner key. */
@@ -108,17 +132,24 @@ export function submitRecoverAccount(input: {
 }
 
 /**
- * tx2: replace every key with the new ones, signed by the new owner key. The
- * account is read again right before signing; only the account authorities the
- * user chose to keep stay, so anything added in the meantime is dropped.
+ * tx2: replace every key with the new ones, signed by the new owner key. Runs
+ * after tx1 landed and reads the chain again first: only the account
+ * authorities the user chose stay (anything added since is dropped), and a
+ * pending change of recovery account, which may have been made before tx1
+ * landed, is cancelled in the same transaction.
  */
 export async function submitReplaceKeys(input: {
   username: string;
   newKeys: RecoveryKeySet;
   keepAccountAuths: Record<RecoveryRole, string[]>;
-  changeRecoveryAccount: boolean;
 }) {
-  const account = await loadRecoveryAccount(input.username);
+  const [account, pending] = await Promise.all([
+    loadRecoveryAccount(input.username),
+    callRPC("database_api.find_change_recovery_account_requests", {
+      accounts: [input.username]
+    }) as Promise<{ requests?: { account_to_recover: string }[] }>
+  ]);
+
   const accountAuths = Object.fromEntries(
     RECOVERY_ROLES.map((role) => [
       role,
@@ -129,20 +160,49 @@ export async function submitReplaceKeys(input: {
   const ops: Operation[] = [
     buildRecoveryReplaceKeysOp(account, input.newKeys.publicKeys, { accountAuths })
   ];
-  if (input.changeRecoveryAccount) {
+  if ((pending?.requests ?? []).some((r) => r.account_to_recover === input.username)) {
     ops.push(buildChangeRecoveryAccountOp(input.username, RECOVERY_ACCOUNT));
   }
   return broadcastOperationsWithKeys(ops, [input.newKeys.owner]);
+}
+
+/** True when the owner authority is exactly the new owner key. */
+export function isOwnerReplaced(account: Pick<RecoveryAccount, "owner">, ownerPublicKey: string) {
+  const { owner } = account;
+  return (
+    owner.weight_threshold === 1 &&
+    owner.key_auths.length === 1 &&
+    String(owner.key_auths[0][0]) === ownerPublicKey
+  );
+}
+
+/** True when every key on the account is exactly the new key for its role. */
+export function areAllKeysReplaced(account: RecoveryAccount, publicKeys: RecoveryNewKeys) {
+  const only = (auth: Authority, key: string) =>
+    auth.key_auths.length === 1 && String(auth.key_auths[0][0]) === key;
+  return (
+    isOwnerReplaced(account, publicKeys.owner) &&
+    only(account.active, publicKeys.active) &&
+    only(account.posting, publicKeys.posting) &&
+    account.memo_key === publicKeys.memo
+  );
+}
+
+export async function verifyRecoveredKeys(
+  username: string,
+  publicKeys: RecoveryNewKeys
+): Promise<boolean> {
+  return areAllKeysReplaced(await loadRecoveryAccount(username), publicKeys);
 }
 
 export async function loadCleanupItems(username: string): Promise<PostRecoveryCleanupItem[]> {
   const [account, withdrawRoutes, savingsWithdrawals, recurrentTransfers, openOrders] =
     await Promise.all([
       loadRecoveryAccount(username),
-      fetchFresh<any[]>(getWithdrawRoutesQueryOptions(username)),
-      fetchFresh<any[]>(getSavingsWithdrawFromQueryOptions(username)),
-      fetchFresh<any[]>(getRecurrentTransfersQueryOptions(username)),
-      fetchFresh<any[]>(getOpenOrdersQueryOptions(username))
+      callRPC("condenser_api.get_withdraw_routes", [username, "outgoing"]),
+      callRPC("condenser_api.get_savings_withdraw_from", [username]),
+      callRPC("condenser_api.find_recurrent_transfers", [username]),
+      callRPC("condenser_api.get_open_orders", [username])
     ]);
   return buildPostRecoveryCleanupOps(account, {
     withdrawRoutes: withdrawRoutes ?? [],
@@ -152,23 +212,29 @@ export async function loadCleanupItems(username: string): Promise<PostRecoveryCl
   });
 }
 
-/** tx3: optional clean-up, signed by the new active key. */
-export function submitCleanup(username: string, ops: Operation[], activeKey: PrivateKey) {
-  return broadcastOperationsWithKeys(ops, [activeKey]);
+export interface CleanupResult {
+  id: string;
+  ok: boolean;
+  error?: string;
 }
 
-/** True when every key on chain is exactly the new key for its role. */
-export async function verifyRecoveredKeys(
+/**
+ * tx3: optional clean-up, signed by the new active key. Each item is its own
+ * transaction so one failure does not undo the others.
+ */
+export async function submitCleanupItems(
   username: string,
-  publicKeys: RecoveryNewKeys
-): Promise<boolean> {
-  const account = await loadRecoveryAccount(username);
-  const only = (auth: Authority, key: string) =>
-    auth.key_auths.length === 1 && String(auth.key_auths[0][0]) === key;
-  return (
-    only(account.owner, publicKeys.owner) &&
-    only(account.active, publicKeys.active) &&
-    only(account.posting, publicKeys.posting) &&
-    account.memo_key === publicKeys.memo
-  );
+  items: PostRecoveryCleanupItem[],
+  activeKey: PrivateKey
+): Promise<CleanupResult[]> {
+  const results: CleanupResult[] = [];
+  for (const item of items) {
+    try {
+      await broadcastOperationsWithKeys([item.op], [activeKey]);
+      results.push({ id: item.id, ok: true });
+    } catch (e) {
+      results.push({ id: item.id, ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return results;
 }

@@ -21,7 +21,7 @@ export function RecoverCodeStep({ requestId, emails, onApproved, onRestart }: Pr
   const [error, setError] = useState("");
   const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
 
-  const locked = RESTART_ERRORS.has(error);
+  const locked = RESTART_ERRORS.has(error) || attemptsLeft === 0;
   const valid = /^\d{6}$/.test(code);
 
   const submit = async (e: React.FormEvent) => {

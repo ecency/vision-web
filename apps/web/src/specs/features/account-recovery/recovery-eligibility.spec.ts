@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   checkOwnerHistoryEntry,
+  findPostingAuthsAddedAfter,
   findRecoverableEntry,
-  getOwnerChangeWaitUntil,
+  getHourlyLimitWaitUntil,
+  isWithinRecoveryWindow,
   parseChainTime
 } from "@/features/account-recovery/recovery-eligibility";
 
@@ -122,29 +124,99 @@ describe("findRecoverableEntry", () => {
   });
 });
 
-describe("getOwnerChangeWaitUntil (preflight)", () => {
-  it("is null when the owner has not changed in the last hour", () => {
-    expect(
-      getOwnerChangeWaitUntil({
-        lastOwnerUpdate: "2026-11-10T10:30:00",
-        ownerHistory: [entry(1, ["K"], "2026-11-10T10:30:00")],
-        now: NOW
-      })
-    ).toBeNull();
-  });
-
-  it("returns one hour after the newest change in the last hour", () => {
-    const wait = getOwnerChangeWaitUntil({
-      lastOwnerUpdate: "2026-11-10T11:20:00",
-      ownerHistory: [entry(1, ["K"], "2026-11-10T11:40:00"), entry(2, ["K"], "2026-11-01T00:00:00")],
-      now: NOW
+describe("findRecoverableEntry: key weight", () => {
+  it("rejects a key that cannot satisfy the old owner authority alone", () => {
+    const multisig = {
+      ...entry(1, ["K1", "K2"], "2026-11-09T00:00:00"),
+      previous_owner_authority: {
+        weight_threshold: 2,
+        account_auths: [] as [string, number][],
+        key_auths: [
+          ["K1", 1],
+          ["K2", 1]
+        ] as [string, number][]
+      }
+    };
+    expect(findRecoverableEntry(["K1"], [multisig], { lastRecoveryTime: null, now: NOW })).toEqual({
+      status: "not-sufficient"
     });
-    expect(wait?.toISOString()).toBe("2026-11-10T12:40:00.000Z");
+  });
+});
+
+describe("getHourlyLimitWaitUntil (recover_account and key update gates)", () => {
+  it("is null once more than an hour has passed", () => {
+    expect(getHourlyLimitWaitUntil("2026-11-10T10:59:59", NOW)).toBeNull();
   });
 
-  it("treats the never-updated sentinel as no change", () => {
-    expect(
-      getOwnerChangeWaitUntil({ lastOwnerUpdate: "1970-01-01T00:00:00", ownerHistory: [], now: NOW })
-    ).toBeNull();
+  it("returns one hour after the given time while inside the hour", () => {
+    expect(getHourlyLimitWaitUntil("2026-11-10T11:30:00", NOW)?.toISOString()).toBe(
+      "2026-11-10T12:30:00.000Z"
+    );
+  });
+
+  it("still waits at exactly one hour (the chain needs strictly more)", () => {
+    expect(getHourlyLimitWaitUntil("2026-11-10T11:00:00", NOW)).not.toBeNull();
+  });
+
+  it("treats a missing value or the 1970 sentinel as no limit", () => {
+    expect(getHourlyLimitWaitUntil(undefined, NOW)).toBeNull();
+    expect(getHourlyLimitWaitUntil("1970-01-01T00:00:00", NOW)).toBeNull();
+  });
+});
+
+describe("isWithinRecoveryWindow (re-check before tx1 with a margin)", () => {
+  it("needs more than the margin left in the 30 day window", () => {
+    const lastValid = new Date(NOW - 30 * DAY + 11 * 60 * 1000).toISOString().slice(0, 19);
+    const tooClose = new Date(NOW - 30 * DAY + 9 * 60 * 1000).toISOString().slice(0, 19);
+    expect(isWithinRecoveryWindow(lastValid, NOW, 10 * 60 * 1000)).toBe(true);
+    expect(isWithinRecoveryWindow(tooClose, NOW, 10 * 60 * 1000)).toBe(false);
+  });
+});
+
+describe("findPostingAuthsAddedAfter", () => {
+  const update = (ts: string, names: string[] | null, op = "account_update") => [
+    0,
+    {
+      timestamp: ts,
+      op: [
+        op,
+        {
+          account: "alice",
+          ...(names
+            ? {
+                posting: {
+                  weight_threshold: 1,
+                  account_auths: names.map((n) => [n, 1]),
+                  key_auths: []
+                }
+              }
+            : {})
+        }
+      ]
+    }
+  ];
+
+  it("flags names that first appear in posting updates after the takeover", () => {
+    const rows = [
+      update("2026-11-01T00:00:00", ["ecency.app"]),
+      update("2026-11-09T00:00:00", null),
+      update("2026-11-09T02:00:00", ["ecency.app", "other.app"]),
+      update("2026-11-09T03:00:00", ["ecency.app", "other.app", "third.app"], "account_update2")
+    ];
+    expect(findPostingAuthsAddedAfter(rows as any, "2026-11-08T12:00:00")).toEqual(
+      new Set(["other.app", "third.app"])
+    );
+  });
+
+  it("flags every name set after the takeover when no earlier posting update is known", () => {
+    const rows = [update("2026-11-09T02:00:00", ["ecency.app", "other.app"])];
+    expect(findPostingAuthsAddedAfter(rows as any, "2026-11-08T12:00:00")).toEqual(
+      new Set(["ecency.app", "other.app"])
+    );
+  });
+
+  it("flags nothing when no posting update happened after the takeover", () => {
+    const rows = [update("2026-11-01T00:00:00", ["ecency.app"])];
+    expect(findPostingAuthsAddedAfter(rows as any, "2026-11-08T12:00:00")).toEqual(new Set());
   });
 });

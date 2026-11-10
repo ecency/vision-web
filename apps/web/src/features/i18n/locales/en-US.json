@@ -2594,7 +2594,8 @@
       "no-match": "That password or key was never the owner key of this account.",
       "current": "That is the current owner key. You still control the account, so log in and change your keys in Permissions instead.",
       "too-old": "That key stopped working more than 30 days ago, so it can no longer be used for recovery.",
-      "before-recovery": "That key was replaced by an earlier recovery and can no longer be used."
+      "before-recovery": "That key was replaced by an earlier recovery and can no longer be used.",
+      "not-sufficient": "That key alone was not enough to control this account."
     },
     "code": {
       "title": "Check your email",
@@ -2610,19 +2611,20 @@
     },
     "finish": {
       "title": "Finish the recovery",
-      "hint": "Two transactions will put your account under your new keys. Every old key will be removed.",
+      "hint": "First your account is recovered with the new owner key. Then every other key is replaced, so no old key keeps access.",
       "checking": "Checking the account...",
-      "wait": "The account keys were changed very recently. For safety, the next change is possible after {{time}}.",
-      "check-again": "Check again",
       "auths-title": "Apps and accounts with access",
       "auths-hint": "Choose which accounts keep access. Only keep the ones you added yourself.",
       "auths-role": "{{role}} access: @{{name}}",
-      "submit": "Recover my account",
+      "submit": "Replace all keys",
       "recovering": "Recovering your account...",
       "updating-keys": "Replacing all keys...",
       "recover-failed": "The recovery transaction did not go through.",
       "keys-failed": "Your account is recovered, but replacing the other keys did not go through. Please try again.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "recovery-wait": "This account was recovered less than an hour ago. The next recovery is possible after {{time}}. This page will continue by itself.",
+      "keys-wait": "Your account is recovered. For safety, the other keys can be replaced after {{time}}. Keep this page open and it will continue by itself.",
+      "auths-flagged": "Added after you lost access. Only keep it if you added it yourself."
     },
     "cleanup": {
       "title": "Undo changes made to your wallet",
@@ -2637,7 +2639,8 @@
       "apply": "Apply",
       "skip": "Skip",
       "failed": "Some of these changes did not go through. You can try again or skip.",
-      "working": "Applying..."
+      "working": "Applying...",
+      "item-failed": "Did not go through"
     },
     "success": {
       "title": "Your account is yours again",
@@ -2669,7 +2672,9 @@
       "too_many_attempts": "Too many wrong codes. Please start over later.",
       "expired": "This request expired. Please start over.",
       "failed": "The recovery request could not be submitted. Please contact support.",
-      "not_recovered": "The account keys are not updated yet."
+      "not_recovered": "The account keys are not updated yet.",
+      "in_progress": "A recovery for this account is already in progress. Check your email, or try again later.",
+      "key_not_sufficient": "That key alone was not enough to control this account, so it can not be used here."
     },
     "entry-login": "Account taken over? Recover it",
     "entry-permissions": "Lost control of your account? Use self-serve recovery."

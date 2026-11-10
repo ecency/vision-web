@@ -62,9 +62,13 @@ export function RecoverOldKeyStep({
 
     const match = matchOldOwnerKey(username, value, chain.data.ownerHistory, {
       lastRecoveryTime: chain.data.lastRecoveryTime,
-      now: Date.now(),
+      now: chain.data.headTime,
       currentOwnerKeys: chain.data.account.owner.key_auths.map(([key]) => String(key))
     });
+    if (match.status === "not-sufficient") {
+      onManual("key_not_sufficient");
+      return;
+    }
     if (match.status !== "match") {
       setMessage(`recover-account.old-key.${match.status}`);
       return;
@@ -83,7 +87,8 @@ export function RecoverOldKeyStep({
         setValue("");
         onProven(res.data.emails ?? [], {
           oldKey: match.key,
-          recentOwnerAuthority: match.entry.previous_owner_authority
+          recentOwnerAuthority: match.entry.previous_owner_authority,
+          validUntil: match.entry.last_valid_time
         });
         return;
       }

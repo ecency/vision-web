@@ -65,4 +65,21 @@ describe("matchOldOwnerKey", () => {
         .status
     ).toBe("before-recovery");
   });
+
+  it("reports a key that cannot satisfy the old owner authority alone", () => {
+    const multisig = [
+      {
+        ...history[0],
+        previous_owner_authority: {
+          weight_threshold: 2,
+          account_auths: [] as [string, number][],
+          key_auths: [
+            [oldOwnerPub, 1],
+            ["STM_OTHER", 1]
+          ] as [string, number][]
+        }
+      }
+    ];
+    expect(matchOldOwnerKey(USER, OLD_PASSWORD, multisig, opts).status).toBe("not-sufficient");
+  });
 });

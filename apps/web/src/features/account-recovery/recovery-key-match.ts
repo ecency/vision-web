@@ -3,7 +3,7 @@ import { findRecoverableEntry, type EligibilityOptions } from "./recovery-eligib
 
 export type OldKeyMatch =
   | { status: "match"; key: PrivateKey; publicKey: string; entry: OwnerHistoryEntry }
-  | { status: "empty" | "no-match" | "current" | "too-old" | "before-recovery" };
+  | { status: "empty" | "no-match" | "current" | "too-old" | "before-recovery" | "not-sufficient" };
 
 /**
  * Owner keys the input could stand for: the key itself when it is a private key

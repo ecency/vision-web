@@ -7,7 +7,7 @@ import { Button } from "@ui/button";
 import { Spinner } from "@ui/spinner";
 import {
   loadCleanupItems,
-  submitCleanup
+  submitCleanupItems
 } from "@/features/account-recovery/recovery-chain";
 
 interface Props {
@@ -16,12 +16,16 @@ interface Props {
   onDone: () => void;
 }
 
-/** Optional: undo wallet changes found on the account. Every row starts checked. */
+/**
+ * Optional: undo wallet changes found on the account. Every row starts checked
+ * and is sent as its own transaction; rows that worked are dropped, failed ones
+ * stay for another try.
+ */
 export function RecoverCleanupStep({ username, activeKey, onDone }: Props) {
   const [items, setItems] = useState<PostRecoveryCleanupItem[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<Set<string>>(new Set());
   const done = useRef(onDone);
   done.current = onDone;
 
@@ -48,18 +52,23 @@ export function RecoverCleanupStep({ username, activeKey, onDone }: Props) {
 
   const apply = async () => {
     if (!items) return;
-    const ops = items.filter((i) => selected.has(i.id)).map((i) => i.op);
-    if (ops.length === 0) {
+    const chosen = items.filter((i) => selected.has(i.id));
+    if (chosen.length === 0) {
       onDone();
       return;
     }
     setBusy(true);
-    setFailed(false);
     try {
-      await submitCleanup(username, ops, activeKey);
-      onDone();
-    } catch {
-      setFailed(true);
+      const results = await submitCleanupItems(username, chosen, activeKey);
+      const failedIds = new Set(results.filter((r) => !r.ok).map((r) => r.id));
+      if (failedIds.size === 0) {
+        onDone();
+        return;
+      }
+      const remaining = items.filter((i) => failedIds.has(i.id));
+      setItems(remaining);
+      setSelected(new Set(remaining.map((i) => i.id)));
+      setFailed(failedIds);
     } finally {
       setBusy(false);
     }
@@ -91,10 +100,13 @@ export function RecoverCleanupStep({ username, activeKey, onDone }: Props) {
             <span>
               {i18next.t(`recover-account.cleanup.items.${item.kind}`, { target: item.target })}
             </span>
+            {failed.has(item.id) && (
+              <span className="text-red text-xs">{i18next.t("recover-account.cleanup.item-failed")}</span>
+            )}
           </label>
         ))}
       </fieldset>
-      {failed && (
+      {failed.size > 0 && (
         <p role="alert" className="text-sm text-red mb-3">
           {i18next.t("recover-account.cleanup.failed")}
         </p>

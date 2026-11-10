@@ -2,10 +2,10 @@ import type { OwnerHistoryEntry } from "@ecency/sdk";
 
 /** How long an earlier owner key can still be used to recover the account. */
 export const RECOVERY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-/** Owner key changes are limited per hour, and a recovery needs two of them. */
+/** Length of the chain's hourly limits on owner changes and recoveries. */
 export const OWNER_CHANGE_WINDOW_MS = 60 * 60 * 1000;
 
-export type OwnerHistoryCheck = "ok" | "too-old" | "before-recovery";
+export type OwnerHistoryCheck = "ok" | "too-old" | "before-recovery" | "not-sufficient";
 
 export interface EligibilityOptions {
   /** Time of the account's latest recover_account op (chain format), or null. */
@@ -54,12 +54,18 @@ export function findRecoverableEntry(
   let reason: OwnerHistoryCheck | null = null;
 
   for (const entry of history) {
+    const authority = entry.previous_owner_authority;
     const publicKey = publicKeys.find((key) =>
-      entry.previous_owner_authority.key_auths.some(([k]) => String(k) === key)
+      authority.key_auths.some(([k]) => String(k) === key)
     );
     if (!publicKey) continue;
 
-    const check = checkOwnerHistoryEntry(entry, options);
+    // The proven key must satisfy the old owner authority on its own.
+    const weight = authority.key_auths.find(([k]) => String(k) === publicKey)?.[1] ?? 0;
+    const check =
+      weight >= authority.weight_threshold
+        ? checkOwnerHistoryEntry(entry, options)
+        : "not-sufficient";
     if (check !== "ok") {
       reason = reason ?? check;
       continue;
@@ -76,24 +82,51 @@ export function findRecoverableEntry(
   return { status: reason ?? "no-match" };
 }
 
-/**
- * Returns when the next owner change is allowed if the owner key changed in the
- * last hour, or null when the recovery can go ahead now.
- */
-export function getOwnerChangeWaitUntil({
-  lastOwnerUpdate,
-  ownerHistory,
-  now
-}: {
-  lastOwnerUpdate?: string;
-  ownerHistory: Pick<OwnerHistoryEntry, "last_valid_time">[];
-  now: number;
-}): Date | null {
-  const times = [lastOwnerUpdate, ...ownerHistory.map((e) => e.last_valid_time)]
-    .filter((t): t is string => !!t)
-    .map(parseChainTime)
-    .filter((t) => !Number.isNaN(t) && t + OWNER_CHANGE_WINDOW_MS > now);
+/** Anything before this is the chain's "never" placeholder (1970-01-01). */
+const NEVER = Date.parse("1970-01-02T00:00:00Z");
 
-  if (times.length === 0) return null;
-  return new Date(Math.max(...times) + OWNER_CHANGE_WINDOW_MS);
+/**
+ * Hourly chain limits: recover_account needs more than an hour since the last
+ * recovery, and a key update needs more than an hour since the previous owner
+ * change. Returns when the limit lifts, or null when it already has.
+ */
+export function getHourlyLimitWaitUntil(time: string | undefined, head: number): Date | null {
+  if (!time) return null;
+  const t = parseChainTime(time);
+  if (Number.isNaN(t) || t < NEVER) return null;
+  return head - t > OWNER_CHANGE_WINDOW_MS ? null : new Date(t + OWNER_CHANGE_WINDOW_MS);
+}
+
+/** Re-check before signing: the proven key must stay valid for at least `marginMs`. */
+export function isWithinRecoveryWindow(lastValidTime: string, head: number, marginMs: number) {
+  return parseChainTime(lastValidTime) + RECOVERY_WINDOW_MS > head + marginMs;
+}
+
+type HistoryRow = [number, { timestamp: string; op: [string, { posting?: { account_auths: [string, number][] } }] }];
+
+/**
+ * Posting account authorities that appeared through account_update(2) after
+ * `validUntil` (when the old owner key was replaced). They may have been added
+ * by someone else, so the page leaves them unticked. With no earlier posting
+ * update in the rows, every name set after the takeover counts.
+ */
+export function findPostingAuthsAddedAfter(rows: HistoryRow[], validUntil: string): Set<string> {
+  const cutoff = parseChainTime(validUntil);
+  const sorted = [...rows].sort(
+    (a, b) => parseChainTime(a[1].timestamp) - parseChainTime(b[1].timestamp)
+  );
+
+  let before = new Set<string>();
+  const added = new Set<string>();
+  for (const [, { timestamp, op }] of sorted) {
+    const posting = op?.[1]?.posting;
+    if (!posting) continue;
+    const names = posting.account_auths.map(([name]) => name);
+    if (parseChainTime(timestamp) <= cutoff) {
+      before = new Set(names);
+    } else {
+      names.filter((n) => !before.has(n)).forEach((n) => added.add(n));
+    }
+  }
+  return added;
 }

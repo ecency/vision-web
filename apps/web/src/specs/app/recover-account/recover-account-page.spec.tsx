@@ -77,10 +77,11 @@ vi.mock("@/features/account-recovery/recovery-key-match", () => ({
 vi.mock("@/features/account-recovery/recovery-chain", async () => ({
   ...(await vi.importActual<Record<string, unknown>>("@/features/account-recovery/recovery-chain")),
   loadRecoveryChainState: vi.fn(),
+  loadRecentPostingAuthAdds: vi.fn(),
   loadCleanupItems: vi.fn(),
   submitRecoverAccount: vi.fn(),
   submitReplaceKeys: vi.fn(),
-  submitCleanup: vi.fn(),
+  submitCleanupItems: vi.fn(),
   verifyRecoveredKeys: vi.fn()
 }));
 
@@ -95,8 +96,9 @@ import {
 import { matchOldOwnerKey } from "@/features/account-recovery/recovery-key-match";
 import {
   loadCleanupItems,
+  loadRecentPostingAuthAdds,
   loadRecoveryChainState,
-  submitCleanup,
+  submitCleanupItems,
   submitRecoverAccount,
   submitReplaceKeys,
   verifyRecoveredKeys
@@ -104,6 +106,7 @@ import {
 import RecoverAccountRoute from "@/app/recover-account/page";
 import { RecoverAccountPage } from "@/app/recover-account/_page";
 
+const HEAD = Date.parse("2026-11-10T12:00:00Z");
 const recentOwnerAuthority = {
   weight_threshold: 1,
   account_auths: [],
@@ -115,31 +118,58 @@ const historyEntry = {
   previous_owner_authority: recentOwnerAuthority,
   last_valid_time: "2026-11-09T00:00:00"
 };
+const auth = (keys: string[], accounts: string[] = []) => ({
+  weight_threshold: 1,
+  account_auths: accounts.map((a) => [a, 1]),
+  key_auths: keys.map((k) => [k, 1])
+});
 const account = {
   name: "alice",
-  owner: { weight_threshold: 1, account_auths: [], key_auths: [["STM_HACKER", 1]] },
-  active: { weight_threshold: 1, account_auths: [], key_auths: [["STM_HACKER_A", 1]] },
-  posting: {
-    weight_threshold: 1,
-    account_auths: [["ecency.app", 1]],
-    key_auths: [["STM_HACKER_P", 1]]
-  },
-  memo_key: "STM_HACKER_M",
+  owner: auth(["STM_PREV_OWNER"]),
+  active: auth(["STM_PREV_ACTIVE"]),
+  posting: auth(["STM_PREV_POSTING"], ["ecency.app", "late.app"]),
+  memo_key: "STM_PREV_MEMO",
   json_metadata: "{}",
-  last_owner_update: "2026-11-01T00:00:00",
-  recovery_account: "ecency"
+  last_owner_update: "2026-11-10T10:00:00",
+  previous_owner_update: "2026-11-01T00:00:00",
+  last_account_recovery: "1970-01-01T00:00:00",
+  recovery_account: "ecency",
+  vesting_withdraw_rate: "0.000000 VESTS"
 };
 const chainState = {
   account,
   ownerHistory: [historyEntry],
   lastRecoveryTime: null,
-  hasPendingRecoveryChange: false
+  headTime: HEAD
+};
+/** Account right after tx1: owner is the new key, the previous change was long ago. */
+const afterTx1 = {
+  ...chainState,
+  account: {
+    ...account,
+    owner: auth(["STM_NEW_OWNER"]),
+    previous_owner_update: account.last_owner_update,
+    last_owner_update: "2026-11-10T12:00:00"
+  },
+  headTime: HEAD + 60 * 1000
+};
+const allReplaced = {
+  ...afterTx1,
+  account: {
+    ...afterTx1.account,
+    active: auth(["STM_NEW_ACTIVE"]),
+    posting: auth(["STM_NEW_POSTING"], ["ecency.app"]),
+    memo_key: "STM_NEW_MEMO"
+  }
 };
 const cleanupItem = {
   id: "power-down",
   kind: "power-down",
   op: ["withdraw_vesting", { account: "alice", vesting_shares: "0.000000 VESTS" }]
 };
+
+/** Chain reads follow what has been broadcast so far, unless a test overrides them. */
+const chain = vi.hoisted(() => ({ next: null as null | (() => unknown), keysLanded: false }));
 
 function setDefaults() {
   vi.mocked(recoveryStart).mockResolvedValue({
@@ -169,11 +199,21 @@ function setDefaults() {
     publicKey: "STM_OLD",
     entry: historyEntry
   } as any);
-  vi.mocked(loadRecoveryChainState).mockResolvedValue(chainState as any);
+  chain.next = null;
+  chain.keysLanded = false;
+  vi.mocked(loadRecoveryChainState).mockImplementation(async () => {
+    if (chain.next) return chain.next() as any;
+    if (chain.keysLanded) return allReplaced as any;
+    return (vi.mocked(submitRecoverAccount).mock.calls.length ? afterTx1 : chainState) as any;
+  });
+  vi.mocked(loadRecentPostingAuthAdds).mockResolvedValue(new Set(["late.app"]));
   vi.mocked(loadCleanupItems).mockResolvedValue([cleanupItem] as any);
   vi.mocked(submitRecoverAccount).mockResolvedValue({ id: "tx1" } as any);
-  vi.mocked(submitReplaceKeys).mockResolvedValue({ id: "tx2" } as any);
-  vi.mocked(submitCleanup).mockResolvedValue({ id: "tx3" } as any);
+  vi.mocked(submitReplaceKeys).mockImplementation(async () => {
+    chain.keysLanded = true;
+    return { id: "tx2" } as any;
+  });
+  vi.mocked(submitCleanupItems).mockResolvedValue([{ id: "power-down", ok: true }]);
   vi.mocked(verifyRecoveredKeys).mockResolvedValue(true);
 }
 
@@ -210,6 +250,16 @@ async function passCode(code = "123456") {
   fireEvent.change(field, { target: { value: code } });
   click("recover-account.code.submit");
 }
+
+async function reachFinish() {
+  renderWithQueryClient(<RecoverAccountPage />);
+  await passStart();
+  await passPassword();
+  await passOldKey();
+  await passCode();
+}
+
+const replaceButton = () => screen.findByRole("button", { name: "recover-account.finish.submit" });
 
 describe("recover-account page", () => {
   beforeEach(() => {
@@ -271,32 +321,50 @@ describe("recover-account page", () => {
     await waitFor(() => expect(recoveryVerifyCode).toHaveBeenCalledWith("r1", "123456"));
 
     await waitFor(() => expect(recoveryStatus).toHaveBeenCalledWith("r1"));
-    fireEvent.click(await screen.findByRole("button", { name: "recover-account.finish.submit" }));
 
+    // tx1 goes out as soon as the request is on chain, without waiting for a click.
+    await waitFor(() =>
+      expect(submitRecoverAccount).toHaveBeenCalledWith({
+        username: "alice",
+        oldKey: h.oldKey,
+        newOwnerKey: h.newKeys.owner,
+        newOwnerPublicKey: "STM_NEW_OWNER",
+        recentOwnerAuthority
+      })
+    );
+
+    // Account authorities: the one set after the takeover starts unticked and is flagged.
+    const kept = await screen.findByLabelText(/auths-role.*ecency\.app/);
+    const late = screen.getByLabelText(/auths-role.*late\.app/);
+    expect(kept).toBeChecked();
+    expect(late).not.toBeChecked();
+    expect(screen.getByText("recover-account.finish.auths-flagged")).toBeInTheDocument();
+    expect(loadRecentPostingAuthAdds).toHaveBeenCalledWith("alice", historyEntry.last_valid_time);
+
+    fireEvent.click(await replaceButton());
     await waitFor(() => expect(submitReplaceKeys).toHaveBeenCalled());
-    expect(submitRecoverAccount).toHaveBeenCalledWith({
+    expect(submitReplaceKeys).toHaveBeenCalledWith({
       username: "alice",
-      oldKey: h.oldKey,
-      newOwnerKey: h.newKeys.owner,
-      newOwnerPublicKey: "STM_NEW_OWNER",
-      recentOwnerAuthority
-    });
-    expect(vi.mocked(submitReplaceKeys).mock.calls[0][0]).toMatchObject({
       newKeys: h.newKeys,
-      changeRecoveryAccount: false
+      keepAccountAuths: { owner: [], active: [], posting: ["ecency.app"] }
     });
 
-    // Optional clean-up: pre-checked checklist.
+    // complete goes out once the keys are verified, before the optional clean-up.
+    await waitFor(() => expect(recoveryComplete).toHaveBeenCalledWith("r1"));
+    expect(verifyRecoveredKeys).toHaveBeenCalledWith("alice", h.newKeys.publicKeys);
+    expect(vi.mocked(verifyRecoveredKeys).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(recoveryComplete).mock.invocationCallOrder[0]
+    );
+
     const checkbox = await screen.findByLabelText(/recover-account\.cleanup\.items\.power-down/);
     expect(checkbox).toBeChecked();
+    expect(submitCleanupItems).not.toHaveBeenCalled();
     click("recover-account.cleanup.apply");
     await waitFor(() =>
-      expect(submitCleanup).toHaveBeenCalledWith("alice", [cleanupItem.op], h.newKeys.active)
+      expect(submitCleanupItems).toHaveBeenCalledWith("alice", [cleanupItem], h.newKeys.active)
     );
 
     expect(await screen.findByText("recover-account.success.title")).toBeInTheDocument();
-    expect(recoveryComplete).toHaveBeenCalledWith("r1");
-    expect(verifyRecoveredKeys).toHaveBeenCalledWith("alice", h.newKeys.publicKeys);
 
     const sent = JSON.stringify([
       vi.mocked(recoveryStart).mock.calls,
@@ -417,32 +485,151 @@ describe("recover-account page", () => {
     expect(screen.queryByPlaceholderText("recover-account.code.placeholder")).toBeNull();
   });
 
-  it("asks the user to wait when the owner key changed in the last hour", async () => {
-    const recent = new Date(Date.now() - 10 * 60 * 1000).toISOString().slice(0, 19);
-    vi.mocked(loadRecoveryChainState)
-      .mockResolvedValueOnce(chainState as any)
-      .mockResolvedValue({ ...chainState, account: { ...account, last_owner_update: recent } } as any);
-    renderWithQueryClient(<RecoverAccountPage />);
-    await passStart();
-    await passPassword();
-    await passOldKey();
-    await passCode();
-    expect(await screen.findByText(/recover-account\.finish\.wait/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "recover-account.finish.submit" })).toBeNull();
+  it("waits before tx1 while the last recovery is less than an hour old", async () => {
+    chain.next = () => ({
+      ...chainState,
+      account: { ...account, last_account_recovery: "2026-11-10T11:30:00" }
+    });
+    await reachFinish();
+    expect(await screen.findByText(/recover-account\.finish\.recovery-wait/)).toBeInTheDocument();
     expect(submitRecoverAccount).not.toHaveBeenCalled();
   });
 
-  it("shows a retry for the key update when it fails after the recovery landed", async () => {
+  it("does not wait for recent owner changes before tx1", async () => {
+    chain.next = () =>
+      vi.mocked(submitRecoverAccount).mock.calls.length
+        ? afterTx1
+        : { ...chainState, account: { ...account, last_owner_update: "2026-11-10T11:59:00" } };
+    await reachFinish();
+    await waitFor(() => expect(submitRecoverAccount).toHaveBeenCalled());
+  });
+
+  it("stops before tx1 when the proven key is about to leave the 30 day window", async () => {
+    vi.mocked(matchOldOwnerKey).mockReturnValue({
+      status: "match",
+      key: h.oldKey,
+      publicKey: "STM_OLD",
+      entry: { ...historyEntry, last_valid_time: "2026-10-11T12:05:00" }
+    } as any);
+    await reachFinish();
+    expect(await screen.findByText("recover-account.manual.title")).toBeInTheDocument();
+    expect(screen.getByText("recover-account.errors.key_not_recent")).toBeInTheDocument();
+    expect(submitRecoverAccount).not.toHaveBeenCalled();
+  });
+
+  it("holds tx2 until the owner change limit lifts, then sends it by itself", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const locked = {
+      ...afterTx1,
+      account: { ...afterTx1.account, previous_owner_update: "2026-11-10T11:10:00" }
+    };
+    chain.next = () => (vi.mocked(submitRecoverAccount).mock.calls.length ? locked : chainState);
+    await reachFinish();
+    fireEvent.click(await replaceButton());
+    expect(await screen.findByText(/recover-account\.finish\.keys-wait/)).toBeInTheDocument();
+    expect(submitReplaceKeys).not.toHaveBeenCalled();
+
+    chain.next = () => afterTx1;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20 * 60 * 1000);
+    });
+    await waitFor(() => expect(submitReplaceKeys).toHaveBeenCalledTimes(1));
+  });
+
+  it("re-reads the chain before retrying tx1 and skips it when it already landed", async () => {
+    vi.mocked(submitRecoverAccount).mockRejectedValueOnce(new Error("timeout"));
+    let landed = false;
+    chain.next = () => (landed ? afterTx1 : chainState);
+    await reachFinish();
+    expect(await screen.findByText("recover-account.finish.recover-failed")).toBeInTheDocument();
+    landed = true;
+    click("recover-account.finish.retry");
+    expect(await replaceButton()).toBeInTheDocument();
+    expect(submitRecoverAccount).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-reads the chain before retrying tx2 and finishes when the keys already changed", async () => {
+    vi.mocked(submitReplaceKeys).mockRejectedValueOnce(new Error("timeout"));
+    let landed = false;
+    chain.next = () =>
+      landed ? allReplaced : vi.mocked(submitRecoverAccount).mock.calls.length ? afterTx1 : chainState;
+    await reachFinish();
+    fireEvent.click(await replaceButton());
+    expect(await screen.findByText("recover-account.finish.keys-failed")).toBeInTheDocument();
+    landed = true;
+    click("recover-account.finish.retry");
+    await waitFor(() => expect(recoveryComplete).toHaveBeenCalledWith("r1"));
+    expect(submitReplaceKeys).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends tx2 again on retry when it did not land", async () => {
     vi.mocked(submitReplaceKeys).mockRejectedValueOnce(new Error("boom"));
-    renderWithQueryClient(<RecoverAccountPage />);
-    await passStart();
-    await passPassword();
-    await passOldKey();
-    await passCode();
-    fireEvent.click(await screen.findByRole("button", { name: "recover-account.finish.submit" }));
+    await reachFinish();
+    fireEvent.click(await replaceButton());
     expect(await screen.findByText("recover-account.finish.keys-failed")).toBeInTheDocument();
     click("recover-account.finish.retry");
     await waitFor(() => expect(submitReplaceKeys).toHaveBeenCalledTimes(2));
     expect(submitRecoverAccount).toHaveBeenCalledTimes(1);
+  });
+
+  it("unticks every posting authority when the account history cannot be read", async () => {
+    vi.mocked(loadRecentPostingAuthAdds).mockRejectedValueOnce(new Error("timeout"));
+    await reachFinish();
+    expect(await screen.findByLabelText(/auths-role.*ecency\.app/)).not.toBeChecked();
+    expect(screen.getByLabelText(/auths-role.*late\.app/)).not.toBeChecked();
+  });
+
+  it("shows clean-up failures per item and keeps the ones that worked", async () => {
+    const second = { id: "open-order:7", kind: "open-order", op: ["limit_order_cancel", {}] };
+    vi.mocked(loadCleanupItems).mockResolvedValueOnce([cleanupItem, second] as any);
+    vi.mocked(submitCleanupItems).mockResolvedValueOnce([
+      { id: "power-down", ok: true },
+      { id: "open-order:7", ok: false, error: "nope" }
+    ]);
+    await reachFinish();
+    fireEvent.click(await replaceButton());
+    click(await screen.findByText("recover-account.cleanup.apply").then((el) => el.textContent!));
+    expect(await screen.findByText("recover-account.cleanup.item-failed")).toBeInTheDocument();
+    expect(screen.queryByText("recover-account.success.title")).toBeNull();
+    click("recover-account.cleanup.apply");
+    await waitFor(() => expect(submitCleanupItems).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(submitCleanupItems).mock.calls[1][1]).toEqual([second]);
+  });
+
+  it("locks the code step when no attempts are left", async () => {
+    vi.mocked(recoveryVerifyCode).mockResolvedValueOnce({
+      status: 400,
+      data: { error: "invalid_code", attempts_left: 0 }
+    } as any);
+    renderWithQueryClient(<RecoverAccountPage />);
+    await passStart();
+    await passPassword();
+    await passOldKey();
+    await passCode("000000");
+    expect(await screen.findByText("recover-account.errors.invalid_code")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("recover-account.code.placeholder")).toBeNull();
+    expect(screen.getByText("recover-account.start-over")).toBeInTheDocument();
+  });
+
+  it("sends a key that cannot sign alone to manual help", async () => {
+    vi.mocked(matchOldOwnerKey).mockReturnValue({ status: "not-sufficient" } as any);
+    renderWithQueryClient(<RecoverAccountPage />);
+    await passStart();
+    await passPassword();
+    await passOldKey();
+    expect(await screen.findByText("recover-account.manual.title")).toBeInTheDocument();
+    expect(screen.getByText("recover-account.errors.key_not_sufficient")).toBeInTheDocument();
+    expect(recoveryProve).not.toHaveBeenCalled();
+  });
+
+  it("explains in_progress when a recovery is already running", async () => {
+    vi.mocked(recoveryStart).mockResolvedValueOnce({
+      status: 409,
+      data: { error: "in_progress" }
+    } as any);
+    renderWithQueryClient(<RecoverAccountPage />);
+    await passStart();
+    expect(await screen.findByText("recover-account.errors.in_progress")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("recover-account.start.username-placeholder")).toBeInTheDocument();
   });
 });

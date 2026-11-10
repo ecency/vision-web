@@ -6,173 +6,274 @@ import { Button } from "@ui/button";
 import { Spinner } from "@ui/spinner";
 import {
   RECOVERY_ROLES,
+  areAllKeysReplaced,
+  isOwnerReplaced,
+  loadRecentPostingAuthAdds,
   loadRecoveryChainState,
   submitRecoverAccount,
   submitReplaceKeys,
+  verifyRecoveredKeys,
   type RecoveryChainState,
   type RecoveryRole
 } from "@/features/account-recovery/recovery-chain";
-import { getOwnerChangeWaitUntil } from "@/features/account-recovery/recovery-eligibility";
+import {
+  getHourlyLimitWaitUntil,
+  isWithinRecoveryWindow
+} from "@/features/account-recovery/recovery-eligibility";
 import type { RecoveryKeySet } from "@/features/account-recovery/recovery-keys";
 import type { RecoveryProof } from "../_page";
 
 type Phase =
   | "checking"
   | "check-failed"
-  | "wait"
-  | "ready"
+  | "recovery-wait"
   | "recovering"
   | "recover-failed"
+  | "review"
+  | "keys-wait"
   | "updating"
-  | "keys-failed";
+  | "keys-failed"
+  | "verifying";
+
+type Keep = Record<RecoveryRole, string[]>;
+
+/** Margin left in the 30 day window before tx1 is signed. */
+const WINDOW_MARGIN_MS = 10 * 60 * 1000;
+/** Extra time after a limit lifts before trying again, so the next block has passed. */
+const RETRY_BUFFER_MS = 6000;
 
 interface Props {
   username: string;
   keys: RecoveryKeySet;
   proof: RecoveryProof;
-  onDone: () => void;
+  onKeysReplaced: (verified: boolean) => void;
+  onManual: (code: string) => void;
 }
-
-type Keep = Record<RecoveryRole, string[]>;
 
 /**
- * Posting access (apps) stays by default. Owner and active access can move funds
- * or keys, so the user has to opt in to keep those.
+ * tx1 (recover_account) goes out as soon as the request is on chain. tx2 (all
+ * keys replaced) follows once the user has reviewed account access and the
+ * owner change limit allows it. Every attempt and retry reads the chain first,
+ * so nothing is sent twice.
  */
-function defaultKeep(state: RecoveryChainState): Keep {
-  return {
-    owner: [],
-    active: [],
-    posting: state.account.posting.account_auths.map(([name]) => name)
-  };
-}
-
-export function RecoverFinishStep({ username, keys, proof, onDone }: Props) {
+export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onManual }: Props) {
   const [phase, setPhase] = useState<Phase>("checking");
   const [state, setState] = useState<RecoveryChainState | null>(null);
   const [waitUntil, setWaitUntil] = useState<Date | null>(null);
-  const [keep, setKeep] = useState<Keep>({ owner: [], active: [], posting: [] });
+  const [keep, setKeep] = useState<Keep | null>(null);
+  const [flagged, setFlagged] = useState<Set<string>>(new Set());
   const [detail, setDetail] = useState("");
-  const recovered = useRef(false);
 
-  const check = useCallback(async () => {
-    setPhase("checking");
+  const confirmed = useRef(false);
+  const running = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const mounted = useRef(true);
+  const callbacks = useRef({ onKeysReplaced, onManual });
+  callbacks.current = { onKeysReplaced, onManual };
+
+  const ownerPub = keys.publicKeys.owner;
+
+  const advance = useCallback(async () => {
+    if (running.current) return;
+    running.current = true;
+    clearTimeout(timer.current);
+
+    const schedule = (until: Date, head: number) => {
+      setWaitUntil(until);
+      timer.current = setTimeout(
+        () => advanceRef.current(),
+        Math.max(0, until.getTime() - head) + RETRY_BUFFER_MS
+      );
+    };
+
     try {
-      const next = await loadRecoveryChainState(username);
-      setState(next);
-      setKeep(defaultKeep(next));
-      const ownerKeys = next.account.owner.key_auths.map(([k]) => String(k));
-      if (ownerKeys.length === 1 && ownerKeys[0] === keys.publicKeys.owner) {
-        // The recovery already went through, only the key update is left.
-        recovered.current = true;
-        setPhase("ready");
+      setDetail("");
+      setPhase("checking");
+      let current: RecoveryChainState;
+      try {
+        current = await loadRecoveryChainState(username);
+      } catch {
+        setPhase("check-failed");
         return;
       }
-      const wait = getOwnerChangeWaitUntil({
-        lastOwnerUpdate: next.account.last_owner_update,
-        ownerHistory: next.ownerHistory,
-        now: Date.now()
-      });
-      setWaitUntil(wait);
-      setPhase(wait ? "wait" : "ready");
-    } catch {
-      setPhase("check-failed");
+      if (!mounted.current) return;
+      setState(current);
+
+      // tx1: recover_account.
+      if (!isOwnerReplaced(current.account, ownerPub)) {
+        const recoveryWait = getHourlyLimitWaitUntil(
+          current.account.last_account_recovery,
+          current.headTime
+        );
+        if (recoveryWait) {
+          setPhase("recovery-wait");
+          schedule(recoveryWait, current.headTime);
+          return;
+        }
+        if (!isWithinRecoveryWindow(proof.validUntil, current.headTime, WINDOW_MARGIN_MS)) {
+          callbacks.current.onManual("key_not_recent");
+          return;
+        }
+        setPhase("recovering");
+        try {
+          await submitRecoverAccount({
+            username,
+            oldKey: proof.oldKey,
+            newOwnerKey: keys.owner,
+            newOwnerPublicKey: ownerPub,
+            recentOwnerAuthority: proof.recentOwnerAuthority
+          });
+        } catch (e) {
+          setDetail(e instanceof Error ? e.message : "");
+          setPhase("recover-failed");
+          return;
+        }
+        try {
+          current = await loadRecoveryChainState(username);
+        } catch {
+          setPhase("check-failed");
+          return;
+        }
+        if (!mounted.current) return;
+        setState(current);
+      }
+
+      // tx2: replace every key.
+      if (!areAllKeysReplaced(current.account, keys.publicKeys)) {
+        if (!confirmed.current) {
+          setPhase("review");
+          return;
+        }
+        const keysWait = getHourlyLimitWaitUntil(
+          current.account.previous_owner_update,
+          current.headTime
+        );
+        if (keysWait) {
+          setPhase("keys-wait");
+          schedule(keysWait, current.headTime);
+          return;
+        }
+        setPhase("updating");
+        try {
+          await submitReplaceKeys({
+            username,
+            newKeys: keys,
+            keepAccountAuths: keepRef.current ?? { owner: [], active: [], posting: [] }
+          });
+        } catch (e) {
+          setDetail(e instanceof Error ? e.message : "");
+          setPhase("keys-failed");
+          return;
+        }
+      }
+
+      setPhase("verifying");
+      let verified = false;
+      try {
+        verified = await verifyRecoveredKeys(username, keys.publicKeys);
+      } catch {
+        verified = false;
+      }
+      if (mounted.current) callbacks.current.onKeysReplaced(verified);
+    } finally {
+      running.current = false;
     }
-  }, [username, keys.publicKeys.owner]);
+  }, [username, keys, ownerPub, proof]);
+
+  const advanceRef = useRef(advance);
+  advanceRef.current = advance;
+  const keepRef = useRef(keep);
+  keepRef.current = keep;
 
   useEffect(() => {
-    check();
-  }, [check]);
+    mounted.current = true;
+    advance();
+    return () => {
+      mounted.current = false;
+      clearTimeout(timer.current);
+    };
+  }, [advance]);
 
-  const run = async () => {
-    if (!state) return;
-    setDetail("");
-
-    if (!recovered.current) {
-      setPhase("recovering");
-      try {
-        await submitRecoverAccount({
-          username,
-          oldKey: proof.oldKey,
-          newOwnerKey: keys.owner,
-          newOwnerPublicKey: keys.publicKeys.owner,
-          recentOwnerAuthority: proof.recentOwnerAuthority
-        });
-        recovered.current = true;
-      } catch (e) {
-        setDetail(e instanceof Error ? e.message : "");
-        setPhase("recover-failed");
-        return;
-      }
-    }
-
-    setPhase("updating");
-    try {
-      await submitReplaceKeys({
-        username,
-        newKeys: keys,
-        keepAccountAuths: keep,
-        changeRecoveryAccount: state.hasPendingRecoveryChange
+  // Account access review: posting access (apps) stays by default unless it was
+  // set after the takeover; owner and active access must be opted in.
+  const account = state?.account;
+  useEffect(() => {
+    if (!account || keep) return;
+    let active = true;
+    const posting = account.posting.account_auths.map(([name]) => name);
+    loadRecentPostingAuthAdds(username, proof.validUntil)
+      .then((added) => {
+        if (!active) return;
+        setFlagged(added);
+        setKeep({ owner: [], active: [], posting: posting.filter((n) => !added.has(n)) });
+      })
+      .catch(() => {
+        // Could not tell which ones are new: keep none unless the user opts in.
+        if (!active) return;
+        setFlagged(new Set(posting));
+        setKeep({ owner: [], active: [], posting: [] });
       });
-      onDone();
-    } catch (e) {
-      setDetail(e instanceof Error ? e.message : "");
-      setPhase("keys-failed");
-    }
-  };
+    return () => {
+      active = false;
+    };
+  }, [account, keep, username, proof.validUntil]);
 
   const toggleKeep = (role: RecoveryRole, name: string, checked: boolean) =>
-    setKeep((prev) => ({
-      ...prev,
-      [role]: checked ? [...prev[role], name] : prev[role].filter((n) => n !== name)
-    }));
+    setKeep((prev) =>
+      prev
+        ? { ...prev, [role]: checked ? [...prev[role], name] : prev[role].filter((n) => n !== name) }
+        : prev
+    );
 
-  const accountAuths = state
-    ? RECOVERY_ROLES.flatMap((role) =>
-        state.account[role].account_auths.map(([name]) => ({ role, name }))
-      )
+  const accountAuths = account
+    ? RECOVERY_ROLES.flatMap((role) => account[role].account_auths.map(([name]) => ({ role, name })))
     : [];
 
-  const busy = phase === "recovering" || phase === "updating";
+  const busy = phase === "checking" || phase === "recovering" || phase === "updating" || phase === "verifying";
+  const showReview = !!keep && accountAuths.length > 0 && !confirmed.current;
 
   return (
     <div>
       <h2 className="text-lg font-semibold mb-2">{i18next.t("recover-account.finish.title")}</h2>
       <p className="text-sm opacity-75 mb-4">{i18next.t("recover-account.finish.hint")}</p>
 
-      {phase === "checking" && (
-        <p className="text-sm opacity-60">{i18next.t("recover-account.finish.checking")}</p>
+      {busy && (
+        <div className="flex items-center gap-2 text-sm mb-4">
+          <Spinner className="size-4" />
+          {i18next.t(
+            phase === "recovering"
+              ? "recover-account.finish.recovering"
+              : phase === "updating"
+                ? "recover-account.finish.updating-keys"
+                : "recover-account.finish.checking"
+          )}
+        </div>
       )}
 
       {phase === "check-failed" && (
-        <div className="text-sm text-red">
+        <div className="text-sm text-red mb-4">
           {i18next.t("recover-account.errors.unavailable")}{" "}
-          <button type="button" className="text-blue-dark-sky" onClick={check}>
+          <button type="button" className="text-blue-dark-sky" onClick={advance}>
             {i18next.t("recover-account.retry")}
           </button>
         </div>
       )}
 
-      {phase === "wait" && waitUntil && (
-        <div>
-          <p className="text-sm mb-4">
-            {i18next.t("recover-account.finish.wait", { time: waitUntil.toLocaleString() })}
-          </p>
-          <Button appearance="secondary" onClick={check}>
-            {i18next.t("recover-account.finish.check-again")}
-          </Button>
-        </div>
+      {(phase === "recovery-wait" || phase === "keys-wait") && waitUntil && (
+        <p className="text-sm mb-4">
+          {i18next.t(`recover-account.finish.${phase}`, { time: waitUntil.toLocaleString() })}
+        </p>
       )}
 
-      {(phase === "ready" || busy || phase === "recover-failed" || phase === "keys-failed") &&
-        accountAuths.length > 0 && (
-          <fieldset className="mb-4" disabled={busy}>
-            <legend className="text-sm font-semibold">
-              {i18next.t("recover-account.finish.auths-title")}
-            </legend>
-            <p className="text-sm opacity-60 mb-2">{i18next.t("recover-account.finish.auths-hint")}</p>
-            {accountAuths.map(({ role, name }) => (
-              <label key={`${role}:${name}`} className="flex items-center gap-2 text-sm">
+      {showReview && keep && (
+        <fieldset className="mb-4" disabled={phase !== "review"}>
+          <legend className="text-sm font-semibold">
+            {i18next.t("recover-account.finish.auths-title")}
+          </legend>
+          <p className="text-sm opacity-60 mb-2">{i18next.t("recover-account.finish.auths-hint")}</p>
+          {accountAuths.map(({ role, name }) => (
+            <div key={`${role}:${name}`}>
+              <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={keep[role].includes(name)}
@@ -180,25 +281,24 @@ export function RecoverFinishStep({ username, keys, proof, onDone }: Props) {
                 />
                 <span>{i18next.t("recover-account.finish.auths-role", { role, name })}</span>
               </label>
-            ))}
-          </fieldset>
-        )}
-
-      {phase === "ready" && (
-        <Button className="w-full" onClick={run}>
-          {i18next.t("recover-account.finish.submit")}
-        </Button>
+              {role === "posting" && flagged.has(name) && (
+                <p className="text-xs text-red ml-6">{i18next.t("recover-account.finish.auths-flagged")}</p>
+              )}
+            </div>
+          ))}
+        </fieldset>
       )}
 
-      {busy && (
-        <div className="flex items-center gap-2 text-sm">
-          <Spinner className="size-4" />
-          {i18next.t(
-            phase === "recovering"
-              ? "recover-account.finish.recovering"
-              : "recover-account.finish.updating-keys"
-          )}
-        </div>
+      {phase === "review" && keep && (
+        <Button
+          className="w-full"
+          onClick={() => {
+            confirmed.current = true;
+            advance();
+          }}
+        >
+          {i18next.t("recover-account.finish.submit")}
+        </Button>
       )}
 
       {(phase === "recover-failed" || phase === "keys-failed") && (
@@ -211,7 +311,7 @@ export function RecoverFinishStep({ username, keys, proof, onDone }: Props) {
             )}
           </p>
           {detail && <p className="text-xs opacity-60 mb-3 break-words">{detail}</p>}
-          <Button onClick={run}>{i18next.t("recover-account.finish.retry")}</Button>
+          <Button onClick={advance}>{i18next.t("recover-account.finish.retry")}</Button>
         </div>
       )}
     </div>
