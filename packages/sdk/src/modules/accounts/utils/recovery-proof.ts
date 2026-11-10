@@ -10,7 +10,9 @@ export function buildRecoveryChallengeDigest(
   newOwnerPublicKey: string,
   nonce: string
 ): Uint8Array {
-  return sha256(`ecency-recovery:${username}:${newOwnerPublicKey}:${nonce}`);
+  // The server lowercases and trims the username, so the client must too.
+  const name = username.trim().toLowerCase();
+  return sha256(`ecency-recovery:${name}:${newOwnerPublicKey}:${nonce}`);
 }
 
 /** Signs the recovery challenge; returns the 130-hex compact recoverable signature. */

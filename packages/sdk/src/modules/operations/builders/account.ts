@@ -481,6 +481,7 @@ export interface PostRecoveryCleanupExtras {
     amount: string;
     recurrence: number;
     remaining_executions: number;
+    pair_id?: number;
   }[];
   openOrders?: { orderid: number }[];
 }
@@ -530,18 +531,25 @@ export function buildPostRecoveryCleanupOps(
     .filter((t) => t.from === name)
     .forEach((t) => {
       const symbol = t.amount.trim().split(/\s+/)[1] ?? "HIVE";
+      const pairId = t.pair_id ?? 0;
+      const op = buildRecurrentTransferOp(
+        name,
+        t.to,
+        `0.000 ${symbol}`,
+        "",
+        t.recurrence,
+        Math.max(2, t.remaining_executions)
+      );
+      // Several transfers to the same account are told apart by pair_id; without
+      // the extension the chain would only touch pair 0.
+      if (pairId > 0) {
+        (op[1] as { extensions: unknown[] }).extensions = [{ type: 1, value: { pair_id: pairId } }];
+      }
       items.push({
-        id: `recurrent-transfer:${t.to}`,
+        id: `recurrent-transfer:${t.to}:${pairId}`,
         kind: "recurrent-transfer",
         target: t.to,
-        op: buildRecurrentTransferOp(
-          name,
-          t.to,
-          `0.000 ${symbol}`,
-          "",
-          t.recurrence,
-          Math.max(2, t.remaining_executions)
-        ),
+        op,
       });
     });
 

@@ -18,4 +18,10 @@ describe("recovery proof", () => {
     );
     expect(recovered.toString()).toBe(oldKey.createPublic().toString());
   });
+
+  it("normalizes the username the same way the server does", () => {
+    expect(Array.from(buildRecoveryChallengeDigest(" Alice ", "STM_NEW", "abc123"))).toEqual(
+      Array.from(buildRecoveryChallengeDigest("alice", "STM_NEW", "abc123"))
+    );
+  });
 });

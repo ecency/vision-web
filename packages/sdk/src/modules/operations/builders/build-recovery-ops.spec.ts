@@ -7,7 +7,7 @@ import {
 
 const OLD = {
   owner: "STM_OLD_OWNER",
-  ownerExtra: "STM_HACKER_OWNER",
+  ownerExtra: "STM_EXTRA_OWNER",
   active: "STM_OLD_ACTIVE",
   posting: "STM_OLD_POSTING",
   memo: "STM_OLD_MEMO",
@@ -42,7 +42,7 @@ const account = {
     ] as [string, number][],
     key_auths: [
       [OLD.posting, 1],
-      ["STM_HACKER_POSTING", 1],
+      ["STM_EXTRA_POSTING", 1],
     ] as [string, number][],
   },
   memo_key: OLD.memo,
@@ -98,7 +98,7 @@ describe("buildRecoveryReplaceKeysOp", () => {
   it("drops ALL old keys, including extra keys a third party added", () => {
     const body = (buildRecoveryReplaceKeysOp(account, NEW) as any)[1];
     const serialized = JSON.stringify(body);
-    for (const old of [OLD.owner, OLD.ownerExtra, OLD.active, OLD.posting, OLD.memo, "STM_HACKER_POSTING"]) {
+    for (const old of [OLD.owner, OLD.ownerExtra, OLD.active, OLD.posting, OLD.memo, "STM_EXTRA_POSTING"]) {
       expect(serialized).not.toContain(old);
     }
   });
@@ -133,11 +133,11 @@ describe("buildPostRecoveryCleanupOps", () => {
       { name: "alice", vesting_withdraw_rate: "1234.567890 VESTS" },
       {
         withdrawRoutes: [
-          { from_account: "alice", to_account: "thief", percent: 10000, auto_vest: false },
+          { from_account: "alice", to_account: "bob", percent: 10000, auto_vest: false },
         ],
         savingsWithdrawals: [{ request_id: 7 }],
         recurrentTransfers: [
-          { from: "alice", to: "thief", amount: "5.000 HBD", recurrence: 24, remaining_executions: 10 },
+          { from: "alice", to: "bob", amount: "5.000 HBD", recurrence: 24, remaining_executions: 10 },
         ],
         openOrders: [{ orderid: 99 }],
       }
@@ -154,14 +154,14 @@ describe("buildPostRecoveryCleanupOps", () => {
       ["withdraw_vesting", { account: "alice", vesting_shares: "0.000000 VESTS" }],
       [
         "set_withdraw_vesting_route",
-        { from_account: "alice", to_account: "thief", percent: 0, auto_vest: false },
+        { from_account: "alice", to_account: "bob", percent: 0, auto_vest: false },
       ],
       ["cancel_transfer_from_savings", { from: "alice", request_id: 7 }],
       [
         "recurrent_transfer",
         {
           from: "alice",
-          to: "thief",
+          to: "bob",
           amount: "0.000 HBD",
           memo: "",
           recurrence: 24,
@@ -191,5 +191,19 @@ describe("buildPostRecoveryCleanupOps", () => {
       ],
     });
     expect((item.op as any)[1]).toMatchObject({ amount: "0.000 HIVE", recurrence: 48, executions: 2 });
+  });
+
+  it("carries the pair_id extension when stopping a paired recurrent transfer", () => {
+    const items = buildPostRecoveryCleanupOps(idle, {
+      recurrentTransfers: [
+        { from: "alice", to: "bob", amount: "1.000 HIVE", recurrence: 24, remaining_executions: 5, pair_id: 0 },
+        { from: "alice", to: "bob", amount: "2.000 HBD", recurrence: 24, remaining_executions: 5, pair_id: 3 },
+      ],
+    });
+    expect(items).toHaveLength(2);
+    expect((items[0].op as any)[1].extensions).toEqual([]);
+    expect((items[1].op as any)[1].extensions).toEqual([{ type: 1, value: { pair_id: 3 } }]);
+    expect(items[0].id).not.toBe(items[1].id);
+    expect(items[1].id).toContain("3");
   });
 });
