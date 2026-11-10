@@ -279,6 +279,28 @@ vi.mock("@ecency/sdk", async () => ({
   hiveTxUtils: { operations: {}, makeBitMaskFilter: vi.fn() },
   hiveTxConfig: { nodes: [], timeout: 1000, address_prefix: "STM" },
   dedupeAndSortKeyAuths: vi.fn((...args: any[]) => args[0] || []),
+  // Self-serve account recovery: request functions and chain helpers are stubs;
+  // their wire format and ops are pinned by the SDK's own specs.
+  recoveryStart: vi.fn(),
+  recoveryProve: vi.fn(),
+  recoveryVerifyCode: vi.fn(),
+  recoveryStatus: vi.fn(),
+  recoveryComplete: vi.fn(),
+  signRecoveryChallenge: vi.fn(),
+  buildRecoveryChallengeDigest: vi.fn(() => new Uint8Array(32)),
+  broadcastOperationsWithKeys: vi.fn(),
+  buildRecoveryRecoverAccountOp: vi.fn(),
+  buildRecoveryReplaceKeysOp: vi.fn(),
+  buildPostRecoveryCleanupOps: vi.fn(() => []),
+  buildChangeRecoveryAccountOp: vi.fn(),
+  getOwnerHistoryQueryOptions: vi.fn((username?: string) => ({
+    queryKey: ["accounts", "owner-history", username],
+    queryFn: vi.fn(async () => [])
+  })),
+  getLastAccountRecoveryQueryOptions: vi.fn((username?: string) => ({
+    queryKey: ["accounts", "last-recovery", username],
+    queryFn: vi.fn(async () => null)
+  })),
   buildGrantPostingPermissionOp: vi.fn(),
   // The search query builder is pure logic with no dependencies, and several
   // components now import it from the SDK rather than from @/utils. Stubbing it

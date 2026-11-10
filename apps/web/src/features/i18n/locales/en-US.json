@@ -2563,6 +2563,117 @@
     "update-successful": "Update successful",
     "update-success-message": "Your Recovery email has been updated successfully"
   },
+  "recover-account": {
+    "page-title": "Recover your account",
+    "page-description": "Get back into a Hive account that someone else took over.",
+    "title": "Recover your account",
+    "intro": "If someone changed your password, you can take your account back here. Everything happens in your browser. Your keys and passwords never leave this device.",
+    "steps": "Step {{n}} of {{total}}",
+    "start-over": "Start over",
+    "retry": "Try again",
+    "start": {
+      "username-placeholder": "Your username",
+      "hint": "Recovery works for accounts that have Ecency as their recovery account and had a password change in the last 30 days.",
+      "submit": "Continue"
+    },
+    "password": {
+      "title": "Your new master password",
+      "hint": "This password will control your account once it is recovered. Download the key file and keep it somewhere safe. Nobody can restore it for you.",
+      "download": "Download key file",
+      "saved-confirm": "I downloaded the key file and saved my new password",
+      "continue": "Continue"
+    },
+    "old-key": {
+      "title": "Prove it is your account",
+      "hint": "Enter a password or owner key you used before the account was taken. It is checked here in your browser and is never sent anywhere.",
+      "placeholder": "Old password or owner private key",
+      "loading": "Checking the account history...",
+      "load-failed": "We could not read the account history. Please try again.",
+      "submit": "Verify",
+      "empty": "Please enter an old password or owner key.",
+      "no-match": "That password or key was never the owner key of this account.",
+      "current": "That is the current owner key. You still control the account, so log in and change your keys in Permissions instead.",
+      "too-old": "That key stopped working more than 30 days ago, so it can no longer be used for recovery.",
+      "before-recovery": "That key was replaced by an earlier recovery and can no longer be used."
+    },
+    "code": {
+      "title": "Check your email",
+      "sent-to": "We sent a 6 digit code to:",
+      "hint": "Keep this page open. The code expires in 15 minutes.",
+      "placeholder": "6 digit code",
+      "submit": "Confirm",
+      "attempts-left": "Attempts left: {{count}}"
+    },
+    "waiting": {
+      "title": "Preparing your recovery",
+      "hint": "Ecency is submitting the recovery request. This usually takes less than a minute. Please keep this page open."
+    },
+    "finish": {
+      "title": "Finish the recovery",
+      "hint": "Two transactions will put your account under your new keys. Every old key will be removed.",
+      "checking": "Checking the account...",
+      "wait": "The account keys were changed very recently. For safety, the next change is possible after {{time}}.",
+      "check-again": "Check again",
+      "auths-title": "Apps and accounts with access",
+      "auths-hint": "Choose which accounts keep access. Only keep the ones you added yourself.",
+      "auths-role": "{{role}} access: @{{name}}",
+      "submit": "Recover my account",
+      "recovering": "Recovering your account...",
+      "updating-keys": "Replacing all keys...",
+      "recover-failed": "The recovery transaction did not go through.",
+      "keys-failed": "Your account is recovered, but replacing the other keys did not go through. Please try again.",
+      "retry": "Try again"
+    },
+    "cleanup": {
+      "title": "Undo changes made to your wallet",
+      "hint": "These were found on your account. Uncheck anything you set up yourself.",
+      "items": {
+        "power-down": "Stop the power down",
+        "withdraw-route": "Remove the power down route to @{{target}}",
+        "savings-withdrawal": "Cancel the savings withdrawal",
+        "recurrent-transfer": "Stop the recurring transfer to @{{target}}",
+        "open-order": "Cancel the open market order"
+      },
+      "apply": "Apply",
+      "skip": "Skip",
+      "failed": "Some of these changes did not go through. You can try again or skip.",
+      "working": "Applying..."
+    },
+    "success": {
+      "title": "Your account is yours again",
+      "verified": "All keys on your account now come from your new master password.",
+      "not-verified": "The recovery went through, but we could not confirm every key yet. Check your keys in Permissions after logging in.",
+      "login": "Log in"
+    },
+    "manual": {
+      "title": "We can not recover this account here",
+      "hint": "Please contact Ecency support and we will help you recover it.",
+      "contact": "Contact support"
+    },
+    "errors": {
+      "generic": "Something went wrong. Please try again.",
+      "unavailable": "The service is busy right now. Please try again in a moment.",
+      "captcha": "The human check failed. Please try again.",
+      "invalid_username": "Please enter a valid username.",
+      "not_found": "We could not find this account, or the request expired.",
+      "rate_limited": "Too many recovery attempts. Please try again tomorrow.",
+      "invalid_request": "Something in the request was not right. Please start over.",
+      "not_ecency_recovery": "This account does not use Ecency as its recovery account.",
+      "no_email": "We have no email address on file for this account.",
+      "no_recent_owner_change": "This account had no password change in the last 30 days that we can recover from.",
+      "key_not_recent": "That key can no longer be used for recovery.",
+      "invalid_proof": "We could not verify the key. Please try again.",
+      "bad_state": "This request is no longer active. Please start over.",
+      "invalid_code": "That code is not right.",
+      "code_expired": "The code expired. Please start over.",
+      "too_many_attempts": "Too many wrong codes. Please start over later.",
+      "expired": "This request expired. Please start over.",
+      "failed": "The recovery request could not be submitted. Please contact support.",
+      "not_recovered": "The account keys are not updated yet."
+    },
+    "entry-login": "Account taken over? Recover it",
+    "entry-permissions": "Lost control of your account? Use self-serve recovery."
+  },
   "chat": {
     "title": "Chats",
     "page-title": "Start direct messages or join channels to chat with anyone.",

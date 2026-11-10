@@ -160,6 +160,11 @@ const CONFIG = {
       aiAssist: {
         enabled: true
       },
+      accountRecovery: {
+        // Self-serve recovery page (/recover-account) and its entry links.
+        // Off until the full flow is verified end to end.
+        enabled: false
+      },
       decentMemes: {
         enabled: true,
         // Third-party meme maker embedded as an iframe in the publish composer.

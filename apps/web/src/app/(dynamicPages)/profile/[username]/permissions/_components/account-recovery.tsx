@@ -24,6 +24,7 @@ import { useForm } from "react-hook-form";
 import { getAccessToken, getSdkAuthContext, getUser } from "@/utils";
 import { accountExists, normalizeAccountName } from "@/utils/hive-account-name";
 import { computeRecoverySubmitState, recoveryFormSchema } from "./account-recovery-utils";
+import { RecoverAccountLink } from "@/features/account-recovery/recover-account-link";
 
 const ECENCY = "ecency";
 
@@ -155,6 +156,10 @@ export function AccountRecovery() {
         {i18next.t("permissions.recovery.title")}
       </div>
       <div className="px-4 text-sm opacity-75 mb-4">{i18next.t("permissions.recovery.hint")}</div>
+      <RecoverAccountLink
+        className="block px-4 text-sm mb-4"
+        label="recover-account.entry-permissions"
+      />
       <form className="px-4 pb-4 flex flex-col gap-4" onSubmit={methods.handleSubmit(update)}>
         <div>
           <label className="mb-2 text-sm opacity-50 px-2">

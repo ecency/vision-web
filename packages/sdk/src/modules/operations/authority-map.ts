@@ -59,9 +59,11 @@ export const OPERATION_AUTHORITY_MAP: Record<string, AuthorityLevel> = {
   remove_proposal: 'active',
   update_proposal_votes: 'active',
 
+  // Signed by the recovery account, which uses its active key
+  request_account_recovery: 'active',
+
   // Owner authority operations - Security & Account Recovery
   change_recovery_account: 'owner',
-  request_account_recovery: 'owner',
   recover_account: 'owner',
   reset_account: 'owner',
   set_reset_account: 'owner',

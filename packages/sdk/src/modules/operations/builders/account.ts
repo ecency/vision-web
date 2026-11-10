@@ -1,4 +1,11 @@
 import type { Operation, Authority } from "../../../hive-tx";
+import {
+  buildCancelTransferFromSavingsOp,
+  buildRecurrentTransferOp,
+  buildSetWithdrawVestingRouteOp,
+  buildWithdrawVestingOp,
+} from "./wallet";
+import { buildLimitOrderCancelOp } from "./market";
 
 export type { Authority };
 
@@ -379,4 +386,172 @@ export function buildRecoverAccountOp(
       extensions: extensions as [],
     },
   ];
+}
+
+type RecoveryRole = "owner" | "active" | "posting";
+
+/** New public keys for every role, all derived from one new master password. */
+export interface RecoveryNewKeys {
+  owner: string;
+  active: string;
+  posting: string;
+  memo: string;
+}
+
+function singleKeyAuthority(
+  publicKey: string,
+  accountAuths: Authority["account_auths"] = []
+): Authority {
+  return {
+    weight_threshold: 1,
+    account_auths: accountAuths.map(([name, weight]) => [name, weight] as [string, number]),
+    key_auths: [[publicKey, 1]],
+  };
+}
+
+/**
+ * Builds the `recover_account` operation for self-serve recovery.
+ * `recentOwnerAuthority` must be the exact `previous_owner_authority` object from
+ * owner history that holds the proven key; the chain compares it as a whole.
+ */
+export function buildRecoveryRecoverAccountOp(
+  accountToRecover: string,
+  newOwnerPublicKey: string,
+  recentOwnerAuthority: Authority
+): Operation {
+  return buildRecoverAccountOp(
+    accountToRecover,
+    singleKeyAuthority(newOwnerPublicKey),
+    recentOwnerAuthority
+  );
+}
+
+/**
+ * Builds an `account_update` that REPLACES every key after a recovery: owner,
+ * active and posting each get exactly one new key and the memo key changes too,
+ * so no earlier key keeps any access. Account authorities (app permissions) are
+ * kept unless the caller passes a per-role override.
+ */
+export function buildRecoveryReplaceKeysOp(
+  account: {
+    name: string;
+    owner: Authority;
+    active: Authority;
+    posting: Authority;
+    json_metadata?: string;
+  },
+  newKeys: RecoveryNewKeys,
+  options: { accountAuths?: Partial<Record<RecoveryRole, Authority["account_auths"]>> } = {}
+): Operation {
+  const authsFor = (role: RecoveryRole) =>
+    options.accountAuths?.[role] ?? account[role]?.account_auths ?? [];
+
+  return buildAccountUpdateOp(
+    account.name,
+    singleKeyAuthority(newKeys.owner, authsFor("owner")),
+    singleKeyAuthority(newKeys.active, authsFor("active")),
+    singleKeyAuthority(newKeys.posting, authsFor("posting")),
+    newKeys.memo,
+    account.json_metadata ?? ""
+  );
+}
+
+export type PostRecoveryCleanupKind =
+  | "power-down"
+  | "withdraw-route"
+  | "savings-withdrawal"
+  | "recurrent-transfer"
+  | "open-order";
+
+export interface PostRecoveryCleanupItem {
+  /** Stable id for a checklist row. */
+  id: string;
+  kind: PostRecoveryCleanupKind;
+  /** The other account involved, when there is one. */
+  target?: string;
+  op: Operation;
+}
+
+export interface PostRecoveryCleanupExtras {
+  withdrawRoutes?: { from_account: string; to_account: string; percent: number; auto_vest?: boolean }[];
+  savingsWithdrawals?: { request_id: number; to?: string; amount?: string }[];
+  recurrentTransfers?: {
+    from: string;
+    to: string;
+    amount: string;
+    recurrence: number;
+    remaining_executions: number;
+  }[];
+  openOrders?: { orderid: number }[];
+}
+
+/**
+ * Builds the optional clean-up operations after a recovery, one per item that is
+ * actually present: stop a power down, remove withdraw routes, cancel savings
+ * withdrawals, stop recurrent transfers and cancel open market orders.
+ * All of them are signed with the active key.
+ */
+export function buildPostRecoveryCleanupOps(
+  account: { name: string; vesting_withdraw_rate?: string },
+  extras: PostRecoveryCleanupExtras
+): PostRecoveryCleanupItem[] {
+  const name = account.name;
+  const items: PostRecoveryCleanupItem[] = [];
+
+  if (parseFloat(account.vesting_withdraw_rate ?? "0") > 0) {
+    items.push({
+      id: "power-down",
+      kind: "power-down",
+      op: buildWithdrawVestingOp(name, "0.000000 VESTS"),
+    });
+  }
+
+  (extras.withdrawRoutes ?? [])
+    .filter((r) => r.from_account === name && r.percent > 0)
+    .forEach((r) =>
+      items.push({
+        id: `withdraw-route:${r.to_account}`,
+        kind: "withdraw-route",
+        target: r.to_account,
+        op: buildSetWithdrawVestingRouteOp(name, r.to_account, 0, false),
+      })
+    );
+
+  (extras.savingsWithdrawals ?? []).forEach((w) =>
+    items.push({
+      id: `savings-withdrawal:${w.request_id}`,
+      kind: "savings-withdrawal",
+      target: w.to,
+      op: buildCancelTransferFromSavingsOp(name, w.request_id),
+    })
+  );
+
+  (extras.recurrentTransfers ?? [])
+    .filter((t) => t.from === name)
+    .forEach((t) => {
+      const symbol = t.amount.trim().split(/\s+/)[1] ?? "HIVE";
+      items.push({
+        id: `recurrent-transfer:${t.to}`,
+        kind: "recurrent-transfer",
+        target: t.to,
+        op: buildRecurrentTransferOp(
+          name,
+          t.to,
+          `0.000 ${symbol}`,
+          "",
+          t.recurrence,
+          Math.max(2, t.remaining_executions)
+        ),
+      });
+    });
+
+  (extras.openOrders ?? []).forEach((o) =>
+    items.push({
+      id: `open-order:${o.orderid}`,
+      kind: "open-order",
+      op: buildLimitOrderCancelOp(name, o.orderid),
+    })
+  );
+
+  return items;
 }

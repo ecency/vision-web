@@ -10,6 +10,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLoginByKeychain, useLoginByMetaMask } from "./hooks";
+import { RecoverAccountLink } from "@/features/account-recovery/recover-account-link";
 import { LoginUserByKey } from "./login-user-by-key";
 import { LoginUsersList } from "./login-users-list";
 import { ExtensionInstallList, useShowExtensionInstall } from "../extension-install-list";
@@ -304,6 +305,11 @@ export default function Login() {
         >
           {i18next.t("login.sign-up-text-2")}
         </Link>
+        <RecoverAccountLink
+          className="block mt-2"
+          label="recover-account.entry-login"
+          onClick={() => toggleUIProp("login")}
+        />
       </div>
 
       <Modal show={showExtensionsInfo} centered={true} onHide={() => setShowExtensionsInfo(false)}>

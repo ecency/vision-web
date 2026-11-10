@@ -140,6 +140,21 @@ export async function broadcastOperations(
   ops: Operation[],
   key: PrivateKey
 ): Promise<TransactionConfirmation> {
+  return broadcastOperationsWithKeys(ops, [key]);
+}
+
+/**
+ * Sign one transaction with several keys and broadcast it, waiting for block
+ * inclusion. Needed when an operation requires more than one signature, such as
+ * `recover_account` (a recent owner key plus the new owner key).
+ */
+export async function broadcastOperationsWithKeys(
+  ops: Operation[],
+  keys: PrivateKey[]
+): Promise<TransactionConfirmation> {
+  if (keys.length === 0) {
+    throw new Error("[SDK][broadcastOperationsWithKeys] At least one key is required");
+  }
   const tx = new Transaction();
   for (const op of ops) {
     await tx.addOperation(
@@ -147,7 +162,7 @@ export async function broadcastOperations(
       op[1] as OperationBody<OperationName>
     );
   }
-  tx.sign(key);
+  tx.sign(keys);
   return callRPCBroadcast("condenser_api.broadcast_transaction_synchronous", [
     tx.transaction,
   ]);
@@ -245,3 +260,4 @@ export function calculateRCMana(rcAccount: RCAccount): ManaResult {
 
 // setHiveTxNodes and initHiveTx removed — config is now unified.
 // Use hiveTxConfig directly or ConfigManager.setHiveNodes().
+
