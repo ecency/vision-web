@@ -659,6 +659,13 @@ describe("recover-account page", () => {
     });
     expect(screen.getByText(/recover-account\.finish\.keys-wait/).textContent).toContain('"count":4');
 
+    // A device clock correction does not move the countdown.
+    vi.setSystemTime(Date.now() - 60 * 60 * 1000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30 * 1000);
+    });
+    expect(screen.getByText(/recover-account\.finish\.keys-wait/).textContent).toContain('"count":4');
+
     chain.next = () => afterTx1;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(20 * 60 * 1000);
