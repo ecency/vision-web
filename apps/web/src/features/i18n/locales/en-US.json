@@ -2621,6 +2621,7 @@
       "updating-keys": "Replacing all keys...",
       "recover-failed": "The recovery transaction did not go through.",
       "keys-failed": "Your account is recovered, but replacing the other keys did not go through. Please try again.",
+      "verify-failed": "We could not confirm the new keys on your account yet. Please try again.",
       "retry": "Try again",
       "recovery-wait": "This account was recovered less than an hour ago. The next recovery is possible after {{time}}. This page will continue by itself.",
       "keys-wait": "Your account is recovered. For safety, the other keys can be replaced after {{time}}. Keep this page open and it will continue by itself.",
@@ -2640,12 +2641,12 @@
       "skip": "Skip",
       "failed": "Some of these changes did not go through. You can try again or skip.",
       "working": "Applying...",
-      "item-failed": "Did not go through"
+      "item-failed": "Did not go through",
+      "load-failed": "We could not check your wallet for changes. Try again, or skip this step."
     },
     "success": {
       "title": "Your account is yours again",
       "verified": "All keys on your account now come from your new master password.",
-      "not-verified": "The recovery went through, but we could not confirm every key yet. Check your keys in Permissions after logging in.",
       "login": "Log in"
     },
     "manual": {
@@ -2674,6 +2675,7 @@
       "failed": "The recovery request could not be submitted. Please contact support.",
       "not_recovered": "The account keys are not updated yet.",
       "in_progress": "A recovery for this account is already in progress. Check your email, or try again later.",
+      "in_progress_until": "A recovery for this account is already in progress. If you closed the page, you can start again after {{time}}.",
       "key_not_sufficient": "That key alone was not enough to control this account, so it can not be used here."
     },
     "entry-login": "Account taken over? Recover it",

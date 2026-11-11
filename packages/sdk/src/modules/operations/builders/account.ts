@@ -388,8 +388,6 @@ export function buildRecoverAccountOp(
   ];
 }
 
-type RecoveryRole = "owner" | "active" | "posting";
-
 /** New public keys for every role, all derived from one new master password. */
 export interface RecoveryNewKeys {
   owner: string;
@@ -398,14 +396,23 @@ export interface RecoveryNewKeys {
   memo: string;
 }
 
+/** Key weights are 16 bit on chain, so a threshold above this cannot be met by one key. */
+const MAX_KEY_WEIGHT = 65535;
+
+/**
+ * One new key that meets the threshold alone. Account authorities keep their
+ * own weights, so one that needed others before still does.
+ */
 function singleKeyAuthority(
   publicKey: string,
-  accountAuths: Authority["account_auths"] = []
+  accountAuths: Authority["account_auths"] = [],
+  threshold = 1
 ): Authority {
+  const weight = Math.min(Math.max(1, Math.floor(threshold) || 1), MAX_KEY_WEIGHT);
   return {
-    weight_threshold: 1,
-    account_auths: accountAuths.map(([name, weight]) => [name, weight] as [string, number]),
-    key_auths: [[publicKey, 1]],
+    weight_threshold: weight,
+    account_auths: accountAuths.map(([name, w]) => [name, w] as [string, number]),
+    key_auths: [[publicKey, weight]],
   };
 }
 
@@ -429,8 +436,10 @@ export function buildRecoveryRecoverAccountOp(
 /**
  * Builds an `account_update` that REPLACES every key after a recovery: owner,
  * active and posting each get exactly one new key and the memo key changes too,
- * so no earlier key keeps any access. Account authorities (app permissions) are
- * kept unless the caller passes a per-role override.
+ * so no earlier key keeps any access. Owner is always the new key alone with
+ * threshold 1. Active and posting keep their threshold, the new key alone meets
+ * it, and their account authorities stay with their weights unless the caller
+ * passes a list.
  */
 export function buildRecoveryReplaceKeysOp(
   account: {
@@ -441,16 +450,21 @@ export function buildRecoveryReplaceKeysOp(
     json_metadata?: string;
   },
   newKeys: RecoveryNewKeys,
-  options: { accountAuths?: Partial<Record<RecoveryRole, Authority["account_auths"]>> } = {}
+  options: { accountAuths?: Partial<Record<"active" | "posting", Authority["account_auths"]>> } = {}
 ): Operation {
-  const authsFor = (role: RecoveryRole) =>
-    options.accountAuths?.[role] ?? account[role]?.account_auths ?? [];
+  const role = (name: "active" | "posting", key: string) =>
+    singleKeyAuthority(
+      key,
+      options.accountAuths?.[name] ?? account[name]?.account_auths ?? [],
+      account[name]?.weight_threshold
+    );
 
   return buildAccountUpdateOp(
     account.name,
-    singleKeyAuthority(newKeys.owner, authsFor("owner")),
-    singleKeyAuthority(newKeys.active, authsFor("active")),
-    singleKeyAuthority(newKeys.posting, authsFor("posting")),
+    // Same shape as the recovery request: one key, weight 1, threshold 1.
+    singleKeyAuthority(newKeys.owner),
+    role("active", newKeys.active),
+    role("posting", newKeys.posting),
     newKeys.memo,
     account.json_metadata ?? ""
   );

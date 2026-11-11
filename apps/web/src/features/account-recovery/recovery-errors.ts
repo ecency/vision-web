@@ -2,7 +2,7 @@ import i18next from "i18next";
 
 export interface RecoveryApiResult {
   status: number;
-  data?: { error?: string; attempts_left?: number } | null;
+  data?: { error?: string; attempts_left?: number; retry_after?: string } | null;
 }
 
 /** Errors that mean this page cannot help and the user should contact support. */

@@ -55,10 +55,16 @@ vi.mock("i18next", () => ({
 // Shared by the mocked ai query options AND the QueryKeys stand-in below, so specs that
 // seed a cache entry use exactly the key the mocked options read. Hoisted because the
 // vi.mock factory runs before module-level code.
-const { aiQueryKeys } = vi.hoisted(() => ({
+const { aiQueryKeys, recoveryQueryKeys } = vi.hoisted(() => ({
   aiQueryKeys: {
     prices: () => ["ai", "prices"] as const,
     images: (username?: string) => ["ai", "images", username] as const
+  },
+  // Same shapes as QueryKeys.accounts.{ownerHistory,lastRecovery,recoveryChainState}.
+  recoveryQueryKeys: {
+    ownerHistory: (username?: string) => ["accounts", "owner-history", username],
+    lastRecovery: (username?: string) => ["accounts", "last-recovery", username],
+    recoveryChainState: (username?: string) => ["accounts", "recovery-chain-state", username]
   }
 }));
 
@@ -197,7 +203,8 @@ vi.mock("@ecency/sdk", async () => ({
     quests: { status: (username?: string) => ["quests", "status", username] },
     accounts: {
       full: (username?: string) => ["get-account-full", username],
-      mutedUsers: (username?: string) => ["accounts", "muted-users", username]
+      mutedUsers: (username?: string) => ["accounts", "muted-users", username],
+      ...recoveryQueryKeys
     },
     // Same shape as the SDK builder: the entry page derives a key prefix from it.
     posts: {
@@ -294,11 +301,11 @@ vi.mock("@ecency/sdk", async () => ({
   buildPostRecoveryCleanupOps: vi.fn(() => []),
   buildChangeRecoveryAccountOp: vi.fn(),
   getOwnerHistoryQueryOptions: vi.fn((username?: string) => ({
-    queryKey: ["accounts", "owner-history", username],
+    queryKey: recoveryQueryKeys.ownerHistory(username),
     queryFn: vi.fn(async () => [])
   })),
   getLastAccountRecoveryQueryOptions: vi.fn((username?: string) => ({
-    queryKey: ["accounts", "last-recovery", username],
+    queryKey: recoveryQueryKeys.lastRecovery(username),
     queryFn: vi.fn(async () => null)
   })),
   buildGrantPostingPermissionOp: vi.fn(),

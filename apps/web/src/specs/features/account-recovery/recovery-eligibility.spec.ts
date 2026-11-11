@@ -215,6 +215,16 @@ describe("findPostingAuthsAddedAfter", () => {
     );
   });
 
+  it("treats a posting update at exactly the cutoff as after the takeover", () => {
+    const rows = [
+      update("2026-11-01T00:00:00", ["ecency.app"]),
+      update("2026-11-08T12:00:00", ["ecency.app", "same.time.app"])
+    ];
+    expect(findPostingAuthsAddedAfter(rows as any, "2026-11-08T12:00:00")).toEqual(
+      new Set(["same.time.app"])
+    );
+  });
+
   it("flags nothing when no posting update happened after the takeover", () => {
     const rows = [update("2026-11-01T00:00:00", ["ecency.app"])];
     expect(findPostingAuthsAddedAfter(rows as any, "2026-11-08T12:00:00")).toEqual(new Set());

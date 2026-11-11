@@ -7,14 +7,18 @@ export type OldKeyMatch =
 
 /**
  * Owner keys the input could stand for: the key itself when it is a private key
- * (WIF), and the owner key derived from it as a master password.
+ * (WIF), and the owner key derived from it as a master password. The password is
+ * tried as typed first (an old one may start or end with spaces), then trimmed.
  */
-function ownerCandidates(username: string, input: string): PrivateKey[] {
+function ownerCandidates(username: string, raw: string, trimmed: string): PrivateKey[] {
   const candidates: PrivateKey[] = [];
-  if (isWif(input)) {
-    candidates.push(PrivateKey.fromString(input));
+  if (isWif(trimmed)) {
+    candidates.push(PrivateKey.fromString(trimmed));
   }
-  candidates.push(PrivateKey.fromLogin(username, input, "owner"));
+  candidates.push(PrivateKey.fromLogin(username, raw, "owner"));
+  if (trimmed !== raw) {
+    candidates.push(PrivateKey.fromLogin(username, trimmed, "owner"));
+  }
   return candidates;
 }
 
@@ -31,7 +35,7 @@ export function matchOldOwnerKey(
   const input = rawInput.trim();
   if (!input) return { status: "empty" };
 
-  const candidates = ownerCandidates(username, input).map((key) => ({
+  const candidates = ownerCandidates(username, rawInput, input).map((key) => ({
     key,
     publicKey: key.createPublic().toString()
   }));

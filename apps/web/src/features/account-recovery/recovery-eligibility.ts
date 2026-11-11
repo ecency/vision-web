@@ -102,11 +102,11 @@ export function isWithinRecoveryWindow(lastValidTime: string, head: number, marg
   return parseChainTime(lastValidTime) + RECOVERY_WINDOW_MS > head + marginMs;
 }
 
-type HistoryRow = [number, { timestamp: string; op: [string, { posting?: { account_auths: [string, number][] } }] }];
+export type HistoryRow = [number, { timestamp: string; op: [string, { posting?: { account_auths: [string, number][] } }] }];
 
 /**
- * Posting account authorities that appeared through account_update(2) after
- * `validUntil` (when the old owner key was replaced). They may have been added
+ * Posting account authorities that appeared through account_update(2) at or
+ * after `validUntil` (when the old owner key was replaced). They may have been added
  * by someone else, so the page leaves them unticked. With no earlier posting
  * update in the rows, every name set after the takeover counts.
  */
@@ -122,7 +122,8 @@ export function findPostingAuthsAddedAfter(rows: HistoryRow[], validUntil: strin
     const posting = op?.[1]?.posting;
     if (!posting) continue;
     const names = posting.account_auths.map(([name]) => name);
-    if (parseChainTime(timestamp) <= cutoff) {
+    // An update at the cutoff itself may be the takeover, so it counts as after.
+    if (parseChainTime(timestamp) < cutoff) {
       before = new Set(names);
     } else {
       names.filter((n) => !before.has(n)).forEach((n) => added.add(n));

@@ -5,7 +5,7 @@ import i18next from "i18next";
 import { Button } from "@ui/button";
 import { Spinner } from "@ui/spinner";
 import {
-  RECOVERY_ROLES,
+  ACCESS_ROLES,
   areAllKeysReplaced,
   isOwnerReplaced,
   loadRecentPostingAuthAdds,
@@ -13,8 +13,8 @@ import {
   submitRecoverAccount,
   submitReplaceKeys,
   verifyRecoveredKeys,
-  type RecoveryChainState,
-  type RecoveryRole
+  type AccessRole,
+  type RecoveryChainState
 } from "@/features/account-recovery/recovery-chain";
 import {
   getHourlyLimitWaitUntil,
@@ -33,9 +33,10 @@ type Phase =
   | "keys-wait"
   | "updating"
   | "keys-failed"
-  | "verifying";
+  | "verifying"
+  | "verify-failed";
 
-type Keep = Record<RecoveryRole, string[]>;
+type Keep = Record<AccessRole, string[]>;
 
 /** Margin left in the 30 day window before tx1 is signed. */
 const WINDOW_MARGIN_MS = 10 * 60 * 1000;
@@ -46,7 +47,7 @@ interface Props {
   username: string;
   keys: RecoveryKeySet;
   proof: RecoveryProof;
-  onKeysReplaced: (verified: boolean) => void;
+  onKeysReplaced: () => void;
   onManual: (code: string) => void;
 }
 
@@ -158,7 +159,7 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
           await submitReplaceKeys({
             username,
             newKeys: keys,
-            keepAccountAuths: keepRef.current ?? { owner: [], active: [], posting: [] }
+            keepAccountAuths: keepRef.current ?? { active: [], posting: [] }
           });
         } catch (e) {
           setDetail(e instanceof Error ? e.message : "");
@@ -174,7 +175,14 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
       } catch {
         verified = false;
       }
-      if (mounted.current) callbacks.current.onKeysReplaced(verified);
+      if (!mounted.current) return;
+      // Only move on once the chain shows the new keys. A retry runs this again,
+      // which re-reads the chain and sends only what is still missing.
+      if (verified) {
+        callbacks.current.onKeysReplaced();
+      } else {
+        setPhase("verify-failed");
+      }
     } finally {
       running.current = false;
     }
@@ -195,7 +203,8 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
   }, [advance]);
 
   // Account access review: posting access (apps) stays by default unless it was
-  // set after the takeover; owner and active access must be opted in.
+  // set after the takeover; active access must be opted in. Owner access is
+  // never offered: tx2 always drops it.
   const account = state?.account;
   useEffect(() => {
     if (!account || keep) return;
@@ -205,20 +214,20 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
       .then((added) => {
         if (!active) return;
         setFlagged(added);
-        setKeep({ owner: [], active: [], posting: posting.filter((n) => !added.has(n)) });
+        setKeep({ active: [], posting: posting.filter((n) => !added.has(n)) });
       })
       .catch(() => {
         // Could not tell which ones are new: keep none unless the user opts in.
         if (!active) return;
         setFlagged(new Set(posting));
-        setKeep({ owner: [], active: [], posting: [] });
+        setKeep({ active: [], posting: [] });
       });
     return () => {
       active = false;
     };
   }, [account, keep, username, proof.validUntil]);
 
-  const toggleKeep = (role: RecoveryRole, name: string, checked: boolean) =>
+  const toggleKeep = (role: AccessRole, name: string, checked: boolean) =>
     setKeep((prev) =>
       prev
         ? { ...prev, [role]: checked ? [...prev[role], name] : prev[role].filter((n) => n !== name) }
@@ -226,7 +235,7 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
     );
 
   const accountAuths = account
-    ? RECOVERY_ROLES.flatMap((role) => account[role].account_auths.map(([name]) => ({ role, name })))
+    ? ACCESS_ROLES.flatMap((role) => account[role].account_auths.map(([name]) => ({ role, name })))
     : [];
 
   const busy = phase === "checking" || phase === "recovering" || phase === "updating" || phase === "verifying";
@@ -301,15 +310,9 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
         </Button>
       )}
 
-      {(phase === "recover-failed" || phase === "keys-failed") && (
+      {(phase === "recover-failed" || phase === "keys-failed" || phase === "verify-failed") && (
         <div role="alert">
-          <p className="text-sm text-red mb-1">
-            {i18next.t(
-              phase === "recover-failed"
-                ? "recover-account.finish.recover-failed"
-                : "recover-account.finish.keys-failed"
-            )}
-          </p>
+          <p className="text-sm text-red mb-1">{i18next.t(`recover-account.finish.${phase}`)}</p>
           {detail && <p className="text-xs opacity-60 mb-3 break-words">{detail}</p>}
           <Button onClick={advance}>{i18next.t("recover-account.finish.retry")}</Button>
         </div>

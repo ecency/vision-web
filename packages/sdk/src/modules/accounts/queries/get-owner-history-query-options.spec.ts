@@ -43,6 +43,16 @@ describe("getOwnerHistoryQueryOptions", () => {
   it("is disabled without a username", () => {
     expect(getOwnerHistoryQueryOptions(undefined).enabled).toBe(false);
   });
+
+  it("throws without a username even when run directly, and calls nothing", async () => {
+    await expect(runQueryFn(getOwnerHistoryQueryOptions(undefined))).rejects.toThrow();
+    expect(mockCallRPC).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty history as an empty list", async () => {
+    mockCallRPC.mockResolvedValueOnce([]);
+    await expect(runQueryFn(getOwnerHistoryQueryOptions("alice"))).resolves.toEqual([]);
+  });
 });
 
 describe("getLastAccountRecoveryQueryOptions", () => {
@@ -61,6 +71,12 @@ describe("getLastAccountRecoveryQueryOptions", () => {
       "condenser_api.get_account_history",
       ["alice", -1, 1000, 2 ** 25, 0],
     ]);
+  });
+
+  it("throws without a username even when run directly, and calls nothing", async () => {
+    expect(getLastAccountRecoveryQueryOptions(undefined).enabled).toBe(false);
+    await expect(runQueryFn(getLastAccountRecoveryQueryOptions(undefined))).rejects.toThrow();
+    expect(mockCallRPC).not.toHaveBeenCalled();
   });
 
   it("returns null when the account was never recovered", async () => {

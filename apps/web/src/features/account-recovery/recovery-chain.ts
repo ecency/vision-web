@@ -12,13 +12,20 @@ import {
   type PrivateKey,
   type RecoveryNewKeys
 } from "@ecency/sdk";
-import { findPostingAuthsAddedAfter, parseChainTime } from "./recovery-eligibility";
+import {
+  findPostingAuthsAddedAfter,
+  parseChainTime,
+  type HistoryRow
+} from "./recovery-eligibility";
 import type { RecoveryKeySet } from "./recovery-keys";
 
 export const RECOVERY_ACCOUNT = "ecency";
 
 export type RecoveryRole = "owner" | "active" | "posting";
 export const RECOVERY_ROLES: RecoveryRole[] = ["owner", "active", "posting"];
+/** Roles whose account authorities may stay after recovery. Owner ones never do. */
+export type AccessRole = "active" | "posting";
+export const ACCESS_ROLES: AccessRole[] = ["active", "posting"];
 
 /** The chain account fields the recovery needs, as database_api.find_accounts returns them. */
 export interface RecoveryAccount {
@@ -48,6 +55,9 @@ export interface RecoveryChainState {
 /** account_update (10) and account_update2 (43) in operation_filter_low. */
 const ACCOUNT_UPDATE_FILTER_LOW = 2 ** 10 + 2 ** 43;
 const NEVER = Date.parse("1970-01-02T00:00:00Z");
+const HISTORY_PAGE_SIZE = 1000;
+/** Most account history pages read while looking for the takeover time. */
+export const RECOVERY_HISTORY_PAGE_CAP = 10;
 
 function toVests(value: unknown): string {
   if (typeof value === "string") return value;
@@ -89,26 +99,49 @@ export async function loadRecoveryChainState(username: string): Promise<Recovery
 }
 
 /**
- * Posting account authorities set by account updates after `validUntil`, the
- * moment the proven owner key was replaced. Rejects on a failed read; the page
- * then treats every posting authority as unconfirmed.
+ * Posting account authorities set by account updates at or after `validUntil`,
+ * the moment the proven owner key was replaced. Reads older pages until the
+ * history reaches that time. Rejects on a failed read or when the cap is hit
+ * first; the page then treats every posting authority as unconfirmed.
  */
 export async function loadRecentPostingAuthAdds(
   username: string,
   validUntil: string
 ): Promise<Set<string>> {
-  const rows = await callRPC(
-    "condenser_api.get_account_history",
-    [username, -1, 1000, ACCOUNT_UPDATE_FILTER_LOW, 0],
-    undefined,
-    undefined,
-    undefined,
-    (result: unknown) => Array.isArray(result)
-  );
-  if (!Array.isArray(rows)) {
-    throw new Error("Unexpected account history response");
+  const cutoff = parseChainTime(validUntil);
+  const rows: HistoryRow[] = [];
+  let start = -1;
+  for (let page = 0; page < RECOVERY_HISTORY_PAGE_CAP; page++) {
+    // The node asserts start >= limit - 1.
+    const limit = start < 0 ? HISTORY_PAGE_SIZE : Math.min(HISTORY_PAGE_SIZE, start + 1);
+    const batch = await callRPC(
+      "condenser_api.get_account_history",
+      [username, start, limit, ACCOUNT_UPDATE_FILTER_LOW, 0],
+      undefined,
+      undefined,
+      undefined,
+      (result: unknown) => Array.isArray(result)
+    );
+    if (!Array.isArray(batch)) {
+      throw new Error("Unexpected account history response");
+    }
+    rows.push(...(batch as HistoryRow[]));
+
+    const oldest = (batch as HistoryRow[]).reduce<HistoryRow | undefined>(
+      (min, item) => (!min || item[0] < min[0] ? item : min),
+      undefined
+    );
+    if (
+      !oldest ||
+      batch.length < limit ||
+      !(oldest[0] > 0) ||
+      parseChainTime(oldest[1].timestamp) < cutoff
+    ) {
+      return findPostingAuthsAddedAfter(rows, validUntil);
+    }
+    start = oldest[0] - 1;
   }
-  return findPostingAuthsAddedAfter(rows, validUntil);
+  throw new Error("Account history is too long to check");
 }
 
 /** tx1: recover_account, signed by the proven old owner key and the new owner key. */
@@ -141,7 +174,7 @@ export function submitRecoverAccount(input: {
 export async function submitReplaceKeys(input: {
   username: string;
   newKeys: RecoveryKeySet;
-  keepAccountAuths: Record<RecoveryRole, string[]>;
+  keepAccountAuths: Record<AccessRole, string[]>;
 }) {
   const [account, pending] = await Promise.all([
     loadRecoveryAccount(input.username),
@@ -151,11 +184,11 @@ export async function submitReplaceKeys(input: {
   ]);
 
   const accountAuths = Object.fromEntries(
-    RECOVERY_ROLES.map((role) => [
+    ACCESS_ROLES.map((role) => [
       role,
       account[role].account_auths.filter(([name]) => input.keepAccountAuths[role].includes(name))
     ])
-  ) as Record<RecoveryRole, Authority["account_auths"]>;
+  ) as Record<AccessRole, Authority["account_auths"]>;
 
   const ops: Operation[] = [
     buildRecoveryReplaceKeysOp(account, input.newKeys.publicKeys, { accountAuths })
@@ -166,24 +199,33 @@ export async function submitReplaceKeys(input: {
   return broadcastOperationsWithKeys(ops, [input.newKeys.owner]);
 }
 
-/** True when the owner authority is exactly the new owner key. */
+/** True when the authority holds only `key` and that key meets the threshold alone. */
+function isOnlyKey(auth: Authority, key: string) {
+  return (
+    auth.key_auths.length === 1 &&
+    String(auth.key_auths[0][0]) === key &&
+    auth.key_auths[0][1] >= auth.weight_threshold
+  );
+}
+
+/** True when the owner authority is exactly the new owner key: weight 1, threshold 1, no accounts. */
 export function isOwnerReplaced(account: Pick<RecoveryAccount, "owner">, ownerPublicKey: string) {
   const { owner } = account;
   return (
     owner.weight_threshold === 1 &&
+    owner.account_auths.length === 0 &&
     owner.key_auths.length === 1 &&
-    String(owner.key_auths[0][0]) === ownerPublicKey
+    String(owner.key_auths[0][0]) === ownerPublicKey &&
+    owner.key_auths[0][1] === 1
   );
 }
 
 /** True when every key on the account is exactly the new key for its role. */
 export function areAllKeysReplaced(account: RecoveryAccount, publicKeys: RecoveryNewKeys) {
-  const only = (auth: Authority, key: string) =>
-    auth.key_auths.length === 1 && String(auth.key_auths[0][0]) === key;
   return (
     isOwnerReplaced(account, publicKeys.owner) &&
-    only(account.active, publicKeys.active) &&
-    only(account.posting, publicKeys.posting) &&
+    isOnlyKey(account.active, publicKeys.active) &&
+    isOnlyKey(account.posting, publicKeys.posting) &&
     account.memo_key === publicKeys.memo
   );
 }

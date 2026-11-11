@@ -27,6 +27,8 @@ export type RecoveryRequestStatus =
 export interface RecoveryErrorBody {
   error?: string;
   attempts_left?: number;
+  /** With `in_progress`: when a new request can be started (ISO time, UTC). */
+  retry_after?: string;
 }
 
 export interface RecoveryStartResponse {

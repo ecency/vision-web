@@ -103,6 +103,51 @@ describe("buildRecoveryReplaceKeysOp", () => {
     }
   });
 
+  it("keeps each role's threshold and gives the new key that weight, retained accounts keep theirs", () => {
+    const multi = {
+      ...account,
+      active: {
+        weight_threshold: 2,
+        account_auths: [["co.signer", 1]] as [string, number][],
+        key_auths: [[OLD.active, 1], ["STM_OTHER_ACTIVE", 1]] as [string, number][],
+      },
+      posting: {
+        weight_threshold: 3,
+        account_auths: [["app.one", 1], ["app.two", 3]] as [string, number][],
+        key_auths: [[OLD.posting, 3]] as [string, number][],
+      },
+    };
+    const body = (buildRecoveryReplaceKeysOp(multi, NEW) as any)[1];
+    expect(body.active).toEqual({
+      weight_threshold: 2,
+      account_auths: [["co.signer", 1]],
+      key_auths: [[NEW.active, 2]],
+    });
+    expect(body.posting).toEqual({
+      weight_threshold: 3,
+      account_auths: [["app.one", 1], ["app.two", 3]],
+      key_auths: [[NEW.posting, 3]],
+    });
+  });
+
+  it("clamps a threshold above the largest key weight", () => {
+    const big = {
+      ...account,
+      active: { weight_threshold: 100000, account_auths: [], key_auths: [[OLD.active, 1]] as [string, number][] },
+    };
+    const body = (buildRecoveryReplaceKeysOp(big, NEW) as any)[1];
+    expect(body.active).toEqual({ weight_threshold: 65535, account_auths: [], key_auths: [[NEW.active, 65535]] });
+  });
+
+  it("always sets the owner to the new key alone with threshold 1", () => {
+    const withOwnerAuths = {
+      ...account,
+      owner: { ...account.owner, weight_threshold: 2, account_auths: [["owner.friend", 1]] as [string, number][] },
+    };
+    const body = (buildRecoveryReplaceKeysOp(withOwnerAuths, NEW) as any)[1];
+    expect(body.owner).toEqual({ weight_threshold: 1, account_auths: [], key_auths: [[NEW.owner, 1]] });
+  });
+
   it("lets the caller choose which account_auths stay per role", () => {
     const body = (
       buildRecoveryReplaceKeysOp(account, NEW, { accountAuths: { active: [] } }) as any

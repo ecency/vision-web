@@ -3,7 +3,7 @@
 import { useState } from "react";
 import i18next from "i18next";
 import { useQuery } from "@tanstack/react-query";
-import { recoveryProve, signRecoveryChallenge } from "@ecency/sdk";
+import { QueryKeys, recoveryProve, signRecoveryChallenge } from "@ecency/sdk";
 import { Button } from "@ui/button";
 import { FormControl } from "@ui/input";
 import { loadRecoveryChainState } from "@/features/account-recovery/recovery-chain";
@@ -46,7 +46,7 @@ export function RecoverOldKeyStep({
   const [busy, setBusy] = useState(false);
 
   const chain = useQuery({
-    queryKey: ["recover-account", "chain-state", username],
+    queryKey: QueryKeys.accounts.recoveryChainState(username),
     queryFn: () => loadRecoveryChainState(username),
     staleTime: 0,
     gcTime: 0,

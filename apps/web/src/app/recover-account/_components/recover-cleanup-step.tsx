@@ -26,11 +26,14 @@ export function RecoverCleanupStep({ username, activeKey, onDone }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<Set<string>>(new Set());
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const done = useRef(onDone);
   done.current = onDone;
 
   useEffect(() => {
     let active = true;
+    setLoadFailed(false);
     loadCleanupItems(username)
       .then((found) => {
         if (!active) return;
@@ -42,13 +45,13 @@ export function RecoverCleanupStep({ username, activeKey, onDone }: Props) {
         setSelected(new Set(found.map((i) => i.id)));
       })
       .catch(() => {
-        // Clean-up is optional: if it cannot be read, finish without it.
-        if (active) done.current();
+        // Not knowing is not the same as nothing to undo: let the user decide.
+        if (active) setLoadFailed(true);
       });
     return () => {
       active = false;
     };
-  }, [username]);
+  }, [username, attempt]);
 
   const apply = async () => {
     if (!items) return;
@@ -73,6 +76,25 @@ export function RecoverCleanupStep({ username, activeKey, onDone }: Props) {
       setBusy(false);
     }
   };
+
+  if (loadFailed) {
+    return (
+      <div>
+        <h2 className="text-lg font-semibold mb-2">{i18next.t("recover-account.cleanup.title")}</h2>
+        <p role="alert" className="text-sm text-red mb-4">
+          {i18next.t("recover-account.cleanup.load-failed")}
+        </p>
+        <div className="flex gap-2">
+          <Button className="flex-1" onClick={() => setAttempt((n) => n + 1)}>
+            {i18next.t("recover-account.retry")}
+          </Button>
+          <Button className="flex-1" appearance="secondary" onClick={onDone}>
+            {i18next.t("recover-account.cleanup.skip")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (!items) {
     return <Spinner className="size-6 mx-auto my-6" />;

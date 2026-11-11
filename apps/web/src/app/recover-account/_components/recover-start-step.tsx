@@ -10,6 +10,7 @@ import {
   MANUAL_HELP_ERRORS,
   recoveryErrorCode
 } from "@/features/account-recovery/recovery-errors";
+import { parseChainTime } from "@/features/account-recovery/recovery-eligibility";
 import { normalizeAccountName } from "@/utils/hive-account-name";
 import { RecoverError } from "./recover-error";
 
@@ -23,6 +24,7 @@ export function RecoverStartStep({ onStarted, onManual }: Props) {
   const [captchaToken, setCaptchaToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [retryAfter, setRetryAfter] = useState<Date | null>(null);
   const turnstileRef = useRef<TurnstileHandle>(null);
 
   const name = normalizeAccountName(username);
@@ -33,6 +35,7 @@ export function RecoverStartStep({ onStarted, onManual }: Props) {
 
     setBusy(true);
     setError("");
+    setRetryAfter(null);
     try {
       const res = await recoveryStart(name, captchaToken);
       if (res.status === 200 && res.data.request_id && res.data.nonce) {
@@ -44,6 +47,10 @@ export function RecoverStartStep({ onStarted, onManual }: Props) {
         onManual(code);
         return;
       }
+      const until = code === "in_progress" && res.data?.retry_after
+        ? parseChainTime(res.data.retry_after)
+        : NaN;
+      if (!Number.isNaN(until)) setRetryAfter(new Date(until));
       setError(code);
     } catch {
       setError("unavailable");
@@ -76,7 +83,15 @@ export function RecoverStartStep({ onStarted, onManual }: Props) {
           onExpire={() => setCaptchaToken("")}
         />
       </div>
-      <RecoverError code={error} />
+      {error === "in_progress" && retryAfter ? (
+        <p role="alert" className="text-red text-sm my-3 px-1">
+          {i18next.t("recover-account.errors.in_progress_until", {
+            time: retryAfter.toLocaleString()
+          })}
+        </p>
+      ) : (
+        <RecoverError code={error} />
+      )}
       <Button className="w-full" type="submit" disabled={busy || !captchaToken || !name} isLoading={busy}>
         {i18next.t("recover-account.start.submit")}
       </Button>

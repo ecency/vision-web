@@ -21,8 +21,13 @@ export function getOwnerHistoryQueryOptions(username: string | undefined) {
   return queryOptions({
     enabled: !!username,
     queryKey: QueryKeys.accounts.ownerHistory(username!),
-    queryFn: () =>
-      callRPC("condenser_api.get_owner_history", [username]) as Promise<OwnerHistoryEntry[]>,
+    queryFn: async () => {
+      // prefetchQuery and fetchQuery ignore `enabled`.
+      if (!username) {
+        throw new Error("[SDK][getOwnerHistory] username is required");
+      }
+      return callRPC("condenser_api.get_owner_history", [username]) as Promise<OwnerHistoryEntry[]>;
+    },
   });
 }
 
@@ -35,6 +40,9 @@ export function getLastAccountRecoveryQueryOptions(username: string | undefined)
     enabled: !!username,
     queryKey: QueryKeys.accounts.lastRecovery(username!),
     queryFn: async (): Promise<string | null> => {
+      if (!username) {
+        throw new Error("[SDK][getLastAccountRecovery] username is required");
+      }
       // A failed lookup must reject, never read as "never recovered": that would
       // switch the lineage rule off. The validator makes callRPC fail over to the
       // next node on a malformed answer.

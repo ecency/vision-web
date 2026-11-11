@@ -54,7 +54,6 @@ export function RecoverAccountPage() {
   const [masterPassword, setMasterPassword] = useState("");
   const [emails, setEmails] = useState<string[]>([]);
   const [manualCode, setManualCode] = useState("");
-  const [verified, setVerified] = useState(false);
 
   const keysRef = useRef<RecoveryKeySet | null>(null);
   const proofRef = useRef<RecoveryProof | null>(null);
@@ -103,22 +102,18 @@ export function RecoverAccountPage() {
     setStep("code");
   }, []);
 
-  // Keys are verified on chain: record the completion before the optional clean-up.
-  const handleKeysReplaced = useCallback(
-    async (keysVerified: boolean) => {
-      proofRef.current = null;
-      setVerified(keysVerified);
-      if (session && keysVerified) {
-        try {
-          await recoveryComplete(session.requestId);
-        } catch {
-          // Only an audit record; the account is already recovered on chain.
-        }
-      }
-      setStep("cleanup");
-    },
-    [session]
-  );
+  // Keys are verified on chain: move on to the optional clean-up and record the
+  // completion in the background. It is only an audit record, so errors are ignored.
+  const handleKeysReplaced = useCallback(() => {
+    proofRef.current = null;
+    setStep("cleanup");
+    if (session) {
+      const requestId = session.requestId;
+      Promise.resolve()
+        .then(() => recoveryComplete(requestId))
+        .catch(() => undefined);
+    }
+  }, [session]);
 
   const finish = useCallback(() => {
     clearSecrets();
@@ -174,6 +169,7 @@ export function RecoverAccountPage() {
             requestId={session.requestId}
             onRequested={() => setStep("finish")}
             onManual={showManual}
+            onRestart={restart}
           />
         )}
 
@@ -195,7 +191,7 @@ export function RecoverAccountPage() {
           />
         )}
 
-        {step === "success" && <RecoverSuccessStep verified={verified} />}
+        {step === "success" && <RecoverSuccessStep />}
 
         {step === "manual" && <RecoverManualHelp code={manualCode} onRestart={restart} />}
       </div>

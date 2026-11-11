@@ -44,6 +44,25 @@ describe("matchOldOwnerKey", () => {
     expect(result.publicKey).toBe(oldOwnerPub);
   });
 
+  it("matches an old master password that starts or ends with spaces", () => {
+    const spaced = "  P5spaced-old-password ";
+    const spacedPub = PrivateKey.fromLogin(USER, spaced, "owner").createPublic().toString();
+    const spacedHistory = [
+      {
+        ...history[0],
+        previous_owner_authority: { ...history[0].previous_owner_authority, key_auths: [[spacedPub, 1]] as [string, number][] }
+      }
+    ];
+    const result = matchOldOwnerKey(USER, spaced, spacedHistory, opts);
+    expect(result.status).toBe("match");
+    if (result.status !== "match") return;
+    expect(result.publicKey).toBe(spacedPub);
+  });
+
+  it("still matches a password typed with extra spaces around it", () => {
+    expect(matchOldOwnerKey(USER, ` ${OLD_PASSWORD}  `, history, opts).status).toBe("match");
+  });
+
   it("reports no-match for a key that was never the owner", () => {
     expect(matchOldOwnerKey(USER, otherKey.toString(), history, opts).status).toBe("no-match");
     expect(matchOldOwnerKey(USER, "wrong password", history, opts).status).toBe("no-match");
