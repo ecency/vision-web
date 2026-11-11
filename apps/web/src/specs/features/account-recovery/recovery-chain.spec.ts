@@ -233,6 +233,17 @@ describe("recovery chain helpers", () => {
       ]);
     });
 
+    it("keeps a pending change to Ecency instead of cancelling it", async () => {
+      setup([{ account_to_recover: "alice", recovery_account: "ecency" }], "appreciator");
+      await submitReplaceKeys({
+        username: "alice",
+        newKeys: keys,
+        keepAccountAuths: { active: [], posting: [] }
+      });
+      const [ops] = rpc.broadcastOperationsWithKeys.mock.calls[0];
+      expect(ops.map(([name]: [string]) => name)).toEqual(["account_update"]);
+    });
+
     it("ignores pending changes for other accounts", async () => {
       setup([{ account_to_recover: "bob", recovery_account: "elsewhere" }]);
       await submitReplaceKeys({

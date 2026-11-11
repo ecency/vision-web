@@ -174,12 +174,14 @@ export function submitRecoverAccount(input: {
   );
 }
 
+const ECENCY_RECOVERY_ACCOUNT = "ecency";
+
 /**
  * tx2: replace every key with the new ones, signed by the new owner key. Runs
  * after tx1 landed and reads the chain again first: only the account
  * authorities the user chose stay (anything added since is dropped), and a
  * pending change of recovery account, which may have been made before tx1
- * landed, is cancelled in the same transaction.
+ * landed, is cancelled in the same transaction unless it is a change to Ecency.
  */
 export async function submitReplaceKeys(input: {
   username: string;
@@ -190,7 +192,7 @@ export async function submitReplaceKeys(input: {
     loadRecoveryAccount(input.username),
     callRPC("database_api.find_change_recovery_account_requests", {
       accounts: [input.username]
-    }) as Promise<{ requests?: { account_to_recover: string }[] }>
+    }) as Promise<{ requests?: { account_to_recover: string; recovery_account: string }[] }>
   ]);
 
   const accountAuths = Object.fromEntries(
@@ -203,9 +205,13 @@ export async function submitReplaceKeys(input: {
   const ops: Operation[] = [
     buildRecoveryReplaceKeysOp(account, input.newKeys.publicKeys, { accountAuths })
   ];
-  if ((pending?.requests ?? []).some((r) => r.account_to_recover === input.username)) {
+  const toCancel = (pending?.requests ?? []).some(
+    (r) => r.account_to_recover === input.username && r.recovery_account !== ECENCY_RECOVERY_ACCOUNT
+  );
+  if (toCancel) {
     // Setting the current recovery account again cancels the pending change.
     // That may be Ecency or a signup partner, so never assume Ecency here.
+    // A pending change to Ecency is kept: whoever made it, it hands recovery to us.
     ops.push(buildChangeRecoveryAccountOp(input.username, account.recovery_account));
   }
   return broadcastOperationsWithKeys(ops, [input.newKeys.owner]);
