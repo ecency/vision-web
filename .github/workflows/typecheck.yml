@@ -73,8 +73,8 @@ jobs:
           node scripts/origin-config-audit.mjs --self-test
           node scripts/origin-config-audit.mjs --fail
 
-      # Runs the committed @ssr_stale fallback block in nginx and checks what clients
-      # get while the render ceiling is full (expired pages are no-store, POST bodies
-      # are not buffered).
-      - name: Test origin SSR fallback behaviour
-        run: scripts/origin-stale-fallback-test.sh
+      # Runs the committed `location /` and @ssr_stale blocks in nginx and checks the
+      # Cache-Control clients get: unchanged for normal answers, a short edge lifetime
+      # for expired copies, and 429 without body buffering when the ceiling is full.
+      - name: Test origin SSR cache headers
+        run: scripts/origin-ssr-cache-test.sh
