@@ -7,6 +7,7 @@ import { Spinner } from "@ui/spinner";
 import {
   ACCESS_ROLES,
   areAllKeysReplaced,
+  canKeepAccountAuths,
   isOwnerReplaced,
   loadRecentPostingAuthAdds,
   loadRecoveryChainState,
@@ -267,7 +268,9 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
     );
 
   const accountAuths = account
-    ? ACCESS_ROLES.flatMap((role) => account[role].account_auths.map(([name]) => ({ role, name })))
+    ? ACCESS_ROLES.filter((role) => canKeepAccountAuths(account[role])).flatMap((role) =>
+        account[role].account_auths.map(([name]) => ({ role, name }))
+      )
     : [];
 
   const busy = phase === "checking" || phase === "recovering" || phase === "updating" || phase === "verifying";

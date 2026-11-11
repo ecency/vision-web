@@ -680,6 +680,23 @@ describe("recover-account page", () => {
     );
   });
 
+  it("does not offer account authorities for a role whose threshold is above the key weight limit", async () => {
+    const withAccess = {
+      ...chainState,
+      account: {
+        ...account,
+        active: { ...auth(["STM_PREV_ACTIVE"], ["active.app"]), weight_threshold: 70000 }
+      }
+    };
+    chain.next = () =>
+      vi.mocked(submitRecoverAccount).mock.calls.length
+        ? { ...withAccess, account: { ...withAccess.account, owner: auth(["STM_NEW_OWNER"]) }, headTime: HEAD + 60000 }
+        : withAccess;
+    await reachFinish();
+    expect(await screen.findByLabelText(/auths-role.*ecency\.app/)).toBeChecked();
+    expect(screen.queryByLabelText(/active\.app/)).toBeNull();
+  });
+
   it("stays on the finish step when the new keys cannot be verified, and retries", async () => {
     vi.mocked(verifyRecoveredKeys).mockResolvedValueOnce(false).mockRejectedValueOnce(new Error("x"));
     await reachFinish();

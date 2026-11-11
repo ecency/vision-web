@@ -27,6 +27,13 @@ export const RECOVERY_ROLES: RecoveryRole[] = ["owner", "active", "posting"];
 /** Roles whose account authorities may stay after recovery. Owner ones never do. */
 export type AccessRole = "active" | "posting";
 export const ACCESS_ROLES: AccessRole[] = ["active", "posting"];
+/** Largest key weight on chain. A role whose threshold is above it keeps no account authorities. */
+export const MAX_KEY_WEIGHT = 65535;
+
+/** Whether tx2 can keep account authorities for this role. */
+export function canKeepAccountAuths(auth: Authority) {
+  return auth.weight_threshold <= MAX_KEY_WEIGHT;
+}
 
 /** The chain account fields the recovery needs, as database_api.find_accounts returns them. */
 export interface RecoveryAccount {

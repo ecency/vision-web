@@ -439,7 +439,7 @@ export function buildRecoveryRecoverAccountOp(
  * so no earlier key keeps any access. Owner is always the new key alone with
  * threshold 1. Active and posting keep their threshold, the new key alone meets
  * it, and their account authorities stay with their weights unless the caller
- * passes a list.
+ * passes a list. A role whose threshold is above the key weight limit keeps none.
  */
 export function buildRecoveryReplaceKeysOp(
   account: {
@@ -452,12 +452,16 @@ export function buildRecoveryReplaceKeysOp(
   newKeys: RecoveryNewKeys,
   options: { accountAuths?: Partial<Record<"active" | "posting", Authority["account_auths"]>> } = {}
 ): Operation {
-  const role = (name: "active" | "posting", key: string) =>
-    singleKeyAuthority(
-      key,
-      options.accountAuths?.[name] ?? account[name]?.account_auths ?? [],
-      account[name]?.weight_threshold
-    );
+  const role = (name: "active" | "posting", key: string) => {
+    const threshold = account[name]?.weight_threshold;
+    // A threshold above the key weight limit gets lowered, which could let an
+    // account that needed others act alone, so such a role keeps no accounts.
+    const accountAuths =
+      threshold > MAX_KEY_WEIGHT
+        ? []
+        : (options.accountAuths?.[name] ?? account[name]?.account_auths ?? []);
+    return singleKeyAuthority(key, accountAuths, threshold);
+  };
 
   return buildAccountUpdateOp(
     account.name,

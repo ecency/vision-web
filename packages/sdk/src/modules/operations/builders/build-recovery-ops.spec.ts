@@ -139,6 +139,33 @@ describe("buildRecoveryReplaceKeysOp", () => {
     expect(body.active).toEqual({ weight_threshold: 65535, account_auths: [], key_auths: [[NEW.active, 65535]] });
   });
 
+  it("drops a role's account_auths when its threshold had to be clamped", () => {
+    const big = {
+      ...account,
+      active: {
+        weight_threshold: 70000,
+        account_auths: [["co.signer", 65535]] as [string, number][],
+        key_auths: [[OLD.active, 70000]] as [string, number][],
+      },
+    };
+    const body = (buildRecoveryReplaceKeysOp(big, NEW) as any)[1];
+    expect(body.active).toEqual({ weight_threshold: 65535, account_auths: [], key_auths: [[NEW.active, 65535]] });
+    const chosen = (
+      buildRecoveryReplaceKeysOp(big, NEW, { accountAuths: { active: [["co.signer", 65535]] } }) as any
+    )[1];
+    expect(chosen.active.account_auths).toEqual([]);
+    expect(body.posting.account_auths).toHaveLength(2);
+  });
+
+  it("keeps account_auths at exactly the largest threshold", () => {
+    const max = {
+      ...account,
+      active: { weight_threshold: 65535, account_auths: [["co.signer", 1]] as [string, number][], key_auths: [[OLD.active, 65535]] as [string, number][] },
+    };
+    const body = (buildRecoveryReplaceKeysOp(max, NEW) as any)[1];
+    expect(body.active.account_auths).toEqual([["co.signer", 1]]);
+  });
+
   it("always sets the owner to the new key alone with threshold 1", () => {
     const withOwnerAuths = {
       ...account,
