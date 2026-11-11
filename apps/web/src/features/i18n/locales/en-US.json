@@ -2573,7 +2573,7 @@
     "retry": "Try again",
     "start": {
       "username-placeholder": "Your username",
-      "hint": "Recovery works for accounts that have Ecency as their recovery account and had a password change in the last 30 days.",
+      "hint": "Recovery works for accounts created through Ecency signup (Ecency or one of its signup partners is the recovery account) that had a password change in the last 30 days.",
       "submit": "Continue"
     },
     "password": {
@@ -2607,7 +2607,7 @@
     },
     "waiting": {
       "title": "Preparing your recovery",
-      "hint": "Ecency is submitting the recovery request. This usually takes less than a minute. Please keep this page open."
+      "hint": "Your recovery account is submitting the recovery request. This usually takes less than a minute. Please keep this page open."
     },
     "finish": {
       "title": "Finish the recovery",
