@@ -22,7 +22,8 @@ export type RecoveryRequestStatus =
   | "requested"
   | "completed"
   | "failed"
-  | "expired";
+  | "expired"
+  | "superseded";
 
 export interface RecoveryErrorBody {
   error?: string;

@@ -233,6 +233,27 @@ describe("findRecentPostingAuthAdds", () => {
     expect(flagged(rows)).toEqual([]);
   });
 
+  it("flags a name removed and added again inside the window, with the re-add time", () => {
+    const rows = [
+      update("2026-09-01T00:00:00", ["ecency.app", "old.app"]),
+      update("2026-10-20T00:00:00", ["ecency.app"]),
+      update("2026-11-02T00:00:00", ["ecency.app", "old.app"]),
+      update("2026-11-05T00:00:00", ["ecency.app"]),
+      update("2026-11-09T00:00:00", ["ecency.app", "old.app"])
+    ];
+    expect(flagged(rows)).toEqual(["old.app"]);
+    expect(findRecentPostingAuthAdds(rows, CUTOFF).get("old.app")).toBe("2026-11-09T00:00:00");
+  });
+
+  it("does not flag a name present throughout", () => {
+    const rows = [
+      update("2026-09-01T00:00:00", ["ecency.app", "old.app"]),
+      update("2026-10-20T00:00:00", ["ecency.app", "old.app", "x.app"]),
+      update("2026-11-09T00:00:00", ["ecency.app", "old.app"])
+    ];
+    expect(flagged(rows)).toEqual(["x.app"]);
+  });
+
   it("flags nothing when no posting update happened in the window", () => {
     expect(flagged([update("2026-09-01T00:00:00", ["ecency.app"])])).toEqual([]);
   });

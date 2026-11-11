@@ -11,6 +11,8 @@ import {
 import { RecoverError, RecoverStartOver } from "./recover-error";
 
 const POLL_MS = 5000;
+/** Statuses that mean "still on its way": keep polling. */
+const PENDING_STATUSES = new Set(["started", "proven", "approved"]);
 /** Failed reads in a row before the page stops and asks the user to retry. */
 export const MAX_STATUS_FAILURES = 6;
 
@@ -51,6 +53,12 @@ export function RecoverWaitingStep({ requestId, onRequested, onManual, onRestart
             callbacks.current.onManual(status);
             return;
           }
+          if (status === "superseded") {
+            callbacks.current.onManual("expired");
+            return;
+          }
+          // Anything but a known pending status (or an unreadable body) is a failed read.
+          transient = !PENDING_STATUSES.has(status ?? "");
         } else if (res.status === 404 && !res.data?.error) {
           callbacks.current.onManual("not_found");
           return;

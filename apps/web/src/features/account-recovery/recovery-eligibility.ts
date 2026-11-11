@@ -108,9 +108,11 @@ export type HistoryRow = [number, { timestamp: string; op: [string, { posting?: 
  * Posting account authorities that appeared through account_update(2) in the
  * window that starts RECOVERY_WINDOW_MS before `validUntil` (when the old owner
  * key was replaced). Someone holding the old keys may have added them, just
- * before or after the takeover, so the page leaves them unticked. Returns each
- * name with the time it was added. With no posting update before the window in
- * the rows, every name set inside it counts.
+ * before or after the takeover, so the page leaves them unticked. Every time a
+ * name goes from absent to present inside the window counts, also for a name
+ * that was there before, was removed and came back. Returns each name with the
+ * latest such time. With no posting update before the window in the rows, every
+ * name set inside it counts.
  */
 export function findRecentPostingAuthAdds(
   rows: HistoryRow[],
@@ -121,19 +123,18 @@ export function findRecentPostingAuthAdds(
     (a, b) => parseChainTime(a[1].timestamp) - parseChainTime(b[1].timestamp)
   );
 
-  let before = new Set<string>();
+  let previous: Set<string> | null = null;
   const added = new Map<string, string>();
   for (const [, { timestamp, op }] of sorted) {
     const posting = op?.[1]?.posting;
     if (!posting) continue;
-    const names = posting.account_auths.map(([name]) => name);
-    if (parseChainTime(timestamp) < windowStart) {
-      before = new Set(names);
-    } else {
-      names
-        .filter((n) => !before.has(n) && !added.has(n))
-        .forEach((n) => added.set(n, timestamp));
+    const names = new Set(posting.account_auths.map(([name]) => name));
+    if (parseChainTime(timestamp) >= windowStart) {
+      names.forEach((n) => {
+        if (!previous?.has(n)) added.set(n, timestamp);
+      });
     }
+    previous = names;
   }
   return added;
 }

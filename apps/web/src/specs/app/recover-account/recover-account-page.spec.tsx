@@ -800,6 +800,38 @@ describe("recover-account page", () => {
     await waitFor(() => expect(submitRecoverAccount).toHaveBeenCalled());
   });
 
+  it("counts a status answer it does not understand as a failed read", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(recoveryStatus).mockResolvedValue({ status: 200, data: {} });
+    await reachFinish();
+    await waitFor(() => expect(recoveryStatus).toHaveBeenCalled());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+    });
+    expect(await screen.findByText("recover-account.errors.unavailable")).toBeInTheDocument();
+    expect(vi.mocked(recoveryStatus).mock.calls.length).toBe(6);
+  });
+
+  it("keeps waiting while the request is still being approved", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(recoveryStatus).mockResolvedValue({ status: 200, data: { status: "approved" } });
+    await reachFinish();
+    await waitFor(() => expect(recoveryStatus).toHaveBeenCalled());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+    });
+    expect(vi.mocked(recoveryStatus).mock.calls.length).toBeGreaterThan(6);
+    expect(screen.queryByText("recover-account.errors.unavailable")).toBeNull();
+    expect(screen.getByText("recover-account.waiting.title")).toBeInTheDocument();
+  });
+
+  it("treats a superseded request like an expired one", async () => {
+    vi.mocked(recoveryStatus).mockResolvedValue({ status: 200, data: { status: "superseded" } });
+    await reachFinish();
+    expect(await screen.findByText("recover-account.manual.title")).toBeInTheDocument();
+    expect(screen.getByText("recover-account.errors.expired")).toBeInTheDocument();
+  });
+
   it("keeps waiting through a few failed status reads", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.mocked(recoveryStatus)
