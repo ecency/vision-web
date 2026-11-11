@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.30
+
+### Patch Changes
+
+- Self-serve account recovery page (#2045)
+
 ## 2.4.29
 
 ### Patch Changes

@@ -1,0 +1,2 @@
+import {a}from'./chunk-4COFIDSX.js';import {c as c$1}from'./chunk-TJCNKBFH.js';import {a as a$1}from'./chunk-AHF3V5KG.js';function c(o,t,u){return c$1(["promotions","boost-plus"],o,({account:r,duration:e})=>[a(o,r,e)],async(r,{account:e})=>{t?.adapter?.invalidateQueries&&await t.adapter.invalidateQueries([a$1.accounts.full(o),a$1.promotions.boostPlusAccounts(e)]);},t,"active",{broadcastMode:u})}export{c as a};//# sourceMappingURL=chunk-IWJ7FF74.js.map
+//# sourceMappingURL=chunk-IWJ7FF74.js.map
