@@ -99,6 +99,16 @@ NGX
 
 get() { docker exec "$NAME" curl -s -o /dev/null -D - "$@" | tr -d '\r'; }
 quiet() { docker exec "$NAME" curl -s -o /dev/null "$@"; }
+# Wait until a background refresh is talking to the stand-in app: an
+# ESTABLISHED connection to port 3000 (0BB8) in the container. Earlier requests
+# have finished by then, and nginx closes upstream connections after each one.
+wait_refresh() {
+  for _ in $(seq 1 40); do
+    docker exec "$NAME" awk '$3 ~ /:0BB8$/ && $4 == "01" {f=1} END {exit !f}' /proc/net/tcp && return 0
+    sleep 0.25
+  done
+  echo "FAIL $LABEL: background refresh did not reach the app within 10s"; FAILED=1; return 1
+}
 # All Cache-Control lines, joined with " | " so a duplicate shows up.
 ccof() { awk -F': ' 'tolower($1)=="cache-control"{printf "%s%s", (n++ ? " | " : ""), $2}'; }
 check() { # description, response headers, expected status, expected X-Cache-Status ("-" = any), expected Cache-Control ("" = none)
@@ -142,7 +152,7 @@ normal_path() { # render ceiling open: everything goes through location /
   check "STALE (app error) gets a short edge lifetime" "$(get http://127.0.0.1:8080/s/err)" 200 STALE "$CC_EXPIRED"
   # A refreshes the expired slow page; B arrives while that refresh runs.
   docker exec -d "$NAME" curl -s -o /dev/null http://127.0.0.1:8080/slow/big
-  sleep 1
+  wait_refresh || return 0
   check "UPDATING (refresh in progress) gets a short edge lifetime" "$(get http://127.0.0.1:8080/slow/big)" 200 UPDATING "$CC_EXPIRED"
 }
 
@@ -153,7 +163,7 @@ ceiling_full() { # render ceiling of 1, held by a slow refresh: anonymous reques
   head -c 3000000 /dev/zero > "$WORK/body"; docker cp "$WORK/body" "$NAME:/tmp/body"
   sleep 3
   docker exec -d "$NAME" curl -s -o /dev/null http://127.0.0.1:8080/slow/big2
-  sleep 1
+  wait_refresh || return 0
   check "full: fresh cached page keeps its Cache-Control" "$(get http://127.0.0.1:8080/l/fresh2)" 200 HIT "$CC_LONG"
   check "full: expired cached page gets a short edge lifetime" "$(get http://127.0.0.1:8080/s/old)" 200 STALE "$CC_EXPIRED"
   check "full: HEAD of an expired page gets a short edge lifetime" "$(get -I http://127.0.0.1:8080/s/old)" 200 STALE "$CC_EXPIRED"
