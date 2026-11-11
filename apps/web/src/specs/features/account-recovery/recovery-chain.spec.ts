@@ -144,11 +144,12 @@ describe("recovery chain helpers", () => {
   });
 
   describe("submitReplaceKeys (tx2)", () => {
-    function setup(pendingRequests: unknown[]) {
+    function setup(pendingRequests: unknown[], recoveryAccount = "ecency") {
       route({
         "database_api.find_accounts": () => ({
           accounts: [
             chainAccount({
+              recovery_account: recoveryAccount,
               owner: auth([NEW.owner], ["owner.friend"]),
               // Added between tx1 and tx2: must not survive.
               active: auth(["STM_PREV_ACTIVE"], ["active.app", "late.app"])
@@ -216,6 +217,20 @@ describe("recovery chain helpers", () => {
       expect(rpc.callRPC).toHaveBeenCalledWith("database_api.find_change_recovery_account_requests", {
         accounts: ["alice"]
       });
+    });
+
+    it("cancels a pending change by keeping the current partner recovery account", async () => {
+      setup([{ account_to_recover: "alice", recovery_account: "elsewhere" }], "appreciator");
+      await submitReplaceKeys({
+        username: "alice",
+        newKeys: keys,
+        keepAccountAuths: { active: [], posting: [] }
+      });
+      const [ops] = rpc.broadcastOperationsWithKeys.mock.calls[0];
+      expect(ops[1]).toEqual([
+        "change_recovery_account",
+        { account_to_recover: "alice", new_recovery_account: "appreciator", extensions: [] }
+      ]);
     });
 
     it("ignores pending changes for other accounts", async () => {

@@ -17,9 +17,9 @@ services:
       - SEARCH_API_ADDR
       - SEARCH_API_SECRET
       - TURNSTILE_SECRET
-      # Self-serve account recovery: recovery accounts the page serves (ecency plus
-      # signup partners that run their own recovery worker). Literal, not a secret.
-      - RECOVERY_ACCOUNTS=ecency,appreciator
+      # Self-serve account recovery: recovery accounts the page serves. A signup
+      # partner is added here once its recovery worker runs. Literal, not a secret.
+      - RECOVERY_ACCOUNTS=ecency
       # Shared secret for the internal SSR RPC cache (/private-api/ssr/*); the
       # web service sends it on every proxied read. Unset = those routes are off.
       - SSR_INTERNAL_SECRET
