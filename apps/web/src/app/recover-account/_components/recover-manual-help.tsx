@@ -45,7 +45,7 @@ export function RecoverManualHelp({ code, username, onRestart }: Props) {
       <p className="text-sm opacity-75 mt-2">
         {i18next.t("recover-account.manual.no-login")}{" "}
         <a
-          href={`mailto:${SUPPORT_EMAIL}?subject=Account%20recovery`}
+          href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(i18next.t("recover-account.manual.email-subject"))}`}
           className="text-blue-dark-sky"
         >
           {SUPPORT_EMAIL}

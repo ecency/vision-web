@@ -522,7 +522,10 @@ describe("recover-account page", () => {
     renderWithQueryClient(<RecoverAccountPage />);
     await passStart();
     const link = await screen.findByRole("link", { name: "hello@ecency.com" });
-    expect(link).toHaveAttribute("href", "mailto:hello@ecency.com?subject=Account%20recovery");
+    expect(link).toHaveAttribute(
+      "href",
+      `mailto:hello@ecency.com?subject=${encodeURIComponent("recover-account.manual.email-subject")}`
+    );
   });
 
   it("says so locally when the old key does not match and sends nothing", async () => {
