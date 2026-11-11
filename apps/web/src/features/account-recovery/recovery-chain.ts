@@ -147,7 +147,7 @@ export async function loadRecentPostingAuthAdds(
       !(oldest[0] > 0) ||
       parseChainTime(oldest[1].timestamp) < windowStart
     ) {
-      return findRecentPostingAuthAdds(rows, validUntil);
+      return findRecentPostingAuthAdds(rows, validUntil, username);
     }
     start = oldest[0] - 1;
   }
