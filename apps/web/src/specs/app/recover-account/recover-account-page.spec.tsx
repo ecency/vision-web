@@ -646,8 +646,18 @@ describe("recover-account page", () => {
     chain.next = () => (vi.mocked(submitRecoverAccount).mock.calls.length ? locked : chainState);
     await reachFinish();
     fireEvent.click(await replaceButton());
-    expect(await screen.findByText(/recover-account\.finish\.keys-wait/)).toBeInTheDocument();
+    // Minutes left by the chain clock (12:10 limit, head 12:01) and a time
+    // without a date, so day and month order can not be misread.
+    const wait = await screen.findByText(/recover-account\.finish\.keys-wait/);
+    expect(wait.textContent).toContain('"count":9');
+    expect(wait.textContent).not.toMatch(/2026|\//);
     expect(submitReplaceKeys).not.toHaveBeenCalled();
+
+    // The count goes down while the page waits.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    });
+    expect(screen.getByText(/recover-account\.finish\.keys-wait/).textContent).toContain('"count":4');
 
     chain.next = () => afterTx1;
     await act(async () => {

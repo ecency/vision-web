@@ -2623,8 +2623,10 @@
       "keys-failed": "Your account is recovered, but replacing the other keys did not go through. Please try again.",
       "verify-failed": "We could not confirm the new keys on your account yet. Please try again.",
       "retry": "Try again",
-      "recovery-wait": "This account was recovered less than an hour ago. The next recovery is possible after {{time}}. This page will continue by itself.",
-      "keys-wait": "Your account is recovered. For safety, the other keys can be replaced after {{time}}. Keep this page open and it will continue by itself.",
+      "recovery-wait_one": "This account was recovered less than an hour ago. The next recovery is possible in {{count}} minute (at {{time}}). This page will continue by itself.",
+      "recovery-wait_other": "This account was recovered less than an hour ago. The next recovery is possible in {{count}} minutes (at {{time}}). This page will continue by itself.",
+      "keys-wait_one": "Your account is recovered. For safety, the other keys can be replaced in {{count}} minute (at {{time}}). Keep this page open and it will continue by itself.",
+      "keys-wait_other": "Your account is recovered. For safety, the other keys can be replaced in {{count}} minutes (at {{time}}). Keep this page open and it will continue by itself.",
       "auths-flagged": "Added after you lost access. Only keep it if you added it yourself.",
       "auths-flagged-before": "Added on {{date}}, shortly before you lost access. Only keep it if you added it yourself."
     },
