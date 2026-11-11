@@ -7,6 +7,8 @@ import { RecoverStartOver } from "./recover-error";
 
 /** Town Square chat, where the team answers help questions. */
 const SUPPORT_CHAT = "/chats/hive-125125/channel";
+/** The chat needs a login, so locked-out users also get an email contact. */
+const SUPPORT_EMAIL = "hello@ecency.com";
 
 interface Props {
   code: string;
@@ -40,6 +42,15 @@ export function RecoverManualHelp({ code, username, onRestart }: Props) {
       <Link href={SUPPORT_CHAT} className="text-blue-dark-sky text-sm">
         {i18next.t("recover-account.manual.contact")}
       </Link>
+      <p className="text-sm opacity-75 mt-2">
+        {i18next.t("recover-account.manual.no-login")}{" "}
+        <a
+          href={`mailto:${SUPPORT_EMAIL}?subject=Account%20recovery`}
+          className="text-blue-dark-sky"
+        >
+          {SUPPORT_EMAIL}
+        </a>
+      </p>
       <div>
         <RecoverStartOver onRestart={onRestart} />
       </div>

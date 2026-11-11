@@ -8,7 +8,7 @@ import { useGlobalStore } from "@/core/global-store";
 export function RecoverSuccessStep() {
   const toggleUIProp = useGlobalStore((s) => s.toggleUiProp);
   return (
-    <div className="text-center bg-blue-dark-sky-040 rounded-2xl p-6">
+    <div className="text-center bg-blue-dark-sky-040 dark:bg-dark-default rounded-2xl p-6">
       <div className="size-10 mx-auto mb-4 bg-blue-dark-sky rounded-full text-white flex items-center justify-center">
         {checkSvg}
       </div>

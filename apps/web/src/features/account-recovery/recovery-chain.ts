@@ -59,7 +59,10 @@ export interface RecoveryChainState {
 }
 
 /** account_update (10) and account_update2 (43) in operation_filter_low. */
-const ACCOUNT_UPDATE_FILTER_LOW = 2 ** 10 + 2 ** 43;
+// account_create (9), account_update (10), create_claimed_account (23),
+// account_create_with_delegation (41), account_update2 (43). The create ops give
+// the posting authority the account started with.
+const ACCOUNT_UPDATE_FILTER_LOW = 2 ** 9 + 2 ** 10 + 2 ** 23 + 2 ** 41 + 2 ** 43;
 const NEVER = Date.parse("1970-01-02T00:00:00Z");
 const HISTORY_PAGE_SIZE = 1000;
 /** Most account history pages read while looking for the takeover time. */

@@ -102,6 +102,12 @@ export function isWithinRecoveryWindow(lastValidTime: string, head: number, marg
   return parseChainTime(lastValidTime) + RECOVERY_WINDOW_MS > head + marginMs;
 }
 
+const CREATE_OPS = new Set([
+  "account_create",
+  "create_claimed_account",
+  "account_create_with_delegation"
+]);
+
 export type HistoryRow = [number, { timestamp: string; op: [string, { posting?: { account_auths: [string, number][] } }] }];
 
 /**
@@ -111,8 +117,9 @@ export type HistoryRow = [number, { timestamp: string; op: [string, { posting?: 
  * before or after the takeover, so the page leaves them unticked. Every time a
  * name goes from absent to present inside the window counts, also for a name
  * that was there before, was removed and came back. Returns each name with the
- * latest such time. With no posting update before the window in the rows, every
- * name set inside it counts.
+ * latest such time. The names an account was created with are never flagged.
+ * With no creation or posting update before the window in the rows, every name
+ * set inside it counts.
  */
 export function findRecentPostingAuthAdds(
   rows: HistoryRow[],
@@ -129,7 +136,7 @@ export function findRecentPostingAuthAdds(
     const posting = op?.[1]?.posting;
     if (!posting) continue;
     const names = new Set(posting.account_auths.map(([name]) => name));
-    if (parseChainTime(timestamp) >= windowStart) {
+    if (!CREATE_OPS.has(op[0]) && parseChainTime(timestamp) >= windowStart) {
       names.forEach((n) => {
         if (!previous?.has(n)) added.set(n, timestamp);
       });

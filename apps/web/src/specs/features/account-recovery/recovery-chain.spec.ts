@@ -344,7 +344,7 @@ describe("recovery chain helpers", () => {
     expect([...added.keys()]).toEqual(["late.app"]);
     const [method, params] = rpc.callRPC.mock.calls[0];
     expect(method).toBe("condenser_api.get_account_history");
-    expect(params).toEqual(["alice", -1, 1000, 2 ** 10 + 2 ** 43, 0]);
+    expect(params).toEqual(["alice", -1, 1000, 2 ** 9 + 2 ** 10 + 2 ** 23 + 2 ** 41 + 2 ** 43, 0]);
   });
 
   describe("loadRecentPostingAuthAdds paging", () => {
@@ -381,8 +381,8 @@ describe("recovery chain helpers", () => {
       expect([...added.keys()].sort()).toEqual(["early.app", "late.app"]);
       expect(added.get("early.app")).toBe("2026-11-01T00:00:00");
       expect(rpc.callRPC).toHaveBeenCalledTimes(3);
-      expect(rpc.callRPC.mock.calls[1][1]).toEqual(["alice", 4999, 1000, 2 ** 10 + 2 ** 43, 0]);
-      expect(rpc.callRPC.mock.calls[2][1]).toEqual(["alice", 3999, 1000, 2 ** 10 + 2 ** 43, 0]);
+      expect(rpc.callRPC.mock.calls[1][1]).toEqual(["alice", 4999, 1000, 2 ** 9 + 2 ** 10 + 2 ** 23 + 2 ** 41 + 2 ** 43, 0]);
+      expect(rpc.callRPC.mock.calls[2][1]).toEqual(["alice", 3999, 1000, 2 ** 9 + 2 ** 10 + 2 ** 23 + 2 ** 41 + 2 ** 43, 0]);
     });
 
     it("fails when the cutoff is not reached within the page cap", async () => {

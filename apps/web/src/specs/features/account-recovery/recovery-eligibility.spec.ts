@@ -208,6 +208,23 @@ describe("findRecentPostingAuthAdds", () => {
     ]);
   });
 
+  it("uses the account creation as the baseline before the first update", () => {
+    const rows = [
+      update("2024-03-04T16:08:15", ["ecency.app"], "create_claimed_account"),
+      update("2026-11-08T12:00:00", ["ecency.app", "other.app"])
+    ];
+    expect(flagged(rows)).toEqual(["other.app"]);
+  });
+
+  it("never flags names the account was created with, even inside the window", () => {
+    const rows = [
+      update("2026-10-25T00:00:00", ["ecency.app"], "account_create"),
+      update("2026-11-01T00:00:00", ["ecency.app"], "account_create_with_delegation"),
+      update("2026-11-09T02:00:00", ["ecency.app", "other.app"])
+    ];
+    expect(flagged(rows)).toEqual(["other.app"]);
+  });
+
   it("treats a posting update at exactly the cutoff as suspect", () => {
     const rows = [
       update("2026-09-01T00:00:00", ["ecency.app"]),

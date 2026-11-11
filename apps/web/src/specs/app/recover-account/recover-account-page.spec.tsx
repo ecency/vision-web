@@ -44,6 +44,9 @@ vi.mock("@/config", () => ({
   }
 }));
 vi.mock("next/navigation", () => ({ notFound: () => h.notFound() }));
+vi.mock("@/features/shared/navbar", () => ({ Navbar: () => <nav data-testid="site-navbar" /> }));
+vi.mock("@/features/shared/scroll-to-top", () => ({ ScrollToTop: () => null }));
+vi.mock("@/features/shared/theme", () => ({ Theme: () => null }));
 vi.mock("@/features/metadata", () => ({
   PagesMetadataGenerator: { getForPage: vi.fn(async () => ({})) }
 }));
@@ -307,6 +310,12 @@ describe("recover-account page", () => {
     expect(result).toBeTruthy();
   });
 
+  it("shows the site navbar around the page", () => {
+    renderWithQueryClient(<>{RecoverAccountRoute()}</>);
+    expect(screen.getByTestId("site-navbar")).toBeInTheDocument();
+    expect(screen.getByText("recover-account.title")).toBeInTheDocument();
+  });
+
   it("renders Turnstile with the recover action", () => {
     renderWithQueryClient(<RecoverAccountPage />);
     expect(h.turnstileProps.at(-1)?.action).toBe("recover");
@@ -387,6 +396,10 @@ describe("recover-account page", () => {
     );
 
     expect(await screen.findByText("recover-account.success.title")).toBeInTheDocument();
+    // The light card needs its own dark background, or white text lands on it.
+    expect(screen.getByText("recover-account.success.title").parentElement).toHaveClass(
+      "dark:bg-dark-default"
+    );
 
     const sent = JSON.stringify([
       vi.mocked(recoveryStart).mock.calls,
@@ -502,6 +515,14 @@ describe("recover-account page", () => {
     await passStart();
     const link = await screen.findByRole("link", { name: "recover-account.manual.contact" });
     expect(link).toHaveAttribute("href", "/chats/hive-125125/channel");
+  });
+
+  it("offers an email contact that needs no login", async () => {
+    vi.mocked(recoveryStart).mockResolvedValueOnce({ status: 422, data: { error: "no_email" } });
+    renderWithQueryClient(<RecoverAccountPage />);
+    await passStart();
+    const link = await screen.findByRole("link", { name: "hello@ecency.com" });
+    expect(link).toHaveAttribute("href", "mailto:hello@ecency.com?subject=Account%20recovery");
   });
 
   it("says so locally when the old key does not match and sends nothing", async () => {
