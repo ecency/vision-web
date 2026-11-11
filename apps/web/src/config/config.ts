@@ -162,8 +162,7 @@ const CONFIG = {
       },
       accountRecovery: {
         // Self-serve recovery page (/recover-account) and its entry links.
-        // Off until the full flow is verified end to end.
-        enabled: false
+        enabled: true
       },
       decentMemes: {
         enabled: true,
