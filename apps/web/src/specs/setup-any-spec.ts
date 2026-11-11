@@ -55,10 +55,16 @@ vi.mock("i18next", () => ({
 // Shared by the mocked ai query options AND the QueryKeys stand-in below, so specs that
 // seed a cache entry use exactly the key the mocked options read. Hoisted because the
 // vi.mock factory runs before module-level code.
-const { aiQueryKeys } = vi.hoisted(() => ({
+const { aiQueryKeys, recoveryQueryKeys } = vi.hoisted(() => ({
   aiQueryKeys: {
     prices: () => ["ai", "prices"] as const,
     images: (username?: string) => ["ai", "images", username] as const
+  },
+  // Same shapes as QueryKeys.accounts.{ownerHistory,lastRecovery,recoveryChainState}.
+  recoveryQueryKeys: {
+    ownerHistory: (username?: string) => ["accounts", "owner-history", username],
+    lastRecovery: (username?: string) => ["accounts", "last-recovery", username],
+    recoveryChainState: (username?: string) => ["accounts", "recovery-chain-state", username]
   }
 }));
 
@@ -197,7 +203,8 @@ vi.mock("@ecency/sdk", async () => ({
     quests: { status: (username?: string) => ["quests", "status", username] },
     accounts: {
       full: (username?: string) => ["get-account-full", username],
-      mutedUsers: (username?: string) => ["accounts", "muted-users", username]
+      mutedUsers: (username?: string) => ["accounts", "muted-users", username],
+      ...recoveryQueryKeys
     },
     // Same shape as the SDK builder: the entry page derives a key prefix from it.
     posts: {
@@ -279,6 +286,28 @@ vi.mock("@ecency/sdk", async () => ({
   hiveTxUtils: { operations: {}, makeBitMaskFilter: vi.fn() },
   hiveTxConfig: { nodes: [], timeout: 1000, address_prefix: "STM" },
   dedupeAndSortKeyAuths: vi.fn((...args: any[]) => args[0] || []),
+  // Self-serve account recovery: request functions and chain helpers are stubs;
+  // their wire format and ops are pinned by the SDK's own specs.
+  recoveryStart: vi.fn(),
+  recoveryProve: vi.fn(),
+  recoveryVerifyCode: vi.fn(),
+  recoveryStatus: vi.fn(),
+  recoveryComplete: vi.fn(),
+  signRecoveryChallenge: vi.fn(),
+  buildRecoveryChallengeDigest: vi.fn(() => new Uint8Array(32)),
+  broadcastOperationsWithKeys: vi.fn(),
+  buildRecoveryRecoverAccountOp: vi.fn(),
+  buildRecoveryReplaceKeysOp: vi.fn(),
+  buildPostRecoveryCleanupOps: vi.fn(() => []),
+  buildChangeRecoveryAccountOp: vi.fn(),
+  getOwnerHistoryQueryOptions: vi.fn((username?: string) => ({
+    queryKey: recoveryQueryKeys.ownerHistory(username),
+    queryFn: vi.fn(async () => [])
+  })),
+  getLastAccountRecoveryQueryOptions: vi.fn((username?: string) => ({
+    queryKey: recoveryQueryKeys.lastRecovery(username),
+    queryFn: vi.fn(async () => null)
+  })),
   buildGrantPostingPermissionOp: vi.fn(),
   // The search query builder is pure logic with no dependencies, and several
   // components now import it from the SDK rather than from @/utils. Stubbing it

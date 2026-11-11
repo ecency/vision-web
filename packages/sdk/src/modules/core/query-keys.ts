@@ -212,6 +212,12 @@ export const QueryKeys = {
       ["accounts", "recoveries", username],
     pendingRecovery: (username: string) =>
       ["accounts", "recoveries", username, "pending-request"],
+    ownerHistory: (username: string) =>
+      ["accounts", "owner-history", username],
+    lastRecovery: (username: string) =>
+      ["accounts", "last-recovery", username],
+    recoveryChainState: (username: string) =>
+      ["accounts", "recovery-chain-state", username],
     checkWalletPending: (username: string, code: string | null) =>
       ["accounts", "check-wallet-pending", username, code],
     mutedUsers: (username: string) =>

@@ -100,6 +100,13 @@ export {
   buildChangeRecoveryAccountOp,
   buildRequestAccountRecoveryOp,
   buildRecoverAccountOp,
+  buildRecoveryRecoverAccountOp,
+  buildRecoveryReplaceKeysOp,
+  buildPostRecoveryCleanupOps,
+  type RecoveryNewKeys,
+  type PostRecoveryCleanupKind,
+  type PostRecoveryCleanupItem,
+  type PostRecoveryCleanupExtras,
   type Authority,
   type AccountKeys,
 } from "./account";

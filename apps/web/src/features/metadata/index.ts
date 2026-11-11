@@ -156,6 +156,14 @@ export namespace PagesMetadataGenerator {
     };
   }
 
+  function buildForRecoverAccount(): Metadata {
+    return {
+      title: i18next.t("recover-account.page-title"),
+      description: i18next.t("recover-account.page-description"),
+      robots: { index: false }
+    };
+  }
+
   function buildForWitnesses(): Metadata {
     return {
       title: i18next.t("witnesses.page-title"),
@@ -197,6 +205,7 @@ export namespace PagesMetadataGenerator {
     if (name === "proposals") return buildForProposals();
     if (name === "search") return buildForSearch();
     if (name === "signup") return buildForSignUp();
+    if (name === "recover-account") return buildForRecoverAccount();
     if (name === "witnesses") return buildForWitnesses();
     if (name === "not-found") return buildForNotFound();
     return {};

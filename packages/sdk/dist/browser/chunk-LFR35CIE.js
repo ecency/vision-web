@@ -1,0 +1,2 @@
+import {e}from'./chunk-AEIA5MPL.js';import {c}from'./chunk-TJCNKBFH.js';import {a}from'./chunk-AHF3V5KG.js';function n(e$1,t,a$1){return c(["market","limit-order-cancel"],e$1,({orderId:d})=>[e(e$1,d)],async()=>{t?.adapter?.invalidateQueries&&await t.adapter.invalidateQueries([a.accounts.full(e$1),a.wallet.openOrders(e$1),["ecency-wallets","asset-info",e$1],["wallet","portfolio","v2",e$1]]);},t,"active",{broadcastMode:a$1})}export{n as a};//# sourceMappingURL=chunk-LFR35CIE.js.map
+//# sourceMappingURL=chunk-LFR35CIE.js.map

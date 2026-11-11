@@ -2,7 +2,14 @@ import { CONFIG, getBoundFetch } from "@/modules/core";
 import { ApiNotification, ApiNotificationSetting } from "@/modules/notifications";
 import { Draft, DraftMetadata } from "@/modules/posts/types/draft";
 import { Schedule } from "@/modules/posts/types/schedule";
-import { ApiResponse } from "./types";
+import {
+  ApiResponse,
+  RecoveryErrorBody,
+  RecoveryProveResponse,
+  RecoveryRequestStatus,
+  RecoveryStartResponse,
+  RecoveryStatusResponse,
+} from "./types";
 
 type RequestError = Error & { status?: number; data?: unknown };
 
@@ -452,4 +459,79 @@ export async function onboardEmail(
   );
 
   return parseJsonResponse<Record<string, unknown>>(response);
+}
+
+// ── Self-serve account recovery ────────────────────────────────────────────
+// These calls answer with an `error` code on failure, which the page shows to
+// the user, so they resolve with { status, data } instead of throwing on a
+// non-2xx status. Only public data is sent: never a password or private key.
+
+async function recoveryRequest<T>(
+  path: string,
+  body?: Record<string, unknown>
+): Promise<ApiResponse<T & RecoveryErrorBody>> {
+  const fetchApi = getBoundFetch();
+  const response = await fetchApi(
+    CONFIG.privateApiHost + "/private-api/recovery/" + path,
+    body
+      ? {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      : { method: "GET" }
+  );
+
+  let data = {} as T & RecoveryErrorBody;
+  try {
+    const parsed = await response.json();
+    if (parsed && typeof parsed === "object") {
+      data = parsed;
+    }
+  } catch {
+    // Empty or non-JSON body (e.g. a gateway error page): keep the status only.
+  }
+  return { status: response.status, data };
+}
+
+export function recoveryStart(username: string, captchaToken: string) {
+  return recoveryRequest<RecoveryStartResponse>("start", {
+    username,
+    captcha_token: captchaToken,
+  });
+}
+
+export function recoveryProve(input: {
+  requestId: string;
+  username: string;
+  newOwnerPub: string;
+  provenKeyPub: string;
+  signature: string;
+}) {
+  return recoveryRequest<RecoveryProveResponse>("prove", {
+    request_id: input.requestId,
+    username: input.username,
+    new_owner_pub: input.newOwnerPub,
+    proven_key_pub: input.provenKeyPub,
+    signature: input.signature,
+  });
+}
+
+export function recoveryVerifyCode(requestId: string, code: string) {
+  return recoveryRequest<{ status?: RecoveryRequestStatus }>("verify-code", {
+    request_id: requestId,
+    code,
+  });
+}
+
+export function recoveryStatus(requestId: string) {
+  return recoveryRequest<RecoveryStatusResponse>(
+    "status?request_id=" + encodeURIComponent(requestId)
+  );
+}
+
+export function recoveryComplete(requestId: string) {
+  return recoveryRequest<{ status?: RecoveryRequestStatus }>("complete", {
+    request_id: requestId,
+  });
 }

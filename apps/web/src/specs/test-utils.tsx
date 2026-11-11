@@ -437,6 +437,7 @@ export type VisionFeaturesConfig = {
   editHistory?: { enabled: boolean };
   chats?: { enabled: boolean };
   waves?: { enabled: boolean };
+  accountRecovery?: { enabled: boolean };
   plausible?: {
     enabled: boolean;
     host?: string;

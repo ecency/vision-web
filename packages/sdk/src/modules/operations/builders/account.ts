@@ -1,4 +1,11 @@
 import type { Operation, Authority } from "../../../hive-tx";
+import {
+  buildCancelTransferFromSavingsOp,
+  buildRecurrentTransferOp,
+  buildSetWithdrawVestingRouteOp,
+  buildWithdrawVestingOp,
+} from "./wallet";
+import { buildLimitOrderCancelOp } from "./market";
 
 export type { Authority };
 
@@ -379,4 +386,198 @@ export function buildRecoverAccountOp(
       extensions: extensions as [],
     },
   ];
+}
+
+/** New public keys for every role, all derived from one new master password. */
+export interface RecoveryNewKeys {
+  owner: string;
+  active: string;
+  posting: string;
+  memo: string;
+}
+
+/** Key weights are 16 bit on chain, so a threshold above this cannot be met by one key. */
+const MAX_KEY_WEIGHT = 65535;
+
+/**
+ * One new key that meets the threshold alone. Account authorities keep their
+ * own weights, so one that needed others before still does.
+ */
+function singleKeyAuthority(
+  publicKey: string,
+  accountAuths: Authority["account_auths"] = [],
+  threshold = 1
+): Authority {
+  const weight = Math.min(Math.max(1, Math.floor(threshold) || 1), MAX_KEY_WEIGHT);
+  return {
+    weight_threshold: weight,
+    account_auths: accountAuths.map(([name, w]) => [name, w] as [string, number]),
+    key_auths: [[publicKey, weight]],
+  };
+}
+
+/**
+ * Builds the `recover_account` operation for self-serve recovery.
+ * `recentOwnerAuthority` must be the exact `previous_owner_authority` object from
+ * owner history that holds the proven key; the chain compares it as a whole.
+ */
+export function buildRecoveryRecoverAccountOp(
+  accountToRecover: string,
+  newOwnerPublicKey: string,
+  recentOwnerAuthority: Authority
+): Operation {
+  return buildRecoverAccountOp(
+    accountToRecover,
+    singleKeyAuthority(newOwnerPublicKey),
+    recentOwnerAuthority
+  );
+}
+
+/**
+ * Builds an `account_update` that REPLACES every key after a recovery: owner,
+ * active and posting each get exactly one new key and the memo key changes too,
+ * so no earlier key keeps any access. Owner is always the new key alone with
+ * threshold 1. Active and posting keep their threshold, the new key alone meets
+ * it, and their account authorities stay with their weights unless the caller
+ * passes a list. A role whose threshold is above the key weight limit keeps none.
+ */
+export function buildRecoveryReplaceKeysOp(
+  account: {
+    name: string;
+    owner: Authority;
+    active: Authority;
+    posting: Authority;
+    json_metadata?: string;
+  },
+  newKeys: RecoveryNewKeys,
+  options: { accountAuths?: Partial<Record<"active" | "posting", Authority["account_auths"]>> } = {}
+): Operation {
+  const role = (name: "active" | "posting", key: string) => {
+    const threshold = account[name]?.weight_threshold;
+    // A threshold above the key weight limit gets lowered, which could let an
+    // account that needed others act alone, so such a role keeps no accounts.
+    const accountAuths =
+      threshold > MAX_KEY_WEIGHT
+        ? []
+        : (options.accountAuths?.[name] ?? account[name]?.account_auths ?? []);
+    return singleKeyAuthority(key, accountAuths, threshold);
+  };
+
+  return buildAccountUpdateOp(
+    account.name,
+    // Same shape as the recovery request: one key, weight 1, threshold 1.
+    singleKeyAuthority(newKeys.owner),
+    role("active", newKeys.active),
+    role("posting", newKeys.posting),
+    newKeys.memo,
+    account.json_metadata ?? ""
+  );
+}
+
+export type PostRecoveryCleanupKind =
+  | "power-down"
+  | "withdraw-route"
+  | "savings-withdrawal"
+  | "recurrent-transfer"
+  | "open-order";
+
+export interface PostRecoveryCleanupItem {
+  /** Stable id for a checklist row. */
+  id: string;
+  kind: PostRecoveryCleanupKind;
+  /** The other account involved, when there is one. */
+  target?: string;
+  op: Operation;
+}
+
+export interface PostRecoveryCleanupExtras {
+  withdrawRoutes?: { from_account: string; to_account: string; percent: number; auto_vest?: boolean }[];
+  savingsWithdrawals?: { request_id: number; to?: string; amount?: string }[];
+  recurrentTransfers?: {
+    from: string;
+    to: string;
+    amount: string;
+    recurrence: number;
+    remaining_executions: number;
+    pair_id?: number;
+  }[];
+  openOrders?: { orderid: number }[];
+}
+
+/**
+ * Builds the optional clean-up operations after a recovery, one per item that is
+ * actually present: stop a power down, remove withdraw routes, cancel savings
+ * withdrawals, stop recurrent transfers and cancel open market orders.
+ * All of them are signed with the active key.
+ */
+export function buildPostRecoveryCleanupOps(
+  account: { name: string; vesting_withdraw_rate?: string },
+  extras: PostRecoveryCleanupExtras
+): PostRecoveryCleanupItem[] {
+  const name = account.name;
+  const items: PostRecoveryCleanupItem[] = [];
+
+  if (parseFloat(account.vesting_withdraw_rate ?? "0") > 0) {
+    items.push({
+      id: "power-down",
+      kind: "power-down",
+      op: buildWithdrawVestingOp(name, "0.000000 VESTS"),
+    });
+  }
+
+  (extras.withdrawRoutes ?? [])
+    .filter((r) => r.from_account === name && r.percent > 0)
+    .forEach((r) =>
+      items.push({
+        id: `withdraw-route:${r.to_account}`,
+        kind: "withdraw-route",
+        target: r.to_account,
+        op: buildSetWithdrawVestingRouteOp(name, r.to_account, 0, false),
+      })
+    );
+
+  (extras.savingsWithdrawals ?? []).forEach((w) =>
+    items.push({
+      id: `savings-withdrawal:${w.request_id}`,
+      kind: "savings-withdrawal",
+      target: w.to,
+      op: buildCancelTransferFromSavingsOp(name, w.request_id),
+    })
+  );
+
+  (extras.recurrentTransfers ?? [])
+    .filter((t) => t.from === name)
+    .forEach((t) => {
+      const symbol = t.amount.trim().split(/\s+/)[1] ?? "HIVE";
+      const pairId = t.pair_id ?? 0;
+      const op = buildRecurrentTransferOp(
+        name,
+        t.to,
+        `0.000 ${symbol}`,
+        "",
+        t.recurrence,
+        Math.max(2, t.remaining_executions)
+      );
+      // Several transfers to the same account are told apart by pair_id; without
+      // the extension the chain would only touch pair 0.
+      if (pairId > 0) {
+        (op[1] as { extensions: unknown[] }).extensions = [{ type: 1, value: { pair_id: pairId } }];
+      }
+      items.push({
+        id: `recurrent-transfer:${t.to}:${pairId}`,
+        kind: "recurrent-transfer",
+        target: t.to,
+        op,
+      });
+    });
+
+  (extras.openOrders ?? []).forEach((o) =>
+    items.push({
+      id: `open-order:${o.orderid}`,
+      kind: "open-order",
+      op: buildLimitOrderCancelOp(name, o.orderid),
+    })
+  );
+
+  return items;
 }

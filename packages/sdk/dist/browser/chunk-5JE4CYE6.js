@@ -1,0 +1,2 @@
+import {h}from'./chunk-4COFIDSX.js';import {c}from'./chunk-TJCNKBFH.js';import {a}from'./chunk-AHF3V5KG.js';function u(i,e,s){return c(["communities","registerRewards"],i,({name:r})=>[h(r)],async(r,n)=>{e?.adapter?.invalidateQueries&&await e.adapter.invalidateQueries([[...a.communities.singlePrefix(n.name)],[...a.points._prefix(i)]]);},e,"active",{broadcastMode:s})}export{u as a};//# sourceMappingURL=chunk-5JE4CYE6.js.map
+//# sourceMappingURL=chunk-5JE4CYE6.js.map
