@@ -459,6 +459,20 @@ describe("recover-account page", () => {
     expect(await screen.findByText("recover-account.errors.invalid_request")).toBeInTheDocument();
   });
 
+  it("offers to start over when the recovery account changed during prove", async () => {
+    vi.mocked(recoveryProve).mockResolvedValueOnce({
+      status: 409,
+      data: { error: "recovery_account_changed" }
+    });
+    renderWithQueryClient(<RecoverAccountPage />);
+    await passStart();
+    await passPassword();
+    await passOldKey();
+    expect(await screen.findByText("recover-account.errors.recovery_account_changed")).toBeInTheDocument();
+    click("recover-account.start-over");
+    expect(await screen.findByPlaceholderText("recover-account.start.username-placeholder")).toBeInTheDocument();
+  });
+
   it("sends no_email at prove to the manual help screen", async () => {
     vi.mocked(recoveryProve).mockResolvedValueOnce({
       status: 422,

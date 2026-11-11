@@ -21,7 +21,8 @@ export const RESTART_ERRORS = new Set([
   "bad_state",
   "not_found",
   "expired",
-  "failed"
+  "failed",
+  "recovery_account_changed"
 ]);
 
 export function recoveryErrorCode(result: RecoveryApiResult): string {

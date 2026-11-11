@@ -2573,7 +2573,7 @@
     "retry": "Try again",
     "start": {
       "username-placeholder": "Your username",
-      "hint": "Recovery works for accounts created through Ecency signup (Ecency or one of its signup partners is the recovery account) that had a password change in the last 30 days.",
+      "hint": "Recovery works for accounts created through Ecency signup that had a password change in the last 30 days. If yours is not supported yet, we will show you how to get help.",
       "submit": "Continue"
     },
     "password": {
@@ -2663,7 +2663,8 @@
       "not_found": "We could not find this account, or the request expired.",
       "rate_limited": "Too many recovery attempts. Please try again tomorrow.",
       "invalid_request": "Something in the request was not right. Please start over.",
-      "not_ecency_recovery": "This account is not recovered by Ecency or one of its signup partners, so it can not be recovered here.",
+      "not_ecency_recovery": "Self-serve recovery is not available yet for this account's recovery account. Please contact support.",
+      "recovery_account_changed": "This account's recovery account changed while you were recovering it. Please start over.",
       "no_email": "We have no email address on file for this account.",
       "no_recent_owner_change": "This account had no password change in the last 30 days that we can recover from.",
       "key_not_recent": "That key can no longer be used for recovery.",
