@@ -326,7 +326,7 @@ describe("recovery chain helpers", () => {
       ]
     });
     const added = await loadRecentPostingAuthAdds("alice", "2026-11-08T00:00:00");
-    expect(added).toEqual(new Set(["late.app"]));
+    expect([...added.keys()]).toEqual(["late.app"]);
     const [method, params] = rpc.callRPC.mock.calls[0];
     expect(method).toBe("condenser_api.get_account_history");
     expect(params).toEqual(["alice", -1, 1000, 2 ** 10 + 2 ** 43, 0]);
@@ -345,22 +345,29 @@ describe("recovery chain helpers", () => {
     const flood = (lastNum: number) =>
       Array.from({ length: 1000 }, (_, i) => row(lastNum - 999 + i, "2026-11-09T10:00:00"));
 
-    it("reads older pages until the history reaches the cutoff", async () => {
+    it("reads older pages until the history reaches 30 days before the cutoff", async () => {
       const pages: Record<number, unknown[]> = {
         [-1]: flood(5999),
         4999: [
-          row(4000, "2026-11-01T00:00:00", ["ecency.app"]),
-          row(4001, "2026-11-08T00:00:03", ["ecency.app", "late.app"]),
+          row(4000, "2026-11-01T00:00:00", ["ecency.app", "early.app"]),
+          row(4001, "2026-11-08T00:00:03", ["ecency.app", "early.app", "late.app"]),
           ...Array.from({ length: 998 }, (_, i) => row(4002 + i, "2026-11-09T09:00:00"))
+        ],
+        3999: [
+          row(3000, "2026-09-15T00:00:00", ["ecency.app"]),
+          ...Array.from({ length: 999 }, (_, i) => row(3001 + i, "2026-10-20T00:00:00"))
         ]
       };
       rpc.callRPC.mockImplementation(async (_method: string, params: unknown) => {
         return pages[(params as number[])[1]] ?? [];
       });
 
-      await expect(loadRecentPostingAuthAdds("alice", CUTOFF)).resolves.toEqual(new Set(["late.app"]));
-      expect(rpc.callRPC).toHaveBeenCalledTimes(2);
+      const added = await loadRecentPostingAuthAdds("alice", CUTOFF);
+      expect([...added.keys()].sort()).toEqual(["early.app", "late.app"]);
+      expect(added.get("early.app")).toBe("2026-11-01T00:00:00");
+      expect(rpc.callRPC).toHaveBeenCalledTimes(3);
       expect(rpc.callRPC.mock.calls[1][1]).toEqual(["alice", 4999, 1000, 2 ** 10 + 2 ** 43, 0]);
+      expect(rpc.callRPC.mock.calls[2][1]).toEqual(["alice", 3999, 1000, 2 ** 10 + 2 ** 43, 0]);
     });
 
     it("fails when the cutoff is not reached within the page cap", async () => {
@@ -376,7 +383,8 @@ describe("recovery chain helpers", () => {
 
     it("stops at the start of the history", async () => {
       rpc.callRPC.mockResolvedValueOnce([row(0, "2026-11-09T00:00:00", ["late.app"])]);
-      await expect(loadRecentPostingAuthAdds("alice", CUTOFF)).resolves.toEqual(new Set(["late.app"]));
+      const added = await loadRecentPostingAuthAdds("alice", CUTOFF);
+      expect([...added.keys()]).toEqual(["late.app"]);
       expect(rpc.callRPC).toHaveBeenCalledTimes(1);
     });
   });

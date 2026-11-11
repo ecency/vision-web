@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   checkOwnerHistoryEntry,
-  findPostingAuthsAddedAfter,
+  findRecentPostingAuthAdds,
   findRecoverableEntry,
   getHourlyLimitWaitUntil,
   isWithinRecoveryWindow,
-  parseChainTime
+  parseChainTime,
+  type HistoryRow
 } from "@/features/account-recovery/recovery-eligibility";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -173,60 +174,66 @@ describe("isWithinRecoveryWindow (re-check before tx1 with a margin)", () => {
   });
 });
 
-describe("findPostingAuthsAddedAfter", () => {
-  const update = (ts: string, names: string[] | null, op = "account_update") => [
+describe("findRecentPostingAuthAdds", () => {
+  const update = (ts: string, names: string[] | null, op = "account_update"): HistoryRow => [
     0,
     {
       timestamp: ts,
       op: [
         op,
-        {
-          account: "alice",
-          ...(names
-            ? {
-                posting: {
-                  weight_threshold: 1,
-                  account_auths: names.map((n) => [n, 1]),
-                  key_auths: []
-                }
-              }
-            : {})
-        }
+        names
+          ? { posting: { account_auths: names.map((n) => [n, 1] as [string, number]) } }
+          : {}
       ]
     }
   ];
+  const CUTOFF = "2026-11-08T12:00:00";
+  const flagged = (rows: HistoryRow[]) => [...findRecentPostingAuthAdds(rows, CUTOFF).keys()].sort();
 
   it("flags names that first appear in posting updates after the takeover", () => {
     const rows = [
-      update("2026-11-01T00:00:00", ["ecency.app"]),
+      update("2026-09-01T00:00:00", ["ecency.app"]),
       update("2026-11-09T00:00:00", null),
       update("2026-11-09T02:00:00", ["ecency.app", "other.app"]),
       update("2026-11-09T03:00:00", ["ecency.app", "other.app", "third.app"], "account_update2")
     ];
-    expect(findPostingAuthsAddedAfter(rows as any, "2026-11-08T12:00:00")).toEqual(
-      new Set(["other.app", "third.app"])
-    );
+    expect(flagged(rows)).toEqual(["other.app", "third.app"]);
+    expect(findRecentPostingAuthAdds(rows, CUTOFF).get("other.app")).toBe("2026-11-09T02:00:00");
   });
 
-  it("flags every name set after the takeover when no earlier posting update is known", () => {
-    const rows = [update("2026-11-09T02:00:00", ["ecency.app", "other.app"])];
-    expect(findPostingAuthsAddedAfter(rows as any, "2026-11-08T12:00:00")).toEqual(
-      new Set(["ecency.app", "other.app"])
-    );
+  it("flags every name set in the window when no earlier posting update is known", () => {
+    expect(flagged([update("2026-11-09T02:00:00", ["ecency.app", "other.app"])])).toEqual([
+      "ecency.app",
+      "other.app"
+    ]);
   });
 
-  it("treats a posting update at exactly the cutoff as after the takeover", () => {
+  it("treats a posting update at exactly the cutoff as suspect", () => {
     const rows = [
-      update("2026-11-01T00:00:00", ["ecency.app"]),
-      update("2026-11-08T12:00:00", ["ecency.app", "same.time.app"])
+      update("2026-09-01T00:00:00", ["ecency.app"]),
+      update(CUTOFF, ["ecency.app", "same.time.app"])
     ];
-    expect(findPostingAuthsAddedAfter(rows as any, "2026-11-08T12:00:00")).toEqual(
-      new Set(["same.time.app"])
-    );
+    expect(flagged(rows)).toEqual(["same.time.app"]);
   });
 
-  it("flags nothing when no posting update happened after the takeover", () => {
-    const rows = [update("2026-11-01T00:00:00", ["ecency.app"])];
-    expect(findPostingAuthsAddedAfter(rows as any, "2026-11-08T12:00:00")).toEqual(new Set());
+  it("flags a name added shortly before the owner change, with its time", () => {
+    const rows = [
+      update("2026-09-01T00:00:00", ["ecency.app"]),
+      update("2026-11-08T11:50:00", ["ecency.app", "early.app"])
+    ];
+    expect(flagged(rows)).toEqual(["early.app"]);
+    expect(findRecentPostingAuthAdds(rows, CUTOFF).get("early.app")).toBe("2026-11-08T11:50:00");
+  });
+
+  it("keeps a name added well before the window", () => {
+    const rows = [
+      update("2026-09-29T12:00:00", ["ecency.app", "old.app"]),
+      update("2026-11-09T02:00:00", ["ecency.app", "old.app"])
+    ];
+    expect(flagged(rows)).toEqual([]);
+  });
+
+  it("flags nothing when no posting update happened in the window", () => {
+    expect(flagged([update("2026-09-01T00:00:00", ["ecency.app"])])).toEqual([]);
   });
 });

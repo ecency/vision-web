@@ -18,7 +18,8 @@ import {
 } from "@/features/account-recovery/recovery-chain";
 import {
   getHourlyLimitWaitUntil,
-  isWithinRecoveryWindow
+  isWithinRecoveryWindow,
+  parseChainTime
 } from "@/features/account-recovery/recovery-eligibility";
 import type { RecoveryKeySet } from "@/features/account-recovery/recovery-keys";
 import type { RecoveryProof } from "../_page";
@@ -62,7 +63,7 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
   const [state, setState] = useState<RecoveryChainState | null>(null);
   const [waitUntil, setWaitUntil] = useState<Date | null>(null);
   const [keep, setKeep] = useState<Keep | null>(null);
-  const [flagged, setFlagged] = useState<Set<string>>(new Set());
+  const [flagged, setFlagged] = useState<Map<string, string | null>>(new Map());
   const [detail, setDetail] = useState("");
 
   const confirmed = useRef(false);
@@ -116,6 +117,7 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
           return;
         }
         setPhase("recovering");
+        let sendError: unknown = null;
         try {
           await submitRecoverAccount({
             username,
@@ -125,17 +127,27 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
             recentOwnerAuthority: proof.recentOwnerAuthority
           });
         } catch (e) {
-          setDetail(e instanceof Error ? e.message : "");
+          sendError = e;
+        }
+        let reread: RecoveryChainState | null = null;
+        try {
+          reread = await loadRecoveryChainState(username);
+        } catch {
+          // Handled below.
+        }
+        if (!mounted.current) return;
+        // A send can report an error and still land (for example a slow node), so
+        // trust the chain over the error.
+        if (sendError && !(reread && isOwnerReplaced(reread.account, ownerPub))) {
+          setDetail(sendError instanceof Error ? sendError.message : "");
           setPhase("recover-failed");
           return;
         }
-        try {
-          current = await loadRecoveryChainState(username);
-        } catch {
+        if (!reread) {
           setPhase("check-failed");
           return;
         }
-        if (!mounted.current) return;
+        current = reread;
         setState(current);
       }
 
@@ -162,9 +174,19 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
             keepAccountAuths: keepRef.current ?? { active: [], posting: [] }
           });
         } catch (e) {
-          setDetail(e instanceof Error ? e.message : "");
-          setPhase("keys-failed");
-          return;
+          let landed = false;
+          try {
+            const reread = await loadRecoveryChainState(username);
+            landed = areAllKeysReplaced(reread.account, keys.publicKeys);
+          } catch {
+            landed = false;
+          }
+          if (!mounted.current) return;
+          if (!landed) {
+            setDetail(e instanceof Error ? e.message : "");
+            setPhase("keys-failed");
+            return;
+          }
         }
       }
 
@@ -203,7 +225,7 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
   }, [advance]);
 
   // Account access review: posting access (apps) stays by default unless it was
-  // set after the takeover; active access must be opted in. Owner access is
+  // set in the 30 days before the takeover or later; active access must be opted in. Owner access is
   // never offered: tx2 always drops it.
   const account = state?.account;
   useEffect(() => {
@@ -219,13 +241,23 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
       .catch(() => {
         // Could not tell which ones are new: keep none unless the user opts in.
         if (!active) return;
-        setFlagged(new Set(posting));
+        setFlagged(new Map(posting.map((n) => [n, null])));
         setKeep({ active: [], posting: [] });
       });
     return () => {
       active = false;
     };
   }, [account, keep, username, proof.validUntil]);
+
+  // Added before the owner change: say when, since the user may not expect it.
+  const flaggedHint = (addedAt: string | null | undefined) => {
+    const time = addedAt ? parseChainTime(addedAt) : NaN;
+    return !Number.isNaN(time) && time < parseChainTime(proof.validUntil)
+      ? i18next.t("recover-account.finish.auths-flagged-before", {
+          date: new Date(time).toLocaleString()
+        })
+      : i18next.t("recover-account.finish.auths-flagged");
+  };
 
   const toggleKeep = (role: AccessRole, name: string, checked: boolean) =>
     setKeep((prev) =>
@@ -291,7 +323,7 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
                 <span>{i18next.t("recover-account.finish.auths-role", { role, name })}</span>
               </label>
               {role === "posting" && flagged.has(name) && (
-                <p className="text-xs text-red ml-6">{i18next.t("recover-account.finish.auths-flagged")}</p>
+                <p className="text-xs text-red ml-6">{flaggedHint(flagged.get(name))}</p>
               )}
             </div>
           ))}

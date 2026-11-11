@@ -105,28 +105,34 @@ export function isWithinRecoveryWindow(lastValidTime: string, head: number, marg
 export type HistoryRow = [number, { timestamp: string; op: [string, { posting?: { account_auths: [string, number][] } }] }];
 
 /**
- * Posting account authorities that appeared through account_update(2) at or
- * after `validUntil` (when the old owner key was replaced). They may have been added
- * by someone else, so the page leaves them unticked. With no earlier posting
- * update in the rows, every name set after the takeover counts.
+ * Posting account authorities that appeared through account_update(2) in the
+ * window that starts RECOVERY_WINDOW_MS before `validUntil` (when the old owner
+ * key was replaced). Someone holding the old keys may have added them, just
+ * before or after the takeover, so the page leaves them unticked. Returns each
+ * name with the time it was added. With no posting update before the window in
+ * the rows, every name set inside it counts.
  */
-export function findPostingAuthsAddedAfter(rows: HistoryRow[], validUntil: string): Set<string> {
-  const cutoff = parseChainTime(validUntil);
+export function findRecentPostingAuthAdds(
+  rows: HistoryRow[],
+  validUntil: string
+): Map<string, string> {
+  const windowStart = parseChainTime(validUntil) - RECOVERY_WINDOW_MS;
   const sorted = [...rows].sort(
     (a, b) => parseChainTime(a[1].timestamp) - parseChainTime(b[1].timestamp)
   );
 
   let before = new Set<string>();
-  const added = new Set<string>();
+  const added = new Map<string, string>();
   for (const [, { timestamp, op }] of sorted) {
     const posting = op?.[1]?.posting;
     if (!posting) continue;
     const names = posting.account_auths.map(([name]) => name);
-    // An update at the cutoff itself may be the takeover, so it counts as after.
-    if (parseChainTime(timestamp) < cutoff) {
+    if (parseChainTime(timestamp) < windowStart) {
       before = new Set(names);
     } else {
-      names.filter((n) => !before.has(n)).forEach((n) => added.add(n));
+      names
+        .filter((n) => !before.has(n) && !added.has(n))
+        .forEach((n) => added.set(n, timestamp));
     }
   }
   return added;

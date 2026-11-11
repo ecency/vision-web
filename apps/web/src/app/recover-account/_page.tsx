@@ -29,6 +29,9 @@ type Step =
   | "success"
   | "manual";
 
+/** Waits between completion record attempts: five attempts over about two minutes. */
+const COMPLETE_RETRY_DELAYS_MS = [5000, 15000, 30000, 60000];
+
 interface Session {
   username: string;
   requestId: string;
@@ -57,6 +60,8 @@ export function RecoverAccountPage() {
 
   const keysRef = useRef<RecoveryKeySet | null>(null);
   const proofRef = useRef<RecoveryProof | null>(null);
+  const mountedRef = useRef(true);
+  const completeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const clearSecrets = useCallback(() => {
     keysRef.current = null;
@@ -64,13 +69,40 @@ export function RecoverAccountPage() {
     setMasterPassword("");
   }, []);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(completeTimer.current);
       keysRef.current = null;
       proofRef.current = null;
-    },
-    []
-  );
+    };
+  }, []);
+
+  // Records the completion. It is only an audit record, so it never blocks the
+  // page, but a node that lags behind can answer not_recovered or fail for a
+  // moment, so those are retried a few times while the page stays open.
+  const sendCompletion = useCallback((requestId: string, attempt = 0) => {
+    const retry = () => {
+      if (!mountedRef.current || attempt >= COMPLETE_RETRY_DELAYS_MS.length) return;
+      completeTimer.current = setTimeout(
+        () => sendCompletion(requestId, attempt + 1),
+        COMPLETE_RETRY_DELAYS_MS[attempt]
+      );
+    };
+    Promise.resolve()
+      .then(() => recoveryComplete(requestId))
+      .then(
+        (res) => {
+          const transient =
+            res.status === 0 ||
+            res.status >= 500 ||
+            (res.status === 409 && res.data?.error === "not_recovered");
+          if (transient) retry();
+        },
+        () => retry()
+      );
+  }, []);
 
   const restart = useCallback(() => {
     clearSecrets();
@@ -103,17 +135,12 @@ export function RecoverAccountPage() {
   }, []);
 
   // Keys are verified on chain: move on to the optional clean-up and record the
-  // completion in the background. It is only an audit record, so errors are ignored.
+  // completion in the background.
   const handleKeysReplaced = useCallback(() => {
     proofRef.current = null;
     setStep("cleanup");
-    if (session) {
-      const requestId = session.requestId;
-      Promise.resolve()
-        .then(() => recoveryComplete(requestId))
-        .catch(() => undefined);
-    }
-  }, [session]);
+    if (session) sendCompletion(session.requestId);
+  }, [session, sendCompletion]);
 
   const finish = useCallback(() => {
     clearSecrets();

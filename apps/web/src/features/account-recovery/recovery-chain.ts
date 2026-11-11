@@ -13,7 +13,8 @@ import {
   type RecoveryNewKeys
 } from "@ecency/sdk";
 import {
-  findPostingAuthsAddedAfter,
+  RECOVERY_WINDOW_MS,
+  findRecentPostingAuthAdds,
   parseChainTime,
   type HistoryRow
 } from "./recovery-eligibility";
@@ -99,16 +100,17 @@ export async function loadRecoveryChainState(username: string): Promise<Recovery
 }
 
 /**
- * Posting account authorities set by account updates at or after `validUntil`,
- * the moment the proven owner key was replaced. Reads older pages until the
- * history reaches that time. Rejects on a failed read or when the cap is hit
- * first; the page then treats every posting authority as unconfirmed.
+ * Posting account authorities set by account updates from 30 days before
+ * `validUntil` (the moment the proven owner key was replaced) onwards, with the
+ * time each was added. Reads older pages until the history reaches the start of
+ * that window. Rejects on a failed read or when the cap is hit first; the page
+ * then treats every posting authority as unconfirmed.
  */
 export async function loadRecentPostingAuthAdds(
   username: string,
   validUntil: string
-): Promise<Set<string>> {
-  const cutoff = parseChainTime(validUntil);
+): Promise<Map<string, string>> {
+  const windowStart = parseChainTime(validUntil) - RECOVERY_WINDOW_MS;
   const rows: HistoryRow[] = [];
   let start = -1;
   for (let page = 0; page < RECOVERY_HISTORY_PAGE_CAP; page++) {
@@ -135,9 +137,9 @@ export async function loadRecentPostingAuthAdds(
       !oldest ||
       batch.length < limit ||
       !(oldest[0] > 0) ||
-      parseChainTime(oldest[1].timestamp) < cutoff
+      parseChainTime(oldest[1].timestamp) < windowStart
     ) {
-      return findPostingAuthsAddedAfter(rows, validUntil);
+      return findRecentPostingAuthAdds(rows, validUntil);
     }
     start = oldest[0] - 1;
   }

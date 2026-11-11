@@ -2625,7 +2625,8 @@
       "retry": "Try again",
       "recovery-wait": "This account was recovered less than an hour ago. The next recovery is possible after {{time}}. This page will continue by itself.",
       "keys-wait": "Your account is recovered. For safety, the other keys can be replaced after {{time}}. Keep this page open and it will continue by itself.",
-      "auths-flagged": "Added after you lost access. Only keep it if you added it yourself."
+      "auths-flagged": "Added after you lost access. Only keep it if you added it yourself.",
+      "auths-flagged-before": "Added on {{date}}, shortly before you lost access. Only keep it if you added it yourself."
     },
     "cleanup": {
       "title": "Undo changes made to your wallet",

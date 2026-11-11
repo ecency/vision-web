@@ -112,6 +112,7 @@ import {
   submitReplaceKeys,
   verifyRecoveredKeys
 } from "@/features/account-recovery/recovery-chain";
+import { parseChainTime } from "@/features/account-recovery/recovery-eligibility";
 import RecoverAccountRoute from "@/app/recover-account/page";
 import { RecoverAccountPage } from "@/app/recover-account/_page";
 
@@ -219,7 +220,7 @@ function setDefaults() {
     if (chain.keysLanded) return allReplaced;
     return vi.mocked(submitRecoverAccount).mock.calls.length ? afterTx1 : chainState;
   });
-  vi.mocked(loadRecentPostingAuthAdds).mockResolvedValue(new Set(["late.app"]));
+  vi.mocked(loadRecentPostingAuthAdds).mockResolvedValue(new Map([["late.app", "2026-11-09T02:00:00"]]));
   vi.mocked(loadCleanupItems).mockResolvedValue([cleanupItem]);
   vi.mocked(submitRecoverAccount).mockResolvedValue(confirmation("tx1"));
   vi.mocked(submitReplaceKeys).mockImplementation(async () => {
@@ -265,11 +266,12 @@ async function passCode(code = "123456") {
 }
 
 async function reachFinish() {
-  renderWithQueryClient(<RecoverAccountPage />);
+  const view = renderWithQueryClient(<RecoverAccountPage />);
   await passStart();
   await passPassword();
   await passOldKey();
   await passCode();
+  return view;
 }
 
 const replaceButton = () => screen.findByRole("button", { name: "recover-account.finish.submit" });
@@ -808,5 +810,108 @@ describe("recover-account page", () => {
     expect(
       await screen.findByText(`recover-account.errors.in_progress_until:${JSON.stringify({ time })}`)
     ).toBeInTheDocument();
+  });
+
+  it("explains a posting authority added shortly before the takeover", async () => {
+    const added = "2026-11-08T23:50:00";
+    vi.mocked(loadRecentPostingAuthAdds).mockResolvedValue(new Map([["late.app", added]]));
+    await reachFinish();
+    expect(await screen.findByLabelText(/auths-role.*late\.app/)).not.toBeChecked();
+    const date = new Date(parseChainTime(added)).toLocaleString();
+    expect(
+      screen.getByText(`recover-account.finish.auths-flagged-before:${JSON.stringify({ date })}`)
+    ).toBeInTheDocument();
+    expect(screen.queryByText("recover-account.finish.auths-flagged")).toBeNull();
+  });
+
+  it("continues when tx1 reported an error but the chain shows it landed", async () => {
+    vi.mocked(submitRecoverAccount).mockRejectedValueOnce(new Error("timeout"));
+    await reachFinish();
+    expect(await replaceButton()).toBeInTheDocument();
+    expect(screen.queryByText("recover-account.finish.recover-failed")).toBeNull();
+    expect(submitRecoverAccount).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues to verification when tx2 reported an error but the keys changed", async () => {
+    vi.mocked(submitReplaceKeys).mockImplementationOnce(async () => {
+      chain.keysLanded = true;
+      throw new Error("timeout");
+    });
+    await reachFinish();
+    fireEvent.click(await replaceButton());
+    expect(await screen.findByText("recover-account.cleanup.title")).toBeInTheDocument();
+    expect(screen.queryByText("recover-account.finish.keys-failed")).toBeNull();
+    expect(submitReplaceKeys).toHaveBeenCalledTimes(1);
+    expect(verifyRecoveredKeys).toHaveBeenCalled();
+  });
+
+  describe("completion record retries", () => {
+    const reachCleanup = async () => {
+      const view = await reachFinish();
+      fireEvent.click(await replaceButton());
+      await screen.findByText("recover-account.cleanup.title");
+      return view;
+    };
+    const wait = async (ms: number) => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+
+    it("retries after network errors, 5xx and not_recovered, then stops on success", async () => {
+      vi.mocked(recoveryComplete)
+        .mockResolvedValueOnce({ status: 503, data: { error: "unavailable" } })
+        .mockResolvedValueOnce({ status: 409, data: { error: "not_recovered" } })
+        .mockRejectedValueOnce(new Error("offline"))
+        .mockResolvedValue({ status: 200, data: { status: "completed" } });
+      await reachCleanup();
+      await wait(5 * 60 * 1000);
+      expect(recoveryComplete).toHaveBeenCalledTimes(4);
+      expect(screen.getByText("recover-account.cleanup.title")).toBeInTheDocument();
+    });
+
+    it("gives up after five attempts within about two minutes", async () => {
+      vi.mocked(recoveryComplete).mockResolvedValue({ status: 502, data: {} });
+      await reachCleanup();
+      await wait(2 * 60 * 1000);
+      expect(recoveryComplete).toHaveBeenCalledTimes(5);
+      await wait(10 * 60 * 1000);
+      expect(recoveryComplete).toHaveBeenCalledTimes(5);
+    });
+
+    it("does not retry other error codes", async () => {
+      vi.mocked(recoveryComplete).mockResolvedValue({ status: 409, data: { error: "bad_state" } });
+      await reachCleanup();
+      await wait(5 * 60 * 1000);
+      expect(recoveryComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not retry an answer that arrives after the page is left", async () => {
+      let answer: (value: { status: number; data: { error?: string } }) => void = () => {};
+      vi.mocked(recoveryComplete).mockReturnValueOnce(
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+      );
+      const view = await reachCleanup();
+      await waitFor(() => expect(recoveryComplete).toHaveBeenCalledTimes(1));
+      view.unmount();
+      answer({ status: 503, data: { error: "unavailable" } });
+      await wait(5 * 60 * 1000);
+      expect(recoveryComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops retrying when the page is left", async () => {
+      vi.mocked(recoveryComplete).mockResolvedValue({ status: 503, data: { error: "unavailable" } });
+      const view = await reachCleanup();
+      await waitFor(() => expect(recoveryComplete).toHaveBeenCalledTimes(1));
+      view.unmount();
+      await wait(5 * 60 * 1000);
+      expect(recoveryComplete).toHaveBeenCalledTimes(1);
+    });
   });
 });
