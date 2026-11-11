@@ -2652,8 +2652,9 @@
     },
     "manual": {
       "title": "We can not recover this account here",
-      "hint": "Please contact Ecency support and we will help you recover it.",
-      "contact": "Contact support"
+      "hint": "Ask in the Ecency chat and we will help you recover it.",
+      "other-recovery": "Your account's recovery account is @{{account}}. Only @{{account}} can recover it. Contact them and tell them you still have an old password or owner key from before the account was taken.",
+      "contact": "Ask for help in the Ecency chat"
     },
     "errors": {
       "generic": "Something went wrong. Please try again.",

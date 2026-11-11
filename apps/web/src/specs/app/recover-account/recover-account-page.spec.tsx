@@ -95,6 +95,7 @@ import type {
 import type { Turnstile } from "@/features/shared/turnstile";
 import type { RecoveryAccount, RecoveryChainState } from "@/features/account-recovery/recovery-chain";
 import {
+  getAccountFullQueryOptions,
   recoveryComplete,
   recoveryProve,
   recoveryStart,
@@ -286,6 +287,12 @@ describe("recover-account page", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.mocked(getAccountFullQueryOptions).mockImplementation(
+      () =>
+        ({ queryKey: ["account"], queryFn: vi.fn() }) as unknown as ReturnType<
+          typeof getAccountFullQueryOptions
+        >
+    );
   });
 
   it("answers notFound while the feature flag is off", () => {
@@ -436,6 +443,66 @@ describe("recover-account page", () => {
       expect(screen.getByText(`recover-account.errors.${code}`)).toBeInTheDocument();
     }
   );
+
+  it("names another recovery account and sends the user to it", async () => {
+    vi.mocked(getAccountFullQueryOptions).mockReturnValue({
+      queryKey: ["recover-test-account", "alice"],
+      queryFn: async () => ({ name: "alice", recovery_account: "otherapp" })
+    } as unknown as ReturnType<typeof getAccountFullQueryOptions>);
+    vi.mocked(recoveryStart).mockResolvedValueOnce({
+      status: 422,
+      data: { error: "not_ecency_recovery" }
+    });
+    renderWithQueryClient(<RecoverAccountPage />);
+    await passStart("alice");
+    expect(
+      await screen.findByText('recover-account.manual.other-recovery:{"account":"otherapp"}')
+    ).toBeInTheDocument();
+    expect(getAccountFullQueryOptions).toHaveBeenCalledWith("alice");
+    expect(screen.queryByText("recover-account.manual.hint")).not.toBeInTheDocument();
+    expect(screen.queryByText("recover-account.errors.not_ecency_recovery")).not.toBeInTheDocument();
+  });
+
+  it("keeps the generic message when the recovery account can not be read", async () => {
+    vi.mocked(getAccountFullQueryOptions).mockReturnValue({
+      queryKey: ["recover-test-account-fail", "alice"],
+      queryFn: async () => {
+        throw new Error("rpc down");
+      },
+      retry: false
+    } as unknown as ReturnType<typeof getAccountFullQueryOptions>);
+    vi.mocked(recoveryStart).mockResolvedValueOnce({
+      status: 422,
+      data: { error: "not_ecency_recovery" }
+    });
+    renderWithQueryClient(<RecoverAccountPage />);
+    await passStart("alice");
+    expect(
+      await screen.findByText("recover-account.errors.not_ecency_recovery")
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/recover-account\.manual\.other-recovery/)).not.toBeInTheDocument();
+  });
+
+  it("only names the recovery account when it is not one of ours", async () => {
+    vi.mocked(getAccountFullQueryOptions).mockReturnValue({
+      queryKey: ["recover-test-account-noemail", "alice"],
+      queryFn: async () => ({ name: "alice", recovery_account: "otherapp" })
+    } as unknown as ReturnType<typeof getAccountFullQueryOptions>);
+    vi.mocked(recoveryStart).mockResolvedValueOnce({ status: 422, data: { error: "no_email" } });
+    renderWithQueryClient(<RecoverAccountPage />);
+    await passStart("alice");
+    expect(await screen.findByText("recover-account.errors.no_email")).toBeInTheDocument();
+    expect(screen.getByText("recover-account.manual.hint")).toBeInTheDocument();
+    expect(screen.queryByText(/recover-account\.manual\.other-recovery/)).not.toBeInTheDocument();
+  });
+
+  it("points manual help to the Ecency chat", async () => {
+    vi.mocked(recoveryStart).mockResolvedValueOnce({ status: 422, data: { error: "no_email" } });
+    renderWithQueryClient(<RecoverAccountPage />);
+    await passStart();
+    const link = await screen.findByRole("link", { name: "recover-account.manual.contact" });
+    expect(link).toHaveAttribute("href", "/chats/hive-125125/channel");
+  });
 
   it("says so locally when the old key does not match and sends nothing", async () => {
     vi.mocked(matchOldOwnerKey).mockReturnValue({ status: "no-match" });

@@ -57,6 +57,7 @@ export function RecoverAccountPage() {
   const [masterPassword, setMasterPassword] = useState("");
   const [emails, setEmails] = useState<string[]>([]);
   const [manualCode, setManualCode] = useState("");
+  const [manualUsername, setManualUsername] = useState("");
 
   const keysRef = useRef<RecoveryKeySet | null>(null);
   const proofRef = useRef<RecoveryProof | null>(null);
@@ -112,9 +113,10 @@ export function RecoverAccountPage() {
   }, [clearSecrets]);
 
   const showManual = useCallback(
-    (code: string) => {
+    (code: string, username?: string) => {
       clearSecrets();
       setManualCode(code);
+      setManualUsername(username ?? "");
       setStep("manual");
     },
     [clearSecrets]
@@ -220,7 +222,11 @@ export function RecoverAccountPage() {
 
         {step === "success" && <RecoverSuccessStep />}
 
-        {step === "manual" && <RecoverManualHelp code={manualCode} onRestart={restart} />}
+        {step === "manual" && <RecoverManualHelp
+            code={manualCode}
+            username={manualUsername || session?.username || ""}
+            onRestart={restart}
+          />}
       </div>
     </div>
   );
