@@ -20,8 +20,6 @@ import {
 } from "./recovery-eligibility";
 import type { RecoveryKeySet } from "./recovery-keys";
 
-export const RECOVERY_ACCOUNT = "ecency";
-
 export type RecoveryRole = "owner" | "active" | "posting";
 export const RECOVERY_ROLES: RecoveryRole[] = ["owner", "active", "posting"];
 /** Roles whose account authorities may stay after recovery. Owner ones never do. */
@@ -203,7 +201,9 @@ export async function submitReplaceKeys(input: {
     buildRecoveryReplaceKeysOp(account, input.newKeys.publicKeys, { accountAuths })
   ];
   if ((pending?.requests ?? []).some((r) => r.account_to_recover === input.username)) {
-    ops.push(buildChangeRecoveryAccountOp(input.username, RECOVERY_ACCOUNT));
+    // Setting the current recovery account again cancels the pending change.
+    // That may be Ecency or a signup partner, so never assume Ecency here.
+    ops.push(buildChangeRecoveryAccountOp(input.username, account.recovery_account));
   }
   return broadcastOperationsWithKeys(ops, [input.newKeys.owner]);
 }
