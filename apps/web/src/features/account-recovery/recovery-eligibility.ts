@@ -102,7 +102,19 @@ export function isWithinRecoveryWindow(lastValidTime: string, head: number, marg
   return parseChainTime(lastValidTime) + RECOVERY_WINDOW_MS > head + marginMs;
 }
 
-export type HistoryRow = [number, { timestamp: string; op: [string, { posting?: { account_auths: [string, number][] } }] }];
+const CREATE_OPS = new Set([
+  "account_create",
+  "create_claimed_account",
+  "account_create_with_delegation"
+]);
+
+export type HistoryRow = [
+  number,
+  {
+    timestamp: string;
+    op: [string, { new_account_name?: string; posting?: { account_auths: [string, number][] } }];
+  }
+];
 
 /**
  * Posting account authorities that appeared through account_update(2) in the
@@ -111,12 +123,16 @@ export type HistoryRow = [number, { timestamp: string; op: [string, { posting?: 
  * before or after the takeover, so the page leaves them unticked. Every time a
  * name goes from absent to present inside the window counts, also for a name
  * that was there before, was removed and came back. Returns each name with the
- * latest such time. With no posting update before the window in the rows, every
- * name set inside it counts.
+ * latest such time. The names an account was created with are never flagged.
+ * Its history also lists accounts it created, whose authorities belong to
+ * those accounts, so only the creation of `username` itself is read.
+ * With no creation or posting update before the window in the rows, every name
+ * set inside it counts.
  */
 export function findRecentPostingAuthAdds(
   rows: HistoryRow[],
-  validUntil: string
+  validUntil: string,
+  username: string
 ): Map<string, string> {
   const windowStart = parseChainTime(validUntil) - RECOVERY_WINDOW_MS;
   const sorted = [...rows].sort(
@@ -126,10 +142,12 @@ export function findRecentPostingAuthAdds(
   let previous: Set<string> | null = null;
   const added = new Map<string, string>();
   for (const [, { timestamp, op }] of sorted) {
+    const isCreate = CREATE_OPS.has(op?.[0]);
+    if (isCreate && op[1].new_account_name !== username) continue;
     const posting = op?.[1]?.posting;
     if (!posting) continue;
     const names = new Set(posting.account_auths.map(([name]) => name));
-    if (parseChainTime(timestamp) >= windowStart) {
+    if (!isCreate && parseChainTime(timestamp) >= windowStart) {
       names.forEach((n) => {
         if (!previous?.has(n)) added.set(n, timestamp);
       });

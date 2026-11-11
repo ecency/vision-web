@@ -175,20 +175,29 @@ describe("isWithinRecoveryWindow (re-check before tx1 with a margin)", () => {
 });
 
 describe("findRecentPostingAuthAdds", () => {
-  const update = (ts: string, names: string[] | null, op = "account_update"): HistoryRow => [
+  const update = (
+    ts: string,
+    names: string[] | null,
+    op = "account_update",
+    newAccount = "alice"
+  ): HistoryRow => [
     0,
     {
       timestamp: ts,
       op: [
         op,
-        names
-          ? { posting: { account_auths: names.map((n) => [n, 1] as [string, number]) } }
-          : {}
+        {
+          ...(op.includes("create") ? { new_account_name: newAccount } : {}),
+          ...(names
+            ? { posting: { account_auths: names.map((n) => [n, 1] as [string, number]) } }
+            : {})
+        }
       ]
     }
   ];
   const CUTOFF = "2026-11-08T12:00:00";
-  const flagged = (rows: HistoryRow[]) => [...findRecentPostingAuthAdds(rows, CUTOFF).keys()].sort();
+  const flagged = (rows: HistoryRow[]) =>
+    [...findRecentPostingAuthAdds(rows, CUTOFF, "alice").keys()].sort();
 
   it("flags names that first appear in posting updates after the takeover", () => {
     const rows = [
@@ -198,7 +207,7 @@ describe("findRecentPostingAuthAdds", () => {
       update("2026-11-09T03:00:00", ["ecency.app", "other.app", "third.app"], "account_update2")
     ];
     expect(flagged(rows)).toEqual(["other.app", "third.app"]);
-    expect(findRecentPostingAuthAdds(rows, CUTOFF).get("other.app")).toBe("2026-11-09T02:00:00");
+    expect(findRecentPostingAuthAdds(rows, CUTOFF, "alice").get("other.app")).toBe("2026-11-09T02:00:00");
   });
 
   it("flags every name set in the window when no earlier posting update is known", () => {
@@ -206,6 +215,33 @@ describe("findRecentPostingAuthAdds", () => {
       "ecency.app",
       "other.app"
     ]);
+  });
+
+  it("uses the account creation as the baseline before the first update", () => {
+    const rows = [
+      update("2024-03-04T16:08:15", ["ecency.app"], "create_claimed_account"),
+      update("2026-11-08T12:00:00", ["ecency.app", "other.app"])
+    ];
+    expect(flagged(rows)).toEqual(["other.app"]);
+  });
+
+  it("never flags names the account was created with, even inside the window", () => {
+    const rows = [
+      update("2026-10-25T00:00:00", ["ecency.app"], "account_create"),
+      update("2026-11-01T00:00:00", ["ecency.app"], "account_create_with_delegation"),
+      update("2026-11-09T02:00:00", ["ecency.app", "other.app"])
+    ];
+    expect(flagged(rows)).toEqual(["other.app"]);
+  });
+
+  it("ignores accounts this account created, before or inside the window", () => {
+    const rows = [
+      update("2024-03-04T16:08:15", ["ecency.app"], "create_claimed_account"),
+      update("2026-09-01T00:00:00", ["decoy.app"], "account_create", "decoy-one"),
+      update("2026-11-08T11:00:00", ["attacker.app"], "create_claimed_account", "decoy-two"),
+      update("2026-11-08T13:00:00", ["ecency.app", "decoy.app", "attacker.app"])
+    ];
+    expect(flagged(rows)).toEqual(["attacker.app", "decoy.app"]);
   });
 
   it("treats a posting update at exactly the cutoff as suspect", () => {
@@ -222,7 +258,7 @@ describe("findRecentPostingAuthAdds", () => {
       update("2026-11-08T11:50:00", ["ecency.app", "early.app"])
     ];
     expect(flagged(rows)).toEqual(["early.app"]);
-    expect(findRecentPostingAuthAdds(rows, CUTOFF).get("early.app")).toBe("2026-11-08T11:50:00");
+    expect(findRecentPostingAuthAdds(rows, CUTOFF, "alice").get("early.app")).toBe("2026-11-08T11:50:00");
   });
 
   it("keeps a name added well before the window", () => {
@@ -242,7 +278,7 @@ describe("findRecentPostingAuthAdds", () => {
       update("2026-11-09T00:00:00", ["ecency.app", "old.app"])
     ];
     expect(flagged(rows)).toEqual(["old.app"]);
-    expect(findRecentPostingAuthAdds(rows, CUTOFF).get("old.app")).toBe("2026-11-09T00:00:00");
+    expect(findRecentPostingAuthAdds(rows, CUTOFF, "alice").get("old.app")).toBe("2026-11-09T00:00:00");
   });
 
   it("does not flag a name present throughout", () => {

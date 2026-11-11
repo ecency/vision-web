@@ -16,7 +16,7 @@ import { RecoverError } from "./recover-error";
 
 interface Props {
   onStarted: (session: { username: string; requestId: string; nonce: string }) => void;
-  onManual: (code: string) => void;
+  onManual: (code: string, username: string) => void;
 }
 
 export function RecoverStartStep({ onStarted, onManual }: Props) {
@@ -44,7 +44,7 @@ export function RecoverStartStep({ onStarted, onManual }: Props) {
       }
       const code = recoveryErrorCode(res);
       if (MANUAL_HELP_ERRORS.has(code)) {
-        onManual(code);
+        onManual(code, name);
         return;
       }
       const until = code === "in_progress" && res.data?.retry_after
