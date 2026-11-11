@@ -44,6 +44,13 @@ type Keep = Record<AccessRole, string[]>;
 const WINDOW_MARGIN_MS = 10 * 60 * 1000;
 /** Extra time after a limit lifts before trying again, so the next block has passed. */
 const RETRY_BUFFER_MS = 6000;
+/** How often the wait message counts down. */
+const COUNTDOWN_TICK_MS = 30 * 1000;
+
+/** Whole minutes in `ms`, at least 1 while still waiting. */
+function minutesLeft(ms: number) {
+  return Math.max(1, Math.ceil(ms / 60000));
+}
 
 interface Props {
   username: string;
@@ -71,6 +78,10 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
   const running = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mounted = useRef(true);
+  // When the wait ends on a monotonic clock (performance.now): the wait length
+  // comes from the chain, and a device clock change can not move it.
+  const waitEnd = useRef(0);
+  const [, setTick] = useState(0);
   const callbacks = useRef({ onKeysReplaced, onManual });
   callbacks.current = { onKeysReplaced, onManual };
 
@@ -82,6 +93,7 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
     clearTimeout(timer.current);
 
     const schedule = (until: Date, head: number) => {
+      waitEnd.current = performance.now() + (until.getTime() - head);
       setWaitUntil(until);
       timer.current = setTimeout(
         () => advanceRef.current(),
@@ -225,6 +237,13 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
     };
   }, [advance]);
 
+  const waiting = phase === "recovery-wait" || phase === "keys-wait";
+  useEffect(() => {
+    if (!waiting) return;
+    const id = setInterval(() => setTick((n) => n + 1), COUNTDOWN_TICK_MS);
+    return () => clearInterval(id);
+  }, [waiting]);
+
   // Account access review: posting access (apps) stays by default unless it was
   // set in the 30 days before the takeover or later; active access must be opted in. Owner access is
   // never offered: tx2 always drops it.
@@ -263,7 +282,10 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
   const toggleKeep = (role: AccessRole, name: string, checked: boolean) =>
     setKeep((prev) =>
       prev
-        ? { ...prev, [role]: checked ? [...prev[role], name] : prev[role].filter((n) => n !== name) }
+        ? {
+            ...prev,
+            [role]: checked ? [...prev[role], name] : prev[role].filter((n) => n !== name)
+          }
         : prev
     );
 
@@ -273,7 +295,8 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
       )
     : [];
 
-  const busy = phase === "checking" || phase === "recovering" || phase === "updating" || phase === "verifying";
+  const busy =
+    phase === "checking" || phase === "recovering" || phase === "updating" || phase === "verifying";
   const showReview = !!keep && accountAuths.length > 0 && !confirmed.current;
 
   return (
@@ -303,9 +326,12 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
         </div>
       )}
 
-      {(phase === "recovery-wait" || phase === "keys-wait") && waitUntil && (
+      {waiting && waitUntil && (
         <p className="text-sm mb-4">
-          {i18next.t(`recover-account.finish.${phase}`, { time: waitUntil.toLocaleString() })}
+          {i18next.t(`recover-account.finish.${phase}`, {
+            count: minutesLeft(waitEnd.current - performance.now()),
+            time: waitUntil.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          })}
         </p>
       )}
 
@@ -314,7 +340,9 @@ export function RecoverFinishStep({ username, keys, proof, onKeysReplaced, onMan
           <legend className="text-sm font-semibold">
             {i18next.t("recover-account.finish.auths-title")}
           </legend>
-          <p className="text-sm opacity-60 mb-2">{i18next.t("recover-account.finish.auths-hint")}</p>
+          <p className="text-sm opacity-60 mb-2">
+            {i18next.t("recover-account.finish.auths-hint")}
+          </p>
           {accountAuths.map(({ role, name }) => (
             <div key={`${role}:${name}`}>
               <label className="flex items-center gap-2 text-sm">
