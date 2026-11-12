@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Variables the generator or the mock read; each case sets its own.
+unset REBUILD_TOUCHED_DIST MOCK_VERSION_BUMP
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 generator="$script_dir/auto-changeset.sh"
@@ -12,6 +14,10 @@ cat > "$test_dir/bin/pnpm" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 if [ "$*" = 'changeset version' ]; then
+  # MOCK_VERSION_BUMP names a package whose version `changeset version` moves.
+  if [ -n "${MOCK_VERSION_BUMP:-}" ]; then
+    printf '{"version":"bumped"}\n' > "packages/$MOCK_VERSION_BUMP/package.json"
+  fi
   exit 0
 fi
 if [ "$*" = '--filter @ecency/sdk build' ]; then
@@ -29,6 +35,7 @@ git -C "$repo" config user.email 'ci-test@example.invalid'
 mkdir -p "$repo/.changeset" "$repo/packages/sdk/dist" "$repo/packages/sdk/src"
 printf 'base dist\n' > "$repo/packages/sdk/dist/index.js"
 printf 'base source\n' > "$repo/packages/sdk/src/index.ts"
+printf '{"version":"base"}\n' > "$repo/packages/sdk/package.json"
 git -C "$repo" add -A
 git -C "$repo" commit -qm base
 base=$(git -C "$repo" rev-parse HEAD)
@@ -68,6 +75,8 @@ fi
 # match near the top. A pipeline like `echo "$list" | grep -q` fails there under
 # pipefail (grep quits early, echo gets SIGPIPE) and skipped versioning on #2059.
 git -C "$repo" reset --hard -q "$base"
+# Removes case 2's untracked dist/generated.js, so the rebuild assertion below
+# can only pass if this case rebuilds.
 git -C "$repo" clean -fdq
 mkdir -p "$repo/.changeset"
 printf 'changed source\n' > "$repo/packages/sdk/src/index.ts"
@@ -78,10 +87,15 @@ done
 git -C "$repo" add -A
 git -C "$repo" commit -qm large
 (cd "$repo" && PR_TITLE=Large PR_NUMBER=103 PR_AUTHOR=maintainer \
-  PR_LABELS='["patch"]' DIFF_BASE="$base" \
+  PR_LABELS='["patch"]' DIFF_BASE="$base" MOCK_VERSION_BUMP=sdk \
   PATH="$test_dir/bin:$PATH" bash "$generator")
 if ! grep -qx '"@ecency/sdk": patch' "$repo/.changeset/pr-103.md" 2>/dev/null; then
   echo 'Large PR with a generic patch label did not version @ecency/sdk' >&2
+  exit 1
+fi
+# The version moved, so the package must be rebuilt.
+if [ "$(cat "$repo/packages/sdk/dist/generated.js" 2>/dev/null)" != 'rebuilt from source' ]; then
+  echo 'Large PR versioned @ecency/sdk but did not rebuild it' >&2
   exit 1
 fi
 
