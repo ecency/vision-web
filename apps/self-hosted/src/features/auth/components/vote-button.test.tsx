@@ -22,17 +22,17 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('@ecency/sdk', async () => {
-  const actual = await vi.importActual<Record<string, unknown>>('@ecency/sdk');
+  const actual = await vi.importActual<typeof import('@ecency/sdk')>('@ecency/sdk');
   return {
     ...actual,
     useVote: () => ({ mutateAsync: (v: unknown) => state.afterVote(v) }),
     getEntryVoteQueryOptions: (author?: string, permlink?: string, voter?: string, enabled = true) => ({
-      queryKey: ['posts', 'entry-vote', author, permlink, voter],
+      queryKey: actual.QueryKeys.posts.entryVote(author, permlink, voter),
       queryFn: () => state.lookup(author, permlink, voter),
       enabled: enabled && !!author && !!permlink && !!voter,
     }),
     getEntryActiveVotesQueryOptions: (entry?: { author: string; permlink: string }) => ({
-      queryKey: ['posts', 'entry-active-votes', entry?.author, entry?.permlink],
+      queryKey: actual.QueryKeys.posts.entryActiveVotes(entry?.author, entry?.permlink),
       queryFn: () => state.list(entry),
       enabled: !!entry,
     }),

@@ -108,7 +108,8 @@ export function VoteButton({
       // unknown prior would let a quick second click (now an unvote) take one
       // from a count the SDK never moved up. Unknown stays unknown.
       if (priorKnown) {
-        const next: ObserverVote | null = weight !== 0 ? { rshares: weight, percent: weight } : null;
+        // No rshares yet: the node computes them once the vote is in a block.
+        const next: ObserverVote | null = weight !== 0 ? { rshares: null, percent: weight } : null;
         queryClient.setQueryData(QueryKeys.posts.entryVote(author, permlink, user.username), next);
         recordOptimisticVote(author, permlink, user.username, next);
       }
@@ -124,7 +125,9 @@ export function VoteButton({
   }, [navigate, author, permlink]);
 
   const ownRow: Vote[] =
-    voted && user ? [{ voter: user.username, percent: ownVote!.percent ?? 10000, rshares: ownVote!.rshares }] : [];
+    voted && user
+      ? [{ voter: user.username, percent: ownVote!.percent ?? 10000, rshares: ownVote!.rshares ?? undefined }]
+      : [];
   // Shown as given: the caller reads it from the entry the SDK's vote update
   // moves (see PostLikes). The button does no count arithmetic of its own.
   const count = Math.max(0, totalVotes || 0);
