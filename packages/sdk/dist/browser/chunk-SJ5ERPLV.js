@@ -1,2 +1,0 @@
-import {b}from'./chunk-4COFIDSX.js';import {c}from'./chunk-AGPZT3YK.js';import {a}from'./chunk-PDIUUNDQ.js';function l(o,t,a$1){return c(["promotions","rc-delegation"],o,({duration:c})=>[b(o,c)],async()=>{t?.adapter?.invalidateQueries&&await t.adapter.invalidateQueries([a.accounts.full(o),a.resourceCredits.account(o),["promotions","rc-delegation-active",o]]);},t,"active",{broadcastMode:a$1})}export{l as a};//# sourceMappingURL=chunk-SJ5ERPLV.js.map
-//# sourceMappingURL=chunk-SJ5ERPLV.js.map

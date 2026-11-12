@@ -1,0 +1,2 @@
+import {d}from'./chunk-X5LWQNEJ.js';import {useMutation}from'@tanstack/react-query';function s(){return useMutation({mutationKey:["ecency-wallets","check-wallet-existence"],mutationFn:async({address:t,currency:a})=>(await(await fetch(`${d.getValidatedBaseUrl()}/private-api/wallets-exist`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({address:t,token:a})})).json()).length===0})}export{s as a};//# sourceMappingURL=chunk-DW4S5RVG.js.map
+//# sourceMappingURL=chunk-DW4S5RVG.js.map
