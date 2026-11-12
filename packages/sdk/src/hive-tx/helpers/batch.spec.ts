@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { callRPC, callRPCBatch, rpcHealthTracker, __METHOD_FALLBACK__, __BATCH_SUPPORT__ } from "./call";
 import { config } from "../config";
 
@@ -252,13 +252,24 @@ describe("callRPCBatch: an error-object refusal", () => {
 // Round 5, item 2: a node that dies while it is being sent single calls must
 // not cost a timeout per request before the batch moves on.
 describe("callRPCBatch: a dead node in single-call mode", () => {
-  it("fails the rest over after about two timeouts, not one per request", async () => {
+  // Asserts attempt counts, not wall time: the call gets a budget the
+  // failover always fits in (20 x the 100 ms timeout), so a slow runner
+  // cannot run out of it, and the old behaviour (every request sent into the
+  // timeout, six at a time) still fails on the count.
+  it("sends the dead node one wave of requests, then fails the rest over", async () => {
+    const budget = config.resilience.totalBudgetFactor;
+    config.resilience.totalBudgetFactor = 20;
+    onTestFinished(() => {
+      config.resilience.totalBudgetFactor = budget;
+    });
     config.nodes = ["https://dead-singles.test", "https://live-singles.test"];
     __BATCH_SUPPORT__.markUnsupported("https://dead-singles.test");
     __BATCH_SUPPORT__.markUnsupported("https://live-singles.test");
     let deadCalls = 0;
+    let liveCalls = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation((input: any, init: any) => {
       const body = JSON.parse(String(init.body));
+      if (!String(input).includes("dead-singles")) liveCalls++;
       if (String(input).includes("dead-singles")) {
         deadCalls++;
         // A dead node: every request runs into its timeout.
@@ -276,13 +287,11 @@ describe("callRPCBatch: a dead node in single-call mode", () => {
       method: "database_api.list_votes",
       params: { start: ["a", `p${i}`, "u"], limit: 1, order: "by_comment_voter" },
     }));
-    const t0 = Date.now();
     const answers = await callRPCBatch(many, { timeout: 100 });
-    // One request per 6-wide wave would be ~9 timeouts (~900 ms); the fix
-    // costs about one. The bound leaves room for a loaded CI runner.
-    expect(Date.now() - t0).toBeLessThan(600);
     expect(answers.every((a) => a.error === undefined)).toBe(true);
-    expect(deadCalls).toBeLessThan(13);
+    // One wave: each of the six workers stops after its own timeout.
+    expect(deadCalls).toBeLessThanOrEqual(6);
+    expect(liveCalls).toBe(50);
   });
 });
 
@@ -325,10 +334,10 @@ describe("callRPCBatch: single-call mode stops early", () => {
       await new Promise((r) => setTimeout(r, 60));
       return json({ jsonrpc: "2.0", id: body.id, result: { votes: [] } });
     });
-    const t0 = Date.now();
     const answers = await callRPCBatch(fifty, { timeout: 100 });
-    // Budget: 2 x 100 ms. Sending all 50, six at a time, takes ~540 ms.
-    expect(Date.now() - t0).toBeLessThan(400);
+    // Budget: 2 x 100 ms. Sending all 50, six at a time, takes at least
+    // ~540 ms, so the budget always ends it first; a slower runner only
+    // stops it sooner. Counted, not timed.
     expect(calls).toBeLessThan(50);
     expect(answers.some((a) => a.error === undefined)).toBe(true);
   });
@@ -447,4 +456,66 @@ describe("node-level asserts: a node that cannot serve the API", () => {
       }
     });
   }
+});
+
+// PR review, items 8 and 9: non-OK batch responses.
+describe("callRPCBatch: non-OK HTTP answers", () => {
+  it("reads a 4xx JSON-RPC batch body by the usual rules instead of faulting the node", async () => {
+    const node = "https://http400-batch.test";
+    config.nodes = [node, "https://http400-unused.test"];
+    const hosts: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      hosts.push(String(input));
+      const body = JSON.parse(String(init.body));
+      return new Response(
+        JSON.stringify(
+          body.map((r: any, i: number) =>
+            i === 0
+              ? { jsonrpc: "2.0", id: r.id, error: { code: -32602, message: "Assert Exception:bad start key" } }
+              : { jsonrpc: "2.0", id: r.id, result: { votes: [] } }
+          )
+        ),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    });
+    const answers = await callRPCBatch(calls);
+    expect(hosts).toEqual([node]);
+    expect(answers[0].error?.message).toMatch(/bad start key/);
+    expect(answers[1].result).toEqual({ votes: [] });
+    expect((rpcHealthTracker as any).health.get(node)?.consecutiveFailures ?? 0).toBe(0);
+  });
+
+  it("still faults the node on a 4xx without a JSON-RPC body", async () => {
+    const node = "https://http403-batch.test";
+    config.nodes = [node, "https://http403-good.test"];
+    const hosts: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      hosts.push(String(input));
+      const body = JSON.parse(String(init.body));
+      if (String(input) === node) return new Response("<html>forbidden</html>", { status: 403 });
+      return json(body.map((r: any) => ({ jsonrpc: "2.0", id: r.id, result: { votes: [] } })));
+    });
+    await callRPCBatch(calls);
+    expect(hosts).toEqual([node, "https://http403-good.test"]);
+  });
+
+  it("releases the body of a 429 answer", async () => {
+    config.nodes = ["https://http429-batch.test", "https://http429-good.test"];
+    const cancels: boolean[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      const body = JSON.parse(String(init.body));
+      if (String(input).includes("http429-batch")) {
+        const r = new Response("slow down", { status: 429 });
+        const original = r.body!.cancel.bind(r.body!);
+        r.body!.cancel = (reason?: unknown) => {
+          cancels.push(true);
+          return original(reason);
+        };
+        return r;
+      }
+      return json(body.map((r: any) => ({ jsonrpc: "2.0", id: r.id, result: { votes: [] } })));
+    });
+    await callRPCBatch(calls);
+    expect(cancels).toEqual([true]);
+  });
 });

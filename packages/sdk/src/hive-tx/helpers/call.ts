@@ -1972,7 +1972,7 @@ export const callRPCBatch = async <T = any>(
   const signal = options.signal
   const deadline = Date.now() + config.resilience.totalBudgetFactor * timeout
   const triedInRound = new Set<string>()
-  let lastError: any
+  let lastError: unknown
 
   // Answers so far, and the requests still waiting for one. A request is
   // answered by a result or by an error that is about the REQUEST (an
@@ -1992,7 +1992,7 @@ export const callRPCBatch = async <T = any>(
     }
     triedInRound.add(node)
     const start = Date.now()
-    let nodeFault: any
+    let nodeFault: unknown
     try {
       const got = await batchOnNode<T>(node, pending.map((i) => calls[i]), timeout, signal, deadline)
       const stillPending: number[] = []
@@ -2022,7 +2022,7 @@ export const callRPCBatch = async <T = any>(
         }
       }
       pending = stillPending
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (signal?.aborted) throw e
       nodeFault = e
     }
@@ -2043,6 +2043,27 @@ export const callRPCBatch = async <T = any>(
 
 /** Pseudo-method under which a node is marked as not taking batch arrays. */
 const BATCH_CAPABILITY = 'jsonrpc.batch'
+
+/** One element of a JSON-RPC batch answer. */
+interface JsonRpcBatchElement {
+  jsonrpc?: unknown
+  id: number
+  result?: unknown
+  error?: unknown
+}
+
+function isBatchElement(value: unknown): value is JsonRpcBatchElement {
+  return !!value && typeof value === 'object' && typeof (value as { id?: unknown }).id === 'number'
+}
+
+/** The `{ code, message }` of a JSON-RPC error answer, if `value` is one. */
+function rpcErrorOf(value: unknown): { code: number; message: string; data?: unknown } | undefined {
+  const e = value && typeof value === 'object' ? (value as { error?: unknown }).error : undefined
+  if (!e || typeof e !== 'object') return undefined
+  const { code, message, data } = e as { code?: unknown; message?: unknown; data?: unknown }
+  if (typeof code !== 'number' || typeof message !== 'string') return undefined
+  return data === undefined ? { code, message } : { code, message, data }
+}
 
 /** Plain refusals (not an error object) in a row, per node; 2 mark it. */
 const batchRefusals = new Map<string, number>()
@@ -2164,7 +2185,7 @@ async function singleCallsAsBatch<T>(
         const result = await jsonRPCCall(node, calls[i].method, calls[i].params, timeout, false, signal)
         transportFailuresInARow = 0
         answers[i] = { result: result as T }
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (signal?.aborted) throw e
         if (e instanceof RPCError) {
           transportFailuresInARow = 0
@@ -2209,39 +2230,66 @@ async function jsonRPCBatchCall<T>(
       headers: { 'Content-Type': 'application/json', ...serverIdentityHeaders() },
       signal
     })
-    if (res.status === 429) {
-      throw new NodeError(url, 'HTTP 429 Rate Limited', {
-        rateLimitMs: parseRetryAfterMs(res.headers.get('Retry-After')),
-        isRateLimit: true
-      })
-    }
-    if (!res.ok) {
+    const release = async () => {
+      // An unconsumed body pins a pooled connection.
       try {
         await res.body?.cancel()
       } catch {
         // nothing to release
       }
-      throw new NodeError(url, `HTTP ${res.status} from ${url}`, { nodeWide: res.status < 500 })
     }
-    const parsed: any = await res.json()
+    if (res.status === 429) {
+      await release()
+      throw new NodeError(url, 'HTTP 429 Rate Limited', {
+        rateLimitMs: parseRetryAfterMs(res.headers.get('Retry-After')),
+        isRateLimit: true
+      })
+    }
+    if (res.status >= 500) {
+      await release()
+      throw new NodeError(url, `HTTP ${res.status} from ${url}`)
+    }
+    // A 4xx may still carry a JSON-RPC answer (some nodes and routers send
+    // their RPC errors that way): read it by the usual per-element and
+    // whole-batch rules. Only a 4xx without one is the node refusing us.
+    let parsedBody: unknown
+    if (!res.ok) {
+      let text = ''
+      try {
+        text = await res.text()
+      } catch {
+        // unreadable: treated as no JSON-RPC body
+      }
+      try {
+        parsedBody = JSON.parse(text)
+      } catch {
+        parsedBody = undefined
+      }
+      const isRpcBody =
+        (Array.isArray(parsedBody) && parsedBody.some(isBatchElement)) || rpcErrorOf(parsedBody) !== undefined
+      if (!isRpcBody) {
+        throw new NodeError(url, `HTTP ${res.status} from ${url}`, { nodeWide: true })
+      }
+    }
+    const parsed: unknown = parsedBody !== undefined ? parsedBody : await res.json()
     if (!Array.isArray(parsed)) {
-      const e = parsed?.error
-      if (e && typeof e.code === 'number' && typeof e.message === 'string') {
+      const e = rpcErrorOf(parsed)
+      if (e) {
         if (isNodeLevelRPCError(e.code, e.message)) throw new RPCError(e)
         throw new BatchRefused(`batch refused: ${e.message}`, false)
       }
       throw new BatchRefused('JSONRPC batch answer is not an array', true)
     }
-    const byId = new Map<number, any>()
-    for (const item of parsed) {
-      if (item && typeof item.id === 'number') byId.set(item.id, item)
+    const byId = new Map<number, JsonRpcBatchElement>()
+    for (const item of parsed as unknown[]) {
+      if (isBatchElement(item)) byId.set(item.id, item)
     }
     return calls.map((_c, i): RpcBatchAnswer<T> | undefined => {
       const item = byId.get(base + i)
       if (!item || item.jsonrpc !== '2.0') return undefined
       if ('result' in item) return { result: item.result as T }
-      const e = item.error
-      return { error: e && 'message' in e && 'code' in e ? new RPCError(e) : new Error(String(e?.message ?? e)) }
+      const e = rpcErrorOf(item)
+      return { error: e ? new RPCError(e) : new Error(String(item.error)) }
     })
   } finally {
     cleanupTimeout()
