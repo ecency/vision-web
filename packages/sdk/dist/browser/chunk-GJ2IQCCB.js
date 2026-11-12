@@ -1,2 +1,0 @@
-import {a}from'./chunk-PDIUUNDQ.js';import {k}from'./chunk-LJJLEKSK.js';import {queryOptions}from'@tanstack/react-query';function u(t,e,o=200){return queryOptions({queryKey:a.posts.reblogs(t??"",o),queryFn:async()=>(await k("condenser_api.get_blog_entries",[t??e,0,o])).filter(r=>r.author!==e&&!r.reblogged_on.startsWith("1970-")).map(r=>({author:r.author,permlink:r.permlink})),enabled:!!t})}export{u as a};//# sourceMappingURL=chunk-GJ2IQCCB.js.map
-//# sourceMappingURL=chunk-GJ2IQCCB.js.map
