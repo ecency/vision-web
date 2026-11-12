@@ -9,7 +9,7 @@ import {
   estimateEvmGas,
   formatWei,
   parseToWei
-} from "@ecency/wallets";
+} from "@ecency/sdk/wallets";
 import { UilArrowLeft, UilCheck, UilExclamationTriangle, UilSpinner } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
 import Image from "next/image";
@@ -18,7 +18,7 @@ import { Button, Modal, ModalBody, ModalHeader } from "@/features/ui";
 import { CURRENCIES_META_DATA } from "../consts/currencies-meta-data";
 import { useQuery } from "@tanstack/react-query";
 import { getAccountFullQueryOptions } from "@ecency/sdk";
-import { useGetExternalWalletBalanceQuery, getTokenPriceQueryOptions } from "@ecency/wallets";
+import { useGetExternalWalletBalanceQuery, getTokenPriceQueryOptions } from "@ecency/sdk/wallets";
 
 /** MetaMask RPC error code when user clicks "Reject" in the confirmation popup */
 const USER_REJECTED_REQUEST = 4001;

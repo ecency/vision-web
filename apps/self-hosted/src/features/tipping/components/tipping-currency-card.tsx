@@ -1,5 +1,5 @@
 import { useInstanceConfig } from "@/features/blog/hooks/use-instance-config";
-import { getAccountWalletAssetInfoQueryOptions } from "@ecency/wallets";
+import { getAccountWalletAssetInfoQueryOptions } from "@ecency/sdk/wallets";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 

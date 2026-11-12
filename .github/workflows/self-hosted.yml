@@ -15,7 +15,6 @@ on:
       - 'apps/self-hosted/**'
       - 'packages/sdk/**'
       - 'packages/render-helper/**'
-      - 'packages/wallets/**'
       - 'packages/ui/**'
       # Root dependency inputs: the Dockerfile copies all of these before
       # installing, so a lockfile bump, an override or a patch can change the
@@ -37,7 +36,6 @@ on:
       - 'apps/self-hosted/**'
       - 'packages/sdk/**'
       - 'packages/render-helper/**'
-      - 'packages/wallets/**'
       - 'packages/ui/**'
       # Root dependency inputs: the Dockerfile copies all of these before
       # installing, so a lockfile bump, an override or a patch can change the
@@ -119,7 +117,6 @@ jobs:
           pnpm --filter @ecency/sdk build
           pnpm --filter @ecency/render-helper build
           pnpm --filter @ecency/ui build
-          pnpm --filter @ecency/wallets build
         env:
           CI: true
 

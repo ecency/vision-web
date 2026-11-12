@@ -28,7 +28,6 @@
     "@ecency/raidstead": "workspace:*",
     "@ecency/render-helper": "workspace:*",
     "@ecency/sdk": "workspace:*",
-    "@ecency/wallets": "workspace:*",
     "@emoji-mart/data": "^1.1.2",
     "@emoji-mart/react": "^1.1.1",
     "@firebase/analytics": "^0.10.0",

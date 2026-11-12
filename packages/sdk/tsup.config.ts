@@ -67,7 +67,7 @@ const PUBLIC_ENTRIES = ["src/index.ts", "src/hive.ts", "src/wallets.ts"];
  * The node build is a single bundle per entry (see below), so without this
  * `wallets.mjs` would carry a second `ConfigManager`, QueryClient and hive-tx
  * config, and SSR would run wallet queries against a copy nobody configured.
- * The standalone `@ecency/wallets` package got the shared copy for free by
+ * The former standalone wallets package got the shared copy for free by
  * importing `@ecency/sdk` as an external; this keeps that.
  *
  * Wallet modules therefore reach the SDK only through `src/index.ts`. Any

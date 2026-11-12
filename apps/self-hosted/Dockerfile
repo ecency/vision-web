@@ -37,7 +37,6 @@ COPY apps/self-hosted/package.json ./apps/self-hosted/
 COPY packages/sdk/package.json ./packages/sdk/
 COPY packages/render-helper/package.json ./packages/render-helper/
 COPY packages/ui/package.json ./packages/ui/
-COPY packages/wallets/package.json ./packages/wallets/
 # patchedDependencies resolves these at install time, before the source COPY below
 COPY patches ./patches
 
@@ -62,7 +61,6 @@ COPY --from=deps /app/apps/self-hosted/node_modules ./apps/self-hosted/node_modu
 COPY --from=deps /app/packages/sdk/node_modules ./packages/sdk/node_modules
 COPY --from=deps /app/packages/render-helper/node_modules ./packages/render-helper/node_modules
 COPY --from=deps /app/packages/ui/node_modules ./packages/ui/node_modules
-COPY --from=deps /app/packages/wallets/node_modules ./packages/wallets/node_modules
 
 # Copy source code
 COPY . .
@@ -80,8 +78,7 @@ RUN if [ -n "$CONFIG_JSON_B64" ]; then \
 # Build shared packages first
 RUN pnpm --filter @ecency/sdk build && \
     pnpm --filter @ecency/render-helper build && \
-    pnpm --filter @ecency/ui build && \
-    pnpm --filter @ecency/wallets build
+    pnpm --filter @ecency/ui build
 
 # Build the self-hosted app. GIT_SHA lands in the bundle as __BUILD_SHA__
 # (rsbuild define) so the running page can say which build it is.

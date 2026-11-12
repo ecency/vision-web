@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { deriveHiveMasterPasswordKeys } from "@ecency/wallets";
+import { deriveHiveMasterPasswordKeys } from "@ecency/sdk/wallets";
 import { v4 } from "uuid";
 
 export function useDownloadKeys(masterPassword: string | undefined, username: string) {

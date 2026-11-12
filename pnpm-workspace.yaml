@@ -84,7 +84,6 @@ allowBuilds:
   "esbuild": true
   "keccak": true
   "protobufjs": true
-  "scryptlib": true
   "secp256k1": true
   "unrs-resolver": true
   "sharp": false

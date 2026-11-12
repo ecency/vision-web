@@ -6,7 +6,7 @@ import { KeyOrHot } from "@/features/shared/key-or-hot";
 import { Button } from "@/features/ui";
 import { getAccountFullQueryOptions, dedupeAndSortKeyAuths } from "@ecency/sdk";
 import type { FullAccount } from "@ecency/sdk";
-import { deriveHiveMasterPasswordKeys } from "@ecency/wallets";
+import { deriveHiveMasterPasswordKeys } from "@ecency/sdk/wallets";
 import { PrivateKey } from "@ecency/sdk";
 import type { Operation } from "@ecency/sdk";
 import type { Authority } from "@ecency/sdk";

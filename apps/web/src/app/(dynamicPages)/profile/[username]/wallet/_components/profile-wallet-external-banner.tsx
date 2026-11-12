@@ -7,7 +7,7 @@ import {
   checkUsernameWalletsPendingQueryOptions,
   getAccountFullQueryOptions,
 } from "@ecency/sdk";
-import { EcencyWalletCurrency } from "@ecency/wallets";
+import { EcencyWalletCurrency } from "@ecency/sdk/wallets";
 import { useQuery } from "@tanstack/react-query";
 import { UilArrowRight } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";

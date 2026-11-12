@@ -10,7 +10,7 @@ import { clipboard } from "@/utils/clipboard";
 import { Tooltip } from "@ui/tooltip";
 import { useDownloadKeys } from "@/features/wallet";
 import { generateMasterPassword } from "@/utils/master-password";
-import { deriveHiveMasterPasswordKeys } from "@ecency/wallets";
+import { deriveHiveMasterPasswordKeys } from "@ecency/sdk/wallets";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useCallback, useEffect, useMemo, useState } from "react";
 

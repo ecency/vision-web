@@ -12,7 +12,7 @@ import {
   getAccountWalletListQueryOptions,
   getAllTokensListQueryOptions,
   useSaveWalletInformationToMetadata
-} from "@ecency/wallets";
+} from "@ecency/sdk/wallets";
 import Image from "next/image";
 import { proxifyImageSrc } from "@ecency/render-helper";
 import { useParams } from "next/navigation";

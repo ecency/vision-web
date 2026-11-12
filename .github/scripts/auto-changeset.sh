@@ -17,7 +17,7 @@ set -eo pipefail
 # the first match, the writer then dies of SIGPIPE on a list over a pipe buffer,
 # and pipefail turns a match into "no match".
 
-PACKAGES=(sdk wallets render-helper ui)
+PACKAGES=(sdk render-helper ui)
 LABELS=$(echo "$PR_LABELS" | jq -r '.[]')
 CHANGED_FILES=$(git diff --name-only "$DIFF_BASE"...HEAD)
 
@@ -123,7 +123,7 @@ fi
 
 echo "Rebuilding packages: ${REBUILD[*]}"
 
-# sdk first: wallets depends on it
+# Build in PACKAGES order, sdk first.
 for pkg in "${PACKAGES[@]}"; do
   if grep -qx "$pkg" <<< "$(printf '%s\n' "${REBUILD[@]}")"; then
     echo "Building @ecency/$pkg..."

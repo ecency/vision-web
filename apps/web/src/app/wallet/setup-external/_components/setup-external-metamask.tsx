@@ -14,7 +14,7 @@ import {
   installHiveSnap,
   getHivePublicKeys,
   type WalletAddressMap
-} from "@ecency/wallets";
+} from "@ecency/sdk/wallets";
 import { getAccountFullQueryOptions, checkUsernameWalletsPendingQueryOptions } from "@ecency/sdk";
 import { PrivateKey } from "@ecency/sdk";
 import { broadcastOperations } from "@ecency/sdk";

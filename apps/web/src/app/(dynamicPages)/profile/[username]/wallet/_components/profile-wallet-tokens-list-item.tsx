@@ -14,7 +14,7 @@ import { AssetOperation, getAccountWalletAssetInfoQueryOptions } from "@ecency/s
 import {
   getAllTokensListQueryOptions,
   getTokenOperationsQueryOptions,
-} from "@ecency/wallets";
+} from "@ecency/sdk/wallets";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import i18next from "i18next";

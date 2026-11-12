@@ -16,7 +16,6 @@
     "@ecency/render-helper": "workspace:*",
     "@ecency/sdk": "workspace:*",
     "@ecency/ui": "workspace:*",
-    "@ecency/wallets": "workspace:*",
     "@floating-ui/dom": "^1.7.4",
     "@floating-ui/react-dom": "^2.1.6",
     "@tanstack/react-query": "^5.90.2",

@@ -20,8 +20,6 @@ package-specific label instead.
 ### Package-Specific Labels
 - `patch:sdk` - Patch bump for @ecency/sdk only
 - `minor:sdk` - Minor bump for @ecency/sdk only
-- `patch:wallets` - Patch bump for @ecency/wallets only
-- `minor:wallets` - Minor bump for @ecency/wallets only
 - `patch:render-helper` - Patch bump for @ecency/render-helper only
 - `minor:render-helper` - Minor bump for @ecency/render-helper only
 - `patch:ui` - Patch bump for @ecency/ui only
@@ -41,14 +39,14 @@ Dependabot's included.
    - Description: PR title
 
 ### Example 2: New feature in multiple packages
-1. Create PR with changes to `packages/sdk/` and `packages/wallets/`
+1. Create PR with changes to `packages/sdk/` and `packages/render-helper/`
 2. Add `minor` label
 3. Changeset is auto-generated for both packages
 
 ### Example 3: Different bump types for different packages
-1. Create PR with changes to both SDK and wallets
-2. Add both `patch:sdk` and `minor:wallets` labels
-3. Changeset generates patch for SDK, minor for wallets
+1. Create PR with changes to both SDK and render-helper
+2. Add both `patch:sdk` and `minor:render-helper` labels
+3. Changeset generates patch for SDK, minor for render-helper
 
 ## What Happens
 

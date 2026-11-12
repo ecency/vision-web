@@ -51,7 +51,7 @@ vi.mock("@ecency/sdk", async () => ({
   },
   broadcastOperations: (...args: any[]) => state.broadcast(...args)
 }));
-vi.mock("@ecency/wallets", () => ({
+vi.mock("@ecency/sdk/wallets", () => ({
   deriveHiveMasterPasswordKeys: () => ({
     owner: "5Jowner", active: "5Jactive", posting: "5Jposting", memo: "5Jmemo",
     ownerPubkey: "PUB(5Jowner)", activePubkey: "PUB(5Jactive)",

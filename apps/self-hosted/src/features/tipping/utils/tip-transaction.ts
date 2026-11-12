@@ -1,6 +1,6 @@
 import { broadcast } from "@/features/auth";
 import { getQueryClient } from "@ecency/sdk";
-import { getAccountWalletAssetInfoQueryOptions } from "@ecency/wallets";
+import { getAccountWalletAssetInfoQueryOptions } from "@ecency/sdk/wallets";
 import type { Operation } from "@ecency/sdk";
 import type { TippingAsset } from "../types";
 

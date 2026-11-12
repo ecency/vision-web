@@ -11,7 +11,7 @@ vi.mock("@/utils", () => ({
   random: vi.fn(),
   getAccessToken: vi.fn(() => "mock-token")
 }));
-vi.mock("@ecency/wallets", () => ({
+vi.mock("@ecency/sdk/wallets", () => ({
   deriveHiveMasterPasswordKeys: vi.fn(() => ({
     owner: "5Jowner", active: "5Jactive", posting: "5Jposting", memo: "5Jmemo",
     ownerPubkey: "STMowner", activePubkey: "STMactive",

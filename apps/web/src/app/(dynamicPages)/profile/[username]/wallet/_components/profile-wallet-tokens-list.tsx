@@ -5,7 +5,7 @@ import { StyledTooltip } from "@/features/ui";
 import {
   getAccountWalletListQueryOptions,
   getAllTokensListQueryOptions,
-} from "@ecency/wallets";
+} from "@ecency/sdk/wallets";
 import { useQuery } from "@tanstack/react-query";
 import i18next from "i18next";
 import { useParams } from "next/navigation";

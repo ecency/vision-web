@@ -34,15 +34,12 @@ jobs:
     # label it patch:<package>.
     if: |
       contains(github.event.pull_request.labels.*.name, 'patch:sdk') ||
-      contains(github.event.pull_request.labels.*.name, 'patch:wallets') ||
       contains(github.event.pull_request.labels.*.name, 'patch:render-helper') ||
       contains(github.event.pull_request.labels.*.name, 'patch:ui') ||
       contains(github.event.pull_request.labels.*.name, 'minor:sdk') ||
-      contains(github.event.pull_request.labels.*.name, 'minor:wallets') ||
       contains(github.event.pull_request.labels.*.name, 'minor:render-helper') ||
       contains(github.event.pull_request.labels.*.name, 'minor:ui') ||
       contains(github.event.pull_request.labels.*.name, 'major:sdk') ||
-      contains(github.event.pull_request.labels.*.name, 'major:wallets') ||
       contains(github.event.pull_request.labels.*.name, 'major:render-helper') ||
       contains(github.event.pull_request.labels.*.name, 'major:ui') ||
       (github.event.pull_request.user.login != 'dependabot[bot]' &&

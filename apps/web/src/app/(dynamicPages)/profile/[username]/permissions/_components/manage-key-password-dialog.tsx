@@ -10,7 +10,7 @@ import {
   ModalHeader
 } from "@/features/ui";
 import { getAccountFullQueryOptions } from "@ecency/sdk";
-import { deriveHiveMasterPasswordKeys } from "@ecency/wallets";
+import { deriveHiveMasterPasswordKeys } from "@ecency/sdk/wallets";
 import { PublicKey } from "@ecency/sdk";
 import { isWif } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";

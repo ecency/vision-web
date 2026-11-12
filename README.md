@@ -59,7 +59,7 @@ await mutateAsync({ profile: { about: "..." } });
 Wallet operations follow the same pattern:
 
 ```ts
-import { useWalletOperation } from "@ecency/wallets";
+import { useWalletOperation } from "@ecency/sdk";
 import { getSdkAuthContext } from "@/utils";
 
 const auth = getSdkAuthContext(activeUser);
@@ -199,8 +199,10 @@ lives in the infra repo. Behaviour is documented here in `docs/cache/`. The rule
 ### Working with pnpm
 
 This repository is organised as a [pnpm workspace](https://pnpm.io/workspaces) with two
-applications (`apps/web`, `apps/self-hosted`) and four publishable packages under `packages/*`
-(`@ecency/sdk`, `@ecency/wallets`, `@ecency/render-helper`, `@ecency/ui`). pnpm keeps a
+applications (`apps/web`, `apps/self-hosted`) and three publishable packages under `packages/*`
+(`@ecency/sdk`, `@ecency/render-helper`, `@ecency/ui`). Wallet and multi-chain code ships as
+the `@ecency/sdk/wallets` entry; the standalone `@ecency/wallets` package is deprecated on npm
+in favour of it. pnpm keeps a
 single lockfile (`pnpm-lock.yaml`) at the workspace root and all commands should be run from this
 directory unless noted otherwise.
 
@@ -223,14 +225,14 @@ You can execute scripts that are defined in each workspace package. Some useful 
 | Start development server | `pnpm --filter @ecency/web dev`   | Runs the Next.js dev server for the web app.
 | Start self-hosted dev server | `pnpm dev:self`               | Runs the Rsbuild dev server for the self-hosted SPA.
 | Build for production | `pnpm --filter @ecency/web build` | Builds the web app only.
-| Build the libraries | `pnpm build:packages`             | Builds `@ecency/sdk`, `@ecency/wallets`, `@ecency/render-helper` plus `@ecency/ui`.
+| Build the libraries | `pnpm build:packages`             | Builds `@ecency/sdk`, `@ecency/render-helper` plus `@ecency/ui`.
 | Start production server | `pnpm --filter @ecency/web start` | Runs the built web app.
 | Lint all packages | `pnpm lint`                       | Executes `pnpm -r lint` defined in the root `package.json`.
 | Type check all packages | `pnpm typecheck`              | Executes `pnpm -r --if-present typecheck`.
 | Test the web app | `pnpm test`                       | Executes `pnpm --filter @ecency/web test`, the web app suite only. Package suites: `pnpm -r test` or `pnpm --filter @ecency/sdk test`.
 
-`pnpm build` builds the web app only. Use `pnpm build:packages` for the four libraries
-(`@ecency/sdk`, `@ecency/wallets`, `@ecency/render-helper`, `@ecency/ui`) and
+`pnpm build` builds the web app only. Use `pnpm build:packages` for the three libraries
+(`@ecency/sdk`, `@ecency/render-helper`, `@ecency/ui`) and
 `pnpm --filter @ecency/self-hosted build` for the self-hosted SPA. Only `pnpm lint` and
 `pnpm typecheck` are recursive.
 
@@ -241,7 +243,7 @@ publish script:
 
 ```bash
 pnpm build:packages
-pnpm publish:sdk        # or publish:wallets / publish:render-helper / publish:ui
+pnpm publish:sdk        # or publish:render-helper / publish:ui
 ```
 
 Each script runs `npx -y npm@11 publish --access public` from the package directory (the npm

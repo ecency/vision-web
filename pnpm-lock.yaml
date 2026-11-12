@@ -93,9 +93,6 @@ importers:
       '@ecency/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@ecency/wallets':
-        specifier: workspace:*
-        version: link:../../packages/wallets
       '@floating-ui/dom':
         specifier: ^1.7.4
         version: 1.7.4
@@ -271,9 +268,6 @@ importers:
       '@ecency/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
-      '@ecency/wallets':
-        specifier: workspace:*
-        version: link:../../packages/wallets
       '@emoji-mart/data':
         specifier: ^1.1.2
         version: 1.2.1
@@ -962,25 +956,6 @@ importers:
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.0)(@types/node@24.10.8)(@vitest/coverage-v8@4.1.11)(@vitest/ui@4.1.11)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.3.4(@types/node@24.10.8)(esbuild@0.28.1)(jiti@2.6.1)(sass-embedded@1.93.2)(sass@1.93.2)(terser@5.47.1)(tsx@4.21.0))
-
-  packages/wallets:
-    dependencies:
-      '@ecency/sdk':
-        specifier: workspace:^
-        version: link:../sdk
-    devDependencies:
-      eslint:
-        specifier: ^9.21.0
-        version: 9.37.0(jiti@2.6.1)
-      tsup:
-        specifier: ^8
-        version: 8.5.0(jiti@2.6.1)(postcss@8.5.31)(tsx@4.21.0)(typescript@5.9.3)
-      typescript:
-        specifier: ^5
-        version: 5.9.3
-      typescript-eslint:
-        specifier: ^8.18.2
-        version: 8.46.0(eslint@9.37.0(jiti@2.6.1))(typescript@5.9.3)
 
 packages:
 

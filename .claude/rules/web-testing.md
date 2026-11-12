@@ -54,7 +54,7 @@ describe('MyComponent', () => {
 ## Mocking Strategy
 
 **Global Mocks** (`setup-any-spec.ts`):
-- External packages (@ecency/sdk, @ecency/wallets). `@ecency/render-helper` is NOT globally mocked; mock it locally when needed
+- External packages (@ecency/sdk, @ecency/sdk/wallets; separate module ids, so each needs its own mock). `@ecency/render-helper` is NOT globally mocked; mock it locally when needed
 - `@/features/post-renderer`, `@/features/pro/pro-badge` (stubbed)
 - i18next (returns keys as-is)
 - `@/utils` (only exports `random` and `getAccessToken`)
@@ -151,5 +151,5 @@ test('displays data', () => {
 - Test location: `src/specs/`
 - Test pattern: `src/specs/**/*.spec.{ts,tsx}`. A spec outside `src/specs/` is not collected and silently does not run
 - Setup file: `src/specs/setup-any-spec.ts`
-- Mocked modules: i18next, @ecency/sdk, @ecency/wallets
+- Mocked modules: i18next, @ecency/sdk, @ecency/sdk/wallets
 - Configuration: `apps/web/vitest.config.mts`

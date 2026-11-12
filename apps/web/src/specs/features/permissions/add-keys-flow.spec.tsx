@@ -24,7 +24,7 @@ vi.mock("@tanstack/react-query", async () => {
 vi.mock("@/utils/user-token", () => ({
   getLoginType: vi.fn(() => "keychain")
 }));
-vi.mock("@ecency/wallets", () => ({
+vi.mock("@ecency/sdk/wallets", () => ({
   deriveHiveMasterPasswordKeys: vi.fn(() => ({
     owner: "5Jowner", active: "5Jactive", posting: "5Jposting", memo: "5Jmemo",
     ownerPubkey: "STMowner", activePubkey: "STMactive",

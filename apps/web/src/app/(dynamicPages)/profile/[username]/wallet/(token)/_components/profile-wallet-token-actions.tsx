@@ -6,7 +6,7 @@ import {
   EcencyWalletCurrency,
   type TransferableCurrency,
   getTokenOperationsQueryOptions,
-} from "@ecency/wallets";
+} from "@ecency/sdk/wallets";
 import { useQuery } from "@tanstack/react-query";
 import {
   UilArrowRight,

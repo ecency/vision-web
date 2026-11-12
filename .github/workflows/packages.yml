@@ -63,31 +63,6 @@ jobs:
           BASE: ${{ steps.diff_base.outputs.base }}
           FILE: packages/sdk/package.json
 
-      - name: Detect version bump in @ecency/wallets
-        id: detect_wallets
-        run: |
-          BASE="${{ steps.diff_base.outputs.base }}"
-          FILE="packages/wallets/package.json"
-          node - <<'NODE' >> "$GITHUB_OUTPUT"
-          const { execSync } = require("child_process");
-          const fs = require("fs");
-          const base = process.env.BASE;
-          const file = process.env.FILE;
-          const headVersion = JSON.parse(fs.readFileSync(file, "utf8")).version;
-          let baseVersion = null;
-          try {
-            const out = execSync(`git show ${base}:${file}`, { encoding: "utf8" });
-            baseVersion = JSON.parse(out).version;
-          } catch (error) {
-            baseVersion = null;
-          }
-          const changed = baseVersion !== headVersion;
-          process.stdout.write(`changed=${changed ? "true" : "false"}\n`);
-          NODE
-        env:
-          BASE: ${{ steps.diff_base.outputs.base }}
-          FILE: packages/wallets/package.json
-
       - name: Detect version bump in @ecency/render-helper
         id: detect_render_helper
         run: |
@@ -141,7 +116,7 @@ jobs:
       - name: Check if any package version changed
         id: packages_changed
         run: |
-          if [ "${{ steps.detect_sdk.outputs.changed }}" = "true" ] || [ "${{ steps.detect_wallets.outputs.changed }}" = "true" ] || [ "${{ steps.detect_render_helper.outputs.changed }}" = "true" ] || [ "${{ steps.detect_ui.outputs.changed }}" = "true" ]; then
+          if [ "${{ steps.detect_sdk.outputs.changed }}" = "true" ] || [ "${{ steps.detect_render_helper.outputs.changed }}" = "true" ] || [ "${{ steps.detect_ui.outputs.changed }}" = "true" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -189,12 +164,6 @@ jobs:
         env:
           VITE_HELIUS_API_KEY: ${{ secrets.VITE_HELIUS_API_KEY }}
 
-      - name: Build @ecency/wallets
-        if: steps.detect_wallets.outputs.changed == 'true'
-        run: pnpm --filter @ecency/wallets build
-        env:
-          VITE_HELIUS_API_KEY: ${{ secrets.VITE_HELIUS_API_KEY }}
-
       - name: Build @ecency/render-helper
         if: steps.detect_render_helper.outputs.changed == 'true'
         run: pnpm --filter @ecency/render-helper build
@@ -214,12 +183,6 @@ jobs:
         env:
           PNPM_CONFIG_GIT_CHECKS: "false"
         run: pnpm publish:sdk
-
-      - name: Publish @ecency/wallets
-        if: steps.detect_wallets.outputs.changed == 'true'
-        env:
-          PNPM_CONFIG_GIT_CHECKS: "false"
-        run: pnpm publish:wallets
 
       - name: Publish @ecency/render-helper
         if: steps.detect_render_helper.outputs.changed == 'true'

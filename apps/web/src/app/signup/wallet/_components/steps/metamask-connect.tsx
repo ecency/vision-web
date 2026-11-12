@@ -9,7 +9,7 @@ import {
   useGetExternalWalletBalanceQuery,
   fetchMultichainAddresses,
   type WalletAddressMap
-} from "@ecency/wallets";
+} from "@ecency/sdk/wallets";
 import { UilArrowLeft, UilCheckCircle } from "@tooni/iconscout-unicons-react";
 import { useQuery } from "@tanstack/react-query";
 import Decimal from "decimal.js";

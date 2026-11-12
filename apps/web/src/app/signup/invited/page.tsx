@@ -14,7 +14,7 @@ import { useDownloadKeys } from "@/features/wallet";
 import { generateMasterPassword } from "@/utils/master-password";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getAccountsQueryOptions } from "@ecency/sdk";
-import { deriveHiveMasterPasswordKeys } from "@ecency/wallets";
+import { deriveHiveMasterPasswordKeys } from "@ecency/sdk/wallets";
 import { useQueryClient } from "@tanstack/react-query";
 import useDebounce from "react-use/lib/useDebounce";
 

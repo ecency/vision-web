@@ -332,7 +332,7 @@ describe("what each consumer resolves", () => {
 });
 
 /**
- * `@ecency/sdk/wallets` (#2062): the former `@ecency/wallets` package, shipped as
+ * `@ecency/sdk/wallets` (#2062): the former standalone wallets package, shipped as
  * a subpath of the SDK.
  *
  * Two properties carry the move. The main entry must not grow by it: apps that
