@@ -55,9 +55,9 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@solana/web3.js": ">=1",
+    "@solana/web3.js": "^1",
     "@tanstack/react-query": ">=5",
-    "@wallet-standard/app": ">=1",
+    "@wallet-standard/app": "^1",
     "hivesigner": "^4.0.0",
     "react": ">=18"
   },

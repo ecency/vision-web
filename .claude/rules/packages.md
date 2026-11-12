@@ -39,9 +39,11 @@ Exports are platform-specific via package.json `exports` field.
 
 **Why separate**: This package is published to npm for use by other Hive applications. It must remain focused and lightweight.
 
-## @ecency/wallets - Multi-chain Wallet Management
+## @ecency/sdk/wallets - Multi-chain Wallet Management
 
-**Purpose**: Asset queries and wallet management across multiple blockchains
+**Purpose**: Asset queries and wallet management across multiple blockchains. Lives in
+`packages/sdk/src/wallets` and ships as the separate `@ecency/sdk/wallets` entry. The
+standalone `@ecency/wallets` package is a deprecated shim that re-exports it.
 
 **Scope**:
 - ✅ Hive assets (HIVE, HBD, Hive Power) — queries and balance display
@@ -53,14 +55,12 @@ Exports are platform-specific via package.json `exports` field.
 
 **Note**: All blockchain mutations (transfers, delegations, staking, etc.) have been migrated to `@ecency/sdk`. This package now focuses on queries, balance display, and multi-chain key management.
 
-**Dependencies**:
-- @ecency/sdk (for Hive core functionality)
-- @okxweb3 packages (for external blockchain support)
-- Heavy crypto libraries
+**Dependencies**: `@scure/*` key derivation, plus the optional peers `@solana/web3.js`
+and `@wallet-standard/app`.
 
-**Bundle Size**: ~131KB
-
-**Why separate**: Wallet functionality requires heavy external dependencies. Users who only need Hive SDK shouldn't be forced to download BTC/ETH/SOL libraries.
+**Why a separate entry**: the main `@ecency/sdk` entry must never import wallet code, so
+apps that only need Hive never bundle it. `packages/sdk/test/build-shape.spec.ts` guards
+this, and the node build shares the main entry's config and query client.
 
 ## @ecency/render-helper - Markdown Rendering Utilities
 

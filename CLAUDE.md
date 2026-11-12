@@ -170,8 +170,9 @@ self-hosted app is in `.claude/rules/self-hosted.md`.
 ### Important Package Guidelines
 
 **❌ DO NOT**:
-- Move wallet/asset queries from `@ecency/wallets` to `@ecency/sdk`
-  - Reason: Would bloat SDK with multi-chain dependencies
+- Import wallet/asset code into the SDK main entry (`packages/sdk/src/index.ts`)
+  - Reason: it lives in the separate `@ecency/sdk/wallets` entry so apps that do not
+    use wallets never bundle multi-chain code or its dependencies
 - Add heavy dependencies to `@ecency/sdk`
   - Reason: SDK must remain lightweight for external consumers
 - Create circular dependencies between packages
@@ -189,7 +190,7 @@ self-hosted app is in `.claude/rules/self-hosted.md`.
 
 **✅ DO**:
 - Put all Hive blockchain mutations in `@ecency/sdk`
-- Put wallet/asset queries in `@ecency/wallets`
+- Put wallet/asset queries in `@ecency/sdk/wallets` (`packages/sdk/src/wallets`)
 - Create web-specific mutation wrappers in `apps/web/src/api/sdk-mutations/`
 - Use `QueryKeys` from `@ecency/sdk` for all cache key references
 - Rebuild packages after changes: `pnpm build:packages`
@@ -200,7 +201,7 @@ self-hosted app is in `.claude/rules/self-hosted.md`.
 export function getPostQueryOptions(author: string, permlink: string) { ... }
 export function useVote(username: string, auth?: AuthContextV2) { ... }
 
-// In @ecency/wallets - Asset/wallet queries (no mutations)
+// In @ecency/sdk/wallets - Asset/wallet queries (no mutations)
 export function getHiveEngineTokensBalancesQueryOptions(username: string) { ... }
 
 // In @ecency/web - SDK mutation wrappers (apps/web/src/api/sdk-mutations/)
