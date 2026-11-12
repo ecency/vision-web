@@ -8,6 +8,24 @@ export interface EntryVote {
   rshares: number;
 }
 
+/**
+ * One account's vote on an entry, as bridge v2 `observer_vote` reports it.
+ * `percent` is the vote weight in basis points (10000 = 100%, negative for a
+ * downvote); null when the source did not say (a v1 bridge `active_votes` row
+ * carries only rshares).
+ */
+export interface ObserverVote {
+  rshares: number;
+  percent: number | null;
+}
+
+/** A row of bridge v2 `top_votes` (only present when requested). */
+export interface EntryTopVote {
+  voter: string;
+  rshares: number;
+  percent: number;
+}
+
 export interface EntryStat {
   flag_weight: number;
   gray: boolean;
@@ -45,7 +63,27 @@ export interface JsonPollMetadata {
 
 export interface Entry {
   last_update?: string;
-  active_votes: EntryVote[];
+  /**
+   * @deprecated Bridge v2 reads no longer return the voter list (and v1 capped
+   * it at 1000). Count with `stats.total_votes`, read the viewer's own vote
+   * with `entryVoteOf` / `getEntryVoteQueryOptions`, and load the full list on
+   * demand with `getEntryActiveVotesQueryOptions`. Still present on rows from
+   * sources that send it (some feeds, optimistic platform layers).
+   */
+  active_votes?: EntryVote[];
+  /**
+   * Vote of the account in `observer_vote_for` on this entry: the vote,
+   * null when that account has not voted, undefined when unknown.
+   */
+  observer_vote?: ObserverVote | null;
+  /**
+   * The observer the read was made for. `observer_vote` describes THIS
+   * account only; never show it as another user's vote. Absent when the
+   * source could not tell (see `normalizeEntry`).
+   */
+  observer_vote_for?: string;
+  /** Bridge v2 `top_votes`, when the read asked for them. */
+  top_votes?: EntryTopVote[];
   author: string;
   author_payout_value: string;
   author_reputation: number;

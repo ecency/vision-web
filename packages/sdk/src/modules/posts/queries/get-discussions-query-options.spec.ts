@@ -10,6 +10,8 @@ vi.mock('@/modules/core/hive-tx', async (importOriginal) => {
   return {
     ...actual,
     callRPC: mockCallRPC,
+    // Bridge reads go through the v2 helper; answer them from the same mock.
+    callRPCWithFallback: vi.fn(async (primary: { method: string; params: unknown }) => ({ result: await mockCallRPC(primary.method, primary.params), method: primary.method })),
   }
 })
 
@@ -44,7 +46,7 @@ describe('getDiscussionsQueryOptions observer resolution', () => {
 
     await runQueryFn(options)
 
-    expect(mockCallRPC).toHaveBeenCalledWith('bridge.get_discussion', {
+    expect(mockCallRPC).toHaveBeenCalledWith('bridge.get_discussion_v2', {
       author: 'alice',
       permlink: 'a-post',
       observer: 'ecency',
@@ -57,7 +59,7 @@ describe('getDiscussionsQueryOptions observer resolution', () => {
     await runQueryFn(options)
 
     expect(mockCallRPC).toHaveBeenCalledWith(
-      'bridge.get_discussion',
+      'bridge.get_discussion_v2',
       expect.objectContaining({ observer: 'bob' })
     )
   })
@@ -76,7 +78,7 @@ describe('getDiscussionsQueryOptions observer resolution', () => {
     await runQueryFn(options)
 
     expect(mockCallRPC).toHaveBeenCalledWith(
-      'bridge.get_discussion',
+      'bridge.get_discussion_v2',
       expect.objectContaining({ observer: 'someotherapp' })
     )
   })

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { callRPCBroadcast, callRPC, callREST, RPCError, NodeHealthTracker } from "./call";
+import { callRPCBroadcast, callRPC, callREST, RPCError, NodeHealthTracker, rpcHealthTracker } from "./call";
+import { getPost } from "../../modules/bridge/requests";
 import { config, setUserAgent } from "../config";
 
 const ORIGINAL_NODES = [...config.nodes];
@@ -441,5 +442,140 @@ describe("NodeHealthTracker — 429 rate-limit backoff", () => {
     t.recordRateLimit("https://n.test"); // streak expired → base 10s → until 210_000 (not 20s)
     vi.setSystemTime(210_001);
     expect(t.isNodeHealthy("https://n.test")).toBe(true);
+  });
+});
+
+// ── Per-node method fallback (bridge v2 reads, issue #2056) ─────────────────
+//
+// Nodes that have not upgraded hivemind answer a v2 method with HTTP 200 and a
+// JSON-RPC assert (-32602, "unknown method: bridge_apiget_post_v2"). That is a
+// capability answer about ONE node, not a node fault: the same node is asked
+// the v1 method at once, remembered as lacking v2 for a TTL, and its health is
+// left exactly as it was.
+describe("per-node method fallback (bridge v2 -> v1)", () => {
+  function unknownMethod(id: number, method: string): Response {
+    const name = method.replace(".", "_api");
+    return new Response(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        error: {
+          code: -32602,
+          message: `Assert Exception:unknown method: ${name}`,
+          data: { code: 10, name: "assert_exception", message: "Assert Exception", extension: { assertion_expression: `unknown method: ${name}` } }
+        }
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  const V1_POST = {
+    author: "alice",
+    permlink: "p",
+    category: "hive",
+    stats: { flag_weight: 0, gray: false, hide: false, total_votes: 2 },
+    active_votes: [
+      { voter: "bob", rshares: 5 },
+      { voter: "carol", rshares: 7 }
+    ]
+  };
+
+  /** A node that predates bridge v2: every *_v2 call is an unknown method. */
+  function oldNodeFetch(calls: Array<{ url: string; method: string }>) {
+    return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      const id = readJsonRpcId(init);
+      const method = JSON.parse(String(init.body)).method as string;
+      calls.push({ url: String(input), method });
+      if (method.endsWith("_v2")) return unknownMethod(id, method);
+      return jsonOk(id, V1_POST);
+    });
+  }
+
+  function healthOf(node: string) {
+    const h = (rpcHealthTracker as any).health.get(node);
+    return {
+      consecutiveFailures: h?.consecutiveFailures ?? 0,
+      bridgeFailures: h?.apiFailures.get("bridge")?.count ?? 0,
+      healthy: rpcHealthTracker.isNodeHealthy(node, "bridge")
+    };
+  }
+
+  it("asks the same node for v1 at once, then v1 only, and leaves its health unchanged", async () => {
+    config.nodes = ["https://old-node-1.test", "https://node-b.test"];
+    const calls: Array<{ url: string; method: string }> = [];
+    oldNodeFetch(calls);
+    const before = healthOf("https://old-node-1.test");
+
+    const first = await getPost("alice", "p", "bob");
+    expect(calls).toEqual([
+      { url: "https://old-node-1.test", method: "bridge.get_post_v2" },
+      { url: "https://old-node-1.test", method: "bridge.get_post" }
+    ]);
+    expect(first?.author).toBe("alice");
+
+    calls.length = 0;
+    await getPost("alice", "p", "bob");
+    expect(calls).toEqual([{ url: "https://old-node-1.test", method: "bridge.get_post" }]);
+
+    expect(healthOf("https://old-node-1.test")).toEqual(before);
+    expect(healthOf("https://old-node-1.test").healthy).toBe(true);
+  });
+
+  it("retries v2 on that node once the TTL has expired", async () => {
+    config.nodes = ["https://old-node-2.test"];
+    const calls: Array<{ url: string; method: string }> = [];
+    oldNodeFetch(calls);
+    const t0 = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(t0);
+
+    await getPost("alice", "p", "bob");
+    expect(calls.map((c) => c.method)).toEqual(["bridge.get_post_v2", "bridge.get_post"]);
+
+    // Still inside the TTL (30 minutes): v1 straight away.
+    calls.length = 0;
+    now.mockReturnValue(t0 + 29 * 60_000);
+    await getPost("alice", "p", "bob");
+    expect(calls.map((c) => c.method)).toEqual(["bridge.get_post"]);
+
+    // Past the TTL: the node may have been upgraded, try v2 again.
+    calls.length = 0;
+    now.mockReturnValue(t0 + 31 * 60_000);
+    await getPost("alice", "p", "bob");
+    expect(calls.map((c) => c.method)).toEqual(["bridge.get_post_v2", "bridge.get_post"]);
+  });
+
+  it("keeps the decision per node: an upgraded node still gets v2", async () => {
+    config.nodes = ["https://old-node-3.test", "https://new-node-3.test"];
+    const calls: Array<{ url: string; method: string }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      const id = readJsonRpcId(init);
+      const method = JSON.parse(String(init.body)).method as string;
+      calls.push({ url: String(input), method });
+      if (String(input).includes("old-node") && method.endsWith("_v2")) return unknownMethod(id, method);
+      if (String(input).includes("old-node")) {
+        // Old node now fails outright, so the call moves to the new node.
+        return new Response("down", { status: 503 });
+      }
+      return jsonOk(id, { ...V1_POST, active_votes: undefined, observer_vote: null });
+    });
+
+    await getPost("alice", "p", "bob");
+    expect(calls).toEqual([
+      { url: "https://old-node-3.test", method: "bridge.get_post_v2" },
+      { url: "https://old-node-3.test", method: "bridge.get_post" },
+      { url: "https://new-node-3.test", method: "bridge.get_post_v2" }
+    ]);
+  });
+
+  it("does not hide a real application error behind the fallback", async () => {
+    config.nodes = ["https://node-x.test"];
+    const calls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+      const id = readJsonRpcId(init);
+      calls.push(JSON.parse(String(init.body)).method);
+      return jsonRpcError(id, -32602, "Assert Exception:Post alice/p does not exist");
+    });
+    await expect(getPost("alice", "p", "bob")).rejects.toThrow(/does not exist/);
+    expect(calls).toEqual(["bridge.get_post_v2"]);
   });
 });

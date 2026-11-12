@@ -2,8 +2,8 @@ import { CONFIG, QueryKeys } from "@/modules/core";
 import { InfiniteData, infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { Entry } from "../types";
 import { filterDmcaEntry } from "../utils/filter-dmca-entries";
-import { getPostsRanked } from "@/modules/bridge";
-import { callRPC } from "@/modules/core/hive-tx";
+import { bridgeV2Call, getPostsRanked } from "@/modules/bridge";
+import { normalizeEntries } from "../utils/normalize-entry";
 
 type PageParam = {
   author: string | undefined;
@@ -94,14 +94,14 @@ export function getPostsRankedInfiniteQueryOptions(
         return [];
       }
 
-      const response = await callRPC("bridge.get_ranked_posts", {
+      const response = await bridgeV2Call<Entry[] | null>("get_ranked_posts", {
         sort,
         start_author: pageParam.author,
         start_permlink: pageParam.permlink,
         limit,
         tag,
         observer,
-      }, undefined, undefined, signal);
+      }, signal);
 
       if (response === null || response === undefined) {
         return [];
@@ -120,7 +120,7 @@ export function getPostsRankedInfiniteQueryOptions(
       // and muted the last entry by date is not the last entry by rank, and
       // scrolling repeated some posts and skipped others. Display order is
       // applied in `select`, which React Query runs after pagination.
-      return filterDmcaEntry(response as Entry[]);
+      return filterDmcaEntry(normalizeEntries(response, observer));
     },
     select: displaySelect(sort),
     enabled,

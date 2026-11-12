@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockCallRPC = vi.hoisted(() => vi.fn());
 
-vi.mock("@/modules/core/hive-tx", () => ({ callRPC: mockCallRPC }));
+vi.mock("@/modules/core/hive-tx", () => ({
+  callRPC: mockCallRPC,
+  callRPCWithFallback: vi.fn(async (primary: { method: string; params: unknown }) => ({ result: await mockCallRPC(primary.method, primary.params), method: primary.method })),
+}));
 
 import { ConfigManager } from "@/modules/core";
 import { getDiscussion } from "./requests";

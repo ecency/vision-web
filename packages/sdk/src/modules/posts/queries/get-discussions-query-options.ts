@@ -2,8 +2,8 @@ import { CONFIG, QueryKeys } from "@/modules/core";
 import { queryOptions } from "@tanstack/react-query";
 import { Entry } from "../types";
 import { filterDmcaEntry } from "../utils/filter-dmca-entries";
-import { getDiscussion } from "@/modules/bridge";
-import { callRPC } from "@/modules/core/hive-tx";
+import { bridgeV2Call, getDiscussion } from "@/modules/bridge";
+import { normalizeEntry } from "../utils/normalize-entry";
 import { parseJsonMetadata } from "../utils/parse-json-metadata";
 
 export enum SortOrder {
@@ -124,14 +124,14 @@ export function getDiscussionsQueryOptions(
         return [];
       }
 
-      const response = await callRPC("bridge.get_discussion", {
+      const response = await bridgeV2Call<Record<string, Entry> | null>("get_discussion", {
         author: entry.author,
         permlink: entry.permlink,
         observer: resolvedObserver,
       });
 
       const results = response
-        ? Array.from(Object.values(response as Record<string, Entry>))
+        ? Object.values(response).map((e) => normalizeEntry(e, resolvedObserver))
         : [];
       return filterDmcaEntry(results);
     },

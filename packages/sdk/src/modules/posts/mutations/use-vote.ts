@@ -1,9 +1,11 @@
-import { useBroadcastMutation, QueryKeys } from "@/modules/core";
+import { useBroadcastMutation, QueryKeys, getQueryClient } from "@/modules/core";
 import type { BroadcastMode } from "@/modules/core";
 import { buildVoteOp } from "@/modules/operations/builders";
 import type { AuthContextV2 } from "@/modules/core/types";
 import type { QueryClient } from "@tanstack/react-query";
 import { EntriesCacheManagement } from "../cache/entries-cache-management";
+import type { ObserverVote } from "../types";
+import { entryVoteOf } from "../utils/normalize-entry";
 
 /**
  * Whether the cached active_votes list already reflects the broadcast vote:
@@ -49,6 +51,10 @@ export function applyVoteCacheUpdate(
   qc?: QueryClient
 ): void {
   const entry = EntriesCacheManagement.getEntry(variables.author, variables.permlink, qc);
+  if (entry && username && !Array.isArray(entry.active_votes)) {
+    applyObserverVoteUpdate(entry, username, variables, qc);
+    return;
+  }
   if (
     !entry?.active_votes ||
     isVoteAlreadyReflected(entry.active_votes, username, variables.weight)
@@ -65,6 +71,47 @@ export function applyVoteCacheUpdate(
     variables.permlink,
     newVotes,
     newPayout,
+    qc
+  );
+}
+
+/**
+ * Bridge v2 entries carry no voter list: the voter's prior vote comes from
+ * the entry when it was read for this voter, else from the `entryVote`
+ * lookup cache. Unknown prior vote: no write (the deferred invalidation
+ * reconciles). Same "already reflected" rule as the list path, so a
+ * platform's at-press optimistic layer is not applied twice.
+ */
+function applyObserverVoteUpdate(
+  entry: NonNullable<ReturnType<typeof EntriesCacheManagement.getEntry>>,
+  username: string,
+  variables: VotePayload,
+  qc?: QueryClient
+): void {
+  let prior = entryVoteOf(entry, username);
+  if (prior === undefined) {
+    const queryClient = qc ?? getQueryClient();
+    prior = queryClient.getQueryData<ObserverVote | null>(
+      QueryKeys.posts.entryVote(variables.author, variables.permlink, username)
+    );
+  }
+  if (prior === undefined) return;
+
+  const weight = variables.weight;
+  const reflected = weight !== 0 ? prior !== null && prior.percent === weight : prior === null;
+  if (reflected) return;
+
+  const next: ObserverVote | null = weight !== 0 ? { rshares: weight, percent: weight } : null;
+  const base = entry.stats?.total_votes ?? entry.total_votes ?? 0;
+  const total =
+    prior === null && next !== null ? base + 1 : prior !== null && next === null ? Math.max(0, base - 1) : base;
+  EntriesCacheManagement.updateObserverVote(
+    variables.author,
+    variables.permlink,
+    username,
+    next,
+    entry.payout + (variables.estimated ?? 0),
+    total,
     qc
   );
 }

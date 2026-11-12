@@ -109,10 +109,6 @@ async function fetchShortsFeedPage(
       }
       return {
         ...entry,
-        // A lightweight feed row may omit active_votes; EntryVoteBtn (which uses
-        // this entry as React Query initialData) calls .some() on it, so default
-        // to an empty array to avoid a crash before the full post query loads.
-        active_votes: entry.active_votes ?? [],
         video: row.video,
         _cursor: row._cursor
       } as ShortsFeedEntry;
