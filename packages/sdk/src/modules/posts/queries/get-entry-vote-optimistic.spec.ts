@@ -50,6 +50,27 @@ describe("getEntryVoteQueryOptions right after this client voted", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: QueryKeys.posts.entryVote("bob", "p", "alice") });
   });
 
+  // Round 5, item 4: a vote that never reached the chain (dropped
+  // transaction) must not show as cast forever: once the hold expires, one
+  // more read lets the chain's answer win.
+  it("lets the chain win after the hold for a dropped transaction", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    answerNoVote();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    recordOptimisticVote("bob", "p", "erin", { rshares: 5000, percent: 5000 });
+    const options = getEntryVoteQueryOptions("bob", "p", "erin");
+
+    expect(await qc.fetchQuery(options)).toEqual({ rshares: 5000, percent: 5000 });
+    await vi.advanceTimersByTimeAsync(15_000);
+    // The +15 s read still lands inside the hold: still the optimistic value.
+    expect(await qc.fetchQuery({ ...options, staleTime: 0 })).toEqual({ rshares: 5000, percent: 5000 });
+
+    await vi.advanceTimersByTimeAsync(46_000);
+    const key = { queryKey: QueryKeys.posts.entryVote("bob", "p", "erin") };
+    expect(invalidate.mock.calls.filter(([arg]) => JSON.stringify(arg) === JSON.stringify(key)).length).toBeGreaterThanOrEqual(2);
+    expect(await qc.fetchQuery({ ...options, staleTime: 0 })).toBeNull();
+  });
+
   it("trusts the chain once 60 s have passed", async () => {
     answerNoVote();
     const t0 = Date.now();
