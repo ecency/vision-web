@@ -15,6 +15,7 @@ import { prepareVotes } from "@/features/shared/entry-vote-btn/utils";
 import { heartSvg } from "@ui/svg";
 import { Entry } from "@/entities";
 import { useViewerVote } from "@/core/hooks/use-viewer-vote";
+import { sortVotes } from "@/features/shared/entry-votes/sort-votes";
 
 type SortOption = "reward" | "timestamp" | "voter" | "percent";
 
@@ -36,7 +37,9 @@ export function EntryVotesDialog({
   totalVotes,
   hasDifferentVotes
 }: Props) {
-  const { data: entry } = useQuery(EcencyEntriesCacheManagement.getEntryQuery(initialEntry));
+  const { data: entry, dataUpdatedAt: entryUpdatedAt } = useQuery(
+    EcencyEntriesCacheManagement.getEntryQuery(initialEntry)
+  );
 
   const { data: apiVotes, isLoading: areVotesLoading } = useQuery(getEntryActiveVotesQueryOptions(entry));
 
@@ -45,7 +48,7 @@ export function EntryVotesDialog({
   const [pageSize, setPageSize] = useState(12);
   const [sort, setSort] = useState<SortOption>("reward");
 
-  const viewerVote = useViewerVote(entry);
+  const viewerVote = useViewerVote(entry, entryUpdatedAt);
   const isVoted = viewerVote.upVoted || viewerVote.downVoted;
 
   const preparedVotes = useMemo(() => prepareVotes(entry!, apiVotes ?? []), [apiVotes, entry]);
@@ -70,16 +73,7 @@ export function EntryVotesDialog({
     const start = (page - 1) * pageSize;
     const end = start + pageSize;
 
-    return votes
-      .sort((a, b) => {
-        const keyA = a[sort]!;
-        const keyB = b[sort]!;
-
-        if (keyA > keyB) return -1;
-        if (keyA < keyB) return 1;
-        return 0;
-      })
-      .slice(start, end);
+    return sortVotes(votes, sort).slice(start, end);
   }, [page, votes, sort]);
   const hasCurrentUserVote = isVoted;
 

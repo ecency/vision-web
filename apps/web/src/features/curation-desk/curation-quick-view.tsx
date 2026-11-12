@@ -170,10 +170,21 @@ export function CurationQuickView({
   const permlink = row?.permlink ?? "";
   const open = !!row;
 
-  const { data: entry, isLoading } = useQuery({
+  const { data: entry, isLoading, refetch: refetchEntry } = useQuery({
     ...EcencyEntriesCacheManagement.getEntryQueryByPath(author, permlink),
     enabled: open && !!author && !!permlink,
   });
+  // The top voters come with a single-post read (top_votes). A feed or waves
+  // row may have seeded this cache without them; read the open post once more
+  // in that case. Once per row: a post read that still has none (no votes,
+  // or a node that answered v1 with an empty list) is not retried.
+  const topVotesReadFor = useRef<string | null>(null);
+  useEffect(() => {
+    const key = `${author}/${permlink}`;
+    if (!open || !entry || entry.top_votes !== undefined || topVotesReadFor.current === key) return;
+    topVotesReadFor.current = key;
+    void refetchEntry();
+  }, [open, entry, author, permlink, refetchEntry]);
   const { data: post } = useQuery({
     ...getCurationPostQueryOptions(author, permlink),
     enabled: open && !!author && !!permlink,

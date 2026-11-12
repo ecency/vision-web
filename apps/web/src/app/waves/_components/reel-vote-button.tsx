@@ -23,13 +23,15 @@ import { formatError } from "@/api/format-error";
  */
 export function ReelVoteButton({ entry: initialEntry }: { entry: Entry }) {
   const { activeUser } = useActiveAccount();
-  const { data: cached } = useQuery(EcencyEntriesCacheManagement.getEntryQuery(initialEntry));
+  const { data: cached, dataUpdatedAt: entryUpdatedAt } = useQuery(
+    EcencyEntriesCacheManagement.getEntryQuery(initialEntry)
+  );
   const entry = cached ?? initialEntry;
 
   const { mutateAsync: vote, isPending } = useEntryVote(entry);
 
   // The user's own upvote (never the SSR observer's): see useViewerVote.
-  const isVoted = useViewerVote(entry).upVoted;
+  const isVoted = useViewerVote(entry, entryUpdatedAt).upVoted;
 
   // Mirror the feed's EntryVotes count (incl. the top-level total_votes fallback)
   // so the rail matches the rest of the app and never drops a real count.

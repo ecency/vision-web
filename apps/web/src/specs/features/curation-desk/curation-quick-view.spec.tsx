@@ -159,12 +159,14 @@ describe("CurationQuickView", () => {
     vi.setSystemTime(NOW);
     state.username = "member1";
     state.entryFetch.mockReset();
+    // A post read: it always carries top_votes (v2 sends them when asked, the
+    // SDK derives them from a v1 list), here none.
     state.entryFetch.mockImplementation(async (author: string, permlink: string) => ({
       author,
       permlink,
       body: `body of ${permlink}`,
       json_metadata: { image: ["https://images.ecency.com/p/x.png"] },
-      active_votes: [],
+      top_votes: [],
     }));
     state.rendererProps.length = 0;
     state.voteClicks.length = 0;
@@ -208,6 +210,55 @@ describe("CurationQuickView", () => {
     const names = screen.getAllByText(/^@v\d$/).map((el) => el.textContent);
     expect(names).toEqual(["@v6", "@v5", "@v4", "@v3", "@v2"]);
     expect(listQuery).not.toHaveBeenCalled();
+  });
+
+  // Review 8: a feed or waves row may have seeded the shared entry cache
+  // without top_votes (only single-post reads ask for them). The open row
+  // is then read once more, as a post, for its top voters.
+  it("reads the open post once when the cached row has no top_votes", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    client.setQueryData(["posts", "entry", "/@alice/morning-light"], {
+      author: "alice",
+      permlink: "morning-light",
+      body: "feed row body",
+      json_metadata: {},
+      stats: { total_votes: 2, flag_weight: 0, gray: false, hide: false },
+    });
+    state.entryFetch.mockImplementation(async (author: string, permlink: string) => ({
+      author,
+      permlink,
+      body: "post body",
+      json_metadata: {},
+      stats: { total_votes: 2, flag_weight: 0, gray: false, hide: false },
+      top_votes: [
+        { voter: "w2", rshares: 20, percent: 100 },
+        { voter: "w1", rshares: 10, percent: 100 },
+      ],
+    }));
+    renderWithQueryClient(
+      <CurationQuickView row={row} neighbour={null} viewer={member} recommendationsEnabled onClose={noop} onPrev={noop} onNext={noop} onReviewed={noop} onSnooze={noop} onFlag={noop} onNote={noop} onSaveNote={noop} recommendRef={null} />,
+      { queryClient: client }
+    );
+    await screen.findByText("@w2");
+    expect(state.entryFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not read the post again when the cached row has top_votes", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    client.setQueryData(["posts", "entry", "/@alice/morning-light"], {
+      author: "alice",
+      permlink: "morning-light",
+      body: "cached",
+      json_metadata: {},
+      top_votes: [{ voter: "w9", rshares: 9, percent: 100 }],
+    });
+    renderWithQueryClient(
+      <CurationQuickView row={row} neighbour={null} viewer={member} recommendationsEnabled onClose={noop} onPrev={noop} onNext={noop} onReviewed={noop} onSnooze={noop} onFlag={noop} onNote={noop} onSaveNote={noop} recommendRef={null} />,
+      { queryClient: client }
+    );
+    await screen.findByText("@w9");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(state.entryFetch).not.toHaveBeenCalled();
   });
 
   it("offers exactly one link out to the post, in the action bar", async () => {
@@ -336,7 +387,7 @@ describe("CurationQuickView", () => {
       (author: string, permlink: string) =>
         new Promise((resolve) => {
           resolveEntry = () =>
-            resolve({ author, permlink, body: "slow body", json_metadata: {}, active_votes: [] });
+            resolve({ author, permlink, body: "slow body", json_metadata: {}, top_votes: [] });
         })
     );
     renderDrawer({ row, voteOnOpen: true, onVoteHandled });
@@ -414,7 +465,7 @@ describe("CurationQuickView", () => {
     state.entryFetch.mockImplementation(
       (author: string, permlink: string) =>
         new Promise((resolve) => {
-          resolveEntry = () => resolve({ author, permlink, body: "slow body", json_metadata: {}, active_votes: [] });
+          resolveEntry = () => resolve({ author, permlink, body: "slow body", json_metadata: {}, top_votes: [] });
         })
     );
     renderDrawer({ row, commentOnOpen: true, onCommentHandled });
@@ -439,7 +490,7 @@ describe("CurationQuickView", () => {
       permlink: "morning-light",
       body: "cached body",
       json_metadata: {},
-      active_votes: [],
+      top_votes: [],
     });
     renderWithQueryClient(
       <CurationQuickView row={row} neighbour={null} viewer={member} recommendationsEnabled commentOnOpen tipOnOpen voteOnOpen onCommentHandled={onCommentHandled} onTipHandled={onTipHandled} onVoteHandled={onVoteHandled} onClose={noop} onPrev={noop} onNext={noop} onReviewed={noop} onSnooze={noop} onFlag={noop} onNote={noop} onSaveNote={noop} recommendRef={null} />,
@@ -468,7 +519,7 @@ describe("CurationQuickView", () => {
   it("never renders the previous post's open reply box on a cached next post, not even for a frame", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     for (const r of [row, next]) {
-      client.setQueryData(["posts", "entry", `/@${r.author}/${r.permlink}`], { author: r.author, permlink: r.permlink, body: "cached", json_metadata: {}, active_votes: [] });
+      client.setQueryData(["posts", "entry", `/@${r.author}/${r.permlink}`], { author: r.author, permlink: r.permlink, body: "cached", json_metadata: {}, top_votes: [] });
     }
     const boxes: string[] = [];
     const observer = new MutationObserver(() => {

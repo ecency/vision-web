@@ -44,7 +44,7 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
   const { activeUser } = useActiveAccount();
   const queryClient = useQueryClient();
 
-  const { data: entry } =
+  const { data: entry, dataUpdatedAt: entryUpdatedAt } =
     useQuery(EcencyEntriesCacheManagement.getEntryQuery(originalEntry));
 
   const [dialog, setDialog] = useState(false);
@@ -58,7 +58,9 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
 
   // The user's OWN vote: from the entry only when it was read for this user,
   // otherwise looked up (see useViewerVote). Never the SSR observer's vote.
-  const viewerVote = useViewerVote(entry);
+  const viewerVote = useViewerVote(entry, entryUpdatedAt);
+  // Logged in and the user's own vote is still being looked up.
+  const votePending = !!activeUser && !viewerVote.known;
   const isVoted = useMemo(
     () => ({ upVoted: viewerVote.upVoted, downVoted: viewerVote.downVoted }),
     [viewerVote.upVoted, viewerVote.downVoted]
@@ -170,7 +172,22 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
     if (dialog) panelRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [dialog]);
 
-  const toggleDialog = useCallback(() => setDialog((d) => !d), []);
+  // A click while the vote is unknown waits for it: the slider must open
+  // knowing whether the user voted (it seeds and labels from that).
+  const [openWhenKnown, setOpenWhenKnown] = useState(false);
+  const toggleDialog = useCallback(() => {
+    if (votePending) {
+      setOpenWhenKnown(true);
+      return;
+    }
+    setDialog((d) => !d);
+  }, [votePending]);
+  useEffect(() => {
+    if (openWhenKnown && !votePending) {
+      setOpenWhenKnown(false);
+      setDialog(true);
+    }
+  }, [openWhenKnown, votePending]);
 
   // Resolve the user's previous vote WHILE the slider is open rather than before
   // opening it, so the open paints immediately instead of blocking on
@@ -215,7 +232,7 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
     <LoginRequired promptOnAnon>
       <div ref={rootRef}>
         <div
-          className="entry-vote-btn"
+          className={`entry-vote-btn${votePending ? " vote-pending" : ""}`}
           role="button"
           tabIndex={0}
           aria-label={
@@ -227,10 +244,8 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
           }
           // Unknown (the user's vote is still being looked up): neither
           // pressed nor not-pressed, and announced as busy.
-          aria-pressed={
-            activeUser && !viewerVote.known ? undefined : isVoted.upVoted || isVoted.downVoted
-          }
-          aria-busy={activeUser && !viewerVote.known ? true : undefined}
+          aria-pressed={votePending ? undefined : isVoted.upVoted || isVoted.downVoted}
+          aria-busy={votePending ? true : undefined}
           aria-expanded={dialog}
           aria-haspopup="dialog"
           onClick={toggleDialog}

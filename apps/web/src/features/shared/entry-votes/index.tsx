@@ -36,13 +36,15 @@ export function EntryVotes({
   hideCount = false,
   iconSizeClass = "[&>svg]:size-3.5"
 }: Props) {
-  const { data: entry } = useQuery(EcencyEntriesCacheManagement.getEntryQuery(initialEntry));
+  const { data: entry, dataUpdatedAt: entryUpdatedAt } = useQuery(
+    EcencyEntriesCacheManagement.getEntryQuery(initialEntry)
+  );
   const previousEntry = usePrevious(entry);
 
   const [visible, setVisible] = useState(false);
 
   // The user's own vote (never the vote of the observer the entry was read for).
-  const viewerVote = useViewerVote(entry);
+  const viewerVote = useViewerVote(entry, entryUpdatedAt);
   const isVoted = viewerVote.upVoted || viewerVote.downVoted;
 
   // Count: stats.total_votes. active_votes.length is only a fallback for rows

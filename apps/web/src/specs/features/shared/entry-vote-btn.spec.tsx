@@ -54,12 +54,14 @@ vi.mock("@/features/shared/entry-vote-btn/utils", async () => ({
 vi.mock("@/features/shared/entry-vote-btn/entry-vote-dialog", () => ({
   EntryVoteDialog: ({
     previousVotedValue,
-    onClick
+    onClick,
+    upVoted
   }: {
     previousVotedValue: number | undefined;
     onClick: (percent: number, estimated: number) => void;
+    upVoted: boolean;
   }) => (
-    <div data-testid="vote-dialog">
+    <div data-testid="vote-dialog" data-up={String(upVoted)}>
       prev:{previousVotedValue === undefined ? "none" : previousVotedValue}
       {/* span, not <button>: pre-existing tests query the single role=button control */}
       <span data-testid="vote-now" onClick={() => onClick(100, 0.5)} />
@@ -458,21 +460,39 @@ describe("EntryVoteBtn: precedence and the session key", () => {
   });
   afterEach(() => vi.clearAllMocks());
 
-  it("prefers the looked-up vote over the entry's (the lookup cache is what a vote writes)", async () => {
+  // Review 5: of the entry read FOR the user and the looked-up vote, the one
+  // fetched later wins (an optimistic vote writes both at the same time; a
+  // tie goes to the lookup).
+  function both(permlink: string, entryVoted: boolean, lookupVoted: boolean, entryAt: number, lookupAt: number) {
     const entry = mockEntry({
       author: "bob",
-      permlink: "both",
+      permlink,
       stats: { flag_weight: 0, gray: false, hide: false, total_votes: 3 },
-      observer_vote: null,
+      observer_vote: entryVoted ? { rshares: 5, percent: 10000 } : null,
       observer_vote_for: "alice"
     } as any);
     delete (entry as any).active_votes;
     const queryClient = createTestQueryClient();
-    queryClient.setQueryData(["posts", "entry-vote", "bob", "both", "alice"], { rshares: 5, percent: 5000 });
-
+    queryClient.setQueryData(["entry", "bob", permlink], entry, { updatedAt: entryAt });
+    queryClient.setQueryData(
+      ["posts", "entry-vote", "bob", permlink, "alice"],
+      lookupVoted ? { rshares: 5, percent: 5000 } : null,
+      { updatedAt: lookupAt }
+    );
     renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />, { queryClient });
+    return screen.getByRole("button").getAttribute("aria-pressed");
+  }
 
-    expect(screen.getByRole("button").getAttribute("aria-pressed")).toBe("true");
+  it("prefers a lookup newer than the entry", () => {
+    expect(both("newer-lookup", false, true, 1_000, 2_000)).toBe("true");
+  });
+
+  it("prefers an entry read for the user newer than the lookup", () => {
+    expect(both("newer-entry", true, false, 2_000, 1_000)).toBe("true");
+  });
+
+  it("gives a tie to the lookup (an optimistic vote writes both)", () => {
+    expect(both("tie", false, true, 1_000, 1_000)).toBe("true");
   });
 
   it("keys the remembered slider value by author/permlink: bridge posts have no post_id", async () => {
@@ -500,5 +520,73 @@ describe("EntryVoteBtn: precedence and the session key", () => {
     renderWithQueryClient(<EntryVoteBtn entry={mk("second")} isPostSlider={true} />);
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() => expect(screen.getByTestId("vote-dialog").textContent).toBe("prev:100"));
+  });
+});
+
+// Review 6: while the user's vote is unknown the button shows a pending state,
+// a click waits for the answer, and a failed lookup ends the wait.
+describe("EntryVoteBtn: the unknown window", () => {
+  let lookup: ReturnType<typeof vi.fn>;
+  beforeEach(async () => {
+    window.sessionStorage.clear();
+    const sdk = await import("@ecency/sdk");
+    lookup = vi.fn();
+    vi.mocked(sdk.getEntryVoteQueryOptions).mockImplementation(((
+      author?: string,
+      permlink?: string,
+      voter?: string,
+      enabled = true
+    ) => ({
+      queryKey: ["posts", "entry-vote", author, permlink, voter],
+      queryFn: () => lookup(author, permlink, voter),
+      enabled: enabled && !!author && !!permlink && !!voter,
+      retry: false
+    })) as any);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  const ssrEntry = (permlink: string) => {
+    const e = mockEntry({
+      author: "bob",
+      permlink,
+      stats: { flag_weight: 0, gray: false, hide: false, total_votes: 3 },
+      observer_vote: null,
+      observer_vote_for: "ecency"
+    } as any);
+    delete (e as any).active_votes;
+    return e;
+  };
+
+  it("shows a pending look while unknown, and drops it once known", async () => {
+    let answer: (v: unknown) => void = () => {};
+    lookup.mockImplementation(() => new Promise((r) => (answer = r)));
+    const { container } = renderWithQueryClient(<EntryVoteBtn entry={ssrEntry("pending")} isPostSlider={true} />);
+    expect(container.querySelector(".entry-vote-btn")).toHaveClass("vote-pending");
+    answer(null);
+    await waitFor(() => expect(container.querySelector(".entry-vote-btn")).not.toHaveClass("vote-pending"));
+  });
+
+  it("opens the slider only once the vote is known, with the right state", async () => {
+    let answer: (v: unknown) => void = () => {};
+    lookup.mockImplementation(() => new Promise((r) => (answer = r)));
+    renderWithQueryClient(<EntryVoteBtn entry={ssrEntry("click-early")} isPostSlider={true} />);
+
+    fireEvent.click(screen.getByRole("button"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByTestId("vote-dialog")).toBeNull();
+
+    answer({ rshares: 5, percent: 10000 });
+    const dialog = await screen.findByTestId("vote-dialog");
+    expect(dialog).toHaveAttribute("data-up", "true");
+  });
+
+  it("falls back to not voted after a failed lookup, never stays busy", async () => {
+    lookup.mockRejectedValue(new Error("all nodes down"));
+    const { container } = renderWithQueryClient(<EntryVoteBtn entry={ssrEntry("lookup-fails")} isPostSlider={true} />);
+    await waitFor(() => expect(screen.getByRole("button").getAttribute("aria-pressed")).toBe("false"));
+    expect(screen.getByRole("button")).not.toHaveAttribute("aria-busy");
+    expect(container.querySelector(".entry-vote-btn")).not.toHaveClass("vote-pending");
+    fireEvent.click(screen.getByRole("button"));
+    expect(await screen.findByTestId("vote-dialog")).toHaveAttribute("data-up", "false");
   });
 });

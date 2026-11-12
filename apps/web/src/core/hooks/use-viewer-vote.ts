@@ -26,15 +26,26 @@ export interface ViewerVote {
  * other cards' lookups into one request). Until it answers, `known` is false
  * and the vote is neither shown as cast nor as "not voted".
  *
- * Precedence: a looked-up vote already in the cache wins over the entry's.
- * Every optimistic vote writes that cache, while the entry may have been read
- * before the vote; the entry is used when no lookup answer exists.
+ * Precedence, when both the entry (read for this user) and a looked-up vote
+ * are at hand: the one fetched later wins, by React Query's dataUpdatedAt.
+ * Pass the entry query's `dataUpdatedAt` as `entryUpdatedAt`; without it, or
+ * on a tie (an optimistic vote writes both at once), the lookup wins.
+ *
+ * A failed lookup ends the unknown window as "not voted" (`known` true), so
+ * the button never stays pending.
  */
-export function useViewerVote(entry: Entry | null | undefined): ViewerVote {
+export function useViewerVote(
+  entry: Entry | null | undefined,
+  entryUpdatedAt?: number
+): ViewerVote {
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username;
   const fromEntry = entryVoteOf(entry, username);
-  const { data: lookedUp } = useQuery(
+  const {
+    data: lookedUp,
+    dataUpdatedAt: lookupUpdatedAt,
+    isError: lookupFailed
+  } = useQuery(
     getEntryVoteQueryOptions(
       entry?.author,
       entry?.permlink,
@@ -42,11 +53,16 @@ export function useViewerVote(entry: Entry | null | undefined): ViewerVote {
       fromEntry === undefined && !!entry && !!username
     )
   );
-  const resolved = lookedUp !== undefined ? lookedUp : fromEntry;
+  let resolved: ObserverVote | null | undefined;
+  if (fromEntry !== undefined && lookedUp !== undefined) {
+    resolved = (entryUpdatedAt ?? 0) > lookupUpdatedAt ? fromEntry : lookedUp;
+  } else {
+    resolved = lookedUp !== undefined ? lookedUp : fromEntry;
+  }
   const direction = username ? voteDirection(resolved ?? null) : null;
   return {
     vote: username ? (resolved ?? null) : null,
-    known: !!username && resolved !== undefined,
+    known: !!username && (resolved !== undefined || lookupFailed),
     upVoted: direction === "up",
     downVoted: direction === "down"
   };
