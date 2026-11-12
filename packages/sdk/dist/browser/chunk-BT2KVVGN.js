@@ -1,0 +1,2 @@
+import {k}from'./chunk-LJJLEKSK.js';import {queryOptions}from'@tanstack/react-query';function s(t){return queryOptions({queryKey:["assets","hive","withdrawal-routes",t],queryFn:()=>k("condenser_api.get_withdraw_routes",[t,"outgoing"]),enabled:!!t})}export{s as a};//# sourceMappingURL=chunk-BT2KVVGN.js.map
+//# sourceMappingURL=chunk-BT2KVVGN.js.map

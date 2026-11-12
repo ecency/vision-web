@@ -1,2 +1,0 @@
-import {a}from'./chunk-PDIUUNDQ.js';import {k}from'./chunk-3V7SV2WV.js';import {queryOptions}from'@tanstack/react-query';function y(t,n,r=100,m=void 0,s=true){return queryOptions({queryKey:a.communities.list(t,n??"",r),enabled:s,queryFn:async()=>{let i=await k("bridge.list_communities",{last:"",limit:r,sort:t==="hot"?"rank":t,query:n||null,observer:m});return i?t==="hot"?i.sort(()=>Math.random()-.5):i:[]}})}export{y as a};//# sourceMappingURL=chunk-RX7HJCRA.js.map
-//# sourceMappingURL=chunk-RX7HJCRA.js.map

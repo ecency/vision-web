@@ -1,0 +1,2 @@
+import {h}from'./chunk-HPIT4TQG.js';import {a as a$1}from'./chunk-PDIUUNDQ.js';import {queryOptions}from'@tanstack/react-query';var u=/^[a-z0-9.-]{3,16}$/,a=/^[a-z0-9-]{1,255}$/;function m(t,r){let o=u.test(t)&&a.test(r);return queryOptions({queryKey:a$1.curation.post(t,r),queryFn:({signal:i})=>{if(!o)throw new Error("[SDK][Curation] invalid author or permlink");return h(t,r,i)},enabled:o,staleTime:15e3})}export{m as a};//# sourceMappingURL=chunk-V4424RHA.js.map
+//# sourceMappingURL=chunk-V4424RHA.js.map

@@ -1,2 +1,0 @@
-import {k}from'./chunk-3V7SV2WV.js';import {queryOptions}from'@tanstack/react-query';function q(e){return queryOptions({queryKey:["wallet","conversion-requests",e],queryFn:()=>k("condenser_api.get_conversion_requests",[e]),select:s=>s.sort((o,t)=>o.requestid-t.requestid)})}export{q as a};//# sourceMappingURL=chunk-GNUMN32Q.js.map
-//# sourceMappingURL=chunk-GNUMN32Q.js.map

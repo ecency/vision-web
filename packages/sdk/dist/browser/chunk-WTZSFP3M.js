@@ -1,0 +1,2 @@
+import {a as a$1}from'./chunk-PDIUUNDQ.js';import {k}from'./chunk-LJJLEKSK.js';import {queryOptions}from'@tanstack/react-query';function a(r,e){return queryOptions({queryKey:a$1.posts.rebloggedBy(r??"",e??""),queryFn:async()=>{if(!r||!e)return [];let s=await k("condenser_api.get_reblogged_by",[r,e]);return Array.isArray(s)?s:[]},enabled:!!r&&!!e})}export{a};//# sourceMappingURL=chunk-WTZSFP3M.js.map
+//# sourceMappingURL=chunk-WTZSFP3M.js.map
