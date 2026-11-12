@@ -1,9 +1,9 @@
 import { defineConfig } from "tsup";
 
 // The shim re-exports `@ecency/sdk/wallets` and nothing else, so `@ecency/sdk`
-// stays external and each build is one re-export line. The layout matches what
-// the package published before the move, so existing deep `dist/*` paths and
-// every `exports` condition keep resolving.
+// stays external and each build is one re-export line. It emits the same
+// `dist/browser` and `dist/node` files the package's `exports` map has always
+// pointed at, so every condition of the `.` export keeps resolving.
 const shared = {
     entry: ["src/index.ts"],
     splitting: false,

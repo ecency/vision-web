@@ -70,24 +70,35 @@ const PUBLIC_ENTRIES = ["src/index.ts", "src/hive.ts", "src/wallets.ts"];
  * The standalone `@ecency/wallets` package got the shared copy for free by
  * importing `@ecency/sdk` as an external; this keeps that.
  *
- * Wallet modules therefore reach the SDK only through `src/index.ts`. A
- * relative import from `src/wallets` to anywhere else outside it fails the
- * build rather than silently inlining a module with state.
+ * Wallet modules therefore reach the SDK only through `src/index.ts`. Any
+ * other import from `src/wallets` to a module outside it fails the build rather
+ * than silently inlining a module with state. That covers relative paths,
+ * including bare `.` and `..`, and the `@/` alias from tsconfig `paths`, which
+ * esbuild would otherwise resolve on its own without passing through here.
  */
 function walletsShareMainEntry(): Plugin {
-    const index = resolve("src/index");
-    const wallets = resolve("src/wallets") + sep;
+    const src = resolve("src");
+    const index = join(src, "index");
+    const wallets = join(src, "wallets") + sep;
     return {
         name: "wallets-share-main-entry",
         setup(build) {
             // From the output extension, not `format`: with `treeshake` tsup runs
             // esbuild in ESM for both formats and converts to CJS afterwards.
             const ext = build.initialOptions.outExtension?.[".js"] === ".cjs" ? ".cjs" : ".mjs";
-            build.onResolve({ filter: /^\.\.?\// }, (args) => {
+            build.onResolve({ filter: /^(\.\.?(\/|$)|@\/)/ }, (args) => {
                 if (!args.importer.startsWith(wallets)) return undefined;
-                const target = resolve(args.resolveDir, args.path).replace(/\.ts$/, "");
-                if (target === index) return { path: `./index${ext}`, external: true };
-                if (target.startsWith(wallets)) return undefined;
+                const target = (
+                    args.path.startsWith("@/")
+                        ? join(src, args.path.slice(2))
+                        : resolve(args.resolveDir, args.path)
+                ).replace(/\.ts$/, "");
+                // `src` (a directory import) and `src/index` both name the main entry.
+                if (target === index || target === src) {
+                    return { path: `./index${ext}`, external: true };
+                }
+                // Trailing separator so `src/wallets` itself (a directory import) counts.
+                if ((target + sep).startsWith(wallets)) return undefined;
                 return {
                     errors: [
                         {

@@ -477,6 +477,57 @@ describe("the ./wallets entry", () => {
     CASE_MS
   );
 
+  /**
+   * Sets a stub query client through the MAIN entry, then runs a wallets
+   * function that reads `CONFIG.queryClient`. With one shared SDK copy the
+   * wallets code sees the stub; with a second, inlined copy it sees its own
+   * unconfigured client instead. `fetch` is disabled in the child so that copy
+   * fails fast rather than reaching a real RPC node, and a timeout bounds the
+   * retries.
+   */
+  const STATE_PROBE = `async (main, w) => {
+    globalThis.fetch = () => Promise.reject(new Error("network disabled in this probe"));
+    const pub = main.PrivateKey.fromLogin("alice", "probe-password", "active").createPublic().toString();
+    let calls = 0;
+    main.ConfigManager.setQueryClient({
+      fetchQuery: async () => { calls++; return { active: { key_auths: [[pub, 1]] } }; }
+    });
+    const timeout = new Promise((r) => setTimeout(() => r("timeout"), 5000));
+    const result = await Promise.race([
+      w.detectHiveKeyDerivation("alice", "probe-password").catch((e) => "error: " + e.message),
+      timeout
+    ]);
+    console.log(JSON.stringify({ result, calls }));
+    process.exit(0);
+  }`;
+
+  it(
+    "runs wallets code against the query client configured through the main entry, ESM and CJS",
+    async () => {
+      const viaEsm = await inNode(
+        esm(`Promise.all([import(process.env.E_MAIN), import(process.env.E_WALLETS)]).then(([main, w]) => (${STATE_PROBE})(main, w))`),
+        { E_MAIN: join(node(), "index.mjs"), E_WALLETS: join(node(), "wallets.mjs") }
+      );
+      expect(viaEsm).toEqual({ result: "master-password", calls: 1 });
+      const viaCjs = await inNode(
+        ["-e", `(${STATE_PROBE})(require(process.env.E_MAIN), require(process.env.E_WALLETS))`],
+        { E_MAIN: join(node(), "index.cjs"), E_WALLETS: join(node(), "wallets.cjs") }
+      );
+      expect(viaCjs).toEqual({ result: "master-password", calls: 1 });
+    },
+    CASE_MS
+  );
+
+  it("does not inline the SDK core into the node wallets bundles", () => {
+    // A string only the core config carries. Present in index.* (so the check
+    // is not vacuous), absent from wallets.* unless core got inlined there.
+    const CORE_MARKER = "poll.ecency.com";
+    expect(readFileSync(join(node(), "index.mjs"), "utf8")).toContain(CORE_MARKER);
+    for (const f of ["wallets.mjs", "wallets.cjs"]) {
+      expect(readFileSync(join(node(), f), "utf8"), f).not.toContain(CORE_MARKER);
+    }
+  });
+
   it(
     "resolves the public names in the emitted types",
     async () => {

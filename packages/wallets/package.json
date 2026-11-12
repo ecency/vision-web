@@ -29,10 +29,6 @@
       "default": "./dist/node/index.mjs"
     }
   },
-  "browser": {
-    "node-fetch": false,
-    "undici": false
-  },
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
