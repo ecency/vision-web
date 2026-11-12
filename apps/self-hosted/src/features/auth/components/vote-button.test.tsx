@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react';
+import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -161,6 +161,91 @@ describe('self-hosted VoteButton with the real vote cache update', () => {
       await new Promise((r) => setTimeout(r, 0));
     });
 
+    expect(container.textContent).toContain('11 likes');
+    expect(container.textContent).not.toContain('12');
+  });
+});
+
+// Round 4, item 7: the visible count moves exactly once also when the SDK's
+// update cannot move it: a cross-post (the footer votes on original_entry,
+// whose key is not cached) and a vote cast before the lookup answered (the
+// SDK does not know the prior vote and leaves the entry alone).
+describe('self-hosted VoteButton when the SDK cannot move the count', () => {
+  beforeEach(() => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network disabled in this spec'));
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    state.user = { username: 'alice' };
+    state.lookup.mockReset();
+  });
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  async function mount(qc: QueryClient, ui: React.ReactElement) {
+    await act(async () => {
+      root.render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+  async function click() {
+    await act(async () => {
+      container.querySelector('button')!.click();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  it('moves a cross-post count once', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    const outerKey = QueryKeys.posts.entry('/@carol/xpost');
+    qc.setQueryData(outerKey, {
+      author: 'carol',
+      permlink: 'xpost',
+      original_entry: { author: 'bob', permlink: 'p', payout: 1, stats: { total_votes: 10 } },
+    });
+    state.lookup.mockResolvedValue(null);
+    state.afterVote.mockImplementation(async (vars: any) => applyVoteCacheUpdate('alice', vars, qc));
+    function CrossPost() {
+      const { data } = useQuery<any>({ queryKey: outerKey, queryFn: () => null, enabled: false });
+      const o = data.original_entry;
+      return <VoteButton author={o.author} permlink={o.permlink} totalVotes={o.stats.total_votes} />;
+    }
+    await mount(qc, <CrossPost />);
+    expect(container.textContent).toContain('10 likes');
+    await click();
+    expect(container.textContent).toContain('11 likes');
+  });
+
+  it('moves the count once when the vote lands before the lookup answered, and not again when the entry refetch arrives', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    const key = QueryKeys.posts.entry('/@bob/p');
+    qc.setQueryData(key, {
+      author: 'bob',
+      permlink: 'p',
+      payout: 1,
+      stats: { total_votes: 10, flag_weight: 0, gray: false, hide: false },
+      observer_vote: null,
+      observer_vote_for: null,
+    });
+    state.lookup.mockImplementation(() => new Promise(() => {}));
+    state.afterVote.mockImplementation(async (vars: any) => applyVoteCacheUpdate('alice', vars, qc));
+    function Page() {
+      const { data } = useQuery<any>({ queryKey: key, queryFn: () => null, enabled: false });
+      return <VoteButton author="bob" permlink="p" totalVotes={data?.stats?.total_votes ?? 0} />;
+    }
+    await mount(qc, <Page />);
+    await click();
+    expect(container.textContent).toContain('11 likes');
+
+    // The deferred refresh brings the chain's count, which includes the vote.
+    await act(async () => {
+      qc.setQueryData(key, (old: any) => ({ ...old, stats: { ...old.stats, total_votes: 11 } }));
+    });
     expect(container.textContent).toContain('11 likes');
     expect(container.textContent).not.toContain('12');
   });
