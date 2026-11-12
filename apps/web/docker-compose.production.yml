@@ -159,7 +159,9 @@ services:
       # 15 concurrent), being dominated by per-process caches rather than the
       # renders themselves, and the multi-second stalls this cap was tightened
       # for no longer occur.
-      - SSR_MAX_INFLIGHT=48
+      # Per region (WEB_SSR_MAX_INFLIGHT), like the memory knobs: a region
+      # running more, smaller replicas sets a lower cap per process.
+      - SSR_MAX_INFLIGHT=${WEB_SSR_MAX_INFLIGHT:-48}
     restart: always
     ports:
       - "3000:3000"

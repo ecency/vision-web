@@ -271,8 +271,31 @@ describe("ssr-admission preload", () => {
     };
     for (const file of ["docker-compose.production.yml", "docker-compose.yml"]) {
       const web = webBlock(readFileSync(join(process.cwd(), file), "utf8"));
-      expect(web, file).toMatch(/^\s*- SSR_MAX_INFLIGHT=\d+$/m);
+      // A literal cap, or a per-region one whose fallback is itself a cap:
+      // zero or a non-number would leave admission control off.
+      const cap = web.match(/^\s*- SSR_MAX_INFLIGHT=(?:(\d+)|\$\{WEB_SSR_MAX_INFLIGHT:-(\d+)\})$/m);
+      expect(cap, file).not.toBeNull();
+      expect(Number(cap![1] ?? cap![2]), file).toBeGreaterThan(0);
       expect(web, file).toMatch(/^\s*- NODE_OPTIONS=.*--max-semi-space-size=\d+/m);
     }
+  });
+
+  it("is pinned per region by the production deploy, never inherited from the host", () => {
+    // The compose fallback is read from whatever shell renders the stack, so
+    // each region states its own cap in the deploy step.
+    const workflow = readFileSync(join(process.cwd(), "../../.github/workflows/master.yml"), "utf8");
+    const job = (name: string): string => {
+      const start = workflow.indexOf(`\n  ${name}:\n`);
+      expect(start, name).toBeGreaterThan(-1);
+      const next = workflow.slice(start + 1).search(/\n  [A-Za-z_-]+:\n/);
+      return next === -1 ? workflow.slice(start) : workflow.slice(start, start + 1 + next);
+    };
+    const eu = job("deploy-EU");
+    expect(eu).toMatch(/unset [^\n]*\bWEB_SSR_MAX_INFLIGHT\b/);
+    expect(eu).toMatch(/export [^\n]*\bWEB_SSR_MAX_INFLIGHT=[1-9]\d*\b/);
+    const us = job("deploy-US");
+    expect(us).toMatch(/^\s*WEB_SSR_MAX_INFLIGHT: "[1-9]\d*"$/m);
+    expect(us).toMatch(/^\s*envs: .*\bWEB_SSR_MAX_INFLIGHT\b/m);
+    expect(us).toMatch(/^\s*export WEB_SSR_MAX_INFLIGHT=\$WEB_SSR_MAX_INFLIGHT$/m);
   });
 });
