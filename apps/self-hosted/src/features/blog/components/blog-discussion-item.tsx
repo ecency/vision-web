@@ -23,9 +23,9 @@ export function BlogDiscussionItem({
 }: Props) {
   const [showReplies, setShowReplies] = useState(false);
 
-  // stats.total_votes: entries read through bridge v2 carry no voter list.
+  // stats.total_votes: entries carry no voter list.
   const likesCount = useMemo(
-    () => entry.stats?.total_votes ?? entry.active_votes?.length ?? 0,
+    () => entry.stats?.total_votes ?? 0,
     [entry],
   );
   // Honor the likes flag, read the same way every other config-flag consumer does

@@ -27,9 +27,9 @@ export function BlogPostHeader({ entry }: Props) {
   );
   const isCommunity = instanceType === 'community';
 
-  // stats.total_votes: entries read through bridge v2 carry no voter list.
+  // stats.total_votes: entries carry no voter list.
   const likesCount = useMemo(
-    () => entryData.stats?.total_votes ?? entryData.active_votes?.length ?? 0,
+    () => entryData.stats?.total_votes ?? 0,
     [entryData],
   );
 
