@@ -4,11 +4,12 @@ import type { Entry } from '@ecency/sdk';
 import { UilComment } from '@tooni/iconscout-unicons-react';
 import { useMemo } from 'react';
 import { InstanceConfigManager, t } from '@/core';
-import { useIsAuthEnabled, VoteButton, ReblogButton } from '@/features/auth';
+import { useIsAuthEnabled, ReblogButton } from '@/features/auth';
 import { VoteDisclosure } from '@/features/shared/hive-disclosure';
 import { TipButton } from '@/features/tipping';
 import { useHiveLayer } from '../hooks/use-hive-layer';
 import { HivePostNote } from './hive-post-note';
+import { PostLikes } from './post-likes';
 import { PostPayout } from './post-payout';
 
 interface Props {
@@ -59,11 +60,7 @@ export function BlogPostFooter({ entry }: Props) {
 
       <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-xs sm:text-sm text-theme-muted font-theme-ui">
         {showLikes && (
-          <VoteButton
-            author={entryData.author}
-            permlink={entryData.permlink}
-            totalVotes={entryData.stats?.total_votes ?? 0}
-          />
+          <PostLikes entry={entry} />
         )}
         {showComments && (
           <div className="flex items-center gap-1">

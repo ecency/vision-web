@@ -4,7 +4,7 @@ import { VoteButton as BaseVoteButton, type Vote } from "@ecency/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UilHeart } from "@tooni/iconscout-unicons-react";
 import clsx from "clsx";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   getEntryVoteQueryOptions,
@@ -22,8 +22,9 @@ interface VoteButtonProps {
   author: string;
   permlink: string;
   /**
-   * The post's vote count (`stats.total_votes`), read from the entry cache by
-   * the caller, so the SDK's optimistic vote update moves it.
+   * The post's vote count (`stats.total_votes`), read by the caller from the
+   * entry cache key of THIS post (author/permlink), the one the SDK's vote
+   * update moves. Use PostLikes, which does that.
    */
   totalVotes: number;
   showCount?: boolean;
@@ -65,18 +66,6 @@ export function VoteButton({
   );
   const voted = isCastVote(ownVote);
 
-  // A count correction for the vote just cast, tied to the post and to the
-  // count it was made against. It shows until `totalVotes` changes: when the
-  // SDK's vote cache update moves the entry the caller reads, or a refetch
-  // brings the chain's count, the new count replaces it (never counted
-  // twice). When nothing moves `totalVotes` (a cross-post, whose footer reads
-  // the cross-post's copy; a vote cast before the lookup answered, which the
-  // SDK leaves alone), the correction is what moves the visible count.
-  const postKey = `${author}/${permlink}`;
-  const [correction, setCorrection] = useState<{ postKey: string; base: number; delta: number } | null>(
-    null
-  );
-
   const adapter = createBroadcastAdapter();
   const voteMutation = useVote(user?.username, { adapter });
 
@@ -90,6 +79,17 @@ export function VoteButton({
     }) => {
       if (!user) return;
 
+      // The SDK's vote cache update moves the count by the voter's PRIOR vote
+      // (+1 fresh, -1 removed, 0 for a new weight), and skips when it does not
+      // know it. So the prior vote is known before the broadcast: a click that
+      // came before the lookup answered waits for it (the same request).
+      if (ownVote === undefined) {
+        try {
+          await queryClient.fetchQuery(getEntryVoteQueryOptions(author, permlink, user.username));
+        } catch {
+          // Lookup failed: vote anyway; the count catches up on the next read.
+        }
+      }
       await voteMutation.mutateAsync({ author, permlink, weight });
       // The vote is only in the mempool yet, so a refetch would not show it:
       // write the visitor's vote into the lookup. The count is NOT moved here:
@@ -98,15 +98,8 @@ export function VoteButton({
       const next: ObserverVote | null = weight !== 0 ? { rshares: weight, percent: weight } : null;
       queryClient.setQueryData(QueryKeys.posts.entryVote(author, permlink, user.username), next);
       recordOptimisticVote(author, permlink, user.username, next);
-      // `voted` is what the button showed: unknown counts as not voted, as
-      // the button treated it (it cast a vote rather than removing one).
-      // `totalVotes` is the count shown when the vote was cast.
-      const delta = next && !voted ? 1 : !next && voted ? -1 : 0;
-      if (delta !== 0) {
-        setCorrection({ postKey: `${author}/${permlink}`, base: totalVotes || 0, delta });
-      }
     },
-    [user, author, permlink, voteMutation, queryClient, voted, totalVotes]
+    [user, author, permlink, voteMutation, queryClient, ownVote]
   );
 
   const handleAuthRequired = useCallback(() => {
@@ -118,10 +111,9 @@ export function VoteButton({
 
   const ownRow: Vote[] =
     voted && user ? [{ voter: user.username, percent: ownVote!.percent ?? 10000, rshares: ownVote!.rshares }] : [];
-  const base = totalVotes || 0;
-  const delta =
-    correction && correction.postKey === postKey && correction.base === base ? correction.delta : 0;
-  const count = Math.max(0, base + delta);
+  // Shown as given: the caller reads it from the entry the SDK's vote update
+  // moves (see PostLikes). The button does no count arithmetic of its own.
+  const count = Math.max(0, totalVotes || 0);
 
   return (
     <span className="flex items-center gap-1">
