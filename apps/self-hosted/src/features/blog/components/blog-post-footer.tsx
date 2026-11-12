@@ -59,11 +59,7 @@ export function BlogPostFooter({ entry }: Props) {
 
       <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-xs sm:text-sm text-theme-muted font-theme-ui">
         {showLikes && (
-          <VoteButton
-            author={entryData.author}
-            permlink={entryData.permlink}
-            activeVotes={entryData.active_votes || []}
-          />
+          <VoteButton author={entryData.author} permlink={entryData.permlink} />
         )}
         {showComments && (
           <div className="flex items-center gap-1">

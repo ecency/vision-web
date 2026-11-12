@@ -1,6 +1,6 @@
 'use client';
 
-import { callRPC, type Entry, QueryKeys } from '@ecency/sdk';
+import { bridgeV2Call, type Entry, normalizeEntry, QueryKeys } from '@ecency/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { UilComment } from '@tooni/iconscout-unicons-react';
 import { useMemo, useState } from 'react';
@@ -47,7 +47,7 @@ function sortDiscussions(
       return (b.author_reputation || 0) - (a.author_reputation || 0);
     },
     votes: (a: Entry, b: Entry) => {
-      return (b.active_votes?.length || 0) - (a.active_votes?.length || 0);
+      return (b.stats?.total_votes ?? 0) - (a.stats?.total_votes ?? 0);
     },
     created: (a: Entry, b: Entry) => {
       if (a.net_rshares < 0) return 1;
@@ -88,14 +88,17 @@ export function BlogPostDiscussion({ entry, isRawContent }: Props) {
       entryData.author,
     ),
     queryFn: async () => {
-      const response = await callRPC('bridge.get_discussion', {
+      // Vote-free v2 read, v1 on nodes that lack it (see bridgeV2Call).
+      const response = await bridgeV2Call<Record<string, Entry> | null>('get_discussion', {
         author: entryData.author,
         permlink: entryData.permlink,
         observer: entryData.author,
       });
 
       if (response && typeof response === 'object') {
-        const comments = Object.values(response) as Entry[];
+        const comments = Object.values(response).map((e) =>
+          normalizeEntry(e, entryData.author),
+        );
         return sortDiscussions(entryData, comments, order);
       }
       return [];
