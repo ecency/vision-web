@@ -8,6 +8,31 @@ export interface EntryVote {
   rshares: number;
 }
 
+/**
+ * One account's vote on an entry, as bridge v2 `observer_vote` reports it.
+ * `percent` is the vote weight in basis points (10000 = 100%, negative for a
+ * downvote); null when the source did not say (a v1 bridge `active_votes` row
+ * carries only rshares).
+ */
+export interface ObserverVote {
+  /**
+   * Null for a vote this client just cast: the node computes rshares only
+   * once the vote is in a block, so an optimistic vote never invents them.
+   */
+  rshares: number | null;
+  percent: number | null;
+}
+
+/**
+ * A row of `top_votes`: from bridge v2 when requested, or derived from a v1
+ * voter list by `normalizeEntry` (percent null when the row had none).
+ */
+export interface EntryTopVote {
+  voter: string;
+  rshares: number;
+  percent: number | null;
+}
+
 export interface EntryStat {
   flag_weight: number;
   gray: boolean;
@@ -45,7 +70,22 @@ export interface JsonPollMetadata {
 
 export interface Entry {
   last_update?: string;
-  active_votes: EntryVote[];
+  // No `active_votes`: entries carry no voter list (bridge v2; removed from
+  // every other source by normalizeEntry). Count with `stats.total_votes`,
+  // read a user's own vote with `entryVoteOf` / `getEntryVoteQueryOptions`,
+  // and load the full list on demand with `getEntryActiveVotesQueryOptions`.
+  /**
+   * Vote of the account in `observer_vote_for`: the vote, or null when that
+   * account has not voted. Meaningless when `observer_vote_for` is null.
+   */
+  observer_vote?: ObserverVote | null;
+  /**
+   * The account `observer_vote` belongs to; null when unknown (see the
+   * `normalizeEntry` contract). Never show the vote as another user's.
+   */
+  observer_vote_for?: string | null;
+  /** Bridge v2 `top_votes`, when the read asked for them. */
+  top_votes?: EntryTopVote[];
   author: string;
   author_payout_value: string;
   author_reputation: number;
@@ -104,10 +144,14 @@ export interface EntryHeader {
   depth: number;
 }
 
+/**
+ * One vote in a voter list (`getEntryVotes`). `reputation` is absent on rows
+ * read through `database_api.list_votes` (nodes without bridge.list_votes).
+ */
 export interface Vote {
   percent: number;
-  reputation: number;
-  rshares: string;
+  reputation?: number;
+  rshares: string | number;
   time: string;
   timestamp?: number;
   voter: string;

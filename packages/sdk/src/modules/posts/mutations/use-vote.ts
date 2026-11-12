@@ -1,24 +1,11 @@
-import { useBroadcastMutation, QueryKeys } from "@/modules/core";
+import { useBroadcastMutation, QueryKeys, getQueryClient } from "@/modules/core";
 import type { BroadcastMode } from "@/modules/core";
 import { buildVoteOp } from "@/modules/operations/builders";
 import type { AuthContextV2 } from "@/modules/core/types";
 import type { QueryClient } from "@tanstack/react-query";
 import { EntriesCacheManagement } from "../cache/entries-cache-management";
-
-/**
- * Whether the cached active_votes list already reflects the broadcast vote:
- * the voter is present for a vote (weight !== 0) or absent for an unvote
- * (weight === 0). Used to avoid stacking the SDK's post-broadcast optimistic
- * update on top of a platform-level optimistic update applied at press time.
- */
-export function isVoteAlreadyReflected(
-  activeVotes: Array<{ voter: string }>,
-  voter: string | undefined,
-  weight: number
-): boolean {
-  const hasVoterRecord = activeVotes.some((v) => v.voter === voter);
-  return weight !== 0 ? hasVoterRecord : !hasVoterRecord;
-}
+import type { ObserverVote } from "../types";
+import { entryVoteOf, isCastVote } from "../utils/normalize-entry";
 
 /**
  * Payload for voting on a post or comment.
@@ -35,13 +22,13 @@ export interface VotePayload {
 }
 
 /**
- * Post-broadcast optimistic cache update for a vote: replaces the voter's
- * active_votes record and bumps the payout by `estimated`. Skipped when the
- * cached entry already reflects this vote (voter present for a vote, absent
- * for an unvote): platforms with their own at-press optimistic layer (e.g.
- * the mobile app) have applied it by the time the broadcast resolves, and
- * stacking a second update here double-counts the payout and clobbers the
- * platform's richer vote record until the deferred invalidation.
+ * Post-broadcast optimistic cache update for a vote on a cached entry: sets
+ * the voter's `observer_vote`, the count and the payout (see
+ * applyObserverVoteUpdate). Skipped when the cache already reflects this vote
+ * (a platform's at-press optimistic layer applied it), when the voter's prior
+ * vote is unknown, and for lightweight rows without a numeric payout and a
+ * `stats.total_votes` count (waves feed rows), which the platform updates
+ * itself; the deferred invalidation reconciles all of them.
  */
 export function applyVoteCacheUpdate(
   username: string | undefined,
@@ -49,24 +36,63 @@ export function applyVoteCacheUpdate(
   qc?: QueryClient
 ): void {
   const entry = EntriesCacheManagement.getEntry(variables.author, variables.permlink, qc);
-  if (
-    !entry?.active_votes ||
-    isVoteAlreadyReflected(entry.active_votes, username, variables.weight)
-  ) {
-    return;
+  if (!entry || !username) return;
+  if (typeof entry.payout !== "number" || !Number.isFinite(entry.payout)) return;
+  if (typeof entry.stats?.total_votes !== "number") return;
+  applyObserverVoteUpdate(entry, username, variables, qc);
+}
+
+/**
+ * Entries carry no voter list: the voter's prior vote comes from the entry
+ * when it was read for this voter, else from the `entryVote` lookup cache.
+ */
+function applyObserverVoteUpdate(
+  entry: NonNullable<ReturnType<typeof EntriesCacheManagement.getEntry>>,
+  username: string,
+  variables: VotePayload,
+  qc?: QueryClient
+): void {
+  let prior = entryVoteOf(entry, username);
+  if (prior === undefined) {
+    const queryClient = qc ?? getQueryClient();
+    prior = queryClient.getQueryData<ObserverVote | null>(
+      QueryKeys.posts.entryVote(variables.author, variables.permlink, username)
+    );
   }
-  const newVotes = [
-    ...entry.active_votes.filter((v) => v.voter !== username),
-    ...(variables.weight !== 0 ? [{ rshares: variables.weight, voter: username! }] : [])
-  ];
-  const newPayout = entry.payout + (variables.estimated ?? 0);
-  EntriesCacheManagement.updateVotes(
+  if (prior === undefined) return;
+
+  const hadVote = isCastVote(prior);
+  const weight = variables.weight;
+  const reflected = weight !== 0 ? hadVote && prior!.percent === weight : !hadVote;
+  if (reflected) return;
+
+  // No rshares yet: the node computes them once the vote is in a block.
+  const next: ObserverVote | null = weight !== 0 ? { rshares: null, percent: weight } : null;
+  const base = entry.stats!.total_votes;
+  const total =
+    !hadVote && next !== null ? base + 1 : hadVote && next === null ? Math.max(0, base - 1) : base;
+  EntriesCacheManagement.updateObserverVote(
     variables.author,
     variables.permlink,
-    newVotes,
-    newPayout,
+    username,
+    next,
+    entry.payout + (variables.estimated ?? 0),
+    total,
     qc
   );
+}
+
+/** The queries the deferred post-vote refresh invalidates. */
+export function voteInvalidationKeys(username: string | undefined, variables: VotePayload) {
+  return [
+    QueryKeys.posts.entry(`/@${variables.author}/${variables.permlink}`),
+    QueryKeys.accounts.full(username),
+    // The voter's looked-up vote: a lookup made before the vote must not
+    // outlive the chain state it predates.
+    QueryKeys.posts.entryVote(variables.author, variables.permlink, username),
+    // The full voter list the votes dialog shows now includes (or drops) them.
+    QueryKeys.posts.entryActiveVotes(variables.author, variables.permlink),
+  ];
 }
 
 /**
@@ -153,10 +179,7 @@ export function useVote(
       // at mempool acceptance before block inclusion.
       if (auth?.adapter?.invalidateQueries) {
         const doInvalidate = () => {
-          auth.adapter!.invalidateQueries!([
-            QueryKeys.posts.entry(`/@${variables.author}/${variables.permlink}`),
-            QueryKeys.accounts.full(username)
-          ]);
+          auth.adapter!.invalidateQueries!(voteInvalidationKeys(username, variables));
         };
         const mode = broadcastMode ?? 'async';
         if (mode === 'async') {

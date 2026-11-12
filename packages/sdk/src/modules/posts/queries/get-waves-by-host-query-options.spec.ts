@@ -8,7 +8,8 @@ const mockMapThreadItemsToWaveEntries = vi.hoisted(() => vi.fn())
 // Only callRPC needs stubbing; @/modules/core (QueryKeys) is used as-is. The
 // hive-tx subpath mock below is intercepted even when imported via the core barrel.
 vi.mock('@/modules/core/hive-tx', () => ({
-  callRPC: mockCallRPC
+  callRPC: mockCallRPC,
+  callRPCWithFallback: vi.fn(async (primary: { method: string; params: unknown }) => ({ result: await mockCallRPC(primary.method, primary.params), method: primary.method })),
 }))
 
 vi.mock('../utils/waves-helpers', () => ({
@@ -63,7 +64,8 @@ describe('getWavesByHostQueryOptions getThreads', () => {
     expect(mockGetVisibleFirstLevelThreadItems).toHaveBeenCalledTimes(2)
     expect(mockMapThreadItemsToWaveEntries).toHaveBeenCalledWith(
       [{ author: 'bob', permlink: 'w1' }],
-      containerB,
+      // A normalized copy of containerB (the response is no longer mutated in place).
+      expect.objectContaining({ ...containerB, host: HOST, id: 2 }),
       HOST
     )
   })

@@ -47,9 +47,8 @@ export function validateEntry(entry: Entry): Entry {
   }
 
   // Ensure array properties are arrays
-  if (!Array.isArray(entry.active_votes)) {
-    entry.active_votes = [];
-  }
+  // active_votes is NOT defaulted: bridge v2 reads carry no voter list, and
+  // an empty array would read as "nobody voted" (see normalizeEntry).
   if (!Array.isArray(entry.beneficiaries)) {
     entry.beneficiaries = [];
   }

@@ -2,9 +2,10 @@ import { getQueryClient } from "../react-query";
 import {
   getNormalizePostQueryOptions,
   getPostQueryOptions,
-  QueryKeys
+  QueryKeys,
+  recordOptimisticVote
 } from "@ecency/sdk";
-import { Entry, EntryVote } from "@/entities";
+import { Entry, ObserverVote } from "@/entities";
 import { makeEntryPath } from "@/utils";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
@@ -19,6 +20,19 @@ import { DEFAULT_OBSERVER } from "@/consts/observer";
 // threading the observer through all of them; the comment thread already
 // personalises via getDiscussionsQueryOptions, which is where mute filtering
 // actually earns its keep on an entry page.
+/** The seed row without the fields that describe votes (see getEntryQuery). */
+function withoutVoteFields<T extends Entry>(entry: T | undefined): Partial<T> | undefined {
+  if (!entry) return entry;
+  const {
+    observer_vote: _vote,
+    observer_vote_for: _for,
+    active_votes: _list,
+    top_votes: _top,
+    ...rest
+  } = entry;
+  return rest as Partial<T>;
+}
+
 function entryKey(author: string, permlink: string) {
   return QueryKeys.posts.entry(makeEntryPath("", author, permlink));
 }
@@ -73,9 +87,26 @@ export namespace EcencyEntriesCacheManagement {
       // for a caller that passed a full entry — the decks post viewer renders an
       // empty article that way, and nothing refetches it because refetchOnMount
       // is false app-wide. An empty body never overwrites a present one.
+      //
+      // Precedence note (use-viewer-vote.ts): a seed row's dataUpdatedAt is the
+      // mount time, not the time it was fetched. That is safe only because
+      // this cache is read and refetched under DEFAULT_OBSERVER, so its vote
+      // pair is never "for" a logged-in user and never races the user's lookup.
+      // Reading this cache with the user as observer would require seeding
+      // dataUpdatedAt (initialDataUpdatedAt) with the row's real fetch time.
+      //
+      // Vote fields are the exception: they never come from the seed row once
+      // a fetched entry exists. The seed may have been read for another
+      // observer, or carry a raw voter list, and spreading it under a refetch
+      // that states the vote differently (or not at all) brought back a stale
+      // vote. The seed only stands while it IS the data (nothing fetched yet).
       select: (data: Entry | null | undefined) =>
         data
-          ? ({ ...initialEntry, ...data, body: data.body || initialEntry?.body || "" } as T)
+          ? ({
+              ...(data === initialEntry ? initialEntry : withoutVoteFields(initialEntry)),
+              ...data,
+              body: data.body || initialEntry?.body || ""
+            } as T)
           : undefined
     };
   }
@@ -143,18 +174,39 @@ export namespace EcencyEntriesCacheManagement {
       // (e.g. the unified waves feed) ship a `net_votes` count but no
       // `active_votes` array, so `votes.length` understates the real total; the
       // caller derives the correct next count and passes it here.
-      update: (votes: EntryVote[], payout: number, totalVotes?: number) => {
+      /**
+       * Optimistic vote. `observerVote` is `voter`'s vote after it (null after
+       * an unvote): it is written as the entry's observer vote, owned by
+       * `voter`, and into that voter's `entryVote` lookup so a refetch under
+       * the default observer still shows it.
+       */
+      update: ({
+        voter,
+        observerVote,
+        payout,
+        totalVotes
+      }: {
+        voter: string;
+        observerVote: ObserverVote | null;
+        payout: number;
+        totalVotes: number;
+      }) => {
         if (!entry) return;
-        const nextTotalVotes = totalVotes ?? votes.length;
+        const nextTotalVotes = totalVotes;
+        qc.setQueryData(QueryKeys.posts.entryVote(entry.author, entry.permlink, voter), observerVote);
+        // Hold it over a lookup that lags the chain (SDK, 60 s window).
+        recordOptimisticVote(entry.author, entry.permlink, voter, observerVote);
         mutateEntryInstance(
           entry,
           (value) => ({
             ...value,
-            active_votes: votes,
+            observer_vote: observerVote,
+            observer_vote_for: voter,
+            // From the cached value, not the entry the hook was created with.
             stats: {
-              ...entry.stats || { gray: false, hide: false, flag_weight: 0, total_votes: 0 },
+              ...(value.stats || { gray: false, hide: false, flag_weight: 0, total_votes: 0 }),
               total_votes: nextTotalVotes,
-              flag_weight: entry?.stats?.flag_weight || 0
+              flag_weight: value.stats?.flag_weight || 0
             },
             total_votes: nextTotalVotes,
             net_votes: nextTotalVotes,

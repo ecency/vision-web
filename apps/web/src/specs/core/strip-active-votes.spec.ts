@@ -189,7 +189,7 @@ describe("stripActiveVotesFromValue (props channel, e.g. profile initialFeed)", 
 // condenser_api.get_content has no `stats` object — its only count field is
 // `net_votes`, which is upvotes MINUS downvotes, not a voter count (live posts:
 // 848 voters vs net_votes 820, and 453 vs 423). Since entry-votes reads
-// `stats.total_votes || active_votes.length || net_votes || total_votes`,
+// `entryVoteCount` (`stats.total_votes ?? (active_votes.length || net_votes || total_votes)`),
 // stripping that shape would drop the displayed number to the net figure. It is
 // therefore left unstripped, and nothing needs otherwise: the entry page keeps
 // the metadata-only condenser query out of the dehydrated payload entirely.

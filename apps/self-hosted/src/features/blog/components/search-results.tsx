@@ -13,7 +13,7 @@ interface Props {
 
 /**
  * The search API returns a SearchResult (created_at, img_url, top-level tags), but BlogPostItem
- * expects an Entry (created, json_metadata.image/tags, active_votes, ...). Passing the raw result
+ * expects an Entry (created, json_metadata.image/tags, stats.total_votes, ...). Passing the raw result
  * left `created` undefined, and formatDate(undefined) threw during render, taking down the whole
  * app via the root ErrorBoundary. Map into the shape BlogPostItem reads.
  */
@@ -26,7 +26,7 @@ function searchResultToEntry(result: SearchResult): Entry {
     category: result.category,
     created: result.created_at,
     children: result.children,
-    active_votes: [],
+    stats: { flag_weight: 0, gray: false, hide: false, total_votes: result.total_votes ?? 0 },
     json_metadata: {
       tags: result.tags,
       image: result.img_url ? [result.img_url] : undefined,

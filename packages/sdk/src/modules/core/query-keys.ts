@@ -67,6 +67,9 @@ export const QueryKeys = {
       ["posts", "reblogs", username, limit],
     entryActiveVotes: (author?: string, permlink?: string) =>
       ["posts", "entry-active-votes", author, permlink],
+    /** One account's vote on one entry (`getEntryVoteQueryOptions`). */
+    entryVote: (author?: string, permlink?: string, voter?: string) =>
+      ["posts", "entry-vote", author, permlink, voter],
     rebloggedBy: (author: string, permlink: string) =>
       ["posts", "reblogged-by", author, permlink],
     tips: (author: string, permlink: string) =>

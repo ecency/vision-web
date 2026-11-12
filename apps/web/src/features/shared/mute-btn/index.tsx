@@ -16,6 +16,16 @@ interface Props {
   onCancel?: () => void;
 }
 
+/**
+ * The entry as shown after a (un)mute: only `gray` changes. No vote count is
+ * invented for a row without stats (a waves row counts with net_votes): the
+ * count reads stats.total_votes first, so a made-up 0 would hide the real one.
+ */
+export function mutedEntry(entry: Entry, mute: boolean): Entry {
+  const nStats = { ...clone(entry.stats ?? { flag_weight: 0, hide: false }), gray: mute } as EntryStat;
+  return { ...clone(entry), stats: nStats };
+}
+
 export function MuteBtn({ entry, community, onSuccess, onCancel, onlyDialog }: Props) {
   const [value, setValue] = useState("");
   const [dialog, setDialog] = useState(false);
@@ -26,9 +36,7 @@ export function MuteBtn({ entry, community, onSuccess, onCancel, onlyDialog }: P
   const submit = useCallback(
     async (mute: boolean, notes: string) => {
       await mutePost({ notes, mute });
-      const nStats: EntryStat = { ...clone(entry.stats || { flag_weight: 0, gray: false, hide: false, total_votes: 0 }), gray: mute };
-      const nEntry: Entry = { ...clone(entry), stats: nStats };
-      onSuccess(nEntry, mute);
+      onSuccess(mutedEntry(entry, mute), mute);
     },
     [entry, mutePost, onSuccess]
   );

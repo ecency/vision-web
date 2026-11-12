@@ -34,13 +34,14 @@ export interface VoteHistoryPage {
   entries: Entry[];
 }
 
+// A post, not an error or null. Not keyed on `active_votes`: bridge v2 reads
+// no longer carry it, which made every post look like a non-entry.
 function isEntry(x: unknown): x is Entry {
   return (
     !!x &&
     typeof x === "object" &&
-    "author" in x &&
-    "permlink" in x &&
-    "active_votes" in x
+    typeof (x as Entry).author === "string" &&
+    typeof (x as Entry).permlink === "string"
   );
 }
 

@@ -75,6 +75,22 @@ vi.mock("@ecency/sdk", async () => ({
   ...(await vi.importActual<Record<string, unknown>>(
     "../../../../packages/sdk/src/modules/moderation"
   )),
+  // Same for the vote helpers (entryVoteOf, voteDirection, normalizeEntry):
+  // pure, and every vote button reads them during render.
+  ...(await vi.importActual<Record<string, unknown>>(
+    "../../../../packages/sdk/src/modules/posts/utils/normalize-entry"
+  )),
+  // Registers a vote the client just cast (SDK holds it over lagging lookups).
+  recordOptimisticVote: vi.fn(),
+  // One account's vote lookup. Answers "not voted" by default; specs override
+  // the queryFn through vi.mocked(getEntryVoteQueryOptions).
+  getEntryVoteQueryOptions: vi.fn(
+    (author?: string, permlink?: string, voter?: string, enabled = true) => ({
+      queryKey: ["posts", "entry-vote", author, permlink, voter],
+      queryFn: vi.fn(async () => null),
+      enabled: enabled && !!author && !!permlink && !!voter
+    })
+  ),
   PrivateKey: { fromString: vi.fn(), fromLogin: vi.fn(), from: vi.fn() },
   PublicKey: { fromString: vi.fn(), from: vi.fn() },
   Signature: { from: vi.fn() },
@@ -210,7 +226,14 @@ vi.mock("@ecency/sdk", async () => ({
     posts: {
       entry: (entryPath: string) => ["posts", "entry", entryPath],
       content: (author: string, permlink?: string) => ["posts", "content", author, permlink],
-      normalize: (author: string, permlink?: string) => ["posts", "normalize", author, permlink]
+      normalize: (author: string, permlink?: string) => ["posts", "normalize", author, permlink],
+      entryVote: (author?: string, permlink?: string, voter?: string) => [
+        "posts",
+        "entry-vote",
+        author,
+        permlink,
+        voter
+      ]
     },
     ai: aiQueryKeys
   },

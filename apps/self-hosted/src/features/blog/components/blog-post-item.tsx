@@ -58,8 +58,9 @@ export function BlogPostItem({ entry }: Props) {
     [entryData],
   );
 
+  // stats.total_votes: entries carry no voter list.
   const likesCount = useMemo(
-    () => entryData.active_votes?.length || 0,
+    () => entryData.stats?.total_votes ?? 0,
     [entryData],
   );
 

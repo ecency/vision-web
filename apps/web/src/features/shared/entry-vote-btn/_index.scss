@@ -5,6 +5,13 @@
   .btn-vote {
     @include btn-vote;
   }
+
+  // The user's own vote is still being looked up: muted, neither the voted
+  // nor the not-voted look. A click waits for the answer (see index.tsx).
+  &.vote-pending .btn-vote {
+    opacity: 0.45;
+    cursor: progress;
+  }
 }
 
 .vote-modal {

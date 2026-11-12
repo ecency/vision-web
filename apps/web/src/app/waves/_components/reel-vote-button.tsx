@@ -7,9 +7,11 @@ import { UilHeart } from "@tooni/iconscout-unicons-react";
 import { Entry } from "@/entities";
 import { LoginRequired } from "@/features/shared";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { useViewerVote } from "@/core/hooks/use-viewer-vote";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useEntryVote } from "@/api/mutations";
-import { getVoteValue } from "@/features/shared/entry-vote-btn/utils";
+import { entryVoteCount } from "@/api/mutations/derive-optimistic-vote";
+import { getVoteValue, voteValueKey } from "@/features/shared/entry-vote-btn/utils";
 import { error } from "@/features/shared/feedback";
 import { formatError } from "@/api/format-error";
 
@@ -22,32 +24,27 @@ import { formatError } from "@/api/format-error";
  */
 export function ReelVoteButton({ entry: initialEntry }: { entry: Entry }) {
   const { activeUser } = useActiveAccount();
-  const { data: cached } = useQuery(EcencyEntriesCacheManagement.getEntryQuery(initialEntry));
+  const { data: cached, dataUpdatedAt: entryUpdatedAt } = useQuery(
+    EcencyEntriesCacheManagement.getEntryQuery(initialEntry)
+  );
   const entry = cached ?? initialEntry;
 
   const { mutateAsync: vote, isPending } = useEntryVote(entry);
 
-  const isVoted = useMemo(
-    () =>
-      !!activeUser &&
-      (entry.active_votes?.some((v) => v.voter === activeUser.username && v.rshares >= 0) ?? false),
-    [activeUser, entry.active_votes]
-  );
+  // The user's own upvote (never the SSR observer's): see useViewerVote.
+  const viewerVote = useViewerVote(entry, entryUpdatedAt);
+  const isVoted = viewerVote.upVoted;
+  // The user's own vote is still being looked up: no tap is taken until it is
+  // known, or a tap could raise or replace an existing vote instead of
+  // removing it.
+  const votePending = viewerVote.pending;
 
   // Mirror the feed's EntryVotes count (incl. the top-level total_votes fallback)
   // so the rail matches the rest of the app and never drops a real count.
-  const count = useMemo(
-    () =>
-      entry.stats?.total_votes ||
-      entry.active_votes?.length ||
-      entry.net_votes ||
-      entry.total_votes ||
-      0,
-    [entry]
-  );
+  const count = useMemo(() => entryVoteCount(entry), [entry]);
 
   const onVote = async () => {
-    if (!activeUser || isPending) {
+    if (!activeUser || isPending || votePending) {
       return;
     }
     try {
@@ -59,9 +56,8 @@ export function ReelVoteButton({ entry: initialEntry }: { entry: Entry }) {
         // the SDK reconciles the authoritative payout afterwards).
         const percent = getVoteValue(
           "up",
-          // Fall back to permlink if post_id is missing, so reels without a
-          // post_id don't all share one saved weight under `${user}-undefined`.
-          `${activeUser.username}-${entry.post_id ?? entry.permlink}`,
+          // The same per-post key the vote slider writes (author/permlink).
+          voteValueKey(activeUser.username, entry),
           getVoteValue("upPrevious", activeUser.username, 100, false),
           false
         );
@@ -77,7 +73,8 @@ export function ReelVoteButton({ entry: initialEntry }: { entry: Entry }) {
       <button
         type="button"
         onClick={onVote}
-        disabled={isPending}
+        disabled={isPending || votePending}
+        aria-busy={votePending ? true : undefined}
         className={`waves-reel-rail__item waves-reel-rail__vote${isVoted ? " is-voted" : ""}`}
         aria-pressed={isVoted}
         aria-label={i18next.t("entry-vote-btn.vote", { defaultValue: "Vote" })}

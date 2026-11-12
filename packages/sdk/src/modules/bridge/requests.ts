@@ -1,15 +1,49 @@
 import { CONFIG } from "@/modules/core";
-import { callRPC } from "@/modules/core/hive-tx";
+import { callRPC, callRPCWithFallback } from "@/modules/core/hive-tx";
 import { AccountRelationship, Profile } from "@/modules/accounts/types";
 import { Community } from "@/modules/communities/types/community";
 import { Subscription } from "@/modules/communities/types/subscription";
 import { Entry } from "@/modules/posts/types";
 import { filterDmcaEntry } from "@/modules/posts/utils/filter-dmca-entries";
+import { normalizeEntry } from "@/modules/posts/utils/normalize-entry";
 
 type BridgeParams = Record<string, unknown> | unknown[];
 
 export function bridgeApiCall<T>(endpoint: string, params: BridgeParams, signal?: AbortSignal): Promise<T> {
   return callRPC(`bridge.${endpoint}`, params, undefined, undefined, signal) as Promise<T>;
+}
+
+/**
+ * How many of the strongest voters a single-post read asks for (bridge v2
+ * `top_votes`). A v1 answer gets them derived by normalizeEntry instead.
+ */
+export const POST_TOP_VOTES = 5;
+
+/** Params only the v2 methods accept: v1 rejects them as unexpected keywords. */
+const BRIDGE_V2_ONLY_PARAMS = ["top_votes"];
+
+/**
+ * Vote-free bridge read: `bridge.<endpoint>_v2`, with `bridge.<endpoint>` as
+ * the per-node fallback for nodes that do not serve v2 yet (see
+ * `callRPCWithFallback`). The v1 request drops the v2-only params
+ * (`top_votes`), which v1 rejects. The raw result comes back in either shape;
+ * run it through `normalizeEntry`.
+ *
+ * Endpoints: get_post, get_ranked_posts, get_account_posts, get_discussion.
+ */
+export async function bridgeV2Call<T>(
+  endpoint: "get_post" | "get_ranked_posts" | "get_account_posts" | "get_discussion",
+  params: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<T> {
+  const v1Params: Record<string, unknown> = { ...params };
+  for (const key of BRIDGE_V2_ONLY_PARAMS) delete v1Params[key];
+  const { result } = await callRPCWithFallback<T>(
+    { method: `bridge.${endpoint}_v2`, params },
+    { method: `bridge.${endpoint}`, params: v1Params },
+    { signal }
+  );
+  return result;
 }
 
 export async function resolvePost(
@@ -46,7 +80,7 @@ export async function resolvePost(
 }
 
 async function resolvePosts(posts: Entry[], observer: string, signal?: AbortSignal): Promise<Entry[]> {
-  const validatedPosts = posts.map(validateEntry);
+  const validatedPosts = posts.map((p) => validateEntry(normalizeEntry(p, observer)));
   const resolved = await Promise.all(validatedPosts.map((p) => resolvePost(p, observer, undefined, signal)));
   return filterDmcaEntry(resolved) as Entry[];
 }
@@ -60,7 +94,7 @@ export async function getPostsRanked(
   observer: string = "",
   signal?: AbortSignal
 ): Promise<Entry[] | null> {
-  const resp = await bridgeApiCall<Entry[] | null>("get_ranked_posts", {
+  const resp = await bridgeV2Call<Entry[] | null>("get_ranked_posts", {
     sort,
     start_author,
     start_permlink,
@@ -95,7 +129,7 @@ export async function getAccountPosts(
     return [];
   }
 
-  const resp = await bridgeApiCall<Entry[] | null>("get_account_posts", {
+  const resp = await bridgeV2Call<Entry[] | null>("get_account_posts", {
     sort,
     account,
     start_author,
@@ -123,7 +157,6 @@ export async function getAccountPosts(
 function validateEntry(entry: Entry): Entry {
   const newEntry: Entry = {
     ...entry,
-    active_votes: Array.isArray(entry.active_votes) ? [...entry.active_votes] : [],
     beneficiaries: Array.isArray(entry.beneficiaries) ? [...entry.beneficiaries] : [],
     blacklists: Array.isArray(entry.blacklists) ? [...entry.blacklists] : [],
     replies: Array.isArray(entry.replies) ? [...entry.replies] : [],
@@ -208,14 +241,15 @@ export async function getPost(
   num?: number,
   signal?: AbortSignal
 ): Promise<Entry | undefined> {
-  const resp = await bridgeApiCall<Entry | null>("get_post", {
+  const resp = await bridgeV2Call<Entry | null>("get_post", {
     author,
     permlink,
     observer,
+    top_votes: POST_TOP_VOTES,
   }, signal);
 
   if (resp) {
-    const validatedEntry = validateEntry(resp);
+    const validatedEntry = validateEntry(normalizeEntry(resp, observer));
     const post = await resolvePost(validatedEntry, observer, num, signal);
     return filterDmcaEntry(post) as Entry;
   }
@@ -239,10 +273,11 @@ export async function getDiscussion(
   permlink: string,
   observer?: string
 ): Promise<Record<string, Entry> | null> {
-  const resp = await bridgeApiCall<Record<string, Entry> | null>("get_discussion", {
+  const resolvedObserver = observer || author;
+  const resp = await bridgeV2Call<Record<string, Entry> | null>("get_discussion", {
     author,
     permlink,
-    observer: observer || author,
+    observer: resolvedObserver,
   });
 
   if (resp) {
@@ -251,7 +286,9 @@ export async function getDiscussion(
       // Filtered as well as validated: a thread is served by .discussion.json
       // and rendered under every post, and a takedown covers a comment the
       // same way it covers the post it hangs under (#1862).
-      validatedResp[key] = filterDmcaEntry(validateEntry(entry)) as Entry;
+      validatedResp[key] = filterDmcaEntry(
+        validateEntry(normalizeEntry(entry, resolvedObserver))
+      ) as Entry;
     }
     return validatedResp;
   }

@@ -3,6 +3,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { Entry } from "../types";
 import { callRPC } from "@/modules/core/hive-tx";
 import { filterDmcaEntry } from "../utils/filter-dmca-entries";
+import { normalizeEntry } from "../utils/normalize-entry";
 
 export function getContentQueryOptions(author: string, permlink: string) {
   return queryOptions({
@@ -19,7 +20,13 @@ export function getContentQueryOptions(author: string, permlink: string) {
       // filtered; this query had not, and it is the one the agent endpoints,
       // the oEmbed provider and the decks columns read, so a listed post came
       // back in full from /@author/permlink.md and .json (#1862).
-      return filterDmcaEntry(entry) as Entry;
+      // Condenser carries the whole voter list; normalize it away like every
+      // other source (no observer: the vote is stated as unknown).
+      // Condenser sends the whole voter list (no cap, no stats), so its length
+      // is the count even past 1000.
+      return filterDmcaEntry(
+        entry ? normalizeEntry(entry, "", { completeVoteList: true }) : entry
+      ) as Entry;
     },
   });
 }

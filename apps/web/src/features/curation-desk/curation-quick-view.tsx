@@ -170,10 +170,21 @@ export function CurationQuickView({
   const permlink = row?.permlink ?? "";
   const open = !!row;
 
-  const { data: entry, isLoading } = useQuery({
+  const { data: entry, isLoading, refetch: refetchEntry } = useQuery({
     ...EcencyEntriesCacheManagement.getEntryQueryByPath(author, permlink),
     enabled: open && !!author && !!permlink,
   });
+  // The top voters come with a single-post read (top_votes). A feed or waves
+  // row may have seeded this cache without them; read the open post once more
+  // in that case. Once per row: a post read that still has none (no votes,
+  // or a node that answered v1 with an empty list) is not retried.
+  const topVotesReadFor = useRef<string | null>(null);
+  useEffect(() => {
+    const key = `${author}/${permlink}`;
+    if (!open || !entry || entry.top_votes !== undefined || topVotesReadFor.current === key) return;
+    topVotesReadFor.current = key;
+    void refetchEntry();
+  }, [open, entry, author, permlink, refetchEntry]);
   const { data: post } = useQuery({
     ...getCurationPostQueryOptions(author, permlink),
     enabled: open && !!author && !!permlink,
@@ -276,11 +287,14 @@ export function CurationQuickView({
   const mine: CurationRecommender | undefined = post?.recommenders?.find((r) => r.username === viewer.username);
   const topVoters = useMemo(
     () =>
-      (entry?.active_votes ?? [])
+      // The strongest voters ride along with the entry: v2 `top_votes`
+      // (requested on single-post reads), or derived from a v1 list by the
+      // SDK normalizer. No voter list is paged for five names.
+      (entry?.top_votes ?? [])
         .slice()
         .sort((a, b) => Number(b.rshares ?? 0) - Number(a.rshares ?? 0))
         .slice(0, 5),
-    [entry?.active_votes]
+    [entry?.top_votes]
   );
 
   if (!row) return null;
@@ -430,7 +444,7 @@ export function CurationQuickView({
                 <li>
                   {i18next.t("curation-desk.marks.payout", {
                     amount: (row.pending_payout ?? row.pending_payout_est ?? 0).toFixed(2),
-                    votes: row.votes ?? entry?.active_votes?.length ?? 0,
+                    votes: row.votes ?? entry?.stats?.total_votes ?? 0,
                   })}
                 </li>
                 {row.rshares_total != null && row.rshares_total > 0 && row.rshares_after_24h != null && (

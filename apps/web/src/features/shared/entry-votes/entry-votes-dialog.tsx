@@ -14,9 +14,11 @@ import { useQuery } from "@tanstack/react-query";
 import { prepareVotes } from "@/features/shared/entry-vote-btn/utils";
 import { heartSvg } from "@ui/svg";
 import { Entry } from "@/entities";
-import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { useViewerVote } from "@/core/hooks/use-viewer-vote";
+import { sortVotes, type VoteSortOption } from "@/features/shared/entry-votes/sort-votes";
 
-type SortOption = "reward" | "timestamp" | "voter" | "percent";
+// The same options sortVotes takes, reputation included (the select offers it).
+type SortOption = VoteSortOption;
 
 interface Props {
   /** See EntryVotes: size-N sink class for the vote icon; defaults to "[&>svg]:size-3.5". */
@@ -36,9 +38,10 @@ export function EntryVotesDialog({
   totalVotes,
   hasDifferentVotes
 }: Props) {
-  const { data: entry } = useQuery(EcencyEntriesCacheManagement.getEntryQuery(initialEntry));
+  const { data: entry, dataUpdatedAt: entryUpdatedAt } = useQuery(
+    EcencyEntriesCacheManagement.getEntryQuery(initialEntry)
+  );
 
-  const { activeUser } = useActiveAccount();
   const { data: apiVotes, isLoading: areVotesLoading } = useQuery(getEntryActiveVotesQueryOptions(entry));
 
   const [searchText, setSearchText] = useState("");
@@ -46,16 +49,8 @@ export function EntryVotesDialog({
   const [pageSize, setPageSize] = useState(12);
   const [sort, setSort] = useState<SortOption>("reward");
 
-  const { voted: isVoted } = useMemo(() => {
-    if (!activeUser) {
-      return { voted: false };
-    }
-    const { active_votes: votes } = entry!;
-
-    const voted = votes ? votes.some((v) => v.voter === activeUser.username) : false;
-
-    return { voted };
-  }, [activeUser, entry]);
+  const viewerVote = useViewerVote(entry, entryUpdatedAt);
+  const isVoted = viewerVote.upVoted || viewerVote.downVoted;
 
   const preparedVotes = useMemo(() => prepareVotes(entry!, apiVotes ?? []), [apiVotes, entry]);
   const votes = useMemo(
@@ -79,20 +74,9 @@ export function EntryVotesDialog({
     const start = (page - 1) * pageSize;
     const end = start + pageSize;
 
-    return votes
-      .sort((a, b) => {
-        const keyA = a[sort]!;
-        const keyB = b[sort]!;
-
-        if (keyA > keyB) return -1;
-        if (keyA < keyB) return 1;
-        return 0;
-      })
-      .slice(start, end);
+    return sortVotes(votes, sort).slice(start, end);
   }, [page, votes, sort]);
-  const hasCurrentUserVote = entry?.active_votes?.find(
-    ({ voter }) => voter === activeUser?.username
-  );
+  const hasCurrentUserVote = isVoted;
 
   const child = (
     <>
@@ -170,9 +154,11 @@ export function EntryVotesDialog({
                               <ProfileLink username={x.voter}>
                                 <span className="item-name notranslate">{x.voter}</span>
                               </ProfileLink>
-                              <span className="item-reputation">
-                                {accountReputation(x.reputation)}
-                              </span>
+                              {x.reputation !== undefined && (
+                                <span className="item-reputation">
+                                  {accountReputation(x.reputation)}
+                                </span>
+                              )}
                             </div>
                           </div>
                           <div className="item-extra">

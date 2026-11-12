@@ -2,7 +2,6 @@
 
 exports[`tempEntry > (1) Create temp entry 1`] = `
 {
-  "active_votes": [],
   "author": "foo",
   "author_payout_value": "0.000 HBD",
   "author_reputation": 6550853848,
@@ -26,6 +25,8 @@ exports[`tempEntry > (1) Create temp entry 1`] = `
   },
   "max_accepted_payout": "1000000.000 HBD",
   "net_rshares": 0,
+  "observer_vote": null,
+  "observer_vote_for": "foo",
   "parent_author": "",
   "parent_permlink": "ecency",
   "payout": 0,

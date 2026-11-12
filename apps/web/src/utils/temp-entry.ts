@@ -24,7 +24,10 @@ export function tempEntry(p: TempEntryProps): Entry {
   const category = p.tags[0];
 
   return {
-    active_votes: [],
+    // A post its author has just written: nobody, the author included, has
+    // voted on it yet, so the vote button needs no lookup.
+    observer_vote: null,
+    observer_vote_for: p.author.name,
     author: p.author.name,
     author_payout_value: "0.000 HBD",
     author_reputation: Number(p.author.reputation!),

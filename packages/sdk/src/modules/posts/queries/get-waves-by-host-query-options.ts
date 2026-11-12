@@ -5,7 +5,8 @@ import {
   getVisibleFirstLevelThreadItems,
   mapThreadItemsToWaveEntries
 } from "../utils/waves-helpers";
-import { callRPC } from "@/modules/core/hive-tx";
+import { bridgeV2Call } from "@/modules/bridge/requests";
+import { normalizeEntry } from "../utils/normalize-entry";
 
 const THREAD_CONTAINER_BATCH_SIZE = 5;
 const MAX_CONTAINERS_TO_SCAN = 50;
@@ -42,7 +43,14 @@ async function getThreads(
 
     let containers: WaveEntry[];
     try {
-      containers = (await callRPC("bridge.get_account_posts", rpcParams)) as WaveEntry[];
+      // No observer: the containers are only scanned for their threads.
+      const raw = await bridgeV2Call<WaveEntry[] | null>(
+        "get_account_posts",
+        rpcParams as unknown as Record<string, unknown>
+      );
+      containers = Array.isArray(raw)
+        ? (raw.map((c) => normalizeEntry(c, "")) as unknown as WaveEntry[])
+        : (raw as unknown as WaveEntry[]);
     } catch (err) {
       console.error("[SDK] getThreads get_account_posts error:", err);
       return null;

@@ -1,2 +1,0 @@
-import {a}from'./chunk-AHF3V5KG.js';import {j}from'./chunk-RAWKN3XW.js';import {queryOptions}from'@tanstack/react-query';function u(e){return queryOptions({enabled:!!e,queryKey:a.accounts.pendingRecovery(e),queryFn:()=>j("database_api.find_change_recovery_account_requests",{accounts:[e]})})}export{u as a};//# sourceMappingURL=chunk-POZX2Y7O.js.map
-//# sourceMappingURL=chunk-POZX2Y7O.js.map

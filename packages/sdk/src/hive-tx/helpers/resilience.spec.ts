@@ -9,6 +9,8 @@ import {
   rpcHedgeBudget,
   rpcHealthTracker,
   restHealthTracker,
+  callRPCWithFallback,
+  __METHOD_FALLBACK__,
 } from "./call";
 import { config, setResilience } from "../config";
 
@@ -693,5 +695,139 @@ describe("setResilience validation", () => {
     expect(config.resilience.adaptiveTimeoutFloorMs).toBe(2_000);
     setResilience({ totalBudgetFactor: 0.25 });
     expect(config.resilience.totalBudgetFactor).toBe(1);
+  });
+});
+
+// Issue #2056: each hedge leg decides the method fallback for ITS node. An
+// old hedge node answering `unknown method` switches to v1 on that node only,
+// and the primary node is not marked.
+describe("hedged reads with a per-node method fallback", () => {
+  it("lets the hedge node fall back to v1 without marking the primary", async () => {
+    const nodes = freshNodes(2);
+    config.nodes = nodes;
+    Object.assign(config.resilience, {
+      hedge: true,
+      hedgeDelayFloorMs: 80,
+      hedgeDelayFactor: 1,
+      adaptiveTimeoutFloorMs: 2_000,
+      adaptiveTimeoutFactor: 4,
+    });
+    const primary = { method: "bridge.get_post_v2", params: { author: "a", permlink: "b" } };
+    const fallback = { method: "bridge.get_post", params: { author: "a", permlink: "b" } };
+
+    // Profile the primary node for the v2 method so the hedge can fire.
+    const seeded = routeFetch({ [nodes[0]]: { kind: "ok", result: { observer_vote: null } } });
+    for (let i = 0; i < 3; i++) await callRPCWithFallback(primary, fallback);
+    expect(rpcHealthTracker.getUsableLatencyMs(nodes[0], primary.method)).toBeDefined();
+    seeded.spy.mockRestore();
+    const before = rpcHedgeBudget.available;
+
+    const seen: Array<{ host: string; method: string }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: any, init: any) => {
+      const host = new URL(String(input)).origin;
+      const body = JSON.parse(String(init.body));
+      seen.push({ host, method: body.method });
+      if (host === nodes[0]) {
+        // Stalled primary: settles only on abort.
+        return new Promise((_resolve, reject) =>
+          init.signal?.addEventListener("abort", () => {
+            const e = new Error("aborted");
+            e.name = "AbortError";
+            reject(e);
+          })
+        );
+      }
+      const payload =
+        body.method === "bridge.get_post_v2"
+          ? { error: { code: -32602, message: "Assert Exception:unknown method: bridge_apiget_post_v2" } }
+          : { result: { author: "a", active_votes: [] } };
+      return Promise.resolve(
+        new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, ...payload }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    });
+
+    const answer = await callRPCWithFallback(primary, fallback);
+
+    expect(answer.method).toBe("bridge.get_post");
+    expect(seen).toEqual([
+      { host: nodes[0], method: "bridge.get_post_v2" },
+      { host: nodes[1], method: "bridge.get_post_v2" },
+      { host: nodes[1], method: "bridge.get_post" },
+    ]);
+    expect(__METHOD_FALLBACK__.lacksMethod(nodes[1], primary.method)).toBe(true);
+    expect(__METHOD_FALLBACK__.lacksMethod(nodes[0], primary.method)).toBe(false);
+    // One hedge, one token: the unknown-method answer spent nothing extra.
+    expect(rpcHedgeBudget.available).toBeCloseTo(before - 1, 5);
+    expect(rpcHealthTracker.isNodeHealthy(nodes[1], "bridge")).toBe(true);
+  });
+});
+
+// Review 3: on a node without the v2 methods every read is answered by v1, so
+// that is the profile the node builds. Hedging and the adaptive per-attempt
+// timeout must read the profile of the method the node will actually be
+// asked, or the four main reads never hedge on a v2-less node.
+describe("hedge and adaptive timeout on a v2-less node", () => {
+  const primary = { method: "bridge.get_post_v2", params: { author: "a", permlink: "b" } };
+  const fallback = { method: "bridge.get_post", params: { author: "a", permlink: "b" } };
+
+  function oldNodeFetch(stall: () => string | undefined) {
+    return vi.spyOn(globalThis, "fetch").mockImplementation((input: any, init: any) => {
+      const host = new URL(String(input)).origin;
+      const body = JSON.parse(String(init.body));
+      if (body.method === "bridge.get_post_v2") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ jsonrpc: "2.0", id: body.id, error: { code: -32602, message: "Assert Exception:unknown method: bridge_apiget_post_v2" } }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+      if (host === stall()) {
+        return new Promise((_r, reject) =>
+          init.signal?.addEventListener("abort", () => {
+            const e = new Error("aborted");
+            e.name = "AbortError";
+            reject(e);
+          })
+        );
+      }
+      return Promise.resolve(jsonOk(body.id, { from: host }));
+    });
+  }
+
+  async function seed(nodes: string[]) {
+    __METHOD_FALLBACK__.reset();
+    const spy = oldNodeFetch(() => undefined);
+    for (let i = 0; i < 12; i++) await callRPCWithFallback(primary, fallback);
+    expect(rpcHealthTracker.getUsableLatencyMs(nodes[0], "bridge.get_post")).toBeDefined();
+    spy.mockRestore();
+  }
+
+  it("hedges the read", async () => {
+    const nodes = freshNodes(2);
+    config.nodes = nodes;
+    Object.assign(config.resilience, { hedge: true, hedgeDelayFloorMs: 80, hedgeDelayFactor: 1, adaptiveTimeoutFloorMs: 3_000, adaptiveTimeoutFactor: 4 });
+    await seed(nodes);
+    oldNodeFetch(() => nodes[0]);
+    const t0 = Date.now();
+    const answer = await callRPCWithFallback(primary, fallback);
+    expect(answer.result).toEqual({ from: nodes[1] });
+    expect(Date.now() - t0).toBeLessThan(1_500);
+  });
+
+  it("shortens the attempt by the node's own profile", async () => {
+    const nodes = freshNodes(2);
+    config.nodes = nodes;
+    Object.assign(config.resilience, { hedge: false, adaptiveTimeoutFloorMs: 150, adaptiveTimeoutFactor: 1 });
+    await seed(nodes);
+    oldNodeFetch(() => nodes[0]);
+    const t0 = Date.now();
+    const answer = await callRPCWithFallback(primary, fallback);
+    expect(answer.result).toEqual({ from: nodes[1] });
+    // The caller's ceiling (config.timeout, 5 s here) would end it at ~5 s.
+    expect(Date.now() - t0).toBeLessThan(1_500);
   });
 });

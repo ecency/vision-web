@@ -1,0 +1,2 @@
+import {k}from'./chunk-GGPLY7NR.js';import {queryOptions}from'@tanstack/react-query';function n(){return queryOptions({queryKey:["operations","chain-properties"],queryFn:async()=>await k("condenser_api.get_chain_properties",[])})}export{n as a};//# sourceMappingURL=chunk-TLVJREQP.js.map
+//# sourceMappingURL=chunk-TLVJREQP.js.map

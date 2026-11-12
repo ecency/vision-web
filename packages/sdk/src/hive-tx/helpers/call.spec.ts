@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { callRPCBroadcast, callRPC, callREST, RPCError, NodeHealthTracker } from "./call";
+import { callRPCBroadcast, callRPC, callREST, RPCError, NodeHealthTracker, rpcHealthTracker, __METHOD_FALLBACK__ } from "./call";
+import { getPost, bridgeV2Call } from "../../modules/bridge/requests";
+import { callRPCWithFallback } from "./call";
 import { config, setUserAgent } from "../config";
 
 const ORIGINAL_NODES = [...config.nodes];
@@ -441,5 +443,276 @@ describe("NodeHealthTracker — 429 rate-limit backoff", () => {
     t.recordRateLimit("https://n.test"); // streak expired → base 10s → until 210_000 (not 20s)
     vi.setSystemTime(210_001);
     expect(t.isNodeHealthy("https://n.test")).toBe(true);
+  });
+});
+
+// ── Per-node method fallback (bridge v2 reads, issue #2056) ─────────────────
+//
+// Nodes that have not upgraded hivemind answer a v2 method with HTTP 200 and a
+// JSON-RPC assert (-32602, "unknown method: bridge_apiget_post_v2"). That is a
+// capability answer about ONE node, not a node fault: the same node is asked
+// the v1 method at once, remembered as lacking v2 for a TTL, and its health is
+// left exactly as it was.
+describe("per-node method fallback (bridge v2 -> v1)", () => {
+  function unknownMethod(id: number, method: string): Response {
+    const name = method.replace(".", "_api");
+    return new Response(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        error: {
+          code: -32602,
+          message: `Assert Exception:unknown method: ${name}`,
+          data: { code: 10, name: "assert_exception", message: "Assert Exception", extension: { assertion_expression: `unknown method: ${name}` } }
+        }
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  const V1_POST = {
+    author: "alice",
+    permlink: "p",
+    category: "hive",
+    stats: { flag_weight: 0, gray: false, hide: false, total_votes: 2 },
+    active_votes: [
+      { voter: "bob", rshares: 5 },
+      { voter: "carol", rshares: 7 }
+    ]
+  };
+
+  /** A node that predates bridge v2: every *_v2 call is an unknown method. */
+  function oldNodeFetch(calls: Array<{ url: string; method: string }>) {
+    return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      const id = readJsonRpcId(init);
+      const method = JSON.parse(String(init.body)).method as string;
+      calls.push({ url: String(input), method });
+      if (method.endsWith("_v2")) return unknownMethod(id, method);
+      return jsonOk(id, V1_POST);
+    });
+  }
+
+  function healthOf(node: string) {
+    const h = (rpcHealthTracker as any).health.get(node);
+    return {
+      consecutiveFailures: h?.consecutiveFailures ?? 0,
+      bridgeFailures: h?.apiFailures.get("bridge")?.count ?? 0,
+      healthy: rpcHealthTracker.isNodeHealthy(node, "bridge")
+    };
+  }
+
+  it("asks the same node for v1 at once, then v1 only, and leaves its health unchanged", async () => {
+    config.nodes = ["https://old-node-1.test", "https://node-b.test"];
+    const calls: Array<{ url: string; method: string }> = [];
+    oldNodeFetch(calls);
+    const before = healthOf("https://old-node-1.test");
+
+    const first = await getPost("alice", "p", "bob");
+    expect(calls).toEqual([
+      { url: "https://old-node-1.test", method: "bridge.get_post_v2" },
+      { url: "https://old-node-1.test", method: "bridge.get_post" }
+    ]);
+    expect(first?.author).toBe("alice");
+
+    calls.length = 0;
+    await getPost("alice", "p", "bob");
+    expect(calls).toEqual([{ url: "https://old-node-1.test", method: "bridge.get_post" }]);
+
+    expect(healthOf("https://old-node-1.test")).toEqual(before);
+    expect(healthOf("https://old-node-1.test").healthy).toBe(true);
+  });
+
+  it("retries v2 on that node once the TTL has expired", async () => {
+    config.nodes = ["https://old-node-2.test"];
+    const calls: Array<{ url: string; method: string }> = [];
+    oldNodeFetch(calls);
+    const t0 = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(t0);
+
+    await getPost("alice", "p", "bob");
+    expect(calls.map((c) => c.method)).toEqual(["bridge.get_post_v2", "bridge.get_post"]);
+
+    // Still inside the TTL (30 minutes): v1 straight away.
+    calls.length = 0;
+    now.mockReturnValue(t0 + 29 * 60_000);
+    await getPost("alice", "p", "bob");
+    expect(calls.map((c) => c.method)).toEqual(["bridge.get_post"]);
+
+    // Past the TTL: the node may have been upgraded, try v2 again.
+    calls.length = 0;
+    now.mockReturnValue(t0 + 31 * 60_000);
+    await getPost("alice", "p", "bob");
+    expect(calls.map((c) => c.method)).toEqual(["bridge.get_post_v2", "bridge.get_post"]);
+  });
+
+  it("keeps the decision per node: an upgraded node still gets v2", async () => {
+    config.nodes = ["https://old-node-3.test", "https://new-node-3.test"];
+    const calls: Array<{ url: string; method: string }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      const id = readJsonRpcId(init);
+      const method = JSON.parse(String(init.body)).method as string;
+      calls.push({ url: String(input), method });
+      if (String(input).includes("old-node") && method.endsWith("_v2")) return unknownMethod(id, method);
+      if (String(input).includes("old-node")) {
+        // Old node now fails outright, so the call moves to the new node.
+        return new Response("down", { status: 503 });
+      }
+      return jsonOk(id, { ...V1_POST, active_votes: undefined, observer_vote: null });
+    });
+
+    await getPost("alice", "p", "bob");
+    expect(calls).toEqual([
+      { url: "https://old-node-3.test", method: "bridge.get_post_v2" },
+      { url: "https://old-node-3.test", method: "bridge.get_post" },
+      { url: "https://new-node-3.test", method: "bridge.get_post_v2" }
+    ]);
+  });
+
+  // Hivemind echoes caller params into the same -32602 "Assert Exception:"
+  // text, so "unknown method" inside a permlink or tag must not read as a
+  // missing method: that would mark a v2 node as v1-only for 30 minutes from
+  // one crafted URL.
+  for (const [label, message, assertion] of [
+    [
+      "a permlink",
+      "Assert Exception:Post gtg/unknown method does not exist",
+      "Post gtg/unknown method does not exist"
+    ],
+    ["a tag", "Assert Exception:invalid tag `unknown method`", "invalid tag `unknown method`"],
+    [
+      "a param that spells the whole marker",
+      "Assert Exception:Post gtg/unknown method: bridge_apiget_post_v2 does not exist",
+      "Post gtg/unknown method: bridge_apiget_post_v2 does not exist"
+    ],
+    [
+      "a different method's name",
+      "Assert Exception:unknown method: bridge_apiget_discussion_v2",
+      "unknown method: bridge_apiget_discussion_v2"
+    ]
+  ] as const) {
+    it(`does not mark the node when ${label} carries "unknown method"`, async () => {
+      const node = `https://echo-node-${label.replace(/\W+/g, "-")}.test`;
+      config.nodes = [node];
+      const calls: string[] = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+        const id = readJsonRpcId(init);
+        calls.push(JSON.parse(String(init.body)).method);
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message, data: { extension: { assertion_expression: assertion } } }
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      });
+
+      await expect(getPost("gtg", "unknown method", "bob")).rejects.toThrow();
+      expect(calls).toEqual(["bridge.get_post_v2"]);
+      expect(__METHOD_FALLBACK__.lacksMethod(node, "bridge.get_post_v2")).toBe(false);
+    });
+  }
+
+  it("does not hide a real application error behind the fallback", async () => {
+    config.nodes = ["https://node-x.test"];
+    const calls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+      const id = readJsonRpcId(init);
+      calls.push(JSON.parse(String(init.body)).method);
+      return jsonRpcError(id, -32602, "Assert Exception:Post alice/p does not exist");
+    });
+    await expect(getPost("alice", "p", "bob")).rejects.toThrow(/does not exist/);
+    expect(calls).toEqual(["bridge.get_post_v2"]);
+  });
+});
+
+// Review J, K: timing and scope of the per-node fallback.
+describe("per-node method fallback: family, timing, latency", () => {
+  beforeEach(() => __METHOD_FALLBACK__.reset());
+
+  function hivemindUnknown(id: number, method: string): Response {
+    const name = method.replace(".", "_api");
+    return new Response(
+      JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32602, message: `Assert Exception:unknown method: ${name}` } }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  it("marks the whole bridge v2 family on one unknown-method answer", async () => {
+    const node = "https://family-node.test";
+    config.nodes = [node];
+    const calls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+      const body = JSON.parse(String(init.body));
+      calls.push(body.method);
+      if (body.method.endsWith("_v2") || body.method === "bridge.list_votes") return hivemindUnknown(body.id, body.method);
+      return jsonOk(body.id, []);
+    });
+
+    await getPost("a", "p", "");
+    calls.length = 0;
+    await bridgeV2Call("get_ranked_posts", { sort: "trending", tag: "", observer: "" });
+    await callRPCWithFallback(
+      { method: "bridge.list_votes", params: { author: "a", permlink: "p" } },
+      { method: "database_api.list_votes", params: { start: ["a", "p", ""], limit: 1, order: "by_comment_voter" } }
+    );
+    // One probe for the family: the other members go straight to v1.
+    expect(calls).toEqual(["bridge.get_ranked_posts", "database_api.list_votes"]);
+  });
+
+  it("does not take a JSON-RPC -32601 for a missing v2 method", async () => {
+    config.nodes = ["https://router-a.test", "https://router-b.test"];
+    const calls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      const body = JSON.parse(String(init.body));
+      calls.push(`${new URL(String(input)).host} ${body.method}`);
+      if (String(input).includes("router-a")) return jsonRpcError(body.id, -32601, "Method not found");
+      return jsonOk(body.id, { author: "a", permlink: "p", observer_vote: null });
+    });
+
+    await getPost("a", "p", "");
+    expect(__METHOD_FALLBACK__.lacksMethod("https://router-a.test", "bridge.get_post_v2")).toBe(false);
+    expect(calls).not.toContain("router-a.test bridge.get_post");
+  });
+
+  it("gives the fallback only what is left of the attempt's time", async () => {
+    config.nodes = ["https://slow-old-node.test"];
+    vi.spyOn(globalThis, "fetch").mockImplementation((_input: any, init: any) => {
+      const body = JSON.parse(String(init.body));
+      if (body.method === "bridge.get_post_v2") {
+        return new Promise((resolve) => setTimeout(() => resolve(hivemindUnknown(body.id, body.method)), 200));
+      }
+      // v1 never answers: only the attempt's deadline ends it.
+      return new Promise((_resolve, reject) =>
+        init.signal?.addEventListener("abort", () => {
+          const e = new Error("aborted");
+          e.name = "TimeoutError";
+          reject(e);
+        })
+      );
+    });
+    const t0 = Date.now();
+    await expect(
+      callRPCWithFallback(
+        { method: "bridge.get_post_v2", params: {} },
+        { method: "bridge.get_post", params: {} },
+        { timeout: 300, retry: 0 }
+      )
+    ).rejects.toThrow();
+    // A fresh 300 ms for v1 would end at ~500 ms.
+    expect(Date.now() - t0).toBeLessThan(420);
+  });
+
+  it("files the answer's latency under the method that answered", async () => {
+    const node = "https://latency-old-node.test";
+    config.nodes = [node];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+      const body = JSON.parse(String(init.body));
+      if (body.method === "bridge.get_post_v2") return hivemindUnknown(body.id, body.method);
+      return jsonOk(body.id, { author: "a", permlink: "p", active_votes: [] });
+    });
+    for (let i = 0; i < 3; i++) await getPost("a", "p", "");
+    expect(rpcHealthTracker.getUsableLatencyMs(node, "bridge.get_post")).toBeDefined();
+    expect(rpcHealthTracker.getUsableLatencyMs(node, "bridge.get_post_v2")).toBeUndefined();
   });
 });

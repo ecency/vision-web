@@ -5,3 +5,4 @@ export * from "./cache";
 export * from "./utils/waves-helpers";
 export * from "./utils/validate-post-creating";
 export * from "./utils/parse-json-metadata";
+export * from "./utils/normalize-entry";

@@ -1,2 +1,0 @@
-import {i}from'./chunk-UKK6NLAT.js';import {b}from'./chunk-CNB64U7U.js';import {c}from'./chunk-TJCNKBFH.js';import {a}from'./chunk-AHF3V5KG.js';function p(t,e,o){return c(["wallet","withdraw-vesting"],t,n=>[i(t,n.vestingShares)],async()=>{await b(e?.adapter,o,[a.accounts.full(t),["ecency-wallets","asset-info",t],["wallet","portfolio","v2",t]]);},e,"active",{broadcastMode:o})}export{p as a};//# sourceMappingURL=chunk-OWY55TUM.js.map
-//# sourceMappingURL=chunk-OWY55TUM.js.map

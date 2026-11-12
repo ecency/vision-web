@@ -25,8 +25,14 @@ export function getUserPostVoteQueryOptions(
         order: "by_voter_comment"
       });
 
-      // Return first vote if found, otherwise null
-      return (result?.votes?.[0] || null) as Vote | null;
+      // A lower-bound seek on (voter, author, permlink): for a post the user
+      // did not vote on it returns the user's NEXT vote, or another voter's.
+      // Only a row matching all three is this vote.
+      const row = result?.votes?.[0];
+      if (!row || row.voter !== username || row.author !== author || row.permlink !== permlink) {
+        return null;
+      }
+      return row as Vote;
     },
     enabled: !!username && !!author && !!permlink,
   });

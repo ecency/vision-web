@@ -1,6 +1,7 @@
 import { Entry, WaveEntry } from "../types";
 import { getDiscussionsQueryOptions, SortOrder } from "../queries/get-discussions-query-options";
 import { CONFIG } from "@/modules/core";
+import { normalizeEntry } from "./normalize-entry";
 
 type EntryWithPostId = Entry & { post_id: number };
 
@@ -38,7 +39,9 @@ export function normalizeWaveEntryFromApi(
   const parent = entry.parent ? normalizeParent(entry.parent) : undefined;
 
   return {
-    ...entry,
+    // Same vote contract as every other source: no raw voter list, and the
+    // vote stated as unknown unless the row was normalized for someone.
+    ...(normalizeEntry(entry, "") as typeof entry),
     id: entry.id ?? entry.post_id,
     // The private-api waves feeds (following / tag / account) send the publish
     // time as `timestamp`, not `created`; map it so the relative time renders on

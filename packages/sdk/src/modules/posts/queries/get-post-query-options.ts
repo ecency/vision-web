@@ -3,7 +3,8 @@ import { queryOptions } from "@tanstack/react-query";
 import { Entry } from "../types";
 import { filterDmcaEntry } from "../utils/filter-dmca-entries";
 import { verifyPostOnAlternateNode } from "@/modules/bridge/verify-on-alternate-node";
-import { callRPC } from "@/modules/core/hive-tx";
+import { bridgeV2Call, POST_TOP_VOTES } from "@/modules/bridge/requests";
+import { normalizeEntry } from "../utils/normalize-entry";
 
 export function getPostQueryOptions(
   author: string,
@@ -23,11 +24,13 @@ export function getPostQueryOptions(
 
       // hive-tx tries nodes in order; the first healthy node (index 0) handles this call.
       // If it returns null, verifyPostOnAlternateNode skips index 0 and tries others.
-      const response = await callRPC("bridge.get_post", {
+      const raw = await bridgeV2Call<Entry | null>("get_post", {
         author,
         permlink: cleanPermlink,
         observer,
+        top_votes: POST_TOP_VOTES,
       });
+      const response = raw ? normalizeEntry(raw, observer) : raw;
 
       if (!response) {
         // Primary node returned null — verify on alternate nodes

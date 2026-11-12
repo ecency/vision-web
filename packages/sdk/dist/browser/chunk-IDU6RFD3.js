@@ -1,2 +1,0 @@
-import {b}from'./chunk-RZVMZQO7.js';import {c}from'./chunk-TJCNKBFH.js';import {a}from'./chunk-AHF3V5KG.js';function p(t,e,i){return c(["witnesses","proxy"],t,({proxy:a})=>[b(t,a)],async()=>{e?.adapter?.invalidateQueries&&await e.adapter.invalidateQueries([a.accounts.full(t),a.witnesses.proxy()]);},e,"active",{broadcastMode:i})}export{p as a};//# sourceMappingURL=chunk-IDU6RFD3.js.map
-//# sourceMappingURL=chunk-IDU6RFD3.js.map

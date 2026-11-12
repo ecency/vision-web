@@ -1,6 +1,7 @@
 import { getQueryClient, QueryKeys } from "@/modules/core";
-import type { Entry, EntryVote } from "../types";
+import type { Entry, ObserverVote } from "../types";
 import type { QueryClient } from "@tanstack/react-query";
+import { recordOptimisticVote } from "../queries/get-entry-active-votes-query-options";
 
 function makeEntryPath(author: string, permlink: string) {
   return `/@${author}/${permlink}`;
@@ -49,35 +50,41 @@ function mutateEntry(
  * during the migration period.
  */
 export namespace EntriesCacheManagement {
-  export function updateVotes(
+  /**
+   * Record `voter`'s vote on a cached entry (bridge v2 shape): sets
+   * `observer_vote` / `observer_vote_for`, the vote count and the payout, and
+   * the `entryVote` lookup for the same voter. A null vote is "not voted".
+   */
+  export function updateObserverVote(
     author: string,
     permlink: string,
-    votes: EntryVote[],
+    voter: string,
+    vote: ObserverVote | null,
     payout: number,
+    totalVotes: number,
     qc?: QueryClient
   ) {
+    const queryClient = qc ?? getQueryClient();
     mutateEntry(
       author,
       permlink,
       (entry) => ({
         ...entry,
-        active_votes: votes,
+        observer_vote: vote,
+        observer_vote_for: voter,
         stats: {
-          ...(entry.stats || {
-            gray: false,
-            hide: false,
-            flag_weight: 0,
-            total_votes: 0,
-          }),
-          total_votes: votes.length,
+          ...(entry.stats || { gray: false, hide: false, flag_weight: 0, total_votes: 0 }),
+          total_votes: totalVotes,
           flag_weight: entry.stats?.flag_weight || 0,
         },
-        total_votes: votes.length,
+        total_votes: totalVotes,
         payout,
         pending_payout_value: String(payout),
       }),
-      qc
+      queryClient
     );
+    queryClient.setQueryData(QueryKeys.posts.entryVote(author, permlink, voter), vote);
+    recordOptimisticVote(author, permlink, voter, vote);
   }
 
   export function updateReblogsCount(

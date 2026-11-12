@@ -1,4 +1,8 @@
-import { getAccountPostsInfiniteQueryOptions, getPostsRankedInfiniteQueryOptions } from "@ecency/sdk";
+import {
+  getAccountPostsInfiniteQueryOptions,
+  getPostsRankedInfiniteQueryOptions,
+  normalizeEntry
+} from "@ecency/sdk";
 import { prefetchInfiniteQuery, getInfiniteQueryData, QueryIdentifiers } from "@/core/react-query";
 import { InfiniteData, UndefinedInitialDataInfiniteOptions, UseInfiniteQueryResult, useInfiniteQuery, infiniteQueryOptions } from "@tanstack/react-query";
 import { Entry, SearchResponse } from "@/entities";
@@ -17,7 +21,7 @@ type FeedInfinite = InfiniteData<Page, unknown>;
 type PromotedPage = Entry[];
 type PromotedCursor = "empty" | "fetched";
 
-function getPromotedEntriesInfiniteQuery() {
+export function getPromotedEntriesInfiniteQuery() {
   return infiniteQueryOptions({
     // Widened to match the SDK feed queries' key type so the three branches in
     // usePostsFeedQuery form a single assignable options union.
@@ -28,7 +32,10 @@ function getPromotedEntriesInfiniteQuery() {
       const response = await appAxios.get<Entry[]>(
         apiBase(`/private-api/promoted-entries`)
       );
-      return annotateLanguageHints(slimEntryPage(response.data));
+      // These rows carry the raw voter list: normalize them like every other
+      // source (no observer: the vote is unknown and gets looked up).
+      const rows = (response.data ?? []).map((row) => normalizeEntry(row, "") as Entry);
+      return annotateLanguageHints(slimEntryPage(rows));
     },
     getNextPageParam: (
       _lastPage: PromotedPage,

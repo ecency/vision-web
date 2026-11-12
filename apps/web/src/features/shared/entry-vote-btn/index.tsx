@@ -1,15 +1,31 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore
+} from "react";
 import * as ss from "@/utils/session-storage";
 import { LoginRequired } from "@/features/shared";
 import useClickAway from "react-use/lib/useClickAway";
 
 import dynamic from "next/dynamic";
 import { useEntryVote } from "@/api/mutations";
-import { Account, Entry, EntryVote } from "@/entities";
-import { getEntryActiveVotesQueryOptions } from "@ecency/sdk";
-import { prepareVotes } from "@/features/shared/entry-vote-btn/utils";
+import { Account, Entry } from "@/entities";
+import { getEntryVoteQueryOptions } from "@ecency/sdk";
+import { useViewerVote } from "@/core/hooks/use-viewer-vote";
+import { voteValueKey } from "@/features/shared/entry-vote-btn/utils";
+import {
+  cancelQueuedOpen,
+  queueOpen,
+  queuedOpenOwner,
+  subscribeQueuedOpen,
+  takeQueuedOpen
+} from "@/features/shared/entry-vote-btn/queued-open";
 import { classNameObject } from "@ui/util";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -43,7 +59,7 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
   const { activeUser } = useActiveAccount();
   const queryClient = useQueryClient();
 
-  const { data: entry } =
+  const { data: entry, dataUpdatedAt: entryUpdatedAt } =
     useQuery(EcencyEntriesCacheManagement.getEntryQuery(originalEntry));
 
   const [dialog, setDialog] = useState(false);
@@ -55,21 +71,16 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
 
   const { mutateAsync: voteInAPI, isPending: isVotingLoading } = useEntryVote(entry);
 
-  const isVoted = useMemo(() => {
-    if (!activeUser) {
-      return { upVoted: false, downVoted: false };
-    }
-    const upVoted =
-      entry?.active_votes?.some(
-        (v: EntryVote) => v.voter === activeUser.username && v.rshares >= 0
-      ) ?? false;
-    const downVoted =
-      entry?.active_votes?.some(
-        (v: EntryVote) => v.voter === activeUser.username && v.rshares < 0
-      ) ?? false;
-
-    return { upVoted, downVoted };
-  }, [activeUser, entry?.active_votes]);
+  // The user's OWN vote: from the entry only when it was read for this user,
+  // otherwise looked up (see useViewerVote). Never the SSR observer's vote.
+  const viewerVote = useViewerVote(entry, entryUpdatedAt);
+  // The user's own vote is being looked up right now. Never "forever": with no
+  // lookup running (no entry, disabled, offline) the button acts as not voted.
+  const votePending = viewerVote.pending;
+  const isVoted = useMemo(
+    () => ({ upVoted: viewerVote.upVoted, downVoted: viewerVote.downVoted }),
+    [viewerVote.upVoted, viewerVote.downVoted]
+  );
 
   useClickAway(rootRef, (e) => {
     if (!dialog) {
@@ -141,7 +152,7 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
     }
 
     if (upVoted || downVoted) {
-      let username = activeUser?.username! + "-" + entry.post_id;
+      let username = voteValueKey(activeUser.username, entry);
       let type = upVoted ? "up" : "down";
       let sessValue = ss.get(`vote-value-${type}-${username}`, null);
 
@@ -149,13 +160,17 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
         return sessValue;
       }
 
+      // A v2 entry read for this user already says the weight.
+      if (viewerVote.vote?.percent != null) {
+        return viewerVote.vote.percent / 100;
+      }
+
       try {
-        const retData = await queryClient.fetchQuery(
-          getEntryActiveVotesQueryOptions(entry)
+        // One vote lookup, not the whole voter list.
+        previousVote = await queryClient.fetchQuery(
+          getEntryVoteQueryOptions(entry.author, entry.permlink, activeUser.username)
         );
-        let votes = prepareVotes(entry, retData);
-        previousVote = votes.find((x) => x.voter === activeUser.username);
-        return previousVote === undefined ? null : previousVote.percent;
+        return previousVote?.percent == null ? null : previousVote.percent / 100;
       } catch (e) {
         console.error("entry-vote-btn failed to load previous vote", e);
         return null;
@@ -163,17 +178,78 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
     } else {
       return null;
     }
-  }, [activeUser, entry, isVoted, queryClient]);
+  }, [activeUser, entry, isVoted, queryClient, viewerVote.vote]);
   // The panel can open inside a scroller that does not show it: the curation
   // drawer's post column is its own scroll box and the action row is its last
   // element, so a panel below that row starts off screen. "nearest" is a no-op
   // wherever the panel is already fully visible, which is every other surface.
+  // A slider opened late from the queue (below) is not scrolled into view:
+  // the reader may be looking somewhere else by then.
+  const openedFromQueue = useRef(false);
   useEffect(() => {
+    if (!dialog) return;
+    if (openedFromQueue.current) {
+      openedFromQueue.current = false;
+      return;
+    }
     // Optional call: jsdom does not implement scrollIntoView.
-    if (dialog) panelRef.current?.scrollIntoView?.({ block: "nearest" });
+    panelRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [dialog]);
 
-  const toggleDialog = useCallback(() => setDialog((d) => !d), []);
+  // A click while the vote is being looked up queues the open: the slider must
+  // open knowing whether the user voted (it seeds and labels from that). One
+  // queued open app-wide, expiring, cancelled on unmount, logout, scroll or a
+  // click elsewhere (see queued-open.ts). A click on the trigger of an open
+  // slider always closes it.
+  const queueId = useId();
+  // Per-button snapshot (is the slot mine?): a queue event re-renders only the
+  // buttons whose answer changed, not every vote button on the page.
+  const isQueued = useSyncExternalStore(
+    subscribeQueuedOpen,
+    () => queuedOpenOwner() === queueId,
+    () => false
+  );
+  const toggleDialog = useCallback(() => {
+    if (dialog) {
+      cancelQueuedOpen(queueId);
+      setDialog(false);
+      return;
+    }
+    if (votePending && activeUser) {
+      queueOpen(queueId, activeUser.username);
+      return;
+    }
+    setDialog(true);
+  }, [dialog, votePending, queueId, activeUser]);
+  useEffect(() => {
+    if (isQueued && !votePending && takeQueuedOpen(queueId, activeUser?.username)) {
+      openedFromQueue.current = true;
+      setDialog(true);
+    }
+  }, [votePending, isQueued, queueId, activeUser?.username]);
+  useEffect(() => {
+    if (!isQueued) return;
+    const cancel = () => cancelQueuedOpen(queueId);
+    const onMouseDown = (e: MouseEvent) => {
+      if (!(e.target instanceof Node) || !rootRef.current?.contains(e.target)) cancel();
+    };
+    window.addEventListener("scroll", cancel, { capture: true, passive: true });
+    document.addEventListener("mousedown", onMouseDown, true);
+    return () => {
+      window.removeEventListener("scroll", cancel, { capture: true });
+      document.removeEventListener("mousedown", onMouseDown, true);
+    };
+  }, [isQueued, queueId]);
+  useEffect(() => () => cancelQueuedOpen(queueId), [queueId]);
+  // A queued open belongs to the account that clicked: any change of account
+  // (logout, or a direct switch to another user) cancels it.
+  const queuedFor = useRef(activeUser?.username);
+  useEffect(() => {
+    if (queuedFor.current !== activeUser?.username) {
+      queuedFor.current = activeUser?.username;
+      cancelQueuedOpen(queueId);
+    }
+  }, [activeUser?.username, queueId]);
 
   // Resolve the user's previous vote WHILE the slider is open rather than before
   // opening it, so the open paints immediately instead of blocking on
@@ -212,13 +288,13 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
   // vote weight before the new lookup resolves.
   useEffect(() => {
     setPreviousVotedValue(undefined);
-  }, [originalEntry.post_id, activeUser?.username]);
+  }, [originalEntry.author, originalEntry.permlink, activeUser?.username]);
 
   return (
     <LoginRequired promptOnAnon>
       <div ref={rootRef}>
         <div
-          className="entry-vote-btn"
+          className={`entry-vote-btn${votePending ? " vote-pending" : ""}`}
           role="button"
           tabIndex={0}
           aria-label={
@@ -228,7 +304,10 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
                 ? i18next.t("entry-vote-btn.downvoted", { defaultValue: "Downvoted, edit vote" })
                 : i18next.t("entry-vote-btn.vote", { defaultValue: "Vote" })
           }
-          aria-pressed={isVoted.upVoted || isVoted.downVoted}
+          // Unknown (the user's vote is still being looked up): neither
+          // pressed nor not-pressed, and announced as busy.
+          aria-pressed={votePending ? undefined : isVoted.upVoted || isVoted.downVoted}
+          aria-busy={votePending ? true : undefined}
           aria-expanded={dialog}
           aria-haspopup="dialog"
           onClick={toggleDialog}

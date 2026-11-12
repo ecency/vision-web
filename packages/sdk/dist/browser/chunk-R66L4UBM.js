@@ -1,0 +1,2 @@
+import {k}from'./chunk-GGPLY7NR.js';import {queryOptions}from'@tanstack/react-query';function n(){return queryOptions({queryKey:["resource-credits","stats"],queryFn:async()=>(await k("rc_api.get_rc_stats",{})).rc_stats})}export{n as a};//# sourceMappingURL=chunk-R66L4UBM.js.map
+//# sourceMappingURL=chunk-R66L4UBM.js.map
