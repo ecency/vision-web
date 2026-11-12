@@ -32,8 +32,11 @@ Exports are platform-specific via package.json `exports` field.
 **Entry Points**:
 - `@ecency/sdk` - Full SDK with React Query hooks, mutations, and queries
 - `@ecency/sdk/hive` - React-free entry point exporting only the transaction engine (signing, RPC, crypto). Use this for server-side tools, CLI scripts, or non-React environments to avoid pulling in React/react-query dependencies.
+- `@ecency/sdk/wallets` - Multi-chain wallet and asset code, see the section below.
 
-**Dependencies**: NONE (except peer deps: @hiveio/dhive, hivesigner, @tanstack/react-query)
+**Dependencies**: the main entry uses only `@noble/*` and `bs58`, plus the peers hivesigner,
+@tanstack/react-query and react. `@scure/*`, `lru-cache` and `remeda` are imported only by the
+wallets entry; `@solana/web3.js` and `@wallet-standard/app` are its optional peers.
 
 **Bundle Size**: ~229KB (full) / ~39KB (hive-only)
 
@@ -55,8 +58,8 @@ standalone `@ecency/wallets` package is a deprecated shim that re-exports it.
 
 **Note**: All blockchain mutations (transfers, delegations, staking, etc.) have been migrated to `@ecency/sdk`. This package now focuses on queries, balance display, and multi-chain key management.
 
-**Dependencies**: `@scure/*` key derivation, plus the optional peers `@solana/web3.js`
-and `@wallet-standard/app`.
+**Dependencies**: `@scure/*` key derivation, `lru-cache` and `remeda`, plus the optional
+peers `@solana/web3.js` and `@wallet-standard/app`.
 
 **Why a separate entry**: the main `@ecency/sdk` entry must never import wallet code, so
 apps that only need Hive never bundle it. `packages/sdk/test/build-shape.spec.ts` guards

@@ -173,8 +173,9 @@ self-hosted app is in `.claude/rules/self-hosted.md`.
 - Import wallet/asset code into the SDK main entry (`packages/sdk/src/index.ts`)
   - Reason: it lives in the separate `@ecency/sdk/wallets` entry so apps that do not
     use wallets never bundle multi-chain code or its dependencies
-- Add heavy dependencies to `@ecency/sdk`
-  - Reason: SDK must remain lightweight for external consumers
+- Add heavy dependencies to the `@ecency/sdk` main entry
+  - Reason: SDK must remain lightweight for external consumers. Wallet-only dependencies
+    are allowed when only `packages/sdk/src/wallets` imports them
 - Create circular dependencies between packages
   - Reason: Breaks build order and package independence
 - Add app-specific logic to packages
