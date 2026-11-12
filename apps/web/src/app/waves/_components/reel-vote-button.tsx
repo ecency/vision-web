@@ -10,7 +10,7 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useViewerVote } from "@/core/hooks/use-viewer-vote";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useEntryVote } from "@/api/mutations";
-import { getVoteValue } from "@/features/shared/entry-vote-btn/utils";
+import { getVoteValue, voteValueKey } from "@/features/shared/entry-vote-btn/utils";
 import { error } from "@/features/shared/feedback";
 import { formatError } from "@/api/format-error";
 
@@ -56,9 +56,8 @@ export function ReelVoteButton({ entry: initialEntry }: { entry: Entry }) {
         // the SDK reconciles the authoritative payout afterwards).
         const percent = getVoteValue(
           "up",
-          // Fall back to permlink if post_id is missing, so reels without a
-          // post_id don't all share one saved weight under `${user}-undefined`.
-          `${activeUser.username}-${entry.post_id ?? entry.permlink}`,
+          // The same per-post key the vote slider writes (author/permlink).
+          voteValueKey(activeUser.username, entry),
           getVoteValue("upPrevious", activeUser.username, 100, false),
           false
         );

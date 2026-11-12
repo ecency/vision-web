@@ -1,15 +1,10 @@
-import { entryVoteOf } from "@ecency/sdk";
-import { Entry, EntryVote, ObserverVote } from "@/entities";
+import { entryVoteOf, isCastVote } from "@ecency/sdk";
+import { Entry, ObserverVote } from "@/entities";
 import { parseAsset } from "@/utils";
 
 export interface OptimisticVote {
   /** The user's vote after this one; null after an unvote. */
   observerVote: ObserverVote | null;
-  /**
-   * The updated voter list, only for a legacy row that still carries
-   * `active_votes`. Undefined for bridge v2 entries, which have no list.
-   */
-  newVotes?: EntryVote[];
   nextVoteCount: number;
   nextPayout: number;
 }
@@ -18,10 +13,11 @@ export interface OptimisticVote {
  * Compute the optimistic vote state for an entry after `username` casts a vote
  * of `weight` (0 removes the vote) with an `estimated` payout delta.
  *
- * Whether the user had voted before decides the count: from the entry when it
- * was read for this user (`observer_vote`) or carries a voter list, otherwise
- * from `priorVote` (the looked-up vote; undefined = unknown, so the count only
- * moves for a fresh vote, never down).
+ * Whether the user had voted before decides the count: the looked-up vote
+ * (`priorVote`) when there is one, else the entry when it was read for this
+ * user. Unknown counts as "no vote" for an upvote and leaves the count alone
+ * for an unvote. A zero vote (percent 0, or rshares 0 without a percent) is no
+ * vote (`isCastVote`), as in the SDK.
  *
  * The count is `stats.total_votes` when present, else whichever vote count a
  * lightweight row carries (`net_votes` on waves feed rows); the base payout is
@@ -34,23 +30,13 @@ export function deriveOptimisticVote(
   username: string,
   priorVote?: ObserverVote | null
 ): OptimisticVote {
-  const fromEntry = entryVoteOf(entry, username);
-  const prior = fromEntry !== undefined ? fromEntry : priorVote;
-  const hadVote = prior != null && prior.percent !== 0;
+  const prior = priorVote !== undefined ? priorVote : entryVoteOf(entry, username);
+  const hadVote = isCastVote(prior);
   const observerVote: ObserverVote | null =
     weight !== 0 ? { rshares: weight, percent: weight } : null;
 
-  const legacyVotes = Array.isArray(entry.active_votes) ? entry.active_votes : undefined;
-  const newVotes = legacyVotes
-    ? [
-        ...legacyVotes.filter((v) => v.voter !== username),
-        ...(weight !== 0 ? [{ rshares: weight, voter: username }] : [])
-      ]
-    : undefined;
-
   const baseVoteCount =
     entry.stats?.total_votes ||
-    legacyVotes?.length ||
     entry.net_votes ||
     entry.total_votes ||
     0;
@@ -68,5 +54,5 @@ export function deriveOptimisticVote(
         parseAsset(entry.author_payout_value).amount +
         parseAsset(entry.curator_payout_value).amount;
 
-  return { observerVote, newVotes, nextVoteCount, nextPayout: basePayout + estimated };
+  return { observerVote, nextVoteCount, nextPayout: basePayout + estimated };
 }

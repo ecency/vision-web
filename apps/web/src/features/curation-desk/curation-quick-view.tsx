@@ -16,12 +16,7 @@ import {
   UilGift,
   UilTimes,
 } from "@tooni/iconscout-unicons-react";
-import {
-  getAccountPostsQueryOptions,
-  getCurationPostQueryOptions,
-  getEntryActiveVotesQueryOptions,
-  type CurationRecommender
-} from "@ecency/sdk";
+import { getAccountPostsQueryOptions, getCurationPostQueryOptions, type CurationRecommender } from "@ecency/sdk";
 import { Button } from "@ui/button";
 import { ModalSidebar } from "@ui/modal/modal-sidebar";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
@@ -183,12 +178,6 @@ export function CurationQuickView({
     ...getCurationPostQueryOptions(author, permlink),
     enabled: open && !!author && !!permlink,
   });
-  // Top voters: entries carry no voter list since bridge v2, so the open row
-  // (only that one, never the prefetched neighbour) loads it on demand.
-  const { data: voters } = useQuery({
-    ...getEntryActiveVotesQueryOptions(entry ?? undefined),
-    enabled: open && !!entry,
-  });
   const { data: authorPosts } = useQuery({
     ...getAccountPostsQueryOptions(author, "posts", "", "", 5, "", open && !!author),
   });
@@ -287,11 +276,14 @@ export function CurationQuickView({
   const mine: CurationRecommender | undefined = post?.recommenders?.find((r) => r.username === viewer.username);
   const topVoters = useMemo(
     () =>
-      (voters ?? [])
+      // The strongest voters ride along with the entry: v2 `top_votes`
+      // (requested on single-post reads), or derived from a v1 list by the
+      // SDK normalizer. No voter list is paged for five names.
+      (entry?.top_votes ?? [])
         .slice()
         .sort((a, b) => Number(b.rshares ?? 0) - Number(a.rshares ?? 0))
         .slice(0, 5),
-    [voters]
+    [entry?.top_votes]
   );
 
   if (!row) return null;

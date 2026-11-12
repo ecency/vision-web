@@ -22,8 +22,13 @@ export interface ViewerVote {
  * caches read as the default observer, so for a logged-in user that vote is
  * usually someone else's: it is never used then. Instead the user's vote is
  * looked up once (`getEntryVoteQueryOptions`, one small database_api call,
- * shared by every component showing the same entry). Until it answers the
- * entry shows as not voted.
+ * shared by every component showing the same entry, and batched with the
+ * other cards' lookups into one request). Until it answers, `known` is false
+ * and the vote is neither shown as cast nor as "not voted".
+ *
+ * Precedence: a looked-up vote already in the cache wins over the entry's.
+ * Every optimistic vote writes that cache, while the entry may have been read
+ * before the vote; the entry is used when no lookup answer exists.
  */
 export function useViewerVote(entry: Entry | null | undefined): ViewerVote {
   const { activeUser } = useActiveAccount();
@@ -37,7 +42,7 @@ export function useViewerVote(entry: Entry | null | undefined): ViewerVote {
       fromEntry === undefined && !!entry && !!username
     )
   );
-  const resolved = fromEntry !== undefined ? fromEntry : lookedUp;
+  const resolved = lookedUp !== undefined ? lookedUp : fromEntry;
   const direction = username ? voteDirection(resolved ?? null) : null;
   return {
     vote: username ? (resolved ?? null) : null,

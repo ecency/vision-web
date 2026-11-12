@@ -28,15 +28,13 @@ function feedWave(overrides: Partial<Entry> = {}): Entry {
   } as Entry;
 }
 
-// A full RPC entry: active_votes + numeric payout.
+// A normalized bridge entry read for bob, who voted, plus a numeric payout.
 function fullEntry(overrides: Partial<Entry> = {}): Entry {
   return {
     author: "alice",
     permlink: "post-1",
-    active_votes: [
-      { voter: "bob", rshares: 100 },
-      { voter: "carol", rshares: 200 }
-    ],
+    observer_vote: { rshares: 100, percent: 10000 },
+    observer_vote_for: "bob",
     stats: { total_votes: 2, flag_weight: 0, gray: false, hide: false },
     payout: 3,
     pending_payout_value: "3.000 HBD",
@@ -50,17 +48,18 @@ describe("deriveOptimisticVote", () => {
   // Regression: feed waves carry no active_votes, so the optimistic count/payout
   // bump used to be skipped entirely. It must now increment net_votes and payout.
   it("increments count and payout for a feed wave with no active_votes", () => {
-    const { newVotes, nextVoteCount, nextPayout } = deriveOptimisticVote(
+    const result = deriveOptimisticVote(
       feedWave(),
       UP,
       0.012,
       "dave"
     );
 
-    expect(nextVoteCount).toBe(6); // net_votes 5 -> 6
-    expect(nextPayout).toBeCloseTo(0.012, 6); // 0 summed strings + estimated
-    // No voter list to extend: a row without one does not grow one.
-    expect(newVotes).toBeUndefined();
+    expect(result.nextVoteCount).toBe(6); // net_votes 5 -> 6
+    expect(result.nextPayout).toBeCloseTo(0.012, 6); // 0 summed strings + estimated
+    // No voter list: the result carries the user's vote, never a list.
+    expect(result).not.toHaveProperty("newVotes");
+    expect(result.observerVote).toEqual({ rshares: UP, percent: UP });
   });
 
   it("sums the existing payout strings of a feed wave as the base payout", () => {
@@ -73,35 +72,30 @@ describe("deriveOptimisticVote", () => {
     expect(nextPayout).toBeCloseTo(1.75, 6);
   });
 
-  it("adds the voter and bumps count/payout for a full entry", () => {
-    const { newVotes, nextVoteCount, nextPayout } = deriveOptimisticVote(
+  it("bumps count/payout for a fresh voter on a full entry", () => {
+    // dave: the entry was read for bob, and dave's lookup said "not voted".
+    const { observerVote, nextVoteCount, nextPayout } = deriveOptimisticVote(
       fullEntry(),
       UP,
       0.5,
-      "dave"
+      "dave",
+      null
     );
 
     expect(nextVoteCount).toBe(3); // 2 -> 3
-    expect(newVotes).toHaveLength(3);
-    expect(newVotes).toContainEqual({ rshares: UP, voter: "dave" });
+    expect(observerVote).toEqual({ rshares: UP, percent: UP });
     expect(nextPayout).toBeCloseTo(3.5, 6); // numeric payout 3 + estimated
   });
 
   it("does not double-count when the user re-votes (already voted)", () => {
-    const { newVotes, nextVoteCount } = deriveOptimisticVote(fullEntry(), UP, 0.1, "bob");
-
+    const { nextVoteCount } = deriveOptimisticVote(fullEntry(), UP, 0.1, "bob");
     expect(nextVoteCount).toBe(2); // unchanged
-    expect(newVotes).toHaveLength(2);
-    expect(newVotes.filter((v) => v.voter === "bob")).toHaveLength(1);
-    expect(newVotes).toContainEqual({ rshares: UP, voter: "bob" });
   });
 
-  it("decrements count and drops the voter when removing a vote (weight 0)", () => {
-    const { newVotes, nextVoteCount } = deriveOptimisticVote(fullEntry(), 0, 0, "bob");
-
+  it("decrements count when removing a vote (weight 0)", () => {
+    const { observerVote, nextVoteCount } = deriveOptimisticVote(fullEntry(), 0, 0, "bob");
     expect(nextVoteCount).toBe(1); // 2 -> 1
-    expect(newVotes).toHaveLength(1);
-    expect(newVotes.some((v) => v.voter === "bob")).toBe(false);
+    expect(observerVote).toBeNull();
   });
 
   it("leaves count unchanged when removing a vote on a feed wave (unknown prior vote)", () => {
@@ -132,7 +126,7 @@ describe("deriveOptimisticVote on a v2 entry", () => {
     expect(r.observerVote).toEqual({ rshares: UP, percent: UP });
     expect(r.nextVoteCount).toBe(1501);
     expect(r.nextPayout).toBeCloseTo(3.5, 6);
-    expect(r.newVotes).toBeUndefined();
+    expect(r).not.toHaveProperty("newVotes");
   });
 
   it("does not change the count on a re-vote", () => {
@@ -168,5 +162,30 @@ describe("deriveOptimisticVote on a v2 entry", () => {
     expect(
       deriveOptimisticVote(readForEcency, UP, 0, "dave", { rshares: 1, percent: 2000 }).nextVoteCount
     ).toBe(1500);
+  });
+});
+
+// Review L: one rule for "had a vote": percent 0 (or rshares 0 without a
+// percent) is no vote, wherever the prior comes from.
+describe("deriveOptimisticVote: a zero prior vote is no vote", () => {
+  const unknownEntry = {
+    author: "alice",
+    permlink: "z",
+    stats: { total_votes: 10, flag_weight: 0, gray: false, hide: false },
+    observer_vote: null,
+    observer_vote_for: null,
+    payout: 0
+  } as unknown as Entry;
+
+  it("adds one vote over a looked-up percent-0 prior", () => {
+    expect(deriveOptimisticVote(unknownEntry, UP, 0, "dave", { rshares: 0, percent: 0 }).nextVoteCount).toBe(11);
+  });
+
+  it("adds one vote over an rshares-0 prior without a percent", () => {
+    expect(deriveOptimisticVote(unknownEntry, UP, 0, "dave", { rshares: 0, percent: null }).nextVoteCount).toBe(11);
+  });
+
+  it("does not subtract for an unvote over a percent-0 prior", () => {
+    expect(deriveOptimisticVote(unknownEntry, 0, 0, "dave", { rshares: 0, percent: 0 }).nextVoteCount).toBe(10);
   });
 });

@@ -38,8 +38,12 @@ vi.mock("@/api/mutations", () => ({
 
 // prepareVotes() reads parseAsset/parseDate from the globally-mocked @/utils; pass the
 // fetched votes straight through so the test doesn't depend on those internals.
-vi.mock("@/features/shared/entry-vote-btn/utils", () => ({
-  prepareVotes: (_entry: any, votes: any[]) => votes
+vi.mock("@/features/shared/entry-vote-btn/utils", async () => ({
+  prepareVotes: (_entry: any, votes: any[]) => votes,
+  // The real per-post session key (author/permlink).
+  ...(await vi.importActual<Record<string, unknown>>(
+    "@/features/shared/entry-vote-btn/utils/vote-value-key"
+  ))
 }));
 
 // The slider dialog is loaded via next/dynamic and pulls in SDK vote-value queries we
@@ -78,7 +82,8 @@ describe("EntryVoteBtn — opening the slider is not blocked on the previous-vot
       author: "bob",
       permlink: "a-post",
       post_id: 999,
-      active_votes: [{ voter: "alice", rshares: 100 }] as any
+      observer_vote: { rshares: 100, percent: null },
+      observer_vote_for: "alice"
     });
 
     const queryClient = createTestQueryClient();
@@ -101,11 +106,11 @@ describe("EntryVoteBtn — opening the slider is not blocked on the previous-vot
 
     // Once the lookup of alice's own vote resolves, its weight (75%) reaches the slider.
     resolveFetch({ rshares: 100, percent: 7500 });
-    await waitFor(() => expect(screen.getByTestId("vote-dialog")).toHaveTextContent("prev:75"));
+    await waitFor(() => expect(screen.getByTestId("vote-dialog").textContent).toBe("prev:75"));
   });
 
   it("toggles the slider closed on a second click", async () => {
-    const entry = mockEntry({ author: "bob", permlink: "b-post", post_id: 1000, active_votes: [] });
+    const entry = mockEntry({ author: "bob", permlink: "b-post", post_id: 1000, observer_vote: null, observer_vote_for: "alice" } as any);
     renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
 
     fireEvent.click(screen.getByRole("button"));
@@ -120,13 +125,15 @@ describe("EntryVoteBtn — opening the slider is not blocked on the previous-vot
       author: "bob",
       permlink: "a",
       post_id: 1,
-      active_votes: [{ voter: "alice", rshares: 100 }] as any
+      observer_vote: { rshares: 100, percent: null },
+      observer_vote_for: "alice"
     });
     const entryB = mockEntry({
       author: "carol",
       permlink: "b",
       post_id: 2,
-      active_votes: [{ voter: "alice", rshares: 50 }] as any
+      observer_vote: { rshares: 50, percent: null },
+      observer_vote_for: "alice"
     });
 
     const queryClient = createTestQueryClient();
@@ -147,7 +154,7 @@ describe("EntryVoteBtn — opening the slider is not blocked on the previous-vot
     fireEvent.click(screen.getByRole("button"));
     await screen.findByTestId("vote-dialog");
     resolveA({ rshares: 100, percent: 7500 });
-    await waitFor(() => expect(screen.getByTestId("vote-dialog")).toHaveTextContent("prev:75"));
+    await waitFor(() => expect(screen.getByTestId("vote-dialog").textContent).toBe("prev:75"));
 
     // Close, then reuse the SAME button instance for a different post.
     fireEvent.click(screen.getByRole("button"));
@@ -172,7 +179,8 @@ describe("EntryVoteBtn — success pulse (transient class, never on load)", () =
       author: "bob",
       permlink: "voted-post",
       post_id: 1001,
-      active_votes: [{ voter: "alice", rshares: 100 }] as any
+      observer_vote: { rshares: 100, percent: null },
+      observer_vote_for: "alice"
     });
     const { container } = renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
 
@@ -180,7 +188,7 @@ describe("EntryVoteBtn — success pulse (transient class, never on load)", () =
   });
 
   it("pulses the chevron after a successful vote broadcast and clears on animationend", async () => {
-    const entry = mockEntry({ author: "bob", permlink: "c-post", post_id: 1002, active_votes: [] });
+    const entry = mockEntry({ author: "bob", permlink: "c-post", post_id: 1002, observer_vote: null, observer_vote_for: "alice" } as any);
     const { container } = renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
 
     fireEvent.click(screen.getByRole("button"));
@@ -197,7 +205,7 @@ describe("EntryVoteBtn — success pulse (transient class, never on load)", () =
   });
 
   it("grows the slider popover from the chevron (top-left origin)", async () => {
-    const entry = mockEntry({ author: "bob", permlink: "d-post", post_id: 1003, active_votes: [] });
+    const entry = mockEntry({ author: "bob", permlink: "d-post", post_id: 1003, observer_vote: null, observer_vote_for: "alice" } as any);
     const { container } = renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
 
     fireEvent.click(screen.getByRole("button"));
@@ -219,7 +227,7 @@ describe("EntryVoteBtn — success pulse (transient class, never on load)", () =
  */
 describe("EntryVoteBtn — dismissing the slider from inside a portalled dialog", () => {
   const entry = () =>
-    mockEntry({ author: "bob", permlink: "in-a-drawer", post_id: 2001, active_votes: [] });
+    mockEntry({ author: "bob", permlink: "in-a-drawer", post_id: 2001, observer_vote: null, observer_vote_for: "alice" } as any);
 
   function portalSubtree(id: string) {
     const container =
@@ -381,12 +389,14 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
 
     renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
 
-    // While alice's own vote is being looked up: not voted.
-    expect(pressed()).toBe("false");
+    // While alice's own vote is being looked up: neither voted nor "not voted".
+    expect(pressed()).toBeNull();
+    expect(screen.getByRole("button")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button")).not.toHaveAttribute("aria-label", "entry-vote-btn.upvoted");
     await waitFor(() => expect(lookup).toHaveBeenCalledWith("bob", "ssr-post", "alice"));
     answer(null);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(pressed()).toBe("false");
+    await waitFor(() => expect(pressed()).toBe("false"));
+    expect(screen.getByRole("button")).not.toHaveAttribute("aria-busy");
   });
 
   it("shows the logged-in user's own vote, looked up, on an entry read for another observer", async () => {
@@ -424,7 +434,71 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
     renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />, { queryClient });
     fireEvent.click(screen.getByRole("button"));
 
-    await waitFor(() => expect(screen.getByTestId("vote-dialog")).toHaveTextContent("prev:60"));
+    await waitFor(() => expect(screen.getByTestId("vote-dialog").textContent).toBe("prev:60"));
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// Review: lookup precedence, the session key (N).
+describe("EntryVoteBtn: precedence and the session key", () => {
+  beforeEach(async () => {
+    window.sessionStorage.clear();
+    const sdk = await import("@ecency/sdk");
+    vi.mocked(sdk.getEntryVoteQueryOptions).mockImplementation(((
+      author?: string,
+      permlink?: string,
+      voter?: string,
+      enabled = true
+    ) => ({
+      queryKey: ["posts", "entry-vote", author, permlink, voter],
+      queryFn: async () => null,
+      enabled: enabled && !!author && !!permlink && !!voter,
+      staleTime: Infinity
+    })) as any);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("prefers the looked-up vote over the entry's (the lookup cache is what a vote writes)", async () => {
+    const entry = mockEntry({
+      author: "bob",
+      permlink: "both",
+      stats: { flag_weight: 0, gray: false, hide: false, total_votes: 3 },
+      observer_vote: null,
+      observer_vote_for: "alice"
+    } as any);
+    delete (entry as any).active_votes;
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(["posts", "entry-vote", "bob", "both", "alice"], { rshares: 5, percent: 5000 });
+
+    renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />, { queryClient });
+
+    expect(screen.getByRole("button").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("keys the remembered slider value by author/permlink: bridge posts have no post_id", async () => {
+    const mk = (permlink: string) => {
+      const e = mockEntry({
+        author: "bob",
+        permlink,
+        stats: { flag_weight: 0, gray: false, hide: false, total_votes: 1 },
+        observer_vote: { rshares: 1, percent: 10000 },
+        observer_vote_for: "alice"
+      } as any);
+      delete (e as any).active_votes;
+      delete (e as any).post_id;
+      return e;
+    };
+    // session-storage keys carry the "ecency_" prefix.
+    window.sessionStorage.setItem("ecency_vote-value-up-alice-bob/first", JSON.stringify(42));
+
+    const first = renderWithQueryClient(<EntryVoteBtn entry={mk("first")} isPostSlider={true} />);
+    fireEvent.click(screen.getByRole("button"));
+    await waitFor(() => expect(screen.getByTestId("vote-dialog").textContent).toBe("prev:42"));
+    first.unmount();
+
+    // Another post must not inherit it.
+    renderWithQueryClient(<EntryVoteBtn entry={mk("second")} isPostSlider={true} />);
+    fireEvent.click(screen.getByRole("button"));
+    await waitFor(() => expect(screen.getByTestId("vote-dialog").textContent).toBe("prev:100"));
   });
 });

@@ -159,9 +159,11 @@ export function EntryVotesDialog({
                               <ProfileLink username={x.voter}>
                                 <span className="item-name notranslate">{x.voter}</span>
                               </ProfileLink>
-                              <span className="item-reputation">
-                                {accountReputation(x.reputation)}
-                              </span>
+                              {x.reputation !== undefined && (
+                                <span className="item-reputation">
+                                  {accountReputation(x.reputation)}
+                                </span>
+                              )}
                             </div>
                           </div>
                           <div className="item-extra">

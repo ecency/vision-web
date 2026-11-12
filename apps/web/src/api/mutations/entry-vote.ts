@@ -55,7 +55,7 @@ export function useEntryVote(entry?: Entry | null) {
       // cache update must not bubble up as a vote error; the deferred
       // invalidation reconciles regardless.
       try {
-        const { observerVote, newVotes, nextVoteCount, nextPayout } = deriveOptimisticVote(
+        const { observerVote, nextVoteCount, nextPayout } = deriveOptimisticVote(
           entry,
           weight,
           estimated,
@@ -65,7 +65,6 @@ export function useEntryVote(entry?: Entry | null) {
         updateVotes({
           voter: activeUser.username,
           observerVote,
-          votes: newVotes,
           payout: nextPayout,
           totalVotes: nextVoteCount
         });

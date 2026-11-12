@@ -64,11 +64,11 @@ export interface Entry {
    * the full list with `getEntryActiveVotesQueryOptions`.
    */
   active_votes?: EntryVote[];
-  /** Vote of `observer_vote_for` on this entry; null = not voted, undefined = unknown. */
+  /** Vote of `observer_vote_for` on this entry; null = not voted. Mirrors the SDK contract. */
   observer_vote?: ObserverVote | null;
-  /** The observer the entry was read for. Never show its vote as another user's. */
-  observer_vote_for?: string;
-  top_votes?: Array<{ voter: string; rshares: number; percent: number }>;
+  /** The account `observer_vote` belongs to; null = unknown. Never show its vote as another user's. */
+  observer_vote_for?: string | null;
+  top_votes?: Array<{ voter: string; rshares: number; percent: number | null }>;
   author: string;
   author_payout_value: string;
   author_reputation: number;

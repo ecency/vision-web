@@ -3,7 +3,11 @@ import * as ls from "@/utils/local-storage";
 import { Button } from "@ui/button";
 import i18next from "i18next";
 import { EntryTipBtn, FormattedCurrency } from "@/features/shared";
-import { getVoteValue, setVoteValue } from "@/features/shared/entry-vote-btn/utils";
+import {
+  getVoteValue,
+  setVoteValue,
+  voteValueKey
+} from "@/features/shared/entry-vote-btn/utils";
 import { InputVote } from "@ui/input";
 import { getDynamicPropsQueryOptions, votingPower, votingValue } from "@ecency/sdk";
 import { Account, Entry } from "@/entities";
@@ -49,21 +53,21 @@ export function EntryVoteDialog({
     () =>
       getVoteValue(
         "up",
-        username! + "-" + entry.post_id,
+        voteValueKey(username!, entry),
         getVoteValue("upPrevious", username!, 100, isPostSlider),
         isPostSlider
       ),
-    [username, entry.post_id, isPostSlider]
+    [username, entry.author, entry.permlink, isPostSlider]
   );
   const getDownVotedValue = useCallback(
     () =>
       getVoteValue(
         "down",
-        username! + "-" + entry.post_id,
+        voteValueKey(username!, entry),
         getVoteValue("downPrevious", username!, -1, isPostSlider),
         isPostSlider
       ),
-    [username, entry.post_id, isPostSlider]
+    [username, entry.author, entry.permlink, isPostSlider]
   );
 
   const [mode, setMode] = useState<Mode>(downVoted ? "down" : "up");
@@ -166,8 +170,8 @@ export function EntryVoteDialog({
     if (!upVoted || (upVoted && initialVoteValues.up !== upSliderVal)) {
       const estimated = Number(estimate(upSliderVal).toFixed(3));
       onClick(upSliderVal, estimated);
-      setVoteValue("up", `${username!}-${entry.post_id}`, upSliderVal);
-      setVoteValue("upPrevious", `${username!}-${entry.post_id}`, upSliderVal);
+      setVoteValue("up", voteValueKey(username!, entry), upSliderVal);
+      setVoteValue("upPrevious", voteValueKey(username!, entry), upSliderVal);
       setWrongValueUp(false);
       setWrongValueDown(false);
       ls.set(isPostSlider ? "post_upSlider_value" : "comment_upSlider_value", upSliderVal);
@@ -177,7 +181,8 @@ export function EntryVoteDialog({
     }
   }, [
     username,
-    entry.post_id,
+    entry.author,
+    entry.permlink,
     estimate,
     initialVoteValues.up,
     isPostSlider,
@@ -195,8 +200,8 @@ export function EntryVoteDialog({
       onClick(downSliderValue, estimated);
       setWrongValueDown(false);
       setWrongValueUp(false);
-      setVoteValue("down", `${username!}-${entry.post_id}`, downSliderValue);
-      setVoteValue("downPrevious", `${username!}-${entry.post_id}`, downSliderValue);
+      setVoteValue("down", voteValueKey(username!, entry), downSliderValue);
+      setVoteValue("downPrevious", voteValueKey(username!, entry), downSliderValue);
       ls.set(isPostSlider ? "post_downSlider_value" : "comment_downSlider_value", downSliderVal);
     } else if (downVoted && initialVoteValues.down === downSliderValue) {
       setWrongValueDown(true);
@@ -205,7 +210,8 @@ export function EntryVoteDialog({
   }, [
     username,
     downSliderVal,
-    entry.post_id,
+    entry.author,
+    entry.permlink,
     estimate,
     initialVoteValues.down,
     isPostSlider,

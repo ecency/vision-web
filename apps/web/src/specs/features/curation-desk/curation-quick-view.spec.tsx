@@ -24,6 +24,8 @@ vi.mock("@ecency/sdk", async () => {
     ...actual,
     // Author snapshot goes to the chain in production; keep the spec off the network.
     getAccountPostsQueryOptions: () => ({ queryKey: ["posts", "account-posts-page", "spec"], queryFn: async () => [], enabled: false }),
+    // The full voter list goes to the chain too; a spy that never fetches.
+    getEntryActiveVotesQueryOptions: vi.fn(() => ({ queryKey: ["posts", "entry-active-votes", "spec"], queryFn: async () => [], enabled: false })),
   };
 });
 vi.mock("@/utils", async () => ({
@@ -178,6 +180,34 @@ describe("CurationQuickView", () => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
     window.localStorage.clear();
+  });
+
+  // Review G: the five strongest voters come with the entry (v2 top_votes, or
+  // derived from a v1 list), not from paging the post's whole voter list.
+  it("lists the top five voters from top_votes without loading the voter list", async () => {
+    const sdk = await import("@ecency/sdk");
+    const listQuery = vi.mocked(sdk.getEntryActiveVotesQueryOptions);
+    listQuery.mockClear();
+    state.entryFetch.mockImplementation(async (author: string, permlink: string) => ({
+      author,
+      permlink,
+      body: "b",
+      json_metadata: {},
+      stats: { total_votes: 9, flag_weight: 0, gray: false, hide: false },
+      top_votes: [
+        { voter: "v1", rshares: 10, percent: 100 },
+        { voter: "v6", rshares: 60, percent: 100 },
+        { voter: "v3", rshares: 30, percent: 100 },
+        { voter: "v5", rshares: 50, percent: 100 },
+        { voter: "v4", rshares: 40, percent: 100 },
+        { voter: "v2", rshares: 20, percent: 100 },
+      ],
+    }));
+    renderDrawer({ row });
+    await screen.findByText("@v6");
+    const names = screen.getAllByText(/^@v\d$/).map((el) => el.textContent);
+    expect(names).toEqual(["@v6", "@v5", "@v4", "@v3", "@v2"]);
+    expect(listQuery).not.toHaveBeenCalled();
   });
 
   it("offers exactly one link out to the post, in the action bar", async () => {

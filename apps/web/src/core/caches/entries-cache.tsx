@@ -4,7 +4,7 @@ import {
   getPostQueryOptions,
   QueryKeys
 } from "@ecency/sdk";
-import { Entry, EntryVote, ObserverVote } from "@/entities";
+import { Entry, ObserverVote } from "@/entities";
 import { makeEntryPath } from "@/utils";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
@@ -19,6 +19,19 @@ import { DEFAULT_OBSERVER } from "@/consts/observer";
 // threading the observer through all of them; the comment thread already
 // personalises via getDiscussionsQueryOptions, which is where mute filtering
 // actually earns its keep on an entry page.
+/** The seed row without the fields that describe votes (see getEntryQuery). */
+function withoutVoteFields<T extends Entry>(entry: T | undefined): Partial<T> | undefined {
+  if (!entry) return entry;
+  const {
+    observer_vote: _vote,
+    observer_vote_for: _for,
+    active_votes: _list,
+    top_votes: _top,
+    ...rest
+  } = entry;
+  return rest as Partial<T>;
+}
+
 function entryKey(author: string, permlink: string) {
   return QueryKeys.posts.entry(makeEntryPath("", author, permlink));
 }
@@ -73,9 +86,19 @@ export namespace EcencyEntriesCacheManagement {
       // for a caller that passed a full entry — the decks post viewer renders an
       // empty article that way, and nothing refetches it because refetchOnMount
       // is false app-wide. An empty body never overwrites a present one.
+      //
+      // Vote fields are the exception: they never come from the seed row once
+      // a fetched entry exists. The seed may have been read for another
+      // observer, or carry a raw voter list, and spreading it under a refetch
+      // that states the vote differently (or not at all) brought back a stale
+      // vote. The seed only stands while it IS the data (nothing fetched yet).
       select: (data: Entry | null | undefined) =>
         data
-          ? ({ ...initialEntry, ...data, body: data.body || initialEntry?.body || "" } as T)
+          ? ({
+              ...(data === initialEntry ? initialEntry : withoutVoteFields(initialEntry)),
+              ...data,
+              body: data.body || initialEntry?.body || ""
+            } as T)
           : undefined
     };
   }
@@ -147,19 +170,16 @@ export namespace EcencyEntriesCacheManagement {
        * Optimistic vote. `observerVote` is `voter`'s vote after it (null after
        * an unvote): it is written as the entry's observer vote, owned by
        * `voter`, and into that voter's `entryVote` lookup so a refetch under
-       * the default observer still shows it. `votes` replaces a legacy voter
-       * list and is left out for bridge v2 entries, which carry none.
+       * the default observer still shows it.
        */
       update: ({
         voter,
         observerVote,
-        votes,
         payout,
         totalVotes
       }: {
         voter: string;
         observerVote: ObserverVote | null;
-        votes?: EntryVote[];
         payout: number;
         totalVotes: number;
       }) => {
@@ -170,7 +190,6 @@ export namespace EcencyEntriesCacheManagement {
           entry,
           (value) => ({
             ...value,
-            ...(votes ? { active_votes: votes } : {}),
             observer_vote: observerVote,
             observer_vote_for: voter,
             stats: {

@@ -21,11 +21,11 @@ export function prepareVotes(entry: Entry, votes: Vote[]): Vote[] {
   if (payout && Number(totalPayout.toFixed(3)) !== payout) {
     totalPayout += payout;
   }
-  const voteRshares = votes && votes.reduce((a, b) => a + parseFloat(b.rshares), 0);
+  const voteRshares = votes && votes.reduce((a, b) => a + Number(b.rshares), 0);
   const ratio = totalPayout / voteRshares;
 
   return votes.map((a) => {
-    const rew = parseFloat(a.rshares) * ratio;
+    const rew = Number(a.rshares) * ratio;
 
     return Object.assign({}, a, {
       reward: rew,

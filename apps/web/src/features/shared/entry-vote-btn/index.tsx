@@ -10,6 +10,7 @@ import { useEntryVote } from "@/api/mutations";
 import { Account, Entry } from "@/entities";
 import { getEntryVoteQueryOptions } from "@ecency/sdk";
 import { useViewerVote } from "@/core/hooks/use-viewer-vote";
+import { voteValueKey } from "@/features/shared/entry-vote-btn/utils";
 import { classNameObject } from "@ui/util";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -133,7 +134,7 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
     }
 
     if (upVoted || downVoted) {
-      let username = activeUser?.username! + "-" + entry.post_id;
+      let username = voteValueKey(activeUser.username, entry);
       let type = upVoted ? "up" : "down";
       let sessValue = ss.get(`vote-value-${type}-${username}`, null);
 
@@ -208,7 +209,7 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
   // vote weight before the new lookup resolves.
   useEffect(() => {
     setPreviousVotedValue(undefined);
-  }, [originalEntry.post_id, activeUser?.username]);
+  }, [originalEntry.author, originalEntry.permlink, activeUser?.username]);
 
   return (
     <LoginRequired promptOnAnon>
@@ -224,7 +225,12 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
                 ? i18next.t("entry-vote-btn.downvoted", { defaultValue: "Downvoted, edit vote" })
                 : i18next.t("entry-vote-btn.vote", { defaultValue: "Vote" })
           }
-          aria-pressed={isVoted.upVoted || isVoted.downVoted}
+          // Unknown (the user's vote is still being looked up): neither
+          // pressed nor not-pressed, and announced as busy.
+          aria-pressed={
+            activeUser && !viewerVote.known ? undefined : isVoted.upVoted || isVoted.downVoted
+          }
+          aria-busy={activeUser && !viewerVote.known ? true : undefined}
           aria-expanded={dialog}
           aria-haspopup="dialog"
           onClick={toggleDialog}
