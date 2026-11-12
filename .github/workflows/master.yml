@@ -214,17 +214,20 @@ jobs:
           web_pull="$(docker pull ecency/vision-web:latest)"; printf '%s\n' "$web_pull"
           STACK_FILE="$(mktemp)"; trap 'rm -f "$STACK_FILE"' EXIT
           docker-compose -f docker-compose.production.yml config > "$STACK_FILE"
+          spec_before="$(docker service inspect vision_web --format '{{json .Spec.TaskTemplate}}' 2>/dev/null || echo none)"
           docker stack deploy -c "$STACK_FILE" vision
+          spec_after="$(docker service inspect vision_web --format '{{json .Spec.TaskTemplate}}' 2>/dev/null || echo none)"
           # Don't report a green deploy unless the new image actually rolled out.
           # `docker stack deploy` returns as soon as the spec is committed to Raft
           # (before Swarm populates UpdateStatus), so a crash-on-start (-> rollback)
           # or a stuck/slow rollout would otherwise pass silently. When a new image
-          # was pulled, wait for vision_web to reach `completed`: never accept an
-          # empty/`updating` reading as success, fail immediately on rollback/pause,
-          # and fail on timeout in any non-`completed` state. Skip the wait only
-          # when the image was unchanged (genuine no-op, nothing to roll out).
-          if printf '%s' "$web_pull" | grep -q 'Image is up to date'; then
-            echo "vision_web image unchanged; no rollout expected"
+          # was pulled, or the task spec changed (memory, heap, render cap and other
+          # env roll the tasks just as a new image does), wait for vision_web to
+          # reach `completed`: never accept an empty/`updating` reading as success,
+          # fail immediately on rollback/pause, and fail on timeout in any
+          # non-`completed` state. Skip the wait only when neither changed.
+          if printf '%s' "$web_pull" | grep -q 'Image is up to date' && [ "$spec_before" = "$spec_after" ]; then
+            echo "vision_web image and task spec unchanged; no rollout expected"
           else
             state=""
             for i in $(seq 1 60); do
@@ -243,6 +246,20 @@ jobs:
             fi
             echo "vision_web converged (UpdateStatus=completed)"
           fi
+          # A replica-count change scales without a rolling update, so UpdateStatus
+          # says nothing about it. Wait for every desired task to be running.
+          replicas=""
+          for i in $(seq 1 60); do
+            replicas="$(docker service ls --filter name=vision_web --format '{{.Name}} {{.Replicas}}' | awk '$1=="vision_web"{print $2}')"
+            running="${replicas%%/*}"; desired="${replicas#*/}"; desired="${desired%% *}"
+            if [ -n "$replicas" ] && [ "$running" = "$desired" ]; then break; fi
+            sleep 5
+          done
+          if [ -z "$replicas" ] || [ "$running" != "$desired" ]; then
+            echo "::error::vision_web replicas did not converge within ~5m (${replicas:-unknown})"
+            exit 1
+          fi
+          echo "vision_web replicas running: $replicas"
           docker system prune -f
 
   deploy-US:
@@ -308,12 +325,15 @@ jobs:
         WEB_HEAP_MB: "1536"
         WEB_MEM_LIMIT: "2304M"
         WEB_UPDATE_ORDER: "stop-first"
+        # Stated here like the memory knobs, so a value exported on the host
+        # can never change this region's render cap.
+        WEB_SSR_MAX_INFLIGHT: "48"
       with:
         host: ${{ secrets.SSH_HOST_US }}
         username: ${{ secrets.SSH_USERNAME }}
         key: ${{ secrets.SSH_KEY }}
         port: ${{ secrets.SSH_PORT }}
-        envs: USE_PRIVATE,PRIVATE_API_ADDR,PRIVATE_API_AUTH,HIVESIGNER_SECRET,SEARCH_API_ADDR,SEARCH_API_SECRET,STRIPE_INTERNAL_SECRET,HOSTING_INTERNAL_SECRET,HIVESEARCHER_ORIGIN_IP,PLAUSIBLE_API_KEY,BLOCKSTREAM_CLIENT_ID,BLOCKSTREAM_CLIENT_SECRET,MATTERMOST_TEAM_ID,MATTERMOST_ADMIN_TOKEN,MATTERMOST_BASE_URL,MATTERMOST_WS_ALLOWED_ORIGINS,THREESPEAK_EMBED_API_KEY,SEO_CRON_SECRET,RAIDSTEAD_VOUCH_SECRET,TURNSTILE_SECRET,NEWSLETTER_API_URL,NEWSLETTER_SERVICE_TOKEN,WEB_REPLICAS,WEB_HEAP_MB,WEB_MEM_LIMIT,WEB_UPDATE_ORDER,SSR_INTERNAL_SECRET,DESK_INTERNAL_TOKEN
+        envs: USE_PRIVATE,PRIVATE_API_ADDR,PRIVATE_API_AUTH,HIVESIGNER_SECRET,SEARCH_API_ADDR,SEARCH_API_SECRET,STRIPE_INTERNAL_SECRET,HOSTING_INTERNAL_SECRET,HIVESEARCHER_ORIGIN_IP,PLAUSIBLE_API_KEY,BLOCKSTREAM_CLIENT_ID,BLOCKSTREAM_CLIENT_SECRET,MATTERMOST_TEAM_ID,MATTERMOST_ADMIN_TOKEN,MATTERMOST_BASE_URL,MATTERMOST_WS_ALLOWED_ORIGINS,THREESPEAK_EMBED_API_KEY,SEO_CRON_SECRET,RAIDSTEAD_VOUCH_SECRET,TURNSTILE_SECRET,NEWSLETTER_API_URL,NEWSLETTER_SERVICE_TOKEN,WEB_REPLICAS,WEB_HEAP_MB,WEB_MEM_LIMIT,WEB_UPDATE_ORDER,WEB_SSR_MAX_INFLIGHT,SSR_INTERNAL_SECRET,DESK_INTERNAL_TOKEN
         script: |
           set -eo pipefail
           export USE_PRIVATE=$USE_PRIVATE
@@ -348,10 +368,14 @@ jobs:
           : "${WEB_HEAP_MB:?WEB_HEAP_MB is required for the US deploy}"
           : "${WEB_MEM_LIMIT:?WEB_MEM_LIMIT is required for the US deploy}"
           : "${WEB_UPDATE_ORDER:?WEB_UPDATE_ORDER is required for the US deploy}"
+          : "${WEB_SSR_MAX_INFLIGHT:?WEB_SSR_MAX_INFLIGHT is required for the US deploy}"
           case "$WEB_HEAP_MB" in ''|*[!0-9]*) echo "WEB_HEAP_MB must be a number of MiB" >&2; exit 1;; esac
+          # Zero or a non-number would switch render admission control off.
+          case "$WEB_SSR_MAX_INFLIGHT" in ''|0*|*[!0-9]*) echo "WEB_SSR_MAX_INFLIGHT must be a positive integer" >&2; exit 1;; esac
           export WEB_HEAP_MB=$WEB_HEAP_MB
           export WEB_MEM_LIMIT=$WEB_MEM_LIMIT
           export WEB_UPDATE_ORDER=$WEB_UPDATE_ORDER
+          export WEB_SSR_MAX_INFLIGHT=$WEB_SSR_MAX_INFLIGHT
           cd ~/vision-web
           git pull origin main
           cd apps/web
@@ -360,17 +384,20 @@ jobs:
           web_pull="$(docker pull ecency/vision-web:latest)"; printf '%s\n' "$web_pull"
           STACK_FILE="$(mktemp)"; trap 'rm -f "$STACK_FILE"' EXIT
           docker-compose -f docker-compose.production.yml config > "$STACK_FILE"
+          spec_before="$(docker service inspect vision_web --format '{{json .Spec.TaskTemplate}}' 2>/dev/null || echo none)"
           docker stack deploy -c "$STACK_FILE" vision
+          spec_after="$(docker service inspect vision_web --format '{{json .Spec.TaskTemplate}}' 2>/dev/null || echo none)"
           # Don't report a green deploy unless the new image actually rolled out.
           # `docker stack deploy` returns as soon as the spec is committed to Raft
           # (before Swarm populates UpdateStatus), so a crash-on-start (-> rollback)
           # or a stuck/slow rollout would otherwise pass silently. When a new image
-          # was pulled, wait for vision_web to reach `completed`: never accept an
-          # empty/`updating` reading as success, fail immediately on rollback/pause,
-          # and fail on timeout in any non-`completed` state. Skip the wait only
-          # when the image was unchanged (genuine no-op, nothing to roll out).
-          if printf '%s' "$web_pull" | grep -q 'Image is up to date'; then
-            echo "vision_web image unchanged; no rollout expected"
+          # was pulled, or the task spec changed (memory, heap, render cap and other
+          # env roll the tasks just as a new image does), wait for vision_web to
+          # reach `completed`: never accept an empty/`updating` reading as success,
+          # fail immediately on rollback/pause, and fail on timeout in any
+          # non-`completed` state. Skip the wait only when neither changed.
+          if printf '%s' "$web_pull" | grep -q 'Image is up to date' && [ "$spec_before" = "$spec_after" ]; then
+            echo "vision_web image and task spec unchanged; no rollout expected"
           else
             state=""
             for i in $(seq 1 60); do
@@ -389,4 +416,18 @@ jobs:
             fi
             echo "vision_web converged (UpdateStatus=completed)"
           fi
+          # A replica-count change scales without a rolling update, so UpdateStatus
+          # says nothing about it. Wait for every desired task to be running.
+          replicas=""
+          for i in $(seq 1 60); do
+            replicas="$(docker service ls --filter name=vision_web --format '{{.Name}} {{.Replicas}}' | awk '$1=="vision_web"{print $2}')"
+            running="${replicas%%/*}"; desired="${replicas#*/}"; desired="${desired%% *}"
+            if [ -n "$replicas" ] && [ "$running" = "$desired" ]; then break; fi
+            sleep 5
+          done
+          if [ -z "$replicas" ] || [ "$running" != "$desired" ]; then
+            echo "::error::vision_web replicas did not converge within ~5m (${replicas:-unknown})"
+            exit 1
+          fi
+          echo "vision_web replicas running: $replicas"
           docker system prune -f
