@@ -4,7 +4,7 @@
 set -euo pipefail
 
 bad=$(git diff --cached --no-renames --name-only \
-  | grep -vE '^(\.changeset/[^/]+\.md|packages/(sdk|wallets|render-helper|ui)/(dist/.+|package\.json|CHANGELOG\.md))$' || true)
+  | grep -vE '^(\.changeset/[^/]+\.md|packages/(sdk|render-helper|ui)/(dist/.+|package\.json|CHANGELOG\.md))$' || true)
 if [ -n "$bad" ]; then
   echo "::error::patch touches paths outside version/changelog/dist:"
   echo "$bad"

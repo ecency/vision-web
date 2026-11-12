@@ -54,6 +54,14 @@ git -C "$repo" add -A
 reject 'source file added by artifact'
 reset_case
 
+# The removed wallets package must not come back through a release artifact.
+mkdir -p "$repo/packages/wallets/dist"
+printf 'revived\n' > "$repo/packages/wallets/dist/index.js"
+git -C "$repo" add -A
+reject 'removed wallets package recreated'
+reset_case
+git -C "$repo" clean -fdq
+
 # Rename detection must not hide deletions outside the allowed paths.
 git -C "$repo" mv scripts/origin-config-audit.mjs packages/sdk/dist/a.js
 git -C "$repo" mv packages/sdk/src/security.ts packages/sdk/dist/b.js

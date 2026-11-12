@@ -41,6 +41,11 @@
   description: Dependency updates
   color: "0366d6"
 
+# Applied by Dependabot. Listed so the label sync does not delete it.
+- name: javascript
+  description: Pull requests that update javascript code
+  color: "168700"
+
 - name: documentation
   description: Documentation changes
   color: "0075ca"
