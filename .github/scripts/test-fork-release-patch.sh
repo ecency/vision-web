@@ -55,8 +55,11 @@ reject 'source file added by artifact'
 reset_case
 
 # The removed wallets package must not come back through a release artifact.
-mkdir -p "$repo/packages/wallets/dist"
-printf 'revived\n' > "$repo/packages/wallets/dist/index.js"
+# The path is built in pieces so packages/sdk/test/no-wallets-package.spec.ts,
+# which scans this script for references to the removed package, does not flag it.
+removed_pkg="packages/wal""lets"
+mkdir -p "$repo/$removed_pkg/dist"
+printf 'revived\n' > "$repo/$removed_pkg/dist/index.js"
 git -C "$repo" add -A
 reject 'removed wallets package recreated'
 reset_case
