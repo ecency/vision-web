@@ -187,14 +187,14 @@ export const DEFAULT_SERVER_RPC_PROXY_METHODS: readonly string[] = [
   'bridge.get_account_posts',
   'bridge.get_post',
   'bridge.get_discussion',
-  // Vote-free reads (bridge v2) and the paged voter list. A node that lacks
-  // them answers `unknown method`, which the proxy relays and callRPCWithFallback
-  // turns into the v1 method above.
+  // Vote-free reads (bridge v2). A node that lacks them answers `unknown
+  // method`, which the proxy relays and callRPCWithFallback turns into the v1
+  // method above. bridge.list_votes is deliberately absent: only the
+  // client-side votes dialog reads it.
   'bridge.get_ranked_posts_v2',
   'bridge.get_account_posts_v2',
   'bridge.get_post_v2',
   'bridge.get_discussion_v2',
-  'bridge.list_votes',
   'bridge.get_profile',
   'bridge.get_profiles',
   'bridge.get_community',

@@ -138,7 +138,8 @@ async function proxyRpcCall<T>(
         // small by construction. Read it, which also releases the socket, so an
         // `unknown method` answer can switch this read to its fallback method.
         try {
-          unknownMethod = UNKNOWN_METHOD_RE.test(await res.text())
+          const relayedBody: unknown = JSON.parse(await res.text())
+          unknownMethod = isUnknownMethodText((relayedBody as { error?: unknown } | null)?.error, method)
         } catch {
           // unreadable body: an ordinary relayed error
         }
@@ -391,18 +392,43 @@ function isNodeLevelRPCError(code: number, message: string): boolean {
 // ── Per-node method fallback ────────────────────────────────────────────────
 
 /**
- * Text of a node's answer for a method it does not have. Hivemind answers HTTP
- * 200 with `-32602 "Assert Exception:unknown method: bridge_apiget_post_v2"`;
- * jussi-style routers answer `-32601 Method not found`.
+ * Hivemind's name for an RPC method in its `unknown method` assert:
+ * `bridge.get_post_v2` -> `bridge_apiget_post_v2`.
  */
-const UNKNOWN_METHOD_RE = /unknown method|method not found/i
+function hivemindMethodName(method: string): string {
+  const dot = method.indexOf('.')
+  return dot > 0 ? `${method.slice(0, dot)}_api${method.slice(dot + 1)}` : method
+}
 
-/** True when an RPC error means "this node does not have that method". */
-function isUnknownMethodError(e: unknown): boolean {
+/**
+ * True when `text` is EXACTLY hivemind's answer for `method` missing:
+ * `Assert Exception:unknown method: bridge_apiget_post_v2`, or the bare
+ * assertion `unknown method: bridge_apiget_post_v2`. Exact, never a
+ * substring: hivemind echoes caller params into the same -32602 assert
+ * ("Post gtg/unknown method does not exist", "invalid tag `unknown method`"),
+ * and a substring match would let one crafted URL mark a v2 node as v1-only.
+ */
+function isUnknownMethodText(text: unknown, method: string): boolean {
+  if (typeof text !== 'string') return false
+  const marker = `unknown method: ${hivemindMethodName(method)}`
+  const t = text.trim()
+  return t === `Assert Exception:${marker}` || t === marker
+}
+
+/**
+ * True when an RPC error means "this node does not have `method`": the
+ * JSON-RPC standard `-32601 Method not found` (a router in front of the node,
+ * which carries no caller params), or hivemind's -32602 assert naming exactly
+ * the method that was called. Each field is checked on its own, never joined.
+ */
+function isUnknownMethodError(e: unknown, method: string): boolean {
   if (!(e instanceof RPCError)) return false
   if (e.code === -32601) return true
-  const assertion = e.data?.extension?.assertion_expression
-  return UNKNOWN_METHOD_RE.test(`${e.message} ${typeof assertion === 'string' ? assertion : ''}`)
+  if (e.code !== -32602) return false
+  return (
+    isUnknownMethodText(e.message, method) ||
+    isUnknownMethodText(e.data?.extension?.assertion_expression, method)
+  )
 }
 
 /**
@@ -477,7 +503,7 @@ async function nodeRpcCall<T>(
     const result = await jsonRPCCall(node, primary.method, primary.params, timeout, false, signal)
     return { result, method: primary.method }
   } catch (e) {
-    if (!fallback || signal?.aborted || !isUnknownMethodError(e)) throw e
+    if (!fallback || signal?.aborted || !isUnknownMethodError(e, primary.method)) throw e
     markLacksMethod(node, primary.method)
     const result = await jsonRPCCall(node, fallback.method, fallback.params, timeout, false, signal)
     return { result, method: fallback.method }

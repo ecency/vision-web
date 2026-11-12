@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { callRPCBroadcast, callRPC, callREST, RPCError, NodeHealthTracker, rpcHealthTracker } from "./call";
+import { callRPCBroadcast, callRPC, callREST, RPCError, NodeHealthTracker, rpcHealthTracker, __METHOD_FALLBACK__ } from "./call";
 import { getPost } from "../../modules/bridge/requests";
 import { config, setUserAgent } from "../config";
 
@@ -566,6 +566,51 @@ describe("per-node method fallback (bridge v2 -> v1)", () => {
       { url: "https://new-node-3.test", method: "bridge.get_post_v2" }
     ]);
   });
+
+  // Hivemind echoes caller params into the same -32602 "Assert Exception:"
+  // text, so "unknown method" inside a permlink or tag must not read as a
+  // missing method: that would mark a v2 node as v1-only for 30 minutes from
+  // one crafted URL.
+  for (const [label, message, assertion] of [
+    [
+      "a permlink",
+      "Assert Exception:Post gtg/unknown method does not exist",
+      "Post gtg/unknown method does not exist"
+    ],
+    ["a tag", "Assert Exception:invalid tag `unknown method`", "invalid tag `unknown method`"],
+    [
+      "a param that spells the whole marker",
+      "Assert Exception:Post gtg/unknown method: bridge_apiget_post_v2 does not exist",
+      "Post gtg/unknown method: bridge_apiget_post_v2 does not exist"
+    ],
+    [
+      "a different method's name",
+      "Assert Exception:unknown method: bridge_apiget_discussion_v2",
+      "unknown method: bridge_apiget_discussion_v2"
+    ]
+  ] as const) {
+    it(`does not mark the node when ${label} carries "unknown method"`, async () => {
+      const node = `https://echo-node-${label.replace(/\W+/g, "-")}.test`;
+      config.nodes = [node];
+      const calls: string[] = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+        const id = readJsonRpcId(init);
+        calls.push(JSON.parse(String(init.body)).method);
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32602, message, data: { extension: { assertion_expression: assertion } } }
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      });
+
+      await expect(getPost("gtg", "unknown method", "bob")).rejects.toThrow();
+      expect(calls).toEqual(["bridge.get_post_v2"]);
+      expect(__METHOD_FALLBACK__.lacksMethod(node, "bridge.get_post_v2")).toBe(false);
+    });
+  }
 
   it("does not hide a real application error behind the fallback", async () => {
     config.nodes = ["https://node-x.test"];

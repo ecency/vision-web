@@ -367,6 +367,26 @@ describe("server-side RPC proxy: per-method fallback", () => {
     expect(rpcProxyStats.fallback).toBe(0);
   });
 
+  it("does not take an echoed param for a missing method", async () => {
+    const urls: string[] = [];
+    mockFetch(async (input, init) => {
+      urls.push(String(input));
+      if (String(input) === PROXY) {
+        return new Response(JSON.stringify({ error: "Assert Exception:Post gtg/unknown method does not exist" }), {
+          status: 502,
+          headers: { "X-Ssr-Cache": "RPCERROR" }
+        });
+      }
+      return rpcOk(idOf(init), { author: "gtg" });
+    });
+    await callRPCWithFallback(
+      { method: "bridge.get_post_v2", params: {} },
+      { method: "bridge.get_post", params: {} }
+    );
+    expect(urls).toEqual([PROXY, "https://node-a.test"]);
+    expect(__METHOD_FALLBACK__.lacksMethod(PROXY, "bridge.get_post_v2")).toBe(false);
+  });
+
   it("treats any other relayed error as before: fall back to the nodes", async () => {
     const urls: string[] = [];
     mockFetch(async (input, init) => {
