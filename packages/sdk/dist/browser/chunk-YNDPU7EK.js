@@ -1,0 +1,2 @@
+import {b,c}from'./chunk-5GN4MESZ.js';import {a}from'./chunk-J2KJOJNR.js';import {useMutation}from'@tanstack/react-query';function g(r){return useMutation({mutationKey:["operations","sign",r],mutationFn:({operation:a$1,keyOrSeed:t})=>{if(!r)throw new Error("[Operations][Sign] \u2013 cannot sign op with anon user");let i;return t.split(" ").length===12?i=a.fromLogin(r,t,"active"):b(t)?i=a.fromString(t):i=a.from(t),c([a$1],i)}})}export{g as a};//# sourceMappingURL=chunk-YNDPU7EK.js.map
+//# sourceMappingURL=chunk-YNDPU7EK.js.map

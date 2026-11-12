@@ -1,0 +1,2 @@
+import {b}from'./chunk-K3LA2I7M.js';import {b as b$1}from'./chunk-CNB64U7U.js';import {c}from'./chunk-6HRXJUCS.js';import {a}from'./chunk-PDIUUNDQ.js';function s(t,n,a$1){return c(["accounts","unfollow"],t,({following:r})=>[b(t,r)],async(r,l)=>{await b$1(n?.adapter,a$1,[a.accounts.relations(t,l.following),a.accounts.full(l.following),a.accounts.followCount(l.following),a.accounts.followCount(t)]);},n,"posting",{broadcastMode:a$1??"async"})}export{s as a};//# sourceMappingURL=chunk-I5S5QQDX.js.map
+//# sourceMappingURL=chunk-I5S5QQDX.js.map

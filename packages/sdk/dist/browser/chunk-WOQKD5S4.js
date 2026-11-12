@@ -1,0 +1,2 @@
+import {k}from'./chunk-3V7SV2WV.js';var c=[3e3,3e3,3e3],d=t=>new Promise(n=>setTimeout(n,t));async function y(t,n){return k("condenser_api.get_content",[t,n])}async function g(t,n,e=0,i){let s=i?.delays??c,r;try{r=await y(t,n);}catch{r=void 0;}if(r||e>=s.length)return;let o=s[e];return o>0&&await d(o),g(t,n,e+1,i)}export{g as a};//# sourceMappingURL=chunk-WOQKD5S4.js.map
+//# sourceMappingURL=chunk-WOQKD5S4.js.map

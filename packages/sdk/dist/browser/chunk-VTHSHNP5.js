@@ -1,0 +1,2 @@
+import {b}from'./chunk-RHHHDLMM.js';import {d}from'./chunk-UCOSKAJL.js';import {a}from'./chunk-PDIUUNDQ.js';import {k}from'./chunk-3V7SV2WV.js';import {queryOptions}from'@tanstack/react-query';function u(r,t){return queryOptions({queryKey:a.posts.content(r,t),enabled:!!r&&!!t,queryFn:async()=>{let n=await k("condenser_api.get_content",[r,t]);return b(n&&d(n,""))}})}export{u as a};//# sourceMappingURL=chunk-VTHSHNP5.js.map
+//# sourceMappingURL=chunk-VTHSHNP5.js.map

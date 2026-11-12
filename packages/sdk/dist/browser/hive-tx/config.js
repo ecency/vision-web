@@ -1,2 +1,2 @@
-export{b as DEFAULT_SERVER_RPC_PROXY_METHODS,a as config,c as serverRpcProxy,e as setNodes,i as setResilience,f as setRestNodes,g as setRestNodesByApi,d as setServerRpcProxy,h as setUserAgent}from'../chunk-S364K442.js';import'../chunk-OS3FCYZY.js';//# sourceMappingURL=config.js.map
+export{b as DEFAULT_SERVER_RPC_PROXY_METHODS,a as config,c as serverRpcProxy,e as setNodes,i as setResilience,f as setRestNodes,g as setRestNodesByApi,d as setServerRpcProxy,h as setUserAgent}from'../chunk-RCWM6W6A.js';import'../chunk-OS3FCYZY.js';//# sourceMappingURL=config.js.map
 //# sourceMappingURL=config.js.map

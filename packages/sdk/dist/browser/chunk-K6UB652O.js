@@ -1,2 +1,0 @@
-import {b}from'./chunk-HU5GXRZC.js';import {a}from'./chunk-AHF3V5KG.js';import {j}from'./chunk-RAWKN3XW.js';import {queryOptions}from'@tanstack/react-query';function s(t,o=50){return queryOptions({queryKey:a.accounts.reputations(t,o),enabled:!!t,queryFn:async()=>!t||!b(t)?[]:j("condenser_api.get_account_reputations",[t,o])})}export{s as a};//# sourceMappingURL=chunk-K6UB652O.js.map
-//# sourceMappingURL=chunk-K6UB652O.js.map
