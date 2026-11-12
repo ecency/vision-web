@@ -3,6 +3,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { Entry } from "../types";
 import { callRPC } from "@/modules/core/hive-tx";
 import { filterDmcaEntry } from "../utils/filter-dmca-entries";
+import { normalizeEntry } from "../utils/normalize-entry";
 
 export function getContentRepliesQueryOptions(author: string, permlink: string) {
   return queryOptions({
@@ -18,7 +19,9 @@ export function getContentRepliesQueryOptions(author: string, permlink: string) 
         permlink,
       })) as Entry[] | null;
 
-      return filterDmcaEntry(replies ?? []) as Entry[];
+      // Condenser rows carry the whole voter list: normalize them like every
+      // other source (no observer: the vote is stated as unknown).
+      return filterDmcaEntry((replies ?? []).map((r) => normalizeEntry(r, ""))) as Entry[];
     },
   });
 }

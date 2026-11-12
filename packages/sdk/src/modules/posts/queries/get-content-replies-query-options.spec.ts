@@ -52,3 +52,14 @@ describe("getContentRepliesQueryOptions", () => {
     await expect(run()).resolves.toEqual([]);
   });
 });
+
+// Review D: condenser replies carry the whole voter list, like get_content.
+describe("getContentRepliesQueryOptions: vote fields", () => {
+  it("normalizes every reply", async () => {
+    mockCallRPC.mockResolvedValue([{ ...reply("bob", "r"), active_votes: [{ voter: "x", rshares: 1, percent: 100 }] }]);
+    const { queryFn } = getContentRepliesQueryOptions("alice", "a-post");
+    const out = (await (queryFn as any)()) as any[];
+    expect(out[0]).not.toHaveProperty("active_votes");
+    expect(out[0].observer_vote_for).toBeNull();
+  });
+});
