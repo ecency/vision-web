@@ -21,7 +21,7 @@ export interface EntryCardFields {
    * an empty description.
    */
   cardSummary: string;
-  /** 1200×630 cover image, or null when the post has none. */
+  /** 1200×630 cover image (JPEG, or the source animation), or null when the post has none. */
   image: string | null;
   isComment: boolean;
 }
@@ -120,5 +120,26 @@ export function buildEntryCardFields(entry: Entry): EntryCardFields {
     image = null;
   }
 
-  return { title, summary, cardSummary, image, isComment };
+  return { title, summary, cardSummary, image: cardImageFormat(image), isComment };
+}
+
+/**
+ * Only crawlers and embedders read the card image, so it names its format
+ * rather than leaving it to Accept negotiation. The CDN keeps one copy per
+ * URL: once a browser has fetched a negotiated URL as AVIF, a link-preview
+ * crawler is served that AVIF too, and many cannot show it. A format in the
+ * URL is part of the cache key. Animated sources pass through unchanged.
+ */
+function cardImageFormat(image: string | null): string | null {
+  if (!image) return image;
+  try {
+    const url = new URL(image);
+    if (url.pathname.startsWith("/p/") && url.searchParams.get("format") === "match") {
+      url.searchParams.set("format", "jpeg");
+      return url.toString();
+    }
+  } catch {
+    // Not a URL: leave it as the image lookup returned it.
+  }
+  return image;
 }

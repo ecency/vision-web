@@ -30,6 +30,7 @@ vi.mock("@/utils", async () => ({
 import { buildEntryCardFields } from "@/app/(dynamicPages)/entry/_helpers/entry-card-fields";
 import { truncate } from "@/utils";
 import { postBodySummary, catchPostImage } from "@ecency/render-helper";
+import type { Entry } from "@/entities";
 
 function entry(overrides: Record<string, unknown> = {}) {
   return {
@@ -53,7 +54,7 @@ describe("buildEntryCardFields", () => {
       title: truncate(e.title, 67),
       summary: expectedSummary,
       cardSummary: expectedSummary, // non-empty summary => identical
-      image: catchPostImage(e as any, 1200, 630, "match")
+      image: catchPostImage(e as any, 1200, 630, "match")!.replace("format=match", "format=jpeg")
     });
   });
 
@@ -81,11 +82,40 @@ describe("buildEntryCardFields", () => {
     expect(buildEntryCardFields(e as any).summary).toBe("Author provided summary");
   });
 
-  it("passes catchPostImage through verbatim (incl. its fallback url)", () => {
+  it("has no card image for a post without one", () => {
     const e = entry({ body: "No inline images here at all.", json_metadata: {} });
-    expect(buildEntryCardFields(e as any).image).toBe(
-      catchPostImage(e as any, 1200, 630, "match")
-    );
+    expect(catchPostImage(e as any, 1200, 630, "match")).toBeNull();
+    expect(buildEntryCardFields(e as any).image).toBeNull();
+  });
+
+  // Only crawlers and embedders read this image. A negotiated (format=match)
+  // URL is cached once per URL by the CDN, so a browser that fetched it first
+  // as AVIF left link-preview crawlers an AVIF they could not show.
+  it.each([
+    ["a metadata cover", { json_metadata: { image: ["https://example.com/cover.png"] } }],
+    ["a body image", { body: "Intro\n\n![shot](https://example.com/photo.jpg)" }],
+    [
+      "an already proxied cover",
+      { json_metadata: { image: ["https://i.ecency.com/p/abc?format=match&mode=fit"] } }
+    ]
+  ])("names JPEG in the card image URL for %s", (_label, overrides) => {
+    const image = buildEntryCardFields(entry(overrides) as unknown as Entry).image;
+    expect(image).not.toBeNull();
+    const url = new URL(image!);
+    expect(url.pathname).toMatch(/^\/p\/./);
+    expect(url.searchParams.get("format")).toBe("jpeg");
+    expect(url.searchParams.get("mode")).toBe("fit");
+    expect(url.searchParams.get("width")).toBe("1200");
+    expect(url.searchParams.get("height")).toBe("630");
+    expect(image).not.toContain("format=match");
+  });
+
+  it.each([
+    ["an unproxied URL", "https://example.com/cover.png?format=match"],
+    ["a string that is not a URL", "not a url"]
+  ])("returns %s from the image lookup unchanged", (_label, looked) => {
+    vi.mocked(catchPostImage).mockReturnValueOnce(looked);
+    expect(buildEntryCardFields(entry() as unknown as Entry).image).toBe(looked);
   });
 
   // Media-only posts summarize to "": `summary` (the SERP meta description)
