@@ -64,4 +64,25 @@ if [ -e "$repo/packages/sdk/dist/evil.js" ] \
   exit 1
 fi
 
-echo 'Fork changeset generation passed'
+# A large PR: the changed-file list is far over a pipe buffer, with the package
+# match near the top. A pipeline like `echo "$list" | grep -q` fails there under
+# pipefail (grep quits early, echo gets SIGPIPE) and skipped versioning on #2059.
+git -C "$repo" reset --hard -q "$base"
+git -C "$repo" clean -fdq
+mkdir -p "$repo/.changeset"
+printf 'changed source\n' > "$repo/packages/sdk/src/index.ts"
+mkdir -p "$repo/zz-docs"
+for i in $(seq 1 3000); do
+  printf '%s\n' "$i" > "$repo/zz-docs/a-long-file-name-to-fill-the-pipe-buffer-$i.md"
+done
+git -C "$repo" add -A
+git -C "$repo" commit -qm large
+(cd "$repo" && PR_TITLE=Large PR_NUMBER=103 PR_AUTHOR=maintainer \
+  PR_LABELS='["patch"]' DIFF_BASE="$base" \
+  PATH="$test_dir/bin:$PATH" bash "$generator")
+if ! grep -qx '"@ecency/sdk": patch' "$repo/.changeset/pr-103.md" 2>/dev/null; then
+  echo 'Large PR with a generic patch label did not version @ecency/sdk' >&2
+  exit 1
+fi
+
+echo 'Changeset generation passed'
