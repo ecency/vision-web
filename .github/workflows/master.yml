@@ -193,9 +193,19 @@ jobs:
           # The web sizing knobs default in compose, so `docker-compose config`
           # would otherwise read whatever the HOST happens to have exported and
           # this region's memory profile could change with no commit behind it.
-          # EU pins its own values here: same numbers as the compose defaults,
-          # stated rather than inherited.
-          unset WEB_REPLICAS WEB_HEAP_MB WEB_MEM_LIMIT WEB_UPDATE_ORDER
+          # EU pins its own values here, stated rather than inherited.
+          #
+          # Six replicas use more of this host's cores. The smaller per-replica
+          # heap and limit keep six of them, a seventh during a start-first
+          # rollout, and the other services inside the host's RAM; the budget
+          # behind that lives with the infrastructure notes. Replicas, heap and
+          # limit change together, never one alone.
+          #
+          # The per-process render cap drops with the replica count, so the
+          # region's total in-flight renders stay what four replicas at 48
+          # allowed (6 x 32 = 4 x 48) while each smaller heap carries fewer.
+          unset WEB_REPLICAS WEB_HEAP_MB WEB_MEM_LIMIT WEB_UPDATE_ORDER WEB_SSR_MAX_INFLIGHT
+          export WEB_REPLICAS=6 WEB_HEAP_MB=2048 WEB_MEM_LIMIT=3072M WEB_UPDATE_ORDER=start-first WEB_SSR_MAX_INFLIGHT=32
           cd ~/vision-web
           git pull origin main
           cd apps/web
@@ -331,10 +341,10 @@ jobs:
           export NEWSLETTER_API_URL=$NEWSLETTER_API_URL
           export NEWSLETTER_SERVICE_TOKEN=$NEWSLETTER_SERVICE_TOKEN
           export WEB_REPLICAS=$WEB_REPLICAS
-          # These three are this region's memory budget. Compose defaults to
-          # the other region's values, so a dropped variable would deploy four
-          # replicas at the wrong cap -- the configuration that cycled this
-          # host out of RAM. Fail the deploy instead of shipping it.
+          # These three are this region's memory budget. The compose defaults
+          # are not this region's values, so a dropped variable would deploy
+          # four replicas at the wrong cap -- the configuration that cycled
+          # this host out of RAM. Fail the deploy instead of shipping it.
           : "${WEB_HEAP_MB:?WEB_HEAP_MB is required for the US deploy}"
           : "${WEB_MEM_LIMIT:?WEB_MEM_LIMIT is required for the US deploy}"
           : "${WEB_UPDATE_ORDER:?WEB_UPDATE_ORDER is required for the US deploy}"
