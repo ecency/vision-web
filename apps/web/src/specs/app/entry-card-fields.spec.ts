@@ -30,6 +30,7 @@ vi.mock("@/utils", async () => ({
 import { buildEntryCardFields } from "@/app/(dynamicPages)/entry/_helpers/entry-card-fields";
 import { truncate } from "@/utils";
 import { postBodySummary, catchPostImage } from "@ecency/render-helper";
+import type { Entry } from "@/entities";
 
 function entry(overrides: Record<string, unknown> = {}) {
   return {
@@ -98,7 +99,7 @@ describe("buildEntryCardFields", () => {
       { json_metadata: { image: ["https://i.ecency.com/p/abc?format=match&mode=fit"] } }
     ]
   ])("names JPEG in the card image URL for %s", (_label, overrides) => {
-    const image = buildEntryCardFields(entry(overrides) as any).image;
+    const image = buildEntryCardFields(entry(overrides) as unknown as Entry).image;
     expect(image).not.toBeNull();
     const url = new URL(image!);
     expect(url.pathname).toMatch(/^\/p\/./);
@@ -107,6 +108,14 @@ describe("buildEntryCardFields", () => {
     expect(url.searchParams.get("width")).toBe("1200");
     expect(url.searchParams.get("height")).toBe("630");
     expect(image).not.toContain("format=match");
+  });
+
+  it.each([
+    ["an unproxied URL", "https://example.com/cover.png?format=match"],
+    ["a string that is not a URL", "not a url"]
+  ])("returns %s from the image lookup unchanged", (_label, looked) => {
+    vi.mocked(catchPostImage).mockReturnValueOnce(looked);
+    expect(buildEntryCardFields(entry() as unknown as Entry).image).toBe(looked);
   });
 
   // Media-only posts summarize to "": `summary` (the SERP meta description)

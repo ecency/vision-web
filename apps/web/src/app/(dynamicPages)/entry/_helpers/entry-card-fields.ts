@@ -21,7 +21,7 @@ export interface EntryCardFields {
    * an empty description.
    */
   cardSummary: string;
-  /** 1200×630 JPEG cover image, or null when the post has none. */
+  /** 1200×630 cover image (JPEG, or the source animation), or null when the post has none. */
   image: string | null;
   isComment: boolean;
 }
