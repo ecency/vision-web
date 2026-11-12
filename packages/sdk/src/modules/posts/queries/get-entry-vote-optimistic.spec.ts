@@ -71,6 +71,32 @@ describe("getEntryVoteQueryOptions right after this client voted", () => {
     expect(await qc.fetchQuery({ ...options, staleTime: 0 })).toBeNull();
   });
 
+  // Round 6, item 4: a hold that settles (the chain caught up) drops its
+  // pending re-reads.
+  it("clears the pending re-reads once the chain agrees", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fetchSpy = answerNoVote();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    recordOptimisticVote("bob", "p", "frank", { rshares: 5000, percent: 5000 });
+    const options = getEntryVoteQueryOptions("bob", "p", "frank");
+    expect(await qc.fetchQuery(options)).toEqual({ rshares: 5000, percent: 5000 });
+
+    // The chain indexed the vote: the next read agrees and the hold settles.
+    fetchSpy.mockImplementation(async (_input: any, init: any) => {
+      const body = JSON.parse(String(init.body));
+      const out = body.map((r: any) => ({
+        jsonrpc: "2.0",
+        id: r.id,
+        result: { votes: [{ voter: "frank", author: "bob", permlink: "p", rshares: 4000, vote_percent: 5000 }] },
+      }));
+      return new Response(JSON.stringify(out), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    expect(await qc.fetchQuery({ ...options, staleTime: 0 })).toEqual({ rshares: 4000, percent: 5000 });
+
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
   it("trusts the chain once 60 s have passed", async () => {
     answerNoVote();
     const t0 = Date.now();

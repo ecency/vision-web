@@ -296,10 +296,30 @@ export const OPTIMISTIC_VOTE_HOLD_MS = 60_000;
 /** When the one extra lookup runs after a disagreeing answer. */
 export const OPTIMISTIC_VOTE_RECHECK_MS = 15_000;
 
-const optimisticVotes = new Map<
-  string,
-  { vote: ObserverVote | null; at: number; recheck: boolean; expiry: boolean }
->();
+interface HeldVote {
+  vote: ObserverVote | null;
+  at: number;
+  recheck: boolean;
+  expiry: boolean;
+  timers: ReturnType<typeof setTimeout>[];
+}
+
+const optimisticVotes = new Map<string, HeldVote>();
+
+/** Drop a hold and the re-reads it still has pending. */
+function settleHold(key: string): void {
+  const held = optimisticVotes.get(key);
+  if (!held) return;
+  held.timers.forEach((t) => clearTimeout(t));
+  optimisticVotes.delete(key);
+}
+
+/** A hold timer that never keeps a Node process (SSR, scripts) alive. */
+function holdTimer(held: HeldVote, fn: () => void, ms: number): void {
+  const t = setTimeout(fn, ms);
+  (t as { unref?: () => void }).unref?.();
+  held.timers.push(t);
+}
 const voteKey = (author: string, permlink: string, voter: string) => `${author}\n${permlink}\n${voter}`;
 
 /**
@@ -314,12 +334,9 @@ export function recordOptimisticVote(
   voter: string,
   vote: ObserverVote | null
 ): void {
-  optimisticVotes.set(voteKey(author, permlink, voter), {
-    vote,
-    at: Date.now(),
-    recheck: false,
-    expiry: false,
-  });
+  const key = voteKey(author, permlink, voter);
+  settleHold(key);
+  optimisticVotes.set(key, { vote, at: Date.now(), recheck: false, expiry: false, timers: [] });
 }
 
 function sameVote(a: ObserverVote | null, b: ObserverVote | null): boolean {
@@ -340,20 +357,20 @@ function settleLookup(
   const held = optimisticVotes.get(key);
   if (!held) return chain;
   if (Date.now() - held.at >= OPTIMISTIC_VOTE_HOLD_MS || sameVote(chain, held.vote)) {
-    optimisticVotes.delete(key);
+    settleHold(key);
     return chain;
   }
   const reread = () =>
     void getQueryClient().invalidateQueries({ queryKey: QueryKeys.posts.entryVote(author, permlink, voter) });
   if (!held.recheck) {
     held.recheck = true;
-    setTimeout(reread, OPTIMISTIC_VOTE_RECHECK_MS);
+    holdTimer(held, reread, OPTIMISTIC_VOTE_RECHECK_MS);
   }
   // A held value must not outlive the hold: if the vote never reaches the
   // chain (a dropped transaction), the read after the hold lets the chain win.
   if (!held.expiry) {
     held.expiry = true;
-    setTimeout(reread, Math.max(0, held.at + OPTIMISTIC_VOTE_HOLD_MS - Date.now()) + 50);
+    holdTimer(held, reread, Math.max(0, held.at + OPTIMISTIC_VOTE_HOLD_MS - Date.now()) + 50);
   }
   return held.vote;
 }
