@@ -67,27 +67,94 @@ describe("getEntryActiveVotesQueryOptions: every voter of a 1500-vote post", () 
     expect(new Set(votes.map((v) => v.voter)).size).toBe(1500);
   });
 
-  it("falls back to condenser_api.get_active_votes on a node without list_votes", async () => {
-    const calls: string[] = [];
+  // Review E: condenser_api.get_active_votes stops at 1000 (live: 1000 of
+  // 1059), so a node without list_votes is paged through database_api.
+  it("pages database_api.list_votes on a node without list_votes, never condenser", async () => {
+    const ALL = Array.from({ length: 1059 }, (_, i) => ({
+      voter: `voter${String(i).padStart(4, "0")}`,
+      author: "alice",
+      permlink: "big-post",
+      rshares: 10 + i,
+      vote_percent: 10000,
+      weight: 5 + i,
+      last_update: "2026-11-07T06:45:09",
+      num_changes: 0,
+    }));
+    // The index is (author, permlink, voter): a seek past this post's last
+    // voter lands on the next post's rows.
+    const NEXT_POST = [{ ...ALL[0], permlink: "zz-next-post", voter: "aaa" }];
+    const calls: Array<{ method: string; params: any }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
       const body = JSON.parse(String(init.body));
-      calls.push(body.method);
+      calls.push({ method: body.method, params: body.params });
       if (body.method === "bridge.list_votes") {
         return rpc(body.id, {
-          error: {
-            code: -32602,
-            message: "Assert Exception:unknown method: bridge_apilist_votes",
-            data: { extension: { assertion_expression: "unknown method: bridge_apilist_votes" } }
-          }
+          error: { code: -32602, message: "Assert Exception:unknown method: bridge_apilist_votes" },
         });
       }
-      return rpc(body.id, { result: VOTES });
+      if (body.method === "database_api.list_votes") {
+        const [, , voter] = body.params.start;
+        const from = voter ? ALL.findIndex((v) => v.voter === voter) : 0;
+        return rpc(body.id, { result: { votes: [...ALL, ...NEXT_POST].slice(from, from + body.params.limit) } });
+      }
+      return rpc(body.id, { result: VOTES.slice(0, 1000) });
     });
 
     const votes = await new QueryClient().fetchQuery(getEntryActiveVotesQueryOptions(entry));
 
-    expect(calls).toEqual(["bridge.list_votes", "condenser_api.get_active_votes"]);
-    expect(votes).toHaveLength(1500);
+    expect(calls.map((c) => c.method)).toEqual([
+      "bridge.list_votes",
+      "database_api.list_votes",
+      "database_api.list_votes",
+    ]);
+    expect(calls[1].params).toEqual({ start: ["alice", "big-post", ""], limit: 1000, order: "by_comment_voter" });
+    // Inclusive start: the last voter of page 1 comes back first and is skipped.
+    expect(calls[2].params).toEqual({
+      start: ["alice", "big-post", "voter0999"],
+      limit: 1000,
+      order: "by_comment_voter",
+    });
+    expect(votes).toHaveLength(1059);
+    expect(new Set(votes.map((v) => v.voter)).size).toBe(1059);
+    expect(votes.some((v) => v.voter === "aaa")).toBe(false);
+    expect(votes[5]).toEqual({
+      voter: "voter0005",
+      rshares: 15,
+      percent: 10000,
+      weight: 10,
+      time: "2026-11-07T06:45:09",
+    });
+  });
+
+  it("restarts from scratch when the method changes mid-pagination, never unions", async () => {
+    config.nodes = ["https://new-votes.test", "https://old-votes.test"];
+    const LV = Array.from({ length: 1500 }, (_, i) => ({ voter: `lv${i}`, rshares: 1, percent: 100, weight: 1, time: "t", reputation: 50 }));
+    const DB = Array.from({ length: 1200 }, (_, i) => ({
+      voter: `db${String(i).padStart(4, "0")}`, author: "alice", permlink: "big-post", rshares: 1, vote_percent: 100, weight: 1, last_update: "t",
+    }));
+    let newNodeCalls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      const body = JSON.parse(String(init.body));
+      if (String(input).includes("new-votes")) {
+        newNodeCalls++;
+        // Serves page 1, then goes down.
+        if (newNodeCalls > 1) return new Response("down", { status: 503 });
+        return rpc(body.id, { result: LV.slice(0, 1000) });
+      }
+      if (body.method === "bridge.list_votes") {
+        return rpc(body.id, {
+          error: { code: -32602, message: "Assert Exception:unknown method: bridge_apilist_votes" },
+        });
+      }
+      const [, , voter] = body.params.start;
+      const from = voter ? DB.findIndex((v) => v.voter === voter) : 0;
+      return rpc(body.id, { result: { votes: DB.slice(from, from + body.params.limit) } });
+    });
+
+    const votes = await new QueryClient().fetchQuery(getEntryActiveVotesQueryOptions(entry));
+
+    expect(votes).toHaveLength(1200);
+    expect(votes.every((v) => v.voter.startsWith("db"))).toBe(true);
   });
 
   it("stops when a page brings no new voter (a relay that answered the full list)", async () => {

@@ -1,20 +1,95 @@
 import { QueryKeys } from "@/modules/core";
 import { queryOptions } from "@tanstack/react-query";
 import { Entry, ObserverVote, Vote } from "../types";
-import { callRPC, callRPCWithFallback } from "@/modules/core/hive-tx";
+import { callRPC, callRPCBatch, callRPCWithFallback } from "@/modules/core/hive-tx";
 
-/** Page size of `bridge.list_votes` (the method accepts 1-1000). */
+/** Page size of `bridge.list_votes` and `database_api.list_votes` (both accept up to 1000). */
 export const LIST_VOTES_PAGE_SIZE = 1000;
 
-/** Upper bound on pages for one post, so a misbehaving relay cannot loop. */
+/** Upper bound on pages for one post, so a misbehaving node or relay cannot loop. */
 const MAX_LIST_VOTES_PAGES = 100;
+
+/** A row of `database_api.list_votes`. It has no reputation. */
+interface DatabaseVote {
+  voter: string;
+  author: string;
+  permlink: string;
+  rshares: number | string;
+  vote_percent: number;
+  weight?: number | string;
+  last_update?: string;
+}
+
+function databaseListVotesParams(author: string, permlink: string, start: string, limit: number) {
+  return { start: [author, permlink, start], limit, order: "by_comment_voter" };
+}
+
+/** A database_api row in the `Vote` shape (no reputation: that index has none). */
+function fromDatabaseVote(row: DatabaseVote): Vote {
+  return {
+    voter: row.voter,
+    rshares: Number(row.rshares) || 0,
+    percent: Number(row.vote_percent) || 0,
+    weight: Number(row.weight) || 0,
+    time: row.last_update ?? "",
+  };
+}
+
+/**
+ * Every vote on a post from `database_api.list_votes` (order by_comment_voter),
+ * which every node serves. The start key is INCLUSIVE, so each page after the
+ * first repeats the previous page's last voter, which is skipped. The index
+ * runs on past this post into the next one, so a row for another post ends
+ * the list. `firstPage` is the first page when it is already in hand.
+ */
+async function getEntryVotesFromDatabase(
+  author: string,
+  permlink: string,
+  signal?: AbortSignal,
+  firstPage?: DatabaseVote[]
+): Promise<Vote[]> {
+  const votes: Vote[] = [];
+  const seen = new Set<string>();
+  let start = "";
+  let page = firstPage;
+  for (let n = 0; n < MAX_LIST_VOTES_PAGES; n++) {
+    if (!page) {
+      const response = await callRPC<{ votes?: DatabaseVote[] }>(
+        "database_api.list_votes",
+        databaseListVotesParams(author, permlink, start, LIST_VOTES_PAGE_SIZE),
+        undefined,
+        undefined,
+        signal
+      );
+      page = Array.isArray(response?.votes) ? response.votes : [];
+    }
+    let added = 0;
+    let ended = false;
+    for (const row of page) {
+      if (!row || row.author !== author || row.permlink !== permlink) {
+        ended = true;
+        break;
+      }
+      if (seen.has(row.voter)) continue;
+      seen.add(row.voter);
+      votes.push(fromDatabaseVote(row));
+      added++;
+    }
+    if (ended || page.length < LIST_VOTES_PAGE_SIZE || added === 0) break;
+    start = page[page.length - 1].voter;
+    page = undefined;
+  }
+  return votes;
+}
 
 /**
  * Every vote on a post. Pages `bridge.list_votes` (`start` = the last voter of
- * the previous page, exclusive) until a short page. A node without it answers
- * through `condenser_api.get_active_votes`, which returns the whole list in
- * one go, and paging stops there. Paging also stops on a page that brings no
- * new voter: a cache may answer `list_votes` with the full v1 list.
+ * the previous page, exclusive) until a short page. A node without it is
+ * paged through `database_api.list_votes` instead (condenser
+ * get_active_votes stops at 1000). The two lists are ordered differently, so
+ * they are never combined: if the method changes after the first page, the
+ * list is read again from the start through database_api. Paging also stops
+ * on a page that brings no new voter (a cache may answer with a full list).
  */
 export async function getEntryVotes(
   author: string,
@@ -28,12 +103,24 @@ export async function getEntryVotes(
   for (let page = 0; page < MAX_LIST_VOTES_PAGES; page++) {
     const params: Record<string, unknown> = { author, permlink, limit: LIST_VOTES_PAGE_SIZE };
     if (start !== undefined) params.start = start;
-    const { result, method } = await callRPCWithFallback<Vote[] | null>(
+    const { result, method } = await callRPCWithFallback<unknown>(
       { method: "bridge.list_votes", params },
-      { method: "condenser_api.get_active_votes", params: [author, permlink] },
+      {
+        method: "database_api.list_votes",
+        params: databaseListVotesParams(author, permlink, "", LIST_VOTES_PAGE_SIZE),
+      },
       { signal }
     );
-    const rows = Array.isArray(result) ? result : [];
+    if (method !== "bridge.list_votes") {
+      const first = (result as { votes?: DatabaseVote[] } | null)?.votes;
+      return getEntryVotesFromDatabase(
+        author,
+        permlink,
+        signal,
+        page === 0 && Array.isArray(first) ? first : undefined
+      );
+    }
+    const rows = Array.isArray(result) ? (result as Vote[]) : [];
     let added = 0;
     for (const row of rows) {
       if (!row || typeof row.voter !== "string" || seen.has(row.voter)) continue;
@@ -41,9 +128,7 @@ export async function getEntryVotes(
       votes.push(row);
       added++;
     }
-    if (method !== "bridge.list_votes" || rows.length < LIST_VOTES_PAGE_SIZE || added === 0) {
-      break;
-    }
+    if (rows.length < LIST_VOTES_PAGE_SIZE || added === 0) break;
     start = rows[rows.length - 1].voter;
   }
   return votes;
@@ -61,35 +146,34 @@ export function getEntryActiveVotesQueryOptions(entry?: Pick<Entry, "author" | "
   });
 }
 
-interface DatabaseVote {
-  voter: string;
+// ── One account's vote, batched ──────────────────────────────────────────────
+
+/** Lookups per JSON-RPC batch request. */
+export const ENTRY_VOTE_BATCH_SIZE = 50;
+
+interface PendingLookup {
   author: string;
   permlink: string;
-  rshares: number | string;
-  vote_percent: number;
+  voter: string;
+  waiters: Array<{ resolve: (v: ObserverVote | null) => void; reject: (e: unknown) => void }>;
 }
 
+let pendingLookups = new Map<string, PendingLookup>();
+let flushScheduled = false;
+
 /**
- * One account's vote on one entry: `{ rshares, percent }`, or null when the
- * account has not voted (a removed vote, percent 0, is null too). One cheap
- * `database_api.list_votes` lookup by (author, permlink, voter), served by
- * every node. Use it when the entry was read for another observer, e.g. the
- * server-rendered default observer while a user is logged in
- * (`entryVoteOf` returns undefined then).
+ * Read one `database_api.list_votes` row as `voter`'s vote on the post. The
+ * method is a lower-bound seek on (author, permlink, voter): for an account
+ * that did not vote it returns the NEXT row, another voter's or another
+ * post's, so the row must match all three or it is "not voted". A removed
+ * vote (percent 0) is "not voted" too.
  */
-export async function getEntryVote(
+function readLookupRow(
+  response: { votes?: DatabaseVote[] } | null | undefined,
   author: string,
   permlink: string,
-  voter: string,
-  signal?: AbortSignal
-): Promise<ObserverVote | null> {
-  const response = await callRPC<{ votes?: DatabaseVote[] }>(
-    "database_api.list_votes",
-    { start: [author, permlink, voter], limit: 1, order: "by_comment_voter" },
-    undefined,
-    undefined,
-    signal
-  );
+  voter: string
+): ObserverVote | null {
   const row = response?.votes?.[0];
   if (!row || row.author !== author || row.permlink !== permlink || row.voter !== voter) {
     return null;
@@ -97,6 +181,61 @@ export async function getEntryVote(
   const percent = Number(row.vote_percent) || 0;
   if (percent === 0) return null;
   return { rshares: Number(row.rshares) || 0, percent };
+}
+
+async function flushLookups(): Promise<void> {
+  flushScheduled = false;
+  const batch = [...pendingLookups.values()];
+  pendingLookups = new Map();
+  for (let i = 0; i < batch.length; i += ENTRY_VOTE_BATCH_SIZE) {
+    const chunk = batch.slice(i, i + ENTRY_VOTE_BATCH_SIZE);
+    try {
+      const answers = await callRPCBatch<{ votes?: DatabaseVote[] }>(
+        chunk.map((l) => ({
+          method: "database_api.list_votes",
+          params: databaseListVotesParams(l.author, l.permlink, l.voter, 1),
+        }))
+      );
+      chunk.forEach((l, k) => {
+        const answer = answers[k];
+        if (answer && answer.error === undefined) {
+          const vote = readLookupRow(answer.result, l.author, l.permlink, l.voter);
+          l.waiters.forEach((w) => w.resolve(vote));
+        } else {
+          l.waiters.forEach((w) => w.reject(answer?.error ?? new Error("no answer")));
+        }
+      });
+    } catch (e) {
+      chunk.forEach((l) => l.waiters.forEach((w) => w.reject(e)));
+    }
+  }
+}
+
+/**
+ * One account's vote on one entry: `{ rshares, percent }`, or null when the
+ * account has not voted (a removed vote, percent 0, is null too). Lookups made
+ * in the same tick (a page of cards mounting) are coalesced into ONE JSON-RPC
+ * batch request, in chunks of 50, that fails over to another node as a unit;
+ * the same lookup asked twice is sent once.
+ */
+export function getEntryVote(
+  author: string,
+  permlink: string,
+  voter: string
+): Promise<ObserverVote | null> {
+  return new Promise((resolve, reject) => {
+    const key = `${author}\n${permlink}\n${voter}`;
+    let lookup = pendingLookups.get(key);
+    if (!lookup) {
+      lookup = { author, permlink, voter, waiters: [] };
+      pendingLookups.set(key, lookup);
+    }
+    lookup.waiters.push({ resolve, reject });
+    if (!flushScheduled) {
+      flushScheduled = true;
+      setTimeout(() => void flushLookups(), 0);
+    }
+  });
 }
 
 export function getEntryVoteQueryOptions(
@@ -107,7 +246,7 @@ export function getEntryVoteQueryOptions(
 ) {
   return queryOptions({
     queryKey: QueryKeys.posts.entryVote(author, permlink, voter),
-    queryFn: async ({ signal }) => getEntryVote(author!, permlink!, voter!, signal),
+    queryFn: async () => getEntryVote(author!, permlink!, voter!),
     enabled: enabled && !!author && !!permlink && !!voter,
     staleTime: 5 * 60_000,
   });

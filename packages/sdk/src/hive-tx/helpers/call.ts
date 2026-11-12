@@ -1905,6 +1905,111 @@ const callRPCCore = async <T = any>(
   throw lastError
 }
 
+// ── Public API: callRPCBatch ────────────────────────────────────────────────
+
+/** One answer of a batch: the result, or the node's error for that request. */
+export type RpcBatchAnswer<T = any> = { result: T; error?: undefined } | { result?: undefined; error: RPCError | Error }
+
+/**
+ * Several reads in ONE HTTP request (a JSON-RPC batch array) to one node.
+ * The batch fails over as a unit: an HTTP error, a transport failure or a
+ * malformed answer moves the whole batch to the next healthy node, exactly
+ * as `callRPC` moves one request. A JSON-RPC error for one request is that
+ * request's answer (`{ error }`), not a node fault. Answers come back in the
+ * order of `calls`. No server proxy and no hedging: this is for many small
+ * reads a client issues at once (one vote lookup per card).
+ */
+export const callRPCBatch = async <T = any>(
+  calls: RpcCallSpec[],
+  options: { timeout?: number; retry?: number; signal?: AbortSignal } = {}
+): Promise<RpcBatchAnswer<T>[]> => {
+  if (calls.length === 0) return []
+  if (!Array.isArray(config.nodes) || config.nodes.length === 0) {
+    throw new Error('config.nodes is empty')
+  }
+  const api = apiOf(calls[0].method)
+  const timeout = options.timeout ?? config.timeout
+  const retry = options.retry ?? config.retry
+  const signal = options.signal
+  const deadline = Date.now() + config.resilience.totalBudgetFactor * timeout
+  const triedInRound = new Set<string>()
+  let lastError: any
+
+  for (let attempt = 0; attempt <= retry; attempt++) {
+    if (attempt > 0 && Date.now() >= deadline) break
+    const ordered = rpcHealthTracker.getOrderedNodes(config.nodes, api)
+    let node = ordered.find((n) => !triedInRound.has(n))
+    if (!node) {
+      triedInRound.clear()
+      node = ordered[0]
+    }
+    triedInRound.add(node)
+    const start = Date.now()
+    try {
+      const answers = await jsonRPCBatchCall<T>(node, calls, timeout, signal)
+      rpcHealthTracker.recordSuccess(node, api)
+      return answers
+    } catch (e: any) {
+      if (signal?.aborted) throw e
+      recordError(rpcHealthTracker, node, e, api)
+      rpcHealthTracker.recordSlowFailure(node, Date.now() - start)
+      lastError = e
+      if (attempt < retry) await jitterDelay()
+    }
+  }
+  throw lastError
+}
+
+async function jsonRPCBatchCall<T>(
+  url: string,
+  calls: RpcCallSpec[],
+  timeout: number,
+  externalSignal?: AbortSignal
+): Promise<RpcBatchAnswer<T>[]> {
+  const base = Math.floor(Math.random() * 100_000_000)
+  const body = calls.map((c, i) => ({ jsonrpc: '2.0', method: c.method, params: c.params, id: base + i }))
+  const { signal: tSignal, cleanup: cleanupTimeout } = createTimeoutSignal(timeout)
+  const { signal, cleanup: cleanupMerge } = mergeSignals(tSignal, externalSignal)
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', ...serverIdentityHeaders() },
+      signal
+    })
+    if (res.status === 429) {
+      throw new NodeError(url, 'HTTP 429 Rate Limited', {
+        rateLimitMs: parseRetryAfterMs(res.headers.get('Retry-After')),
+        isRateLimit: true
+      })
+    }
+    if (!res.ok) {
+      try {
+        await res.body?.cancel()
+      } catch {
+        // nothing to release
+      }
+      throw new NodeError(url, `HTTP ${res.status} from ${url}`, { nodeWide: res.status < 500 })
+    }
+    const parsed: unknown = await res.json()
+    if (!Array.isArray(parsed)) throw new Error('JSONRPC batch answer is not an array')
+    const byId = new Map<number, any>()
+    for (const item of parsed) {
+      if (item && typeof item.id === 'number') byId.set(item.id, item)
+    }
+    return calls.map((_c, i): RpcBatchAnswer<T> => {
+      const item = byId.get(base + i)
+      if (!item || item.jsonrpc !== '2.0') throw new Error('JSONRPC batch id mismatch')
+      if ('result' in item) return { result: item.result as T }
+      const e = item.error
+      return { error: e && 'message' in e && 'code' in e ? new RPCError(e) : new Error(String(e?.message ?? e)) }
+    })
+  } finally {
+    cleanupTimeout()
+    cleanupMerge()
+  }
+}
+
 // ── Public API: callRPC for broadcasts ──────────────────────────────────────
 
 /**

@@ -140,10 +140,14 @@ export interface EntryHeader {
   depth: number;
 }
 
+/**
+ * One vote in a voter list (`getEntryVotes`). `reputation` is absent on rows
+ * read through `database_api.list_votes` (nodes without bridge.list_votes).
+ */
 export interface Vote {
   percent: number;
-  reputation: number;
-  rshares: string;
+  reputation?: number;
+  rshares: string | number;
   time: string;
   timestamp?: number;
   voter: string;

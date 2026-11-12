@@ -26,6 +26,7 @@ export {
   config as hiveTxConfig,
   callRPC,
   callRPCWithFallback,
+  callRPCBatch,
   callRPCBroadcast,
   callREST,
   callWithQuorum,
@@ -47,6 +48,7 @@ export type {
   RpcCallSpec,
   RpcFallbackResult,
   CallRPCWithFallbackOptions,
+  RpcBatchAnswer,
 } from "../../hive-tx";
 
 // ── Compat types (matching dhive shapes used throughout the codebase) ──────
