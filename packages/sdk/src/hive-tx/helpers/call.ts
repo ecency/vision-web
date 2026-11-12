@@ -2117,8 +2117,10 @@ async function singleCallsAsBatch<T>(
   const answers: Array<RpcBatchAnswer<T> | undefined> = new Array(calls.length)
   let next = 0
   let transportFailuresInARow = 0
-  const stopped = () =>
-    transportFailuresInARow >= SINGLES_TRANSPORT_FAILURES_TO_STOP || Date.now() >= deadline
+  // Latched: once the node failed twice in a row, a later success of a call
+  // already in flight does not reopen it.
+  let givenUp = false
+  const stopped = () => givenUp || Date.now() >= deadline
   const worker = async () => {
     while (next < calls.length && !stopped()) {
       const i = next++
@@ -2133,6 +2135,7 @@ async function singleCallsAsBatch<T>(
           answers[i] = { error: e }
         } else {
           transportFailuresInARow++
+          if (transportFailuresInARow >= SINGLES_TRANSPORT_FAILURES_TO_STOP) givenUp = true
           // Left undefined: a transport failure is about the node, so this
           // request moves on with the others that were not answered. This
           // worker stops here: on a dead node every worker stops after its

@@ -284,3 +284,51 @@ describe("callRPCBatch: a dead node in single-call mode", () => {
     expect(deadCalls).toBeLessThan(13);
   });
 });
+
+describe("callRPCBatch: single-call mode stops early", () => {
+  const fifty = Array.from({ length: 50 }, (_, i) => ({
+    method: "database_api.list_votes",
+    params: { start: ["a", `p${i}`, "u"], limit: 1, order: "by_comment_voter" },
+  }));
+
+  it("stops every worker after two transport failures in a row, the rest moves on", async () => {
+    config.nodes = ["https://half-sick.test", "https://healthy.test"];
+    __BATCH_SUPPORT__.markUnsupported("https://half-sick.test");
+    __BATCH_SUPPORT__.markUnsupported("https://healthy.test");
+    const hosts: Record<string, number> = {};
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+      const host = new URL(String(input)).host;
+      hosts[host] = (hosts[host] ?? 0) + 1;
+      const body = JSON.parse(String(init.body));
+      if (host === "half-sick.test") {
+        const n = Number(body.params.start[1].slice(1));
+        if (n < 2) throw new TypeError("fetch failed");
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return json({ jsonrpc: "2.0", id: body.id, result: { votes: [] } });
+    });
+    const answers = await callRPCBatch(fifty);
+    expect(answers.every((a) => a.error === undefined)).toBe(true);
+    // Only the first wave reached the half-sick node.
+    expect(hosts["half-sick.test"]).toBeLessThanOrEqual(6);
+    expect(hosts["healthy.test"]).toBeGreaterThanOrEqual(44);
+  });
+
+  it("starts no new single call past the call's time budget", async () => {
+    config.nodes = ["https://slow-singles.test"];
+    __BATCH_SUPPORT__.markUnsupported("https://slow-singles.test");
+    let calls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+      calls++;
+      const body = JSON.parse(String(init.body));
+      await new Promise((r) => setTimeout(r, 60));
+      return json({ jsonrpc: "2.0", id: body.id, result: { votes: [] } });
+    });
+    const t0 = Date.now();
+    const answers = await callRPCBatch(fifty, { timeout: 100 });
+    // Budget: 2 x 100 ms. Sending all 50, six at a time, takes ~540 ms.
+    expect(Date.now() - t0).toBeLessThan(400);
+    expect(calls).toBeLessThan(50);
+    expect(answers.some((a) => a.error === undefined)).toBe(true);
+  });
+});
