@@ -178,6 +178,26 @@ describe("getEntryActiveVotesQueryOptions: every voter of a 1500-vote post", () 
     expect(votes[0].percent).toBe(100);
   });
 
+  // Round 4, item 6: a null or {} page is not an empty list; it is a failed
+  // page, read again from the start through database_api.
+  for (const [label, odd] of [["null", null], ["{}", {}]] as const) {
+    it(`reads a ${label} list_votes page as failed and uses database_api`, async () => {
+      const DB = Array.from({ length: 4 }, (_, i) => ({
+        voter: `db${i}`, author: "alice", permlink: "big-post", rshares: 1, vote_percent: 100, weight: 1, last_update: "t",
+      }));
+      const methods: string[] = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+        const body = JSON.parse(String(init.body));
+        methods.push(body.method);
+        if (body.method === "bridge.list_votes") return rpc(body.id, { result: odd });
+        return rpc(body.id, { result: { votes: DB } });
+      });
+      const votes = await new QueryClient().fetchQuery(getEntryActiveVotesQueryOptions(entry));
+      expect(methods).toEqual(["bridge.list_votes", "database_api.list_votes"]);
+      expect(votes.map((v) => v.voter)).toEqual(["db0", "db1", "db2", "db3"]);
+    });
+  }
+
   it("stops when a page brings no new voter (a relay that answered the full list)", async () => {
     let n = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {

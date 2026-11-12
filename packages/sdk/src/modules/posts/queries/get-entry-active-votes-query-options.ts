@@ -1,4 +1,5 @@
-import { QueryKeys } from "@/modules/core";
+import { getQueryClient, QueryKeys } from "@/modules/core";
+import { isCastVote } from "../utils/normalize-entry";
 import { queryOptions } from "@tanstack/react-query";
 import { Entry, ObserverVote, Vote } from "../types";
 import { callRPC, callRPCBatch, callRPCWithFallback } from "@/modules/core/hive-tx";
@@ -123,7 +124,12 @@ export async function getEntryVotes(
         page === 0 ? (dbPage as DatabaseVote[]) : undefined
       );
     }
-    const rows = Array.isArray(result) ? (result as Vote[]) : [];
+    if (!Array.isArray(result)) {
+      // Neither a list_votes page nor a database_api body (null, {}): a failed
+      // page, not an empty list. Read the list again from the start.
+      return getEntryVotesFromDatabase(author, permlink, signal);
+    }
+    const rows = result as Vote[];
     let added = 0;
     for (const row of rows) {
       if (!row || typeof row.voter !== "string" || seen.has(row.voter)) continue;
@@ -283,6 +289,61 @@ export function getEntryVote(
   });
 }
 
+// ── Holding a vote this client just cast ─────────────────────────────────────
+
+/** How long a vote this client cast outranks a disagreeing lookup. */
+export const OPTIMISTIC_VOTE_HOLD_MS = 60_000;
+/** When the one extra lookup runs after a disagreeing answer. */
+export const OPTIMISTIC_VOTE_RECHECK_MS = 15_000;
+
+const optimisticVotes = new Map<string, { vote: ObserverVote | null; at: number; recheck: boolean }>();
+const voteKey = (author: string, permlink: string, voter: string) => `${author}\n${permlink}\n${voter}`;
+
+/**
+ * Record a vote this client just cast (or removed) on a post. The node
+ * indexes that vote a block or more later, so for OPTIMISTIC_VOTE_HOLD_MS a
+ * lookup that disagrees with it keeps this value, and one more lookup runs
+ * OPTIMISTIC_VOTE_RECHECK_MS later. Called by the vote cache updates.
+ */
+export function recordOptimisticVote(
+  author: string,
+  permlink: string,
+  voter: string,
+  vote: ObserverVote | null
+): void {
+  optimisticVotes.set(voteKey(author, permlink, voter), { vote, at: Date.now(), recheck: false });
+}
+
+function sameVote(a: ObserverVote | null, b: ObserverVote | null): boolean {
+  const castA = isCastVote(a);
+  const castB = isCastVote(b);
+  if (castA !== castB) return false;
+  return !castA || a!.percent === b!.percent;
+}
+
+/** The chain's answer, unless a recent vote of this client says otherwise. */
+function settleLookup(
+  author: string,
+  permlink: string,
+  voter: string,
+  chain: ObserverVote | null
+): ObserverVote | null {
+  const key = voteKey(author, permlink, voter);
+  const held = optimisticVotes.get(key);
+  if (!held) return chain;
+  if (Date.now() - held.at >= OPTIMISTIC_VOTE_HOLD_MS || sameVote(chain, held.vote)) {
+    optimisticVotes.delete(key);
+    return chain;
+  }
+  if (!held.recheck) {
+    held.recheck = true;
+    setTimeout(() => {
+      void getQueryClient().invalidateQueries({ queryKey: QueryKeys.posts.entryVote(author, permlink, voter) });
+    }, OPTIMISTIC_VOTE_RECHECK_MS);
+  }
+  return held.vote;
+}
+
 export function getEntryVoteQueryOptions(
   author: string | undefined,
   permlink: string | undefined,
@@ -291,7 +352,8 @@ export function getEntryVoteQueryOptions(
 ) {
   return queryOptions({
     queryKey: QueryKeys.posts.entryVote(author, permlink, voter),
-    queryFn: async ({ signal }) => getEntryVote(author!, permlink!, voter!, signal),
+    queryFn: async ({ signal }) =>
+      settleLookup(author!, permlink!, voter!, await getEntryVote(author!, permlink!, voter!, signal)),
     enabled: enabled && !!author && !!permlink && !!voter,
     staleTime: 5 * 60_000,
   });

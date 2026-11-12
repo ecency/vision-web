@@ -1,6 +1,7 @@
 import { getQueryClient, QueryKeys } from "@/modules/core";
 import type { Entry, ObserverVote } from "../types";
 import type { QueryClient } from "@tanstack/react-query";
+import { recordOptimisticVote } from "../queries/get-entry-active-votes-query-options";
 
 function makeEntryPath(author: string, permlink: string) {
   return `/@${author}/${permlink}`;
@@ -83,6 +84,7 @@ export namespace EntriesCacheManagement {
       queryClient
     );
     queryClient.setQueryData(QueryKeys.posts.entryVote(author, permlink, voter), vote);
+    recordOptimisticVote(author, permlink, voter, vote);
   }
 
   export function updateReblogsCount(
