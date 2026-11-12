@@ -14,7 +14,7 @@ import { useQuery } from "@tanstack/react-query";
 import { prepareVotes } from "@/features/shared/entry-vote-btn/utils";
 import { heartSvg } from "@ui/svg";
 import { Entry } from "@/entities";
-import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { useViewerVote } from "@/core/hooks/use-viewer-vote";
 
 type SortOption = "reward" | "timestamp" | "voter" | "percent";
 
@@ -38,7 +38,6 @@ export function EntryVotesDialog({
 }: Props) {
   const { data: entry } = useQuery(EcencyEntriesCacheManagement.getEntryQuery(initialEntry));
 
-  const { activeUser } = useActiveAccount();
   const { data: apiVotes, isLoading: areVotesLoading } = useQuery(getEntryActiveVotesQueryOptions(entry));
 
   const [searchText, setSearchText] = useState("");
@@ -46,16 +45,8 @@ export function EntryVotesDialog({
   const [pageSize, setPageSize] = useState(12);
   const [sort, setSort] = useState<SortOption>("reward");
 
-  const { voted: isVoted } = useMemo(() => {
-    if (!activeUser) {
-      return { voted: false };
-    }
-    const { active_votes: votes } = entry!;
-
-    const voted = votes ? votes.some((v) => v.voter === activeUser.username) : false;
-
-    return { voted };
-  }, [activeUser, entry]);
+  const viewerVote = useViewerVote(entry);
+  const isVoted = viewerVote.upVoted || viewerVote.downVoted;
 
   const preparedVotes = useMemo(() => prepareVotes(entry!, apiVotes ?? []), [apiVotes, entry]);
   const votes = useMemo(
@@ -90,9 +81,7 @@ export function EntryVotesDialog({
       })
       .slice(start, end);
   }, [page, votes, sort]);
-  const hasCurrentUserVote = entry?.active_votes?.find(
-    ({ voter }) => voter === activeUser?.username
-  );
+  const hasCurrentUserVote = isVoted;
 
   const child = (
     <>

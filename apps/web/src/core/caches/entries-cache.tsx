@@ -4,7 +4,7 @@ import {
   getPostQueryOptions,
   QueryKeys
 } from "@ecency/sdk";
-import { Entry, EntryVote } from "@/entities";
+import { Entry, EntryVote, ObserverVote } from "@/entities";
 import { makeEntryPath } from "@/utils";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
@@ -143,14 +143,36 @@ export namespace EcencyEntriesCacheManagement {
       // (e.g. the unified waves feed) ship a `net_votes` count but no
       // `active_votes` array, so `votes.length` understates the real total; the
       // caller derives the correct next count and passes it here.
-      update: (votes: EntryVote[], payout: number, totalVotes?: number) => {
+      /**
+       * Optimistic vote. `observerVote` is `voter`'s vote after it (null after
+       * an unvote): it is written as the entry's observer vote, owned by
+       * `voter`, and into that voter's `entryVote` lookup so a refetch under
+       * the default observer still shows it. `votes` replaces a legacy voter
+       * list and is left out for bridge v2 entries, which carry none.
+       */
+      update: ({
+        voter,
+        observerVote,
+        votes,
+        payout,
+        totalVotes
+      }: {
+        voter: string;
+        observerVote: ObserverVote | null;
+        votes?: EntryVote[];
+        payout: number;
+        totalVotes: number;
+      }) => {
         if (!entry) return;
-        const nextTotalVotes = totalVotes ?? votes.length;
+        const nextTotalVotes = totalVotes;
+        qc.setQueryData(QueryKeys.posts.entryVote(entry.author, entry.permlink, voter), observerVote);
         mutateEntryInstance(
           entry,
           (value) => ({
             ...value,
-            active_votes: votes,
+            ...(votes ? { active_votes: votes } : {}),
+            observer_vote: observerVote,
+            observer_vote_for: voter,
             stats: {
               ...entry.stats || { gray: false, hide: false, flag_weight: 0, total_votes: 0 },
               total_votes: nextTotalVotes,

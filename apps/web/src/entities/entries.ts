@@ -10,6 +10,13 @@ export interface EntryVote {
   rshares: number;
 }
 
+/** One account's vote (bridge v2 `observer_vote`); mirrors the SDK type. */
+export interface ObserverVote {
+  rshares: number;
+  /** Basis points, negative for a downvote; null when the source did not say. */
+  percent: number | null;
+}
+
 export interface EntryStat {
   flag_weight: number;
   gray: boolean;
@@ -51,7 +58,17 @@ export interface JsonPollMetadata {
 
 export interface Entry {
   last_update?: string;
-  active_votes: EntryVote[];
+  /**
+   * @deprecated Bridge v2 reads carry no voter list. Count with
+   * `stats.total_votes`, read the viewer's vote with `useViewerVote`, and load
+   * the full list with `getEntryActiveVotesQueryOptions`.
+   */
+  active_votes?: EntryVote[];
+  /** Vote of `observer_vote_for` on this entry; null = not voted, undefined = unknown. */
+  observer_vote?: ObserverVote | null;
+  /** The observer the entry was read for. Never show its vote as another user's. */
+  observer_vote_for?: string;
+  top_votes?: Array<{ voter: string; rshares: number; percent: number }>;
   author: string;
   author_payout_value: string;
   author_reputation: number;

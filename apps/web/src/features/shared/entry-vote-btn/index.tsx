@@ -7,9 +7,9 @@ import useClickAway from "react-use/lib/useClickAway";
 
 import dynamic from "next/dynamic";
 import { useEntryVote } from "@/api/mutations";
-import { Account, Entry, EntryVote } from "@/entities";
-import { getEntryActiveVotesQueryOptions } from "@ecency/sdk";
-import { prepareVotes } from "@/features/shared/entry-vote-btn/utils";
+import { Account, Entry } from "@/entities";
+import { getEntryVoteQueryOptions } from "@ecency/sdk";
+import { useViewerVote } from "@/core/hooks/use-viewer-vote";
 import { classNameObject } from "@ui/util";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -55,21 +55,13 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
 
   const { mutateAsync: voteInAPI, isPending: isVotingLoading } = useEntryVote(entry);
 
-  const isVoted = useMemo(() => {
-    if (!activeUser) {
-      return { upVoted: false, downVoted: false };
-    }
-    const upVoted =
-      entry?.active_votes?.some(
-        (v: EntryVote) => v.voter === activeUser.username && v.rshares >= 0
-      ) ?? false;
-    const downVoted =
-      entry?.active_votes?.some(
-        (v: EntryVote) => v.voter === activeUser.username && v.rshares < 0
-      ) ?? false;
-
-    return { upVoted, downVoted };
-  }, [activeUser, entry?.active_votes]);
+  // The user's OWN vote: from the entry only when it was read for this user,
+  // otherwise looked up (see useViewerVote). Never the SSR observer's vote.
+  const viewerVote = useViewerVote(entry);
+  const isVoted = useMemo(
+    () => ({ upVoted: viewerVote.upVoted, downVoted: viewerVote.downVoted }),
+    [viewerVote.upVoted, viewerVote.downVoted]
+  );
 
   useClickAway(rootRef, (e) => {
     if (!dialog) {
@@ -149,13 +141,17 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
         return sessValue;
       }
 
+      // A v2 entry read for this user already says the weight.
+      if (viewerVote.vote?.percent != null) {
+        return viewerVote.vote.percent / 100;
+      }
+
       try {
-        const retData = await queryClient.fetchQuery(
-          getEntryActiveVotesQueryOptions(entry)
+        // One vote lookup, not the whole voter list.
+        previousVote = await queryClient.fetchQuery(
+          getEntryVoteQueryOptions(entry.author, entry.permlink, activeUser.username)
         );
-        let votes = prepareVotes(entry, retData);
-        previousVote = votes.find((x) => x.voter === activeUser.username);
-        return previousVote === undefined ? null : previousVote.percent;
+        return previousVote?.percent == null ? null : previousVote.percent / 100;
       } catch (e) {
         console.error("entry-vote-btn failed to load previous vote", e);
         return null;
@@ -163,7 +159,7 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
     } else {
       return null;
     }
-  }, [activeUser, entry, isVoted, queryClient]);
+  }, [activeUser, entry, isVoted, queryClient, viewerVote.vote]);
   // The panel can open inside a scroller that does not show it: the curation
   // drawer's post column is its own scroll box and the action row is its last
   // element, so a panel below that row starts off screen. "nearest" is a no-op

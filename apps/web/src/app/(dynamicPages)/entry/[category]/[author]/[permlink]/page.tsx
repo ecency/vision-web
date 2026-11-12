@@ -143,12 +143,12 @@ export default async function EntryPage({ params, searchParams }: Props) {
   const isRawContent = sParams.raw !== undefined;
 
   const author = username.replace(/%40/g, "");
-  // Anonymous requests get active_votes stripped out of everything that crosses
-  // to the client (see below). Logged-in requests keep the full arrays, because
-  // they are the only source of the viewer's own vote — entry-vote-btn derives
-  // isVoted from entry.active_votes and there is no per-observer field to fall
-  // back to. Reading the cookie costs nothing here: this route already awaits
-  // searchParams, so it renders dynamically regardless.
+  // Anonymous requests get any active_votes stripped out of everything that
+  // crosses to the client (see below); bridge v2 reads carry none to begin
+  // with. The entry is read for the default observer, so its observer_vote is
+  // never the viewer's: the vote button looks the viewer's own vote up
+  // (useViewerVote). Reading the cookie costs nothing here: this route already
+  // awaits searchParams, so it renders dynamically regardless.
   const loggedInUser = (await cookies()).get(ACTIVE_USER_COOKIE_NAME)?.value;
   const entryQueryOptions = EcencyEntriesCacheManagement.getEntryQueryByPath(author, permlink);
   const [fetchedEntry, account] = await Promise.all([

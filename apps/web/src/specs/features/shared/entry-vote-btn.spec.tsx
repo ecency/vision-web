@@ -99,8 +99,8 @@ describe("EntryVoteBtn — opening the slider is not blocked on the previous-vot
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(dialog).toHaveTextContent("prev:none"); // value not resolved yet
 
-    // Once the fetch resolves, the prior vote weight (75%) is forwarded to the slider.
-    resolveFetch([{ voter: "alice", percent: 75, rshares: 100, time: "2024-01-01T00:00:00" }]);
+    // Once the lookup of alice's own vote resolves, its weight (75%) reaches the slider.
+    resolveFetch({ rshares: 100, percent: 7500 });
     await waitFor(() => expect(screen.getByTestId("vote-dialog")).toHaveTextContent("prev:75"));
   });
 
@@ -146,7 +146,7 @@ describe("EntryVoteBtn — opening the slider is not blocked on the previous-vot
 
     fireEvent.click(screen.getByRole("button"));
     await screen.findByTestId("vote-dialog");
-    resolveA([{ voter: "alice", percent: 75, rshares: 100, time: "2024-01-01T00:00:00" }]);
+    resolveA({ rshares: 100, percent: 7500 });
     await waitFor(() => expect(screen.getByTestId("vote-dialog")).toHaveTextContent("prev:75"));
 
     // Close, then reuse the SAME button instance for a different post.
@@ -318,5 +318,113 @@ describe("EntryVoteBtn — dismissing the slider from inside a portalled dialog"
 
     fireEvent.mouseDown(document.body);
     await waitFor(() => expect(screen.queryByTestId("vote-dialog")).toBeNull());
+  });
+});
+
+// Issue #2056: bridge v2 entries carry the observer's vote, not every vote.
+describe("EntryVoteBtn: vote state from bridge v2", () => {
+  // getEntryVoteQueryOptions comes from the global @ecency/sdk mock.
+  let lookup: ReturnType<typeof vi.fn>;
+  beforeEach(async () => {
+    window.sessionStorage.clear();
+    const sdk = await import("@ecency/sdk");
+    lookup = vi.fn(async () => null);
+    vi.mocked(sdk.getEntryVoteQueryOptions).mockImplementation(((
+      author?: string,
+      permlink?: string,
+      voter?: string,
+      enabled = true
+    ) => ({
+      queryKey: ["posts", "entry-vote", author, permlink, voter],
+      queryFn: () => lookup(author, permlink, voter),
+      enabled: enabled && !!author && !!permlink && !!voter
+    })) as any);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  const pressed = () => screen.getByRole("button").getAttribute("aria-pressed");
+
+  it("shows a vote cast beyond the first 1000 voters as cast", async () => {
+    // 1059 votes: v1 active_votes stopped at 1000 and left alice out. v2 tells
+    // us directly, and there is no voter list at all.
+    const entry = mockEntry({
+      author: "bob",
+      permlink: "big-post",
+      post_id: 3001,
+      stats: { flag_weight: 0, gray: false, hide: false, total_votes: 1059 },
+      observer_vote: { rshares: 123, percent: 10000 },
+      observer_vote_for: "alice"
+    } as any);
+    delete (entry as any).active_votes;
+
+    renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
+
+    expect(pressed()).toBe("true");
+    expect(screen.getByRole("button")).toHaveAttribute("aria-label", "entry-vote-btn.upvoted");
+    // The entry answered for alice: no lookup.
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("never shows the default observer's vote as the logged-in user's", async () => {
+    // Server-rendered for the default observer, who voted; alice has not.
+    const entry = mockEntry({
+      author: "bob",
+      permlink: "ssr-post",
+      post_id: 3002,
+      stats: { flag_weight: 0, gray: false, hide: false, total_votes: 5 },
+      observer_vote: { rshares: 999, percent: 10000 },
+      observer_vote_for: "ecency"
+    } as any);
+    delete (entry as any).active_votes;
+    let answer: (v: unknown) => void = () => {};
+    lookup.mockImplementation(() => new Promise((res) => (answer = res)));
+
+    renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
+
+    // While alice's own vote is being looked up: not voted.
+    expect(pressed()).toBe("false");
+    await waitFor(() => expect(lookup).toHaveBeenCalledWith("bob", "ssr-post", "alice"));
+    answer(null);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(pressed()).toBe("false");
+  });
+
+  it("shows the logged-in user's own vote, looked up, on an entry read for another observer", async () => {
+    const entry = mockEntry({
+      author: "bob",
+      permlink: "ssr-post-2",
+      post_id: 3003,
+      stats: { flag_weight: 0, gray: false, hide: false, total_votes: 5 },
+      observer_vote: null,
+      observer_vote_for: "ecency"
+    } as any);
+    delete (entry as any).active_votes;
+    lookup.mockResolvedValue({ rshares: -50, percent: -2500 });
+
+    renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button")).toHaveAttribute("aria-label", "entry-vote-btn.downvoted")
+    );
+  });
+
+  it("seeds the slider from observer_vote.percent without loading any voter list", async () => {
+    const entry = mockEntry({
+      author: "bob",
+      permlink: "seed-post",
+      post_id: 3004,
+      stats: { flag_weight: 0, gray: false, hide: false, total_votes: 1 },
+      observer_vote: { rshares: 10, percent: 6000 },
+      observer_vote_for: "alice"
+    } as any);
+    delete (entry as any).active_votes;
+    const queryClient = createTestQueryClient();
+    const fetchSpy = vi.spyOn(queryClient, "fetchQuery");
+
+    renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />, { queryClient });
+    fireEvent.click(screen.getByRole("button"));
+
+    await waitFor(() => expect(screen.getByTestId("vote-dialog")).toHaveTextContent("prev:60"));
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

@@ -7,7 +7,7 @@ import i18next from "i18next";
 import { heartSvg } from "@ui/svg";
 import usePrevious from "react-use/lib/usePrevious";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
-import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { useViewerVote } from "@/core/hooks/use-viewer-vote";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 
@@ -39,21 +39,14 @@ export function EntryVotes({
   const { data: entry } = useQuery(EcencyEntriesCacheManagement.getEntryQuery(initialEntry));
   const previousEntry = usePrevious(entry);
 
-  const { activeUser } = useActiveAccount();
-
   const [visible, setVisible] = useState(false);
 
-  const { voted: isVoted } = useMemo(() => {
-    if (!activeUser || !entry) {
-      return { voted: false };
-    }
-    const { active_votes: votes } = entry;
+  // The user's own vote (never the vote of the observer the entry was read for).
+  const viewerVote = useViewerVote(entry);
+  const isVoted = viewerVote.upVoted || viewerVote.downVoted;
 
-    const voted = votes ? votes.some((v) => v.voter === activeUser.username) : false;
-
-    return { voted };
-  }, [activeUser, entry]);
-
+  // Count: stats.total_votes. active_votes.length is only a fallback for rows
+  // without stats (it stopped at 1000 on v1, and v2 rows carry no list).
   const totalVotes = useMemo(
     () =>
       entry?.stats?.total_votes ||
@@ -72,10 +65,16 @@ export function EntryVotes({
           : i18next.t("entry-votes.title-n", { n: totalVotes }),
     [totalVotes]
   );
-  const hasDifferentVotes = previousEntry?.active_votes?.length !== entry?.active_votes?.length;
-  const hasCurrentUserVote = entry?.active_votes?.find(
-    ({ voter }) => voter === activeUser?.username
-  );
+  // "vote-done" pulse: the count moved while this entry is shown and the user
+  // now has a vote on it (their own vote just landed).
+  const previousTotal =
+    previousEntry?.stats?.total_votes ||
+    previousEntry?.active_votes?.length ||
+    previousEntry?.net_votes ||
+    previousEntry?.total_votes ||
+    0;
+  const hasDifferentVotes = !!previousEntry && previousTotal !== totalVotes;
+  const hasCurrentUserVote = isVoted;
 
   const countClassName = `entry-votes__count${hideCount ? " entry-votes__count--hidden" : ""}`;
 

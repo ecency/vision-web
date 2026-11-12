@@ -16,7 +16,12 @@ import {
   UilGift,
   UilTimes,
 } from "@tooni/iconscout-unicons-react";
-import { getAccountPostsQueryOptions, getCurationPostQueryOptions, type CurationRecommender } from "@ecency/sdk";
+import {
+  getAccountPostsQueryOptions,
+  getCurationPostQueryOptions,
+  getEntryActiveVotesQueryOptions,
+  type CurationRecommender
+} from "@ecency/sdk";
 import { Button } from "@ui/button";
 import { ModalSidebar } from "@ui/modal/modal-sidebar";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
@@ -178,6 +183,12 @@ export function CurationQuickView({
     ...getCurationPostQueryOptions(author, permlink),
     enabled: open && !!author && !!permlink,
   });
+  // Top voters: entries carry no voter list since bridge v2, so the open row
+  // (only that one, never the prefetched neighbour) loads it on demand.
+  const { data: voters } = useQuery({
+    ...getEntryActiveVotesQueryOptions(entry ?? undefined),
+    enabled: open && !!entry,
+  });
   const { data: authorPosts } = useQuery({
     ...getAccountPostsQueryOptions(author, "posts", "", "", 5, "", open && !!author),
   });
@@ -276,11 +287,11 @@ export function CurationQuickView({
   const mine: CurationRecommender | undefined = post?.recommenders?.find((r) => r.username === viewer.username);
   const topVoters = useMemo(
     () =>
-      (entry?.active_votes ?? [])
+      (voters ?? [])
         .slice()
         .sort((a, b) => Number(b.rshares ?? 0) - Number(a.rshares ?? 0))
         .slice(0, 5),
-    [entry?.active_votes]
+    [voters]
   );
 
   if (!row) return null;
@@ -430,7 +441,7 @@ export function CurationQuickView({
                 <li>
                   {i18next.t("curation-desk.marks.payout", {
                     amount: (row.pending_payout ?? row.pending_payout_est ?? 0).toFixed(2),
-                    votes: row.votes ?? entry?.active_votes?.length ?? 0,
+                    votes: row.votes ?? entry?.stats?.total_votes ?? 0,
                   })}
                 </li>
                 {row.rshares_total != null && row.rshares_total > 0 && row.rshares_after_24h != null && (

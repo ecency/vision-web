@@ -5,6 +5,11 @@ import type { Entry } from "@/entities";
  * Drop the full `active_votes` array from entries in a dehydrated React Query
  * state before it is streamed to the client.
  *
+ * Since #2056 the SDK reads posts through bridge v2, which carries no voter
+ * list, and `normalizeEntry` drops it from v1 answers too, so on SDK reads
+ * this is a no-op. It stays for entries from other sources that still carry
+ * one (search rows, condenser shapes, older persisted caches).
+ *
  * `bridge.get_post` / `bridge.get_ranked_posts` return every vote as a
  * `{ voter, rshares }` record. On a high-vote post or a tag/community feed that
  * is tens to hundreds of KB of voter data that:
@@ -124,10 +129,10 @@ export function stripActiveVotesFromDehydratedState(
   state: DehydratedState,
   currentUser?: string
 ): DehydratedState {
-  // Only strip for ANONYMOUS requests. Logged-in requests keep the full
-  // active_votes: isVoted (the "you voted" highlight) reads them client-side
-  // after auth loads, and a logged-in cache variant only ever holds public vote
-  // data. Anonymous / crawler requests never need isVoted, and their cache
+  // Only strip for ANONYMOUS requests. Logged-in requests keep whatever
+  // voter list an entry still carries: useViewerVote reads the user's vote from
+  // it when present (it looks the vote up otherwise), and a logged-in cache
+  // variant only ever holds public vote data. Anonymous / crawler requests never need isVoted, and their cache
   // variant carries no user-specific data, so stripping there is safe and
   // shrinks the payload that the bulk of cold-load / SEO traffic downloads.
   if (currentUser) {
@@ -177,8 +182,8 @@ export function stripActiveVotesFromValue<T>(value: T, currentUser?: string): T 
  * handed to it. That is why this returns the STORED reference rather than the
  * clone: using the clone would silently reintroduce the duplicate.
  *
- * Anonymous-only, like the other two helpers: logged-in requests keep the full
- * arrays because active_votes is the only source of the viewer's own vote.
+ * Anonymous-only, like the other two helpers: logged-in requests keep any
+ * voter list, which useViewerVote reads before it falls back to a lookup.
  */
 export function stripAnonEntryCacheInPlace<T>(
   queryClient: QueryClient,

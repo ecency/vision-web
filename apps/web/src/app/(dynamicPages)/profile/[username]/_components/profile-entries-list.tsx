@@ -80,8 +80,9 @@ export async function ProfileEntriesList({ section, account, initialFeed, curren
 
   // Strip active_votes from the entries serialized into the (client) EntryListItem
   // props for anonymous requests — covers both the feed entries and the
-  // separately-fetched pinned entry. Logged-in keeps the full arrays so the
-  // "you voted" highlight works.
+  // separately-fetched pinned entry. Bridge v2 reads carry none; logged-in
+  // requests keep any list a row still has (useViewerVote reads it before
+  // falling back to a lookup of the user's own vote).
   const entries = stripActiveVotesFromValue(entryList, currentUser);
 
   const initialPageEntriesCount = initialPageEntries.length;

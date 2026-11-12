@@ -1,8 +1,15 @@
-import { Entry, EntryVote } from "@/entities";
+import { entryVoteOf } from "@ecency/sdk";
+import { Entry, EntryVote, ObserverVote } from "@/entities";
 import { parseAsset } from "@/utils";
 
 export interface OptimisticVote {
-  newVotes: EntryVote[];
+  /** The user's vote after this one; null after an unvote. */
+  observerVote: ObserverVote | null;
+  /**
+   * The updated voter list, only for a legacy row that still carries
+   * `active_votes`. Undefined for bridge v2 entries, which have no list.
+   */
+  newVotes?: EntryVote[];
   nextVoteCount: number;
   nextPayout: number;
 }
@@ -11,37 +18,46 @@ export interface OptimisticVote {
  * Compute the optimistic vote state for an entry after `username` casts a vote
  * of `weight` (0 removes the vote) with an `estimated` payout delta.
  *
- * Robust to lightweight feed entries (the unified waves feed) that ship a
- * `net_votes` count but no `active_votes` array: the count is derived from
- * whichever vote-count field the entry carries, and the base payout from the
- * numeric `payout` (full RPC entries) or the summed payout strings (feed
- * entries), so the count and payout still move immediately on vote rather than
- * waiting for a refetch.
+ * Whether the user had voted before decides the count: from the entry when it
+ * was read for this user (`observer_vote`) or carries a voter list, otherwise
+ * from `priorVote` (the looked-up vote; undefined = unknown, so the count only
+ * moves for a fresh vote, never down).
+ *
+ * The count is `stats.total_votes` when present, else whichever vote count a
+ * lightweight row carries (`net_votes` on waves feed rows); the base payout is
+ * the numeric `payout` (bridge entries) or the summed payout strings (feeds).
  */
 export function deriveOptimisticVote(
   entry: Entry,
   weight: number,
   estimated: number,
-  username: string
+  username: string,
+  priorVote?: ObserverVote | null
 ): OptimisticVote {
-  const existingVotes = entry.active_votes ?? [];
-  const alreadyVoted = existingVotes.some((v) => v.voter === username);
+  const fromEntry = entryVoteOf(entry, username);
+  const prior = fromEntry !== undefined ? fromEntry : priorVote;
+  const hadVote = prior != null && prior.percent !== 0;
+  const observerVote: ObserverVote | null =
+    weight !== 0 ? { rshares: weight, percent: weight } : null;
 
-  const newVotes: EntryVote[] = [
-    ...existingVotes.filter((v) => v.voter !== username),
-    ...(weight !== 0 ? [{ rshares: weight, voter: username }] : [])
-  ];
+  const legacyVotes = Array.isArray(entry.active_votes) ? entry.active_votes : undefined;
+  const newVotes = legacyVotes
+    ? [
+        ...legacyVotes.filter((v) => v.voter !== username),
+        ...(weight !== 0 ? [{ rshares: weight, voter: username }] : [])
+      ]
+    : undefined;
 
   const baseVoteCount =
     entry.stats?.total_votes ||
-    existingVotes.length ||
+    legacyVotes?.length ||
     entry.net_votes ||
     entry.total_votes ||
     0;
   let nextVoteCount = baseVoteCount;
-  if (weight !== 0 && !alreadyVoted) {
+  if (weight !== 0 && !hadVote) {
     nextVoteCount = baseVoteCount + 1;
-  } else if (weight === 0 && alreadyVoted) {
+  } else if (weight === 0 && hadVote) {
     nextVoteCount = Math.max(0, baseVoteCount - 1);
   }
 
@@ -52,5 +68,5 @@ export function deriveOptimisticVote(
         parseAsset(entry.author_payout_value).amount +
         parseAsset(entry.curator_payout_value).amount;
 
-  return { newVotes, nextVoteCount, nextPayout: basePayout + estimated };
+  return { observerVote, newVotes, nextVoteCount, nextPayout: basePayout + estimated };
 }

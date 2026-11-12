@@ -59,7 +59,8 @@ describe("deriveOptimisticVote", () => {
 
     expect(nextVoteCount).toBe(6); // net_votes 5 -> 6
     expect(nextPayout).toBeCloseTo(0.012, 6); // 0 summed strings + estimated
-    expect(newVotes).toEqual([{ rshares: UP, voter: "dave" }]);
+    // No voter list to extend: a row without one does not grow one.
+    expect(newVotes).toBeUndefined();
   });
 
   it("sums the existing payout strings of a feed wave as the base payout", () => {
@@ -106,5 +107,66 @@ describe("deriveOptimisticVote", () => {
   it("leaves count unchanged when removing a vote on a feed wave (unknown prior vote)", () => {
     const { nextVoteCount } = deriveOptimisticVote(feedWave(), 0, 0, "dave");
     expect(nextVoteCount).toBe(5); // can't decrement without an active_votes list
+  });
+});
+
+// Issue #2056: bridge v2 entries carry no voter list, only the observer's vote.
+describe("deriveOptimisticVote on a v2 entry", () => {
+  function v2Entry(overrides: Partial<Entry> = {}): Entry {
+    return {
+      author: "alice",
+      permlink: "v2-post",
+      stats: { total_votes: 1500, flag_weight: 0, gray: false, hide: false },
+      observer_vote: null,
+      observer_vote_for: "dave",
+      payout: 3,
+      pending_payout_value: "3.000 HBD",
+      author_payout_value: "0.000 HBD",
+      curator_payout_value: "0.000 HBD",
+      ...overrides
+    } as Entry;
+  }
+
+  it("sets observer_vote and adds one vote", () => {
+    const r = deriveOptimisticVote(v2Entry(), UP, 0.5, "dave");
+    expect(r.observerVote).toEqual({ rshares: UP, percent: UP });
+    expect(r.nextVoteCount).toBe(1501);
+    expect(r.nextPayout).toBeCloseTo(3.5, 6);
+    expect(r.newVotes).toBeUndefined();
+  });
+
+  it("does not change the count on a re-vote", () => {
+    const r = deriveOptimisticVote(
+      v2Entry({ observer_vote: { rshares: 10, percent: 10000 } }),
+      5000,
+      0,
+      "dave"
+    );
+    expect(r.observerVote).toEqual({ rshares: 5000, percent: 5000 });
+    expect(r.nextVoteCount).toBe(1500);
+  });
+
+  it("removes the vote and one from the count on an unvote", () => {
+    const r = deriveOptimisticVote(
+      v2Entry({ observer_vote: { rshares: 10, percent: 10000 } }),
+      0,
+      0,
+      "dave"
+    );
+    expect(r.observerVote).toBeNull();
+    expect(r.nextVoteCount).toBe(1499);
+  });
+
+  it("uses the looked-up prior vote when the entry was read for another observer", () => {
+    const readForEcency = v2Entry({
+      observer_vote: { rshares: 7, percent: 10000 },
+      observer_vote_for: "ecency"
+    });
+    // ecency's vote is not dave's: with no prior known, a fresh vote counts.
+    expect(deriveOptimisticVote(readForEcency, UP, 0, "dave", null).nextVoteCount).toBe(1501);
+    // dave had voted (lookup): a re-vote.
+    expect(
+      deriveOptimisticVote(readForEcency, UP, 0, "dave", { rshares: 1, percent: 2000 }).nextVoteCount
+    ).toBe(1500);
   });
 });

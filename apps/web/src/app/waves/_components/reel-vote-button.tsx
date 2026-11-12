@@ -7,6 +7,7 @@ import { UilHeart } from "@tooni/iconscout-unicons-react";
 import { Entry } from "@/entities";
 import { LoginRequired } from "@/features/shared";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { useViewerVote } from "@/core/hooks/use-viewer-vote";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useEntryVote } from "@/api/mutations";
 import { getVoteValue } from "@/features/shared/entry-vote-btn/utils";
@@ -27,12 +28,8 @@ export function ReelVoteButton({ entry: initialEntry }: { entry: Entry }) {
 
   const { mutateAsync: vote, isPending } = useEntryVote(entry);
 
-  const isVoted = useMemo(
-    () =>
-      !!activeUser &&
-      (entry.active_votes?.some((v) => v.voter === activeUser.username && v.rshares >= 0) ?? false),
-    [activeUser, entry.active_votes]
-  );
+  // The user's own upvote (never the SSR observer's): see useViewerVote.
+  const isVoted = useViewerVote(entry).upVoted;
 
   // Mirror the feed's EntryVotes count (incl. the top-level total_votes fallback)
   // so the rail matches the rest of the app and never drops a real count.
