@@ -8,7 +8,7 @@ vi.mock("@/utils", async () => ({
   getAccessToken: vi.fn(() => "mock-token")
 }));
 
-import { deriveOptimisticVote } from "@/api/mutations/derive-optimistic-vote";
+import { deriveOptimisticVote, entryVoteCount } from "@/api/mutations/derive-optimistic-vote";
 import { Entry } from "@/entities";
 
 const UP = 10000;
@@ -187,5 +187,31 @@ describe("deriveOptimisticVote: a zero prior vote is no vote", () => {
 
   it("does not subtract for an unvote over a percent-0 prior", () => {
     expect(deriveOptimisticVote(unknownEntry, 0, 0, "dave", { rshares: 0, percent: 0 }).nextVoteCount).toBe(10);
+  });
+
+  // stats.total_votes is authoritative: 0 is a count, never "absent", so a
+  // positive legacy count (net_votes / total_votes) must not be the base.
+  it("starts from an authoritative zero stats.total_votes over a legacy count", () => {
+    const entry = feedWave({
+      stats: { total_votes: 0, flag_weight: 0, gray: false, hide: false },
+      net_votes: 7,
+      total_votes: 7
+    } as Partial<Entry>);
+    expect(deriveOptimisticVote(entry, UP, 0, "dave", null).nextVoteCount).toBe(1);
+  });
+});
+
+describe("entryVoteCount", () => {
+  it("keeps an authoritative zero", () => {
+    expect(
+      entryVoteCount({ stats: { total_votes: 0 }, net_votes: 7, total_votes: 7 } as unknown as Entry)
+    ).toBe(0);
+  });
+
+  it("falls back to the legacy counts only without stats", () => {
+    expect(entryVoteCount({ net_votes: 5 } as Entry)).toBe(5);
+    expect(entryVoteCount({ total_votes: 4 } as unknown as Entry)).toBe(4);
+    expect(entryVoteCount({ active_votes: [{}, {}, {}], net_votes: 9 } as unknown as Entry)).toBe(3);
+    expect(entryVoteCount(undefined)).toBe(0);
   });
 });

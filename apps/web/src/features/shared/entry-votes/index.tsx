@@ -8,6 +8,7 @@ import { heartSvg } from "@ui/svg";
 import usePrevious from "react-use/lib/usePrevious";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useViewerVote } from "@/core/hooks/use-viewer-vote";
+import { entryVoteCount } from "@/api/mutations/derive-optimistic-vote";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 
@@ -47,16 +48,7 @@ export function EntryVotes({
 
   // Count: stats.total_votes. active_votes.length is only a fallback for rows
   // without stats (it stopped at 1000 on v1, and v2 rows carry no list).
-  const totalVotes = useMemo(
-    () =>
-      // `??`: a stats.total_votes of 0 is a count, not "absent".
-      entry?.stats?.total_votes ??
-      ((entry?.active_votes && entry?.active_votes?.length) ||
-        entry?.net_votes ||
-        entry?.total_votes ||
-        0),
-    [entry]
-  );
+  const totalVotes = useMemo(() => entryVoteCount(entry), [entry]);
   const title = useMemo(
     () =>
       totalVotes === 0
@@ -68,12 +60,7 @@ export function EntryVotes({
   );
   // "vote-done" pulse: the count moved while this entry is shown and the user
   // now has a vote on it (their own vote just landed).
-  const previousTotal =
-    previousEntry?.stats?.total_votes ||
-    previousEntry?.active_votes?.length ||
-    previousEntry?.net_votes ||
-    previousEntry?.total_votes ||
-    0;
+  const previousTotal = entryVoteCount(previousEntry);
   const hasDifferentVotes = !!previousEntry && previousTotal !== totalVotes;
   const hasCurrentUserVote = isVoted;
 

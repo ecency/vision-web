@@ -10,6 +10,7 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useViewerVote } from "@/core/hooks/use-viewer-vote";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useEntryVote } from "@/api/mutations";
+import { entryVoteCount } from "@/api/mutations/derive-optimistic-vote";
 import { getVoteValue, voteValueKey } from "@/features/shared/entry-vote-btn/utils";
 import { error } from "@/features/shared/feedback";
 import { formatError } from "@/api/format-error";
@@ -40,13 +41,7 @@ export function ReelVoteButton({ entry: initialEntry }: { entry: Entry }) {
 
   // Mirror the feed's EntryVotes count (incl. the top-level total_votes fallback)
   // so the rail matches the rest of the app and never drops a real count.
-  const count = useMemo(
-    () =>
-      // `??`: a stats.total_votes of 0 is a count, not "absent".
-      entry.stats?.total_votes ??
-      (entry.active_votes?.length || entry.net_votes || entry.total_votes || 0),
-    [entry]
-  );
+  const count = useMemo(() => entryVoteCount(entry), [entry]);
 
   const onVote = async () => {
     if (!activeUser || isPending || votePending) {
