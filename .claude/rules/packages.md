@@ -45,18 +45,19 @@ wallets entry; `@solana/web3.js` and `@wallet-standard/app` are its optional pee
 ## @ecency/sdk/wallets - Multi-chain Wallet Management
 
 **Purpose**: Asset queries and wallet management across multiple blockchains. Lives in
-`packages/sdk/src/wallets` and ships as the separate `@ecency/sdk/wallets` entry. The
-standalone `@ecency/wallets` package is a deprecated shim that re-exports it.
+`packages/sdk/src/wallets` and ships as the separate `@ecency/sdk/wallets` entry. The former
+standalone `@ecency/wallets` package is deprecated on npm in favour of this entry and no longer
+lives in the repo.
 
 **Scope**:
 - ✅ Hive assets (HIVE, HBD, Hive Power) — queries and balance display
 - ✅ Hive Engine tokens — queries and balance display
 - ✅ Points system — queries
-- ✅ External blockchains (BTC, ETH, SOL, TON, TRON, APT, BNB)
+- ✅ External blockchains (BTC, ETH, BNB, SOL)
 - ✅ Wallet balance/transaction queries
 - ✅ Multi-chain key management
 
-**Note**: All blockchain mutations (transfers, delegations, staking, etc.) have been migrated to `@ecency/sdk`. This package now focuses on queries, balance display, and multi-chain key management.
+**Note**: All blockchain mutations (transfers, delegations, staking, etc.) have been migrated to the `@ecency/sdk` main entry. This entry focuses on queries, balance display, and multi-chain key management.
 
 **Dependencies**: `@scure/*` key derivation, `lru-cache` and `remeda`, plus the optional
 peers `@solana/web3.js` and `@wallet-standard/app`.
@@ -94,8 +95,11 @@ this, and the node build shares the main entry's config and query client.
 
 ## Packages (Vitest)
 
-- Each package has its own Vitest configuration
-- Test files co-located with source code
+- `sdk`, `render-helper` and `ui` have their own `vitest.config.ts`; `raidstead` runs Vitest
+  with its defaults. Each runs through its `test` script (`vitest run`), and CI runs them all
+  with `pnpm -r test`
+- Test files are mostly co-located with source code; `packages/sdk/test` and
+  `packages/render-helper/test` hold the build-output and repo-level checks
 
 ## Publishing Packages
 
@@ -105,7 +109,6 @@ pnpm build:packages
 
 # Publish individual packages
 pnpm publish:sdk
-pnpm publish:wallets
 pnpm publish:render-helper
 pnpm publish:ui
 ```

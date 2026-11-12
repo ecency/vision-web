@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Ecency Vision is a Next.js 15-based web client for the Hive blockchain, organized as a pnpm monorepo workspace. The codebase consists of a main Next.js application (`apps/web`), a self-hosted blog SPA (`apps/self-hosted`), and four publishable packages (`@ecency/sdk`, `@ecency/wallets`, `@ecency/render-helper`, `@ecency/ui`).
+Ecency Vision is a Next.js 15-based web client for the Hive blockchain, organized as a pnpm monorepo workspace. The codebase consists of a main Next.js application (`apps/web`), a self-hosted blog SPA (`apps/self-hosted`), and three publishable packages (`@ecency/sdk`, `@ecency/render-helper`, `@ecency/ui`). Wallet and multi-chain code ships as the `@ecency/sdk/wallets` entry; the former `@ecency/wallets` package is deprecated on npm in favour of it.
 
 ## Path-scoped rules
 
@@ -39,7 +39,6 @@ pnpm dev
 
 # Start package dev servers (watch mode)
 pnpm dev:sdk
-pnpm dev:wallets
 pnpm dev:ui
 
 # Start self-hosted app dev server
@@ -55,7 +54,7 @@ pnpm build
 
 # Build all packages
 pnpm build:packages
-# or: pnpm -F @ecency/sdk -F @ecency/wallets -F @ecency/render-helper -F @ecency/ui build
+# or: pnpm -F @ecency/sdk -F @ecency/render-helper -F @ecency/ui build
 
 # Build production server
 pnpm start
@@ -114,8 +113,7 @@ pnpm --filter @ecency/sdk test path/to/test.spec.ts   # no `--`: with it, the wh
 - **apps/web** - Main Next.js application (`@ecency/web`)
   - **apps/web/src/features/post-renderer** - Post rendering components (migrated from packages/renderer)
 - **apps/self-hosted** - Self-hosted blog SPA (`@ecency/self-hosted`) — Rsbuild + TanStack Router
-- **packages/sdk** - Core Hive SDK with React Query integration (`@ecency/sdk`)
-- **packages/wallets** - Multi-chain wallet management (`@ecency/wallets`)
+- **packages/sdk** - Core Hive SDK with React Query integration (`@ecency/sdk`), plus the multi-chain wallet code (`packages/sdk/src/wallets`) shipped as the `@ecency/sdk/wallets` entry
 - **packages/render-helper** - Markdown rendering utilities (`@ecency/render-helper`)
 - **packages/ui** - Shared UI component library (`@ecency/ui`)
 - **packages/raidstead** - Raidstead game (`@ecency/raidstead`, private, not published): the dot renderer and scene, art as shape data, and a typed games-api client. Consumed from source (`main` is `src/index.ts`, listed in `transpilePackages`), so it has no build step and no committed `dist`. The route is `apps/web/src/app/raidstead`.
@@ -142,18 +140,19 @@ The monorepo follows a **layered architecture** with clear separation of concern
 │   - Post renderer (features/post-renderer)   │
 └──────────────────┬──────────────────────────┘
                    │ imports
-     ┌─────────────┼──────────┬──────────┐
-     │             │          │          │
-     ▼             ▼          ▼          ▼
-┌────────────┐ ┌────────┐ ┌──────────┐ ┌────────┐
-│ @ecency/   │ │@ecency/│ │ @ecency/ │ │@ecency/│
-│ sdk        │ │wallets │ │ render-  │ │ ui     │
-│ - Queries  │ │- Asset │ │ helper   │ │- Shared│
-│ - Mutations│ │  queries│ │- Markdown│ │  UI    │
-│ - Types    │ │- Keys  │ │- Content │ │  comps │
-│ - QueryKeys│ └───┬────┘ └──────────┘ └────────┘
-└──────┬─────┘     │
-       └───────────┘ wallets imports sdk
+     ┌─────────────┼──────────────┬──────────┐
+     │             │              │          │
+     ▼             ▼              ▼          ▼
+┌────────────┐ ┌────────────┐ ┌──────────┐ ┌────────┐
+│ @ecency/   │ │ @ecency/   │ │ @ecency/ │ │@ecency/│
+│ sdk        │ │ sdk/wallets│ │ render-  │ │ ui     │
+│ - Queries  │ │ - Asset    │ │ helper   │ │- Shared│
+│ - Mutations│ │   queries  │ │- Markdown│ │  UI    │
+│ - Types    │ │ - Keys     │ │- Content │ │  comps │
+│ - QueryKeys│ └─────┬──────┘ └──────────┘ └────────┘
+└──────▲─────┘       │
+       └─────────────┘ same package; the wallets entry
+                       imports the main entry
 
 ┌─────────────────────────────────────────────┐
 │     @ecency/self-hosted (Rsbuild SPA)       │
@@ -161,7 +160,7 @@ The monorepo follows a **layered architecture** with clear separation of concern
 │   - TanStack Router                          │
 │   - Runtime config (Docker/Nginx)            │
 └──────────────────┬──────────────────────────┘
-                   │ imports sdk, render-helper, wallets, ui
+                   │ imports sdk, sdk/wallets, render-helper, ui
 ```
 
 Per-package scope, entry points and build details are in `.claude/rules/packages.md`; the
@@ -220,7 +219,7 @@ export function useVoteMutation() {
 
 ### When to Rebuild Packages
 
-After modifying files in `packages/sdk` or `packages/wallets`:
+After modifying files in `packages/sdk` (including `packages/sdk/src/wallets`):
 
 ```bash
 # Rebuild all packages
@@ -228,7 +227,6 @@ pnpm build:packages
 
 # Or rebuild individual packages
 pnpm --filter @ecency/sdk build
-pnpm --filter @ecency/wallets build
 ```
 
 The web app will not see package changes until they are rebuilt.

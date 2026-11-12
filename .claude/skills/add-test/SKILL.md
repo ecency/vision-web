@@ -61,7 +61,7 @@ in `web-build.yml` (push to `develop`), `staging.yml` and `master.yml`; none of 
 | Module | Provided |
 |---|---|
 | `@ecency/sdk` | explicit stubs, plus the real `modules/moderation`, `modules/newsletter/errors` and `modules/search/query-builder` spread in |
-| `@ecency/wallets` | `validateKey`, `validateWif`, `EXTERNAL_BLOCKCHAINS`, `useGetHiveEngineTokensBalances`, `EcencyWalletCurrency` |
+| `@ecency/sdk/wallets` | `validateKey`, `validateWif`, `EXTERNAL_BLOCKCHAINS`, `useGetHiveEngineTokensBalances`, `EcencyWalletCurrency` |
 | `@/utils` | `random`, `getAccessToken` |
 | `@/core/hooks/use-active-account` | `useActiveAccount` returning a null `activeUser` |
 | `i18next` | default export only. `default.t()` returns the key verbatim, so assert on i18n keys; there is no named `t` export |

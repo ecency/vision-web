@@ -4,10 +4,14 @@ This document explains how packages in the vision-web monorepo are published to 
 
 ## Overview
 
-The monorepo contains 4 publishable packages:
-- **@ecency/sdk** - Core SDK for Ecency/Hive interactions
-- **@ecency/wallets** - Cryptocurrency wallet integrations
+The monorepo contains 3 publishable packages:
+- **@ecency/sdk** - Core SDK for Ecency/Hive interactions. Wallet and multi-chain code ships
+  as its `@ecency/sdk/wallets` entry
 - **@ecency/render-helper** - Markdown+HTML rendering and sanitization library
+- **@ecency/ui** - Shared React UI components
+
+The former `@ecency/wallets` package is deprecated on npm in favour of `@ecency/sdk/wallets`
+and is no longer published from this repo.
 
 ## Automated Publishing (CI/CD)
 
@@ -55,7 +59,7 @@ pnpm publish --access public
 # Build specific package
 pnpm render-helper
 pnpm sdk
-pnpm wallets
+pnpm ui
 
 # Build all packages
 pnpm build:packages
@@ -63,7 +67,7 @@ pnpm build:packages
 # Publish specific package (requires npm authentication)
 pnpm publish:render-helper
 pnpm publish:sdk
-pnpm publish:wallets
+pnpm publish:ui
 ```
 
 ## Package Dependencies
@@ -77,7 +81,7 @@ When multiple packages need updates:
 
 1. **@ecency/render-helper** - No dependencies on other packages
 2. **@ecency/sdk** - No dependencies on other packages
-3. **@ecency/wallets** - Depends on @ecency/sdk
+3. **@ecency/ui** - No dependencies on other packages
 
 The CI workflow handles this automatically by building/publishing in parallel where possible.
 
@@ -147,4 +151,4 @@ All packages are published to: https://www.npmjs.com/org/ecency
 View published versions:
 - https://www.npmjs.com/package/@ecency/render-helper
 - https://www.npmjs.com/package/@ecency/sdk
-- https://www.npmjs.com/package/@ecency/wallets
+- https://www.npmjs.com/package/@ecency/ui
