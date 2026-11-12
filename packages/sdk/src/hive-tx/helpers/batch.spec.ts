@@ -519,3 +519,21 @@ describe("callRPCBatch: non-OK HTTP answers", () => {
     expect(cancels).toEqual([true]);
   });
 });
+
+// PR delta review, item 1: an element error without a numeric code keeps its
+// message, not "[object Object]".
+describe("callRPCBatch: element errors without a code", () => {
+  it("surfaces the element's message", async () => {
+    config.nodes = ["https://codeless.test"];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+      const body = JSON.parse(String(init.body));
+      return json(
+        body.map((r: { id: number }, i: number) =>
+          i === 0 ? { jsonrpc: "2.0", id: r.id, error: { message: "boom" } } : { jsonrpc: "2.0", id: r.id, result: { votes: [] } }
+        )
+      );
+    });
+    const answers = await callRPCBatch(calls);
+    expect(answers[0].error?.message).toBe("boom");
+  });
+});

@@ -2289,7 +2289,10 @@ async function jsonRPCBatchCall<T>(
       if (!item || item.jsonrpc !== '2.0') return undefined
       if ('result' in item) return { result: item.result as T }
       const e = rpcErrorOf(item)
-      return { error: e ? new RPCError(e) : new Error(String(item.error)) }
+      // An error without a numeric code keeps its message ("boom"), not the
+      // "[object Object]" of the object itself.
+      const message = (item.error as { message?: unknown } | null | undefined)?.message
+      return { error: e ? new RPCError(e) : new Error(String(message ?? item.error)) }
     })
   } finally {
     cleanupTimeout()
