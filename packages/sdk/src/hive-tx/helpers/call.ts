@@ -542,6 +542,16 @@ async function nodeRpcCall<T>(
   }
 }
 
+/**
+ * The method a node will actually be asked for this read: the fallback on a
+ * node marked as lacking the primary. Latency is filed under the method that
+ * answered, so deadlines and hedge delays must read the same key, or a
+ * v2-less node is never profiled for the key they read.
+ */
+function profileKeyFor(node: string, primary: RpcCallSpec, fallback?: RpcCallSpec): string {
+  return fallback && lacksMethod(node, primary.method) ? fallback.method : primary.method
+}
+
 /** Extract the API prefix from a method name like "rc_api.find_rc_accounts" -> "rc_api". */
 function apiOf(method: string): string {
   const dot = method.indexOf('.')
@@ -1462,7 +1472,7 @@ function hedgedRpcAttempt<T>(opts: {
       const legTimeout = adaptiveAttemptTimeout(
         rpcHealthTracker,
         node,
-        method,
+        profileKeyFor(node, call, fallback),
         callerTimeout,
         explicitTimeout
       )
@@ -1501,7 +1511,11 @@ function hedgedRpcAttempt<T>(opts: {
               // (lower bound of its true latency) so the ranker learns without
               // marking it as failed. A primary that already failed was fully
               // recorded by its own catch — nothing more to record.
-              rpcHealthTracker.recordCensoredLatency(primary, Date.now() - primaryStart, method)
+              rpcHealthTracker.recordCensoredLatency(
+                primary,
+                Date.now() - primaryStart,
+                profileKeyFor(primary, call, fallback)
+              )
             }
           } else if (!hedgeFired) {
             rpcHedgeBudget.refill()
@@ -1525,7 +1539,7 @@ function hedgedRpcAttempt<T>(opts: {
           }
           // Failover-class failure — record exactly as the sequential catch does.
           recordError(rpcHealthTracker, node, e, api)
-          rpcHealthTracker.recordSlowFailure(node, Date.now() - start, method)
+          rpcHealthTracker.recordSlowFailure(node, Date.now() - start, profileKeyFor(node, call, fallback))
           lastError = e
           if (!isHedge && !hedgeFired) {
             // Primary failed fast, before the hedge delay: plain failover.
@@ -1549,11 +1563,12 @@ function hedgedRpcAttempt<T>(opts: {
     // silently never fire for exactly the heavy tail it exists to protect.
     // Firing at ~80% of the window keeps the duplicate meaningful (it starts
     // while the primary is still allowed to win) for every profile shape.
-    const ewma = rpcHealthTracker.getUsableLatencyMs(primary, method) ?? 0
+    const primaryKey = profileKeyFor(primary, call, fallback)
+    const ewma = rpcHealthTracker.getUsableLatencyMs(primary, primaryKey) ?? 0
     const primaryWindow = adaptiveAttemptTimeout(
       rpcHealthTracker,
       primary,
-      method,
+      primaryKey,
       callerTimeout,
       explicitTimeout
     )
@@ -1802,10 +1817,12 @@ const callRPCCore = async <T = any>(
     // Hedge eligibility for THIS attempt: opted in, the primary has a usable
     // latency profile for this exact method (so the hedge delay is grounded in
     // data — cold starts stay sequential), and healthy untried peers exist.
+    // The profile is the one for the method THIS node will be asked.
+    const nodeKey = profileKeyFor(node, primary, fallback)
     let hedgePool: string[] = []
     if (
       config.resilience.hedge &&
-      rpcHealthTracker.getUsableLatencyMs(node, method) !== undefined
+      rpcHealthTracker.getUsableLatencyMs(node, nodeKey) !== undefined
     ) {
       hedgePool = orderedNodes
         .filter((n) => !triedInRound.has(n) && rpcHealthTracker.isNodeHealthy(n, api))
@@ -1851,7 +1868,7 @@ const callRPCCore = async <T = any>(
         node,
         primary,
         fallback,
-        adaptiveAttemptTimeout(rpcHealthTracker, node, method, ceiling, explicitTimeout),
+        adaptiveAttemptTimeout(rpcHealthTracker, node, nodeKey, ceiling, explicitTimeout),
         signal
       )
       const res = answer.result
@@ -1892,7 +1909,7 @@ const callRPCCore = async <T = any>(
       // a node that 200s-but-too-slow or aborts at the timeout is demoted by the
       // ranker, not only by the (transient) failure gate. Measured elapsed, never a
       // constant; recordSlowFailure ignores instant (down-node) failures.
-      rpcHealthTracker.recordSlowFailure(node, Date.now() - callStart, method)
+      rpcHealthTracker.recordSlowFailure(node, Date.now() - callStart, nodeKey)
       lastError = e
 
       // Add jitter before trying next node
@@ -1946,7 +1963,27 @@ export const callRPCBatch = async <T = any>(
     triedInRound.add(node)
     const start = Date.now()
     try {
-      const answers = await jsonRPCBatchCall<T>(node, calls, timeout, signal)
+      let answers: RpcBatchAnswer<T>[]
+      if (lacksMethod(node, BATCH_CAPABILITY)) {
+        answers = await singleCallsAsBatch<T>(node, calls, timeout, signal)
+      } else {
+        try {
+          answers = await jsonRPCBatchCall<T>(node, calls, timeout, signal)
+        } catch (e) {
+          if (!(e instanceof BatchUnsupported)) throw e
+          // The node (or a router in front of it) does not take batch arrays.
+          // About its software, not its health: remember it for the TTL and
+          // ask it the requests one by one.
+          markLacksMethod(node, BATCH_CAPABILITY)
+          answers = await singleCallsAsBatch<T>(node, calls, timeout, signal)
+        }
+      }
+      // A node-level error (a sick backend behind an HTTP 200) for any request
+      // fails the whole batch on this node, as it would fail one call.
+      const sick = answers.find(
+        (a) => a.error instanceof RPCError && isNodeLevelRPCError(a.error.code, a.error.message)
+      )
+      if (sick) throw sick.error
       rpcHealthTracker.recordSuccess(node, api)
       return answers
     } catch (e: any) {
@@ -1958,6 +1995,32 @@ export const callRPCBatch = async <T = any>(
     }
   }
   throw lastError
+}
+
+/** Pseudo-method under which a node is marked as not taking batch arrays. */
+const BATCH_CAPABILITY = 'jsonrpc.batch'
+
+/** The node answered a batch array with something that is not a batch answer. */
+class BatchUnsupported extends Error {}
+
+/** The batch's requests sent one by one to one node, answers in order. */
+async function singleCallsAsBatch<T>(
+  node: string,
+  calls: RpcCallSpec[],
+  timeout: number,
+  signal?: AbortSignal
+): Promise<RpcBatchAnswer<T>[]> {
+  return Promise.all(
+    calls.map((c) =>
+      jsonRPCCall(node, c.method, c.params, timeout, false, signal).then(
+        (result): RpcBatchAnswer<T> => ({ result: result as T }),
+        (e): RpcBatchAnswer<T> => {
+          if (e instanceof RPCError) return { error: e }
+          throw e
+        }
+      )
+    )
+  )
 }
 
 async function jsonRPCBatchCall<T>(
@@ -1992,14 +2055,14 @@ async function jsonRPCBatchCall<T>(
       throw new NodeError(url, `HTTP ${res.status} from ${url}`, { nodeWide: res.status < 500 })
     }
     const parsed: unknown = await res.json()
-    if (!Array.isArray(parsed)) throw new Error('JSONRPC batch answer is not an array')
+    if (!Array.isArray(parsed)) throw new BatchUnsupported('JSONRPC batch answer is not an array')
     const byId = new Map<number, any>()
     for (const item of parsed) {
       if (item && typeof item.id === 'number') byId.set(item.id, item)
     }
     return calls.map((_c, i): RpcBatchAnswer<T> => {
       const item = byId.get(base + i)
-      if (!item || item.jsonrpc !== '2.0') throw new Error('JSONRPC batch id mismatch')
+      if (!item || item.jsonrpc !== '2.0') throw new BatchUnsupported('JSONRPC batch id mismatch')
       if ('result' in item) return { result: item.result as T }
       const e = item.error
       return { error: e && 'message' in e && 'code' in e ? new RPCError(e) : new Error(String(e?.message ?? e)) }
