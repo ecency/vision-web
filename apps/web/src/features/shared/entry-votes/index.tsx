@@ -18,8 +18,6 @@ const EntryVotesDialog = dynamic(
   { ssr: false }
 );
 
-type SortOption = "reward" | "timestamp" | "voter" | "percent";
-
 interface Props {
   /** Icon sizing convention (docs/icons.md): a size-N sink class for the vote
    *  icon, e.g. "size-4 [&>svg]:size-full". Defaults to "[&>svg]:size-3.5"

@@ -8,8 +8,14 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 export interface ViewerVote {
   /** The logged-in user's vote, null when none (or not known yet). */
   vote: ObserverVote | null;
-  /** True once the vote is known, from the entry or the lookup. */
+  /** True once the vote is known, from the entry or the lookup (or the lookup failed). */
   known: boolean;
+  /**
+   * True only while the lookup is actually running. Not known and not pending
+   * (no entry, lookup disabled, offline so the query is paused) means "act as
+   * not voted": nothing is waited for.
+   */
+  pending: boolean;
   upVoted: boolean;
   downVoted: boolean;
 }
@@ -44,7 +50,8 @@ export function useViewerVote(
   const {
     data: lookedUp,
     dataUpdatedAt: lookupUpdatedAt,
-    isError: lookupFailed
+    isError: lookupFailed,
+    fetchStatus: lookupFetchStatus
   } = useQuery(
     getEntryVoteQueryOptions(
       entry?.author,
@@ -60,9 +67,11 @@ export function useViewerVote(
     resolved = lookedUp !== undefined ? lookedUp : fromEntry;
   }
   const direction = username ? voteDirection(resolved ?? null) : null;
+  const known = !!username && (resolved !== undefined || lookupFailed);
   return {
     vote: username ? (resolved ?? null) : null,
-    known: !!username && (resolved !== undefined || lookupFailed),
+    known,
+    pending: !!username && !known && lookupFetchStatus === "fetching",
     upVoted: direction === "up",
     downVoted: direction === "down"
   };

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import * as ss from "@/utils/session-storage";
 import { LoginRequired } from "@/features/shared";
 import useClickAway from "react-use/lib/useClickAway";
@@ -11,6 +11,13 @@ import { Account, Entry } from "@/entities";
 import { getEntryVoteQueryOptions } from "@ecency/sdk";
 import { useViewerVote } from "@/core/hooks/use-viewer-vote";
 import { voteValueKey } from "@/features/shared/entry-vote-btn/utils";
+import {
+  cancelQueuedOpen,
+  queueOpen,
+  queuedOpenOwner,
+  subscribeQueuedOpen,
+  takeQueuedOpen
+} from "@/features/shared/entry-vote-btn/queued-open";
 import { classNameObject } from "@ui/util";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -59,8 +66,9 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
   // The user's OWN vote: from the entry only when it was read for this user,
   // otherwise looked up (see useViewerVote). Never the SSR observer's vote.
   const viewerVote = useViewerVote(entry, entryUpdatedAt);
-  // Logged in and the user's own vote is still being looked up.
-  const votePending = !!activeUser && !viewerVote.known;
+  // The user's own vote is being looked up right now. Never "forever": with no
+  // lookup running (no entry, disabled, offline) the button acts as not voted.
+  const votePending = viewerVote.pending;
   const isVoted = useMemo(
     () => ({ upVoted: viewerVote.upVoted, downVoted: viewerVote.downVoted }),
     [viewerVote.upVoted, viewerVote.downVoted]
@@ -167,27 +175,63 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
   // drawer's post column is its own scroll box and the action row is its last
   // element, so a panel below that row starts off screen. "nearest" is a no-op
   // wherever the panel is already fully visible, which is every other surface.
+  // A slider opened late from the queue (below) is not scrolled into view:
+  // the reader may be looking somewhere else by then.
+  const openedFromQueue = useRef(false);
   useEffect(() => {
-    // Optional call: jsdom does not implement scrollIntoView.
-    if (dialog) panelRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [dialog]);
-
-  // A click while the vote is unknown waits for it: the slider must open
-  // knowing whether the user voted (it seeds and labels from that).
-  const [openWhenKnown, setOpenWhenKnown] = useState(false);
-  const toggleDialog = useCallback(() => {
-    if (votePending) {
-      setOpenWhenKnown(true);
+    if (!dialog) return;
+    if (openedFromQueue.current) {
+      openedFromQueue.current = false;
       return;
     }
-    setDialog((d) => !d);
-  }, [votePending]);
+    // Optional call: jsdom does not implement scrollIntoView.
+    panelRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [dialog]);
+
+  // A click while the vote is being looked up queues the open: the slider must
+  // open knowing whether the user voted (it seeds and labels from that). One
+  // queued open app-wide, expiring, cancelled on unmount, logout, scroll or a
+  // click elsewhere (see queued-open.ts). A click on the trigger of an open
+  // slider always closes it.
+  const queueId = useId();
+  const [queueTick, setQueueTick] = useState(0);
+  useEffect(() => subscribeQueuedOpen(() => setQueueTick((t) => t + 1)), []);
+  const isQueued = queuedOpenOwner() === queueId;
+  const toggleDialog = useCallback(() => {
+    if (dialog) {
+      cancelQueuedOpen(queueId);
+      setDialog(false);
+      return;
+    }
+    if (votePending) {
+      queueOpen(queueId);
+      return;
+    }
+    setDialog(true);
+  }, [dialog, votePending, queueId]);
   useEffect(() => {
-    if (openWhenKnown && !votePending) {
-      setOpenWhenKnown(false);
+    if (!votePending && takeQueuedOpen(queueId)) {
+      openedFromQueue.current = true;
       setDialog(true);
     }
-  }, [openWhenKnown, votePending]);
+  }, [votePending, queueTick, queueId]);
+  useEffect(() => {
+    if (!isQueued) return;
+    const cancel = () => cancelQueuedOpen(queueId);
+    const onMouseDown = (e: MouseEvent) => {
+      if (!(e.target instanceof Node) || !rootRef.current?.contains(e.target)) cancel();
+    };
+    window.addEventListener("scroll", cancel, { capture: true, passive: true });
+    document.addEventListener("mousedown", onMouseDown, true);
+    return () => {
+      window.removeEventListener("scroll", cancel, { capture: true });
+      document.removeEventListener("mousedown", onMouseDown, true);
+    };
+  }, [isQueued, queueId]);
+  useEffect(() => () => cancelQueuedOpen(queueId), [queueId]);
+  useEffect(() => {
+    if (!activeUser) cancelQueuedOpen(queueId);
+  }, [activeUser, queueId]);
 
   // Resolve the user's previous vote WHILE the slider is open rather than before
   // opening it, so the open paints immediately instead of blocking on

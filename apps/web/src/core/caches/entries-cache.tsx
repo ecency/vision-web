@@ -2,7 +2,8 @@ import { getQueryClient } from "../react-query";
 import {
   getNormalizePostQueryOptions,
   getPostQueryOptions,
-  QueryKeys
+  QueryKeys,
+  recordOptimisticVote
 } from "@ecency/sdk";
 import { Entry, ObserverVote } from "@/entities";
 import { makeEntryPath } from "@/utils";
@@ -86,6 +87,13 @@ export namespace EcencyEntriesCacheManagement {
       // for a caller that passed a full entry — the decks post viewer renders an
       // empty article that way, and nothing refetches it because refetchOnMount
       // is false app-wide. An empty body never overwrites a present one.
+      //
+      // Precedence note (use-viewer-vote.ts): a seed row's dataUpdatedAt is the
+      // mount time, not the time it was fetched. That is safe only because
+      // this cache is read and refetched under DEFAULT_OBSERVER, so its vote
+      // pair is never "for" a logged-in user and never races the user's lookup.
+      // Reading this cache with the user as observer would require seeding
+      // dataUpdatedAt (initialDataUpdatedAt) with the row's real fetch time.
       //
       // Vote fields are the exception: they never come from the seed row once
       // a fetched entry exists. The seed may have been read for another
@@ -186,6 +194,8 @@ export namespace EcencyEntriesCacheManagement {
         if (!entry) return;
         const nextTotalVotes = totalVotes;
         qc.setQueryData(QueryKeys.posts.entryVote(entry.author, entry.permlink, voter), observerVote);
+        // Hold it over a lookup that lags the chain (SDK, 60 s window).
+        recordOptimisticVote(entry.author, entry.permlink, voter, observerVote);
         mutateEntryInstance(
           entry,
           (value) => ({

@@ -50,3 +50,23 @@ describe("getEntryQuery select: vote fields", () => {
     expect(select(seed, seed).observer_vote_for).toBe("alice");
   });
 });
+
+// Round 4, item 4: the web's optimistic vote write also tells the SDK, so a
+// lookup that lags the chain does not flip the vote back.
+import { renderHook } from "@testing-library/react";
+import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+describe("useUpdateVotes", () => {
+  it("records the vote as this client's optimistic vote", async () => {
+    const sdk = await import("@ecency/sdk");
+    const qc = new QueryClient();
+    const entry = { ...base, stats: { total_votes: 1, flag_weight: 0, gray: false, hide: false } } as Entry;
+    qc.setQueryData(["posts", "entry", "/@bob/p"], entry);
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: qc }, children);
+    const { result } = renderHook(() => EcencyEntriesCacheManagement.useUpdateVotes(entry), { wrapper });
+    result.current.update({ voter: "alice", observerVote: { rshares: 1, percent: 100 }, payout: 1, totalVotes: 2 });
+    expect(vi.mocked(sdk.recordOptimisticVote)).toHaveBeenCalledWith("bob", "p", "alice", { rshares: 1, percent: 100 });
+  });
+});

@@ -15,9 +15,10 @@ import { prepareVotes } from "@/features/shared/entry-vote-btn/utils";
 import { heartSvg } from "@ui/svg";
 import { Entry } from "@/entities";
 import { useViewerVote } from "@/core/hooks/use-viewer-vote";
-import { sortVotes } from "@/features/shared/entry-votes/sort-votes";
+import { sortVotes, type VoteSortOption } from "@/features/shared/entry-votes/sort-votes";
 
-type SortOption = "reward" | "timestamp" | "voter" | "percent";
+// The same options sortVotes takes, reputation included (the select offers it).
+type SortOption = VoteSortOption;
 
 interface Props {
   /** See EntryVotes: size-N sink class for the vote icon; defaults to "[&>svg]:size-3.5". */
