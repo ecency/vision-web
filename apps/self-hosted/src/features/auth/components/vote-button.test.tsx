@@ -251,6 +251,17 @@ describe('self-hosted VoteButton when the SDK cannot move the count', () => {
     expect(container.textContent).toContain('11 likes');
   });
 
+  it('does not carry a correction over to another post with the same count', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    state.lookup.mockImplementation(() => new Promise(() => {}));
+    state.afterVote.mockImplementation(async () => {});
+    await mount(qc, <VoteButton author="bob" permlink="first" totalVotes={10} />);
+    await click();
+    expect(container.textContent).toContain('11 likes');
+    await mount(qc, <VoteButton author="bob" permlink="second" totalVotes={10} />);
+    expect(container.textContent).toContain('10 likes');
+  });
+
   it('moves the count once when the vote lands before the lookup answered, and not again when the entry refetch arrives', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     const key = QueryKeys.posts.entry('/@bob/p');
