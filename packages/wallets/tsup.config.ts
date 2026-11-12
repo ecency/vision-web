@@ -1,31 +1,15 @@
 import { defineConfig } from "tsup";
 
+// The shim re-exports `@ecency/sdk/wallets` and nothing else, so `@ecency/sdk`
+// stays external and each build is one re-export line. It emits the same
+// `dist/browser` and `dist/node` files the package's `exports` map has always
+// pointed at, so every condition of the `.` export keeps resolving.
 const shared = {
     entry: ["src/index.ts"],
     splitting: false,
     sourcemap: true,
     treeshake: true,
-    external: [
-        "react",
-        "react-dom",
-        "react/jsx-runtime",
-        "@tanstack/react-query",
-        "@ecency/sdk",
-        "hivesigner",
-        "lru-cache",
-        "scheduler",
-        "dayjs",
-        "remeda",
-        "bip39",
-        "@scure/base",
-        "@scure/bip32",
-        "@wallet-standard/app",
-        "@solana/web3.js",
-        "node-fetch",
-        "undici",
-        "crypto",
-        "buffer",
-    ] as const,
+    external: ["@ecency/sdk", "@ecency/sdk/wallets"],
     shims: false,
 } as const;
 
@@ -41,9 +25,6 @@ export default defineConfig([
         clean: true,
         minify: false,
         outExtension: () => ({ js: ".js" }),
-        define: {
-            "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "production"),
-        },
     },
     // Node build
     {

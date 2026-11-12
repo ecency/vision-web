@@ -1,5 +1,14 @@
 # @ecency/wallets
 
+## 7.0.1
+
+### Patch Changes
+
+- SDK: add @ecency/sdk/wallets entry and make @ecency/wallets a shim (#2063)
+
+- Updated dependencies []:
+  - @ecency/sdk@2.6.0
+
 ## 7.0.0
 
 ### Patch Changes

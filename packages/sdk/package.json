@@ -1,7 +1,7 @@
 {
   "name": "@ecency/sdk",
   "private": false,
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "Ecency SDK",
   "repository": {
     "type": "git",
@@ -34,6 +34,13 @@
       "import": "./dist/node/hive.mjs",
       "require": "./dist/node/hive.cjs",
       "default": "./dist/node/hive.mjs"
+    },
+    "./wallets": {
+      "types": "./dist/browser/wallets.d.ts",
+      "browser": "./dist/browser/wallets.js",
+      "import": "./dist/node/wallets.mjs",
+      "require": "./dist/node/wallets.cjs",
+      "default": "./dist/node/wallets.mjs"
     }
   },
   "browser": {
@@ -48,7 +55,9 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
+    "@solana/web3.js": "^1",
     "@tanstack/react-query": ">=5",
+    "@wallet-standard/app": "^1",
     "hivesigner": "^4.0.0",
     "react": ">=18"
   },
@@ -61,14 +70,21 @@
     },
     "hivesigner": {
       "optional": false
+    },
+    "@solana/web3.js": {
+      "optional": true
+    },
+    "@wallet-standard/app": {
+      "optional": true
     }
   },
   "devDependencies": {
+    "@solana/web3.js": "^1.98.0",
     "@types/node": "^22.13.8",
     "@vitest/coverage-v8": "^4.1.11",
+    "@wallet-standard/app": "^1.1.0",
     "bip39": "^3.1.0",
     "eslint": "^9.21.0",
-    "lru-cache": "^11.0.2",
     "prettier": "^3.5.2",
     "tsup": "^8",
     "typescript": "^5.6",
@@ -79,7 +95,12 @@
     "@noble/ciphers": "^2.1.1",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",
-    "bs58": "6.0.0"
+    "@scure/base": "^1.2.4",
+    "@scure/bip32": "^1.6.2",
+    "@scure/bip39": "^1.5.0",
+    "bs58": "6.0.0",
+    "lru-cache": "^11.0.2",
+    "remeda": "^2.30.0"
   },
   "publishConfig": {
     "access": "public"

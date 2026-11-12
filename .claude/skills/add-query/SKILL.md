@@ -1,6 +1,6 @@
 ---
 name: add-query
-description: Use when adding or changing a React Query data query - a query option builder in @ecency/sdk or @ecency/wallets, an app-specific query under apps/web/src/api/queries, or the QueryKeys entry one of those needs.
+description: Use when adding or changing a React Query data query - a query option builder in @ecency/sdk or its @ecency/sdk/wallets entry, an app-specific query under apps/web/src/api/queries, or the QueryKeys entry one of those needs.
 argument-hint: [query-name]
 ---
 
@@ -11,30 +11,30 @@ argument-hint: [query-name]
 | Data | Path |
 |---|---|
 | Hive chain data (posts, accounts, communities, proposals, polls, market) | `packages/sdk/src/modules/<domain>/queries/` |
-| External chain assets (BTC, ETH, BNB, SOL) | `packages/wallets/src/modules/assets/external/<chain>/`, with no `queries/` dir |
-| Multi-chain wallet list, token prices, token operations | `packages/wallets/src/modules/wallets/queries/` |
+| External chain assets (BTC, ETH, BNB, SOL) | `packages/sdk/src/wallets/modules/assets/external/<chain>/`, with no `queries/` dir |
+| Multi-chain wallet list, token prices, token operations | `packages/sdk/src/wallets/modules/wallets/queries/` |
 | Data only the web app has (contributors, gifs, pending payouts) | `apps/web/src/api/queries/` |
 
 Hive, Hive Engine and Points asset builders already live in the SDK under
 `packages/sdk/src/modules/{wallet,hive-engine,points}/queries/`. The matching
-`packages/wallets/src/modules/assets/{hive,hive-engine,points}/queries/index.ts` files are
+`packages/sdk/src/wallets/modules/assets/{hive,hive-engine,points}/queries/index.ts` files are
 re-export lists pointing back at `@ecency/sdk`, so a new builder for one of those assets is
 an SDK file plus one line in the wallets re-export. CLAUDE.md holds the package boundary
-rules: the multi-chain code stays in `@ecency/wallets`. Its external chain list is stale,
-since the chains under `assets/external/` are BTC, ETH, BNB and SOL.
+rules: the multi-chain code lives in the `@ecency/sdk/wallets` entry, never the SDK main entry.
+The chain list in `.claude/rules/packages.md` is stale: the chains under
+`assets/external/` are BTC, ETH, BNB and SOL.
 
 ## 1. Failing spec first
 
 Write the builder's spec before the builder: the `queryKey` it must produce, what `queryFn` returns for a mocked response (empty and error shapes too) plus the `enabled` guard for missing arguments. Run it and confirm it fails **for the right reason**: an assertion about the missing behaviour, not an import error, a missing mock or a typo. When the subject file does not exist yet, add a stub export (a component returning `null`, a function returning `undefined`) so the run reaches the assertion. If the issue says `No test-first: <reason>` (pure layout or CSS, a dependency upgrade, infra config), skip this step and repeat that line in the PR.
 
-In either package, colocate `get-<entity>-query-options.spec.ts` beside the builder (the SDK
-picks up vitest's default spec glob, `packages/wallets/vitest.config.ts` includes
-`src/**/*.spec.ts`), then run the one spec (plus `pnpm typecheck` once it is green):
+Colocate `get-<entity>-query-options.spec.ts` beside the builder (the SDK picks up vitest's
+default spec glob, wallet code included), then run the one spec (plus `pnpm typecheck` once it is green):
 
 ```bash
 pnpm --filter @ecency/sdk test src/modules/<domain>/queries/get-<entity>-query-options.spec.ts
-pnpm --filter @ecency/wallets test src/modules/wallets/queries/<name>.spec.ts
-pnpm --filter @ecency/wallets test src/modules/assets/external/<chain>/<name>.spec.ts   # BTC, ETH, BNB, SOL
+pnpm --filter @ecency/sdk test src/wallets/modules/wallets/queries/<name>.spec.ts
+pnpm --filter @ecency/sdk test src/wallets/modules/assets/external/<chain>/<name>.spec.ts   # BTC, ETH, BNB, SOL
 ```
 
 **Never add `--` before the path.** pnpm forwards it to vitest as a passthrough separator
@@ -51,10 +51,10 @@ Key style is per workspace, so pick the right one before writing anything:
 | Workspace | Where the key comes from |
 |---|---|
 | `@ecency/sdk` | the shared `QueryKeys` object, below |
-| `@ecency/wallets` | a package-local namespaced array; `QueryKeys` is not imported there |
+| `@ecency/sdk/wallets` | a package-local namespaced array; `QueryKeys` is not imported there |
 | `apps/web` | the `QueryIdentifiers` enum, or a local suffix constant appended to another builder's key (step 4, where the enum member is added) |
 
-`@ecency/wallets` keeps its keys local so the multi-chain code does not reach
+`@ecency/sdk/wallets` keeps its keys local so the multi-chain code does not reach
 back into the SDK, so CLAUDE.md's blanket rule to take every cache key from `QueryKeys` is
 stale here. It uses `["ecency-wallets", ...]` for the wallet list, the all-tokens
 list, market data plus external balances, `["assets", "<chain>", ...]` for the per-chain
@@ -95,9 +95,9 @@ argument and returning the shorter array: `search.similarEntries`,
 ## 3. Write the builder
 
 File: `packages/sdk/src/modules/<domain>/queries/get-<entity>-query-options.ts`. In
-`@ecency/wallets` there are two homes: a wallet-level builder is
-`packages/wallets/src/modules/wallets/queries/<name>.ts`, while a per-chain builder for BTC,
-ETH, BNB or SOL sits directly in `packages/wallets/src/modules/assets/external/<chain>/`,
+`@ecency/sdk/wallets` there are two homes: a wallet-level builder is
+`packages/sdk/src/wallets/modules/wallets/queries/<name>.ts`, while a per-chain builder for BTC,
+ETH, BNB or SOL sits directly in `packages/sdk/src/wallets/modules/assets/external/<chain>/`,
 with no `queries/` level. A web-only
 query is `apps/web/src/api/queries/<name>-query.ts` (`get-contributors-query.ts`,
 `get-gifs-query.ts`), usually with its key from `QueryIdentifiers` (step 4, where the enum member is added). The builder
@@ -107,7 +107,7 @@ Almost all top-level `export function` names under
 `packages/sdk/src/modules/*/queries/` are `get...`; the query builders that are not
 (`searchQueryOptions`, `lookupAccountsQueryOptions`, `checkFavoriteQueryOptions`,
 `checkUsernameWalletsPendingQueryOptions`) are older names, so name a new one `get...`.
-The remaining non-`get` exports are helpers such as `sortDiscussions`, not builders. `@ecency/wallets` is looser and
+The remaining non-`get` exports are helpers such as `sortDiscussions`, not builders. `@ecency/sdk/wallets` is looser and
 `modules/wallets/queries/use-get-external-wallet-query.ts` does export a hook
 (`useGetExternalWalletBalanceQuery`); do not copy it. Trimmed from
 `modules/posts/queries/get-post-query-options.ts`:
@@ -167,9 +167,10 @@ export function getPostQueryOptions(author: string, permlink?: string, observer 
   In `apps/web`, take `QueryKeys` plus `callRPC` from `@ecency/sdk` (route handlers use the
   `@ecency/sdk/hive` subpath for `callRPC`); there is no `getBoundFetch`, app-owned requests
   go through `appAxios` with `apiBase` from `@/api/helper`, while `CONFIG` there is the
-  unrelated `EcencyConfigManager.CONFIG` from `@/config`. In `@ecency/wallets`, `CONFIG`
-  comes from `@ecency/sdk`, `getBoundFetch` is package-local at
-  `@/modules/wallets/utils/get-bound-fetch`, the private-API host is
+  unrelated `EcencyConfigManager.CONFIG` from `@/config`. In `@ecency/sdk/wallets`, `CONFIG`
+  comes from a relative import of the SDK main entry (`src/index.ts`, never a deeper SDK
+  path: the node build rejects it), `getBoundFetch` is local at
+  `src/wallets/modules/wallets/utils/get-bound-fetch`, the private-API host is
   `ConfigManager.getValidatedBaseUrl()`; neither `QueryKeys` nor `callRPC` is used.
 
 Paginated lists use `infiniteQueryOptions`. Plenty of them take an inline scalar cursor
@@ -210,13 +211,13 @@ off `QueryIdentifiers`, so they also need an enum member in
 `PENDING_PAYOUTS_KEY` constant and appends it to another builder's key, so match whichever
 the neighbouring file does rather than assuming the enum.
 
-A wallet-level builder in `@ecency/wallets` follows the
+A wallet-level builder in `@ecency/sdk/wallets` follows the
 SDK shape: `modules/wallets/queries/index.ts`, re-exported by that module's `index.ts`, which
-`packages/wallets/src/index.ts` exports.
+`packages/sdk/src/wallets/index.ts` exports.
 
 An external chain builder does not reach the package root today. The links are
 `external/<chain>/index.ts` then `external/index.ts` (which re-exports bnb, btc, eth and sol),
-but `packages/wallets/src/modules/assets/index.ts` exports only `./hive`, `./types`, `./utils`,
+but `packages/sdk/src/wallets/modules/assets/index.ts` exports only `./hive`, `./types`, `./utils`,
 `./hive-engine` plus `./points`. It never exports `./external`, so nothing outside that
 directory can import the BTC, ETH, BNB or SOL builders. Nothing does. Adding a builder
 there means adding the missing `export * from "./external";` line as well, otherwise the new
@@ -267,7 +268,7 @@ timeout, so a hanging node cannot hold a render open.
   read a key this way, as in
   `discussionsQueryOptions.queryKey` in `features/shared/discussion/index.tsx:99`.
   `@ecency/sdk` has a key registry you can reach independently (`QueryKeys`, which CLAUDE.md
-  points at), while `@ecency/wallets` has none, its key arrays being inline in the
+  points at), while `@ecency/sdk/wallets` has none, its key arrays being inline in the
   definitions that own them. So for a wallets key, `.queryKey` is the reuse path, as
   `mutations/save-wallet-information-to-metadata.ts:188` does. Most of them support it because
   they return an options object; `queries/use-get-external-wallet-query.ts` is the

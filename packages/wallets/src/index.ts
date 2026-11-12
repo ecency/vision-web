@@ -1,6 +1,2 @@
-import { rememberScryptBsvVersion } from "./internal/scrypt-guard";
-
-rememberScryptBsvVersion();
-
-export * from "./modules/wallets";
-export * from "./modules/assets";
+// Deprecated: this package moved to `@ecency/sdk/wallets` (#2062).
+export * from "@ecency/sdk/wallets";

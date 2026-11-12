@@ -49,7 +49,7 @@ Guard: `apps/self-hosted/scripts/check-node-globals.mjs`, run by its build.
   query, not the pattern.
 - Key source is per workspace, so check against the right one before flagging.
   See the table in the `add-query` skill. `@ecency/sdk` uses `QueryKeys`
-  (`packages/sdk/src/modules/core/query-keys.ts`), `@ecency/wallets` uses its own
+  (`packages/sdk/src/modules/core/query-keys.ts`), `@ecency/sdk/wallets` uses its own
   package-local arrays, `apps/web` uses `QueryIdentifiers`
   (`apps/web/src/core/react-query`) or a local constant appended to another
   builder's key. What is worth flagging is a raw array that duplicates a key some
@@ -100,7 +100,7 @@ reintroduce it.
   `No test-first: <reason>`.
 - Placement decides collection. Some workspaces pin `include`, so a misplaced or
   wrongly suffixed file there is silently never run: `apps/web` takes
-  `src/specs/**/*.spec.{ts,tsx}` only, `packages/wallets` `src/**/*.spec.ts`,
+  `src/specs/**/*.spec.{ts,tsx}` only,
   `packages/ui` and `apps/self-hosted` `src/**/*.test.{ts,tsx}`. sdk and
   render-helper pin no `include`, so vitest's default picks up either suffix
   anywhere; co-located `*.spec.ts` is their convention, not a rule the runner

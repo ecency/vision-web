@@ -1,0 +1,2 @@
+import {a}from'./chunk-J2KJOJNR.js';function r(e,i,o){let t=a.fromLogin(e,i,o);return {privateKey:t.toString(),publicKey:t.createPublic().toString()}}function v(e,i){let o=r(e,i,"owner"),t=r(e,i,"active"),n=r(e,i,"posting"),p=r(e,i,"memo");return {owner:o.privateKey,active:t.privateKey,posting:n.privateKey,memo:p.privateKey,ownerPubkey:o.publicKey,activePubkey:t.publicKey,postingPubkey:n.publicKey,memoPubkey:p.publicKey}}export{r as a,v as b};//# sourceMappingURL=chunk-CHELBE53.js.map
+//# sourceMappingURL=chunk-CHELBE53.js.map

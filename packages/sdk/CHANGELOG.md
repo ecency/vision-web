@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.6.0
+
+### Minor Changes
+
+- SDK: add @ecency/sdk/wallets entry and make @ecency/wallets a shim (#2063)
+
 ## 2.5.0
 
 ### Minor Changes

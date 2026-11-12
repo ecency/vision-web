@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -173,7 +173,14 @@ describe("browser build stays splittable", () => {
 describe("node build stays one bundle per entry", () => {
   it("emits only the entry files, with no shared chunks", () => {
     const files = jsFiles(node()).map((f) => relative(node(), f)).sort();
-    expect(files).toEqual(["hive.cjs", "hive.mjs", "index.cjs", "index.mjs"]);
+    expect(files).toEqual([
+      "hive.cjs",
+      "hive.mjs",
+      "index.cjs",
+      "index.mjs",
+      "wallets.cjs",
+      "wallets.mjs"
+    ]);
   });
 
   it("keeps each entry self-contained", () => {
@@ -283,15 +290,16 @@ describe("the browser entry list stays ordered", () => {
     expect(entries.filter((e) => e.endsWith(".d.ts"))).toEqual([]);
     expect(entries).toContain(join("src", "index.ts"));
     expect(entries).toContain(join("src", "hive.ts"));
+    expect(entries).toContain(join("src", "wallets.ts"));
   });
 
-  it("keeps the node build on the two public entries only", async () => {
+  it("keeps the node build on the three public entries only", async () => {
     // The other half of the shape, at config level: the node build must not
     // grow an entry per file, because that is what would split it.
     const configs = (await import("../tsup.config")).default as Array<Record<string, unknown>>;
     const nodeConfig = configs.find((c) => c.platform === "node");
     expect(nodeConfig).toBeDefined();
-    expect(nodeConfig!.entry).toEqual(["src/index.ts", "src/hive.ts"]);
+    expect(nodeConfig!.entry).toEqual(["src/index.ts", "src/hive.ts", "src/wallets.ts"]);
     expect(nodeConfig!.splitting).toBeFalsy();
   });
 });
@@ -309,8 +317,9 @@ describe("what each consumer resolves", () => {
     // browser build and its ~1,100 files. That may be what you want one day;
     // measure a Metro bundle before and after, then update this test.
     const pkg = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8"));
-    for (const subpath of [".", "./hive"]) {
+    for (const subpath of [".", "./hive", "./wallets"]) {
       const entry = pkg.exports[subpath];
+      expect(entry, subpath).toBeDefined();
       expect(Object.keys(entry)).not.toContain("react-native");
       expect(entry.browser).toMatch(/^\.\/dist\/browser\//);
       // Everything off the browser (SSR, route handlers, scripts, mobile
@@ -320,4 +329,237 @@ describe("what each consumer resolves", () => {
       }
     }
   });
+});
+
+/**
+ * `@ecency/sdk/wallets` (#2062): the former `@ecency/wallets` package, shipped as
+ * a subpath of the SDK.
+ *
+ * Two properties carry the move. The main entry must not grow by it: apps that
+ * never touch wallets must not bundle BIP39/BIP32 or the MetaMask code. And the
+ * node build of `./wallets` must share the main entry's module state, exactly
+ * as the standalone package did by importing `@ecency/sdk` as an external, or
+ * SSR would read a second, unconfigured `ConfigManager` and QueryClient.
+ */
+describe("the ./wallets entry", () => {
+  /** Packages only wallet code may import. Any of them in the main graph means
+   *  wallet code leaked into `@ecency/sdk`. */
+  const WALLET_ONLY_PACKAGES = [
+    "@scure/bip39",
+    "@scure/bip32",
+    "@solana/web3.js",
+    "@wallet-standard/app"
+  ];
+  /** String literals that only wallets modules carry. Wallet code hoisted into
+   *  a shared chunk keeps them even though its file name and export names do
+   *  not survive minification. */
+  const WALLET_MARKERS = ["wallet_requestSnaps", "all-tokens-list", "external-wallet-balance"];
+  const PUBLIC_NAMES = ["deriveHiveKeys", "EcencyWalletCurrency", "getAllTokensListQueryOptions"];
+
+  /** Whether `src` names `specifier` as a module, root or subpath, in either quote style. */
+  const mentions = (src: string, specifier: string) =>
+    ['"', "'"].some((q) => src.includes(q + specifier + q) || src.includes(q + specifier + "/"));
+
+  /**
+   * Every own file reachable from `entry` through static or dynamic imports.
+   * Deliberately an over-approximation (any relative string literal that names
+   * an emitted file is an edge), so a leak can only make it bigger.
+   */
+  function reachable(entry: string): string[] {
+    const own = new Set(jsFiles(browser()));
+    const seen = new Set<string>([entry]);
+    const queue = [entry];
+    while (queue.length) {
+      const f = queue.pop()!;
+      const src = readFileSync(f, "utf8");
+      for (const m of src.matchAll(/["'](\.{1,2}\/[^"']+)["']/g)) {
+        const t = resolve(dirname(f), m[1]);
+        if (own.has(t) && !seen.has(t)) {
+          seen.add(t);
+          queue.push(t);
+        }
+      }
+    }
+    return [...seen];
+  }
+
+  it("is exported with the same conditions as . and ./hive, pointing at emitted files", () => {
+    const pkg = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8"));
+    const entry = pkg.exports["./wallets"];
+    expect(entry).toEqual({
+      types: "./dist/browser/wallets.d.ts",
+      browser: "./dist/browser/wallets.js",
+      import: "./dist/node/wallets.mjs",
+      require: "./dist/node/wallets.cjs",
+      default: "./dist/node/wallets.mjs"
+    });
+    expect(Object.keys(entry)).toEqual(Object.keys(pkg.exports["."]));
+    for (const target of Object.values(entry) as string[]) {
+      const file = join(out, target.replace(/^\.\/dist\//, ""));
+      expect(statSync(file).isFile(), target).toBe(true);
+    }
+  });
+
+  it("keeps wallet code out of the main entry's browser graph", () => {
+    const main = reachable(join(browser(), "index.js"));
+    expect(main.length).toBeGreaterThan(10);
+    const leaks: string[] = [];
+    for (const f of main) {
+      const rel = relative(browser(), f);
+      if (rel === "wallets.js" || rel.startsWith("wallets/")) leaks.push(`${rel}: wallets module`);
+      const src = readFileSync(f, "utf8");
+      for (const p of WALLET_ONLY_PACKAGES) if (mentions(src, p)) leaks.push(`${rel}: imports ${p}`);
+      for (const m of WALLET_MARKERS) if (src.includes(m)) leaks.push(`${rel}: carries "${m}"`);
+    }
+    expect(leaks).toEqual([]);
+
+    // The markers must be real, or the check above passes vacuously.
+    const wallets = reachable(join(browser(), "wallets.js")).map((f) => readFileSync(f, "utf8"));
+    for (const m of WALLET_MARKERS) expect(wallets.some((src) => src.includes(m)), m).toBe(true);
+    expect(wallets.some((src) => mentions(src, "@scure/bip39"))).toBe(true);
+  });
+
+  it("keeps wallet code out of the main entry's node bundles", () => {
+    for (const f of ["index.mjs", "index.cjs"]) {
+      const src = readFileSync(join(node(), f), "utf8");
+      for (const p of WALLET_ONLY_PACKAGES) expect(mentions(src, p), `${f} imports ${p}`).toBe(false);
+      for (const m of WALLET_MARKERS) expect(src.includes(m), `${f} carries "${m}"`).toBe(false);
+    }
+    const wallets = readFileSync(join(node(), "wallets.mjs"), "utf8");
+    for (const m of WALLET_MARKERS) expect(wallets.includes(m), m).toBe(true);
+  });
+
+  it("does not re-export wallets from the main entry source", () => {
+    const index = readFileSync(join(PKG, "src", "index.ts"), "utf8");
+    expect(index).not.toMatch(/wallets/);
+  });
+
+  it(
+    "exports the public names from the browser, node ESM and node CJS builds",
+    async () => {
+      const esmKeys = (file: string) =>
+        inNode(
+          esm(`import(process.env.E_ENTRY).then((m) => console.log(JSON.stringify({ keys: Object.keys(m).sort() })))`),
+          { E_ENTRY: file }
+        );
+      const b = await esmKeys(join(browser(), "wallets.js"));
+      const n = await esmKeys(join(node(), "wallets.mjs"));
+      const c = await inNode(
+        ["-e", `console.log(JSON.stringify({ keys: Object.keys(require(process.env.E_ENTRY)).sort() }))`],
+        { E_ENTRY: join(node(), "wallets.cjs") }
+      );
+      for (const name of PUBLIC_NAMES) expect(b.keys, `browser ${name}`).toContain(name);
+      expect(b.keys).toEqual(n.keys);
+      expect(c.keys).toEqual(n.keys);
+    },
+    CASE_MS
+  );
+
+  it(
+    "shares the main entry's module state in the node build, ESM and CJS",
+    async () => {
+      // `useWalletOperation` is the SDK's own function, re-exported by wallets.
+      // Identity holds only if wallets.* loads index.* instead of inlining a
+      // second copy of the SDK (and with it a second ConfigManager).
+      const viaEsm = await inNode(
+        esm(`Promise.all([import(process.env.E_MAIN), import(process.env.E_WALLETS)]).then(([main, w]) =>
+          console.log(JSON.stringify({ same: main.useWalletOperation === w.useWalletOperation, fn: typeof w.useWalletOperation })))`),
+        { E_MAIN: join(node(), "index.mjs"), E_WALLETS: join(node(), "wallets.mjs") }
+      );
+      expect(viaEsm).toEqual({ same: true, fn: "function" });
+      const viaCjs = await inNode(
+        ["-e", `const main = require(process.env.E_MAIN); const w = require(process.env.E_WALLETS);
+          console.log(JSON.stringify({ same: main.useWalletOperation === w.useWalletOperation, fn: typeof w.useWalletOperation }))`],
+        { E_MAIN: join(node(), "index.cjs"), E_WALLETS: join(node(), "wallets.cjs") }
+      );
+      expect(viaCjs).toEqual({ same: true, fn: "function" });
+    },
+    CASE_MS
+  );
+
+  /**
+   * Sets a stub query client through the MAIN entry, then runs a wallets
+   * function that reads `CONFIG.queryClient`. With one shared SDK copy the
+   * wallets code sees the stub; with a second, inlined copy it sees its own
+   * unconfigured client instead. `fetch` is disabled in the child so that copy
+   * fails fast rather than reaching a real RPC node, and a timeout bounds the
+   * retries.
+   */
+  const STATE_PROBE = `async (main, w) => {
+    globalThis.fetch = () => Promise.reject(new Error("network disabled in this probe"));
+    const pub = main.PrivateKey.fromLogin("alice", "probe-password", "active").createPublic().toString();
+    let calls = 0;
+    main.ConfigManager.setQueryClient({
+      fetchQuery: async () => { calls++; return { active: { key_auths: [[pub, 1]] } }; }
+    });
+    const timeout = new Promise((r) => setTimeout(() => r("timeout"), 5000));
+    const result = await Promise.race([
+      w.detectHiveKeyDerivation("alice", "probe-password").catch((e) => "error: " + e.message),
+      timeout
+    ]);
+    console.log(JSON.stringify({ result, calls }));
+    process.exit(0);
+  }`;
+
+  it(
+    "runs wallets code against the query client configured through the main entry, ESM and CJS",
+    async () => {
+      const viaEsm = await inNode(
+        esm(`Promise.all([import(process.env.E_MAIN), import(process.env.E_WALLETS)]).then(([main, w]) => (${STATE_PROBE})(main, w))`),
+        { E_MAIN: join(node(), "index.mjs"), E_WALLETS: join(node(), "wallets.mjs") }
+      );
+      expect(viaEsm).toEqual({ result: "master-password", calls: 1 });
+      const viaCjs = await inNode(
+        ["-e", `(${STATE_PROBE})(require(process.env.E_MAIN), require(process.env.E_WALLETS))`],
+        { E_MAIN: join(node(), "index.cjs"), E_WALLETS: join(node(), "wallets.cjs") }
+      );
+      expect(viaCjs).toEqual({ result: "master-password", calls: 1 });
+    },
+    CASE_MS
+  );
+
+  it("does not inline the SDK core into the node wallets bundles", () => {
+    // A string only the core config carries. Present in index.* (so the check
+    // is not vacuous), absent from wallets.* unless core got inlined there.
+    const CORE_MARKER = "poll.ecency.com";
+    expect(readFileSync(join(node(), "index.mjs"), "utf8")).toContain(CORE_MARKER);
+    for (const f of ["wallets.mjs", "wallets.cjs"]) {
+      expect(readFileSync(join(node(), f), "utf8"), f).not.toContain(CORE_MARKER);
+    }
+  });
+
+  it(
+    "resolves the public names in the emitted types",
+    async () => {
+      const dir = mkdtempSync(join(out, "types-"));
+      const consumer = join(dir, "consumer.ts");
+      writeFileSync(
+        consumer,
+        [
+          `import { deriveHiveKeys, EcencyWalletCurrency, getAllTokensListQueryOptions } from "../browser/wallets.js";`,
+          `const keys: { owner: string } = deriveHiveKeys("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about");`,
+          `const currency: string = EcencyWalletCurrency.BTC;`,
+          `const key: readonly unknown[] = getAllTokensListQueryOptions("alice").queryKey;`,
+          `export { keys, currency, key };`,
+          ""
+        ].join("\n")
+      );
+      await exec(
+        join(PKG, "node_modules/.bin/tsc"),
+        [
+          "--noEmit",
+          "--strict",
+          "--skipLibCheck",
+          "--target", "es2020",
+          "--module", "esnext",
+          "--moduleResolution", "bundler",
+          "--lib", "es2022,dom",
+          "--types", "node",
+          consumer
+        ],
+        { cwd: PKG, timeout: CHILD_MS * 2 }
+      );
+    },
+    CASE_MS * 2
+  );
 });

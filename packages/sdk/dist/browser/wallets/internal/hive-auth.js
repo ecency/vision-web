@@ -1,0 +1,2 @@
+import'../../chunk-OS3FCYZY.js';var e=null;function r(t){e=t;}function a(){return e}export{a as getHiveAuthBroadcastHandler,r as registerHiveAuthBroadcastHandler};//# sourceMappingURL=hive-auth.js.map
+//# sourceMappingURL=hive-auth.js.map

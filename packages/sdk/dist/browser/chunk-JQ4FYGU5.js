@@ -1,0 +1,2 @@
+import {a as a$3}from'./chunk-DW4S5RVG.js';import {a as a$2}from'./chunk-RCC5K5UP.js';import {a as a$1}from'./chunk-URPX2PDL.js';import {a}from'./chunk-OS3FCYZY.js';var m={};a(m,{useCheckWalletExistence:()=>a$3,useCreateAccountWithWallets:()=>a$2,useUpdateAccountWithWallets:()=>a$1});export{m as a};//# sourceMappingURL=chunk-JQ4FYGU5.js.map
+//# sourceMappingURL=chunk-JQ4FYGU5.js.map

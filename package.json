@@ -23,7 +23,7 @@
     "dev:sdk": "pnpm --filter @ecency/sdk dev",
     "dev:wallets": "pnpm --filter @ecency/wallets dev",
     "publish:sdk": "cd packages/sdk && npx -y npm@11 publish --access public",
-    "publish:wallets": "cd packages/wallets && npx -y npm@11 publish --access public",
+    "publish:wallets": "cd packages/wallets && rm -f ecency-wallets-*.tgz && pnpm pack && npx -y npm@11 publish ./ecency-wallets-*.tgz --access public; s=$?; rm -f ecency-wallets-*.tgz; exit $s",
     "publish:render-helper": "cd packages/render-helper && npx -y npm@11 publish --access public",
     "publish:ui": "cd packages/ui && npx -y npm@11 publish --access public",
     "changeset": "changeset",

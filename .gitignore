@@ -11,5 +11,8 @@ coverage/
 
 packages/*/coverage/
 
+# The wallets shim is published from a packed tarball (publish:wallets)
+packages/*/*.tgz
+
 # Byte cache from running the hosting operator scripts and their tests
 __pycache__/

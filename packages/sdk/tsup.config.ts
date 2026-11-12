@@ -1,6 +1,8 @@
 import { readdirSync } from "node:fs";
-import { join } from "node:path";
-import { defineConfig } from "tsup";
+import { join, resolve, sep } from "node:path";
+import { defineConfig, type Options } from "tsup";
+
+type Plugin = NonNullable<Options["esbuildPlugins"]>[number];
 
 /**
  * Every buildable source file, in a STABLE order.
@@ -55,8 +57,62 @@ export function sourceEntries(dir = "src"): string[] {
  */
 const DIST_ROOT = process.env.SDK_DIST_ROOT ?? "dist";
 
+/** The public entry points, in the order `package.json` lists them. */
+const PUBLIC_ENTRIES = ["src/index.ts", "src/hive.ts", "src/wallets.ts"];
+
+/**
+ * Node build only: `src/wallets/**` loads the rest of the SDK from the sibling
+ * `index` bundle instead of inlining its own copy.
+ *
+ * The node build is a single bundle per entry (see below), so without this
+ * `wallets.mjs` would carry a second `ConfigManager`, QueryClient and hive-tx
+ * config, and SSR would run wallet queries against a copy nobody configured.
+ * The standalone `@ecency/wallets` package got the shared copy for free by
+ * importing `@ecency/sdk` as an external; this keeps that.
+ *
+ * Wallet modules therefore reach the SDK only through `src/index.ts`. Any
+ * other import from `src/wallets` to a module outside it fails the build rather
+ * than silently inlining a module with state. That covers relative paths,
+ * including bare `.` and `..`, and the `@/` alias from tsconfig `paths`, which
+ * esbuild would otherwise resolve on its own without passing through here.
+ */
+function walletsShareMainEntry(): Plugin {
+    const src = resolve("src");
+    const index = join(src, "index");
+    const wallets = join(src, "wallets") + sep;
+    return {
+        name: "wallets-share-main-entry",
+        setup(build) {
+            // From the output extension, not `format`: with `treeshake` tsup runs
+            // esbuild in ESM for both formats and converts to CJS afterwards.
+            const ext = build.initialOptions.outExtension?.[".js"] === ".cjs" ? ".cjs" : ".mjs";
+            build.onResolve({ filter: /^(\.\.?(\/|$)|@\/)/ }, (args) => {
+                if (!args.importer.startsWith(wallets)) return undefined;
+                const target = (
+                    args.path.startsWith("@/")
+                        ? join(src, args.path.slice(2))
+                        : resolve(args.resolveDir, args.path)
+                ).replace(/\.ts$/, "");
+                // `src` (a directory import) and `src/index` both name the main entry.
+                if (target === index || target === src) {
+                    return { path: `./index${ext}`, external: true };
+                }
+                // Trailing separator so `src/wallets` itself (a directory import) counts.
+                if ((target + sep).startsWith(wallets)) return undefined;
+                return {
+                    errors: [
+                        {
+                            text: `${args.importer} imports ${args.path}, outside src/wallets. Import it from the SDK entry (src/index.ts) instead, so the node build shares the main bundle's state.`,
+                        },
+                    ],
+                };
+            });
+        },
+    };
+}
+
 const shared = {
-    entry: ["src/index.ts", "src/hive.ts"],
+    entry: PUBLIC_ENTRIES,
     splitting: false,
     sourcemap: true,
     treeshake: true,
@@ -74,6 +130,12 @@ const shared = {
         "lru-cache",
         "scheduler",
         "bip39",
+        "@scure/base",
+        "@scure/bip32",
+        "@scure/bip39",
+        "remeda",
+        "@solana/web3.js",
+        "@wallet-standard/app",
         "node-fetch",
         "undici",
         "crypto"
@@ -130,7 +192,7 @@ export default defineConfig([
         // hive-tx in the browser.
         entry: sourceEntries(),
         splitting: true,
-        dts: { entry: ["src/index.ts", "src/hive.ts"] },
+        dts: { entry: PUBLIC_ENTRIES },
         format: ["esm"],
         platform: "browser",
         target: "es2020",
@@ -149,6 +211,7 @@ export default defineConfig([
     {
         ...shared,
         dts: false,
+        esbuildPlugins: [walletsShareMainEntry()],
         format: ["esm", "cjs"],
         platform: "node",
         target: "node18",

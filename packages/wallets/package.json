@@ -1,8 +1,8 @@
 {
   "name": "@ecency/wallets",
   "private": false,
-  "version": "7.0.0",
-  "description": "Ecency wallets",
+  "version": "7.0.1",
+  "description": "Deprecated: moved to @ecency/sdk/wallets",
   "repository": {
     "type": "git",
     "url": "https://github.com/ecency/vision-web.git",
@@ -29,59 +29,20 @@
       "default": "./dist/node/index.mjs"
     }
   },
-  "browser": {
-    "node-fetch": false,
-    "undici": false
-  },
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
     "lint": "eslint .",
-    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
-  "peerDependencies": {
-    "@ecency/sdk": "workspace:*",
-    "@solana/web3.js": ">=1",
-    "@tanstack/react-query": ">=5",
-    "@wallet-standard/app": ">=1",
-    "hivesigner": "^4.0.0",
-    "react": ">=18"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    },
-    "@tanstack/react-query": {
-      "optional": true
-    },
-    "@wallet-standard/app": {
-      "optional": true
-    },
-    "@solana/web3.js": {
-      "optional": true
-    }
-  },
   "dependencies": {
-    "@scure/base": "^1.2.4",
-    "@scure/bip32": "^1.6.2",
-    "@scure/bip39": "^1.5.0",
-    "dayjs": "^1.11.10",
-    "lru-cache": "^11.0.2",
-    "numeral": "^2.0.6",
-    "remeda": "^2.30.0"
+    "@ecency/sdk": "workspace:^"
   },
   "devDependencies": {
-    "@solana/web3.js": "^1.98.0",
-    "@types/node": "^22.13.8",
-    "@types/numeral": "^2.0.5",
-    "@wallet-standard/app": "^1.1.0",
     "eslint": "^9.21.0",
-    "prettier": "^3.5.2",
     "tsup": "^8",
     "typescript": "^5.6",
-    "typescript-eslint": "^8.18.2",
-    "vitest": "^4.1.11"
+    "typescript-eslint": "^8.18.2"
   },
   "publishConfig": {
     "access": "public"

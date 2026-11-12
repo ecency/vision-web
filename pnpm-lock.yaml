@@ -858,6 +858,15 @@ importers:
       '@noble/hashes':
         specifier: ^2.0.1
         version: 2.0.1
+      '@scure/base':
+        specifier: ^1.2.4
+        version: 1.2.6
+      '@scure/bip32':
+        specifier: ^1.6.2
+        version: 1.6.2
+      '@scure/bip39':
+        specifier: ^1.5.0
+        version: 1.6.0
       '@tanstack/react-query':
         specifier: '>=5'
         version: 5.90.2(react@18.3.1)
@@ -867,25 +876,34 @@ importers:
       hivesigner:
         specifier: ^4.0.0
         version: 4.0.0
+      lru-cache:
+        specifier: ^11.0.2
+        version: 11.2.2
       react:
         specifier: '>=18'
         version: 18.3.1
+      remeda:
+        specifier: ^2.30.0
+        version: 2.32.0
     devDependencies:
+      '@solana/web3.js':
+        specifier: ^1.98.0
+        version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
       '@types/node':
         specifier: ^22.13.8
         version: 22.18.8
       '@vitest/coverage-v8':
         specifier: ^4.1.11
         version: 4.1.11(vitest@4.1.11)
+      '@wallet-standard/app':
+        specifier: ^1.1.0
+        version: 1.1.0
       bip39:
         specifier: ^3.1.0
         version: 3.1.0
       eslint:
         specifier: ^9.21.0
         version: 9.37.0(jiti@2.6.1)
-      lru-cache:
-        specifier: ^11.0.2
-        version: 11.2.2
       prettier:
         specifier: ^3.5.2
         version: 3.6.2
@@ -948,57 +966,12 @@ importers:
   packages/wallets:
     dependencies:
       '@ecency/sdk':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../sdk
-      '@scure/base':
-        specifier: ^1.2.4
-        version: 1.2.6
-      '@scure/bip32':
-        specifier: ^1.6.2
-        version: 1.6.2
-      '@scure/bip39':
-        specifier: ^1.5.0
-        version: 1.6.0
-      '@tanstack/react-query':
-        specifier: '>=5'
-        version: 5.90.2(react@18.3.1)
-      dayjs:
-        specifier: ^1.11.10
-        version: 1.11.18
-      hivesigner:
-        specifier: ^4.0.0
-        version: 4.0.0
-      lru-cache:
-        specifier: ^11.0.2
-        version: 11.2.2
-      numeral:
-        specifier: ^2.0.6
-        version: 2.0.6
-      react:
-        specifier: '>=18'
-        version: 18.3.1
-      remeda:
-        specifier: ^2.30.0
-        version: 2.32.0
     devDependencies:
-      '@solana/web3.js':
-        specifier: ^1.98.0
-        version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
-      '@types/node':
-        specifier: ^22.13.8
-        version: 22.18.8
-      '@types/numeral':
-        specifier: ^2.0.5
-        version: 2.0.5
-      '@wallet-standard/app':
-        specifier: ^1.1.0
-        version: 1.1.0
       eslint:
         specifier: ^9.21.0
         version: 9.37.0(jiti@2.6.1)
-      prettier:
-        specifier: ^3.5.2
-        version: 3.6.2
       tsup:
         specifier: ^8
         version: 8.5.0(jiti@2.6.1)(postcss@8.5.31)(tsx@4.21.0)(typescript@5.9.3)
@@ -1008,9 +981,6 @@ importers:
       typescript-eslint:
         specifier: ^8.18.2
         version: 8.46.0(eslint@9.37.0(jiti@2.6.1))(typescript@5.9.3)
-      vitest:
-        specifier: ^4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.0)(@types/node@22.18.8)(@vitest/coverage-v8@4.1.11)(@vitest/ui@4.1.11)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.3.4(@types/node@22.18.8)(esbuild@0.28.1)(jiti@2.6.1)(sass-embedded@1.93.2)(sass@1.93.2)(terser@5.47.1)(tsx@4.21.0))
 
 packages:
 

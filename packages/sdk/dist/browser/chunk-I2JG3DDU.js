@@ -1,0 +1,2 @@
+import {e}from'./chunk-QGQPFACV.js';var o=e.operations,a=o,p=Object.entries(o).reduce((e,[t,i])=>(e[i]=t,e),{});export{a,p as b};//# sourceMappingURL=chunk-I2JG3DDU.js.map
+//# sourceMappingURL=chunk-I2JG3DDU.js.map
