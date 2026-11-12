@@ -81,6 +81,17 @@ function applyObserverVoteUpdate(
   );
 }
 
+/** The queries the deferred post-vote refresh invalidates. */
+export function voteInvalidationKeys(username: string | undefined, variables: VotePayload) {
+  return [
+    QueryKeys.posts.entry(`/@${variables.author}/${variables.permlink}`),
+    QueryKeys.accounts.full(username),
+    // The voter's looked-up vote: a lookup made before the vote must not
+    // outlive the chain state it predates.
+    QueryKeys.posts.entryVote(variables.author, variables.permlink, username),
+  ];
+}
+
 /**
  * React Query mutation hook for voting on posts and comments.
  *
@@ -165,10 +176,7 @@ export function useVote(
       // at mempool acceptance before block inclusion.
       if (auth?.adapter?.invalidateQueries) {
         const doInvalidate = () => {
-          auth.adapter!.invalidateQueries!([
-            QueryKeys.posts.entry(`/@${variables.author}/${variables.permlink}`),
-            QueryKeys.accounts.full(username)
-          ]);
+          auth.adapter!.invalidateQueries!(voteInvalidationKeys(username, variables));
         };
         const mode = broadcastMode ?? 'async';
         if (mode === 'async') {

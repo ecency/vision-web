@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { QueryKeys } from "@/modules/core";
-import { applyVoteCacheUpdate } from "./use-vote";
+import { applyVoteCacheUpdate, voteInvalidationKeys } from "./use-vote";
 
 // Issue #2056: v2 entries carry the observer's own vote instead of a voter list.
 describe("applyVoteCacheUpdate on a v2 entry (observer_vote)", () => {
@@ -101,5 +101,17 @@ describe("applyVoteCacheUpdate: zero votes and lightweight rows", () => {
     });
     applyVoteCacheUpdate("carol", { author: "alice", permlink: "edge-post", weight: 10000, estimated: 2 }, qc);
     expect(qc.getQueryData(entryKey)).toBe(entry);
+  });
+});
+
+// Review 5: the deferred post-vote refresh also drops the voter's looked-up
+// vote, so a lookup made before the vote does not outlive the chain state.
+describe("voteInvalidationKeys", () => {
+  it("covers the entry, the voter's account and the voter's own vote lookup", () => {
+    expect(voteInvalidationKeys("carol", { author: "alice", permlink: "p", weight: 1 })).toEqual([
+      QueryKeys.posts.entry("/@alice/p"),
+      QueryKeys.accounts.full("carol"),
+      QueryKeys.posts.entryVote("alice", "p", "carol"),
+    ]);
   });
 });

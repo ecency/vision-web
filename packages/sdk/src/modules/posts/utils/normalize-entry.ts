@@ -83,7 +83,9 @@ function deriveTopVotes(rows: VoteRow[]): EntryTopVote[] {
  * 3. `observer_vote` key present (v2): known, from it.
  * 4. `active_votes` array present (v1, condenser, private-api rows): the
  *    observer's row is the vote; absence is "not voted" only when the list has
- *    fewer than 1000 rows, otherwise unknown.
+ *    fewer than 1000 rows, otherwise unknown. A row with rshares 0 and no
+ *    percent is unknown too: a weighted vote can carry no rshares, and only
+ *    the percent tells it from a removed vote.
  * 5. Neither: unknown.
  *
  * Other fields: `active_votes` is always removed. `top_votes` from v2 is kept
@@ -115,7 +117,12 @@ export function normalizeEntry<T extends object>(raw: T, observer: string): Entr
     vote = toObserverVote((raw as { observer_vote?: unknown }).observer_vote);
   } else if (list) {
     const row = list.find((v) => v && v.voter === who);
-    if (row) {
+    const percentless = row && (row.percent === undefined || row.percent === null);
+    if (row && percentless && toNumber(row.rshares) === 0) {
+      // v1 rows carry only rshares, and a weighted vote can have none (live:
+      // vote_percent 7600, rshares 0). Such a row cannot tell a vote from a
+      // removed one: unknown, so the lookup (which has the percent) decides.
+    } else if (row) {
       voteFor = who;
       vote = toObserverVote({ rshares: row.rshares, percent: row.percent });
     } else if (list.length < BRIDGE_V1_ACTIVE_VOTES_CAP) {

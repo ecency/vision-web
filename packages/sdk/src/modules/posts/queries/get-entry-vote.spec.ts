@@ -69,3 +69,55 @@ describe("getEntryVote", () => {
     await expect(getEntryVote("bob", "post", "alice")).rejects.toThrow("boom");
   });
 });
+
+// Review 9a: the caller's AbortSignal reaches the batch.
+describe("getEntryVote: cancellation", () => {
+  beforeEach(() => {
+    mockBatch.mockReset();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network disabled in this spec"));
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("does not send a lookup whose caller cancelled before the batch went out", async () => {
+    answer([row()]);
+    const c = new AbortController();
+    const p = getEntryVote("bob", "post", "alice", c.signal);
+    c.abort();
+    await expect(p).rejects.toThrow();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(mockBatch).not.toHaveBeenCalled();
+  });
+
+  it("aborts the batch request when every caller in it cancelled", async () => {
+    let seen: AbortSignal | undefined;
+    mockBatch.mockImplementation(
+      (_calls: unknown[], opts: { signal?: AbortSignal }) =>
+        new Promise((_res, reject) => {
+          seen = opts?.signal;
+          opts?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        })
+    );
+    const a = new AbortController();
+    const b = new AbortController();
+    const pa = getEntryVote("bob", "p1", "alice", a.signal);
+    const pb = getEntryVote("bob", "p2", "alice", b.signal);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(seen?.aborted).toBe(false);
+    a.abort();
+    expect(seen?.aborted).toBe(false);
+    b.abort();
+    expect(seen?.aborted).toBe(true);
+    await expect(pa).rejects.toThrow();
+    await expect(pb).rejects.toThrow();
+  });
+
+  it("keeps the batch going for the callers that did not cancel", async () => {
+    answer([row({ permlink: "p2" })]);
+    const a = new AbortController();
+    const pa = getEntryVote("bob", "p1", "alice", a.signal);
+    const pb = getEntryVote("bob", "p2", "alice");
+    a.abort();
+    await expect(pa).rejects.toThrow();
+    await expect(pb).resolves.toEqual({ rshares: 120, percent: 5500 });
+  });
+});

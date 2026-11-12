@@ -144,11 +144,25 @@ describe("normalizeEntry (shape-driven, v1 or v2 in, one Entry out)", () => {
     ]);
   });
 
-  it("reads a zero vote (percent 0, or rshares 0 without percent) as no vote", () => {
-    expect(normalizeEntry({ ...V2, observer_vote: { rshares: 0, percent: 0 } }, "x").observer_vote).toBeNull();
-    expect(
-      normalizeEntry({ ...COMMON, active_votes: [{ voter: "x", rshares: 0 }] }, "x").observer_vote
-    ).toBeNull();
+  it("reads a v2 zero vote (percent 0) as no vote", () => {
+    const e = normalizeEntry({ ...V2, observer_vote: { rshares: 0, percent: 0 } }, "x");
+    expect(e.observer_vote).toBeNull();
+    expect(e.observer_vote_for).toBe("x");
+  });
+
+  it("leaves a v1 row with rshares 0 and no percent unknown", () => {
+    // Live: dividendencheck on hiveio/announcing-the-launch-of-hive-blockchain
+    // has vote_percent 7600 and rshares 0. v1 shows only the rshares, so the
+    // row cannot tell a weighted vote from a removed one: the lookup decides.
+    const e = normalizeEntry({ ...COMMON, active_votes: [{ voter: "x", rshares: 0 }] }, "x");
+    expect(e.observer_vote_for).toBeNull();
+    expect(e.observer_vote).toBeNull();
+  });
+
+  it("keeps a v1 row with rshares 0 and a percent (condenser rows carry one)", () => {
+    const e = normalizeEntry({ ...COMMON, active_votes: [{ voter: "x", rshares: 0, percent: 7600 }] }, "x");
+    expect(e.observer_vote_for).toBe("x");
+    expect(e.observer_vote).toEqual({ rshares: 0, percent: 7600 });
   });
 
   it("never relabels an already normalized entry for another observer", () => {

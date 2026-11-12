@@ -157,6 +157,27 @@ describe("getEntryActiveVotesQueryOptions: every voter of a 1500-vote post", () 
     expect(votes.every((v) => v.voter.startsWith("db"))).toBe(true);
   });
 
+  // Review 9b: rows are read by their SHAPE: a cache in front of the nodes
+  // may answer list_votes with the database_api body.
+  it("reads a database_api body answered for bridge.list_votes by its shape", async () => {
+    const rows = Array.from({ length: 3 }, (_, i) => ({
+      voter: `d${i}`,
+      author: "alice",
+      permlink: "big-post",
+      rshares: i,
+      vote_percent: 100,
+      weight: 1,
+      last_update: "t",
+    }));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+      const body = JSON.parse(String(init.body));
+      return rpc(body.id, { result: { votes: rows } });
+    });
+    const votes = await new QueryClient().fetchQuery(getEntryActiveVotesQueryOptions(entry));
+    expect(votes.map((v) => v.voter)).toEqual(["d0", "d1", "d2"]);
+    expect(votes[0].percent).toBe(100);
+  });
+
   it("stops when a page brings no new voter (a relay that answered the full list)", async () => {
     let n = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {

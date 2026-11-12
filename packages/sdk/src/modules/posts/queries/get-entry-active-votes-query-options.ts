@@ -103,7 +103,7 @@ export async function getEntryVotes(
   for (let page = 0; page < MAX_LIST_VOTES_PAGES; page++) {
     const params: Record<string, unknown> = { author, permlink, limit: LIST_VOTES_PAGE_SIZE };
     if (start !== undefined) params.start = start;
-    const { result, method } = await callRPCWithFallback<unknown>(
+    const { result } = await callRPCWithFallback<unknown>(
       { method: "bridge.list_votes", params },
       {
         method: "database_api.list_votes",
@@ -111,13 +111,16 @@ export async function getEntryVotes(
       },
       { signal }
     );
-    if (method !== "bridge.list_votes") {
-      const first = (result as { votes?: DatabaseVote[] } | null)?.votes;
+    // By SHAPE, not by the method that answered: a `{ votes }` body is a
+    // database_api page (a node without list_votes, or a cache answering the
+    // list_votes key with that body), an array is a list_votes page.
+    const dbPage = (result as { votes?: unknown } | null)?.votes;
+    if (!Array.isArray(result) && Array.isArray(dbPage)) {
       return getEntryVotesFromDatabase(
         author,
         permlink,
         signal,
-        page === 0 && Array.isArray(first) ? first : undefined
+        page === 0 ? (dbPage as DatabaseVote[]) : undefined
       );
     }
     const rows = Array.isArray(result) ? (result as Vote[]) : [];
@@ -151,11 +154,43 @@ export function getEntryActiveVotesQueryOptions(entry?: Pick<Entry, "author" | "
 /** Lookups per JSON-RPC batch request. */
 export const ENTRY_VOTE_BATCH_SIZE = 50;
 
+interface LookupWaiter {
+  resolve: (v: ObserverVote | null) => void;
+  reject: (e: unknown) => void;
+  signal?: AbortSignal;
+}
+
 interface PendingLookup {
   author: string;
   permlink: string;
   voter: string;
-  waiters: Array<{ resolve: (v: ObserverVote | null) => void; reject: (e: unknown) => void }>;
+  waiters: LookupWaiter[];
+}
+
+function abortError(signal?: AbortSignal): unknown {
+  if (signal?.reason !== undefined) return signal.reason;
+  const e = new Error("The lookup was aborted");
+  e.name = "AbortError";
+  return e;
+}
+
+const isLive = (w: LookupWaiter) => !w.signal?.aborted;
+
+/**
+ * A signal that aborts once EVERY waiter of the chunk has cancelled, so a
+ * batch nobody waits for any more is cancelled, while one caller leaving does
+ * not cancel the others' lookups. Undefined when some waiter cannot cancel.
+ */
+function chunkSignal(chunk: PendingLookup[]): AbortSignal | undefined {
+  const waiters = chunk.flatMap((l) => l.waiters);
+  if (waiters.length === 0 || waiters.some((w) => !w.signal)) return undefined;
+  const controller = new AbortController();
+  const check = () => {
+    if (waiters.every((w) => w.signal!.aborted)) controller.abort();
+  };
+  for (const w of waiters) w.signal!.addEventListener("abort", check, { once: true });
+  check();
+  return controller.signal;
 }
 
 let pendingLookups = new Map<string, PendingLookup>();
@@ -185,7 +220,8 @@ function readLookupRow(
 
 async function flushLookups(): Promise<void> {
   flushScheduled = false;
-  const batch = [...pendingLookups.values()];
+  // A lookup every caller of which has cancelled is not sent at all.
+  const batch = [...pendingLookups.values()].filter((l) => l.waiters.some(isLive));
   pendingLookups = new Map();
   for (let i = 0; i < batch.length; i += ENTRY_VOTE_BATCH_SIZE) {
     const chunk = batch.slice(i, i + ENTRY_VOTE_BATCH_SIZE);
@@ -194,7 +230,8 @@ async function flushLookups(): Promise<void> {
         chunk.map((l) => ({
           method: "database_api.list_votes",
           params: databaseListVotesParams(l.author, l.permlink, l.voter, 1),
-        }))
+        })),
+        { signal: chunkSignal(chunk) }
       );
       chunk.forEach((l, k) => {
         const answer = answers[k];
@@ -221,16 +258,24 @@ async function flushLookups(): Promise<void> {
 export function getEntryVote(
   author: string,
   permlink: string,
-  voter: string
+  voter: string,
+  signal?: AbortSignal
 ): Promise<ObserverVote | null> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError(signal));
+      return;
+    }
+    // A cancelled caller is released at once; its lookup is dropped or the
+    // batch cancelled only when nobody else waits for it (see chunkSignal).
+    signal?.addEventListener("abort", () => reject(abortError(signal)), { once: true });
     const key = `${author}\n${permlink}\n${voter}`;
     let lookup = pendingLookups.get(key);
     if (!lookup) {
       lookup = { author, permlink, voter, waiters: [] };
       pendingLookups.set(key, lookup);
     }
-    lookup.waiters.push({ resolve, reject });
+    lookup.waiters.push({ resolve, reject, signal });
     if (!flushScheduled) {
       flushScheduled = true;
       setTimeout(() => void flushLookups(), 0);
@@ -246,7 +291,7 @@ export function getEntryVoteQueryOptions(
 ) {
   return queryOptions({
     queryKey: QueryKeys.posts.entryVote(author, permlink, voter),
-    queryFn: async () => getEntryVote(author!, permlink!, voter!),
+    queryFn: async ({ signal }) => getEntryVote(author!, permlink!, voter!, signal),
     enabled: enabled && !!author && !!permlink && !!voter,
     staleTime: 5 * 60_000,
   });
