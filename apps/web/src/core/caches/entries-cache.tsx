@@ -202,10 +202,11 @@ export namespace EcencyEntriesCacheManagement {
             ...value,
             observer_vote: observerVote,
             observer_vote_for: voter,
+            // From the cached value, not the entry the hook was created with.
             stats: {
-              ...entry.stats || { gray: false, hide: false, flag_weight: 0, total_votes: 0 },
+              ...(value.stats || { gray: false, hide: false, flag_weight: 0, total_votes: 0 }),
               total_votes: nextTotalVotes,
-              flag_weight: entry?.stats?.flag_weight || 0
+              flag_weight: value.stats?.flag_weight || 0
             },
             total_votes: nextTotalVotes,
             net_votes: nextTotalVotes,

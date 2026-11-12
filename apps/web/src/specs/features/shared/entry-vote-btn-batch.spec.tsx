@@ -63,7 +63,7 @@ describe("EntryVoteBtn: a page of cards looks the user's votes up in one request
         observer_vote: { rshares: 1, percent: 10000 },
         observer_vote_for: "ecency"
       } as any);
-      delete (e as any).active_votes;
+      Reflect.deleteProperty(e, "active_votes");
       return e;
     });
 

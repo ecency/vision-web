@@ -59,7 +59,7 @@ const card = (permlink: string, observerFor = "ecency", vote: unknown = null) =>
     observer_vote: vote,
     observer_vote_for: observerFor
   } as any);
-  delete (e as any).active_votes;
+  Reflect.deleteProperty(e, "active_votes");
   return e;
 };
 
@@ -127,6 +127,30 @@ describe("EntryVoteBtn: the queued open", () => {
     account.user = null;
     r.rerender(<EntryVoteBtn entry={card("qlogout")} isPostSlider={false} />);
     expect(queuedOpenOwner()).toBeNull();
+  });
+
+  // PR review, item 5: a queued open belongs to the user who clicked.
+  it("cancels on a direct account switch (alice to bob)", async () => {
+    const r = renderWithQueryClient(<EntryVoteBtn entry={card("qswitch")} isPostSlider={false} />);
+    fireEvent.click(screen.getByRole("button"));
+    await waitFor(() => expect(answers.has("qswitch")).toBe(true));
+    account.user = { username: "bob" };
+    r.rerender(<EntryVoteBtn entry={card("qswitch")} isPostSlider={false} />);
+    expect(queuedOpenOwner()).toBeNull();
+    // Bob's own lookup answers: no slider opens without a click of his.
+    await waitFor(() => expect(answers.has("qswitch")).toBe(true));
+    await act(async () => answers.get("qswitch")!(null));
+    await settle();
+    expect(screen.queryByTestId("vote-dialog")).toBeNull();
+  });
+
+  it("does not hand a queued open to another user even if the slot is still held", async () => {
+    const { queueOpen, takeQueuedOpen } = await import("@/features/shared/entry-vote-btn/queued-open");
+    queueOpen("owner-x", "alice");
+    expect(takeQueuedOpen("owner-x", "bob")).toBe(false);
+    expect(queuedOpenOwner()).toBeNull();
+    queueOpen("owner-x", "alice");
+    expect(takeQueuedOpen("owner-x", undefined)).toBe(false);
   });
 
   it("does not scroll a late (queued) open into view; a direct open does", async () => {

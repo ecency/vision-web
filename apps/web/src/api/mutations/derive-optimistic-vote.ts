@@ -33,7 +33,8 @@ export function deriveOptimisticVote(
   const prior = priorVote !== undefined ? priorVote : entryVoteOf(entry, username);
   const hadVote = isCastVote(prior);
   const observerVote: ObserverVote | null =
-    weight !== 0 ? { rshares: weight, percent: weight } : null;
+    // No rshares yet: the node computes them once the vote is in a block.
+    weight !== 0 ? { rshares: null, percent: weight } : null;
 
   const baseVoteCount =
     entry.stats?.total_votes ||

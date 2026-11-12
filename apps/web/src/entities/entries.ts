@@ -12,7 +12,8 @@ export interface EntryVote {
 
 /** One account's vote (bridge v2 `observer_vote`); mirrors the SDK type. */
 export interface ObserverVote {
-  rshares: number;
+  /** Null for an optimistic vote: the node computes rshares once it is in a block. */
+  rshares: number | null;
   /** Basis points, negative for a downvote; null when the source did not say. */
   percent: number | null;
 }

@@ -46,7 +46,7 @@ function v2Row(permlink: string, total: number, aliceVoted: boolean) {
     // A feed row may still carry a stale net_votes; the count must not use it.
     net_votes: total - 7
   } as any);
-  delete (e as any).active_votes;
+  Reflect.deleteProperty(e, "active_votes");
   return e;
 }
 
@@ -67,5 +67,15 @@ describe("EntryVotes on a v2 feed page", () => {
       n.classList.contains("voted")
     );
     expect(hearts).toEqual([true, false, true]);
+  });
+});
+
+// PR review, item 6: stats.total_votes 0 is authoritative.
+describe("EntryVotes count of zero", () => {
+  it("shows 0, not a legacy count, when stats.total_votes is 0", () => {
+    const e = v2Row("zero", 0, false);
+    (e as { net_votes?: number }).net_votes = 1;
+    const { container } = renderWithQueryClient(<EntryVotes entry={e} />);
+    expect(container.querySelector(".entry-votes__count")).toHaveTextContent("0");
   });
 });

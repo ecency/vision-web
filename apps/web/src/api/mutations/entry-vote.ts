@@ -7,7 +7,16 @@ import { useVoteMutation } from "@/api/sdk-mutations";
 import { deriveOptimisticVote } from "./derive-optimistic-vote";
 import { useQueryClient } from "@tanstack/react-query";
 import { ObserverVote } from "@/entities";
-import { QueryKeys } from "@ecency/sdk";
+import { entryVoteOf, isCastVote, QueryKeys } from "@ecency/sdk";
+import { pickViewerVote } from "@/core/hooks/use-viewer-vote";
+
+/** Same vote: both not cast, or both cast with the same weight. */
+function sameVote(a: ObserverVote | null, b: ObserverVote | null): boolean {
+  const castA = isCastVote(a);
+  const castB = isCastVote(b);
+  if (castA !== castB) return false;
+  return !castA || a!.percent === b!.percent;
+}
 
 /**
  * Entry vote mutation hook.
@@ -30,13 +39,6 @@ export function useEntryVote(entry?: Entry | null) {
       if (!entry) throw new Error("Entry not provided");
       if (!activeUser) throw new Error("Active user not provided");
 
-      // The user's vote before this one, when the entry was read for another
-      // observer: the lookup the vote button made (useViewerVote). Read BEFORE
-      // the broadcast, whose SDK cache update writes the new vote there.
-      const priorVote = queryClient.getQueryData<ObserverVote | null>(
-        QueryKeys.posts.entryVote(entry.author, entry.permlink, activeUser.username)
-      );
-
       // Broadcast vote via SDK (SDK updates its own cache optimistically)
       await sdkMutation.mutateAsync({
         author: entry.author,
@@ -46,24 +48,42 @@ export function useEntryVote(entry?: Entry | null) {
       });
 
       // Optimistically reflect the vote on the web cache key: the user's
-      // observer_vote, the count and the payout. Neither bridge v2 entries nor
-      // the unified waves feed carry an `active_votes` list, so nothing here
-      // depends on one. The SDK's deferred
+      // observer_vote, the count and the payout. Derived from the entry cached
+      // NOW, after the broadcast: a post refetch may have landed meanwhile,
+      // and the SDK's own vote cache update usually already applied this vote
+      // to the same entry (then there is nothing left to do, and doing it
+      // again would add the payout estimate twice). The SDK's deferred
       // invalidation reconciles the authoritative values afterwards.
       //
       // The vote is already broadcast at this point, so a failure in this local
-      // cache update must not bubble up as a vote error; the deferred
-      // invalidation reconciles regardless.
+      // cache update must not bubble up as a vote error.
       try {
+        const username = activeUser.username;
+        const entryQueryKey = EcencyEntriesCacheManagement.getEntryQuery(entry).queryKey;
+        const cached = queryClient.getQueryData<Entry>(entryQueryKey);
+        if (!cached) return;
+        const next: ObserverVote | null = weight !== 0 ? { rshares: null, percent: weight } : null;
+        const inEntry = entryVoteOf(cached, username);
+        if (inEntry !== undefined && sameVote(inEntry, next)) return;
+
+        // The prior vote: the newer of the entry (read for this user) and the
+        // looked-up vote, the same rule the vote button shows.
+        const lookupKey = QueryKeys.posts.entryVote(entry.author, entry.permlink, username);
+        const prior = pickViewerVote(
+          inEntry,
+          queryClient.getQueryState(entryQueryKey)?.dataUpdatedAt,
+          queryClient.getQueryData<ObserverVote | null>(lookupKey),
+          queryClient.getQueryState(lookupKey)?.dataUpdatedAt
+        );
         const { observerVote, nextVoteCount, nextPayout } = deriveOptimisticVote(
-          entry,
+          cached,
           weight,
           estimated,
-          activeUser.username,
-          priorVote
+          username,
+          prior
         );
         updateVotes({
-          voter: activeUser.username,
+          voter: username,
           observerVote,
           payout: nextPayout,
           totalVotes: nextVoteCount

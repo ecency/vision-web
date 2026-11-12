@@ -8,6 +8,7 @@ vi.mock("@/utils", async () => ({
 }));
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import type { Entry } from "@/entities";
+import { QueryKeys } from "@ecency/sdk";
 
 // Review D: vote fields must never come from an older object when newer data
 // exists. getEntryQuery seeds the shared entry cache with whatever row a card
@@ -62,7 +63,7 @@ describe("useUpdateVotes", () => {
     const sdk = await import("@ecency/sdk");
     const qc = new QueryClient();
     const entry = { ...base, stats: { total_votes: 1, flag_weight: 0, gray: false, hide: false } } as Entry;
-    qc.setQueryData(["posts", "entry", "/@bob/p"], entry);
+    qc.setQueryData(QueryKeys.posts.entry("/@bob/p"), entry);
     const wrapper = ({ children }: { children: React.ReactNode }) =>
       React.createElement(QueryClientProvider, { client: qc }, children);
     const { result } = renderHook(() => EcencyEntriesCacheManagement.useUpdateVotes(entry), { wrapper });

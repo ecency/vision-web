@@ -365,7 +365,7 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
       observer_vote: { rshares: 123, percent: 10000 },
       observer_vote_for: "alice"
     } as any);
-    delete (entry as any).active_votes;
+    Reflect.deleteProperty(entry, "active_votes");
 
     renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
 
@@ -385,7 +385,7 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
       observer_vote: { rshares: 999, percent: 10000 },
       observer_vote_for: "ecency"
     } as any);
-    delete (entry as any).active_votes;
+    Reflect.deleteProperty(entry, "active_votes");
     let answer: (v: unknown) => void = () => {};
     lookup.mockImplementation(() => new Promise((res) => (answer = res)));
 
@@ -410,7 +410,7 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
       observer_vote: null,
       observer_vote_for: "ecency"
     } as any);
-    delete (entry as any).active_votes;
+    Reflect.deleteProperty(entry, "active_votes");
     lookup.mockResolvedValue({ rshares: -50, percent: -2500 });
 
     renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
@@ -429,7 +429,7 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
       observer_vote: { rshares: 10, percent: 6000 },
       observer_vote_for: "alice"
     } as any);
-    delete (entry as any).active_votes;
+    Reflect.deleteProperty(entry, "active_votes");
     const queryClient = createTestQueryClient();
     const fetchSpy = vi.spyOn(queryClient, "fetchQuery");
 
@@ -471,7 +471,7 @@ describe("EntryVoteBtn: precedence and the session key", () => {
       observer_vote: entryVoted ? { rshares: 5, percent: 10000 } : null,
       observer_vote_for: "alice"
     } as any);
-    delete (entry as any).active_votes;
+    Reflect.deleteProperty(entry, "active_votes");
     const queryClient = createTestQueryClient();
     queryClient.setQueryData(["entry", "bob", permlink], entry, { updatedAt: entryAt });
     queryClient.setQueryData(
@@ -504,7 +504,7 @@ describe("EntryVoteBtn: precedence and the session key", () => {
         observer_vote: { rshares: 1, percent: 10000 },
         observer_vote_for: "alice"
       } as any);
-      delete (e as any).active_votes;
+      Reflect.deleteProperty(e, "active_votes");
       delete (e as any).post_id;
       return e;
     };
@@ -553,7 +553,7 @@ describe("EntryVoteBtn: the unknown window", () => {
       observer_vote: null,
       observer_vote_for: "ecency"
     } as any);
-    delete (e as any).active_votes;
+    Reflect.deleteProperty(e, "active_votes");
     return e;
   };
 

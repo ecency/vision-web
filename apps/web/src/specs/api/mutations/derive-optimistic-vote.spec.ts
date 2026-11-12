@@ -59,7 +59,7 @@ describe("deriveOptimisticVote", () => {
     expect(result.nextPayout).toBeCloseTo(0.012, 6); // 0 summed strings + estimated
     // No voter list: the result carries the user's vote, never a list.
     expect(result).not.toHaveProperty("newVotes");
-    expect(result.observerVote).toEqual({ rshares: UP, percent: UP });
+    expect(result.observerVote).toEqual({ rshares: null, percent: UP });
   });
 
   it("sums the existing payout strings of a feed wave as the base payout", () => {
@@ -83,7 +83,7 @@ describe("deriveOptimisticVote", () => {
     );
 
     expect(nextVoteCount).toBe(3); // 2 -> 3
-    expect(observerVote).toEqual({ rshares: UP, percent: UP });
+    expect(observerVote).toEqual({ rshares: null, percent: UP });
     expect(nextPayout).toBeCloseTo(3.5, 6); // numeric payout 3 + estimated
   });
 
@@ -123,7 +123,7 @@ describe("deriveOptimisticVote on a v2 entry", () => {
 
   it("sets observer_vote and adds one vote", () => {
     const r = deriveOptimisticVote(v2Entry(), UP, 0.5, "dave");
-    expect(r.observerVote).toEqual({ rshares: UP, percent: UP });
+    expect(r.observerVote).toEqual({ rshares: null, percent: UP });
     expect(r.nextVoteCount).toBe(1501);
     expect(r.nextPayout).toBeCloseTo(3.5, 6);
     expect(r).not.toHaveProperty("newVotes");
@@ -136,7 +136,7 @@ describe("deriveOptimisticVote on a v2 entry", () => {
       0,
       "dave"
     );
-    expect(r.observerVote).toEqual({ rshares: 5000, percent: 5000 });
+    expect(r.observerVote).toEqual({ rshares: null, percent: 5000 });
     expect(r.nextVoteCount).toBe(1500);
   });
 

@@ -3,6 +3,7 @@ import "@testing-library/jest-dom";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
+import { QueryKeys } from "@ecency/sdk";
 import { renderWithQueryClient } from "@/specs/test-utils";
 import { installFetchRouter, makePost, makeRoster, makeRow, NOW } from "./curation-test-utils";
 
@@ -217,7 +218,7 @@ describe("CurationQuickView", () => {
   // is then read once more, as a post, for its top voters.
   it("reads the open post once when the cached row has no top_votes", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-    client.setQueryData(["posts", "entry", "/@alice/morning-light"], {
+    client.setQueryData(QueryKeys.posts.entry("/@alice/morning-light"), {
       author: "alice",
       permlink: "morning-light",
       body: "feed row body",
@@ -245,7 +246,7 @@ describe("CurationQuickView", () => {
 
   it("does not read the post again when the cached row has top_votes", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-    client.setQueryData(["posts", "entry", "/@alice/morning-light"], {
+    client.setQueryData(QueryKeys.posts.entry("/@alice/morning-light"), {
       author: "alice",
       permlink: "morning-light",
       body: "cached",
@@ -485,7 +486,7 @@ describe("CurationQuickView", () => {
     const onTipHandled = vi.fn();
     const onVoteHandled = vi.fn();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-    client.setQueryData(["posts", "entry", "/@alice/morning-light"], {
+    client.setQueryData(QueryKeys.posts.entry("/@alice/morning-light"), {
       author: "alice",
       permlink: "morning-light",
       body: "cached body",
@@ -519,7 +520,7 @@ describe("CurationQuickView", () => {
   it("never renders the previous post's open reply box on a cached next post, not even for a frame", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     for (const r of [row, next]) {
-      client.setQueryData(["posts", "entry", `/@${r.author}/${r.permlink}`], { author: r.author, permlink: r.permlink, body: "cached", json_metadata: {}, top_votes: [] });
+      client.setQueryData(QueryKeys.posts.entry(`/@${r.author}/${r.permlink}`), { author: r.author, permlink: r.permlink, body: "cached", json_metadata: {}, top_votes: [] });
     }
     const boxes: string[] = [];
     const observer = new MutationObserver(() => {

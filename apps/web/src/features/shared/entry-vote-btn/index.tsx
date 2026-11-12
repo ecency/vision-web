@@ -215,18 +215,18 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
       setDialog(false);
       return;
     }
-    if (votePending) {
-      queueOpen(queueId);
+    if (votePending && activeUser) {
+      queueOpen(queueId, activeUser.username);
       return;
     }
     setDialog(true);
-  }, [dialog, votePending, queueId]);
+  }, [dialog, votePending, queueId, activeUser]);
   useEffect(() => {
-    if (isQueued && !votePending && takeQueuedOpen(queueId)) {
+    if (isQueued && !votePending && takeQueuedOpen(queueId, activeUser?.username)) {
       openedFromQueue.current = true;
       setDialog(true);
     }
-  }, [votePending, isQueued, queueId]);
+  }, [votePending, isQueued, queueId, activeUser?.username]);
   useEffect(() => {
     if (!isQueued) return;
     const cancel = () => cancelQueuedOpen(queueId);
@@ -241,9 +241,15 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
     };
   }, [isQueued, queueId]);
   useEffect(() => () => cancelQueuedOpen(queueId), [queueId]);
+  // A queued open belongs to the account that clicked: any change of account
+  // (logout, or a direct switch to another user) cancels it.
+  const queuedFor = useRef(activeUser?.username);
   useEffect(() => {
-    if (!activeUser) cancelQueuedOpen(queueId);
-  }, [activeUser, queueId]);
+    if (queuedFor.current !== activeUser?.username) {
+      queuedFor.current = activeUser?.username;
+      cancelQueuedOpen(queueId);
+    }
+  }, [activeUser?.username, queueId]);
 
   // Resolve the user's previous vote WHILE the slider is open rather than before
   // opening it, so the open paints immediately instead of blocking on

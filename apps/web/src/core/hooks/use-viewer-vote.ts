@@ -40,6 +40,25 @@ export interface ViewerVote {
  * A failed lookup ends the unknown window as "not voted" (`known` true), so
  * the button never stays pending.
  */
+/**
+ * The user's prior vote from the two places it can be known: the entry, when
+ * it was read for this user, and the looked-up vote. When both are at hand
+ * the one fetched later wins (React Query's dataUpdatedAt); a tie goes to the
+ * lookup, which an optimistic vote writes together with the entry. Undefined
+ * when neither knows. Shared by the vote button and the optimistic update.
+ */
+export function pickViewerVote(
+  fromEntry: ObserverVote | null | undefined,
+  entryUpdatedAt: number | undefined,
+  lookedUp: ObserverVote | null | undefined,
+  lookupUpdatedAt: number | undefined
+): ObserverVote | null | undefined {
+  if (fromEntry !== undefined && lookedUp !== undefined) {
+    return (entryUpdatedAt ?? 0) > (lookupUpdatedAt ?? 0) ? fromEntry : lookedUp;
+  }
+  return lookedUp !== undefined ? lookedUp : fromEntry;
+}
+
 export function useViewerVote(
   entry: Entry | null | undefined,
   entryUpdatedAt?: number
@@ -60,12 +79,7 @@ export function useViewerVote(
       fromEntry === undefined && !!entry && !!username
     )
   );
-  let resolved: ObserverVote | null | undefined;
-  if (fromEntry !== undefined && lookedUp !== undefined) {
-    resolved = (entryUpdatedAt ?? 0) > lookupUpdatedAt ? fromEntry : lookedUp;
-  } else {
-    resolved = lookedUp !== undefined ? lookedUp : fromEntry;
-  }
+  const resolved = pickViewerVote(fromEntry, entryUpdatedAt, lookedUp, lookupUpdatedAt);
   const direction = username ? voteDirection(resolved ?? null) : null;
   const known = !!username && (resolved !== undefined || lookupFailed);
   return {

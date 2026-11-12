@@ -49,11 +49,12 @@ export function EntryVotes({
   // without stats (it stopped at 1000 on v1, and v2 rows carry no list).
   const totalVotes = useMemo(
     () =>
-      entry?.stats?.total_votes ||
-      (entry?.active_votes && entry?.active_votes?.length) ||
-      entry?.net_votes ||
-      entry?.total_votes ||
-      0,
+      // `??`: a stats.total_votes of 0 is a count, not "absent".
+      entry?.stats?.total_votes ??
+      ((entry?.active_votes && entry?.active_votes?.length) ||
+        entry?.net_votes ||
+        entry?.total_votes ||
+        0),
     [entry]
   );
   const title = useMemo(
