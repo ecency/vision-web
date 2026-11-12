@@ -176,6 +176,35 @@ describe('PostLikes', () => {
     expect(count()).toBe('10');
   });
 
+  // Round 6, item 2: a failing lookup does not stall the click through the
+  // client's default retries (3, with backoff: 7 s or more).
+  it('a failing lookup lets the vote go out after one attempt', async () => {
+    currentQc = new QueryClient({ defaultOptions: { queries: { retry: 3, staleTime: Infinity } } });
+    const entry = post('lookup-down');
+    currentQc.setQueryData(QueryKeys.posts.entry('/@bob/lookup-down'), entry);
+    state.lookup.mockRejectedValue(new Error('all nodes down'));
+    await render(entry);
+    const t0 = Date.now();
+    await click();
+    await vi.waitFor(() => expect(state.broadcast).toHaveBeenCalledTimes(1), { timeout: 800 });
+    expect(Date.now() - t0).toBeLessThan(800);
+    expect(state.lookup.mock.calls.length).toBeLessThanOrEqual(2);
+  });
+
+  // Round 6, item 3: when the click-time lookup failed, the prior vote stays
+  // unknown; the cast vote is not written as though it were known, so a quick
+  // second click cannot subtract from a count that never went up.
+  it('a failed lookup, a vote and a second click leave 10', async () => {
+    const entry = post('unknown-prior');
+    currentQc.setQueryData(QueryKeys.posts.entry('/@bob/unknown-prior'), entry);
+    state.lookup.mockRejectedValue(new Error('all nodes down'));
+    await render(entry);
+    await click();
+    expect(count()).toBe('10');
+    await click();
+    expect(count()).toBe('10');
+  });
+
   it('a failed broadcast leaves 10', async () => {
     const entry = post('fails');
     currentQc.setQueryData(QueryKeys.posts.entry('/@bob/fails'), entry);

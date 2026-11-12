@@ -61,9 +61,13 @@ export function VoteButton({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data: ownVote } = useQuery(
-    getEntryVoteQueryOptions(author, permlink, user?.username, !!user?.username),
-  );
+  // No retries: the lookup is cheap and batched, and a click waits for it
+  // (below), so a retrying lookup would stall the vote through the backoff.
+  // A failed lookup leaves the vote unknown until the next read.
+  const { data: ownVote } = useQuery({
+    ...getEntryVoteQueryOptions(author, permlink, user?.username, !!user?.username),
+    retry: false,
+  });
   const voted = isCastVote(ownVote);
 
   const adapter = createBroadcastAdapter();
@@ -83,9 +87,14 @@ export function VoteButton({
       // (+1 fresh, -1 removed, 0 for a new weight), and skips when it does not
       // know it. So the prior vote is known before the broadcast: a click that
       // came before the lookup answered waits for it (the same request).
-      if (ownVote === undefined) {
+      let priorKnown = ownVote !== undefined;
+      if (!priorKnown) {
         try {
-          await queryClient.fetchQuery(getEntryVoteQueryOptions(author, permlink, user.username));
+          await queryClient.fetchQuery({
+            ...getEntryVoteQueryOptions(author, permlink, user.username),
+            retry: false,
+          });
+          priorKnown = true;
         } catch {
           // Lookup failed: vote anyway; the count catches up on the next read.
         }
@@ -95,9 +104,14 @@ export function VoteButton({
       // write the visitor's vote into the lookup. The count is NOT moved here:
       // the SDK's vote cache update already moves stats.total_votes in the
       // entry the page reads (`totalVotes` comes from it).
-      const next: ObserverVote | null = weight !== 0 ? { rshares: weight, percent: weight } : null;
-      queryClient.setQueryData(QueryKeys.posts.entryVote(author, permlink, user.username), next);
-      recordOptimisticVote(author, permlink, user.username, next);
+      // Only when the prior vote was known: writing the cast vote over an
+      // unknown prior would let a quick second click (now an unvote) take one
+      // from a count the SDK never moved up. Unknown stays unknown.
+      if (priorKnown) {
+        const next: ObserverVote | null = weight !== 0 ? { rshares: weight, percent: weight } : null;
+        queryClient.setQueryData(QueryKeys.posts.entryVote(author, permlink, user.username), next);
+        recordOptimisticVote(author, permlink, user.username, next);
+      }
     },
     [user, author, permlink, voteMutation, queryClient, ownVote]
   );
