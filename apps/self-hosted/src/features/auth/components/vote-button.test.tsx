@@ -70,6 +70,8 @@ async function render(totalVotes: number) {
 
 describe('self-hosted VoteButton', () => {
   beforeEach(() => {
+    // The real SDK is spread into the mock: nothing may reach a node.
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network disabled in this spec'));
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -80,6 +82,7 @@ describe('self-hosted VoteButton', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
   });
 
   it('shows stats.total_votes and loads nothing for an anonymous visitor', async () => {
@@ -113,6 +116,8 @@ describe('self-hosted VoteButton with the real vote cache update', () => {
   }
 
   beforeEach(() => {
+    // The real SDK is spread into the mock: nothing may reach a node.
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network disabled in this spec'));
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -123,6 +128,7 @@ describe('self-hosted VoteButton with the real vote cache update', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
   });
 
   it('shows 11 after one vote on a post with 10', async () => {
