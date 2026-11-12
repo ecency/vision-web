@@ -1,7 +1,7 @@
 {
   "name": "@ecency/ui",
   "private": false,
-  "version": "1.0.2",
+  "version": "1.0.1",
   "description": "Shared UI components for Ecency applications",
   "repository": {
     "type": "git",
