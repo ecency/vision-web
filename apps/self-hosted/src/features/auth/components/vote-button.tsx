@@ -4,7 +4,7 @@ import { VoteButton as BaseVoteButton, type Vote } from "@ecency/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UilHeart } from "@tooni/iconscout-unicons-react";
 import clsx from "clsx";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   getEntryVoteQueryOptions,
@@ -20,7 +20,10 @@ import { useAuth, useIsAuthenticated, useIsAuthEnabled } from "../hooks";
 interface VoteButtonProps {
   author: string;
   permlink: string;
-  /** The post's vote count (`stats.total_votes`). */
+  /**
+   * The post's vote count (`stats.total_votes`), read from the entry cache by
+   * the caller, so the SDK's optimistic vote update moves it.
+   */
   totalVotes: number;
   showCount?: boolean;
   className?: string;
@@ -60,8 +63,6 @@ export function VoteButton({
     getEntryVoteQueryOptions(author, permlink, user?.username, !!user?.username),
   );
   const voted = isCastVote(ownVote);
-  // Count change from this visitor's votes in this page view.
-  const [delta, setDelta] = useState(0);
 
   const adapter = createBroadcastAdapter();
   const voteMutation = useVote(user?.username, { adapter });
@@ -78,13 +79,13 @@ export function VoteButton({
 
       await voteMutation.mutateAsync({ author, permlink, weight });
       // The vote is only in the mempool yet, so a refetch would not show it:
-      // write the visitor's vote into the lookup and move the count.
+      // write the visitor's vote into the lookup. The count is NOT moved here:
+      // the SDK's vote cache update already moves stats.total_votes in the
+      // entry the page reads (`totalVotes` comes from it).
       const next: ObserverVote | null = weight !== 0 ? { rshares: weight, percent: weight } : null;
       queryClient.setQueryData(QueryKeys.posts.entryVote(author, permlink, user.username), next);
-      if (!voted && next) setDelta((d) => d + 1);
-      if (voted && !next) setDelta((d) => d - 1);
     },
-    [user, author, permlink, voteMutation, queryClient, voted]
+    [user, author, permlink, voteMutation, queryClient]
   );
 
   const handleAuthRequired = useCallback(() => {
@@ -96,7 +97,7 @@ export function VoteButton({
 
   const ownRow: Vote[] =
     voted && user ? [{ voter: user.username, percent: ownVote!.percent ?? 10000, rshares: ownVote!.rshares }] : [];
-  const count = Math.max(0, (totalVotes || 0) + delta);
+  const count = Math.max(0, totalVotes || 0);
 
   return (
     <span className="flex items-center gap-1">
