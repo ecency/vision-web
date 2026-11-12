@@ -1,5 +1,5 @@
 import { getQueryClient, QueryKeys } from "@/modules/core";
-import type { Entry, EntryVote, ObserverVote } from "../types";
+import type { Entry, ObserverVote } from "../types";
 import type { QueryClient } from "@tanstack/react-query";
 
 function makeEntryPath(author: string, permlink: string) {
@@ -49,37 +49,6 @@ function mutateEntry(
  * during the migration period.
  */
 export namespace EntriesCacheManagement {
-  export function updateVotes(
-    author: string,
-    permlink: string,
-    votes: EntryVote[],
-    payout: number,
-    qc?: QueryClient
-  ) {
-    mutateEntry(
-      author,
-      permlink,
-      (entry) => ({
-        ...entry,
-        active_votes: votes,
-        stats: {
-          ...(entry.stats || {
-            gray: false,
-            hide: false,
-            flag_weight: 0,
-            total_votes: 0,
-          }),
-          total_votes: votes.length,
-          flag_weight: entry.stats?.flag_weight || 0,
-        },
-        total_votes: votes.length,
-        payout,
-        pending_payout_value: String(payout),
-      }),
-      qc
-    );
-  }
-
   /**
    * Record `voter`'s vote on a cached entry (bridge v2 shape): sets
    * `observer_vote` / `observer_vote_for`, the vote count and the payout, and

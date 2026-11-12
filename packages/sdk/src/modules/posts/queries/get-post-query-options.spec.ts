@@ -126,7 +126,9 @@ describe('getPostQueryOptions', () => {
       expect(mockCallRPC).toHaveBeenCalledWith('bridge.get_post_v2', {
         author: 'testauthor',
         permlink: 'test-permlink',
-        observer: 'observer'
+        observer: 'observer',
+        // The five strongest voters ride along (curation drawer, review G).
+        top_votes: 5
       })
     })
 
@@ -140,7 +142,8 @@ describe('getPostQueryOptions', () => {
       expect(mockCallRPC).toHaveBeenCalledWith('bridge.get_post_v2', {
         author: 'testauthor',
         permlink: 'test-permlink',
-        observer: ''
+        observer: '',
+        top_votes: 5
       })
     })
 

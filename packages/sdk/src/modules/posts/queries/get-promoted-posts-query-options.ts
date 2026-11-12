@@ -1,5 +1,6 @@
 import { ConfigManager, getBoundFetch, QueryKeys } from "@/modules/core";
 import { queryOptions } from "@tanstack/react-query";
+import { normalizeEntry } from "../utils/normalize-entry";
 
 // TODO: replace any with Entry
 export function getPromotedPostsQuery<T extends any>(
@@ -22,7 +23,11 @@ export function getPromotedPostsQuery<T extends any>(
         },
       });
       const data = await response.json();
-      return data as T[];
+      // These rows carry raw active_votes: normalize them like bridge reads
+      // (no observer, so the vote is stated as unknown and looked up).
+      return (Array.isArray(data)
+        ? data.map((row) => (row && typeof row === "object" ? normalizeEntry(row, "") : row))
+        : data) as T[];
     },
   });
 }

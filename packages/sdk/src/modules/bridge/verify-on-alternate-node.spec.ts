@@ -19,7 +19,8 @@ describe("verifyPostOnAlternateNode", () => {
 
     const result = await verifyPostOnAlternateNode("author", "permlink", "obs");
 
-    expect(result).toEqual(mockEntry);
+    // Normalized: a row with neither vote field states the vote as unknown.
+    expect(result).toEqual({ ...mockEntry, observer_vote: null, observer_vote_for: null });
     expect(mockCallWithQuorum).toHaveBeenCalledWith(
       "bridge.get_post",
       { author: "author", permlink: "permlink", observer: "obs" },
@@ -58,7 +59,7 @@ describe("verifyPostOnAlternateNode", () => {
 
     const result = await verifyPostOnAlternateNode("author", "permlink", "");
 
-    expect(result).toEqual(correctEntry);
+    expect(result).toEqual({ ...correctEntry, observer_vote: null, observer_vote_for: null });
   });
 
   it("should return null for non-object response", async () => {

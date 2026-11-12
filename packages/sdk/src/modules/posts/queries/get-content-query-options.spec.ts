@@ -73,7 +73,8 @@ describe("getContentQueryOptions", () => {
 
     const result = await run("alice", "a-post");
 
-    expect(result).toEqual(entry());
+    // Untouched apart from the vote pair every normalized entry carries.
+    expect(result).toEqual({ ...entry(), observer_vote: null, observer_vote_for: null });
   });
 
   it("asks condenser_api for the post it was given", async () => {
@@ -91,5 +92,21 @@ describe("getContentQueryOptions", () => {
     mockCallRPC.mockResolvedValue(null);
 
     await expect(run("alice", "gone")).resolves.toBeNull();
+  });
+});
+
+// Review D: a condenser row carries its whole voter list; it goes through the
+// same normalizer as every other source, so no raw list reaches a card.
+describe("getContentQueryOptions: vote fields", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it("drops active_votes and states the vote as unknown", async () => {
+    mockCallRPC.mockResolvedValue(
+      entry({ active_votes: [{ voter: "bob", rshares: 5, percent: 10000 }] })
+    );
+    const out = await run("alice", "a-post");
+    expect(out).not.toHaveProperty("active_votes");
+    expect(out.observer_vote_for).toBeNull();
+    expect(out.observer_vote).toBeNull();
+    expect(out.root_author).toBe("alice");
   });
 });

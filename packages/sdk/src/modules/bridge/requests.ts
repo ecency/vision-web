@@ -13,6 +13,12 @@ export function bridgeApiCall<T>(endpoint: string, params: BridgeParams, signal?
   return callRPC(`bridge.${endpoint}`, params, undefined, undefined, signal) as Promise<T>;
 }
 
+/**
+ * How many of the strongest voters a single-post read asks for (bridge v2
+ * `top_votes`). A v1 answer gets them derived by normalizeEntry instead.
+ */
+export const POST_TOP_VOTES = 5;
+
 /** Params only the v2 methods accept: v1 rejects them as unexpected keywords. */
 const BRIDGE_V2_ONLY_PARAMS = ["top_votes"];
 
@@ -239,6 +245,7 @@ export async function getPost(
     author,
     permlink,
     observer,
+    top_votes: POST_TOP_VOTES,
   }, signal);
 
   if (resp) {

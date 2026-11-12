@@ -19,11 +19,14 @@ export interface ObserverVote {
   percent: number | null;
 }
 
-/** A row of bridge v2 `top_votes` (only present when requested). */
+/**
+ * A row of `top_votes`: from bridge v2 when requested, or derived from a v1
+ * voter list by `normalizeEntry` (percent null when the row had none).
+ */
 export interface EntryTopVote {
   voter: string;
   rshares: number;
-  percent: number;
+  percent: number | null;
 }
 
 export interface EntryStat {
@@ -63,25 +66,20 @@ export interface JsonPollMetadata {
 
 export interface Entry {
   last_update?: string;
+  // No `active_votes`: entries carry no voter list (bridge v2; removed from
+  // every other source by normalizeEntry). Count with `stats.total_votes`,
+  // read a user's own vote with `entryVoteOf` / `getEntryVoteQueryOptions`,
+  // and load the full list on demand with `getEntryActiveVotesQueryOptions`.
   /**
-   * @deprecated Bridge v2 reads no longer return the voter list (and v1 capped
-   * it at 1000). Count with `stats.total_votes`, read the viewer's own vote
-   * with `entryVoteOf` / `getEntryVoteQueryOptions`, and load the full list on
-   * demand with `getEntryActiveVotesQueryOptions`. Still present on rows from
-   * sources that send it (some feeds, optimistic platform layers).
-   */
-  active_votes?: EntryVote[];
-  /**
-   * Vote of the account in `observer_vote_for` on this entry: the vote,
-   * null when that account has not voted, undefined when unknown.
+   * Vote of the account in `observer_vote_for`: the vote, or null when that
+   * account has not voted. Meaningless when `observer_vote_for` is null.
    */
   observer_vote?: ObserverVote | null;
   /**
-   * The observer the read was made for. `observer_vote` describes THIS
-   * account only; never show it as another user's vote. Absent when the
-   * source could not tell (see `normalizeEntry`).
+   * The account `observer_vote` belongs to; null when unknown (see the
+   * `normalizeEntry` contract). Never show the vote as another user's.
    */
-  observer_vote_for?: string;
+  observer_vote_for?: string | null;
   /** Bridge v2 `top_votes`, when the read asked for them. */
   top_votes?: EntryTopVote[];
   author: string;

@@ -150,9 +150,11 @@ describe("getPost on a node that serves bridge.get_post_v2", () => {
 
   it("makes exactly one bridge.get_post_v2 call and returns observer_vote without active_votes", async () => {
     const methods: string[] = [];
+    const params: unknown[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
       const body = JSON.parse(String(init.body));
       methods.push(body.method);
+      params.push(body.params);
       const result =
         body.method === "bridge.get_post_v2"
           ? {
@@ -173,6 +175,7 @@ describe("getPost on a node that serves bridge.get_post_v2", () => {
     const entry = await getPost("alice", "p", "bob");
 
     expect(methods).toEqual(["bridge.get_post_v2"]);
+    expect(params[0]).toEqual({ author: "alice", permlink: "p", observer: "bob", top_votes: 5 });
     expect(entry?.observer_vote).toEqual({ rshares: 123, percent: 5000 });
     expect(entry?.observer_vote_for).toBe("bob");
     expect(entry?.stats?.total_votes).toBe(1059);

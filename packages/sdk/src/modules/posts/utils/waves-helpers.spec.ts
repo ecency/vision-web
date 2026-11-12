@@ -53,6 +53,25 @@ describe('waves-helpers', () => {
       expect(result?.container.host).toBe(mockHost)
     })
 
+    // Review D: feed rows go through normalizeEntry like every other source.
+    it('states the vote as unknown and drops a raw voter list', () => {
+      const result = normalizeWaveEntryFromApi(
+        { author: 'u', permlink: 'p', post_id: 1, active_votes: [{ voter: 'x', rshares: 1 }] } as any,
+        mockHost
+      ) as any
+      expect(result).not.toHaveProperty('active_votes')
+      expect(result.observer_vote_for).toBeNull()
+      expect(result.observer_vote).toBeNull()
+    })
+
+    it('keeps the vote pair of an entry that was already normalized', () => {
+      const result = normalizeWaveEntryFromApi(
+        { author: 'u', permlink: 'p', post_id: 1, observer_vote: { rshares: 3, percent: 100 }, observer_vote_for: 'alice' } as any,
+        mockHost
+      ) as any
+      expect(result.observer_vote_for).toBe('alice')
+    })
+
     it('should return null for null entry', () => {
       const result = normalizeWaveEntryFromApi(null, mockHost)
       expect(result).toBeNull()

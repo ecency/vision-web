@@ -3,7 +3,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { Entry } from "../types";
 import { filterDmcaEntry } from "../utils/filter-dmca-entries";
 import { verifyPostOnAlternateNode } from "@/modules/bridge/verify-on-alternate-node";
-import { bridgeV2Call } from "@/modules/bridge/requests";
+import { bridgeV2Call, POST_TOP_VOTES } from "@/modules/bridge/requests";
 import { normalizeEntry } from "../utils/normalize-entry";
 
 export function getPostQueryOptions(
@@ -28,6 +28,7 @@ export function getPostQueryOptions(
         author,
         permlink: cleanPermlink,
         observer,
+        top_votes: POST_TOP_VOTES,
       });
       const response = raw ? normalizeEntry(raw, observer) : raw;
 
