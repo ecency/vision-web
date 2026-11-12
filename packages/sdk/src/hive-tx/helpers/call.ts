@@ -70,7 +70,9 @@ type ProxyMissReason = 'status' | 'rpcerror' | 'timeout' | 'transport' | 'valida
 class ProxyMiss extends Error {
   constructor(
     public reason: ProxyMissReason,
-    message: string
+    message: string,
+    /** The relayed node error says the method does not exist there. */
+    public unknownMethod = false
   ) {
     super(message)
   }
@@ -129,14 +131,30 @@ async function proxyRpcCall<T>(
       throw new ProxyMiss(tSignal.aborted ? 'timeout' : 'transport', errorMessage(e))
     }
     if (res.status !== 200) {
-      // Release the connection: an unconsumed body pins a pooled socket.
-      try {
-        await res.body?.cancel()
-      } catch {
-        // nothing to release
-      }
       const relayed = res.status === 502 && (res.headers.get('x-ssr-cache') ?? '').toUpperCase() === 'RPCERROR'
-      throw new ProxyMiss(relayed ? 'rpcerror' : 'status', relayed ? 'proxy relayed a node error' : `proxy answered ${res.status}`)
+      let unknownMethod = false
+      if (relayed) {
+        // The relayed body is the node's error message (`{"error": "..."}`),
+        // small by construction. Read it, which also releases the socket, so an
+        // `unknown method` answer can switch this read to its fallback method.
+        try {
+          unknownMethod = UNKNOWN_METHOD_RE.test(await res.text())
+        } catch {
+          // unreadable body: an ordinary relayed error
+        }
+      } else {
+        // Release the connection: an unconsumed body pins a pooled socket.
+        try {
+          await res.body?.cancel()
+        } catch {
+          // nothing to release
+        }
+      }
+      throw new ProxyMiss(
+        relayed ? 'rpcerror' : 'status',
+        relayed ? 'proxy relayed a node error' : `proxy answered ${res.status}`,
+        unknownMethod
+      )
     }
     let result: unknown
     try {
@@ -368,6 +386,102 @@ function isNodeLevelRPCError(code: number, message: string): boolean {
   // e.g. "Unable to parse endpoint data" from HAF when a backing service is down
   if (code === -32602 && /unable to parse|endpoint data|internal/i.test(message)) return true
   return false
+}
+
+// ── Per-node method fallback ────────────────────────────────────────────────
+
+/**
+ * Text of a node's answer for a method it does not have. Hivemind answers HTTP
+ * 200 with `-32602 "Assert Exception:unknown method: bridge_apiget_post_v2"`;
+ * jussi-style routers answer `-32601 Method not found`.
+ */
+const UNKNOWN_METHOD_RE = /unknown method|method not found/i
+
+/** True when an RPC error means "this node does not have that method". */
+function isUnknownMethodError(e: unknown): boolean {
+  if (!(e instanceof RPCError)) return false
+  if (e.code === -32601) return true
+  const assertion = e.data?.extension?.assertion_expression
+  return UNKNOWN_METHOD_RE.test(`${e.message} ${typeof assertion === 'string' ? assertion : ''}`)
+}
+
+/**
+ * How long a node stays marked as lacking a method. Nodes upgrade hivemind
+ * independently, so the mark expires and the next call asks for the primary
+ * method again: one extra round trip per node per TTL while it lacks it.
+ */
+const METHOD_UNSUPPORTED_TTL_MS = 30 * 60_000
+
+/**
+ * `${target}\n${method}` -> epoch ms the mark expires. A target is a node URL or
+ * the server proxy URL. Bounded by (#nodes + 1) x (#methods that have a
+ * fallback), both code-defined.
+ */
+const unsupportedMethods = new Map<string, number>()
+
+function lacksMethod(target: string, method: string): boolean {
+  const key = `${target}\n${method}`
+  const until = unsupportedMethods.get(key)
+  if (until === undefined) return false
+  if (until > Date.now()) return true
+  unsupportedMethods.delete(key)
+  return false
+}
+
+function markLacksMethod(target: string, method: string): void {
+  unsupportedMethods.set(`${target}\n${method}`, Date.now() + METHOD_UNSUPPORTED_TTL_MS)
+}
+
+/**
+ * Test seam and diagnostics for the per-node method fallback.
+ * @internal Not re-exported by the package.
+ */
+export const __METHOD_FALLBACK__ = Object.freeze({
+  TTL_MS: METHOD_UNSUPPORTED_TTL_MS,
+  lacksMethod,
+  reset: () => unsupportedMethods.clear()
+})
+
+/** One JSON-RPC request: a method and its params. */
+export interface RpcCallSpec {
+  method: string
+  params: any[] | object
+}
+
+/** What `callRPCWithFallback` resolves with: the result and the method that produced it. */
+export interface RpcFallbackResult<T> {
+  result: T
+  method: string
+}
+
+/**
+ * One read against ONE node with an optional fallback method. A node known to
+ * lack the primary gets the fallback straight away. Otherwise the primary is
+ * sent, and an `unknown method` answer marks the node (for the TTL) and asks
+ * the SAME node for the fallback at once. That answer is about the node's
+ * software, not its health: nothing is recorded against it here, and the
+ * caller sees a single attempt, so no failover and no hedge is spent on it.
+ */
+async function nodeRpcCall<T>(
+  node: string,
+  primary: RpcCallSpec,
+  fallback: RpcCallSpec | undefined,
+  timeout: number,
+  signal?: AbortSignal
+): Promise<RpcFallbackResult<T>> {
+  if (fallback && lacksMethod(node, primary.method)) {
+    const result = await jsonRPCCall(node, fallback.method, fallback.params, timeout, false, signal)
+    return { result, method: fallback.method }
+  }
+  try {
+    const result = await jsonRPCCall(node, primary.method, primary.params, timeout, false, signal)
+    return { result, method: primary.method }
+  } catch (e) {
+    if (!fallback || signal?.aborted || !isUnknownMethodError(e)) throw e
+    markLacksMethod(node, primary.method)
+    const result = await jsonRPCCall(node, fallback.method, fallback.params, timeout, false, signal)
+    return { result, method: fallback.method }
+  }
 }
 
 /** Extract the API prefix from a method name like "rc_api.find_rc_accounts" -> "rc_api". */
@@ -1208,8 +1322,11 @@ function jitterDelay(): Promise<void> {
  * wired into `callRPC` only.
  */
 function hedgedRpcAttempt<T>(opts: {
+  /** Profile key for deadlines and latency samples: the primary method. */
   method: string
-  params: any[] | object
+  call: RpcCallSpec
+  /** Per-node fallback method, decided independently by each leg's node. */
+  fallback?: RpcCallSpec
   api: string
   primary: string
   /**
@@ -1233,10 +1350,11 @@ function hedgedRpcAttempt<T>(opts: {
   onHedgeFired: (node: string) => void
   /** Caller-supplied payload validation — see callRPC's `validate` param. */
   validate?: (result: unknown) => boolean
-}): Promise<T> {
+}): Promise<RpcFallbackResult<T>> {
   const {
     method,
-    params,
+    call,
+    fallback,
     api,
     primary,
     hedgePool,
@@ -1247,7 +1365,7 @@ function hedgedRpcAttempt<T>(opts: {
     onHedgeFired,
     validate
   } = opts
-  return new Promise<T>((resolve, reject) => {
+  return new Promise<RpcFallbackResult<T>>((resolve, reject) => {
     let done = false
     let pendingLegs = 0
     let hedgeFired = false
@@ -1292,8 +1410,9 @@ function hedgedRpcAttempt<T>(opts: {
       )
       const start = Date.now()
       if (!isHedge) primaryStart = start
-      jsonRPCCall(node, method, params, legTimeout, false, merged.signal)
-        .then((res) => {
+      nodeRpcCall<T>(node, call, fallback, legTimeout, merged.signal)
+        .then((answer) => {
+          const res = answer.result
           merged.cleanup()
           pendingLegs--
           if (!isHedge) primarySettled = true
@@ -1329,7 +1448,7 @@ function hedgedRpcAttempt<T>(opts: {
           } else if (!hedgeFired) {
             rpcHedgeBudget.refill()
           }
-          finish(() => resolve(res as T))
+          finish(() => resolve(answer))
         })
         .catch((e) => {
           merged.cleanup()
@@ -1456,6 +1575,65 @@ export const callRPC = async <T = any>(
   signal?: AbortSignal,
   validate?: (result: unknown) => boolean
 ): Promise<T> => {
+  const answer = await callRPCCore<T>({ method, params }, undefined, timeout, retry, signal, validate)
+  return answer.result
+}
+
+/**
+ * Options for `callRPCWithFallback`; the same knobs `callRPC` takes positionally.
+ */
+export interface CallRPCWithFallbackOptions {
+  timeout?: number
+  retry?: number
+  signal?: AbortSignal
+  validate?: (result: unknown) => boolean
+}
+
+/**
+ * A read with a per-node fallback method, for methods that only some nodes
+ * serve yet (bridge `*_v2`, `bridge.list_votes`). Each node is asked for the
+ * primary method unless it answered `unknown method` for it within the last
+ * 30 minutes; such an answer switches that node to the fallback on the spot
+ * (same node, same attempt) and is never counted as a node failure, never
+ * triggers failover and never spends hedge budget. Every other error behaves
+ * exactly as in `callRPC`. The server read cache (`setServerRpcProxy`) is
+ * handled the same way.
+ *
+ * Resolves with the result and the method that produced it. Callers that
+ * parse the result must still go by its SHAPE: a cache in front of the nodes
+ * may answer a primary request with the fallback's shape.
+ *
+ * @example
+ * ```typescript
+ * const { result, method } = await callRPCWithFallback(
+ *   { method: 'bridge.get_post_v2', params: { author, permlink, observer } },
+ *   { method: 'bridge.get_post', params: { author, permlink, observer } }
+ * )
+ * ```
+ */
+export const callRPCWithFallback = async <T = any>(
+  primary: RpcCallSpec,
+  fallback: RpcCallSpec,
+  options: CallRPCWithFallbackOptions = {}
+): Promise<RpcFallbackResult<T>> =>
+  callRPCCore<T>(
+    primary,
+    fallback,
+    options.timeout,
+    options.retry ?? config.retry,
+    options.signal,
+    options.validate
+  )
+
+const callRPCCore = async <T = any>(
+  primary: RpcCallSpec,
+  fallback: RpcCallSpec | undefined,
+  timeout: number | undefined,
+  retry: number,
+  signal?: AbortSignal,
+  validate?: (result: unknown) => boolean
+): Promise<RpcFallbackResult<T>> => {
+  const method = primary.method
   if (!Array.isArray(config.nodes)) {
     throw new Error('config.nodes is not an array')
   }
@@ -1484,28 +1662,52 @@ export const callRPC = async <T = any>(
   // timeout and nothing of the failover budget the nodes get today.
   // Snapshot: the binding can be cleared by the host while this call awaits.
   const proxy = serverRpcProxy
-  if (proxy && isNodeRuntime && proxy.methodSet.has(method)) {
+  // The proxy is one more "node" for the method fallback: once it relayed an
+  // `unknown method` for the primary, it is asked for the fallback directly.
+  let proxySpec: RpcCallSpec | undefined = primary
+  if (proxy && fallback && lacksMethod(proxy.url, primary.method)) proxySpec = fallback
+  if (proxy && isNodeRuntime && proxySpec && proxy.methodSet.has(proxySpec.method)) {
     if (Date.now() < proxyOpenUntil) {
       rpcProxyStats.skipped++
     } else {
-      try {
-        const served = await proxyRpcCall<T>(proxy, method, params, ceiling, signal, validate)
-        rpcProxyStats.served++
-        proxyConsecutiveMisses = 0
-        return served
-      } catch (e: unknown) {
-        if (signal?.aborted) throw e
-        rpcProxyStats.fallback++
-        const reason: string = e instanceof ProxyMiss ? e.reason : 'transport'
-        rpcProxyStats.fallbackByReason[reason] = (rpcProxyStats.fallbackByReason[reason] ?? 0) + 1
-        if (reason === 'rpcerror') {
-          // A relayed node error is a healthy proxy answer: it closes the
-          // count like a served call. Crawler-made feed URLs produce these in
-          // runs, and counting them opened the breaker on a working proxy.
+      while (proxySpec) {
+        const spec: RpcCallSpec = proxySpec
+        proxySpec = undefined
+        try {
+          const served = await proxyRpcCall<T>(proxy, spec.method, spec.params, ceiling, signal, validate)
+          rpcProxyStats.served++
           proxyConsecutiveMisses = 0
-        } else if (++proxyConsecutiveMisses >= proxy.failureThreshold) {
-          proxyOpenUntil = Date.now() + proxy.cooldownMs
-          proxyConsecutiveMisses = 0
+          return { result: served, method: spec.method }
+        } catch (e: unknown) {
+          if (signal?.aborted) throw e
+          if (
+            fallback &&
+            spec === primary &&
+            e instanceof ProxyMiss &&
+            e.reason === 'rpcerror' &&
+            e.unknownMethod
+          ) {
+            // The proxy's upstream lacks the primary: same as a node saying so.
+            // Not a miss; ask the proxy for the fallback when it may serve it.
+            markLacksMethod(proxy.url, primary.method)
+            proxyConsecutiveMisses = 0
+            if (proxy.methodSet.has(fallback.method)) {
+              proxySpec = fallback
+              continue
+            }
+          }
+          rpcProxyStats.fallback++
+          const reason: string = e instanceof ProxyMiss ? e.reason : 'transport'
+          rpcProxyStats.fallbackByReason[reason] = (rpcProxyStats.fallbackByReason[reason] ?? 0) + 1
+          if (reason === 'rpcerror') {
+            // A relayed node error is a healthy proxy answer: it closes the
+            // count like a served call. Crawler-made feed URLs produce these in
+            // runs, and counting them opened the breaker on a working proxy.
+            proxyConsecutiveMisses = 0
+          } else if (++proxyConsecutiveMisses >= proxy.failureThreshold) {
+            proxyOpenUntil = Date.now() + proxy.cooldownMs
+            proxyConsecutiveMisses = 0
+          }
         }
       }
     }
@@ -1552,7 +1754,8 @@ export const callRPC = async <T = any>(
         // the catch below must NOT record again (unlike the sequential path).
         return await hedgedRpcAttempt<T>({
           method,
-          params,
+          call: primary,
+          fallback,
           api,
           primary: node,
           hedgePool,
@@ -1580,14 +1783,14 @@ export const callRPC = async <T = any>(
 
     const callStart = Date.now()
     try {
-      const res = await jsonRPCCall(
+      const answer = await nodeRpcCall<T>(
         node,
-        method,
-        params,
+        primary,
+        fallback,
         adaptiveAttemptTimeout(rpcHealthTracker, node, method, ceiling, explicitTimeout),
-        false,
         signal
       )
+      const res = answer.result
       if (validate && !validate(res)) {
         // Well-formed envelope, impossible payload: a node fault the
         // HTTP/JSON-RPC layers cannot see. Count it against this node's API
@@ -1604,7 +1807,7 @@ export const callRPC = async <T = any>(
       // An un-hedged success is what earns hedge budget back (see HedgeBudget).
       rpcHedgeBudget.refill()
       tryRecordHeadBlock(rpcHealthTracker, node, method, res)
-      return res as T
+      return answer
     } catch (e: any) {
       // RPCErrors: distinguish node-level failures from genuine blockchain rejections.
       // Node-level errors (e.g. -32602 "Unable to parse endpoint data" from a sick

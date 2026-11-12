@@ -25,6 +25,7 @@ export {
   Memo,
   config as hiveTxConfig,
   callRPC,
+  callRPCWithFallback,
   callRPCBroadcast,
   callREST,
   callWithQuorum,
@@ -43,6 +44,9 @@ export type {
   // nameable from the main entry, not only from @ecency/sdk/hive.
   ResilienceOptions,
   TransactionReference,
+  RpcCallSpec,
+  RpcFallbackResult,
+  CallRPCWithFallbackOptions,
 } from "../../hive-tx";
 
 // ── Compat types (matching dhive shapes used throughout the codebase) ──────

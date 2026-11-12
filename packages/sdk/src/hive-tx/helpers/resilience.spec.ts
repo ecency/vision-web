@@ -9,6 +9,8 @@ import {
   rpcHedgeBudget,
   rpcHealthTracker,
   restHealthTracker,
+  callRPCWithFallback,
+  __METHOD_FALLBACK__,
 } from "./call";
 import { config, setResilience } from "../config";
 
@@ -693,5 +695,72 @@ describe("setResilience validation", () => {
     expect(config.resilience.adaptiveTimeoutFloorMs).toBe(2_000);
     setResilience({ totalBudgetFactor: 0.25 });
     expect(config.resilience.totalBudgetFactor).toBe(1);
+  });
+});
+
+// Issue #2056: each hedge leg decides the method fallback for ITS node. An
+// old hedge node answering `unknown method` switches to v1 on that node only,
+// and the primary node is not marked.
+describe("hedged reads with a per-node method fallback", () => {
+  it("lets the hedge node fall back to v1 without marking the primary", async () => {
+    const nodes = freshNodes(2);
+    config.nodes = nodes;
+    Object.assign(config.resilience, {
+      hedge: true,
+      hedgeDelayFloorMs: 80,
+      hedgeDelayFactor: 1,
+      adaptiveTimeoutFloorMs: 2_000,
+      adaptiveTimeoutFactor: 4,
+    });
+    const primary = { method: "bridge.get_post_v2", params: { author: "a", permlink: "b" } };
+    const fallback = { method: "bridge.get_post", params: { author: "a", permlink: "b" } };
+
+    // Profile the primary node for the v2 method so the hedge can fire.
+    const seeded = routeFetch({ [nodes[0]]: { kind: "ok", result: { observer_vote: null } } });
+    for (let i = 0; i < 3; i++) await callRPCWithFallback(primary, fallback);
+    expect(rpcHealthTracker.getUsableLatencyMs(nodes[0], primary.method)).toBeDefined();
+    seeded.spy.mockRestore();
+    const before = rpcHedgeBudget.available;
+
+    const seen: Array<{ host: string; method: string }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: any, init: any) => {
+      const host = new URL(String(input)).origin;
+      const body = JSON.parse(String(init.body));
+      seen.push({ host, method: body.method });
+      if (host === nodes[0]) {
+        // Stalled primary: settles only on abort.
+        return new Promise((_resolve, reject) =>
+          init.signal?.addEventListener("abort", () => {
+            const e = new Error("aborted");
+            e.name = "AbortError";
+            reject(e);
+          })
+        );
+      }
+      const payload =
+        body.method === "bridge.get_post_v2"
+          ? { error: { code: -32602, message: "Assert Exception:unknown method: bridge_apiget_post_v2" } }
+          : { result: { author: "a", active_votes: [] } };
+      return Promise.resolve(
+        new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, ...payload }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    });
+
+    const answer = await callRPCWithFallback(primary, fallback);
+
+    expect(answer.method).toBe("bridge.get_post");
+    expect(seen).toEqual([
+      { host: nodes[0], method: "bridge.get_post_v2" },
+      { host: nodes[1], method: "bridge.get_post_v2" },
+      { host: nodes[1], method: "bridge.get_post" },
+    ]);
+    expect(__METHOD_FALLBACK__.lacksMethod(nodes[1], primary.method)).toBe(true);
+    expect(__METHOD_FALLBACK__.lacksMethod(nodes[0], primary.method)).toBe(false);
+    // One hedge, one token: the unknown-method answer spent nothing extra.
+    expect(rpcHedgeBudget.available).toBeCloseTo(before - 1, 5);
+    expect(rpcHealthTracker.isNodeHealthy(nodes[1], "bridge")).toBe(true);
   });
 });

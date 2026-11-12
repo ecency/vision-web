@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { callRPC, resetRpcProxyBreaker, rpcProxyStats } from "./call";
+import { callRPC, callRPCWithFallback, resetRpcProxyBreaker, rpcProxyStats, __METHOD_FALLBACK__ } from "./call";
 import { config, serverRpcProxy, setServerRpcProxy, DEFAULT_SERVER_RPC_PROXY_METHODS } from "../config";
 import { ConfigManager } from "../../modules/core/config";
 
@@ -330,5 +330,60 @@ describe("ConfigManager.getServerRpcProxyStats", () => {
     rpcProxyStats.skipped += 1;
     expect(stats.skipped).toBe(before + 1);
     rpcProxyStats.skipped = before;
+  });
+});
+
+// The read cache relays a node's `unknown method` answer as a 502 tagged
+// RPCERROR with the node's message as `{"error": ...}` (vision-api #119).
+describe("server-side RPC proxy: per-method fallback", () => {
+  beforeEach(() => __METHOD_FALLBACK__.reset());
+
+  function relayedUnknown(): Response {
+    return new Response(JSON.stringify({ error: "Assert Exception:unknown method: bridge_apiget_post_v2" }), {
+      status: 502,
+      headers: { "Content-Type": "application/json", "X-Ssr-Cache": "RPCERROR" }
+    });
+  }
+
+  it("asks the proxy for v1 after it relayed unknown method for v2, then v1 only", async () => {
+    const methods: string[] = [];
+    mockFetch(async (input, init) => {
+      expect(String(input)).toBe(PROXY);
+      const body = bodyOf(init);
+      methods.push(`${body.api}.${body.method}`);
+      return body.method === "get_post_v2" ? relayedUnknown() : jsonOk({ author: "a", active_votes: [] });
+    });
+    const primary = { method: "bridge.get_post_v2", params: { author: "a", permlink: "b" } };
+    const fallback = { method: "bridge.get_post", params: { author: "a", permlink: "b" } };
+
+    const first = await callRPCWithFallback(primary, fallback);
+    expect(first).toEqual({ result: { author: "a", active_votes: [] }, method: "bridge.get_post" });
+    expect(methods).toEqual(["bridge.get_post_v2", "bridge.get_post"]);
+
+    methods.length = 0;
+    await callRPCWithFallback(primary, fallback);
+    expect(methods).toEqual(["bridge.get_post"]);
+    expect(rpcProxyStats.served).toBe(2);
+    expect(rpcProxyStats.fallback).toBe(0);
+  });
+
+  it("treats any other relayed error as before: fall back to the nodes", async () => {
+    const urls: string[] = [];
+    mockFetch(async (input, init) => {
+      urls.push(String(input));
+      if (String(input) === PROXY) {
+        return new Response(JSON.stringify({ error: "Assert Exception:Post a/b does not exist" }), {
+          status: 502,
+          headers: { "X-Ssr-Cache": "RPCERROR" }
+        });
+      }
+      return rpcOk(idOf(init), { author: "a" });
+    });
+    await callRPCWithFallback(
+      { method: "bridge.get_post_v2", params: {} },
+      { method: "bridge.get_post", params: {} }
+    );
+    expect(urls).toEqual([PROXY, "https://node-a.test"]);
+    expect(rpcProxyStats.fallbackByReason.rpcerror).toBe(1);
   });
 });
