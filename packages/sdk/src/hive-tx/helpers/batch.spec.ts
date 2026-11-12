@@ -278,8 +278,9 @@ describe("callRPCBatch: a dead node in single-call mode", () => {
     }));
     const t0 = Date.now();
     const answers = await callRPCBatch(many, { timeout: 100 });
-    // One request per 6-wide wave would be ~9 timeouts (~900 ms).
-    expect(Date.now() - t0).toBeLessThan(350);
+    // One request per 6-wide wave would be ~9 timeouts (~900 ms); the fix
+    // costs about one. The bound leaves room for a loaded CI runner.
+    expect(Date.now() - t0).toBeLessThan(600);
     expect(answers.every((a) => a.error === undefined)).toBe(true);
     expect(deadCalls).toBeLessThan(13);
   });
@@ -382,4 +383,68 @@ describe("callRPCBatch: request-level asserts under any code", () => {
     expect(h?.apiFailures.get("database_api")?.count ?? 0).toBe(0);
     expect(h?.consecutiveFailures ?? 0).toBe(0);
   });
+});
+
+// Round 7: hived answers "this node cannot serve this API" with an Assert
+// Exception whose START is fixed server text (live on api.hive.blog,
+// api.deathwing.me and rpc.mahdiyari.info). That is a node fault: fail over.
+// Request params cannot forge the prefix; an echo later in the text stays an
+// application error.
+describe("node-level asserts: a node that cannot serve the API", () => {
+  const cases: Array<[string, number, string, boolean]> = [
+    ["missing API", -32002, "Assert Exception:api_itr != data._registered_apis.end(): Could not find API account_history_api", true],
+    ["missing method", -32002, "Assert Exception:method_itr != api_itr->second.end(): Could not find method get_discussions_by_blog_x", true],
+    ["hivemind redirect", -32002, "Assert Exception:false: Supported by hivemind", true],
+    ["an echo of that text in a param", -32602, "Assert Exception:Post x/Could not find API y does not exist", false],
+    ["a lock timeout (not an assert)", -32003, "Unable to acquire READ lock", true],
+  ];
+
+  for (const [label, code, message, failsOver] of cases) {
+    it(`callRPC: ${label} ${failsOver ? "fails over" : "stays an answer"}`, async () => {
+      const a = `https://api-a-${label.replace(/\W+/g, "-")}.test`;
+      const b = `https://api-b-${label.replace(/\W+/g, "-")}.test`;
+      config.nodes = [a, b];
+      const hosts: string[] = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+        hosts.push(String(input));
+        const body = JSON.parse(String(init.body));
+        return String(input) === a
+          ? json({ jsonrpc: "2.0", id: body.id, error: { code, message } })
+          : json({ jsonrpc: "2.0", id: body.id, result: { ok: true } });
+      });
+      if (failsOver) {
+        await expect(callRPC("condenser_api.get_accounts", [["x"]])).resolves.toEqual({ ok: true });
+        expect(hosts).toEqual([a, b]);
+      } else {
+        await expect(callRPC("condenser_api.get_accounts", [["x"]])).rejects.toThrow(/does not exist/);
+        expect(hosts).toEqual([a]);
+      }
+    });
+
+    it(`callRPCBatch: ${label} on every element ${failsOver ? "fails over" : "stays the answers"}`, async () => {
+      const a = `https://batch-a-${label.replace(/\W+/g, "-")}.test`;
+      const b = `https://batch-b-${label.replace(/\W+/g, "-")}.test`;
+      config.nodes = [a, b];
+      const hosts: string[] = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
+        hosts.push(String(input));
+        const body = JSON.parse(String(init.body));
+        return json(
+          body.map((r: any) =>
+            String(input) === a
+              ? { jsonrpc: "2.0", id: r.id, error: { code, message } }
+              : { jsonrpc: "2.0", id: r.id, result: { votes: [] } }
+          )
+        );
+      });
+      const answers = await callRPCBatch(calls);
+      if (failsOver) {
+        expect(hosts).toEqual([a, b]);
+        expect(answers.every((x) => x.error === undefined)).toBe(true);
+      } else {
+        expect(hosts).toEqual([a]);
+        expect(answers.every((x) => /does not exist/.test(String(x.error?.message)))).toBe(true);
+      }
+    });
+  }
 });

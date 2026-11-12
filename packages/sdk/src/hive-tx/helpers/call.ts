@@ -379,8 +379,23 @@ interface NodeHealth {
  * The HTTP layer looks healthy, so failover never triggers — the caller just gets
  * an error and gives up. This function identifies those node-level errors.
  */
+/**
+ * Asserts that mean "this node cannot serve this API or method": hived's
+ * plugin registry and the hivemind redirect. Fixed server text at the START
+ * of the message (verified live on api.hive.blog, api.deathwing.me and
+ * rpc.mahdiyari.info), so request params cannot forge them; an echo later in
+ * the text does not match.
+ */
+const NODE_CAPABILITY_ASSERT_PREFIXES = [
+  'Assert Exception:api_itr != data._registered_apis.end(): Could not find API ',
+  'Assert Exception:method_itr != api_itr->second.end(): Could not find method ',
+  'Assert Exception:false: Supported by hivemind'
+]
+
 function isNodeLevelRPCError(code: number, message: string): boolean {
-  // An "Assert Exception:" is the chain or hivemind answering the request (a
+  // A node that does not serve the API or method: fail over to one that does.
+  if (NODE_CAPABILITY_ASSERT_PREFIXES.some((prefix) => message.startsWith(prefix))) return true
+  // Any other "Assert Exception:" is the chain or hivemind answering the request (a
   // post that does not exist, a bad argument), whatever the code it comes
   // with (-32602 from hivemind, -32003 from a plain hived node), and it
   // echoes caller params: "Assert Exception:Post a/internal-notes does not
