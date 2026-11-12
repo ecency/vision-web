@@ -5,7 +5,7 @@ import { FormattedCurrency } from "@/features/shared";
 import { type GeneralAssetInfo, getAccountWalletAssetInfoQueryOptions } from "@ecency/sdk";
 import {
   getAccountWalletListQueryOptions
-} from "@ecency/wallets";
+} from "@ecency/sdk/wallets";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";

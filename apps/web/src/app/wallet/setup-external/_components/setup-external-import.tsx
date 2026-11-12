@@ -8,7 +8,7 @@ import {
   EcencyWalletCurrency,
   EcencyWalletsPrivateApi,
   useSaveWalletInformationToMetadata
-} from "@ecency/wallets";
+} from "@ecency/sdk/wallets";
 import {
   UilArrowLeft,
   UilArrowUpRight,

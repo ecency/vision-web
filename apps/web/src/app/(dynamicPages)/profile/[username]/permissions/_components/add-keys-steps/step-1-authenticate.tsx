@@ -10,7 +10,7 @@ import {
   deriveHiveKeys,
   deriveHiveMasterPasswordKeys,
   detectHiveKeyDerivation
-} from "@ecency/wallets";
+} from "@ecency/sdk/wallets";
 import { useKeyDerivationStore } from "../../_hooks";
 import { error } from "@/features/shared";
 

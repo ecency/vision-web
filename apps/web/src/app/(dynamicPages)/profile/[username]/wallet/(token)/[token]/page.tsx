@@ -3,7 +3,7 @@ import { generateProfileMetadata } from "../../../_helpers";
 import { HiveEngineChart, HiveEngineTokenHistory } from "./_components";
 import { normalizeTokenSymbol } from "./_helpers/token-symbol";
 import { TradingViewWidget } from "@/features/trading-view";
-import { EcencyWalletCurrency } from "@ecency/wallets";
+import { EcencyWalletCurrency } from "@ecency/sdk/wallets";
 
 interface Props {
   params: Promise<{ username: string; token: string }>;

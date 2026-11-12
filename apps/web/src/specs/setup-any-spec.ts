@@ -354,7 +354,7 @@ vi.mock("@/features/pro/pro-badge", () => ({
   ProBadge: () => null
 }));
 
-vi.mock("@ecency/wallets", () => ({
+vi.mock("@ecency/sdk/wallets", () => ({
   validateKey: vi.fn(),
   validateWif: vi.fn(),
   EXTERNAL_BLOCKCHAINS: [],

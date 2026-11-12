@@ -1,7 +1,7 @@
 "use client";
 
 import { useInstanceConfig } from "@/features/blog/hooks/use-instance-config";
-import { getAccountWalletListQueryOptions } from "@ecency/wallets";
+import { getAccountWalletListQueryOptions } from "@ecency/sdk/wallets";
 import { useQuery } from "@tanstack/react-query";
 import { TippingCurrencyCard } from "./tipping-currency-card";
 import { isExternalWalletAsset } from "../types";

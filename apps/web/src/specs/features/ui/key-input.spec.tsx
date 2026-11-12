@@ -36,7 +36,7 @@ const DERIVED = {
   memo: "MEMO_WIF"
 };
 
-vi.mock("@ecency/wallets", () => ({
+vi.mock("@ecency/sdk/wallets", () => ({
   deriveHiveKeys: () => DERIVED,
   detectHiveKeyDerivation: (...args: unknown[]) => h.detectSpy(...args)
 }));

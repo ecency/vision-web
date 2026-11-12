@@ -1,5 +1,5 @@
 import { Badge, Button } from "@/features/ui";
-import { EcencyWalletCurrency } from "@ecency/wallets";
+import { EcencyWalletCurrency } from "@ecency/sdk/wallets";
 import { SignupWalletChooseUsername } from "./signup-wallet-choose-username";
 import i18next from "i18next";
 import { UilArrowRight } from "@tooni/iconscout-unicons-react";

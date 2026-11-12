@@ -140,7 +140,7 @@ const config = {
     : undefined,
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
-  transpilePackages: ["@ecency/sdk", "@ecency/wallets", "@ecency/render-helper", "@ecency/raidstead"],
+  transpilePackages: ["@ecency/sdk", "@ecency/render-helper", "@ecency/raidstead"],
   experimental: {
     externalDir: true,
     optimizePackageImports: [
@@ -162,10 +162,9 @@ const config = {
       "@react-spring/web",
       "@sentry/nextjs",
       "@sentry/browser",
-      // NOTE: do not add @ecency/sdk / @ecency/wallets here. optimizePackageImports
-      // on the large SDK barrel pushed the production build past CI's ~4GB heap
-      // (OOM, exit 134); @ecency/wallets also has a module-side-effect entrypoint
-      // (rememberScryptBsvVersion) that the optimization would bypass.
+      // NOTE: do not add @ecency/sdk here (that covers its ./hive and ./wallets
+      // entries too). optimizePackageImports on the large SDK barrel pushed the
+      // production build past CI's ~4GB heap (OOM, exit 134).
     ]
   },
 

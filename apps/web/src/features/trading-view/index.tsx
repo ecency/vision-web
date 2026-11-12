@@ -1,7 +1,7 @@
 "use client";
 
 import { useGlobalStore } from "@/core/global-store";
-import { EcencyWalletCurrency } from "@ecency/wallets";
+import { EcencyWalletCurrency } from "@ecency/sdk/wallets";
 import { memo, useEffect, useRef } from "react";
 
 interface Props {

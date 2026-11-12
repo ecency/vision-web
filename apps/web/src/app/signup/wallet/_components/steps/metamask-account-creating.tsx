@@ -12,7 +12,7 @@ import {
   EcencyWalletsPrivateApi,
   installHiveSnap,
   getHivePublicKeys
-} from "@ecency/wallets";
+} from "@ecency/sdk/wallets";
 import { UilCheckCircle, UilSpinner } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
 import { useCallback, useEffect, useRef, useState } from "react";

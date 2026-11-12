@@ -39,7 +39,7 @@ vi.mock("@tanstack/react-query", async (orig) => ({
   })
 }));
 
-vi.mock("@ecency/wallets", () => ({
+vi.mock("@ecency/sdk/wallets", () => ({
   detectHiveKeyDerivation: vi.fn(async () => "bip44"),
   deriveHiveKeys: vi.fn(() => ({
     ownerPubkey: "O",

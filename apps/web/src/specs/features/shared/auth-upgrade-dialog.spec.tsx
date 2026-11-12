@@ -52,7 +52,7 @@ vi.mock("@/features/shared/auth-upgrade/auth-upgrade-events", () => ({
   resolveAuthUpgrade: (...args: unknown[]) => h.resolveAuthUpgrade(...args)
 }));
 
-// The real KeyInput derives through @ecency/sdk and @ecency/wallets, both
+// The real KeyInput derives through @ecency/sdk and @ecency/sdk/wallets, both
 // globally mocked in this suite. What is under test here is which username the
 // dialog hands to resolveAuthUpgrade, so a stub that signs is enough.
 vi.mock("@ui/input", () => ({

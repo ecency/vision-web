@@ -104,11 +104,11 @@ export function useLoginByKey(
         // Login with master password, BIP44 seed or active private key
         // Get active and posting private keys from user entered code
         if (isPlainPassword) {
-          // Lazy-load Hive key derivation so @ecency/wallets (heavy crypto
+          // Lazy-load Hive key derivation so @ecency/sdk/wallets (heavy crypto
           // deps) stays out of the eager bundle. Only reached when logging in
           // with a plain password/seed (WIF active-key logins take the
           // else-branch and never reach this import).
-          const { deriveHiveKeys, detectHiveKeyDerivation } = await import("@ecency/wallets");
+          const { deriveHiveKeys, detectHiveKeyDerivation } = await import("@ecency/sdk/wallets");
           const derivation = await detectHiveKeyDerivation(account.name, keyOrSeed);
 
           const candidates: { active: PrivateKey; posting: PrivateKey }[] = [];

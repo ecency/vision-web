@@ -18,7 +18,7 @@ import { Popover, PopoverContent } from "@/features/ui";
 import { formattedNumber } from "@/utils";
 
 // The tip transfer modal is interaction-gated (renders only when the dialog
-// opens) and drags the write-flow → @ecency/wallets → bip39 graph. Load it
+// opens) and drags the write-flow → @ecency/sdk/wallets → bip39 graph. Load it
 // lazily so that heavy chunk stays off the eager feed/profile/community read
 // path (previously pulled in eagerly via EntryVoteBtn → EntryVoteDialog →
 // EntryTipBtn). ssr:false is correct: it never renders during SSR.

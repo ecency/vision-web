@@ -37,7 +37,7 @@ vi.mock("@ecency/sdk", async () => ({
   PublicKey: { fromString: () => { throw new Error("not a public key"); } },
   isWif: () => false
 }));
-vi.mock("@ecency/wallets", () => ({
+vi.mock("@ecency/sdk/wallets", () => ({
   deriveHiveMasterPasswordKeys: () => ({
     owner: "5Jowner", active: "5Jactive", posting: "5Jposting", memo: "5Jmemo",
     ownerPubkey: "STM_NEW_OWNER", activePubkey: "STM_NEW_ACTIVE",

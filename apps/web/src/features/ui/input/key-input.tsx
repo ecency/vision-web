@@ -74,11 +74,11 @@ export const KeyInput = forwardRef<
         if (isWif(key)) {
           privateKey = PrivateKey.fromString(key);
         } else {
-          // Lazy-load Hive key derivation so @ecency/wallets (heavy crypto
+          // Lazy-load Hive key derivation so @ecency/sdk/wallets (heavy crypto
           // deps) stays out of the eager bundle loaded on every feed/profile/
           // community page. Only reached when a non-WIF key is entered for
           // signing (key-input is rendered by always-mounted signing UI).
-          const { deriveHiveKeys, detectHiveKeyDerivation } = await import("@ecency/wallets");
+          const { deriveHiveKeys, detectHiveKeyDerivation } = await import("@ecency/sdk/wallets");
           const derivation = await detectHiveKeyDerivation(
             activeUser.username,
             key,
