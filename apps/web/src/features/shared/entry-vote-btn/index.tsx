@@ -1,6 +1,14 @@
 "use client";
 
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore
+} from "react";
 import * as ss from "@/utils/session-storage";
 import { LoginRequired } from "@/features/shared";
 import useClickAway from "react-use/lib/useClickAway";
@@ -194,9 +202,13 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
   // click elsewhere (see queued-open.ts). A click on the trigger of an open
   // slider always closes it.
   const queueId = useId();
-  const [queueTick, setQueueTick] = useState(0);
-  useEffect(() => subscribeQueuedOpen(() => setQueueTick((t) => t + 1)), []);
-  const isQueued = queuedOpenOwner() === queueId;
+  // Per-button snapshot (is the slot mine?): a queue event re-renders only the
+  // buttons whose answer changed, not every vote button on the page.
+  const isQueued = useSyncExternalStore(
+    subscribeQueuedOpen,
+    () => queuedOpenOwner() === queueId,
+    () => false
+  );
   const toggleDialog = useCallback(() => {
     if (dialog) {
       cancelQueuedOpen(queueId);
@@ -210,11 +222,11 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
     setDialog(true);
   }, [dialog, votePending, queueId]);
   useEffect(() => {
-    if (!votePending && takeQueuedOpen(queueId)) {
+    if (isQueued && !votePending && takeQueuedOpen(queueId)) {
       openedFromQueue.current = true;
       setDialog(true);
     }
-  }, [votePending, queueTick, queueId]);
+  }, [votePending, isQueued, queueId]);
   useEffect(() => {
     if (!isQueued) return;
     const cancel = () => cancelQueuedOpen(queueId);

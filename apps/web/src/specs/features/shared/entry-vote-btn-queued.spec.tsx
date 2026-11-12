@@ -169,3 +169,22 @@ describe("EntryVoteBtn: the queued open", () => {
     expect(await screen.findByTestId("vote-dialog")).toHaveAttribute("data-up", "false");
   });
 });
+
+// Round 5, item 5: the queue slot is read per button (is it mine?), so a
+// queue event re-renders only the buttons whose answer changed.
+describe("EntryVoteBtn: queue events re-render only the buttons they concern", () => {
+  it("does not re-render an unrelated button when another card queues", async () => {
+    let otherRenders = 0;
+    const a = renderWithQueryClient(<EntryVoteBtn entry={card("rr-a")} isPostSlider={false} />);
+    renderWithQueryClient(
+      <React.Profiler id="other" onRender={() => (otherRenders += 1)}>
+        <EntryVoteBtn entry={card("rr-b")} isPostSlider={false} />
+      </React.Profiler>
+    );
+    await settle();
+    const before = otherRenders;
+    fireEvent.click(within(a.container).getByRole("button"));
+    await settle();
+    expect(otherRenders).toBe(before);
+  });
+});
