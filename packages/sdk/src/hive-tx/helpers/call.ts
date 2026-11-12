@@ -380,17 +380,19 @@ interface NodeHealth {
  * an error and gives up. This function identifies those node-level errors.
  */
 function isNodeLevelRPCError(code: number, message: string): boolean {
+  // An "Assert Exception:" is the chain or hivemind answering the request (a
+  // post that does not exist, a bad argument), whatever the code it comes
+  // with (-32602 from hivemind, -32003 from a plain hived node), and it
+  // echoes caller params: "Assert Exception:Post a/internal-notes does not
+  // exist". Never node-level, or one such request fails over across the pool
+  // and parks every node.
+  if (/^\s*Assert Exception:/.test(message)) return false
   // -32603: Internal error — node is having problems
   if (code === -32603) return true
   // -32000 to -32099: Server error range (implementation-defined server errors)
   if (code <= -32000 && code >= -32099) return true
   // -32601: Method not found — node may be missing this API plugin
   if (code === -32601) return true
-  // An "Assert Exception:" is the chain or hivemind answering the request (a
-  // post that does not exist, a bad argument), and it echoes caller params:
-  // "Assert Exception:Post a/internal-notes does not exist". Never node-level,
-  // or one such permlink fails over across the pool and parks every node.
-  if (code === -32602 && /^\s*Assert Exception:/.test(message)) return false
   // -32602 with node-sick indicators (vs normal "invalid params" from bad client input)
   // e.g. "Unable to parse endpoint data" from HAF when a backing service is down
   if (code === -32602 && /unable to parse|endpoint data|internal/i.test(message)) return true
@@ -1992,7 +1994,17 @@ export const callRPCBatch = async <T = any>(
         }
       }
       if (stillPending.length > 0 && nodeFault === undefined) {
-        nodeFault = new Error(`[hive-tx] ${stillPending.length} batch requests unanswered by ${node}`)
+        if (got.transportError !== undefined) {
+          nodeFault = got.transportError
+        } else if (Date.now() < deadline) {
+          nodeFault = new Error(`[hive-tx] ${stillPending.length} batch requests unanswered by ${node}`)
+        } else {
+          // Not sent before the CALL's deadline: the budget ran out, not the
+          // node. No failure is recorded; the requests end unanswered.
+          lastError ??= new Error(`[hive-tx] batch time budget spent with ${stillPending.length} requests unanswered`)
+          pending = stillPending
+          break
+        }
       }
       pending = stillPending
     } catch (e: any) {
@@ -2066,11 +2078,11 @@ async function batchOnNode<T>(
   timeout: number,
   signal?: AbortSignal,
   deadline = Infinity
-): Promise<Array<RpcBatchAnswer<T> | undefined>> {
+): Promise<NodeAnswers<T>> {
   if (lacksMethod(node, BATCH_CAPABILITY)) {
     return singleCallsAsBatch<T>(node, calls, timeout, signal, deadline)
   }
-  let partial: Array<RpcBatchAnswer<T> | undefined>
+  let partial: NodeAnswers<T>
   try {
     partial = await jsonRPCBatchCall<T>(node, calls, timeout, signal)
   } catch (e) {
@@ -2090,9 +2102,18 @@ async function batchOnNode<T>(
     missing.forEach((i, k) => {
       partial[i] = filled[k]
     })
+    if (filled.transportError !== undefined) partial.transportError = filled.transportError
   }
   return partial
 }
+
+/**
+ * A node's answers, one per request, `undefined` for a request it did not
+ * answer. `transportError` is set when some of those were lost to a transport
+ * failure (a node fault); without it, unanswered requests were simply not
+ * sent before the call's deadline (not the node's fault).
+ */
+type NodeAnswers<T> = Array<RpcBatchAnswer<T> | undefined> & { transportError?: unknown }
 
 /** Transport failures in a row after which a node gets no more single calls. */
 const SINGLES_TRANSPORT_FAILURES_TO_STOP = 2
@@ -2113,8 +2134,8 @@ async function singleCallsAsBatch<T>(
   timeout: number,
   signal?: AbortSignal,
   deadline = Infinity
-): Promise<Array<RpcBatchAnswer<T> | undefined>> {
-  const answers: Array<RpcBatchAnswer<T> | undefined> = new Array(calls.length)
+): Promise<NodeAnswers<T>> {
+  const answers: NodeAnswers<T> = new Array(calls.length)
   let next = 0
   let transportFailuresInARow = 0
   // Latched: once the node failed twice in a row, a later success of a call
@@ -2135,6 +2156,7 @@ async function singleCallsAsBatch<T>(
           answers[i] = { error: e }
         } else {
           transportFailuresInARow++
+          answers.transportError ??= e
           if (transportFailuresInARow >= SINGLES_TRANSPORT_FAILURES_TO_STOP) givenUp = true
           // Left undefined: a transport failure is about the node, so this
           // request moves on with the others that were not answered. This

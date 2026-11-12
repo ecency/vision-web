@@ -332,3 +332,54 @@ describe("callRPCBatch: single-call mode stops early", () => {
     expect(answers.some((a) => a.error === undefined)).toBe(true);
   });
 });
+
+// Round 6, item 1: an "Assert Exception:" is the node answering the request,
+// whatever the code (a plain hived node sends -32003 for some asserts).
+describe("callRPCBatch: request-level asserts under any code", () => {
+  it("keeps a -32003 'Assert Exception:' element as its answer: one fetch, no failure", async () => {
+    const node = "https://assert-32003.test";
+    config.nodes = [node, "https://unused-32003.test"];
+    let fetches = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+      fetches++;
+      const body = JSON.parse(String(init.body));
+      return json(
+        body.map((r: any, i: number) =>
+          i === 7
+            ? { jsonrpc: "2.0", id: r.id, error: { code: -32003, message: "Assert Exception:start.size() == 3: bad key" } }
+            : { jsonrpc: "2.0", id: r.id, result: { votes: [] } }
+        )
+      );
+    });
+    const fifty = Array.from({ length: 50 }, (_, i) => ({
+      method: "database_api.list_votes",
+      params: { start: ["a", `p${i}`, "u"], limit: 1, order: "by_comment_voter" },
+    }));
+    const answers = await callRPCBatch(fifty);
+    expect(fetches).toBe(1);
+    expect(answers[7].error?.message).toMatch(/^Assert Exception:/);
+    const h = (rpcHealthTracker as any).health.get(node);
+    expect(h?.apiFailures.get("database_api")?.count ?? 0).toBe(0);
+    expect(h?.consecutiveFailures ?? 0).toBe(0);
+  });
+
+  it("does not record a node failure for requests left over at the call's deadline", async () => {
+    const node = "https://slow-but-fine.test";
+    config.nodes = [node];
+    __BATCH_SUPPORT__.markUnsupported(node);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init: any) => {
+      const body = JSON.parse(String(init.body));
+      await new Promise((r) => setTimeout(r, 60));
+      return json({ jsonrpc: "2.0", id: body.id, result: { votes: [] } });
+    });
+    const fifty = Array.from({ length: 50 }, (_, i) => ({
+      method: "database_api.list_votes",
+      params: { start: ["a", `q${i}`, "u"], limit: 1, order: "by_comment_voter" },
+    }));
+    const answers = await callRPCBatch(fifty, { timeout: 100 });
+    expect(answers.some((a) => a.error !== undefined)).toBe(true);
+    const h = (rpcHealthTracker as any).health.get(node);
+    expect(h?.apiFailures.get("database_api")?.count ?? 0).toBe(0);
+    expect(h?.consecutiveFailures ?? 0).toBe(0);
+  });
+});
