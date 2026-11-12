@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.0
+
+### Minor Changes
+
+- SDK: vote-free bridge v2 post reads with per-node fallback (#2059)
+
 ## 2.4.30
 
 ### Patch Changes
