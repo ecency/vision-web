@@ -386,6 +386,11 @@ function isNodeLevelRPCError(code: number, message: string): boolean {
   if (code <= -32000 && code >= -32099) return true
   // -32601: Method not found — node may be missing this API plugin
   if (code === -32601) return true
+  // An "Assert Exception:" is the chain or hivemind answering the request (a
+  // post that does not exist, a bad argument), and it echoes caller params:
+  // "Assert Exception:Post a/internal-notes does not exist". Never node-level,
+  // or one such permlink fails over across the pool and parks every node.
+  if (code === -32602 && /^\s*Assert Exception:/.test(message)) return false
   // -32602 with node-sick indicators (vs normal "invalid params" from bad client input)
   // e.g. "Unable to parse endpoint data" from HAF when a backing service is down
   if (code === -32602 && /unable to parse|endpoint data|internal/i.test(message)) return true
@@ -1963,27 +1968,14 @@ export const callRPCBatch = async <T = any>(
     triedInRound.add(node)
     const start = Date.now()
     try {
-      let answers: RpcBatchAnswer<T>[]
-      if (lacksMethod(node, BATCH_CAPABILITY)) {
-        answers = await singleCallsAsBatch<T>(node, calls, timeout, signal)
-      } else {
-        try {
-          answers = await jsonRPCBatchCall<T>(node, calls, timeout, signal)
-        } catch (e) {
-          if (!(e instanceof BatchUnsupported)) throw e
-          // The node (or a router in front of it) does not take batch arrays.
-          // About its software, not its health: remember it for the TTL and
-          // ask it the requests one by one.
-          markLacksMethod(node, BATCH_CAPABILITY)
-          answers = await singleCallsAsBatch<T>(node, calls, timeout, signal)
-        }
+      const answers = await batchOnNode<T>(node, calls, timeout, signal)
+      // Every request failed in a way that is about the node (a sick backend
+      // behind an HTTP 200, or every single call failing): the whole batch
+      // fails on this node and moves on. One failed element among answers is
+      // that element's answer.
+      if (answers.every((a) => a.error !== undefined && isNodeFailure(a.error))) {
+        throw answers[0].error
       }
-      // A node-level error (a sick backend behind an HTTP 200) for any request
-      // fails the whole batch on this node, as it would fail one call.
-      const sick = answers.find(
-        (a) => a.error instanceof RPCError && isNodeLevelRPCError(a.error.code, a.error.message)
-      )
-      if (sick) throw sick.error
       rpcHealthTracker.recordSuccess(node, api)
       return answers
     } catch (e: any) {
@@ -2000,35 +1992,122 @@ export const callRPCBatch = async <T = any>(
 /** Pseudo-method under which a node is marked as not taking batch arrays. */
 const BATCH_CAPABILITY = 'jsonrpc.batch'
 
-/** The node answered a batch array with something that is not a batch answer. */
-class BatchUnsupported extends Error {}
+/** Plain refusals (not an error object) in a row, per node; 2 mark it. */
+const batchRefusals = new Map<string, number>()
+const BATCH_REFUSALS_TO_MARK = 2
 
-/** The batch's requests sent one by one to one node, answers in order. */
+/** Single calls in flight per node when a batch is sent one by one. */
+const SINGLES_CONCURRENCY = 6
+
+/**
+ * @internal Test seam and diagnostics for batch support. Not re-exported.
+ */
+export const __BATCH_SUPPORT__ = {
+  reset: (): void => {
+    batchRefusals.clear()
+    for (const key of [...unsupportedMethods.keys()]) {
+      if (key.endsWith(`\n${BATCH_CAPABILITY}`)) unsupportedMethods.delete(key)
+    }
+  },
+  refused: (node: string): number => batchRefusals.get(node) ?? 0,
+  markUnsupported: (node: string): void => markLacksMethod(node, BATCH_CAPABILITY)
+}
+
+/** The node answered a batch array with something other than a batch answer. */
+class BatchRefused extends Error {
+  /** True for a plain answer (not a JSON-RPC error object). */
+  constructor(message: string, public plain: boolean) {
+    super(message)
+  }
+}
+
+/** An answer error that is about the node, not the request. */
+function isNodeFailure(e: RPCError | Error): boolean {
+  if (e instanceof RPCError) return isNodeLevelRPCError(e.code, e.message)
+  return true
+}
+
+/**
+ * One node's answers to a batch: one JSON-RPC batch POST, unless the node is
+ * known not to take batches. Requests the batch answer left out are re-sent
+ * as single calls. A plain refusal (a non-array, non-error answer) twice in a
+ * row marks the node as not taking batches for the TTL; a whole-batch error
+ * object with a node-level code is a node fault (thrown, so the batch fails
+ * over); any other refusal is answered with single calls this time only.
+ */
+async function batchOnNode<T>(
+  node: string,
+  calls: RpcCallSpec[],
+  timeout: number,
+  signal?: AbortSignal
+): Promise<RpcBatchAnswer<T>[]> {
+  if (lacksMethod(node, BATCH_CAPABILITY)) {
+    return singleCallsAsBatch<T>(node, calls, timeout, signal)
+  }
+  let partial: Array<RpcBatchAnswer<T> | undefined>
+  try {
+    partial = await jsonRPCBatchCall<T>(node, calls, timeout, signal)
+  } catch (e) {
+    if (!(e instanceof BatchRefused)) throw e
+    if (e.plain) {
+      const n = (batchRefusals.get(node) ?? 0) + 1
+      batchRefusals.set(node, n)
+      if (n >= BATCH_REFUSALS_TO_MARK) markLacksMethod(node, BATCH_CAPABILITY)
+    }
+    return singleCallsAsBatch<T>(node, calls, timeout, signal)
+  }
+  // A batch array came back: the node takes batches; its refusal count restarts.
+  batchRefusals.delete(node)
+  const missing = partial.flatMap((a, i) => (a === undefined ? [i] : []))
+  if (missing.length > 0) {
+    const filled = await singleCallsAsBatch<T>(node, missing.map((i) => calls[i]), timeout, signal)
+    missing.forEach((i, k) => {
+      partial[i] = filled[k]
+    })
+  }
+  return partial as RpcBatchAnswer<T>[]
+}
+
+/**
+ * The requests sent one by one to one node, at most SINGLES_CONCURRENCY in
+ * flight, answers in order. A failure of one call is that call's answer and
+ * never rejects the others.
+ */
 async function singleCallsAsBatch<T>(
   node: string,
   calls: RpcCallSpec[],
   timeout: number,
   signal?: AbortSignal
 ): Promise<RpcBatchAnswer<T>[]> {
-  return Promise.all(
-    calls.map((c) =>
-      jsonRPCCall(node, c.method, c.params, timeout, false, signal).then(
-        (result): RpcBatchAnswer<T> => ({ result: result as T }),
-        (e): RpcBatchAnswer<T> => {
-          if (e instanceof RPCError) return { error: e }
-          throw e
-        }
-      )
-    )
-  )
+  const answers: RpcBatchAnswer<T>[] = new Array(calls.length)
+  let next = 0
+  const worker = async () => {
+    while (next < calls.length) {
+      const i = next++
+      try {
+        const result = await jsonRPCCall(node, calls[i].method, calls[i].params, timeout, false, signal)
+        answers[i] = { result: result as T }
+      } catch (e: any) {
+        if (signal?.aborted) throw e
+        answers[i] = { error: e instanceof Error ? e : new Error(String(e)) }
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(SINGLES_CONCURRENCY, calls.length) }, worker))
+  return answers
 }
 
+/**
+ * One batch POST. Resolves with an answer per request, `undefined` for a
+ * request the answer left out. Throws BatchRefused for a non-array answer that
+ * is not a node fault, and an RPCError for a whole-batch node-level error.
+ */
 async function jsonRPCBatchCall<T>(
   url: string,
   calls: RpcCallSpec[],
   timeout: number,
   externalSignal?: AbortSignal
-): Promise<RpcBatchAnswer<T>[]> {
+): Promise<Array<RpcBatchAnswer<T> | undefined>> {
   const base = Math.floor(Math.random() * 100_000_000)
   const body = calls.map((c, i) => ({ jsonrpc: '2.0', method: c.method, params: c.params, id: base + i }))
   const { signal: tSignal, cleanup: cleanupTimeout } = createTimeoutSignal(timeout)
@@ -2054,15 +2133,22 @@ async function jsonRPCBatchCall<T>(
       }
       throw new NodeError(url, `HTTP ${res.status} from ${url}`, { nodeWide: res.status < 500 })
     }
-    const parsed: unknown = await res.json()
-    if (!Array.isArray(parsed)) throw new BatchUnsupported('JSONRPC batch answer is not an array')
+    const parsed: any = await res.json()
+    if (!Array.isArray(parsed)) {
+      const e = parsed?.error
+      if (e && typeof e.code === 'number' && typeof e.message === 'string') {
+        if (isNodeLevelRPCError(e.code, e.message)) throw new RPCError(e)
+        throw new BatchRefused(`batch refused: ${e.message}`, false)
+      }
+      throw new BatchRefused('JSONRPC batch answer is not an array', true)
+    }
     const byId = new Map<number, any>()
     for (const item of parsed) {
       if (item && typeof item.id === 'number') byId.set(item.id, item)
     }
-    return calls.map((_c, i): RpcBatchAnswer<T> => {
+    return calls.map((_c, i): RpcBatchAnswer<T> | undefined => {
       const item = byId.get(base + i)
-      if (!item || item.jsonrpc !== '2.0') throw new BatchUnsupported('JSONRPC batch id mismatch')
+      if (!item || item.jsonrpc !== '2.0') return undefined
       if ('result' in item) return { result: item.result as T }
       const e = item.error
       return { error: e && 'message' in e && 'code' in e ? new RPCError(e) : new Error(String(e?.message ?? e)) }
