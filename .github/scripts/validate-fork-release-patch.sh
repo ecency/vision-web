@@ -27,7 +27,7 @@ semver='[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?'
 range="(workspace:(\\*|\\^|~|[\\^~]?${semver})|[\\^~]?${semver})"
 bad=$(git diff --cached --no-renames --text --no-ext-diff -U0 -- 'packages/*/package.json' \
   | grep -E '^[+-][^+-]' \
-  | grep -vE "^[+-][[:space:]]*\"version\": \"${semver}\",?$|^[+-][[:space:]]*\"@ecency/(sdk|wallets|render-helper|ui)\": \"${range}\",?$" || true)
+  | grep -vE "^[+-][[:space:]]*\"version\": \"${semver}\",?$|^[+-][[:space:]]*\"@ecency/(sdk|render-helper|ui)\": \"${range}\",?$" || true)
 if [ -n "$bad" ]; then
   echo "::error::patch changes package.json beyond versions:"
   echo "$bad"

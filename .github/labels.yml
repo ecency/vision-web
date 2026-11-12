@@ -20,14 +20,6 @@
   description: Minor bump for @ecency/sdk
   color: "bfdadc"
 
-- name: "patch:wallets"
-  description: Patch bump for @ecency/wallets
-  color: "fef2c0"
-
-- name: "minor:wallets"
-  description: Minor bump for @ecency/wallets
-  color: "f9d0c4"
-
 - name: "patch:render-helper"
   description: Patch bump for @ecency/render-helper
   color: "e4e669"

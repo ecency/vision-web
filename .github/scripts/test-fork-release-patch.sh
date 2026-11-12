@@ -75,12 +75,12 @@ git -C "$repo" add -A
 validate
 reset_case
 
-printf '{\n  "name": "@ecency/sdk",\n  "version": "1.0.0",\n  "dependencies": {\n    "@ecency/wallets": "npm:other-pkg@1"\n  }\n}\n' > "$repo/packages/sdk/package.json"
+printf '{\n  "name": "@ecency/sdk",\n  "version": "1.0.0",\n  "dependencies": {\n    "@ecency/render-helper": "npm:other-pkg@1"\n  }\n}\n' > "$repo/packages/sdk/package.json"
 git -C "$repo" add -A
 reject 'untrusted internal dependency range'
 reset_case
 
-printf '{\n  "name": "@ecency/sdk",\n  "version": "1.0.0",\n  "dependencies": {\n    "@ecency/wallets": "workspace:*"\n  }\n}\n' > "$repo/packages/sdk/package.json"
+printf '{\n  "name": "@ecency/sdk",\n  "version": "1.0.0",\n  "dependencies": {\n    "@ecency/render-helper": "workspace:*"\n  }\n}\n' > "$repo/packages/sdk/package.json"
 git -C "$repo" add -A
 git -C "$repo" commit -qm 'internal dependency fixture'
 sed -i 's/workspace:\*/^1.2.3/' "$repo/packages/sdk/package.json"
