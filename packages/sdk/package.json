@@ -1,7 +1,7 @@
 {
   "name": "@ecency/sdk",
   "private": false,
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "Ecency SDK",
   "repository": {
     "type": "git",
