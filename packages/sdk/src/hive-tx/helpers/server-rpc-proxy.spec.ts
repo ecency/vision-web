@@ -407,3 +407,50 @@ describe("server-side RPC proxy: per-method fallback", () => {
     expect(rpcProxyStats.fallbackByReason.rpcerror).toBe(1);
   });
 });
+
+// Review A: a read cache that predates the v2 methods answers them with a
+// plain 404 (its route fallback, not a relayed node error). That is "the
+// proxy lacks this method", not a proxy fault: it must not open the breaker
+// for every other method.
+describe("server-side RPC proxy: a 404 for the primary of a fallback pair", () => {
+  beforeEach(() => __METHOD_FALLBACK__.reset());
+
+  it("serves v2 reads through the proxy's v1 and keeps the breaker closed", async () => {
+    const calls: Array<{ url: string; method: string }> = [];
+    mockFetch(async (input, init) => {
+      const body = bodyOf(init);
+      const method = String(input) === PROXY ? `${body.api}.${body.method}` : String(body.method);
+      calls.push({ url: String(input), method });
+      if (String(input) !== PROXY) return rpcOk(idOf(init), { from: "node" });
+      if (body.method === "get_post_v2") return jsonOk({ error: "Not Found" }, 404);
+      return jsonOk({ from: "proxy", method });
+    });
+    const primary = { method: "bridge.get_post_v2", params: { author: "a", permlink: "b" } };
+    const fallback = { method: "bridge.get_post", params: { author: "a", permlink: "b" } };
+
+    for (let i = 0; i < 3; i++) {
+      const answer = await callRPCWithFallback(primary, fallback);
+      expect(answer).toEqual({ result: { from: "proxy", method: "bridge.get_post" }, method: "bridge.get_post" });
+    }
+    // Probed once, then straight to v1 on the proxy.
+    expect(calls.map((c) => c.method)).toEqual([
+      "bridge.get_post_v2",
+      "bridge.get_post",
+      "bridge.get_post",
+      "bridge.get_post"
+    ]);
+    expect(rpcProxyStats.fallbackByReason.status).toBe(0);
+
+    calls.length = 0;
+    await callRPC("bridge.get_profile", { account: "a" });
+    expect(calls).toEqual([{ url: PROXY, method: "bridge.get_profile" }]);
+  });
+
+  it("still counts a 404 for a method without a fallback as a miss", async () => {
+    mockFetch(async (input, init) =>
+      String(input) === PROXY ? jsonOk({ error: "Not Found" }, 404) : rpcOk(idOf(init), { from: "node" })
+    );
+    await callRPC("bridge.get_profile", { account: "a" });
+    expect(rpcProxyStats.fallbackByReason.status).toBe(1);
+  });
+});

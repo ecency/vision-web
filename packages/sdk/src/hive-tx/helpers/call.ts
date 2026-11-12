@@ -72,7 +72,9 @@ class ProxyMiss extends Error {
     public reason: ProxyMissReason,
     message: string,
     /** The relayed node error says the method does not exist there. */
-    public unknownMethod = false
+    public unknownMethod = false,
+    /** A plain 404 from the proxy itself: its route table has no such method. */
+    public notFound = false
   ) {
     super(message)
   }
@@ -154,7 +156,8 @@ async function proxyRpcCall<T>(
       throw new ProxyMiss(
         relayed ? 'rpcerror' : 'status',
         relayed ? 'proxy relayed a node error' : `proxy answered ${res.status}`,
-        unknownMethod
+        unknownMethod,
+        !relayed && res.status === 404
       )
     }
     let result: unknown
@@ -416,14 +419,14 @@ function isUnknownMethodText(text: unknown, method: string): boolean {
 }
 
 /**
- * True when an RPC error means "this node does not have `method`": the
- * JSON-RPC standard `-32601 Method not found` (a router in front of the node,
- * which carries no caller params), or hivemind's -32602 assert naming exactly
- * the method that was called. Each field is checked on its own, never joined.
+ * True when an RPC error means "this node does not have `method`": hivemind's
+ * -32602 assert naming exactly the method that was called. Each field is
+ * checked on its own, never joined. A generic -32601 is deliberately NOT read
+ * this way: no pool node answers a missing bridge method with it, and one
+ * transient router answer would park a capable node for the whole TTL.
  */
 function isUnknownMethodError(e: unknown, method: string): boolean {
   if (!(e instanceof RPCError)) return false
-  if (e.code === -32601) return true
   if (e.code !== -32602) return false
   return (
     isUnknownMethodText(e.message, method) ||
@@ -454,8 +457,26 @@ function lacksMethod(target: string, method: string): boolean {
   return false
 }
 
+/**
+ * Methods that ship together: a node that lacks one lacks them all (the
+ * bridge v2 reads and `bridge.list_votes` came in one hivemind release). One
+ * unknown-method answer marks the whole family, so an old node is probed once
+ * per TTL, not once per method.
+ */
+const METHOD_FAMILIES: readonly (readonly string[])[] = [
+  [
+    'bridge.get_post_v2',
+    'bridge.get_ranked_posts_v2',
+    'bridge.get_account_posts_v2',
+    'bridge.get_discussion_v2',
+    'bridge.list_votes'
+  ]
+]
+
 function markLacksMethod(target: string, method: string): void {
-  unsupportedMethods.set(`${target}\n${method}`, Date.now() + METHOD_UNSUPPORTED_TTL_MS)
+  const until = Date.now() + METHOD_UNSUPPORTED_TTL_MS
+  const family = METHOD_FAMILIES.find((f) => f.includes(method)) ?? [method]
+  for (const m of family) unsupportedMethods.set(`${target}\n${m}`, until)
 }
 
 /**
@@ -480,13 +501,20 @@ export interface RpcFallbackResult<T> {
   method: string
 }
 
+/** A node answer plus when the request that produced it started (latency). */
+interface NodeAnswer<T> extends RpcFallbackResult<T> {
+  startedAt: number
+}
+
 /**
  * One read against ONE node with an optional fallback method. A node known to
  * lack the primary gets the fallback straight away. Otherwise the primary is
  * sent, and an `unknown method` answer marks the node (for the TTL) and asks
- * the SAME node for the fallback at once. That answer is about the node's
- * software, not its health: nothing is recorded against it here, and the
- * caller sees a single attempt, so no failover and no hedge is spent on it.
+ * the SAME node for the fallback at once, within what is left of the same
+ * attempt's `timeout`. That answer is about the node's software, not its
+ * health: nothing is recorded against it, and the caller sees one attempt, so
+ * it causes no failover. `startedAt` is the start of the request that
+ * answered, so latency is filed under the method that answered.
  */
 async function nodeRpcCall<T>(
   node: string,
@@ -494,19 +522,23 @@ async function nodeRpcCall<T>(
   fallback: RpcCallSpec | undefined,
   timeout: number,
   signal?: AbortSignal
-): Promise<RpcFallbackResult<T>> {
+): Promise<NodeAnswer<T>> {
+  const attemptStart = Date.now()
   if (fallback && lacksMethod(node, primary.method)) {
     const result = await jsonRPCCall(node, fallback.method, fallback.params, timeout, false, signal)
-    return { result, method: fallback.method }
+    return { result, method: fallback.method, startedAt: attemptStart }
   }
   try {
     const result = await jsonRPCCall(node, primary.method, primary.params, timeout, false, signal)
-    return { result, method: primary.method }
+    return { result, method: primary.method, startedAt: attemptStart }
   } catch (e) {
     if (!fallback || signal?.aborted || !isUnknownMethodError(e, primary.method)) throw e
     markLacksMethod(node, primary.method)
-    const result = await jsonRPCCall(node, fallback.method, fallback.params, timeout, false, signal)
-    return { result, method: fallback.method }
+    const left = attemptStart + timeout - Date.now()
+    if (left <= 0) throw createTimeoutReason()
+    const fallbackStart = Date.now()
+    const result = await jsonRPCCall(node, fallback.method, fallback.params, left, false, signal)
+    return { result, method: fallback.method, startedAt: fallbackStart }
   }
 }
 
@@ -1461,7 +1493,7 @@ function hedgedRpcAttempt<T>(opts: {
             }
             return
           }
-          rpcHealthTracker.recordSuccess(node, api, Date.now() - start, method)
+          rpcHealthTracker.recordSuccess(node, api, Date.now() - answer.startedAt, answer.method)
           tryRecordHeadBlock(rpcHealthTracker, node, method, res)
           if (isHedge) {
             if (!primarySettled) {
@@ -1474,7 +1506,7 @@ function hedgedRpcAttempt<T>(opts: {
           } else if (!hedgeFired) {
             rpcHedgeBudget.refill()
           }
-          finish(() => resolve(answer))
+          finish(() => resolve({ result: answer.result, method: answer.method }))
         })
         .catch((e) => {
           merged.cleanup()
@@ -1618,12 +1650,16 @@ export interface CallRPCWithFallbackOptions {
 /**
  * A read with a per-node fallback method, for methods that only some nodes
  * serve yet (bridge `*_v2`, `bridge.list_votes`). Each node is asked for the
- * primary method unless it answered `unknown method` for it within the last
- * 30 minutes; such an answer switches that node to the fallback on the spot
- * (same node, same attempt) and is never counted as a node failure, never
- * triggers failover and never spends hedge budget. Every other error behaves
- * exactly as in `callRPC`. The server read cache (`setServerRpcProxy`) is
- * handled the same way.
+ * primary method unless it answered `unknown method` for it (or for another
+ * method of the same family) within the last 30 minutes; such an answer
+ * switches that node to the fallback on the spot (same node, same attempt,
+ * within what is left of the attempt's timeout). It is never counted as a node
+ * failure and never triggers failover. It starts no hedge of its own; the
+ * extra round trip is ordinary time on that attempt, so a hedge that was
+ * already due can still fire while it runs. Every other error behaves exactly
+ * as in `callRPC`. The server read cache (`setServerRpcProxy`) is handled the
+ * same way, and a plain 404 from it for the primary method means the cache
+ * does not serve that method yet.
  *
  * Resolves with the result and the method that produced it. Callers that
  * parse the result must still go by its SHAPE: a cache in front of the nodes
@@ -1710,11 +1746,13 @@ const callRPCCore = async <T = any>(
             fallback &&
             spec === primary &&
             e instanceof ProxyMiss &&
-            e.reason === 'rpcerror' &&
-            e.unknownMethod
+            ((e.reason === 'rpcerror' && e.unknownMethod) || (e.reason === 'status' && e.notFound))
           ) {
-            // The proxy's upstream lacks the primary: same as a node saying so.
-            // Not a miss; ask the proxy for the fallback when it may serve it.
+            // The proxy's upstream lacks the primary (a relayed unknown-method
+            // answer), or the proxy itself does not serve it yet (a plain 404:
+            // a cache deployed before the method was added, or rolled back).
+            // Same as a node saying so: not a miss, never toward the breaker;
+            // ask the proxy for the fallback when it may serve it.
             markLacksMethod(proxy.url, primary.method)
             proxyConsecutiveMisses = 0
             if (proxy.methodSet.has(fallback.method)) {
@@ -1829,11 +1867,11 @@ const callRPCCore = async <T = any>(
         }
         continue
       }
-      rpcHealthTracker.recordSuccess(node, api, Date.now() - callStart, method)
+      rpcHealthTracker.recordSuccess(node, api, Date.now() - answer.startedAt, answer.method)
       // An un-hedged success is what earns hedge budget back (see HedgeBudget).
       rpcHedgeBudget.refill()
       tryRecordHeadBlock(rpcHealthTracker, node, method, res)
-      return answer
+      return { result: answer.result, method: answer.method }
     } catch (e: any) {
       // RPCErrors: distinguish node-level failures from genuine blockchain rejections.
       // Node-level errors (e.g. -32602 "Unable to parse endpoint data" from a sick
