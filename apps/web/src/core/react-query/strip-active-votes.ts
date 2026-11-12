@@ -38,7 +38,7 @@ function isStripableEntry(value: unknown): value is Entry {
   // net_votes is deliberately NOT accepted. It is upvotes MINUS downvotes, not a
   // voter count — live posts show active_votes 848 vs net_votes 820, and 453 vs
   // 423. entry-votes reads
-  // `stats.total_votes || active_votes.length || net_votes || total_votes`, so
+  // `entryVoteCount` (`stats.total_votes ?? (active_votes.length || net_votes || total_votes)`), so
   // stripping a shape whose only count is net_votes (condenser_api.get_content
   // has no stats object) would drop the displayed number to the net figure.
   //

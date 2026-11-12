@@ -10,20 +10,6 @@ export interface OptimisticVote {
 }
 
 /**
- * Compute the optimistic vote state for an entry after `username` casts a vote
- * of `weight` (0 removes the vote) with an `estimated` payout delta.
- *
- * Whether the user had voted before decides the count: the looked-up vote
- * (`priorVote`) when there is one, else the entry when it was read for this
- * user. Unknown counts as "no vote" for an upvote and leaves the count alone
- * for an unvote. A zero vote (percent 0, or rshares 0 without a percent) is no
- * vote (`isCastVote`), as in the SDK.
- *
- * The count is `stats.total_votes` when present, else whichever vote count a
- * lightweight row carries (`net_votes` on waves feed rows); the base payout is
- * the numeric `payout` (bridge entries) or the summed payout strings (feeds).
- */
-/**
  * An entry's vote count. `stats.total_votes` is authoritative, and 0 is a count
  * (`??`, never `||`). Rows without stats fall back to the voter list length
  * (capped at 1000 on v1), then the lightweight `net_votes` / `total_votes`.
@@ -35,6 +21,19 @@ export function entryVoteCount(entry: Entry | undefined | null): number {
   );
 }
 
+/**
+ * Compute the optimistic vote state for an entry after `username` casts a vote
+ * of `weight` (0 removes the vote) with an `estimated` payout delta.
+ *
+ * Whether the user had voted before decides the count: the looked-up vote
+ * (`priorVote`) when there is one, else the entry when it was read for this
+ * user. Unknown counts as "no vote" for an upvote and leaves the count alone
+ * for an unvote. A zero vote (percent 0, or rshares 0 without a percent) is no
+ * vote (`isCastVote`), as in the SDK.
+ *
+ * The base count is `entryVoteCount(entry)`; the base payout is
+ * the numeric `payout` (bridge entries) or the summed payout strings (feeds).
+ */
 export function deriveOptimisticVote(
   entry: Entry,
   weight: number,

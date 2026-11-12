@@ -199,6 +199,16 @@ describe("deriveOptimisticVote: a zero prior vote is no vote", () => {
     } as Partial<Entry>);
     expect(deriveOptimisticVote(entry, UP, 0, "dave", null).nextVoteCount).toBe(1);
   });
+
+  it("unvotes from an authoritative zero without using the legacy count", () => {
+    const entry = feedWave({
+      stats: { total_votes: 0, flag_weight: 0, gray: false, hide: false },
+      net_votes: 7
+    } as Partial<Entry>);
+    expect(
+      deriveOptimisticVote(entry, 0, 0, "dave", { rshares: 100, percent: UP }).nextVoteCount
+    ).toBe(0);
+  });
 });
 
 describe("entryVoteCount", () => {
@@ -208,10 +218,12 @@ describe("entryVoteCount", () => {
     ).toBe(0);
   });
 
-  it("falls back to the legacy counts only without stats", () => {
+  it("falls back to the legacy counts only without a stats count", () => {
     expect(entryVoteCount({ net_votes: 5 } as Entry)).toBe(5);
     expect(entryVoteCount({ total_votes: 4 } as unknown as Entry)).toBe(4);
     expect(entryVoteCount({ active_votes: [{}, {}, {}], net_votes: 9 } as unknown as Entry)).toBe(3);
     expect(entryVoteCount(undefined)).toBe(0);
+    // stats without a count is not a count: fall back.
+    expect(entryVoteCount({ stats: {}, net_votes: 5 } as unknown as Entry)).toBe(5);
   });
 });
