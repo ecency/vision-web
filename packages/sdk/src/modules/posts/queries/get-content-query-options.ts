@@ -22,7 +22,11 @@ export function getContentQueryOptions(author: string, permlink: string) {
       // back in full from /@author/permlink.md and .json (#1862).
       // Condenser carries the whole voter list; normalize it away like every
       // other source (no observer: the vote is stated as unknown).
-      return filterDmcaEntry(entry ? normalizeEntry(entry, "") : entry) as Entry;
+      // Condenser sends the whole voter list (no cap, no stats), so its length
+      // is the count even past 1000.
+      return filterDmcaEntry(
+        entry ? normalizeEntry(entry, "", { completeVoteList: true }) : entry
+      ) as Entry;
     },
   });
 }

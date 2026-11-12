@@ -306,6 +306,11 @@ interface HeldVote {
 
 const optimisticVotes = new Map<string, HeldVote>();
 
+/** @internal Number of holds kept (tests, diagnostics). */
+export function __optimisticVoteHolds(): number {
+  return optimisticVotes.size;
+}
+
 /** Drop a hold and the re-reads it still has pending. */
 function settleHold(key: string): void {
   const held = optimisticVotes.get(key);
@@ -336,7 +341,17 @@ export function recordOptimisticVote(
 ): void {
   const key = voteKey(author, permlink, voter);
   settleHold(key);
-  optimisticVotes.set(key, { vote, at: Date.now(), recheck: false, expiry: false, timers: [] });
+  const held: HeldVote = { vote, at: Date.now(), recheck: false, expiry: false, timers: [] };
+  optimisticVotes.set(key, held);
+  // Dropped when it expires even if no lookup reads it again. Only the entry
+  // goes: a re-read already scheduled for the expiry still runs.
+  holdTimer(
+    held,
+    () => {
+      if (optimisticVotes.get(key) === held) optimisticVotes.delete(key);
+    },
+    OPTIMISTIC_VOTE_HOLD_MS
+  );
 }
 
 function sameVote(a: ObserverVote | null, b: ObserverVote | null): boolean {

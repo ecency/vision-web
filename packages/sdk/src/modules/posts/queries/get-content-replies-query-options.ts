@@ -21,7 +21,9 @@ export function getContentRepliesQueryOptions(author: string, permlink: string) 
 
       // Condenser rows carry the whole voter list: normalize them like every
       // other source (no observer: the vote is stated as unknown).
-      return filterDmcaEntry((replies ?? []).map((r) => normalizeEntry(r, ""))) as Entry[];
+      return filterDmcaEntry(
+        (replies ?? []).map((r) => normalizeEntry(r, "", { completeVoteList: true }))
+      ) as Entry[];
     },
   });
 }

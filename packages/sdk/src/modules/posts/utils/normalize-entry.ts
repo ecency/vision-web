@@ -25,7 +25,7 @@ function toNumber(value: unknown): number {
 export function isCastVote(vote: ObserverVote | null | undefined): vote is ObserverVote {
   if (!vote) return false;
   if (vote.percent !== null && vote.percent !== undefined) return vote.percent !== 0;
-  return vote.rshares !== 0;
+  return vote.rshares !== null && vote.rshares !== undefined && vote.rshares !== 0;
 }
 
 /** Coerce a vote-like value to an ObserverVote; null for none or a zero vote. */
@@ -33,7 +33,7 @@ function toObserverVote(value: unknown): ObserverVote | null {
   if (!value || typeof value !== "object") return null;
   const v = value as { rshares?: unknown; percent?: unknown };
   const vote: ObserverVote = {
-    rshares: toNumber(v.rshares),
+    rshares: v.rshares === undefined || v.rshares === null ? null : toNumber(v.rshares),
     percent: v.percent === undefined || v.percent === null ? null : toNumber(v.percent)
   };
   return isCastVote(vote) ? vote : null;
@@ -49,10 +49,9 @@ function deriveTopVotes(rows: VoteRow[]): EntryTopVote[] {
       rshares: toNumber(r.rshares),
       percent: r.percent === undefined || r.percent === null ? null : toNumber(r.percent)
     }))
-    .sort(
-      (a, b) =>
-        Math.abs(b.rshares) - Math.abs(a.rshares) || (a.voter < b.voter ? -1 : a.voter > b.voter ? 1 : 0)
-    )
+    // Signed, upvotes first: the order the voters are shown in, so a big
+    // flag never pushes a shown upvoter out of the set. Ties by voter.
+    .sort((a, b) => b.rshares - a.rshares || (a.voter < b.voter ? -1 : a.voter > b.voter ? 1 : 0))
     .slice(0, DERIVED_TOP_VOTES);
 }
 
@@ -89,12 +88,27 @@ function deriveTopVotes(rows: VoteRow[]): EntryTopVote[] {
  * 5. Neither: unknown.
  *
  * Other fields: `active_votes` is always removed. `top_votes` from v2 is kept
- * (coerced); for a v1 list it is derived (top 10 by |rshares|, then voter,
- * percent null when the row has none); absent otherwise. A row with no `stats`
- * gets `stats` from its list length only when the list is under 1000 rows.
+ * (coerced); for a v1 list it is derived (top 10 by signed rshares, upvotes
+ * first, then voter; percent null when the row has none); absent otherwise.
+ * A row with no `stats` gets `stats` from its list length only when the list
+ * is under 1000 rows.
+ *
+ * `options.completeVoteList`: the source sends the WHOLE voter list (condenser
+ * get_content / get_content_replies: no cap, no stats). Then the cap rule does
+ * not apply: absence means not voted and the length is the count, however
+ * long the list. Bridge v1 lists are capped; leave it unset for them.
+ *
  * Everything else passes through.
  */
-export function normalizeEntry<T extends object>(raw: T, observer: string): Entry {
+export interface NormalizeEntryOptions {
+  completeVoteList?: boolean;
+}
+
+export function normalizeEntry<T extends object>(
+  raw: T,
+  observer: string,
+  options: NormalizeEntryOptions = {}
+): Entry {
   if (!raw || typeof raw !== "object") return raw as unknown as Entry;
 
   const { active_votes: activeVotes, ...rest } = raw as Record<string, unknown> & {
@@ -125,7 +139,7 @@ export function normalizeEntry<T extends object>(raw: T, observer: string): Entr
     } else if (row) {
       voteFor = who;
       vote = toObserverVote({ rshares: row.rshares, percent: row.percent });
-    } else if (list.length < BRIDGE_V1_ACTIVE_VOTES_CAP) {
+    } else if (options.completeVoteList || list.length < BRIDGE_V1_ACTIVE_VOTES_CAP) {
       voteFor = who;
     }
   }
@@ -142,7 +156,7 @@ export function normalizeEntry<T extends object>(raw: T, observer: string): Entr
     out.top_votes = deriveTopVotes(list);
   }
 
-  if (list && !out.stats && list.length < BRIDGE_V1_ACTIVE_VOTES_CAP) {
+  if (list && !out.stats && (options.completeVoteList || list.length < BRIDGE_V1_ACTIVE_VOTES_CAP)) {
     out.stats = { flag_weight: 0, gray: false, hide: false, total_votes: list.length };
   }
 
@@ -190,5 +204,5 @@ export function voteDirection(vote: ObserverVote | null | undefined): "up" | "do
   if (vote.percent !== null && vote.percent !== undefined) {
     return vote.percent > 0 ? "up" : "down";
   }
-  return vote.rshares > 0 ? "up" : "down";
+  return (vote.rshares ?? 0) > 0 ? "up" : "down";
 }

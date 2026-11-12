@@ -23,7 +23,8 @@ describe("applyVoteCacheUpdate on a v2 entry (observer_vote)", () => {
     const { qc } = seed({ observer_vote: null, observer_vote_for: "carol" });
     applyVoteCacheUpdate("carol", { author: "alice", permlink: "v2-post", weight: 5000, estimated: 2 }, qc);
     const e = qc.getQueryData<any>(entryKey);
-    expect(e.observer_vote).toEqual({ rshares: 5000, percent: 5000 });
+    // No fabricated rshares: the node has not computed them yet.
+    expect(e.observer_vote).toEqual({ rshares: null, percent: 5000 });
     expect(e.observer_vote_for).toBe("carol");
     expect(e.stats.total_votes).toBe(1501);
     expect(e.payout).toBe(3);
@@ -39,7 +40,7 @@ describe("applyVoteCacheUpdate on a v2 entry (observer_vote)", () => {
   });
 
   it("skips the write when the platform layer already set this vote", () => {
-    const { qc, entry } = seed({ observer_vote: { rshares: 5000, percent: 5000 }, observer_vote_for: "carol" });
+    const { qc, entry } = seed({ observer_vote: { rshares: null, percent: 5000 }, observer_vote_for: "carol" });
     applyVoteCacheUpdate("carol", { author: "alice", permlink: "v2-post", weight: 5000, estimated: 2 }, qc);
     expect(qc.getQueryData(entryKey)).toBe(entry);
   });
@@ -62,7 +63,7 @@ describe("applyVoteCacheUpdate on a v2 entry (observer_vote)", () => {
     // carol had voted already: a re-vote, not a new vote.
     expect(e.stats.total_votes).toBe(1500);
     expect(qc.getQueryData(QueryKeys.posts.entryVote("alice", "v2-post", "carol"))).toEqual({
-      rshares: 5000,
+      rshares: null,
       percent: 5000,
     });
   });
@@ -112,6 +113,8 @@ describe("voteInvalidationKeys", () => {
       QueryKeys.posts.entry("/@alice/p"),
       QueryKeys.accounts.full("carol"),
       QueryKeys.posts.entryVote("alice", "p", "carol"),
+      // PR review, item 7: the votes dialog's full voter list.
+      QueryKeys.posts.entryActiveVotes("alice", "p"),
     ]);
   });
 });

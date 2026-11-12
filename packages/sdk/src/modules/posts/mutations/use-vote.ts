@@ -66,7 +66,8 @@ function applyObserverVoteUpdate(
   const reflected = weight !== 0 ? hadVote && prior!.percent === weight : !hadVote;
   if (reflected) return;
 
-  const next: ObserverVote | null = weight !== 0 ? { rshares: weight, percent: weight } : null;
+  // No rshares yet: the node computes them once the vote is in a block.
+  const next: ObserverVote | null = weight !== 0 ? { rshares: null, percent: weight } : null;
   const base = entry.stats!.total_votes;
   const total =
     !hadVote && next !== null ? base + 1 : hadVote && next === null ? Math.max(0, base - 1) : base;
@@ -89,6 +90,8 @@ export function voteInvalidationKeys(username: string | undefined, variables: Vo
     // The voter's looked-up vote: a lookup made before the vote must not
     // outlive the chain state it predates.
     QueryKeys.posts.entryVote(variables.author, variables.permlink, username),
+    // The full voter list the votes dialog shows now includes (or drops) them.
+    QueryKeys.posts.entryActiveVotes(variables.author, variables.permlink),
   ];
 }
 

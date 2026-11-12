@@ -110,3 +110,15 @@ describe("getContentQueryOptions: vote fields", () => {
     expect(out.root_author).toBe("alice");
   });
 });
+
+// PR review, item 13: condenser get_content carries the complete voter list
+// (no cap) and no stats: its length is the count, also past 1000.
+describe("getContentQueryOptions: a complete list of 1000 or more", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it("keeps the count as stats.total_votes", async () => {
+    const votes = Array.from({ length: 1200 }, (_, i) => ({ voter: `v${i}`, rshares: 1, percent: 100 }));
+    mockCallRPC.mockResolvedValue(entry({ active_votes: votes }));
+    const out = await run("alice", "a-post");
+    expect((out as any).stats?.total_votes).toBe(1200);
+  });
+});

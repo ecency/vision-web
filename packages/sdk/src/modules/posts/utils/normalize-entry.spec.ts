@@ -136,12 +136,14 @@ describe("normalizeEntry (shape-driven, v1 or v2 in, one Entry out)", () => {
     ];
     const derived = normalizeEntry({ ...COMMON, active_votes: list }, "x").top_votes!;
     expect(derived).toHaveLength(10);
-    expect(derived.slice(0, 4)).toEqual([
-      { voter: "flag", rshares: -900, percent: null },
+    // Signed order, upvotes first (as displayed): a big flag does not push an
+    // upvoter out of the top set; ties by voter.
+    expect(derived.slice(0, 3)).toEqual([
       { voter: "a-tie", rshares: 100, percent: 5000 },
       { voter: "b-tie", rshares: 100, percent: null },
       { voter: "small", rshares: 5, percent: null }
     ]);
+    expect(derived.map((v) => v.voter)).not.toContain("flag");
   });
 
   it("reads a v2 zero vote (percent 0) as no vote", () => {
@@ -211,5 +213,40 @@ describe("voteDirection and isCastVote", () => {
     expect(isCastVote({ rshares: 0, percent: 0 })).toBe(false);
     expect(isCastVote({ rshares: 0, percent: null })).toBe(false);
     expect(isCastVote(null)).toBe(false);
+  });
+});
+
+// PR review, item 13: condenser lists (get_content, get_content_replies) are
+// complete, with no cap and no stats. Their length is the count, and a voter
+// missing from them did not vote, however long the list.
+describe("normalizeEntry: complete voter lists", () => {
+  const big = (n: number) => Array.from({ length: n }, (_, i) => ({ voter: `c${i}`, rshares: 1, percent: 100 }));
+
+  it("derives stats.total_votes from a complete list of 1000 or more", () => {
+    const e = normalizeEntry({ author: "a", permlink: "p", active_votes: big(1200) }, "", { completeVoteList: true });
+    expect(e.stats?.total_votes).toBe(1200);
+  });
+
+  it("reads absence from a complete list as not voted", () => {
+    const e = normalizeEntry({ author: "a", permlink: "p", active_votes: big(1200) }, "late", { completeVoteList: true });
+    expect(e.observer_vote_for).toBe("late");
+    expect(e.observer_vote).toBeNull();
+  });
+
+  it("keeps the cap rule for bridge v1 lists", () => {
+    const e = normalizeEntry({ author: "a", permlink: "p", active_votes: big(1200) }, "late");
+    expect(e).not.toHaveProperty("stats");
+    expect(e.observer_vote_for).toBeNull();
+  });
+});
+
+// PR review, item 10: an optimistic vote has no real rshares (null).
+describe("votes without rshares (optimistic)", () => {
+  it("decides by percent, and is not cast without one", () => {
+    expect(isCastVote({ rshares: null, percent: 5000 })).toBe(true);
+    expect(isCastVote({ rshares: null, percent: 0 })).toBe(false);
+    expect(isCastVote({ rshares: null, percent: null })).toBe(false);
+    expect(voteDirection({ rshares: null, percent: -5000 })).toBe("down");
+    expect(voteDirection({ rshares: null, percent: null })).toBeNull();
   });
 });

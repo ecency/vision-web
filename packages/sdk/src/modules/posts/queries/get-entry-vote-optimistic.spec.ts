@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { ConfigManager, QueryKeys } from "@/modules/core";
 import { config } from "@/hive-tx/config";
-import { getEntryVoteQueryOptions, recordOptimisticVote } from "./get-entry-active-votes-query-options";
+import { getEntryVoteQueryOptions, recordOptimisticVote, __optimisticVoteHolds } from "./get-entry-active-votes-query-options";
 
 // Round 4, item 4: bridge and database reads lag the chain by a block or
 // more. The lookup refetch the post-vote refresh triggers can say "no vote"
@@ -95,6 +95,17 @@ describe("getEntryVoteQueryOptions right after this client voted", () => {
 
     await vi.advanceTimersByTimeAsync(61_000);
     expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  // PR review, item 11: a hold nobody reads again does not stay for the
+  // session; it is dropped when it expires.
+  it("drops a hold that no lookup reads again when it expires", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const before = __optimisticVoteHolds();
+    recordOptimisticVote("bob", "p", "gina", { rshares: null, percent: 5000 });
+    expect(__optimisticVoteHolds()).toBe(before + 1);
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(__optimisticVoteHolds()).toBe(before);
   });
 
   it("trusts the chain once 60 s have passed", async () => {

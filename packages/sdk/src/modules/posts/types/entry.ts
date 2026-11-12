@@ -15,7 +15,11 @@ export interface EntryVote {
  * carries only rshares).
  */
 export interface ObserverVote {
-  rshares: number;
+  /**
+   * Null for a vote this client just cast: the node computes rshares only
+   * once the vote is in a block, so an optimistic vote never invents them.
+   */
+  rshares: number | null;
   percent: number | null;
 }
 
