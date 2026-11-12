@@ -7,6 +7,16 @@ on:
 permissions:
   contents: read
 
+# One versioning run per PR, newest event wins. Each labeled event carries the
+# PR's labels at that moment, so a label swapped seconds after another
+# (patch:ui then patch:sdk on #2059) cancels the older run instead of racing it
+# to the branch, where the loser's push is rejected. Workflow level, not job
+# level: a job enters its group only once its gate finishes, so a slow gate on
+# the older event could otherwise cancel the newer run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   # Same-repo PRs are versioned and rebuilt on their own branch. A fork's branch
   # cannot be pushed with GITHUB_TOKEN, and its committed dist is the contributor's

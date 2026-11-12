@@ -13,6 +13,9 @@
   #                                   committed dist is reset before the fork job builds.
   #                                   Review the result: fork build code still runs.
 set -eo pipefail
+# Feed grep -q from here-strings, never `echo "$list" | grep -q`: grep exits at
+# the first match, the writer then dies of SIGPIPE on a list over a pipe buffer,
+# and pipefail turns a match into "no match".
 
 PACKAGES=(sdk wallets render-helper ui)
 LABELS=$(echo "$PR_LABELS" | jq -r '.[]')
@@ -44,7 +47,7 @@ set_bump() {
 # Package-specific labels
 for pkg in "${PACKAGES[@]}"; do
   for bump in patch minor major; do
-    if echo "$LABELS" | grep -qx "$bump:$pkg"; then set_bump "@ecency/$pkg" "$bump"; fi
+    if grep -qx "$bump:$pkg" <<< "$LABELS"; then set_bump "@ecency/$pkg" "$bump"; fi
   done
 done
 
@@ -54,14 +57,14 @@ done
 # released and are ignored here. Mirrors the job-level `if:`; kept in the
 # script too so the rule survives someone loosening that condition.
 if [ ${#PACKAGE_BUMPS[@]} -eq 0 ] && [ "$PR_AUTHOR" != "dependabot[bot]" ]; then
-  if echo "$LABELS" | grep -qx "major"; then
+  if grep -qx "major" <<< "$LABELS"; then
     DEFAULT_BUMP="major"
-  elif echo "$LABELS" | grep -qx "minor"; then
+  elif grep -qx "minor" <<< "$LABELS"; then
     DEFAULT_BUMP="minor"
   fi
 
   for pkg in "${PACKAGES[@]}"; do
-    if echo "$CHANGED_FILES" | grep -q "^packages/$pkg/"; then set_bump "@ecency/$pkg" "$DEFAULT_BUMP"; fi
+    if grep -q "^packages/$pkg/" <<< "$CHANGED_FILES"; then set_bump "@ecency/$pkg" "$DEFAULT_BUMP"; fi
   done
 fi
 
@@ -91,11 +94,12 @@ cat "$CHANGESET_FILE"
 pnpm changeset version
 
 # Packages whose version moved, plus (fork PRs) every package the PR touched
+VERSIONED_FILES=$(git diff --name-only)
 REBUILD=()
 for pkg in "${PACKAGES[@]}"; do
-  if git diff --name-only | grep -q "^packages/$pkg/"; then
+  if grep -q "^packages/$pkg/" <<< "$VERSIONED_FILES"; then
     REBUILD+=("$pkg")
-  elif [ "${REBUILD_TOUCHED_DIST:-}" = "true" ] && echo "$CHANGED_FILES" | grep -q "^packages/$pkg/"; then
+  elif [ "${REBUILD_TOUCHED_DIST:-}" = "true" ] && grep -q "^packages/$pkg/" <<< "$CHANGED_FILES"; then
     REBUILD+=("$pkg")
   fi
 done
@@ -121,7 +125,7 @@ echo "Rebuilding packages: ${REBUILD[*]}"
 
 # sdk first: wallets depends on it
 for pkg in "${PACKAGES[@]}"; do
-  if printf '%s\n' "${REBUILD[@]}" | grep -qx "$pkg"; then
+  if grep -qx "$pkg" <<< "$(printf '%s\n' "${REBUILD[@]}")"; then
     echo "Building @ecency/$pkg..."
     pnpm --filter "@ecency/$pkg" build
   fi
