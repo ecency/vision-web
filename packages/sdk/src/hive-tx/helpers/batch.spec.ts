@@ -133,25 +133,38 @@ describe("node-level classification of echoed asserts", () => {
     expect(answers.every((a) => /does not exist/.test(String(a.error?.message)))).toBe(true);
   });
 
-  it("batch: one sick element among good ones stays that element's answer", async () => {
+  // Round 5, item 3: a node-level error on SOME elements is not an answer for
+  // them: those elements (only) move to the next node, and the node that
+  // failed them is not recorded as healthy.
+  it("batch: 49 sick elements and 1 good one: the 49 are re-sent to the next node", async () => {
     config.nodes = ["https://mixed-a.test", "https://mixed-b.test"];
-    const hosts: string[] = [];
+    const sent: Array<{ host: string; n: number }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init: any) => {
-      hosts.push(new URL(String(input)).host);
+      const host = new URL(String(input)).host;
       const body = JSON.parse(String(init.body));
+      sent.push({ host, n: body.length });
       return json(
-        body.map((r: any, i: number) =>
-          i === 0
+        body.map((r: any) =>
+          host === "mixed-a.test" && r.params.start[1] !== "p0"
             ? { jsonrpc: "2.0", id: r.id, error: { code: -32603, message: "Internal Error" } }
-            : { jsonrpc: "2.0", id: r.id, result: { votes: [] } }
+            : { jsonrpc: "2.0", id: r.id, result: { votes: [{ n: r.params.start[1], host }] } }
         )
       );
     });
-    const answers = await callRPCBatch(calls);
-    expect(hosts).toEqual(["mixed-a.test"]);
-    expect(answers[0].error).toBeDefined();
-    expect(answers[1].result).toEqual({ votes: [] });
-    expect(answers[2].result).toEqual({ votes: [] });
+    const fifty = Array.from({ length: 50 }, (_, i) => ({
+      method: "database_api.list_votes",
+      params: { start: ["a", `p${i}`, "u"], limit: 1, order: "by_comment_voter" },
+    }));
+    const answers = await callRPCBatch(fifty);
+    expect(sent).toEqual([
+      { host: "mixed-a.test", n: 50 },
+      { host: "mixed-b.test", n: 49 },
+    ]);
+    expect(answers.every((a) => a.error === undefined)).toBe(true);
+    expect((answers[0].result as any).votes[0].host).toBe("mixed-a.test");
+    expect((answers[7].result as any).votes[0]).toEqual({ n: "p7", host: "mixed-b.test" });
+    const a = (rpcHealthTracker as any).health.get("https://mixed-a.test");
+    expect(a.apiFailures.get("database_api")?.count ?? 0).toBe(1);
   });
 });
 
@@ -233,5 +246,41 @@ describe("callRPCBatch: an error-object refusal", () => {
     for (let i = 0; i < 3; i++) await callRPCBatch(calls.slice(0, 1));
     expect(shapes).toEqual(["batch", "single", "batch", "single", "batch", "single"]);
     expect(__BATCH_SUPPORT__.refused("https://invalid-req.test")).toBe(0);
+  });
+});
+
+// Round 5, item 2: a node that dies while it is being sent single calls must
+// not cost a timeout per request before the batch moves on.
+describe("callRPCBatch: a dead node in single-call mode", () => {
+  it("fails the rest over after about two timeouts, not one per request", async () => {
+    config.nodes = ["https://dead-singles.test", "https://live-singles.test"];
+    __BATCH_SUPPORT__.markUnsupported("https://dead-singles.test");
+    __BATCH_SUPPORT__.markUnsupported("https://live-singles.test");
+    let deadCalls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: any, init: any) => {
+      const body = JSON.parse(String(init.body));
+      if (String(input).includes("dead-singles")) {
+        deadCalls++;
+        // A dead node: every request runs into its timeout.
+        return new Promise((_r, reject) =>
+          init.signal?.addEventListener("abort", () => {
+            const e = new Error("timed out");
+            e.name = "TimeoutError";
+            reject(e);
+          })
+        );
+      }
+      return Promise.resolve(json({ jsonrpc: "2.0", id: body.id, result: { votes: [] } }));
+    });
+    const many = Array.from({ length: 50 }, (_, i) => ({
+      method: "database_api.list_votes",
+      params: { start: ["a", `p${i}`, "u"], limit: 1, order: "by_comment_voter" },
+    }));
+    const t0 = Date.now();
+    const answers = await callRPCBatch(many, { timeout: 100 });
+    // One request per 6-wide wave would be ~9 timeouts (~900 ms).
+    expect(Date.now() - t0).toBeLessThan(350);
+    expect(answers.every((a) => a.error === undefined)).toBe(true);
+    expect(deadCalls).toBeLessThan(13);
   });
 });

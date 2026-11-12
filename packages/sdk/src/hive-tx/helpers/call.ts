@@ -1957,7 +1957,15 @@ export const callRPCBatch = async <T = any>(
   const triedInRound = new Set<string>()
   let lastError: any
 
-  for (let attempt = 0; attempt <= retry; attempt++) {
+  // Answers so far, and the requests still waiting for one. A request is
+  // answered by a result or by an error that is about the REQUEST (an
+  // application error such as an echoed assert). A node-level error, a
+  // transport failure or a request the node never got to stays pending and
+  // moves to the next node; answered requests are never sent again.
+  const answers: Array<RpcBatchAnswer<T> | undefined> = new Array(calls.length)
+  let pending = calls.map((_c, i) => i)
+
+  for (let attempt = 0; attempt <= retry && pending.length > 0; attempt++) {
     if (attempt > 0 && Date.now() >= deadline) break
     const ordered = rpcHealthTracker.getOrderedNodes(config.nodes, api)
     let node = ordered.find((n) => !triedInRound.has(n))
@@ -1967,26 +1975,43 @@ export const callRPCBatch = async <T = any>(
     }
     triedInRound.add(node)
     const start = Date.now()
+    let nodeFault: any
     try {
-      const answers = await batchOnNode<T>(node, calls, timeout, signal)
-      // Every request failed in a way that is about the node (a sick backend
-      // behind an HTTP 200, or every single call failing): the whole batch
-      // fails on this node and moves on. One failed element among answers is
-      // that element's answer.
-      if (answers.every((a) => a.error !== undefined && isNodeFailure(a.error))) {
-        throw answers[0].error
+      const got = await batchOnNode<T>(node, pending.map((i) => calls[i]), timeout, signal, deadline)
+      const stillPending: number[] = []
+      // An index loop, not forEach: unanswered requests are HOLES in `got`,
+      // which forEach would skip (and so drop instead of moving them on).
+      for (let k = 0; k < pending.length; k++) {
+        const i = pending[k]
+        const a = got[k]
+        if (a === undefined || (a.error !== undefined && isNodeFailure(a.error))) {
+          stillPending.push(i)
+          if (a?.error !== undefined && nodeFault === undefined) nodeFault = a.error
+        } else {
+          answers[i] = a
+        }
       }
-      rpcHealthTracker.recordSuccess(node, api)
-      return answers
+      if (stillPending.length > 0 && nodeFault === undefined) {
+        nodeFault = new Error(`[hive-tx] ${stillPending.length} batch requests unanswered by ${node}`)
+      }
+      pending = stillPending
     } catch (e: any) {
       if (signal?.aborted) throw e
-      recordError(rpcHealthTracker, node, e, api)
-      rpcHealthTracker.recordSlowFailure(node, Date.now() - start)
-      lastError = e
-      if (attempt < retry) await jitterDelay()
+      nodeFault = e
     }
+    if (nodeFault === undefined) {
+      rpcHealthTracker.recordSuccess(node, api)
+      break
+    }
+    // One record per node and attempt, however many requests it failed.
+    recordError(rpcHealthTracker, node, nodeFault, api)
+    rpcHealthTracker.recordSlowFailure(node, Date.now() - start)
+    lastError = nodeFault
+    if (pending.length > 0 && attempt < retry) await jitterDelay()
   }
-  throw lastError
+  if (pending.length === calls.length) throw lastError
+  for (const i of pending) answers[i] = { error: lastError instanceof Error ? lastError : new Error(String(lastError)) }
+  return answers as RpcBatchAnswer<T>[]
 }
 
 /** Pseudo-method under which a node is marked as not taking batch arrays. */
@@ -2039,10 +2064,11 @@ async function batchOnNode<T>(
   node: string,
   calls: RpcCallSpec[],
   timeout: number,
-  signal?: AbortSignal
-): Promise<RpcBatchAnswer<T>[]> {
+  signal?: AbortSignal,
+  deadline = Infinity
+): Promise<Array<RpcBatchAnswer<T> | undefined>> {
   if (lacksMethod(node, BATCH_CAPABILITY)) {
-    return singleCallsAsBatch<T>(node, calls, timeout, signal)
+    return singleCallsAsBatch<T>(node, calls, timeout, signal, deadline)
   }
   let partial: Array<RpcBatchAnswer<T> | undefined>
   try {
@@ -2054,42 +2080,66 @@ async function batchOnNode<T>(
       batchRefusals.set(node, n)
       if (n >= BATCH_REFUSALS_TO_MARK) markLacksMethod(node, BATCH_CAPABILITY)
     }
-    return singleCallsAsBatch<T>(node, calls, timeout, signal)
+    return singleCallsAsBatch<T>(node, calls, timeout, signal, deadline)
   }
   // A batch array came back: the node takes batches; its refusal count restarts.
   batchRefusals.delete(node)
   const missing = partial.flatMap((a, i) => (a === undefined ? [i] : []))
   if (missing.length > 0) {
-    const filled = await singleCallsAsBatch<T>(node, missing.map((i) => calls[i]), timeout, signal)
+    const filled = await singleCallsAsBatch<T>(node, missing.map((i) => calls[i]), timeout, signal, deadline)
     missing.forEach((i, k) => {
       partial[i] = filled[k]
     })
   }
-  return partial as RpcBatchAnswer<T>[]
+  return partial
 }
+
+/** Transport failures in a row after which a node gets no more single calls. */
+const SINGLES_TRANSPORT_FAILURES_TO_STOP = 2
 
 /**
  * The requests sent one by one to one node, at most SINGLES_CONCURRENCY in
  * flight, answers in order. A failure of one call is that call's answer and
- * never rejects the others.
+ * never rejects the others. A worker whose call failed in transport stops;
+ * after SINGLES_TRANSPORT_FAILURES_TO_STOP such failures in a row (the node
+ * died), or once the call's deadline passed, no worker starts another call:
+ * the requests not sent are left
+ * `undefined`, so the caller moves them to the next node as a unit instead of
+ * paying a timeout per request here.
  */
 async function singleCallsAsBatch<T>(
   node: string,
   calls: RpcCallSpec[],
   timeout: number,
-  signal?: AbortSignal
-): Promise<RpcBatchAnswer<T>[]> {
-  const answers: RpcBatchAnswer<T>[] = new Array(calls.length)
+  signal?: AbortSignal,
+  deadline = Infinity
+): Promise<Array<RpcBatchAnswer<T> | undefined>> {
+  const answers: Array<RpcBatchAnswer<T> | undefined> = new Array(calls.length)
   let next = 0
+  let transportFailuresInARow = 0
+  const stopped = () =>
+    transportFailuresInARow >= SINGLES_TRANSPORT_FAILURES_TO_STOP || Date.now() >= deadline
   const worker = async () => {
-    while (next < calls.length) {
+    while (next < calls.length && !stopped()) {
       const i = next++
       try {
         const result = await jsonRPCCall(node, calls[i].method, calls[i].params, timeout, false, signal)
+        transportFailuresInARow = 0
         answers[i] = { result: result as T }
       } catch (e: any) {
         if (signal?.aborted) throw e
-        answers[i] = { error: e instanceof Error ? e : new Error(String(e)) }
+        if (e instanceof RPCError) {
+          transportFailuresInARow = 0
+          answers[i] = { error: e }
+        } else {
+          transportFailuresInARow++
+          // Left undefined: a transport failure is about the node, so this
+          // request moves on with the others that were not answered. This
+          // worker stops here: on a dead node every worker stops after its
+          // first timeout, so the node costs one timeout, not two, and the
+          // call's budget still has room to fail over.
+          return
+        }
       }
     }
   }
