@@ -221,6 +221,36 @@ describe('self-hosted VoteButton when the SDK cannot move the count', () => {
     expect(container.textContent).toContain('11 likes');
   });
 
+  it('moves a cross-post count once when the original is also cached under its own key', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    const outerKey = QueryKeys.posts.entry('/@carol/xpost2');
+    qc.setQueryData(outerKey, {
+      author: 'carol',
+      permlink: 'xpost2',
+      original_entry: { author: 'bob', permlink: 'p2', payout: 1, stats: { total_votes: 10 } },
+    });
+    // The reader opened the original before: the SDK's update moves THIS copy,
+    // which the cross-post footer does not show.
+    qc.setQueryData(QueryKeys.posts.entry('/@bob/p2'), {
+      author: 'bob',
+      permlink: 'p2',
+      payout: 1,
+      stats: { total_votes: 10, flag_weight: 0, gray: false, hide: false },
+      observer_vote: null,
+      observer_vote_for: 'alice',
+    });
+    state.lookup.mockResolvedValue(null);
+    state.afterVote.mockImplementation(async (vars: any) => applyVoteCacheUpdate('alice', vars, qc));
+    function CrossPost() {
+      const { data } = useQuery<any>({ queryKey: outerKey, queryFn: () => null, enabled: false });
+      const o = data.original_entry;
+      return <VoteButton author={o.author} permlink={o.permlink} totalVotes={o.stats.total_votes} />;
+    }
+    await mount(qc, <CrossPost />);
+    await click();
+    expect(container.textContent).toContain('11 likes');
+  });
+
   it('moves the count once when the vote lands before the lookup answered, and not again when the entry refetch arrives', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     const key = QueryKeys.posts.entry('/@bob/p');
@@ -245,6 +275,8 @@ describe('self-hosted VoteButton when the SDK cannot move the count', () => {
     // The deferred refresh brings the chain's count, which includes the vote.
     await act(async () => {
       qc.setQueryData(key, (old: any) => ({ ...old, stats: { ...old.stats, total_votes: 11 } }));
+      // React Query notifies observers on a later tick.
+      await new Promise((r) => setTimeout(r, 0));
     });
     expect(container.textContent).toContain('11 likes');
     expect(container.textContent).not.toContain('12');

@@ -7,7 +7,6 @@ import clsx from "clsx";
 import { useCallback, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  type Entry,
   getEntryVoteQueryOptions,
   isCastVote,
   type ObserverVote,
@@ -66,11 +65,13 @@ export function VoteButton({
   );
   const voted = isCastVote(ownVote);
 
-  // A count correction for the cases the SDK's vote cache update cannot move
-  // the count: a cross-post (the entry under author/permlink is not cached)
-  // and a vote cast before the lookup answered (prior vote unknown). It is
-  // tied to the post and to the count it was made against, so a refetch that
-  // brings a new count drops it (never counted twice).
+  // A count correction for the vote just cast, tied to the post and to the
+  // count it was made against. It shows until `totalVotes` changes: when the
+  // SDK's vote cache update moves the entry the caller reads, or a refetch
+  // brings the chain's count, the new count replaces it (never counted
+  // twice). When nothing moves `totalVotes` (a cross-post, whose footer reads
+  // the cross-post's copy; a vote cast before the lookup answered, which the
+  // SDK leaves alone), the correction is what moves the visible count.
   const postKey = `${author}/${permlink}`;
   const [correction, setCorrection] = useState<{ postKey: string; base: number; delta: number } | null>(
     null
@@ -89,11 +90,7 @@ export function VoteButton({
     }) => {
       if (!user) return;
 
-      const entryKey = QueryKeys.posts.entry(`/@${author}/${permlink}`);
-      const before = queryClient.getQueryData<Entry>(entryKey)?.stats?.total_votes;
       await voteMutation.mutateAsync({ author, permlink, weight });
-      const after = queryClient.getQueryData<Entry>(entryKey)?.stats?.total_votes;
-      const sdkMovedCount = before !== undefined && after !== before;
       // The vote is only in the mempool yet, so a refetch would not show it:
       // write the visitor's vote into the lookup. The count is NOT moved here:
       // the SDK's vote cache update already moves stats.total_votes in the
@@ -101,13 +98,12 @@ export function VoteButton({
       const next: ObserverVote | null = weight !== 0 ? { rshares: weight, percent: weight } : null;
       queryClient.setQueryData(QueryKeys.posts.entryVote(author, permlink, user.username), next);
       recordOptimisticVote(author, permlink, user.username, next);
-      if (!sdkMovedCount) {
-        // `voted` is what the button showed: unknown counts as not voted, as
-        // the button treated it (it cast a vote rather than removing one).
-        const delta = next && !voted ? 1 : !next && voted ? -1 : 0;
-        if (delta !== 0) {
-          setCorrection({ postKey: `${author}/${permlink}`, base: totalVotes || 0, delta });
-        }
+      // `voted` is what the button showed: unknown counts as not voted, as
+      // the button treated it (it cast a vote rather than removing one).
+      // `totalVotes` is the count shown when the vote was cast.
+      const delta = next && !voted ? 1 : !next && voted ? -1 : 0;
+      if (delta !== 0) {
+        setCorrection({ postKey: `${author}/${permlink}`, base: totalVotes || 0, delta });
       }
     },
     [user, author, permlink, voteMutation, queryClient, voted, totalVotes]
