@@ -111,6 +111,29 @@ describe("EntryVoteBtn — opening the slider is not blocked on the previous-vot
     await waitFor(() => expect(screen.getByTestId("vote-dialog").textContent).toBe("prev:75"));
   });
 
+  // Issue #2070: the lookup now returns a removed vote as a percent-0 row. It
+  // is not a previous vote, so it must not seed the slider with 0.
+  it("does not seed the slider from a looked-up removed vote (percent 0)", async () => {
+    const entry = mockEntry({
+      author: "bob",
+      permlink: "removed-prev",
+      post_id: 998,
+      observer_vote: { rshares: 100, percent: null },
+      observer_vote_for: "alice"
+    });
+    const queryClient = createTestQueryClient();
+    const fetchSpy = vi.spyOn(queryClient, "fetchQuery").mockResolvedValue({ rshares: 0, percent: 0 } as any);
+
+    renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />, { queryClient });
+    fireEvent.click(screen.getByRole("button"));
+
+    await screen.findByTestId("vote-dialog");
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByTestId("vote-dialog").textContent).not.toBe("prev:0");
+    expect(screen.getByTestId("vote-dialog").textContent).toBe("prev:none");
+  });
+
   it("toggles the slider closed on a second click", async () => {
     const entry = mockEntry({ author: "bob", permlink: "b-post", post_id: 1000, observer_vote: null, observer_vote_for: "alice" } as any);
     renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);

@@ -12,7 +12,10 @@ export interface EntryVote {
  * One account's vote on an entry, as bridge v2 `observer_vote` reports it.
  * `percent` is the vote weight in basis points (10000 = 100%, negative for a
  * downvote); null when the source did not say (a v1 bridge `active_votes` row
- * carries only rshares).
+ * carries only rshares). Percent 0 is a removed vote: the account voted, then
+ * set the weight to 0. Hivemind keeps that row and still counts it in
+ * `stats.total_votes`, so it is kept, but it is not a cast vote. Test "has
+ * voted" with `isCastVote`, never by null checks.
  */
 export interface ObserverVote {
   /**
@@ -75,8 +78,9 @@ export interface Entry {
   // read a user's own vote with `entryVoteOf` / `getEntryVoteQueryOptions`,
   // and load the full list on demand with `getEntryActiveVotesQueryOptions`.
   /**
-   * Vote of the account in `observer_vote_for`: the vote, or null when that
-   * account has not voted. Meaningless when `observer_vote_for` is null.
+   * Vote of the account in `observer_vote_for`: the vote; a percent-0 row when
+   * that account voted, then removed the vote (not cast, see `isCastVote`);
+   * or null when it never voted. Meaningless when `observer_vote_for` is null.
    */
   observer_vote?: ObserverVote | null;
   /**

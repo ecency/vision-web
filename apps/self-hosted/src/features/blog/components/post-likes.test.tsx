@@ -102,7 +102,7 @@ afterEach(() => {
 });
 
 describe('PostLikes', () => {
-  it('vote then unvote on a post: 10, 11, 10', async () => {
+  it('vote then unvote on a post, then revote: 10, 11, 11, 11', async () => {
     const entry = post('normal');
     currentQc.setQueryData(QueryKeys.posts.entry('/@bob/normal'), entry);
     state.lookup.mockResolvedValue(null);
@@ -110,11 +110,15 @@ describe('PostLikes', () => {
     expect(count()).toBe('10');
     await click();
     expect(count()).toBe('11');
+    // Hivemind keeps the removed vote as a percent 0 row and still counts it
+    // (#2070): the unvote keeps 11, and so does the revote over that row.
     await click();
-    expect(count()).toBe('10');
+    expect(count()).toBe('11');
+    await click();
+    expect(count()).toBe('11');
   });
 
-  it('vote then unvote on a cross-post: 10, 11, 10', async () => {
+  it('vote then unvote on a cross-post, then revote: 10, 11, 11, 11', async () => {
     const outer = { author: 'carol', permlink: 'xpost', original_entry: post('orig') };
     currentQc.setQueryData(QueryKeys.posts.entry('/@carol/xpost'), outer);
     state.lookup.mockResolvedValue(null);
@@ -122,11 +126,15 @@ describe('PostLikes', () => {
     expect(count()).toBe('10');
     await click();
     expect(count()).toBe('11');
+    // Hivemind keeps the removed vote as a percent 0 row and still counts it
+    // (#2070): the unvote keeps 11, and so does the revote over that row.
     await click();
-    expect(count()).toBe('10');
+    expect(count()).toBe('11');
+    await click();
+    expect(count()).toBe('11');
   });
 
-  it('vote before the lookup answered, then unvote: 10, 11, 10', async () => {
+  it('vote before the lookup answered, then unvote, then revote: 10, 11, 11, 11', async () => {
     const entry = post('early');
     currentQc.setQueryData(QueryKeys.posts.entry('/@bob/early'), entry);
     let answer: (v: unknown) => void = () => {};
@@ -139,8 +147,12 @@ describe('PostLikes', () => {
     await tick();
     await tick();
     expect(count()).toBe('11');
+    // Hivemind keeps the removed vote as a percent 0 row and still counts it
+    // (#2070): the unvote keeps 11, and so does the revote over that row.
     await click();
-    expect(count()).toBe('10');
+    expect(count()).toBe('11');
+    await click();
+    expect(count()).toBe('11');
   });
 
   it('a weight change by a user who already voted keeps 10', async () => {

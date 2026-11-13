@@ -14,7 +14,10 @@ export interface EntryVote {
 export interface ObserverVote {
   /** Null for an optimistic vote: the node computes rshares once it is in a block. */
   rshares: number | null;
-  /** Basis points, negative for a downvote; null when the source did not say. */
+  /**
+   * Basis points, negative for a downvote; null when the source did not say.
+   * 0 = a removed vote, kept as a row hivemind still counts, but not cast.
+   */
   percent: number | null;
 }
 
@@ -65,7 +68,11 @@ export interface Entry {
    * the full list with `getEntryActiveVotesQueryOptions`.
    */
   active_votes?: EntryVote[];
-  /** Vote of `observer_vote_for` on this entry; null = not voted. Mirrors the SDK contract. */
+  /**
+   * Vote of `observer_vote_for` on this entry. null = never voted; a percent-0
+   * row = voted, then removed (not cast: test with `isCastVote`). Mirrors the
+   * SDK contract.
+   */
   observer_vote?: ObserverVote | null;
   /** The account `observer_vote` belongs to; null = unknown. Never show its vote as another user's. */
   observer_vote_for?: string | null;

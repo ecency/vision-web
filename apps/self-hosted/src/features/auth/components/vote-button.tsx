@@ -84,8 +84,9 @@ export function VoteButton({
       if (!user) return;
 
       // The SDK's vote cache update moves the count by the voter's PRIOR vote
-      // (+1 fresh, -1 removed, 0 for a new weight), and skips when it does not
-      // know it. So the prior vote is known before the broadcast: a click that
+      // (+1 for a first vote; 0 for a new weight, an unvote, or a vote over a
+      // removed vote, whose row hivemind still counts), and skips when it does
+      // not know it. So the prior vote is known before the broadcast: a click that
       // came before the lookup answered waits for it (the same request).
       let priorKnown = ownVote !== undefined;
       if (!priorKnown) {
