@@ -10,12 +10,22 @@ import { ObserverVote } from "@/entities";
 import { entryVoteOf, isCastVote, QueryKeys } from "@ecency/sdk";
 import { pickViewerVote } from "@/core/hooks/use-viewer-vote";
 
-/** Same vote: both not cast, or both cast with the same weight. */
+/**
+ * Same vote: both cast with the same weight, both a removed vote (a percent-0
+ * row, #2070), or both no row. A removed vote is not "no row": hivemind still
+ * counts it. Same rule as the SDK's lookup hold; percent 0 is checked here
+ * directly so the web build does not need a newer SDK dist.
+ */
 function sameVote(a: ObserverVote | null, b: ObserverVote | null): boolean {
-  const castA = isCastVote(a);
-  const castB = isCastVote(b);
-  if (castA !== castB) return false;
-  return !castA || a!.percent === b!.percent;
+  if (isCastVote(a) || isCastVote(b)) {
+    return isCastVote(a) && isCastVote(b) && a.percent === b.percent;
+  }
+  return isRemovedRow(a) === isRemovedRow(b);
+}
+
+/** A removed vote: a percent-0 row (the SDK's isRemovedVote). */
+function isRemovedRow(vote: ObserverVote | null): boolean {
+  return vote?.percent === 0;
 }
 
 /**

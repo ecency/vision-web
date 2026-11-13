@@ -1,5 +1,5 @@
 import { getQueryClient, QueryKeys } from "@/modules/core";
-import { isCastVote } from "../utils/normalize-entry";
+import { isCastVote, isRemovedVote } from "../utils/normalize-entry";
 import { queryOptions } from "@tanstack/react-query";
 import { Entry, ObserverVote, Vote } from "../types";
 import { callRPC, callRPCBatch, callRPCWithFallback } from "@/modules/core/hive-tx";
@@ -354,11 +354,18 @@ export function recordOptimisticVote(
   );
 }
 
+/**
+ * Same vote state: both cast with the same weight, both a removed vote (a
+ * percent-0 row), or both no row. A removed vote is not "no row": hivemind
+ * still counts it, and a node a block behind answers null for it, so that
+ * answer must not settle a hold of a removed vote (#2070). Holds still end by
+ * their timeout either way.
+ */
 function sameVote(a: ObserverVote | null, b: ObserverVote | null): boolean {
-  const castA = isCastVote(a);
-  const castB = isCastVote(b);
-  if (castA !== castB) return false;
-  return !castA || a!.percent === b!.percent;
+  if (isCastVote(a) || isCastVote(b)) {
+    return isCastVote(a) && isCastVote(b) && a.percent === b.percent;
+  }
+  return isRemovedVote(a) === isRemovedVote(b);
 }
 
 /** The chain's answer, unless a recent vote of this client says otherwise. */

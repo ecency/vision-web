@@ -131,4 +131,22 @@ describe("useEntryVote: removed votes keep their row", () => {
     await hook.current.mutateAsync({ weight: 10000, estimated: 0 });
     expect(qc.getQueryData<Entry>(entryKey)?.stats?.total_votes).toBe(1);
   });
+
+  // PR #2071 review: an entry from a node a block behind says "no row" (null)
+  // while the user's vote is not indexed yet. The unvote leaves a removed row
+  // on chain, so it must be written (not skipped as "already not voted"), and
+  // a revote over it adds nothing.
+  it("writes the removed row over a lagging no-row entry, so a revote adds nothing", async () => {
+    const qc = new QueryClient();
+    const lagging = readForAlice({ stats: { total_votes: 0, flag_weight: 0, gray: false, hide: false } });
+    expect(lagging.observer_vote).toBeNull();
+    qc.setQueryData(entryKey, lagging);
+    const hook = setup(qc, lagging);
+
+    await hook.current.mutateAsync({ weight: 0, estimated: 0 });
+    expect(qc.getQueryData<Entry>(entryKey)?.observer_vote).toEqual({ rshares: 0, percent: 0 });
+
+    await hook.current.mutateAsync({ weight: 10000, estimated: 0 });
+    expect(qc.getQueryData<Entry>(entryKey)?.stats?.total_votes).toBe(0);
+  });
 });

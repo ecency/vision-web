@@ -3,6 +3,9 @@ import { QueryClient } from "@tanstack/react-query";
 import { ConfigManager, QueryKeys } from "@/modules/core";
 import { config } from "@/hive-tx/config";
 import { getEntryVoteQueryOptions, recordOptimisticVote, __optimisticVoteHolds } from "./get-entry-active-votes-query-options";
+import { applyVoteCacheUpdate } from "../mutations/use-vote";
+import { normalizeEntry } from "../utils/normalize-entry";
+import type { Entry } from "../types";
 
 // Round 4, item 4: bridge and database reads lag the chain by a block or
 // more. The lookup refetch the post-vote refresh triggers can say "no vote"
@@ -121,5 +124,56 @@ describe("getEntryVoteQueryOptions right after this client voted", () => {
     answerNoVote();
     const vote = await qc.fetchQuery(getEntryVoteQueryOptions("bob", "p", "dave"));
     expect(vote).toBeNull();
+  });
+
+  // PR #2071 review: a node that has not indexed the vote yet answers "no
+  // row" (null) for a removed vote. That is not the removed row the client
+  // holds: the hold must stay, or a revote adds one to a row hivemind counts.
+  it("keeps a removed-vote hold over a lagging null, so a revote adds nothing", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    answerNoVote();
+    const entryKey = QueryKeys.posts.entry("/@bob/p");
+    // Read for the default observer: hanna's prior vote comes from the lookup.
+    const fromServer = (total: number): Entry =>
+      normalizeEntry(
+        {
+          author: "bob",
+          permlink: "p",
+          payout: 1,
+          observer_vote: null,
+          stats: { gray: false, hide: false, flag_weight: 0, total_votes: total },
+        },
+        "ecency"
+      );
+    const vote = (weight: number) =>
+      applyVoteCacheUpdate("hanna", { author: "bob", permlink: "p", weight, estimated: 0 }, qc);
+    const count = () => qc.getQueryData<Entry>(entryKey)?.stats?.total_votes;
+    const options = getEntryVoteQueryOptions("bob", "p", "hanna");
+
+    qc.setQueryData(entryKey, fromServer(0));
+    qc.setQueryData(options.queryKey, null);
+    vote(10000);
+    expect(count()).toBe(1);
+    vote(0);
+    expect(count()).toBe(1);
+
+    // The deferred refresh: the post comes back for the default observer
+    // (chain-true count 1), and the lookup from a node that is a block behind
+    // answers null.
+    qc.setQueryData(entryKey, fromServer(1));
+    const looked = await qc.fetchQuery({ ...options, staleTime: 0 });
+    expect(looked).toEqual({ rshares: 0, percent: 0 });
+
+    vote(10000);
+    expect(count()).toBe(1);
+  });
+
+  it("still lets the chain win a removed-vote hold once it expires", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    answerNoVote();
+    const t0 = Date.now();
+    recordOptimisticVote("bob", "p", "ivan", { rshares: 0, percent: 0 });
+    vi.spyOn(Date, "now").mockReturnValue(t0 + 61_000);
+    expect(await qc.fetchQuery(getEntryVoteQueryOptions("bob", "p", "ivan"))).toBeNull();
   });
 });

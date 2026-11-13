@@ -3,6 +3,7 @@ import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { renderWithQueryClient, mockEntry, createTestQueryClient } from "@/specs/test-utils";
+import type { Entry, ObserverVote } from "@/entities";
 
 // Log a user in so LoginRequired renders the button and the vote slider can mount.
 vi.mock("@/core/hooks/use-active-account", () => ({
@@ -122,7 +123,7 @@ describe("EntryVoteBtn — opening the slider is not blocked on the previous-vot
       observer_vote_for: "alice"
     });
     const queryClient = createTestQueryClient();
-    const fetchSpy = vi.spyOn(queryClient, "fetchQuery").mockResolvedValue({ rshares: 0, percent: 0 } as any);
+    const fetchSpy = vi.spyOn(queryClient, "fetchQuery").mockResolvedValue({ rshares: 0, percent: 0 } satisfies ObserverVote);
 
     renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />, { queryClient });
     fireEvent.click(screen.getByRole("button"));
@@ -407,8 +408,8 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
       post_id: 3010,
       stats: { flag_weight: 0, gray: false, hide: false, total_votes: 1 },
       observer_vote: { rshares: 0, percent: 0 }
-    } as any);
-    const entry = normalizeEntry(raw, "alice") as any;
+    });
+    const entry = normalizeEntry(raw, "alice") as Entry;
     expect(entry.observer_vote).toEqual({ rshares: 0, percent: 0 });
 
     renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
@@ -427,7 +428,7 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
       stats: { flag_weight: 0, gray: false, hide: false, total_votes: 1 },
       observer_vote: null,
       observer_vote_for: "ecency"
-    } as any);
+    });
     lookup.mockResolvedValue({ rshares: 0, percent: 0 });
 
     renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
