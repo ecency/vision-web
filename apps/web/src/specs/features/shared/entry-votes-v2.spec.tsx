@@ -46,7 +46,6 @@ function v2Row(permlink: string, total: number, aliceVoted: boolean) {
     // A feed row may still carry a stale net_votes; the count must not use it.
     net_votes: total - 7
   } as any);
-  Reflect.deleteProperty(e, "active_votes");
   return e;
 }
 

@@ -55,6 +55,7 @@ function fullRow(overrides: Partial<Entry> = {}): Entry {
     category: "photography",
     body: `Some words and a cover ![cover](https://example.com/${permlink}.jpg) then more words.`,
     json_metadata: { tags: ["photography"] },
+    // Deliberate raw v1 voter list: the card-only strip must drop it.
     active_votes: Array.from({ length: 300 }, (_, i) => ({ voter: `v${i}`, rshares: 1 })) as never,
     stats: { total_votes: 300, flag_weight: 0, gray: false, hide: false },
     ...overrides

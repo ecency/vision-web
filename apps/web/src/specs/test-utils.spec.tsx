@@ -92,6 +92,17 @@ describe("Test Utilities", () => {
       expect(entry.depth).toBe(0);
     });
 
+    // Issue #2068: entries carry no voter list (bridge v2), so the fixture
+    // carries the v2 vote fields instead of active_votes.
+    test("mockEntry builds the v2 vote shape without active_votes", () => {
+      const entry = mockEntry();
+      expect(entry).not.toHaveProperty("active_votes");
+      expect(entry.stats.total_votes).toBe(0);
+      expect(entry.top_votes).toEqual([]);
+      expect(entry.observer_vote).toBeNull();
+      expect(entry.observer_vote_for).toBeNull();
+    });
+
     test("mockEntry accepts overrides", () => {
       const entry = mockEntry({
         author: "bob",
@@ -179,9 +190,39 @@ describe("Test Utilities", () => {
       expect(entry.permlink).toBe("my-post");
       expect(entry.title).toBe("My Post");
       expect(entry.body).toBe("Post content");
-      expect(entry.active_votes).toHaveLength(1);
       expect(entry.children).toBe(5);
       expect(entry.payout).toBe(10.5);
+    });
+
+    test("EntryBuilder.withVotes sets top_votes and stats.total_votes", () => {
+      const entry = new EntryBuilder()
+        .withVotes([
+          { voter: "bob", rshares: 1000, percent: 10000 },
+          { voter: "carol", rshares: 500 }
+        ])
+        .build();
+
+      expect(entry).not.toHaveProperty("active_votes");
+      expect(entry.top_votes).toEqual([
+        { voter: "bob", rshares: 1000, percent: 10000 },
+        { voter: "carol", rshares: 500, percent: null }
+      ]);
+      expect(entry.stats.total_votes).toBe(2);
+      expect(entry.stats.gray).toBe(false);
+    });
+
+    test("EntryBuilder.withObserverVote sets observer_vote and observer_vote_for", () => {
+      const entry = new EntryBuilder()
+        .withObserverVote("bob", { rshares: 1000, percent: 5000 })
+        .build();
+
+      expect(entry.observer_vote_for).toBe("bob");
+      expect(entry.observer_vote).toEqual({ rshares: 1000, percent: 5000 });
+
+      // null = the observer has not voted.
+      const unvoted = new EntryBuilder().withObserverVote("bob", null).build();
+      expect(unvoted.observer_vote_for).toBe("bob");
+      expect(unvoted.observer_vote).toBeNull();
     });
 
     test("EntryBuilder can create comments", () => {

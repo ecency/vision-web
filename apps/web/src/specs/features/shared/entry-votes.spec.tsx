@@ -50,6 +50,8 @@ describe("EntryVotes", () => {
     expect(container.querySelector(".entry-votes__count")).toHaveTextContent("42");
   });
 
+  // Deliberate raw v1 row (voter list, no stats): exercises the legacy count
+  // fallback. v2 entries carry no active_votes.
   it("falls back to active_votes length when stats.total_votes is absent", () => {
     const entry = mockEntry({
       stats: undefined as any,
@@ -66,8 +68,7 @@ describe("EntryVotes", () => {
 
   it("shows the empty zero-state (non-interactive, no-data) when there are no votes", () => {
     const entry = mockEntry({
-      stats: { flag_weight: 0, gray: false, hide: false, total_votes: 0 },
-      active_votes: []
+      stats: { flag_weight: 0, gray: false, hide: false, total_votes: 0 }
     });
     const { container } = renderVotes(entry);
 

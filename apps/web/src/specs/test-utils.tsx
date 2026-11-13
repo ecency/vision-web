@@ -16,7 +16,7 @@
 import React, { ReactElement } from "react";
 import { render, RenderOptions, RenderResult } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { FullAccount, Entry, Community, ActiveUser } from "@/entities";
+import type { FullAccount, Entry, Community, ActiveUser, ObserverVote } from "@/entities";
 
 // ============================================================================
 // QueryClient Test Utilities
@@ -235,8 +235,9 @@ export function mockFullAccount(overrides?: Partial<FullAccount>): FullAccount {
 export function mockEntry(overrides?: Partial<Entry>): Entry {
   const now = new Date().toISOString();
 
+  // No active_votes: entries carry no voter list (bridge v2). Votes live in
+  // stats.total_votes, top_votes and observer_vote / observer_vote_for.
   return {
-    active_votes: [],
     author: "testuser",
     author_payout_value: "0.000 HBD",
     author_reputation: 50,
@@ -255,6 +256,8 @@ export function mockEntry(overrides?: Partial<Entry>): Entry {
     },
     max_accepted_payout: "1000000.000 HBD",
     net_rshares: 0,
+    observer_vote: null,
+    observer_vote_for: null,
     parent_permlink: "test",
     payout: 0,
     payout_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -271,6 +274,7 @@ export function mockEntry(overrides?: Partial<Entry>): Entry {
       total_votes: 0
     },
     title: "Test Entry Title",
+    top_votes: [],
     updated: now,
     url: "/test/@testuser/test-permlink",
     ...overrides
@@ -497,7 +501,8 @@ export function mockFeatureFlags(flags: Partial<VisionFeaturesConfig>): void {
  * const entry = new EntryBuilder()
  *   .withAuthor('alice')
  *   .withTitle('My Post')
- *   .withVotes([{ voter: 'bob', rshares: 1000 }])
+ *   .withVotes([{ voter: 'bob', rshares: 1000, percent: 10000 }])
+ *   .withObserverVote('bob', { rshares: 1000, percent: 10000 })
  *   .withComments(5)
  *   .build();
  */
@@ -524,8 +529,27 @@ export class EntryBuilder {
     return this;
   }
 
-  withVotes(votes: Array<{ voter: string; rshares: number }>): this {
-    this.entry.active_votes = votes;
+  /** Sets `top_votes` and counts them in `stats.total_votes`. */
+  withVotes(votes: Array<{ voter: string; rshares: number; percent?: number | null }>): this {
+    this.entry.top_votes = votes.map(({ voter, rshares, percent }) => ({
+      voter,
+      rshares,
+      percent: percent ?? null
+    }));
+    this.entry.stats = {
+      flag_weight: 0,
+      gray: false,
+      hide: false,
+      ...this.entry.stats,
+      total_votes: votes.length
+    };
+    return this;
+  }
+
+  /** Sets `account`'s own vote (`observer_vote`); null = `account` has not voted. */
+  withObserverVote(account: string, vote: ObserverVote | null): this {
+    this.entry.observer_vote_for = account;
+    this.entry.observer_vote = vote;
     return this;
   }
 

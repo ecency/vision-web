@@ -21,7 +21,6 @@ function entry(overrides: Partial<Entry> = {}): Entry {
     title: "A title",
     body: "the full article body",
     json_metadata: { description: "card summary" },
-    active_votes: [],
     stats: { total_votes: 0, flag_weight: 0, gray: false, hide: false },
     ...overrides
   } as Entry;

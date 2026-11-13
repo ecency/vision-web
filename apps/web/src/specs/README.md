@@ -121,6 +121,8 @@ const comment = mockEntry({
 });
 ```
 
+Votes use the bridge v2 shape: `stats.total_votes` (default 0), `top_votes` (default `[]`) and `observer_vote` / `observer_vote_for` (default `null` / `null`). Entries carry no `active_votes`; mock it only as raw v1 or condenser input to a normalizer or stripper, with a comment saying so.
+
 ### `mockCommunity(overrides?)`
 
 Creates a complete `Community` object with sensible defaults.
@@ -162,7 +164,8 @@ const entry = new EntryBuilder()
   .withPermlink('my-post')
   .withTitle('My Post')
   .withBody('Post content')
-  .withVotes([{ voter: 'bob', rshares: 1000 }])
+  .withVotes([{ voter: 'bob', rshares: 1000, percent: 10000 }])
+  .withObserverVote('bob', { rshares: 1000, percent: 10000 })
   .withComments(5)
   .withPayout(10.5)
   .inCommunity('hive-123456', 'Test Community')
@@ -181,7 +184,8 @@ const comment = new EntryBuilder()
 - `withPermlink(permlink: string)`
 - `withTitle(title: string)`
 - `withBody(body: string)`
-- `withVotes(votes: Array<{ voter: string; rshares: number }>)`
+- `withVotes(votes: Array<{ voter: string; rshares: number; percent?: number | null }>)`: sets `top_votes` and `stats.total_votes`
+- `withObserverVote(account: string, vote: ObserverVote | null)`: sets `observer_vote` and `observer_vote_for` (null = `account` has not voted)
 - `withComments(count: number)`
 - `withPayout(amount: number)`
 - `asComment(parentAuthor: string, parentPermlink: string)`
@@ -297,8 +301,8 @@ describe('PostDetailModal', () => {
       .withTitle('Test Post')
       .withBody('This is a test post')
       .withVotes([
-        { voter: 'bob', rshares: 1000 },
-        { voter: 'charlie', rshares: 2000 }
+        { voter: 'bob', rshares: 1000, percent: 10000 },
+        { voter: 'charlie', rshares: 2000, percent: 10000 }
       ])
       .withComments(5)
       .withPayout(15.5)

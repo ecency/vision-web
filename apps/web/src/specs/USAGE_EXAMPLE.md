@@ -157,10 +157,13 @@ test("renders post with author profile", () => {
     .withAuthor("alice")
     .withTitle("My First Post")
     .withBody("Hello Hive!")
+    // Sets top_votes and stats.total_votes (entries carry no active_votes).
     .withVotes([
-      { voter: "bob", rshares: 5000 },
-      { voter: "charlie", rshares: 10000 }
+      { voter: "bob", rshares: 5000, percent: 5000 },
+      { voter: "charlie", rshares: 10000, percent: 10000 }
     ])
+    // The viewer's own vote: observer_vote + observer_vote_for.
+    .withObserverVote("bob", { rshares: 5000, percent: 5000 })
     .withComments(3)
     .withPayout(25.5)
     .inCommunity("hive-123456", "Test Community")

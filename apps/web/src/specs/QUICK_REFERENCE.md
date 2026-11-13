@@ -118,7 +118,8 @@ import { EntryBuilder, AccountBuilder } from "@/specs/test-utils";
 const post = new EntryBuilder()
   .withAuthor("alice")
   .withTitle("My Post")
-  .withVotes([{ voter: "bob", rshares: 1000 }])
+  .withVotes([{ voter: "bob", rshares: 1000, percent: 10000 }])
+  .withObserverVote("bob", { rshares: 1000, percent: 10000 })
   .inCommunity("hive-123456", "Test Community")
   .build();
 
@@ -186,7 +187,11 @@ mockEntry({
 - `parent_permlink` - For comments
 - `depth` - Comment depth (0 = post)
 - `community` - Community name (e.g., "hive-123456")
-- `active_votes` - Array of votes
+- `stats.total_votes` - Vote count (default 0)
+- `top_votes` - Top voters, `{ voter, rshares, percent }` rows (default `[]`)
+- `observer_vote` / `observer_vote_for` - The vote of the account in `observer_vote_for` (default `null` / `null`)
+
+Entries carry no `active_votes` (bridge v2). Mock it only as raw v1 or condenser input to a normalizer or stripper, with a comment saying so.
 
 ### mockCommunity(overrides?)
 
@@ -218,7 +223,8 @@ new EntryBuilder()
   .withPermlink(permlink: string)
   .withTitle(title: string)
   .withBody(body: string)
-  .withVotes(votes: Array<{voter: string, rshares: number}>)
+  .withVotes(votes: Array<{voter: string, rshares: number, percent?: number | null}>) // top_votes + stats.total_votes
+  .withObserverVote(account: string, vote: ObserverVote | null) // observer_vote + observer_vote_for
   .withComments(count: number)
   .withPayout(amount: number)
   .asComment(parentAuthor: string, parentPermlink: string)
