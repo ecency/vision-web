@@ -14,9 +14,8 @@ interface InstallableExtension {
   descKey: string;
   highlight: boolean;
   /**
-   * Store URL per browser family. A family is omitted when there's no listing
-   * yet: Hive Keeper is still in Firefox (AMO) review, and Peak Vault ships for
-   * Chromium only. Add Keeper's `firefox` URL here once it's approved.
+   * Store URL per browser family. A family is omitted when there's no listing:
+   * Peak Vault ships for Chromium only.
    */
   urls: Partial<Record<BrowserFamily, string>>;
 }
@@ -35,8 +34,8 @@ const EXTENSIONS: InstallableExtension[] = [
     highlight: true,
     urls: {
       chrome:
-        "https://chromewebstore.google.com/detail/hive-keeper/eehlplhgiofbbanbjiodipefljadfehe"
-      // firefox: pending AMO review — add the listing URL once approved.
+        "https://chromewebstore.google.com/detail/hive-keeper/eehlplhgiofbbanbjiodipefljadfehe",
+      firefox: "https://addons.mozilla.org/firefox/addon/hive-keeper/"
     }
   },
   {
