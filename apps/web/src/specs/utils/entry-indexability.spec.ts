@@ -379,6 +379,21 @@ describe("wave quality gate (depth-1 under container)", () => {
     ).toBe(false);
   });
 
+  // Deliberate raw v1 / condenser row (voter list, no stats): covers the
+  // active_votes.length fallback. v2 entries carry no active_votes.
+  it("counts voters from a raw v1 active_votes list when there is no stats count", () => {
+    const voters = Array.from({ length: 6 }, (_, i) => ({ voter: `v${i}`, rshares: 1 }));
+    const raw = (list: typeof voters) =>
+      wave({
+        children: 0,
+        stats: undefined,
+        active_votes: list,
+        pending_payout_value: "0.500 HBD"
+      } as unknown as Partial<Entry>);
+    expect(idx(raw(voters))).toBe(true);
+    expect(idx(raw(voters.slice(0, 1)))).toBe(false);
+  });
+
   it("payout is source-agnostic (numeric payout field counts)", () => {
     expect(
       idx(
