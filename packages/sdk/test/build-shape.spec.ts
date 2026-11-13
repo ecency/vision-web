@@ -242,6 +242,70 @@ describe("both builds load in plain Node and agree on their surface", () => {
   );
 
   it(
+    "the ./hive subpath loads with react and @tanstack/react-query missing",
+    async () => {
+      // `@ecency/sdk/hive` is the React-free entry the README points server and
+      // CLI users at (#2069). A resolve hook makes both packages unresolvable,
+      // as on an install without them, in every build and module format.
+      const blockReact = `require("node:module").registerHooks({
+        resolve(spec, ctx, next) {
+          if (/^(react|react-dom|@tanstack\\/react-query)(\\/|$)/.test(spec)) {
+            throw Object.assign(new Error("blocked " + spec), { code: "ERR_MODULE_NOT_FOUND" });
+          }
+          return next(spec, ctx);
+        }
+      });`;
+      const load = (entry: string) =>
+        inNode(
+          [
+            "-e",
+            `${blockReact}
+            (process.env.E_ENTRY.endsWith(".cjs")
+              ? Promise.resolve().then(() => require(process.env.E_ENTRY))
+              : import(process.env.E_ENTRY)
+            ).then(
+              (m) => console.log(JSON.stringify({ keys: Object.keys(m).length })),
+              (e) => console.log(JSON.stringify({ error: String(e && e.message) }))
+            )`
+          ],
+          { E_ENTRY: entry }
+        );
+      const entries = [join(browser(), "hive.js"), join(node(), "hive.mjs"), join(node(), "hive.cjs")];
+
+      // Statically too, because loading only runs top-level imports: a lazy
+      // `import("@tanstack/react-query")` inside a function would pass the load
+      // check and still break a consumer later. Follows every relative import,
+      // static and dynamic, from each hive entry through the chunks it reaches.
+      const spec = /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)["']([^"']+)["']/g;
+      const reached = new Set<string>();
+      const bare = new Set<string>();
+      const walk = (f: string) => {
+        if (reached.has(f)) return;
+        reached.add(f);
+        for (const m of readFileSync(f, "utf8").matchAll(spec)) {
+          if (m[1].startsWith(".")) walk(resolve(dirname(f), m[1]));
+          else bare.add(m[1]);
+        }
+      };
+      entries.forEach(walk);
+      // Not vacuous: the browser entry reaches its chunks and the externals.
+      expect(reached.size).toBeGreaterThan(entries.length);
+      expect([...bare].some((s) => s.startsWith("@noble/"))).toBe(true);
+      expect([...bare].filter((s) => /^(react|react-dom|@tanstack\/react-query)(\/|$)/.test(s))).toEqual([]);
+
+      for (const entry of entries) {
+        const result = await load(entry);
+        expect(result, relative(out, entry)).toEqual({ keys: expect.any(Number) });
+        expect(result.keys as number).toBeGreaterThan(10);
+      }
+      // Not vacuous: the same hook does stop the main entry, which needs both.
+      const main = await load(join(node(), "index.mjs"));
+      expect(main.error).toMatch(/blocked (react|@tanstack\/react-query)/);
+    },
+    CASE_MS
+  );
+
+  it(
     "the node CommonJS build loads and matches too",
     async () => {
       // What every plain `require` consumer gets: scripts, the newsletter
