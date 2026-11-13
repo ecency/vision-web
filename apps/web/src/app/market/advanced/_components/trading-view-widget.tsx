@@ -10,7 +10,14 @@ import { Dropdown, DropdownItem, DropdownMenu, DropdownToggle } from "@ui/dropdo
 import { Button } from "@ui/button";
 import { useInfiniteDataFlow } from "@/utils";
 import { useDebounce, useMount } from "react-use";
-import { createChart, IChartApi, ISeriesApi, Time, TimeRange } from "lightweight-charts";
+import {
+  createChart,
+  IChartApi,
+  ISeriesApi,
+  Time,
+  TimeRange,
+  TimeRangeChangeEventHandler
+} from "lightweight-charts";
 import { useResizeDetector } from "react-resize-detector";
 
 interface Props {
@@ -22,6 +29,8 @@ export const TradingViewWidget = ({ widgetTypeChanged }: Props) => {
 
   const { ref: chartContainerRef, width, height } = useResizeDetector();
   const chartRef = useRef<IChartApi | null>(null);
+  const timeRangeHandlerRef = useRef<TimeRangeChangeEventHandler | null>(null);
+  const firstPageTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const [bucketSeconds, setBucketSeconds] = useLocalStorage<number>(PREFIX + "_amml_tv_bs", 300);
   const [candleStickSeries, setCandleStickSeries] = useState<ISeriesApi<"Candlestick">>();
@@ -96,9 +105,10 @@ export const TradingViewWidget = ({ widgetTypeChanged }: Props) => {
     const chart = createChart(chartContainerRef.current, chartOptions);
     chartRef.current = chart;
 
-    chart
-      .timeScale()
-      .subscribeVisibleTimeRangeChange((timeRange) => setLastTimeRange(timeRange ?? undefined));
+    const onTimeRange: TimeRangeChangeEventHandler = (timeRange) =>
+      setLastTimeRange(timeRange ?? undefined);
+    timeRangeHandlerRef.current = onTimeRange;
+    chart.timeScale().subscribeVisibleTimeRangeChange(onTimeRange);
 
     setCandleStickSeries(
       chart.addCandlestickSeries({
@@ -115,7 +125,7 @@ export const TradingViewWidget = ({ widgetTypeChanged }: Props) => {
       })
     );
 
-    setTimeout(() => fetchNextPage(), 10000);
+    firstPageTimerRef.current = setTimeout(() => fetchNextPage(), 10000);
   });
 
   useDebounce(
@@ -132,10 +142,16 @@ export const TradingViewWidget = ({ widgetTypeChanged }: Props) => {
     chartRef.current?.resize(width ?? 0, height ?? 0);
   }, [width, height]);
 
-  // Dispose the chart on unmount so it doesn't leak listeners/canvases.
+  // Dispose the chart on unmount so it doesn't leak listeners/canvases, and
+  // stop the first page ask that mount scheduled.
   useEffect(() => {
     return () => {
+      clearTimeout(firstPageTimerRef.current);
       if (chartRef.current) {
+        if (timeRangeHandlerRef.current) {
+          chartRef.current.timeScale().unsubscribeVisibleTimeRangeChange(timeRangeHandlerRef.current);
+          timeRangeHandlerRef.current = null;
+        }
         chartRef.current.remove();
         chartRef.current = null;
       }
