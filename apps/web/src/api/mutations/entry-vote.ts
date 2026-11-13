@@ -62,7 +62,9 @@ export function useEntryVote(entry?: Entry | null) {
         const entryQueryKey = EcencyEntriesCacheManagement.getEntryQuery(entry).queryKey;
         const cached = queryClient.getQueryData<Entry>(entryQueryKey);
         if (!cached) return;
-        const next: ObserverVote | null = weight !== 0 ? { rshares: null, percent: weight } : null;
+        // An unvote leaves a percent-0 row (#2070), as deriveOptimisticVote writes.
+        const next: ObserverVote =
+          weight !== 0 ? { rshares: null, percent: weight } : { rshares: 0, percent: 0 };
         const inEntry = entryVoteOf(cached, username);
         if (inEntry !== undefined && sameVote(inEntry, next)) return;
 

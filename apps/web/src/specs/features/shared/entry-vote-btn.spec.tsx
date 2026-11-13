@@ -374,6 +374,46 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
     expect(lookup).not.toHaveBeenCalled();
   });
 
+  // Issue #2070: a removed vote stays a percent-0 row (hivemind still counts
+  // it). Through the real normalizer it must read as not voted.
+  it("shows a removed vote (percent-0 row) as not voted", async () => {
+    const { normalizeEntry } = await import("@ecency/sdk");
+    const { observer_vote_for: _for, ...raw } = mockEntry({
+      author: "bob",
+      permlink: "removed-post",
+      post_id: 3010,
+      stats: { flag_weight: 0, gray: false, hide: false, total_votes: 1 },
+      observer_vote: { rshares: 0, percent: 0 }
+    } as any);
+    const entry = normalizeEntry(raw, "alice") as any;
+    expect(entry.observer_vote).toEqual({ rshares: 0, percent: 0 });
+
+    renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
+
+    expect(pressed()).toBe("false");
+    expect(screen.getByRole("button")).toHaveAttribute("aria-label", "entry-vote-btn.vote");
+    // The entry answered for alice (a row, not unknown): no lookup.
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("shows a looked-up removed vote (percent-0 row) as not voted", async () => {
+    const entry = mockEntry({
+      author: "bob",
+      permlink: "removed-post-2",
+      post_id: 3011,
+      stats: { flag_weight: 0, gray: false, hide: false, total_votes: 1 },
+      observer_vote: null,
+      observer_vote_for: "ecency"
+    } as any);
+    lookup.mockResolvedValue({ rshares: 0, percent: 0 });
+
+    renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
+
+    await waitFor(() => expect(lookup).toHaveBeenCalled());
+    await waitFor(() => expect(pressed()).toBe("false"));
+    expect(screen.getByRole("button")).toHaveAttribute("aria-label", "entry-vote-btn.vote");
+  });
+
   it("never shows the default observer's vote as the logged-in user's", async () => {
     // Server-rendered for the default observer, who voted; alice has not.
     const entry = mockEntry({

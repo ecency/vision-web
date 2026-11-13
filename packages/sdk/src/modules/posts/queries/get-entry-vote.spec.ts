@@ -52,9 +52,11 @@ describe("getEntryVote", () => {
     await expect(getEntryVote("bob", "post", "alice")).resolves.toBeNull();
   });
 
-  it("returns null for a removed vote (percent 0)", async () => {
+  // Issue #2070: a removed vote is a row hivemind still counts, so it is kept
+  // (percent 0, not cast) instead of being read as "never voted".
+  it("returns a removed vote as a percent-0 row", async () => {
     answer([row({ vote_percent: 0, rshares: 0 })]);
-    await expect(getEntryVote("bob", "post", "alice")).resolves.toBeNull();
+    await expect(getEntryVote("bob", "post", "alice")).resolves.toEqual({ rshares: 0, percent: 0 });
   });
 
   it("returns null when nothing follows", async () => {

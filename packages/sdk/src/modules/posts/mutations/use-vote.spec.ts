@@ -2,6 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { QueryKeys } from "@/modules/core";
 import { applyVoteCacheUpdate, voteInvalidationKeys } from "./use-vote";
+import { normalizeEntry } from "../utils/normalize-entry";
 
 // Issue #2056: v2 entries carry the observer's own vote instead of a voter list.
 describe("applyVoteCacheUpdate on a v2 entry (observer_vote)", () => {
@@ -51,7 +52,7 @@ describe("applyVoteCacheUpdate on a v2 entry (observer_vote)", () => {
     const { qc } = seed({ observer_vote: { rshares: 9, percent: 10000 }, observer_vote_for: "carol" });
     applyVoteCacheUpdate("carol", { author: "alice", permlink: "v2-post", weight: 0, estimated: 0 }, qc);
     const e = qc.getQueryData<any>(entryKey);
-    expect(e.observer_vote).toBeNull();
+    expect(e.observer_vote).toEqual({ rshares: 0, percent: 0 });
     expect(e.stats.total_votes).toBe(1500);
   });
 
@@ -114,6 +115,53 @@ describe("applyVoteCacheUpdate: zero votes and lightweight rows", () => {
     });
     applyVoteCacheUpdate("carol", { author: "alice", permlink: "edge-post", weight: 10000, estimated: 2 }, qc);
     expect(qc.getQueryData(entryKey)).toBe(entry);
+  });
+});
+
+// Issue #2070: hivemind keeps a vote row once cast. Through the real
+// normalizer, a removed vote stays a percent-0 row and the count follows chain.
+describe("applyVoteCacheUpdate: removed votes keep their row", () => {
+  const entryKey = QueryKeys.posts.entry("/@alice/row-post");
+  const raw = (fields: Record<string, unknown>) => ({
+    author: "alice",
+    permlink: "row-post",
+    payout: 1,
+    ...fields,
+  });
+  const vote = (qc: QueryClient, weight: number) =>
+    applyVoteCacheUpdate("carol", { author: "alice", permlink: "row-post", weight, estimated: 0 }, qc);
+  const count = (qc: QueryClient) => qc.getQueryData<any>(entryKey).stats.total_votes;
+
+  it("keeps the count on a revote over a normalized percent-0 row", () => {
+    const qc = new QueryClient();
+    const entry = normalizeEntry(
+      raw({
+        observer_vote: { rshares: 0, percent: 0 },
+        stats: { gray: false, hide: false, flag_weight: 0, total_votes: 1 },
+      }),
+      "carol"
+    );
+    qc.setQueryData(entryKey, entry);
+    vote(qc, 10000);
+    expect(count(qc)).toBe(1);
+    expect(qc.getQueryData<any>(entryKey).observer_vote).toEqual({ rshares: null, percent: 10000 });
+  });
+
+  it("follows the chain through vote, unvote, revote, unvote, flag from 0", () => {
+    const qc = new QueryClient();
+    const entry = normalizeEntry(
+      raw({ observer_vote: null, stats: { gray: false, hide: false, flag_weight: 0, total_votes: 0 } }),
+      "carol"
+    );
+    qc.setQueryData(entryKey, entry);
+    const seen = [10000, 0, 10000, 0, -10000].map((w) => {
+      vote(qc, w);
+      return count(qc);
+    });
+    expect(seen).toEqual([1, 1, 1, 1, 1]);
+    // The unvote leaves the row, not "never voted".
+    vote(qc, 0);
+    expect(qc.getQueryData<any>(entryKey).observer_vote).toEqual({ rshares: 0, percent: 0 });
   });
 });
 

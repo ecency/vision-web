@@ -207,7 +207,7 @@ let flushScheduled = false;
  * method is a lower-bound seek on (author, permlink, voter): for an account
  * that did not vote it returns the NEXT row, another voter's or another
  * post's, so the row must match all three or it is "not voted". A removed
- * vote (percent 0) is "not voted" too.
+ * vote stays a row (percent 0, not cast): hivemind still counts it.
  */
 function readLookupRow(
   response: { votes?: DatabaseVote[] } | null | undefined,
@@ -220,7 +220,6 @@ function readLookupRow(
     return null;
   }
   const percent = Number(row.vote_percent) || 0;
-  if (percent === 0) return null;
   return { rshares: Number(row.rshares) || 0, percent };
 }
 
@@ -256,7 +255,8 @@ async function flushLookups(): Promise<void> {
 
 /**
  * One account's vote on one entry: `{ rshares, percent }`, or null when the
- * account has not voted (a removed vote, percent 0, is null too). Lookups made
+ * account has not voted. A removed vote is `{ rshares, percent: 0 }`: not
+ * cast (`isCastVote`), but a row hivemind still counts. Lookups made
  * in the same tick (a page of cards mounting) are coalesced into ONE JSON-RPC
  * batch request, in chunks of 50, that fails over to another node as a unit;
  * the same lookup asked twice is sent once.

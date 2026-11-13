@@ -10,6 +10,7 @@ vi.mock("@/utils", async () => ({
 
 import { deriveOptimisticVote, entryVoteCount } from "@/api/mutations/derive-optimistic-vote";
 import { Entry } from "@/entities";
+import { normalizeEntry } from "@ecency/sdk";
 
 const UP = 10000;
 
@@ -97,7 +98,8 @@ describe("deriveOptimisticVote", () => {
   it("leaves the count unchanged when removing a known vote (weight 0)", () => {
     const { observerVote, nextVoteCount } = deriveOptimisticVote(fullEntry(), 0, 0, "bob");
     expect(nextVoteCount).toBe(2); // unchanged
-    expect(observerVote).toBeNull();
+    // The row stays (percent 0): a removed vote, not "never voted".
+    expect(observerVote).toEqual({ rshares: 0, percent: 0 });
   });
 
   it("adds one for a new vote on a post the user had not voted on", () => {
@@ -165,7 +167,7 @@ describe("deriveOptimisticVote on a v2 entry", () => {
       0,
       "dave"
     );
-    expect(r.observerVote).toBeNull();
+    expect(r.observerVote).toEqual({ rshares: 0, percent: 0 });
     expect(r.nextVoteCount).toBe(1500);
   });
 
@@ -257,5 +259,24 @@ describe("entryVoteCount", () => {
     expect(entryVoteCount(undefined)).toBe(0);
     // stats without a count is not a count: fall back.
     expect(entryVoteCount({ stats: {}, net_votes: 5 } as unknown as Entry)).toBe(5);
+  });
+});
+
+// Issue #2070: through the real normalizer, a removed vote stays a percent-0
+// row, and a revote over it does not add one (hivemind still counts the row).
+describe("deriveOptimisticVote over a normalized removed vote", () => {
+  it("keeps the count on a revote over a v2 percent-0 row", () => {
+    const entry = normalizeEntry(
+      {
+        author: "alice",
+        permlink: "row-post",
+        payout: 0,
+        observer_vote: { rshares: 0, percent: 0 },
+        stats: { total_votes: 1, flag_weight: 0, gray: false, hide: false }
+      },
+      "dave"
+    ) as Entry;
+    expect(deriveOptimisticVote(entry, UP, 0, "dave").nextVoteCount).toBe(1);
+    expect(deriveOptimisticVote(entry, -UP, 0, "dave").nextVoteCount).toBe(1);
   });
 });

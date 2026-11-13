@@ -53,7 +53,8 @@ export namespace EntriesCacheManagement {
   /**
    * Record `voter`'s vote on a cached entry (bridge v2 shape): sets
    * `observer_vote` / `observer_vote_for`, the vote count and the payout, and
-   * the `entryVote` lookup for the same voter. A null vote is "not voted".
+   * the `entryVote` lookup for the same voter. A null vote is "not voted"; a
+   * removed vote is `{ rshares: 0, percent: 0 }` (a row hivemind still counts).
    */
   export function updateObserverVote(
     author: string,

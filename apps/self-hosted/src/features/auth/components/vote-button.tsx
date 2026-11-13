@@ -109,7 +109,9 @@ export function VoteButton({
       // from a count the SDK never moved up. Unknown stays unknown.
       if (priorKnown) {
         // No rshares yet: the node computes them once the vote is in a block.
-        const next: ObserverVote | null = weight !== 0 ? { rshares: null, percent: weight } : null;
+        // An unvote leaves a percent-0 row (#2070): not cast, still counted.
+        const next: ObserverVote =
+          weight !== 0 ? { rshares: null, percent: weight } : { rshares: 0, percent: 0 };
         queryClient.setQueryData(QueryKeys.posts.entryVote(author, permlink, user.username), next);
         recordOptimisticVote(author, permlink, user.username, next);
       }
