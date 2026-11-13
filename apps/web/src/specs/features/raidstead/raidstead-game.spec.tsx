@@ -81,6 +81,23 @@ import { LeaderboardSheet } from "@/app/raidstead/_components/sheets";
 
 const expiry = () => new Date(Date.now() + 86_400_000).toISOString();
 
+// Waits for the page by turns of the event loop, not by the clock (#2053). After
+// mount the page renders in steps React schedules as tasks (the calendar's answer,
+// then the sign-in effect), and findBy gives them 1s of wall time: a worker that
+// stalls for a second under full-suite load meets that deadline before the next
+// render. Every answer here is mocked, so the page is done after a few task turns
+// however slow the machine is.
+async function settled<T>(find: () => T, turns = 20): Promise<T> {
+  for (let turn = 0; ; turn++) {
+    await act(() => new Promise<void>((done) => setTimeout(done, 0)));
+    try {
+      return find();
+    } catch (e) {
+      if (turn >= turns) throw e;
+    }
+  }
+}
+
 // What a visible line says: the values the page last gave that string (the i18n
 // stand-in shows the key alone, so "5 / 15" reads "raidstead.energy.value").
 const shown = (key: string) =>
@@ -351,12 +368,12 @@ describe("Raidstead page", () => {
     api.state.mockRejectedValueOnce({ status: 500, code: "internal", message: "x" });
     try {
       render(<RaidsteadGame />);
-      fireEvent.click(await screen.findByRole("button", { name: /raidstead.signin.play-as/ }));
-      await screen.findByText("raidstead.errors.load-failed");
+      fireEvent.click(await settled(() => screen.getByRole("button", { name: /raidstead.signin.play-as/ })));
+      await settled(() => screen.getByText("raidstead.errors.load-failed"));
       // the session is kept: "try again" loads the game with it
       expect(box.stored).toMatchObject({ token: "rs1_ann" });
       fireEvent.click(screen.getByRole("button", { name: "g.try-again" }));
-      await screen.findByRole("button", { name: /raidstead.actions.rally/ });
+      await settled(() => screen.getByRole("button", { name: /raidstead.actions.rally/ }));
       expect(signIn).toHaveBeenCalledTimes(1);
     } finally {
       vi.mocked(signIn).mockReset();
