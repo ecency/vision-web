@@ -206,10 +206,11 @@ in favour of it. pnpm keeps a
 single lockfile (`pnpm-lock.yaml`) at the workspace root and all commands should be run from this
 directory unless noted otherwise.
 
-Apps that consume `@ecency/sdk` from npm install it with its React peers,
-`npm install @ecency/sdk hivesigner @tanstack/react-query react`: the `@ecency/sdk` and `@ecency/sdk/wallets`
-entries import both when they load. `@ecency/sdk/hive` (signing, RPC, crypto) works without them,
-which is why they are declared as optional peers.
+Apps that consume `@ecency/sdk` from npm install it with its peers,
+`npm install @ecency/sdk hivesigner @tanstack/react-query react`. The `@ecency/sdk` and
+`@ecency/sdk/wallets` entries import `@tanstack/react-query` and `react` when they load.
+`@ecency/sdk/hive` (signing, RPC, crypto) works without those two, which is why they are declared
+as optional peers.
 
 ##### Install dependencies
 
