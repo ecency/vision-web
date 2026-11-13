@@ -27,8 +27,9 @@ export function entryVoteCount(entry: Entry | undefined | null): number {
  *
  * Whether the user had voted before decides the count: the looked-up vote
  * (`priorVote`) when there is one, else the entry when it was read for this
- * user. Unknown counts as "no vote" for an upvote and leaves the count alone
- * for an unvote. A zero vote (percent 0, or rshares 0 without a percent) is no
+ * user. Unknown counts as "no vote" for an upvote. An unvote (weight 0) leaves
+ * the count alone, and so does a vote over a known percent-0 row (a removed
+ * vote hivemind still counts). A zero vote (percent 0, or rshares 0 without a percent) is no
  * vote (`isCastVote`), as in the SDK.
  *
  * The base count is `entryVoteCount(entry)`; the base payout is
@@ -47,13 +48,22 @@ export function deriveOptimisticVote(
     // No rshares yet: the node computes them once the vote is in a block.
     weight !== 0 ? { rshares: null, percent: weight } : null;
 
+  // A known percent-0 prior is a removed vote. entryVoteOf reports it as null,
+  // so read the entry's own vote for this user.
+  const rawPrior =
+    priorVote !== undefined
+      ? priorVote
+      : entry.observer_vote_for === username
+        ? entry.observer_vote
+        : undefined;
+  const keptRow = rawPrior?.percent === 0;
+
   const baseVoteCount = entryVoteCount(entry);
-  let nextVoteCount = baseVoteCount;
-  if (weight !== 0 && !hadVote) {
-    nextVoteCount = baseVoteCount + 1;
-  } else if (weight === 0 && hadVote) {
-    nextVoteCount = Math.max(0, baseVoteCount - 1);
-  }
+  // Hivemind keeps a vote row once cast: an unvote leaves it as a percent-0 row
+  // that stats.total_votes still counts (#2070). So an unvote never lowers the
+  // count, and a vote over a kept row does not add one.
+  const nextVoteCount =
+    weight !== 0 && !hadVote && !keptRow ? baseVoteCount + 1 : baseVoteCount;
 
   const basePayout =
     typeof entry.payout === "number"

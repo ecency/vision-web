@@ -45,12 +45,14 @@ describe("applyVoteCacheUpdate on a v2 entry (observer_vote)", () => {
     expect(qc.getQueryData(entryKey)).toBe(entry);
   });
 
-  it("removes the vote and the count on an unvote", () => {
+  // Issue #2070: hivemind keeps a removed vote as a percent-0 row and
+  // stats.total_votes keeps counting it, so an unvote leaves the count alone.
+  it("removes the vote but keeps the count on an unvote", () => {
     const { qc } = seed({ observer_vote: { rshares: 9, percent: 10000 }, observer_vote_for: "carol" });
     applyVoteCacheUpdate("carol", { author: "alice", permlink: "v2-post", weight: 0, estimated: 0 }, qc);
     const e = qc.getQueryData<any>(entryKey);
     expect(e.observer_vote).toBeNull();
-    expect(e.stats.total_votes).toBe(1499);
+    expect(e.stats.total_votes).toBe(1500);
   });
 
   it("uses the looked-up vote when the entry was read for another observer", () => {
@@ -80,15 +82,25 @@ describe("applyVoteCacheUpdate: zero votes and lightweight rows", () => {
   };
   const base = { payout: 1, stats: { gray: false, hide: false, flag_weight: 0, total_votes: 10 } };
 
-  it("counts a prior vote of percent 0 as no vote (entry)", () => {
+  // Issue #2070: a percent-0 prior is a removed vote whose row hivemind still
+  // counts in stats.total_votes, so voting again does not add one.
+  it("keeps the count when re-voting over the entry's percent-0 row", () => {
     const { qc } = seed({ ...base, observer_vote: { rshares: 0, percent: 0 }, observer_vote_for: "carol" });
     applyVoteCacheUpdate("carol", { author: "alice", permlink: "edge-post", weight: 10000, estimated: 0 }, qc);
-    expect(qc.getQueryData<any>(entryKey).stats.total_votes).toBe(11);
+    const e = qc.getQueryData<any>(entryKey);
+    expect(e.observer_vote).toEqual({ rshares: null, percent: 10000 });
+    expect(e.stats.total_votes).toBe(10);
   });
 
-  it("counts a looked-up prior vote of percent 0 as no vote", () => {
+  it("keeps the count when re-voting over a looked-up percent-0 row", () => {
     const { qc } = seed({ ...base, observer_vote: null, observer_vote_for: null });
     qc.setQueryData(QueryKeys.posts.entryVote("alice", "edge-post", "carol"), { rshares: 0, percent: 0 });
+    applyVoteCacheUpdate("carol", { author: "alice", permlink: "edge-post", weight: 10000, estimated: 0 }, qc);
+    expect(qc.getQueryData<any>(entryKey).stats.total_votes).toBe(10);
+  });
+
+  it("adds one when the voter is known never to have voted (observer_vote null)", () => {
+    const { qc } = seed({ ...base, observer_vote: null, observer_vote_for: "carol" });
     applyVoteCacheUpdate("carol", { author: "alice", permlink: "edge-post", weight: 10000, estimated: 0 }, qc);
     expect(qc.getQueryData<any>(entryKey).stats.total_votes).toBe(11);
   });

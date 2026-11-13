@@ -53,11 +53,15 @@ function applyObserverVoteUpdate(
   qc?: QueryClient
 ): void {
   let prior = entryVoteOf(entry, username);
+  // A known percent-0 prior is a removed vote. entryVoteOf reports it as null,
+  // so keep the entry's own vote for this user.
+  let rawPrior = entry.observer_vote_for === username ? entry.observer_vote : prior;
   if (prior === undefined) {
     const queryClient = qc ?? getQueryClient();
     prior = queryClient.getQueryData<ObserverVote | null>(
       QueryKeys.posts.entryVote(variables.author, variables.permlink, username)
     );
+    rawPrior = prior;
   }
   if (prior === undefined) return;
 
@@ -69,8 +73,11 @@ function applyObserverVoteUpdate(
   // No rshares yet: the node computes them once the vote is in a block.
   const next: ObserverVote | null = weight !== 0 ? { rshares: null, percent: weight } : null;
   const base = entry.stats!.total_votes;
-  const total =
-    !hadVote && next !== null ? base + 1 : hadVote && next === null ? Math.max(0, base - 1) : base;
+  // Hivemind keeps a vote row once cast: an unvote leaves it as a percent-0 row
+  // that stats.total_votes still counts (#2070). So an unvote never lowers the
+  // count, and a vote over a kept row does not add one.
+  const keptRow = rawPrior?.percent === 0;
+  const total = !hadVote && !keptRow && next !== null ? base + 1 : base;
   EntriesCacheManagement.updateObserverVote(
     variables.author,
     variables.permlink,
