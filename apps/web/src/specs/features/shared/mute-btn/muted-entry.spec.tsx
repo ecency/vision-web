@@ -25,7 +25,6 @@ describe("mutedEntry", () => {
   const wavesRow = () => {
     const e = mockEntry({ author: "bob", permlink: "wave", net_votes: 4 });
     Reflect.deleteProperty(e, "stats");
-    Reflect.deleteProperty(e, "active_votes");
     return e;
   };
 

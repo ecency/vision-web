@@ -28,7 +28,19 @@ export function isCastVote(vote: ObserverVote | null | undefined): vote is Obser
   return vote.rshares !== null && vote.rshares !== undefined && vote.rshares !== 0;
 }
 
-/** Coerce a vote-like value to an ObserverVote; null for none or a zero vote. */
+/**
+ * A removed vote: the account voted, then set the weight to 0. Hivemind keeps
+ * the row (percent 0) and `stats.total_votes` still counts it, so it is not
+ * "never voted", but it is not cast either (`isCastVote` is false).
+ */
+export function isRemovedVote(vote: ObserverVote | null | undefined): boolean {
+  return !!vote && vote.percent === 0;
+}
+
+/**
+ * Coerce a vote-like value to an ObserverVote: the vote, a removed vote
+ * (percent 0, kept as a row), or null for none or any other zero vote.
+ */
 function toObserverVote(value: unknown): ObserverVote | null {
   if (!value || typeof value !== "object") return null;
   const v = value as { rshares?: unknown; percent?: unknown };
@@ -36,7 +48,7 @@ function toObserverVote(value: unknown): ObserverVote | null {
     rshares: v.rshares === undefined || v.rshares === null ? null : toNumber(v.rshares),
     percent: v.percent === undefined || v.percent === null ? null : toNumber(v.percent)
   };
-  return isCastVote(vote) ? vote : null;
+  return isCastVote(vote) || isRemovedVote(vote) ? vote : null;
 }
 
 type VoteRow = { voter?: unknown; rshares?: unknown; percent?: unknown };
@@ -70,7 +82,8 @@ function deriveTopVotes(rows: VoteRow[]): EntryTopVote[] {
  * - Known: `observer_vote_for` is the (non-empty) account the entry was read
  *   for, and `observer_vote` is that account's vote `{ rshares, percent }`
  *   (percent null when the source did not say), or null for "has not voted".
- *   A zero vote (see `isCastVote`) is null.
+ *   A removed vote stays a row with percent 0 (`isRemovedVote`): not cast,
+ *   but still counted by hivemind. Any other zero vote is null.
  * - Unknown: `observer_vote_for: null` and `observer_vote: null`. Nothing may be
  *   concluded about anyone's vote; look it up (`getEntryVoteQueryOptions`).
  *
@@ -182,8 +195,8 @@ export function normalizeDiscussion<T extends object>(
 
 /**
  * The vote `username` cast on `entry`, as far as the entry itself can tell:
- * the vote, null for "has not voted", or undefined for "unknown from this
- * entry" (it was read for another observer, or for none). Undefined means look
+ * the vote, a removed vote (percent 0, not cast: test with `isCastVote`),
+ * null for "has not voted", or undefined for "unknown from this entry" (it was read for another observer, or for none). Undefined means look
  * it up (`getEntryVoteQueryOptions`); it must never be read as "not voted".
  * Only normalized entries answer: a raw voter list is not read.
  */
@@ -195,7 +208,8 @@ export function entryVoteOf(
   if (typeof entry.observer_vote_for !== "string" || entry.observer_vote_for !== username) {
     return undefined;
   }
-  return isCastVote(entry.observer_vote) ? entry.observer_vote : null;
+  const vote = entry.observer_vote;
+  return isCastVote(vote) || isRemovedVote(vote) ? vote! : null;
 }
 
 /** Direction of a vote for UI state: "up", "down", or null when not cast. */

@@ -35,7 +35,6 @@ const reel = (permlink: string, over: Record<string, unknown> = {}) => {
     observer_vote_for: "ecency",
     ...over
   } as never);
-  Reflect.deleteProperty(e, "active_votes");
   return e;
 };
 

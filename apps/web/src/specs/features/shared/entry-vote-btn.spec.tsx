@@ -3,6 +3,7 @@ import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { renderWithQueryClient, mockEntry, createTestQueryClient } from "@/specs/test-utils";
+import type { Entry, ObserverVote } from "@/entities";
 
 // Log a user in so LoginRequired renders the button and the vote slider can mount.
 vi.mock("@/core/hooks/use-active-account", () => ({
@@ -109,6 +110,29 @@ describe("EntryVoteBtn — opening the slider is not blocked on the previous-vot
     // Once the lookup of alice's own vote resolves, its weight (75%) reaches the slider.
     resolveFetch({ rshares: 100, percent: 7500 });
     await waitFor(() => expect(screen.getByTestId("vote-dialog").textContent).toBe("prev:75"));
+  });
+
+  // Issue #2070: the lookup now returns a removed vote as a percent-0 row. It
+  // is not a previous vote, so it must not seed the slider with 0.
+  it("does not seed the slider from a looked-up removed vote (percent 0)", async () => {
+    const entry = mockEntry({
+      author: "bob",
+      permlink: "removed-prev",
+      post_id: 998,
+      observer_vote: { rshares: 100, percent: null },
+      observer_vote_for: "alice"
+    });
+    const queryClient = createTestQueryClient();
+    const fetchSpy = vi.spyOn(queryClient, "fetchQuery").mockResolvedValue({ rshares: 0, percent: 0 } satisfies ObserverVote);
+
+    renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />, { queryClient });
+    fireEvent.click(screen.getByRole("button"));
+
+    await screen.findByTestId("vote-dialog");
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByTestId("vote-dialog").textContent).not.toBe("prev:0");
+    expect(screen.getByTestId("vote-dialog").textContent).toBe("prev:none");
   });
 
   it("toggles the slider closed on a second click", async () => {
@@ -365,7 +389,6 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
       observer_vote: { rshares: 123, percent: 10000 },
       observer_vote_for: "alice"
     } as any);
-    Reflect.deleteProperty(entry, "active_votes");
 
     renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
 
@@ -373,6 +396,46 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
     expect(screen.getByRole("button")).toHaveAttribute("aria-label", "entry-vote-btn.upvoted");
     // The entry answered for alice: no lookup.
     expect(lookup).not.toHaveBeenCalled();
+  });
+
+  // Issue #2070: a removed vote stays a percent-0 row (hivemind still counts
+  // it). Through the real normalizer it must read as not voted.
+  it("shows a removed vote (percent-0 row) as not voted", async () => {
+    const { normalizeEntry } = await import("@ecency/sdk");
+    const { observer_vote_for: _for, ...raw } = mockEntry({
+      author: "bob",
+      permlink: "removed-post",
+      post_id: 3010,
+      stats: { flag_weight: 0, gray: false, hide: false, total_votes: 1 },
+      observer_vote: { rshares: 0, percent: 0 }
+    });
+    const entry = normalizeEntry(raw, "alice") as Entry;
+    expect(entry.observer_vote).toEqual({ rshares: 0, percent: 0 });
+
+    renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
+
+    expect(pressed()).toBe("false");
+    expect(screen.getByRole("button")).toHaveAttribute("aria-label", "entry-vote-btn.vote");
+    // The entry answered for alice (a row, not unknown): no lookup.
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("shows a looked-up removed vote (percent-0 row) as not voted", async () => {
+    const entry = mockEntry({
+      author: "bob",
+      permlink: "removed-post-2",
+      post_id: 3011,
+      stats: { flag_weight: 0, gray: false, hide: false, total_votes: 1 },
+      observer_vote: null,
+      observer_vote_for: "ecency"
+    });
+    lookup.mockResolvedValue({ rshares: 0, percent: 0 });
+
+    renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
+
+    await waitFor(() => expect(lookup).toHaveBeenCalled());
+    await waitFor(() => expect(pressed()).toBe("false"));
+    expect(screen.getByRole("button")).toHaveAttribute("aria-label", "entry-vote-btn.vote");
   });
 
   it("never shows the default observer's vote as the logged-in user's", async () => {
@@ -385,7 +448,6 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
       observer_vote: { rshares: 999, percent: 10000 },
       observer_vote_for: "ecency"
     } as any);
-    Reflect.deleteProperty(entry, "active_votes");
     let answer: (v: unknown) => void = () => {};
     lookup.mockImplementation(() => new Promise((res) => (answer = res)));
 
@@ -410,7 +472,6 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
       observer_vote: null,
       observer_vote_for: "ecency"
     } as any);
-    Reflect.deleteProperty(entry, "active_votes");
     lookup.mockResolvedValue({ rshares: -50, percent: -2500 });
 
     renderWithQueryClient(<EntryVoteBtn entry={entry} isPostSlider={true} />);
@@ -429,7 +490,6 @@ describe("EntryVoteBtn: vote state from bridge v2", () => {
       observer_vote: { rshares: 10, percent: 6000 },
       observer_vote_for: "alice"
     } as any);
-    Reflect.deleteProperty(entry, "active_votes");
     const queryClient = createTestQueryClient();
     const fetchSpy = vi.spyOn(queryClient, "fetchQuery");
 
@@ -471,7 +531,6 @@ describe("EntryVoteBtn: precedence and the session key", () => {
       observer_vote: entryVoted ? { rshares: 5, percent: 10000 } : null,
       observer_vote_for: "alice"
     } as any);
-    Reflect.deleteProperty(entry, "active_votes");
     const queryClient = createTestQueryClient();
     queryClient.setQueryData(["entry", "bob", permlink], entry, { updatedAt: entryAt });
     queryClient.setQueryData(
@@ -504,7 +563,6 @@ describe("EntryVoteBtn: precedence and the session key", () => {
         observer_vote: { rshares: 1, percent: 10000 },
         observer_vote_for: "alice"
       } as any);
-      Reflect.deleteProperty(e, "active_votes");
       delete (e as any).post_id;
       return e;
     };
@@ -553,7 +611,6 @@ describe("EntryVoteBtn: the unknown window", () => {
       observer_vote: null,
       observer_vote_for: "ecency"
     } as any);
-    Reflect.deleteProperty(e, "active_votes");
     return e;
   };
 

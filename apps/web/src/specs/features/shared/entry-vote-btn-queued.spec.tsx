@@ -59,7 +59,6 @@ const card = (permlink: string, observerFor = "ecency", vote: unknown = null) =>
     observer_vote: vote,
     observer_vote_for: observerFor
   } as any);
-  Reflect.deleteProperty(e, "active_votes");
   return e;
 };
 

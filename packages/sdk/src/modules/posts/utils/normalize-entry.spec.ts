@@ -146,10 +146,21 @@ describe("normalizeEntry (shape-driven, v1 or v2 in, one Entry out)", () => {
     expect(derived.map((v) => v.voter)).not.toContain("flag");
   });
 
-  it("reads a v2 zero vote (percent 0) as no vote", () => {
+  // Issue #2070: a removed vote stays a row (percent 0) that hivemind still
+  // counts in stats.total_votes. It is kept, but it is not a cast vote.
+  it("keeps a v2 removed vote (percent 0) as a row that is not cast", () => {
     const e = normalizeEntry({ ...V2, observer_vote: { rshares: 0, percent: 0 } }, "x");
-    expect(e.observer_vote).toBeNull();
+    expect(e.observer_vote).toEqual({ rshares: 0, percent: 0 });
     expect(e.observer_vote_for).toBe("x");
+    expect(entryVoteOf(e, "x")).toEqual({ rshares: 0, percent: 0 });
+    expect(isCastVote(entryVoteOf(e, "x"))).toBe(false);
+    expect(voteDirection(entryVoteOf(e, "x"))).toBeNull();
+  });
+
+  it("keeps a v1 removed vote row (percent 0) as a row that is not cast", () => {
+    const e = normalizeEntry({ ...COMMON, active_votes: [{ voter: "x", rshares: 0, percent: 0 }] }, "x");
+    expect(e.observer_vote_for).toBe("x");
+    expect(e.observer_vote).toEqual({ rshares: 0, percent: 0 });
   });
 
   it("leaves a v1 row with rshares 0 and no percent unknown", () => {

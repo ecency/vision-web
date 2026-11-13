@@ -16,7 +16,7 @@ import useClickAway from "react-use/lib/useClickAway";
 import dynamic from "next/dynamic";
 import { useEntryVote } from "@/api/mutations";
 import { Account, Entry } from "@/entities";
-import { getEntryVoteQueryOptions } from "@ecency/sdk";
+import { getEntryVoteQueryOptions, isCastVote } from "@ecency/sdk";
 import { useViewerVote } from "@/core/hooks/use-viewer-vote";
 import { voteValueKey } from "@/features/shared/entry-vote-btn/utils";
 import {
@@ -170,7 +170,10 @@ export function EntryVoteBtn({ entry: originalEntry, isPostSlider, account }: Pr
         previousVote = await queryClient.fetchQuery(
           getEntryVoteQueryOptions(entry.author, entry.permlink, activeUser.username)
         );
-        return previousVote?.percent == null ? null : previousVote.percent / 100;
+        // A removed vote (percent 0) is a row, not a previous vote.
+        return isCastVote(previousVote) && previousVote.percent != null
+          ? previousVote.percent / 100
+          : null;
       } catch (e) {
         console.error("entry-vote-btn failed to load previous vote", e);
         return null;

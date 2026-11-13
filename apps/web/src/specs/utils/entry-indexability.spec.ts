@@ -6,7 +6,7 @@ vi.mock("@ecency/render-helper", () => ({
   postBodySummary: (b: string) => b ?? ""
 }));
 
-import { Entry, EntryVote } from "@/entities";
+import { Entry, EntryStat } from "@/entities";
 import {
   canonicalTarget,
   isIndexable,
@@ -22,8 +22,8 @@ const longBody = "x".repeat(WAVE_MIN_BODY_CHARS + 20);
 const shortBody = "gm";
 
 const realPostBody = "x".repeat(500); // > CONTAINER_ANCHOR_MAX_BODY (400)
-const vote = (voter: string): EntryVote => ({ voter, rshares: 0 });
-const votes = (n: number): EntryVote[] => Array.from({ length: n }, () => vote("v"));
+// Entries carry no voter list (bridge v2): the count is stats.total_votes.
+const votes = (n: number): EntryStat => ({ flag_weight: 0, gray: false, hide: false, total_votes: n });
 
 const makeEntry = (o: Partial<Entry>): Entry =>
   ({
@@ -32,7 +32,7 @@ const makeEntry = (o: Partial<Entry>): Entry =>
     depth: 0,
     body: longBody,
     children: 0,
-    active_votes: [],
+    stats: votes(0),
     json_metadata: {},
     author_reputation: 0,
     pending_payout_value: "0.000 HBD",
@@ -340,7 +340,7 @@ describe("wave quality gate (depth-1 under container)", () => {
   });
 
   it("Tier1 fail: long body but no engagement", () => {
-    expect(idx(wave({ body: longBody, children: 0, active_votes: [] }))).toBe(false);
+    expect(idx(wave({ body: longBody, children: 0, stats: votes(0) }))).toBe(false);
   });
 
   it("Tier1 pass via voters + payout", () => {
@@ -348,7 +348,7 @@ describe("wave quality gate (depth-1 under container)", () => {
       idx(
         wave({
           children: 0,
-          active_votes: votes(6),
+          stats: votes(6),
           pending_payout_value: "0.500 HBD"
         })
       )
@@ -360,7 +360,7 @@ describe("wave quality gate (depth-1 under container)", () => {
       idx(
         wave({
           children: 0,
-          active_votes: [vote("self")],
+          stats: votes(1),
           pending_payout_value: "50.000 HBD"
         })
       )
@@ -372,11 +372,26 @@ describe("wave quality gate (depth-1 under container)", () => {
       idx(
         wave({
           children: 0,
-          active_votes: votes(40),
+          stats: votes(40),
           pending_payout_value: "0.001 HBD"
         })
       )
     ).toBe(false);
+  });
+
+  // Deliberate raw v1 / condenser row (voter list, no stats): covers the
+  // active_votes.length fallback. v2 entries carry no active_votes.
+  it("counts voters from a raw v1 active_votes list when there is no stats count", () => {
+    const voters = Array.from({ length: 6 }, (_, i) => ({ voter: `v${i}`, rshares: 1 }));
+    const raw = (list: typeof voters) =>
+      wave({
+        children: 0,
+        stats: undefined,
+        active_votes: list,
+        pending_payout_value: "0.500 HBD"
+      } as unknown as Partial<Entry>);
+    expect(idx(raw(voters))).toBe(true);
+    expect(idx(raw(voters.slice(0, 1)))).toBe(false);
   });
 
   it("payout is source-agnostic (numeric payout field counts)", () => {
@@ -384,7 +399,7 @@ describe("wave quality gate (depth-1 under container)", () => {
       idx(
         wave({
           children: 0,
-          active_votes: votes(6),
+          stats: votes(6),
           pending_payout_value: "0.000 HBD",
           payout: 1.23
         } as Partial<Entry>)

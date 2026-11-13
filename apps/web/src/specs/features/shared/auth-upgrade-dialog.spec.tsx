@@ -214,15 +214,16 @@ describe("AuthUpgradeDialog extension picker", () => {
     expect(screen.queryByText("key-or-hot.extension-unavailable")).toBeNull();
   });
 
-  it("shows only the Firefox listing (Keychain) on Firefox", () => {
+  it("shows only the Firefox listings (Keeper, Keychain) on Firefox", () => {
     h.detected = [];
     setUserAgent("Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0");
     openDialog();
 
     const keychainLink = screen.getByRole("link", { name: /keychain/i });
     expect(keychainLink.getAttribute("href")).toContain("addons.mozilla.org");
-    // Keeper (in AMO review) and Peak Vault (Chromium-only) have no Firefox link.
-    expect(screen.queryByRole("link", { name: /hive keeper/i })).toBeNull();
+    const keeperLink = screen.getByRole("link", { name: /hive keeper/i });
+    expect(keeperLink.getAttribute("href")).toBe("https://addons.mozilla.org/firefox/addon/hive-keeper/");
+    // Peak Vault is Chromium-only: no Firefox link.
     expect(screen.queryByRole("link", { name: /peak vault/i })).toBeNull();
   });
 

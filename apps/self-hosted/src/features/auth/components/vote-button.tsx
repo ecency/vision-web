@@ -84,8 +84,9 @@ export function VoteButton({
       if (!user) return;
 
       // The SDK's vote cache update moves the count by the voter's PRIOR vote
-      // (+1 fresh, -1 removed, 0 for a new weight), and skips when it does not
-      // know it. So the prior vote is known before the broadcast: a click that
+      // (+1 for a first vote; 0 for a new weight, an unvote, or a vote over a
+      // removed vote, whose row hivemind still counts), and skips when it does
+      // not know it. So the prior vote is known before the broadcast: a click that
       // came before the lookup answered waits for it (the same request).
       let priorKnown = ownVote !== undefined;
       if (!priorKnown) {
@@ -109,7 +110,9 @@ export function VoteButton({
       // from a count the SDK never moved up. Unknown stays unknown.
       if (priorKnown) {
         // No rshares yet: the node computes them once the vote is in a block.
-        const next: ObserverVote | null = weight !== 0 ? { rshares: null, percent: weight } : null;
+        // An unvote leaves a percent-0 row (#2070): not cast, still counted.
+        const next: ObserverVote =
+          weight !== 0 ? { rshares: null, percent: weight } : { rshares: 0, percent: 0 };
         queryClient.setQueryData(QueryKeys.posts.entryVote(author, permlink, user.username), next);
         recordOptimisticVote(author, permlink, user.username, next);
       }

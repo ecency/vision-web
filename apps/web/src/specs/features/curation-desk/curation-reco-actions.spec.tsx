@@ -156,7 +156,7 @@ describe("recommended list row actions", () => {
       permlink,
       body: `body of ${permlink}`,
       json_metadata: {},
-      active_votes: [],
+      stats: { total_votes: 0, flag_weight: 0, gray: false, hide: false },
     }));
     marks = [];
     router = installFetchRouter()
@@ -294,7 +294,13 @@ describe("recommended list row actions", () => {
     );
     state.entryFetch.mockImplementation(async (author: string, permlink: string) => {
       if (author === "alice") return new Promise(() => {});
-      return { author, permlink, body: "body", json_metadata: {}, active_votes: [] };
+      return {
+        author,
+        permlink,
+        body: "body",
+        json_metadata: {},
+        stats: { total_votes: 0, flag_weight: 0, gray: false, hide: false },
+      };
     });
 
     renderWithQueryClient(<CurationRecommendationsView />);

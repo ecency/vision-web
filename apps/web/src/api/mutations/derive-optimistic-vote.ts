@@ -3,8 +3,8 @@ import { Entry, ObserverVote } from "@/entities";
 import { parseAsset } from "@/utils";
 
 export interface OptimisticVote {
-  /** The user's vote after this one; null after an unvote. */
-  observerVote: ObserverVote | null;
+  /** The user's vote after this one; a percent-0 row after an unvote. */
+  observerVote: ObserverVote;
   nextVoteCount: number;
   nextPayout: number;
 }
@@ -27,9 +27,11 @@ export function entryVoteCount(entry: Entry | undefined | null): number {
  *
  * Whether the user had voted before decides the count: the looked-up vote
  * (`priorVote`) when there is one, else the entry when it was read for this
- * user. Unknown counts as "no vote" for an upvote and leaves the count alone
- * for an unvote. A zero vote (percent 0, or rshares 0 without a percent) is no
- * vote (`isCastVote`), as in the SDK.
+ * user. Unknown counts as "no vote" for an upvote. Hivemind keeps a vote row
+ * once cast (#2070): an unvote leaves a percent-0 row that `stats.total_votes`
+ * still counts. So an unvote writes that row and leaves the count alone, and
+ * a vote over a removed vote (percent 0) does not add one. A zero vote is
+ * not cast (`isCastVote`), as in the SDK.
  *
  * The base count is `entryVoteCount(entry)`; the base payout is
  * the numeric `payout` (bridge entries) or the summed payout strings (feeds).
@@ -43,17 +45,16 @@ export function deriveOptimisticVote(
 ): OptimisticVote {
   const prior = priorVote !== undefined ? priorVote : entryVoteOf(entry, username);
   const hadVote = isCastVote(prior);
-  const observerVote: ObserverVote | null =
+  const observerVote: ObserverVote =
     // No rshares yet: the node computes them once the vote is in a block.
-    weight !== 0 ? { rshares: null, percent: weight } : null;
+    weight !== 0 ? { rshares: null, percent: weight } : { rshares: 0, percent: 0 };
 
+  // Same rule as the SDK's isRemovedVote, inlined so the web build does not
+  // need a newer SDK dist for it.
+  const removedVote = !!prior && prior.percent === 0;
   const baseVoteCount = entryVoteCount(entry);
-  let nextVoteCount = baseVoteCount;
-  if (weight !== 0 && !hadVote) {
-    nextVoteCount = baseVoteCount + 1;
-  } else if (weight === 0 && hadVote) {
-    nextVoteCount = Math.max(0, baseVoteCount - 1);
-  }
+  const nextVoteCount =
+    weight !== 0 && !hadVote && !removedVote ? baseVoteCount + 1 : baseVoteCount;
 
   const basePayout =
     typeof entry.payout === "number"

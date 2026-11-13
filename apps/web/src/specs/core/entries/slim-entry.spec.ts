@@ -228,6 +228,8 @@ describe("slimEntryPage", () => {
   });
 });
 
+// Deliberate raw v1 rows with active_votes: cardOnlyEntry exists to drop the
+// voter lists these shapes still carry. v2 entries have none.
 describe("withCardOnlyPageEntries", () => {
   const page = () => [
     entry({ body: "a body", active_votes: [{ voter: "a", rshares: 1 }] as never }),
@@ -318,7 +320,7 @@ describe("withCardOnlyPageEntries", () => {
 });
 
 describe("getEntryModerationReason", () => {
-  const lowRepAuthor = { author_reputation: 25, net_rshares: 0, active_votes: [] };
+  const lowRepAuthor = { author_reputation: 25, net_rshares: 0 };
 
   it("still flags a low-trust post whose body link was recorded before the strip", () => {
     const e = entry({

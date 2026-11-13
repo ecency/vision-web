@@ -175,8 +175,8 @@ export namespace EcencyEntriesCacheManagement {
       // `active_votes` array, so `votes.length` understates the real total; the
       // caller derives the correct next count and passes it here.
       /**
-       * Optimistic vote. `observerVote` is `voter`'s vote after it (null after
-       * an unvote): it is written as the entry's observer vote, owned by
+       * Optimistic vote. `observerVote` is `voter`'s vote after it (a percent-0
+       * row after an unvote, #2070): it is written as the entry's observer vote, owned by
        * `voter`, and into that voter's `entryVote` lookup so a refetch under
        * the default observer still shows it.
        */

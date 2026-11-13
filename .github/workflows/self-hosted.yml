@@ -85,6 +85,23 @@ jobs:
         run: pnpm install --frozen-lockfile
         env:
           CI: true
+      # The shared packages are built first, in the same order as
+      # apps/self-hosted/Dockerfile. They resolve through their committed dist
+      # (and rsbuild.config.ts aliases @ecency/ui straight at it), so skipping
+      # this bundles whatever dist happens to be checked in and tests a
+      # different artifact than the image ships. A regression introduced in a
+      # package's source would then pass here and still reach production, which
+      # is how the last one arrived: it came from render-helper.
+      # The unit tests below import @ecency/sdk through that dist too, so the
+      # build has to come first or they test the previous SDK.
+      - name: Build shared packages
+        run: |
+          pnpm --filter @ecency/sdk build
+          pnpm --filter @ecency/render-helper build
+          pnpm --filter @ecency/ui build
+        env:
+          CI: true
+
       - name: Run self-hosted tests
         run: pnpm --filter @ecency/self-hosted test
       # Hosting API is a standalone npm project (not part of pnpm workspace)
@@ -104,22 +121,6 @@ jobs:
       # load used to reach production uncompiled. This is also what runs
       # scripts/check-node-globals.mjs, which fails on a Node global that
       # Rsbuild does not provide.
-      #
-      # The shared packages are built first, in the same order as
-      # apps/self-hosted/Dockerfile. They resolve through their committed dist
-      # (and rsbuild.config.ts aliases @ecency/ui straight at it), so skipping
-      # this bundles whatever dist happens to be checked in and tests a
-      # different artifact than the image ships. A regression introduced in a
-      # package's source would then pass here and still reach production, which
-      # is how the last one arrived: it came from render-helper.
-      - name: Build shared packages
-        run: |
-          pnpm --filter @ecency/sdk build
-          pnpm --filter @ecency/render-helper build
-          pnpm --filter @ecency/ui build
-        env:
-          CI: true
-
       - name: Build the self-hosted app
         run: |
           # Mirrors the Dockerfile: config.json is gitignored, so fall back to

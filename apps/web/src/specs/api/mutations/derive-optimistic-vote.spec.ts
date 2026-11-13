@@ -10,6 +10,7 @@ vi.mock("@/utils", async () => ({
 
 import { deriveOptimisticVote, entryVoteCount } from "@/api/mutations/derive-optimistic-vote";
 import { Entry } from "@/entities";
+import { normalizeEntry } from "@ecency/sdk";
 
 const UP = 10000;
 
@@ -92,15 +93,34 @@ describe("deriveOptimisticVote", () => {
     expect(nextVoteCount).toBe(2); // unchanged
   });
 
-  it("decrements count when removing a vote (weight 0)", () => {
+  // Issue #2070: hivemind keeps a removed vote as a percent-0 row and
+  // stats.total_votes keeps counting it, so an unvote leaves the count alone.
+  it("leaves the count unchanged when removing a known vote (weight 0)", () => {
     const { observerVote, nextVoteCount } = deriveOptimisticVote(fullEntry(), 0, 0, "bob");
-    expect(nextVoteCount).toBe(1); // 2 -> 1
-    expect(observerVote).toBeNull();
+    expect(nextVoteCount).toBe(2); // unchanged
+    // The row stays (percent 0): a removed vote, not "never voted".
+    expect(observerVote).toEqual({ rshares: 0, percent: 0 });
+  });
+
+  it("adds one for a new vote on a post the user had not voted on", () => {
+    const { nextVoteCount } = deriveOptimisticVote(
+      fullEntry({ observer_vote: null, observer_vote_for: "bob" }),
+      UP,
+      0,
+      "bob"
+    );
+    expect(nextVoteCount).toBe(3); // 2 -> 3
+  });
+
+  it("leaves the count unchanged when changing a non-zero vote to another non-zero weight", () => {
+    const { observerVote, nextVoteCount } = deriveOptimisticVote(fullEntry(), -5000, 0, "bob");
+    expect(nextVoteCount).toBe(2); // unchanged
+    expect(observerVote).toEqual({ rshares: null, percent: -5000 });
   });
 
   it("leaves count unchanged when removing a vote on a feed wave (unknown prior vote)", () => {
     const { nextVoteCount } = deriveOptimisticVote(feedWave(), 0, 0, "dave");
-    expect(nextVoteCount).toBe(5); // can't decrement without an active_votes list
+    expect(nextVoteCount).toBe(5); // an unvote never lowers the count
   });
 });
 
@@ -140,15 +160,15 @@ describe("deriveOptimisticVote on a v2 entry", () => {
     expect(r.nextVoteCount).toBe(1500);
   });
 
-  it("removes the vote and one from the count on an unvote", () => {
+  it("removes the vote but keeps the count on an unvote (#2070)", () => {
     const r = deriveOptimisticVote(
       v2Entry({ observer_vote: { rshares: 10, percent: 10000 } }),
       0,
       0,
       "dave"
     );
-    expect(r.observerVote).toBeNull();
-    expect(r.nextVoteCount).toBe(1499);
+    expect(r.observerVote).toEqual({ rshares: 0, percent: 0 });
+    expect(r.nextVoteCount).toBe(1500);
   });
 
   it("uses the looked-up prior vote when the entry was read for another observer", () => {
@@ -177,8 +197,21 @@ describe("deriveOptimisticVote: a zero prior vote is no vote", () => {
     payout: 0
   } as unknown as Entry;
 
-  it("adds one vote over a looked-up percent-0 prior", () => {
-    expect(deriveOptimisticVote(unknownEntry, UP, 0, "dave", { rshares: 0, percent: 0 }).nextVoteCount).toBe(11);
+  // Issue #2070: a percent-0 prior is a removed vote whose row hivemind still
+  // counts in stats.total_votes, so voting again does not add one.
+  it("keeps the count when re-voting over a looked-up percent-0 row", () => {
+    expect(deriveOptimisticVote(unknownEntry, UP, 0, "dave", { rshares: 0, percent: 0 }).nextVoteCount).toBe(10);
+  });
+
+  it("keeps the count when re-voting over the entry's own percent-0 row", () => {
+    const entry = { ...unknownEntry, observer_vote: { rshares: 0, percent: 0 }, observer_vote_for: "dave" } as Entry;
+    expect(deriveOptimisticVote(entry, UP, 0, "dave").nextVoteCount).toBe(10);
+  });
+
+  it("adds one when the user is known never to have voted (observer_vote null)", () => {
+    const entry = { ...unknownEntry, observer_vote: null, observer_vote_for: "dave" } as Entry;
+    expect(deriveOptimisticVote(entry, UP, 0, "dave").nextVoteCount).toBe(11);
+    expect(deriveOptimisticVote(unknownEntry, UP, 0, "dave", null).nextVoteCount).toBe(11);
   });
 
   it("adds one vote over an rshares-0 prior without a percent", () => {
@@ -221,9 +254,29 @@ describe("entryVoteCount", () => {
   it("falls back to the legacy counts only without a stats count", () => {
     expect(entryVoteCount({ net_votes: 5 } as Entry)).toBe(5);
     expect(entryVoteCount({ total_votes: 4 } as unknown as Entry)).toBe(4);
+    // Deliberate raw v1 row: the voter list is a legacy count fallback.
     expect(entryVoteCount({ active_votes: [{}, {}, {}], net_votes: 9 } as unknown as Entry)).toBe(3);
     expect(entryVoteCount(undefined)).toBe(0);
     // stats without a count is not a count: fall back.
     expect(entryVoteCount({ stats: {}, net_votes: 5 } as unknown as Entry)).toBe(5);
+  });
+});
+
+// Issue #2070: through the real normalizer, a removed vote stays a percent-0
+// row, and a revote over it does not add one (hivemind still counts the row).
+describe("deriveOptimisticVote over a normalized removed vote", () => {
+  it("keeps the count on a revote over a v2 percent-0 row", () => {
+    const entry = normalizeEntry(
+      {
+        author: "alice",
+        permlink: "row-post",
+        payout: 0,
+        observer_vote: { rshares: 0, percent: 0 },
+        stats: { total_votes: 1, flag_weight: 0, gray: false, hide: false }
+      },
+      "dave"
+    ) as Entry;
+    expect(deriveOptimisticVote(entry, UP, 0, "dave").nextVoteCount).toBe(1);
+    expect(deriveOptimisticVote(entry, -UP, 0, "dave").nextVoteCount).toBe(1);
   });
 });

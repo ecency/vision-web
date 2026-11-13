@@ -19,6 +19,7 @@ describe("promoted entries", () => {
           body: "b",
           json_metadata: {},
           stats: { total_votes: 2, flag_weight: 0, gray: false, hide: false },
+          // Deliberate raw v1 / condenser input to the normalizer.
           active_votes: [
             { voter: "x", rshares: 1 },
             { voter: "alice", rshares: 2 }

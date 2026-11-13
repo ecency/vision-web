@@ -32,6 +32,7 @@ function entry(overrides: Partial<ReturnType<typeof mockEntry>> = {}) {
   return mockEntry({
     author: "alice",
     permlink: "p",
+    // Deliberate raw v1 voter list: the query must not keep it.
     active_votes: votes as never,
     payout_at: "2026-08-27T00:00:00",
     pending_payout_value: "1.234 HBD",

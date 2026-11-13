@@ -36,6 +36,7 @@ describe("getEntryQuery select: vote fields", () => {
         ...base,
         observer_vote: { rshares: 5, percent: 10000 },
         observer_vote_for: "alice",
+        // Deliberate raw v1 voter list: the cache must not keep it.
         active_votes: [{ voter: "x", rshares: 1 }],
         top_votes: [{ voter: "x", rshares: 1, percent: 100 }]
       },

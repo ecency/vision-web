@@ -7,6 +7,8 @@ import {
   stripAnonEntryCacheInPlace
 } from "@/core/react-query/strip-active-votes";
 
+// Deliberate raw v1 / condenser rows: the stripper under test exists to drop
+// the active_votes these shapes still carry. v2 entries have none.
 function entry(overrides: Record<string, any> = {}) {
   return {
     author: "alice",

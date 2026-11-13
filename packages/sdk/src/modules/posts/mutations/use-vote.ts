@@ -5,7 +5,7 @@ import type { AuthContextV2 } from "@/modules/core/types";
 import type { QueryClient } from "@tanstack/react-query";
 import { EntriesCacheManagement } from "../cache/entries-cache-management";
 import type { ObserverVote } from "../types";
-import { entryVoteOf, isCastVote } from "../utils/normalize-entry";
+import { entryVoteOf, isCastVote, isRemovedVote } from "../utils/normalize-entry";
 
 /**
  * Payload for voting on a post or comment.
@@ -66,11 +66,13 @@ function applyObserverVoteUpdate(
   const reflected = weight !== 0 ? hadVote && prior!.percent === weight : !hadVote;
   if (reflected) return;
 
-  // No rshares yet: the node computes them once the vote is in a block.
-  const next: ObserverVote | null = weight !== 0 ? { rshares: null, percent: weight } : null;
+  // Hivemind keeps a vote row once cast (#2070): an unvote leaves it as a
+  // percent-0 row that stats.total_votes still counts. So the unvote writes
+  // that row, never lowers the count, and a vote over the row does not add one.
+  // No rshares for a new vote yet: the node computes them once it is in a block.
+  const next: ObserverVote = weight !== 0 ? { rshares: null, percent: weight } : { rshares: 0, percent: 0 };
   const base = entry.stats!.total_votes;
-  const total =
-    !hadVote && next !== null ? base + 1 : hadVote && next === null ? Math.max(0, base - 1) : base;
+  const total = weight !== 0 && !hadVote && !isRemovedVote(prior) ? base + 1 : base;
   EntriesCacheManagement.updateObserverVote(
     variables.author,
     variables.permlink,

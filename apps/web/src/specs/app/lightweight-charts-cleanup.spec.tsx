@@ -19,7 +19,8 @@ const chartMock = vi.hoisted(() => {
     timeScale: vi.fn(() => ({
       fitContent: vi.fn(),
       subscribeVisibleLogicalRangeChange: vi.fn(),
-      subscribeVisibleTimeRangeChange: vi.fn()
+      subscribeVisibleTimeRangeChange: vi.fn(),
+      unsubscribeVisibleTimeRangeChange: vi.fn()
     }))
   };
   return { chart, createChart: vi.fn(() => chart) };

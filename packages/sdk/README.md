@@ -229,9 +229,15 @@ The `@ecency/sdk/hive` entry point exports the built-in transaction engine (sign
 ## Installation
 
 ```sh
-yarn add @ecency/sdk
+npm install @ecency/sdk hivesigner @tanstack/react-query react
 # or
-npm install @ecency/sdk
+yarn add @ecency/sdk hivesigner @tanstack/react-query react
+```
+
+`@ecency/sdk` and `@ecency/sdk/wallets` import `@tanstack/react-query` (and through it `react`) when they load, so install both alongside the SDK. They are declared as optional peers only so that projects using just `@ecency/sdk/hive` are not made to install React; that entry works without them:
+
+```sh
+npm install @ecency/sdk hivesigner
 ```
 
 ## Quick Start (React Query)

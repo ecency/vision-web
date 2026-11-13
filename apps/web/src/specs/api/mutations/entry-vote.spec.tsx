@@ -2,7 +2,7 @@ import { vi } from "vitest";
 import React from "react";
 import { renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { QueryKeys } from "@ecency/sdk";
+import { normalizeEntry, QueryKeys } from "@ecency/sdk";
 
 // PR review, items 3 and 4: the web optimistic vote update.
 vi.mock("@/utils", async () => ({
@@ -91,5 +91,62 @@ describe("useEntryVote: the optimistic update", () => {
     const after = qc.getQueryData<Entry>(entryKey);
     expect(after?.stats?.total_votes).toBe(11);
     expect(after?.payout).toBe(1.5);
+  });
+});
+
+// Issue #2070: hivemind keeps a vote row once cast, so after the first vote
+// the count stays put through unvote, revote and flag (chain: 1,1,1,1,1).
+describe("useEntryVote: removed votes keep their row", () => {
+  beforeEach(() => broadcast.mockReset());
+
+  // A raw v2 post read for alice: normalizeEntry labels it from the observer.
+  const readForAlice = (over: Partial<Entry>): Entry => {
+    const { observer_vote_for: _for, ...raw } = entry(over);
+    return normalizeEntry(raw, "alice") as Entry;
+  };
+
+  it("follows the chain through vote, unvote, revote, unvote, flag from 0", async () => {
+    const qc = new QueryClient();
+    const start = readForAlice({ stats: { total_votes: 0, flag_weight: 0, gray: false, hide: false } });
+    expect(start.observer_vote_for).toBe("alice");
+    qc.setQueryData(entryKey, start);
+    const hook = setup(qc, start);
+    const seen: number[] = [];
+    for (const weight of [10000, 0, 10000, 0, -10000]) {
+      await hook.current.mutateAsync({ weight, estimated: 0 });
+      seen.push(qc.getQueryData<Entry>(entryKey)!.stats!.total_votes);
+    }
+    expect(seen).toEqual([1, 1, 1, 1, 1]);
+  });
+
+  it("keeps the count on a revote over a normalized percent-0 row", async () => {
+    const qc = new QueryClient();
+    const removed = readForAlice({
+      stats: { total_votes: 1, flag_weight: 0, gray: false, hide: false },
+      observer_vote: { rshares: 0, percent: 0 }
+    });
+    expect(removed.observer_vote).toEqual({ rshares: 0, percent: 0 });
+    qc.setQueryData(entryKey, removed);
+    const hook = setup(qc, removed);
+    await hook.current.mutateAsync({ weight: 10000, estimated: 0 });
+    expect(qc.getQueryData<Entry>(entryKey)?.stats?.total_votes).toBe(1);
+  });
+
+  // PR #2071 review: an entry from a node a block behind says "no row" (null)
+  // while the user's vote is not indexed yet. The unvote leaves a removed row
+  // on chain, so it must be written (not skipped as "already not voted"), and
+  // a revote over it adds nothing.
+  it("writes the removed row over a lagging no-row entry, so a revote adds nothing", async () => {
+    const qc = new QueryClient();
+    const lagging = readForAlice({ stats: { total_votes: 0, flag_weight: 0, gray: false, hide: false } });
+    expect(lagging.observer_vote).toBeNull();
+    qc.setQueryData(entryKey, lagging);
+    const hook = setup(qc, lagging);
+
+    await hook.current.mutateAsync({ weight: 0, estimated: 0 });
+    expect(qc.getQueryData<Entry>(entryKey)?.observer_vote).toEqual({ rshares: 0, percent: 0 });
+
+    await hook.current.mutateAsync({ weight: 10000, estimated: 0 });
+    expect(qc.getQueryData<Entry>(entryKey)?.stats?.total_votes).toBe(0);
   });
 });

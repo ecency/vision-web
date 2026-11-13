@@ -1,5 +1,5 @@
 import { getQueryClient, QueryKeys } from "@/modules/core";
-import { isCastVote } from "../utils/normalize-entry";
+import { isCastVote, isRemovedVote } from "../utils/normalize-entry";
 import { queryOptions } from "@tanstack/react-query";
 import { Entry, ObserverVote, Vote } from "../types";
 import { callRPC, callRPCBatch, callRPCWithFallback } from "@/modules/core/hive-tx";
@@ -207,7 +207,7 @@ let flushScheduled = false;
  * method is a lower-bound seek on (author, permlink, voter): for an account
  * that did not vote it returns the NEXT row, another voter's or another
  * post's, so the row must match all three or it is "not voted". A removed
- * vote (percent 0) is "not voted" too.
+ * vote stays a row (percent 0, not cast): hivemind still counts it.
  */
 function readLookupRow(
   response: { votes?: DatabaseVote[] } | null | undefined,
@@ -220,7 +220,6 @@ function readLookupRow(
     return null;
   }
   const percent = Number(row.vote_percent) || 0;
-  if (percent === 0) return null;
   return { rshares: Number(row.rshares) || 0, percent };
 }
 
@@ -256,7 +255,8 @@ async function flushLookups(): Promise<void> {
 
 /**
  * One account's vote on one entry: `{ rshares, percent }`, or null when the
- * account has not voted (a removed vote, percent 0, is null too). Lookups made
+ * account has not voted. A removed vote is `{ rshares, percent: 0 }`: not
+ * cast (`isCastVote`), but a row hivemind still counts. Lookups made
  * in the same tick (a page of cards mounting) are coalesced into ONE JSON-RPC
  * batch request, in chunks of 50, that fails over to another node as a unit;
  * the same lookup asked twice is sent once.
@@ -354,11 +354,18 @@ export function recordOptimisticVote(
   );
 }
 
+/**
+ * Same vote state: both cast with the same weight, both a removed vote (a
+ * percent-0 row), or both no row. A removed vote is not "no row": hivemind
+ * still counts it, and a node a block behind answers null for it, so that
+ * answer must not settle a hold of a removed vote (#2070). Holds still end by
+ * their timeout either way.
+ */
 function sameVote(a: ObserverVote | null, b: ObserverVote | null): boolean {
-  const castA = isCastVote(a);
-  const castB = isCastVote(b);
-  if (castA !== castB) return false;
-  return !castA || a!.percent === b!.percent;
+  if (isCastVote(a) || isCastVote(b)) {
+    return isCastVote(a) && isCastVote(b) && a.percent === b.percent;
+  }
+  return isRemovedVote(a) === isRemovedVote(b);
 }
 
 /** The chain's answer, unless a recent vote of this client says otherwise. */

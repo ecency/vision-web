@@ -182,48 +182,6 @@ export const entryInstance1: Entry = {
   curator_payout_value: "0.000 HBD",
   promoted: "0.000 HBD",
   replies: [],
-  active_votes: [
-    {
-      voter: "user1",
-      rshares: 34273117581576
-    },
-    {
-      voter: "user2",
-      rshares: 2269348064337
-    },
-    {
-      voter: "user3",
-      rshares: 19969726098
-    },
-    {
-      voter: "user4",
-      rshares: 725359024516
-    },
-    {
-      voter: "user5",
-      rshares: 24029616493
-    },
-    {
-      voter: "user6",
-      rshares: 1485954337
-    },
-    {
-      voter: "user7",
-      rshares: 1281560607198
-    },
-    {
-      voter: "user8",
-      rshares: 554323413016
-    },
-    {
-      voter: "user9",
-      rshares: 140063022903
-    },
-    {
-      voter: "user10",
-      rshares: 542424211
-    }
-  ],
   author_reputation: 76.58,
   stats: {
     hide: false,
@@ -275,7 +233,6 @@ export const crossEntryInstance: Entry = {
   beneficiaries: [],
   max_accepted_payout: "0.000 HBD",
   percent_hbd: 10000,
-  active_votes: [],
   blacklists: [],
   community: "hive-125125",
   community_title: "Ecency",
@@ -325,118 +282,6 @@ export const crossEntryInstance: Entry = {
     beneficiaries: [],
     max_accepted_payout: "1000000.000 HBD",
     percent_hbd: 10000,
-    active_votes: [
-      { rshares: 308271008130, voter: "svamiva" },
-      { rshares: 882060063768, voter: "ausbitbank" },
-      {
-        rshares: 41179914713,
-        voter: "krystle"
-      },
-      { rshares: 10184621620, voter: "anarcist69" },
-      { rshares: 60754236643, voter: "scaredycatguide" },
-      {
-        rshares: 30379382731,
-        voter: "jlufer"
-      },
-      { rshares: 20624058840, voter: "clayboyn" },
-      { rshares: 59031515005, voter: "r0nd0n" },
-      {
-        rshares: 13366123570,
-        voter: "mitchelljaworski"
-      },
-      { rshares: 3763903058, voter: "ma1neevent" },
-      { rshares: 59192409376, voter: "amberyooper" },
-      {
-        rshares: 1119195703381,
-        voter: "followbtcnews"
-      },
-      { rshares: 770968428854, voter: "isaria" },
-      { rshares: 2448954060270, voter: "minnowsupport" },
-      {
-        rshares: 357915457366,
-        voter: "crimsonclad"
-      },
-      { rshares: 19833307049, voter: "vachemorte" },
-      { rshares: 266458345307, voter: "juliakponsford" },
-      {
-        rshares: 2451612319,
-        voter: "auditoryorgasms"
-      },
-      { rshares: 10510733533, voter: "st3llar" },
-      { rshares: 1096800958, voter: "koh" },
-      { rshares: 7480530904, voter: "bex-dk" },
-      {
-        rshares: 24232431632,
-        voter: "dinshatech"
-      },
-      { rshares: 1328531906, voter: "digitalpnut" },
-      { rshares: 1593592511, voter: "run-the-bits" },
-      {
-        rshares: 1464842216323,
-        voter: "msp-curation"
-      },
-      { rshares: 32218931639, voter: "aagabriel" },
-      { rshares: 23456628498, voter: "flaxz" },
-      { rshares: 872056776, voter: "alitavirgen" },
-      {
-        rshares: 697663478,
-        voter: "therabbitzone"
-      },
-      { rshares: 4734033244, voter: "franz54" },
-      { rshares: 49345291774, voter: "blarchive" },
-      { rshares: 2023866799, voter: "anarcist" },
-      {
-        rshares: 26565771,
-        voter: "adumbrate"
-      },
-      { rshares: 1845176869, voter: "catarafa" },
-      { rshares: 127865883, voter: "tankadiary" },
-      { rshares: 519158925, voter: "bearableguy123" },
-      {
-        rshares: 2045810365,
-        voter: "creary"
-      },
-      { rshares: 5048296448, voter: "nftshowroom" },
-      { rshares: 1146516946, voter: "peachymod" },
-      {
-        rshares: 108815286965,
-        voter: "lisamgentile1961"
-      },
-      { rshares: 6717937187, voter: "rootdraws" },
-      { rshares: 15421562, voter: "rpi" },
-      { rshares: 141605135, voter: "toni.curation" },
-      {
-        rshares: 98456195,
-        voter: "faireye"
-      },
-      { rshares: 910253967, voter: "julesquirin" },
-      { rshares: 846225189, voter: "almightymelon" },
-      {
-        rshares: 2027225084,
-        voter: "localgrower"
-      },
-      { rshares: 109893171681, voter: "tanjakolader" },
-      { rshares: 842827730, voter: "flaxz.ctp" },
-      { rshares: 5766385063, voter: "leoschein" },
-      {
-        rshares: 38796762150,
-        voter: "unorgmilitia"
-      },
-      { rshares: 0, voter: "regeneretta" },
-      { rshares: 1398441903, voter: "megaleoschein" },
-      { rshares: 1707971814, voter: "dugsix" },
-      {
-        rshares: 1996427811,
-        voter: "bhealy"
-      },
-      { rshares: 1364612442, voter: "generatornation" },
-      { rshares: 1740006545, voter: "darinapogodina" },
-      { rshares: 0, voter: "bbananass" },
-      {
-        rshares: 1678519518,
-        voter: "maurofolco"
-      }
-    ],
     blacklists: [],
     community: "hive-167922",
     community_title: "LeoFinance",
@@ -599,7 +444,6 @@ export const discussionInstace1: Entry[] = [
     curator_payout_value: "0.000 HBD",
     promoted: "0.000 HBD",
     replies: [],
-    active_votes: [],
     author_reputation: 75.6,
     stats: { hide: false, gray: false, total_votes: 180, flag_weight: 0 },
     beneficiaries: [{ account: "esteemapp", weight: 300 }],
@@ -629,7 +473,6 @@ export const discussionInstace1: Entry[] = [
     curator_payout_value: "0.000 HBD",
     promoted: "0.000 HBD",
     replies: [],
-    active_votes: [],
     author_reputation: 64.87,
     stats: { hide: false, gray: false, total_votes: 0, flag_weight: 0 },
     beneficiaries: [{ account: "esteemapp", weight: 300 }],
@@ -661,7 +504,6 @@ export const discussionInstace1: Entry[] = [
     curator_payout_value: "0.000 HBD",
     promoted: "0.000 HBD",
     replies: ["ardpien/re-brittandjosie-qbjoep"],
-    active_votes: [],
     author_reputation: 71.78,
     stats: { hide: false, gray: false, total_votes: 0, flag_weight: 0 },
     beneficiaries: [],
@@ -693,7 +535,6 @@ export const discussionInstace1: Entry[] = [
     curator_payout_value: "0.000 HBD",
     promoted: "0.000 HBD",
     replies: [],
-    active_votes: [{ voter: "jznsamuel", rshares: 114901996313 }],
     author_reputation: 47.13,
     stats: { hide: false, gray: false, total_votes: 1, flag_weight: 0 },
     beneficiaries: [],
@@ -725,7 +566,6 @@ export const discussionInstace1: Entry[] = [
     curator_payout_value: "0.000 HBD",
     promoted: "0.000 HBD",
     replies: [],
-    active_votes: [],
     author_reputation: 60.22,
     stats: { hide: false, gray: false, total_votes: 0, flag_weight: 0 },
     beneficiaries: [{ account: "esteemapp", weight: 300 }],
@@ -757,7 +597,6 @@ export const discussionInstace1: Entry[] = [
     curator_payout_value: "0.000 HBD",
     promoted: "0.000 HBD",
     replies: [],
-    active_votes: [{ voter: "jznsamuel", rshares: 116060350556 }],
     author_reputation: 68.52,
     stats: { hide: false, gray: false, total_votes: 1, flag_weight: 0 },
     beneficiaries: [{ account: "esteemapp", weight: 300 }],
@@ -789,7 +628,6 @@ export const discussionInstace1: Entry[] = [
     curator_payout_value: "0.000 HBD",
     promoted: "0.000 HBD",
     replies: [],
-    active_votes: [{ voter: "jznsamuel", rshares: 117230405346 }],
     author_reputation: 71.51,
     stats: { hide: false, gray: false, total_votes: 1, flag_weight: 0 },
     beneficiaries: [{ account: "esteemapp", weight: 300 }],
@@ -821,10 +659,6 @@ export const discussionInstace1: Entry[] = [
     curator_payout_value: "0.000 HBD",
     promoted: "0.000 HBD",
     replies: [],
-    active_votes: [
-      { voter: "foo", rshares: 123 },
-      { voter: "bar", rshares: 123 }
-    ],
     author_reputation: 65.01,
     stats: { hide: false, gray: false, total_votes: 2, flag_weight: 0 },
     beneficiaries: [{ account: "esteemapp", weight: 300 }],
@@ -856,10 +690,6 @@ export const discussionInstace1: Entry[] = [
     curator_payout_value: "0.000 HBD",
     promoted: "0.000 HBD",
     replies: [],
-    active_votes: [
-      { voter: "foxkoit", rshares: 154659337454 },
-      { voter: "jznsamuel", rshares: 118413204550 }
-    ],
     author_reputation: 57.66,
     stats: { hide: false, gray: false, total_votes: 2, flag_weight: 0 },
     beneficiaries: [{ account: "esteemapp", weight: 300 }],
@@ -891,7 +721,6 @@ export const discussionInstace1: Entry[] = [
     curator_payout_value: "0.000 HBD",
     promoted: "0.000 HBD",
     replies: [],
-    active_votes: [],
     author_reputation: 47.13,
     stats: { hide: false, gray: false, total_votes: 0, flag_weight: 0 },
     beneficiaries: [],
