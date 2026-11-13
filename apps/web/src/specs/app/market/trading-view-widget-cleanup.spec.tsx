@@ -28,10 +28,10 @@ vi.mock("react-resize-detector", () => ({
   }
 }));
 vi.mock("@/core/global-store", () => ({
-  useGlobalStore: (selector: any) => selector({ theme: "day" })
+  useGlobalStore: <T,>(selector: (s: { theme: string }) => T) => selector({ theme: "day" })
 }));
 vi.mock("@/app/market/advanced/_components/market-advanced-mode-widget", () => ({
-  MarketAdvancedModeWidget: ({ children }: any) => <div>{children}</div>
+  MarketAdvancedModeWidget: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>
 }));
 vi.mock("@/app/market/advanced/_components/api", () => ({
   useMarketBucketSizeQuery: () => ({ data: [] }),
@@ -40,12 +40,12 @@ vi.mock("@/app/market/advanced/_components/api", () => ({
 vi.mock("@/utils", () => ({ useInfiniteDataFlow: () => [] }));
 vi.mock("@/utils/local-storage", () => ({ PREFIX: "ecency" }));
 vi.mock("@ui/dropdown", () => ({
-  Dropdown: ({ children }: any) => <div>{children}</div>,
-  DropdownToggle: ({ children }: any) => <div>{children}</div>,
-  DropdownMenu: ({ children }: any) => <div>{children}</div>,
-  DropdownItem: ({ children }: any) => <div>{children}</div>
+  Dropdown: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  DropdownToggle: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenu: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  DropdownItem: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>
 }));
-vi.mock("@ui/button", () => ({ Button: ({ children }: any) => <button>{children}</button> }));
+vi.mock("@ui/button", () => ({ Button: ({ children }: { children?: React.ReactNode }) => <button>{children}</button> }));
 
 import { TradingViewWidget } from "@/app/market/advanced/_components/trading-view-widget";
 
@@ -58,15 +58,27 @@ describe("TradingViewWidget cleanup", () => {
     vi.useRealTimers();
   });
 
+  // On mount the 300ms debounce also asks for the next page (no range is known
+  // yet). Each case lets that ask land first, so what is counted after it can
+  // only be the 10s first page timer.
+  const mountPastDebounce = () => {
+    const view = render(<TradingViewWidget widgetTypeChanged={() => {}} />);
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(m.fetchNextPage).toHaveBeenCalledTimes(1);
+    m.fetchNextPage.mockClear();
+    return view;
+  };
+
   it("removes the chart once on unmount and does not ask for the next page after it", () => {
-    const { unmount } = render(<TradingViewWidget widgetTypeChanged={() => {}} />);
+    const { unmount } = mountPastDebounce();
     expect(m.createChart).toHaveBeenCalledTimes(1);
     expect(m.chart.remove).not.toHaveBeenCalled();
 
     unmount();
     expect(m.chart.remove).toHaveBeenCalledTimes(1);
 
-    m.fetchNextPage.mockClear();
     act(() => {
       vi.advanceTimersByTime(10_000);
     });
@@ -74,12 +86,15 @@ describe("TradingViewWidget cleanup", () => {
   });
 
   it("still asks for the next page 10s after mount while mounted", () => {
-    const { unmount } = render(<TradingViewWidget widgetTypeChanged={() => {}} />);
-    m.fetchNextPage.mockClear();
+    const { unmount } = mountPastDebounce();
     act(() => {
-      vi.advanceTimersByTime(10_000);
+      vi.advanceTimersByTime(8_999);
     });
-    expect(m.fetchNextPage).toHaveBeenCalled();
+    expect(m.fetchNextPage).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(m.fetchNextPage).toHaveBeenCalledTimes(1);
     unmount();
   });
 

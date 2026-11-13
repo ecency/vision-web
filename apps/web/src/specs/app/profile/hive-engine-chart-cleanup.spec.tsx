@@ -21,7 +21,7 @@ vi.mock("react-resize-detector", () => ({
   }
 }));
 vi.mock("@/core/global-store", () => ({
-  useGlobalStore: (selector: any) => selector({ theme: "day" })
+  useGlobalStore: <T,>(selector: (s: { theme: string }) => T) => selector({ theme: "day" })
 }));
 vi.mock("@ecency/sdk", () => ({
   getHiveEngineTokensMetricsQueryOptions: () => ({ queryKey: ["he-metrics"] })

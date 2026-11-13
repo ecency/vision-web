@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -114,6 +114,9 @@ async function inNode(
 }
 
 const esm = (body: string) => ["--input-type=module", "-e", body];
+
+/** The React peers of `.` and `./wallets`, by bare specifier or a subpath of one. */
+const REACT_PEER = /^(react|react-dom|@tanstack\/react-query)(\/|$)/;
 
 describe("browser build stays splittable", () => {
   it("emits an entry per source module, not one bundle", () => {
@@ -242,40 +245,12 @@ describe("both builds load in plain Node and agree on their surface", () => {
   );
 
   it(
-    "the ./hive subpath loads with react and @tanstack/react-query missing",
-    async () => {
-      // `@ecency/sdk/hive` is the React-free entry the README points server and
-      // CLI users at (#2069). A resolve hook makes both packages unresolvable,
-      // as on an install without them, in every build and module format.
-      const blockReact = `require("node:module").registerHooks({
-        resolve(spec, ctx, next) {
-          if (/^(react|react-dom|@tanstack\\/react-query)(\\/|$)/.test(spec)) {
-            throw Object.assign(new Error("blocked " + spec), { code: "ERR_MODULE_NOT_FOUND" });
-          }
-          return next(spec, ctx);
-        }
-      });`;
-      const load = (entry: string) =>
-        inNode(
-          [
-            "-e",
-            `${blockReact}
-            (process.env.E_ENTRY.endsWith(".cjs")
-              ? Promise.resolve().then(() => require(process.env.E_ENTRY))
-              : import(process.env.E_ENTRY)
-            ).then(
-              (m) => console.log(JSON.stringify({ keys: Object.keys(m).length })),
-              (e) => console.log(JSON.stringify({ error: String(e && e.message) }))
-            )`
-          ],
-          { E_ENTRY: entry }
-        );
-      const entries = [join(browser(), "hive.js"), join(node(), "hive.mjs"), join(node(), "hive.cjs")];
-
-      // Statically too, because loading only runs top-level imports: a lazy
-      // `import("@tanstack/react-query")` inside a function would pass the load
-      // check and still break a consumer later. Follows every relative import,
-      // static and dynamic, from each hive entry through the chunks it reaches.
+    "the ./hive subpath imports neither react nor @tanstack/react-query, statically",
+    () => {
+      // Loading only runs top-level imports: a lazy `import("@tanstack/react-query")`
+      // inside a function would pass the load checks below and still break a
+      // consumer later. Follows every relative import, static and dynamic, from
+      // each hive entry through the chunks it reaches.
       const spec = /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)["']([^"']+)["']/g;
       const reached = new Set<string>();
       const bare = new Set<string>();
@@ -287,23 +262,99 @@ describe("both builds load in plain Node and agree on their surface", () => {
           else bare.add(m[1]);
         }
       };
+      const entries = [join(browser(), "hive.js"), join(node(), "hive.mjs"), join(node(), "hive.cjs")];
       entries.forEach(walk);
       // Not vacuous: the browser entry reaches its chunks and the externals.
       expect(reached.size).toBeGreaterThan(entries.length);
       expect([...bare].some((s) => s.startsWith("@noble/"))).toBe(true);
-      expect([...bare].filter((s) => /^(react|react-dom|@tanstack\/react-query)(\/|$)/.test(s))).toEqual([]);
-
-      for (const entry of entries) {
-        const result = await load(entry);
-        expect(result, relative(out, entry)).toEqual({ keys: expect.any(Number) });
-        expect(result.keys as number).toBeGreaterThan(10);
-      }
-      // Not vacuous: the same hook does stop the main entry, which needs both.
-      const main = await load(join(node(), "index.mjs"));
-      expect(main.error).toMatch(/blocked (react|@tanstack\/react-query)/);
-    },
-    CASE_MS
+      expect([...bare].filter((s) => REACT_PEER.test(s))).toEqual([]);
+    }
   );
+
+  describe("with react and @tanstack/react-query missing", () => {
+    // #2069: both stay OPTIONAL peers so `@ecency/sdk/hive` users are not made to
+    // install React, which only holds while `./hive` loads without them; `.` and
+    // `./wallets` import them at load, which is why the READMEs say to install
+    // them. A preload makes both unresolvable, as on an install without them.
+    //
+    // `module.register` (Node 20.6+) covers `import`, and patching the CommonJS
+    // resolver covers `require`: the package supports Node >= 22.12, and the
+    // synchronous `module.registerHooks` that would do both arrived in 22.15.
+    const BLOCKER = `
+      import { createRequire, register } from "node:module";
+      const blocked = ${REACT_PEER};
+      const refuse = (spec, code) =>
+        Object.assign(new Error("blocked " + spec), { code });
+      register(
+        "data:text/javascript," +
+          encodeURIComponent(
+            "export async function resolve(spec, ctx, next) {" +
+              "if (" + blocked + ".test(spec)) throw Object.assign(new Error('blocked ' + spec), { code: 'ERR_MODULE_NOT_FOUND' });" +
+              "return next(spec, ctx);" +
+            "}"
+          )
+      );
+      const Module = createRequire(import.meta.url)("node:module");
+      const resolveFilename = Module._resolveFilename;
+      Module._resolveFilename = function (spec, ...rest) {
+        if (blocked.test(spec)) throw refuse(spec, "MODULE_NOT_FOUND");
+        return resolveFilename.call(this, spec, ...rest);
+      };
+    `;
+    let blocker: string;
+    beforeAll(() => {
+      blocker = join(out, "block-react-peers.mjs");
+      writeFileSync(blocker, BLOCKER);
+    });
+
+    const load = (entry: string) =>
+      inNode(
+        [
+          "--import",
+          pathToFileURL(blocker).href,
+          "-e",
+          `(process.env.E_ENTRY.endsWith(".cjs")
+            ? Promise.resolve().then(() => require(process.env.E_ENTRY))
+            : import(process.env.E_ENTRY)
+          ).then(
+            (m) => console.log(JSON.stringify({ keys: Object.keys(m).length })),
+            (e) => console.log(JSON.stringify({ error: String(e && e.message) }))
+          )`
+        ],
+        { E_ENTRY: entry }
+      );
+
+    it(
+      "the ./hive subpath still loads, in every build and format",
+      async () => {
+        for (const entry of [join(browser(), "hive.js"), join(node(), "hive.mjs"), join(node(), "hive.cjs")]) {
+          const result = await load(entry);
+          expect(result, relative(out, entry)).toEqual({ keys: expect.any(Number) });
+          expect(result.keys as number).toBeGreaterThan(10);
+        }
+      },
+      CASE_MS
+    );
+
+    it(
+      "the . and ./wallets entries fail on exactly those packages",
+      async () => {
+        const entries = [
+          join(browser(), "index.js"),
+          join(node(), "index.mjs"),
+          join(node(), "index.cjs"),
+          join(browser(), "wallets.js"),
+          join(node(), "wallets.mjs"),
+          join(node(), "wallets.cjs")
+        ];
+        for (const entry of entries) {
+          const result = await load(entry);
+          expect(result.error, relative(out, entry)).toMatch(/^blocked (react|@tanstack\/react-query)(\/|$)/);
+        }
+      },
+      CASE_MS
+    );
+  });
 
   it(
     "the node CommonJS build loads and matches too",
