@@ -7,14 +7,26 @@ import { error, LinearProgress, UserAvatar } from "@/features/shared";
 import { arrowRightSvg } from "@ui/svg";
 import { formatError } from "@/api/format-error";
 import { useDelegateRcMutation } from "@/api/sdk-mutations";
-import { getBadActorsQueryOptions, getAccountFullQueryOptions } from "@ecency/sdk";
+import {
+  getAccountFullQueryOptions,
+  getAccountRcQueryOptions,
+  getBadActorsQueryOptions
+} from "@ecency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebounce } from "react-use";
 
 export const ResourceCreditsDelegation = (props: any) => {
-  const { resourceCredit, activeUser, hideDelegation, toFromList, amountFromList, delegateeData } =
-    props;
+  const { activeUser, hideDelegation, toFromList, amountFromList, delegateeData } = props;
   const queryClient = useQueryClient();
+  // The RC being delegated is the signer's own, so the balance and the limit
+  // come from the logged in account, whichever profile the dialog opened on.
+  const { data: resourceCredit } = useQuery({
+    ...getAccountRcQueryOptions(activeUser.username),
+    select: (accounts) =>
+      accounts.length
+        ? Number(accounts[0].rc_manabar.current_mana) + Number(accounts[0].received_delegated_rc)
+        : undefined
+  });
   const { data: badActors } = useQuery(getBadActorsQueryOptions());
   const { mutateAsync: delegateRc } = useDelegateRcMutation();
 
@@ -217,7 +229,7 @@ export const ResourceCreditsDelegation = (props: any) => {
               <div className="col-span-12 lg:col-span-10 lg:col-start-3">
                 <div className="balance space-3">
                   <span className="balance-label">{i18next.t("transfer.balance")}</span>
-                  <span>{`: ${resourceCredit}`}</span>
+                  <span>{resourceCredit === undefined ? "" : `: ${resourceCredit}`}</span>
                 </div>
               </div>
             </div>

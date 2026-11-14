@@ -331,9 +331,10 @@ export const ResourceCreditsInfo = ({ account, rcPercent }: Props) => {
           <ModalBody>
             <ResourceCreditsDelegation
               activeUser={activeUser}
-              resourceCredit={resourceCredit}
               hideDelegation={hideDelegation}
-              toFromList={toFromList}
+              toFromList={
+                toFromList || (account.name !== activeUser?.username ? account.name : "")
+              }
               amountFromList={amountFromList}
               delegateeData={delegateeData}
             />
