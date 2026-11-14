@@ -83,7 +83,9 @@ export const ResourceCreditsDelegation = (props: any) => {
     }
   };
 
+  // A recipient must be entered: `toData` survives clearing the field.
   const canSubmit =
+    !!to &&
     (toData || delegateeData) &&
     !toError &&
     !inProgress &&

@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
@@ -27,8 +27,21 @@ vi.mock("@/app/(dynamicPages)/profile/[username]/_components/claim-account-credi
   ClaimAccountCredit: () => null
 }));
 
+// The list's own "edit" action, as rc-delegations-list calls it on a row.
 vi.mock("@/app/(dynamicPages)/profile/[username]/_components/rc-delegations-list", () => ({
-  RcDelegationsList: () => null,
+  RcDelegationsList: (props: any) => (
+    <button
+      onClick={() => {
+        props.setShowDelegationsList(false);
+        props.showDelegation();
+        props.setAmountFromList("30000000000");
+        props.setToFromList("carol");
+        props.setDelegateeData({ name: "carol" });
+      }}
+    >
+      edit-carol
+    </button>
+  ),
   ConfirmDelete: () => null
 }));
 
@@ -78,14 +91,19 @@ describe("RC delegate from another user's profile", () => {
     );
   });
 
-  async function openDelegateOnBobsProfile() {
+  function renderProfile(name: string) {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    renderWithQueryClient(
-      <ResourceCreditsInfo rcPercent={50} account={mockFullAccount({ name: "bob" })} />,
+    return renderWithQueryClient(
+      <ResourceCreditsInfo rcPercent={50} account={mockFullAccount({ name })} />,
       { queryClient }
     );
+  }
+
+  async function openDelegateOnBobsProfile() {
+    const view = renderProfile("bob");
     fireEvent.click(screen.getAllByRole("button")[0]);
     fireEvent.click(await screen.findByText("rc-info.delegation-button"));
+    return view;
   }
 
   it("shows the logged in user's RC as the balance, not the visited account's", async () => {
@@ -110,5 +128,51 @@ describe("RC delegate from another user's profile", () => {
     await openDelegateOnBobsProfile();
 
     expect(screen.getByPlaceholderText("transfer.to-placeholder")).toHaveValue("bob");
+  });
+
+  // #2073
+  it("does not crash when the user logs out while the delegate form is open", async () => {
+    const view = await openDelegateOnBobsProfile();
+    await screen.findByText(`: ${ALICE_RC}`);
+
+    vi.mocked(useActiveAccount).mockReturnValue({ activeUser: null, username: null } as any);
+    view.rerender(<ResourceCreditsInfo rcPercent={50} account={mockFullAccount({ name: "bob" })} />);
+
+    expect(screen.queryByPlaceholderText("transfer.amount-placeholder")).not.toBeInTheDocument();
+  });
+
+  // #2074
+  it("starts a fresh delegation with no recipient after editing one from the list", async () => {
+    vi.mocked(useActiveAccount).mockReturnValue({
+      activeUser: { username: "alice" },
+      username: "alice"
+    } as any);
+    renderProfile("alice");
+
+    // RC info -> outgoing list -> edit carol's delegation -> close the form.
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    fireEvent.click(await screen.findByText(/rc-info.delegated/));
+    fireEvent.click(await screen.findByText("edit-carol"));
+    expect(await screen.findByPlaceholderText("transfer.to-placeholder")).toHaveValue("carol");
+    const delegateDialog = screen
+      .getByPlaceholderText("transfer.to-placeholder")
+      .closest(".transfer-dialog") as HTMLElement;
+    fireEvent.click(within(delegateDialog).getByLabelText("g.close"));
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText("transfer.to-placeholder")).not.toBeInTheDocument()
+    );
+
+    // A fresh Delegate from RC info.
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    fireEvent.click(await screen.findByText("rc-info.delegation-button"));
+    await screen.findByText(`: ${ALICE_RC}`);
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText("transfer.amount-placeholder"), {
+        target: { value: "10000000000" }
+      });
+    });
+
+    expect(screen.getByPlaceholderText("transfer.to-placeholder")).toHaveValue("");
+    expect(screen.getByText("g.next").closest("button")).toBeDisabled();
   });
 });
