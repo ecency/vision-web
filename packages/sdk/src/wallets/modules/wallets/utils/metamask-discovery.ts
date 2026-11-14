@@ -1,5 +1,5 @@
 import { EcencyWalletCurrency } from "../enums";
-import { isBtcMainnetAddress } from "./metamask-btc-transfer";
+import { isBtcMainnetAddress, normalizeBtcAddress } from "./metamask-btc-transfer";
 
 export type WalletAddressMap = Partial<Record<EcencyWalletCurrency, string>>;
 
@@ -63,10 +63,14 @@ export async function fetchMultichainAddresses(): Promise<WalletAddressMap> {
     );
 
     for (const mmWallet of mmWallets) {
+      let connectedAccounts: WalletStandardWallet["accounts"] | undefined;
       try {
         const connect = getConnectFeature(mmWallet)!;
         if (connect.name === "bitcoin:connect") {
-          await connect.feature.connect!({ purposes: ["payment"] });
+          const result = (await connect.feature.connect!({ purposes: ["payment"] })) as
+            { accounts?: WalletStandardWallet["accounts"] } | undefined;
+          // Prefer the accounts the connect call returned; wallet.accounts may lag behind.
+          connectedAccounts = result?.accounts?.length ? result.accounts : undefined;
         } else {
           await connect.feature.connect!();
         }
@@ -77,14 +81,18 @@ export async function fetchMultichainAddresses(): Promise<WalletAddressMap> {
         continue;
       }
 
-      for (const account of mmWallet.accounts ?? []) {
+      for (const account of connectedAccounts ?? mmWallet.accounts ?? []) {
         if (!account.address || !Array.isArray(account.chains)) continue;
 
         for (const [prefix, currency] of Object.entries(CHAIN_PREFIX_MAP)) {
           if (addresses[currency]) continue;
           if (account.chains.some((c: string) => c.startsWith(prefix))) {
             // Only save mainnet BTC addresses (testnet/regtest accounts share the chain list)
-            if (currency === EcencyWalletCurrency.BTC && !isBtcMainnetAddress(account.address)) continue;
+            if (currency === EcencyWalletCurrency.BTC) {
+              if (!isBtcMainnetAddress(account.address)) continue;
+              addresses[currency] = normalizeBtcAddress(account.address);
+              continue;
+            }
             addresses[currency] = account.address;
           }
         }

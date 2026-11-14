@@ -1,2 +1,2 @@
-export{d as formatSats,b as getBtcExplorerUrl,a as isBtcMainnetAddress,c as parseToSats,e as sendBtcTransfer}from'../../../../chunk-EGS6DH5T.js';import'../../../../chunk-OS3FCYZY.js';//# sourceMappingURL=metamask-btc-transfer.js.map
+export{e as formatSats,c as getBtcExplorerUrl,a as isBtcMainnetAddress,b as normalizeBtcAddress,d as parseToSats,f as sendBtcTransfer}from'../../../../chunk-X23W7UUC.js';import'../../../../chunk-OS3FCYZY.js';//# sourceMappingURL=metamask-btc-transfer.js.map
 //# sourceMappingURL=metamask-btc-transfer.js.map

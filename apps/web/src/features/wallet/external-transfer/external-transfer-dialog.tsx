@@ -8,6 +8,7 @@ import {
   getSolExplorerUrl,
   getBtcExplorerUrl,
   isBtcMainnetAddress,
+  parseToSats,
   estimateEvmGas,
   formatWei,
   parseToWei
@@ -216,7 +217,14 @@ export function ExternalTransferDialog({ currency, username, show, onHide }: Pro
 
   const addressValid = to.length > 0 && isValidAddress(to, currency);
   const amountValid = isValidAmount(amount, currency);
-  const exceedsBalance = amountValid && fullBalance ? parseFloat(amount) > parseFloat(fullBalance) : false;
+  const isBtc = currency === EcencyWalletCurrency.BTC;
+  // BTC: the network fee is added on top of the amount, so the whole balance can
+  // never be sent. Compare in sats to avoid float rounding at 8 decimals.
+  const exceedsBalance = !amountValid || !balanceData
+    ? false
+    : isBtc
+      ? parseToSats(amount) >= balanceData.balanceBigInt
+      : !!fullBalance && parseFloat(amount) > parseFloat(fullBalance);
   const canSubmit = addressValid && amountValid && !exceedsBalance && !addressMismatch && !!externalAddress;
 
   useEffect(() => {
@@ -283,14 +291,14 @@ export function ExternalTransferDialog({ currency, username, show, onHide }: Pro
                 <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
                   {i18next.t("external-transfer.amount-label", { defaultValue: "Amount" })}
                 </label>
-                {humanBalance && currency === EcencyWalletCurrency.BTC && (
+                {fullBalance && isBtc && (
                   // No "max" for BTC: the fee is added on top of the amount, so sending
-                  // the full balance can never be funded.
-                  <span className="text-xs text-gray-500">
-                    {i18next.t("external-transfer.balance", { defaultValue: "Balance: {{balance}}", balance: humanBalance })}
+                  // the full balance can never be funded. Show all 8 decimals (sats).
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {i18next.t("external-transfer.balance", { defaultValue: "Balance: {{balance}}", balance: fullBalance })}
                   </span>
                 )}
-                {humanBalance && currency !== EcencyWalletCurrency.BTC && (
+                {humanBalance && !isBtc && (
                   <button
                     className="text-xs text-blue-dark-sky hover:underline"
                     onClick={handleMax}
@@ -344,8 +352,8 @@ export function ExternalTransferDialog({ currency, username, show, onHide }: Pro
               </div>
             )}
 
-            {currency === EcencyWalletCurrency.BTC && (
-              <div className="text-xs text-gray-500 bg-gray-50 dark:bg-dark-200 p-2 rounded-lg">
+            {isBtc && (
+              <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-dark-200 p-2 rounded-lg">
                 {i18next.t("external-transfer.btc-fee-hint", {
                   defaultValue: "MetaMask sets the network fee when you confirm. Leave some BTC for the fee."
                 })}

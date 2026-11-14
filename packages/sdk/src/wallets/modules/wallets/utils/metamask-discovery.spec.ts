@@ -30,6 +30,43 @@ describe("fetchMultichainAddresses", () => {
     expect(result[EcencyWalletCurrency.BTC]).toBe("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq");
   });
 
+  it("uses the accounts returned by bitcoin:connect when wallet.accounts is empty", async () => {
+    walletsRef.list = [
+      {
+        name: "MetaMask",
+        chains: ["bitcoin:mainnet"],
+        features: {
+          "bitcoin:connect": {
+            version: "1.0.0",
+            connect: vi.fn(async () => ({
+              accounts: [{ address: "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", chains: ["bitcoin:mainnet"] }]
+            }))
+          }
+        },
+        accounts: []
+      }
+    ];
+
+    const result = await fetchMultichainAddresses();
+
+    expect(result[EcencyWalletCurrency.BTC]).toBe("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq");
+  });
+
+  it("saves an uppercase bech32 address in lowercase", async () => {
+    walletsRef.list = [
+      {
+        name: "MetaMask",
+        chains: ["bitcoin:mainnet"],
+        features: { "bitcoin:connect": { version: "1.0.0", connect: vi.fn() } },
+        accounts: [{ address: "BC1QAR0SRRR7XFKVY5L643LYDNW9RE59GTZZWF5MDQ", chains: ["bitcoin:mainnet"] }]
+      }
+    ];
+
+    const result = await fetchMultichainAddresses();
+
+    expect(result[EcencyWalletCurrency.BTC]).toBe("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq");
+  });
+
   it("still finds the SOL address through standard:connect", async () => {
     walletsRef.list = [
       {

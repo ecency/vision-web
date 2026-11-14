@@ -1,27 +1,72 @@
+import { bech32, bech32m, createBase58check } from "@scure/base";
+import { sha256 } from "@noble/hashes/sha2.js";
+
 const BTC_EXPLORER_URL = "https://mempool.space/tx/";
 const SATS_PER_BTC = 100_000_000n;
 const BTC_DECIMALS = 8;
 const AMOUNT_REGEX = /^\d+(\.\d+)?$/;
 
-/**
- * Mainnet address shapes: bech32/bech32m (bc1..., all lower or all upper case),
- * P2PKH (1...) and P2SH (3...) in case-sensitive base58.
- */
-const BECH32_LOWER_REGEX = /^bc1[02-9ac-hj-np-z]{11,87}$/;
-const BECH32_UPPER_REGEX = /^BC1[02-9AC-HJ-NP-Z]{11,87}$/;
-const BASE58_REGEX = /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/;
+const BASE58_VERSION_P2PKH = 0x00;
+const BASE58_VERSION_P2SH = 0x05;
+const base58check = createBase58check(sha256);
 
-export function isBtcMainnetAddress(address: string): boolean {
-  const trimmed = address.trim();
+function isValidSegwitAddress(address: string): boolean {
+  // bech32 strings must not mix case (BIP-173)
+  if (address !== address.toLowerCase() && address !== address.toUpperCase()) return false;
+  const lower = address.toLowerCase();
+  if (!lower.startsWith("bc1")) return false;
+
+  for (const codec of [bech32, bech32m]) {
+    let decoded: { prefix: string; words: number[] };
+    try {
+      decoded = codec.decode(lower as `${string}1${string}`, 90);
+    } catch {
+      continue;
+    }
+    if (decoded.prefix !== "bc" || decoded.words.length < 1) return false;
+
+    const version = decoded.words[0];
+    // BIP-350: v0 uses bech32, v1-v16 use bech32m
+    if (version > 16) return false;
+    if ((version === 0) !== (codec === bech32)) return false;
+
+    let program: Uint8Array;
+    try {
+      program = codec.fromWords(decoded.words.slice(1));
+    } catch {
+      return false;
+    }
+    if (program.length < 2 || program.length > 40) return false;
+    if (version === 0 && program.length !== 20 && program.length !== 32) return false;
+    return true;
+  }
+  return false;
+}
+
+function isValidBase58Address(address: string): boolean {
+  let payload: Uint8Array;
+  try {
+    payload = base58check.decode(address);
+  } catch {
+    return false;
+  }
   return (
-    BECH32_LOWER_REGEX.test(trimmed) ||
-    BECH32_UPPER_REGEX.test(trimmed) ||
-    BASE58_REGEX.test(trimmed)
+    payload.length === 21 &&
+    (payload[0] === BASE58_VERSION_P2PKH || payload[0] === BASE58_VERSION_P2SH)
   );
 }
 
-/** bech32 is case-insensitive; base58 is not. */
-function normalizeBtcAddress(address: string): string {
+/**
+ * True for a Bitcoin mainnet address with a valid checksum: bech32 (segwit v0),
+ * bech32m (taproot and later witness versions), or Base58Check P2PKH / P2SH.
+ */
+export function isBtcMainnetAddress(address: string): boolean {
+  const trimmed = address.trim();
+  return isValidSegwitAddress(trimmed) || isValidBase58Address(trimmed);
+}
+
+/** bech32 is case-insensitive and stored lowercase; base58 is case-sensitive. */
+export function normalizeBtcAddress(address: string): string {
   const trimmed = address.trim();
   return /^bc1/i.test(trimmed) ? trimmed.toLowerCase() : trimmed;
 }
@@ -56,36 +101,65 @@ export function formatSats(sats: bigint, decimals = BTC_DECIMALS): string {
   return fracStr ? `${whole}.${fracStr}` : whole.toString();
 }
 
+interface SatsConnectError {
+  code?: number;
+  message?: string;
+}
+
 interface SatsConnectResponse<T> {
   result?: T;
-  error?: { code?: number; message?: string };
+  error?: SatsConnectError;
 }
 
 interface SatsConnectProvider {
   request<T = unknown>(method: string, params?: unknown): Promise<SatsConnectResponse<T>>;
 }
 
+interface SatsConnectWallet {
+  name: string;
+  features: { "sats-connect:"?: { provider?: SatsConnectProvider } };
+}
+
+/** sats-connect error codes (RpcErrorCode) that MetaMask's Bitcoin wallet returns. */
+const SATS_USER_REJECTION = -32000;
+const SATS_ACCESS_DENIED = -32002;
+/** EIP-1193 user rejection; the transfer dialog treats it as a cancel. */
+const USER_REJECTED_REQUEST = 4001;
+
+function isSatsConnectWallet(wallet: unknown): wallet is SatsConnectWallet {
+  if (!wallet || typeof wallet !== "object") return false;
+  const { name, features } = wallet as { name?: unknown; features?: unknown };
+  if (typeof name !== "string" || !features || typeof features !== "object") return false;
+  const feature = (features as Record<string, unknown>)["sats-connect:"];
+  return (
+    !!feature &&
+    typeof feature === "object" &&
+    typeof (feature as { provider?: { request?: unknown } }).provider?.request === "function"
+  );
+}
+
 async function getMetaMaskSatsConnectProvider(): Promise<SatsConnectProvider> {
   const { getWallets } = await import("@wallet-standard/app");
-  const wallet = getWallets()
-    .get()
-    .find(
-      (w: any) =>
-        w.name?.toLowerCase().includes("metamask") &&
-        (w.features as Record<string, any>)["sats-connect:"]?.provider
-    );
+  const wallet = (getWallets().get() as readonly unknown[])
+    .filter(isSatsConnectWallet)
+    .find((w) => w.name.toLowerCase().includes("metamask"));
 
-  if (!wallet) {
+  const provider = wallet?.features["sats-connect:"]?.provider;
+  if (!provider) {
     throw new Error("MetaMask Bitcoin wallet not found. Enable Bitcoin in MetaMask and try again.");
   }
+  return provider;
+}
 
-  return (wallet.features as Record<string, any>)["sats-connect:"].provider as SatsConnectProvider;
+function toError(error: SatsConnectError, fallback: string): Error & { code?: number } {
+  const code = error.code === SATS_USER_REJECTION ? USER_REJECTED_REQUEST : error.code;
+  return Object.assign(new Error(error.message || fallback), { code });
 }
 
 function unwrap<T>(response: SatsConnectResponse<T> | undefined, method: string): T {
   if (!response) throw new Error(`MetaMask Bitcoin ${method} returned no response`);
   if (response.error) {
-    throw new Error(response.error.message || `MetaMask Bitcoin ${method} failed`);
+    throw toError(response.error, `MetaMask Bitcoin ${method} failed`);
   }
   return response.result as T;
 }
@@ -107,12 +181,21 @@ export async function sendBtcTransfer(
     throw new Error("Amount must be greater than zero");
   }
 
+  const recipient = normalizeBtcAddress(to);
+  if (!isBtcMainnetAddress(recipient)) {
+    throw new Error("Invalid Bitcoin address");
+  }
+
   const provider = await getMetaMaskSatsConnectProvider();
 
   const accountsResponse = await provider.request<{
     addresses: Array<{ address: string; purpose?: string }>;
   }>("getAddresses", { purposes: ["payment"] });
-  // An error here means the user closed the prompt without picking a Bitcoin account.
+  // ACCESS_DENIED means the prompt was closed without picking a Bitcoin account;
+  // that falls through to the "no account" error below. Anything else is surfaced.
+  if (accountsResponse?.error && accountsResponse.error.code !== SATS_ACCESS_DENIED) {
+    throw toError(accountsResponse.error, "MetaMask Bitcoin getAddresses failed");
+  }
   const from = accountsResponse?.error
     ? undefined
     : accountsResponse?.result?.addresses?.find((a) => !a.purpose || a.purpose === "payment")?.address;
@@ -126,7 +209,7 @@ export async function sendBtcTransfer(
 
   const { txid } = unwrap<{ txid: string }>(
     await provider.request("sendTransfer", {
-      recipients: [{ address: to.trim(), amount: Number(sats) }]
+      recipients: [{ address: recipient, amount: Number(sats) }]
     }),
     "sendTransfer"
   );

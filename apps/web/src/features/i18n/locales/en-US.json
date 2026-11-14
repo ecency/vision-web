@@ -3865,7 +3865,8 @@
       "logging-in": "Signing you in with MetaMask...",
       "address-label": "{{chain}} address:",
       "checking-multichain": "Checking MetaMask multichain addresses...",
-      "chain-not-available": "Selected chain is not available in MetaMask"
+      "chain-not-available": "Selected chain is not available in MetaMask",
+      "reconnect": "Reconnect MetaMask"
     },
     "balance": {
       "label": "Balance:"

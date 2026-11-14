@@ -315,7 +315,13 @@ declare function installHiveSnap(): Promise<void>;
  */
 declare function getHivePublicKeys(): Promise<HivePublicKey[]>;
 
+/**
+ * True for a Bitcoin mainnet address with a valid checksum: bech32 (segwit v0),
+ * bech32m (taproot and later witness versions), or Base58Check P2PKH / P2SH.
+ */
 declare function isBtcMainnetAddress(address: string): boolean;
+/** bech32 is case-insensitive and stored lowercase; base58 is case-sensitive. */
+declare function normalizeBtcAddress(address: string): string;
 declare function getBtcExplorerUrl(txid: string): string;
 declare function parseToSats(amount: string): bigint;
 declare function formatSats(sats: bigint, decimals?: number): string;
@@ -328,4 +334,4 @@ declare function formatSats(sats: bigint, decimals?: number): string;
  */
 declare function sendBtcTransfer(to: string, amountBtc: string, expectedFrom?: string): Promise<string>;
 
-export { type AccountPointsResponse, AssetOperation, type EcencyHiveKeys, type EcencyTokenMetadata, EcencyWalletBasicTokens, EcencyWalletCurrency, index as EcencyWalletsPrivateApi, type ExternalWalletBalance, HiveEngineTokenMetadataResponse, type HiveKeyDerivation, type HivePublicKey, type HiveRole, type TransferableCurrency, type WalletAddressMap, buildTokensPayload, deriveHiveKey, deriveHiveKeys, deriveHiveMasterPasswordKey, deriveHiveMasterPasswordKeys, detectHiveKeyDerivation, discoverMetaMaskWallets, ensureEvmChain, estimateEvmGas, fetchEvmAddress, fetchMultichainAddresses, formatLamports, formatSats, formatWei, getAccountWalletListQueryOptions, getAllTokensListQueryOptions, getBtcExplorerUrl, getEvmChainConfig, getEvmExplorerUrl, getHivePublicKeys, getSolExplorerUrl, getTokenOperationsQueryOptions, getTokenPriceQueryOptions, installHiveSnap, isBtcMainnetAddress, parseToLamports, parseToSats, parseToWei, sendBtcTransfer, sendEvmTransfer, sendSolTransfer, useExternalTransfer, useGetExternalWalletBalanceQuery, useSaveWalletInformationToMetadata };
+export { type AccountPointsResponse, AssetOperation, type EcencyHiveKeys, type EcencyTokenMetadata, EcencyWalletBasicTokens, EcencyWalletCurrency, index as EcencyWalletsPrivateApi, type ExternalWalletBalance, HiveEngineTokenMetadataResponse, type HiveKeyDerivation, type HivePublicKey, type HiveRole, type TransferableCurrency, type WalletAddressMap, buildTokensPayload, deriveHiveKey, deriveHiveKeys, deriveHiveMasterPasswordKey, deriveHiveMasterPasswordKeys, detectHiveKeyDerivation, discoverMetaMaskWallets, ensureEvmChain, estimateEvmGas, fetchEvmAddress, fetchMultichainAddresses, formatLamports, formatSats, formatWei, getAccountWalletListQueryOptions, getAllTokensListQueryOptions, getBtcExplorerUrl, getEvmChainConfig, getEvmExplorerUrl, getHivePublicKeys, getSolExplorerUrl, getTokenOperationsQueryOptions, getTokenPriceQueryOptions, installHiveSnap, isBtcMainnetAddress, normalizeBtcAddress, parseToLamports, parseToSats, parseToWei, sendBtcTransfer, sendEvmTransfer, sendSolTransfer, useExternalTransfer, useGetExternalWalletBalanceQuery, useSaveWalletInformationToMetadata };
