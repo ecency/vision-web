@@ -292,12 +292,12 @@ describe('waves-helpers', () => {
       expect(result[2].post_id).toBe(1) // Oldest
     })
 
-    it('should link parent items correctly', () => {
+    it('should link parent items correctly, the parent keyed by author/permlink', () => {
+      // Bridge rows: no post_id, no id.
       const items = [
         {
           author: 'parent-user',
           permlink: 'parent-post',
-          post_id: 1,
           created: '2024-01-01T00:00:00',
           parent_author: 'container-author',
           parent_permlink: 'container-post'
@@ -305,7 +305,6 @@ describe('waves-helpers', () => {
         {
           author: 'child-user',
           permlink: 'child-post',
-          post_id: 2,
           created: '2024-01-02T00:00:00',
           parent_author: 'parent-user',
           parent_permlink: 'parent-post'
@@ -315,9 +314,10 @@ describe('waves-helpers', () => {
       const result = mapThreadItemsToWaveEntries(items, mockContainer, mockHost)
 
       expect(result).toHaveLength(2)
-      const childEntry = result.find(e => e.post_id === 2)
+      const childEntry = result.find(e => e.id === 'child-user/child-post')
       expect(childEntry?.parent).toBeDefined()
       expect(childEntry?.parent?.author).toBe('parent-user')
+      expect(childEntry?.parent?.id).toBe('parent-user/parent-post')
     })
 
     it('should not link parent if parent author is host', () => {
@@ -397,7 +397,7 @@ describe('waves-helpers without post_id', () => {
         permlink: 'wave-a',
         container: { author: host, permlink: 'waves-20261114cgy7o3' },
         parent: { author: 'bob', permlink: 'wave-b' }
-      } as any,
+      } as unknown as Parameters<typeof normalizeWaveEntryFromApi>[0],
       host
     )
 

@@ -110,7 +110,7 @@ export function mapThreadItemsToWaveEntries(
         id: entryKey(item),
         host,
         container,
-        parent
+        parent: parent ? normalizeParent(parent) : undefined
       } as WaveEntry;
     })
     .filter((entry) => entryKey(entry.container) !== entry.id)
