@@ -8,6 +8,15 @@ import type { Entry, EntryTopVote, ObserverVote } from "../types";
  */
 export const BRIDGE_V1_ACTIVE_VOTES_CAP = 1000;
 
+/**
+ * The identity of a post: author/permlink. Use it wherever a post needs a key
+ * or an equality check. Hive API nodes no longer return `post_id` from bridge
+ * reads, and the value was per node, never comparable across nodes.
+ */
+export function entryKey(entry: { author: string; permlink: string }): string {
+  return `${entry.author}/${entry.permlink}`;
+}
+
 /** How many voters `normalizeEntry` derives into `top_votes` from a v1 list. */
 export const DERIVED_TOP_VOTES = 10;
 

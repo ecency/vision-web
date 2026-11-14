@@ -6,7 +6,7 @@ import {
   mapThreadItemsToWaveEntries
 } from "../utils/waves-helpers";
 import { bridgeV2Call } from "@/modules/bridge/requests";
-import { normalizeEntry } from "../utils/normalize-entry";
+import { entryKey, normalizeEntry } from "../utils/normalize-entry";
 
 const THREAD_CONTAINER_BATCH_SIZE = 5;
 const MAX_CONTAINERS_TO_SCAN = 50;
@@ -22,7 +22,7 @@ async function getThreads(
   let startAuthor = pageParam?.author;
   let startPermlink = pageParam?.permlink;
   let scannedContainers = 0;
-  let skipContainerId = pageParam?.post_id;
+  let skipContainerKey = pageParam ? entryKey(pageParam) : undefined;
 
   while (scannedContainers < MAX_CONTAINERS_TO_SCAN) {
     interface AccountPostsParams {
@@ -61,14 +61,14 @@ async function getThreads(
     }
 
     const normalizedContainers = containers.map((container) => {
-      container.id = container.post_id;
+      container.id = entryKey(container);
       container.host = host;
       return container;
     });
 
     for (const container of normalizedContainers) {
-      if (skipContainerId && container.post_id === skipContainerId) {
-        skipContainerId = undefined;
+      if (skipContainerKey && container.id === skipContainerKey) {
+        skipContainerKey = undefined;
         continue;
       }
 
