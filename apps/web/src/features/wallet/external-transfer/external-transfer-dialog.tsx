@@ -6,6 +6,8 @@ import {
   type TransferableCurrency,
   getEvmExplorerUrl,
   getSolExplorerUrl,
+  getBtcExplorerUrl,
+  isBtcMainnetAddress,
   estimateEvmGas,
   formatWei,
   parseToWei
@@ -26,7 +28,8 @@ const USER_REJECTED_REQUEST = 4001;
 const DECIMALS: Record<string, number> = {
   ETH: 18,
   BNB: 18,
-  SOL: 9
+  SOL: 9,
+  BTC: 8
 };
 
 function isValidEvmAddress(address: string): boolean {
@@ -46,6 +49,8 @@ function isValidAddress(address: string, currency: EcencyWalletCurrency): boolea
       return isValidEvmAddress(address);
     case EcencyWalletCurrency.SOL:
       return isValidSolAddress(address);
+    case EcencyWalletCurrency.BTC:
+      return isBtcMainnetAddress(address);
     default:
       return false;
   }
@@ -178,7 +183,8 @@ export function ExternalTransferDialog({ currency, username, show, onHide }: Pro
       // the active MetaMask account does not match it (funds safety). The dialog's
       // open-time read is silent (eth_accounts) and only powers the proactive
       // warning; the hard guarantee lives in sendEvmTransfer, atomic with its
-      // account read. externalAddress is the SOL address for SOL (ignored there).
+      // account read. The BTC send applies the same check against the connected
+      // MetaMask Bitcoin account. externalAddress is ignored for SOL.
       const result = await transfer.mutateAsync({ to, amount, expectedFrom: externalAddress });
       setTxHash(result.txHash);
       setStep("success");
@@ -204,6 +210,7 @@ export function ExternalTransferDialog({ currency, username, show, onHide }: Pro
     if (!txHash) return undefined;
     if (isEvm) return getEvmExplorerUrl(currency, txHash);
     if (currency === EcencyWalletCurrency.SOL) return getSolExplorerUrl(txHash);
+    if (currency === EcencyWalletCurrency.BTC) return getBtcExplorerUrl(txHash);
     return undefined;
   }, [txHash, currency, isEvm]);
 
@@ -258,7 +265,9 @@ export function ExternalTransferDialog({ currency, username, show, onHide }: Pro
               <input
                 type="text"
                 className="w-full mt-1 p-3 border border-[--border-color] rounded-lg bg-transparent text-sm font-mono"
-                placeholder={isEvm ? "0x..." : "Solana address"}
+                placeholder={
+                  isEvm ? "0x..." : currency === EcencyWalletCurrency.BTC ? "bc1..." : "Solana address"
+                }
                 value={to}
                 onChange={(e) => setTo(e.target.value.trim())}
               />
@@ -274,7 +283,14 @@ export function ExternalTransferDialog({ currency, username, show, onHide }: Pro
                 <label className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
                   {i18next.t("external-transfer.amount-label", { defaultValue: "Amount" })}
                 </label>
-                {humanBalance && (
+                {humanBalance && currency === EcencyWalletCurrency.BTC && (
+                  // No "max" for BTC: the fee is added on top of the amount, so sending
+                  // the full balance can never be funded.
+                  <span className="text-xs text-gray-500">
+                    {i18next.t("external-transfer.balance", { defaultValue: "Balance: {{balance}}", balance: humanBalance })}
+                  </span>
+                )}
+                {humanBalance && currency !== EcencyWalletCurrency.BTC && (
                   <button
                     className="text-xs text-blue-dark-sky hover:underline"
                     onClick={handleMax}
@@ -324,6 +340,14 @@ export function ExternalTransferDialog({ currency, username, show, onHide }: Pro
                 {i18next.t("external-transfer.max-evm-hint", {
                   defaultValue: "Network fees are paid from {{token}}. MetaMask may adjust the amount to reserve gas.",
                   token: meta?.name ?? currency
+                })}
+              </div>
+            )}
+
+            {currency === EcencyWalletCurrency.BTC && (
+              <div className="text-xs text-gray-500 bg-gray-50 dark:bg-dark-200 p-2 rounded-lg">
+                {i18next.t("external-transfer.btc-fee-hint", {
+                  defaultValue: "MetaMask sets the network fee when you confirm. Leave some BTC for the fee."
                 })}
               </div>
             )}

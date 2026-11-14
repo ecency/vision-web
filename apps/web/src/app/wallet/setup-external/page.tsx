@@ -26,7 +26,7 @@ export default function WalletSetupExternalPage() {
               title: i18next.t("wallet.link-metamask.title", { defaultValue: "Link MetaMask" }),
               description: i18next.t("wallet.link-metamask.intro-description", {
                 defaultValue:
-                  "Connect your MetaMask wallet to link ETH, BNB, SOL addresses and enable MetaMask login for your Hive account."
+                  "Connect your MetaMask wallet to link BTC, ETH, BNB and SOL addresses and enable MetaMask login for your Hive account."
               }),
               buttonText: i18next.t("g.continue"),
               onClick: () => setStep("metamask")

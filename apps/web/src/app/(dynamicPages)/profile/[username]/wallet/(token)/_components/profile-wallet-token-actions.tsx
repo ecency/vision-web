@@ -108,7 +108,12 @@ export function ProfileWalletTokenActions() {
   const isWatchOnly = (matchedToken as any)?.watchOnly === true;
   const isOwnWallet = activeUser?.username === cleanUsername;
   const isMetaMaskUser = activeUser && getLoginType(activeUser.username) === "metamask";
-  const TRANSFERABLE_TOKENS = [EcencyWalletCurrency.ETH, EcencyWalletCurrency.BNB, EcencyWalletCurrency.SOL];
+  const TRANSFERABLE_TOKENS = [
+    EcencyWalletCurrency.ETH,
+    EcencyWalletCurrency.BNB,
+    EcencyWalletCurrency.SOL,
+    EcencyWalletCurrency.BTC
+  ];
   const canTransfer = isOwnWallet && isMetaMaskUser && !isWatchOnly && isExternalToken &&
     TRANSFERABLE_TOKENS.includes(tokenSymbol as EcencyWalletCurrency);
 

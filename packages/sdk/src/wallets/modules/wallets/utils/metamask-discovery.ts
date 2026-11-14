@@ -1,12 +1,27 @@
 import { EcencyWalletCurrency } from "../enums";
+import { isBtcMainnetAddress } from "./metamask-btc-transfer";
 
 export type WalletAddressMap = Partial<Record<EcencyWalletCurrency, string>>;
 
 /** Chain prefixes we look for in Wallet Standard accounts */
 const CHAIN_PREFIX_MAP: Record<string, EcencyWalletCurrency> = {
   "solana:": EcencyWalletCurrency.SOL,
-  "bip122:": EcencyWalletCurrency.BTC
+  "bip122:": EcencyWalletCurrency.BTC,
+  // MetaMask's native Bitcoin wallet uses the Bitcoin Wallet Standard chain ids
+  "bitcoin:": EcencyWalletCurrency.BTC
 };
+
+/** Connect features we know how to call, in order of preference. */
+const CONNECT_FEATURES = ["standard:connect", "bitcoin:connect"] as const;
+
+function getConnectFeature(wallet: WalletStandardWallet) {
+  for (const name of CONNECT_FEATURES) {
+    const feature = wallet.features[name] as
+      { connect?: (input?: unknown) => Promise<unknown> } | undefined;
+    if (typeof feature?.connect === "function") return { name, feature };
+  }
+  return undefined;
+}
 
 const HIVE_SNAP_ID = "npm:@hiveio/metamask-snap";
 
@@ -43,17 +58,18 @@ export async function fetchMultichainAddresses(): Promise<WalletAddressMap> {
 
     // Iterate ALL MetaMask wallet registrations — MetaMask may expose
     // separate entries per chain (e.g., one for Solana, one for Bitcoin)
-    const mmWallets = wallets.filter(
-      (w: WalletStandardWallet) =>
-        w.name.toLowerCase().includes("metamask") &&
-        w.features["standard:connect"]
-    ) as WalletStandardWallet[];
+    const mmWallets = (wallets as unknown as WalletStandardWallet[]).filter(
+      (w) => w.name.toLowerCase().includes("metamask") && getConnectFeature(w)
+    );
 
     for (const mmWallet of mmWallets) {
       try {
-        const connectFeature = mmWallet.features["standard:connect"] as
-          { connect: () => Promise<void> };
-        await connectFeature.connect();
+        const connect = getConnectFeature(mmWallet)!;
+        if (connect.name === "bitcoin:connect") {
+          await connect.feature.connect!({ purposes: ["payment"] });
+        } else {
+          await connect.feature.connect!();
+        }
       } catch (connectErr) {
         if (process.env.NODE_ENV === "development") {
           console.log("[MetaMask multichain] wallet connect failed, trying next:", connectErr);
@@ -67,6 +83,8 @@ export async function fetchMultichainAddresses(): Promise<WalletAddressMap> {
         for (const [prefix, currency] of Object.entries(CHAIN_PREFIX_MAP)) {
           if (addresses[currency]) continue;
           if (account.chains.some((c: string) => c.startsWith(prefix))) {
+            // Only save mainnet BTC addresses (testnet/regtest accounts share the chain list)
+            if (currency === EcencyWalletCurrency.BTC && !isBtcMainnetAddress(account.address)) continue;
             addresses[currency] = account.address;
           }
         }

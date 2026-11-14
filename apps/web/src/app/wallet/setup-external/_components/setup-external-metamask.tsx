@@ -325,11 +325,11 @@ function SetupExternalMetamaskInner({ username, onBack }: Props & { username: st
               {isMetaMaskUser
                 ? i18next.t("wallet.link-metamask.description-metamask-user", {
                     defaultValue:
-                      "Connect MetaMask to save your wallet addresses (ETH, BNB, SOL) to your Hive profile."
+                      "Connect MetaMask to save your wallet addresses (BTC, ETH, BNB, SOL) to your Hive profile."
                   })
                 : i18next.t("wallet.link-metamask.description-other-user", {
                     defaultValue:
-                      "Connect MetaMask to add its Hive keys to your account and save wallet addresses. This enables MetaMask login and links your ETH, BNB, SOL wallets."
+                      "Connect MetaMask to add its Hive keys to your account and save wallet addresses. This enables MetaMask login and links your BTC, ETH, BNB and SOL wallets."
                   })}
             </div>
             <Image

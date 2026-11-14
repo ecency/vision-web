@@ -4090,6 +4090,7 @@
     "balance": "Balance: {{balance}}",
     "estimated-fee": "Estimated network fee",
     "max-evm-hint": "Network fees are paid from {{token}}. MetaMask may adjust the amount to reserve gas.",
+    "btc-fee-hint": "MetaMask sets the network fee when you confirm. Leave some BTC for the fee.",
     "error-address-mismatch": "Connected MetaMask account does not match your linked wallet address. Please switch accounts in MetaMask.",
     "error-exceeds-balance": "Amount exceeds available balance",
     "review": "Review transfer",

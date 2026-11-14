@@ -4,3 +4,4 @@ export * from "./detect-hive-key-derivation";
 export * from "./metamask-evm-transfer";
 export * from "./metamask-sol-transfer";
 export * from "./metamask-discovery";
+export * from "./metamask-btc-transfer";

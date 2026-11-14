@@ -27,7 +27,7 @@ const SUPPORTED_CHAINS: {
 }[] = [
   { currency: EcencyWalletCurrency.ETH, isEvm: true },
   { currency: EcencyWalletCurrency.BNB, isEvm: true },
-  { currency: EcencyWalletCurrency.BTC, isEvm: false, comingSoon: true },
+  { currency: EcencyWalletCurrency.BTC, isEvm: false },
   { currency: EcencyWalletCurrency.SOL, isEvm: false }
 ];
 
