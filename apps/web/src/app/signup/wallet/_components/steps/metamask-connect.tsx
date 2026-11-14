@@ -27,7 +27,7 @@ const SUPPORTED_CHAINS: {
 }[] = [
   { currency: EcencyWalletCurrency.ETH, isEvm: true },
   { currency: EcencyWalletCurrency.BNB, isEvm: true },
-  { currency: EcencyWalletCurrency.BTC, isEvm: false, comingSoon: true },
+  { currency: EcencyWalletCurrency.BTC, isEvm: false },
   { currency: EcencyWalletCurrency.SOL, isEvm: false }
 ];
 
@@ -159,7 +159,8 @@ export function MetamaskConnect({ username, onVerified, onBack }: Props) {
       })) as string[];
       if (accounts?.[0]) {
         setEvmAddress(accounts[0]);
-        setSelectedCurrency(EcencyWalletCurrency.ETH);
+        // Keep the chain the user picked when this is a reconnect
+        setSelectedCurrency((current) => current ?? EcencyWalletCurrency.ETH);
 
         // Also fetch non-EVM addresses (BTC, SOL) via multichain API
         setIsLoadingChainAddresses(true);
@@ -366,11 +367,22 @@ export function MetamaskConnect({ username, onVerified, onBack }: Props) {
             </div>
           )}
           {selectedCurrency && !isEvmChain && !connectedAddress && !isLoadingChainAddresses && (
-            <div className="text-sm text-orange-500">
-              {i18next.t("signup-wallets.metamask.chain-not-available", {
-                chain: CURRENCIES_META_DATA[selectedCurrency]?.title ?? "",
-                defaultValue: "{{chain}} address not found in your MetaMask wallet. Please enable this chain in MetaMask and reconnect."
-              })}
+            <div className="flex flex-col items-start gap-2">
+              <div className="text-sm text-orange-500">
+                {i18next.t("signup-wallets.metamask.chain-not-available", {
+                  chain: CURRENCIES_META_DATA[selectedCurrency]?.title ?? "",
+                  defaultValue: "{{chain}} address not found in your MetaMask wallet. Please enable this chain in MetaMask and reconnect."
+                })}
+              </div>
+              <Button
+                size="sm"
+                appearance="secondary"
+                onClick={connectMetaMask}
+                disabled={isConnecting}
+                icon={isConnecting ? <Spinner className="size-4" /> : undefined}
+              >
+                {i18next.t("signup-wallets.metamask.reconnect", { defaultValue: "Reconnect MetaMask" })}
+              </Button>
             </div>
           )}
 

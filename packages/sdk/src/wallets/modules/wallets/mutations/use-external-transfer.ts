@@ -1,17 +1,19 @@
 import { EcencyWalletCurrency } from "../enums";
 import { sendEvmTransfer, parseToWei } from "../utils/metamask-evm-transfer";
 import { sendSolTransfer } from "../utils/metamask-sol-transfer";
+import { sendBtcTransfer } from "../utils/metamask-btc-transfer";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 export type TransferableCurrency =
   | EcencyWalletCurrency.ETH
   | EcencyWalletCurrency.BNB
-  | EcencyWalletCurrency.SOL;
+  | EcencyWalletCurrency.SOL
+  | EcencyWalletCurrency.BTC;
 
 interface ExternalTransferPayload {
   to: string;
   amount: string;
-  /** EVM only: the linked wallet address. The send is blocked if the active
+  /** EVM and BTC: the linked wallet address. The send is blocked if the active
    *  MetaMask account does not match it (funds safety). */
   expectedFrom?: string;
 }
@@ -32,6 +34,10 @@ export function useExternalTransfer(currency: TransferableCurrency) {
         case EcencyWalletCurrency.SOL: {
           const signature = await sendSolTransfer(to, amount);
           return { txHash: signature, currency };
+        }
+        case EcencyWalletCurrency.BTC: {
+          const txid = await sendBtcTransfer(to, amount, expectedFrom);
+          return { txHash: txid, currency };
         }
       }
     },

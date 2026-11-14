@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.1
+
+### Patch Changes
+
+- Wallet: send BTC from MetaMask's native Bitcoin wallet (#2079)
+
 ## 2.8.0
 
 ### Minor Changes
