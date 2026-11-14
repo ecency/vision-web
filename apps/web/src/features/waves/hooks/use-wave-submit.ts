@@ -11,7 +11,7 @@ import { error, success } from "@/features/shared";
 import i18next from "i18next";
 import { useActiveAccount } from "@/core/hooks";
 import { getQueryClient } from "@/core/react-query";
-import { getAccountFullQueryOptions } from "@ecency/sdk";
+import { entryKey, getAccountFullQueryOptions } from "@ecency/sdk";
 import { scheduleQuestsRefresh } from "@/utils/refresh-quests";
 import { latchWavesOnboardingItem } from "@/features/waves/components/waves-onboarding-checklist/derive-waves-onboarding-state";
 import { openInNewTab } from "@/utils/open-in-new-tab";
@@ -133,7 +133,7 @@ export function useWaveSubmit(
         }
       }
 
-      threadItem.id = threadItem.post_id;
+      threadItem.id = entryKey(threadItem);
 
       return threadItem;
     },

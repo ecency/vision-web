@@ -73,7 +73,7 @@ export function useEntryReblog(entry: Entry) {
             ? data.filter((d) => d.author !== entry.author || d.permlink !== entry.permlink)
             : [
                 {
-                  entry_id: entry.id ?? 0,
+                  entry_id: 0,
                   blog: activeUser?.username ?? "",
                   post_id: entry.post_id,
                   num: 0,

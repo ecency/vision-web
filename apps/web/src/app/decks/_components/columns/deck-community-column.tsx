@@ -12,7 +12,7 @@ import { newDataComingPaginatedCondition } from "../utils";
 import { InfiniteScrollLoader } from "./helpers";
 import dayjs from "@/utils/dayjs";
 import { Entry } from "@/entities";
-import { getPostsRankedQueryOptions } from "@ecency/sdk";
+import { entryKey, getPostsRankedQueryOptions } from "@ecency/sdk";
 import i18next from "i18next";
 import useMount from "react-use/lib/useMount";
 import { useQueryClient } from "@tanstack/react-query";
@@ -66,7 +66,7 @@ export const DeckCommunityColumn = ({ id, settings, draggable }: Props) => {
         );
         let items = ((response as IdentifiableEntry[] | null) ?? [])
           .filter((e) => !e.stats?.is_pinned)
-          .map((i) => ({ ...i, id: i.post_id }));
+          .map((i) => ({ ...i, id: entryKey(i) }));
 
         items = items.sort((a, b) => (dayjs(a.created).isAfter(dayjs(b.created)) ? -1 : 1));
 

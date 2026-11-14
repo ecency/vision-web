@@ -8,6 +8,7 @@ import { useEntryDiscussionsList } from "@/features/entry-management";
 import { UilCommentAdd } from "@tooni/iconscout-unicons-react";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useQuery } from "@tanstack/react-query";
+import { entryKey } from "@ecency/sdk";
 
 interface Props {
   item: WaveEntry;
@@ -30,7 +31,7 @@ export function WaveViewDiscussionItem({ item, i }: Props) {
       })}
     >
       <WavesListItem
-        key={entry!.post_id}
+        key={entryKey(entry!)}
         item={entry as WaveEntry}
         i={i}
         commentSlot={expanded ? i18next.t("waves.hide-replies") : undefined}

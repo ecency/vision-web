@@ -3,7 +3,7 @@ import React, { JSX, useEffect, useState } from "react";
 import { IdentifiableEntry } from "../deck-threads-manager";
 import { DeckThreadItemBody } from "./deck-thread-item-body";
 import { useInViewport } from "react-in-viewport";
-import { useEntryChecking } from "../../utils";
+import { isLocalEntry, useEntryChecking } from "../../utils";
 import { DeckThreadItemHeader } from "./deck-thread-item-header";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { Entry, WaveEntry } from "@/entities";
@@ -76,9 +76,7 @@ export const ThreadItem = ({
   }, [triggerPendingStatus]);
 
   useEffect(() => {
-    setIntervalStarted(
-      typeof entry?.post_id === "string" || !entry?.post_id || entry?.post_id === 1
-    );
+    setIntervalStarted(!!entry && isLocalEntry(entry));
   }, [entry]);
 
   useEffect(() => {

@@ -125,6 +125,15 @@ vi.mock("@ecency/sdk", async () => ({
     initialPageParam: undefined,
     getNextPageParam: () => undefined
   })),
+  // One thread (bridge.get_discussion): none by default.
+  getDiscussionQueryOptions: vi.fn((author?: string, permlink?: string) => ({
+    queryKey: ["discussion", author, permlink],
+    queryFn: vi.fn(async () => null)
+  })),
+  getBadActorsQueryOptions: vi.fn(() => ({
+    queryKey: ["bad-actors"],
+    queryFn: vi.fn(async () => new Set<string>())
+  })),
   // Ranked tag/community feeds (page 1 and the cursor archive): empty by default.
   getPostsRankedQueryOptions: vi.fn((...key: unknown[]) => ({
     queryKey: ["posts-ranked", ...key],
@@ -249,8 +258,8 @@ vi.mock("@ecency/sdk", async () => ({
     queryKey: ["boost-account"],
     queryFn: vi.fn()
   })),
-  getAccountRcQueryOptions: vi.fn(() => ({
-    queryKey: ["resource-credits", "account"],
+  getAccountRcQueryOptions: vi.fn((username?: string) => ({
+    queryKey: ["resource-credits", "account", username],
     queryFn: vi.fn()
   })),
   getRcStatsQueryOptions: vi.fn(() => ({

@@ -6,7 +6,7 @@ import { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
 import { DeckGridContext } from "../deck-manager";
 import { DeckPostViewer } from "./content-viewer";
 import { Entry } from "@/entities";
-import { getPostsRankedQueryOptions } from "@ecency/sdk";
+import { entryKey, getPostsRankedQueryOptions } from "@ecency/sdk";
 import { useDataLimit } from "@/utils/data-limit";
 import i18next from "i18next";
 import useMount from "react-use/lib/useMount";
@@ -48,7 +48,7 @@ export const DeckTrendingColumn = ({ id, settings, draggable }: Props) => {
       const response = await queryClient.fetchQuery(
         getPostsRankedQueryOptions("trending", "", "", dataLimit)
       );
-      setData((response as IdentifiableEntry[]) ?? []);
+      setData((response ?? []).map((e) => ({ ...e, id: entryKey(e) })));
     } catch (e) {
     } finally {
       setIsReloading(false);

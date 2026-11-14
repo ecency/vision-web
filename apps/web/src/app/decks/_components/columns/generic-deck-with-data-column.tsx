@@ -89,7 +89,7 @@ export const GenericDeckWithDataColumn = ({
               {({ measure, registerChild }) => {
                 return (
                   <div
-                    key={(visibleData[index].id ?? visibleData[index].post_id) + key}
+                    key={visibleData[index].id + key}
                     ref={registerChild as any}
                     className="virtual-list-item"
                     style={style}
@@ -112,7 +112,7 @@ export const GenericDeckWithDataColumn = ({
       {visibleData.map((item, index) => (
         <div
           className="virtual-list-item"
-          key={visibleData[index].id ?? visibleData[index].post_id}
+          key={visibleData[index].id}
         >
           {children(visibleData[index], () => {}, index)}
         </div>

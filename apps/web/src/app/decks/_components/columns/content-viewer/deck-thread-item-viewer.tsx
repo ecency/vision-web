@@ -14,7 +14,11 @@ import { WaveEntry, Entry } from "@/entities";
 import { useWaveDiscussionsList } from "@/features/waves";
 import { makeEntryPath } from "@/utils";
 import { SortOrder } from "@/enums";
-import { getDiscussionsQueryOptions, SortOrder as SDKSortOrder } from "@ecency/sdk";
+import {
+  entryKey,
+  getDiscussionsQueryOptions,
+  SortOrder as SDKSortOrder
+} from "@ecency/sdk";
 
 // Helper function to add a reply to discussions list
 function addReplyToDiscussionsList(
@@ -110,7 +114,7 @@ export const DeckThreadItemViewer = ({
         {data.map((reply) => (
           <DeckThreadItemViewerReply
             isHighlighted={highlightedEntry === `${reply.author}/${reply.permlink}`}
-            key={reply.post_id}
+            key={entryKey(reply)}
             entry={reply as IdentifiableEntry}
             parentEntry={entry!}
             incrementParentEntryCount={() => updateRepliesCount(entry!.children + 1)}

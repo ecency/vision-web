@@ -1,5 +1,5 @@
 import { ThreadItemEntry } from "./identifiable-entry";
-import { getPostsRankedQueryOptions } from "@ecency/sdk";
+import { entryKey, getPostsRankedQueryOptions } from "@ecency/sdk";
 import { FetchQueryOptions } from "@tanstack/query-core";
 import { QueryIdentifiers } from "@/core/react-query";
 import { getQueryClient } from "@/core/react-query";
@@ -31,7 +31,7 @@ export async function fetchThreadsFromCommunity(
 
     return {
       ...item,
-      id: item.post_id,
+      id: entryKey(item),
       host
     };
   });

@@ -31,7 +31,10 @@ export const EntryPayout = ({ entry: initialEntry }: Props) => {
   // missing numeric payout (rendering $0.000). Require the numeric payout AND the
   // absence of max_accepted_payout so only true search results take this branch.
   const isSearchResult =
-    (entry.id || 0) > 0 && typeof entry.payout === "number" && !entry.max_accepted_payout;
+    typeof entry.id === "number" &&
+    entry.id > 0 &&
+    typeof entry.payout === "number" &&
+    !entry.max_accepted_payout;
 
   let isPayoutDeclined,
     pendingPayout,

@@ -2,7 +2,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
-import { useCommunityPinCache } from "@/core/caches";
+import { pinTrackKey, useCommunityPin, useCommunityPinCache } from "@/core/caches";
 import { QueryIdentifiers } from "@/core/react-query";
 import type { Entry } from "@/entities";
 
@@ -23,6 +23,10 @@ vi.mock("@ecency/sdk", async () => {
     }
   };
 });
+vi.mock("@/api/sdk-mutations", () => ({
+  usePinPostMutation: () => ({ mutateAsync: vi.fn(async () => undefined) })
+}));
+vi.mock("@/features/shared/feedback", () => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("@/utils", async () => ({
   ...(await vi.importActual<object>("@/utils")),
   random: vi.fn(),
@@ -95,7 +99,29 @@ describe("useCommunityPinCache", () => {
 
     // useCommunityPin writes this key on success; unpinning must win over the
     // community page still listing the post as pinned.
-    client.setQueryData([QueryIdentifiers.ENTRY_PIN_TRACK, entry.post_id], false);
+    client.setQueryData(pinTrackKey(entry), false);
     await waitFor(() => expect(result.current.data).toBe(false));
+  });
+
+  // Hive API nodes no longer return post_id, so a pin override keyed by it was
+  // one key shared by every post: pinning one showed every post as pinned.
+  it("keeps a pin on one post from leaking onto another post", async () => {
+    const client = appClient();
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const pinned = { author: "alice", permlink: "pinned-one", category: "hive-1", stats: {} } as unknown as Entry;
+    const other = { author: "bob", permlink: "not-pinned", category: "hive-1", stats: {} } as unknown as Entry;
+
+    const pin = renderHook(() => useCommunityPin(pinned, { name: "hive-1" } as any), { wrapper });
+    const otherState = renderHook(() => useCommunityPinCache(other, false), { wrapper });
+    expect(otherState.result.current.data).toBe(false);
+
+    await pin.result.current.mutateAsync(true);
+
+    await waitFor(() =>
+      expect(renderHook(() => useCommunityPinCache(pinned, false), { wrapper }).result.current.data).toBe(true)
+    );
+    expect(otherState.result.current.data).toBe(false);
   });
 });
