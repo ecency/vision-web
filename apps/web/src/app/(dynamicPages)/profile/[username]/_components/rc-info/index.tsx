@@ -321,7 +321,10 @@ export const ResourceCreditsInfo = ({ account, rcPercent }: Props) => {
 
       <div>
         <Modal
-          // Signing needs the logged in account; logging out closes the form (#2073).
+          // Signing needs the logged in account. On logout this clears `show`, and
+          // Modal calls onHide (hideDelegation) on that open->closed transition, so
+          // the open flag, recipient and amount are reset and signing in again does
+          // not reopen the form (#2073).
           show={showDelegationModal && !!activeUser}
           centered={true}
           onHide={hideDelegation}

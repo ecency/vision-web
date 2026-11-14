@@ -155,6 +155,40 @@ describe("RC delegate from another user's profile", () => {
     expect(screen.queryByPlaceholderText("transfer.amount-placeholder")).not.toBeInTheDocument();
   });
 
+  // #2073: logging out must close the form, not just hide it, or signing in
+  // again on the same mounted page reopens it with the old recipient/amount.
+  // Pins the Modal onHide reset that the `show && activeUser` guard relies on.
+  it("stays closed when the user signs in again after logging out", async () => {
+    const view = await openDelegateOnBobsProfile();
+    await screen.findByText(`: ${ALICE_RC}`);
+    fireEvent.change(screen.getByPlaceholderText("transfer.amount-placeholder"), {
+      target: { value: "10000000000" }
+    });
+
+    vi.mocked(useActiveAccount).mockReturnValue({
+      activeUser: null,
+      username: null
+    } as unknown as ActiveAccount);
+    view.rerender(<ResourceCreditsInfo rcPercent={50} account={mockFullAccount({ name: "bob" })} />);
+
+    vi.mocked(useActiveAccount).mockReturnValue({
+      activeUser: { username: "alice" },
+      username: "alice"
+    } as unknown as ActiveAccount);
+    view.rerender(<ResourceCreditsInfo rcPercent={50} account={mockFullAccount({ name: "bob" })} />);
+
+    // The modal unmounts after its exit transition; without the fix it never
+    // closes, because the open flag survived the logout.
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText("transfer.amount-placeholder")).not.toBeInTheDocument()
+    );
+
+    // Opening Delegate again starts clean.
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    fireEvent.click(await screen.findByText("rc-info.delegation-button"));
+    expect(await screen.findByPlaceholderText("transfer.amount-placeholder")).toHaveValue("");
+  });
+
   // #2074
   it("starts a fresh delegation with no recipient after editing one from the list", async () => {
     vi.mocked(useActiveAccount).mockReturnValue({
